@@ -93,6 +93,18 @@ ESP_MB = 192
 #
 STICK_DISK_MAX_MB = 32
 
+#
+# **A `/home` partition is not that disk, and has its own ceiling.** The
+# loader never reads it - Kosmos's USB driver does, a block at a time, from
+# the stick - so the reason for the 32 above does not reach it. Diego, 19
+# September: "from now on we need to make the drive image at least 512mb".
+# Four gigabytes is not a limit of anything in the machine: it is how much
+# `mkusb.sh` writes and reads back before a stick can be booted, and past it
+# that wait is the thing a person notices. **No partition this size has
+# booted on the ThinkPad yet** - 0.10.88 is the first (`docs/boot.md`).
+#
+STICK_HOME_MAX_MB = 4096
+
 # The partition type every UEFI firmware looks for, and the one this image
 # has exactly one of. UEFI 2.10, table 5.7.
 ESP_TYPE_GUID = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
@@ -358,13 +370,23 @@ def main():
         if not os.path.isfile(image):
             sys.exit("mkusb_image: no disk image at %s" % image)
 
-        if os.path.getsize(image) > STICK_DISK_MAX_MB * 1024 * 1024:
+        if image is disk \
+                and os.path.getsize(image) > STICK_DISK_MAX_MB * 1024 * 1024:
             sys.exit("mkusb_image: %s is %.0f MB, and the ThinkPad has not yet "
-                     "booted a disk over %d MB (docs/boot.md). Make one that "
-                     "size:\n  build/host/lua tools/kfs.lua create %s %d "
-                     "host-file:/home/name ..."
+                     "booted a disk over %d MB that the loader carries "
+                     "(docs/boot.md). Make one that size, or give it as "
+                     "--home, in a partition of its own:\n  build/host/lua "
+                     "tools/kfs.lua create %s %d host-file:/home/name ..."
                      % (image, os.path.getsize(image) / 1048576.0,
                         STICK_DISK_MAX_MB, image, STICK_DISK_MAX_MB))
+
+        if image is home \
+                and os.path.getsize(image) > STICK_HOME_MAX_MB * 1024 * 1024:
+            sys.exit("mkusb_image: %s is %.0f MB, past the %d MB a /home "
+                     "partition may be - which is how much mkusb.sh writes "
+                     "and reads back before a stick is booted"
+                     % (image, os.path.getsize(image) / 1048576.0,
+                        STICK_HOME_MAX_MB))
 
     # The partition's own GUID, on the command line with the other words, so
     # the check on their length below counts it too.

@@ -263,7 +263,33 @@ void ec_init(void)
     kputs(" bytes");
     kputs(f.hardware_reduced ? ", hardware reduced\n" : "\n");
 
+    /* The TSC measured while the 8253 is known to count, so no wait after
+     * the switch depends on it (`timer.c`); and after the switch, asked
+     * whether it still does - the line to read on a machine that stopped. */
+    pc_timer_measure_tsc();
+
+    /*
+     * **`opt/kosmos/acpi=off` leaves the machine in the firmware's mode** -
+     * F5, F6 and the power button the firmware's again, and the battery not
+     * read, since the controller's ports are then the firmware's to use. One
+     * word in a stick's `\boot\kosmos.cmdline`, which the Mac can edit, for
+     * a machine on which ACPI mode turns out to be the fault.
+     */
+    {
+        char value[16];
+
+        if (hal_boot_option("opt/kosmos/acpi", value, sizeof(value))
+            && value[0] == 'o' && value[1] == 'f' && value[2] == 'f') {
+            kputs("acpi: left in the firmware's mode - opt/kosmos/acpi=off\n");
+            return;
+        }
+    }
+
     acpi_mode = switch_to_acpi(&f);
+
+    kputs(pc_pit_counts() ? "acpi: the 8253 still counts\n"
+                          : "acpi: the 8253 stopped counting - every wait is "
+                            "on the TSC\n");
 
     if (!acpi_mode) {
         return;

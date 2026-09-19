@@ -5795,3 +5795,38 @@ L, R, both triggers, Select, Start, and the D-pad's four directions. The
 driver says thirty-two changes and stops, so the sticks, pressed after, are
 not in the log.
 
+## 18.106 The 8253 stops in ACPI mode, and a 512 MB `/home`
+
+**Stick 0.10.87 crawled on the ThinkPad** (`boot.md`'s table): ACPI mode on,
+the battery read - *24%, discharging* - then about three minutes before the
+sound card said anything, and the boot stopped at stage 10. **The 8253
+stopped counting once the machine was in ACPI mode.** Every wait before the
+scheduler's tick was a spin on its channel two, bounded at ten million
+reads of the port - milliseconds under QEMU, ten seconds a wait on silicon -
+and the sound card's setup is a run of them, the timer's calibration two
+more. QEMU's 8253 never stops, so nothing here could have seen it.
+
+**So the TSC is measured against the 8253 before the switch, and every
+wait is on the TSC from then on** (`timer.c`); the timer's calibration takes
+that same measurement rather than a second one against a chip that may have
+stopped. After the switch the kernel asks whether channel two still counts
+and says so - *acpi: the 8253 still counts*, under QEMU, checked by
+`run_x86.py`'s 2c - which is the line to read on the ThinkPad's next boot.
+`opt/kosmos/acpi=off` leaves a machine in the firmware's mode, one word in a
+stick's `\boot\kosmos.cmdline`.
+
+**The stick's `/home` at 512 MB**, from `~/Kosmos/home` (`roadmap.md` 4d):
+
+- **`test_homeimage.py`, 10 checks on the host**: folders kept, a dot-file
+  kept, `.DS_Store`, a `._` file and a name with a colon left out, the size
+  asked for, a nested file back byte for byte.
+- **`run_x86.py`'s `usb_home_large`, 4 checks, in `x86-usb-2`**: a 512 MB
+  `/home` made by `homeimage.py` with a 40 MB file and then a 256 KB one -
+  found in the image's bytes past 32 MB - on a stick `write_gpt` lays out,
+  the kernel told its GUID. `/home` is all 1,048,576 sectors, the machine's
+  `df` agrees with `kfs.lua df`, and the far file reads back.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| macOS's litter not filtered | *`/home` holds .DS_Store*, and *macOS's ._ file went in* |
+

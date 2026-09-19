@@ -99,6 +99,12 @@ void pc_timer_interrupt(void);
  * `apic.c` measures the local APIC's timer against it. */
 void pc_timer_wait_ms(unsigned ms);
 
+/* The TSC measured against the 8253, once, so waits stop needing it - done
+ * before ACPI mode, which may stop the 8253's clock (`timer.c`). And whether
+ * channel two still counts, asked against the TSC. */
+void pc_timer_measure_tsc(void);
+bool pc_pit_counts(void);
+
 /* Masks every line on the 8259 pair. For a machine driving the I/O APIC
  * instead - see `apic.c`, which explains why silence is not the same as
  * being ignored. */

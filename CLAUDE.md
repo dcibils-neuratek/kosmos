@@ -696,13 +696,15 @@ every check under OVMF, which is necessary and not sufficient. So:
   that is the 0.10.60 kernel with a disk of 32 MB or less: 0.10.61 stopped
   after the loader's last line with both disks, and a disk's size is not what
   decides it (`docs/boot.md`).
-- **The stick is built by `make MEGA=1 x86-usb-image USB_HOME=partition`**,
-  which refuses a disk over 32 MB, and never by anything that skips that
-  refusal. `USB_HOME=partition` is part of the layout: every stick since
-  0.10.62 has carried `/home` in a partition of its own, and without it the
-  image is a different layout with the disk in memory, 8 MB larger. Written
-  to a stick with `bash tools/mkusb.sh <image>`, never `make usb`, which
-  rebuilds the image without it first.
+- **The stick is built by `make MEGA=1 x86-usb-image`**, with `/home` in a
+  partition of its own - the default since 19 September, and the layout
+  every stick since 0.10.62 has had. That `/home` is made fresh from
+  `~/Kosmos/home` at 512 MB (`HOME_DIR`, `STICK_HOME_MB`; Diego, 19
+  September: "from now on we need to make the drive image at least 512mb"),
+  and never from the repository. `USB_HOME=disk` is the old layout, whose
+  disk the loader carries and which is still refused over 32 MB. Written to
+  a stick with `bash tools/mkusb.sh <image>` - the image that was checked -
+  rather than `make usb`, which builds a new one first.
 - **`tools/mkusb.sh` reads the stick back after writing it, and a stick that
   does not hold its image is not booted.** Nothing had ever checked that the
   machine is given the bytes the build wrote: `dd` did not read back and the
@@ -718,7 +720,7 @@ every check under OVMF, which is necessary and not sufficient. So:
   incremental" - and then "we always need 1 stable build we agree is stable
   to use", "on top of that we develop new features", "we can label builds
   with -stable and -development suffixes". So:
-  - `make MEGA=1 x86-usb-image USB_HOME=partition` writes
+  - `make MEGA=1 x86-usb-image` writes
     `build/x86_64/kosmos-usb-<version>-development.img`, from `main`, booted
     under OVMF before it is handed over. Each build handed over takes its own
     revision first (`make bump`), so no two builds share a name.

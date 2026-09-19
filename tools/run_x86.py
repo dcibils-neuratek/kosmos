@@ -1648,6 +1648,110 @@ def usb_home_named(image, check):
           % shown)
 
 
+def usb_home_large(image, check):
+    """**A 512 MB `/home`, read past where the old one ended.**
+
+    Diego, 19 September: "from now on we need to make the drive image at
+    least 512mb". The stick's `/home` is a partition read by the USB driver,
+    so its size should not matter to anything but the filesystem - and "should
+    not" is what this checks. The image is made the way a stick's is,
+    `homeimage.py` from a folder, at 512 MB: a 40 MB file first and a 256 KB
+    one after it, so the second sits past the 32 MB the old disk ended at -
+    found in the image's bytes here, rather than assumed from the order. The
+    stick is `mkusb_image.write_gpt`'s, and the kernel is told the partition's
+    GUID as the loader tells it.
+
+    Then `/home` has to be all 512 MB - `diskinfo`'s sector count - with the
+    free blocks the host's `kfs.lua df` counts in the same image, and the far
+    file has to read back: its length, and bytes at its start, middle and
+    end.
+    """
+    import uuid
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mkusb_image
+
+    work = tempfile.mkdtemp(prefix="kosmos-x86-home512-")
+    folder = os.path.join(work, "home")
+    home = os.path.join(work, "home.img")
+    esp = os.path.join(work, "esp.img")
+    stick = os.path.join(work, "stick.img")
+    guid = str(uuid.uuid4()).upper()
+    far = bytes(i % 251 for i in range(256 * 1024))
+    here = os.path.dirname(os.path.abspath(__file__))
+    lua = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(image))),
+                       "host", "lua")
+
+    os.makedirs(os.path.join(folder, "videos"))
+
+    with open(os.path.join(folder, "videos", "a-filler.bin"), "wb") as out:
+        out.write(b"\x5a" * (40 * 1024 * 1024))
+
+    with open(os.path.join(folder, "videos", "far.bin"), "wb") as out:
+        out.write(far)
+
+    made = subprocess.run([sys.executable, os.path.join(here, "homeimage.py"),
+                           folder, home, "512"], capture_output=True, text=True)
+
+    if made.returncode != 0:
+        check(False, "homeimage.py would not make a 512 MB /home: "
+              + made.stdout + made.stderr)
+        return
+
+    with open(home, "rb") as handle:
+        at = handle.read().find(far[:4096])
+
+    check(at >= 32 * 1024 * 1024,
+          "the far file begins at byte %d of the image, not past 32 MB - the "
+          "test would not reach where the old disk ended" % at)
+
+    free = subprocess.run([lua, os.path.join(here, "kfs.lua"), "df", home],
+                          capture_output=True, text=True).stdout.strip()
+
+    with open(esp, "wb") as handle:
+        handle.truncate(1024 * 1024)
+
+    mkusb_image.write_gpt(stick, esp, os.path.getsize(esp), home=home,
+                          home_guid=guid)
+
+    out = boot(image, None, 150.0,
+               typed=("diskinfo", "df",
+                      'local d = fs.read("/home/videos/far.bin") '
+                      'print("FAR" .. "FILE", d and #d, d and d:byte(1), '
+                      'd and d:byte(131073), d and d:byte(#d))'),
+               extra=("-device", "qemu-xhci,id=usb0",
+                      "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+                      "-device", "usb-storage,bus=usb0.0,drive=stick",
+                      "-fw_cfg", "name=opt/kosmos/home,string=%s" % guid),
+               after="its backup")
+
+    if out is None:
+        check(False, "the machine would not boot with a 512 MB /home")
+        return
+
+    shown = "\n    ".join(l.strip() for l in out.splitlines()
+                           if "disk:" in l or "FARFILE" in l
+                           or "blocks free" in l or "Kosmos partition" in l)
+
+    check("disk: %d sectors of 512 bytes" % (512 * 2048) in out,
+          "/home was not the whole 512 MB partition:\n    " + shown)
+
+    wanted = re.search(r"(\d+) blocks free of (\d+)", free)
+    guest = re.findall(r"(\d+) blocks free of (\d+)", out)
+
+    check(wanted is not None and guest
+          and guest[-1] == (wanted.group(1), wanted.group(2)),
+          "the machine's df and kfs.lua's disagree about the 512 MB /home: "
+          "%r and %r" % (guest[-1] if guest else None, free))
+
+    expect = "FARFILE\t%d\t%d\t%d\t%d" % (len(far), far[0], far[131072],
+                                          far[-1])
+
+    check(expect in out,
+          "the file past 32 MB did not read back as written - wanted %r:"
+          "\n    %s" % (expect, shown))
+
+
 def cmdline_long(image, check):
     """**A command line longer than 256 characters keeps its last word.**
 
@@ -3429,6 +3533,7 @@ def core(image, check, fails):
     check("acpi: the FADT: SCI 9, SMI command port 0xb2 (0x02 enables ACPI)"
           in said
           and "acpi: switched to ACPI mode - 0x02 to port 0xb2" in said
+          and "acpi: the 8253 still counts" in said
           and "acpi: the power button is a key now" in said
           and "at 0x66 - nothing answers there" in said
           and "acpi: S5 is sleep type 0, from the DSDT's \\_S5, written to "
@@ -3687,7 +3792,7 @@ def core(image, check, fails):
 
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -3765,6 +3870,8 @@ def main():
         usb_home_late(image, check)
     if 'usb_home_named' in wanted:
         usb_home_named(image, check)
+    if 'usb_home_large' in wanted:
+        usb_home_large(image, check)
     if 'usb_drives' in wanted:
         usb_drives(image, check)
     if 'usb_flush_refused' in wanted:

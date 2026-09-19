@@ -18,6 +18,17 @@ Last updated: 2026-09-19
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## Stick 0.10.87 crawled; 0.10.88 is the fix, with a 512 MB /home - 19 September
+
+0.10.87 on the ThinkPad: ACPI mode on, battery 24% read, then ~3 min in
+the sound setup and stuck at stage 10 - **the 8253 stops counting in ACPI
+mode** and every pre-tick wait spun on it (10 s each). Fixed: TSC measured
+before the switch, waits on the TSC, `acpi: the 8253 still counts / stopped`
+said after the switch, `opt/kosmos/acpi=off` as an escape (`testing.md`
+18.106, `boot.md`). Stick 0.10.88 also carries `/home` at 512 MB from
+`~/Kosmos/home` (21 files migrated from build/kosmos.img; Desktop and
+Deskbar seeded on first boot) - the partition layout is the default now.
+
 ## Game controllers, the Xbox 360 part - 19 September
 
 Built (`usb.md` 9, `testing.md` 18.105): the USB driver reads an Xbox 360

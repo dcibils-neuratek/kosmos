@@ -88,6 +88,35 @@ static uint64_t rdtsc(void)
  * Nothing asks for more; a caller that did would get a shorter wait than it
  * wanted, so the argument is clamped rather than silently wrapped.
  */
+/*
+ * **The TSC's rate, measured once against the 8253 while it still counts.**
+ *
+ * The ThinkPad stopped in its boot on 19 September, stick 0.10.87, straight
+ * after the machine was switched into ACPI mode and before the sound card
+ * said anything - and the sound card's setup is a run of waits on the
+ * 8253's channel two, each bounded at ten million reads of its port, which
+ * is a few milliseconds under QEMU and ten seconds a wait on silicon. The
+ * likeliest reason the channel stopped reaching its count is Intel's 8254
+ * clock gating, which a firmware may switch on once an operating system
+ * says it has taken over; `pc_pit_counts` asks the machine, and the boot
+ * log says what it answered (`ec.c`).
+ *
+ * So the TSC is measured against the 8253 before that switch
+ * (`pc_timer_measure_tsc`), and every wait from then on is on the TSC -
+ * which is invariant on every processor this runs on and needs no chip
+ * outside the core. Before it is measured, the 8253 as before.
+ */
+static uint64_t tsc_hz;
+
+static uint64_t calibrate(void);
+
+void pc_timer_measure_tsc(void)
+{
+    if (tsc_hz == 0) {
+        tsc_hz = calibrate();
+    }
+}
+
 void pc_timer_wait_ms(unsigned ms)
 {
     uint32_t divisor;
@@ -100,6 +129,16 @@ void pc_timer_wait_ms(unsigned ms)
 
     if (ms > 50u) {
         ms = 50u;
+    }
+
+    if (tsc_hz != 0) {
+        uint64_t until = rdtsc() + tsc_hz * ms / 1000u;
+
+        while (rdtsc() < until) {
+            __asm__ volatile("pause");
+        }
+
+        return;
     }
 
     divisor = (PIT_HZ * ms) / 1000u;
@@ -124,9 +163,52 @@ void pc_timer_wait_ms(unsigned ms)
     pc_out8(PIT_GATE2, gate);
 }
 
+/*
+ * Whether channel two still reaches its count: a millisecond asked for, and
+ * twenty on the TSC allowed. Only once the TSC is measured - it is the clock
+ * this checks the other one against.
+ */
+bool pc_pit_counts(void)
+{
+    uint64_t until;
+    uint8_t gate;
+    bool counted = false;
+
+    if (tsc_hz == 0) {
+        return true;                    /* nothing to check it against */
+    }
+
+    pc_out8(PIT_COMMAND, 0xB0);
+    pc_out8(PIT_CHANNEL2, (uint8_t)((PIT_HZ / 1000u) & 0xFF));
+    pc_out8(PIT_CHANNEL2, (uint8_t)((PIT_HZ / 1000u) >> 8));
+
+    gate = (uint8_t)(pc_in8(PIT_GATE2) & ~(GATE2_ON | SPEAKER_ON));
+    pc_out8(PIT_GATE2, gate);
+    pc_out8(PIT_GATE2, (uint8_t)(gate | GATE2_ON));
+
+    until = rdtsc() + tsc_hz / 50u;
+
+    while (rdtsc() < until) {
+        if ((pc_in8(PIT_GATE2) & OUT2_HIGH) != 0) {
+            counted = true;
+            break;
+        }
+    }
+
+    pc_out8(PIT_GATE2, gate);
+    return counted;
+}
+
 static uint64_t calibrate(void)
 {
     uint32_t divisor = (PIT_HZ * CALIBRATE_MS) / 1000u;
+
+    /* Measured already, before ACPI mode: the same answer, not a second
+     * measurement against a chip that may have stopped since. */
+    if (tsc_hz != 0) {
+        return tsc_hz;
+    }
+
     uint64_t start, end;
     uint8_t gate;
     unsigned spins;

@@ -1198,6 +1198,14 @@ serves `/dev/backlight`: a level, 0 to 256, on the controller the firmware
 lit, never below a sixteenth. The window manager steps it by sixteen and
 shows the Display bar `docs/levels.html` drew.
 
+**And one cost nobody named before it was paid: the 8253 stops.** On
+stick 0.10.87 the machine switched to ACPI mode and then crawled - three
+minutes for the sound card, then stopped at stage 10 - because the legacy
+timer's channel two stopped counting once the firmware had handed over,
+and every wait before the tick was a spin on it. The waits are on the TSC
+now, measured before the switch (`testing.md` 18.106), and
+`opt/kosmos/acpi=off` leaves the machine in the firmware's mode.
+
 ## 8d. The battery, from the same controller
 
 **The T14's DSDT says where the charge is**, read with `iasl -d` from the

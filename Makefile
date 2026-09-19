@@ -2791,17 +2791,22 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 #     make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
 #     make MEGA=1 usb
 #
-# **Or `/home` in a partition of its own, when asked** (USB step 5f).
-# `USB_HOME=partition` puts the same disk in a second partition beside the ESP
-# rather than on it, and tells the kernel that partition's GUID: Kosmos opens
-# `/home` on the stick it started from through its own USB driver, and nothing
-# is loaded into memory. **The ThinkPad has booted this layout four times** -
-# `c70d9df`, `9af841c`, `895aa3f` and `b5ce4a4`, the last of which Diego used
-# and called stable - so it is no longer an experiment. This comment said it
-# had never booted for a day after it had, which is the kind of stale line
-# that decides what goes on a stick (`docs/boot.md`, whose table decides):
+# **Or `/home` in a partition of its own - the default since 19 September**
+# (USB step 5f). A second partition beside the ESP, whose GUID the kernel is
+# told: Kosmos opens `/home` on the stick it started from through its own USB
+# driver, and nothing is loaded into memory. **The ThinkPad has booted this
+# layout four times** - `c70d9df`, `9af841c`, `895aa3f` and `b5ce4a4`, the
+# last of which Diego used and called stable. It was a flag until 0.10.86 was
+# built without it, as `CLAUDE.md` read, and came out the other layout; so it
+# is the default, and `USB_HOME=disk` asks for the old one.
 #
-#     make MEGA=1 x86-usb-image USB_HOME=partition
+# **That `/home` is made fresh for each stick, from a folder on this Mac**:
+# `HOME_DIR`, `~/Kosmos/home`, at `STICK_HOME_MB`, 512 - Diego, 19 September:
+# "from now on we need to make the drive image at least 512mb", "and i will
+# be adding more images, videos, etc". `tools/homeimage.py` has the rest. The
+# folder is his and never the repository's.
+#
+#     make MEGA=1 x86-usb-image
 #
 # **And the desktop, started by itself.** Diego, 15 September: "i think the
 # desktop should start automatically yes upon booting". The shell starts what
@@ -2810,13 +2815,19 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 #
 USB_BOOT ?= wm
 
+USB_HOME      ?= partition
+HOME_DIR      ?= $(HOME)/Kosmos/home
+STICK_HOME_MB ?= 512
+STICK_HOME    := build/stick-home.img
+
 x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
-	@if [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
-	    echo "$(DISK) goes on the stick too: $(if $(filter partition,$(USB_HOME)),in a partition of its own that Kosmos opens as /home,the loader reads it and Kosmos mounts it)"; \
-	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --$(if $(filter partition,$(USB_HOME)),home,disk) $(DISK) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
-	elif [ "$(USB_HOME)" = partition ]; then \
-	    echo "USB_HOME=partition puts /home in a partition, and $(DISK) holds no filesystem to put there: make image FILES=..."; \
-	    exit 1; \
+	@if [ "$(USB_HOME)" = partition ]; then \
+	    python3 tools/homeimage.py "$(HOME_DIR)" $(STICK_HOME) $(STICK_HOME_MB) && \
+	    echo "$(HOME_DIR) goes on the stick as /home, $(STICK_HOME_MB) MB, in a partition of its own" && \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --home $(STICK_HOME) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
+	elif [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
+	    echo "$(DISK) goes on the stick too: the loader reads it and Kosmos mounts it"; \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --disk $(DISK) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	else \
 	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	fi
@@ -2942,6 +2953,8 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	@# builds one, its Kosmos partition copied out by `sticklog.py`, and a log
 	@# taken from the copy by `kfs.lua`.
 	python3 tools/test_sticklog.py $(HOSTDIR)/lua
+	@# And the stick's /home, made from a folder on this Mac.
+	python3 tools/test_homeimage.py
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.
