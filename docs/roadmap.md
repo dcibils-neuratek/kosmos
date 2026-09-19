@@ -715,6 +715,30 @@ processors, and still what follows USB:
      whole console (`snes_saveState`, `snes_loadState`), so a game could be
      saved to `/home` and continued after quitting, and Double Size could
      keep the player's place instead of starting over.
+4c. **AGREED on 19 September, not started - game controllers over USB.**
+   Diego: "How hard would It be to use a usb game pad controller in kosmos
+   with snes emulator and other apps?", then "let's add Xbox 360 and Xbox one
+   controllers support which are the most common", and "I do have a 8bit
+   controller usb which is a snes controller" - the 8BitDo SN30 Pro USB,
+   whose modes are "Switch mode, X-input" (8BitDo's page), so on Kosmos it
+   is an Xbox 360 controller. Its place in the order is Diego's to say.
+   1. **Xbox 360, wired** - Microsoft's own protocol rather than HID, class
+      FFh: a fixed 20-byte report. The SN30 Pro USB speaks it. The wireless
+      receiver wraps the same report and comes after.
+   2. **Xbox One and Series, over USB** - the same class with a different
+      protocol, and a start-up packet before the pad sends anything.
+   3. **How presses reach a program**: the USB driver turns a report into
+      presses and releases and hands them to the kernel as key events - a
+      sibling of the call the USB mouse moves with - so they go to the
+      focused window like any key. The sticks are D-pad presses past a
+      threshold. Analog values, rumble and more than one player are later,
+      and would want a state block shared per pad instead.
+   4. **The Super Nintendo, Doom and Quake** map the pad's buttons.
+   5. **Tested** on the host with reports from the protocols' own layouts,
+      in QEMU for the path from the driver to a window, and **with the
+      real SN30 Pro under QEMU on the Mac** through `usb-host` - macOS has
+      no driver of its own for an Xbox 360 pad to hold it - before the
+      ThinkPad.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
