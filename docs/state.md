@@ -6,14 +6,35 @@ Last updated: 2026-09-18
 
 ---
 
-## The ThinkPad keys: the brightness works, 18 September
+## Stick 0.10.85 waiting on Diego, 18 September (late)
 
-**Stick 0.10.83 raised the ThinkPad's screen from a third to 80% at boot**
-- Diego: "it worked! the brightness worked!" The backlight driver reads the
-Intel display engine's two PWM controllers and writes controller 0's on-time
-(`29753d3`, `testing.md` 18.96). **Next is step 5**: F5 and F6, which arrive
-as embedded-controller queries 0x14 and 0x15 on GPE 0x6E rather than as
-keys (`thinkpad.md` 8b), then the Display bar.
+**`kosmos-usb-0.10.85-development.img`**, sha256
+`3c416acb1a8cf69872f38e911a7d5bbc2fc31e04638ca73d5c3f570918368529`, 29 checks
+under OVMF. Everything since 0.10.83, which raised the brightness to 80% at
+boot and worked ("it worked! the brightness worked!"):
+
+- **The F5 and F6 probe** (`hal/pc/ec.c`, `testing.md` 18.99): reads only,
+  and logs whether SCI_EN is set and every change in the embedded
+  controller's status and the GPE status bits. It decides how F5 and F6
+  get answered - roadmap step 5b. 0.10.84 carried it too; 0.10.85
+  supersedes it.
+- **The desktop's wallpapers** (`17fdc68`, `testing.md` 18.100): 24 Unsplash
+  photographs in `FULL=1` images, in Appearance by photographer. The
+  image's allowance went to 32 MB; heap at 32, stack top at 46, screen at 48.
+- **The Super Nintendo's File menu** (`e4c75f1`, `testing.md` 18.101): the
+  window manager draws a menu bar above a direct window.
+- **Space Grotesk** (`535a50e`, `testing.md` 18.98).
+
+**Waiting on Diego**: F5 three times, F6 three times, `diagnose`, `make
+stick-log`; and trying the wallpapers and the Super Nintendo's menu.
+
+**`make test` is 4:30-4:50** (`tools/gate.py`, `testing.md` 18.97). Rerun
+only what a change can affect; the full set when it can affect everything.
+
+**The Mac had 2.0 GB free** when 0.10.85 was built; seven superseded
+development stick images in `build/x86_64/` are 235 MB each.
+
+**Unpushed**: everything since `930416e` (0.10.82).
 
 ## Before that: stick 0.10.81, 18 September
 
