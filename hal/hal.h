@@ -866,6 +866,29 @@ void          hal_power_off(void);
 void          hal_restart(void);
 
 /*
+ * The battery, as the board last read it, or false when the board reads
+ * none - no battery, or none this board knows how to ask.
+ *
+ * **A copy of a reading, never a read.** The ThinkPad's is its embedded
+ * controller's, asked every thirty seconds on processor zero's tick
+ * (`hal/pc/ec.c`) and cached, so a caller that asks sixty times a second -
+ * `sysinfo`, for the top bar - costs a copy under a lock and touches no
+ * port. `percent` is remaining over full, rounded, at most 100; the rest is
+ * what the controller said, and a battery the controller has not finished
+ * measuring - `ready` false - keeps the reading before it.
+ */
+struct hal_battery {
+    bool     present;           /* a battery is in the machine */
+    bool     charging;
+    bool     discharging;
+    bool     on_ac;             /* the charger is plugged in */
+    bool     critical;          /* the controller says it is nearly empty */
+    unsigned percent;           /* 0 to 100 */
+};
+
+bool          hal_battery_read(struct hal_battery *out);
+
+/*
  * A string the firmware was asked to carry, or false when there is none.
  *
  * QEMU takes `-fw_cfg name=opt/kosmos/boot,string=wm`, which is how a

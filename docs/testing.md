@@ -5723,3 +5723,39 @@ the face changed is named rather than guessed.
 `arm-media` is 1:41 with it, from 1:09 - under the slowest suite, so the
 gate's whole is unchanged.
 
+## 18.104 The battery on the top bar
+
+**The ThinkPad's charge, from its embedded controller to the Deskbar**
+(`thinkpad.md` 8d). Diego, 19 September: "The battery indicator is a must".
+
+**`test_batterydecode`, 10 checks on the host**: every state `GBST` in the
+T14's DSDT tells apart - charging, discharging, both bits (charging wins),
+full on the charger, critical - the charge rounded to the nearest percent
+and held at 100, no battery, and the two readings `GBST` would not trust,
+refused.
+
+**`run_x86.py`'s `battery` part, 6 checks, in `x86-core`.** q35 has no
+embedded controller, so the reading is `opt/kosmos/battery`'s - the kernel
+takes `57,charging` or `8` there instead of the registers, and says at boot
+that it did - and everything above the controller is what runs on the
+ThinkPad. At a prompt `/dev/battery` says 57, charging, on AC; with the
+desktop the Deskbar says "57% charging" with no red in the bar, and "8%"
+with red. And **`power_button`, with no option, now checks the Deskbar says
+nothing about a battery** - the question mark it drew before any reading
+existed is gone, and a machine that reads none shows none.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| `/dev/battery` not served | *did not say 57, charging, on AC: BATTERY nil nil nil*, and neither Deskbar said anything |
+| the low battery not drawn red | *8% and discharging drew 0 pixels of red in the bar* |
+
+**A control that first proved nothing**: its edit put a `--` inside a call
+in `deskbar.lua`, the build failed at `luacheck`, and the run that followed
+used the binary before it and passed. Caught by the build's exit status,
+which is now checked before any control run is believed.
+
+**What QEMU cannot show**: the registers themselves, and whether the T14's
+controller answers RD_EC in ACPI mode as the DSDT assumes. The kernel says
+the first reading at boot - *ec: the battery: 83%, discharging, on
+battery* - which is the line to read on the ThinkPad.
+

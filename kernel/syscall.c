@@ -654,6 +654,20 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
      * Two devices, two questions. */
     info.net_mtu = hal_net_present() ? HAL_NET_MTU : 0u;
 
+    {
+        struct hal_battery b;
+
+        if (hal_battery_read(&b)) {
+            info.battery_known       = 1u;
+            info.battery_present     = b.present ? 1u : 0u;
+            info.battery_charging    = b.charging ? 1u : 0u;
+            info.battery_discharging = b.discharging ? 1u : 0u;
+            info.battery_on_ac       = b.on_ac ? 1u : 0u;
+            info.battery_critical    = b.critical ? 1u : 0u;
+            info.battery_percent     = b.percent;
+        }
+    }
+
     info.threads_used     = thread_count();
     info.threads_total    = THREAD_MAX;
     info.processes_used   = process_count();

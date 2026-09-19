@@ -440,6 +440,23 @@ static bool node_read(const char *want, const struct sysinfo *i,
      * what it says - and `sys.build().platform` already names the board
      * for anyone who wants it.
      */
+    /*
+     * The battery, when the board reads one: its charge, and which way it
+     * is going, in the words a bar shows. Absent from the listing and
+     * unreadable otherwise, as a screen is on a board without one.
+     */
+    if (strcmp(want, "battery") == 0 && i->battery_known != 0) {
+        put_num(r, "present", i->battery_present);
+        put_num(r, "percent", i->battery_percent);
+        put_num(r, "on_ac", i->battery_on_ac);
+        put_num(r, "critical", i->battery_critical);
+        put_text(r, "state", i->battery_present == 0 ? "absent"
+                           : i->battery_charging != 0 ? "charging"
+                           : i->battery_discharging != 0 ? "discharging"
+                                                         : "holding");
+        return true;
+    }
+
     if (strcmp(want, "keyboard") == 0 && i->has_keyboard != 0) {
         put_text(r, "transport", "virtio-input, polled");
         return true;
@@ -460,6 +477,7 @@ static void node_list(const struct sysinfo *i, struct dev_reply *r)
      * a node that answers nothing. */
     if (i->screen_width > 0) { put_text(r, "screen", ""); }
     if (i->has_keyboard != 0) { put_text(r, "keyboard", ""); }
+    if (i->battery_known != 0) { put_text(r, "battery", ""); }
 }
 
 static void answer(const struct message *in, uint64_t sender)

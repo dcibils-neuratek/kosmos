@@ -1198,6 +1198,34 @@ serves `/dev/backlight`: a level, 0 to 256, on the controller the firmware
 lit, never below a sixteenth. The window manager steps it by sixteen and
 shows the Display bar `docs/levels.html` drew.
 
+## 8d. The battery, from the same controller
+
+**The T14's DSDT says where the charge is**, read with `iasl -d` from the
+tables the machine gave on 18 September. `_BST` calls `GBST`, which reads
+the embedded controller's `ECOR` region:
+
+| where | field | what |
+|---|---|---|
+| 38h, bits 0-6 | `HB0S` | battery 0's state: 20h charging, 40h discharging; low three bits all set, not ready; all clear, critical |
+| 38h, bit 7 | `HB0A` | a battery is present - `_STA` reads `RBEC (0x38) & 0x80` |
+| 46h, bit 4 | `HPAC` | the charger is plugged in - `AC._PSR` |
+| 81h | `HIID` | which page appears at A0h; `GBST` writes the battery's number, 0 |
+| A0h | `SBRC` | remaining capacity, 16 bits |
+| A2h | `SBFC` | full-charge capacity, 16 bits |
+
+SBRC and SBFC are in one unit whichever the battery uses - `GBST` multiplies
+both by ten in milliwatt-hour mode - so the charge is their ratio and no
+unit needs knowing.
+
+**Read by the kernel, every thirty seconds, on processor zero's tick**
+(`hal/pc/ec.c`), with RD_EC (80h) and WR_EC (81h) - the same controller
+and the same tick as F5, F6 and the power button, so its reads and the
+queries never interleave on its one pair of ports. The reading is cached;
+`sysinfo` copies it, the devices server serves it as `/dev/battery`, and the
+Deskbar draws the charge, "charging" while it is, and red at ten per cent
+and falling. A battery the controller has not finished measuring keeps the
+reading before it.
+
 ## 9. What is still missing
 
 | | | rough size |

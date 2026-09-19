@@ -11,11 +11,11 @@
  * `ec_init` once at boot, after the ACPI walk and before the other
  * processors start: switches to ACPI mode and finds the controller.
  * `ec_tick` on core 0's timer interrupt: the power button and the
- * controller's queries, as keys. `ec_key_event` and `ec_input_pending` are
+ * controller's queries, as keys, and the battery every thirty seconds. `ec_key_event` and `ec_input_pending` are
  * the board's second source of keys, after the keyboard.
  */
 void ec_init(void);
-void ec_tick(void);
+void ec_tick(unsigned hz);          /* called `hz` times a second */
 bool ec_key_event(unsigned *code, bool *down);
 bool ec_input_pending(void);
 

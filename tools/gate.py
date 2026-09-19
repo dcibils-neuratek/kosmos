@@ -132,7 +132,7 @@ SUITES = [
     # quarter minutes alone - so it runs as four groups of its parts, each a
     # machine of its own, side by side (`--parts`).
     Suite("x86-core", ["python3", "tools/run_x86.py", X86, "--parts",
-                       "core,power_button"], x86=True),
+                       "core,power_button,battery"], x86=True),
     Suite("x86-storage", ["python3", "tools/run_x86.py", X86, "--parts",
                           "storage,memdisk,identity,firmware,machine_report"],
           x86=True),

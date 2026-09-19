@@ -763,11 +763,30 @@ processors, and still what follows USB:
       spacing scale, the type sizes, and every widget beside what it looks
       like today - for Diego to change, and then applied one application at a
       time, each photographed against its drawing.
-6. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
+6. **BUILT on 19 September, waiting on the ThinkPad - a battery indicator on
+   the top bar** (`thinkpad.md` 8d, `testing.md` 18.104). Diego that morning:
+   "The battery indicator is a must", "As I now don't know what battery is
+   left". As planned: for the ThinkPad: read from the
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on
    every `SYS_SYSINFO`. It starts with getting the DSDT off the machine,
    which the keys above will already have done.
+6b. **WANTED since 19 September, not scheduled - a device playground.**
+   Diego: "At some point we will create small showcase apps that access
+   devices like the battery, gamepads, sound, network", "Right now we have
+   this amazing architecture of the os but is difficult to showcase its
+   simplicity of accessing hardware via the servers, devices and kits", and
+   "It would be a system devices showcase app which you will be able to
+   interact with hardware, query it, see it in action (like moving a
+   controller pad or stick and seeing it moving on the screen), or playing a
+   sound and moving the balance or volume meter and seeing how it changes
+   the sound, and all other devices. Is like a device playground app to
+   interact with recognized hardware". One window, a page per device the
+   machine has - the battery, a game pad with its sticks drawn where they
+   are, sound with a tone and its volume and balance, the network, the
+   screen, the processors - each showing the few lines of Lua that reach it,
+   so the page is the demonstration and the code is the lesson. **Drawn
+   first**, as every app is, and a natural companion to the tutorial below.
 7. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no

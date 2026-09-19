@@ -6,6 +6,27 @@ Last updated: 2026-09-19
 
 ---
 
+## Today's plan, agreed with Diego on 19 September
+
+1. **Game controllers, the Xbox 360 part** (`roadmap.md` 4c): his 8BitDo SN30
+   Pro USB is one in X-input mode - tested with the real pad plugged into
+   the Mac and passed to QEMU with `usb-host` - and the Super Nintendo, Doom
+   and Quake mapped.
+2. **The battery indicator - "a must"** (Diego), `roadmap.md` 6.
+3. **Stick 0.10.87 at the end of the day**: ACPI mode and the brightness
+   keys, the power button, the Super Nintendo's menus, the controller and
+   the battery - one trip to the ThinkPad for all of it.
+4. After the stick: Xbox One and Series controllers.
+
+## The battery on the top bar - 19 September
+
+Built and tested in QEMU (`testing.md` 18.104, `thinkpad.md` 8d): the
+kernel reads the T14's embedded controller every 30 s (38h state, 46h AC,
+81h page, A0h/A2h remaining/full, from its DSDT), caches it; `sysinfo`
+fields, `/dev/battery`, the Deskbar's "83%" / "83% charging", red at 10%.
+QEMU takes `opt/kosmos/battery=57,charging` instead. The line to read on
+the ThinkPad: *ec: the battery: ...* at boot. Not on a stick yet.
+
 ## The Super Nintendo's View and Game menus - 19 September
 
 Diego: "Do the 2x option in snes emulator app menu and it will restart the

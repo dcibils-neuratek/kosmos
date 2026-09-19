@@ -167,6 +167,9 @@ static uint64_t calibrate(void)
     return ((end - start) * 1000ULL) / CALIBRATE_MS;
 }
 
+/* The tick's rate, for `ec_tick`'s thirty seconds. */
+static unsigned tick_hz = 100;
+
 void hal_timer_init(unsigned hz)
 {
     uint32_t divisor;
@@ -174,6 +177,8 @@ void hal_timer_init(unsigned hz)
     if (hz == 0) {
         hz = 100;
     }
+
+    tick_hz = hz;
 
     /*
      * **The local APIC's own timer, when this machine is driving one.**
@@ -285,7 +290,7 @@ void pc_timer_interrupt(void)
      * processors asking the controller at once would interleave their
      * commands on its one pair of ports. */
     if (this_cpu()->index == 0) {
-        ec_tick();
+        ec_tick(tick_hz);
     }
 }
 

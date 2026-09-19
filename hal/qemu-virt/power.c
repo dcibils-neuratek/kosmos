@@ -118,3 +118,13 @@ void hal_restart(void)
 {
     psci(PSCI_SYSTEM_RESET, 0, 0, 0);
 }
+
+/*
+ * No battery: QEMU's `virt` has none, and a board that cannot read one says
+ * so rather than inventing a charge.
+ */
+bool hal_battery_read(struct hal_battery *out)
+{
+    (void)out;
+    return false;
+}

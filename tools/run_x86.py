@@ -2483,6 +2483,11 @@ def power_button(image, check):
         check("wm: the power button - shutting down" in text,
               "the kernel heard the power button and the window manager "
               "never took the key")
+        check("deskbar: battery" not in text,
+              "a machine with no battery to read showed one in the "
+              "Deskbar: "
+              + next((l for l in text.splitlines() if "deskbar: battery" in l),
+                     ""))
         check(proc.poll() is not None,
               "the machine is still running after the power button - S5 "
               "was not entered:\n"
@@ -2492,6 +2497,121 @@ def power_button(image, check):
         monitor.close()
         proc.kill()
         proc.wait()
+
+
+def battery(image, check):
+    """The battery, from the kernel's reading to the Deskbar's words.
+
+    q35 has no embedded controller, so the reading is `opt/kosmos/battery`'s
+    - the one input the kernel takes for a test instead of the ThinkPad's
+    registers, and says so at boot - and everything above it is what runs on
+    the ThinkPad: `hal_battery_read`, `sysinfo`, `/dev/battery` from the
+    devices server, and the Deskbar drawing it. The registers themselves are
+    `test_batterydecode`'s, on the host.
+
+      at a prompt, 57 and charging: `/dev/battery` says 57, charging, on AC;
+      the desktop, 57 and charging: the Deskbar says "57% charging", and
+        nothing in the bar is the low battery's red;
+      the desktop, 8: the Deskbar says "8%", in red.
+
+    And a machine with no battery shows none: `power_button`'s boot has no
+    option, and its Deskbar must say nothing about one.
+    """
+    binary = os.path.join(os.path.dirname(image), "kosmos.bin")
+    RED = (0xe0, 0x48, 0x48)
+
+    # QEMU splits an option's value at commas, so a comma inside one is two.
+    def option(value):
+        return ["-fw_cfg", "name=opt/kosmos/battery,string="
+                + value.replace(",", ",,")]
+
+    out = boot(image, None, 90.0,
+               typed=('local b = fs.read("/dev/battery") print("BAT" .. "TERY", '
+                      'b and b.percent, b and b.state, b and b.on_ac)',),
+               extra=option("57,charging"))
+
+    if out is None:
+        check(False, "the machine would not boot with a battery option")
+        return
+
+    check("ec: the battery is opt/kosmos/battery's, for a test: 57%, charging"
+          in out,
+          "the kernel did not say the battery reading was the option's")
+    check(re.search(r"BATTERY\s+57\s+charging\s+1", out) is not None,
+          "/dev/battery did not say 57, charging, on AC: "
+          + next((l.strip() for l in out.splitlines()
+                  if l.startswith("BATTERY")), "nothing"))
+
+    def desktop(value, label):
+        work = tempfile.mkdtemp(prefix="kosmos-x86-battery-")
+        path = os.path.join(work, "monitor")
+        cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+               "-display", "none", "-vga", "none", "-device", "ramfb",
+               "-monitor", "unix:%s,server,nowait" % path,
+               "-serial", "stdio",
+               "-fw_cfg", "name=opt/kosmos/boot,string=wm"] + option(value) \
+              + ["-kernel", binary]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL)
+        heard = bytearray()
+
+        def drain():
+            while True:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+
+                if not chunk:
+                    return
+
+                heard.extend(chunk)
+
+        threading.Thread(target=drain, daemon=True).start()
+        monitor = Monitor(path)
+        red = None
+
+        try:
+            until = time.time() + 120.0
+            want = "deskbar: battery " + label
+
+            while time.time() < until \
+                    and want not in heard.decode("utf-8", "replace"):
+                time.sleep(0.25)
+
+            said = heard.decode("utf-8", "replace")
+            check(want in said,
+                  "with opt/kosmos/battery=%s the Deskbar never said %r: %s"
+                  % (value, want,
+                     next((l.strip() for l in said.splitlines()
+                           if "deskbar: battery" in l), "nothing")))
+
+            time.sleep(2.0)
+            screen = monitor.screendump(os.path.join(work, "bar.ppm"))
+
+            if screen is not None:
+                width, height, px = screen
+                red = 0
+
+                for y in range(0, min(36, height)):
+                    for x in range(width // 2, width):
+                        o = (y * width + x) * 3
+
+                        if tuple(px[o:o + 3]) == RED:
+                            red += 1
+        finally:
+            monitor.close()
+            proc.kill()
+            proc.wait()
+
+        return red
+
+    red = desktop("57,charging", "57% charging")
+    check(red == 0, "57%% and charging drew %r pixels of the low battery's "
+                    "red in the bar" % red)
+
+    red = desktop("8", "8%")
+    check(red is not None and red >= 20,
+          "8%% and discharging drew %r pixels of red in the bar - the low "
+          "battery was not shown as low" % red)
 
 
 # A ring's requests before its Link back to the first: `RING_TRBS - 1` in
@@ -3567,7 +3687,7 @@ def core(image, check, fails):
 
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button']
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -3689,6 +3809,10 @@ def main():
     # And the power button, which ACPI mode makes the system's to answer.
     if 'power_button' in wanted:
         power_button(image, check)
+
+    # And the battery, from the kernel's reading to the Deskbar.
+    if 'battery' in wanted:
+        battery(image, check)
 
     partial = "" if wanted == PARTS else " (%s)" % ", ".join(wanted)
 

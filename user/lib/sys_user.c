@@ -1533,6 +1533,15 @@ static int l_info(lua_State *L)
     SET("tick_hz",          info.tick_hz);
     SET("current_el",       info.current_el);
 
+    if (info.battery_known) {
+        SET("battery_present",     info.battery_present);
+        SET("battery_charging",    info.battery_charging);
+        SET("battery_discharging", info.battery_discharging);
+        SET("battery_on_ac",       info.battery_on_ac);
+        SET("battery_critical",    info.battery_critical);
+        SET("battery_percent",     info.battery_percent);
+    }
+
     /*
      * What the firmware says the machine is. `machine_source` is always
      * there: where the three names were read, or why there are none.

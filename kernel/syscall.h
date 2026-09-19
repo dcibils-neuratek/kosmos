@@ -957,6 +957,19 @@ struct sysinfo {
      * the log was never stamped from the counter.
      */
     uint64_t log_origin;
+
+    /*
+     * The battery, as the board last read it (`hal_battery_read`): all
+     * zeroes when `battery_known` is 0, which is a board that reads none.
+     * A copy of a cached reading, so asking costs nothing at the hardware.
+     */
+    uint32_t battery_known;
+    uint32_t battery_present;
+    uint32_t battery_charging;
+    uint32_t battery_discharging;
+    uint32_t battery_on_ac;
+    uint32_t battery_critical;
+    uint32_t battery_percent;
 };
 
 /*

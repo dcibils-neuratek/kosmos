@@ -392,6 +392,20 @@ local function memory_now()
   return m.total_mb - m.free_mb, m.total_mb
 end
 
+--
+-- The battery, from `/dev/battery`, or nil when the machine reads none -
+-- the devices server lists that node only when the board has a reading.
+--
+local function battery_now()
+  local ok, b = pcall(fs.read, "/dev/battery")
+
+  if not ok or type(b) ~= "table" or b.present ~= 1 or not b.percent then
+    return nil
+  end
+
+  return b
+end
+
 local function network_now()
   local ok, info = pcall(fs.net_info, "/net")
 
@@ -1130,29 +1144,44 @@ function bar:draw(g)
   end
 
   --
-  -- The battery, and **it has no reading in it.**
+  -- The battery: its charge, and "charging" while it is.
   --
-  -- This machine cannot read one: there is no driver, and the ThinkPad's
-  -- embedded controller is its own piece of work - `roadmap.md` has it
-  -- third in the agreed order, starting with getting the DSDT off the
-  -- machine. So the picture is drawn and a question mark is drawn beside
-  -- it, which is the part that says so: the battery alone would read as a
-  -- charge, and the battery with a query reads as "nobody has asked".
+  -- **Diego, 19 September: "The battery indicator is a must", "As I now
+  -- don't know what battery is left".** It used to be the picture and a
+  -- question mark, drawn before anything could read one, so the reading
+  -- would replace the query and nothing else would move - and that is what
+  -- it does. The ThinkPad's embedded controller is read by the kernel every
+  -- thirty seconds (`hal/pc/ec.c`) and `/dev/battery` is that reading.
   --
-  -- **It must not become a number.** A battery drawn at 72% on a machine
-  -- that cannot read one is indistinguishable from one that works, which is
-  -- exactly the failure the rule above exists to prevent. When the reading
-  -- arrives it replaces the query and nothing else here moves, which is the
-  -- other reason to draw the shape now.
+  -- **Nothing is drawn where there is nothing to read**, by the volume's
+  -- rule above: a charge on a machine that cannot measure one would be
+  -- indistinguishable from one that works. At ten per cent and falling, or
+  -- when the controller calls it critical, the number turns red.
   --
-  do
-    local qw = gfx.measure("?")
+  -- Said in the log when the words change, which is how a harness knows
+  -- what the bar is showing without reading pixels as text.
+  --
+  local bat = battery_now()
 
-    x = x - PAD - ICON - 4 - qw
+  if bat then
+    local label = ("%d%%"):format(bat.percent)
+                  .. (bat.state == "charging" and " charging" or "")
+    local low = bat.critical == 1
+                or (bat.state == "discharging" and bat.percent <= 10)
+    local lw = gfx.measure(label)
+
+    x = x - PAD - ICON - 4 - lw
     self.battery_x = x
 
     g:icon(x, iy, "App_PowerStatus.png", ICON)
-    g:text(x + ICON + 4, ty, "?", theme.tab_text)
+    g:text(x + ICON + 4, ty, label, low and 0xffe04848 or theme.tab_text)
+
+    if self.battery_said ~= label then
+      print("deskbar: battery " .. label)
+      self.battery_said = label
+    end
+  else
+    self.battery_x = nil
   end
 
   --

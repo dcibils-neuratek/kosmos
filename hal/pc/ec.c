@@ -38,6 +38,13 @@
  * controller would name its own, and they would be logged here as unknown
  * until somebody reads that machine's DSDT the same way.
  *
+ * **And the battery**, the same controller asked the other thing it knows
+ * (`battery_decode.h` has the registers, from the T14's own DSDT): every
+ * thirty seconds on the same tick, so its reads and the queries never
+ * interleave on the controller's one pair of ports, and cached for
+ * `hal_battery_read`. A read is RD_EC, 80h, and choosing the battery's page
+ * is WR_EC, 81h (ACPI 6.5, 12.3.1 and 12.3.2).
+ *
  * Offsets and bits are the ACPI specification's and ACPICA's: the FADT and
  * ECDT fields in `acpi.c`, from `iasl -T` templates compiled and
  * disassembled; the controller's status bits OBF 0, IBF 1, SCI_EVT 5 and its
@@ -49,6 +56,7 @@
 #include <stdint.h>
 
 #include "acpi.h"
+#include "battery_decode.h"
 #include "console.h"
 #include "ec.h"
 #include "hal.h"
@@ -61,6 +69,8 @@
 #define EC_IBF          0x02u
 #define EC_SCI_EVT      0x20u
 #define EC_QR_EC        0x84u
+#define EC_RD_EC        0x80u
+#define EC_WR_EC        0x81u
 
 #define PM1_SCI_EN      0x0001u
 #define PM1_PWRBTN      0x0100u
@@ -84,6 +94,10 @@
 /* Lines about events said at most, as the watch before this had. */
 #define EVENTS_SAID     64u
 
+/* How often the battery is asked, in seconds. A charge moves a percent in
+ * minutes, and every read is time on processor zero with interrupts off. */
+#define BATTERY_EVERY   30u
+
 static bool     acpi_mode;
 static uint16_t pm1_status;
 static bool     ec_on;
@@ -102,6 +116,20 @@ static uint32_t unknown_said[8];    /* a bit per query number, said once */
 #define ECQ 16
 
 static struct spinlock ec_lock = SPINLOCK("ec keys");
+
+/*
+ * The battery's last reading, written on core 0's tick and copied by
+ * `hal_battery_read` on any core - so under its own lock, which masks
+ * interrupts like every lock here.
+ */
+static struct spinlock battery_lock = SPINLOCK("battery");
+static struct hal_battery battery;
+static bool battery_known;
+static bool battery_fixed;          /* opt/kosmos/battery's, for a test */
+static unsigned battery_due;        /* ticks until the next reading */
+
+static void read_battery(void);     /* both below the controller's reads */
+static void battery_option(void);
 static struct { uint8_t code; uint8_t down; } keys[ECQ];
 static unsigned key_head, key_tail;
 
@@ -211,6 +239,8 @@ void ec_init(void)
     struct acpi_ec_facts f;
     uint8_t status;
 
+    battery_option();
+
     if (!acpi_ec_facts(&f)) {
         kputs("acpi: no FADT, so nothing to say about events\n");
         return;
@@ -284,6 +314,10 @@ void ec_init(void)
     }
 
     ec_on = true;
+
+    if (!battery_fixed) {
+        read_battery();
+    }
 }
 
 /* The status port until `mask` reads as `want`, or -1 once EC_SPINS pass. */
@@ -319,6 +353,168 @@ static int ec_query(void)
     return pc_in8(ec_data);
 }
 
+/* RD_EC: one byte of the controller's space, or -1. */
+static int ec_read(uint8_t address)
+{
+    if (ec_wait(EC_IBF, 0) < 0) {
+        return -1;
+    }
+
+    pc_out8(ec_cmd, EC_RD_EC);
+
+    if (ec_wait(EC_IBF, 0) < 0) {
+        return -1;
+    }
+
+    pc_out8(ec_data, address);
+
+    if (ec_wait(EC_OBF, EC_OBF) < 0) {
+        return -1;
+    }
+
+    return pc_in8(ec_data);
+}
+
+/* WR_EC: one byte into it. */
+static bool ec_write(uint8_t address, uint8_t value)
+{
+    if (ec_wait(EC_IBF, 0) < 0) {
+        return false;
+    }
+
+    pc_out8(ec_cmd, EC_WR_EC);
+
+    if (ec_wait(EC_IBF, 0) < 0) {
+        return false;
+    }
+
+    pc_out8(ec_data, address);
+
+    if (ec_wait(EC_IBF, 0) < 0) {
+        return false;
+    }
+
+    pc_out8(ec_data, value);
+    return ec_wait(EC_IBF, 0) >= 0;
+}
+
+static int ec_read16(uint8_t address)
+{
+    int low = ec_read(address);
+    int high = low < 0 ? -1 : ec_read((uint8_t)(address + 1u));
+
+    return (low < 0 || high < 0) ? -1 : (low | (high << 8));
+}
+
+/*
+ * The battery, asked. `GBST`'s own sequence: the state byte, the charger's
+ * bit, page 0 chosen, then the remaining and full capacities. A controller
+ * that does not answer, or a battery not ready, leaves the reading before.
+ */
+static void read_battery(void)
+{
+    struct battery_raw raw;
+    struct hal_battery now;
+    int state, power, remaining, full;
+    unsigned long flags;
+    bool first;
+
+    state = ec_read(EC_BATTERY_STATE);
+    power = state < 0 ? -1 : ec_read(EC_POWER);
+
+    if (power < 0 || !ec_write(EC_BATTERY_PAGE, 0)) {
+        return;
+    }
+
+    remaining = ec_read16(EC_BATTERY_NOW);
+    full = remaining < 0 ? -1 : ec_read16(EC_BATTERY_FULL);
+
+    if (full < 0) {
+        return;
+    }
+
+    raw.state = (uint8_t)state;
+    raw.power = (uint8_t)power;
+    raw.remaining = (uint16_t)remaining;
+    raw.full = (uint16_t)full;
+
+    if (!battery_decode(&raw, &now)) {
+        return;
+    }
+
+    flags = spin_lock(&battery_lock);
+    first = !battery_known;
+    battery = now;
+    battery_known = true;
+    spin_unlock(&battery_lock, flags);
+
+    if (first) {
+        kputs("ec: the battery: ");
+
+        if (!now.present) {
+            kputs("none in the machine");
+        } else {
+            kputu(now.percent);
+            kputs(now.charging ? "%, charging"
+                  : now.discharging ? "%, discharging" : "%, holding");
+        }
+
+        kputs(now.on_ac ? ", on the charger\n" : ", on battery\n");
+    }
+}
+
+/*
+ * `opt/kosmos/battery=57` or `=57,charging`: a reading for a machine with
+ * no controller - QEMU - so everything above the controller can be tested
+ * where it is written. Said at boot, so a log never mistakes it for a
+ * battery.
+ */
+static void battery_option(void)
+{
+    char value[32];
+    unsigned percent = 0;
+    unsigned i;
+
+    if (!hal_boot_option("opt/kosmos/battery", value, sizeof(value))) {
+        return;
+    }
+
+    for (i = 0; value[i] >= '0' && value[i] <= '9' && percent <= 100u; i++) {
+        percent = percent * 10u + (unsigned)(value[i] - '0');
+    }
+
+    if (i == 0 || percent > 100u) {
+        kputs("ec: opt/kosmos/battery wants a percentage, 0 to 100\n");
+        return;
+    }
+
+    battery.present = true;
+    battery.percent = percent;
+    battery.charging = value[i] == ',' && value[i + 1] == 'c';
+    battery.discharging = !battery.charging;
+    battery.on_ac = battery.charging;
+    battery.critical = false;
+    battery_known = true;
+    battery_fixed = true;
+
+    kputs("ec: the battery is opt/kosmos/battery's, for a test: ");
+    kputu(percent);
+    kputs(battery.charging ? "%, charging\n" : "%, discharging\n");
+}
+
+bool hal_battery_read(struct hal_battery *out)
+{
+    unsigned long flags = spin_lock(&battery_lock);
+    bool known = battery_known;
+
+    if (known) {
+        *out = battery;
+    }
+
+    spin_unlock(&battery_lock, flags);
+    return known;
+}
+
 static void event(int q)
 {
     unsigned code = 0;
@@ -349,7 +545,7 @@ static void event(int q)
     }
 }
 
-void ec_tick(void)
+void ec_tick(unsigned hz)
 {
     unsigned n;
 
@@ -395,5 +591,14 @@ void ec_tick(void)
 
     if (gpe_status != 0 && (pc_in8(gpe_status) & gpe_bit) != 0) {
         pc_out8(gpe_status, gpe_bit);           /* write one to clear */
+    }
+
+    if (!battery_fixed) {
+        if (battery_due == 0) {
+            read_battery();
+            battery_due = BATTERY_EVERY * hz;
+        } else {
+            battery_due--;
+        }
     }
 }
