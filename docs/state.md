@@ -18,6 +18,15 @@ Last updated: 2026-09-19
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## Pushed as 0.10.89 - 19 September
+
+`2b6ac5e` on GitHub, `make prepush` green (29 suites, 5:07). Next: Xbox One
+and Series controllers - FFh/47h/D0h, a power-on packet (`05 20 nn 01 00`)
+on the interrupt OUT endpoint before the pad reports, input type 20h
+(buttons in bytes 4-5, triggers 10-bit, sticks 16-bit), the Xbox button as
+type 07h with an acknowledgement asked for (Linux `xpad`, Microsoft's
+[MS-GIPUSB]). The USB driver needs an interrupt OUT ring for it.
+
 ## Stick 0.10.88 booted on the ThinkPad - 19 September
 
 `kosmos-usb-0.10.88-development.img` (commit `90ec487`), 738 MB, `/home`
@@ -130,7 +139,7 @@ only what a change can affect; the full set when it can affect everything.
 **The Mac had 2.0 GB free** when 0.10.85 was built; seven superseded
 development stick images in `build/x86_64/` are 235 MB each.
 
-**Unpushed**: everything since `930416e` (0.10.82).
+**Pushed on 19 September as 0.10.89** (`2b6ac5e`, Diego's "push it"): everything since `930416e`, after `make prepush` - 29 suites in 5:07 and `docs/screenshots/2026-09-19-1137-e11702c.png`.
 
 ## Before that: stick 0.10.81, 18 September
 
