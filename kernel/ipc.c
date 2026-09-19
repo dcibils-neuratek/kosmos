@@ -679,31 +679,55 @@ void ipc_caps_release(struct thread *t)
     }
 }
 
+/*
+ * **The slot is claimed under its own lock**, and it was not until 19
+ * September (`threads.md` step 0).
+ *
+ * It was a test of `in_use` and a store of `true`, with nothing between two
+ * cores doing both at once - and `SYS_ENDPOINT_CREATE` is a syscall, so two
+ * programs starting on two cores reach it together. Both saw the slot free,
+ * both claimed it, and two servers had one endpoint: a message sent to one
+ * received by the other. It is the race `alloc_process` and `memobj_create`
+ * were each fixed for, a third time.
+ *
+ * The endpoint's own lock rather than a lock for the pool, because it is the
+ * one `teardown` holds when it gives a slot back: claiming and releasing a
+ * slot are then ordered by the same lock, and nothing new is needed. A scan
+ * takes each lock in turn, briefly; creating an endpoint is rare.
+ */
 cap_t ipc_endpoint_create(void)
 {
     struct thread *self = thread_current();
     unsigned i;
 
     for (i = 0; i < ENDPOINT_MAX; i++) {
-        if (!endpoints[i].in_use) {
-            cap_t index;
+        struct endpoint *ep = &endpoints[i];
+        unsigned long flags = spin_lock(&ep->lock);
+        cap_t index;
 
-            endpoints[i].in_use = true;
-            endpoints[i].owner = self->process;
-            endpoints[i].senders = NULL;
-            endpoints[i].receivers = NULL;
-            endpoints[i].watcher = NULL;
-            endpoints[i].awaiting_reply = NULL;
-
-            index = install(self, &endpoints[i]);
-
-            if (index < 0) {
-                endpoints[i].in_use = false;
-                return index;
-            }
-
-            return index;
+        if (ep->in_use) {
+            spin_unlock(&ep->lock, flags);
+            continue;
         }
+
+        ep->in_use = true;
+        ep->owner = self->process;
+        ep->senders = NULL;
+        ep->receivers = NULL;
+        ep->watcher = NULL;
+        ep->awaiting_reply = NULL;
+        spin_unlock(&ep->lock, flags);
+
+        index = install(self, ep);
+
+        if (index < 0) {
+            flags = spin_lock(&ep->lock);
+            ep->in_use = false;
+            ep->owner = NULL;
+            spin_unlock(&ep->lock, flags);
+        }
+
+        return index;
     }
 
     return IPC_ERR_NO_SPACE;

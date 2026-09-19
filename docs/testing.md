@@ -5945,7 +5945,7 @@ becomes a Lua string.
   fail - "kept kosmos-test at frame 689 ... then None" - and nothing else
   does.
 
-## 18.111 Two things wrong on four cores, before threads
+## 18.111 Three things wrong on four cores, before threads
 
 **`threads.md` step 0**: found while reading the kernel for threads, and
 wrong today whatever threads become.
@@ -5972,3 +5972,18 @@ releases it under the lock that claimed it, on every failure.
   while the other cores still held it, which is the bug itself; the second
   failed, and the leaked slots filled the pool, so five tests after it that
   start processes failed too.
+
+**And an endpoint could be two servers'.** Found while reading for step 1:
+`ipc_endpoint_create` claimed its slot by testing `in_use` and storing
+`true`, and `SYS_ENDPOINT_CREATE` is a syscall two programs on two cores
+reach together. The claim is made under the endpoint's own lock now - the
+one `teardown` holds when it gives the slot back, so claiming and releasing
+are ordered by the same lock and nothing new was needed.
+
+- **`ipc: endpoints made at once are each their own`**, both boards: every
+  core makes eight endpoints at the same instant, sixteen rounds, and no
+  endpoint may be in two cores' tables.
+- Control, watched on the code as it was: it failed on the ARM board at
+  once, and passed on x86 with one round - QEMU interleaves an x86 guest's
+  cores on this Mac rather than running them at once, so a window a few
+  instructions wide seldom opens. With sixteen rounds it fails on both.

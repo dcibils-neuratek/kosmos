@@ -246,7 +246,10 @@ it, and the steps that cannot fail loudly come before the one that can.
    18.111). A shared region's count under the pool's lock, and the slot a
    failed spawn leaked given back. A region's count raced from every core,
    and a bad image offered more times than there are slots; unfixed, the
-   first panicked with a double free on both boards.
+   first panicked with a double free on both boards. **And a third, found
+   reading for step 1**: an endpoint's slot was claimed without a lock, so
+   two programs starting on two cores could share one; claimed under the
+   endpoint's own lock now.
 1. **Capabilities move from the thread to the process**, with a lock. One
    thread still, so nothing should behave differently, and the whole gate
    is the check.

@@ -4962,6 +4962,156 @@ static bool test_a_regions_count_holds_on_every_core(void)
 }
 
 /*
+ * **Endpoints made on every core at once are each their own** (`threads.md`
+ * step 0).
+ *
+ * `ipc_endpoint_create` claimed a slot by testing `in_use` and storing
+ * `true`, and `SYS_ENDPOINT_CREATE` is a syscall two programs on two cores
+ * reach together - so both could claim the same slot, and two servers would
+ * share one endpoint. Every core makes endpoints at the same instant, each
+ * in its own capability table, and no endpoint may be in two of them.
+ */
+#define MADE_EACH   8u
+#define MADE_ROUNDS 16u
+
+static volatile unsigned         made_go, made_drop;
+static volatile unsigned         made_ready[NR_CPUS], made_gone[NR_CPUS];
+static struct endpoint *volatile made[NR_CPUS][MADE_EACH];
+static volatile cap_t            made_cap[NR_CPUS][MADE_EACH];
+
+static void make_endpoints(unsigned me)
+{
+    struct thread *self = thread_current();
+    unsigned i;
+
+    for (i = 0; i < MADE_EACH; i++) {
+        cap_t c = ipc_endpoint_create();
+
+        made_cap[me][i] = c;
+        made[me][i] = (c >= 0) ? self->caps[c].endpoint : NULL;
+    }
+}
+
+static void drop_endpoints(unsigned me)
+{
+    unsigned i;
+
+    for (i = 0; i < MADE_EACH; i++) {
+        if (made_cap[me][i] >= 0) {
+            (void)ipc_endpoint_destroy(made_cap[me][i]);
+        }
+    }
+}
+
+/* Round after round: make on the signal, say so, drop on the next. */
+static void makes_endpoints(void *arg)
+{
+    unsigned me = (unsigned)(uintptr_t)arg;
+    unsigned r;
+
+    for (r = 1; r <= MADE_ROUNDS; r++) {
+        while (made_go < r) {
+            cpu_relax();
+        }
+
+        make_endpoints(me);
+        made_ready[me] = r;
+
+        while (made_drop < r) {
+            cpu_relax();
+        }
+
+        drop_endpoints(me);
+        made_gone[me] = r;
+    }
+}
+
+/* Every core has said `round` in `said`, or the wait ran out. */
+static bool all_said(volatile unsigned *said, unsigned cores, unsigned round)
+{
+    unsigned long start = hal_ticks();
+    unsigned c;
+
+    for (c = 1; c < cores; c++) {
+        while (said[c] < round && hal_ticks() - start < 10UL * TICK_HZ) {
+            cpu_relax();
+        }
+
+        if (said[c] < round) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool test_endpoints_made_at_once_are_each_their_own(void)
+{
+    unsigned online = smp_online();
+    unsigned cores = online < NR_CPUS ? online : NR_CPUS;
+    unsigned c, i, d, j, r;
+    bool distinct = true, all_made = true;
+
+    if (online < 2) {
+        return true;            /* one processor; nothing to race */
+    }
+
+    if (ipc_endpoints_in_use() + cores * MADE_EACH > ENDPOINT_MAX) {
+        return false;           /* the pool is too full to try */
+    }
+
+    made_go = 0;
+    made_drop = 0;
+
+    for (c = 0; c < NR_CPUS; c++) {
+        made_ready[c] = 0;
+        made_gone[c] = 0;
+    }
+
+    for (c = 1; c < cores; c++) {
+        if (thread_create_on(c, "makes", makes_endpoints,
+                             (void *)(uintptr_t)c) == NULL) {
+            return false;
+        }
+    }
+
+    for (r = 1; r <= MADE_ROUNDS; r++) {
+        made_go = r;
+        make_endpoints(0);      /* and this core, in the same moment */
+
+        if (!all_said(made_ready, cores, r)) {
+            return false;
+        }
+
+        for (c = 0; c < cores; c++) {
+            for (i = 0; i < MADE_EACH; i++) {
+                if (made[c][i] == NULL) {
+                    all_made = false;
+                    continue;
+                }
+
+                for (d = c; d < cores; d++) {
+                    for (j = (d == c) ? i + 1 : 0; j < MADE_EACH; j++) {
+                        if (made[d][j] == made[c][i]) {
+                            distinct = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        made_drop = r;
+        drop_endpoints(0);
+
+        if (!all_said(made_gone, cores, r)) {
+            return false;
+        }
+    }
+
+    return all_made && distinct;
+}
+
+/*
  * **A refused image gives its process slot back** (`threads.md` step 0).
  *
  * `process_create` claims a slot and then checks the image; six of its
@@ -7533,6 +7683,7 @@ static const struct test tests[] = {
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region's count holds on every core", test_a_regions_count_holds_on_every_core },
     { "proc: a refused image gives its slot back", test_a_refused_image_gives_its_slot_back },
+    { "ipc: endpoints made at once are each their own", test_endpoints_made_at_once_are_each_their_own },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
     { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
     { "irq: a line is claimed, counted and given back",
