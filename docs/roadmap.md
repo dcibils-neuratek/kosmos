@@ -885,6 +885,12 @@ processors, and still what follows USB:
    each checkable on its own as SMP's were: a second thread on the same
    core; on another core; exit and kill across cores with memory being
    unmapped under them; the libc; the kit; Lua. Every step a test.
+   **`docs/threads.md` is written** (19 September): the inventory of what
+   assumes one thread, the design, ten steps, and four decisions Diego's.
+   **Its step 0 is two bugs found on the way, wrong today**: a shared
+   region's reference count is a plain `++` and `--` reached from several
+   cores (`memobj.c`), and a spawn that fails early leaks its process slot
+   (`process.c`).
 
    **Where threads go, Diego's question the same evening** - "I want to
    follow the beos idea which is as really great", "Can we have threads
