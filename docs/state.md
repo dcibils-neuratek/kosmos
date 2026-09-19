@@ -28,10 +28,13 @@ invisible (SCI_EN clear, SMM answering them). Built and tested in QEMU:
   `test_backlightdecode` levels (`testing.md` 18.102). QEMU has no embedded
   controller, so F5/F6 themselves are proved on the ThinkPad only.
 
-**Next**: gate, commit, `make bump`, stick 0.10.86 with numbered steps for
-Diego - F5/F6 (Display bar, `wm: brightness` lines), the power button (the
-machine turns off), Deskbar's Shut Down (the machine turns off), `diagnose`,
-`make stick-log`.
+**Stick 0.10.86 handed to Diego**: `8b88fd2` + bump `1c54333`, `make test`
+29 suites in 5:01. `kosmos-usb-0.10.86-development.img`, 234.9 MB, `/home`
+in a partition (GUID 64F2E095-...), sha256 `c3f5b593...848a`; `run_uefi.py`
+29 checks and the OVMF desktop check all yes. Asked of Diego: F5 and F6
+(the Display bar), the Deskbar's Shut Down and the power button (the
+machine turns off), `diagnose`, `make stick-log`. **Built wrong first**
+without `USB_HOME=partition` and rebuilt before handing over (roadmap).
 
 ## Stick 0.10.85 waiting on Diego, 18 September (late)
 

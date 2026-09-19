@@ -1155,6 +1155,16 @@ display harness's phases held to `DISPLAY_PARTS` the same way - its phase
 list lives inside `run_screenshot.py`'s `main`, so it needs a list at the
 module's top first.
 
+**Wanted - a stick's layout that cannot be built wrong.** On 19 September
+0.10.86 was first built with `make MEGA=1 x86-usb-image`, as `CLAUDE.md`
+said, and came out without `/home` in a partition - a layout the ThinkPad
+has not booted since 0.10.61 - because `USB_HOME=partition` is a flag and
+not the default. Caught by the size (243.3 MB against 234.9) and the missing
+`opt/kosmos/home=` before it was handed over. `make usb` has the same trap:
+it rebuilds the image with the default before writing. The proven layout
+should be the default, and `make usb` should write the image that was
+checked rather than a new one.
+
 ## Known and unexplained
 
 **Three to four audio underruns per 2.3 seconds.** Six structural changes
