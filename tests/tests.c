@@ -4864,6 +4864,126 @@ static bool test_a_region_can_be_one_physical_run(void)
         && pmm_free_pages() == before;      /* and both given back whole */
 }
 
+/*
+ * **A region's count, changed from every core at once** (`threads.md` step
+ * 0).
+ *
+ * A capability to a shared region is delivered in one process and dropped
+ * in another, and each changes the region's reference count - which was a
+ * plain `++` and `--`, three steps apiece, with no lock. Two cores doing it
+ * at the same instant both read the same number and one change is lost. So
+ * every core does it, twenty thousand times, starting together: a region
+ * made with one reference must end with exactly one.
+ *
+ * A lost increment frees the region's pages while it is still referenced, so
+ * the unlocked version may not even reach the check - it may panic on
+ * "unreferenced twice" instead, which is the same failure said louder.
+ */
+#define COUNT_ROUNDS 20000u
+
+static struct memobj *volatile counted;
+static volatile bool           count_go;
+static volatile bool           counted_on[NR_CPUS];
+
+static void count_a_region(void *arg)
+{
+    unsigned me = (unsigned)(uintptr_t)arg;
+    unsigned i;
+
+    while (!count_go) {
+        cpu_relax();
+    }
+
+    for (i = 0; i < COUNT_ROUNDS; i++) {
+        memobj_ref(counted);
+        memobj_unref(counted);
+    }
+
+    counted_on[me] = true;
+}
+
+static bool test_a_regions_count_holds_on_every_core(void)
+{
+    unsigned online = smp_online();
+    unsigned long start;
+    unsigned c, i;
+    bool whole;
+
+    if (online < 2) {
+        return true;            /* one processor; nothing to race */
+    }
+
+    counted = memobj_create(1, false);
+
+    if (counted == NULL) {
+        return false;
+    }
+
+    count_go = false;
+
+    for (c = 0; c < NR_CPUS; c++) {
+        counted_on[c] = false;
+    }
+
+    for (c = 1; c < online && c < NR_CPUS; c++) {
+        if (thread_create_on(c, "counts", count_a_region,
+                             (void *)(uintptr_t)c) == NULL) {
+            return false;
+        }
+    }
+
+    count_go = true;
+
+    /* And this core, in the same moment. */
+    for (i = 0; i < COUNT_ROUNDS; i++) {
+        memobj_ref(counted);
+        memobj_unref(counted);
+    }
+
+    start = hal_ticks();
+
+    for (c = 1; c < online && c < NR_CPUS; c++) {
+        while (!counted_on[c] && hal_ticks() - start < 10UL * TICK_HZ) {
+            cpu_relax();
+        }
+
+        if (!counted_on[c]) {
+            return false;       /* a core never finished its rounds */
+        }
+    }
+
+    whole = counted->in_use && counted->refs == 1;
+
+    if (counted->in_use && counted->refs > 0) {
+        memobj_unref(counted);
+    }
+
+    return whole;
+}
+
+/*
+ * **A refused image gives its process slot back** (`threads.md` step 0).
+ *
+ * `process_create` claims a slot and then checks the image; six of its
+ * refusals returned holding the slot, and `process_count` counted each as a
+ * live process that never ran. More refusals than there are slots, so a
+ * leak cannot hide under the pool's size, and the count must not move.
+ */
+static bool test_a_refused_image_gives_its_slot_back(void)
+{
+    static const uint64_t refused[512];     /* a page with no magic in it */
+    unsigned before = process_count();
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX + 4; i++) {
+        if (process_create("t-refused", refused, sizeof refused, 0) != NULL) {
+            return false;       /* a page of zeroes was taken for a program */
+        }
+    }
+
+    return process_count() == before;
+}
+
 static bool test_shared_memory_is_freed_once(void)
 {
     size_t before = pmm_free_pages();
@@ -7411,6 +7531,8 @@ static const struct test tests[] = {
     { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
+    { "mem: a region's count holds on every core", test_a_regions_count_holds_on_every_core },
+    { "proc: a refused image gives its slot back", test_a_refused_image_gives_its_slot_back },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
     { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
     { "irq: a line is claimed, counted and given back",

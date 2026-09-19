@@ -15,6 +15,8 @@
 
 static struct memobj objects[MEMOBJ_MAX];
 
+static void release(struct memobj *m);
+
 void memobj_init(void)
 {
     unsigned i;
@@ -59,7 +61,7 @@ static void unwind(struct memobj *m, size_t built)
     m->indexes = 0;
     m->pages = 0;
     m->contiguous = false;
-    m->in_use = false;
+    release(m);
 }
 
 /*
@@ -74,9 +76,19 @@ static void unwind(struct memobj *m, size_t built)
  *
  * So the lock covers exactly what the comment already identified: the scan
  * and the claim. Everything after - hundreds of page allocations - happens
- * outside it, on a slot nobody else can now find.
+ * outside it, on a slot nobody else can now find. **And the reference count**,
+ * since 19 September: see `memobj_ref`.
  */
 static struct spinlock objects_lock = SPINLOCK("regions");
+
+/* A slot given back, under the lock that claims them (`memobj_unref`). */
+static void release(struct memobj *m)
+{
+    unsigned long flags = spin_lock(&objects_lock);
+
+    m->in_use = false;
+    spin_unlock(&objects_lock, flags);
+}
 
 struct memobj *memobj_create(size_t pages, bool contiguous)
 {
@@ -203,26 +215,65 @@ struct memobj *memobj_create(size_t pages, bool contiguous)
     return NULL;
 }
 
+/*
+ * **The count is changed under the pool's lock**, and it was not until 19
+ * September (`threads.md` step 0).
+ *
+ * It was a plain `++` and `--`, and those are three steps each - read, add,
+ * write - reached from different processes on different cores: a capability
+ * delivered in a message under one endpoint's lock, another dropped at some
+ * process's exit under none. Two at once on two cores both read the same
+ * number and one change is lost. Lose an increment and the region's pages go
+ * back to the allocator while a window still draws into them; lose a
+ * decrement and they never go back. One core could never see it, and the
+ * window is a few instructions wide, which is why nothing had.
+ *
+ * The same lock the claim takes, held for the check and the change and
+ * nothing else - the pages are freed outside it, as they are built outside
+ * it - and taken again to release the slot, so a scan on another core sees
+ * it free only after everything below has been written.
+ */
 void memobj_ref(struct memobj *m)
 {
-    if (m != NULL && m->in_use) {
+    unsigned long flags;
+
+    if (m == NULL) {
+        return;
+    }
+
+    flags = spin_lock(&objects_lock);
+
+    if (m->in_use) {
         m->refs++;
     }
+
+    spin_unlock(&objects_lock, flags);
 }
 
 void memobj_unref(struct memobj *m)
 {
-    if (m == NULL || !m->in_use) {
+    unsigned long flags;
+
+    if (m == NULL) {
+        return;
+    }
+
+    flags = spin_lock(&objects_lock);
+
+    if (!m->in_use) {
+        spin_unlock(&objects_lock, flags);
         return;
     }
 
     if (m->refs == 0) {
+        spin_unlock(&objects_lock, flags);
         panic("memobj: unreferenced twice");
     }
 
     m->refs--;
 
     if (m->refs > 0) {
+        spin_unlock(&objects_lock, flags);
         return;
     }
 
@@ -235,6 +286,7 @@ void memobj_unref(struct memobj *m)
      * and for the same reason.
      */
     m->generation++;
+    spin_unlock(&objects_lock, flags);
 
     /*
      * The pages go back first and the *slot* last.
@@ -268,7 +320,7 @@ void memobj_unref(struct memobj *m)
     }
 
     m->pages = 0;
-    m->in_use = false;
+    release(m);
 }
 
 unsigned memobj_in_use(void)

@@ -237,6 +237,25 @@ static struct process *alloc_process(void)
 }
 
 /*
+ * A slot `alloc_process` claimed, given back by a create that failed.
+ *
+ * Under the lock that claimed it, so a scanner on another core sees the slot
+ * free only after everything this create wrote into it. It was missing from
+ * the six early refusals - an empty image, a bad header or read-only half, a
+ * misaligned image, no address space, no pages for the writable half - which
+ * returned `NULL` holding the slot, and `process_count` counted each as a
+ * live process that never ran (`threads.md` step 0).
+ */
+static struct process *give_back(struct process *p)
+{
+    unsigned long flags = spin_lock(&processes_lock);
+
+    p->in_use = false;
+    spin_unlock(&processes_lock, flags);
+    return NULL;
+}
+
+/*
  * The thread side of a process.
  *
  * Runs once, in kernel context, to install the address space and then hand
@@ -269,8 +288,12 @@ struct process *process_create(const char *name, const void *image,
     size_t rx_pages;
     size_t i;
 
-    if (p == NULL || pages == 0) {
-        return NULL;
+    if (p == NULL) {
+        return NULL;                        /* no slot, so none to give back */
+    }
+
+    if (pages == 0) {
+        return give_back(p);
     }
 
     /*
@@ -280,7 +303,7 @@ struct process *process_create(const char *name, const void *image,
      * at M8 the images come off a disk.
      */
     if (len < USER_IMAGE_HEADER || header[0] != USER_IMAGE_MAGIC) {
-        return NULL;
+        return give_back(p);
     }
 
     rx_bytes = (size_t)header[1];
@@ -298,7 +321,7 @@ struct process *process_create(const char *name, const void *image,
      * So the half has to be bytes the image actually has.
      */
     if ((rx_bytes & PAGE_MASK) != 0 || rx_pages == 0 || rx_bytes > len) {
-        return NULL;
+        return give_back(p);
     }
 
     /*
@@ -342,13 +365,13 @@ struct process *process_create(const char *name, const void *image,
          * `bin2c.py` aligns what it generates; a loader that arrives later
          * has to align its buffer, and this is where it will find that out.
          */
-        return NULL;
+        return give_back(p);
     }
 
 
     p->space = as_create();
     if (p->space == NULL) {
-        return NULL;
+        return give_back(p);
     }
 
     p->image_page_count = pages - rx_pages;
@@ -358,7 +381,7 @@ struct process *process_create(const char *name, const void *image,
 
         if (p->image_pages == NULL) {
             as_destroy(p->space);
-            return NULL;
+            return give_back(p);
         }
 
         memcpy(p->image_pages, (const char *)image + rx_bytes, len - rx_bytes);
@@ -441,7 +464,6 @@ struct process *process_create(const char *name, const void *image,
     p->thread = thread_create_suspended(p->name, process_main, p);
 
     if (p->thread == NULL) {
-        p->in_use = false;
         goto fail;
     }
 
@@ -462,8 +484,7 @@ fail:
         pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
     }
     as_destroy(p->space);
-    p->in_use = false;
-    return NULL;
+    return give_back(p);
 }
 
 struct process *process_spawn(struct process *parent, unsigned long arg)

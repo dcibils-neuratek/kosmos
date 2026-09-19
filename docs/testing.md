@@ -5944,3 +5944,31 @@ becomes a Lua string.
 - Control, watched: with the state never read, both continuing checks
   fail - "kept kosmos-test at frame 689 ... then None" - and nothing else
   does.
+
+## 18.111 Two things wrong on four cores, before threads
+
+**`threads.md` step 0**: found while reading the kernel for threads, and
+wrong today whatever threads become.
+
+**A shared region's reference count was not locked.** `memobj_ref` and
+`memobj_unref` were a plain `++` and `--`, reached from different processes
+on different cores. They take the region pool's lock now, for the check and
+the change; the pages are still freed outside it, and the slot is given back
+under it - by `unwind`, a failed create's path, as well.
+
+**A refused image kept its process slot.** Six of `process_create`'s
+refusals returned holding the slot `alloc_process` had claimed, each then
+counted by `process_count` as a live process that never ran. `give_back`
+releases it under the lock that claimed it, on every failure.
+
+- **`mem: a region's count holds on every core`**, both boards: every core
+  takes and drops a reference to one region twenty thousand times, starting
+  together, and the region ends with exactly the one it began with.
+- **`proc: a refused image gives its slot back`**, both boards: a page of
+  zeroes offered as a program thirty-six times - more than the pool's
+  thirty-two slots - and the count of processes does not move.
+- Controls, watched on the code as it was: the first panicked on both
+  boards with "pmm_free_page: double free" - a lost count freed the region
+  while the other cores still held it, which is the bug itself; the second
+  failed, and the leaked slots filled the pool, so five tests after it that
+  start processes failed too.

@@ -9,7 +9,8 @@ apps?"
 
 This page is written before the kernel changes, as `smp.md` was, so that
 the order is argued once and every step can be checked on its own. Nothing
-here is built yet. Where it says "today" it describes the tree as it stands
+here was built when it was written; the steps below say what has been
+since. Where it says "today" it describes the tree as it stands
 on 19 September, with a file and a line for each claim; where it says
 "proposed" it is a decision still Diego's.
 
@@ -241,10 +242,11 @@ Coroutines stay what a program uses to wait on many things at once.
 The order `smp.md` taught: every step checkable before the next depends on
 it, and the steps that cannot fail loudly come before the one that can.
 
-0. **The two things wrong today.** A shared region's count under a lock,
-   and the slot a failed spawn leaks. Tests that race a region between
-   processes on two cores, and spawn a bad image until the pool would have
-   run out.
+0. **DONE on 19 September - the two things wrong today** (`testing.md`
+   18.111). A shared region's count under the pool's lock, and the slot a
+   failed spawn leaked given back. A region's count raced from every core,
+   and a bad image offered more times than there are slots; unfixed, the
+   first panicked with a double free on both boards.
 1. **Capabilities move from the thread to the process**, with a lock. One
    thread still, so nothing should behave differently, and the whole gate
    is the check.
@@ -271,6 +273,11 @@ it, and the steps that cannot fail loudly come before the one that can.
    thread that buys nothing is complexity for nothing.
 
 ## Decisions that are Diego's
+
+**Taken on 19 September, as proposed** - Diego, having read this page:
+"Great let's do it". So a process ends when its first thread returns; 16
+threads a process to start; stacks made by the kernel with a guard; and
+step 0 first. The four as they were put:
 
 1. **When a process ends**: when its first thread returns, as proposed, or
    when its last thread does.

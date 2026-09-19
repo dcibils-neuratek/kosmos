@@ -887,7 +887,8 @@ processors, and still what follows USB:
    unmapped under them; the libc; the kit; Lua. Every step a test.
    **`docs/threads.md` is written** (19 September): the inventory of what
    assumes one thread, the design, ten steps, and four decisions Diego's.
-   **Its step 0 is two bugs found on the way, wrong today**: a shared
+   **Its step 0, DONE the same evening (`testing.md` 18.111), was two bugs
+   found on the way, wrong today**: a shared
    region's reference count is a plain `++` and `--` reached from several
    cores (`memobj.c`), and a spawn that fails early leaks its process slot
    (`process.c`).
