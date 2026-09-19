@@ -1806,6 +1806,16 @@ three fields are little-endian on disk and its last two are not.
 **This is what Finder's Favorites and Windows' Quick Access key on**, and why
 neither is a mount: the drive itself never changes.
 
+### 6e: the Drives app
+
+`drives.lua`, as `drives.html` drew it, over `drivelist.lua`: the USB
+driver's units with what each says it is, the drive server's volumes on
+each, and the machine's own disk. It shows and does not change: Format...
+and New partition... are there and greyed. What it cannot say yet it says it
+cannot - a stick's partition table and the partitions no filesystem claims
+need a question the drive server does not answer yet, and the internal
+disk's partitions are the kernel's and not read.
+
 ### What is not done yet
 
 - **6b is built, as far as naming volumes goes** (16 September). A drive

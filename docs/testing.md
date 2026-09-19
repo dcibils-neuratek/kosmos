@@ -5859,3 +5859,28 @@ half buried, so a test that wants two windows overlapping has to overlap
 them by less. The `deskbar focus` phase pressed the minimise box 44 pixels
 in from the frame's right edge; it reads the tab's width now.
 
+## 18.108 The Drives app
+
+**USB step 6e, drawn first in `drives.html`**: every drive, the chosen
+one's partitions as a bar - not to scale, so a small partition beside a
+large stick is still something to see - its partitions as rows with the
+chosen one opening in Tracker, and Format... and New partition... drawn and
+greyed, because it shows before it changes anything. The model is
+`drivelist.lua`: each stick from the USB driver, each volume from the drive
+server, the machine's own disk from `sys.disk()`, and what no volume
+accounts for said as "free or unread" rather than guessed. The kit's
+buttons gained `disabled`.
+
+- **`run_x86.py`'s `usb_drives`, one check more**: on the two-volume FAT
+  stick, the model sees one USB stick of 67,108,864 bytes holding PHOTOS
+  then BACKUP, with 4 MB they do not account for. Run as a program of its
+  own, because the one before it is typed at the prompt and a line there is
+  cut at about a kilobyte - adding these lines to it silently stopped the
+  whole program, and every check in the part failed at once.
+- **The display harness's `drives app`, 3 checks, both boards**: the window
+  opens, says what it found, and draws without a Lua error - on a machine
+  with no stick and no disk, "No drives" in its first list.
+- Looked at once with the FAT stick under x86 QEMU: the stick, PHOTOS and
+  BACKUP and the 4 MB beside them, PHOTOS's use a dash because FAT32's free
+  count is a hint, BACKUP's 44 KB.
+

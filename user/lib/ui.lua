@@ -1376,11 +1376,16 @@ function ui.label(spec)
   return v
 end
 
+--
+-- `disabled` greys a button's label and makes it answer nothing - for an
+-- action that exists but is not offered yet, as the Drives app's Format...
+-- is: shown, so a person can see it will be there, and not pressable.
+--
 function ui.button(spec)
   local v = ui.view(spec)
   v.h = v.h > 0 and v.h or (GH + 10)
   v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 24)
-  v.focusable = true
+  v.focusable = not v.disabled
 
   function v:draw(g)
     local face = self.pressed and theme.accent or theme.raised
@@ -1411,10 +1416,13 @@ function ui.button(spec)
     if self.pressed then tx, ty = tx + 1, ty + 1 end
 
     g:text(tx, ty, label,
-           self.pressed and theme.text_on or theme.text, face)
+           self.disabled and theme.text_dim
+           or (self.pressed and theme.text_on or theme.text), face)
   end
 
   function v:key(c)
+    if self.disabled then return false end
+
     if c == 10 or c == 13 or c == 32 then
       if self.on_click then self.on_click(self) end
       return true
@@ -1433,6 +1441,8 @@ function ui.button(spec)
   --
   function v:mouse(action, x, y)
     local inside = x >= 0 and x < self.w and y >= 0 and y < self.h
+
+    if self.disabled then return true end
 
     if action == "press" then
       self.pressed = true

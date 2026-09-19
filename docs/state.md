@@ -18,6 +18,28 @@ Last updated: 2026-09-19
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## The afternoon of 19 September, while Diego was away
+
+Built, tested and committed after the 0.10.89 push:
+
+- **Xbox One and Series pads** (`usb.md` 9): GIP's start-up sent on the
+  interrupt OUT, input and the Xbox button read, the button acknowledged;
+  53 host checks. **No Xbox One pad here - Diego has one at home.**
+- **`mp4.lua`**, the video player's first piece: an MP4's index, 26 host
+  checks including Diego's clip (H.264 Main 3.0 640x360, AAC-LC).
+- **BeOS's tab by default**, a bar across by choice in Appearance
+  (`ui.md` 16.8b, `testing.md` 18.107) - reverses the recorded full-width
+  decision, Diego's choice of 18 September.
+- **`make shot`**: eleven applications, none twice.
+- **Mockups for Diego to review**: `docs/video.html`, `docs/playground.html`,
+  `docs/styleguide.html`, each ending in questions.
+- **The Drives app** (USB 6e, `testing.md` 18.108).
+
+**Waiting on Diego**: FFmpeg's decoders for the video player (4e), a
+LÖVE-compatible kit rather than vendoring LÖVE (4f), save states for the
+Super Nintendo, the four questions on each mockup, and tonight's test of
+the stick with all of it.
+
 ## Pushed as 0.10.89 - 19 September
 
 `2b6ac5e` on GitHub, `make prepush` green (29 suites, 5:07). Next: Xbox One

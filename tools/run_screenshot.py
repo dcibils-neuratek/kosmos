@@ -3589,6 +3589,60 @@ def check_tabs(guest):
     return 4
 
 
+def check_drives_app(guest):
+    """The Drives app opens, says what it found, and draws (USB step 6e).
+
+    The harness has no stick and no disk, so what it finds is nothing - and
+    "No drives" drawn in its first list, not an empty window and not a Lua
+    error, is the case this machine can show. The model under it is held to
+    a real stick's two volumes by `run_x86.py`'s `usb_drives`.
+    """
+    mark = len(guest.seen)
+    guest.type("wm drives")
+    deadline = time.monotonic() + 30
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if re.search(r"drives: \d+ drive", guest.seen[mark:]) \
+                and "wm: window Drives at" in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+
+    said = guest.seen[mark:]
+
+    if "wm: window Drives at" not in said:
+        raise Failure("the Drives app never opened a window:\n" + said[-800:])
+
+    if not re.search(r"drives: \d+ drive", said):
+        raise Failure("the Drives app never said what it found:\n"
+                      + said[-800:])
+
+    time.sleep(2.0)
+    guest._read_available()
+    bad = [l for l in guest.seen[mark:].splitlines()
+           if "drives" in l and ("attempt to" in l or "error" in l)]
+
+    if bad:
+        raise Failure("the Drives app failed while drawing: " + bad[0])
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[back:]:
+            break
+
+        time.sleep(0.3)
+
+    return 3
+
+
 def check_snes_scale(guest):
     """`--scale` reaches the Super Nintendo, and never reaches a ROM's name.
 
@@ -7257,6 +7311,7 @@ def main():
         wallpaper_checks = phase("wallpapers", check_wallpapers)
         direct_menu_checks = phase("direct menu", check_direct_menu)
         tab_checks = phase("tabs", check_tabs)
+        drives_app_checks = phase("drives app", check_drives_app)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
@@ -7322,7 +7377,7 @@ def main():
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
              + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
-             + tab_checks
+             + tab_checks + drives_app_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
 
@@ -7398,6 +7453,7 @@ def main():
           f"image and one reaching the screen pixel for pixel, "
           f"{direct_menu_checks} on a menu bar above a window that draws its "
           f"own pixels, and its menu reaching the program, "
+          f"{drives_app_checks} on the Drives app opening and drawing, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

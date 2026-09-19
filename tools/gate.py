@@ -226,7 +226,7 @@ DISPLAY_PARTS = [
     ["faces", "wallpapers", "direct menu", "tabs", "Super Nintendo --scale", "deskbar", "deskbar focus", "desktop",
      "places", "panel"],
     ["clipboard", "cores", "reaped", "clicks", "graphical", "replicants",
-     "window_manager"],
+     "window_manager", "drives app"],
 ]
 
 for board, image, own in (("arm", ARM, "power button"),

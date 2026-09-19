@@ -443,7 +443,13 @@ is the one that makes the machine Diego owns behave like a computer:
    6c's** - read again on 16 September, every bar in `drives.html` sits
    inside a `drive-tile`, which is the Drives app, and the sidebar rows there
    carry a name and a type and nothing else. They move to 6e; **6d DONE** (18 September), the Open and Save window - **DONE, the window itself** (`b1e408a`): the same sidebar as Tracker from `/lib/sidebar.lua`, the trail, Name, Size and Kind, one click selecting and a second opening, and a filter, in every application that opens or saves (`ui.md` 16.8f). **DONE on 18 September: the Super Nintendo's File menu** - Open ROM... and Quit (`testing.md` 18.101). Its window draws its own pixels, and no such window could carry a kit menu (`window:paint` returns at once for one). **Diego chose A**: the compositor draws a menu bar above a direct window's pixels, so Doom and Quake can have one the same way (README's decision log). Open ROM from a stick already works by path, `wm snes:/drives/...`;
-   **6e** the Drives app; **6f** exFAT.
+   **6e DONE on 19 September - the Drives app**, as `drives.html` drew it:
+   the drives, the chosen one's partitions as a bar not to scale, its
+   partitions as rows opening in Tracker, and Format... and New
+   partition... drawn and greyed (`testing.md` 18.108). A stick's partition
+   table and the partitions no filesystem claims are the drive server's to
+   report next; the machine's own disk is listed, its partitions not read
+   yet. **6f** exFAT.
 
    **6b's shape, read out of the code on 16 September, for Diego to agree
    before it is built.** `drives.html` says `/drives` is "one folder every

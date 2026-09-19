@@ -1016,6 +1016,15 @@ def usb_drives(image, check):
         'print("drives" .. ": done")'
     )
 
+    # The Drives app's model, as a program of its own: the one above is
+    # typed at the prompt, and a line there is cut at about a kilobyte.
+    model = (
+        'for _, d in ipairs(use("/lib/drivelist.lua").drives()) do '
+        'local v = {} for _, x in ipairs(d.volumes) do v[#v + 1] = x.name end '
+        'print("drives" .. ": model " .. d.kind .. "|" .. d.bytes .. "|" '
+        '.. table.concat(v, ",") .. "|" .. d.unclaimed) end'
+    )
+
     # **Not `its backup`, which every other USB phase waits for.** That line
     # comes from a stick laid out with a GPT, and this one has an MBR - as a
     # camera or a Windows box writes - so the driver prints "no GUID
@@ -1024,7 +1033,9 @@ def usb_drives(image, check):
     # never sent. This is the driver's own last line, whatever the stick.
     out = boot(image, None, 180.0,
                typed=("fs.write('/ramfs/d.lua', %r)" % program,
-                      "/ramfs/d.lua"),
+                      "/ramfs/d.lua",
+                      "fs.write('/ramfs/m.lua', %r)" % model,
+                      "/ramfs/m.lua"),
                extra=extra, after="watching for devices")
 
     if out is None:
@@ -1117,6 +1128,19 @@ def usb_drives(image, check):
           "bytes - 512 is a reader that returned the first cluster and never "
           "followed the table:\n    %s"
           % (big.group(1) if big else "nothing", shown))
+
+    # **The Drives app's model** (USB step 6e): the stick as one drive of
+    # its own size, its two volumes in partition order, and what they do
+    # not account for - the stick's 64 MB less their 48 and 12, which is
+    # its partition table and the room after them.
+    stick_model = [l for l in lines if l.startswith("drives: model USB stick|")]
+    want = "drives: model USB stick|%d|PHOTOS,BACKUP|%d" % (
+        fatstick.SECTORS * 512, (fatstick.SECTORS - 98304 - 24576) * 512)
+
+    check(stick_model == [want],
+          "the Drives app's model did not see one stick of %d bytes holding "
+          "PHOTOS then BACKUP - wanted %r, got %r"
+          % (fatstick.SECTORS * 512, want, stick_model))
 
 
 def usb_home(image, check):
