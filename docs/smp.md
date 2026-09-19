@@ -681,6 +681,42 @@ found.
 
 ---
 
+## What was still unlocked on 19 September, and what it cost
+
+Found by reading the kernel for `threads.md`, months after the audit below,
+and every one of the three was a race on four cores *that day* (`testing.md`
+18.111):
+
+- **A shared region's reference count** was a plain `++` and `--`, reached
+  from different processes on different cores - a capability delivered in a
+  message under one endpoint's lock, another dropped at a process's exit
+  under none. Two at once lose a change. Lose an increment and the region's
+  pages go back to the allocator while a window is still drawing into them.
+  Under the region pool's lock now; with the lock taken away again, the
+  kernel panics with `pmm_free_page: double free` on both boards, which is
+  the bug reproducing.
+- **An endpoint's slot** was claimed by testing `in_use` and storing `true`,
+  and `SYS_ENDPOINT_CREATE` is a syscall two programs on two cores reach
+  together: both saw it free, both took it, and two servers had one
+  endpoint. Claimed under the endpoint's own lock now - the one `teardown`
+  holds when it gives the slot back.
+- **A process slot a failed spawn never gave back**, which is not a race but
+  is the same family: a pool that leaks slots runs out for reasons nothing
+  reports.
+
+**And the capability table gained a lock, then lost it again for readers.**
+A process's threads can reach one table at once, so filling or emptying a
+slot takes the table's lock - but every message resolves a capability, and
+the lock on that path cost **ten per cent of an IPC round trip**, measured.
+A slot's kind is written last when it is filled and first when it is
+emptied, with release, and read with acquire; a reader sees a slot finished
+or empty, never half written, and needs no lock at all.
+
+**The pools grow now** (`threads.md` step 1b, `kernel/pool.c`), which the
+locking made possible rather than complicated: a slab is published with a
+release store of the slot count, read with acquire, so a core that sees the
+count sees the slab behind it.
+
 ## What has to be locked
 
 **Audited against the code rather than remembered, and the list is about

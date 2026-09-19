@@ -107,16 +107,40 @@ Rejected on purpose:
 ### 4.1 Kernel
 
 Runs at EL1. Freestanding C11, and **no heap for kernel objects**: threads,
-address spaces, endpoints and interrupt claims live in pools. Pages are
-allocated - the physical page allocator is in the list below, and always was -
-but no kernel object is ever `kmalloc`ed and freed, which is what keeps a slot
-bounded in time, unable to fragment, and refusable cleanly at the syscall.
+processes, address spaces, endpoints, shared regions and interrupt claims live
+in pools. Pages are allocated - the physical page allocator is in the list
+below, and always was - but no kernel object is ever `kmalloc`ed and freed,
+which is what keeps a slot bounded in time, unable to fragment, and refusable
+cleanly at the syscall.
 
 This paragraph said "no dynamic allocator" for two years while the list under
 it named one; the principle was always about kernel *objects*, and it now says
-so. **Pool sizes are not the principle.** Compiled in for a 512 MB QEMU guest,
-they are to be sized once at boot from the RAM that is actually present - a
-4K display and a 16 GB laptop are why - and never grown or freed afterwards.
+so.
+
+**And the pools grow, since 19 September 2026** (`threads.md` step 1b). They
+were numbers compiled in for a 512 MB QEMU guest - 48 threads, 32 processes,
+96 endpoints, 256 regions, 32 capabilities a process - and several had bitten:
+spawning failed at twenty-six, a game's data met a 32 MB cap on a region, a
+PDF viewer ran out of capabilities mid-page. Diego: "We should be able to grow
+as needed on processes and threads just like beos or Linux".
+
+`kernel/pool.c` is the shape, written once and used by every pool: **slabs**
+of objects, pages from `pmm`, made when every slot is taken and **never given
+back**, up to a **ceiling derived from the machine's memory**. That keeps
+everything the principle protects - a claim is a scan or one slab, so bounded;
+nothing is freed, so nothing fragments; running out is still a refusal at the
+syscall; and the ceiling is what stops a process consuming without bound, as
+Linux computes `threads-max` from RAM at boot. On the 512 MB board: 2,048
+threads, 512 processes, 8,232 endpoints, 32,784 regions. On a 16 GB machine,
+65,536 threads.
+
+**No limit is per process any more.** A region may be a gigabyte (or half of
+memory), a process may map as much as the machine has, and its capability
+table grows by pages past the thirty-two inside it. What stops a runaway is
+**the reserve**: `pmm_room_for_user` refuses a program the last thirty-second
+of memory - 8 MB to 256 MB - which the kernel keeps for a thread's stacks, a
+pool's slab, page tables, and starting the process that would end the
+runaway.
 
 Responsibilities:
 
@@ -252,9 +276,17 @@ destroyed endpoint both clear it.
 
 ### 4.3 Capabilities
 
-Each process has an array of endpoints. Syscalls take an index into that array, never a global identifier.
+Each process has a table of them. Syscalls take an index into that table, never a global identifier.
 
 A process cannot name what you did not hand it. There is no global table to enumerate, no path to guess. It is simpler to implement than Unix permissions and gives better isolation.
+
+**A capability names an endpoint, a region of memory or an interrupt line**, and the kind is stored rather than inferred, so one can never be read as another. Each carries the **generation** of the object it names, which is what makes a stale capability - to an endpoint that was destroyed and whose pool slot has since been taken by somebody else's - refuse rather than resolve to a stranger. A capability travelling in a message carries the generation the *sender's* slot held, so one destroyed while the message was in flight arrives already stale.
+
+**The table belongs to the process**, since 19 September 2026 (`threads.md` step 1). It was the thread's, which was the same thing while a process had one thread and the wrong thing as soon as it had two - a capability one thread received would be a number its sibling could not use. A kernel thread, which belongs to no process, keeps a table of its own.
+
+**Thirty-two in the table, and pages beyond them.** An ordinary process holds a handful and allocates nothing; one that needs more takes a page of capabilities at a time, to 52,224. The wall is the machine's rather than a number's: a chunk is a page like any other and the reserve refuses one to a program eating it.
+
+**The lock is on writers only.** Two threads of a process can reach one table at once, so filling or emptying a slot takes the table's lock. Reading does not: a slot's kind is written last when it is filled and first when it is emptied, with release, and read with acquire - so a reader sees a slot finished or empty, never half written. That matters because every message resolves a capability: with the lock on that path an IPC round trip cost ten per cent more, measured (`testing.md` 18.118).
 
 ### 4.4 Namespaces and the protocol
 

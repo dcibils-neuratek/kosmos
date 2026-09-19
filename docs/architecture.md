@@ -190,20 +190,32 @@ comments. The budget counts the first number, and `make size` prints both:
 what it exists to catch is something creeping *in*, not somebody explaining
 what is already there.
 
-There is **no allocator**. Every kernel object lives in a statically declared
-pool with a fixed size:
+There is **no allocator**. Every kernel object lives in a pool, and running
+out is an error at a known limit rather than a failure at an unknown one -
+every one of those numbers is reported by `ps`, because a limit nothing counts
+is a limit nobody can find. That lesson was learned twice here, both times
+painfully.
 
-| pool            | size |
-| --------------- | ---- |
-| threads         |   48 |
-| processes       |   32 |
-| endpoints       |   96 |
-| address spaces  |   32 |
+**The pools grow, and the limits come from the machine** (19 September 2026,
+`threads.md` step 1b, `kernel/pool.c`). They were numbers compiled in for a
+512 MB guest and several had bitten; now a pool is slabs of objects from `pmm`,
+made when every slot is taken, never given back, up to a ceiling derived from
+memory:
 
-Running out is then an error at a known limit rather than a failure at an
-unknown one - and every one of those numbers is reported by `ps`, because a
-limit nothing counts is a limit nobody can find. That lesson was learned
-twice here, both times painfully.
+| pool            | at boot | ceiling, 512 MB | ceiling, 16 GB |
+| --------------- | ------- | --------------- | -------------- |
+| threads         |      64 |           2,048 |         65,536 |
+| processes       |      32 |             512 |         16,384 |
+| address spaces  |      40 | processes and 8 over | the same |
+| endpoints       |      96 |           8,232 |        263,168 |
+| shared regions  |     256 |          32,784 |      1,048,576 |
+
+The sizes went the same way: a region may be a gigabyte rather than 32 MB, a
+process may map what the machine has rather than 48 MB, and a capability table
+holds thirty-two inline and pages beyond them. What stops a runaway is **the
+reserve** - the last thirty-second of memory, which only the kernel's own
+allocations may reach, so there is always room to start the process that ends
+it.
 
 ### The syscall boundary - eighteen calls
 
@@ -581,11 +593,24 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   thread on any of them and it runs there.
 
   The kernel has locks now - the pools, every endpoint, every runqueue, the
-  console - and one rule: **every lock masks interrupts**, because the
-  things worth locking are reached from a syscall and from an interrupt
-  handler alike. A thread has a home and does not migrate, which is what
-  lets IPC release its endpoint before the context switch rather than
-  handing it to the next thread.
+  console, and each process's capability table - and one rule: **every lock
+  masks interrupts**, because the things worth locking are reached from a
+  syscall and from an interrupt handler alike. A thread has a home and does
+  not migrate, which is what lets IPC release its endpoint before the
+  context switch rather than handing it to the next thread.
+
+  **Three things were still unlocked on 19 September** and each was a real
+  race on four cores: a shared region's reference count, changed from two
+  processes at once, which freed a window's pixels while it was drawing into
+  them; an endpoint's slot, claimed by two programs starting together, so
+  two servers shared one endpoint; and a process slot a failed spawn never
+  gave back. `testing.md` 18.111 has them, each with a test and a control -
+  the first panicked with a double free the moment its lock was taken away.
+
+  **And a lock is not free.** The capability table's, taken on every message,
+  cost ten per cent of an IPC round trip; readers go without it now, since a
+  slot's kind is published last with release and read with acquire, so a
+  reader sees a slot finished or empty and never half written.
 
   What is still missing is no longer "one line and one afternoon", which is
   what this said while the drivers were unlocked. They were locked in

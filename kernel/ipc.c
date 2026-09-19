@@ -485,6 +485,19 @@ static unsigned table_slots(const struct captable *c)
  * of the bounds check, since a table's size is no longer a constant anybody
  * can compare against. The lock is held by the caller.
  */
+/*
+ * Slot `index`, or NULL when this table has no such slot - which is the whole
+ * of the bounds check, since a table's size is no longer a constant anybody
+ * can compare against.
+ *
+ * **Safe to call without the lock**, which is what keeps the lock off the
+ * path every message takes (`resolve_as`). The inline slots are in the table
+ * and always there; a chunk's count is read with acquire, against the release
+ * that publishes it in `captable_grow`, so a reader that sees the count sees
+ * the chunk behind it. A stale count only means an index that has just become
+ * valid reads as out of range, which the caller reports as a bad capability -
+ * and a capability nobody has been handed yet cannot be in a message.
+ */
 static struct cap *cap_slot(struct captable *c, cap_t index)
 {
     unsigned n;
@@ -499,11 +512,37 @@ static struct cap *cap_slot(struct captable *c, cap_t index)
 
     n = (unsigned)index - (unsigned)CAPS_INLINE;
 
-    if (n / CAPS_PER_CHUNK >= c->chunks) {
+    if (n / CAPS_PER_CHUNK >= __atomic_load_n(&c->chunks, __ATOMIC_ACQUIRE)) {
         return NULL;
     }
 
     return &c->chunk[n / CAPS_PER_CHUNK][n % CAPS_PER_CHUNK];
+}
+
+/*
+ * **A slot is read without the lock and written under it.**
+ *
+ * Every message resolves a capability, so the lock the table gained on 19
+ * September sat on the hot path: an IPC round trip cost ten per cent more
+ * with it, measured (`testing.md` 18.118). Readers do not need it. A slot's
+ * `kind` is written *last* when it is filled and *first* when it is emptied,
+ * with release; a reader loads it with acquire and looks at nothing else
+ * until it has. So a reader sees a slot either finished or empty, never half
+ * written - and what it then reads is checked against the object's generation
+ * anyway, which is the check that was already there for a slot whose object
+ * was destroyed and replaced.
+ *
+ * Writers still take the lock, because two of them filling the same free slot
+ * would both think they had it.
+ */
+static unsigned char slot_kind(const struct cap *slot)
+{
+    return __atomic_load_n(&slot->kind, __ATOMIC_ACQUIRE);
+}
+
+static void slot_set_kind(struct cap *slot, unsigned char kind)
+{
+    __atomic_store_n(&slot->kind, kind, __ATOMIC_RELEASE);
 }
 
 /*
@@ -566,7 +605,9 @@ static bool captable_grow(struct captable *c)
 
     if (c->chunk != NULL && c->chunks < CAPS_CHUNKS_MAX) {
         c->chunk[c->chunks] = chunk;
-        c->chunks++;
+        /* Published after the chunk it counts, for a reader without the
+         * lock (`cap_slot`). */
+        __atomic_store_n(&c->chunks, c->chunks + 1, __ATOMIC_RELEASE);
         chunk = NULL;
         added = true;
     }
@@ -609,30 +650,23 @@ unsigned captable_count(struct captable *c)
 static struct endpoint *resolve_as(struct thread *t, cap_t index,
                                    unsigned *generation)
 {
-    struct captable *c = t->caps;
-    struct endpoint *ep = NULL;
-    struct cap *slot;
-    unsigned long flags;
-
-    flags = spin_lock(&c->lock);
-    slot = cap_slot(c, index);
+    struct cap *slot = cap_slot(t->caps, index);
 
     /* Empty, or a region of memory, or an interrupt line: not an endpoint. */
-    if (slot != NULL && slot->kind == CAP_ENDPOINT) {
+    if (slot != NULL && slot_kind(slot) == CAP_ENDPOINT) {
         struct endpoint *e = slot->endpoint;
 
         /* Destroyed and the slot reused since, if the generations differ. */
         if (e != NULL && e->in_use && slot->generation == e->generation) {
-            ep = e;
-
             if (generation != NULL) {
                 *generation = slot->generation;
             }
+
+            return e;
         }
     }
 
-    spin_unlock(&c->lock, flags);
-    return ep;
+    return NULL;
 }
 
 static struct endpoint *resolve(struct thread *t, cap_t index)
@@ -640,15 +674,12 @@ static struct endpoint *resolve(struct thread *t, cap_t index)
     return resolve_as(t, index, NULL);
 }
 
-/* The generation `index` holds in `t`'s table, read under its lock. */
+/* The generation `index` holds in `t`'s table. Read as `resolve_as` reads. */
 static unsigned slot_generation(struct thread *t, cap_t index)
 {
-    unsigned long flags = spin_lock(&t->caps->lock);
     struct cap *slot = cap_slot(t->caps, index);
-    unsigned g = (slot != NULL) ? slot->generation : 0;
 
-    spin_unlock(&t->caps->lock, flags);
-    return g;
+    return (slot != NULL && slot_kind(slot) != CAP_NONE) ? slot->generation : 0;
 }
 
 /*
@@ -676,11 +707,11 @@ again:
         struct cap *slot = cap_slot(c, i);
 
         if (slot->kind == CAP_NONE) {
-            slot->kind = CAP_ENDPOINT;
             slot->endpoint = ep;
             slot->memory = NULL;
             slot->irq = NULL;
             slot->generation = generation;
+            slot_set_kind(slot, CAP_ENDPOINT);  /* last: see `slot_kind` */
             spin_unlock(&c->lock, flags);
             return i;
         }
@@ -707,29 +738,22 @@ again:
 static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
                                         unsigned *generation)
 {
-    struct captable *c = t->caps;
-    struct memobj *m = NULL;
-    struct cap *slot;
-    unsigned long flags;
+    struct cap *slot = cap_slot(t->caps, index);
 
-    flags = spin_lock(&c->lock);
-    slot = cap_slot(c, index);
-
-    if (slot != NULL && slot->kind == CAP_MEMORY) {
+    if (slot != NULL && slot_kind(slot) == CAP_MEMORY) {
         struct memobj *r = slot->memory;
 
         /* Freed and the slot reused since, if the generations differ. */
         if (r != NULL && r->in_use && slot->generation == r->generation) {
-            m = r;
-
             if (generation != NULL) {
                 *generation = slot->generation;
             }
+
+            return r;
         }
     }
 
-    spin_unlock(&c->lock, flags);
-    return m;
+    return NULL;
 }
 
 struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
@@ -754,25 +778,18 @@ struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
  */
 struct irq_line *ipc_resolve_irq(struct thread *t, cap_t index)
 {
-    struct captable *c = t->caps;
-    struct irq_line *line = NULL;
-    struct cap *slot;
-    unsigned long flags;
+    struct cap *slot = cap_slot(t->caps, index);
 
-    flags = spin_lock(&c->lock);
-    slot = cap_slot(c, index);
-
-    if (slot != NULL && slot->kind == CAP_IRQ) {
+    if (slot != NULL && slot_kind(slot) == CAP_IRQ) {
         struct irq_line *l = slot->irq;
 
         /* Released and the slot reused since, if the generations differ. */
         if (l != NULL && l->in_use && slot->generation == l->generation) {
-            line = l;
+            return l;
         }
     }
 
-    spin_unlock(&c->lock, flags);
-    return line;
+    return NULL;
 }
 
 cap_t ipc_install_irq(struct thread *t, struct irq_line *line)
@@ -794,11 +811,11 @@ again:
         struct cap *slot = cap_slot(c, i);
 
         if (slot->kind == CAP_NONE) {
-            slot->kind = CAP_IRQ;
             slot->endpoint = NULL;
             slot->memory = NULL;
             slot->irq = line;
             slot->generation = line->generation;
+            slot_set_kind(slot, CAP_IRQ);       /* last: see `slot_kind` */
             spin_unlock(&c->lock, flags);
             return i;
         }
@@ -862,11 +879,11 @@ again:
                 break;
             }
 
-            slot->kind = CAP_MEMORY;
             slot->endpoint = NULL;
             slot->memory = m;
             slot->irq = NULL;
             slot->generation = generation;
+            slot_set_kind(slot, CAP_MEMORY);    /* last: see `slot_kind` */
             spin_unlock(&c->lock, flags);
             return i;
         }
@@ -916,7 +933,9 @@ static struct memobj *empty_slot(struct cap *slot)
         m = slot->memory;
     }
 
-    slot->kind = CAP_NONE;
+    /* Emptied first, so a reader without the lock sees an empty slot rather
+     * than one being taken apart (`slot_kind`). */
+    slot_set_kind(slot, CAP_NONE);
     slot->endpoint = NULL;
     slot->memory = NULL;
     slot->irq = NULL;

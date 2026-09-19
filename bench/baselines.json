@@ -8,12 +8,12 @@
     "value": 355.731
   },
   "context_switch": {
-    "commit": "pending",
+    "commit": "42f0e71",
     "iterations": 200000,
-    "note": "One of the three that touch no Lua. Two changes moved it in opposite directions and the net is what matters: 9.812 -> 6.875 when the FP register file stopped being saved on every switch, then 6.875 -> 8.375 when round robin became a priority queue. Net -14.6% against the eager-FP round-robin number, with priorities and preemption-on-wake gained. The +21.8% half is the cost of indexing eight queues and maintaining an occupancy mask instead of following one head pointer; the obvious version, which scanned the levels, cost twice that and the benchmark caught it the same day.",
+    "note": "One of the three that touch no Lua. Two changes moved it in opposite directions and the net is what matters: 9.812 -> 6.875 when the FP register file stopped being saved on every switch, then 6.875 -> 8.375 when round robin became a priority queue. Net -14.6% against the eager-FP round-robin number, with priorities and preemption-on-wake gained. The +21.8% half is the cost of indexing eight queues and maintaining an occupancy mask instead of following one head pointer; the obvious version, which scanned the levels, cost twice that and the benchmark caught it the same day. **8.375 -> 12.066 (+44%), and it is the SMP programme rather than one change.** Measured on 19 September 2026 by building the benchmark at the commit that recorded 8.375 (802d0be, 5 September) and at the last commit before that evening's work: 8.625 there, 12.064 here - so the growth is everything between, which is per-core runqueues with a lock each, a lock on every pool, the preemption path and the IPI. Nobody re-measured for two weeks because `make test` does not run the benchmarks; `roadmap.md` has finding where it went, by bisecting these two numbers. That evening's own work - capabilities moving to the process - cost 12.064 -> 12.066, which is nothing.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 8.375
+    "value": 12.066
   },
   "exception": {
     "commit": "pending",
@@ -32,12 +32,12 @@
     "value": 78371.0
   },
   "ipc_roundtrip": {
-    "commit": "pending",
+    "commit": "42f0e71",
     "iterations": 100000,
-    "note": "A minimal message: the floor of the IPC path, including the capability lookup. 36.251 -> 30.376 from lazy FP save, then back to 36.438 with the priority scheduler - a round trip is two switches, so it pays the policy twice. Net flat against two days earlier, which is the honest way to read it: lazy FP bought the priority queue rather than the priority queue being free. What was gained for it is a bounded wait for a higher-priority thread, which this benchmark cannot see.",
+    "note": "A minimal message: the floor of the IPC path, including the capability lookup. 36.251 -> 30.376 from lazy FP save, then back to 36.438 with the priority scheduler - a round trip is two switches, so it pays the policy twice. Net flat against two days earlier, which is the honest way to read it: lazy FP bought the priority queue rather than the priority queue being free. What was gained for it is a bounded wait for a higher-priority thread, which this benchmark cannot see. **36.438 -> 62.960 (+73%), of which 1.6% is the capability table moving to the process and the rest is the SMP programme.** Measured on 19 September 2026: 37.629 at the commit that recorded 36.438, 61.944 at the last commit before that evening, 62.960 after it. The evening's 1.6% is one indirection and an acquire load on every resolve, which is what a table shared by a process's threads costs; putting the table's lock on the read path cost 10% instead, which is why readers do not take it (`design.md` 4.3). The 70% before it is per-core runqueues, locks in every pool and endpoint, and the IPI - and `roadmap.md` carries finding out which, by bisecting.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 36.438
+    "value": 62.96
   },
   "serialize": {
     "commit": "pending",

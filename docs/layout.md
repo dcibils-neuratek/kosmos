@@ -16,7 +16,7 @@ halves of this document:
 | `boot/` | the assembly entry points and the linker scripts, and `efi/`: Kosmos's own UEFI loader | the first instructions the machine runs, before there is a C stack - and on a PC, the loader that puts the kernel in memory at all (`boot.md`) |
 | `arch/aarch64/` | **which CPU you are.** Page tables, exception vector, context switch, barriers | it is different on another architecture and is *reimplemented*, not abstracted |
 | `hal/qemu-virt/` | **which peripherals you have.** UART, timer, interrupt controller, framebuffer, keyboard, block device | it is different on another board behind the same interface |
-| `kernel/` | Nebula: threads, address spaces, IPC, capabilities, physical memory | it must run at EL1, or it defines the isolation boundary |
+| `kernel/` | Nebula: threads, address spaces, IPC, capabilities, physical memory, and `pool.c`, where every kernel object lives and how the pools grow | it must run at EL1, or it defines the isolation boundary |
 | `lua/upstream/` | Lua 5.4, exactly as shipped | never edited; changes are patches applied at build time |
 | `lua/kosmos/` | our additions to the interpreter: the serializer, the freestanding header | it is C that belongs to the language rather than to the system |
 | `runtime/libc/` | the freestanding libc: `memcpy`, `malloc`, `snprintf`, `setjmp` | a C program needs it and it has no operating system to ask |

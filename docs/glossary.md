@@ -159,7 +159,7 @@ else.
 
 **Synchronous IPC / rendezvous** — The sender blocks until the receiver is ready. No buffering in the kernel. Simpler and faster than asynchronous, at the cost of code being harder to write. Coroutines solve that.
 
-**Capability** — A permission that is also the only way to name something. A process has an array of endpoints and syscalls take an index. If you were not handed the capability, you cannot even name the resource.
+**Capability** — A permission that is also the only way to name something. A process has a table of them and syscalls take an index into it. If you were not handed the capability, you cannot even name the resource. A capability names an endpoint, a region of shared memory or an interrupt line, and carries the **generation** of the thing it names, so one whose object has been destroyed and replaced refuses rather than resolving to a stranger. The table belongs to the *process*, and every thread of it shares one.
 
 **Endpoint** — The point where a server receives messages. A capability points at an endpoint.
 
@@ -170,6 +170,12 @@ else.
 **SMP** — Symmetric Multiprocessing. Several processors that are equals: same instruction set, same view of memory, any of them able to run any code. It buys *throughput*, not speed — one thread runs no faster on four cores. What it buys this system is that when the machine is busy there is a processor free to answer you.
 
 **Concurrency vs parallelism** — Concurrency is structure: several things in progress, interleaved. Parallelism is execution: several things at the same instant. Kosmos was concurrent for a year before it was parallel, and almost every SMP bug is code that was correct as the first and wrong as the second.
+
+**Pool** — Where a kernel object lives: threads, processes, address spaces, endpoints, shared regions. Not a heap - a slot is claimed by a scan, which is bounded, cannot fragment, and refuses cleanly when there is none. **A pool grows** (`kernel/pool.c`): when every slot is taken it adds a **slab** of them, pages from the page allocator, and never gives a slab back - so an object's address is good for the life of the machine. It stops at a **ceiling** derived from the machine's memory, which is what keeps one program from making the kernel consume without bound.
+
+**Slab** — The unit a pool grows by: a few pages holding some number of objects, made in one go and never freed.
+
+**The reserve** — The last thirty-second of memory (between 8 MB and 256 MB), which only the kernel's own allocations may reach. It replaced every per-process cap on memory: a program may map what the machine has, and this is what leaves room to make a thread's stacks, a pool's slab, page tables, and the process that would end a runaway.
 
 **Spinlock** — The kernel's only lock (`kernel/spinlock.h`). A word one core owns at a time, taken with an atomic and spun on by anyone else. **Every one of them masks interrupts**, because the structures worth locking are reached from a syscall and from an interrupt handler alike, and a lock held with interrupts on is a self-deadlock waiting for a tick.
 

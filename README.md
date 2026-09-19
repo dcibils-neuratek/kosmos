@@ -136,6 +136,7 @@ If something collides with one of these, the feature gets cut, not the principle
 | [docs/beos.md](docs/beos.md) | The BeOS lineage: what is inherited, what is corrected, and where Kosmos departs on purpose. |
 | [docs/gfx.md](docs/gfx.md) | The path pixels take from Lua to the framebuffer, for apps that produce images. |
 | [docs/testing.md](docs/testing.md) | How each layer is measured and how regressions are caught. |
+| [docs/threads.md](docs/threads.md) | Threads in a process: what the kernel assumed, the design, and the steps. |
 | [docs/hal.md](docs/hal.md) | How `arch/` is separated from `hal/`, the targets, and the trap in each piece of hardware. |
 | [docs/roadmap.md](docs/roadmap.md) | What is built, and the wishlist. |
 | [docs/setup.md](docs/setup.md) | Toolchain, build, how to debug without a debugger. |

@@ -870,6 +870,18 @@ processors, and still what follows USB:
    because QEMU's audio passes through the Mac's and says nothing about the
    machine. Then the shortest period the controller and the scheduler
    hold without a gap, and a priority band for the thread that mixes.
+4i-b. **WANTED since 19 September - where the fortnight went: IPC costs 70%
+   more and a context switch 44% more than on 5 September** (`testing.md`
+   18.118). Measured at three commits, so it is attributed rather than
+   suspected: the growth is everything between 5 and 19 September, which is
+   the SMP programme - per-core runqueues with a lock each, a lock on every
+   pool and every endpoint, the preemption path, the IPI. Some of that is
+   the price of four processors being correct and some may be a lock held
+   longer than it needs to be; nobody knows which, and the way to find out
+   is to bisect those two numbers over the fortnight's commits. **And to run
+   `make bench` where it would be seen**: it is in neither `make test` nor
+   `make prepush`, which is why two weeks passed.
+
 4j. **AGREED on 19 September - threads in a process.** Diego: "Why don't we
    add threading? To the kernel!", "Every modern os has multi threading as
    well as multi processing", "Threading will give us a lot of room for

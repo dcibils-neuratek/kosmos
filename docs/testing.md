@@ -6159,3 +6159,33 @@ the kernel's size came out larger than the memory the header reserves. The
 margin had been shrinking for months and this day's work spent the last of
 it. Both headers say `__load_end` now, so the size comes from addresses and
 not from however large a build's debug information happens to be.
+
+## 18.118 The benchmarks, and what two weeks had cost
+
+**`make bench` was two weeks stale and both kernel numbers had grown.** Run
+on 19 September after the pools:
+
+| | 5 September | before that evening | after |
+|---|---|---|---|
+| `context_switch` | 8.375 | 12.064 | 12.066 |
+| `ipc_roundtrip` | 36.438 | 61.944 | 62.960 |
+
+**Attributed by building the benchmark at three commits** rather than
+guessing: at the one that recorded the baselines (which reproduces them
+within 3%, so the harness is consistent), at the last commit before that
+evening, and at its end. So the evening cost **1.6% of an IPC round trip
+and nothing measurable on a context switch**, and the rest - 44% and 70% -
+arrived over the previous fortnight, which is the SMP programme: per-core
+runqueues with a lock each, a lock on every pool and every endpoint, the
+preemption path, the IPI.
+
+**The 1.6% is a capability table that belongs to the process**: one
+indirection and an acquire load on every resolve. It was 10% when the
+table's lock sat on the read path, and that is why readers do not take it -
+a slot's kind is published last with release and read with acquire, so a
+reader sees a slot finished or empty (`design.md` 4.3).
+
+**Nobody noticed for a fortnight because `make test` does not run the
+benchmarks**, and `make prepush` does not either. The baselines carry the
+measurement and the reasoning now, so the next regression is visible again;
+finding where the fortnight's went is `roadmap.md`.
