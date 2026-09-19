@@ -170,6 +170,7 @@ void *memobj_page(const struct memobj *m, size_t i);
 /* Reference counting. A region's pages go back when the last capability to
  * it does. */
 void memobj_ref(struct memobj *m);
+bool memobj_ref_as(struct memobj *m, unsigned generation);
 void memobj_unref(struct memobj *m);
 
 /* How many are in use, for the machine's own report. */

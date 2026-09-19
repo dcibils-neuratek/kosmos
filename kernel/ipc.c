@@ -141,7 +141,13 @@ static struct endpoint endpoints[ENDPOINT_MAX];
  * copy.
  */
 static struct endpoint *resolve(struct thread *t, cap_t index);
-static cap_t install(struct thread *t, struct endpoint *ep);
+static struct endpoint *resolve_as(struct thread *t, cap_t index,
+                                   unsigned *generation);
+static cap_t install(struct thread *t, struct endpoint *ep, unsigned generation);
+static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
+                                        unsigned *generation);
+static cap_t install_memory(struct thread *t, struct memobj *m,
+                            unsigned generation);
 
 static void message_copy(struct message *dst, const struct message *src)
 {
@@ -183,10 +189,13 @@ static void message_deliver(struct thread *to, struct thread *from,
     message_set_cap(dst, -1);
 
     if (sending >= 0) {
-        struct endpoint *ep = resolve(from, sending);
+        unsigned generation = 0;
+        struct endpoint *ep = resolve_as(from, sending, &generation);
 
+        /* With the generation the sender's slot held, not the object's now:
+         * see `install`. */
         if (ep != NULL) {
-            message_set_cap(dst, install(to, ep));
+            message_set_cap(dst, install(to, ep, generation));
         } else {
             /*
              * Or a region of memory, which travels exactly the same way and
@@ -199,10 +208,12 @@ static void message_deliver(struct thread *to, struct thread *from,
              * capability; the application receives its own index for the
              * same pages and can map them. Nobody else can name them.
              */
-            struct memobj *m = ipc_resolve_memory(from, sending);
+            struct memobj *m = resolve_memory_as(from, sending, &generation);
 
             if (m != NULL) {
-                message_set_cap(dst, ipc_install_memory(to, m));
+                cap_t got = install_memory(to, m, generation);
+
+                message_set_cap(dst, got >= 0 ? got : -1);
             }
         }
     }
@@ -418,47 +429,120 @@ unsigned ipc_endpoints_in_use(void)
     return n;
 }
 
-/* The endpoint a capability index names, or NULL if it names nothing. This
- * is the entire access check: a bounds test and a generation match. */
-static struct endpoint *resolve(struct thread *t, cap_t index)
+/*
+ * The table itself (`ipc.h`): made empty, and counted.
+ *
+ * The lock is initialised field by field rather than by `SPINLOCK()`, which
+ * is an initialiser for a declaration and not for a table that lives inside a
+ * process slot or a thread slot and is made again every time one is reused.
+ */
+void captable_init(struct captable *c)
 {
-    struct endpoint *ep;
+    memset(c->slot, 0, sizeof c->slot);
+    c->lock.locked = 0;
+    c->lock.holder = SPIN_NOBODY;
+    c->lock.name = "caps";
+}
 
-    if (index < 0 || index >= CAPS_PER_THREAD) {
+unsigned captable_count(struct captable *c)
+{
+    unsigned long flags = spin_lock(&c->lock);
+    unsigned i, n = 0;
+
+    for (i = 0; i < CAPS_PER_TABLE; i++) {
+        if (c->slot[i].kind != CAP_NONE) {
+            n++;
+        }
+    }
+
+    spin_unlock(&c->lock, flags);
+    return n;
+}
+
+/*
+ * The endpoint a capability index names, or NULL if it names nothing. This
+ * is the entire access check: a bounds test and a generation match.
+ *
+ * `generation`, when asked for, is the one the *slot* holds, which is what a
+ * capability travelling onward must carry (`install`).
+ */
+static struct endpoint *resolve_as(struct thread *t, cap_t index,
+                                   unsigned *generation)
+{
+    struct captable *c = t->caps;
+    struct endpoint *ep = NULL;
+    unsigned long flags;
+
+    if (index < 0 || index >= CAPS_PER_TABLE) {
         return NULL;
     }
 
-    if (t->caps[index].kind != CAP_ENDPOINT) {
-        return NULL;            /* empty, or a region of memory */
+    flags = spin_lock(&c->lock);
+
+    /* Empty, or a region of memory, or an interrupt line: not an endpoint. */
+    if (c->slot[index].kind == CAP_ENDPOINT) {
+        struct endpoint *e = c->slot[index].endpoint;
+
+        /* Destroyed and the slot reused since, if the generations differ. */
+        if (e != NULL && e->in_use && c->slot[index].generation == e->generation) {
+            ep = e;
+
+            if (generation != NULL) {
+                *generation = c->slot[index].generation;
+            }
+        }
     }
 
-    ep = t->caps[index].endpoint;
-
-    if (ep == NULL || !ep->in_use) {
-        return NULL;
-    }
-
-    if (t->caps[index].generation != ep->generation) {
-        return NULL;    /* destroyed and the slot reused since */
-    }
-
+    spin_unlock(&c->lock, flags);
     return ep;
 }
 
-static cap_t install(struct thread *t, struct endpoint *ep)
+static struct endpoint *resolve(struct thread *t, cap_t index)
 {
+    return resolve_as(t, index, NULL);
+}
+
+/* The generation `index` holds in `t`'s table, read under its lock. */
+static unsigned slot_generation(struct thread *t, cap_t index)
+{
+    unsigned long flags = spin_lock(&t->caps->lock);
+    unsigned g = t->caps->slot[index].generation;
+
+    spin_unlock(&t->caps->lock, flags);
+    return g;
+}
+
+/*
+ * An endpoint into a free slot, **with the generation it is known by** - the
+ * one the capability it came from held, not the endpoint's generation now.
+ *
+ * They are the same number unless the endpoint was destroyed while its
+ * capability was on its way: resolved against the sender's table, then torn
+ * down by its owner on another core, and its slot perhaps made a new
+ * endpoint of somebody else's - all before the install. Reading the
+ * endpoint's generation here would give the receiver a capability that
+ * matches the stranger. Carrying the sender's gives it one that is stale on
+ * arrival, which is the right answer for something that no longer exists.
+ */
+static cap_t install(struct thread *t, struct endpoint *ep, unsigned generation)
+{
+    struct captable *c = t->caps;
+    unsigned long flags = spin_lock(&c->lock);
     cap_t i;
 
-    for (i = 0; i < CAPS_PER_THREAD; i++) {
-        if (t->caps[i].kind == CAP_NONE) {
-            t->caps[i].kind = CAP_ENDPOINT;
-            t->caps[i].endpoint = ep;
-            t->caps[i].memory = NULL;
-            t->caps[i].generation = ep->generation;
+    for (i = 0; i < CAPS_PER_TABLE; i++) {
+        if (c->slot[i].kind == CAP_NONE) {
+            c->slot[i].kind = CAP_ENDPOINT;
+            c->slot[i].endpoint = ep;
+            c->slot[i].memory = NULL;
+            c->slot[i].irq = NULL;
+            c->slot[i].generation = generation;
+            spin_unlock(&c->lock, flags);
             return i;
         }
     }
 
+    spin_unlock(&c->lock, flags);
     return IPC_ERR_NO_SPACE;
 }
 
@@ -470,29 +554,39 @@ static cap_t install(struct thread *t, struct endpoint *ep)
  * `resolve` would return something the caller has to test the type of
  * anyway - which is where a capability of one kind gets used as the other.
  */
+static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
+                                        unsigned *generation)
+{
+    struct captable *c = t->caps;
+    struct memobj *m = NULL;
+    unsigned long flags;
+
+    if (index < 0 || index >= CAPS_PER_TABLE) {
+        return NULL;
+    }
+
+    flags = spin_lock(&c->lock);
+
+    if (c->slot[index].kind == CAP_MEMORY) {
+        struct memobj *r = c->slot[index].memory;
+
+        /* Freed and the slot reused since, if the generations differ. */
+        if (r != NULL && r->in_use && c->slot[index].generation == r->generation) {
+            m = r;
+
+            if (generation != NULL) {
+                *generation = c->slot[index].generation;
+            }
+        }
+    }
+
+    spin_unlock(&c->lock, flags);
+    return m;
+}
+
 struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
 {
-    struct memobj *m;
-
-    if (index < 0 || index >= CAPS_PER_THREAD) {
-        return NULL;
-    }
-
-    if (t->caps[index].kind != CAP_MEMORY) {
-        return NULL;
-    }
-
-    m = t->caps[index].memory;
-
-    if (m == NULL || !m->in_use) {
-        return NULL;
-    }
-
-    if (t->caps[index].generation != m->generation) {
-        return NULL;    /* freed and the slot reused since */
-    }
-
-    return m;
+    return resolve_memory_as(t, index, NULL);
 }
 
 /*
@@ -512,91 +606,152 @@ struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
  */
 struct irq_line *ipc_resolve_irq(struct thread *t, cap_t index)
 {
-    struct irq_line *line;
+    struct captable *c = t->caps;
+    struct irq_line *line = NULL;
+    unsigned long flags;
 
-    if (index < 0 || index >= CAPS_PER_THREAD) {
+    if (index < 0 || index >= CAPS_PER_TABLE) {
         return NULL;
     }
 
-    if (t->caps[index].kind != CAP_IRQ) {
-        return NULL;
+    flags = spin_lock(&c->lock);
+
+    if (c->slot[index].kind == CAP_IRQ) {
+        struct irq_line *l = c->slot[index].irq;
+
+        /* Released and the slot reused since, if the generations differ. */
+        if (l != NULL && l->in_use && c->slot[index].generation == l->generation) {
+            line = l;
+        }
     }
 
-    line = t->caps[index].irq;
-
-    if (line == NULL || !line->in_use) {
-        return NULL;
-    }
-
-    if (t->caps[index].generation != line->generation) {
-        return NULL;    /* released and the slot reused since */
-    }
-
+    spin_unlock(&c->lock, flags);
     return line;
 }
 
 cap_t ipc_install_irq(struct thread *t, struct irq_line *line)
 {
+    struct captable *c;
+    unsigned long flags;
     cap_t i;
 
     if (t == NULL || line == NULL) {
         return -1;
     }
 
-    for (i = 0; i < CAPS_PER_THREAD; i++) {
-        if (t->caps[i].kind == CAP_NONE) {
-            t->caps[i].kind = CAP_IRQ;
-            t->caps[i].endpoint = NULL;
-            t->caps[i].memory = NULL;
-            t->caps[i].irq = line;
-            t->caps[i].generation = line->generation;
+    c = t->caps;
+    flags = spin_lock(&c->lock);
+
+    for (i = 0; i < CAPS_PER_TABLE; i++) {
+        if (c->slot[i].kind == CAP_NONE) {
+            c->slot[i].kind = CAP_IRQ;
+            c->slot[i].endpoint = NULL;
+            c->slot[i].memory = NULL;
+            c->slot[i].irq = line;
+            c->slot[i].generation = line->generation;
+            spin_unlock(&c->lock, flags);
             return i;
         }
     }
 
+    spin_unlock(&c->lock, flags);
     return -1;
+}
+
+/*
+ * A region into a free slot, with a reference - **taken only if the region
+ * is still the one `generation` names** (`memobj_ref_as`).
+ *
+ * Every install takes a slot and a reference, and there is deliberately
+ * no dedupe here.
+ *
+ * There was, for about an hour: handing back an existing index for a
+ * region the thread already held, so that a client resending one buffer
+ * in a loop did not spend a slot per call. It returned that index
+ * without taking a reference, which is defensible on its own and is
+ * wrong in company - `SYS_MEM_CREATE` installs and then unrefs on the
+ * stated grounds that `install` took a reference of its own. When the
+ * dedupe fired there, that unref took the count to zero and freed the
+ * region its caller had just created, whose pages then went back to the
+ * allocator while a capability still named them.
+ *
+ * The symptom was a read that reported writing 1811 bytes into a region
+ * that stayed full of zeroes, and only for regions created late - late
+ * being when a pool slot had been recycled and a stale capability could
+ * match it.
+ *
+ * `ipc_cap_drop` is what makes the dedupe unnecessary: a server that
+ * gives a buffer back does not accumulate them, so there is nothing to
+ * deduplicate. An optimisation that trades a correct reference count
+ * for a slot is not one.
+ */
+static cap_t install_memory(struct thread *t, struct memobj *m,
+                            unsigned generation)
+{
+    struct captable *c = t->caps;
+    unsigned long flags = spin_lock(&c->lock);
+    cap_t i;
+
+    for (i = 0; i < CAPS_PER_TABLE; i++) {
+        if (c->slot[i].kind == CAP_NONE) {
+            /* The region pool's lock inside this one: the order is table,
+             * then regions, and nothing takes them the other way round. */
+            if (!memobj_ref_as(m, generation)) {
+                break;          /* freed on the way here: nothing to name */
+            }
+
+            c->slot[i].kind = CAP_MEMORY;
+            c->slot[i].endpoint = NULL;
+            c->slot[i].memory = m;
+            c->slot[i].irq = NULL;
+            c->slot[i].generation = generation;
+            spin_unlock(&c->lock, flags);
+            return i;
+        }
+    }
+
+    spin_unlock(&c->lock, flags);
+    return (i < CAPS_PER_TABLE) ? IPC_ERR_BAD_CAP : IPC_ERR_NO_SPACE;
 }
 
 cap_t ipc_install_memory(struct thread *t, struct memobj *m)
 {
-    cap_t i;
+    return install_memory(t, m, m->generation);
+}
 
-    /*
-     * Every install takes a slot and a reference, and there is deliberately
-     * no dedupe here.
-     *
-     * There was, for about an hour: handing back an existing index for a
-     * region the thread already held, so that a client resending one buffer
-     * in a loop did not spend a slot per call. It returned that index
-     * without taking a reference, which is defensible on its own and is
-     * wrong in company - `SYS_MEM_CREATE` installs and then unrefs on the
-     * stated grounds that `install` took a reference of its own. When the
-     * dedupe fired there, that unref took the count to zero and freed the
-     * region its caller had just created, whose pages then went back to the
-     * allocator while a capability still named them.
-     *
-     * The symptom was a read that reported writing 1811 bytes into a region
-     * that stayed full of zeroes, and only for regions created late - late
-     * being when a pool slot had been recycled and a stale capability could
-     * match it.
-     *
-     * `ipc_cap_drop` is what makes the dedupe unnecessary: a server that
-     * gives a buffer back does not accumulate them, so there is nothing to
-     * deduplicate. An optimisation that trades a correct reference count
-     * for a slot is not one.
-     */
-    for (i = 0; i < CAPS_PER_THREAD; i++) {
-        if (t->caps[i].kind == CAP_NONE) {
-            t->caps[i].kind = CAP_MEMORY;
-            t->caps[i].endpoint = NULL;
-            t->caps[i].memory = m;
-            t->caps[i].generation = m->generation;
-            memobj_ref(m);
-            return i;
-        }
+/*
+ * A slot emptied, and the region it held - if it held one it still counts
+ * in - handed back for the caller to let go of **after** the table's lock is
+ * released: letting go of the last reference frees every page of a region,
+ * which may be nine hundred of them, and a lock that masks interrupts is not
+ * held across that.
+ *
+ * A stale capability is dropped without touching the object. The slot may
+ * name a region that was freed and whose pool entry has since been taken by
+ * another one. Unreffing then decrements a stranger, and the stranger's owner
+ * watches its pages go back to the allocator while it still holds a
+ * capability to them. The generation is exactly the check that tells the two
+ * apart, and it is why the field is there. Letting go afterwards is safe for
+ * the same reason: this slot's reference is still counted until then, so the
+ * region cannot be freed by anybody else in between.
+ */
+static struct memobj *empty_slot(struct cap *slot)
+{
+    struct memobj *m = NULL;
+
+    if (slot->kind == CAP_MEMORY
+        && slot->memory != NULL
+        && slot->generation == slot->memory->generation) {
+        m = slot->memory;
     }
 
-    return IPC_ERR_NO_SPACE;
+    slot->kind = CAP_NONE;
+    slot->endpoint = NULL;
+    slot->memory = NULL;
+    slot->irq = NULL;
+    slot->generation = 0;
+
+    return m;
 }
 
 /*
@@ -615,67 +770,54 @@ cap_t ipc_install_memory(struct thread *t, struct memobj *m)
  */
 int ipc_cap_drop(struct thread *t, cap_t index)
 {
-    if (t == NULL || index < 0 || index >= CAPS_PER_THREAD) {
+    struct captable *c;
+    struct memobj *m;
+    unsigned long flags;
+
+    if (t == NULL || index < 0 || index >= CAPS_PER_TABLE) {
         return IPC_ERR_BAD_CAP;
     }
 
-    if (t->caps[index].kind == CAP_NONE) {
+    c = t->caps;
+    flags = spin_lock(&c->lock);
+
+    if (c->slot[index].kind == CAP_NONE) {
+        spin_unlock(&c->lock, flags);
         return IPC_ERR_BAD_CAP;
     }
 
-    /*
-     * A stale capability is dropped without touching the object.
-     *
-     * The slot may name a region that was freed and whose pool entry has
-     * since been taken by another one. Unreffing then decrements a stranger,
-     * and the stranger's owner watches its pages go back to the allocator
-     * while it still holds a capability to them. The generation is exactly
-     * the check that tells the two apart, and it is why the field is there.
-     */
-    if (t->caps[index].kind == CAP_MEMORY
-        && t->caps[index].memory != NULL
-        && t->caps[index].generation == t->caps[index].memory->generation) {
-        memobj_unref(t->caps[index].memory);
-    }
+    m = empty_slot(&c->slot[index]);
+    spin_unlock(&c->lock, flags);
 
-    t->caps[index].kind = CAP_NONE;
-    t->caps[index].endpoint = NULL;
-    t->caps[index].memory = NULL;
-    t->caps[index].irq = NULL;
-    t->caps[index].generation = 0;
-
+    memobj_unref(m);
     return 0;
 }
 
 /*
- * Everything a thread holds, released.
+ * Everything a table holds, released: a process's, when it ends.
  *
  * Only memory needs this. An endpoint capability going stale is harmless -
  * the generation check catches it - but a region's pages are only freed
- * when the last capability to it is dropped, so a thread that ends without
+ * when the last capability to it is dropped, so a process that ends without
  * dropping its own leaks them for the life of the machine.
+ *
+ * Emptied under the lock and let go of after it, a slot's worth at a time,
+ * for the reason `empty_slot` gives.
  */
-void ipc_caps_release(struct thread *t)
+void ipc_caps_release(struct captable *c)
 {
     cap_t i;
 
-    if (t == NULL) {
+    if (c == NULL) {
         return;
     }
 
-    for (i = 0; i < CAPS_PER_THREAD; i++) {
-        /* Generation-checked, for the reason `ipc_cap_drop` gives: a stale
-         * slot names a pool entry, not the region that used to be in it. */
-        if (t->caps[i].kind == CAP_MEMORY
-            && t->caps[i].memory != NULL
-            && t->caps[i].generation == t->caps[i].memory->generation) {
-            memobj_unref(t->caps[i].memory);
-        }
+    for (i = 0; i < CAPS_PER_TABLE; i++) {
+        unsigned long flags = spin_lock(&c->lock);
+        struct memobj *m = empty_slot(&c->slot[i]);
 
-        t->caps[i].kind = CAP_NONE;
-        t->caps[i].endpoint = NULL;
-        t->caps[i].memory = NULL;
-        t->caps[i].irq = NULL;
+        spin_unlock(&c->lock, flags);
+        memobj_unref(m);
     }
 }
 
@@ -718,7 +860,7 @@ cap_t ipc_endpoint_create(void)
         ep->awaiting_reply = NULL;
         spin_unlock(&ep->lock, flags);
 
-        index = install(self, ep);
+        index = install(self, ep, ep->generation);
 
         if (index < 0) {
             flags = spin_lock(&ep->lock);
@@ -735,7 +877,8 @@ cap_t ipc_endpoint_create(void)
 
 cap_t ipc_cap_grant(struct thread *to, cap_t from_index)
 {
-    struct endpoint *ep = resolve(thread_current(), from_index);
+    unsigned generation = 0;
+    struct endpoint *ep = resolve_as(thread_current(), from_index, &generation);
 
     if (ep == NULL) {
         return IPC_ERR_BAD_CAP;
@@ -744,7 +887,7 @@ cap_t ipc_cap_grant(struct thread *to, cap_t from_index)
     /* The index the recipient gets is unrelated to the one the granter used.
      * An index is meaningful only inside the table it came from, which is
      * what stops one from being guessed or forged elsewhere. */
-    return install(to, ep);
+    return install(to, ep, generation);
 }
 
 /* Wakes a thread out of an IPC wait with a result. */
@@ -808,6 +951,7 @@ int ipc_endpoint_destroy(cap_t index)
     struct thread *self = thread_current();
     struct endpoint *ep = resolve(self, index);
     unsigned long epflags;
+    unsigned held;
 
     if (ep == NULL) {
         return IPC_ERR_BAD_CAP;
@@ -821,7 +965,9 @@ int ipc_endpoint_destroy(cap_t index)
      * another core and taken it down - and the slot may already be a new
      * endpoint belonging to somebody else, which destroying would end.
      */
-    if (!ep->in_use || self->caps[index].generation != ep->generation) {
+    held = slot_generation(self, index);
+
+    if (!ep->in_use || held != ep->generation) {
         spin_unlock(&ep->lock, epflags);
         return IPC_ERR_BAD_CAP;
     }
@@ -829,10 +975,24 @@ int ipc_endpoint_destroy(cap_t index)
     teardown(ep);
     spin_unlock(&ep->lock, epflags);
 
-    /* The granter's own capability is cleared; the others go stale on their
-     * next use, which is what the generation check is for. */
-    self->caps[index].kind = CAP_NONE;
-    self->caps[index].endpoint = NULL;
+    /*
+     * The granter's own capability is cleared; the others go stale on their
+     * next use, which is what the generation check is for. Only if the slot
+     * still holds *this* capability: another thread of the process may have
+     * dropped the index and filled it with something else since the check.
+     * An endpoint's slot holds no region, so there is nothing to let go of.
+     */
+    {
+        unsigned long cflags = spin_lock(&self->caps->lock);
+        struct cap *slot = &self->caps->slot[index];
+
+        if (slot->kind == CAP_ENDPOINT && slot->endpoint == ep
+            && slot->generation == held) {
+            (void)empty_slot(slot);
+        }
+
+        spin_unlock(&self->caps->lock, cflags);
+    }
 
     return IPC_OK;
 }
@@ -1248,7 +1408,7 @@ struct endpoint *ipc_endpoint_lock(struct thread *t, cap_t index,
 
     /* Looked at again under the lock, as `ipc_endpoint_destroy` looks: the
      * endpoint may have been taken down since `resolve` read it. */
-    if (!ep->in_use || t->caps[index].generation != ep->generation) {
+    if (!ep->in_use || slot_generation(t, index) != ep->generation) {
         spin_unlock(&ep->lock, *flags);
         return NULL;
     }

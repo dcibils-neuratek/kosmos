@@ -5987,3 +5987,38 @@ are ordered by the same lock and nothing new was needed.
   once, and passed on x86 with one round - QEMU interleaves an x86 guest's
   cores on this Mac rather than running them at once, so a window a few
   instructions wide seldom opens. With sixteen rounds it fails on both.
+
+## 18.112 Capabilities belong to the process
+
+**`threads.md` step 1.** The capability table was the thread's - a comment
+said it would move to the process "at M4", and it never did - which is the
+same thing while a process has one thread and the wrong thing once it has
+two. It is `struct captable` now, with a lock of its own: a process has one
+and every thread of it points at it; a kernel thread, which has no process,
+points at one of its own. Taken after an endpoint's lock and before the
+region pool's, and never held across freeing pages - a slot is emptied under
+it and its region let go of after.
+
+**And a capability in flight carries its generation.** A capability sent in
+a message was resolved against the sender's table and installed in the
+receiver's with the object's generation *at install time*. An endpoint
+destroyed on another core in between, and its slot made somebody else's,
+would have reached the receiver as a working capability to the stranger. It
+arrives stale now; a region is referenced only if it is still the one the
+sender named (`memobj_ref_as`).
+
+- The whole gate, 29 suites, is the check that nothing behaves differently
+  with one thread a process: green, 4:42.
+- **`mem: a reference is taken only for the region it names`**, both
+  boards: the right generation is referenced, a wrong one refused without
+  touching the count, a freed region refused. Control, watched: with the
+  generation not compared, it fails.
+- **A test that could not fail, found and repaired.** The check that a
+  capability held across a server's restart is refused faked one by
+  setting a spare slot's endpoint and an old generation, and not its kind -
+  so the slot stayed empty and the call was refused for being empty. Its
+  kind is set now; with the generation check switched off, the kernel
+  suite panics at that test, where before it would have passed.
+- The boot thread and each core's idle thread are adopted rather than
+  created, so they are given their tables where they are adopted: with the
+  table a pointer, a slot nobody set was a data abort at the fifteenth test.

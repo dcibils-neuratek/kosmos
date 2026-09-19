@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "spinlock.h"
+
 struct thread;
 struct memobj;
 struct process;
@@ -95,6 +97,7 @@ struct message {
  */
 typedef int cap_t;
 
+
 /* The two ends of the +1 encoding, so nothing else has to know about it. */
 static inline void message_set_cap(struct message *m, cap_t c)
 {
@@ -125,7 +128,7 @@ static inline cap_t message_get_cap(const struct message *m)
  * lookup.
  */
 /*
- * How many capabilities a thread may hold at once.
+ * How many capabilities a table holds: a process's, or a kernel thread's.
  *
  * Sixteen, until a graphical application turned out to need more than that
  * on its own. A PDF viewer holds its console, its `/dev/wm` endpoint, the
@@ -139,18 +142,77 @@ static inline cap_t message_get_cap(const struct message *m)
  * number was chosen for was a shell and three servers.
  *
  * Sixty-four was tried first and panicked the benchmark image with a data
- * abort. A slot is 32 bytes, so that was 1.5 KB more per thread and 73 KB
- * more `.bss` across the pool - and `state.md` already records what `.bss`
- * growth does here: the thread stacks and their guard pages have to stay
- * inside the first 2 MB of RAM, which is the only part mapped a page at a
- * time. Doubling is enough for what applications actually hold and leaves
- * that alone.
+ * abort, because `.bss` growth then pushed the thread stacks' guard pages out
+ * of the first 2 MB of RAM, the only part mapped a page at a time. **That
+ * wall is gone** - `mmu_init` maps a page at a time as far as the image
+ * reaches, "and grows by itself the next time the image does" - so the
+ * number is the limit it says it is and not a layout accident.
  *
  * It is still a *limit*, and deliberately: a process that leaks capabilities
  * should hit a wall rather than grow without bound. `SYS_CAP_DROP` is how a
  * program stays under it.
  */
-#define CAPS_PER_THREAD     32
+#define CAPS_PER_TABLE      32
+
+struct endpoint;
+struct memobj;
+struct irq_line;
+
+#define CAP_NONE      0
+#define CAP_ENDPOINT  1
+#define CAP_MEMORY    2
+
+/*
+ * A hardware interrupt line, claimed by a driver. `kernel/irq.h` is the
+ * argument; what matters here is that it is a capability like the other two,
+ * so a driver names a line by an index into its own table and cannot reach
+ * one it was not given.
+ */
+#define CAP_IRQ       3
+
+/*
+ * **A capability table, and whose it is.**
+ *
+ * A capability names one of three kinds of thing: an endpoint, a region of
+ * memory two processes share, or an interrupt line. The kind is stored
+ * rather than inferred, so a slot holding one can never be read as another -
+ * which is the mistake a union without a tag invites, and which would be a
+ * process handing out a pointer to somebody's pixels as a place to send
+ * messages. The generation is checked for all three, against the same
+ * hazard: a slot whose object was destroyed and replaced.
+ *
+ * **The table is the process's**, which is where `design.md` always put it,
+ * since 19 September (`threads.md` step 1). It was the thread's - a comment
+ * said it would move "at M4", and it never did - which is the same thing
+ * while a process has one thread and the wrong thing as soon as it has two:
+ * a capability one thread received would be a number its sibling could not
+ * use. So a process's threads all point at their process's table, and a
+ * kernel thread, which belongs to no process, points at one of its own.
+ *
+ * **With a lock**, because two threads on two cores can now reach one table
+ * at once. Before, the only writer from outside was a delivery, under the
+ * endpoint's lock, and the thread itself needed none. Taken after an
+ * endpoint's lock and before the region pool's, never the other way round,
+ * and never held across freeing pages.
+ */
+struct cap {
+    unsigned char    kind;      /* CAP_NONE, CAP_ENDPOINT, CAP_MEMORY, CAP_IRQ */
+    struct endpoint *endpoint;
+    struct memobj   *memory;
+    struct irq_line *irq;
+    unsigned         generation;
+};
+
+struct captable {
+    struct spinlock lock;
+    struct cap      slot[CAPS_PER_TABLE];
+};
+
+/* An empty table with its lock ready: for a process, or a kernel thread. */
+void captable_init(struct captable *c);
+
+/* How many slots hold something, for `sysinfo`. */
+unsigned captable_count(struct captable *c);
 
 /*
  * How many endpoints exist. Here rather than only in ipc.c because
@@ -193,7 +255,7 @@ cap_t ipc_install_memory(struct thread *t, struct memobj *m);
 /* One capability back. Dropping is not destroying: see ipc.c. */
 int  ipc_cap_drop(struct thread *t, cap_t index);
 
-void ipc_caps_release(struct thread *t);
+void ipc_caps_release(struct captable *c);
 
 /*
  * A new endpoint, with a capability to it installed in the calling thread.

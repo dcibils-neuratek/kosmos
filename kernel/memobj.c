@@ -250,6 +250,33 @@ void memobj_ref(struct memobj *m)
     spin_unlock(&objects_lock, flags);
 }
 
+/*
+ * A reference taken only if `m` is still the region `generation` names -
+ * for a capability travelling from one table to another, which was resolved
+ * against the first and may have been freed, and its slot made a stranger's,
+ * before it reaches the second (`install_memory` in `ipc.c`). False, and no
+ * reference, when it has gone.
+ */
+bool memobj_ref_as(struct memobj *m, unsigned generation)
+{
+    unsigned long flags;
+    bool taken = false;
+
+    if (m == NULL) {
+        return false;
+    }
+
+    flags = spin_lock(&objects_lock);
+
+    if (m->in_use && m->refs > 0 && m->generation == generation) {
+        m->refs++;
+        taken = true;
+    }
+
+    spin_unlock(&objects_lock, flags);
+    return taken;
+}
+
 void memobj_unref(struct memobj *m)
 {
     unsigned long flags;

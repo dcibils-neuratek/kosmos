@@ -144,8 +144,8 @@ its index. **The kernel makes its stack** - pages from `pmm`, mapped in a
 slot of its own above 8 GB with an unmapped gap below it, so a thread that
 overflows faults rather than writing into its neighbour. Its home is the
 least busy core, as every thread's is today. It comes from the same thread
-pool as every other thread, which is sized once at boot; **a process may
-have 16 at first**, a number chosen to be raised rather than to be right.
+pool as every other thread - **with no number of its own**: a process may
+have as many threads as the machine can hold (step 1b).
 
 `SYS_THREAD_EXIT(code)` ends the caller. `SYS_THREAD_WAIT(index)` waits for
 a sibling to end and returns its code.
@@ -250,9 +250,25 @@ it, and the steps that cannot fail loudly come before the one that can.
    reading for step 1**: an endpoint's slot was claimed without a lock, so
    two programs starting on two cores could share one; claimed under the
    endpoint's own lock now.
-1. **Capabilities move from the thread to the process**, with a lock. One
-   thread still, so nothing should behave differently, and the whole gate
-   is the check.
+1. **DONE on 19 September - capabilities move from the thread to the
+   process**, with a lock (`testing.md` 18.112). One thread still, so
+   nothing should behave differently, and the whole gate was the check. A
+   capability in flight now carries its generation, so one destroyed on the
+   way arrives stale.
+1b. **Pools that grow, and no limit that is not the machine's.** Every pool
+   the kernel keeps - processes, threads, endpoints, regions - grows by a
+   slab of slots when it is full and never gives a slab back, up to a
+   ceiling derived from RAM; and the limits that were numbers become the
+   machine's: a region's size, what a process may map, and a process's
+   capability table, which grows the same way. Measured today, a thread slot
+   is 4.2 KB and a process slot 1.4 KB, whether used or not; the thread pool
+   is 48, one per process and sixteen over, which threads would exhaust at
+   once - so this comes before the second thread does. **And a reserve**: the
+   last slots of each pool are kept for starting a process, so a program
+   that makes threads until the ceiling cannot stop anybody opening
+   Processes to end it. Tests: a pool driven past its old size and back, a
+   process with more threads than the old pool had slots, a region past 32
+   MB, and a runaway that still leaves room to start one more process.
 2. **The thread's own register** saved and restored, and `errno` moved into
    the block it points at. One thread still.
 3. **A second thread, on the same core.** `SYS_THREAD_CREATE`, `EXIT` and
@@ -278,13 +294,17 @@ it, and the steps that cannot fail loudly come before the one that can.
 ## Decisions that are Diego's
 
 **Taken on 19 September, as proposed** - Diego, having read this page:
-"Great let's do it". So a process ends when its first thread returns; 16
-threads a process to start; stacks made by the kernel with a guard; and
-step 0 first. The four as they were put:
+"Great let's do it". So a process ends when its first thread returns; stacks
+made by the kernel with a guard; and step 0 first. **Except the second**:
+"Let's make sure we don't have caps on thread count, process count or else
+like we had in the past", and "We should be able to grow as needed on
+processes and threads just like beos or Linux" - so there is no number of
+threads a process, and the pools grow (step 1b). The four as they were put:
 
 1. **When a process ends**: when its first thread returns, as proposed, or
    when its last thread does.
-2. **Sixteen threads a process** to start with.
+2. ~~**Sixteen threads a process** to start with.~~ No: no limit a
+   process, and pools that grow.
 3. **Stacks made by the kernel**, with a guard, as proposed - or memory the
    program maps and hands in, which is more flexible and loses the guard
    unless the program leaves one.

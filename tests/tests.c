@@ -2924,8 +2924,8 @@ static bool test_a_stale_capability_fails(void)
         bool stale_rejected;
         cap_t i;
 
-        for (i = 0; i < CAPS_PER_THREAD; i++) {
-            if (self->caps[i].endpoint == NULL) {
+        for (i = 0; i < CAPS_PER_TABLE; i++) {
+            if (self->caps->slot[i].kind == CAP_NONE) {
                 spare = i;
                 break;
             }
@@ -2935,15 +2935,23 @@ static bool test_a_stale_capability_fails(void)
             return false;
         }
 
-        /* The same endpoint, named with the generation it had before the
+        /*
+         * The same endpoint, named with the generation it had before the
          * destroy. That is precisely what a capability held across a
-         * server restart looks like. */
-        self->caps[spare].endpoint = self->caps[second].endpoint;
-        self->caps[spare].generation = self->caps[second].generation - 1;
+         * server restart looks like.
+         *
+         * **With its kind**, which this did not set until 19 September: the
+         * slot stayed empty, so the call was refused for being empty and the
+         * generation was never looked at - a check that could not fail.
+         */
+        self->caps->slot[spare].kind = CAP_ENDPOINT;
+        self->caps->slot[spare].endpoint = self->caps->slot[second].endpoint;
+        self->caps->slot[spare].generation = self->caps->slot[second].generation - 1;
 
         stale_rejected = ipc_call(spare, &msg, &reply) == IPC_ERR_BAD_CAP;
 
-        self->caps[spare].endpoint = NULL;
+        self->caps->slot[spare].kind = CAP_NONE;
+        self->caps->slot[spare].endpoint = NULL;
 
         return stale_rejected && ipc_endpoint_destroy(second) == IPC_OK;
     }
@@ -2955,7 +2963,7 @@ static bool test_a_capability_index_out_of_range_fails(void)
     struct message reply = { 0 };
 
     return ipc_call(-1, &msg, &reply) == IPC_ERR_BAD_CAP
-        && ipc_call(CAPS_PER_THREAD, &msg, &reply) == IPC_ERR_BAD_CAP
+        && ipc_call(CAPS_PER_TABLE, &msg, &reply) == IPC_ERR_BAD_CAP
         && ipc_call(0, &msg, &reply) == IPC_ERR_BAD_CAP;   /* nothing installed */
 }
 
@@ -3055,7 +3063,8 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
     /*
      * The helper needs its *own* index for this endpoint.
      *
-     * Capabilities are per-thread - `resolve` reads `t->caps[index]` - so
+     * A kernel thread's capabilities are its own - `resolve` reads
+     * `t->caps->slot[index]`, and a kernel thread's `caps` is its own table - so
      * handing a created thread the creator's number gets `IPC_ERR_BAD_CAP`
      * and a test that fails for a reason that has nothing to do with what
      * it is testing. Which is how the first version of this failed.
@@ -4988,7 +4997,7 @@ static void make_endpoints(unsigned me)
         cap_t c = ipc_endpoint_create();
 
         made_cap[me][i] = c;
-        made[me][i] = (c >= 0) ? self->caps[c].endpoint : NULL;
+        made[me][i] = (c >= 0) ? self->caps->slot[c].endpoint : NULL;
     }
 }
 
@@ -5109,6 +5118,39 @@ static bool test_endpoints_made_at_once_are_each_their_own(void)
     }
 
     return all_made && distinct;
+}
+
+/*
+ * **A reference is taken only for the region it names** (`threads.md` step
+ * 1).
+ *
+ * A capability travelling in a message is resolved against the sender's
+ * table and installed in the receiver's, and the region may be freed - its
+ * slot perhaps made a stranger's - in between. `memobj_ref_as` takes the
+ * reference only if the region still has the generation the sender's slot
+ * held: the right one is taken, a wrong one is refused without touching the
+ * count, and a freed region is refused.
+ */
+static bool test_a_reference_is_taken_only_for_the_region_it_names(void)
+{
+    struct memobj *m = memobj_create(1, false);
+    unsigned g;
+    bool right, wrong, gone;
+
+    if (m == NULL) {
+        return false;
+    }
+
+    g = m->generation;
+    right = memobj_ref_as(m, g) && m->refs == 2;
+    wrong = !memobj_ref_as(m, g + 1) && m->refs == 2;
+
+    memobj_unref(m);
+    memobj_unref(m);            /* the last: the region is freed */
+
+    gone = !memobj_ref_as(m, g);
+
+    return right && wrong && gone;
 }
 
 /*
@@ -7682,6 +7724,7 @@ static const struct test tests[] = {
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region's count holds on every core", test_a_regions_count_holds_on_every_core },
+    { "mem: a reference is taken only for the region it names", test_a_reference_is_taken_only_for_the_region_it_names },
     { "proc: a refused image gives its slot back", test_a_refused_image_gives_its_slot_back },
     { "ipc: endpoints made at once are each their own", test_endpoints_made_at_once_are_each_their_own },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },

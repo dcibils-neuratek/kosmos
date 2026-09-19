@@ -1104,8 +1104,8 @@ void kmain(void)
     boot_fact_begin();
     kputu(ENDPOINT_MAX);
     kputs(" endpoints, ");
-    kputu(CAPS_PER_THREAD);
-    kputs(" capabilities a thread, generation-numbered against reuse");
+    kputu(CAPS_PER_TABLE);
+    kputs(" capabilities a process, generation-numbered against reuse");
     boot_fact_end();
 
     process_init();

@@ -563,8 +563,10 @@ processors, and still what follows USB:
    - user address space reused, since a 4 GB window that is never reused
      holds about 120 full 4K surfaces in a session;
    - the x86 RAM ceiling of about 768 MB lifted, with a higher-half kernel;
-   - the kernel's pools sized from RAM once at boot, which is the principle
-     about kernel objects kept and its compiled-in numbers dropped;
+   - the kernel's pools growing as they are needed, to a ceiling derived
+     from RAM - the principle about kernel objects kept and its compiled-in
+     numbers dropped; decided 19 September and planned as `threads.md` step
+     1b;
    - the flat per-process cap replaced by growth, a reserve for what the
      desktop cannot lose, and reclaiming from the largest offender.
 

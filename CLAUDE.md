@@ -204,9 +204,25 @@ is recorded rather than quietly made.
 
 **The sizes of the pools are not part of the principle.** They were compiled
 in because the first machine was a 512 MB QEMU guest, and every one of them is
-a number that a 16 GB laptop, or a 4K screen, outgrows. They are to be carved
-from physical memory once, at boot, in proportion to what is there - and never
-grown or freed afterwards, which is what keeps every property above.
+a number that a 16 GB laptop, or a 4K screen, outgrows - and several have bitten:
+spawning failed at twenty-six processes, Quake met a 32 MB cap on a region, the
+Super Nintendo a 48 MB cap on what a process maps, and a PDF viewer ran out of
+capabilities at sixteen.
+
+**So the pools grow, as Linux's and Haiku's do, and are never freed.** Diego,
+19 September 2026: "Let's make sure we don't have caps on thread count, process
+count or else like we had in the past", and "We should be able to grow as needed
+on processes and threads just like beos or Linux". This said they were to be
+carved once at boot and never grown, and that was one way to keep the
+properties above, not the only one. A pool grows by a slab of slots - pages
+from `pmm` - when it is full, and never gives a slab back, so every property
+holds: claiming a slot is a scan or one slab, which is bounded; nothing is freed,
+so nothing fragments; running out is still a refusal at the syscall; and the
+ceiling a pool grows to is derived from the machine's memory, which is the one
+thing that keeps a process from making the kernel consume without bound. That
+is Linux's shape too: `threads-max` is computed from RAM at boot. **No limit
+is per process**: one program may have as many threads as the machine can hold.
+`docs/threads.md` has the steps.
 
 **The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. No networking, no graphics, no filesystem, and no Lua inside it.
 

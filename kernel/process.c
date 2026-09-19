@@ -123,7 +123,7 @@ unsigned process_table(struct proc_info *out, unsigned max)
         out[n].pages     = (uint32_t)p->mapped_pages;
         out[n].held      = (uint32_t)(p->mapped_pages + p->image_page_count
                                       + USER_HEAP_PAGES + USER_STACK_PAGES);
-        out[n].caps      = thread_cap_count(p->thread);
+        out[n].caps      = captable_count(&p->caps);
         out[n].priority  = (p->thread != NULL)
                            ? thread_effective_priority(p->thread)
                            : 0u;
@@ -291,6 +291,8 @@ struct process *process_create(const char *name, const void *image,
     if (p == NULL) {
         return NULL;                        /* no slot, so none to give back */
     }
+
+    captable_init(&p->caps);
 
     if (pages == 0) {
         return give_back(p);
@@ -466,6 +468,9 @@ struct process *process_create(const char *name, const void *image,
     if (p->thread == NULL) {
         goto fail;
     }
+
+    /* Its capabilities are the process's, from before it first runs. */
+    p->thread->caps = &p->caps;
 
     return p;
 
@@ -1270,7 +1275,7 @@ void process_exit(struct process *p, int code)
      * about to stop existing - so a process that exits holding one would
      * leak it for the life of the machine.
      */
-    ipc_caps_release(thread_current());
+    ipc_caps_release(&p->caps);
 
     release_memory(p);
 

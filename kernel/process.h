@@ -7,6 +7,7 @@
  * whose macros do not compile on their own is a header that works only in
  * the order it happens to be included. */
 #include "mmu.h"
+#include "ipc.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -299,6 +300,12 @@ struct process {
 
     struct addrspace *space;
     struct thread    *thread;
+
+    /*
+     * Its capabilities, which every thread of it shares - `threads.md` step
+     * 1. They were its thread's until 19 September.
+     */
+    struct captable   caps;
 
     /* The physical pages behind each region, so they can be returned when
      * the process dies. */

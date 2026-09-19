@@ -63,18 +63,6 @@
 struct memobj;
 struct irq_line;
 
-#define CAP_NONE      0
-#define CAP_ENDPOINT  1
-#define CAP_MEMORY    2
-
-/*
- * A hardware interrupt line, claimed by a driver. `kernel/irq.h` is the
- * argument; what matters here is that it is a capability like the other two,
- * so a driver names a line by an index into its own table and cannot reach
- * one it was not given.
- */
-#define CAP_IRQ       3
-
 #define THREAD_MAX          48
 #define THREAD_NAME_MAX     16
 
@@ -295,28 +283,17 @@ struct thread {
 
     /*
      * Capabilities, by index. A thread cannot name what it was not handed:
-     * there is no global table and no identifier to guess. At M4 this moves
-     * to the process, which is where design.md puts it.
-     */
-    /*
-     * A capability names one of two kinds of thing now: an endpoint, or a
-     * region of memory two processes share. The kind is stored rather than
-     * inferred, so a slot holding one can never be read as the other -
-     * which is the mistake a union without a tag invites and which would be
-     * a process handing out a pointer to somebody's pixels as a place to
-     * send messages.
+     * there is no global table and no identifier to guess.
      *
-     * The generation is checked for both, against the same hazard: a slot
-     * whose object was destroyed and replaced.
+     * `caps` is the table this thread's indices are read in: its process's,
+     * shared by every thread of the process (`ipc.h`, `threads.md` step 1),
+     * or - for a kernel thread, which has no process - `own_caps`. Every
+     * thread carries one of its own so that a kernel thread has somewhere to
+     * keep capabilities without a pool of tables to run out of; a process's
+     * threads leave theirs empty.
      */
-    struct {
-        unsigned char    kind;      /* CAP_NONE, CAP_ENDPOINT, CAP_MEMORY,
-                                     * CAP_IRQ */
-        struct endpoint *endpoint;
-        struct memobj   *memory;
-        struct irq_line *irq;
-        unsigned         generation;
-    } caps[CAPS_PER_THREAD];
+    struct captable *caps;
+    struct captable  own_caps;
 
     /*
      * The process this thread is running, or NULL in a kernel thread.
@@ -540,9 +517,6 @@ void thread_place_across(unsigned cores);
  */
 void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy);
 
-/* How many capabilities a thread holds. What a process may reach is exactly
- * this many things, and no others. */
-unsigned thread_cap_count(const struct thread *t);
 
 /*
  * Performs the switch thread_tick asked for, if it asked for one.

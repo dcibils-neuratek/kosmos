@@ -592,6 +592,16 @@ void thread_init(void)
     t->stack = NULL;
     t->exception_stack = NULL;
 
+    /*
+     * A table of its own, as every kernel thread has - and set here because
+     * an adopted thread never passes through `thread_create`, which is where
+     * the others get theirs. While the table was an array inside the thread,
+     * a zeroed slot was an empty table and nothing had to be said; a
+     * pointer that nobody set is a data abort on the first capability.
+     */
+    captable_init(&t->own_caps);
+    t->caps = &t->own_caps;
+
     /* The boot thread is core zero's, and becomes its idle thread. */
     t->sched.cpu = 0;
 
@@ -630,6 +640,8 @@ void thread_init(void)
         idle->space = NULL;
         idle->stack = NULL;
         idle->exception_stack = NULL;
+        captable_init(&idle->own_caps);
+        idle->caps = &idle->own_caps;
 
         /* Its own core's, by definition: an idle thread is never enqueued
          * anywhere, but the field should say what is true rather than
@@ -707,7 +719,8 @@ struct thread *thread_create_suspended(const char *name,
      * the one thing capabilities exist to prevent. It would also be a
      * particularly quiet bug, since everything would appear to work.
      */
-    memset(t->caps, 0, sizeof(t->caps));
+    captable_init(&t->own_caps);
+    t->caps = &t->own_caps;
     t->process = NULL;
     t->space = NULL;
     memset(&t->ipc, 0, sizeof(t->ipc));
@@ -1029,22 +1042,6 @@ void thread_set_priority(struct thread *t, unsigned priority)
     refresh_effective(t);
 }
 
-unsigned thread_cap_count(const struct thread *t)
-{
-    unsigned i, n = 0;
-
-    if (t == NULL) {
-        return 0;
-    }
-
-    for (i = 0; i < CAPS_PER_THREAD; i++) {
-        if (t->caps[i].kind != CAP_NONE) {
-            n++;
-        }
-    }
-
-    return n;
-}
 
 /*
  * How many processors new threads are spread across.
