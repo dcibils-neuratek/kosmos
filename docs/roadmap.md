@@ -742,6 +742,19 @@ processors, and still what follows USB:
       `com.apple.gamecontroller.driver.XboxGamepad` holds the pad's gamepad
       interface, so QEMU takes it only when run as root - as anyone else the
       pad refuses SET_CONFIGURATION, which is what the first try found.
+4d. **AGREED on 19 September, next after stick 0.10.87 - a `/home` of 512 MB
+   or more on the stick, with Diego's own files in it.** Diego: "from now on
+   we need to make the drive image at least 512mb as we are adding more
+   content to it", "and i will be adding more images, videos, etc to test in
+   kosmos". The stick's `/home` has been a partition of its own since 0.10.62
+   (`USB_HOME=partition`), read by the USB driver rather than carried by the
+   loader, so the 32 MB cap - which came from the loader carrying the disk
+   into memory - no longer has a reason on that layout. **But no bigger one
+   has booted on the ThinkPad**, and the table in `boot.md` decides. So: kfs
+   at 512 MB checked under QEMU first, then a stick of its own, 0.10.88, whose
+   first boot on the ThinkPad is the proof - with 0.10.87 to fall back to.
+   Diego's images and videos come from a folder on the Mac that the image
+   build copies into `/home`, and never from the repository.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
