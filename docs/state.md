@@ -18,6 +18,46 @@ Last updated: 2026-09-19
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## The night of 19 September: threads, and every limit from the machine
+
+**Eleven commits, not pushed** (`origin/main` is at 0.10.91, `7b93d8b`).
+The gate is green - 29 suites, 5:08 - and `make bench` is green again.
+
+**`docs/threads.md`** was written first, as `smp.md` was: what the kernel
+assumes about one thread per process, read from the tree with a line for
+each claim, the design, ten steps, and four decisions. Diego read it and
+said "Great let's do it", and the steps since:
+
+- **Step 0, three things wrong on four cores today** (`testing.md` 18.111):
+  a shared region's reference count unlocked - the control panics with a
+  double free - an endpoint's slot claimed by two programs at once, and a
+  process slot a failed spawn never gave back.
+- **Step 1, capabilities belong to the process** (18.112), with a lock, and
+  a capability in flight carries its generation so one destroyed on the way
+  arrives stale. A test that could not fail was repaired on the way.
+- **Step 1b, every limit from the machine** (18.113-18.117), after Diego:
+  "we don't have caps on thread count, process count or else", "grow as
+  needed ... just like beos or Linux". `kernel/pool.c` written once and used
+  by every pool: threads 48 -> 2,048 (65,536 in 16 GB), processes and
+  address spaces 32 -> 512, endpoints 96 -> 8,232, regions 256 -> 32,784, a
+  region 32 MB -> a gigabyte, a process's mappings 48 MB -> the machine, its
+  capability table 32 -> 52,224. **The reserve** replaces every per-process
+  cap: a program may not take the last thirty-second of memory, so there is
+  always room to start the process that ends a runaway.
+- **The x86 image had four kilobytes left**: the multiboot header said "load
+  to the end of the file" and the file is the ELF, debug information
+  included. Both headers state `__load_end` now.
+- **`make bench`, two weeks stale** (18.118): IPC +73% and a switch +44%
+  against 5 September. Attributed by building at three commits - the
+  evening cost **1.6%** of a round trip and nothing on a switch; the rest is
+  the SMP programme, and finding where is roadmap 4i-b. The capability
+  table's lock came off the read path for 10% of it.
+- **The architecture is written down**: `design.md` 4.1 and 4.3,
+  `architecture.md`, `smp.md`, `glossary.md`, `layout.md`, `README`.
+
+**Next**: threads step 2 (the per-thread register and `errno`), then a
+second thread in a process; `docs/gamekit.md`; the video player.
+
 ## The evening of 19 September
 
 **Pushed as 0.10.91** (`7b93d8b`), `make prepush` green: 29 suites in 5:13,
