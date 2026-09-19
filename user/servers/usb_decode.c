@@ -84,6 +84,16 @@
 #define SUBCLASS_XBOX360    0x5Du
 #define PROTOCOL_XBOX360    0x01u
 
+/*
+ * And an Xbox One or Series pad's: FFh, 47h, D0h - the numbers Linux's
+ * `xpad` matches, 71 and 208. The same class serves the pad's audio on
+ * another interface, whose endpoints are isochronous; the pad is the one
+ * with an interrupt IN *and* an interrupt OUT, both needed, since the host
+ * has to send it a power-on message before it reports anything.
+ */
+#define SUBCLASS_XBOXONE    0x47u
+#define PROTOCOL_XBOXONE    0xD0u
+
 #define CLASS_HID           3u
 #define SUBCLASS_BOOT       1u
 #define PROTOCOL_MOUSE      2u
@@ -115,7 +125,7 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                        struct usb_config *out)
 {
     unsigned total, at;
-    bool hid = false, in_mouse = false, in_pad = false;
+    bool hid = false, in_mouse = false, in_pad = false, in_one = false;
     bool storage = false, in_stick = false, stick_found = false;
     unsigned last_bulk = 0;             /* 1 IN, 2 OUT: the endpoint just read */
 
@@ -129,6 +139,9 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
     out->extra = 0;
     out->interval = 0;
     out->report_length = 0;
+    out->out_endpoint = 0;
+    out->out_packet = 0;
+    out->out_interval = 0;
     out->storage_subclass = 0;
     out->storage_protocol = 0;
     forget_stick(out);
@@ -186,6 +199,17 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
             if (in_pad) {
                 out->interface = d[IFACE_NUMBER];
                 out->report_length = 0;
+            }
+
+            in_one = d[IFACE_CLASS] == CLASS_VENDOR && d[IFACE_ALTERNATE] == 0
+                  && d[IFACE_SUBCLASS] == SUBCLASS_XBOXONE
+                  && d[IFACE_PROTOCOL] == PROTOCOL_XBOXONE;
+
+            /* Each such interface starts with neither endpoint found. */
+            if (in_one) {
+                out->interface = d[IFACE_NUMBER];
+                out->endpoint = 0;
+                out->out_endpoint = 0;
             }
 
             /*
@@ -265,6 +289,31 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
             }
 
             last_bulk = 0;
+        } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH && in_one) {
+            unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;
+            uint8_t number = (uint8_t)(d[EP_ADDRESS] & EP_NUMBER);
+
+            /* The first interrupt endpoint each way; with both, the pad. */
+            if ((d[EP_ATTRIBUTES] & EP_TYPE) == EP_INTERRUPT && number != 0
+                && (packet & 0x7FFu) != 0) {
+                if ((d[EP_ADDRESS] & EP_IN) != 0 && out->endpoint == 0) {
+                    out->endpoint = number;
+                    out->packet = (uint16_t)(packet & 0x7FFu);
+                    out->extra = (uint8_t)((packet >> 11) & 0x3u);
+                    out->interval = d[EP_INTERVAL];
+                } else if ((d[EP_ADDRESS] & EP_IN) == 0
+                           && out->out_endpoint == 0) {
+                    out->out_endpoint = number;
+                    out->out_packet = (uint16_t)(packet & 0x7FFu);
+                    out->out_interval = d[EP_INTERVAL];
+                }
+            }
+
+            if (out->endpoint != 0 && out->out_endpoint != 0) {
+                out->kind = USB_CONFIG_XBOXONE;
+                forget_stick(out);
+                return;
+            }
         } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH
                    && (in_mouse || in_pad)) {
             unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;

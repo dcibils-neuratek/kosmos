@@ -27,6 +27,8 @@ enum usb_config_kind {
     USB_CONFIG_BULK_ONLY,       /* SCSI over Bulk-Only, a bulk IN and a bulk OUT */
     USB_CONFIG_XBOX360,         /* an Xbox 360 controller's interface, FFh/5Dh/01h,
                                    with an interrupt IN endpoint */
+    USB_CONFIG_XBOXONE,         /* an Xbox One or Series controller's, FFh/47h/D0h,
+                                   with an interrupt IN and an interrupt OUT */
 };
 
 struct usb_config {
@@ -48,6 +50,12 @@ struct usb_config {
     /* Its HID descriptor's length for the Report descriptor (HID 1.11
      * 6.2.1, wDescriptorLength), which is how much to ask for; 0 if none. */
     uint16_t report_length;
+
+    /* An Xbox One pad's interrupt OUT, which it has to be spoken to on
+     * before it reports anything (`pad_decode.h`); all zero otherwise. */
+    uint8_t  out_endpoint;
+    uint16_t out_packet;
+    uint8_t  out_interval;
 
     /* The first mass storage interface's subclass and protocol, for
      * STORAGE_OTHER's line. */

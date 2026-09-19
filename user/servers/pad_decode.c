@@ -103,3 +103,141 @@ uint32_t pad_pressed(const struct pad_state *s, uint32_t before)
 
     return on;
 }
+
+/*--------------------------------------------------------------------------
+ * Xbox One and Series: GIP.
+ *------------------------------------------------------------------------*/
+
+#define GIP_CMD_ACK          0x01u
+#define GIP_CMD_ANNOUNCE     0x02u
+#define GIP_CMD_VIRTUAL_KEY  0x07u
+#define GIP_CMD_INPUT        0x20u
+#define GIP_OPT_ACK          0x10u
+#define GIP_OPT_INTERNAL     0x20u
+
+static const int8_t one_byte4[8] = {
+    -1, -1, PAD_START, PAD_SELECT,
+    PAD_SOUTH, PAD_EAST, PAD_WEST, PAD_NORTH,     /* A, B, X, Y */
+};
+
+static const int8_t one_byte5[8] = {
+    PAD_UP, PAD_DOWN, PAD_LEFT, PAD_RIGHT,
+    PAD_TL, PAD_TR, PAD_THUMBL, PAD_THUMBR,
+};
+
+enum pad_xone_kind pad_decode_xone(const uint8_t *m, unsigned length,
+                                   struct pad_state *s, bool *ack,
+                                   uint8_t *seq)
+{
+    *ack = false;
+
+    if (m == 0 || length < 4u) {
+        return PAD_XONE_OTHER;
+    }
+
+    *seq = m[2];
+
+    if (m[0] == GIP_CMD_ANNOUNCE) {
+        return PAD_XONE_ANNOUNCE;
+    }
+
+    if (m[0] == GIP_CMD_VIRTUAL_KEY && length >= 5u) {
+        *ack = m[1] == (GIP_OPT_ACK | GIP_OPT_INTERNAL);
+
+        if ((m[4] & 0x03u) != 0) {
+            s->buttons |= 1u << PAD_MODE;
+        } else {
+            s->buttons &= ~(1u << PAD_MODE);
+        }
+
+        return PAD_XONE_GUIDE;
+    }
+
+    if (m[0] == GIP_CMD_INPUT && length >= 18u) {
+        uint32_t buttons = s->buttons & (1u << PAD_MODE);
+        unsigned bit;
+
+        for (bit = 0; bit < 8u; bit++) {
+            if ((m[4] & (1u << bit)) != 0 && one_byte4[bit] >= 0) {
+                buttons |= 1u << one_byte4[bit];
+            }
+
+            if ((m[5] & (1u << bit)) != 0) {
+                buttons |= 1u << one_byte5[bit];
+            }
+        }
+
+        s->buttons = buttons;
+
+        /* Ten bits, 0 to 1023, kept as the 360's eight so one threshold
+         * serves both. */
+        s->lt = (uint8_t)((uint16_t)word_at(m, 6) >> 2);
+        s->rt = (uint8_t)((uint16_t)word_at(m, 8) >> 2);
+        s->lx = word_at(m, 10);
+        s->ly = word_at(m, 12);
+        s->rx = word_at(m, 14);
+        s->ry = word_at(m, 16);
+        return PAD_XONE_INPUT;
+    }
+
+    return PAD_XONE_OTHER;
+}
+
+/*
+ * `xpad`'s `xboxone_init_packets`, the ones for Microsoft's pads and every
+ * pad: a vendor and product of 0 is every pad. The sequence byte, the
+ * third, is written over with the count.
+ */
+static const struct {
+    uint16_t vendor, product;
+    uint8_t  length;
+    uint8_t  bytes[8];
+} one_init[PAD_XONE_STEPS] = {
+    { 0x0000, 0x0000, 5, { 0x05, 0x20, 0x00, 0x01, 0x00 } },       /* power on */
+    { 0x045e, 0x02ea, 5, { 0x05, 0x20, 0x00, 0x0f, 0x06 } },       /* One S */
+    { 0x045e, 0x0b00, 5, { 0x05, 0x20, 0x00, 0x0f, 0x06 } },       /* Elite 2 */
+    { 0x045e, 0x0b00, 6, { 0x4d, 0x10, 0x01, 0x02, 0x07, 0x00 } }, /* its input */
+    { 0x0000, 0x0000, 7, { 0x0a, 0x20, 0x00, 0x03, 0x00, 0x01, 0x14 } }, /* light */
+    { 0x0000, 0x0000, 6, { 0x06, 0x20, 0x00, 0x02, 0x01, 0x00 } }, /* auth done */
+};
+
+unsigned pad_xone_init(uint16_t vendor, uint16_t product, unsigned step,
+                       uint8_t seq, uint8_t *out)
+{
+    unsigned i;
+
+    if (step >= PAD_XONE_STEPS) {
+        return 0;
+    }
+
+    if (one_init[step].vendor != 0
+        && (one_init[step].vendor != vendor
+            || one_init[step].product != product)) {
+        return 0;
+    }
+
+    for (i = 0; i < one_init[step].length; i++) {
+        out[i] = one_init[step].bytes[i];
+    }
+
+    out[2] = seq;
+    return one_init[step].length;
+}
+
+/* `xpadone_ack_mode_report`'s thirteen bytes, with the pad's sequence. */
+unsigned pad_xone_ack(uint8_t seq, uint8_t *out)
+{
+    static const uint8_t ack[13] = {
+        GIP_CMD_ACK, GIP_OPT_INTERNAL, 0x00, 0x09,
+        0x00, GIP_CMD_VIRTUAL_KEY, GIP_OPT_INTERNAL, 0x02,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+    unsigned i;
+
+    for (i = 0; i < sizeof(ack); i++) {
+        out[i] = ack[i];
+    }
+
+    out[2] = seq;
+    return sizeof(ack);
+}

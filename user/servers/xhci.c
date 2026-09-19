@@ -223,16 +223,19 @@
 #define DEVICES_MAX         8u
 #define NAME_MAX_CHARS      48u         /* of a product string, kept */
 #define PORT_FAILED         0xFFu       /* a port whose device was not named */
-#define PAGES_A_DEVICE      6u
+#define PAGES_A_DEVICE      8u
 #define PAGE_DCBAA          0u
 #define PAGE_COMMANDS       1u
 #define PAGE_EVENTS         2u
 #define PAGE_ERST           3u
 #define PAGE_DEVICES        4u
-#define DEVICE_PAGE_RING    4u          /* of a device's own six: a mouse's */
+#define DEVICE_PAGE_RING    4u          /* of a device's own eight: a mouse's */
 #define DEVICE_PAGE_REPORT  5u          /* ...ring, and its reports */
 #define DEVICE_PAGE_OUT     4u          /* ...or a stick's bulk OUT ring */
 #define DEVICE_PAGE_IN      5u          /* ...and its bulk IN ring */
+#define DEVICE_PAGE_PAD_OUT 6u          /* an Xbox One pad's OUT ring */
+#define DEVICE_PAGE_PAD_SAY 7u          /* ...and what is sent on it */
+#define PAD_SAY_SLOT        64u         /* bytes a message, a page of them */
 #define SCRATCH_OFFSET      64u         /* the array, after the table's entry */
 #define SCRATCHPADS_MAX     ((PAGE - SCRATCH_OFFSET) / 8u)
 
@@ -343,6 +346,25 @@ struct mouse {
     bool          pad;
     uint32_t      pressed;
     unsigned      said;
+
+    /*
+     * **An Xbox One or Series pad** (`xone`) is spoken to as well: its
+     * interrupt OUT, a ring and a page of 64-byte messages taken in turn,
+     * the sequence number of the next one, and the state its messages build
+     * up - the Xbox button arrives in a message of its own. `announced` is
+     * whether the start-up has been sent again after the pad said it had
+     * arrived, which some pads wait for.
+     */
+    bool          xone;
+    bool          announced;
+    unsigned      out_dci;
+    struct ring   out_ring;
+    uint8_t      *say;
+    uint64_t      say_bus;
+    unsigned      say_next;
+    uint8_t       seq;
+    uint16_t      vendor, product;
+    struct pad_state state;
 };
 
 /*
@@ -1866,6 +1888,42 @@ static bool read_report(const struct mouse *m, unsigned got,
  * ThinkPad to show which button arrived as which, and not a line for every
  * press of a game.
  */
+/*
+ * A message to an Xbox One pad: into the next 64-byte slot of its page, a
+ * Normal TRB for it on the OUT ring, and the OUT endpoint's doorbell. Not
+ * waited for - the pad's answer is in what it sends next - and a slot is
+ * reused only after sixty-three more, far past the one or two in flight.
+ */
+static void pad_say(struct controller *c, unsigned slot, const uint8_t *bytes,
+                    unsigned length)
+{
+    struct mouse *m = &c->mouse[slot];
+    unsigned at = (m->say_next++ % (PAGE / PAD_SAY_SLOT)) * PAD_SAY_SLOT;
+
+    memcpy(m->say + at, bytes, length);
+    (void)ring_push(&m->out_ring, (uint32_t)(m->say_bus + at),
+                    (uint32_t)((m->say_bus + at) >> 32), length,
+                    TRB_TYPE(TRB_NORMAL) | TRB_IOC);
+    mmio_write32(c->doorbells + 4u * slot, m->out_dci);
+}
+
+/* What the host says first (`pad_xone_init`), each with the next sequence. */
+static void pad_start(struct controller *c, unsigned slot)
+{
+    struct mouse *m = &c->mouse[slot];
+    uint8_t bytes[16];
+    unsigned step, length;
+
+    for (step = 0; step < PAD_XONE_STEPS; step++) {
+        length = pad_xone_init(m->vendor, m->product, step, m->seq, bytes);
+
+        if (length != 0) {
+            pad_say(c, slot, bytes, length);
+            m->seq++;
+        }
+    }
+}
+
 static void pad_keys(struct controller *c, struct mouse *m, uint32_t now)
 {
     uint32_t changed = now ^ m->pressed;
@@ -1898,11 +1956,33 @@ static void pad_keys(struct controller *c, struct mouse *m, uint32_t now)
     }
 }
 
-static void pad_report(struct controller *c, struct mouse *m, unsigned got)
+static void pad_report(struct controller *c, unsigned slot, unsigned got)
 {
+    struct mouse *m = &c->mouse[slot];
     struct pad_state s;
 
-    if (!pad_decode_x360(m->report, got, &s)) {
+    if (m->xone) {
+        uint8_t bytes[16], seq = 0;
+        bool ack = false;
+        enum pad_xone_kind kind = pad_decode_xone(m->report, got, &m->state,
+                                                  &ack, &seq);
+
+        if (ack) {
+            pad_say(c, slot, bytes, pad_xone_ack(seq, bytes));
+        }
+
+        if (kind == PAD_XONE_ANNOUNCE && !m->announced) {
+            m->announced = true;
+            pad_start(c, slot);
+            return;
+        }
+
+        if (kind != PAD_XONE_INPUT && kind != PAD_XONE_GUIDE) {
+            return;
+        }
+
+        s = m->state;
+    } else if (!pad_decode_x360(m->report, got, &s)) {
         return;                         /* its lights' status, not input */
     }
 
@@ -1988,7 +2068,7 @@ static void take_report(struct controller *c, const uint32_t *event)
 
     if (m->pad) {
         if (left < m->length) {
-            pad_report(c, m, m->length - left);
+            pad_report(c, slot, m->length - left);
         }
 
         ask_for_report(c, slot);
@@ -2970,7 +3050,8 @@ static void use_device(struct controller *c, struct device *d,
     }
 
     if ((found.kind != USB_CONFIG_BOOT_MOUSE
-         && found.kind != USB_CONFIG_XBOX360) || d->speed >= 4u) {
+         && found.kind != USB_CONFIG_XBOX360
+         && found.kind != USB_CONFIG_XBOXONE) || d->speed >= 4u) {
         about(line, c);
         say_text(line, " port ");
         say_dec(line, d->port);
@@ -2990,8 +3071,9 @@ static void use_device(struct controller *c, struct device *d,
             say_text(line, ", protocol ");
             say_dec(line, found.hid_protocol);
             say_text(line, "); not read");
-        } else if (found.kind == USB_CONFIG_XBOX360) {
-            say_text(line, ": a SuperSpeed Xbox 360 controller, which this "
+        } else if (found.kind == USB_CONFIG_XBOX360
+                   || found.kind == USB_CONFIG_XBOXONE) {
+            say_text(line, ": a SuperSpeed Xbox controller, which this "
                            "does not read yet");
         } else {
             say_text(line, ": a SuperSpeed boot mouse, which this does not "
@@ -3041,6 +3123,39 @@ static void use_device(struct controller *c, struct device *d,
     ep[3] = (uint32_t)(m->ring.bus >> 32);
     ep[4] = (payload << 16) | m->length;
 
+    /*
+     * **An Xbox One pad's OUT as well**, in the same Configure Endpoint: its
+     * context index is twice its number (4.5.1), its type 3, Interrupt OUT
+     * (Table 6-9), and the slot's Context Entries the larger of the two. Its
+     * ring and the page its messages are written from are two more of the
+     * device's pages.
+     */
+    if (found.kind == USB_CONFIG_XBOXONE) {
+        unsigned out_dci = 2u * found.out_endpoint;
+        uint32_t *out_ep = context(c, d->input, out_dci + 1u);
+
+        m->out_dci = out_dci;
+        m->say = (uint8_t *)(c->mem + (page + DEVICE_PAGE_PAD_SAY) * PAGE);
+        m->say_bus = c->bus + (page + DEVICE_PAGE_PAD_SAY) * PAGE;
+        ring_start(&m->out_ring,
+                   (uint32_t *)(c->mem + (page + DEVICE_PAGE_PAD_OUT) * PAGE),
+                   c->bus + (page + DEVICE_PAGE_PAD_OUT) * PAGE);
+
+        icc[1] |= 1u << out_dci;
+
+        if (out_dci > dci) {
+            slot[0] = (slot[0] & ~(0x1Fu << 27)) | (out_dci << 27);
+        }
+
+        memset(out_ep, 0, c->context);
+        out_ep[0] = interval_for(d->speed, found.out_interval) << 16;
+        out_ep[1] = ((uint32_t)found.out_packet << 16) | (3u << 3)
+                  | (3u << 1);
+        out_ep[2] = (uint32_t)m->out_ring.bus | 1u;
+        out_ep[3] = (uint32_t)(m->out_ring.bus >> 32);
+        out_ep[4] = ((uint32_t)found.out_packet << 16) | 16u;
+    }
+
     if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
                  TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
         say_failure(c, d->port, "Configure Endpoint",
@@ -3060,6 +3175,34 @@ static void use_device(struct controller *c, struct device *d,
      * once it is configured. The OUT endpoint beside the IN is for its lights
      * and its rumble, and neither is asked for.
      */
+    /*
+     * **An Xbox One or Series pad says nothing until spoken to**: reading
+     * starts, then the start-up is sent (`pad_start`) - power on, the light,
+     * authenticated - and it is sent again if the pad announces itself
+     * after, which some pads wait for (`pad_report`).
+     */
+    if (found.kind == USB_CONFIG_XBOXONE) {
+        m->pad = true;
+        m->xone = true;
+        m->vendor = c->vendor[d->slot];
+        m->product = c->product[d->slot];
+        m->reading = true;
+        ask_for_report(c, d->slot);
+        pad_start(c, d->slot);
+
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": an Xbox One or Series controller, read from "
+                       "endpoint ");
+        say_dec(line, found.endpoint);
+        say_text(line, " and started on endpoint ");
+        say_dec(line, found.out_endpoint);
+        say_text(line, "; its buttons are keys");
+        say_send(console, line);
+        return;
+    }
+
     if (found.kind == USB_CONFIG_XBOX360) {
         m->pad = true;
         m->reading = true;

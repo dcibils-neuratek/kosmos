@@ -76,6 +76,56 @@ bool pad_decode_x360(const uint8_t *report, unsigned length,
  */
 uint32_t pad_pressed(const struct pad_state *s, uint32_t before);
 
+/*
+ * **An Xbox One or Series pad speaks GIP**, Microsoft's Gaming Input
+ * Protocol, and says nothing until spoken to. Every message starts with a
+ * command, a byte of options, a sequence number and a payload length; the
+ * layouts below are Linux's `xpad` driver's, which drives these pads daily,
+ * and agree with Microsoft's published [MS-GIPUSB].
+ *
+ *   20h  input: byte 4 Menu (2), View (3), A B X Y (4-7); byte 5 the D-pad
+ *        up, down, left, right (0-3), LB, RB, the stick clicks (4-7);
+ *        triggers 10 bits at 6 and 8; sticks at 10 to 17, up positive
+ *   07h  the Xbox button, bits 0-1 of byte 4 - and options 30h, which asks
+ *        for an acknowledgement
+ *   02h  the pad announcing itself, which some pads wait for an answer to
+ *
+ * So the host sends first: power on, the light on, and "authenticated",
+ * with two more for the One S and the Elite 2 (`pad_xone_init`); and it
+ * answers the Xbox button (`pad_xone_ack`). The sequence number counts from
+ * 0, one a message, as `xpad`'s `odata_serial` does.
+ */
+enum pad_xone_kind {
+    PAD_XONE_OTHER,             /* a message this does not act on */
+    PAD_XONE_INPUT,             /* 20h: the buttons, triggers and sticks */
+    PAD_XONE_GUIDE,             /* 07h: the Xbox button */
+    PAD_XONE_ANNOUNCE,          /* 02h: the pad has arrived */
+};
+
+/*
+ * One message into `state`: an input report replaces everything but the Xbox
+ * button, which only its own message changes. `*ack` is set when the pad
+ * asked for an acknowledgement, and `*seq` is its sequence number.
+ */
+enum pad_xone_kind pad_decode_xone(const uint8_t *message, unsigned length,
+                                   struct pad_state *state, bool *ack,
+                                   uint8_t *seq);
+
+/*
+ * The host's `step`th start-up message for a pad of this vendor and
+ * product, with `seq` as its sequence number, into `out` (16 bytes); its
+ * length, or 0 when this step has nothing for this pad. `PAD_XONE_STEPS`
+ * steps in all.
+ */
+#define PAD_XONE_STEPS 6u
+
+unsigned pad_xone_init(uint16_t vendor, uint16_t product, unsigned step,
+                       uint8_t seq, uint8_t *out);
+
+/* The acknowledgement of the Xbox button's message `seq`, into `out` (16
+ * bytes); its length. */
+unsigned pad_xone_ack(uint8_t seq, uint8_t *out);
+
 #define PAD_STICK_PRESS    16384        /* half-way, of 32767 */
 #define PAD_STICK_RELEASE  12288        /* and let go inside three eighths */
 #define PAD_TRIGGER_PRESS  128u

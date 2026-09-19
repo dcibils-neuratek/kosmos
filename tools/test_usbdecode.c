@@ -113,6 +113,29 @@ static const uint8_t xbox360[] = {
 
 _Static_assert(sizeof(xbox360) == 0x5c, "the 360's wTotalLength is its size");
 
+/*
+ * An Xbox One or Series pad, laid out from Microsoft's [MS-GIPUSB] rather
+ * than a dump: interface 0, FFh/47h/D0h, with two 64-byte interrupt
+ * endpoints every 4 ms - the OUT listed first - then the audio interface,
+ * the same class, whose alternate 1 has isochronous endpoints, and a third
+ * with none. 73 bytes.
+ */
+static const uint8_t xboxone[] = {
+    0x09, 0x02, 0x49, 0x00, 0x03, 0x01, 0x00, 0xa0, 0xfa,
+    0x09, 0x04, 0x00, 0x00, 0x02, 0xff, 0x47, 0xd0, 0x00,
+    0x07, 0x05, 0x02, 0x03, 0x40, 0x00, 0x04,
+    0x07, 0x05, 0x82, 0x03, 0x40, 0x00, 0x04,
+    0x09, 0x04, 0x01, 0x00, 0x00, 0xff, 0x47, 0xd0, 0x00,
+    0x09, 0x04, 0x01, 0x01, 0x02, 0xff, 0x47, 0xd0, 0x00,
+    0x07, 0x05, 0x03, 0x01, 0xe4, 0x00, 0x01,
+    0x07, 0x05, 0x83, 0x01, 0x40, 0x00, 0x01,
+    0x09, 0x04, 0x02, 0x00, 0x00, 0xff, 0x47, 0xd0, 0x00,
+};
+
+_Static_assert(sizeof(xboxone) == 0x49, "the One's wTotalLength is its size");
+
+#define AT_ONE_OUT      20              /* interface 0's OUT's address */
+
 #define AT_PAD_PROTOCOL 16              /* interface 0's bInterfaceProtocol */
 #define AT_PAD_IN       37              /* its IN endpoint's address */
 
@@ -334,6 +357,27 @@ int main(void)
         got = decode(copy, sizeof(copy));
         check(got.kind != USB_CONFIG_XBOX360,
               "a pad with only OUT endpoints was taken for one to read");
+    }
+
+    /* 3c. An Xbox One pad: both interrupt endpoints, whichever comes first,
+     *     and not the audio interface's isochronous ones. */
+    {
+        uint8_t copy[sizeof(xboxone)];
+
+        got = decode(xboxone, sizeof(xboxone));
+        check(got.kind == USB_CONFIG_XBOXONE && got.interface == 0
+              && got.endpoint == 2 && got.packet == 64 && got.interval == 4
+              && got.out_endpoint == 2 && got.out_packet == 64
+              && got.out_interval == 4,
+              "an Xbox One pad was not interface 0 with IN 2 and OUT 2, 64 "
+              "bytes every 4");
+
+        memcpy(copy, xboxone, sizeof(copy));
+        copy[AT_ONE_OUT] = 0x81;            /* its OUT made a second IN */
+        got = decode(copy, sizeof(copy));
+        check(got.kind != USB_CONFIG_XBOXONE,
+              "an Xbox One pad with no interrupt OUT was taken for one - the "
+              "host could never tell it to start");
     }
 
     /* 4. A stick: SCSI over Bulk-Only, bulk IN 1 and OUT 2, 512 bytes. */

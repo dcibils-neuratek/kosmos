@@ -140,16 +140,148 @@ int main(void)
     check(!pad_decode_x360(r, 19, &s), "a report of 19 bytes was read");
     check(!pad_decode_x360(0, 20, &s), "no report at all was read");
 
+    /*
+     * **An Xbox One or Series pad**, GIP (`pad_decode.h`): each button of
+     * both bytes, the triggers' ten bits, the sticks, the Xbox button kept
+     * across input reports, what asks for an acknowledgement, and what the
+     * host says first.
+     */
+    {
+        static const struct { uint8_t b4, b5; int bit; const char *what; } one[] = {
+            { 0x04, 0, PAD_START,  "Menu, byte 4 bit 2" },
+            { 0x08, 0, PAD_SELECT, "View, byte 4 bit 3" },
+            { 0x10, 0, PAD_SOUTH,  "A, byte 4 bit 4" },
+            { 0x20, 0, PAD_EAST,   "B, byte 4 bit 5" },
+            { 0x40, 0, PAD_WEST,   "X, byte 4 bit 6" },
+            { 0x80, 0, PAD_NORTH,  "Y, byte 4 bit 7" },
+            { 0, 0x01, PAD_UP,     "D-pad up, byte 5 bit 0" },
+            { 0, 0x02, PAD_DOWN,   "D-pad down, byte 5 bit 1" },
+            { 0, 0x04, PAD_LEFT,   "D-pad left, byte 5 bit 2" },
+            { 0, 0x08, PAD_RIGHT,  "D-pad right, byte 5 bit 3" },
+            { 0, 0x10, PAD_TL,     "LB, byte 5 bit 4" },
+            { 0, 0x20, PAD_TR,     "RB, byte 5 bit 5" },
+            { 0, 0x40, PAD_THUMBL, "the left stick's click, byte 5 bit 6" },
+            { 0, 0x80, PAD_THUMBR, "the right stick's click, byte 5 bit 7" },
+        };
+        uint8_t m[18], out[16], seq = 0;
+        bool ack = true;
+        unsigned n, k, lengths[PAD_XONE_STEPS];
+
+        for (i = 0; i < sizeof(one) / sizeof(one[0]); i++) {
+            memset(m, 0, sizeof(m));
+            m[0] = 0x20;
+            m[3] = 0x0e;
+            m[4] = one[i].b4;
+            m[5] = one[i].b5;
+            memset(&s, 0, sizeof(s));
+            snprintf(line, sizeof(line), "%s was not read as itself alone",
+                     one[i].what);
+            check(pad_decode_xone(m, 18, &s, &ack, &seq) == PAD_XONE_INPUT
+                  && s.buttons == (1u << one[i].bit) && !ack, line);
+        }
+
+        memset(m, 0, sizeof(m));
+        m[0] = 0x20;
+        m[4] = 0x03;                        /* the sync bit and its neighbour */
+        memset(&s, 0, sizeof(s));
+        check(pad_decode_xone(m, 18, &s, &ack, &seq) == PAD_XONE_INPUT
+              && s.buttons == 0,
+              "byte 4's bits 0 and 1 were read as buttons");
+
+        /* Triggers of ten bits, sticks signed; the left stick up and the
+         * right trigger all the way in. */
+        m[6] = 0x00; m[7] = 0x02;            /* left trigger 512 */
+        m[8] = 0xff; m[9] = 0x03;            /* right trigger 1023 */
+        m[10] = 0x00; m[11] = 0x80;          /* left X -32768 */
+        m[12] = 0xff; m[13] = 0x7f;          /* left Y 32767, up */
+        check(pad_decode_xone(m, 18, &s, &ack, &seq) == PAD_XONE_INPUT
+              && s.lt == 128 && s.rt == 255 && s.lx == -32768 && s.ly == 32767
+              && pad_pressed(&s, 0) == ((1u << PAD_UP) | (1u << PAD_LEFT)
+                                        | (1u << PAD_TL2) | (1u << PAD_TR2)),
+              "an Xbox One's triggers and left stick were not read as the "
+              "360's are - ten bits halved twice, up positive");
+
+        /* The Xbox button: its own message, kept by the input after it, and
+         * an acknowledgement asked for with options 30h. */
+        memset(&s, 0, sizeof(s));
+        {
+            uint8_t guide[6] = { 0x07, 0x30, 0x2a, 0x02, 0x01, 0x5b };
+
+            check(pad_decode_xone(guide, 6, &s, &ack, &seq) == PAD_XONE_GUIDE
+                  && (s.buttons & (1u << PAD_MODE)) && ack && seq == 0x2a,
+                  "the Xbox button's message was not the button down with an "
+                  "acknowledgement asked for, sequence 2Ah");
+
+            memset(m, 0, sizeof(m));
+            m[0] = 0x20;
+            m[4] = 0x10;                     /* A, and the Xbox button still */
+            check(pad_decode_xone(m, 18, &s, &ack, &seq) == PAD_XONE_INPUT
+                  && s.buttons == ((1u << PAD_MODE) | (1u << PAD_SOUTH)),
+                  "an input report let go of the Xbox button, which only its "
+                  "own message changes");
+
+            guide[1] = 0x20;
+            guide[4] = 0x00;
+            check(pad_decode_xone(guide, 6, &s, &ack, &seq) == PAD_XONE_GUIDE
+                  && !(s.buttons & (1u << PAD_MODE)) && !ack,
+                  "the Xbox button let go, with no acknowledgement asked for, "
+                  "was not read so");
+        }
+
+        {
+            uint8_t announce[8] = { 0x02, 0x20, 0x01, 0x1c };
+
+            check(pad_decode_xone(announce, 8, &s, &ack, &seq)
+                  == PAD_XONE_ANNOUNCE, "the pad's announcement was missed");
+            check(pad_decode_xone(m, 17, &s, &ack, &seq) == PAD_XONE_OTHER,
+                  "an input report of 17 bytes was read");
+        }
+
+        /* What the host says first: every pad, and the One S and Elite 2. */
+        for (k = 0; k < PAD_XONE_STEPS; k++) {
+            lengths[k] = pad_xone_init(0x045e, 0x0b12, k, (uint8_t)k, out);
+        }
+        check(lengths[0] == 5 && lengths[1] == 0 && lengths[2] == 0
+              && lengths[3] == 0 && lengths[4] == 7 && lengths[5] == 6,
+              "a Series pad (045e:0b12) was not sent power on, the light and "
+              "authenticated - and only those");
+
+        n = pad_xone_init(0x045e, 0x0b12, 0, 7, out);
+        check(n == 5 && out[0] == 0x05 && out[1] == 0x20 && out[2] == 7
+              && out[3] == 0x01 && out[4] == 0x00,
+              "power on was not 05 20 <seq> 01 00");
+
+        n = pad_xone_init(0x045e, 0x02ea, 1, 1, out);
+        check(n == 5 && out[3] == 0x0f && out[4] == 0x06
+              && pad_xone_init(0x045e, 0x0b00, 3, 3, out) == 6 && out[0] == 0x4d
+              && out[2] == 3,
+              "the One S's and the Elite 2's own start-up messages were not "
+              "theirs");
+        check(pad_xone_init(0x045e, 0x0b12, PAD_XONE_STEPS, 0, out) == 0,
+              "a step past the last gave a message");
+
+        n = pad_xone_ack(0x2a, out);
+        check(n == 13 && out[0] == 0x01 && out[1] == 0x20 && out[2] == 0x2a
+              && out[3] == 0x09 && out[5] == 0x07 && out[6] == 0x20
+              && out[7] == 0x02 && out[12] == 0x00,
+              "the acknowledgement was not xpad's thirteen bytes with the "
+              "pad's sequence");
+    }
+
     if (fails) {
-        printf("FAIL: %d of %d checks on an Xbox 360 controller's reports\n",
+        printf("FAIL: %d of %d checks on Xbox 360 and Xbox One controllers' "
+               "reports\n",
                fails, fails + checks);
         return 1;
     }
 
-    printf("PASS: %d checks on an Xbox 360 controller's reports (every "
+    printf("PASS: %d checks on Xbox 360 and Xbox One controllers' reports (every "
            "button by itself, the sticks and triggers signed and "
            "little-endian, the stick as the D-pad with its hysteresis, the "
            "triggers as buttons, and reports that are not input "
-           "refused).\n", checks);
+           "refused; and an Xbox One's messages - its buttons, its Xbox "
+           "button kept across input, what asks for an acknowledgement, the "
+           "start-up for each pad and the acknowledgement's bytes).\n",
+           checks);
     return 0;
 }
