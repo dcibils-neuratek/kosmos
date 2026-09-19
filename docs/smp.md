@@ -31,8 +31,9 @@ largely the question of *who may change that word, and when*.
 
 Two things about threads here are unusual and both matter later:
 
-- **A process has exactly one thread.** There are no threads inside a
-  process; a Lua program that wants concurrency uses coroutines. So "thread"
+- **A process has exactly one thread** - today; threads in a process are
+  agreed (`roadmap.md` 4j, 19 September). There are no threads inside a
+  process yet; a Lua program that wants concurrency uses coroutines. So "thread"
   and "process" are nearly the same population, and parallelism across cores
   means *different processes* running at once rather than one program
   spreading itself.

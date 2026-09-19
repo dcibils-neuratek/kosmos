@@ -5884,3 +5884,33 @@ buttons gained `disabled`.
   BACKUP and the 4 MB beside them, PHOTOS's use a dash because FAT32's free
   count is a hint, BACKUP's 44 KB.
 
+
+## 18.109 A run leaves nothing in the temporary directory
+
+**The Mac's disk filled on 19 September**, and `make prepush` died in
+`x86-usb-1` with "No space left on device" while writing a test stick - a
+place that had nothing to do with the cause. The suites had left 1515
+directories and files in the temporary directory, 19 GB: every
+`tempfile.mkdtemp` was a promise to remember a `finally`, some tools kept it
+and most did not, and nothing could tell them apart. The 512 MB `/home`
+test of 18.106 left 595 MB a run by itself.
+
+So **`tools/scratch.py` is the one way a tool makes a temporary file**: a
+process gets one directory, `kosmos-` and eight characters, made the first
+time it asks and removed when the process exits; `directory`, `path` and
+`disk` put things in it. The name is short because a QEMU monitor is a Unix
+socket inside it, and macOS refuses a socket path over 104 bytes. A
+`made-by` file inside says which command made it.
+
+- **`test_scratch.py`, 10 checks, in the host suite**: the scanner finds all
+  five ways of making a temporary file in a decoy of its own, and none in
+  `tools/` outside `scratch.py`; a process ending normally, by
+  `sys.exit(3)` and by an uncaught exception leaves its temporary directory
+  empty, three processes with their own `TMPDIR`; and one ending by
+  `os._exit`, which skips the tidying, is left, found by `leftovers` and
+  named by `made_by` - the path `gate.py` takes.
+- **`gate.py` fails a run that leaves anything**, naming each leftover by
+  what made it - so a tool killed before it could tidy up is a failure with
+  a name rather than a disk that fills a month later.
+- Control, watched: with the removal switched off, the three endings fail,
+  each naming the directory it left.

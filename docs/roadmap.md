@@ -772,23 +772,118 @@ processors, and still what follows USB:
    (h264bsd, OpenH264's) cannot play it, nor most phone video. Three pieces:
    - **The container**, ours: an MP4 reader - `moov`, the sample tables,
      `avcC` and `esds` - host-tested on the clip. **Started today.**
-   - **The decoders**: proposed, **FFmpeg's `libavcodec`, H.264 and AAC
-     only**, ported as Doom, Quake and LakeSnes were - LGPL-2.1+, so in the
-     FULL image (a GPLv2 work already) and out of the MIT one. Diego's
-     answer awaited.
+   - **The decoders: FFmpeg's `libavcodec`, H.264 and AAC only**, agreed
+     by Diego on 19 September ("Yes"). Ported as Doom, Quake and LakeSnes
+     were, vendored byte for byte with its notice - LGPL-2.1+, so in the
+     FULL image (a GPLv2 work already) and out of the MIT one, and named in
+     `LICENSE`. The source is a download, asked for before it is fetched.
    - **The app**, drawn first as every app is: `docs/video.html`.
    Several days, not one.
-4f. **ASKED FOR on 19 September - LÖVE.** Diego: "vendor in love2d
-   https://github.com/love2d/love as we will be doing some apps that require
-   love2d lua framework for graphics, audio and else". **LÖVE itself cannot
-   be vendored to run here**: it is C++ over SDL2, OpenGL, OpenAL and LuaJIT
-   (Lua 5.1), and Kosmos has none of them, not even a C++ runtime. Proposed
-   instead, **a LÖVE-compatible kit**: `love.graphics`, `love.audio`,
-   `love.keyboard`, `love.mouse`, `love.timer` and the callbacks -
-   `love.load`, `love.update`, `love.draw`, `love.keypressed` - over
-   Kosmos's own surfaces and audio server, so a game's `main.lua` runs as it
-   is. LÖVE is zlib-licensed, so its documentation and tests can be used to
-   hold the kit to the real API. Diego's answer awaited.
+4f. **AGREED on 19 September - the Game Kit: our own, for games and
+   everything else that draws its own window.** It began as "vendor in
+   love2d ... as we will be doing some apps that require love2d lua framework
+   for graphics, audio and else", and became, the same afternoon, "can we do
+   our own 2d and 3d library inspired In love 2d but kosmos optimized",
+   "Like a GameKit", "That implements all required libraries in kosmos for
+   ui, 2d, 3d, controllers, audio, etc.", and "Take the best ideas from
+   love2d and use them wisely. I am not sure we will port many games or apps
+   but build new ones on our platform like a audio editing and composing
+   app, 3d planets simulations and other cool projects I have in mind".
+
+   **Why not LÖVE itself**: it is the opposite of Lite XL on the three
+   points that made that port work (`litexl.md`) - Lua 5.1 or LuaJIT against
+   the 5.4 everything here runs, a large C++ core against small C, and
+   OpenGL against a pixel buffer - and it needs threads in a process, which
+   Kosmos does not have. Months of porting SDL, a GL and a C++ runtime before
+   one rectangle, and then drawing slower than a surface already does.
+
+   **What it is**: `use("/kits/game")`, BeOS's name - its Game Kit was
+   `BWindowScreen` and `BDirectWindow` - for an application that owns its
+   window's pixels and runs on a frame: a game, a planet simulation, an
+   audio editor and composer. **Not a compatibility layer**: LÖVE's best
+   ideas, taken on purpose, and nothing kept because LÖVE has it:
+   - a program is a few callbacks - `load`, `update(dt)`, `draw`, and one
+     per kind of input - and the kit owns the loop;
+   - drawing is immediate: shapes, images, text, a transform stack, and
+     offscreen canvases to draw into and then draw;
+   - sprite batches, so a thousand sprites are one call into C;
+   - sound as sources, a short one held whole and a long one streamed;
+   - the game pad as a first-class input, the keys the USB driver already
+     makes (`usb.md` 9);
+   - and UI inside the window - a button, a slider, a list - for the tools
+     an editor or a simulation needs.
+
+   **What makes it Kosmos's**: it draws into the window's shared surface as
+   Doom and the Super Nintendo do, and says which rectangles changed; every
+   loop over pixels or samples is C; **a frame allocates nothing**, which
+   `frames` can check, because a collector pause in a frame is the thing
+   this system has learned to fear most; sound goes into the audio server's
+   ring, never a message; and the loop runs on the window's frame, not on
+   a clock of its own.
+
+   **Rendering: software now, the GPU later, and the programs never know.**
+   Diego: "we will implement real gpu 2d and 3d rendering in the roadmap so
+   plan for that as well in GameKit", "It uses software rendering until we
+   develop the hardware drivers". So drawing goes through one renderer
+   interface with two halves: today the surface's C primitives for 2D and
+   TinyGL (`/kits/gl`, `/lib/g3d.lua`) for 3D, and later the GPU (item 4h).
+   A program written for the software half runs unchanged on the other.
+
+   **First**, as an app is drawn before it is written, the kit is written
+   before it is built: `docs/gamekit.md` - the API, one small program in it,
+   and what each call costs - for Diego to change. Then the 2D half with a
+   first game to prove it, then sound, then 3D.
+4g. **AGREED on 19 September - the Super Nintendo keeps your game.** Diego:
+   "Yes" to continuing a game after quitting. Two kinds of keeping, and the
+   port has neither today:
+   - **The cartridge's own save** - the battery-backed RAM a game like Zelda
+     writes its save slots to. LakeSnes has `snes_saveBattery` and
+     `snes_loadBattery`; written beside the ROM in `/home` when the game is
+     quit and read when it starts, so a game saved in the game is there
+     tomorrow.
+   - **A save state** - the whole machine at one instant, anywhere in the
+     game. `snes_saveState` and `snes_loadState`; one slot per ROM, saved on
+     quit and offered on the next start, and carried across Double Size's
+     restart so switching scale no longer loses your place.
+4h. **WANTED since 19 September, not scheduled - real GPU rendering, 2D and
+   3D.** Diego: "we will implement real gpu 2d and 3d rendering in the
+   roadmap". The order is in the plan of 12 September: **virtio-gpu under
+   QEMU first** - a protocol of forty pages rather than Intel's manuals, and
+   what grows `hal_fb_flush` - **then virgl**, where the guest's 3D commands
+   run on the Mac's own GPU and the compositor draws each window as a
+   texture instead of copying it, which is the real win: not a faster blit
+   but no blit. A native driver for the ThinkPad's Intel GPU after that, for
+   its own sake. The Game Kit (4f) is the first program-facing user, and its
+   renderer interface is where the switch happens.
+4i. **WANTED since 19 September, not scheduled - low-latency audio.** Diego:
+   "I plan kosmos to be a multimedia monster so we need to have low latency
+   audio". An audio editor and composer (4f) is the program that asks it: a
+   key played on a keyboard has to sound before the ear notices the gap,
+   which is a few milliseconds, not a frame. **Measured first, because
+   nobody has**: the period is 5.8 ms (256 frames at 44.1 kHz) and the ring
+   several of them deep, but the time from a key to its sound - through the
+   window manager, the program, the ring, the server's mix and the
+   controller's own buffer - is not a number anybody has. On the ThinkPad,
+   because QEMU's audio passes through the Mac's and says nothing about the
+   machine. Then the shortest period the controller and the scheduler
+   hold without a gap, and a priority band for the thread that mixes.
+4j. **AGREED on 19 September - threads in a process.** Diego: "Why don't we
+   add threading? To the kernel!", "Every modern os has multi threading as
+   well as multi processing", "Threading will give us a lot of room for
+   speed and super responsive ui and os". Refused until now in `design.md`
+   4.5 on an argument written for one core; a process is homed on one of
+   four (eight on the ThinkPad), so one program can use one core, and the
+   media work above - decoding, mixing, rasterising, simulating - is what
+   wants more. **The kernel part** is threads that share a process's address
+   space and capabilities, each homed on its own core, with a way to wait
+   and wake that costs nothing when nobody waits; `struct process` holds one
+   thread today and about forty places in the kernel say so. **The rest**:
+   per-thread storage for `errno` and the allocator's lock in the libc, C
+   threads for kits, and Lua threads each with a state of their own and
+   channels between them. **Written first as `docs/threads.md`**, in steps
+   each checkable on its own as SMP's were: a second thread on the same
+   core; on another core; exit and kill across cores with memory being
+   unmapped under them; the libc; the kit; Lua. Every step a test.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab

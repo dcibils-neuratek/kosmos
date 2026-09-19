@@ -39,6 +39,15 @@ Four things, and they are the order of preference when two of them disagree:
 - **Scalable.** It has to still be true when the machine is busy, which is
   what `make stress` is for.
 
+**And what it is for is media.** Diego, 19 September 2026: "I plan kosmos
+to be a multimedia monster so we need to have low latency audio, 3d
+rendering, nice and friendly kits and else". BeOS called itself the Media
+OS, and this is the same bet: sound that answers a key before the ear can
+tell, pictures and 3D that keep their frame, and kits pleasant enough that
+an audio editor or a planet simulation is a weekend rather than a port. The
+four above are how; this is what they are for. `roadmap.md` 4f, 4h and 4i
+are where it is being built.
+
 **The target is a Raspberry Pi 5**, and it is chosen to be hard: a fast UI on
 it is a real result rather than a QEMU number.
 
