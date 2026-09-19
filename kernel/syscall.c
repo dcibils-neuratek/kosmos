@@ -1228,6 +1228,26 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
+    case SYS_KEY_PUSH:
+        /*
+         * A driver's key - `syscall.h` has why. Device authority, as the
+         * pointer's movement is, and the sleepers woken as it wakes them:
+         * a key from a process arrives here rather than in the trap handler
+         * that wakes whoever waits for input.
+         */
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+        } else if ((unsigned long)sc->arg[0] > KEY_PUSH_MOST) {
+            result = SYS_ERR_NO_DEVICE;     /* no key has that number */
+        } else if (!hal_key_push((unsigned)sc->arg[0], sc->arg[1] != 0)) {
+            result = SYS_ERR_NO_ROOM;       /* the queue is full */
+        } else {
+            p->pushed_keys = true;
+            thread_wake_sleepers_now();
+            result = 0;
+        }
+        break;
+
     case SYS_SCREEN_TAKE:
         /*
          * "I am drawing the whole screen now; stop printing on it."

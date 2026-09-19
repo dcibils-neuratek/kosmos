@@ -405,6 +405,20 @@ local KEYS = {
   [30]  = B.y,      [31]  = B.x,                         -- a s
   [44]  = B.b,      [45]  = B.a,                         -- z x
   [32]  = B.l,      [46]  = B.r,                         -- d c
+
+  --
+  -- **And a game controller** - the USB driver's keys (`pad_decode.h`),
+  -- evdev's gamepad codes, which name a button by where it sits. An 8BitDo
+  -- SN30 Pro has a Super Nintendo's buttons in a Super Nintendo's places,
+  -- so the bottom one is B, the right A, the left Y and the top X - and on
+  -- an Xbox pad the same four places are the same four buttons.
+  --
+  [0x130] = B.b,    [0x131] = B.a,                       -- south, east
+  [0x134] = B.y,    [0x133] = B.x,                       -- west, north
+  [0x136] = B.l,    [0x137] = B.r,                       -- the shoulders
+  [0x13a] = B.select, [0x13b] = B.start,
+  [0x220] = B.up,   [0x221] = B.down,                    -- the D-pad, and
+  [0x222] = B.left, [0x223] = B.right,                   -- the left stick
 }
 
 -- P, and the key marked Pause, as the Game menu's item.

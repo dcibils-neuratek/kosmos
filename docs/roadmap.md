@@ -736,9 +736,12 @@ processors, and still what follows USB:
    4. **The Super Nintendo, Doom and Quake** map the pad's buttons.
    5. **Tested** on the host with reports from the protocols' own layouts,
       in QEMU for the path from the driver to a window, and **with the
-      real SN30 Pro under QEMU on the Mac** through `usb-host` - macOS has
-      no driver of its own for an Xbox 360 pad to hold it - before the
-      ThinkPad.
+      real SN30 Pro under QEMU on the Mac** through `usb-host`
+      (`tools/usbhost.sh`), before the ThinkPad. **This said macOS has no
+      Xbox 360 driver of its own, and it has one**:
+      `com.apple.gamecontroller.driver.XboxGamepad` holds the pad's gamepad
+      interface, so QEMU takes it only when run as root - as anyone else the
+      pad refuses SET_CONFIGURATION, which is what the first try found.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab

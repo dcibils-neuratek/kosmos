@@ -88,6 +88,34 @@ static const uint8_t superspeed_stick[] = {
 #define AT_IN_BURST     27
 #define AT_OUT_BURST    40
 
+/*
+ * An Xbox 360 controller, 045e:028e. Interface 0 byte for byte as its
+ * published dump gives it - FFh/5Dh/01h, its 17-byte descriptor of type 21h,
+ * interrupt IN 81h of 32 bytes every 4 frames and interrupt OUT 01h - and
+ * interface 1, the headset's (FFh/5Dh/03h), shortened to one endpoint of its
+ * four, its 27-byte descriptor's first fourteen bytes as the dump shows them
+ * and the rest zeroes. The real pad has two interfaces more; they are not
+ * the pad and the walk never reaches them. 92 bytes.
+ */
+static const uint8_t xbox360[] = {
+    0x09, 0x02, 0x5c, 0x00, 0x02, 0x01, 0x00, 0xa0, 0xfa,
+    0x09, 0x04, 0x00, 0x00, 0x02, 0xff, 0x5d, 0x01, 0x00,
+    0x11, 0x21, 0x00, 0x01, 0x01, 0x25, 0x81, 0x14, 0x00, 0x00, 0x00, 0x00,
+    0x13, 0x01, 0x08, 0x00, 0x00,
+    0x07, 0x05, 0x81, 0x03, 0x20, 0x00, 0x04,
+    0x07, 0x05, 0x01, 0x03, 0x20, 0x00, 0x08,
+    0x09, 0x04, 0x01, 0x00, 0x04, 0xff, 0x5d, 0x03, 0x00,
+    0x1b, 0x21, 0x00, 0x01, 0x01, 0x01, 0x82, 0x40, 0x01, 0x02, 0x20, 0x16,
+    0x83, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00,
+    0x07, 0x05, 0x82, 0x03, 0x20, 0x00, 0x02,
+};
+
+_Static_assert(sizeof(xbox360) == 0x5c, "the 360's wTotalLength is its size");
+
+#define AT_PAD_PROTOCOL 16              /* interface 0's bInterfaceProtocol */
+#define AT_PAD_IN       37              /* its IN endpoint's address */
+
 static struct usb_config decode(const uint8_t *bytes, unsigned length)
 {
     struct usb_config got;
@@ -280,6 +308,32 @@ int main(void)
               "a keyboard alone is not HID without a mouse");
         check(got.hid_subclass == 1 && got.hid_protocol == 1,
               "a keyboard alone: its subclass and protocol");
+    }
+
+    /* 3b. An Xbox 360 controller: its gamepad interface and its IN, and the
+     *     descriptor of type 21h between them not taken for HID's. */
+    {
+        uint8_t copy[sizeof(xbox360)];
+
+        got = decode(xbox360, sizeof(xbox360));
+        check(got.kind == USB_CONFIG_XBOX360 && got.interface == 0
+              && got.endpoint == 1 && got.packet == 32 && got.interval == 4
+              && got.report_length == 0,
+              "an Xbox 360 controller was not its interface 0 with IN 1, 32 "
+              "bytes every 4");
+
+        memcpy(copy, xbox360, sizeof(copy));
+        copy[AT_PAD_PROTOCOL] = 0x03;       /* a headset's, not a pad's */
+        got = decode(copy, sizeof(copy));
+        check(got.kind == USB_CONFIG_NEITHER,
+              "an Xbox 360 interface of protocol 03h, a headset's, was "
+              "taken for the pad");
+
+        memcpy(copy, xbox360, sizeof(copy));
+        copy[AT_PAD_IN] = 0x01;             /* the IN endpoint made OUT */
+        got = decode(copy, sizeof(copy));
+        check(got.kind != USB_CONFIG_XBOX360,
+              "a pad with only OUT endpoints was taken for one to read");
     }
 
     /* 4. A stick: SCSI over Bulk-Only, bulk IN 1 and OUT 2, 512 bytes. */

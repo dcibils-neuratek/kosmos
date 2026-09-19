@@ -5759,3 +5759,34 @@ controller answers RD_EC in ACPI mode as the DSDT assumes. The kernel says
 the first reading at boot - *ec: the battery: 83%, discharging, on
 battery* - which is the line to read on the ThinkPad.
 
+## 18.105 An Xbox 360 controller's buttons, as keys
+
+**Diego's 8BitDo SN30 Pro USB is an Xbox 360 pad** (045E:028E in X-input
+mode), and so is every pad that speaks X-input (`usb.md` 9). The driver
+reads it on the mouse's path and hands each button to the kernel as a key
+(`SYS_KEY_PUSH`, `hal_key_push`); the Super Nintendo, Doom and Quake map
+evdev's gamepad codes.
+
+- **`test_paddecode`, 27 checks on the host**: every button by itself from
+  both bytes, byte 3's unused bit, the evdev codes, the sticks and triggers,
+  the left stick as the D-pad past half-way with its hysteresis, the D-pad
+  and the stick together as one direction, and four reports that are not
+  input refused.
+- **`test_usbdecode`, 3 checks more**: the 360's configuration found - its
+  descriptor of type 21h not taken for HID's - and a headset's interface
+  and a pad with no IN refused. **The test's own descriptor was wrong at
+  first**: the headset's 27-byte descriptor written with 14 of its bytes,
+  which the walk rightly called malformed.
+- **The kernel suite, on both boards**: *input: a driver's key comes out,
+  and is let go*.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| `hal_key_release_all` queues no release | *not ok - input: a driver's key comes out, and is let go*, on both boards |
+
+**The real pad under QEMU on the Mac**, through `tools/usbhost.sh`: the
+driver found it - *port 5: 045e:028e, USB 2.0, class 255, "Controller"* -
+took it for a pad, configured its endpoint, and its SET_CONFIGURATION
+stalled, because macOS's own Xbox 360 driver holds the interface. Run as
+root the tool can take it; that run is Diego's, with his password.
+

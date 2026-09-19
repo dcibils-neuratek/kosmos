@@ -1840,6 +1840,73 @@ fill them with files, and `fatls` read every one back: 24 checks. Controls in
 
 ---
 
+## 9. Game controllers
+
+**Agreed with Diego on 19 September** (`roadmap.md` 4c): Xbox 360 and Xbox
+One pads, "which are the most common", and his 8BitDo SN30 Pro USB - which
+is an Xbox 360 pad in its X-input mode, and on this Mac says so:
+**045E:028E, "Controller"**, Microsoft's own identity.
+
+### 9a: an Xbox 360 pad is not HID
+
+Its gamepad interface is class FFh, subclass 5Dh, protocol 01h - Microsoft's
+own - with an interrupt IN endpoint, 81h, and an OUT, 01h, for its lights
+and rumble. Between the interface and its endpoints is a 17-byte descriptor
+of type 21h, which is HID's number and not HID's descriptor. Its other
+interfaces (5Dh/03h a headset, 5Dh/02h, FDh/13h a security handshake) are
+not the pad. It needs no Report descriptor and no protocol set: configured,
+it sends its 20-byte report - type 00h, length 14h, the buttons in bytes 2
+and 3, the triggers in 4 and 5, the sticks in 6 to 13 (`pad_decode.h`).
+
+`usb_decode_config` finds the interface and its IN; `use_device` gives the
+endpoint a ring and configures the device as it does a mouse's, and
+`take_report` hands each report to `pad_report` rather than `read_report`.
+
+### 9b: its buttons are keys
+
+**A pad's buttons reach a program the way a key does**, not through a
+device of their own. The driver turns a report into what programs see down
+- the buttons, each trigger past half-way, the left stick as the D-pad past
+half-way and let go only inside three eighths - and each change goes to the
+kernel with `SYS_KEY_PUSH`, a key a driver presses as `SYS_POINTER_MOVE` is
+a mouse a driver moves. The board queues it beside its keyboard's
+(`hal_key_push`, `hal/keys.c`), the console server collects it with the
+rest, and the window manager gives it to the focused window as a `rawkey`.
+The codes are evdev's gamepad ones, which name a button by where it sits:
+`BTN_SOUTH` (130h) is the bottom face button whoever made the pad, and the
+D-pad is 220h to 223h.
+
+So **focus decides who has the pad**, as it decides who has the keyboard,
+and nothing new had to be built for that. What this cannot carry is an
+analogue value - how far the stick is pushed - rumble, or two players; each
+of those wants a state block per pad, shared, and is later. What a driver
+held down when it ended is let go by the kernel, as a mouse's buttons are.
+
+The Super Nintendo, Doom and Quake map the codes in their key tables.
+
+### What is not done yet, and what QEMU cannot show
+
+- **Xbox One and Series pads** - FFh/47h/D0h, and a start-up packet before
+  the pad sends anything.
+- **The Xbox 360 wireless receiver**, whose four pads' reports come wrapped.
+- **QEMU has no game controller.** `tools/usbhost.sh` hands one of the
+  Mac's to QEMU through libusb - and **macOS has its own Xbox 360 driver**
+  (`com.apple.gamecontroller.driver.XboxGamepad`), which holds the pad, so
+  it runs under `sudo`. Without root, the pad refuses SET_CONFIGURATION.
+
+### How it is tested
+
+- `test_paddecode`, on the host: each of the fifteen buttons by itself, the
+  sticks and triggers signed and little-endian, the stick as the D-pad with
+  its hysteresis, the triggers as buttons, and reports that are not input.
+- `test_usbdecode`: an Xbox 360 configuration, its interface 0 byte for byte
+  from a published dump - found, and a headset's interface and a pad with no
+  IN not taken for one.
+- The kernel suite, both boards: a driver's keys come out of
+  `hal_key_event` in order, a full queue refuses, and `hal_key_release_all`
+  lets go of what is still down.
+- The real pad, under QEMU on the Mac through `tools/usbhost.sh`.
+
 ## Sources
 
 - Microsoft, *FAT32 File System Specification*, version 1.03, 6 December 2000

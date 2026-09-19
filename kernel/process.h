@@ -398,6 +398,7 @@ struct process {
      * good. `process_exit` reports no movement and no buttons for it.
      */
     bool              moved_pointer;
+    bool              pushed_keys;      /* SYS_KEY_PUSH, let go at exit */
 
     /*
      * Pages this process asked for with SYS_MAP: where the next one goes,

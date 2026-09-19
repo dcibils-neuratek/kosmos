@@ -239,6 +239,20 @@ local KEYS = {
 
   [21] = 121,         -- y
   [49] = 110,         -- n
+
+  -- **A game controller**, the USB driver's keys (`pad_decode.h`): evdev's
+  -- gamepad codes, a button named by where it sits. The D-pad and the left
+  -- stick are the arrows; L and R strafe, as Doom's own `,` and `.` do.
+  [0x220] = 0xad, [0x221] = 0xaf, [0x222] = 0xac, [0x223] = 0xae,
+  [0x130] = 0xa3,     -- the bottom button -> fire
+  [0x139] = 0xa3,     -- the right trigger -> fire
+  [0x131] = 0xa2,     -- the right one     -> use, doors and switches
+  [0x134] = 0xb6,     -- the left one      -> run
+  [0x133] = 13,       -- the top one       -> enter, for the menus
+  [0x136] = 44,       -- L                 -> strafe left
+  [0x137] = 46,       -- R                 -> strafe right
+  [0x13b] = 27,       -- Start             -> the menu
+  [0x13a] = 9,        -- Select            -> the automap
 }
 
 --

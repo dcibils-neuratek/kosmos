@@ -15,14 +15,16 @@
 
 #include "hal.h"
 #include "input.h"
+#include "keys.h"
 
 bool hal_keyboard_init(void)   { return virtio_keyboard_init(); }
 int  keyboard_getchar(void)    { return virtio_keyboard_getchar(); }
 bool keyboard_present(void)    { return virtio_keyboard_present(); }
 
+/* The keyboard's keys, then the keys a process pressed (`hal_key_push`). */
 bool hal_key_event(unsigned *code, bool *down)
 {
-    return virtio_key_event(code, down);
+    return virtio_key_event(code, down) || keys_pushed_event(code, down);
 }
 
 bool hal_key_held(unsigned code) { return virtio_key_held(code); }
@@ -47,8 +49,15 @@ bool hal_pointer_move(int dx, int dy, uint32_t buttons)
     return false;
 }
 
-bool hal_input_pending(void)      { return virtio_input_pending(); }
-bool hal_input_pending_peek(void) { return virtio_input_pending_peek(); }
+bool hal_input_pending(void)
+{
+    return virtio_input_pending() || keys_pushed_pending();
+}
+
+bool hal_input_pending_peek(void)
+{
+    return virtio_input_pending_peek() || keys_pushed_pending();
+}
 
 void input_interrupt(unsigned line) { virtio_input_interrupt(line); }
 

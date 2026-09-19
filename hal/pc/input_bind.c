@@ -27,6 +27,7 @@
 #include "hal.h"
 #include "i8042.h"
 #include "input.h"
+#include "keys.h"
 #include "pointer.h"
 
 bool hal_keyboard_init(void)   { return i8042_keyboard_init(); }
@@ -41,7 +42,8 @@ bool keyboard_present(void)    { return i8042_present(); }
  */
 bool hal_key_event(unsigned *code, bool *down)
 {
-    return i8042_key_event(code, down) || ec_key_event(code, down);
+    return i8042_key_event(code, down) || ec_key_event(code, down)
+        || keys_pushed_event(code, down);
 }
 
 bool hal_key_held(unsigned code) { return i8042_key_held(code); }
@@ -125,13 +127,15 @@ bool hal_pointer_move(int dx, int dy, uint32_t buttons)
 bool hal_input_pending(void)
 {
     return i8042_input_pending() || pc_pointer_moved()
-        || virtio_input_pending() || ec_input_pending();
+        || virtio_input_pending() || ec_input_pending()
+        || keys_pushed_pending();
 }
 
 bool hal_input_pending_peek(void)
 {
     return i8042_input_pending_peek() || pc_pointer_moved()
-        || virtio_input_pending_peek() || ec_input_pending();
+        || virtio_input_pending_peek() || ec_input_pending()
+        || keys_pushed_pending();
 }
 
 /*

@@ -24,7 +24,106 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "hal.h"
 #include "keys.h"
+#include "spinlock.h"
+
+/*
+ * **The keys processes press** (`hal_key_push`): a queue, and which codes are
+ * down, so a driver that ends holding one can have it let go. Pushed by a
+ * syscall on any core and taken by the console server's on any other, so
+ * under a lock - which masks interrupts, as every lock here does.
+ *
+ * Sixty-four events is a second of a game pad being mashed; one that is
+ * full refuses the press rather than dropping one already queued, and a
+ * release is never refused while there is room for one - the order of the
+ * checks below is so a key cannot be held for ever by a full queue.
+ */
+#define PUSHED 64u
+
+static struct spinlock pushed_lock = SPINLOCK("pushed keys");
+static struct { uint16_t code; uint8_t down; } pushed[PUSHED];
+static unsigned pushed_head, pushed_tail;
+static uint32_t pushed_held[(KEY_PUSH_MOST + 1u) / 32u];
+
+static bool pushed_put(unsigned code, bool down)
+{
+    unsigned next = (pushed_head + 1u) % PUSHED;
+
+    if (next == pushed_tail) {
+        return false;
+    }
+
+    pushed[pushed_head].code = (uint16_t)code;
+    pushed[pushed_head].down = down ? 1u : 0u;
+    pushed_head = next;
+
+    if (down) {
+        pushed_held[code / 32u] |= 1u << (code % 32u);
+    } else {
+        pushed_held[code / 32u] &= ~(1u << (code % 32u));
+    }
+
+    return true;
+}
+
+bool hal_key_push(unsigned code, bool down)
+{
+    unsigned long flags;
+    bool took;
+
+    if (code > KEY_PUSH_MOST) {
+        return false;
+    }
+
+    flags = spin_lock(&pushed_lock);
+    took = pushed_put(code, down);
+    spin_unlock(&pushed_lock, flags);
+
+    return took;
+}
+
+bool hal_key_release_all(void)
+{
+    unsigned long flags = spin_lock(&pushed_lock);
+    bool any = false;
+    unsigned code;
+
+    for (code = 0; code <= KEY_PUSH_MOST; code++) {
+        if ((pushed_held[code / 32u] & (1u << (code % 32u))) != 0) {
+            any = true;
+
+            /* A full queue loses the release; the bit goes either way, so
+             * the next driver's press of the same key is not a no-op. */
+            if (!pushed_put(code, false)) {
+                pushed_held[code / 32u] &= ~(1u << (code % 32u));
+            }
+        }
+    }
+
+    spin_unlock(&pushed_lock, flags);
+    return any;
+}
+
+bool keys_pushed_event(unsigned *code, bool *down)
+{
+    unsigned long flags = spin_lock(&pushed_lock);
+    bool got = pushed_head != pushed_tail;
+
+    if (got) {
+        *code = pushed[pushed_tail].code;
+        *down = pushed[pushed_tail].down != 0;
+        pushed_tail = (pushed_tail + 1u) % PUSHED;
+    }
+
+    spin_unlock(&pushed_lock, flags);
+    return got;
+}
+
+bool keys_pushed_pending(void)
+{
+    return pushed_head != pushed_tail;      /* a hint; the lock decides above */
+}
 
 static const unsigned char keymap_plain[128] = {
     0x00, 0x1b, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,   /*   0  esc 1234567 */

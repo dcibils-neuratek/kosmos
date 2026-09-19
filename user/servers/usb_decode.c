@@ -73,6 +73,17 @@
 #define PROTOCOL_BULK_ONLY  0x50u
 
 /* HID 1.11, 4.1 to 4.3: the class, the boot subclass, the mouse protocol. */
+/*
+ * An Xbox 360 controller's gamepad interface: Microsoft's own, not HID
+ * (`pad_decode.h`). Its other interfaces - 5Dh/03h for a headset, FDh/13h
+ * for its security handshake - are not the pad and are passed over. Between
+ * the interface and its endpoints it carries a descriptor of type 21h, which
+ * is HID's number and not HID's descriptor, so nothing here reads it.
+ */
+#define CLASS_VENDOR        0xFFu
+#define SUBCLASS_XBOX360    0x5Du
+#define PROTOCOL_XBOX360    0x01u
+
 #define CLASS_HID           3u
 #define SUBCLASS_BOOT       1u
 #define PROTOCOL_MOUSE      2u
@@ -104,7 +115,7 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                        struct usb_config *out)
 {
     unsigned total, at;
-    bool hid = false, in_mouse = false;
+    bool hid = false, in_mouse = false, in_pad = false;
     bool storage = false, in_stick = false, stick_found = false;
     unsigned last_bulk = 0;             /* 1 IN, 2 OUT: the endpoint just read */
 
@@ -164,6 +175,15 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                     && d[IFACE_PROTOCOL] == PROTOCOL_MOUSE;
 
             if (in_mouse) {
+                out->interface = d[IFACE_NUMBER];
+                out->report_length = 0;
+            }
+
+            in_pad = d[IFACE_CLASS] == CLASS_VENDOR && d[IFACE_ALTERNATE] == 0
+                  && d[IFACE_SUBCLASS] == SUBCLASS_XBOX360
+                  && d[IFACE_PROTOCOL] == PROTOCOL_XBOX360;
+
+            if (in_pad) {
                 out->interface = d[IFACE_NUMBER];
                 out->report_length = 0;
             }
@@ -245,14 +265,17 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
             }
 
             last_bulk = 0;
-        } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH && in_mouse) {
+        } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH
+                   && (in_mouse || in_pad)) {
             unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;
 
+            /* The first interrupt IN: the pad's OUT, for its lights and
+             * its rumble, is not read and not needed. */
             if ((d[EP_ADDRESS] & EP_IN) != 0
                 && (d[EP_ADDRESS] & EP_NUMBER) != 0
-                && (d[EP_ATTRIBUTES] & EP_INTERRUPT) == EP_INTERRUPT
+                && (d[EP_ATTRIBUTES] & EP_TYPE) == EP_INTERRUPT
                 && (packet & 0x7FFu) != 0) {
-                out->kind = USB_CONFIG_BOOT_MOUSE;
+                out->kind = in_pad ? USB_CONFIG_XBOX360 : USB_CONFIG_BOOT_MOUSE;
                 out->endpoint = (uint8_t)(d[EP_ADDRESS] & EP_NUMBER);
                 out->packet = (uint16_t)(packet & 0x7FFu);
                 out->extra = (uint8_t)((packet >> 11) & 0x3u);

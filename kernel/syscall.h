@@ -405,7 +405,17 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_FIRMWARE   53   /* (index, offset, buf, max) -> bytes or error */
 
-#define SYS_MAX         54
+/*
+ * **A key a driver presses**, as `SYS_POINTER_MOVE` is a mouse a driver
+ * moves: evdev's code and whether it went down, from a process holding
+ * device authority - the USB driver, for a game controller's buttons. They
+ * join the board's own keys (`hal_key_push`) and reach the focused window as
+ * any key does; a code past `KEY_PUSH_MOST` is refused. What the process
+ * still holds down when it ends is let go by the kernel.
+ */
+#define SYS_KEY_PUSH   54   /* (code, down)           -> 0 or error         */
+
+#define SYS_MAX         55
 
 /*
  * What a spawn may hand its child beyond capabilities.

@@ -1237,6 +1237,12 @@ void process_exit(struct process *p, int code)
         thread_wake_sleepers_now();
     }
 
+    /* And any key it pressed and did not let go - a game controller's
+     * button, held when its driver died - for the same reason. */
+    if (p->pushed_keys && hal_key_release_all()) {
+        thread_wake_sleepers_now();
+    }
+
     /*
      * Capabilities before memory. A shared region's pages come back only
      * when the last capability naming it is dropped, and this thread's are

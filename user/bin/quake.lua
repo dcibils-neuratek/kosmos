@@ -149,6 +149,18 @@ local KEYS = {
   [87]  = 145, [88]  = 146,                                       -- F11, F12
   [110] = 147, [111] = 148, [109] = 149, [104] = 150,             -- ins del pgdn pgup
   [102] = 151, [107] = 152, [119] = 255,                          -- home end pause
+
+  -- **A game controller**, the USB driver's keys (`pad_decode.h`): evdev's
+  -- gamepad codes, a button named by where it sits. The D-pad and the left
+  -- stick are the arrows; the rest are the keys Quake binds by default -
+  -- Control fires, Space jumps, Shift runs, `,` and `.` step aside.
+  [0x220] = 128, [0x221] = 129, [0x222] = 130, [0x223] = 131,     -- arrows
+  [0x130] = 133, [0x139] = 133,                     -- bottom, right trigger: fire
+  [0x131] = 32,                                     -- the right one: jump
+  [0x134] = 134,                                    -- the left one: run
+  [0x133] = 13,                                     -- the top one: enter
+  [0x136] = 44,  [0x137] = 46,                      -- L and R: step aside
+  [0x13b] = 27,  [0x13a] = 9,                       -- Start: menu; Select: scores
 }
 
 local function row(first, chars)

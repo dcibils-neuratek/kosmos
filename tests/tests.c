@@ -5332,6 +5332,59 @@ static bool test_a_driver_movement_adds_to_the_pointer(void)
         && again.buttons == 0 && again.moved == 0;    /* is not the pointer's */
 }
 
+/*
+ * A driver's keys come out of `hal_key_event` in the order they went in,
+ * past whatever the keyboard queued first; a full queue refuses a press;
+ * and `hal_key_release_all` lets go of what is still down - the kernel's
+ * half of a game controller's driver dying with a button held.
+ *
+ * `hal_key_push` is the board's half of `SYS_KEY_PUSH`, and shared by both
+ * boards, so this runs on both. The keyboard's own queue is drained first:
+ * whatever the boot left in it is not this test's.
+ */
+static bool test_a_driver_key_comes_out_and_is_let_go(void)
+{
+    unsigned code = 0, filled = 0, i;
+    bool down = false, ok;
+
+    while (hal_key_event(&code, &down)) {
+        /* the boot's, not this test's */
+    }
+
+    ok = hal_key_push(0x130u, true) && hal_key_push(0x221u, true)
+      && hal_key_push(0x130u, false)
+      && hal_key_event(&code, &down) && code == 0x130u && down
+      && hal_key_event(&code, &down) && code == 0x221u && down
+      && hal_key_event(&code, &down) && code == 0x130u && !down
+      && !hal_key_event(&code, &down)
+      && !hal_key_push(KEY_PUSH_MOST + 1u, true);
+
+    /* 0x221 is still down: let go of it, and only it. */
+    ok = ok && hal_key_release_all()
+      && hal_key_event(&code, &down) && code == 0x221u && !down
+      && !hal_key_event(&code, &down)
+      && !hal_key_release_all();
+
+    /* Full, then refused - and a key pressed into it still let go. */
+    for (i = 0; i < 200u && hal_key_push(0x131u, (i & 1u) == 0); i++) {
+        filled++;
+    }
+
+    ok = ok && filled > 0 && filled < 200u;
+
+    while (hal_key_event(&code, &down)) {
+        /* drained */
+    }
+
+    (void)hal_key_release_all();
+
+    while (hal_key_event(&code, &down)) {
+        /* and what letting go queued */
+    }
+
+    return ok && !hal_key_release_all();
+}
+
 static bool test_the_boot_announced_every_stage(void)
 {
     /*
@@ -7374,6 +7427,8 @@ static const struct test tests[] = {
                                           test_a_driver_may_map_devices_and_not_ram },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
+    { "input: a driver's key comes out, and is let go",
+                                          test_a_driver_key_comes_out_and_is_let_go },
     { "input: a driver's movement adds to the pointer",
                                           test_a_driver_movement_adds_to_the_pointer },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },

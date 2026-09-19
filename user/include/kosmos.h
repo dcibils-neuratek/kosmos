@@ -580,6 +580,15 @@ static inline long kosmos_pointer_move(long dx, long dy,
     return sys3(SYS_POINTER_MOVE, dx, dy, (long)buttons);
 }
 
+/*
+ * A key pressed or let go by the driver that reads it - a game controller's
+ * button, as evdev numbers it. Device authority only.
+ */
+static inline long kosmos_key_push(unsigned code, int down)
+{
+    return sys2(SYS_KEY_PUSH, (long)code, down ? 1L : 0L);
+}
+
 static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 {
     return sys2(SYS_REPLY, (long)sender, (long)(uintptr_t)msg);

@@ -72,6 +72,7 @@
 #include "say.h"
 #include "blockproto.h"
 #include "storage_decode.h"
+#include "pad_decode.h"
 #include "usb_decode.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
@@ -332,6 +333,16 @@ struct mouse {
     /* Where its buttons and movement are, by its Report descriptor; when
      * that is not `ok`, it is read as a boot mouse. */
     struct usb_mouse_report layout;
+
+    /*
+     * **Or a game controller**, read on the same ring the same way: an Xbox
+     * 360 pad (`pad_decode.h`), whose reports become keys rather than
+     * movement. `pressed` is what programs were last told is down, so a
+     * report says only what changed; `said` counts the presses logged.
+     */
+    bool          pad;
+    uint32_t      pressed;
+    unsigned      said;
 };
 
 /*
@@ -1845,6 +1856,75 @@ static bool read_report(const struct mouse *m, unsigned got,
 }
 
 /*
+ * **A game controller's report, as keys.** What programs see down - the
+ * pad's buttons, its triggers past half-way, its left stick as the D-pad
+ * (`pad_pressed`) - is compared with what they were last told, and each
+ * change goes to the kernel as a key pressed or let go (`SYS_KEY_PUSH`),
+ * which puts it in the focused window's events beside the keyboard's.
+ *
+ * The first thirty-two changes are said: enough for a photograph of the
+ * ThinkPad to show which button arrived as which, and not a line for every
+ * press of a game.
+ */
+static void pad_keys(struct controller *c, struct mouse *m, uint32_t now)
+{
+    uint32_t changed = now ^ m->pressed;
+    struct say_line line;
+    unsigned bit;
+
+    for (bit = 0; bit < PAD_BITS; bit++) {
+        bool down = (now & (1u << bit)) != 0;
+
+        if ((changed & (1u << bit)) == 0) {
+            continue;
+        }
+
+        if (kosmos_key_push(pad_codes[bit], down) != 0) {
+            continue;                   /* refused: told again next change */
+        }
+
+        m->pressed ^= 1u << bit;
+
+        if (m->said < 32u) {
+            m->said++;
+            about(&line, c);
+            say_text(&line, " port ");
+            say_dec(&line, m->port);
+            say_text(&line, ": the pad's ");
+            say_text(&line, pad_names[bit]);
+            say_text(&line, down ? " down" : " up");
+            say_send(console, &line);
+        }
+    }
+}
+
+static void pad_report(struct controller *c, struct mouse *m, unsigned got)
+{
+    struct pad_state s;
+
+    if (!pad_decode_x360(m->report, got, &s)) {
+        return;                         /* its lights' status, not input */
+    }
+
+    if (++m->reports == 1u) {
+        struct say_line line;
+
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, m->port);
+        say_text(&line, ": the pad's first report: buttons ");
+        say_hex(&line, s.buttons, 4);
+        say_text(&line, ", left stick ");
+        say_count(&line, s.lx);
+        say_text(&line, ",");
+        say_count(&line, s.ly);
+        say_send(console, &line);
+    }
+
+    pad_keys(c, m, pad_pressed(&s, m->pressed));
+}
+
+/*
  * A report, read by `read_report`. The movement and the
  * buttons go to the pointer when there is something new in them, and the
  * next request goes on the ring whatever there was. The first report is said,
@@ -1889,15 +1969,29 @@ static void take_report(struct controller *c, const uint32_t *event)
             to_pointer(0, 0);
         }
 
+        if (m->pad) {
+            pad_keys(c, m, 0);          /* let go of whatever it held */
+        }
+
         about(&line, c);
         say_text(&line, " port ");
         say_dec(&line, m->port);
-        say_text(&line, ": the mouse's report failed: ");
+        say_text(&line, m->pad ? ": the pad's report failed: "
+                               : ": the mouse's report failed: ");
         say_text(&line, completion_name(code));
         say_text(&line, " (");
         say_dec(&line, code);
         say_text(&line, "); not read again until it is plugged in again");
         say_send(console, &line);
+        return;
+    }
+
+    if (m->pad) {
+        if (left < m->length) {
+            pad_report(c, m, m->length - left);
+        }
+
+        ask_for_report(c, slot);
         return;
     }
 
@@ -2875,7 +2969,8 @@ static void use_device(struct controller *c, struct device *d,
         return;
     }
 
-    if (found.kind != USB_CONFIG_BOOT_MOUSE || d->speed >= 4u) {
+    if ((found.kind != USB_CONFIG_BOOT_MOUSE
+         && found.kind != USB_CONFIG_XBOX360) || d->speed >= 4u) {
         about(line, c);
         say_text(line, " port ");
         say_dec(line, d->port);
@@ -2895,6 +2990,9 @@ static void use_device(struct controller *c, struct device *d,
             say_text(line, ", protocol ");
             say_dec(line, found.hid_protocol);
             say_text(line, "); not read");
+        } else if (found.kind == USB_CONFIG_XBOX360) {
+            say_text(line, ": a SuperSpeed Xbox 360 controller, which this "
+                           "does not read yet");
         } else {
             say_text(line, ": a SuperSpeed boot mouse, which this does not "
                            "read yet");
@@ -2946,13 +3044,36 @@ static void use_device(struct controller *c, struct device *d,
     if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
                  TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
         say_failure(c, d->port, "Configure Endpoint",
-                    "; the mouse is not read", line);
+                    "; it is not read", line);
         return;
     }
 
     if (!control_nodata(c, d, SET_CONFIGURATION, found.configuration, 0)) {
         say_failure(c, d->port, "SET_CONFIGURATION",
-                    "; the mouse is not read", line);
+                    "; it is not read", line);
+        return;
+    }
+
+    /*
+     * **An Xbox 360 controller needs nothing more**: no Report descriptor to
+     * read and no protocol to set - it is not HID - and it sends its reports
+     * once it is configured. The OUT endpoint beside the IN is for its lights
+     * and its rumble, and neither is asked for.
+     */
+    if (found.kind == USB_CONFIG_XBOX360) {
+        m->pad = true;
+        m->reading = true;
+        ask_for_report(c, d->slot);
+
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": an Xbox 360 controller, read from endpoint ");
+        say_dec(line, found.endpoint);
+        say_text(line, ", up to ");
+        say_dec(line, found.packet);
+        say_text(line, " bytes; its buttons are keys");
+        say_send(console, line);
         return;
     }
 
@@ -3258,6 +3379,10 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
      */
     if (m != NULL) {
         bool held = m->buttons != 0;
+
+        if (m->pad) {
+            pad_keys(c, m, 0);          /* a pad unplugged mid-press */
+        }
 
         memset(m, 0, sizeof(*m));
 

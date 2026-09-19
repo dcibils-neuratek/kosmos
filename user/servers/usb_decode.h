@@ -25,6 +25,8 @@ enum usb_config_kind {
     USB_CONFIG_BOOT_MOUSE,      /* a boot mouse, with an interrupt IN endpoint */
     USB_CONFIG_STORAGE_OTHER,   /* mass storage, and no stick this can speak to */
     USB_CONFIG_BULK_ONLY,       /* SCSI over Bulk-Only, a bulk IN and a bulk OUT */
+    USB_CONFIG_XBOX360,         /* an Xbox 360 controller's interface, FFh/5Dh/01h,
+                                   with an interrupt IN endpoint */
 };
 
 struct usb_config {
@@ -35,7 +37,8 @@ struct usb_config {
     uint8_t  hid_subclass;
     uint8_t  hid_protocol;
 
-    /* The boot mouse, when there is one. */
+    /* The boot mouse, when there is one - or the Xbox 360 controller's
+     * interface, whose endpoint is read the same way. */
     uint8_t  interface;         /* bInterfaceNumber, for SET_PROTOCOL */
     uint8_t  endpoint;          /* its number, 1 to 15; the direction is IN */
     uint16_t packet;            /* wMaxPacketSize 10:0 */

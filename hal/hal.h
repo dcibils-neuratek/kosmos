@@ -611,6 +611,24 @@ unsigned hal_pointer_speed(unsigned units_per_count);
 bool hal_pointer_move(int dx, int dy, uint32_t buttons);
 
 /*
+ * **A key a process presses**, as `hal_pointer_move` is a mouse a process
+ * moves: the USB driver's game controller, whose buttons are evdev codes
+ * past the typing block - `BTN_SOUTH` is 0x130. Queued beside the board's
+ * own keys and handed out by `hal_key_event` after them, so they reach the
+ * focused window like any other. False when the queue is full.
+ *
+ * `hal_key_release_all` lets go of every one still down, for the kernel
+ * when the process that pressed them ends; true if there was one.
+ *
+ * Shared by every board (`hal/keys.c`): a queue of numbers is not a
+ * peripheral, and each board only merges it with what it has.
+ */
+#define KEY_PUSH_MOST 0x3FFu        /* ten bits: past every code keys.h has */
+
+bool hal_key_push(unsigned code, bool down);
+bool hal_key_release_all(void);
+
+/*
  * Has an input device raised an interrupt since this was last asked?
  *
  * Not "what happened" - the events are in the device's own queue and are

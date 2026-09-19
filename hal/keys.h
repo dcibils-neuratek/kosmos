@@ -72,6 +72,13 @@
 #define KEY_BRIGHTNESSDOWN 224
 #define KEY_BRIGHTNESSUP   225
 
+/*
+ * The keys processes pressed (`hal_key_push`), for a board's
+ * `hal_key_event` and `hal_input_pending` to merge with its own.
+ */
+bool keys_pushed_event(unsigned *code, bool *down);
+bool keys_pushed_pending(void);
+
 /* The escape sequence a terminal would have sent for a key that is not a
  * character, or NULL. */
 const char *hal_key_sequence(unsigned code);
