@@ -258,7 +258,8 @@ it, and the steps that cannot fail loudly come before the one that can.
 1b. **Pools that grow, and no limit that is not the machine's** - **the
    thread pool DONE on 19 September** (`testing.md` 18.113), **processes
    and address spaces the same evening, on one pool written once**
-   (`kernel/pool.c`, 18.114); endpoints, regions and capability tables to
+   (`kernel/pool.c`, 18.114); **endpoints and regions next** (18.115);
+   a region's size, a process's capability table and what it may map to
    come. Every pool
    the kernel keeps - processes, threads, endpoints, regions - grows by a
    slab of slots when it is full and never gives a slab back, up to a

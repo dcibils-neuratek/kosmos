@@ -676,7 +676,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.regions_used     = memobj_in_use();
     info.regions_total    = memobj_total();
     info.endpoints_used   = ipc_endpoints_in_use();
-    info.endpoints_total  = ENDPOINT_MAX;
+    info.endpoints_total  = ipc_endpoints_total();
     info.spaces_used      = as_count();
     info.spaces_total     = as_total();
 

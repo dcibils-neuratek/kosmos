@@ -215,17 +215,11 @@ void captable_init(struct captable *c);
 unsigned captable_count(struct captable *c);
 
 /*
- * How many endpoints exist. Here rather than only in ipc.c because
- * SYS_SYSINFO reports "in use, of this many", and half of that pair is
- * useless without the other.
- *
- * Raised with the process pool, because they are spent together: a server
- * needs one to be reachable at, and a client that brokers a private
- * connection needs another. Thirty-two was one per process and change;
- * ninety-six is three apiece, which is what a system where processes hand
- * each other capabilities actually uses.
+ * How many endpoints there can be: the pool's ceiling, for `SYS_SYSINFO`'s
+ * "in use, of this many". It was ninety-six, compiled in - three a process -
+ * and grows now (`ipc.c`, `threads.md` step 1b).
  */
-#define ENDPOINT_MAX        96
+unsigned ipc_endpoints_total(void);
 
 /* Prepares the endpoint pool. Called once, before any thread uses IPC. */
 void ipc_init(void);

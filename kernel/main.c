@@ -1104,8 +1104,10 @@ void kmain(void)
     boot_why("How processes talk, and the only way they can. Nothing is buffered.");
 
     boot_fact_begin();
-    kputu(ENDPOINT_MAX);
-    kputs(" endpoints, ");
+    kputu(ipc_endpoints_total());
+    kputs(" endpoints and ");
+    kputu(memobj_total());
+    kputs(" regions at most, ");
     kputu(CAPS_PER_TABLE);
     kputs(" capabilities a process, generation-numbered against reuse");
     boot_fact_end();

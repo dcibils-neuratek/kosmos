@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ipc.h"
+#include "pool.h"
 #include "irq.h"
 #include "spinlock.h"
 #include "hal.h"
@@ -117,7 +118,26 @@ struct endpoint {
     struct thread *watcher;
 };
 
-static struct endpoint endpoints[ENDPOINT_MAX];
+/*
+ * **The pool, which grows** (`kernel/pool.h`, `threads.md` step 1b): ninety-six
+ * at boot, as there were, and an endpoint for every `ENDPOINT_RAM_EACH` of
+ * memory at most - an endpoint is seventy-two bytes, so the ceiling costs
+ * nothing until it is reached.
+ */
+#define ENDPOINT_BOOT_SLOTS 96u
+#define ENDPOINT_RAM_EACH   (64u * 1024u)
+
+static struct pool endpoints;
+
+static struct endpoint *endpoint_at(unsigned i)
+{
+    return pool_at(&endpoints, i);
+}
+
+unsigned ipc_endpoints_total(void)
+{
+    return pool_ceiling(&endpoints);
+}
 
 /*
  * Single core and cooperative, so none of the queue surgery below can be
@@ -396,23 +416,25 @@ void ipc_timed_out(struct thread *t)
     }
 }
 
+/*
+ * A new slab's endpoints: zeroed already, which is unused with empty queues,
+ * except the lock, whose holder has to say nobody. Their generation starts at
+ * zero and only ever goes up.
+ */
+static void endpoint_fresh(void *object)
+{
+    struct endpoint *ep = object;
+
+    ep->lock.locked = 0;
+    ep->lock.holder = SPIN_NOBODY;
+    ep->lock.name   = "endpoint";
+}
+
 void ipc_init(void)
 {
-    unsigned i;
-
-    for (i = 0; i < ENDPOINT_MAX; i++) {
-        endpoints[i].in_use = false;
-        endpoints[i].senders = NULL;
-        endpoints[i].watcher = NULL;
-        endpoints[i].receivers = NULL;
-        endpoints[i].awaiting_reply = NULL;
-
-        endpoints[i].lock.locked = 0;
-        endpoints[i].lock.holder = SPIN_NOBODY;
-        endpoints[i].lock.name   = "endpoint";
-
-        /* generation is deliberately not reset: it only ever goes up. */
-    }
+    pool_init(&endpoints, "endpoints", sizeof(struct endpoint),
+              pool_ceiling_for(ENDPOINT_RAM_EACH, ENDPOINT_BOOT_SLOTS),
+              ENDPOINT_BOOT_SLOTS, endpoint_fresh);
 }
 
 unsigned ipc_endpoints_in_use(void)
@@ -420,8 +442,8 @@ unsigned ipc_endpoints_in_use(void)
     unsigned n = 0;
     unsigned i;
 
-    for (i = 0; i < ENDPOINT_MAX; i++) {
-        if (endpoints[i].in_use) {
+    for (i = 0; i < pool_slots(&endpoints); i++) {
+        if (endpoint_at(i)->in_use) {
             n++;
         }
     }
@@ -842,8 +864,9 @@ cap_t ipc_endpoint_create(void)
     struct thread *self = thread_current();
     unsigned i;
 
-    for (i = 0; i < ENDPOINT_MAX; i++) {
-        struct endpoint *ep = &endpoints[i];
+again:
+    for (i = 0; i < pool_slots(&endpoints); i++) {
+        struct endpoint *ep = endpoint_at(i);
         unsigned long flags = spin_lock(&ep->lock);
         cap_t index;
 
@@ -870,6 +893,11 @@ cap_t ipc_endpoint_create(void)
         }
 
         return index;
+    }
+
+    /* Every endpoint taken: one more slab and look again, or refuse. */
+    if (pool_grow(&endpoints)) {
+        goto again;
     }
 
     return IPC_ERR_NO_SPACE;
@@ -1014,8 +1042,8 @@ void ipc_endpoints_release(struct process *p)
         return;
     }
 
-    for (i = 0; i < ENDPOINT_MAX; i++) {
-        struct endpoint *ep = &endpoints[i];
+    for (i = 0; i < pool_slots(&endpoints); i++) {
+        struct endpoint *ep = endpoint_at(i);
         unsigned long epflags;
 
         if (ep->owner != p) {

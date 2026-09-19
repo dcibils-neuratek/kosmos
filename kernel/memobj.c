@@ -12,23 +12,38 @@
 #include "pmm.h"
 #include "page.h"
 #include "panic.h"
+#include "pool.h"
 
-static struct memobj objects[MEMOBJ_MAX];
+/*
+ * **The pool, which grows** (`kernel/pool.h`, `threads.md` step 1b):
+ * two hundred and fifty-six at boot, as there were, and a region for every
+ * `MEMOBJ_RAM_EACH` of memory at most - a descriptor is 168 bytes, and a
+ * region is at least a page, so the pages run out first.
+ */
+#define MEMOBJ_BOOT_SLOTS 256u
+#define MEMOBJ_RAM_EACH   (16u * 1024u)
+
+static struct pool objects;
+
+static struct memobj *object_at(unsigned i)
+{
+    return pool_at(&objects, i);
+}
 
 static void release(struct memobj *m);
 
+/* A new slab's regions: zeroed, which is unused and empty, and generation
+ * one - the first a capability can name. */
+static void memobj_fresh(void *object)
+{
+    ((struct memobj *)object)->generation = 1;
+}
+
 void memobj_init(void)
 {
-    unsigned i;
-
-    for (i = 0; i < MEMOBJ_MAX; i++) {
-        objects[i].in_use = false;
-        objects[i].generation = 1;
-        objects[i].refs = 0;
-        objects[i].pages = 0;
-        objects[i].indexes = 0;
-        objects[i].contiguous = false;
-    }
+    pool_init(&objects, "regions", sizeof(struct memobj),
+              pool_ceiling_for(MEMOBJ_RAM_EACH, MEMOBJ_BOOT_SLOTS),
+              MEMOBJ_BOOT_SLOTS, memobj_fresh);
 }
 
 void *memobj_page(const struct memobj *m, size_t i)
@@ -98,8 +113,9 @@ struct memobj *memobj_create(size_t pages, bool contiguous)
         return NULL;
     }
 
-    for (i = 0; i < MEMOBJ_MAX; i++) {
-        struct memobj *m = &objects[i];
+again:
+    for (i = 0; i < pool_slots(&objects); i++) {
+        struct memobj *m = object_at(i);
         size_t indexes = (pages + MEMOBJ_PER_INDEX - 1) / MEMOBJ_PER_INDEX;
         size_t k, n;
         unsigned long flags = spin_lock(&objects_lock);
@@ -210,6 +226,11 @@ struct memobj *memobj_create(size_t pages, bool contiguous)
         m->refs = 1;
 
         return m;
+    }
+
+    /* Every region taken: one more slab and look again, or refuse. */
+    if (pool_grow(&objects)) {
+        goto again;
     }
 
     return NULL;
@@ -355,8 +376,8 @@ unsigned memobj_in_use(void)
     unsigned i;
     unsigned n = 0;
 
-    for (i = 0; i < MEMOBJ_MAX; i++) {
-        if (objects[i].in_use) {
+    for (i = 0; i < pool_slots(&objects); i++) {
+        if (object_at(i)->in_use) {
             n++;
         }
     }
@@ -366,7 +387,7 @@ unsigned memobj_in_use(void)
 
 unsigned memobj_total(void)
 {
-    return MEMOBJ_MAX;
+    return pool_ceiling(&objects);
 }
 
 uintptr_t memobj_phys(const struct memobj *m)

@@ -78,11 +78,11 @@
  * as tiles it works, and a tile is an ordinary region. So the pool has to
  * be able to hold a hundred of them.
  *
- * The cost is ten kilobytes of .bss for descriptors that are usually empty,
- * which is the trade this kernel makes everywhere: a fixed shape that fails
- * at a known limit.
+ * It was two hundred and fifty-six descriptors in `.bss`, "a fixed shape that
+ * fails at a known limit". The pool grows now (`memobj.c`, `threads.md` step
+ * 1b), from those two hundred and fifty-six, to a ceiling from memory:
+ * `memobj_total` is the ceiling, `memobj_in_use` what is taken.
  */
-#define MEMOBJ_MAX        256
 
 /*
  * The largest region, in pages: 32 MB.

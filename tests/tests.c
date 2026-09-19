@@ -5071,7 +5071,7 @@ static bool test_endpoints_made_at_once_are_each_their_own(void)
         return true;            /* one processor; nothing to race */
     }
 
-    if (ipc_endpoints_in_use() + cores * MADE_EACH > ENDPOINT_MAX) {
+    if (ipc_endpoints_in_use() + cores * MADE_EACH > ipc_endpoints_total()) {
         return false;           /* the pool is too full to try */
     }
 
@@ -7643,6 +7643,128 @@ static bool test_the_process_pool_grows(void)
     return second == first && process_ceiling() > PROCESS_BOOT_SLOTS;
 }
 
+/*
+ * **Endpoints and regions grow past what was compiled in** (`threads.md`
+ * step 1b): ninety-six endpoints and two hundred and fifty-six regions were
+ * the whole of each pool. A hundred and twenty endpoints alive at once - five
+ * kernel threads making twenty-four each, since one table holds thirty-two -
+ * and three hundred regions, then every one of them gone again.
+ */
+#define GROWN_EP_THREADS 5u
+#define GROWN_EP_EACH    24u
+#define GROWN_REGIONS    300u
+
+/* A flag each rather than a shared count: an atomic add is a library call
+ * on AArch64 without LSE, and the kernel links no library for it. */
+static volatile bool     grown_ep_drop;
+static volatile bool     grown_ep_ready[GROWN_EP_THREADS], grown_ep_gone[GROWN_EP_THREADS];
+static volatile unsigned grown_ep_made[GROWN_EP_THREADS];
+
+static unsigned grown_ep_count(const volatile bool *flags)
+{
+    unsigned i, n = 0;
+
+    for (i = 0; i < GROWN_EP_THREADS; i++) {
+        n += flags[i];
+    }
+
+    return n;
+}
+
+static void makes_many_endpoints(void *arg)
+{
+    unsigned me = (unsigned)(uintptr_t)arg;
+    cap_t mine[GROWN_EP_EACH];
+    unsigned i, made = 0;
+
+    for (i = 0; i < GROWN_EP_EACH; i++) {
+        mine[i] = ipc_endpoint_create();
+        made += (mine[i] >= 0);
+    }
+
+    grown_ep_made[me] = made;
+    grown_ep_ready[me] = true;
+
+    while (!grown_ep_drop) {
+        thread_yield();
+    }
+
+    for (i = 0; i < GROWN_EP_EACH; i++) {
+        if (mine[i] >= 0) {
+            (void)ipc_endpoint_destroy(mine[i]);
+        }
+    }
+
+    grown_ep_gone[me] = true;
+}
+
+static bool test_endpoints_and_regions_grow(void)
+{
+    static struct memobj *regions[GROWN_REGIONS];
+    unsigned ep_before = ipc_endpoints_in_use();
+    unsigned rg_before = memobj_in_use();
+    unsigned long start;
+    unsigned i, regions_made = 0, ep_made = 0, peak_ep, peak_rg;
+    bool ok;
+
+    grown_ep_drop = false;
+
+    for (i = 0; i < GROWN_EP_THREADS; i++) {
+        grown_ep_ready[i] = grown_ep_gone[i] = false;
+        grown_ep_made[i] = 0;
+    }
+
+    for (i = 0; i < GROWN_EP_THREADS; i++) {
+        if (thread_create("endpoints", makes_many_endpoints,
+                          (void *)(uintptr_t)i) == NULL) {
+            return false;
+        }
+    }
+
+    start = hal_ticks();
+
+    while (grown_ep_count(grown_ep_ready) < GROWN_EP_THREADS
+           && hal_ticks() - start < 10UL * TICK_HZ) {
+        thread_yield();
+    }
+
+    peak_ep = ipc_endpoints_in_use();
+
+    for (i = 0; i < GROWN_REGIONS; i++) {
+        regions[i] = memobj_create(1, false);
+        regions_made += (regions[i] != NULL);
+    }
+
+    peak_rg = memobj_in_use();
+
+    for (i = 0; i < GROWN_REGIONS; i++) {
+        memobj_unref(regions[i]);
+    }
+
+    grown_ep_drop = true;
+    start = hal_ticks();
+
+    while (grown_ep_count(grown_ep_gone) < GROWN_EP_THREADS
+           && hal_ticks() - start < 10UL * TICK_HZ) {
+        thread_yield();
+    }
+
+    for (i = 0; i < GROWN_EP_THREADS; i++) {
+        ep_made += grown_ep_made[i];
+    }
+
+    ok = ep_made == GROWN_EP_THREADS * GROWN_EP_EACH
+         && peak_ep >= ep_before + GROWN_EP_THREADS * GROWN_EP_EACH
+         && peak_ep > 96
+         && regions_made == GROWN_REGIONS
+         && peak_rg >= rg_before + GROWN_REGIONS
+         && peak_rg > 256
+         && ipc_endpoints_in_use() == ep_before
+         && memobj_in_use() == rg_before;
+
+    return ok;
+}
+
 static bool test_a_slot_is_reused_only_once_its_thread_has_left(void)
 {
     unsigned cores = smp_online();
@@ -7804,6 +7926,7 @@ static const struct test tests[] = {
     { "smp: a slot is reused only once its thread has left", test_a_slot_is_reused_only_once_its_thread_has_left },
     { "thread: the pool grows", test_the_thread_pool_grows },
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
+    { "ipc: endpoints and regions grow past their old pools", test_endpoints_and_regions_grow },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: a caller ends a watched sleep",    test_a_caller_ends_a_watched_sleep },

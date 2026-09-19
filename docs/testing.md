@@ -6083,3 +6083,25 @@ under the pool's lock.
   abandon, it fails; with the process pool not growing, it fails.
 - The boot screen: "32 slots, growing to 512; each gets its own page
   tables, heap and stack".
+
+## 18.115 Endpoints and regions grow
+
+**`threads.md` step 1b, the next two pools, on `pool.c`.** Endpoints were
+ninety-six, compiled in; they are ninety-six at boot and one for every
+64 KB of memory at most - 8,232 on the ARM board. Regions were two hundred
+and fifty-six; they are that many at boot and one for every 16 KB at most -
+32,784. A new slab of endpoints has its locks made to say nobody holds them,
+and a new slab of regions starts at generation one, which is what each
+pool's `fresh` is for. The boot screen: "8232 endpoints and 32784 regions at
+most".
+
+- **`ipc: endpoints and regions grow past their old pools`**, both boards: a
+  hundred and twenty endpoints alive at once - five kernel threads making
+  twenty-four each, a table holding thirty-two - and three hundred regions,
+  every one made, and every one gone after. Controls, watched: with either
+  pool not growing, it fails.
+- **An atomic add is a library call** on AArch64 without LSE - the first
+  version of this test used `__atomic_fetch_add` and did not link, wanting
+  `__aarch64_ldadd4_acq_rel`. A plain load with acquire and a store with
+  release, which `pool.c` uses, are single instructions; anything that reads,
+  changes and writes back is not, here, and takes a lock or a flag apiece.
