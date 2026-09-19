@@ -1,0 +1,226 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos's style guide, drawn to be changed: roadmap item 5, part 3. Diego,
+  18 September 2026: "i would like to polish the entire Kosmos UI in several
+  ways. The screenshots you design look great but the UI then lacks polish
+  in certain areas, like color schemes, ui layouts, spacing in widgets,
+  fonts", and "the fonts used in the screenhot look great". The colours are
+  the BeOS palette exactly as user/lib/themes.lua carries it, from Haiku's
+  own table of R5's; "today" is what the kit draws now, and "proposed" is
+  what this page asks Diego to change until it is right.
+-->
+<title>Kosmos Style Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --bitmap: ui-monospace, "Menlo", "Courier New", monospace;
+
+    /* BeOS R5, as themes.lua has it */
+    --b-desktop: #336698; --b-window: #d8d8d8; --b-raised: #e8e8e8; --b-sunken: #ffffff;
+    --b-line: #606060; --b-line-soft: #b8b8b8; --b-edge-light: #ffffff; --b-edge-dark: #989898;
+    --b-text: #000000; --b-text-dim: #808080; --b-tab: #ffcb00; --b-tab-idle: #e8e8e8;
+    --b-accent: #bebebe; --b-good: #009800; --b-bad: #cb0000; --b-ring: #0000e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4; --rule: #283241; --accent: #85a8ff; --card: #171e28; }
+  }
+  :root[data-theme="dark"] { --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4; --rule: #283241; --accent: #85a8ff; --card: #171e28; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 980px; margin: 0 auto; padding: 44px 22px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 56px 0 10px; text-wrap: balance; }
+  h3 { font: 600 15px/1.3 var(--body); margin: 0 0 8px; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  /* the palette */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+  .sw { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; font: 12px/1.4 var(--mono); }
+  .sw i { display: block; height: 46px; border-bottom: 1px solid var(--rule); }
+  .sw div { padding: 6px 8px; } .sw b { font-weight: 500; display: block; }
+
+  /* a Kosmos surface, for both columns */
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .col { background: var(--b-desktop); padding: 16px; border-radius: 8px; }
+  .col > .label { color: #fff; font: 600 12px var(--body); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; }
+  .panel { background: var(--b-window); color: var(--b-text); padding: 14px; display: grid; gap: 12px; border: 1px solid var(--b-line); }
+  .today .panel { font: 14px/1.2 var(--bitmap); gap: 8px; padding: 8px; }
+  .proposed .panel { font: 14px/1.35 var(--body); gap: 12px; padding: 14px; }
+
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .proposed .row { gap: 10px; }
+
+  .kbtn { background: var(--b-raised); border: 1px solid var(--b-line); box-shadow: inset 1px 1px 0 var(--b-edge-light), inset -1px -1px 0 var(--b-edge-dark); padding: 2px 10px; }
+  .proposed .kbtn { padding: 5px 16px; border-radius: 3px; }
+  .kbtn.default { outline: 2px solid var(--b-ring); outline-offset: 1px; }
+  .proposed .kbtn.default { outline: 0; box-shadow: inset 1px 1px 0 var(--b-edge-light), inset -1px -1px 0 var(--b-edge-dark), 0 0 0 2px var(--b-window), 0 0 0 3px var(--b-line); font-weight: 600; }
+
+  .check { display: inline-flex; gap: 6px; align-items: center; }
+  .check i { width: 13px; height: 13px; background: var(--b-sunken); border: 1px solid var(--b-line); box-shadow: inset 1px 1px 0 var(--b-edge-dark); display: inline-grid; place-items: center; font-style: normal; font-size: 11px; line-height: 1; }
+  .proposed .check i { width: 15px; height: 15px; border-radius: 2px; }
+
+  .field { background: var(--b-sunken); border: 1px solid var(--b-line); box-shadow: inset 1px 1px 0 var(--b-edge-dark); padding: 2px 6px; min-width: 180px; }
+  .proposed .field { padding: 5px 8px; border-radius: 2px; }
+  .field.focus { outline: 1px solid var(--b-ring); }
+  .proposed .field.focus { outline: 2px solid var(--b-ring); outline-offset: -1px; }
+
+  .list { background: var(--b-sunken); border: 1px solid var(--b-line); box-shadow: inset 1px 1px 0 var(--b-edge-dark); }
+  .list div { padding: 0 6px; }
+  .proposed .list div { padding: 3px 10px; }
+  .list .sel { background: var(--b-accent); }
+  .list .head { background: var(--b-raised); border-bottom: 1px solid var(--b-line-soft); color: var(--b-text-dim); display: flex; justify-content: space-between; }
+  .proposed .list .head { font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+
+  .wtab { display: inline-flex; align-items: center; gap: 8px; background: var(--b-tab); padding: 3px 10px 2px 6px; border: 1px solid #a88400; border-bottom: 0; }
+  .today .wtab { font: 14px var(--bitmap); }
+  .proposed .wtab { font: 600 14px var(--display); padding: 4px 12px 3px 7px; }
+  .wtab .box { width: 11px; height: 11px; border: 1px solid #6b5300; background: #ffe066; }
+  .wbody { height: 34px; border: 2px solid var(--b-tab); background: var(--b-window); }
+
+  .menu { background: var(--b-raised); border: 1px solid var(--b-line); box-shadow: 2px 2px 0 rgba(0,0,0,.25); width: 200px; }
+  .menu div { padding: 1px 10px; display: flex; justify-content: space-between; }
+  .proposed .menu div { padding: 4px 14px; }
+  .menu .hot { background: var(--b-accent); }
+  .menu hr { border: 0; border-top: 1px solid var(--b-line-soft); margin: 3px 0; }
+  .menu small { color: var(--b-text-dim); }
+
+  .level { height: 8px; background: var(--b-sunken); border: 1px solid var(--b-line); position: relative; width: 200px; }
+  .level i { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; background: var(--b-good); }
+  .proposed .level { height: 10px; border-radius: 5px; overflow: hidden; }
+  .proposed .level i { border-radius: 5px; }
+
+  /* type */
+  .types { display: grid; gap: 14px; margin-top: 14px; }
+  .type { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; display: grid; grid-template-columns: 170px 1fr; gap: 14px; align-items: baseline; }
+  .type .what { font: 12px/1.5 var(--mono); color: var(--muted); }
+  @media (max-width: 720px) { .type { grid-template-columns: 1fr; } }
+
+  /* spacing */
+  .scale { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
+  .scale div { display: grid; gap: 6px; justify-items: center; font: 12px var(--mono); color: var(--muted); }
+  .scale i { background: var(--accent); display: block; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font: 600 13px var(--body); color: var(--muted); }
+  td:first-child { white-space: nowrap; font-family: var(--mono); font-size: 13px; }
+  .wrap { overflow-x: auto; }
+  ol.ask { padding-left: 22px; } ol.ask li { margin-bottom: 10px; max-width: 70ch; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The look of Kosmos</h1>
+  <p class="lede">One page that says what every window is made of: its colours, its type, the space between things, and each widget - as the kit draws it today, and as proposed. Change this page until it is right; the kit follows it, one application at a time.</p>
+  <p class="note">Roadmap item 5. The tab is already done - BeOS's, by default, since 19 September. The rest is proposed and nothing below is decided: every "proposed" is a question.</p>
+
+  <h2>Colours</h2>
+  <p>The BeOS palette, exactly as <code>themes.lua</code> carries it - R5's own values from Haiku's table. Two rules make it BeOS rather than any grey desktop: a button is <em>lighter</em> than the panel it sits on, and nothing is blue but the desktop and the focus ring.</p>
+  <div class="swatches">
+    <div class="sw"><i style="background:#336698"></i><div><b>desktop</b>#336698</div></div>
+    <div class="sw"><i style="background:#d8d8d8"></i><div><b>window</b>#d8d8d8, the panel</div></div>
+    <div class="sw"><i style="background:#e8e8e8"></i><div><b>raised</b>#e8e8e8, a button</div></div>
+    <div class="sw"><i style="background:#ffffff"></i><div><b>sunken</b>#ffffff, a field</div></div>
+    <div class="sw"><i style="background:#ffcb00"></i><div><b>tab</b>#ffcb00, the focus</div></div>
+    <div class="sw"><i style="background:#e8e8e8"></i><div><b>tab_idle</b>#e8e8e8</div></div>
+    <div class="sw"><i style="background:#bebebe"></i><div><b>accent</b>#bebebe, a selection</div></div>
+    <div class="sw"><i style="background:#0000e5"></i><div><b>ring</b>#0000e5, the only blue</div></div>
+    <div class="sw"><i style="background:#606060"></i><div><b>line</b>#606060</div></div>
+    <div class="sw"><i style="background:#808080"></i><div><b>text_dim</b>#808080</div></div>
+    <div class="sw"><i style="background:#009800"></i><div><b>good</b>#009800</div></div>
+    <div class="sw"><i style="background:#cb0000"></i><div><b>bad</b>#cb0000</div></div>
+  </div>
+  <p class="note">The machine starts in <code>dark</code> today, and <code>beos</code>, <code>photon</code>, <code>platinum</code> and <code>irix</code> are in Appearance. Proposed: <b>beos as the default</b>, since it is the look everything else here is drawn after.</p>
+
+  <h2>Type</h2>
+  <p>Today every role is <code>spleen</code>, an 8 by 16 bitmap: sharp, and the same everywhere. Proposed: IBM Plex, which is already in the image with its licence, in three roles - the mockups' faces, which Diego liked.</p>
+  <div class="types">
+    <div class="type"><div class="what">widgets<br>today: spleen 16</div><div style="font:14px var(--bitmap)">Open, Save, a list of files, the words on a button</div></div>
+    <div class="type"><div class="what">widgets<br>proposed: Plex Sans 14</div><div style="font:14px var(--body)">Open, Save, a list of files, the words on a button</div></div>
+    <div class="type"><div class="what">titles<br>proposed: Plex Sans Condensed 600, 14</div><div style="font:600 15px var(--display)">Tracker - Music - Appearance - This Machine</div></div>
+    <div class="type"><div class="what">text and the terminal<br>proposed: Plex Mono 13</div><div style="font:13px var(--mono)">kosmos&gt; ls /home/roms/snes &nbsp; mk2.sfc &nbsp;smas.sfc</div></div>
+    <div class="type"><div class="what">headings in a window<br>proposed: Plex Sans 600, 18</div><div style="font:600 18px var(--body)">Library</div></div>
+  </div>
+
+  <h2>Space</h2>
+  <p>Four steps and nothing between them. Today's spacing is whatever each application chose - Appearance puts its labels 12 in from the edge, and others their own numbers - which is most of what reads as unfinished.</p>
+  <div class="scale">
+    <div><i style="width:4px;height:4px"></i>4<br>inside a control</div>
+    <div><i style="width:8px;height:8px"></i>8<br>between controls</div>
+    <div><i style="width:12px;height:12px"></i>12<br>a window's edge</div>
+    <div><i style="width:16px;height:16px"></i>16<br>between groups</div>
+    <div><i style="width:24px;height:24px"></i>24<br>between sections</div>
+  </div>
+
+  <h2>The widgets, today and proposed</h2>
+  <div class="pair">
+    <div class="col today"><div class="label">Today</div>
+      <div class="panel">
+        <div class="row"><span class="kbtn default">Open</span><span class="kbtn">Cancel</span></div>
+        <div class="row"><span class="check"><i>x</i>Show hidden files</span></div>
+        <div class="row"><span class="field focus">magicword-clip.mp4</span></div>
+        <div class="list"><div class="head"><span>Name</span><span>Size</span></div><div>doom1.wad</div><div class="sel">magicword-clip.mp4</div><div>roms</div></div>
+        <div class="row"><div class="level"><i></i></div></div>
+      </div>
+    </div>
+    <div class="col proposed"><div class="label">Proposed</div>
+      <div class="panel">
+        <div class="row"><span class="kbtn default">Open</span><span class="kbtn">Cancel</span></div>
+        <div class="row"><span class="check"><i>&#10003;</i>Show hidden files</span></div>
+        <div class="row"><span class="field focus">magicword-clip.mp4</span></div>
+        <div class="list"><div class="head"><span>Name</span><span>Size</span></div><div>doom1.wad</div><div class="sel">magicword-clip.mp4</div><div>roms</div></div>
+        <div class="row"><div class="level"><i></i></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pair">
+    <div class="col today"><div class="label">Today: a tab and a menu</div>
+      <div><span class="wtab"><span class="box"></span>Tracker</span><div class="wbody"></div></div>
+      <div style="margin-top:12px" class="menu"><div>Open ROM...</div><div class="hot">Double Size</div><hr><div>Quit</div></div>
+    </div>
+    <div class="col proposed"><div class="label">Proposed: a tab and a menu</div>
+      <div><span class="wtab"><span class="box"></span>Tracker</span><div class="wbody"></div></div>
+      <div style="margin-top:12px" class="menu"><div>Open ROM... <small>Super+O</small></div><div class="hot">Double Size <small>2</small></div><hr><div>Quit <small>Super+Q</small></div></div>
+    </div>
+  </div>
+  <p class="note">What changes, widget by widget: more room inside each control, the default button said by weight and an outer rule instead of the ring, a tick in a checkbox rather than an x, lists with rows you can hit, headers set small and bold, menus that show their keys, and bars with rounded ends. The colours do not change - the BeOS palette above, in both columns.</p>
+
+  <h2>How it gets applied</h2>
+  <div class="wrap">
+  <table>
+    <tr><th>Step</th><th>What</th><th>What it costs</th></tr>
+    <tr><td>1</td><td>This page, changed until Diego says it is right</td><td>nothing yet</td></tr>
+    <tr><td>2</td><td>The kit's metrics - padding, row heights, the default button, the checkbox - in <code>ui.lua</code>, one change</td><td>every window changes at once, so the display harness's measured positions change with it</td></tr>
+    <tr><td>3</td><td>IBM Plex as the default faces</td><td>the harness finds rows by the 16-pixel bitmap face, so it pins that face for itself first</td></tr>
+    <tr><td>4</td><td>Each application laid out on the four steps of space, one at a time, each photographed beside this page</td><td>one application a sitting</td></tr>
+  </table>
+  </div>
+
+  <h2>For Diego</h2>
+  <ol class="ask">
+    <li><b>BeOS as the default palette</b>, instead of <code>dark</code>?</li>
+    <li><b>IBM Plex</b> for widgets, titles and the terminal - or keep the bitmap for the terminal, where it is at its best?</li>
+    <li>The <b>proposed widgets</b>: which to keep, which to change - and is anything here too modern for the look you want?</li>
+    <li>The <b>four steps of space</b>: 4, 8, 12, 16 and 24 - roomier, or tighter?</li>
+  </ol>
+</main>
+</body>
+</html>
