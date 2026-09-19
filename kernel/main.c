@@ -1088,11 +1088,13 @@ void kmain(void)
 
     thread_init();
     boot_stage("threads");
-    boot_why("A fixed pool; two stacks each, so a stack overflow can report itself.");
+    boot_why("A pool that grows; two stacks each, so a stack overflow can report itself.");
 
     boot_fact_begin();
-    kputu(THREAD_MAX);
-    kputs(" slots, two stacks each, a guard page below every one");
+    kputu(thread_slots_made());
+    kputs(" slots, growing to ");
+    kputu(thread_ceiling());
+    kputs(" as they are wanted; two stacks each, a guard page below every one");
     boot_fact_end();
 
     ipc_init();

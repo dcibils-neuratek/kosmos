@@ -656,13 +656,19 @@ static bool test_a_thread_that_returns_exits_cleanly(void)
     unsigned before = thread_count();
     unsigned made;
     unsigned after;
-    unsigned ids[THREAD_MAX];
-    unsigned states[THREAD_MAX];
+    /* The first slots, as many as a snapshot on this stack can hold; the
+     * pool grows, so there is no whole of it to copy any more. */
+    enum { SNAPSHOT = 128 };
+    unsigned ids[SNAPSHOT];
+    unsigned states[SNAPSHOT];
+    unsigned shown;
     unsigned i;
 
     /* Who was alive, slot by slot, so that a count that comes out wrong can
      * say whose thread it was. */
-    for (i = 0; i < THREAD_MAX; i++) {
+    shown = thread_slots_made() < SNAPSHOT ? thread_slots_made() : SNAPSHOT;
+
+    for (i = 0; i < shown; i++) {
         const struct thread *t = thread_by_index(i);
 
         ids[i] = t != NULL ? t->id : 0;
@@ -710,7 +716,7 @@ static bool test_a_thread_that_returns_exits_cleanly(void)
     kputs(finished ? "ran" : "never ran");
     kputs(")\n");
 
-    for (i = 0; i < THREAD_MAX; i++) {
+    for (i = 0; i < shown; i++) {
         const struct thread *t = thread_by_index(i);
         unsigned id = t != NULL ? t->id : 0;
         unsigned st = t != NULL ? (unsigned)t->state : 0;
@@ -7494,11 +7500,77 @@ static bool wait_until_dead(const struct thread *t, bool spin)
     return t->state == THREAD_DEAD;
 }
 
+/*
+ * **The thread pool grows** (`threads.md` step 1b).
+ *
+ * It was forty-eight slots, compiled in. Now it is the slabs made at boot and
+ * as many more as are wanted, up to a ceiling from the machine's memory. So:
+ * a hundred threads alive at once - twice the old pool, and more than the
+ * slabs made at boot - every one of them made, the pool larger for it, and
+ * all of them gone again after, back to the count before.
+ */
+#define GROWN_THREADS 100u
+
+static volatile bool grown_go;
+static volatile unsigned grown_ran[GROWN_THREADS];
+
+static void grown_thread(void *arg)
+{
+    unsigned me = (unsigned)(uintptr_t)arg;
+
+    while (!grown_go) {
+        thread_yield();
+    }
+
+    grown_ran[me] = 1;
+}
+
+static bool test_the_thread_pool_grows(void)
+{
+    unsigned before = thread_count();
+    unsigned slots_before = thread_slots_made();
+    unsigned made = 0, ran = 0, i;
+    unsigned long start;
+
+    grown_go = false;
+
+    for (i = 0; i < GROWN_THREADS; i++) {
+        grown_ran[i] = 0;
+
+        if (thread_create("grown", grown_thread, (void *)(uintptr_t)i) != NULL) {
+            made++;
+        }
+    }
+
+    /* All alive at once: none can finish before `grown_go`. */
+    if (made != GROWN_THREADS || thread_count() != before + GROWN_THREADS
+        || thread_slots_made() <= slots_before
+        || before + GROWN_THREADS <= 48) {
+        grown_go = true;
+        return false;
+    }
+
+    grown_go = true;
+    start = hal_ticks();
+
+    while (thread_count() > before && hal_ticks() - start < 10UL * TICK_HZ) {
+        thread_yield();
+    }
+
+    for (i = 0; i < GROWN_THREADS; i++) {
+        ran += grown_ran[i];
+    }
+
+    return ran == GROWN_THREADS && thread_count() == before;
+}
+
 static bool test_a_slot_is_reused_only_once_its_thread_has_left(void)
 {
     unsigned cores = smp_online();
-    struct thread *touched[THREAD_MAX];
+    enum { TOUCH_MAX = 128 };
+    struct thread *touched[TOUCH_MAX];
     unsigned before = thread_count();
+    unsigned free_slots = thread_slots_made() - before;
     unsigned count = 0;
     unsigned round;
     unsigned long start;
@@ -7515,8 +7587,12 @@ static bool test_a_slot_is_reused_only_once_its_thread_has_left(void)
         return false;
     }
 
-    /* Every slot touched, and given straight back. */
-    while (count < THREAD_MAX) {
+    /*
+     * Every free slot touched, and given straight back - the ones that
+     * exist, and no more: the pool grows, so creating until a create fails
+     * would fill the machine rather than the pool.
+     */
+    while (count < free_slots && count < TOUCH_MAX) {
         struct thread *t = thread_create_suspended("touch", short_thread, NULL);
 
         if (t == NULL) {
@@ -7647,6 +7723,7 @@ static const struct test tests[] = {
     { "smp: a changed mapping reaches every core", test_a_changed_mapping_reaches_every_processor },
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },
     { "smp: a slot is reused only once its thread has left", test_a_slot_is_reused_only_once_its_thread_has_left },
+    { "thread: the pool grows", test_the_thread_pool_grows },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: a caller ends a watched sleep",    test_a_caller_ends_a_watched_sleep },

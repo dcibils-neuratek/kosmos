@@ -27,43 +27,42 @@
  */
 
 /*
- * How many threads there can be, ever.
+ * How many threads there can be.
  *
- * A fixed pool because `CLAUDE.md` forbids an allocator in the kernel, and
- * the reason that rule is worth having is visible here: running out is an
- * error at a known limit, reported at the one call that asks for a thread,
- * rather than a failure at an unknown one somewhere later. There is no
- * fragmentation, nothing to audit, and no path where the kernel is halfway
- * through something when memory runs out.
+ * A pool and not an allocator, because `CLAUDE.md` keeps kernel objects out
+ * of a heap, and the reason is visible here: running out is an error at a
+ * known limit, reported at the one call that asks for a thread, rather than a
+ * failure at an unknown one somewhere later. There is no fragmentation,
+ * nothing to audit, and no path where the kernel is halfway through
+ * something when memory runs out. **A pool that grows keeps all of that**, as
+ * long as it grows in slabs that are never given back and stops at a ceiling.
  *
  * Sixteen until M6, which was a number and not a derivation: chosen at M3
- * when the system had three threads and never revisited. Forty-eight now,
- * and this is where the sizing is written down.
+ * when the system had three threads and never revisited. Then forty-eight;
+ * then, on 19 September 2026, no number at all.
  *
  * What a slot costs, measured rather than estimated:
  *
- *   struct thread   2,640 bytes of .bss per slot, always, used or not. Most
- *                   of it is the 2 KB `struct message` embedded below: a
- *                   thread's message in flight lives on the thread, so the
- *                   kernel never has to allocate one.
+ *   struct thread   4,208 bytes a slot, used or not: the 2 KB `struct
+ *                   message` embedded below - a thread's message in flight
+ *                   lives on the thread, so the kernel never has to allocate
+ *                   one - and a capability table of its own, for when it is
+ *                   a kernel thread (`own_caps`).
  *   its stacks      40 KB of RAM per *live* thread - two stacks of four
  *                   pages, each with a guard page allocated and then
  *                   unmapped - taken from the page allocator at creation
  *                   and given back when the thread dies.
  *
- * So the pool is cheap and the threads are not, which is the right way round
- * for a limit: forty-eight slots is 127 KB of .bss and nothing more until
- * something actually runs.
- *
- * **Why forty-eight.** Every process has a thread and PROCESS_MAX is 32, so
- * thirty-three is the floor: the boot thread and one per process. The rest
- * is room for a process to have more than one thread, which nothing does yet
- * and the app server will.
+ * **There is no number of threads any more.** It was forty-eight - the boot
+ * thread, one per process, and sixteen over - and threads in a process would
+ * have used that up at once. The pool grows in slabs up to a ceiling derived
+ * from the machine's memory (`thread.c`, `threads.md` step 1b):
+ * `thread_slots_made` is how many slots exist, `thread_ceiling` how many
+ * could.
  */
 struct memobj;
 struct irq_line;
 
-#define THREAD_MAX          48
 #define THREAD_NAME_MAX     16
 
 /* 16 KB each, matching the boot stack, plus a guard page below each. */
@@ -516,6 +515,10 @@ void thread_place_across(unsigned cores);
  * are opposite situations.
  */
 void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy);
+
+/* Slots in the pool now, and the most it may grow to (`thread.c`). */
+unsigned thread_slots_made(void);
+unsigned thread_ceiling(void);
 
 
 /*

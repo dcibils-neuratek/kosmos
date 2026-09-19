@@ -669,7 +669,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     }
 
     info.threads_used     = thread_count();
-    info.threads_total    = THREAD_MAX;
+    info.threads_total    = thread_ceiling();   /* what the pool may grow to */
     info.processes_used   = process_count();
     info.processes_held   = process_slots_used();
     info.processes_total  = PROCESS_MAX;

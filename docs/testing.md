@@ -6022,3 +6022,32 @@ sender named (`memobj_ref_as`).
 - The boot thread and each core's idle thread are adopted rather than
   created, so they are given their tables where they are adopted: with the
   table a pointer, a slot nobody set was a data abort at the fifteenth test.
+
+## 18.113 The thread pool grows
+
+**`threads.md` step 1b, its first pool.** Forty-eight thread slots in
+`.bss`, compiled in - the boot thread, one a process and sixteen over - are
+now slabs of sixteen, pages from `pmm`, made when every slot is taken and
+never given back, up to a thread for every 256 KB of memory: 2,048 on the
+512 MB ARM board, 2,032 on the x86 one, 65,536 in 16 GB. The boot screen
+says it: "64 slots, growing to 2048 as they are wanted". A claim takes a
+never-used slot, then a dead one whose thread has left, and only then a new
+slab, so the pool is as large as the most threads ever alive at once.
+
+- **`thread: the pool grows`**, both boards: a hundred threads alive at
+  once - twice the old pool, and more than the sixty-four slots made at
+  boot - every one made, the pool larger for it, every one run, and the
+  count back to where it was.
+- Control, watched: with growth stopped at the boot slabs, that test fails,
+  and the tests after it fail with it, finding the pool full of its threads.
+- `sched_switch_to` drained the runqueue into an array of `THREAD_MAX`
+  pointers on a sixteen-kilobyte stack; it drains into a list through
+  `sched.next` now. Two tests that sized arrays by the pool take a fixed
+  snapshot instead, and the one that touched every slot touches the free
+  ones that exist rather than creating until a create fails - which, in a
+  pool that grows, would fill the machine.
+- **Still a scan a tick**: `thread_wake_sleepers` walks every slot made so
+  far, 250 times a second, looking for sleepers that are due. Proportional
+  to the most threads ever alive rather than to a compiled-in number, and
+  fine at hundreds; a queue of sleepers kept in order of when they wake is
+  the answer when it is not.

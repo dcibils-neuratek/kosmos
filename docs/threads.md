@@ -255,7 +255,9 @@ it, and the steps that cannot fail loudly come before the one that can.
    nothing should behave differently, and the whole gate was the check. A
    capability in flight now carries its generation, so one destroyed on the
    way arrives stale.
-1b. **Pools that grow, and no limit that is not the machine's.** Every pool
+1b. **Pools that grow, and no limit that is not the machine's** - **the
+   thread pool DONE on 19 September** (`testing.md` 18.113), the rest to
+   come. Every pool
    the kernel keeps - processes, threads, endpoints, regions - grows by a
    slab of slots when it is full and never gives a slab back, up to a
    ceiling derived from RAM; and the limits that were numbers become the
@@ -269,6 +271,20 @@ it, and the steps that cannot fail loudly come before the one that can.
    Processes to end it. Tests: a pool driven past its old size and back, a
    process with more threads than the old pool had slots, a region past 32
    MB, and a runaway that still leaves room to start one more process.
+
+   **What it touches, found by doing the first one.** One growable pool,
+   `kernel/pool.c`, written once and used by every pool - slabs, a
+   directory made at boot, a count published with release - rather than the
+   same forty lines four times; the thread pool, done first by hand, moves
+   onto it. The process pool drags two things with it: **address spaces**,
+   a pool of their own in each `arch/` that has to be at least as large -
+   a spawn once failed at eleven because it was not - and **the process
+   list programs read**, which `sys_user.c` fills through a buffer of 32
+   entries, so past thirty-two processes the Processes window would stop
+   listing them without a word. A region's 32 MB comes from the sixteen
+   index pages a `struct memobj` holds; a directory page above them makes a
+   gigabyte. And each process's capability table grows by pages that go
+   back when the process ends.
 2. **The thread's own register** saved and restored, and `errno` moved into
    the block it points at. One thread still.
 3. **A second thread, on the same core.** `SYS_THREAD_CREATE`, `EXIT` and
