@@ -55,8 +55,24 @@ said "Great let's do it", and the steps since:
 - **The architecture is written down**: `design.md` 4.1 and 4.3,
   `architecture.md`, `smp.md`, `glossary.md`, `layout.md`, `README`.
 
-**Next**: threads step 2 (the per-thread register and `errno`), then a
-second thread in a process; `docs/gamekit.md`; the video player.
+**Then step 2 and step 3, the same night**:
+
+- **Step 2, a thread's own pointer** (`testing.md` 18.119): `TPIDR_EL0` and
+  the FS base belong to the thread, `errno` moved into the block behind it,
+  and the switch loads it only when two threads' differ. Three versions
+  measured; the cheapest costs 2.1% of a context switch, and the baselines
+  carry the numbers.
+- **Step 3, a process with two threads** (18.121): create, exit and wait,
+  the kernel making each thread's stack a megabyte above the share window
+  **and its own block** - because `errno` is read through the thread pointer
+  and on x86 that read faults when the pointer is zero, where ARM quietly
+  returned a fallback.
+- Two tests were fixed rather than worked around: one sampled a steady state
+  (18.120), one could never fail (18.112).
+
+**Next**: step 4, threads of one process on several cores - placement
+already puts them there, so this is the test - then the futex (5) and kill
+across cores (6). Then `docs/gamekit.md` and the video player.
 
 ## The evening of 19 September
 
