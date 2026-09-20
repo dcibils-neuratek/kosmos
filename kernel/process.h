@@ -237,6 +237,47 @@ struct thread;
 #define USER_SHARE_END   (USER_VA_BASE + 0x200000000UL)     /* 0x280000000 */
 
 /*
+ * **Where a thread's stack goes**, from 8 GB upward: past the share window,
+ * in the part of the address space nothing else uses (`threads.md` step 3).
+ *
+ * A slot a thread, a megabyte apiece, with the stack at the top of it and
+ * the rest left unmapped. So an overflow runs into three quarters of a
+ * megabyte of nothing and faults, rather than into the next thread's stack -
+ * the same reason the kernel's own stacks have a guard page, and cheap here
+ * because address space is the one thing this machine has plenty of: the
+ * window holds half a million slots before it reaches the 512 GB a process
+ * may address.
+ *
+ * The first thread's stack is not here. It is where it always was, below
+ * `USER_STACK_TOP`, because a process that never makes a thread should have
+ * exactly the address space it had before threads existed.
+ */
+#define USER_TSTACK_VA   (USER_VA_BASE + 0x200000000UL)
+#define USER_TSTACK_SLOT (1024UL * 1024UL)
+
+/* The top of thread `index`'s stack: the top of its slot. Index 0 is the
+ * first thread, whose stack is `USER_STACK_TOP`. */
+#define USER_TSTACK_TOP(index) \
+    (USER_TSTACK_VA + (unsigned long)(index) * USER_TSTACK_SLOT \
+     + USER_TSTACK_SLOT)
+
+/*
+ * **And a page at the bottom of the slot: the thread's own block**, which
+ * the thread pointer points at and whose first word is its own address
+ * (`threads.md` step 2; `runtime/include/tls.h`).
+ *
+ * The kernel makes it rather than the program, and that is not a
+ * convenience: on x86 a thread reads its block *through* the FS base, so a
+ * thread whose base is zero faults reading address zero the first time it
+ * touches `errno` - where AArch64, whose register it can read directly,
+ * quietly says "no block". One board would work and the other would fault,
+ * which is how a portability trap is built. A block every thread has from
+ * its first instruction removes the question.
+ */
+#define USER_TBLOCK(index) \
+    (USER_TSTACK_VA + (unsigned long)(index) * USER_TSTACK_SLOT)
+
+/*
  * The image header. Sixteen bytes at the front: a magic number, then how
  * many bytes are read-only and executable. Without the second field the
  * kernel could only map an image one way, and one way that works for both
@@ -277,6 +318,19 @@ struct process {
      * 1. They were its thread's until 19 September.
      */
     struct captable   caps;
+
+    /*
+     * **Its threads** (`threads.md` step 3): `thread` above is the first,
+     * which is the one that entered `main` and the one the process ends
+     * with; the rest hang off `threads`, linked through `sibling`, in no
+     * particular order. `next_index` is the number the next one gets, and
+     * numbers are not reused - a thread is named by its index and a stale
+     * name must not find a stranger, which is the generation argument again
+     * in the smallest possible form.
+     */
+    struct thread    *threads;
+    unsigned          next_index;
+    unsigned          live_threads;
 
     /* The physical pages behind each region, so they can be returned when
      * the process dies. */
@@ -597,6 +651,20 @@ bool process_should_die(void);
  * something that has not run: it frees the same memory without ending
  * anybody's thread.
  */
+/*
+ * **Threads of a process that is already running** (`threads.md` step 3).
+ *
+ * `process_thread_create` makes one at `entry` with `arg` and its own stack,
+ * answering with its index in this process; `process_thread_ended` takes one
+ * off and keeps its code for whoever waits; `process_thread_wait` is that
+ * wait, and hands the slot back.
+ */
+int  process_thread_create(struct process *p, unsigned long entry,
+                           unsigned long arg);
+void process_thread_ended(struct process *p, struct thread *t, int code);
+int  process_thread_wait(struct process *p, unsigned index);
+struct thread *process_thread_at(struct process *p, unsigned index);
+
 void process_abandon(struct process *p);
 
 /* Releases an exited process's slot. Until this, `exited` and `exit_code`

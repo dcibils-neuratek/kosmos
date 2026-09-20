@@ -21,8 +21,11 @@ struct tls_block {
     int   errno_value;
 };
 
-/* Makes this thread's block and tells the kernel where it is. Called once as
- * a process starts, and by every thread as it starts. */
-void tls_setup(void);
+/*
+ * **The kernel makes the block**, one page at the bottom of a thread's stack
+ * slot, before the thread runs (`USER_TBLOCK` in `kernel/process.h`), so
+ * `errno` works from a thread's first instruction. A program that wants a
+ * larger one of its own points the register at it with `kosmos_set_tls`.
+ */
 
 #endif /* KOSMOS_TLS_H */

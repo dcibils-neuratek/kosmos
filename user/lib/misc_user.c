@@ -30,24 +30,21 @@
  *
  * So the block the thread pointer names holds it. `kosmos_tls()` is one
  * instruction - the register on AArch64, the first word at `%fs:0` on x86,
- * which is why the block begins with its own address - and before
- * `tls_setup` has run, or in a process that never calls it, the fallback is
- * what one thread always had.
+ * which is why the block begins with its own address.
+ *
+ * **The kernel makes the block**, one page at the bottom of the thread's
+ * stack slot, before the thread runs an instruction (`USER_TBLOCK` in
+ * `process.h`). It has to: on x86 a thread reads its block *through* the FS
+ * base, so a thread whose base is zero faults at the first `errno` - which
+ * is exactly what the first thread this system ever made did, while the
+ * same code on AArch64 quietly read a fallback. A program may still point
+ * the register at a larger block of its own with `kosmos_set_tls`.
  */
-static struct tls_block main_tls;
-static int errno_before_tls;
-
-void tls_setup(void)
-{
-    main_tls.self = &main_tls;
-    (void)kosmos_set_tls(&main_tls);
-}
-
 int *__errno(void)
 {
     struct tls_block *t = kosmos_tls();
 
-    return (t != NULL) ? &t->errno_value : &errno_before_tls;
+    return &t->errno_value;
 }
 
 static char decimal_point[] = ".";

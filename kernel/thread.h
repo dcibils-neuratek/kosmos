@@ -306,6 +306,34 @@ struct thread {
     unsigned long tls;
 
     /*
+     * **Its place among its process's threads** (`threads.md` step 3).
+     *
+     * `index` is what `SYS_THREAD_WAIT` names it by and where its stack is
+     * (`USER_TSTACK_TOP`); `sibling` links the process's list; `exit_code`
+     * is what it said on the way out and `joiner` is whoever is waiting to
+     * hear it. `user_entry` and `user_arg` are where it begins, read by the
+     * thread itself as it starts rather than passed in, because the thread
+     * does not exist yet when the syscall is deciding them.
+     */
+    struct thread   *sibling;
+    unsigned         index;
+    int              exit_code;
+    struct thread   *joiner;
+    unsigned long    user_entry;
+    unsigned long    user_arg;
+    void            *user_stack_pages;
+    void            *tls_page;
+
+    /*
+     * **Ended and not yet waited for**, which is a process's zombie one
+     * layer down: the slot keeps the code until a sibling asks for it, so
+     * `SYS_THREAD_WAIT` can be called after the thread has finished, which
+     * is the usual way round. `alloc_thread` steps over such a slot; the
+     * process gives them all back when it ends.
+     */
+    bool             ended;
+
+    /*
      * The process this thread is running, or NULL in a kernel thread.
      *
      * Per thread and not a global, which was found the hard way. With one

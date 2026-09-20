@@ -314,6 +314,311 @@ static void process_main(void *arg)
     enter_user(USER_TEXT_VA + USER_IMAGE_HEADER, USER_STACK_TOP, p->arg);
 }
 
+/* A run of pages back to the allocator, one at a time, as everything here
+ * frees them: the allocator does not remember that a run was a run. */
+static void free_pages(void *base, size_t count)
+{
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        pmm_free_page((char *)base + i * PAGE_SIZE);
+    }
+}
+
+/*
+ * A thread's own block: one page, mapped at the bottom of its stack slot,
+ * holding its own address in its first word (`USER_TBLOCK`). Written here
+ * through the kernel's own view of the page, because the process cannot be
+ * asked to do it - it would have to read `errno` to report a failure.
+ */
+static bool give_thread_a_block(struct process *p, struct thread *t,
+                                unsigned index)
+{
+    void *page;
+
+    if (!pmm_room_for_user(1)) {
+        return false;
+    }
+
+    page = pmm_alloc_page();
+
+    if (page == NULL) {
+        return false;
+    }
+
+    memset(page, 0, PAGE_SIZE);
+    *(unsigned long *)page = (unsigned long)USER_TBLOCK(index);
+
+    if (as_map(p->space, (uintptr_t)USER_TBLOCK(index), (uintptr_t)page, 1,
+               MAP_USER_RW) != AS_OK) {
+        kputs("block: as_map refused index ");
+        kputu(index);
+        kputs("\n");
+        pmm_free_page(page);
+        return false;
+    }
+
+    t->tls_page = page;
+    t->tls = (unsigned long)USER_TBLOCK(index);
+    return true;
+}
+
+/*
+ * **A thread of a process that is already running** (`threads.md` step 3).
+ *
+ * It begins where `process_main` begins - in kernel context, with the
+ * address space installed - and reads where to go from its own slot, because
+ * the thread does not exist when `SYS_THREAD_CREATE` is deciding those
+ * numbers. From the `enter_user` below it is user code like any other, and
+ * every return into the kernel is an exception.
+ */
+static void user_thread_main(void *arg)
+{
+    struct thread *self = thread_current();
+
+    (void)arg;
+    as_switch(self->space);
+    enter_user(self->user_entry, USER_TSTACK_TOP(self->index),
+               self->user_arg);
+}
+
+/*
+ * One more thread for `p`, entering at `entry` with `arg`, and its stack.
+ * Returns its index, or a negative error. The caller is one of `p`'s own
+ * threads; nothing else may make one.
+ */
+int process_thread_create(struct process *p, unsigned long entry,
+                          unsigned long arg)
+{
+    unsigned long flags;
+    struct thread *t;
+    void *pages;
+    unsigned index;
+    uintptr_t top;
+
+    if (p == NULL || !p->in_use || p->exited) {
+        return -1;
+    }
+
+    if (!pmm_room_for_user(USER_STACK_PAGES)) {
+        return -2;                          /* the reserve: `pmm.c` */
+    }
+
+    pages = pmm_alloc_contiguous(USER_STACK_PAGES);
+
+    if (pages == NULL) {
+        return -2;
+    }
+
+    memset(pages, 0, USER_STACK_PAGES * PAGE_SIZE);
+
+    flags = spin_lock(&processes_lock);
+    index = p->next_index++;
+    spin_unlock(&processes_lock, flags);
+
+    top = (uintptr_t)USER_TSTACK_TOP(index);
+
+    /* The stack at the top of its slot, and the rest of the slot left
+     * unmapped: an overflow faults rather than reaching a neighbour. */
+    if (as_map(p->space, top - USER_STACK_PAGES * PAGE_SIZE,
+               (uintptr_t)pages, USER_STACK_PAGES, MAP_USER_RW) != AS_OK) {
+        free_pages(pages, USER_STACK_PAGES);
+        return -2;
+    }
+
+    t = thread_create_suspended(p->name, user_thread_main, NULL);
+
+    if (t == NULL) {
+        (void)as_unmap(p->space, top - USER_STACK_PAGES * PAGE_SIZE,
+                       USER_STACK_PAGES);
+        free_pages(pages, USER_STACK_PAGES);
+        return -3;
+    }
+
+    t->process = p;
+    t->space = p->space;
+    t->caps = &p->caps;
+    t->index = index;
+    t->user_entry = entry;
+    t->user_arg = arg;
+    t->user_stack_pages = pages;
+
+    if (!give_thread_a_block(p, t, index)) {
+        thread_abandon(t);
+        (void)as_unmap(p->space, top - USER_STACK_PAGES * PAGE_SIZE,
+                       USER_STACK_PAGES);
+        free_pages(pages, USER_STACK_PAGES);
+        return -2;
+    }
+
+    flags = spin_lock(&processes_lock);
+    t->sibling = p->threads;
+    p->threads = t;
+    p->live_threads++;
+    spin_unlock(&processes_lock, flags);
+
+    thread_wake(t);
+    return (int)index;
+}
+
+/* A thread of `p` by the index it was given, or NULL. */
+struct thread *process_thread_at(struct process *p, unsigned index)
+{
+    unsigned long flags = spin_lock(&processes_lock);
+    struct thread *t = p->threads;
+
+    while (t != NULL && t->index != index) {
+        t = t->sibling;
+    }
+
+    spin_unlock(&processes_lock, flags);
+    return t;
+}
+
+/*
+ * A thread of `p` that has ended: off the list, its stack given back, and
+ * whoever was waiting for it woken with its code.
+ */
+void process_thread_ended(struct process *p, struct thread *t, int code)
+{
+    unsigned long flags;
+    struct thread **link;
+    struct thread *joiner;
+
+    flags = spin_lock(&processes_lock);
+    link = &p->threads;
+
+    while (*link != NULL && *link != t) {
+        link = &(*link)->sibling;
+    }
+
+    /* Left on the list, marked ended: its code is kept until a sibling waits
+     * for it, and `alloc_thread` steps over the slot until then. */
+    (void)link;
+    t->exit_code = code;
+    t->ended = true;
+    p->live_threads--;
+    joiner = t->joiner;
+    t->joiner = NULL;
+    spin_unlock(&processes_lock, flags);
+
+    if (t->tls_page != NULL) {
+        (void)as_unmap(p->space, (uintptr_t)USER_TBLOCK(t->index), 1);
+        pmm_free_page(t->tls_page);
+        t->tls_page = NULL;
+    }
+
+    if (t->user_stack_pages != NULL) {
+        (void)as_unmap(p->space,
+                       (uintptr_t)USER_TSTACK_TOP(t->index)
+                       - USER_STACK_PAGES * PAGE_SIZE,
+                       USER_STACK_PAGES);
+        free_pages(t->user_stack_pages, USER_STACK_PAGES);
+        t->user_stack_pages = NULL;
+    }
+
+    if (joiner != NULL) {
+        thread_wake(joiner);
+    }
+}
+
+/*
+ * Waits for the thread with that index and answers with its code.
+ *
+ * A thread that has already ended is answered at once - which is the usual
+ * way round, since a thread that does a little work finishes before whoever
+ * made it gets round to asking. Its slot is handed back here, which is what
+ * `ended` was keeping.
+ */
+int process_thread_wait(struct process *p, unsigned index)
+{
+    for (;;) {
+        unsigned long flags = spin_lock(&processes_lock);
+        struct thread **link = &p->threads;
+        struct thread *t;
+        int code;
+
+        while (*link != NULL && (*link)->index != index) {
+            link = &(*link)->sibling;
+        }
+
+        t = *link;
+
+        if (t == NULL) {
+            spin_unlock(&processes_lock, flags);
+            return SYS_ERR_NO_CHILD;        /* no thread of this process */
+        }
+
+        if (t->ended) {
+            code = t->exit_code;
+            *link = t->sibling;
+            t->sibling = NULL;
+            t->ended = false;               /* the slot is the pool's again */
+            spin_unlock(&processes_lock, flags);
+            return code;
+        }
+
+        if (t->joiner != NULL && t->joiner != thread_current()) {
+            spin_unlock(&processes_lock, flags);
+            return SYS_ERR_DENIED;          /* somebody is already waiting */
+        }
+
+        t->joiner = thread_current();
+        thread_block_and_release(&processes_lock, flags);
+    }
+}
+
+/*
+ * Every other thread of this process, gone, before anything it is running on
+ * is freed (`threads.md` step 3).
+ *
+ * The first thread is the one that tears the process down, and it does that
+ * here rather than trusting that no sibling is left: freeing an address
+ * space under a running thread is the failure this ordering exists to
+ * prevent. Marked killed first, so a sibling on its way back to user level
+ * leaves instead; then waited for.
+ */
+/* The slots of threads that ended and were never waited for, back to the
+ * pool: a process that ends takes its zombies with it. */
+static void release_ended_threads(struct process *p)
+{
+    unsigned long flags = spin_lock(&processes_lock);
+    struct thread *t = p->threads;
+
+    while (t != NULL) {
+        struct thread *next = t->sibling;
+
+        t->sibling = NULL;
+        t->ended = false;
+        t = next;
+    }
+
+    p->threads = NULL;
+    spin_unlock(&processes_lock, flags);
+}
+
+static void wait_for_siblings(struct process *p)
+{
+    unsigned long start = hal_ticks();
+
+    /*
+     * **Waited for, not killed.** Marking the process killed here sets the
+     * flag the *exiting* thread's own return path reads, and that path calls
+     * `process_exit` again - which on x86 was a reboot in the middle of the
+     * suite rather than an error anybody could read. Ending siblings that
+     * have not asked to end is step 6's work, with the waking and the
+     * interrupt it needs; step 3 waits for threads that are leaving anyway,
+     * and says so loudly if one does not.
+     */
+    while (p->live_threads > 0) {
+        if (hal_ticks() - start > 5UL * TICK_HZ) {
+            panic("process: a thread would not leave");
+        }
+
+        thread_yield();
+    }
+}
+
 struct process *process_create(const char *name, const void *image,
                                size_t len, unsigned long arg)
 {
@@ -507,6 +812,14 @@ struct process *process_create(const char *name, const void *image,
 
     /* Its capabilities are the process's, from before it first runs. */
     p->thread->caps = &p->caps;
+    p->thread->index = 0;
+    p->next_index = 1;
+
+    /* And its own block, as every thread has: slot zero's, the first
+     * thread's stack being where it always was. */
+    if (!give_thread_a_block(p, p->thread, 0)) {
+        goto fail;
+    }
 
     return p;
 
@@ -1118,6 +1431,13 @@ void process_start(struct process *p)
  * differ only in whose thread ends. */
 static void release_memory(struct process *p)
 {
+    /* The first thread's own block, which no `process_thread_ended` will
+     * reach: that one is for the threads it made. */
+    if (p->thread != NULL && p->thread->tls_page != NULL) {
+        pmm_free_page(p->thread->tls_page);
+        p->thread->tls_page = NULL;
+    }
+
     /* Before the thread is gone, so the figure outlives it. */
     if (p->thread != NULL) {
         p->ticks = p->thread->ticks;
@@ -1195,10 +1515,18 @@ void process_abandon(struct process *p)
     }
 
     if (p->thread != NULL) {
+        /* Its block by hand, because `release_memory` reaches it through the
+         * pointer this is about to clear. */
+        if (p->thread->tls_page != NULL) {
+            pmm_free_page(p->thread->tls_page);
+            p->thread->tls_page = NULL;
+        }
+
         thread_abandon(p->thread);
         p->thread = NULL;
     }
 
+    release_ended_threads(p);
     ipc_caps_release(&p->caps);
     release_memory(p);
     (void)give_back(p);
@@ -1220,6 +1548,11 @@ void process_exit(struct process *p, int code)
          */
         panic("process_exit: only the running process may exit");
     }
+
+    /* Its other threads first, before a byte of what they run on is freed
+     * (`wait_for_siblings`). Nothing below may assume it is alone until this
+     * has returned. */
+    wait_for_siblings(p);
 
     /*
      * **Every death says so, not only the ones that fault.**
@@ -1324,6 +1657,7 @@ void process_exit(struct process *p, int code)
      * about to stop existing - so a process that exits holding one would
      * leak it for the life of the machine.
      */
+    release_ended_threads(p);
     ipc_caps_release(&p->caps);
 
     release_memory(p);

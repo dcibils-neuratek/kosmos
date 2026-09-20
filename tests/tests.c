@@ -3631,6 +3631,10 @@ static bool test_our_math_matches_its_definition(void)
  * the same syscalls as the shell.
  */
 
+/* Has to match CTEST_THREADS in user/init/main.c: the C role that makes a
+ * thread, since Lua cannot hand the kernel an entry point. */
+#define CTEST_THREADS   900UL
+
 /* Has to match LUATEST_BASE in user/init/main.c. A boot word at or above it
  * selects the test chunk instead of init. */
 #define LUATEST_BASE    1000UL
@@ -3692,6 +3696,58 @@ static bool luatest_role(unsigned long role)
      * the next test failing to find a slot.
      */
     return code == 0 && process_count() == before;
+}
+
+/*
+ * **A process with two threads** (`threads.md` step 3).
+ *
+ * The role is C rather than Lua - `user/init/main.c`, `CTEST_THREADS` -
+ * because Lua cannot hand the kernel an entry point, and because what is
+ * being tested is a *user* thread: its own stack, made by the kernel a
+ * megabyte above the share window with the rest of its slot unmapped, and
+ * its own `errno`.
+ *
+ * It starts a thread, that thread counts to a thousand in memory they share,
+ * the first waits for it and reads the code it gave, and each still reads
+ * its own `errno`. Then it waits again for the same index, which must say
+ * there is no such thread: the slot went back when its code was read. Every
+ * one of those is a number in the exit code, so a failure says which.
+ */
+static bool test_a_process_with_two_threads(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned before = process_count();
+    size_t pages_before = pmm_free_pages();
+    struct process *p;
+    unsigned i;
+    int code;
+
+    p = process_create("t-threads", init_image, (size_t)init_image_len,
+                       CTEST_THREADS);
+
+    if (p == NULL) {
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
+    for (i = 0; i < LUATEST_SLICES && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    /* And the thread's stack given back with everything else: a process that
+     * made a thread leaves no more behind than one that did not. */
+    return code == 0 && process_count() == before
+        && pmm_free_pages() == pages_before;
 }
 
 static bool test_lua_arithmetic(void)          { return luatest_role(0); }
@@ -8147,6 +8203,7 @@ static const struct test tests[] = {
     { "thread: the pool grows", test_the_thread_pool_grows },
     { "thread: its own pointer survives a switch", test_a_threads_pointer_survives_a_switch },
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
+    { "thread: a process with two threads", test_a_process_with_two_threads },
     { "ipc: endpoints and regions grow past their old pools", test_endpoints_and_regions_grow },
     { "cap: a table holds more than it has room for", test_a_table_holds_more_than_it_has_room_for },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },

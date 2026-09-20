@@ -348,6 +348,34 @@ static inline void *kosmos_tls(void)
     return (void *)(uintptr_t)value;
 }
 
+/*
+ * **Threads in this process** (`threads.md` step 3).
+ *
+ * `kosmos_thread_start` begins one at `entry` with one word, and answers
+ * with its index in this process - a number that means nothing outside it,
+ * as a capability's does. The kernel makes its stack. `kosmos_thread_exit`
+ * ends the calling thread, and `kosmos_thread_wait` answers with the code a
+ * thread gave, whether or not it has already finished.
+ *
+ * A thread that returns from `entry` does not fall off the end: the kit that
+ * wraps this calls `kosmos_thread_exit` for it.
+ */
+static inline long kosmos_thread_start(void (*entry)(unsigned long),
+                                       unsigned long arg)
+{
+    return sys2(SYS_THREAD_CREATE, (long)(uintptr_t)entry, (long)arg);
+}
+
+static inline void kosmos_thread_exit(int code)
+{
+    (void)sys1(SYS_THREAD_EXIT, (long)code);
+}
+
+static inline long kosmos_thread_wait(unsigned long index)
+{
+    return sys1(SYS_THREAD_WAIT, (long)index);
+}
+
 /* Every process, into `out`. Returns how many were written. */
 static inline long kosmos_proctable(struct proc_info *out, unsigned long max)
 {

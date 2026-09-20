@@ -431,7 +431,31 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_SET_TLS    55   /* (address)              -> 0                  */
 
-#define SYS_MAX         56
+/*
+ * **Threads in a process** (`threads.md` step 3).
+ *
+ * `SYS_THREAD_CREATE` takes where to begin and one word to begin with, and
+ * answers with the thread's *index in this process* - never a number that
+ * means anything outside it, which is the rule capabilities follow and for
+ * the same reason. The kernel makes its stack, a megabyte of address space
+ * apiece with the stack at the top and the rest unmapped, so an overflow
+ * faults instead of reaching a neighbour.
+ *
+ * `SYS_THREAD_EXIT` ends the caller with a code; `SYS_THREAD_WAIT` waits for
+ * the thread with that index and answers with its code. A thread that has
+ * already ended is answered at once - its slot is kept until somebody asks,
+ * exactly as a process's is.
+ *
+ * The process ends when its *first* thread returns, as C's `main` does, and
+ * that thread is also the one that tears the process down: it waits for its
+ * siblings to leave first, because freeing the address space under a running
+ * thread is the bug this design exists to avoid.
+ */
+#define SYS_THREAD_CREATE 56 /* (entry, arg)          -> index or error     */
+#define SYS_THREAD_EXIT   57 /* (code)                -> does not return    */
+#define SYS_THREAD_WAIT   58 /* (index)               -> its code or error  */
+
+#define SYS_MAX         59
 
 /*
  * What a spawn may hand its child beyond capabilities.

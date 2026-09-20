@@ -1247,6 +1247,36 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = 0;
         break;
 
+    case SYS_THREAD_CREATE:
+        result = process_thread_create(p, sc->arg[0], sc->arg[1]);
+
+        if (result < 0) {
+            result = (result == -2) ? SYS_ERR_NO_ROOM : SYS_ERR_NO_ROOM;
+        }
+
+        break;
+
+    case SYS_THREAD_EXIT:
+        /*
+         * The caller, and only the caller. A thread that is its process's
+         * first is the process ending, which is `SYS_EXIT` - answered as
+         * such rather than leaving a process with no first thread.
+         */
+        if (thread_current() == p->thread) {
+            process_exit(p, (int)sc->arg[0]);
+            result = 0;                     /* not reached */
+        } else {
+            process_thread_ended(p, thread_current(), (int)sc->arg[0]);
+            thread_exit();                  /* does not return */
+            result = 0;
+        }
+
+        break;
+
+    case SYS_THREAD_WAIT:
+        result = process_thread_wait(p, (unsigned)sc->arg[0]);
+        break;
+
     case SYS_KEY_PUSH:
         /*
          * A driver's key - `syscall.h` has why. Device authority, as the

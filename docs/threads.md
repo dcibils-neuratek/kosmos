@@ -293,9 +293,13 @@ it, and the steps that cannot fail loudly come before the one that can.
    thread still. `SYS_SET_TLS` is how a thread says where its block is; the
    two boards differ in whether the kernel must also save the register, and
    the hardware decides that rather than taste.
-3. **A second thread, on the same core.** `SYS_THREAD_CREATE`, `EXIT` and
-   `WAIT`; two threads counting into the same memory; a thread ending and
-   being waited for. On one core, so a failure is deterministic.
+3. **DONE on 19 September - a second thread in a process** (`testing.md`
+   18.121). `SYS_THREAD_CREATE`, `EXIT` and `WAIT`; two threads counting
+   into the same memory; a thread ending and being waited for, and its code
+   kept until it is. The kernel makes each thread's stack **and its own
+   block**, because `errno` is read through the thread pointer and on x86
+   that read faults when the pointer is zero - the first user thread this
+   system made found that out.
 4. **On other cores.** The same tests with each thread homed elsewhere, and
    *Work spreads* again: one process with four busy threads reads 100% on
    four cores.

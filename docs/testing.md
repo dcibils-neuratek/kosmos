@@ -6248,3 +6248,42 @@ core that never does fails exactly as it did before.
 The same evening's other flake, the wallpaper check in `arm-display-3`, did
 not reproduce and is left alone - a failure that repeats is a bug and one
 that does not is a note.
+
+## 18.121 A process with two threads
+
+**`threads.md` step 3, and the first one.** `SYS_THREAD_CREATE` takes an
+entry and one word and answers with the thread's index in its process;
+`SYS_THREAD_EXIT` ends the caller with a code; `SYS_THREAD_WAIT` waits for
+an index and returns that code, whether or not the thread has already
+finished - a thread that has ended keeps its slot until somebody asks, as a
+process does.
+
+**The kernel makes each thread's stack**: a megabyte of address space above
+the share window, the 256 KB stack at the top of it and the rest left
+unmapped, so an overflow faults in empty space rather than in a neighbour.
+**And each thread's own block**, one page at the bottom of that slot, whose
+first word is its own address.
+
+**The block is the kernel's job, and the reason is a portability trap the
+first user thread walked into.** `errno` reads through the thread pointer,
+and on x86 that read goes *through* the FS base - so a thread whose base is
+zero faults on address zero at its first `errno`, while AArch64, whose
+register a program can read directly, quietly returned a fallback. One board
+worked and the other faulted. Every thread now has a block before its first
+instruction.
+
+- **`thread: a process with two threads`**, both boards, through a C role in
+  the test image (`CTEST_THREADS`) because Lua cannot hand the kernel an
+  entry point: a thread is started, counts to a thousand in memory both
+  share, is waited for and gives back its code; each thread still reads its
+  own `errno`; waiting a second time says there is no such thread, its slot
+  having gone back when its code was read. The pages are all back afterwards.
+  Control, watched: with thread creation refused, it fails.
+
+**Two things went wrong on x86 and neither was what it looked like.**
+Marking the process killed while waiting for its siblings made the exiting
+thread's own return path call `process_exit` again - a reboot in the middle
+of the suite rather than an error - so step 3 waits for threads that are
+leaving and leaves killing to step 6. And a "hang" after test 58 was the
+machine being loaded by QEMUs left from earlier experiments: with the
+machine quiet, the suite runs in 8.5 seconds and passes 170 of 170, twice.

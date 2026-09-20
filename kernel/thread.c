@@ -568,7 +568,9 @@ static struct thread *alloc_thread(void)
         }
 
         for (i = 0; i < made; i++) {
-            if (slot(i)->state == THREAD_DEAD && !still_leaving(slot(i))) {
+            /* Not one its process is still holding the exit code of. */
+            if (slot(i)->state == THREAD_DEAD && !slot(i)->ended
+                && !still_leaving(slot(i))) {
                 slot(i)->state = THREAD_CLAIMED;
                 spin_unlock(&threads_lock, flags);
                 return slot(i);
@@ -681,6 +683,14 @@ void thread_init(void)
     captable_init(&t->own_caps);
     t->caps = &t->own_caps;
     t->tls = 0;
+    t->sibling = NULL;
+    t->index = 0;
+    t->exit_code = 0;
+    t->joiner = NULL;
+    t->user_entry = 0;
+    t->user_arg = 0;
+    t->user_stack_pages = NULL;
+    t->ended = false;
 
     /* The boot thread is core zero's, and becomes its idle thread. */
     t->sched.cpu = 0;
@@ -803,6 +813,14 @@ struct thread *thread_create_suspended(const char *name,
     captable_init(&t->own_caps);
     t->caps = &t->own_caps;
     t->tls = 0;
+    t->sibling = NULL;
+    t->index = 0;
+    t->exit_code = 0;
+    t->joiner = NULL;
+    t->user_entry = 0;
+    t->user_arg = 0;
+    t->user_stack_pages = NULL;
+    t->ended = false;
     t->process = NULL;
     t->space = NULL;
     memset(&t->ipc, 0, sizeof(t->ipc));
