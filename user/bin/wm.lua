@@ -242,7 +242,7 @@ local saved_wallpaper = nil
 --
 -- **A role's font at a size an application asked for.**
 --
--- Eight slots beyond the four roles, and `gfx.face` says no rather than
+-- Seven slots beyond the five roles, and `gfx.face` says no rather than
 -- evicting one - so a window that asks for more sizes than the machine will
 -- hold draws those at the role's own size, said once, instead of silently
 -- losing its headings to the bitmap font.
@@ -284,7 +284,7 @@ local function apply_fonts(fonts)
 
   local why
 
-  for _, role in ipairs { "ui", "title", "text", "mono" } do
+  for _, role in ipairs(theme.roles) do
     local want = fonts[role]
 
     if type(want) == "table" and want.font then
@@ -814,7 +814,7 @@ load_appearance()
 do
   local said = {}
 
-  for _, role in ipairs { "ui", "title", "text", "mono" } do
+  for _, role in ipairs(theme.roles) do
     local f = theme.fonts[role]
 
     said[#said + 1] = role .. "=" .. f.font .. "/" .. f.px

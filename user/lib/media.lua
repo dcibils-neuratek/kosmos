@@ -75,7 +75,32 @@ end
 -- A file, and a stream to play it on - paused until `play`. Nil and why when
 -- it cannot be either.
 --
-function media.open(path)
+--
+-- **Films come through this door too**, and that is a decision rather than
+-- a convenience. Diego, 20 September, asked whether the video work was "a
+-- video kit or media kit that also has audio decoding and playing
+-- abilities", and left the answer to me. It is one Media Kit, for one
+-- reason that outweighs the rest: **a film's picture and its sound have to
+-- agree on a clock, and neither half can hold that agreement alone.** Two
+-- kits would mean every application that plays a film writes its own sync -
+-- which is the wheel this exists so that nobody reinvents. BeOS called the
+-- same thing the Media Kit for the same reason, and this system already
+-- borrows that shelf of names.
+--
+-- **The picture half is a file of its own** (`video.lua`), loaded here only
+-- when a film is opened - so Music, which opens songs, never pays for an
+-- MP4 reader or a JPEG decoder it will not use. One door to learn, and no
+-- cost to what comes through the other side of it.
+--
+local FILMS = { mp4 = true, m4v = true, mov = true }
+
+function media.open(path, options)
+  local kind = tostring(path):lower():match("%.(%w+)$")
+
+  if kind and FILMS[kind] then
+    return use("/lib/video.lua").open(path, options)
+  end
+
   local fmt = audio.format()
 
   if fmt.period == 0 then return nil, "this machine has no sound device" end

@@ -150,7 +150,9 @@ function pulse.panel(spec)
 
       g:fill(bx, ry, CHIP_W, ROW - 4, chip)
       g:frame(bx, ry, CHIP_W, ROW - 4, "edge_dark")
-      g:text(bx + (CHIP_W - gfx.font.w) // 2, ry + 1, tostring(c - 1),
+      local digit = tostring(c - 1)
+
+      g:text(bx + (CHIP_W - gfx.measure(digit)) // 2, ry + 1, digit,
              live and "text_on" or "text_dim")
 
       --
@@ -166,7 +168,9 @@ function pulse.panel(spec)
       -- One that is not `live` never reached the kernel at all, which is
       -- the stronger statement and the one this branch means.
       local text = live and ("%d%%"):format(value) or "no data"
-      local room = 6 * gfx.font.w + 6
+      -- The widest thing this can say, measured rather than counted in
+      -- cells: six characters of the widest glyph is not six characters.
+      local room = gfx.measure("no data") + 6
 
       local barx = bx + CHIP_W + 6
       local barw = self.w - 4 - barx - room
@@ -174,7 +178,7 @@ function pulse.panel(spec)
       g:frame(barx, ry, barw, ROW - 4, "edge_dark")
       ui.leds(g, barx + 1, ry + 1, barw - 2, ROW - 6, value / 100, lit)
 
-      g:text(self.w - 4 - #text * gfx.font.w, ry + 1, text,
+      g:text(self.w - 4 - gfx.measure(text), ry + 1, text,
              live and "text" or "text_dim")
     end
   end

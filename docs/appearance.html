@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+  Appearance, redrawn - the mockup, before the code.
+
+  Diego, 20 September 2026, looking at the window with IBM Plex in force:
+  "i realised we need to revisit this appearance app as it needs a better
+  design, spacing, and ordering of widgets since we added a lot and is too
+  packed and small", and "let's work on the design of this app as a part of
+  the entire UI redesign we are working on with the new style layout we
+  worked".
+
+  `roadmap.md` 5b. Drawn first, as every app here is: the page is argued
+  with until he agrees, and the code follows the page rather than the other
+  way round.
+-->
+<title>Kosmos Appearance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The desktop as themes.lua's beos palette has it. */
+    --k-desk: #336698;
+    --k-win: #d8d8d8;
+    --k-raised: #e8e8e8;
+    --k-sunken: #ffffff;
+    --k-line: #606060;
+    --k-soft: #b8b8b8;
+    --k-light: #ffffff;
+    --k-dark: #989898;
+    --k-ink: #000000;
+    --k-dim: #808080;
+    --k-tab: #ffcb00;
+    --k-sel: #b8b8b8;
+    --k-ring: #0000e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font: 16px/1.6 var(--body); }
+  main { max-width: 1040px; margin: 0 auto; padding: 44px 22px 80px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display);
+       margin: 0 0 10px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; }
+  h3 { font: 600 15px/1.3 var(--body); margin: 26px 0 6px; }
+  p { margin: 0 0 12px; max-width: 68ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 64ch; }
+  .note { font-size: 13.5px; color: var(--muted); max-width: 74ch; }
+  ol, ul { max-width: 70ch; }
+  li { margin: 0 0 7px; }
+  code { font: 0.88em var(--mono); background: var(--card);
+         border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px;
+          align-items: start; margin: 22px 0 8px; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  .stage { background: var(--k-desk); padding: 22px; border-radius: 10px;
+           overflow-x: auto; }
+  .caption { font: 12px/1.5 var(--mono); color: #cfe0f5; margin-top: 10px;
+             letter-spacing: .02em; }
+
+  /* ---- The window, as Kosmos draws it ---- */
+  .win { background: var(--k-win); border: 1px solid var(--k-line);
+         color: var(--k-ink); font: 14px/1.35 var(--body); width: max-content; }
+  .bar { display: flex; align-items: stretch; height: 22px;
+         border-bottom: 1px solid var(--k-dark); }
+  .tab { background: var(--k-tab); display: flex; align-items: center;
+         gap: 7px; padding: 0 9px; font: 600 13px var(--display);
+         border-right: 1px solid var(--k-dark); }
+  .tab i { width: 9px; height: 9px; background: var(--k-raised);
+           border: 1px solid var(--k-line); display: block; }
+  .body { padding: 14px; }
+
+  .group { margin-bottom: 16px; }
+  .group > .head { font: 600 13px var(--body); letter-spacing: .02em;
+                   margin-bottom: 6px; display: flex; gap: 8px;
+                   align-items: baseline; justify-content: space-between; }
+  .group > .head em { font: 400 12px var(--body); font-style: normal;
+                      color: var(--k-dim); }
+  .list { background: var(--k-sunken); border: 1px solid var(--k-line); }
+  .list div { padding: 3px 8px; font: 13px/1.5 var(--body); }
+  .list div.on { background: var(--k-sel); }
+  .list div.dim { color: var(--k-dim); }
+  .sw { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  .sw i { display: block; height: 26px; border: 1px solid var(--k-dark); }
+  .sw i.on { outline: 2px solid var(--k-ring); outline-offset: 1px; }
+  .btn { background: var(--k-raised); border: 1px solid var(--k-line);
+         box-shadow: inset 1px 1px 0 var(--k-light),
+                     inset -1px -1px 0 var(--k-dark);
+         padding: 4px 12px; font: 13px var(--body); display: inline-block; }
+  .row { display: flex; gap: 10px; align-items: flex-start; }
+  .grow { flex: 1; }
+  .status { border-top: 1px solid var(--k-dark); margin-top: 4px;
+            padding-top: 8px; font: 12.5px var(--body); color: var(--k-dim); }
+
+  /* today's cramped one */
+  .today .win { width: 380px; font: 13px/1.3 var(--body); }
+  .today .body { padding: 10px; }
+  .today .group { margin-bottom: 8px; }
+  .today .list div { padding: 1px 6px; font-size: 12px; line-height: 1.35; }
+
+  /* the proposal */
+  .new .win { width: 668px; }
+  .panes { display: grid; grid-template-columns: 286px 1fr; gap: 16px; }
+  .role { display: flex; justify-content: space-between; gap: 12px; }
+  .role span:last-child { color: var(--k-dim); font: 12px var(--mono);
+                          white-space: nowrap; }
+  .preview { background: var(--k-sunken); border: 1px solid var(--k-line);
+             padding: 10px 12px; }
+  .preview b { font: 600 15px var(--display); display: block; }
+  .preview span { font: 13px var(--body); }
+  .preview code { background: none; border: 0; padding: 0;
+                  font: 12.5px var(--mono); color: var(--k-dim); }
+  .mini-desk { background: var(--k-desk); border: 1px solid var(--k-line);
+               padding: 10px; }
+  .mini-win { background: var(--k-win); border: 1px solid var(--k-line); }
+  .mini-bar { background: var(--k-tab); font: 600 11px var(--display);
+              padding: 2px 7px; display: flex; align-items: center; gap: 5px;
+              width: max-content; border-right: 1px solid var(--k-dark);
+              border-bottom: 1px solid var(--k-dark); }
+  .mini-bar i { width: 7px; height: 7px; background: var(--k-raised);
+                border: 1px solid var(--k-line); display: block; }
+  .mini-body { padding: 7px 8px 8px; display: grid; gap: 5px; }
+  .mini-head { font: 600 13px var(--body); }
+  .mini-row { display: flex; gap: 6px; }
+  .mini-btn { background: var(--k-raised); border: 1px solid var(--k-line);
+              box-shadow: inset 1px 1px 0 var(--k-light),
+                          inset -1px -1px 0 var(--k-dark);
+              padding: 2px 8px; font: 11px var(--body); }
+  .mini-list { background: var(--k-sunken); border: 1px solid var(--k-line);
+               font: 11px/1.5 var(--body); }
+  .mini-list div { padding: 0 6px; }
+  .mini-list div.on { background: var(--k-sel); }
+  .mini-text { font: 11px/1.4 var(--mono); }
+  .mini-term { background: #101010; color: #c8e6c9; font: 11px var(--mono);
+               padding: 3px 6px; }
+
+  .shape { display: flex; gap: 10px; }
+  .shape label { flex: 1; background: var(--k-sunken);
+                 border: 1px solid var(--k-line); padding: 8px;
+                 font: 12.5px var(--body); display: block; }
+  .shape label.on { outline: 2px solid var(--k-ring); outline-offset: -3px; }
+  .shape label .mini { display: block; }
+  .mini { height: 30px; border: 1px solid var(--k-dark);
+          background: var(--k-win); margin-bottom: 6px; position: relative; }
+  .mini b { position: absolute; left: 0; top: 0; height: 9px;
+            background: var(--k-tab); display: block; }
+  .mini.tabbed b { width: 52px; border-right: 1px solid var(--k-dark); }
+  .mini.barred b { width: 100%; }
+
+  table { border-collapse: collapse; margin: 14px 0 6px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 7px 14px 7px 0;
+           border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font: 600 13px var(--body); color: var(--muted); }
+  .q { background: var(--card); border: 1px solid var(--rule);
+       border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+       padding: 14px 18px; margin: 14px 0; }
+  .q h3 { margin-top: 0; }
+</style>
+
+<main>
+  <h1>Appearance, redrawn</h1>
+  <p class="lede">The panel that chooses how everything else looks had never
+  been looked at. It has grown a group at a time until it is seven of them in
+  one narrow column, and the day the desktop took a proportional face it
+  stopped having room at all.</p>
+
+  <div class="cols">
+    <div class="today">
+      <div class="stage">
+        <div class="win">
+          <div class="bar"><div class="tab"><i></i>Appearance</div></div>
+          <div class="body">
+            <div class="group"><div class="head">Palette</div>
+              <div class="list"><div class="on">beos</div><div>dark</div><div>irix</div></div>
+            </div>
+            <div class="group"><div class="head">Desktop</div>
+              <div class="sw">
+                <i style="background:#1b2330"></i><i style="background:#17202b"></i>
+                <i style="background:#1e2b3a"></i><i style="background:#39404a"></i>
+                <i style="background:#22303f"></i><i style="background:#2b4257"></i>
+                <i style="background:#2a3b2a"></i><i style="background:#3a2f42"></i>
+                <i class="on" style="background:#336698"></i><i style="background:#4a7fc1"></i>
+                <i style="background:#6d95c4"></i><i style="background:#94aecb"></i>
+                <i style="background:#6b6b6b"></i><i style="background:#8a8a8a"></i>
+                <i style="background:#a6a6a6"></i><i style="background:#d8d8d8"></i>
+              </div>
+            </div>
+            <div class="group"><div class="head">Fonts</div>
+              <div class="row">
+                <div class="list" style="width:150px">
+                  <div>Window titles</div><div class="on">Widgets</div><div>Regular text</div>
+                </div>
+                <div class="list" style="width:122px">
+                  <div>ibmplexmono</div><div>ibmplexsans-bold</div>
+                  <div>ibmplexsans-boldi</div><div>ibmplexsans-italic</div>
+                  <div class="on">ibmplexsans</div>
+                </div>
+                <div class="list" style="width:56px">
+                  <div>12</div><div>14</div><div>16</div><div class="on">18</div><div>20</div>
+                </div>
+              </div>
+              <div style="margin-top:8px"><span class="btn">Palette default</span></div>
+            </div>
+            <div class="group"><div class="head">Wallpaper</div>
+              <div class="list"><div class="on">none</div><div>black.png</div>
+                <div>blue.png</div><div>graham.jpg</div></div>
+            </div>
+            <div class="group"><div class="head">Window titles</div>
+              <div class="list"><div class="on">A tab as wide as the title, as BeOS drew it</div>
+                <div>A bar across the whole window</div></div>
+            </div>
+            <div class="status">saved: beos, ui = ibmplexsans 18</div>
+          </div>
+        </div>
+        <div class="caption">today &middot; 380 &times; 580, seven groups in one column</div>
+      </div>
+
+      <h3>What is wrong with it</h3>
+      <ol>
+        <li><b>Lists three rows deep.</b> There are three palettes today and
+        the list shows all three; a fourth is a scroll bar. The font list has
+        eleven faces and shows five.</li>
+        <li><b>The fonts are the hardest part and get the least room</b> -
+        three lists side by side in 348 pixels, the family names cut
+        (<code>ibmplexsans-boldi</code>), and no way to see what a face looks
+        like before choosing it.</li>
+        <li><b>You cannot see what is set.</b> The role list says
+        <em>Widgets</em>, not what Widgets currently <em>is</em>; finding out
+        means clicking each role in turn and reading the status line.</li>
+        <li><b>The order is the order things were added</b>, not the order
+        anyone uses them, and <em>Palette default</em> sits under Fonts while
+        belonging to Palette.</li>
+        <li><b>Two sentences pretending to be a picture.</b> Window titles is
+        a choice between two <em>shapes</em>, described in words.</li>
+      </ol>
+    </div>
+
+    <div class="new">
+      <div class="stage">
+        <div class="win">
+          <div class="bar"><div class="tab"><i></i>Appearance</div></div>
+          <div class="body">
+            <div class="panes">
+              <div>
+                <div class="group">
+                  <div class="head"><span>Palette</span><em>3 of them</em></div>
+                  <div class="list">
+                    <div class="on">beos</div><div>dark</div><div>irix</div>
+                    <div class="dim">&nbsp;</div><div class="dim">&nbsp;</div>
+                    <div class="dim">&nbsp;</div>
+                  </div>
+                  <div style="margin-top:8px"><span class="btn">Back to this palette's colours</span></div>
+                </div>
+
+                <div class="group">
+                  <div class="head"><span>Desktop</span><em>#336698</em></div>
+                  <div class="sw">
+                    <i style="background:#1b2330"></i><i style="background:#17202b"></i>
+                    <i style="background:#1e2b3a"></i><i style="background:#39404a"></i>
+                    <i style="background:#22303f"></i><i style="background:#2b4257"></i>
+                    <i style="background:#2a3b2a"></i><i style="background:#3a2f42"></i>
+                    <i class="on" style="background:#336698"></i><i style="background:#4a7fc1"></i>
+                    <i style="background:#6d95c4"></i><i style="background:#94aecb"></i>
+                    <i style="background:#6b6b6b"></i><i style="background:#8a8a8a"></i>
+                    <i style="background:#a6a6a6"></i><i style="background:#d8d8d8"></i>
+                  </div>
+                </div>
+
+                <div class="group">
+                  <div class="head"><span>Wallpaper</span><em>none</em></div>
+                  <div class="list">
+                    <div class="on">none</div><div>black.png</div><div>blue.png</div>
+                    <div>graham.jpg</div><div>jeremy.jpg</div><div>lucas.jpg</div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div class="group">
+                  <div class="head"><span>Fonts</span><em>five roles</em></div>
+                  <div class="list">
+                    <div class="role on"><span>Window titles</span><span>Plex Sans Condensed 15</span></div>
+                    <div class="role"><span>Widgets</span><span>Plex Sans 14</span></div>
+                    <div class="role"><span>Headings</span><span>Plex Sans Bold 18</span></div>
+                    <div class="role"><span>Regular text</span><span>Plex Mono 13</span></div>
+                    <div class="role"><span>Terminal</span><span>Plex Mono 13</span></div>
+                  </div>
+
+                  <div class="row" style="margin-top:8px">
+                    <div class="list grow">
+                      <div>ibmplexmono</div>
+                      <div class="on">ibmplexsanscondensed</div>
+                      <div>ibmplexsans</div>
+                      <div>ibmplexsans-bold</div>
+                      <div>ibmplexsans-italic</div>
+                      <div>spleen</div>
+                    </div>
+                    <div class="list" style="width:62px">
+                      <div>12</div><div>13</div><div>14</div>
+                      <div class="on">15</div><div>16</div><div>18</div>
+                    </div>
+                  </div>
+
+                  <div class="mini-desk" style="margin-top:8px">
+                    <div class="mini-win">
+                      <div class="mini-bar"><i></i>Tracker</div>
+                      <div class="mini-body">
+                        <div class="mini-head">Library</div>
+                        <div class="mini-row">
+                          <span class="mini-btn">New folder</span>
+                          <span class="mini-btn">Delete</span>
+                        </div>
+                        <div class="mini-list">
+                          <div class="on">Deskbar</div><div>magicword-clip.mp4</div>
+                        </div>
+                        <div class="mini-text">A paragraph, in the face that
+                        regular text is set in.</div>
+                        <div class="mini-term">kosmos&gt; play --debug film.mp4</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="group">
+                  <div class="head"><span>Window titles</span><em>the shape</em></div>
+                  <div class="shape">
+                    <label class="on"><span class="mini tabbed"><b></b></span>A tab, as BeOS drew it</label>
+                    <label><span class="mini barred"><b></b></span>A bar across the window</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="status">beos &middot; window titles Plex Sans Condensed 15 &middot; saved</div>
+          </div>
+        </div>
+        <div class="caption">proposed &middot; 668 &times; 530, two columns, nothing hidden</div>
+      </div>
+
+      <h3>What changed, and why</h3>
+      <ol>
+        <li><b>Two columns, and it is shorter.</b> The same seven groups in
+        668 &times; 530 instead of 380 &times; 580 - a window that fits a
+        1024-wide screen twice over, with lists six rows deep.</li>
+        <li><b>Each role says what it is set to.</b> <em>Window titles &mdash;
+        Plex Sans Condensed 15</em>, all four visible at once, so the panel
+        answers the question you came with before you touch anything.</li>
+        <li><b>A miniature desktop under the family and size lists</b> - a
+        little window in the palette and faces being chosen, showing all five
+        roles at once.</li>
+        <li><b>Two lists for fonts, not three</b>, because the role list above
+        is the third and it earns its space by reporting.</li>
+        <li><b>The shapes are drawn.</b> Window titles is two small pictures
+        of a window, one tabbed and one barred.</li>
+        <li><b>Order of use, not order of arrival</b>: palette, desktop
+        colour, wallpaper down the left; type and window shape down the
+        right. <em>Palette default</em> moves up beside the palette it
+        resets, and says what it does.</li>
+        <li><b>One status line</b>, quieter, saying what is in force and
+        whether it is saved.</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2>What this keeps</h2>
+  <p>Every control that exists today is still here, doing the same thing:
+  the palette list, the sixteen desktop colours, a font family and size per
+  role, the wallpaper list with <code>none</code> first, the title shape, the
+  reset, and a line that says what was saved. Nothing is hidden behind a tab
+  or a disclosure, because <strong>a preferences panel that hides half its
+  settings is how the packing started</strong>.</p>
+
+  <table>
+    <tr><th>Today</th><th>Proposed</th></tr>
+    <tr><td>380 &times; 580</td><td>668 &times; 530</td></tr>
+    <tr><td>Lists 3&ndash;5 rows</td><td>Lists 6 rows</td></tr>
+    <tr><td>One role's font visible</td><td>All five roles, with their faces</td></tr>
+    <tr><td>No preview</td><td>A miniature desktop, all five roles</td></tr>
+    <tr><td>Title shape as two sentences</td><td>Two drawings</td></tr>
+    <tr><td>Reset under Fonts</td><td>Reset beside Palette</td></tr>
+  </table>
+
+  <h2>The four questions, and what was decided</h2>
+
+  <p>Asked on 20 September and answered the same afternoon - <em>"1 two
+  columns, 2 miniature desktop, 3 yes, 4 nothing"</em>. The drawing above is
+  what those answers make, and it is what the code follows.</p>
+
+  <div class="q">
+    <h3>1. Two columns &mdash; agreed</h3>
+    <p class="note">668 &times; 470 rather than one column at roughly 420
+    &times; 700. Wider, shorter, and the lists get six rows.</p>
+  </div>
+
+  <div class="q">
+    <h3>2. A miniature desktop, not a line &mdash; agreed</h3>
+    <p class="note">The preview is a little window drawn in the palette and
+    the faces being chosen: a title bar, a heading, two buttons, a list, a
+    paragraph and a terminal line. <strong>Every role at once</strong>, which
+    is the thing a single line of sample text cannot do - and the reason it
+    is worth the day it costs. It is what BeOS's panel did.</p>
+    <p class="note">It also answers a question the panel could not answer
+    before: what a palette and a face look like <em>together</em>, without
+    applying either.</p>
+  </div>
+
+  <div class="q">
+    <h3>3. Headings join the roles &mdash; agreed</h3>
+    <p class="note">Five now: window titles, widgets, headings, regular text,
+    terminal. <code>heading</code> arrived with the style guide at Plex Sans
+    Bold 18 and applications have been using it while the panel pretended it
+    did not exist.</p>
+  </div>
+
+  <div class="q">
+    <h3>4. Nothing else &mdash; agreed</h3>
+    <p class="note">A light/dark switch, the pointer's size and the
+    double-click speed were considered and left out: none of them exist to be
+    set, so each is a thing to build first and lay out second.</p>
+  </div>
+
+  <p class="note" style="margin-top:28px">Drawn on 20 September 2026 for
+  <code>roadmap.md</code> 5b. The code follows this page, not the other way
+  round - so argue with it here, where an afternoon of changes costs an
+  afternoon of nothing.</p>
+</main>
+</html>

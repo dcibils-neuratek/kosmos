@@ -1035,11 +1035,20 @@ static int font_table_ref = LUA_NOREF;
  * ROLE_UI is what everything draws with unless it says otherwise, which
  * keeps every existing `text` call working.
  */
-#define ROLE_UI    0
-#define ROLE_TEXT  1
-#define ROLE_MONO  2
-#define ROLE_TITLE 3
-#define ROLE_COUNT 4
+#define ROLE_UI      0
+#define ROLE_TEXT    1
+#define ROLE_MONO    2
+#define ROLE_TITLE   3
+/*
+ * **A heading, since 20 September.** It arrived with the style guide as a
+ * face applications were told to use, and `role_of` had no name for it - so
+ * every `heading` asked for fell through to `ROLE_UI` and was drawn in the
+ * widget font, which is precisely the silent wrong-font failure the comment
+ * below this one describes. Diego chose to put it in the Appearance panel
+ * ("3 yes"), and a role a person can set has to be a role the drawing knows.
+ */
+#define ROLE_HEADING 4
+#define ROLE_COUNT   5
 
 /*
  * Where a codepoint outside printable ASCII lives.
@@ -1142,7 +1151,21 @@ static unsigned utf8_next(const char *str, size_t len, size_t *at)
  * `measure`, `height` and drawing take either a role name or a face - they
  * were already taking an index, and a role is just one of the first four.
  */
-#define FACES_MAX   12
+/*
+ * **The sized pool is eight, whatever the roles come to.**
+ *
+ * This was a flat 12 with four roles, so the eight slots a caller can ask
+ * for by size were what happened to be left over - and the day a fifth role
+ * arrived (`heading`, 20 September) they silently became seven. Nothing
+ * said so: `gfx.face` answers "no room for another face" exactly as it does
+ * when a program really has asked for nine sizes, and the display suite
+ * found it as two faces that would not load.
+ *
+ * Written as a sum so that the next role costs a slot of its own rather
+ * than one of these.
+ */
+#define FACES_SIZED 8
+#define FACES_MAX   (ROLE_COUNT + FACES_SIZED)
 
 static struct outline_font faces[FACES_MAX];
 
@@ -1175,6 +1198,7 @@ static int role_of(lua_State *L, int index)
     if (strcmp(name, "text") == 0)  return ROLE_TEXT;
     if (strcmp(name, "mono") == 0)  return ROLE_MONO;
     if (strcmp(name, "title") == 0) return ROLE_TITLE;
+    if (strcmp(name, "heading") == 0) return ROLE_HEADING;
 
     return ROLE_UI;
 }

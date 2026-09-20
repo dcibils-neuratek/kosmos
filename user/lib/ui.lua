@@ -1849,7 +1849,26 @@ end
 
 function ui.list(spec)
   local v = ui.view(spec)
-  v.h = v.h > 0 and v.h or (GH * 6)
+  --
+  -- **How tall a row is, asked rather than remembered.**
+  --
+  -- Every one of these was `GH`, which is `gfx.font.h` as it stood when
+  -- this file loaded - and in an application that is *before* the desktop
+  -- has said what its faces are, because the faces arrive in the reply to
+  -- the window this kit is about to open. So a list drew rows 16 pixels
+  -- apart and put 23-pixel text in them, and the rows above and below the
+  -- selected one were cut into. Diego photographed it in the Appearance
+  -- panel's font list on 20 September: "each row should be able to show the
+  -- contents without any overlapping on the other rows below or above".
+  --
+  -- Exactly `gfx.height()` and no padding: under the 8x16 bitmap it is 16,
+  -- which is what `GH` was, so nothing that was measured against that face
+  -- moves - and under a proportional face it is however tall that face is,
+  -- which is the whole of the fix.
+  --
+  local function row_h() return gfx.height() end
+
+  v.h = v.h > 0 and v.h or (row_h() * 6)
   v.w = v.w > 0 and v.w or 200
   v.focusable = true
   v.items = v.items or {}
@@ -1879,7 +1898,7 @@ function ui.list(spec)
       g:frame(1, 1, self.w - 2, self.h - 2, "ring")
     end
 
-    local rows = (self.h - 4) // GH
+    local rows = (self.h - 4) // row_h()
 
     --
     -- Follow the selection when it *moves*, and not on every pass.
@@ -1923,16 +1942,16 @@ function ui.list(spec)
       local item = self.items[n]
 
       if item then
-        local y = 2 + i * GH
+        local y = 2 + i * row_h()
         local on = (n == self.selected)
         local bg = on and theme.accent or theme.sunken
 
-        if on then g:fill(2, y, room, GH, bg) end
+        if on then g:fill(2, y, room, row_h(), bg) end
 
         local tx = 4
 
         if self.checks then
-          local box = GH - 4
+          local box = row_h() - 4
 
           g:sunken(4, y + 2, box, box, "sunken")
 
@@ -2006,7 +2025,7 @@ function ui.list(spec)
   -- same bargain the button makes.
   --
   function v:mouse(action, x, y)
-    local rows = self.rows or ((self.h - 4) // GH)
+    local rows = self.rows or ((self.h - 4) // row_h())
 
     --
     -- The bar first, because it sits over the right-hand end of every row
@@ -2021,7 +2040,7 @@ function ui.list(spec)
       return true
     end
 
-    local row = (y - 2) // GH
+    local row = (y - 2) // row_h()
     local n = self.top + row
 
     if row < 0 or n > #self.items then return true end
@@ -2031,7 +2050,7 @@ function ui.list(spec)
     -- because a checklist is read down the boxes and a selection moving
     -- under your eye while you tick things is noise.
     --
-    if self.checks and action == "press" and x < 4 + GH + 2 then
+    if self.checks and action == "press" and x < 4 + row_h() + 2 then
       local key = tostring(self.items[n])
 
       self.checks[key] = (not self.checks[key]) or nil
@@ -3103,11 +3122,27 @@ function ui.replicant(spec)
   local v = ui.view{ x = spec.x or 0, y = spec.y or 0,
                      w = spec.w or 160, h = spec.h or 40 }
 
+  --
   -- What a replicant may see. Deliberately small and deliberately explicit:
   -- adding to this list is granting something to every replicant that will
   -- ever run, so it is a list and not a metatable onto _G.
+  --
+  -- **`measure` and `height` were granted on 20 September**, deliberately
+  -- and for a reason rather than for convenience: a replicant that can only
+  -- see `gfx.font` can only lay text out by counting cells, which is wrong
+  -- for every face that is not the bitmap - the clock centred itself with
+  -- `#text * gfx.font.w` and drifted the moment the desktop took IBM Plex.
+  -- Changing that line to measure broke every replicant at once, because
+  -- the function was not in here, and the display suite caught it.
+  --
+  -- Both are pure: they read the faces this process has already loaded and
+  -- tell you how wide or tall a string would be. Nothing is drawn, nothing
+  -- is changed, and a replicant already draws through the host's `gc` with
+  -- the host's faces - so this grants an *answer* about what is about to
+  -- happen anyway.
+  --
   local env = {
-    gfx = { font = gfx.font },
+    gfx = { font = gfx.font, measure = gfx.measure, height = gfx.height },
     fs = ui.restricted(spec.needs),
     ticks = sys.ticks,
     theme = theme,
@@ -3290,7 +3325,7 @@ local function apply_fonts(fonts)
   -- `title` as well, so an application that asked for it measured against a
   -- face it had never loaded - the 8x16 bitmap - while the compositor drew
   -- the desktop's title face. Found on 15 September, writing the size below.
-  for _, role in ipairs { "ui", "title", "text", "mono" } do
+  for _, role in ipairs(theme.roles) do
     local want = fonts[role]
 
     if type(want) == "table" and want.font then
@@ -3306,7 +3341,7 @@ end
 --
 -- **A role's font at a size of its own.**
 --
--- `gfx.face` keeps a pool of eight beyond the four roles and answers `nil,
+-- `gfx.face` keeps a pool of seven beyond the five roles and answers `nil,
 -- "no room for another face"` rather than throwing one out - so a size that
 -- cannot be served falls back to the role itself, which draws at the
 -- desktop's size rather than in the bitmap font. Remembered per role and

@@ -458,8 +458,16 @@ local function meter(spec)
 
     g:text(0, 0, self.label, "text_dim")
 
+    --
+    -- **Measured, not counted**, and this one was missed when the row above
+    -- was fixed the same way - which is what "fix the class, not the
+    -- instance" means in practice. `gfx.font.w` is the *widest* glyph of
+    -- the widget face, so `#right` of them is wider than the string really
+    -- is, and the value was pushed left until it sat on top of the label:
+    -- `mem124 of 512 MB`, which is what Diego photographed on 20 September.
+    --
     local right = text or (tostring(value) .. " of " .. tostring(of))
-    g:text(self.w - #right * gfx.font.w, 0, right, "text")
+    g:text(self.w - gfx.measure(right), 0, right, "text")
 
     local top = gfx.font.h + 4
 

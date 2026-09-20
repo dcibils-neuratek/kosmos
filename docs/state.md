@@ -18,6 +18,52 @@ Last updated: 2026-09-20
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 20 September, the afternoon: a film, a kit, and Appearance redrawn
+
+**Pushed once (0.10.92, `f607ec7`); everything below is on top of it and
+not yet committed.**
+
+**Video plays.** Diego asked for a film we could already decode, so the
+clip is Motion JPEG and MP3 - `gfx.jpeg` and `/kits/mp3`, both in the image
+already - and `mp4.lua` read it unchanged. `play /home/magicword-mjpeg.mp4`
+holds **29.9 frames a second of 29.9, nothing dropped**, at 2.4 ms read,
+9.4 ms decode and 0.2 ms to screen against a 33 ms budget. Diego watched it
+on his own machine: "it plays all the video", "it looks great".
+
+- **The player is a kit** (`user/lib/video.lua`), because he asked whether
+  his own application could use it. `media.open` is the one door - a song or
+  a film - and the picture half is loaded only when a film is opened, so
+  Music pays nothing for an MP4 reader. `play.lua` is twenty lines and
+  mentions no codec.
+- **`debuginfo = true` at open** gives the badge and the overlay: codec,
+  resolution, actual against nominal frames a second, dropped, bitrate,
+  audio codec. In the kit rather than the app, which is Diego's correction -
+  "i mean debug as a parameter when instantiating the video player in lua
+  code" - and the right one: the alternative is every application writing
+  the same overlay.
+- **A minimal host ffmpeg** is built from the source already downloaded for
+  the port, to make test films. `build/ffmpeg-host`, never vendored.
+
+**Appearance is redrawn** (`roadmap.md` 5b, `testing.md` 18.124): drawn
+first as `docs/appearance.html`, agreed the same afternoon - "1 two columns,
+2 miniature desktop, 3 yes, 4 nothing" - and built. Two columns at 668 wide,
+lists six rows deep, five roles each reporting its face, the title's shape
+drawn rather than described, and a preview that is a little desktop in the
+palette and faces being chosen. `heading` became a real role on the way:
+`gfx`'s `role_of` had never known the word, so every heading had been drawn
+in the widget font.
+
+**And the class from the morning kept turning up.** Diego photographed
+`mem124 of 512 MB` in Processes - a label and its value on top of each other
+- which is `#right * gfx.font.w` again. Fixed in `procs.lua`, `about.lua`,
+`clock-replicant.lua` and `pulse.lua`; the clock's fix then broke every
+replicant, because the sandbox hands out `gfx.font` and not `gfx.measure`,
+and the display suite caught it. What is left is the capacity sums and the
+`GW` caches in the editors (`roadmap.md` 5c).
+
+**Next**: commit all of the above, then threads step 4-6, `docs/gamekit.md`,
+and the video player's own app.
+
 ## 20 September: the desktop was two fonts at once
 
 **The screenshot of 0.10.90 was wrong in a way the fonts got blamed for.**

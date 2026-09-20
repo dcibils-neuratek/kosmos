@@ -477,6 +477,14 @@ end
 -- The title was part of `ui` until somebody chose a display face for their
 -- title bars and got it in every list as well, which is the whole argument
 -- for splitting it: the settings you *want* to make are the roles.
+--
+-- **The roles, in one place.** Three loops named them - the window
+-- manager's `apply_fonts`, its startup line, and the kit's `apply_fonts` -
+-- so a fifth role meant finding all three, and the fifth role is exactly
+-- what was being added when this was written.
+--
+theme.roles = { "ui", "title", "text", "mono", "heading" }
+
 theme.fonts = {
   -- Widgets: the words on a button, a list of files, the Open window.
   ui      = { font = "ibmplexsans", px = 14 },

@@ -6421,3 +6421,77 @@ control is for.
 to be done" and leaves the binary alone - with the output discarded, so the
 suite ran against a binary from eight minutes earlier and the control
 "passed". The x86 image is built by `make x86-build`.
+
+## 18.124 The Appearance panel, and a window that measures itself
+
+**Roadmap 5b**, drawn first (`docs/appearance.html`) and agreed the same
+afternoon: two columns at 668 wide instead of seven groups in a 380-pixel
+one, lists six rows deep, every font role reporting the face it is set to,
+the title's shape drawn rather than described, and `heading` joining the
+roles.
+
+**What is worth testing is invisible in a screenshot.** The panel's height
+is *measured* - the two columns are summed at the faces in force, and the
+window is resized to what they came to - and a window that measured itself
+looks exactly like one whose constant happens to fit. It regressed twice
+while being written, both times silently: once the sums ran after
+`win:run()`, so they happened when the window closed; once they ran before
+the widgets they were measuring existed. Both times the window stayed at
+the 530 it had asked for and the bottom group hung off the end of it.
+
+So the panel says what it laid out, and `appearance` in the display harness
+holds it to that line. **4 checks**: that it opened at all, that it is 668
+wide as drawn, that it offers five roles rather than the four it had, and
+that its height is not 530.
+
+**The line reports `win.h`, not the sum.** Printing the arithmetic would
+have passed on both regressions - the sum is correct in each of them, and
+what failed was the resize reaching the window manager. `win.h` is what the
+window manager agreed to, which is the only number that means the window is
+really that tall. With the resize commented out the phase fails with *"the
+panel is 530 tall, which is the size it asked for before it knew the
+faces"*.
+
+**And a two-copies-of-one-fact bug it inherited.** The palette list's
+selection was set where the list was built, which is before the saved
+settings are read - so a machine with `beos` saved opened the panel with
+`dark` highlighted and, four inches below, a status line saying `in force:
+beos`. It is the same bug the file's own comment describes about `role()`,
+in the widget beside it. The display now catches up with the state in one
+function, `reflect`, and the palette row is set there and nowhere else.
+
+## 18.125 A list row is as tall as its face, and a role costs a slot
+
+Two consequences of the same afternoon, both found by looking rather than
+by reasoning.
+
+**The rows.** Diego, seeing the Appearance panel's font list: "each row
+should be able to show the contents without any overlapping on the other
+rows below or above the item selected". `ui.list` spaced its rows by `GH`,
+which is `gfx.font.h` *as it stood when the kit loaded* - and in an
+application that is before the desktop has said what its faces are, because
+the faces arrive in the reply to the window the kit is about to open. So
+the list drew rows 16 apart with 23-pixel text in them.
+
+It asks now: `row_h()` is `gfx.height()`, called where it is used. **No
+padding**, and that is deliberate rather than mean - under the 8x16 bitmap
+it is exactly 16, which is what `GH` was, so not one of the forty display
+checks measured against that face moves. Under a proportional face it is
+that face's height, which is the whole of the fix.
+
+**The slot.** Adding `heading` as a fifth role broke two faces that had
+nothing to do with it: `FACES_MAX` was a flat 12, so the eight faces a
+program may ask for *by size* were whatever the roles left over, and the
+fifth role quietly made them seven. `gfx.face` then answered "no room for
+another face" for `ibmplexsans-italic` and `spacegrotesk-light`, which is
+the same sentence it says when a program has really asked for nine sizes.
+
+The `faces` phase caught it on both boards, and the fix is to stop the two
+numbers sharing: `FACES_MAX` is `ROLE_COUNT + FACES_SIZED` now, so a sixth
+role costs a slot of its own rather than one of the sized pool's.
+
+**Neither would have been found by reading the diff.** One needed a
+photograph of a list, the other needed a suite that loads every face in the
+image - and the face that failed was in neither the role that was added nor
+the file that added it.
+

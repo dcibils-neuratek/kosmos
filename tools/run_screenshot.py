@@ -3579,6 +3579,92 @@ def check_direct_menu(guest):
     return 3
 
 
+def check_appearance(guest):
+    """**The Appearance panel lays itself out rather than guessing.**
+
+    Redrawn on 20 September (`docs/appearance.html`, `roadmap.md` 5b) from
+    seven groups in one 380-pixel column to two columns - and the thing
+    worth testing is invisible in a screenshot: the window's height is
+    *measured* from what the two columns came to, at the faces in force,
+    rather than being a constant that happens to fit.
+
+    It regressed twice while being written, both times silently - the sums
+    ran after `win:run()` once, and before the widgets they measured the
+    other time - and both times the window stayed at its starting 530 with
+    the bottom group cut off. So the panel says what it laid out and this
+    holds it to three things: that it opened, that every role the kit has is
+    offered, and that the height is not the starting one.
+
+    The number itself is deliberately not checked against a constant: it
+    depends on the faces, which is the whole point.
+    """
+    mark = len(guest.seen)
+
+    guest.type("wm appearance")
+    guest.wait_for("appearance: ", "the Appearance panel to lay itself out")
+
+    line = guest.seen[mark:].split("appearance: ", 1)[1].split("\n")[0].strip()
+    said = re.match(r"(\d+)x(\d+), (\d+) roles, (\S+)", line)
+
+    if not said:
+        raise Failure("the panel said %r, which is not a layout" % line)
+
+    width, height, roles = int(said.group(1)), int(said.group(2)), int(said.group(3))
+    checks = 1
+
+    if width != 668:
+        raise Failure("the panel is %d wide, and the drawing agreed with "
+                      "Diego says 668" % width)
+
+    checks += 1
+
+    if roles != 5:
+        raise Failure("the panel offers %d font roles; the kit has five - "
+                      "window titles, widgets, headings, text and terminal"
+                      % roles)
+
+    checks += 1
+
+    #
+    # **The one that bites.** 530 is what `ui.window` was asked for, before
+    # this process knew what the desktop's faces were; anything that stops
+    # measuring lands back on it exactly.
+    #
+    if height <= 530:
+        raise Failure(
+            "the panel is %d tall, which is the size it asked for before it "
+            "knew the faces - so its layout is not following them, and its "
+            "bottom group is off the end of the window" % height)
+
+    checks += 1
+
+    #
+    # **And the desktop is stopped again**, which is the phase's own
+    # housekeeping and not a detail: every phase in this part shares one
+    # machine, and a desktop that is left running owns the console - so the
+    # next phase types `wm snes:--scale 3` at a window manager instead of a
+    # shell and hears nothing back. That is exactly how this phase failed
+    # the suite the first time it ran beside others.
+    #
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+
+    end = time.monotonic() + 15
+
+    while time.monotonic() < end:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-W Q did not get the screen back after the "
+                      "Appearance panel")
+
+    return checks
+
+
 def check_tabs(guest):
     """The title's shape: a BeOS tab by default, a bar across on request.
 
@@ -7509,6 +7595,7 @@ def main():
         wallpaper_checks = phase("wallpapers", check_wallpapers)
         direct_menu_checks = phase("direct menu", check_direct_menu)
         tab_checks = phase("tabs", check_tabs)
+        appearance_checks = phase("appearance", check_appearance)
         drives_app_checks = phase("drives app", check_drives_app)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
@@ -7655,6 +7742,8 @@ def main():
           f"{direct_menu_checks} on a menu bar above a window that draws its "
           f"own pixels, and its menu reaching the program, "
           f"{drives_app_checks} on the Drives app opening and drawing, "
+          f"{appearance_checks} on the Appearance panel laying itself out "
+          f"from the faces in force rather than from a constant, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

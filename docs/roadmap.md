@@ -789,6 +789,40 @@ processors, and still what follows USB:
      View menu draws (Actual, Double, Fit to the Screen), the keys and the
      game pad as drawn.
    Several days, not one.
+
+   **AGREED on 20 September - a film we can already play, first.** Diego:
+   "Perhaps we can download a mp4 video with the codecs you already have to
+   see them working?" So before libavcodec: an MP4 carrying **Motion JPEG
+   video and MP3 audio**, which are `gfx.jpeg` (stb_image) and `/kits/mp3`
+   (minimp3), both in the tree for other reasons. It proves the whole path -
+   index, frame by offset, decode, blit, the clock, audio out - with nothing
+   new to port, and leaves exactly one thing unproven, which is the decoder
+   that replaces them.
+
+   `mp4.lua` read the film **unchanged**: 300 video frames in an `mp4v`
+   entry at 640x360, 384 audio frames in an `mp4a` entry whose `esds` object
+   type is `0x6b`, MPEG-1 Layer III. The first video sample begins `ff d8`
+   and the first audio sample `ff fb`, which is to say a JPEG and an MP3
+   frame, handed to decoders that already exist.
+
+   The clip is made here rather than found: no MJPEG MP4 was worth trusting
+   off the web, and there is no `ffmpeg` on this Mac, so **a minimal host
+   ffmpeg is built from the source already downloaded for the port** (9.0.2,
+   matched against its git tag) - `build/ffmpeg-host`, decoders and muxers
+   only, 5.4 MB, host only and in `build/`, never vendored and never in the
+   image. It is also the tool for every test asset after this one.
+
+   **AGREED on 20 September - the player is a kit, and the app is one of its
+   callers.** Diego: "Let's say I build an app that plays video. Can I use
+   the videokit you are working on to include those capabilities in my app?"
+   Yes, and that decides the shape rather than following from it: the
+   playing lives in a library reached through the namespace - `video.open`,
+   a frame for a moment, audio fed out - and `user/bin/video.lua` is a thin
+   caller of it, as Music is a caller of `media.lua`. **Which decoder is
+   behind it is not a fact its user should have to know** (`CLAUDE.md`, on
+   kits): MJPEG today, H.264 when libavcodec lands, and not one call site
+   changes. That is BeOS's Media Kit argument and the reason `use("/kits/x")`
+   and `use("/lib/x.lua")` read the same at the call site.
 4f. **AGREED on 19 September - the Game Kit: our own, for games and
    everything else that draws its own window.** It began as "vendor in
    love2d ... as we will be doing some apps that require love2d lua framework
@@ -985,6 +1019,72 @@ processors, and still what follows USB:
       mistake as the clipping, in the one widget where being a few pixels
       out is felt on every keystroke, and the same answer applies: measure
       the prefix. The terminal already asks, through `cell()`.
+5b. **AGREED on 20 September - Appearance, redrawn.** Diego, looking at it
+   with IBM Plex in force: "i realised we need to revisit this appearance
+   app as it needs a better design, spacing, and ordering of widgets since
+   we added a lot and is too packed and small", "let's work on the design of
+   this app as a part of the entire UI redesign we are working on with the
+   new style layout we worked". It is seven groups stacked in one 380-pixel
+   column - Palette, Desktop, Fonts (three lists side by side), a button,
+   Wallpaper, Window titles, and a status line - with lists three rows deep.
+   **Drawn first**, as every app is (`docs/appearance.html`), shown to him
+   and changed until he agrees; the code follows the page.
+
+   **Drawn and agreed the same afternoon.** Four questions, and his answers:
+   "1 two columns, 2 miniature desktop, 3 yes, 4 nothing".
+
+   - **Two columns**, 668 x 530 rather than 380 x 580 - wider and *shorter*,
+     with lists six rows deep. Palette, desktop colour and wallpaper down
+     the left; type and the window's shape down the right.
+   - **A miniature desktop for the preview**, which is the expensive answer
+     and the right one: a little window drawn in the palette and the faces
+     being chosen, with a title bar, a heading, two buttons, a list, a
+     paragraph and a terminal line - **every role at once**, and what a
+     palette and a face look like *together*, neither of which a line of
+     sample text can show. BeOS's panel did this.
+   - **Headings become a fifth role** (`heading`, Plex Sans Bold 18): it
+     arrived with the style guide and applications have been using it while
+     the panel pretended it did not exist.
+   - **Each role reports what it is set to** on its own row, so the panel
+     answers the question you came with before you touch anything; and
+     *Palette default* moves beside the palette it resets and says what it
+     does.
+   - Nothing else added: a light/dark switch, the pointer's size and the
+     double-click speed were considered and left out, because none of them
+     exist to be set yet.
+
+5c. **AGREED on 20 September - every pixel position measured, not counted.**
+   The same class as `gc:text`'s clipping (`testing.md` 18.123), found again
+   in the Processes window Diego photographed: `mem124 of 512 MB`, a label
+   and its value on top of each other, from
+   `self.w - #right * gfx.font.w` - a count of the *widest* glyph in the
+   widget face, which is not the width of a string. Fixed on 20 September
+   wherever it appeared: `procs.lua`'s meters (the one photographed, and its
+   neighbour in the same file had already been fixed alone, which is how the
+   class survived), `about.lua`'s two-colour banner, `clock-replicant.lua`'s
+   centring, and `pulse.lua`'s chip, reading and right edge. **What is left
+   is the capacity sums** - `calc.lua`, `about.lua`'s column count,
+   `deskbar.lua`, and the `GW` caches in `edit.lua`, `reader.lua` and
+   `tracker.lua`, which are a cell width for a face that may not have one;
+   the editors want `gfx.measure("0", "mono")` rather than the widget face's
+   widest glyph - and `ui.button`'s default height (`GH + 10`) and
+   `ui.field`'s scrolling, which count the same cached cell.
+
+   **`ui.list` was done on 20 September** (`testing.md` 18.125), because
+   Diego photographed it: a list spaced its rows by the height the kit
+   cached when it loaded, which is before an application has been told the
+   desktop's faces, so 23-pixel text sat in 16-pixel rows. `row_h()` asks
+   instead, and is exactly `gfx.height()` so that nothing measured against
+   the pinned bitmap moves.
+
+5d. **AGREED on 20 September - a thread count for every process.** Diego:
+   "now that we have the threads, we can show each process how many threads
+   it has in the table". `sys.processes()` has no such field, so it is a
+   column in four layers: the kernel's per-process info, the syscall that
+   copies it, `sys_user.c`'s row, and the Processes window. It is the first
+   thing `threads.md`'s work makes visible to a person, which is a good
+   reason to have it.
+
 6. **DONE on 19 September, on the ThinkPad - a battery indicator on
    the top bar**, stick 0.10.88: "battery works!" (`thinkpad.md` 8d, `testing.md` 18.104). Diego that morning:
    "The battery indicator is a must", "As I now don't know what battery is

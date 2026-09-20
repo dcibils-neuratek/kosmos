@@ -51,11 +51,21 @@ function banner:draw(g)
   g:fill(0, 0, self.w, self.h, "sunken")
   g:frame(0, 0, self.w, self.h, "line")
 
+  --
   -- Two words, two colours, the way the BeOS logo split Be and OS.
+  --
+  -- Where the second starts is *measured*, because where a string ends is
+  -- not four times anything once the face is proportional: this placed
+  -- `OS` at `4 * gfx.font.w`, four of the widest glyph in the widget face,
+  -- and Plex put a gap in the middle of the word.
+  --
   g:text(14, 18, "Kosm", "text", "sunken")
-  g:text(14 + 4 * gfx.font.w, 18, "OS", "tab", "sunken")
-  g:text(14 + 7 * gfx.font.w, 22, "  " .. b.version, "text_dim",
-         "sunken")
+
+  local after_kosm = 14 + gfx.measure("Kosm")
+
+  g:text(after_kosm, 18, "OS", "tab", "sunken")
+  g:text(after_kosm + gfx.measure("OS"), 22, "  " .. b.version,
+         "text_dim", "sunken")
 end
 
 win:add(banner)

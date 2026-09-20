@@ -44,7 +44,8 @@ return function(state)
     local s = self.since % 60
     local text = string.format("%s %02d:%02d", self.label, m, s)
 
-    g:text((w - #text * gfx.font.w) // 2,
+    -- Centred on what the string measures, not on a count of cells.
+    g:text((w - gfx.measure(text)) // 2,
            (h - gfx.font.h) // 2, text, theme.good, theme.sunken)
   end
 

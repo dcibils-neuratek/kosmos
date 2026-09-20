@@ -23,10 +23,30 @@
 
 local ui = use("/lib/ui.lua")
 
-local W, H = 380, 580
+--
+-- **Two columns, 668 by 530** (`docs/appearance.html`, `roadmap.md` 5b).
+--
+-- It was 380 by 580 with seven groups stacked in one column and lists three
+-- rows deep, and Diego said what was wrong with it on 20 September: "it
+-- needs a better design, spacing, and ordering of widgets since we added a
+-- lot and is too packed and small". Drawn before it was rewritten, argued
+-- with on the page, and agreed there: "1 two columns, 2 miniature desktop,
+-- 3 yes, 4 nothing".
+--
+-- Wider and *shorter*: palette, desktop colour and wallpaper down the left,
+-- type and the window's shape down the right, every list six rows deep
+-- instead of three.
+--
+local W, H = 668, 530
+
+local PAD    = 12
+local GUTTER = 16
+local LEFT_X,  LEFT_W = PAD, 286
+local RIGHT_X = LEFT_X + LEFT_W + GUTTER
+local RIGHT_W = W - RIGHT_X - PAD
 
 local win, err = ui.window{ title = "Appearance", w = W, h = H,
-                            x = 200, y = 140 }
+                            x = 160, y = 110 }
 
 if not win then
   print("appearance: " .. tostring(err))
@@ -48,8 +68,7 @@ local SWATCHES = {
   0xff707070, 0xff909090, 0xffb0b0b0, 0xffd0d0d0,
 }
 
-local SW      = 40             -- a swatch, in pixels
-local PER_ROW = 8
+local PER_ROW = 8              -- to a row; `SW` is derived below
 
 --
 -- The vertical layout, derived rather than typed.
@@ -65,14 +84,29 @@ local PER_ROW = 8
 -- gaps changes size when you use the thing this window is for - and a
 -- layout of constants is a layout that is correct at exactly one font size.
 --
-local LH      = gfx.font.h + 2        -- a label, and the room under it
-local GAP     = 6
+--
+-- **Measured, and measured again when the face changes.** `gfx.height()`
+-- rather than `gfx.font.h`, because this is the window that *changes* the
+-- face: a layout built from a number read once at startup is right until
+-- somebody uses this panel for what it is for.
+--
+local function line_h() return gfx.height() end
 
-local LIST_Y  = 10 + LH
-local LIST_H  = 58
+local LH      = line_h() + 6          -- a label, and the room under it
+local GAP     = 10
+local ROWS    = 6                     -- how deep every list is
+local LIST_H  = ROWS * line_h() + 6
 
-local DESK_Y  = LIST_Y + LIST_H + GAP
-local SWATCH_Y = DESK_Y + LH
+--   The left column: the palette, the colour of the ground, the picture.
+local PAL_Y     = PAD
+local LIST_Y    = PAL_Y + LH
+local RESET_H   = line_h() + 10
+local RESET_Y   = LIST_Y + LIST_H + GAP
+local DESK_Y    = RESET_Y + RESET_H + GAP
+local SWATCH_Y  = DESK_Y + LH
+local SW        = (LEFT_W - 7 * 4) // 8
+local WALL_Y    = SWATCH_Y + 2 * (SW + 4) + GAP
+local WALL_LIST = WALL_Y + LH
 
 --
 -- Every theme this machine has: the ones compiled in, plus any `.theme`
@@ -164,7 +198,8 @@ local chosen_px      = 16
 -- would be a second place to keep in step.
 local FONTS = gfx.fonts()
 
-local status = ui.label{ x = 12, y = H - 34, w = W - 24, text = "" }
+local status = ui.label{ x = PAD, y = H - 30, w = W - 2 * PAD,
+                         text = "", color = "text_dim" }
 
 -- The picture behind everything, or nil for none.
 local chosen_wallpaper = nil
@@ -207,7 +242,7 @@ local function send()
                     .. tostring(werr))
 end
 
-win:add(ui.label{ x = 12, y = 10, w = W - 24, text = "Palette" })
+win:add(ui.label{ x = LEFT_X, y = PAL_Y, w = LEFT_W, text = "Palette" })
 
 --
 -- A list rather than a button per theme. Two buttons fitted while there
@@ -216,7 +251,7 @@ win:add(ui.label{ x = 12, y = 10, w = W - 24, text = "Palette" })
 -- length.
 --
 local palette_list = ui.list{
-  x = 12, y = LIST_Y, w = W - 24, h = LIST_H,
+  x = LEFT_X, y = LIST_Y, w = LEFT_W, h = LIST_H,
   items = theme_names(),
   on_select = function(_, item)
     chosen_palette = item
@@ -224,13 +259,9 @@ local palette_list = ui.list{
   end,
 }
 
-for i, n in ipairs(palette_list.items) do
-  if n == chosen_palette then palette_list.selected = i end
-end
-
 win:add(palette_list)
 
-win:add(ui.label{ x = 12, y = DESK_Y, w = W - 24, text = "Desktop" })
+win:add(ui.label{ x = LEFT_X, y = DESK_Y, w = LEFT_W, text = "Desktop" })
 
 -- The swatches, as a view that draws itself and answers a click.
 --
@@ -238,28 +269,28 @@ win:add(ui.label{ x = 12, y = DESK_Y, w = W - 24, text = "Desktop" })
 -- and what this wants is a colour and nothing else. `gfx.md`'s rule holds
 -- either way - the fills are C, and what Lua decides is where they go.
 local swatches = ui.view{
-  x = 12, y = SWATCH_Y, w = PER_ROW * SW, h = 2 * SW,
+  x = LEFT_X, y = SWATCH_Y, w = LEFT_W, h = 2 * (SW + 4),
 
   draw = function(self, g)
     for i, colour in ipairs(SWATCHES) do
       local col = (i - 1) % PER_ROW
       local row = (i - 1) // PER_ROW
-      local x, y = col * SW, row * SW
+      local x, y = col * (SW + 4), row * (SW + 4)
 
-      g:fill(x, y, SW - 2, SW - 2, colour)
+      g:fill(x, y, SW, SW, colour)
 
       if colour == chosen_desktop then
-        g:frame(x, y, SW - 2, SW - 2, ui.theme.ring)
-        g:frame(x + 1, y + 1, SW - 4, SW - 4, ui.theme.ring)
+        g:frame(x, y, SW, SW, ui.theme.ring)
+        g:frame(x + 1, y + 1, SW - 2, SW - 2, ui.theme.ring)
       else
-        g:frame(x, y, SW - 2, SW - 2, ui.theme.line)
+        g:frame(x, y, SW, SW, ui.theme.line)
       end
     end
   end,
 
   on_click = function(self, x, y)
-    local col = x // SW
-    local row = y // SW
+    local col = x // (SW + 4)
+    local row = y // (SW + 4)
     local i = row * PER_ROW + col + 1
 
     if SWATCHES[i] then
@@ -286,40 +317,120 @@ win:add(swatches)
 --------------------------------------------------------------------------
 
 ROLES = {
-  { key = "title", label = "Window titles" },
-  { key = "ui",   label = "Widgets" },
-  { key = "text", label = "Regular text" },
-  { key = "mono", label = "Monospace" },
+  { key = "title",   label = "Window titles" },
+  { key = "ui",      label = "Widgets" },
+  { key = "heading", label = "Headings" },
+  { key = "text",    label = "Regular text" },
+  { key = "mono",    label = "Terminal" },
 }
 
-local SIZES = { 10, 12, 14, 16, 18, 20, 22 }
+local SIZES = { 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28 }
 
--- What each role is set to. The interface font is the one that was already
--- being chosen, so it keeps the saved value; the other two start on the
--- bitmap, which is what they have been all along.
 --
--- One entry per role, and there must be one per role: a missing entry is a
--- nil indexed a moment later, and the role that was missing was the one
--- that had just been added.
+-- What each role is set to, starting from what the kit has in force rather
+-- than from a list of constants: the panel's first frame should say what is
+-- true, and `theme.fonts` is the answer the desktop gave this process when
+-- its window opened.
 --
-chosen = {
-  title = { font = chosen_font, px = chosen_px },
-  ui    = { font = chosen_font, px = chosen_px },
-  text  = { font = "spleen", px = 16 },
-  mono  = { font = "spleen", px = 16 },
+chosen = {}
+
+for _, r in ipairs(ROLES) do
+  local have = theme.fonts[r.key] or {}
+
+  chosen[r.key] = { font = have.font or "spleen", px = have.px or 16 }
+end
+
+--------------------------------------------------------------------------
+-- The right column: type, and the window's shape.
+--------------------------------------------------------------------------
+
+local FONTS_Y = PAD
+local ROLE_Y  = FONTS_Y + LH
+local ROLE_H  = #ROLES * (line_h() + 6) + 4
+
+--
+-- **Every role, with the face it is set to.**
+--
+-- The list used to say `Widgets` and nothing else, so the panel could not
+-- answer the question anybody opens it with - *what is my widget font?* -
+-- without clicking each role in turn and reading the status line. Five rows
+-- that each report are worth more than five rows that each label.
+--
+-- A view rather than `ui.list`, because a list row is one string and this
+-- row is two: a name at the left and, quieter and right-aligned, the face.
+--
+local function face_of(key)
+  local c = chosen[key]
+  local name = c.font:gsub("^ibmplex", "Plex "):gsub("sanscondensed", "Sans Condensed")
+                     :gsub("^Plex sans", "Plex Sans"):gsub("^Plex mono", "Plex Mono")
+                     :gsub("%-bold", " Bold"):gsub("%-italic", " Italic")
+
+  return name .. " " .. c.px
+end
+
+role_list = ui.view{
+  x = RIGHT_X, y = ROLE_Y, w = RIGHT_W, h = ROLE_H, selected = 1,
+
+  draw = function(self, g)
+    local row = line_h() + 6
+
+    g:fill(0, 0, self.w, self.h, "sunken")
+    g:frame(0, 0, self.w, self.h, "line")
+
+    for i, r in ipairs(ROLES) do
+      local y = 2 + (i - 1) * row
+      local on = (i == self.selected)
+
+      if on then g:fill(1, y, self.w - 2, row, "accent") end
+
+      g:text(7, y + 3, r.label, on and "text_on" or "text")
+
+      -- Right-aligned, and measured to get there.
+      local said = face_of(r.key)
+
+      g:text(self.w - 7 - gfx.measure(said), y + 3, said,
+             on and "text_on" or "text_dim")
+    end
+  end,
+
+  on_click = function(self, x, y)
+    local at = y // (line_h() + 6) + 1
+
+    if ROLES[at] then
+      self.selected = at
+      if self.on_select then self:on_select() end
+    end
+  end,
 }
 
-local FY = SWATCH_Y + 2 * SW + LH + GAP
+local LISTS_Y = ROLE_Y + ROLE_H + GAP
+local SIZE_W  = 62
+local FONT_W  = RIGHT_W - SIZE_W - 8
 
-role_list = ui.list{ x = 12,  y = FY, w = 150, h = 56, items = {} }
-local font_list = ui.list{ x = 172, y = FY, w = 122, h = 92, items = FONTS }
-local size_list = ui.list{ x = 304, y = FY, w = 56,  h = 92, items = {} }
+local font_list = ui.list{ x = RIGHT_X, y = LISTS_Y, w = FONT_W,
+                           h = LIST_H, items = FONTS }
+local size_list = ui.list{ x = RIGHT_X + FONT_W + 8, y = LISTS_Y,
+                           w = SIZE_W, h = LIST_H, items = {} }
 
-for i, r in ipairs(ROLES) do role_list.items[i] = r.label end
 for i, px in ipairs(SIZES) do size_list.items[i] = tostring(px) end
 
+--
+-- **The display catches up with the state, in one place.**
+--
+-- The palette row is set here and nowhere else, and that is a fix rather
+-- than tidiness: it used to be selected from `chosen_palette` where the
+-- list was built, which is *before* the saved settings are read - so a
+-- machine with `beos` saved opened this panel with `dark` highlighted and
+-- the status line underneath saying `in force: beos`. Two copies of one
+-- fact, which is the same bug the note above `role()` describes, in the
+-- widget beside it.
+--
 local function reflect()
   local c = chosen[role()]
+
+  for i, name in ipairs(palette_list.items) do
+    if name == chosen_palette then palette_list.selected = i end
+  end
 
   for i, f in ipairs(FONTS) do
     if f == c.font then font_list.selected = i end
@@ -346,13 +457,117 @@ size_list.on_select = function(self, item)
   send()
 end
 
-win:add(ui.label{ x = 12, y = FY - LH, w = W - 24, text = "Fonts" })
+win:add(ui.label{ x = RIGHT_X, y = FONTS_Y, w = RIGHT_W, text = "Fonts" })
 win:add(role_list)
 win:add(font_list)
 win:add(size_list)
 
+--------------------------------------------------------------------------
+-- **The preview: a desktop in miniature.**
+--
+-- Diego chose this over a line of sample text, knowing what it cost - "2
+-- miniature desktop" - and it is the right choice for a reason the cheaper
+-- one cannot reach: a palette and a face are chosen *together*, and the
+-- question is never "what does 15-pixel Plex Sans Condensed look like", it
+-- is "what does my desktop look like now". So this draws one: a window with
+-- a title, a heading, two buttons, a list, a paragraph and a terminal line,
+-- in the colours and the faces in force.
+--
+-- It needs no state of its own and no "apply" button, because **this panel
+-- applies as you choose** - every list here sends the change the moment it
+-- is selected. So the miniature is drawn with the live theme and is
+-- therefore never a promise about something that has not happened.
+--------------------------------------------------------------------------
+
+--
+-- **As tall as what it draws.** The first number here was a guess - six
+-- lines and a bit - and the paragraph came out underneath the terminal
+-- line at the sizes the desktop actually had. This is the same sum the
+-- drawing makes, in the same order, so the two cannot drift.
+--
+local function preview_h()
+  return 20                                   -- the desktop around it
+         + gfx.height("title") + 4 + 8        -- the tab
+         + gfx.height("heading") + 6          -- the heading
+         + line_h() + 8 + 8                   -- the buttons
+         + 2 * line_h() + 4 + 8               -- the list
+         + gfx.height("text") + 6             -- the paragraph
+         + gfx.height("mono") + 4             -- the terminal
+         + 8
+end
+
+local PREVIEW_Y = LISTS_Y + LIST_H + GAP
+local PREVIEW_H = preview_h()
+
+local preview = ui.view{
+  x = RIGHT_X, y = PREVIEW_Y, w = RIGHT_W, h = PREVIEW_H,
+
+  draw = function(self, g)
+    -- The ground: the desktop's own colour, which is the thing being
+    -- chosen two groups to the left.
+    g:fill(0, 0, self.w, self.h, chosen_desktop or theme.desktop)
+
+    local x, y = 10, 10
+    local w, h = self.w - 20, self.h - 20
+
+    g:fill(x, y, w, h, "window")
+    g:frame(x, y, w, h, "line")
+
+    -- A tab as wide as its title, or a bar across: whichever is chosen.
+    local title = "Tracker"
+    local tw = (chosen_tabs == "full") and w
+               or (gfx.measure(title, "title") + 20)
+    local th = gfx.height("title") + 4
+
+    g:fill(x, y, tw, th, "tab")
+    g:frame(x, y, tw, th, "line")
+    g:text(x + 8, y + 2, title, "tab_text", nil, "title")
+
+    local iy = y + th + 8
+
+    g:text(x + 8, iy, "Library", "text", nil, "heading")
+    iy = iy + gfx.height("heading") + 6
+
+    -- Two buttons, in the widget face.
+    local bw = gfx.measure("New folder") + 18
+    local bh = line_h() + 8
+
+    g:raised(x + 8, iy, bw, bh, theme.raised)
+    g:text(x + 17, iy + 4, "New folder", "text")
+    g:raised(x + 8 + bw + 6, iy, gfx.measure("Delete") + 18, bh, theme.raised)
+    g:text(x + 8 + bw + 15, iy + 4, "Delete", "text")
+    iy = iy + bh + 8
+
+    -- A list with a row selected in it.
+    local lh = 2 * line_h() + 4
+
+    g:fill(x + 8, iy, w - 16, lh, "sunken")
+    g:frame(x + 8, iy, w - 16, lh, "line")
+    g:fill(x + 9, iy + 2, w - 18, line_h(), "accent")
+    g:text(x + 13, iy + 2, "Deskbar", "text_on")
+    g:text(x + 13, iy + 2 + line_h(), "magicword-clip.mp4", "text")
+    iy = iy + lh + 8
+
+    -- A paragraph, and a line of terminal.
+    g:text(x + 8, iy, "A paragraph, in the reading face.", "text", nil, "text")
+    iy = iy + gfx.height("text") + 6
+
+    g:fill(x + 8, iy, w - 16, gfx.height("mono") + 4, 0xff101010)
+    g:text(x + 12, iy + 2, "kosmos> play film.mp4", 0xffc8e6c9, nil, "mono")
+  end,
+}
+
+win:add(preview)
+
+--
+-- **Back where it belongs.** This resets the desktop's colour to whatever
+-- the palette says, and it sat under the *fonts* - three groups from the
+-- thing it affects - with a name, "Palette default", that did not say what
+-- pressing it would do.
+--
 win:add(ui.button{
-  x = 12, y = FY + 100, w = 150, h = 24, text = "Palette default",
+  x = LEFT_X, y = RESET_Y, w = LEFT_W, h = RESET_H,
+  text = "Back to this palette's colours",
   on_click = function() chosen_desktop = nil; send() end,
 })
 
@@ -405,12 +620,11 @@ end
 -- library of them.
 --------------------------------------------------------------------------
 
--- Below the "Palette default" button, which sits at FY + 100 and is 24
--- tall. The first attempt put this at FY + 92 + GAP and drew the heading
--- straight through it.
-local WALL_Y = FY + 124 + GAP
+-- In the left column, under the ground's colour: the picture that goes
+-- on it. `WALL_Y` and `WALL_LIST` are worked out with the rest of that
+-- column, at the top of this file.
 
-win:add(ui.label{ x = 12, y = WALL_Y, w = W - 24, text = "Wallpaper" })
+win:add(ui.label{ x = LEFT_X, y = WALL_Y, w = LEFT_W, text = "Wallpaper" })
 
 -- What each line of the list stands for: a label, and the name the window
 -- manager is sent - a path in `/home`, or `wallpaper/<file>` in the image.
@@ -461,7 +675,7 @@ local function wallpapers()
 end
 
 local wall_list = ui.list{
-  x = 12, y = WALL_Y + LH, w = W - 24, h = 74,
+  x = LEFT_X, y = WALL_LIST, w = LEFT_W, h = LIST_H,
   items = wallpapers(),
   on_select = function(_, item)
     chosen_wallpaper = wall_path[item] or nil
@@ -494,27 +708,99 @@ win:add(wall_list)
 -- tab like windows or linux or beos". The tab is the default, being the
 -- one he prefers; the window manager draws either (`tabs` in `wm.lua`).
 --
-local TITLES_Y = WALL_Y + LH + 74 + GAP
+--
+-- **Drawn, not described.** It was two sentences in a list - "A tab as wide
+-- as the title, as BeOS drew it" - which is a picture explained in words to
+-- somebody who can see. Two small windows say it in no words at all, and
+-- the mockup Diego agreed shows them side by side.
+--
+local TITLES_Y = PREVIEW_Y + PREVIEW_H + GAP
+local SHAPE_Y  = TITLES_Y + LH
+local SHAPE_H  = 52
 local TITLES = {
-  { key = "beos", text = "A tab as wide as the title, as BeOS drew it" },
-  { key = "full", text = "A bar across the whole window" },
+  { key = "beos", text = "A tab, as BeOS drew it" },
+  { key = "full", text = "A bar across the window" },
 }
 
-win:add(ui.label{ x = 12, y = TITLES_Y, w = W - 24, text = "Window titles" })
+win:add(ui.label{ x = RIGHT_X, y = TITLES_Y, w = RIGHT_W,
+                  text = "Window titles" })
 
-local titles_list = ui.list{
-  x = 12, y = TITLES_Y + LH, w = W - 24, h = 44,
-  items = { TITLES[1].text, TITLES[2].text },
-  on_select = function(_, item)
-    for _, t in ipairs(TITLES) do
-      if t.text == item then chosen_tabs = t.key end
+local shapes = ui.view{
+  x = RIGHT_X, y = SHAPE_Y, w = RIGHT_W, h = SHAPE_H,
+
+  draw = function(self, g)
+    local each = (self.w - 8) // 2
+
+    for i, t in ipairs(TITLES) do
+      local x = (i - 1) * (each + 8)
+      local on = (chosen_tabs == t.key)
+
+      g:fill(x, 0, each, self.h, "sunken")
+      g:frame(x, 0, each, self.h, on and ui.theme.ring or ui.theme.line)
+
+      if on then g:frame(x + 1, 1, each - 2, self.h - 2, ui.theme.ring) end
+
+      -- A window, an inch tall: its ground, and a tab or a bar on it.
+      local wx, wy, ww, wh = x + 8, 6, each - 16, 22
+
+      g:fill(wx, wy, ww, wh, "window")
+      g:frame(wx, wy, ww, wh, "line")
+      g:fill(wx, wy, (t.key == "full") and ww or (ww // 3), 7, "tab")
+
+      g:text(x + 8, wy + wh + 4, t.text, on and "text" or "text_dim")
     end
+  end,
 
-    send()
+  on_click = function(self, x, _)
+    local each = (self.w - 8) // 2
+    local t = TITLES[(x > each) and 2 or 1]
+
+    if t and t.key ~= chosen_tabs then
+      chosen_tabs = t.key
+      send()
+    end
   end,
 }
+win:add(shapes)
 
-titles_list.selected = (chosen_tabs == "full") and 2 or 1
-win:add(titles_list)
+--
+-- **And the window is as tall as the two columns turned out to be.**
+--
+-- `H` above is a starting size, because `ui.window` is asked for one before
+-- this process has been told what the desktop's faces are - the reply to
+-- that request is what carries them. Everything below it is measured, so
+-- the real height is only known here, and a panel whose own window is the
+-- wrong size for the font it is setting would be a poor advertisement.
+--
+-- This is also why it is a *resize* rather than a better constant: pick a
+-- 24-pixel widget font in this window and the columns grow, and the window
+-- has to grow with them. That part is not wired up yet - it wants a
+-- relayout on the theme event, which is `roadmap.md` 5b's remaining half -
+-- but the arithmetic is here and correct rather than approximately right.
+--
+do
+  local left  = WALL_LIST + LIST_H
+  local right = SHAPE_Y + SHAPE_H
+  local tall  = math.max(left, right) + GAP + line_h() + PAD
+
+  status.y = tall - line_h() - PAD + 2
+
+  if tall ~= H then win:resize(W, tall) end
+
+  --
+  -- Said out loud, because the interesting part is invisible: a panel whose
+  -- height *follows the faces* looks exactly like one whose height is a
+  -- constant that happens to fit. The line is what a test can hold to, and
+  -- it is how `display`'s `appearance` phase knows this laid itself out
+  -- rather than guessed (`testing.md`).
+  --
+  -- **The window's own size, not the sum that asked for it.** Printing
+  -- `tall` would say the arithmetic happened, which is not the thing worth
+  -- knowing: the regression this guards against is a resize that never
+  -- reached the window manager, and after one that did, `win.h` is what the
+  -- window manager agreed to.
+  print(("appearance: %dx%d, %d roles, %s"):format(win.w, win.h, #ROLES,
+                                                   chosen_palette))
+end
 
 win:run()

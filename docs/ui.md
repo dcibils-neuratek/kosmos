@@ -1051,6 +1051,44 @@ longer edits it. It asks `opener`, which is still the editor for a `.lua`.
 
 `testing.md` §18.55 has the checks and their controls.
 
+## 16.17 Five roles, and the panel that sets them
+
+**A role is a *decision somebody makes*, and there are five of them.** A
+title bar is a label on chrome and can carry a face with character; a widget
+font has to work at every size in every list; a heading inside a window is
+bigger than the text under it; a paragraph wants something to read; a
+terminal wants a fixed width or its columns stop lining up.
+
+`heading` was the fourth to arrive and for a while it was not really a role
+at all: the style guide named it, applications asked for it, and `gfx`'s
+`role_of` did not know the word - so every heading was drawn in the widget
+font. Nothing failed, which is the difficulty: a face that is merely the
+*wrong* face has no error to report. It is now `ROLE_HEADING`, and the five
+names live in `theme.roles` rather than being written out in the three
+loops that apply them.
+
+**The Appearance panel is where they are chosen**, and it was redrawn in
+September (`docs/appearance.html`, `testing.md` 18.124) because it had grown
+a group at a time into seven of them stacked in a 380-pixel column with
+lists three rows deep. Two things about the new one are worth keeping in
+mind when any other panel is built:
+
+- **A row that labels is worth less than a row that reports.** The old role
+  list said *Widgets*; the new one says *Widgets &mdash; Plex Sans 14*, so
+  the panel answers the question you opened it with before you touch it.
+- **A panel that sets the font cannot have a constant for its own size.**
+  Every measurement in it is taken at the faces in force, and the window is
+  resized to what the two columns came to. The file's oldest comment already
+  said this - "a layout of constants is a layout that is correct at exactly
+  one font size" - about a bug in its own vertical spacing.
+
+And the preview is a miniature desktop rather than a line of sample text,
+which is Diego's choice and the more expensive one: a palette and a face are
+chosen *together*, and what somebody wants to see is not what 15-pixel Plex
+Sans Condensed looks like but what their desktop looks like now.
+
+---
+
 ## 16.16 A face is not a cell, and both halves of the desktop have to agree
 
 Two rules, learned on the same morning, from one screenshot.
