@@ -43,6 +43,10 @@
   p { margin: 0 0 12px; max-width: 66ch; }
   .lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
   .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  .lesson { display: block; margin-top: 10px; padding: 8px 10px; font: 0.9em var(--body);
+            color: var(--w-accent); background: var(--w-light); border: 1px solid var(--w-dark);
+            border-radius: 3px; text-decoration: none; }
+  .lesson::before { content: "> "; color: var(--w-dark); }
   code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
 
   .desk { background: var(--k-desk); border-radius: 10px; padding: 26px 22px 30px; overflow-x: auto; margin-top: 20px; }
@@ -105,7 +109,7 @@
 <body>
 <main>
   <h1>Devices</h1>
-  <p class="lede">One window with a page for every device this machine has: what it says right now, something to do with it, and the few lines of Lua that reach it. The page is the demonstration and the code is the lesson.</p>
+  <p class="lede">One window with a page for every device this machine has: what it says right now, and something to do with it. <b>The code is not in the window</b> - each page links to the tutorial lesson that reaches that device, so there is one copy of every example and it is one you can open, change and run. Diego, 19 September: "I don't need to put the Lua code in the app but perhaps a link to the tutorial code that uses that device".</p>
   <p class="note">A drawing, not a program. Diego's idea, 19 September: "a device playground app to interact with recognized hardware". Only devices the machine really has are listed - on QEMU there is no battery page, and a pad appears when one is plugged in.</p>
 
   <h2>Three of its pages</h2>
@@ -139,9 +143,7 @@
             <div><span>from</span><b>EC 38h, A0h, A2h</b></div>
           </div>
         </div>
-<div class="code"><span class="k">local</span> b = fs.read(<span class="s">"/dev/battery"</span>)
-print(b.percent .. <span class="s">"%"</span>, b.state, b.on_ac == 1 <span class="k">and</span> <span class="s">"plugged in"</span> <span class="k">or</span> <span class="s">""</span>)
-<span class="c">-- 24%  discharging</span></div>
+<a class="lesson" href="#">Lesson 5, Servers and devices - the code that reaches it</a>
       </div>
     </div>
   </div>
@@ -178,11 +180,7 @@ print(b.percent .. <span class="s">"%"</span>, b.state, b.on_ac == 1 <span class
             <div><span>reports</span><b>1 214</b></div>
           </div>
         </div>
-<div class="code"><span class="k">for</span> _, ev <span class="k">in</span> ipairs(reply.events) <span class="k">do</span>
-  <span class="k">if</span> ev.type == <span class="s">"rawkey"</span> <span class="k">and</span> ev.code >= 0x130 <span class="k">then</span>
-    print(PAD[ev.code], ev.down <span class="k">and</span> <span class="s">"down"</span> <span class="k">or</span> <span class="s">"up"</span>)
-  <span class="k">end</span>
-<span class="k">end</span></div>
+<a class="lesson" href="#">Lesson 5, Servers and devices - the code that reaches it</a>
       </div>
     </div>
   </div>
@@ -209,10 +207,7 @@ print(b.percent .. <span class="s">"%"</span>, b.state, b.on_ac == 1 <span class
             <div class="btnrow"><span class="btn on">Playing</span><span class="btn">Sine</span><span class="btn">Square</span><span class="btn">Noise</span></div>
           </div>
         </div>
-<div class="code"><span class="k">local</span> audio = use(<span class="s">"/lib/audio.lua"</span>)
-<span class="k">local</span> s = audio.open(<span class="s">"Devices"</span>)
-audio.set{ stream = s.stream, gain = 180, balance = -30 }
-s:play(tone(440))  <span class="c">-- the meters are the server's own peaks</span></div>
+<a class="lesson" href="#">Lesson 8, Sound - the code that reaches it</a>
       </div>
     </div>
   </div>
@@ -238,12 +233,12 @@ s:play(tone(440))  <span class="c">-- the meters are the server's own peaks</spa
   </table>
   </div>
 
-  <h2>For Diego</h2>
+  <h2>Decided on 19 September</h2>
   <ol class="ask">
-    <li><b>One window with a page each</b>, as drawn - or a small app per device, each opened from a folder?</li>
-    <li><b>The code under each page</b>: always shown, as drawn, or behind a "Show the code" button?</li>
-    <li><b>Which pages first</b>? Proposed: battery, game pad and sound, since those are the three you named.</li>
-    <li><b>Its name</b>: Devices, Hardware, or Playground?</li>
+    <li><b>One window with a page each</b>, as drawn. Diego: "Playground also I like it".</li>
+    <li><b>The code is not in the window.</b> Each page links to the tutorial lesson that reaches that device (roadmap 7), so an example exists once, in a file that can be opened, changed and run - not twice, with one copy going stale.</li>
+    <li><b>Battery, game pad and sound first</b>, the three Diego named.</li>
+    <li><b>Open</b>: what the window is called, and whether it waits for the tutorial's lessons to exist or links to the ones already written.</li>
   </ol>
 </main>
 </body>

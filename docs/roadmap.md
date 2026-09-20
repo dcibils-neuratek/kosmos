@@ -783,7 +783,11 @@ processors, and still what follows USB:
      were, vendored byte for byte with its notice - LGPL-2.1+, so in the
      FULL image (a GPLv2 work already) and out of the MIT one, and named in
      `LICENSE`. The source is a download, asked for before it is fetched.
-   - **The app**, drawn first as every app is: `docs/video.html`.
+   - **The app**, drawn first as every app is: `docs/video.html`, and
+     **approved on 19 September** - Diego: "Video app looks great". So: the
+     controls under the picture rather than over it, the three sizes the
+     View menu draws (Actual, Double, Fit to the Screen), the keys and the
+     game pad as drawn.
    Several days, not one.
 4f. **AGREED on 19 September - the Game Kit: our own, for games and
    everything else that draws its own window.** It began as "vendor in
@@ -944,17 +948,21 @@ processors, and still what follows USB:
       the title, or a bar across the whole window as Windows and Linux draw
       it. The code already calls it a tab (`TAB_H` in `wm.lua`) and draws it
       full width. The tab by default, being the one Diego prefers.
-   2. **IBM Plex as the default faces.** The mockups are set in IBM Plex Sans
+   2. **APPROVED on 19 September - IBM Plex as the default faces**, with the
+      style guide (`docs/styleguide.html`): Diego, "Style guide looks
+      great", which takes the page as drawn - **`beos` as the default
+      theme** instead of starting dark, and Plex in its three roles. The mockups are set in IBM Plex Sans
       and Plex Mono, and both are already in `assets/fonts/` with their
       licences - unused by default, because every default face is `spleen`,
       the 8x16 bitmap (`theme.fonts`). Plex Sans Condensed, the mockups'
       headings, is not in the tree and would be a download. What this costs is
       real: the display harness finds rows by the 16-pixel default face, so it
       pins its own look before the default can change.
-   3. **The polish, drawn first**: a style guide in `docs/` - colours, the
-      spacing scale, the type sizes, and every widget beside what it looks
-      like today - for Diego to change, and then applied one application at a
-      time, each photographed against its drawing.
+   3. **The polish, drawn first and APPROVED on 19 September**: the style
+      guide (`docs/styleguide.html`) - colours, the spacing scale, the type
+      sizes, and every widget beside what it looks like today - is accepted
+      as drawn, and is applied one application at a time, each photographed
+      against its drawing.
 6. **DONE on 19 September, on the ThinkPad - a battery indicator on
    the top bar**, stick 0.10.88: "battery works!" (`thinkpad.md` 8d, `testing.md` 18.104). Diego that morning:
    "The battery indicator is a must", "As I now don't know what battery is
@@ -963,7 +971,15 @@ processors, and still what follows USB:
    rather than through an AML interpreter, and cached rather than read on
    every `SYS_SYSINFO`. It starts with getting the DSDT off the machine,
    which the keys above will already have done.
-6b. **WANTED since 19 September, not scheduled - a device playground.**
+6b. **APPROVED on 19 September - a device playground** (`docs/playground.html`).
+   Diego, having seen the drawing: "Playground also I like it. I don't need
+   to put the Lua code in the app but perhaps a link to the tutorial code
+   that uses that device" - so **the code is not in the window**: each page
+   links to the tutorial lesson that reaches that device (item 7), which
+   means an example exists once, in a file that can be opened, changed and
+   run, rather than twice with one copy going stale. **It therefore follows
+   the tutorial** rather than leading it: the pages whose lessons exist can
+   link, and the rest wait. Battery, game pad and sound first.
    Diego: "At some point we will create small showcase apps that access
    devices like the battery, gamepads, sound, network", "Right now we have
    this amazing architecture of the os but is difficult to showcase its
