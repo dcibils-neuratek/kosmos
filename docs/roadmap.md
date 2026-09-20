@@ -979,7 +979,9 @@ processors, and still what follows USB:
    means an example exists once, in a file that can be opened, changed and
    run, rather than twice with one copy going stale. **It therefore follows
    the tutorial** rather than leading it: the pages whose lessons exist can
-   link, and the rest wait. Battery, game pad and sound first.
+   link, and the rest wait. Battery, game pad and sound first, and it is
+   called **Device playground** - Diego's own words for it, on 19 September
+   and the first time he asked for it.
    Diego: "At some point we will create small showcase apps that access
    devices like the battery, gamepads, sound, network", "Right now we have
    this amazing architecture of the os but is difficult to showcase its
