@@ -1051,6 +1051,50 @@ longer edits it. It asks `opener`, which is still the editor for a `.lua`.
 
 `testing.md` §18.55 has the checks and their controls.
 
+## 16.16 A face is not a cell, and both halves of the desktop have to agree
+
+Two rules, learned on the same morning, from one screenshot.
+
+**The window manager draws the text of every ordinary window.** An
+application sends drawing commands and the compositor owns the pixels
+(`gfx.md` 19.4), so a string is *measured* in the application - to place it,
+centre it, size a button around it - and *drawn* in the window manager. That
+only works while both hold the same face, which makes the font table the
+window manager sends its clients a promise about its own state rather than a
+preference it passes on.
+
+It was not one. `load_appearance` applied the fonts in `/home/.appearance`
+and no others, so on a machine with nothing saved the window manager loaded
+no face at all, while still sending applications the defaults - which they
+loaded. The desktop then laid itself out in IBM Plex and painted in the 8 by
+16 bitmap: a menu bar whose titles were spaced for 18 pixels of "File" drew
+it 32 wide, so the next title began inside it.
+
+It hid for two years' worth of commits because **a face that is not loaded
+is the bitmap**, and the default was the bitmap. Nothing distinguishes "we
+never loaded anything" from "we loaded spleen" until the default changes.
+The rule that comes out of it: *what is advertised is what is held*. A role
+the window manager fails to load is named to clients as whatever is actually
+in force, so the two halves cannot disagree silently.
+
+**And a width is measured, never counted.** `gc:text` clipped a string to
+its view by dividing the room by a cell width - one cell per character -
+which is exactly right for a bitmap font and wrong for every other. `New
+folder` in a 96-pixel button became `New folde` with twenty-five pixels to
+spare, `Delete` became `Delet`, and the widget gallery's labels lost their
+tails.
+
+This is `gfx.md` 19.3 one level up. That rule says nothing in Lua computes a
+pixel offset, because the pitch is almost never `width * 4`; this one says
+nothing in Lua computes a character count from a width, because the advance
+is almost never the same for two glyphs. `gc:text` measures now: one
+`gfx.measure` when the whole string fits, which is the common case and costs
+a single C call, and a binary search over characters - about four
+measurements - when something really does have to be cut. Cutting is still
+by the character, because half a glyph is worse than a missing one.
+
+---
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

@@ -2638,15 +2638,39 @@ def battery(image, check):
     `test_batterydecode`'s, on the host.
 
       at a prompt, 57 and charging: `/dev/battery` says 57, charging, on AC;
-      the desktop, 57 and charging: the Deskbar says "57% charging", and
-        nothing in the bar is the low battery's red;
-      the desktop, 8: the Deskbar says "8%", in red.
+      the desktop, 57 and charging: the Deskbar says "57% charging";
+      the desktop, 8: the Deskbar says "8%", and says it in red - which is
+        the reddish pixels of that screen against the charging one's, the
+        battery icon being orange and on both.
 
     And a machine with no battery shows none: `power_button`'s boot has no
     option, and its Deskbar must say nothing about one.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
-    RED = (0xe0, 0x48, 0x48)
+
+    #
+    # **Reddish, rather than one exact colour**, and the difference is the
+    # face. The number is drawn in 0xe04848, and this counted pixels equal
+    # to those three bytes - which is every pixel of a glyph only while the
+    # glyph is a bitmap, one bit to a pixel. The desktop's face became IBM
+    # Plex on 19 September, an outline rasterised with coverage, so a red
+    # "8%" is a handful of solid pixels in a cloud of blends and the exact
+    # count fell to zero. The check said the low battery was not shown; the
+    # screen said it was, in red.
+    #
+    # What it means is "that number is red", so that is what it asks: a
+    # pixel whose red clearly leads its green and blue. The background it
+    # sits on is the Deskbar's tab, which is grey, and grey has no lead.
+    #
+    # **And it is asked as a difference between the two machines**, because
+    # the battery *icon* is in the same band and is itself reddish - 79
+    # pixels of it, which a fixed threshold read as a low battery on a
+    # machine that was charging. The icon is the same on both screens and
+    # the label is red on one of them, so what the red costs is exactly the
+    # difference, and nothing has to know where the icon ends.
+    #
+    def reddish(r, g, b):
+        return r > 0x90 and r - g > 0x40 and r - b > 0x40
 
     # QEMU splits an option's value at commas, so a comma inside one is two.
     def option(value):
@@ -2723,7 +2747,7 @@ def battery(image, check):
                     for x in range(width // 2, width):
                         o = (y * width + x) * 3
 
-                        if tuple(px[o:o + 3]) == RED:
+                        if reddish(px[o], px[o + 1], px[o + 2]):
                             red += 1
         finally:
             monitor.close()
@@ -2732,14 +2756,17 @@ def battery(image, check):
 
         return red
 
-    red = desktop("57,charging", "57% charging")
-    check(red == 0, "57%% and charging drew %r pixels of the low battery's "
-                    "red in the bar" % red)
+    quiet = desktop("57,charging", "57% charging")
+    low = desktop("8", "8%")
 
-    red = desktop("8", "8%")
-    check(red is not None and red >= 20,
-          "8%% and discharging drew %r pixels of red in the bar - the low "
-          "battery was not shown as low" % red)
+    check(quiet is not None and low is not None,
+          "a battery desktop drew nothing to look at: 57%% charging gave "
+          "%r and 8%% gave %r" % (quiet, low))
+
+    check(quiet is not None and low is not None and low - quiet >= 12,
+          "8%% and discharging drew %r reddish pixels in the bar against "
+          "%r while charging - the low battery was not shown as low"
+          % (low, quiet))
 
 
 # A ring's requests before its Link back to the first: `RING_TRBS - 1` in

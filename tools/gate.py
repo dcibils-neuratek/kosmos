@@ -224,11 +224,18 @@ DISPLAY_PARTS = [
      "interrupt", "status_bar", "editor", "registry", "context", "widgets",
      "scripting", "idle", "direct", "3d", "terminal", "programs by file"],
     ["log view", "text size", "window resize", "triangle", "repaints",
-     "@@BOARD@@", "volume keys", "compositor budget", "default look"],
+     "@@BOARD@@", "volume keys", "compositor budget"],
     ["faces", "wallpapers", "direct menu", "tabs", "Super Nintendo --scale", "deskbar", "deskbar focus", "desktop",
      "places", "panel"],
     ["clipboard", "cores", "reaped", "clicks", "graphical", "replicants",
      "window_manager", "drives app"],
+
+    # **Alone, and that is the point.** It is the only check that wants a
+    # desktop on a machine nobody has told anything, and every other phase
+    # here runs after the harness has pinned the faces its rows were
+    # measured against. A desktop cannot be quit either, so the phase takes
+    # the console with it - `run_screenshot.py` says the rest.
+    ["default look"],
 ]
 
 for board, image, own in (("arm", ARM, "power button"),

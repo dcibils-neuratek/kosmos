@@ -948,21 +948,43 @@ processors, and still what follows USB:
       the title, or a bar across the whole window as Windows and Linux draw
       it. The code already calls it a tab (`TAB_H` in `wm.lua`) and draws it
       full width. The tab by default, being the one Diego prefers.
-   2. **APPROVED on 19 September - IBM Plex as the default faces**, with the
+   2. **DONE on 19-20 September - IBM Plex as the default faces**, with the
       style guide (`docs/styleguide.html`): Diego, "Style guide looks
       great", which takes the page as drawn - **`beos` as the default
-      theme** instead of starting dark, and Plex in its three roles. The mockups are set in IBM Plex Sans
-      and Plex Mono, and both are already in `assets/fonts/` with their
-      licences - unused by default, because every default face is `spleen`,
-      the 8x16 bitmap (`theme.fonts`). Plex Sans Condensed, the mockups'
-      headings, is not in the tree and would be a download. What this costs is
-      real: the display harness finds rows by the 16-pixel default face, so it
-      pins its own look before the default can change.
+      theme** instead of starting dark, and Plex in its roles. Plex Sans and
+      Plex Mono were already in `assets/fonts/` with their licences and
+      unused, every default face being `spleen`, the 8x16 bitmap; the four
+      roles are Plex now, with a fifth, `heading`, that the guide names and
+      the kit had no role for. What it cost was real and was paid: the
+      display harness finds rows by the 16-pixel face they were written
+      for, so it pins its own look, and a check on the default runs before
+      that pin.
+
+      **Plex Sans Condensed was downloaded and vendored** with its licence,
+      and the first desktop the change drew was wrong - for reasons that
+      were not the fonts (`testing.md` 18.123, `ui.md` 16.16). The window
+      manager had never loaded its own faces, applying only what
+      `/home/.appearance` named, so applications laid themselves out in Plex
+      while the process that draws their text still held the bitmap; and
+      `gc:text` clipped every string by counting cells, exact for a bitmap
+      font and a lie for any other. Both bugs were older than this item and
+      both were hidden by the default being the bitmap - as were the two
+      checks that should have caught them, neither of which could fail as
+      written. All four fixed on 20 September.
    3. **The polish, drawn first and APPROVED on 19 September**: the style
       guide (`docs/styleguide.html`) - colours, the spacing scale, the type
       sizes, and every widget beside what it looks like today - is accepted
       as drawn, and is applied one application at a time, each photographed
       against its drawing.
+
+      **And the widgets that still count cells**, found reviewing the fix
+      above and left for this part rather than pulled forward: `ui.lua`'s
+      text field places its caret at `4 + (caret - from) * GW`, highlights a
+      selection `#shown * GW` wide and scrolls by `(w - 8) // GW`, where
+      `GW` is `gfx.font.w` as it was when the file loaded. That is the same
+      mistake as the clipping, in the one widget where being a few pixels
+      out is felt on every keystroke, and the same answer applies: measure
+      the prefix. The terminal already asks, through `cell()`.
 6. **DONE on 19 September, on the ThinkPad - a battery indicator on
    the top bar**, stick 0.10.88: "battery works!" (`thinkpad.md` 8d, `testing.md` 18.104). Diego that morning:
    "The battery indicator is a must", "As I now don't know what battery is

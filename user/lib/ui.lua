@@ -174,6 +174,38 @@ function gc:fill(x, y, w, h, color)
 end
 
 --
+-- **The longest prefix of `s` that fits in `budget` pixels**, as a byte
+-- count and the width it takes, or nil when the string is not valid UTF-8
+-- and the caller has to fall back.
+--
+-- Measured rather than counted, and that is the whole point of it: a
+-- proportional face has no cell, so there is no number of characters that
+-- means a width. Binary search, so a label costs about four `gfx.measure`
+-- calls and a line of a terminal about ten - and the case that matters,
+-- text that fits, costs one and never comes here at all.
+--
+local function fits(s, face, budget)
+  local n = utf8.len(s)
+
+  if not n then return nil end
+
+  local lo, hi = 0, n
+
+  while lo < hi do
+    local mid = (lo + hi + 1) // 2
+    local stop = utf8.offset(s, mid + 1)
+    local head = stop and s:sub(1, stop - 1) or s
+
+    if gfx.measure(head, face) <= budget then lo = mid else hi = mid - 1 end
+  end
+
+  local stop = utf8.offset(s, lo + 1)
+  local bytes = stop and (stop - 1) or #s
+
+  return bytes, gfx.measure(s:sub(1, bytes), face)
+end
+
+--
 -- `role` picks the face: "ui" when it is not given, "mono" for a terminal,
 -- "text" for a paragraph.
 --
@@ -194,58 +226,83 @@ function gc:text(x, y, s, color, bg, role, px)
   color, bg = shade(color), shade(bg)
   local ax, ay = self.ox + x, self.oy + y
 
-  local GW, GH = GW, GH
   local face = px and ui.sized(role, px) or role
 
-  -- A role's own metrics, for the clipping below. The widget font's cell is
-  -- the wrong ruler for a face that is not the widget font, and clipping by
-  -- the wrong cell width drops characters that would have fitted.
-  if face then
-    GW = math.max(1, gfx.measure("0", face))
-    GH = gfx.height(face)
-  end
+  -- **Asked, not remembered.** `GH` above is `gfx.font.h` as it was when
+  -- this file loaded, which is before a process has been told what the
+  -- desktop's faces are - the same staleness that had the Deskbar
+  -- measuring its own width in the wrong font (`testing.md` 18.122). One
+  -- call, and it answers for the face this text is actually drawn in.
+  local GH = gfx.height(face)
 
   if ay + GH <= self.cy or ay >= self.cy + self.ch then return end
 
-  -- Clipped by the character rather than by the pixel: a half glyph is
-  -- worse than a missing one, and the alternative is a clip rectangle in
-  -- the blitter, which is `gfx`'s business and not this file's.
-  local skip = 0
-
-  if ax < self.cx then
-    skip = (self.cx - ax + GW - 1) // GW
-    ax = ax + skip * GW
-  end
-
-  local room = (self.cx + self.cw - ax) // GW
+  --
+  -- **Clipped by measuring, which it did by counting cells.**
+  --
+  -- Still by the character rather than the pixel - a half glyph is worse
+  -- than a missing one, and the alternative is a clip rectangle in the
+  -- blitter, which is `gfx`'s business and not this file's. What changed is
+  -- how many characters that is: `room` was `width // GW`, one cell per
+  -- character, and a cell is something only a bitmap font has.
+  --
+  -- It was exact for as long as every glyph was eight pixels wide, and the
+  -- day the desktop's face became IBM Plex it started cutting the last
+  -- character off anything whose *count* passed the box while its *width*
+  -- sat well inside it: `New folder` in a 96-pixel button became `New
+  -- folde` with twenty-five pixels to spare, `Delete` became `Delet`.
+  --
+  -- `fits` measures instead, and the text that fits - nearly all of it -
+  -- pays one `gfx.measure` and no slicing at all.
+  --
+  local room = self.cx + self.cw - ax
 
   if room <= 0 then return end
 
-  --
-  -- Sliced by *character*, not by byte.
-  --
-  -- `skip` and `room` are counted in cells, and `s:sub` counts bytes, so
-  -- the two agreed only for as long as everything on screen was ASCII. On
-  -- anything else this cut the line short - and could cut through the
-  -- middle of a UTF-8 sequence, leaving a byte that is not a character.
-  --
-  -- Guarded, because `utf8.offset` raises on a continuation byte and a
-  -- browser will be handed malformed input on purpose. Falling back to the
-  -- byte slice is what this did before and is wrong in the same old way
-  -- rather than in a new one.
-  --
-  local shown
+  local shown = s
 
-  do
-    local ok, from = pcall(utf8.offset, s, skip + 1)
+  --
+  -- The left edge, when a view has been scrolled: drop whole characters
+  -- until what is left starts at or after the clip, and move `ax` by what
+  -- was dropped rather than by a multiple of anything.
+  --
+  if ax < self.cx then
+    local want = self.cx - ax
+    local bytes, wide = fits(s, face, want)
 
-    if ok and from then
-      local fine, stop = pcall(utf8.offset, s, skip + room + 1)
+    if bytes == nil then
+      -- Not valid UTF-8, which a browser will hand over on purpose. The
+      -- old cell arithmetic is wrong in the same old way rather than in a
+      -- new one.
+      local cell = math.max(1, gfx.measure("0", face))
+      local skip = (want + cell - 1) // cell
 
-      shown = (fine and stop) and s:sub(from, stop - 1) or s:sub(from)
+      ax = ax + skip * cell
+      shown = s:sub(skip + 1)
+      room = self.cx + self.cw - ax
     else
-      shown = s:sub(skip + 1, skip + room)
+      -- One character more than fits in `want`, so the first one shown
+      -- begins at or past the clip rather than under it.
+      local stop = utf8.offset(s, utf8.len(s:sub(1, bytes)) + 2)
+
+      if stop == nil then return end
+
+      ax = ax + gfx.measure(s:sub(1, stop - 1), face)
+      shown = s:sub(stop)
+      room = self.cx + self.cw - ax
     end
+
+    if room <= 0 or shown == "" then return end
+  end
+
+  -- And the right edge, which is one measurement when the whole string
+  -- fits and a search when it does not.
+  if gfx.measure(shown, face) > room then
+    local bytes = fits(shown, face, room)
+
+    shown = bytes and shown:sub(1, bytes)
+            or shown:sub(1, math.max(0, room //
+                                        math.max(1, gfx.measure("0", face))))
   end
 
   if shown == "" then return end

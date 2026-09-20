@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-19
+Last updated: 2026-09-20
 
 ---
 
@@ -17,6 +17,46 @@ Last updated: 2026-09-19
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 20 September: the desktop was two fonts at once
+
+**The screenshot of 0.10.90 was wrong in a way the fonts got blamed for.**
+Menu titles overlapped - `FileGo View` - and labels lost their tails:
+`New folde`, `Delet`, `Widge`, `Press m`. Nothing was wrong with IBM Plex;
+loaded directly, all four faces parse and draw, and ten M's measure 90
+pixels against ten i's at 30.
+
+Two bugs, both older than the font change and both hidden by the bitmap
+(`testing.md` 18.123, `ui.md` 16.16, README's log):
+
+- **The window manager never loaded its own faces.** `load_appearance`
+  applied the font table in `/home/.appearance` and nothing else, so a
+  machine with nothing saved loaded no face - while still sending the
+  defaults to applications, which loaded them. The desktop laid itself out
+  in Plex and painted in the 8 by 16 bitmap. Invisible for as long as the
+  default *was* the bitmap, because a face that is not loaded is the bitmap.
+  Now `apply_fonts(saved.fonts or theme.fonts)`, and what is advertised is
+  what is held.
+- **`gc:text` clipped by counting cells**, `room = width // GW`, which is
+  exact for a bitmap font and a lie for any other: `New folder` in a
+  96-pixel button lost its `r` with 25 pixels to spare. It measures now -
+  one `gfx.measure` when the string fits, a binary search when it does not.
+
+**And two checks that could not fail**, which is why neither bug was caught:
+`default look` compared `theme.fonts` with itself and measured in a process
+where no face had loaded; the battery check counted pixels of exactly
+`0xe04848`, which is every pixel of a bitmap glyph and almost none of an
+antialiased one. Both rewritten to ask what only the other side can answer -
+the window manager now reports `held` beside `fonts`, and the battery's red
+is the *difference* between a low reading and a charging one, so the icon's
+own orange cancels. Both fail under their controls. `default look` needs a
+desktop with nothing saved, and a desktop cannot be quit, so it has a
+machine of its own in `gate.py`.
+
+**Next**: threads step 4, then the futex (5) and kill across cores (6).
+Still waiting on Diego: the ThinkPad test of stick 0.10.90, and the
+questions at the end of `video.html`, `playground.html` and
+`styleguide.html`.
 
 ## The night of 19 September: threads, and every limit from the machine
 

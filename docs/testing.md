@@ -6335,3 +6335,89 @@ alone, which dropped the faces the setup had pinned. The next desktop to
 start came up in Plex, and the Deskbar check three phases later found its
 buttons a few pixels from where it expected them. `appearance()` builds that
 file now, palette and faces together, and every phase writes through it.
+
+## 18.123 Two fonts at once, and two checks that could not fail
+
+**What the screenshot of 0.10.90 showed**: menu titles overlapping
+(`FileGo View`), `New folder` drawn as `New folde`, `Delet`, `Widge`,
+`Press m`. What it looked like was a font that did not fit. What it was, was
+two bugs that had been true all along and that the bitmap had hidden.
+
+### The window manager never loaded its own faces
+
+`load_appearance` applied `saved.fonts` - the table in
+`/home/.appearance` - and returned early when there was no settings file at
+all. So the window manager loaded a face only if somebody had been to the
+Appearance panel. Nothing showed it for as long as the default was the
+bitmap, because **a face that is not loaded is the bitmap**: "never applied"
+and "applied spleen" draw the same pixels.
+
+The defaults still reached applications, because what the window manager
+sends them is `theme.fonts` - what was asked for - rather than what it
+loaded. So every application loaded Plex and laid itself out in it, while
+the process that draws the text of every ordinary window still had the 8 by
+16 bitmap.
+
+The arithmetic is visible in the picture, which is how it was found rather
+than guessed: the menu bar's spans were computed from 18 pixels for "File"
+and 14 for "Go", and the glyphs were drawn on an 8-pixel grid - 32 pixels
+for "File" - so "Go" began 14 pixels inside it. `apply_fonts(saved.fonts or
+theme.fonts)` is the fix, and a role that fails to load is now advertised as
+whatever is in force instead of what was wanted.
+
+### Text was clipped to a view by counting cells
+
+`gc:text` cut every string an application draws to `room = width // GW`,
+one cell per character. That is exact for a bitmap font and a lie for
+everything else, and it is the same mistake as computing a pixel offset in
+Lua, one level up: **nothing in Lua computes a character count from a width
+either.** `New folder` in a 96-pixel button lost its `r` with twenty-five
+pixels to spare.
+
+It measures now - `gfx.measure` once when the whole string fits, which is
+nearly always, and a binary search over characters when it does not, about
+four measurements for a label.
+
+### The check that was watching could not fail
+
+`default look` (18.122) read `theme.fonts`, the constants in the file it had
+just loaded, and compared them with themselves; then it measured three
+strings in a console process where no face had ever loaded, so every width
+came back from the bitmap and "the face drew" was `48 > 0`. **It passed on
+the build whose screenshot is above.**
+
+It asks the window manager now, which is the only thing that can answer:
+the `theme` reply carries `held`, the faces it actually loaded, beside
+`fonts`, the ones it hands on. **9 checks**: the roles in the file say what
+the style guide says; all four faces load; ten M's measure wider than ten
+i's, so the face that loaded is proportional rather than a silent fallback;
+and each of the four roles the window manager holds is the one it
+advertises. Reverting the one-line fix fails it with *"the window manager
+draws ui in none, not ibmplexsans/14"*.
+
+**It costs a machine of its own** (`gate.py`, a fifth display part). The
+question needs a desktop on a machine nobody has told anything, which is
+the moment before the harness pins its faces - and a desktop cannot be
+quit, so starting one takes the console for the rest of that boot. In a
+whole `make screenshot` run the three checks that need no desktop still run.
+
+### And the battery's red, for the same reason one level down
+
+`x86-core`'s battery check counted pixels of exactly `0xe04848`, which is
+every pixel of a glyph while the glyph is one bit to a pixel. Against an
+antialiased face the count fell to zero and the check said the low battery
+was not shown as low, on a screen that was showing it in red.
+
+Counting *reddish* pixels instead is not enough on its own: the battery
+icon is orange and 79 of its pixels are reddish, which a fixed threshold
+reads as a low battery on a machine that is charging. So the check is a
+**difference between the two machines** - 143 reddish pixels at 8 per cent
+against 79 while charging - and the icon, being the same on both, cancels.
+With the red disabled it reads 79 against 79 and fails, which is what a
+control is for.
+
+**And the control has to be built.** The first attempt at it ran
+`make build/x86_64/kosmos.elf`, which is not a target - make says "Nothing
+to be done" and leaves the binary alone - with the output discarded, so the
+suite ran against a binary from eight minutes earlier and the control
+"passed". The x86 image is built by `make x86-build`.

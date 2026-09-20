@@ -273,6 +273,12 @@ local function sized(role, px)
   return got or role
 end
 
+--
+-- What each role actually holds. Nothing means the bitmap, which is what a
+-- role that has never been loaded draws in.
+--
+local in_force = {}
+
 local function apply_fonts(fonts)
   if type(fonts) ~= "table" then return end
 
@@ -286,10 +292,22 @@ local function apply_fonts(fonts)
       local ok, err = gfx.use_font(want.font, px, role)
 
       if ok then
-        theme.fonts[role] = { font = want.font, px = px }
+        in_force[role] = { font = want.font, px = px }
       else
         why = tostring(err)
       end
+
+      --
+      -- **What is advertised is what is loaded**, and it was what was asked
+      -- for. Applications are sent this table and lay themselves out against
+      -- it, while the text of an ordinary window is drawn here - so a role
+      -- this process failed to load and still named is a desktop measuring
+      -- in one face and drawing in another.
+      --
+      -- A failure leaves the previous face in force rather than none, which
+      -- is why this says what is there instead of assuming the bitmap.
+      --
+      theme.fonts[role] = in_force[role] or { font = "spleen", px = px }
     end
   end
 
@@ -322,20 +340,36 @@ local function default_appearance()
   if palette then theme.apply(palette) end
 end
 
+local startup_font_why
+
 local function load_appearance()
   local saved = fs.read(SETTINGS)
 
-  if type(saved) ~= "table" then
-    default_appearance()
-    return
-  end
+  if type(saved) ~= "table" then saved = {} end
 
   if not saved.palette then default_appearance() end
 
   if saved.palette then theme.apply(saved.palette) end
   if saved.desktop then theme.override { desktop = saved.desktop } end
 
-  apply_fonts(saved.fonts)
+  --
+  -- **`or theme.fonts`, and without it the desktop was two fonts at once.**
+  --
+  -- This applied `saved.fonts` alone, and returned above without applying
+  -- anything at all when there was no settings file - so the window manager
+  -- loaded a face only if somebody had been to the Appearance panel. Nothing
+  -- showed it for as long as the default was the bitmap, because a face that
+  -- is not loaded *is* the bitmap.
+  --
+  -- The day the default became IBM Plex it showed everywhere at once. The
+  -- defaults still reached applications, because what is sent below is
+  -- `theme.fonts` rather than what was loaded here, so every application
+  -- loaded Plex and laid itself out in it - while this process, which draws
+  -- the text of every ordinary window, still had the 8x16 bitmap. Menu
+  -- titles were spaced for 18 pixels of "File" and drawn 32 wide, so "Go"
+  -- started inside it; buttons sized in Plex held bitmap text and clipped it.
+  --
+  startup_font_why = apply_fonts(saved.fonts or theme.fonts)
   tabs.choose(saved.tabs)
 
   -- Kept, not applied: this runs before the framebuffer is taken, and a
@@ -768,6 +802,26 @@ end
 -- desktop starting, and before compositing because otherwise the first
 -- frame is the default palette and the second is the chosen one.
 load_appearance()
+
+--
+-- **Said out loud, because this is the face every window's text is drawn
+-- in.** An application is sent these names and lays itself out against
+-- them; if this process holds something else, the desktop measures in one
+-- font and draws in another, which is what happened the day the default
+-- stopped being the bitmap. A line in the log is what lets a test - and a
+-- person looking at a boot - see which faces are really in force.
+--
+do
+  local said = {}
+
+  for _, role in ipairs { "ui", "title", "text", "mono" } do
+    local f = theme.fonts[role]
+
+    said[#said + 1] = role .. "=" .. f.font .. "/" .. f.px
+  end
+
+  print("wm: faces " .. table.concat(said, " "))
+end
 
 -- And the picture, now that there is a screen to centre it on. A wallpaper
 -- that has gone missing is not an error worth stopping for: the desktop
@@ -4249,8 +4303,17 @@ handlers.theme = function(req)
 
   add_damage(0, 0, W, H)
 
+  --
+  -- `held` is what this process actually loaded, against `fonts`, which is
+  -- what it hands to applications. They are the same table's worth of
+  -- information only when nothing went wrong, and a desktop where they
+  -- differ draws every window's text in a face its application never
+  -- measured - so the difference is worth being able to ask about rather
+  -- than only to look at.
+  --
   return { ok = true, palette = theme.name, desktop = theme.desktop,
-           fonts = theme.fonts, font_why = font_why }
+           fonts = theme.fonts, held = in_force, font_why = font_why,
+           held_why = startup_font_why }
 end
 
 --

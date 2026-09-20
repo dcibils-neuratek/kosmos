@@ -1767,7 +1767,7 @@ def tab_top(width, height, px):
     return None
 
 
-def check_default_look(guest):
+def check_default_look(guest, ask_wm):
     """**What a machine nobody has told looks like**, which since 19
     September is IBM Plex (`docs/styleguide.html`, roadmap 5).
 
@@ -1775,26 +1775,59 @@ def check_default_look(guest):
     against - so this is the only place the default can be checked, and
     without it the pin would hide a face that had stopped loading.
 
-    Two things, and the second is the one that bites: that the roles say
-    Plex, and that each of those faces actually *draws* - a name that
-    resolves to nothing measures zero and would leave every window empty.
+    **The first version of this check could not fail, and the desktop it
+    passed on was visibly broken.** It read `theme.fonts` - the constants in
+    the file it had just loaded - and compared them with themselves, then
+    measured three strings in a console process where nothing had ever
+    loaded a face, so every width came back from the bitmap and the "it
+    drew" check was `48 > 0`. It passed on the build whose screenshot shows
+    menu titles overlapping and every button clipped.
+
+    So three things, and the first two are the ones that bite:
+
+    - **What the window manager holds**, which it is asked for rather than
+      told: its `theme` reply carries `held`, the faces it actually loaded,
+      beside `fonts`, the ones it hands to applications. That process draws
+      the text of every ordinary window, so a desktop holding the bitmap
+      while advertising Plex lays out in one face and paints in the other -
+      which is exactly what `load_appearance` did, applying a saved font
+      table when there was none to apply.
+    - **That the face is proportional once loaded**, measured as the
+      difference between ten narrow letters and ten wide ones. A face that
+      failed to parse leaves the bitmap, where both are eighty pixels.
+    - That the roles in the file say what the style guide says.
     """
     checks = 0
     program = (
         "local theme = use('/lib/theme.lua') "
         "local f = theme.fonts "
-        "local w = gfx.measure('Kosmos', 'ui') "
-        "local t = gfx.measure('Kosmos', 'title') "
-        "local m = gfx.measure('Kosmos', 'mono') "
+        "local ok = {} "
+        "for _, r in ipairs { 'ui', 'title', 'text', 'mono' } do "
+        "ok[#ok + 1] = gfx.use_font(f[r].font, f[r].px, r) and 'y' or 'n' end "
+        "local thin = gfx.measure('iiiiiiiiii', 'ui') "
+        "local wide = gfx.measure('MMMMMMMMMM', 'ui') "
+        "local r = (%s) and fs.send('/app/wm', { type = 'theme' }) or {} "
+        "local held = {} "
+        "for _, role in ipairs { 'ui', 'title', 'text', 'mono' } do "
+        "local h = (r.held or {})[role] "
+        "held[#held + 1] = role .. '=' .. "
+        "(h and (h.font .. '/' .. h.px) or 'none') end "
         "print('look' .. ': ' .. f.ui.font .. ' ' .. f.ui.px .. ' ' .. "
         "f.title.font .. ' ' .. f.title.px .. ' ' .. f.mono.font .. ' ' .. "
-        "f.mono.px .. ' ' .. w .. ' ' .. t .. ' ' .. m) "
+        "f.mono.px .. ' ' .. table.concat(ok) .. ' ' .. thin .. ' ' .. wide "
+        ".. ' ' .. table.concat(held, ' ') .. ' why=' .. tostring(r.held_why)) "
         "print('look' .. '-said')"
-    )
+    ) % ("true" if ask_wm else "false")
 
     mark = len(guest.seen)
     guest.type("fs.write('/ramfs/look.lua', %r)" % program)
-    guest.type("./ramfs/look.lua")
+
+    # **Under `wm`, because half of what is asked is a question only the
+    # window manager can answer** - and it has to be a desktop with nothing
+    # saved, which is this phase and no other: the pin below gives every
+    # later desktop a font table to load, and a window manager that loads
+    # what it was given is exactly the bug this cannot see.
+    guest.type("wm /ramfs/look.lua" if ask_wm else "./ramfs/look.lua")
     # Waited for the marker *after* the line, not for the line itself: the
     # line arrives from QEMU in pieces, and reading it the instant its first
     # characters land gives "ibmplexsans 14 ibm". `run_media.py` has the same
@@ -1804,11 +1837,11 @@ def check_default_look(guest):
     line = guest.seen[mark:].split("look: ", 1)[1].split("\n")[0].strip()
     parts = line.split()
 
-    if len(parts) < 9:
+    if len(parts) < 14:
         raise Failure("the default faces came back as %r" % line)
 
     ui, ui_px, title, title_px, mono, mono_px = parts[0:6]
-    drawn = [int(n) for n in parts[6:9]]
+    loaded, thin, wide = parts[6], int(parts[7]), int(parts[8])
 
     if ui != "ibmplexsans" or ui_px != "14":
         raise Failure("the widgets' face is %s %s, not ibmplexsans 14" % (ui, ui_px))
@@ -1827,11 +1860,40 @@ def check_default_look(guest):
 
     checks += 1
 
-    if min(drawn) <= 0:
-        raise Failure("a default face measured nothing: %r - it did not load"
-                      % (drawn,))
+    if loaded != "yyyy":
+        raise Failure("a default face would not load: %s for ui/title/text/mono"
+                      % loaded)
 
     checks += 1
+
+    if wide <= thin:
+        raise Failure("ten M's measure %d and ten i's %d, so the widgets' face "
+                      "is not proportional - it fell back to the bitmap"
+                      % (wide, thin))
+
+    checks += 1
+
+    # What the desktop itself holds, which is what its windows are drawn in.
+    if not ask_wm:
+        return checks
+
+    held = dict(part.split("=", 1) for part in parts[9:13])
+    why = parts[13].split("=", 1)[1]
+
+    for role, want in (("ui", "ibmplexsans/14"),
+                       ("title", "ibmplexsanscondensed/15"),
+                       ("text", "ibmplexmono/13"),
+                       ("mono", "ibmplexmono/13")):
+        if held.get(role) != want:
+            raise Failure(
+                "the window manager draws %s in %s, not %s%s - so every "
+                "window it draws for is measured in one face and painted in "
+                "another"
+                % (role, held.get(role), want,
+                   "" if why == "nil" else " (" + why + ")"))
+
+        checks += 1
+
     return checks
 
 
@@ -7351,10 +7413,33 @@ def main():
         phase_times = []
         default_look_checks = 0
 
+        #
+        # **A desktop cannot be quit, so asking one costs a machine.**
+        #
+        # Half of this check is a question only the window manager can
+        # answer, and the window manager it has to ask is one on a machine
+        # nobody has told anything - which is this moment and no other,
+        # because the pin below hands every later desktop a font table.
+        # Starting it here takes the console for the rest of the boot, and
+        # there is no way to stop a desktop, so the phases below would have
+        # nobody to type to.
+        #
+        # So `gate.py` gives this phase a machine of its own, and only there
+        # is the window manager asked. In a whole run - `make screenshot` -
+        # the three checks that need no desktop still run.
+        #
         if not only or "default look" in only:
             began = time.monotonic()
-            default_look_checks = check_default_look(guest)
+            default_look_checks = check_default_look(
+                guest, ask_wm=(only == ["default look"]))
             phase_times.append((time.monotonic() - began, "default look"))
+
+            if only == ["default look"]:
+                print("%d checks on what a machine nobody has told looks "
+                      "like: IBM Plex in its roles, each face drawing, and "
+                      "the window manager holding the faces it hands to "
+                      "applications." % default_look_checks)
+                return 0
 
         # **And the faces its rows were measured against.** The default is
         # IBM Plex since 19 September (`docs/styleguide.html`), and nearly
