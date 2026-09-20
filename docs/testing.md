@@ -6287,3 +6287,51 @@ of the suite rather than an error - so step 3 waits for threads that are
 leaving and leaves killing to step 6. And a "hang" after test 58 was the
 machine being loaded by QEMUs left from earlier experiments: with the
 machine quiet, the suite runs in 8.5 seconds and passes 170 of 170, twice.
+
+## 18.122 IBM Plex, and what a machine nobody has told looks like
+
+**Roadmap 5, part 2, from the style guide Diego approved** ("Style guide
+looks great"). Every role was `spleen`, an 8 by 16 bitmap: exact, free, and
+what made a finished desktop look like a terminal that had grown windows.
+The defaults are IBM Plex now - widgets in Plex Sans 14, a title in Plex
+Sans Condensed 15, text and the terminal in Plex Mono 13 - and a `heading`
+role exists at Plex Sans Bold 18, which the guide names and the kit had no
+role for. The bitmap is still in the image and still what a console at a
+fixed size should ask for.
+
+**Plex Sans Condensed was not in the tree** and is now: one face, 198 KB,
+from IBM's own repository under the SIL Open Font License, with the licence
+beside it as every vendored thing here carries one.
+
+- **The harness pins the bitmap faces** in its own `.appearance`, because
+  forty phases find a row, a baseline or a column by the 16-pixel face they
+  were written for. Pinning is honest only with something checking the
+  default, which is the next line.
+- **`default look`, 4 checks, both boards**: on a machine with nothing
+  saved, before the pin, the three roles report Plex at their sizes **and
+  each face measures more than nothing** - a name that resolved to no face
+  would draw empty windows and pass a check that only compared names.
+- **A lesson learned twice**: the first version waited for the line's first
+  characters and read `ibmplexsans 14 ibm`, because a line arrives from QEMU
+  in pieces. It waits for a marker printed after the line now, which is what
+  `run_media.py` already says in a comment of its own.
+
+**And a bug the change exposed rather than caused: the Deskbar measured its
+own layout at load time.** `KOSMOS_W` - 12, the icon, 8, the width of the
+word "Kosmos" and 12 - was computed when the file loaded, which is before
+the process has ever opened a window and therefore before it has been told
+what the desktop's faces are: `ui.window` brings them back in its reply, and
+a theme change sends them again. So the word was measured in the kit's
+default face and drawn in the desktop's, and the two agreed only while they
+were the same face. They stopped agreeing the day the default became Plex,
+and the Deskbar's focus check found it at once: every button sat a few
+pixels from where the bar thought it was. `kosmos_w()` measures when it
+draws now.
+
+**And the pin had to be in one place.** Six phases rewrite
+`/home/.appearance` for their own reasons - the wallpapers one names a
+picture in it, others put the palette back - and each wrote the palette
+alone, which dropped the faces the setup had pinned. The next desktop to
+start came up in Plex, and the Deskbar check three phases later found its
+buttons a few pixels from where it expected them. `appearance()` builds that
+file now, palette and faces together, and every phase writes through it.

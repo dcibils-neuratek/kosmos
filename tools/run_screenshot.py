@@ -671,6 +671,32 @@ def find_colour(at, want, x0, y0, x1, y1):
     return None
 
 
+#
+# **What the harness pins, in one place.**
+#
+# The default faces are IBM Plex since 19 September (`docs/styleguide.html`),
+# and nearly every check below finds a row, a baseline or a column by the 8
+# by 16 bitmap it was written for. So the harness writes its own faces into
+# `/home/.appearance` - and *every* phase that rewrites that file has to
+# write them too, because a write with the palette alone drops them and the
+# next desktop to start comes up in Plex. That is exactly what happened: the
+# wallpapers phase rewrote the file, and the Deskbar check three phases later
+# found its buttons a few pixels from where it expected them.
+#
+PINNED_FONTS = ('fonts = { ui = { font = "spleen", px = 16 }, '
+                'title = { font = "spleen", px = 16 }, '
+                'text = { font = "spleen", px = 16 }, '
+                'mono = { font = "spleen", px = 16 } }')
+
+
+def appearance(extra=""):
+    """The `/home/.appearance` the harness runs with: the dark palette its
+    colours were written against, the bitmap faces its rows were measured
+    with, and whatever a phase adds."""
+    return ('fs.write("/home/.appearance", { palette = "dark", %s%s })'
+            % (PINNED_FONTS, (", " + extra) if extra else ""))
+
+
 def settle(guest, predicate, what, seconds=20):
     """Waits for the screen to satisfy `predicate`, and returns the picture.
 
@@ -1741,6 +1767,74 @@ def tab_top(width, height, px):
     return None
 
 
+def check_default_look(guest):
+    """**What a machine nobody has told looks like**, which since 19
+    September is IBM Plex (`docs/styleguide.html`, roadmap 5).
+
+    Run before the harness pins the bitmap faces its own rows were measured
+    against - so this is the only place the default can be checked, and
+    without it the pin would hide a face that had stopped loading.
+
+    Two things, and the second is the one that bites: that the roles say
+    Plex, and that each of those faces actually *draws* - a name that
+    resolves to nothing measures zero and would leave every window empty.
+    """
+    checks = 0
+    program = (
+        "local theme = use('/lib/theme.lua') "
+        "local f = theme.fonts "
+        "local w = gfx.measure('Kosmos', 'ui') "
+        "local t = gfx.measure('Kosmos', 'title') "
+        "local m = gfx.measure('Kosmos', 'mono') "
+        "print('look' .. ': ' .. f.ui.font .. ' ' .. f.ui.px .. ' ' .. "
+        "f.title.font .. ' ' .. f.title.px .. ' ' .. f.mono.font .. ' ' .. "
+        "f.mono.px .. ' ' .. w .. ' ' .. t .. ' ' .. m) "
+        "print('look' .. '-said')"
+    )
+
+    mark = len(guest.seen)
+    guest.type("fs.write('/ramfs/look.lua', %r)" % program)
+    guest.type("./ramfs/look.lua")
+    # Waited for the marker *after* the line, not for the line itself: the
+    # line arrives from QEMU in pieces, and reading it the instant its first
+    # characters land gives "ibmplexsans 14 ibm". `run_media.py` has the same
+    # lesson written down; this is the second time it has been learned.
+    guest.wait_for("look-said", "report the default faces")
+
+    line = guest.seen[mark:].split("look: ", 1)[1].split("\n")[0].strip()
+    parts = line.split()
+
+    if len(parts) < 9:
+        raise Failure("the default faces came back as %r" % line)
+
+    ui, ui_px, title, title_px, mono, mono_px = parts[0:6]
+    drawn = [int(n) for n in parts[6:9]]
+
+    if ui != "ibmplexsans" or ui_px != "14":
+        raise Failure("the widgets' face is %s %s, not ibmplexsans 14" % (ui, ui_px))
+
+    checks += 1
+
+    if title != "ibmplexsanscondensed" or title_px != "15":
+        raise Failure("a title's face is %s %s, not ibmplexsanscondensed 15"
+                      % (title, title_px))
+
+    checks += 1
+
+    if mono != "ibmplexmono" or mono_px != "13":
+        raise Failure("the terminal's face is %s %s, not ibmplexmono 13"
+                      % (mono, mono_px))
+
+    checks += 1
+
+    if min(drawn) <= 0:
+        raise Failure("a default face measured nothing: %r - it did not load"
+                      % (drawn,))
+
+    checks += 1
+    return checks
+
+
 def check_text_size(guest):
     """A window with a heading larger than the desktop's own text.
 
@@ -1900,7 +1994,7 @@ def check_text_size(guest):
     # The focus phase then read its buttons three greens off - the right
     # pixels, the wrong palette - which is a subtler failure than the wrong
     # pixels and took one more run to see.
-    guest.type('fs.write("/home/.appearance", { palette = "dark" }) '
+    guest.type(appearance() + ' '
                'print("sized-font" .. "-back")')
     guest.wait_for("sized-font-back",
                    "put the desktop's own face and palette back")
@@ -3209,7 +3303,7 @@ def check_wallpapers(guest):
         "for _, xy in ipairs{ {300, 600}, {1400, 300}, {700, 850} } do "
         "print(string.format('walls' .. ': at %d %d %08x', xy[1], xy[2], "
         "p:get(xy[1], xy[2]))) end "
-        "fs.write('/home/.appearance', { palette = 'dark', wallpaper = names[1] }) "
+        + appearance("wallpaper = names[1]") + " " 
         "end "
         "print('walls' .. ': done')"
     )
@@ -3272,7 +3366,7 @@ def check_wallpapers(guest):
 
             time.sleep(0.3)
 
-        guest.type('fs.write("/home/.appearance", { palette = "dark" }) '
+        guest.type(appearance() + ' '
                    'print("walls" .. "-reset")')
         guest.wait_for("walls-reset", "put the flat desktop back")
 
@@ -4796,7 +4890,7 @@ def check_log_view(guest):
         failures.append("Control-W Q did not get the screen back.")
 
     # The palette and faces every other phase was written against.
-    guest.type('fs.write("/home/.appearance", { palette = "dark" }) '
+    guest.type(appearance() + ' '
                'print("log-view" .. "-restored")')
     guest.wait_for("log-view-restored", "put the dark palette back")
 
@@ -5983,7 +6077,7 @@ def check_panel(guest):
     make the lone click and the pair's first one a double, and the check that
     one click chooses nothing would pass without proving it.
     """
-    guest.type('fs.write("/home/.appearance", { palette = "dark" })')
+    guest.type(appearance())
     guest.type('fs.send("/home/picktest", { type = "mkdir" })')
     guest.type('fs.send("/home/picktest/sub", { type = "mkdir" })')
     guest.type('fs.write("/home/picktest/a.txt", "a")')
@@ -6114,7 +6208,7 @@ def check_places(guest):
     NAME = "PlaceProbe"
     ROW = 16                            # the default face; pinned below
 
-    guest.type('fs.write("/home/.appearance", { palette = "dark" })')
+    guest.type(appearance())
     guest.type('fs.send("/home/placetest", { type = "mkdir" })')
     guest.type('fs.send("/home/placetest/%s", { type = "mkdir" })' % NAME)
     time.sleep(1.0)
@@ -7251,17 +7345,35 @@ def main():
         # which `theme.apply` resolves by name. BeOS is what `make shot`
         # photographs and what every desktop boot in `run_x86.py` runs.
         #
+        # The default look, before the pin below hides it - and before the
+        # phase helper exists, which is the whole point: this is the one
+        # check that has to run on a machine nobody has told anything.
+        phase_times = []
+        default_look_checks = 0
+
+        if not only or "default look" in only:
+            began = time.monotonic()
+            default_look_checks = check_default_look(guest)
+            phase_times.append((time.monotonic() - began, "default look"))
+
+        # **And the faces its rows were measured against.** The default is
+        # IBM Plex since 19 September (`docs/styleguide.html`), and nearly
+        # every check below finds a row, a baseline or a column by the 8 by
+        # 16 bitmap they were written for. Pinned here rather than chased
+        # through forty phases - and the default itself is checked in
+        # `default_look`, on a machine with nothing saved, which is the only
+        # place it can be.
         guest.type('fs.write("/home/.startup", { items = {} }) '
-                   'fs.write("/home/.appearance", { palette = "dark" }) '
+                   + appearance() + ' '
                    'print("harness-set" .. "-up")')
         guest.wait_for("harness-set-up",
-                       "emptied the login set and chose the dark palette")
+                       "emptied the login set, chose the dark palette and "
+                       "pinned the bitmap faces")
 
         # Each phase timed, because "the harness is slow" is not something
         # to guess about. The number that matters is which phase, not the
         # total: a phase that waits a fixed twelve seconds and a phase that
         # takes twelve seconds of screendumps need different fixes.
-        phase_times = []
 
         # **A phase not asked for counts nothing and runs nothing** - the
         # gate runs the harness as several machines, each with its share of
@@ -7378,6 +7490,7 @@ def main():
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
              + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
+             + default_look_checks
              + tab_checks + drives_app_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
@@ -7448,6 +7561,8 @@ def main():
           f"manager rather than a window, "
           f"{budget_checks} on a full-screen picture and a maximised window fitting "
           f"in the compositor at 1920x1080, "
+          f"{default_look_checks} on what a machine nobody has told looks "
+          f"like - IBM Plex in its roles, and each face drawing, "
           f"{face_checks} on every outline face loading and drawing, Space "
           f"Grotesk's five weights among them, "
           f"{wallpaper_checks} on the desktop's wallpapers carried in the "

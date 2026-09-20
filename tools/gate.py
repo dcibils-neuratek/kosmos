@@ -224,7 +224,7 @@ DISPLAY_PARTS = [
      "interrupt", "status_bar", "editor", "registry", "context", "widgets",
      "scripting", "idle", "direct", "3d", "terminal", "programs by file"],
     ["log view", "text size", "window resize", "triangle", "repaints",
-     "@@BOARD@@", "volume keys", "compositor budget"],
+     "@@BOARD@@", "volume keys", "compositor budget", "default look"],
     ["faces", "wallpapers", "direct menu", "tabs", "Super Nintendo --scale", "deskbar", "deskbar focus", "desktop",
      "places", "panel"],
     ["clipboard", "cores", "reaped", "clicks", "graphical", "replicants",

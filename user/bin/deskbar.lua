@@ -691,7 +691,7 @@ end
 --
 -- A function rather than a button's handler, because the bar is one view
 -- and not a row of widgets - see the strip below. `bar:mouse` calls this
--- when a press lands left of `KOSMOS_W`.
+-- when a press lands left of `kosmos_w()`.
 --
 local function open_kosmos_menu()
     local items = {}
@@ -869,7 +869,25 @@ local function lit(colour, k)
   return a | (r << 16) | (g_ << 8) | b
 end
 
-local KOSMOS_W = 12 + ICON + 8 + gfx.measure("Kosmos") + 12
+--
+-- **Measured when it is used, not when this file loads.**
+--
+-- It was a constant, computed at load: 12, the icon, 8, the width of the
+-- word and 12. At that moment this process has never opened a window, so it
+-- has never been told what the desktop's faces are - `ui.window` brings them
+-- back in its reply and a theme change sends them again. The word was
+-- therefore measured in the *kit's* default face and drawn in the
+-- desktop's, and the two agreed only as long as they were the same face.
+--
+-- They stopped agreeing the day IBM Plex became the default (`roadmap.md`
+-- 5): every button on the bar sat a few pixels from where the bar thought
+-- it was, and a press near an edge found the wrong one. `gfx.measure` is a
+-- call into C over a face the process already has, so asking each time
+-- costs nothing worth naming.
+--
+local function kosmos_w()
+  return 12 + ICON + 8 + gfx.measure("Kosmos") + 12
+end
 local TASK_W = 190              -- a button per window, at most this wide
 local GAP = 4
 
@@ -999,7 +1017,7 @@ local right_x = win.w
 --
 local function task_spans()
   local out = {}
-  local room = right_x - KOSMOS_W - GAP * 2
+  local room = right_x - kosmos_w() - GAP * 2
   local n = #running
 
   if n == 0 or room < n then return out end
@@ -1008,7 +1026,7 @@ local function task_spans()
 
   if each < 1 then each = 1 end
 
-  local x = KOSMOS_W + GAP
+  local x = kosmos_w() + GAP
 
   for _, w_ in ipairs(running) do
     out[#out + 1] = { w_ = w_, x = x, w = each }
@@ -1076,7 +1094,7 @@ function bar:draw(g)
   local menu_up = #win.menus > 0
 
   if menu_up then
-    rounded(g, 2, 2, KOSMOS_W - 4, self.h - 4,
+    rounded(g, 2, 2, kosmos_w() - 4, self.h - 4,
             lit(lit(theme.tab, FACE), PRESSED))
   end
 
@@ -1297,7 +1315,7 @@ function bar:mouse(action, x, y)
 
   if action ~= "press" then return false end
 
-  if x < KOSMOS_W then
+  if x < kosmos_w() then
     -- Lit by the repaint this press causes: returning true is what repaints,
     -- and by then the menu is open and `#win.menus` says so. See "Instant
     -- feedback" in `ui.md` §16.13.
@@ -1395,7 +1413,7 @@ end
 -- what is in it. Anywhere else on the bar has nothing to say yet.
 --
 function bar:on_context(x, _)
-  if x < KOSMOS_W then
+  if x < kosmos_w() then
     kosmos_context_menu()
     return true
   end

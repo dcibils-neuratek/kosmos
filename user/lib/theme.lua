@@ -455,8 +455,17 @@ function theme.vgradient(dst, x, y, w, h, top, bottom, y0, span)
   end
 end
 
--- The bitmap font until something says otherwise. It is exact, it costs
--- nothing, and it is what every display test was written against.
+-- **IBM Plex, since 19 September 2026** (`docs/styleguide.html`, roadmap 5).
+--
+-- It was `spleen` in all four roles, an 8 by 16 bitmap: exact, free, and
+-- what every display test was written against - and what made a finished
+-- desktop look like a terminal that had grown windows. Diego drew the
+-- mockups in Plex, said "the fonts used in the screenhot look great", and
+-- approved the style guide that proposes it: "Style guide looks great".
+--
+-- The bitmap is still in the image and still the right answer for a console
+-- at a fixed size; `spleen` names it, and a person or an application that
+-- asks for it gets it.
 --
 -- Four of them, because the four places text appears do not want the same
 -- face: a title bar is a label on chrome and can carry a face with some
@@ -469,10 +478,23 @@ end
 -- title bars and got it in every list as well, which is the whole argument
 -- for splitting it: the settings you *want* to make are the roles.
 theme.fonts = {
-  ui    = { font = "spleen", px = 16 },
-  title = { font = "spleen", px = 16 },
-  text  = { font = "spleen", px = 16 },
-  mono  = { font = "spleen", px = 16 },
+  -- Widgets: the words on a button, a list of files, the Open window.
+  ui      = { font = "ibmplexsans", px = 14 },
+
+  -- A title is a label on chrome and can carry a face with character in
+  -- it - which is the whole argument for the role being separate.
+  title   = { font = "ibmplexsanscondensed", px = 15 },
+
+  -- Text and the terminal, as the style guide groups them: a column of
+  -- characters that has to line up is worth more here than a proportional
+  -- face, and it is what the drawing shows.
+  text    = { font = "ibmplexmono", px = 13 },
+  mono    = { font = "ibmplexmono", px = 13 },
+
+  -- A heading inside a window - "Library", "Palette" - which the guide
+  -- names and the kit had no role for. Applications that want one stop
+  -- choosing a size each.
+  heading = { font = "ibmplexsans-bold", px = 18 },
 }
 
 theme.apply("dark")
