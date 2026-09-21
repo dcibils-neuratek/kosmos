@@ -1918,11 +1918,23 @@ LITEXL_DATA := $(if $(LITEXL),$(shell find runtime/upstream/lite-xl/data \
 
 LITEXL_ROOTED := $(if $(LITEXL),--rooted runtime/upstream/lite-xl/data litexl/)
 
-$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(LITEXL_DATA) tools/progs2c.py \
-                    $(HOSTDIR)/lua.ok
+#
+# The solar system's portable core, by the same mechanism and for the same
+# reason: nine Lua files that are a program's library rather than a program,
+# carried under `solar/` so `use("/lib/solar/app.lua")` reads them straight
+# out. They live in a directory of their own because they arrive from
+# another repository unmodified - `user/lib/solar/README.kosmos.md` - and a
+# wildcard over `user/lib/*.lua` deliberately does not reach into it.
+#
+SOLAR_DATA := $(shell find user/lib/solar -name '*.lua' 2>/dev/null)
+SOLAR_ROOTED := --rooted user/lib/solar solar/
+
+$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(LITEXL_DATA) $(SOLAR_DATA) \
+                    tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
-	    $(LITEXL_ROOTED) $(LITEXL_DATA)
+	    $(LITEXL_ROOTED) $(LITEXL_DATA) \
+	    $(SOLAR_ROOTED) $(SOLAR_DATA)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
@@ -1990,13 +2002,21 @@ QEMU      := qemu-system-aarch64
 #       ~/Downloads/book.pdf:/home/book.pdf
 #
 #
-# **32 MB, because this image also goes on the ThinkPad's stick**, where a
-# disk over 32 MB does not boot: `tools/mkusb_image.py` refuses one and
-# `docs/thinkpad.md` §6a has why. QEMU would take any size; the default is
-# the one that works on both.
+# **128 MB since 21 September**, because the solar system's baked textures
+# are eleven and a half megabytes and the old 32 would not hold them beside
+# Doom's WAD and a Super Nintendo cartridge. Diego: "grow the disk to
+# 128mb".
+#
+# **What that costs, and it is not nothing.** 32 was the number that worked
+# on *both* QEMU and the ThinkPad's stick, where a disk over 32 MB does not
+# boot - `tools/mkusb_image.py` refuses one and `docs/thinkpad.md` §6a has
+# why. That refusal is still there and is now the thing that catches it, so
+# **the old stick layout needs `make usb USB_HOME=disk DISK_MB=32`**; the
+# layout every stick has had since 19 September carries `/home` in a
+# partition of its own and does not use this disk at all.
 #
 DISK      := build/kosmos.img
-DISK_MB   := 32
+DISK_MB   ?= 128
 
 #
 # What to start once the machine is up. Empty means the shell.

@@ -1853,6 +1853,109 @@ static int l_set(lua_State *L)
  * two, because the difference is a branch and the pair would be two entries
  * in every list that names the primitives.
  */
+/*
+ * `dst:pixels(t, w, h [, scale])` - a Lua array of pixels onto a surface.
+ *
+ * **One native call for a whole frame**, which is the only shape that makes
+ * sense for a renderer written in Lua: the alternative is a call per pixel,
+ * and half a million of those is not a frame rate, it is an apology.
+ *
+ * `t` is `t[1 .. w*h]`, row-major from the top-left, each entry a number
+ * `0xRRGGBB`. That is the shape the portable solar-system renderer
+ * produces, and it is the shape any Lua rasterizer naturally produces, so
+ * this is a general primitive rather than one program's favour.
+ *
+ * **Why a table at all**, when `gfx.md` 19.1 says pixels never go inside
+ * one: because for a rasterizer written in portable Lua there is no
+ * alternative that is not worse. A userdata with `__index`/`__newindex`
+ * turns every pixel the *renderer* writes into a metamethod call, which is
+ * several times slower on PUC Lua - it only pays with a JIT and FFI. So the
+ * table is accepted at the boundary, deliberately, and the crossing happens
+ * exactly once a frame, here, in C. Diego agreed to the exception on 21
+ * September for the solar system port.
+ *
+ * `scale` is a whole-number nearest-neighbour enlargement, so a small
+ * render can fill a larger window without a second pass over the pixels.
+ *
+ * **Byte order.** The word is written whole, `0xFF000000 | rgb`, which is
+ * what every other primitive in this file does and what XRGB8888 wants on
+ * the two architectures Kosmos runs on. A big-endian target would have to
+ * change this function *and* every other one here; writing channels one at
+ * a time in this one place would cost speed now and still not make the
+ * file portable, so it is one convention rather than one exception.
+ */
+static int l_pixels(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    long w = (long)luaL_checkinteger(L, 3);
+    long h = (long)luaL_checkinteger(L, 4);
+    long scale = (long)luaL_optinteger(L, 5, 1);
+    long y;
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+
+    if (w <= 0 || h <= 0) {
+        return 0;
+    }
+
+    if (scale < 1) {
+        scale = 1;
+    }
+
+    /*
+     * Clipped against the surface rather than trusted, because the caller
+     * is Lua and the cost of being wrong here is somebody else's memory.
+     * A render larger than the window draws the part that fits.
+     */
+    for (y = 0; y < h; y++) {
+        long copies;
+
+        for (copies = 0; copies < scale; copies++) {
+            long dy = y * scale + copies;
+            uint32_t *row;
+            long x;
+
+            if (dy >= (long)s->height) {
+                return 0;
+            }
+
+            row = row_of(s, (unsigned)dy);
+
+            for (x = 0; x < w; x++) {
+                long dx = x * scale;
+                uint32_t rgb;
+                long lane;
+
+                if (dx >= (long)s->width) {
+                    break;
+                }
+
+                /*
+                 * `lua_rawgeti` rather than `lua_geti`: the table is an
+                 * array of numbers and a metamethod on it would mean the
+                 * caller had handed us something other than what this
+                 * function documents.
+                 */
+                lua_rawgeti(L, 2, (lua_Integer)(y * w + x + 1));
+                rgb = (uint32_t)lua_tointeger(L, -1);
+                lua_pop(L, 1);
+
+                rgb |= 0xff000000u;
+
+                for (lane = 0; lane < scale; lane++) {
+                    if (dx + lane >= (long)s->width) {
+                        break;
+                    }
+
+                    row[dx + lane] = rgb;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int l_stretch(lua_State *L)
 {
     struct surface *d = check_surface(L, 1);
@@ -1942,6 +2045,7 @@ static const luaL_Reg surface_methods[] = {
     { "blit",   l_blit },
     { "blend",  l_blend },
     { "stretch", l_stretch },
+    { "pixels",  l_pixels },
     { "text",   l_text },
     { "get",    l_get },
     { "set",    l_set },
