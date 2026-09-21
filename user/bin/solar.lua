@@ -379,7 +379,22 @@ local function reader()
   end
 end
 
-local function run(width, height, scale, level, assets, auto)
+--
+-- **The HUD is authored at 540 rows** and multiplied up from there - 1x
+-- under 900, 2x under 1700 - so a render *below* 540 draws a HUD sized for
+-- a screen twice as tall as the one it is on. At 480x270 it swallows the
+-- picture, which is what Diego saw: "the hud is too big and cant see the
+-- planets".
+--
+-- So the default is 540 rows, and the speed has to come from somewhere
+-- else. The measurements say where: at the overview the orbits are 31% of
+-- a frame, the belts 11% and the stars 5%, so the sky and the rings of
+-- rubble are the cheap thing to spend. `stars` and `belts` are options the
+-- core already takes, which is why this is a host decision rather than a
+-- change to the core.
+--
+local function run(width, height, scale, level, assets, auto, stars, belts,
+                   fps_wanted)
   local App = require "solar.app"
   local ui = use_("/lib/ui.lua")
   local wmproto = use_("/lib/wmproto.lua")
@@ -389,6 +404,7 @@ local function run(width, height, scale, level, assets, auto)
   local app = App.new({ width = width, height = height, quality = level,
                         autoQuality = auto,
                         assets = assets ~= "none" and assets or nil,
+                        stars = stars, belts = belts,
                         read = read })
 
   local win = ui.window{ title = "Solar System", direct = true,
@@ -404,6 +420,36 @@ local function run(width, height, scale, level, assets, auto)
 
   local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
   local last = sys.ticks()
+
+  --
+  -- **The frame rate, on the picture** - Diego asked for it, and a number
+  -- printed to a console nobody is looking at is not a frame counter.
+  --
+  -- Drawn by the *host*, onto the surface, after the frame has been
+  -- presented: `surface:text` is C and the letters land on pixels that are
+  -- already there. The alternative - drawing it into the core's Lua
+  -- framebuffer - would be a per-pixel loop in the interpreter for the one
+  -- thing on screen that exists to say how slow the interpreter is.
+  --
+  -- It also means the core is untouched, which is the whole arrangement
+  -- here: the HUD is the film's, this is the projectionist's.
+  --
+  local shown_fps, shown_ms = 0, 0
+  local showing_fps = fps_wanted
+
+  local function counter(s_, when)
+    if not showing_fps then return end
+
+    local said = ("%.1f fps  %.0f ms"):format(shown_fps, shown_ms)
+    local wide = gfx.measure(said) + 12
+    local tall = gfx.height() + 6
+    local x = width * scale - wide - 8
+
+    s_:fill(x, 8, wide, tall, 0xcc101820)
+    s_:fill(x, 8, wide, 1, 0xff3b6ea5)
+    s_:text(x + 6, 11, said, (shown_fps >= 20) and 0xff8fe08f
+                             or (shown_fps >= 8) and 0xffe0d48f or 0xffe08f8f)
+  end
 
   --
   -- What Kosmos calls a key and what the core calls one. The core asks for
@@ -427,7 +473,7 @@ local function run(width, height, scale, level, assets, auto)
   }
 
   local shift = false
-  local frames, since, said = 0, sys.ticks(), 0
+  local frames, since, said = 0, sys.ticks(), sys.ticks()
 
   while win.running and not app.quit do
     local now = sys.ticks()
@@ -438,8 +484,9 @@ local function run(width, height, scale, level, assets, auto)
     app:update(dt)
     app:draw()
 
-    -- The whole frame, in one call into C.
+    -- The whole frame, in one call into C, and the counter over it.
     win:surface():pixels(app.g.fb, width, height, scale)
+    counter(win:surface(), now)
 
     if not win:commit{ x = 0, y = 0, w = width * scale, h = height * scale } then
       break
@@ -449,13 +496,21 @@ local function run(width, height, scale, level, assets, auto)
 
     -- What it is really managing, every two seconds, because a port's first
     -- question is always "how fast is it now".
-    if now - since >= 2 * hz then
-      said = frames / ((now - since) / hz)
-
-      print(("solar: %.1f frames a second, level %d")
-            :format(said, app.quality or level))
-
+    --
+    -- Twice a second for the number on screen, every two seconds for the
+    -- line in the log: one is read while it moves and wants to be current,
+    -- the other is read afterwards and wants to be quiet.
+    --
+    if now - since >= hz // 2 then
+      shown_fps = frames / ((now - since) / hz)
+      shown_ms = (shown_fps > 0) and (1000 / shown_fps) or 0
       frames, since = 0, now
+
+      if now - said >= 2 * hz then
+        said = now
+        print(("solar: %.1f frames a second, level %d")
+              :format(shown_fps, app.quality or level))
+      end
     end
 
     local reply = wmproto.poll(win.handle, 0)
@@ -470,6 +525,10 @@ local function run(width, height, scale, level, assets, auto)
       elseif ev.type == "rawkey" then
         if ev.code == 42 or ev.code == 54 then
           shift = ev.down
+        elseif ev.down and ev.code == 63 then
+          -- F5: the counter is the host's, so its key is the host's too,
+          -- and it is one the core does not use.
+          showing_fps = not showing_fps
         elseif ev.down and KEYS[ev.code] then
           app:key(KEYS[ev.code], shift)
         end
@@ -500,10 +559,23 @@ end
 do
   local w, h = wanted:match("(%d+)x(%d+)")
 
-  run(tonumber(w) or 480, tonumber(h) or 270, number("%-%-scale", 2),
-      number("%-%-level", 3),
+  --
+  -- Defaults for a machine that is emulating every instruction: the HUD's
+  -- own 960x540, drawn once rather than doubled, with a quarter of the
+  -- stars and a fifth of the belt. `--stars` and `--belts` put them back
+  -- for a machine that can afford them, and the ThinkPad is the one to
+  -- ask about that rather than QEMU.
+  --
+  local sky = number("%-%-stars", 500)
+  local rubble = number("%-%-belts", 300)
+
+  run(tonumber(w) or 960, tonumber(h) or 540, number("%-%-scale", 1),
+      number("%-%-level", 2),
       wanted:match("%-%-assets%s+(%S+)") or "/home/solar/",
-      not wanted:match("%-%-hold"))
+      not wanted:match("%-%-hold"),
+      { sky, math.floor(sky * 1.3) },
+      { rubble, math.floor(rubble * 0.7) },
+      not wanted:match("%-%-nofps"))
   return
 end
 

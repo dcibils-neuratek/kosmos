@@ -350,8 +350,121 @@ elseif command == "rm" then
 
   image:close()
   print("removed " .. path)
+elseif command == "copy" then
+  --
+  -- **Every file from one image into another, attributes and all.**
+  --
+  -- Written on 21 September after `get` and `put` were used to move a disk
+  -- into a bigger one and quietly made a different disk. The header above
+  -- says what this format has that FAT32 does not - "no way to say what a
+  -- file *is*" is the thing kfs fixes - and a launcher on the Deskbar's
+  -- menu is an ordinary empty file whose *attributes* say `kind =
+  -- "launcher"`. Copy the bytes and you have copied nothing that mattered:
+  -- the menus came up empty and the Drive on the desktop stopped opening.
+  --
+  -- So this is a copy that carries what a file *is*, and it exists because
+  -- a pair of verbs that each do half the job will be used for the whole
+  -- one again.
+  --
+  local from, to = args[2], args[3]
+
+  if not to then die("usage: copy <image from> <image to>") end
+
+  local function walk(sb, path, out)
+    for _, name in ipairs(kfs.list(sb, path) or {}) do
+      local full = (path == "/") and ("/" .. name) or (path .. "/" .. name)
+      local _, node = kfs.find(sb, full)
+
+      if node then
+        if node.kind == kfs.KIND_DIR then
+          walk(sb, full, out)
+        else
+          out[#out + 1] = full
+        end
+      end
+    end
+
+    return out
+  end
+
+  open(from, "r")
+
+  local source = mounted()
+  local paths = walk(source, "/", {})
+  local held = {}
+
+  for _, path in ipairs(paths) do
+    local _, node = kfs.find(source, path)
+    local data = {}
+    local at = 0
+
+    while at < node.size do
+      local piece = kfs.read_range(source, node, at, 1024 * 1024)
+
+      if not piece or #piece == 0 then break end
+
+      data[#data + 1] = piece
+      at = at + #piece
+    end
+
+    --
+    -- **The attribute block verbatim, not unpacked and packed again.**
+    --
+    -- It is `<I4 length>` and then the serialiser's bytes, padded out to
+    -- the block - so copying the block copies the attributes exactly,
+    -- without this tool needing `sys.pack` at all. The host's Lua is stock
+    -- upstream and has no serialiser; teaching it one would be a second
+    -- implementation of a format that already has one, which is the thing
+    -- this repository keeps refusing to do.
+    --
+    local raw = nil
+
+    if node.attrs ~= 0 then
+      raw = kfs.read_block(node.attrs)
+    end
+
+    held[#held + 1] = { path = path, data = table.concat(data), raw = raw }
+  end
+
+  image:close()
+
+  open(to, "w")
+
+  local target = mounted()
+  local carried = 0
+
+  for _, file in ipairs(held) do
+    ensure(target, file.path)
+
+    local ok, err = kfs.store(target, file.path, file.data, 0)
+
+    if not ok then die(file.path .. ": " .. tostring(err)) end
+
+    if file.raw then
+      local number, node = kfs.find(target, file.path)
+      local block, aerr = kfs.alloc_block(target)
+
+      if not block then die(file.path .. ": " .. tostring(aerr)) end
+
+      local fine, werr = kfs.write_block(block, file.raw)
+
+      if not fine then die(file.path .. ": " .. tostring(werr)) end
+
+      node.attrs = block
+
+      local ok2, ierr = kfs.write_inode(target, number, node)
+
+      if not ok2 then die(file.path .. ": " .. tostring(ierr)) end
+
+      carried = carried + 1
+    end
+  end
+
+  image:close()
+  print(("%s -> %s: %d files, %d of them with attributes")
+        :format(from, to, #held, carried))
 else
-  print("usage: kfs.lua <create|ls|put|get|rm> <image> ...")
+  print("usage: kfs.lua <create|ls|put|get|rm|copy> <image> ...")
   print("")
   print("  create <image> <MB> [host:guest ...]   format, and fill it")
   print("  ls     <image> [path]                  what is in there")
@@ -359,5 +472,6 @@ else
   print("  get    <image> <path> <host>           a file out")
   print("  rm     <image> <path>                  a file gone")
   print("  df     <image>                         how much room is left")
+  print("  copy   <image from> <image to>         every file, attributes too")
   os.exit(command and 1 or 0)
 end
