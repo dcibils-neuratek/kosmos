@@ -887,6 +887,41 @@ processors, and still what follows USB:
    before it is built: `docs/gamekit.md` - the API, one small program in it,
    and what each call costs - for Diego to change. Then the 2D half with a
    first game to prove it, then sound, then 3D.
+
+   **STARTED on 21 September, and not in the order above.** The 2D half
+   exists, and it arrived because the solar system needed it rather than
+   because the document was written - which is a departure from *an app is
+   drawn before it is written* and is recorded rather than quietly made.
+   What justifies it: this is not an app and not an API anybody has to live
+   with yet. It is a port of a rasterizer that already existed, function
+   for function, so there was no design to show Diego - the shape was
+   decided by `solar/soft.lua` years before Kosmos saw it. `gamekit.md` is
+   still owed, and is now better informed for having one real user.
+
+   - `user/lib/game.c` - `game.clear` and `game.line` against a surface
+     *or* a Lua array, for a program that already has a framebuffer of its
+     own. Written first, and **it was the wrong answer**: see below.
+   - `user/lib/gamesoft.c` - `game.soft`, the whole rasterizer, owning a
+     surface. Clear, blend, point, rect, frame, line, lineFast, circle,
+     text, and lit textured spheres, ray-traced rings and the sun.
+
+   **The measurement that decided the shape**, and it is the part worth
+   keeping: C writing into a *Lua table* is **0.56x** - slower than the
+   interpreter - because a store from C is the whole table API with its
+   boxing and its barrier, about 85 ns a pixel. C writing into a **surface
+   is 18.7x**. So the framebuffer had to stop being a table, and the moment
+   it does, every function that indexes it has to move too. That is why the
+   kit's first piece is nine hundred lines rather than two primitives.
+
+   Measured under QEMU TCG at 960x540, Earth close-up, the whole scene:
+   **6 to 8 times faster at every graphics level** - level 2 from 118 ms to
+   14.4 ms, level 10 from 529 ms to 63 ms. TCG numbers are a ratio rather
+   than a speed, and the ratio is the claim.
+
+   **Held to the picture rather than to the speed**: `solar --compare` runs
+   every primitive through both rasterizers and compares all 368,640 pixels
+   with no tolerance, and `tools/run_game.py` is that in the gate
+   (`testing.md` 18.128).
 4g. **DONE on 19 September - the Super Nintendo keeps your game** (`testing.md`
    18.110). Diego:
    "Yes" to continuing a game after quitting. Two kinds of keeping, and the

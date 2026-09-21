@@ -6602,3 +6602,156 @@ knows and which does not depend on what else the Mac is doing.
 Until then, **a sound failure inside the gate is re-run alone before it is
 believed**, and this section is the reason that is not special pleading.
 
+
+## 18.128 A rasterizer ported to C, and the check that it draws the same picture
+
+**Nine hundred lines of numeric C, and the only thing that makes them
+legitimate is that they draw the picture the Lua already drew.**
+`user/lib/gamesoft.c` is `user/lib/solar/soft.lua` function for function -
+clear, blend, point, rect, frame, line, lineFast, circle, text, and the
+three expensive ones: a lit textured sphere, ray-traced rings and the sun.
+The core on disk is untouched and still runs under stock `lua` and LÖVE;
+the host swaps the module in through its own `require` (`solar.lua`), and
+`--lua` runs the original.
+
+**Why all of it rather than the two hot primitives.** The first attempt
+moved `clear` and `line` to C writing into the core's Lua table, and
+`solar --bench` said, clearing 960x540 ten times:
+
+```
+Lua into a table       24.81 ms
+C into that table      43.81 ms   0.56x
+C into a surface        1.32 ms  18.72x
+```
+
+**C into a Lua table is slower than the interpreter.** `fb[i] = c` in Lua
+is one VM instruction reaching the table's array part; the same store from
+C is `lua_pushinteger` and `lua_rawseti` - the whole table API with its
+boxing and its write barrier - about 85 ns a pixel, which at 960x540 is
+thirteen milliseconds a frame in *stores alone*. The interpreter was never
+the slow part; the representation was, and a C loop over it pays the toll
+twice.
+
+So the framebuffer had to become a surface - and `sphere`, `ring` and `sun`
+index `self.fb` directly inside their inner loops, so the moment it does,
+they have to come too. All of it or none of it, and that is the general
+lesson: **moving a loop to C is worth nothing until the data it walks stops
+being a Lua value.**
+
+**What it bought**, under QEMU TCG at 960x540 focused on Earth - a ratio
+rather than a speed, which is what TCG is for:
+
+| level | 1 | 2 | 4 | 7 | 10 |
+|-------|---|---|---|---|----|
+| Lua   | 100.6 ms | 118.1 | 131.9 | 251.5 | 528.7 |
+| C     | 12.3 ms  | 14.4  | 24.3  | 43.5  | 63.3 |
+| | 8.2x | 8.2x | 5.4x | 5.8x | 8.4x |
+
+### The check
+
+**`solar --compare`, and `tools/run_game.py` in the gate as `arm-game`.**
+Every primitive is called on both rasterizers with identical arguments -
+lines at every slope including the ones that clip on each edge and the
+degenerate one, points at all three sizes, the three expensive ones at
+block sizes 1 and 2, with and without an atmosphere, with the ring shadow
+on, and text last so glyphs blend rather than merely cover - and then all
+368,640 pixels are compared.
+
+**No tolerance.** One channel out by one is a failure, because a rounding
+difference that shows on a single pixel here is the one that shows on a
+hundred thousand when a planet fills the screen. It names the first
+disagreement with both colours, because "17 pixels differ" says nothing
+and "at 412,88 the Lua says 3f4a5e and the C says 3f4a5d" says which
+`floor` to go and look at.
+
+**It also counts how much of the frame was drawn on**, and that is not
+decoration: two rasterizers that drew nothing agree on every pixel, so
+`0 differ` is a sentence a broken script and a correct port both produce.
+105,346 of 368,640 are drawn on, and the guest refuses to call anything
+below a tenth a pass. This is the mistake `check_default_look` made by
+comparing a table with itself (18.123), caught in advance this time.
+
+### The control, which bit
+
+Changing one constant - `S:point`'s corner weight, 0.25 to 0.35 - made it
+report **exactly five differing pixels**, naming the first. Five is
+arithmetically right: the four corners of the size-3 point at 80,40, plus
+the single on-screen corner of the one drawn at the origin. A check of
+this shape that has never been shown to fail is a check nobody should
+believe, and this one was shown before the constant was put back.
+
+That constant is not hypothetical. It is the bug this port actually had:
+written from memory of having read the file, `0.35` for both the plus and
+the corners, when the source uses `0.6`/`0.35` for the plus and `0.25` for
+the corners. Reading the source again before trusting the port is what
+found it - and the comparison is what would have found it anyway.
+
+### Three places that deliberately differ
+
+All in the safe direction, and each marked SAFER in the file: a texture
+read is bounds-checked where `string.byte` past the end would return nil
+and raise on the next arithmetic; a truncated PPM is refused rather than
+returned short; a glyph shorter than its cell reads as blank rather than
+raising on `nil > 0`. The Lua faults or throws in all three, so nothing
+that works today can tell the difference - and a C port that faulted
+instead would be a memory bug rather than an error message.
+
+## 18.129 A perfect rasterizer drawing into the buffer nobody was looking at
+
+**The pixel comparison passed, and the window was black.** 18.128's check
+said all 368,640 pixels agreed; the app reported 43.2 frames a second at
+graphics level 4; the screenshot showed a black rectangle with a title bar
+on it. Both statements were true.
+
+The host had done this:
+
+```lua
+local dst = win:surface()          -- once, before the loop
+while win.running do
+  app:draw()
+  present(dst)
+  win:commit{ ... }
+end
+```
+
+`window:surface()` returns `self.region[self.region.draw_into]`, and
+`commit` flips `draw_into` to the other buffer. So every frame after the
+first went into the buffer that had just been shown, while the buffer
+being shown was never written. The old code called `win:surface()` twice
+inside the loop and the hoist looked like tidying.
+
+**What makes this worth a section is that the comparison could not have
+caught it, ever.** `--compare` checks *what is drawn*; this was a bug about
+*where it lands*. A check of one is structurally blind to the other, and a
+suite of perfect checks on one axis still ships a black window.
+
+So `run_game.py` grew a second half: boot a machine with a display, open
+the app, screendump, and count the lit pixels **inside the window's own
+rectangle** - not the screen, because the desktop behind it is a
+photograph of mountains and would pass any "there are colours here" test
+on its own.
+
+**Control**: hoisting `win:surface()` back out of the loop makes it report
+**7 lit pixels** where a drawn frame has tens of thousands. Put back, it
+passes. The whole suite is 5 seconds.
+
+### The class, not the instance
+
+**A handle to something that flips must not be cached across the flip**,
+and this system has now met that shape twice in different clothes. The
+other is 18.20: a capability index left in a parent after the endpoint
+behind it was destroyed, which names *nothing* rather than the wrong
+thing - the kernel answers "the endpoint was destroyed" and a slot goes
+back to the pool. Same class, opposite symptom, which is why neither
+reminded anybody of the other.
+
+The general form: **a value that names a slot rather than a thing, held
+longer than the slot's identity lasts.** The kernel's answer was to make
+the stale index *fail loudly*; a back buffer cannot do that, because
+writing to it is entirely legal - it is simply not the one being shown. So
+the only defence here is not to keep it, and the only way to know is to
+look at the screen.
+
+`ui.lua`'s own helpers ask for the surface each pass, which is why nothing
+else in the system has this. This host stopped doing so for about ninety
+minutes.

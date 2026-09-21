@@ -207,6 +207,12 @@ SUITES = [
     # sound keeping real time. It shares the machine with the others: a run
     # it fails because of them is the evidence for giving it a quiet one.
     Suite("arm-media", ["python3", "tools/run_media.py", ARM]),
+
+    # The Game Kit's rasterizer against the portable one it was ported
+    # from: every primitive, both ways, and all 368,640 pixels compared
+    # with no tolerance. Nine hundred lines of numeric C are worth six to
+    # eight times the speed only if they draw the same picture.
+    Suite("arm-game", ["python3", "tools/run_game.py", ARM]),
 ]
 
 #

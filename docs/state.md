@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-20
+Last updated: 2026-09-21
 
 ---
 
@@ -17,6 +17,70 @@ Last updated: 2026-09-20
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 21 September: the solar system's rasterizer moved to C
+
+**`user/lib/gamesoft.c`, the Game Kit's 2D half, and 6 to 8 times faster at
+every graphics level.** Diego, on the port running at a few frames a second:
+"we need to make it FAST", and then the shape of it - "this planet sim is a
+great exercise for us to create a reusable kit of high performance
+components for games and graphical apps that run at full speed in c",
+"while lua orchestrates them".
+
+**The measurement redirected the work, and that is the part to remember.**
+The plan was `clear` and the anti-aliased line in C, because the profile
+said they were 31% and 11% of a frame. `solar --bench`, clearing 960x540
+ten times:
+
+```
+Lua into a table       24.81 ms
+C into that table      43.81 ms   0.56x
+C into a surface        1.32 ms  18.72x
+```
+
+C writing into a Lua table is *slower than the interpreter* - a store from
+C is the whole table API with its boxing and its write barrier, about 85 ns
+a pixel. The interpreter was never the slow part; the representation was.
+So the framebuffer had to become a surface, and because `sphere`, `ring`
+and `sun` index `self.fb` directly inside their inner loops, every function
+had to move at once: nine hundred lines rather than two.
+
+Under QEMU TCG at 960x540, Earth close-up, whole scene: level 1 from
+100.6 ms to 12.3, level 2 from 118.1 to 14.4, level 10 from 528.7 to 63.3.
+A ratio rather than a speed, which is all TCG is for.
+
+**The core is still untouched.** `user/lib/solar/soft.lua` is the file its
+author wrote, running under stock `lua` and LÖVE; the host seeds its own
+`require` cache so `app.lua` picks up the C module at the line where it
+already says `local Soft = require "solar.soft"`, and `solar --lua` runs
+the original.
+
+**What makes it allowed to exist**: `solar --compare` calls every primitive
+on both rasterizers with identical arguments and compares all 368,640
+pixels with no tolerance - 0 differ, 105,346 drawn on. In the gate as
+`arm-game` (`tools/run_game.py`), one second. The control bit: the corner
+weight changed from 0.25 to 0.35 reported exactly five pixels, which is
+arithmetically the right five. `testing.md` 18.128.
+
+**And the bug the control describes was real.** I wrote `0.35` for the
+corners from memory of having read `soft.lua`, where the source says
+`0.25`. Reading it again before trusting the port is what caught it.
+
+**Then the comparison passed and the window was black** - 43.2 frames a
+second, level 4, nothing on screen. I had hoisted `win:surface()` out of
+the frame loop, and the window is double-buffered: `commit` flips
+`draw_into`, so every frame went into the buffer that had just been shown.
+**The pixel comparison could never have caught it**, because it checks
+what is drawn and this was about where it lands. So `run_game.py` has a
+second half that opens the app and counts the lit pixels inside the
+window's own rectangle; the control - putting the hoist back - reports 7
+lit pixels against tens of thousands. `testing.md` 18.129. The whole suite
+is 5 seconds.
+
+Still owed: `docs/gamekit.md` - the kit was built before it was written,
+which is a departure from *an app is drawn before it is written*, argued
+in `roadmap.md` 4f rather than quietly made. And `PORT_NOTES.md`, which
+the port brief asks for.
 
 ## 20 September, the afternoon: a film, a kit, and Appearance redrawn
 

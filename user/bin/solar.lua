@@ -59,6 +59,27 @@ function require(name)
 end
 
 --------------------------------------------------------------------------
+-- Which rasterizer, declared here and decided once the arguments are read.
+--
+-- A `local` this early because every mode below closes over it - the
+-- measuring ones as much as the window - and a name assigned further down
+-- than the function that reads it is a global by accident.
+--
+-- The C one needs a surface to draw into and cannot make one itself, so
+-- `film_for` is the other half of the decision: a surface when there is a
+-- C rasterizer to use it, and nil when the core is going to allocate its
+-- own Lua table as it always has.
+--------------------------------------------------------------------------
+
+local Native
+
+local function film_for(w, h)
+  if not Native then return nil end
+
+  return gfx.surface{ w = w, h = h }
+end
+
+--------------------------------------------------------------------------
 -- Bring-up step 1: the simulation, with nothing else.
 --
 -- The brief's first step, and it is a good one: `sim.lua` needs only
@@ -120,7 +141,8 @@ end
 local function frames_of(width, height, level, count, focus)
   local App = require "solar.app"
   local clock = timer()
-  local app = App.new({ width = width, height = height, quality = level })
+  local app = App.new({ width = width, height = height, quality = level,
+                        fb = film_for(width, height) })
 
   if focus then
     for _, b in ipairs(app.sim.bodies) do
@@ -165,6 +187,21 @@ end
 -- with numbers rather than with an opinion.
 --
 local function phases(width, height, level, count, focus)
+  --
+  -- **This one only works on the Lua rasterizer, and says so rather than
+  -- quietly measuring nothing.** It wraps the rasterizer's methods to time
+  -- them, and the C one keeps its methods in a metatable that this cannot
+  -- reach - so under `--compare`'s other half every phase would read zero
+  -- and the table would look like a frame that costs nothing at all.
+  --
+  -- A silently empty profile is worse than a refusal, because somebody
+  -- would believe it.
+  --
+  if Native then
+    print("solar: --phases profiles the Lua rasterizer; add --lua")
+    return
+  end
+
   local Soft = require "solar.soft"
   local clock = timer()
   local spent, order = {}, {}
@@ -237,7 +274,8 @@ local function attribute(width, height, level, count, focus)
   local function without(label, opts, keys)
     local app = App.new({ width = width, height = height, quality = level,
                           stars = opts and opts.stars,
-                          belts = opts and opts.belts })
+                          belts = opts and opts.belts,
+                          fb = film_for(width, height) })
 
     if focus then
       for _, b in ipairs(app.sim.bodies) do
@@ -320,6 +358,65 @@ end
 
 local wanted = args or ""
 
+--------------------------------------------------------------------------
+-- The Game Kit's rasterizer, under the core's own name.
+--
+-- **The core is not edited; its module is furnished.** `require` is this
+-- program's (see the shim above), so seeding `loaded["solar.soft"]` before
+-- anything asks for it means `solar/app.lua` picks up the C rasterizer at
+-- the line where it says `local Soft = require "solar.soft"`, without a
+-- byte of the core changing. `solar/soft.lua` on disk is untouched - the
+-- same file that runs under stock `lua` and LOVE - and `--lua` runs it.
+-- That is what the port brief means by an optional native fast path the
+-- core falls back from.
+--
+-- **Why the whole rasterizer and not a few primitives.** The first attempt
+-- here replaced `clear` and `line` with C ones that wrote into the core's
+-- Lua table, and `solar --bench` said, clearing 960x540 ten times:
+--
+--     Lua into a table       24.81 ms
+--     C into that table      43.81 ms   0.56x
+--     C into a surface        1.32 ms  18.72x
+--
+-- C writing into a Lua *table* is slower than the interpreter writing into
+-- it. `fb[i] = c` inside a Lua loop is one VM instruction reaching the
+-- table's array part; the same store from C is `lua_pushinteger` and
+-- `lua_rawseti`, the whole table API with its boxing and its barrier, once
+-- per pixel. The interpreter was never the slow part - **the
+-- representation was**, and a C loop over it pays that toll twice.
+--
+-- So the framebuffer had to become a surface, and the moment it does,
+-- every function that indexes it has to come too: `sphere`, `ring` and
+-- `sun` read and write `self.fb[i]` directly, inside their inner loops,
+-- which is exactly why they are fast in Lua and exactly why this was all
+-- or nothing. `user/lib/gamesoft.c` is the whole of it.
+--
+-- `--compare` is what says it draws the same picture: the same calls into
+-- both rasterizers, then a pixel-by-pixel count of the disagreements.
+--------------------------------------------------------------------------
+
+local function native_soft()
+  local ok, game = pcall(use_, "/kits/game")
+
+  if not ok or type(game) ~= "table" or type(game.soft) ~= "table" then
+    return nil
+  end
+
+  return game.soft
+end
+
+--
+-- The decision itself. `--lua` is the portable rasterizer, and it is worth
+-- keeping reachable rather than being a thing you rebuild to get: it is
+-- the reference the C is checked against by `--compare`, and it is what
+-- proves the core still runs unmodified.
+--
+Native = not wanted:match("%-%-lua") and native_soft() or nil
+
+if Native then
+  loaded["solar.soft"] = Native
+end
+
 local function number(after, fallback)
   return tonumber(wanted:match(after .. "%s+(%d+)")) or fallback
 end
@@ -374,69 +471,6 @@ end
 -- the same arrangement Doom, the Super Nintendo and the video player use.
 --------------------------------------------------------------------------
 
---------------------------------------------------------------------------
--- The Game Kit's primitives, under the core's own names.
---
--- **The core is not edited; its module is furnished.** `require` is this
--- program's (see the shim above), so what comes back from
--- `require "solar.soft"` is a table this host may add to - and two of its
--- methods are replaced with the C ones. `solar/soft.lua` on disk is
--- untouched, the same file that runs under stock `lua` and LÖVE, and a
--- machine without the kit runs the Lua versions and draws the same
--- picture. That is what the port brief means by an optional native fast
--- path the core falls back from.
---
--- **And it is off, because it was measured and it loses.** `solar --bench`
--- on this machine, clearing 960x540 ten times:
---
---     Lua into a table       24.81 ms
---     C into that table      43.81 ms   0.56x
---     C into a surface        1.32 ms  18.72x
---
--- C writing into a *Lua table* is slower than the interpreter writing into
--- it. `fb[i] = c` inside a Lua loop is one VM instruction reaching the
--- table's array part; the same store from C is `lua_pushinteger` and
--- `lua_rawseti`, which is the whole table API with its boxing and its
--- barrier, once per pixel. The interpreter is not the slow part - **the
--- representation is**, and a C loop over it pays the same toll twice.
---
--- So moving primitives to C buys nothing here until the pixels stop being
--- a Lua table, and the third number says what it buys then: eighteen
--- times, for the same C.
---
--- `--fast` turns it on for anyone who wants to measure it again. The real
--- answer is a `soft` whose framebuffer *is* a surface, which is a
--- proposal rather than a thing to do quietly (`docs/state.md`).
---
--- The C stays in `/kits/game` rather than here, written against a Lua
--- array *or* a surface, because it is the Game Kit's (`roadmap.md` 4f) and
--- the next graphical application should get it - drawing into a surface,
--- where it is worth having.
---------------------------------------------------------------------------
-
-local function make_fast()
-  local ok, game = pcall(use_, "/kits/game")
-
-  if not ok or type(game) ~= "table" then
-    print("solar: no /kits/game, so the Lua rasterizer draws everything")
-    return false
-  end
-
-  local Soft = require "solar.soft"
-
-  function Soft.clear(self, colour)
-    game.clear(self.fb, self.w, self.h, colour or 0)
-  end
-
-  function Soft.line(self, x0, y0, x1, y1, r, g, b, a)
-    game.line(self.fb, self.w, self.h, x0, y0, x1, y1, r, g, b, a or 1)
-  end
-
-  return true
-end
-
--- Off, because it is a loss on a table. `--fast` is for measuring it.
-if wanted:match("%-%-fast") then make_fast() end
 
 --------------------------------------------------------------------------
 -- Bring-up step 5: the textures.
@@ -515,10 +549,25 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
 
   local read = (assets ~= "none") and reader() or nil
 
+  --
+  -- The film, and with the C rasterizer it is a surface rather than half a
+  -- million Lua numbers. `Soft.new(w, h, fb)` has always taken a host
+  -- buffer as its third argument - "anything indexable 1 .. w*h that
+  -- stores numbers", says the core's own comment - so handing it one is
+  -- the contract the port brief describes rather than a hole cut for us.
+  --
+  local film = film_for(width, height)
+
+  if Native and not film then
+    print("solar: no room for a " .. width .. "x" .. height .. " surface")
+    return
+  end
+
   local app = App.new({ width = width, height = height, quality = level,
                         autoQuality = auto,
                         assets = assets ~= "none" and assets or nil,
                         stars = stars, belts = belts,
+                        fb = film,
                         read = read })
 
   local win = ui.window{ title = "Solar System", direct = true,
@@ -529,8 +578,38 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
     return
   end
 
-  print(("solar: %dx%d at %dx, level %d, auto")
-        :format(width, height, scale, level))
+  print(("solar: %dx%d at %dx, level %d, auto, %s rasterizer")
+        :format(width, height, scale, level, Native and "C" or "Lua"))
+
+  --
+  -- Putting the frame on the window, and which call that is depends on
+  -- where the frame lives.
+  --
+  -- A surface goes across with `blit` or `stretch` - a C loop reading
+  -- pixels and writing pixels, with nothing in between. A Lua table has to
+  -- go through `pixels`, which reads half a million table slots. Both are
+  -- one call a frame, which is the thing that matters either way.
+  --
+  -- **`win:surface()` is asked every frame, and that is not sloppiness.**
+  -- The window is double-buffered: `surface()` answers
+  -- `region[region.draw_into]`, and `commit` flips `draw_into` to the other
+  -- one. Holding the answer in a local means every frame after the first is
+  -- drawn into the buffer that was just put on screen, while the one being
+  -- shown is never written - which looks like a black window at a perfectly
+  -- healthy forty-two frames a second, and is exactly what it did for one
+  -- screenshot on 21 September.
+  --
+  local present
+
+  if Native and scale == 1 then
+    present = function(dst) dst:blit(film, 0, 0, width, height, 0, 0) end
+  elseif Native then
+    present = function(dst)
+      dst:stretch(film, 0, 0, width, height, 0, 0, width * scale, height * scale)
+    end
+  else
+    present = function(dst) dst:pixels(app.g.fb, width, height, scale) end
+  end
 
   local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
   local last = sys.ticks()
@@ -598,9 +677,12 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
     app:update(dt)
     app:draw()
 
-    -- The whole frame, in one call into C, and the counter over it.
-    win:surface():pixels(app.g.fb, width, height, scale)
-    counter(win:surface(), now)
+    -- The whole frame, in one call into C, and the counter over it. The
+    -- surface is this pass's back buffer, asked for now rather than kept.
+    local dst = win:surface()
+
+    present(dst)
+    counter(dst, now)
 
     if not win:commit{ x = 0, y = 0, w = width * scale, h = height * scale } then
       break
@@ -662,6 +744,201 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
 
   win:close()
   print("solar: closed")
+end
+
+--------------------------------------------------------------------------
+-- `--compare`: the two rasterizers, the same calls, and the pixels counted.
+--
+-- **This is the whole argument for the C being allowed to exist.** It is
+-- an optional fast path under a renderer that also runs elsewhere, so the
+-- only thing that makes it legitimate is drawing the picture the portable
+-- one draws. Not approximately: the same `floor` in the same three places,
+-- the same coverage on an anti-aliased line, the same texel out of the
+-- same equirectangular lookup.
+--
+-- So the check is direct rather than clever. Every primitive is called on
+-- both with identical arguments, and then every pixel is compared. There
+-- is no tolerance and no sampling: a single channel out by one is a
+-- failure, because a rounding difference that shows up on one pixel today
+-- is the one that shows up on a hundred thousand when a planet fills the
+-- screen.
+--
+-- It reports the first disagreement it finds with both colours, because
+-- "17 pixels differ" tells you nothing and "at 412,88 the Lua says 3f4a5e
+-- and the C says 3f4a5d" tells you which `floor` to go and look at.
+--
+-- Textures are not read here and that is deliberate: this has to run on a
+-- machine with nothing on its disk, and the flat-shaded path exercises
+-- every line of the shading except the three that index a string. Those
+-- are covered by the picture on screen, which is where a wrong texel is
+-- extremely obvious.
+--------------------------------------------------------------------------
+
+local function compare(width, height)
+  local Lua = use_("/lib/solar/soft.lua")
+  local C = native_soft()
+
+  if not C then
+    print("solar: no /kits/game, so there is nothing to compare against")
+    print("solar: FAIL")
+    return
+  end
+
+  local surface = gfx.surface{ w = width, h = height }
+
+  if not surface then
+    print("solar: no room for the comparison surface")
+    print("solar: FAIL")
+    return
+  end
+
+  local a = Lua.new(width, height)
+  local b = C.new(width, height, surface)
+
+  --
+  -- One script, run twice. A table of calls rather than two copies of the
+  -- same code, because two copies is how a check ends up checking that the
+  -- Lua agrees with itself.
+  --
+  local AXES = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }
+  local TILT = { { 0.94, -0.34, 0 }, { 0.34, 0.94, 0 }, { 0, 0, 1 } }
+
+  local script = {
+    { "clear", 0x101828 },
+
+    -- Lines at every slope, including the ones that clip on each edge and
+    -- the degenerate ones, because the major-axis choice and the
+    -- Liang-Barsky parameters are where a port goes wrong.
+    { "line", 10, 10, 300, 200, 255, 128, 64, 1 },
+    { "line", 300, 200, 10, 10, 255, 128, 64, 0.5 },
+    { "line", -50, 30, 400, 31, 90, 200, 255, 0.8 },
+    { "line", 20, -80, 21, 400, 200, 255, 90, 0.8 },
+    { "line", -200, -200, 900, 800, 255, 255, 255, 0.3 },
+    { "line", 100, 100, 100, 100, 255, 0, 0, 1 },
+    { "lineFast", 5, 300, 500, 320, 120, 255, 180, 0.9 },
+    { "lineFast", -400, 250, 400, 255, 255, 220, 120, 0.4 },
+
+    -- Points of all three sizes, on and off the edge.
+    { "point", 40, 40, 1, 255, 255, 255, 1 },
+    { "point", 60, 40, 2, 255, 240, 200, 0.7 },
+    { "point", 80, 40, 3, 200, 220, 255, 0.55 },
+    { "point", 0, 0, 3, 255, 255, 255, 1 },
+
+    { "rect", 200, 60, 120, 70, 30, 40, 60, 1 },
+    { "rect", 230, 80, 120, 70, 200, 60, 40, 0.35 },
+    { "rect", -20, 200, 80, 60, 60, 200, 90, 0.5 },
+    { "frame", 205, 65, 110, 60, 220, 220, 220, 0.9 },
+    { "circle", 150, 250, 55, 255, 200, 90, 0.8 },
+    { "circle", 30, 30, 90, 90, 160, 255, 0.4 },
+
+    -- The three expensive ones, at step 1 and at step 2, with and without
+    -- an atmosphere, and with the ring shadow on - which is the only
+    -- caller of the ring LUT from inside a sphere.
+    { "sun", { sx = 120, sy = 420, sr = 26, ax = AXES[1], ay = AXES[2],
+               az = AXES[3], pad = 5, step = 1 } },
+    { "sun", { sx = 300, sy = 430, sr = 18, ax = TILT[1], ay = TILT[2],
+               az = TILT[3], pad = 3, step = 2 } },
+
+    { "sphere", { sx = 420, sy = 150, sr = 70, ax = AXES[1], ay = AXES[2],
+                  az = AXES[3], L = { 0.6, 0.3, -0.74 },
+                  color = { 180, 140, 110 }, step = 1 } },
+    { "sphere", { sx = 560, sy = 300, sr = 48, ax = TILT[1], ay = TILT[2],
+                  az = TILT[3], L = { -0.5, 0.2, -0.84 },
+                  color = { 90, 130, 200 }, atm = 0.8,
+                  atmColor = { 120, 170, 255 }, step = 1 } },
+    { "sphere", { sx = 200, sy = 380, sr = 40, ax = AXES[1], ay = AXES[2],
+                  az = AXES[3], L = { 0.2, 0.8, -0.56 },
+                  color = { 210, 190, 140 }, ringShadow = true, step = 1 } },
+    { "sphere", { sx = 640, sy = 120, sr = 55, ax = TILT[1], ay = TILT[2],
+                  az = TILT[3], L = { 0.7, -0.2, -0.68 },
+                  color = { 160, 160, 160 }, atm = 0.5, step = 2 } },
+
+    { "ring", { sx = 200, sy = 380, sr = 40, N = { 0.1, 0.86, 0.5 },
+                L = { 0.2, 0.8, -0.56 }, step = 1 } },
+    { "ring", { sx = 640, sy = 400, sr = 34, N = { -0.3, 0.7, 0.65 },
+                L = { 0.7, -0.2, -0.68 }, step = 2, shadow = false } },
+    { "ring", { sx = 400, sy = 300, sr = 30, N = { 0.9, 0.1, 0.01 },
+                L = { 0, 0, -1 }, step = 1 } },          -- edge-on: nothing
+  }
+
+  -- Text last, over everything, so a glyph blends rather than merely
+  -- covering - which is the half of `S:text` that could differ.
+  local Font = require "solar.font"
+  local font = Font.get(12)
+
+  script[#script + 1] = { "text", font, "Comparison 0123 ~!@#", 24, 470,
+                          230, 230, 240, 0.85 }
+  script[#script + 1] = { "text", font, "right edge", 700, 490,
+                          255, 180, 90, 0.6, "right" }
+
+  for _, call in ipairs(script) do
+    local name = call[1]
+
+    a[name](a, table.unpack(call, 2))
+    b[name](b, table.unpack(call, 2))
+  end
+
+  --
+  -- The comparison. `surface:get` is one call per pixel, which is slow and
+  -- is fine: this runs once and it is a check rather than a frame.
+  --
+  -- **What is also counted is how much of the picture is not the
+  -- background**, and that is not decoration. Two rasterizers that drew
+  -- nothing at all agree on every pixel, so "0 differ" on its own is a
+  -- sentence that a broken script and a correct port both produce. The
+  -- coverage is what tells them apart, and it is checked rather than
+  -- printed for somebody to notice.
+  --
+  local differ, drawn, first = 0, 0, nil
+  local BACKGROUND = 0x101828
+
+  for y = 0, height - 1 do
+    for x = 0, width - 1 do
+      local want = a.fb[y * width + x + 1]
+      local got = surface:get(x, y) & 0x00ffffff
+
+      if want ~= BACKGROUND then drawn = drawn + 1 end
+
+      if want ~= got then
+        differ = differ + 1
+
+        if not first then
+          first = ("at %d,%d the Lua says %06x and the C says %06x")
+                  :format(x, y, want, got)
+        end
+      end
+    end
+  end
+
+  print(("solar: compared %d pixels of %dx%d, %d drawn on, %d differ")
+        :format(width * height, width, height, drawn, differ))
+
+  -- A tenth of the frame. The script above covers about a fifth, so this
+  -- is well clear of it and still catches a script that stopped drawing.
+  if drawn < width * height // 10 then
+    print("solar: the script drew almost nothing, so agreeing means nothing")
+    print("solar: FAIL")
+
+    return
+  end
+
+  if first then
+    print("solar:   " .. first)
+    print("solar: FAIL")
+
+    return
+  end
+
+  print("solar: the C rasterizer draws the Lua rasterizer's picture")
+  print("solar: PASS")
+end
+
+if wanted:match("%-%-compare") then
+  local w, h = wanted:match("(%d+)x(%d+)")
+
+  compare(tonumber(w) or 720, tonumber(h) or 512)
+
+  return
 end
 
 --

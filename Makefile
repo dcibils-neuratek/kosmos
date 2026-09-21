@@ -768,6 +768,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/lib/sys_user.c \
              user/lib/gfx.c \
              user/lib/game.c \
+             user/lib/gamesoft.c \
              user/lib/png.c \
              user/lib/jpeg.c \
              user/lib/docfont.c \

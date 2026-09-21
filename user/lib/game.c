@@ -326,6 +326,20 @@ static int l_line(lua_State *L)
     return 0;
 }
 
+/*
+ * The full rasterizer, in `gamesoft.c`: a surface and every loop that
+ * fills it, `game.soft` for a program that wants one object rather than
+ * these two free functions.
+ *
+ * It is a separate file because the two are answers to different
+ * questions. What is here draws into *whatever a caller already has*,
+ * including a Lua table, and is the cheap way to make an existing program
+ * faster without changing what its framebuffer is. What is there owns a
+ * surface, which is eighteen times quicker and is what a program written
+ * for Kosmos should reach for.
+ */
+void kosmos_gamesoft_open(lua_State *L);
+
 void kosmos_game_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -335,4 +349,7 @@ void kosmos_game_kit(lua_State *L)
     };
 
     luaL_newlib(L, api);
+
+    kosmos_gamesoft_open(L);
+    lua_setfield(L, -2, "soft");
 }
