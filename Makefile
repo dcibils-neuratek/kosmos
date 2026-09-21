@@ -241,6 +241,7 @@ SRCS := boot/start.S \
         hal/virtio/input.c \
         hal/qemu-virt/input_bind.c \
         hal/keys.c \
+        hal/pointer_edges.c \
         hal/qemu-virt/input_describe.c \
         hal/virtio/blk.c \
         hal/qemu-virt/blk_bind.c \
@@ -2479,6 +2480,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/input_bind.c \
              hal/pc/pointer.c \
              hal/keys.c \
+             hal/pointer_edges.c \
              hal/pc/input_describe.c \
              hal/virtio/snd.c \
              hal/pc/hda.c \

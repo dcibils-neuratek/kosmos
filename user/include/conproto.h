@@ -73,10 +73,31 @@
 #define CON_TEXT_MAX    1024u
 #define CON_KEYS_MAX      64u   /* bytes typed since anyone last asked */
 #define CON_EVENTS_MAX    32u   /* key transitions, for the window manager */
+#define CON_CLICKS_MAX    16u   /* button transitions, for the same reason */
 
 struct con_key {
     uint32_t code;
     uint32_t down;
+};
+
+/*
+ * One button transition, and where the pointer was when it happened.
+ *
+ * **The pointer's position is a state and its buttons are events**, and
+ * the fields below carry the state. They cannot carry a click that began
+ * and ended between two `wait`s: `buttons` reads the same at both ends and
+ * the click never existed. The comment above `fill_pointer` in
+ * `console.c` has worked that out since the first time a button stopped
+ * responding; `hal/pointer_edges.c` is where it was finally fixed, and
+ * this is how the answer reaches the window manager.
+ *
+ * Sixteen for the same reason `CON_EVENTS_MAX` is thirty-two: more than
+ * anybody can produce between two passes, small enough that the reply
+ * still fits in one message.
+ */
+struct con_click {
+    uint32_t x, y;
+    uint32_t buttons;           /* the merged state *after* this transition */
 };
 
 struct con_request {
@@ -136,12 +157,17 @@ struct con_reply {
     uint32_t min_y, max_y;
     uint32_t buttons, moved;
 
+    /* What the buttons did since the last `wait`, in order, and how many
+     * did not fit anywhere along the way. */
+    uint32_t nclicks, clicks_lost;
+
     /* stat */
     uint32_t bytes, lines, interrupts, reloads;
 
-    uint8_t        keys[CON_KEYS_MAX];
-    struct con_key events[CON_EVENTS_MAX];
-    char           line[CON_TEXT_MAX];
+    uint8_t          keys[CON_KEYS_MAX];
+    struct con_key   events[CON_EVENTS_MAX];
+    struct con_click clicks[CON_CLICKS_MAX];
+    char             line[CON_TEXT_MAX];
 };
 
 _Static_assert(sizeof(struct con_request) <= 2048,

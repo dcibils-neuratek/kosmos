@@ -407,11 +407,82 @@ static void drain_key_events(struct con_reply *rep)
     }
 }
 
+/*
+ * The button transitions, kept here until whoever asked for them reads them.
+ *
+ * **A stash rather than a straight copy, because reading takes them.**
+ * `SYS_POINTER` drains the board's ring, and this server calls it from two
+ * places: the `wait` a window manager sits in, and the plain `pointer`
+ * question any program may ask. Without somewhere to put them, a program
+ * asking where the pointer is would take the transitions and throw them
+ * away, and the manager's clicks would go missing *because something else
+ * looked* - which is a far nastier version of the bug this whole path
+ * exists to fix.
+ *
+ * So every call keeps what it drained, and only a reply that carries
+ * clicks empties it. Twice what one reply holds, because two syscalls can
+ * land between two `wait`s and neither should lose anything.
+ */
+#define CLICK_STASH (CON_CLICKS_MAX * 2u)
+
+static struct con_click clicks[CLICK_STASH];
+static unsigned stashed;
+static unsigned stash_lost;
+
+static void keep_clicks(const struct pointer_info *where)
+{
+    unsigned i;
+
+    for (i = 0; i < where->nedges && i < POINTER_EDGES_MAX; i++) {
+        if (stashed == CLICK_STASH) {
+            unsigned k;
+
+            /* The oldest goes: a press whose release was dropped would be
+             * a button held down for ever, and that is worse. */
+            for (k = 1; k < CLICK_STASH; k++) {
+                clicks[k - 1] = clicks[k];
+            }
+
+            stashed--;
+            stash_lost++;
+        }
+
+        clicks[stashed].x = where->edges[i].x;
+        clicks[stashed].y = where->edges[i].y;
+        clicks[stashed].buttons = where->edges[i].buttons;
+        stashed++;
+    }
+
+    stash_lost += where->dropped;
+}
+
+static void drain_clicks(struct con_reply *rep)
+{
+    unsigned n = (stashed < CON_CLICKS_MAX) ? stashed : CON_CLICKS_MAX;
+    unsigned i;
+
+    for (i = 0; i < n; i++) {
+        rep->clicks[i] = clicks[i];
+    }
+
+    for (i = n; i < stashed; i++) {
+        clicks[i - n] = clicks[i];
+    }
+
+    stashed -= n;
+    rep->nclicks = n;
+    rep->clicks_lost = stash_lost;
+    stash_lost = 0;
+}
+
 static void fill_pointer(struct con_reply *rep)
 {
     struct pointer_info where;
 
     if (kosmos_pointer(&where) == 0) {
+        keep_clicks(&where);
+        drain_clicks(rep);
+
         rep->x       = where.x;
         rep->y       = where.y;
         rep->min_x   = where.min_x;
@@ -577,6 +648,14 @@ static void answer(const struct message *msg, uint64_t sender)
             fail(sender, CON_ERR_NO_POINTER);
             return;
         }
+
+        /*
+         * Kept, not reported: this op answers "where is it", and a caller
+         * asking that has not asked for the transitions. Keeping them
+         * anyway is what stops this call stealing them from the `wait`
+         * that is collecting them (see the stash above).
+         */
+        keep_clicks(&where);
 
         rep.x       = where.x;
         rep.y       = where.y;

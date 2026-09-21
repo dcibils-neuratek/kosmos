@@ -556,6 +556,41 @@ struct pointer_state {
 };
 
 /*
+ * One button transition, and where the pointer was when it happened.
+ *
+ * **A position is a state and a button is an event**, which is the whole
+ * of why this exists beside `pointer_state` rather than inside it. Asking
+ * where the pointer is has one right answer - now - and asking what the
+ * buttons did has as many as happened since the last time anyone asked.
+ * A reader that only ever sampled the state lost every click that began
+ * and ended between two samples, which is a bug a real machine found and
+ * QEMU never did (`hal/pointer_edges.c`).
+ *
+ * `buttons` is the merged state *after* this transition, so a reader
+ * replays them in order and ends where `hal_pointer_poll` would have put
+ * it. The position is the one at the time of the edge rather than the one
+ * now, because a click is at a place: a press in a menu and a release
+ * somewhere else are two facts, and reporting both at wherever the
+ * pointer ended up would lose the one that matters.
+ */
+struct pointer_edge {
+    uint32_t x, y;
+    uint32_t buttons;
+};
+
+/*
+ * A board records one when the buttons it reports change; whoever owns the
+ * console takes them. `hal/keys.c` is the same arrangement for keys, and
+ * these are deliberately the same shape.
+ */
+void     hal_pointer_edge(uint32_t x, uint32_t y, uint32_t buttons);
+unsigned hal_pointer_edges(struct pointer_edge *out, unsigned max);
+
+/* How many did not fit since the last time this was asked, so that losing
+ * one is something a reader can notice rather than a silent cap. */
+unsigned hal_pointer_edges_dropped(void);
+
+/*
  * Brings up a pointing device, if the board has one. False is not an error,
  * exactly as with the keyboard: a machine with a serial cable and no mouse
  * is a legitimate way to run this system and always will be.

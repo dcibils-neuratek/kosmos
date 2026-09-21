@@ -6755,3 +6755,91 @@ look at the screen.
 `ui.lua`'s own helpers ask for the surface each pass, which is why nothing
 else in the system has this. This host stopped doing so for about ninety
 minutes.
+
+## 18.130 A click is an event, and the desktop was sampling it
+
+**Diego, after 0.10.99 on the ThinkPad**: "i found some quircks like the
+mouse buttons be unrespiosnive under certaun scenarios" - on the desktop
+and the Deskbar.
+
+**The code had already worked out why and said so.** Above `fill_pointer`
+in `user/servers/console.c`:
+
+> A key is an event and a position is a state. Keys queue, so reading them
+> a pass late loses nothing - they are all still there. The pointer does
+> not queue.
+
+`SYS_POINTER` answered where the pointer is and what is held *now*. A
+press and a release that both happened between two of the window
+manager's passes left `buttons` exactly as they found it, so the click
+never existed. That comment had fixed the half sampling order could fix -
+taking the sample *after* the wait rather than before - and named the half
+it could not: "a window whose repaint takes a dozen messages: the release
+then arrives while the manager is draining those."
+
+That is a busy desktop. It is also why QEMU never found it and a real
+machine did.
+
+### The fix: the pointer gets what the keyboard has always had
+
+`hal/keys.c` has kept key transitions in a ring since the first driver
+outside the kernel. `hal/pointer_edges.c` is that, for buttons, and
+deliberately the same shape - a reader should not have to learn two ideas
+about what an input event is.
+
+- **Shared by both boards**, beside `hal/keys.c`. The PC records an edge
+  when its *merged* state changes (a TrackPoint and a USB mouse are two
+  sources); the virt board records one when the tablet's buttons change.
+  The two lose a click for different reasons and lose it just the same.
+- **The position travels with the edge**, because a click is at a place. A
+  press in a menu and a release elsewhere are two facts.
+- **The oldest is dropped when full**, never the newest: dropping the
+  newest would leave a press whose release had been thrown away, which is
+  a button held down for ever - worse than the bug being fixed.
+- **`dropped` is reported** all the way to `wm`, which says so once. A
+  transition nobody will ever see is exactly what this path exists to
+  prevent, so losing one is not allowed to be silent.
+
+The chain is `hal_pointer_edge` → `SYS_POINTER` → the console server →
+`con.wait` → `wm.lua`, which **replays each edge through `pointer_pass`
+before the current state**. That needed no new logic in `pointer_pass`: it
+already decides press-or-release by comparing with the last state it saw,
+so feeding it the states in the order they really happened produces the
+presses and releases that really happened.
+
+**One hazard closed on the way.** `CON_OP_POINTER` - the plain "where is
+the pointer" any program may ask - also calls `SYS_POINTER`, and reading
+*takes* the transitions. Without care, a program asking where the pointer
+is would have stolen the window manager's clicks and thrown them away:
+clicks going missing *because something else looked*, which is nastier
+than the original bug. The console server keeps a stash that both calls
+append to and only a reply carrying clicks empties.
+
+### Two checks, at two levels, and both controls bite
+
+- **`input: a click between two looks is not lost`** (`make test`, both
+  boards): `hal_pointer_move` down then up with no poll between, then
+  assert the state says nothing is held *and* that two transitions are
+  waiting, and that reading took them. **Control**: making
+  `hal_pointer_edge` a no-op turns it to `not ok 149`.
+- **The fourth check of the `clicks` display phase**: a press and a
+  release sent as **one QMP event batch**, so the board processes both
+  before anybody looks. Every other click in that phase is press, sleep,
+  release - three calls - and is sampled correctly even by the old code,
+  which is why none of them ever caught this. **Control**: removing the
+  replay from `wm.lua` fails it with "the click was dropped because the
+  pointer was sampled rather than its transitions read".
+
+The second control is the interesting one. It reproduces on an idle
+machine in QEMU what a loaded machine did by itself, which is the general
+trick worth keeping: **when a bug needs the machine to be busy, find the
+way to make the race certain instead of likely.**
+
+### A Lua limit met on the way
+
+`wm.lua`'s main chunk is at Lua's ceiling of **200 locals**, and adding
+one more makes the file refuse to parse - reporting the overflow at
+whatever innocent line happens to be last, which cost two rebuilds to
+understand. The pointer's bookkeeping is one table, `pointer_log`, folded
+into the slot the old `pointers_said` counter had. Worth knowing before
+the next thing this file needs.

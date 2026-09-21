@@ -95,6 +95,23 @@ if [ "${FILE%/}" != "$FILE" ]; then
     printf 'stick-log: %s is in %s/, %s files\n' "$FILE" "$OUT" "$(ls "$OUT" | wc -l | tr -d ' ')"
 else
     mkdir -p "$(dirname "$OUT")"
-    "$LUA" "$HERE/kfs.lua" get "$COPY" "$FILE" "$OUT"
+
+    #
+    #  When the file is not there, say what *is* - because the next
+    #  question is always "then what did it write, and where".
+    #
+    #  This used to be one `get` whose failure was a Lua traceback about
+    #  comparing a number with nil (`kfs.lua`'s own note has why), and the
+    #  answer to it needed a second run with a different verb. Reading the
+    #  stick costs a password and a minute of copying, so a run that ends
+    #  in "no such file" should end with the folder listed as well.
+    #
+    if ! "$LUA" "$HERE/kfs.lua" get "$COPY" "$FILE" "$OUT"; then
+        printf '\nstick-log: %s is not on the stick. What is in %s:\n' \
+               "$FILE" "$(dirname "$FILE")" >&2
+        "$LUA" "$HERE/kfs.lua" ls "$COPY" "$(dirname "$FILE")" >&2 || true
+        exit 1
+    fi
+
     printf 'stick-log: %s is in %s, %s lines\n' "$FILE" "$OUT" "$(wc -l < "$OUT" | tr -d ' ')"
 fi

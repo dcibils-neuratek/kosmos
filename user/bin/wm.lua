@@ -4892,7 +4892,19 @@ local function window_at(x, y)
   return nil
 end
 
-local pointers_said = 0
+--
+-- The pointer's own bookkeeping, and it is one table rather than three
+-- names for a reason the compiler gives: **this chunk is at Lua's limit of
+-- 200 locals**, and adding even one more makes the file refuse to parse -
+-- reporting the overflow at whatever innocent line happens to be last.
+--
+--   said     how many button transitions have been logged (bounded)
+--   replay   the one table every replayed transition is written through,
+--            because a table per click per pass is the allocation habit
+--            this loop cannot afford
+--   lost     how often a dropped transition has been mentioned
+--
+local pointer_log = { said = 0, replay = {}, lost = 0 }
 
 local function pointer_pass(p)
   if not p then return end
@@ -4913,8 +4925,8 @@ local function pointer_pass(p)
   -- lost between the two. If both do and the widget stays down, it was lost
   -- after this - which on the first real machine it was, in an event queue
   -- `post` now empties more carefully.
-  if is_down ~= was_down and pointers_said < 30 then
-    pointers_said = pointers_said + 1
+  if is_down ~= was_down and pointer_log.said < 30 then
+    pointer_log.said = pointer_log.said + 1
     print(("wm: button %s at %d,%d raw=%s"):format(
           is_down and "down" or "up", nx, ny, tostring(p.buttons)))
   end
@@ -6020,6 +6032,55 @@ while running do
   step("pointer")
   -- 3. The pointer, before the picture: a click can raise a window and a
   -- drag can move one, and both are damage that this pass should draw.
+  --
+  -- **The transitions first, each at the place it happened, and then where
+  -- the pointer is now.**
+  --
+  -- `input.pointer` says what is held *now*, and that is the wrong question
+  -- to ask about a click: a press and a release that both happened while
+  -- this loop was busy leave it saying nothing happened at all. That is the
+  -- bug Diego found on the ThinkPad - "the mouse buttons be unrespiosnive
+  -- under certaun scenarios" - and it bites here, on the desktop, because
+  -- this is where a pass can take a dozen messages.
+  --
+  -- `input.clicks` is every transition since the last pass, in order, from
+  -- a queue the board now keeps (`hal/pointer_edges.c`). Replaying them
+  -- through `pointer_pass` needs no new code in it: it already works out a
+  -- press or a release by comparing against the last state it saw, so
+  -- feeding it the states in the order they really happened produces
+  -- exactly the presses and releases that really happened.
+  --
+  -- The final call then sees the current state, which the last edge has
+  -- already brought it to, so it dispatches nothing and only settles the
+  -- position.
+  if input.pointer then
+    for _, c in ipairs(input.clicks or {}) do
+      -- One table, reused: a click is rare, but a table per click per pass
+      -- on the frame path is the habit this loop cannot afford.
+      --
+      -- Written through `pointer_log.replay` rather than a local of its own
+      -- because this chunk has no room for one - Lua allows 200 and this
+      -- file uses them all.
+      pointer_log.replay.x = c.x
+      pointer_log.replay.y = c.y
+      pointer_log.replay.buttons = c.buttons
+      pointer_log.replay.min_x = input.pointer.min_x
+      pointer_log.replay.max_x = input.pointer.max_x
+      pointer_log.replay.min_y = input.pointer.min_y
+      pointer_log.replay.max_y = input.pointer.max_y
+      pointer_pass(pointer_log.replay)
+    end
+
+    -- Said rather than counted silently: a transition that did not fit
+    -- anywhere is a click nobody will ever see, and the whole point of this
+    -- path is that such a thing should be impossible.
+    if (input.pointer.clicks_lost or 0) > 0 and pointer_log.lost < 5 then
+      pointer_log.lost = pointer_log.lost + 1
+      print(("wm: %d button transition(s) lost")
+            :format(input.pointer.clicks_lost))
+    end
+  end
+
   pointer_pass(input.pointer)
 
   if measuring then t, heap = charge("pointer", t, heap) end

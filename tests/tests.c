@@ -5761,6 +5761,66 @@ static bool test_a_driver_movement_adds_to_the_pointer(void)
 }
 
 /*
+ * A click that begins and ends between two looks is still there.
+ *
+ * **This is the bug Diego found on the ThinkPad**, on 21 September: "i
+ * found some quircks like the mouse buttons be unrespiosnive under
+ * certaun scenarios", on the desktop and the Deskbar. `console.c` had
+ * already named the mechanism in a comment above `fill_pointer` - "A key
+ * is an event and a position is a state. Keys queue... The pointer does
+ * not queue" - and half fixed it by sampling after the wait instead of
+ * before, which removed one wake of staleness and left the race.
+ *
+ * The race is this test. A press and a release with no look between them
+ * leave `buttons` back at zero, so a reader that only ever asks "what is
+ * held now" sees nothing at all and `on_click` never fires. It bites when
+ * the window manager is busy - a repaint that costs a dozen messages is
+ * long enough - which is why a real machine found it and QEMU never did.
+ *
+ * So the pointer gets what the keyboard has had all along: the
+ * *transitions* are kept, in order, and reading them takes them. The
+ * position stays a state, because a position genuinely is one - it has no
+ * history worth keeping and the newest answer is the only right one.
+ *
+ * The test right below this one is the shape being copied, deliberately.
+ */
+static bool test_a_click_between_two_looks_is_not_lost(void)
+{
+    struct pointer_edge edges[4];
+    struct pointer_state now;
+    unsigned n;
+
+    if (!hal_pointer_move(0, 0, 0)) {
+        /* An absolute board refuses a driver's movement; nothing to do. */
+        return hal_pointer_speed(0) == 0;
+    }
+
+    /* Whatever the boot and the tests above left in it is not ours. */
+    while (hal_pointer_edges(edges, 4) != 0) {
+        /* drained */
+    }
+
+    /* Down and up, with no look in between: the click a busy desktop
+     * used to lose entirely. */
+    if (!hal_pointer_move(0, 0, 0x1u) || !hal_pointer_move(0, 0, 0)) {
+        return false;
+    }
+
+    /* The state agrees that nothing is held now, which is true and is
+     * exactly why the state alone cannot answer this. */
+    if (!hal_pointer_poll(&now) || (now.buttons & 0x1u) != 0) {
+        return false;
+    }
+
+    n = hal_pointer_edges(edges, 4);
+
+    return n == 2
+        && (edges[0].buttons & 0x1u) != 0       /* it went down */
+        && (edges[1].buttons & 0x1u) == 0       /* and then came up */
+        && hal_pointer_edges(edges, 4) == 0;    /* and reading took them */
+}
+
+/*
  * A driver's keys come out of `hal_key_event` in the order they went in,
  * past whatever the keyboard queued first; a full queue refuses a press;
  * and `hal_key_release_all` lets go of what is still down - the kernel's
@@ -8307,6 +8367,8 @@ static const struct test tests[] = {
                                           test_a_driver_key_comes_out_and_is_let_go },
     { "input: a driver's movement adds to the pointer",
                                           test_a_driver_movement_adds_to_the_pointer },
+    { "input: a click between two looks is not lost",
+                                          test_a_click_between_two_looks_is_not_lost },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },
     { "console: a write carries its colour, and UTF-8",

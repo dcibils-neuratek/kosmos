@@ -712,12 +712,49 @@ struct proc_info {
  * whoever knows the size of the screen does the scaling. A kernel that
  * scaled would have to know which screen, and it does not.
  */
+/*
+ * How many button transitions one `SYS_POINTER` can carry.
+ *
+ * Sixteen is eight clicks in whatever interval the caller polls at, and a
+ * caller that polls once a frame is asking about 16 ms. Nobody clicks
+ * eight times in a frame. The board keeps twice this and `dropped` says
+ * when even that was not enough, so a loss is visible rather than silent.
+ */
+#define POINTER_EDGES_MAX 16u
+
+/*
+ * One button transition, and where the pointer was when it happened.
+ *
+ * **A position is a state and a button is an event.** `buttons`, `x` and
+ * `y` below answer "where is it and what is held *now*", which is the
+ * right and only answer for a position. It is the wrong answer for a
+ * click: a press and a release that both happen between two calls leave
+ * `buttons` exactly as they found it, and the click never existed as far
+ * as the caller is concerned. That was a real bug on real hardware
+ * (`hal/pointer_edges.c`), and these are the fix.
+ *
+ * Declared here rather than shared with `hal.h`'s `struct pointer_edge`,
+ * exactly as `pointer_info` is declared rather than shared with
+ * `pointer_state`: the kernel copies field by field, so the board's shape
+ * and the system call's ABI can move independently.
+ */
+struct pointer_edge_info {
+    uint32_t x, y;
+    uint32_t buttons;           /* the merged state *after* this transition */
+};
+
 struct pointer_info {
     uint32_t x, y;
     uint32_t min_x, max_x;
     uint32_t min_y, max_y;
     uint32_t buttons;
     uint32_t moved;
+
+    /* What the buttons did since the last call, in order. Reading takes
+     * them, as reading a key does. */
+    uint32_t nedges;
+    uint32_t dropped;
+    struct pointer_edge_info edges[POINTER_EDGES_MAX];
 };
 
 /*

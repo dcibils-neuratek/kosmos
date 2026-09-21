@@ -212,7 +212,18 @@ SUITES = [
     # from: every primitive, both ways, and all 368,640 pixels compared
     # with no tolerance. Nine hundred lines of numeric C are worth six to
     # eight times the speed only if they draw the same picture.
+    #
+    # **On both boards, and that is not duplication.** The rasterizer is
+    # floating point all the way through - `atan2` and `acos` per pixel in
+    # the sphere, a `pow` in the sun's limb darkening - and the two
+    # machines reach that arithmetic differently: musl's libm compiled for
+    # AArch64 against the same source compiled for x86-64, with different
+    # register widths and a different compiler backend under it. Agreement
+    # on one board says the port is right; agreement on both says the
+    # arithmetic is portable, which is the claim a released binary makes.
+    # Five seconds each.
     Suite("arm-game", ["python3", "tools/run_game.py", ARM]),
+    Suite("x86-game", ["python3", "tools/run_game.py", X86], x86=True),
 ]
 
 #

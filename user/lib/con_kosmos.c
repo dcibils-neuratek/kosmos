@@ -483,7 +483,43 @@ static int l_wait(lua_State *L)
     clear_array(L, lua_gettop(L), i);
     lua_pop(L, 1);
 
+    /*
+     * The button transitions, in the same reused-table shape and for the
+     * same reason: a click a pass, allocating a table each, is the
+     * collector back on the frame path.
+     *
+     * These are what makes a click reliable. The pointer's `buttons`
+     * below says what is held *now*, and a press and a release that both
+     * happened since the last pass leave it saying nothing happened -
+     * which is the bug a ThinkPad found (`hal/pointer_edges.c`).
+     */
+    subtable(L, out, "clicks");
+
+    for (i = 0; i < r->nclicks && i < CON_CLICKS_MAX; i++) {
+        lua_rawgeti(L, -1, (lua_Integer)i + 1);
+
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            lua_newtable(L);
+            lua_pushvalue(L, -1);
+            lua_rawseti(L, -3, (lua_Integer)i + 1);
+        }
+
+        lua_pushinteger(L, (lua_Integer)r->clicks[i].x);
+        lua_setfield(L, -2, "x");
+        lua_pushinteger(L, (lua_Integer)r->clicks[i].y);
+        lua_setfield(L, -2, "y");
+        lua_pushinteger(L, (lua_Integer)r->clicks[i].buttons);
+        lua_setfield(L, -2, "buttons");
+        lua_pop(L, 1);
+    }
+
+    clear_array(L, lua_gettop(L), i);
+    lua_pop(L, 1);
+
     subtable(L, out, "pointer");
+    lua_pushinteger(L, (lua_Integer)r->clicks_lost);
+    lua_setfield(L, -2, "clicks_lost");
     lua_pushinteger(L, (lua_Integer)r->x);       lua_setfield(L, -2, "x");
     lua_pushinteger(L, (lua_Integer)r->y);       lua_setfield(L, -2, "y");
     lua_pushinteger(L, (lua_Integer)r->min_x);   lua_setfield(L, -2, "min_x");

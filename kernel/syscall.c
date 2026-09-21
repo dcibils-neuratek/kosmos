@@ -1195,6 +1195,30 @@ void syscall_dispatch(struct syscall_frame *sc)
             out->max_y   = state.max_y;
             out->buttons = state.buttons;
             out->moved   = state.moved;
+
+            /*
+             * And what the buttons *did*, which the state above cannot
+             * say. Drained here because this call is already guarded to
+             * one reader: a second process taking transitions the first
+             * never sees is the same disagreement the comment above
+             * refuses for the position, and worse, because a transition
+             * taken is gone.
+             */
+            {
+                struct pointer_edge edges[POINTER_EDGES_MAX];
+                unsigned n = hal_pointer_edges(edges, POINTER_EDGES_MAX);
+                unsigned i;
+
+                for (i = 0; i < n; i++) {
+                    out->edges[i].x = edges[i].x;
+                    out->edges[i].y = edges[i].y;
+                    out->edges[i].buttons = edges[i].buttons;
+                }
+
+                out->nedges = n;
+                out->dropped = hal_pointer_edges_dropped();
+            }
+
             result = 0;
         }
         break;

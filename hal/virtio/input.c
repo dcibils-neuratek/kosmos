@@ -636,6 +636,25 @@ static bool hal_pointer_poll_locked(struct pointer_state *out)
 
                 /* A press is news even when nothing moved. */
                 cursor.moved = true;
+
+                /*
+                 * **And the transition is kept, not only the state.**
+                 *
+                 * This loop drains every event that has arrived, so a
+                 * press and its release in one batch leave `buttons`
+                 * exactly where they found it and the caller - who only
+                 * ever asks what is held *now* - sees no click at all.
+                 * That is the bug the ThinkPad found on its own hardware
+                 * (`hal/pointer_edges.c`), and it is here too: the two
+                 * boards lose a click for different reasons and lose it
+                 * just the same.
+                 *
+                 * The position is the one this batch has already set,
+                 * because ABS_X and ABS_Y precede the button in a report
+                 * group - a click is at a place, and the place is this
+                 * one rather than wherever the pointer ends up.
+                 */
+                hal_pointer_edge(cursor.x, cursor.y, cursor.buttons);
             }
         } else if (event.type == EV_SYN) {
             cursor.moved = true;

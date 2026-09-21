@@ -252,9 +252,9 @@ elseif command == "ls" then
 
   for _, name in ipairs(names) do
     local full = (path == "/") and ("/" .. name) or (path .. "/" .. name)
-    local _, node = kfs.find(sb, full)
+    local number, node = kfs.find(sb, full)
 
-    if node and node.kind == kfs.KIND_DIR then
+    if number and node.kind == kfs.KIND_DIR then
       print(("  %-28s %10s"):format(name, "folder"))
     else
       print(("  %-28s %10d"):format(name, node and node.size or 0))
@@ -282,9 +282,26 @@ elseif command == "get" then
   open(img, "r")
 
   local sb = mounted()
-  local _, node = kfs.find(sb, guest)
+  local number, node = kfs.find(sb, guest)
 
-  if not node then die(guest .. ": no such file") end
+  --
+  -- **`number`, not `node`.** `kfs.find` answers `number, node` when it
+  -- finds something and `nil, reason` when it does not - so the second
+  -- value is a *string* on failure, and `if not node` never fires on it.
+  -- This read `local _, node = ...` and then tested `node`, so a file that
+  -- was simply not there became `attempt to compare number with nil` four
+  -- frames away in `take`, with the reason thrown on the floor.
+  --
+  -- It hid a plain answer behind a Lua error for as long as it existed,
+  -- and it cost an evening on 21 September: `make stick-log` crashed on a
+  -- ThinkPad's stick and the message said nothing about the only thing
+  -- that was wrong, which was that `/home/diagnose.txt` was not on it.
+  --
+  if not number then die(guest .. ": " .. tostring(node)) end
+
+  if node.kind == kfs.KIND_DIR then
+    die(guest .. " is a folder; `getdir` takes one of those")
+  end
 
   take(sb, node, host)
   image:close()
@@ -308,9 +325,9 @@ elseif command == "getdir" then
   if not names then die(guest .. ": " .. tostring(err)) end
 
   for _, name in ipairs(names) do
-    local _, node = kfs.find(sb, guest .. "/" .. name)
+    local number, node = kfs.find(sb, guest .. "/" .. name)
 
-    if node and node.kind ~= kfs.KIND_DIR then
+    if number and node.kind ~= kfs.KIND_DIR then
       take(sb, node, host .. "/" .. name)
       print(("%s/%s -> %s/%s, %d bytes"):format(guest, name, host, name,
                                                node.size))
@@ -373,9 +390,9 @@ elseif command == "copy" then
   local function walk(sb, path, out)
     for _, name in ipairs(kfs.list(sb, path) or {}) do
       local full = (path == "/") and ("/" .. name) or (path .. "/" .. name)
-      local _, node = kfs.find(sb, full)
+      local number, node = kfs.find(sb, full)
 
-      if node then
+      if number then
         if node.kind == kfs.KIND_DIR then
           walk(sb, full, out)
         else
@@ -394,7 +411,10 @@ elseif command == "copy" then
   local held = {}
 
   for _, path in ipairs(paths) do
-    local _, node = kfs.find(source, path)
+    local number, node = kfs.find(source, path)
+
+    if not number then die(path .. ": " .. tostring(node)) end
+
     local data = {}
     local at = 0
 

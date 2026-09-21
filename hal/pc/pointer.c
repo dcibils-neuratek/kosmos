@@ -135,8 +135,30 @@ void pc_pointer_move(enum pc_pointer_source from, int dx, int dy,
     }
 
     if ((buttons & BUTTONS) != held[from]) {
+        uint32_t merged = 0;
+        unsigned i;
+
         held[from] = buttons & BUTTONS;
         moved = true;
+
+        /*
+         * **The transition is kept, not just the state.**
+         *
+         * A press and a release that both happen between two looks leave
+         * this state exactly as it started, so a reader that only samples
+         * sees nothing at all - which is the click the ThinkPad's desktop
+         * was losing. The merged state is recorded as an edge, with the
+         * position it happened at, and `hal/pointer_edges.c` has the
+         * reasoning.
+         *
+         * Merged here rather than in the ring, because what a *source*
+         * holds is this file's idea and no other file's.
+         */
+        for (i = 0; i < PC_POINTER_SOURCES; i++) {
+            merged |= held[i];
+        }
+
+        hal_pointer_edge(x, y, merged);
     }
 
     spin_unlock(&pointer_lock, flags);

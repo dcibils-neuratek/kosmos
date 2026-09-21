@@ -1098,6 +1098,76 @@ processors, and still what follows USB:
      double-click speed were considered and left out, because none of them
      exist to be set yet.
 
+5g. **DONE on 21 September - a click is an event, not a state** (`testing.md`
+   18.130). Diego,
+   after 0.10.99 on the ThinkPad: "i found some quircks like the mouse
+   buttons be unrespiosnive under certaun scenarios", on the desktop and
+   the Deskbar.
+
+   **The code already names this bug.** `user/servers/console.c` says it
+   in the comment above `fill_pointer`: "A key is an event and a position
+   is a state. Keys queue, so reading them a pass late loses nothing -
+   they are all still there. The pointer does not queue." A press and its
+   release can fall entirely between two samples, and then `on_click`
+   never fires.
+
+   It was half fixed: the sample moved to *after* the wait, which removed
+   one wake of staleness. **The race is structurally still there**, and
+   the same comment names the conditions - "a window whose repaint takes a
+   dozen messages: the release then arrives while the manager is draining
+   those". That is a busy desktop, which is what Diego was using.
+
+   **The fix is to make a button transition an event.** `pc_pointer_move`
+   already notices the change - `if ((buttons & BUTTONS) != held[from])` -
+   and throws the edge away after setting a `moved` flag. A small ring of
+   transitions there, drained by `SYS_POINTER` beside the position, makes
+   a click as reliable as a keystroke, which is what it should always have
+   been. The position stays a state, because a position genuinely is one.
+
+   Nothing in QEMU reproduces it reliably, because the desktop there is
+   never busy enough for long enough - which is exactly why it took real
+   hardware to find.
+
+5h. **AGREED on 21 September - the solar system full screen, and its
+   pointer.** Diego, seeing it at 100 fps on the ThinkPad: "we just need a
+   way to maximize the window and able to drag, rotate and else with the
+   mouse".
+
+   **Full screen is missing and is the easy half**: the Video app already
+   relaunches itself with `--size full`, `wm` has the `fullscreen` window
+   property, and `solar.lua` takes a size on its command line. The same
+   shape, with the graphics level left where it was.
+
+   **The pointer is already wired**, which is the interesting part.
+   `solar.lua` forwards `pointerDown`, `pointerMove` and `pointerUp`, and
+   the core orbits on a drag and zooms on the wheel. So if dragging did
+   nothing on the machine, it is 5g rather than a missing feature - and
+   that is the thing to settle before writing any code here, because
+   building a second pointer path over a dropped-event bug would hide it.
+
+5i. **The write that did not reach the stick** (`boot.md`). `diagnose` was
+   run on the ThinkPad on 21 September and `/home/diagnose.txt` was not on
+   the stick afterwards, read back on the Mac - while the rest of `/home`
+   was intact. Two explanations and they are very different: the write
+   failed on the machine and said so, or **it succeeded and was lost**,
+   which would mean nothing saved on the ThinkPad survives a power-off.
+
+   The second is plausible rather than idle: Kosmos's USB driver has its
+   `SYNCHRONIZE CACHE` refused by these devices - `ILLEGAL REQUEST
+   (20h/00h)`, recorded at 0.10.65 - and the 0.10.63 check that "a file
+   saved to `/home` read back" read it back *in the same session*, which a
+   write cache satisfies perfectly.
+
+   **Settled by re-running `diagnose` and reading what it prints**, before
+   any code is written. If it reports bytes written, this is a data-loss
+   bug and goes to the top of the list.
+
+5j. **The video player decodes Motion JPEG only** (`roadmap.md` 4e). Not a
+   bug and worth stating because it was mistaken for one on 21 September:
+   `magicword-clip.mp4` is H.264 and the app refused it correctly. The
+   MJPEG file it can play was never copied into `~/Kosmos/home`, so no
+   stick has ever carried one.
+
 5f. **The sound suite measures the Mac, not the machine** (`testing.md`
    18.127). It failed twice inside `make test` on 20 September and passed
    alone both times: the check is a wall-clock write latency, and the gate

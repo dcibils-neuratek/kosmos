@@ -18,6 +18,72 @@ Last updated: 2026-09-21
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 21 September, the evening: 100 fps on the ThinkPad, and a lost click
+
+**The rasterizer ran at 100 fps at maximum detail on the T14.** Diego,
+after writing 0.10.99 to a stick: "solar system works great at 100fps in
+max detail!". That is the first performance number this project has that
+is not a QEMU figure, and `CLAUDE.md` is explicit that QEMU numbers are
+not performance numbers at all. Level 10 is 63 ms under TCG; the machine
+does it in about ten.
+
+He reported four things, all recorded the same day as `roadmap.md` 5g to
+5j:
+
+1. **Wants full screen and the pointer** in the solar system (5h). The
+   pointer is already wired - `solar.lua` forwards `pointerDown`,
+   `pointerMove` and `pointerUp` - so a drag that did nothing is 5g
+   rather than a missing feature. Full screen is genuinely missing.
+2. The graphics levels: works great.
+3. **The video player refused the clip**, correctly: it decodes Motion
+   JPEG and `magicword-clip.mp4` is H.264 (5j). My error in telling him to
+   test that file. `magicword-mjpeg.mp4` has now been copied into
+   `~/Kosmos/home`, so the next stick carries one it can play.
+4. **Mouse buttons unresponsive on the desktop and the Deskbar** - which
+   turned out to be a real bug, diagnosed and fixed the same evening.
+
+### The click (5g, `testing.md` 18.130) - DONE
+
+A press and a release that both happened between two of the window
+manager's passes were invisible, because `SYS_POINTER` answered what is
+held *now*. `console.c` had already named the mechanism in a comment and
+fixed the half sampling order could fix. `hal/pointer_edges.c` now keeps
+the transitions, as `hal/keys.c` has always kept keys, and `wm.lua`
+replays them through `pointer_pass` before the current state.
+
+**Two checks, both with controls that bite**: a kernel test on both
+boards, and a fourth check in the `clicks` display phase that sends press
+and release as one QMP batch - reproducing on an idle QEMU what a loaded
+machine did by itself. Every existing click test is press-sleep-release
+as three calls, which is why none of them had ever caught it.
+
+**A hazard closed on the way**: `CON_OP_POINTER` also drains the queue, so
+a program asking where the pointer is would have stolen the window
+manager's clicks. The console server keeps a stash both paths feed.
+
+**And `wm.lua` is at Lua's ceiling of 200 locals** - one more makes the
+file refuse to parse, reporting the error at an unrelated line.
+
+### Still open, and it is the serious one (5i)
+
+`diagnose` was run on the ThinkPad and `/home/diagnose.txt` was **not on
+the stick** afterwards, while the rest of `/home` was intact. Either the
+write failed and said so, or it succeeded and was lost - and the USB
+driver's `SYNCHRONIZE CACHE` is refused by these devices (0.10.65), so
+the second is plausible. **Nothing is written until `diagnose` is re-run
+and its last line read.** If it reports bytes written, nothing saved on
+that machine survives a power-off, and that outranks everything else.
+
+### A tool bug found while chasing it
+
+`make stick-log` crashed with `attempt to compare number with nil` instead
+of saying the file was not there. `kfs.find` answers `number, node` on
+success and `nil, reason` on failure, and `tools/kfs.lua` did
+`local _, node = kfs.find(...)` - discarding the success flag and then
+testing `node`, which on failure is a *string* and therefore truthy. Six
+call sites had the same shape; all fixed, and `stick-log` now lists the
+folder when the file is missing.
+
 ## 21 September: the solar system's rasterizer moved to C
 
 **`user/lib/gamesoft.c`, the Game Kit's 2D half, and 6 to 8 times faster at

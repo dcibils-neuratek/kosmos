@@ -6902,6 +6902,44 @@ def check_clicks(guest):
             "is still on it."
         )
 
+    #
+    # 4. A click nobody could have sampled, which is the one that was lost.
+    #
+    # Every click above is a press, a sleep, and a release - three separate
+    # QMP calls - so the window manager samples the pointer while the
+    # button is down and sees it. This one sends the press and the release
+    # as **one event batch**: the board processes both before anybody
+    # looks, so a reader that only ever asks "what is held now" observes
+    # nothing at all and the click never existed.
+    #
+    # That is the bug Diego found on the ThinkPad on 21 September - "the
+    # mouse buttons be unrespiosnive under certaun scenarios" - and the
+    # reason it needed real hardware is that only a *busy* desktop takes
+    # long enough between samples for an ordinary click to fall through.
+    # Sending both in one batch reproduces on an idle machine in QEMU what
+    # a loaded machine did by itself.
+    #
+    # `hal/pointer_edges.c` keeps the transitions now and the manager
+    # replays them, so this must behave exactly as check 1 did. The
+    # control that proves it bites: with the replay removed from `wm.lua`,
+    # the window manager reports no button at all.
+    #
+    before_fast = _strip(screen_now(), width, *status)
+
+    guest.mouse_to(*_to_tablet(wx + 150 + 30, wy + 60 + 13, width, height))
+    time.sleep(0.5)
+    guest._qmp("input-send-event", {"events": [
+        {"type": "btn", "data": {"down": True,  "button": "left"}},
+        {"type": "btn", "data": {"down": False, "button": "left"}},
+    ]})
+
+    settle(guest,
+           lambda w, h, px: (True if _strip(px, w, *status) != before_fast
+                             else None),
+           "a press and release delivered together changed nothing: the "
+           "click was dropped because the pointer was sampled rather than "
+           "its transitions read. See hal/pointer_edges.c.")
+
     mark = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
@@ -6918,7 +6956,7 @@ def check_clicks(guest):
     else:
         raise Failure("Control-C did not get the screen back after clicking.")
 
-    return 3
+    return 4
 
 
 def check_graphical_mode(guest):
