@@ -7,6 +7,7 @@
 #   ./run-kosmos.sh -b wm           straight to the desktop
 #   ./run-kosmos.sh -b "wm blocks"  with something on it
 #   ./run-kosmos.sh -fit            scale the window down to fit this screen
+#   ./run-kosmos.sh -fast           this Mac's own cores, if hvf works here
 #   ./run-kosmos.sh -smp 8          eight processors (four by default)
 #   ./run-kosmos.sh -m 2G           more memory (512M by default)
 #   ./run-kosmos.sh -serial         no window, serial only
@@ -95,6 +96,12 @@ want_cpus="no"
 memory="512M"
 want_memory="no"
 
+# `-fast`: run the guest on this Mac's own cores instead of emulating.
+#
+# See the comment beside the QEMU line for what this is and why it is not
+# the default.
+fast="no"
+
 for arg in "$@"; do
     if [ "$want_size" = "yes" ]; then
         size="$arg"
@@ -123,6 +130,7 @@ for arg in "$@"; do
     case "$arg" in
         -serial) serial_only="yes" ;;
         -fit)    fit="yes" ;;
+        -fast)   fast="yes" ;;
         -r)      want_size="yes" ;;
         -b)      want_boot="yes" ;;
         -smp)    want_cpus="yes" ;;
@@ -345,7 +353,47 @@ fi
 # thing that would change that is `-accel hvf`, and no Kosmos kernel
 # currently boots under it on this Mac (see the note at the end).
 #
-set -- -M virt,gic-version=3 -cpu cortex-a72 -m "$memory" -smp "$cpus"
+#
+# **`-fast`: the guest on this Mac's own cores, rather than emulated.**
+#
+# Everything above is QEMU translating each guest instruction as it meets
+# it, which is why an Apple Silicon Mac runs an ARM guest slowly despite
+# being an ARM machine. `-accel hvf` hands the instructions to the
+# hardware and leaves QEMU emulating only the devices; the build tree
+# spells the same thing `make FAST=1 qemu`, and it is worth 4x on a fill,
+# 5x on a blit and 14x on a circle drawn in Lua.
+#
+# **It is not the default because it does not currently work here.** No
+# Kosmos kernel boots under hvf on the Mac this was built on - including
+# released binaries from before any of the work that might have caused it,
+# which is what says it is QEMU's bug rather than the kernel's. TCG is the
+# path that is known to boot, so TCG is what you get unless you ask.
+#
+# So this flag is an experiment with a known failure mode: if the screen
+# stays black or the boot log stops early, hvf is broken on your machine
+# too and the answer is to leave it off. If it *boots*, that is worth
+# knowing - it would mean the fault is one QEMU build rather than the
+# hypervisor path, and `make fast` is recoverable.
+#
+# `-cpu host` goes with it and is not optional: HVF cannot pretend to be a
+# core the host is not, so speed and fidelity are a pair rather than two
+# independent flags. That is also why the two lines differ in the CPU.
+#
+if [ "$fast" = "yes" ]; then
+    if [ "$(uname -s)" != "Darwin" ]; then
+        echo "-fast is hvf, which is macOS only." >&2
+        exit 2
+    fi
+
+    echo "-fast: running on this Mac's own cores (-accel hvf -cpu host)." >&2
+    echo "  If the screen stays black or the log stops early, drop -fast:" >&2
+    echo "  no Kosmos kernel boots under hvf on the Mac this was built on," >&2
+    echo "  and finding out whether yours does is the point of the flag." >&2
+
+    set -- -M virt,gic-version=3 -accel hvf -cpu host -m "$memory" -smp "$cpus"
+else
+    set -- -M virt,gic-version=3 -cpu cortex-a72 -m "$memory" -smp "$cpus"
+fi
 
 # QEMU's own NAT: no privileges, no packet on a real network, and this
 # computer is 10.0.2.2 from inside. `ping`, `fetch` and the browser all need
