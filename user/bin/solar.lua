@@ -542,7 +542,7 @@ end
 -- change to the core.
 --
 local function run(width, height, scale, level, assets, auto, stars, belts,
-                   fps_wanted)
+                   fps_wanted, full, days, focus)
   local App = require "solar.app"
   local ui = use_("/lib/ui.lua")
   local wmproto = use_("/lib/wmproto.lua")
@@ -570,16 +570,109 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
                         fb = film,
                         read = read })
 
-  local win = ui.window{ title = "Solar System", direct = true,
-                         w = width * scale, h = height * scale, x = 80, y = 70 }
+  --
+  -- What a relaunch carried over, put back before the first frame.
+  --
+  -- `days` is the simulation's own clock and is set directly, because the
+  -- core has no "start at this date" option and inventing one would be
+  -- editing the core. `focus` goes through `setFocus`, which is the door
+  -- the core provides and which re-aims the camera as well.
+  --
+  if days then app.sim.days = days end
+
+  if focus then
+    for _, b in ipairs(app.sim.bodies) do
+      if b.id == focus then app:setFocus(b) end
+    end
+  end
+
+  --
+  -- The counter's state, declared here because `go_full` below carries it
+  -- across a relaunch: a name is only in scope after it exists, and this
+  -- used to sit further down where that was not yet true.
+  --
+  local shown_fps, shown_ms = 0, 0
+  local showing_fps = fps_wanted
+
+  --------------------------------------------------------------------------
+  -- Full screen, and it is a relaunch rather than a resize.
+  --
+  -- Diego asked for it seeing the thing run at a hundred frames a second
+  -- on the ThinkPad - "we just need a way to maximize the window" - and
+  -- he had already said how, when the port was being planned: "we will
+  -- relaunch it in fullscreen as we do with the other apps now when
+  -- needed". The Video app does exactly this and for a reason that
+  -- applies here twice over: a window that draws its own pixels has its
+  -- shared region allocated when it opens, and so does the film this
+  -- renders into, so changing either means new memory rather than a new
+  -- number.
+  --
+  -- **What travels, and what does not.** The graphics level, the body in
+  -- focus and the date go across, because those are what a person had set
+  -- up and would have to set up again. The camera's angle does not:
+  -- `setFocus` re-aims it, which gets most of the way there, and carrying
+  -- yaw, pitch and distance would be this host reaching further into the
+  -- core's state than it has any business doing.
+  --
+  -- The window goes only once the new one has been asked for. A refused
+  -- launch leaves a working simulation on screen and a line saying why,
+  -- which is the Video app's rule and the right one.
+  --------------------------------------------------------------------------
+  local win
+
+  local function go_full(want)
+    local focus = app.focus and app.focus.id
+    local reply, sent = fs.send("/app/wm", {
+      type = "launch", program = "solar",
+      args = ("%s--level %d --days %.6f%s%s%s"):format(
+               want and "--full " or "",
+               app.quality or level,
+               app.sim.days,
+               focus and (" --focus " .. focus) or "",
+               (assets ~= "none") and "" or " --assets none",
+               showing_fps and "" or " --nofps"),
+    })
+
+    if reply and reply.ok then
+      win:close()
+      return
+    end
+
+    print("solar: could not start again "
+          .. (want and "full screen" or "in a window") .. ": "
+          .. tostring(reply and reply.error or sent))
+  end
+
+  --
+  -- **A full-screen window must *be* the screen**, and the window manager
+  -- refuses one that is not - it composites straight out of this
+  -- program's region, so a smaller one would have it reading past the end.
+  -- It used to die doing exactly that; now it says no, and this is the
+  -- half that stops it having to.
+  --
+  -- The *film* stays 960x540 either way. Cost here is per pixel, so
+  -- rendering at the panel's full size would be four times the work for a
+  -- simulation that already fills the screen; `stretch` blows it up in one
+  -- C call instead, which is what `dw`/`dh` below are for.
+  --
+  local win_w, win_h = width * scale, height * scale
+
+  if full then
+    win_w, win_h = gfx.screen():size()
+  end
+
+  win = ui.window{ title = "Solar System", direct = true,
+                   w = win_w, h = win_h, x = 80, y = 70,
+                   fullscreen = full or nil }
 
   if not win or not win:surface() then
     print("solar: no window")
     return
   end
 
-  print(("solar: %dx%d at %dx, level %d, auto, %s rasterizer")
-        :format(width, height, scale, level, Native and "C" or "Lua"))
+  print(("solar: %dx%d at %dx, level %d, auto, %s rasterizer%s")
+        :format(width, height, scale, level, Native and "C" or "Lua",
+                full and ", full screen" or ""))
 
   --
   -- Putting the frame on the window, and which call that is depends on
@@ -599,15 +692,34 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
   -- healthy forty-two frames a second, and is exactly what it did for one
   -- screenshot on 21 September.
   --
+  --
+  -- **How big the window actually is, asked rather than assumed.**
+  --
+  -- `width * scale` is what was *requested*, and full screen is the case
+  -- where it is not what arrived: the window manager makes the window the
+  -- whole screen and says nothing about the number this program asked for.
+  -- Stretching to the request would then fill a 960-pixel corner of a 1920
+  -- screen and leave the rest black.
+  --
+  -- So the destination comes from the surface, which is the only thing
+  -- that knows. It is read once, here, because the size cannot change
+  -- without a relaunch - and `surface()` itself is still asked every frame
+  -- for the buffer, which is a different question with a different answer.
+  --
+  local dw, dh = win:surface():size()
+
   local present
 
-  if Native and scale == 1 then
+  if Native and dw == width and dh == height then
     present = function(dst) dst:blit(film, 0, 0, width, height, 0, 0) end
   elseif Native then
     present = function(dst)
-      dst:stretch(film, 0, 0, width, height, 0, 0, width * scale, height * scale)
+      dst:stretch(film, 0, 0, width, height, 0, 0, dw, dh)
     end
   else
+    -- The Lua rasterizer's table, blown up by a whole number. `pixels`
+    -- takes a factor rather than a rectangle, so this is the one path
+    -- that cannot fill an arbitrary window exactly.
     present = function(dst) dst:pixels(app.g.fb, width, height, scale) end
   end
 
@@ -627,8 +739,6 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
   -- It also means the core is untouched, which is the whole arrangement
   -- here: the HUD is the film's, this is the projectionist's.
   --
-  local shown_fps, shown_ms = 0, 0
-  local showing_fps = fps_wanted
 
   local function counter(s_, when)
     if not showing_fps then return end
@@ -684,7 +794,7 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
     present(dst)
     counter(dst, now)
 
-    if not win:commit{ x = 0, y = 0, w = width * scale, h = height * scale } then
+    if not win:commit{ x = 0, y = 0, w = dw, h = dh } then
       break
     end
 
@@ -725,11 +835,19 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
           -- F5: the counter is the host's, so its key is the host's too,
           -- and it is one the core does not use.
           showing_fps = not showing_fps
+        elseif ev.down and ev.code == 87 then
+          -- F11, and the host's for the same reason: how big the window
+          -- is has nothing to do with the simulation.
+          go_full(not full)
         elseif ev.down and KEYS[ev.code] then
           app:key(KEYS[ev.code], shift)
         end
       elseif ev.type == "mouse" and not ev.menu then
-        local x, y = ev.x // scale, ev.y // scale
+        -- Window pixels back into the film's own, which is not a
+        -- division by `scale` once the window can be any size: full
+        -- screen stretches 960x540 onto 1920x1080 and a click at the
+        -- right-hand edge has to land at the right-hand edge of the film.
+        local x, y = ev.x * width // dw, ev.y * height // dh
 
         if ev.action == "press" then
           app:pointerDown(x, y)
@@ -966,7 +1084,10 @@ do
       not wanted:match("%-%-hold"),
       { sky, math.floor(sky * 1.3) },
       { rubble, math.floor(rubble * 0.7) },
-      not wanted:match("%-%-nofps"))
+      not wanted:match("%-%-nofps"),
+      wanted:match("%-%-full") ~= nil,
+      tonumber(wanted:match("%-%-days%s+([%d%.%-]+)")),
+      wanted:match("%-%-focus%s+(%a+)"))
   return
 end
 
@@ -976,3 +1097,4 @@ print("  solar --sweep [WxH] [--frames N]    frame time at every level")
 print("  solar --phases [WxH] [--level N]    where a frame goes")
 print("  solar --attrib [WxH] [--level N]    the same, by removal")
 print("  solar [WxH] [--scale N] [--level N] [--assets DIR|none]")
+print("  solar --full                        the whole screen; F11 toggles")

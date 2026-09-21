@@ -2875,7 +2875,32 @@ handlers.open = function(req, who, cap)
   -- screen, and a window manager that quietly gave it a smaller rectangle
   -- would be showing a part of each frame.
   --
+  --
+  -- **And it is refused if the application has not done its half.**
+  --
+  -- The window becomes the screen, and a window that draws its own pixels
+  -- composites straight out of the region it allocated - so a program that
+  -- asks for full screen having made a smaller region has just told this
+  -- process to read past the end of it. On 21 September that is exactly
+  -- what happened: `solar --full` asked for 960x540, got a 1024x768
+  -- window, and the *desktop* died with a translation fault reading
+  -- 0x1803f5000. The application's mistake killed the window manager,
+  -- which is the one outcome a server may never allow.
+  --
+  -- So the mismatch is caught here, where both numbers are known, and the
+  -- open is refused with a sentence saying which two disagree. The comment
+  -- above already stated the contract - "it has *already* made buffers the
+  -- size of the screen" - and an unchecked contract is a wish.
+  --
   if req.fullscreen then
+    local rw, rh = tonumber(req.w) or 0, tonumber(req.h) or 0
+
+    if rw < W or rh < H then
+      return { ok = false, error = ("full screen needs a %dx%d window; "
+                                    .. "this one asked for %dx%d")
+                                   :format(W, H, rw, rh) }
+    end
+
     w_, h_ = W, H
   end
 

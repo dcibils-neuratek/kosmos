@@ -6843,3 +6843,66 @@ whatever innocent line happens to be last, which cost two rebuilds to
 understand. The pointer's bookkeeping is one table, `pointer_log`, folded
 into the slot the old `pointers_said` counter had. Worth knowing before
 the next thing this file needs.
+
+## 18.131 Full screen, and an application that killed the window manager
+
+**Diego, seeing the rasterizer run at a hundred frames a second on the
+ThinkPad**: "we just need a way to maximize the window and able to drag,
+rotate and else with the mouse". The pointer half was already wired -
+`solar.lua` has forwarded `pointerDown`, `pointerMove` and `pointerUp`
+since the port - so what he was missing there was 18.130's lost click.
+Full screen was genuinely absent.
+
+It is a **relaunch**, not a resize, and that was Diego's own instruction
+when the port was planned: "we will relaunch it in fullscreen as we do
+with the other apps now when needed". The reason holds twice over here: a
+window that draws its own pixels has its shared region allocated when it
+opens, and so does the film the rasterizer draws into.
+
+What travels across the relaunch is the graphics level, the body in focus
+and the date - what a person had set up and would otherwise set up again.
+The camera's angle does not: `setFocus` re-aims it, and carrying yaw,
+pitch and distance would be the host reaching further into the core's
+state than a host should.
+
+### The bug it found, which was the window manager's
+
+The first attempt asked for full screen with the *film's* size, 960x540.
+The window manager made the window the screen - 1024x768 in the harness -
+and then **died**:
+
+```
+process "wm" died: data abort from a lower EL
+  far     0x00000001803f5000
+  cause   read, translation fault, level 3
+```
+
+A window that draws its own pixels is composited straight out of the
+region the application allocated. Asking for full screen having made a
+smaller region tells the window manager to read past the end of it.
+
+**The comment right above the fault had stated the contract**: "it has
+*already* made buffers the size of the screen". Nothing checked it, and an
+unchecked contract is a wish. `CLAUDE.md` is explicit that a server "has
+to stay correct when the caller is wrong, out of date, or hostile" - and
+here an application's arithmetic mistake took the whole desktop with it.
+
+Both halves fixed:
+
+- **`wm` refuses** a full-screen window smaller than the screen, naming
+  both sizes. **Control**: making `solar --full` ask for 960x540 again
+  gets "no window" and a live desktop, where it used to get a translation
+  fault and a dead one.
+- **`solar` asks for the screen**, from `gfx.screen():size()`, as the
+  Video app already did. The *film* stays 960x540 either way: cost is per
+  pixel, so rendering at the panel's size would be four times the work,
+  and `stretch` blows it up in one C call.
+
+### And a number that was not the window's size
+
+`present` and the damage rectangle used `width * scale` - what was
+*requested*. Full screen is the case where that is not what arrived, so
+the destination now comes from `win:surface():size()`, which is the only
+thing that knows. The pointer is mapped the same way: at full screen a
+click at the right-hand edge of a 1920 screen has to land at the
+right-hand edge of a 960-wide film, which `ev.x // scale` does not do.

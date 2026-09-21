@@ -1128,8 +1128,8 @@ processors, and still what follows USB:
    never busy enough for long enough - which is exactly why it took real
    hardware to find.
 
-5h. **AGREED on 21 September - the solar system full screen, and its
-   pointer.** Diego, seeing it at 100 fps on the ThinkPad: "we just need a
+5h. **DONE on 21 September - the solar system full screen, and its
+   pointer** (`testing.md` 18.131). Diego, seeing it at 100 fps on the ThinkPad: "we just need a
    way to maximize the window and able to drag, rotate and else with the
    mouse".
 
