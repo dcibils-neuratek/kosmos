@@ -273,6 +273,49 @@ local function attribute(width, height, level, count, focus)
   print("solar: attribution done")
 end
 
+--
+-- **What a primitive costs, three ways**, which is the question the Game
+-- Kit has to keep answering: the interpreter, C writing into a Lua array,
+-- and C writing into a surface. The three numbers are the whole argument
+-- for where a renderer's pixels should live.
+--
+local function bench(width, height, count)
+  local ok, game = pcall(use_, "/kits/game")
+
+  if not ok then print("solar: no /kits/game") return end
+
+  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
+  local fb = {}
+
+  for i = 1, width * height do fb[i] = 0 end
+
+  local function ms(what)
+    local began = sys.ticks()
+
+    for _ = 1, count do what() end
+
+    return (sys.ticks() - began) / hz * 1000 / count
+  end
+
+  local in_lua = ms(function()
+    for i = 1, width * height do fb[i] = 0x102030 end
+  end)
+
+  local in_c = ms(function() game.clear(fb, width, height, 0x102030) end)
+  local surface = gfx.surface{ w = width, h = height }
+  local on_surface = ms(function()
+    game.clear(surface, width, height, 0x102030)
+  end)
+
+  print(("solar: clear %dx%d, %d times each"):format(width, height, count))
+  print(("solar:   Lua into a table      %8.2f ms"):format(in_lua))
+  print(("solar:   C into that table     %8.2f ms  %.2fx"):format(in_c,
+        (in_c > 0) and (in_lua / in_c) or 0))
+  print(("solar:   C into a surface      %8.2f ms  %.2fx"):format(on_surface,
+        (on_surface > 0) and (in_lua / on_surface) or 0))
+  print("solar: bench done")
+end
+
 --------------------------------------------------------------------------
 
 local wanted = args or ""
@@ -291,6 +334,13 @@ if wanted:match("%-%-sweep") then
 
   sweep(tonumber(w) or 960, tonumber(h) or 540, number("%-%-frames", 5),
         wanted:match("%-%-focus%s+(%a+)"))
+  return
+end
+
+if wanted:match("%-%-bench") then
+  local w, h = wanted:match("(%d+)x(%d+)")
+
+  bench(tonumber(w) or 960, tonumber(h) or 540, number("%-%-frames", 10))
   return
 end
 
@@ -323,6 +373,70 @@ end
 -- is a `commit` and nothing is copied between processes (`gfx.md` 19.4) -
 -- the same arrangement Doom, the Super Nintendo and the video player use.
 --------------------------------------------------------------------------
+
+--------------------------------------------------------------------------
+-- The Game Kit's primitives, under the core's own names.
+--
+-- **The core is not edited; its module is furnished.** `require` is this
+-- program's (see the shim above), so what comes back from
+-- `require "solar.soft"` is a table this host may add to - and two of its
+-- methods are replaced with the C ones. `solar/soft.lua` on disk is
+-- untouched, the same file that runs under stock `lua` and LÖVE, and a
+-- machine without the kit runs the Lua versions and draws the same
+-- picture. That is what the port brief means by an optional native fast
+-- path the core falls back from.
+--
+-- **And it is off, because it was measured and it loses.** `solar --bench`
+-- on this machine, clearing 960x540 ten times:
+--
+--     Lua into a table       24.81 ms
+--     C into that table      43.81 ms   0.56x
+--     C into a surface        1.32 ms  18.72x
+--
+-- C writing into a *Lua table* is slower than the interpreter writing into
+-- it. `fb[i] = c` inside a Lua loop is one VM instruction reaching the
+-- table's array part; the same store from C is `lua_pushinteger` and
+-- `lua_rawseti`, which is the whole table API with its boxing and its
+-- barrier, once per pixel. The interpreter is not the slow part - **the
+-- representation is**, and a C loop over it pays the same toll twice.
+--
+-- So moving primitives to C buys nothing here until the pixels stop being
+-- a Lua table, and the third number says what it buys then: eighteen
+-- times, for the same C.
+--
+-- `--fast` turns it on for anyone who wants to measure it again. The real
+-- answer is a `soft` whose framebuffer *is* a surface, which is a
+-- proposal rather than a thing to do quietly (`docs/state.md`).
+--
+-- The C stays in `/kits/game` rather than here, written against a Lua
+-- array *or* a surface, because it is the Game Kit's (`roadmap.md` 4f) and
+-- the next graphical application should get it - drawing into a surface,
+-- where it is worth having.
+--------------------------------------------------------------------------
+
+local function make_fast()
+  local ok, game = pcall(use_, "/kits/game")
+
+  if not ok or type(game) ~= "table" then
+    print("solar: no /kits/game, so the Lua rasterizer draws everything")
+    return false
+  end
+
+  local Soft = require "solar.soft"
+
+  function Soft.clear(self, colour)
+    game.clear(self.fb, self.w, self.h, colour or 0)
+  end
+
+  function Soft.line(self, x0, y0, x1, y1, r, g, b, a)
+    game.line(self.fb, self.w, self.h, x0, y0, x1, y1, r, g, b, a or 1)
+  end
+
+  return true
+end
+
+-- Off, because it is a loss on a table. `--fast` is for measuring it.
+if wanted:match("%-%-fast") then make_fast() end
 
 --------------------------------------------------------------------------
 -- Bring-up step 5: the textures.
