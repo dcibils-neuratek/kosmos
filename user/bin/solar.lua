@@ -324,13 +324,72 @@ end
 -- the same arrangement Doom, the Super Nintendo and the video player use.
 --------------------------------------------------------------------------
 
-local function run(width, height, scale, level)
+--------------------------------------------------------------------------
+-- Bring-up step 5: the textures.
+--
+-- The core asks its host for `read(path)` and wants the whole file as a
+-- string - which is what a texture is here, read once at startup and kept
+-- for the life of the program (`string.byte` per texel, the README says).
+-- Eleven and a half megabytes of them, which the heap takes because
+-- `malloc` grows it by asking the kernel for another arena.
+--
+-- Bytes come through a region rather than through `fs.read` - the ordinary
+-- read answers Lua *values*, and a PPM is not one - so this is the same
+-- path the media kit uses for a film: `read_into` fills a region, and
+-- `region_read` makes the one string the core is going to hold anyway.
+--
+-- A texture that is missing is not an error: the body is drawn flat-shaded
+-- in its base colour, which is how the port came up before the disk had
+-- anything on it.
+--------------------------------------------------------------------------
+
+local BIGGEST = 2 * 1024 * 1024         -- earth.ppm is 1.5 MB; none is larger
+
+local function reader()
+  local page = sys.memory(BIGGEST // 4096)
+
+  if not page then
+    print("solar: no room for a read buffer, so no textures")
+    return nil
+  end
+
+  return function(path)
+    local size = (fs.getattr(path) or {}).size
+
+    if not size or size == 0 then return nil end
+
+    local pieces, at = {}, 0
+
+    while at < size do
+      local want = size - at
+
+      if want > BIGGEST then want = BIGGEST end
+
+      local got = fs.read_into(path, page, at, want)
+
+      if not got or got == 0 then break end
+
+      pieces[#pieces + 1] = sys.region_read(page, 0, got)
+      at = at + got
+    end
+
+    if at == 0 then return nil end
+
+    return table.concat(pieces)
+  end
+end
+
+local function run(width, height, scale, level, assets, auto)
   local App = require "solar.app"
   local ui = use_("/lib/ui.lua")
   local wmproto = use_("/lib/wmproto.lua")
 
+  local read = (assets ~= "none") and reader() or nil
+
   local app = App.new({ width = width, height = height, quality = level,
-                        autoQuality = true })
+                        autoQuality = auto,
+                        assets = assets ~= "none" and assets or nil,
+                        read = read })
 
   local win = ui.window{ title = "Solar System", direct = true,
                          w = width * scale, h = height * scale, x = 80, y = 70 }
@@ -432,11 +491,19 @@ local function run(width, height, scale, level)
   print("solar: closed")
 end
 
-if wanted:match("%-%-run") or wanted == "" then
+--
+-- The window is what this program is, so it is what happens unless one of
+-- the measuring modes above was asked for by name. An unknown flag lands
+-- here rather than in a help text, which is the right way round: `solar
+-- --level 8` should open a window at level 8, not explain itself.
+--
+do
   local w, h = wanted:match("(%d+)x(%d+)")
 
   run(tonumber(w) or 480, tonumber(h) or 270, number("%-%-scale", 2),
-      number("%-%-level", 3))
+      number("%-%-level", 3),
+      wanted:match("%-%-assets%s+(%S+)") or "/home/solar/",
+      not wanted:match("%-%-hold"))
   return
 end
 
@@ -445,3 +512,4 @@ print("  solar --check                       the simulation, no window")
 print("  solar --sweep [WxH] [--frames N]    frame time at every level")
 print("  solar --phases [WxH] [--level N]    where a frame goes")
 print("  solar --attrib [WxH] [--level N]    the same, by removal")
+print("  solar [WxH] [--scale N] [--level N] [--assets DIR|none]")
