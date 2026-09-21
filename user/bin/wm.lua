@@ -1113,7 +1113,7 @@ local function frame_of(win)
   -- A menu and the backdrop are both undecorated, at opposite ends of the
   -- stack: one floats over everything, the other is what everything sits
   -- on. Neither has a tab, so for both the frame is the rectangle.
-  if win.kind == "menu" or win.backdrop or win.strip then
+  if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen then
     return win.x, win.y, win.w, win.h
   end
 
@@ -2395,7 +2395,8 @@ local function compose_rect(r)
       --
       local shape
 
-      if win.kind == "menu" or win.backdrop or win.strip then
+      if win.kind == "menu" or win.backdrop or win.strip
+         or win.fullscreen then
         shape = { { frame_of(win) } }
       else
         shape = { tabs.shape(win) }
@@ -2861,6 +2862,23 @@ handlers.open = function(req, who, cap)
     w_, h_ = W, H - reserved_top
   end
 
+  --
+  -- **And a full-screen window is the screen**, which `room_w` and `room_h`
+  -- are not: those leave space for a border and a tab that this window does
+  -- not have, so the clamp above handed back 1912 by 1072 for a screen of
+  -- 1920 by 1080. Eight pixels of nothing at two edges is exactly the sort
+  -- of thing that reads as a border and gets chased as one - the strip's
+  -- own comment, six lines up, is about the same mistake.
+  --
+  -- It matters more here than it would for an ordinary window: this one
+  -- draws its own pixels, so it has *already* made buffers the size of the
+  -- screen, and a window manager that quietly gave it a smaller rectangle
+  -- would be showing a part of each frame.
+  --
+  if req.fullscreen then
+    w_, h_ = W, H
+  end
+
   local win = {
     handle  = next_handle,
     title   = tostring(req.title or "window"),
@@ -3211,6 +3229,28 @@ handlers.open = function(req, who, cap)
     win.x, win.y = 0, 0
     reserved_top = win.h
     fit_backdrop()
+  end
+
+  --
+  -- **Full screen: the window *is* the screen.**
+  --
+  -- Diego, 20 September: "the video player needs a switch to fullscreen
+  -- mode, as most video players do". It is here rather than in the player
+  -- because every application that draws its own pixels wants the same
+  -- thing - Doom, Quake, the Super Nintendo, the browser - and because
+  -- `maximise` cannot serve them: it resizes, and a window that draws its
+  -- own pixels cannot be resized, its buffers being a region the
+  -- application allocated for exactly these dimensions.
+  --
+  -- So an application asks for it when it opens the window, having made its
+  -- buffers the size of the screen. No tab, no border, at the origin, and
+  -- above everything including the strip - which is what "full screen"
+  -- means and is three lines because `frame_of` and the compositor already
+  -- know how to treat a window with no chrome.
+  --
+  if req.fullscreen then
+    win.fullscreen = true
+    win.x, win.y = 0, 0
   end
 
   if req.kind == "menu" then

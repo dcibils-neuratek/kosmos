@@ -3421,6 +3421,15 @@ function ui.window(spec)
     -- bottom of the stack and never raised. The desktop is one of these.
     backdrop = spec.backdrop or nil,
 
+    --
+    -- **Full screen**: undecorated too, at the origin, and in front of
+    -- everything including the Deskbar. The application makes its buffers
+    -- the size of the screen and asks for this; the window manager does not
+    -- resize it into place, because a window that draws its own pixels
+    -- cannot be resized at all (`wm.lua`, on `fullscreen`).
+    --
+    fullscreen = spec.fullscreen or nil,
+
     -- And its opposite: a strip across the top, undecorated and pinned,
     -- which takes room away from the screen rather than sitting over it.
     strip = spec.strip or nil,

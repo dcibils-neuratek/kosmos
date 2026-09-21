@@ -790,6 +790,16 @@ processors, and still what follows USB:
      game pad as drawn.
    Several days, not one.
 
+   **The app is built** (20 September), and it is what the drawing shows:
+   the picture at its own size with the controls under it, the window
+   manager's menu bar above, File/View/Play, the three View sizes and
+   **Full Screen** - which Diego asked for and which went into the window
+   manager, because `maximise` cannot resize a window that draws its own
+   pixels and every such application wants the same thing. What is left of
+   4e is the decoders, and the sound: the kit reads a film's audio track
+   and says what it is, and the volume items are in the Play menu greyed
+   until it can play it.
+
    **AGREED on 20 September - a film we can already play, first.** Diego:
    "Perhaps we can download a mp4 video with the codecs you already have to
    see them working?" So before libavcodec: an MP4 carrying **Motion JPEG
@@ -1052,6 +1062,34 @@ processors, and still what follows USB:
    - Nothing else added: a light/dark switch, the pointer's size and the
      double-click speed were considered and left out, because none of them
      exist to be set yet.
+
+5f. **The sound suite measures the Mac, not the machine** (`testing.md`
+   18.127). It failed twice inside `make test` on 20 September and passed
+   alone both times: the check is a wall-clock write latency, and the gate
+   runs thirty QEMUs beside it. Either it gets a machine of its own in
+   `gate.py`, as `default look` does, or it measures the guest's own
+   lateness - the driver's underrun counter already knows it - rather than
+   the host's scheduler. Not to be fixed by widening the threshold.
+
+5e. **AGREED on 20 September - a pass over the seam between Lua and C.**
+   Diego, after the frame-as-a-Lua-string was found: "this is the types of
+   things we need to revisit and make sure we are making good use of our
+   lua and c worlds where it makes sense based on speed, resources and
+   performance". Not "should this be C" - the language split already
+   answers that - but **where a value crosses between them for no reason**,
+   which does not look slow in a profile and shows up as collector
+   pressure, which is what breaks a frame deadline. Found so far and fixed:
+   the video kit's frames (`testing.md` 18.126). To look at, in this order:
+
+   - **`media.lua`'s audio path**, which reads each MP3 frame into a Lua
+     string 172 times a second through `sys.region_read` - the audio
+     *server* was fixed and its client may not have been. Not measured yet,
+     so not yet a claim.
+   - **`con.wait`'s neighbours**: the console's own marshalling was moved
+     into C and took the collector out of the frame path; whatever else
+     talks to a server sixty times a second deserves the same look.
+   - **The kits that take or return bytes** - `gfx.png`, the PDF kit,
+     `kfs` - measured before anything is moved, as `CLAUDE.md` insists.
 
 5c. **AGREED on 20 September - every pixel position measured, not counted.**
    The same class as `gc:text`'s clipping (`testing.md` 18.123), found again

@@ -61,8 +61,24 @@ replicant, because the sandbox hands out `gfx.font` and not `gfx.measure`,
 and the display suite caught it. What is left is the capacity sums and the
 `GW` caches in the editors (`roadmap.md` 5c).
 
-**Next**: commit all of the above, then threads step 4-6, `docs/gamekit.md`,
-and the video player's own app.
+**And the evening: the Video app** (`testing.md` 18.126). Built to
+`docs/video.html`: the picture with the controls under it, the menu bar
+above, File/View/Play, the three sizes and **Full Screen** - which went
+into the window manager as a window property, because `maximise` cannot
+resize a window that draws its own pixels and Doom, Quake and the Super
+Nintendo want the same thing.
+
+Its test builds a film rather than carrying one: four frames of flat grey
+in an MP4, the JPEGs written by hand, five checks in the media suite. That
+fixture found `mp4v` being read as a codec when it is a container's way of
+saying "the `esds` will tell you" - and Diego's question about why an MP4
+is read in Lua found the seam: every frame was a Lua string on its way to a
+C decoder. `gfx.jpeg` had taken an address all along. **Ten per cent a
+frame, and the garbage gone** - now `roadmap.md` 5e, a pass over every such
+seam.
+
+**Next**: threads step 4-6, `docs/gamekit.md`, the decoders and the sound
+for the video player (4e's remainder).
 
 ## 20 September: the desktop was two fonts at once
 

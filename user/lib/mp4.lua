@@ -200,6 +200,22 @@ local function stsd(s, box, track)
     local c = find(inner, "avcC")
 
     if c then avcc(s, c, track) end
+
+    --
+    -- **And `esds` here too, which only the audio branch read.**
+    --
+    -- A video sample entry of `mp4v` says "MPEG-4 systems describes this",
+    -- and *which* codec is the object type inside its `esds`: 0x20 is
+    -- MPEG-4 Visual, 0x6c is JPEG. Reading it only for audio meant every
+    -- `mp4v` film looked alike from here, and a reader that cannot tell
+    -- Motion JPEG from MPEG-4 Visual hands both to the same decoder - so
+    -- one of them fails as "would not decode" rather than as "this system
+    -- has no decoder for that", which is a different sentence and the
+    -- honest one.
+    --
+    local d = find(inner, "esds")
+
+    if d then esds(s, d, track) end
   elseif track.kind == "audio" and e.size >= 8 + 28 then
     -- The audio sample entry, 12.2.3: the channels at 16, the rate a 16.16
     -- number at 24.

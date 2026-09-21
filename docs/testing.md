@@ -6495,3 +6495,110 @@ photograph of a list, the other needed a suite that loads every face in the
 image - and the face that failed was in neither the role that was added nor
 the file that added it.
 
+## 18.126 A film built here, and the seam between Lua and C
+
+**The Video app** (`docs/video.html`, `roadmap.md` 4e) is a caller of the
+media kit: the picture at its own size, the controls under it and never
+over it, the window manager's menu bar above, File/View/Play, and the two
+states that are not a film - nothing open, and a film this system cannot
+decode, which names what it is and what would play.
+
+### The fixture: a film, because none goes in the repository
+
+`test_mp4.lua` says it about the container and it is as true of the
+pictures. So `run_media.py` **builds one**: four frames of flat grey, each
+a different grey, 16 by 16 at ten a second, in an MP4 with the `esds` that
+says its pictures are JPEGs.
+
+The JPEG is written by hand and is the smallest baseline one that means
+anything - a single 8x8 block whose only coefficient is DC, which *is* a
+flat grey square, with the standard Huffman tables. So what the suite
+exercises is the decoder in the image rather than an encoder written here
+to be exercised by it. `ffmpeg` on the Mac reads the result as *mjpeg
+(Baseline), gray, 16x16*, which is the independent opinion that the bytes
+are really a JPEG.
+
+**5 checks**, in the suite that already builds a disk: that the kit opens
+it and says Motion JPEG 16x16 of four frames; that asking for the frame at
+four moments gives back the four greys it was made from; that nothing was
+dropped; and that `media.open` still opens an MP3 as a song, which is the
+other half of one door. Off-by-one in the frame lookup fails it with
+*"should decode to about [40, 120, 200, 96] and came back as [120, 200,
+96, 96]"*.
+
+**Three of those checks failed first on their own patterns**, not on the
+system: `Motion JPEG` is two words where the regex wanted one, and `$` does
+not reach past the `\r` in a guest's `\r\n` - which is why every other
+pattern in that file says `\r?\n`.
+
+### What the fixture found: `mp4v` is not a codec
+
+Building a film by hand meant deciding what to put in its sample entry, and
+that exposed a guess. `mp4v` means "MPEG-4 systems describes this", and
+*which* codec is the object type in the entry's `esds`: 0x6c is JPEG, 0x20
+is MPEG-4 Visual. `mp4.lua` read `esds` **only for audio**, so every `mp4v`
+film looked alike and the kit mapped all of them to JPEG - right about the
+file in front of me and wrong about MPEG-4 Visual, which would have been
+handed to a JPEG decoder to fail as "would not decode" rather than as "this
+system has no decoder for that".
+
+### And the seam: a frame was a Lua string
+
+Diego, seeing the kit: *"why are we decoding mp4 in lua and not c? what is
+the mp4.lua lib for?"* The answer is that `mp4.lua` is the *index* - a few
+hundred boxes, read once, and it runs on the host so the format is tested
+without booting - and the decoding was always C. But the question found
+something real in between: `film:frame` read each frame into a **Lua
+string** before handing it to the C decoder. Ten kilobytes, thirty times a
+second.
+
+**`gfx.jpeg` has taken `(address, length)` since the window manager needed
+it for wallpapers**, with a comment saying exactly why - bytes about to be
+thrown away should not be bytes the collector walks. The facility existed,
+the reasoning was written down, and the new kit used the string form
+anyway, while `mp4.lua`'s own header claimed frames are never touched here.
+
+Measured the same way, 200 frames drawn flat out:
+
+| | a string per frame | straight from the region |
+|---|---|---|
+| 200 frames | 3.58 s | **3.22 s** |
+| read | 7.25 ms | **6.04 ms** |
+| decode | 9.34 ms | 9.62 ms |
+| what the collector saw grow | 7.8 KB | **1.2 KB** |
+
+**Ten per cent, and the garbage gone.** The lesson is not "that should have
+been C": the decoder *was* C and the index *should* be Lua. It is that the
+**seam** between them was copying a value into Lua's world for no reason on
+its way to C - which does not show up as slow code in a profile, it shows
+up as collector pressure, which is what actually breaks a frame deadline.
+
+## 18.127 The sound suite fails when the gate is busy, and that is the suite's fault
+
+**Twice on 20 September**: `x86-sound` failed inside `make test` with *"the
+HDA ring underran: UNDERRUNS 2, worst write 64181 us"* and then passed
+14/14 - and later 39/39 - run on its own a few minutes later, with nothing
+changed. The first time the machine was busy with a QEMU somebody had left
+playing a film; the second time it was busy with the gate's own thirty
+suites.
+
+**It is a real measurement of the wrong thing.** The check asks how long a
+write to the audio ring took in *wall-clock* microseconds, which on a host
+running thirty emulators is a measurement of the host's scheduler. The
+second complaint beside it - "the queue floor is not a number between one
+and the device depth" - is the same underrun read a second way, so one
+stall counts twice.
+
+**What not to do about it**: widen the threshold until it stops firing.
+That is the number the check exists to watch, and a suite that cannot fail
+is 18.123's lesson.
+
+**What to do**, unresolved and now `roadmap.md` 5f: either give this suite
+the machine to itself in `gate.py` - it is short, and the gate already runs
+`default look` alone for a different reason - or measure the guest's own
+idea of lateness, which is what the underrun counter in the driver already
+knows and which does not depend on what else the Mac is doing.
+
+Until then, **a sound failure inside the gate is re-run alone before it is
+believed**, and this section is the reason that is not special pleading.
+

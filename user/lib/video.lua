@@ -34,11 +34,12 @@ local video = {}
 local film = {}
 film.__index = film
 
--- A megabyte, which holds any `moov` this will meet and a hundred frames of
--- what it decodes. Reads go through a region rather than a string because
--- `fs.read_into` writes into one; `media.lua` reads a film's cousin the
--- same way.
-local READ = 1024 * 1024
+-- Four megabytes: enough for any `moov` this will meet, and for a single
+-- frame of anything it will be asked to decode - a 4K Motion JPEG frame is
+-- about a megabyte and a half at a decent quality. Reads go through a
+-- region because that is what `fs.read_into` fills, and because the
+-- decoder reads the region directly (`jpeg_frame`).
+local READ = 4 * 1024 * 1024
 
 --
 -- **The decoders, by the sample entry that names them.**
@@ -52,11 +53,58 @@ local READ = 1024 * 1024
 -- ordinary JPEG images, one to a sample, which is why this kit can exist
 -- before a video decoder does.
 --
+--
+-- **A frame is an address and a length, never a Lua string.**
+--
+-- `gfx.jpeg` has taken `(at, length)` since the window manager needed it
+-- for wallpapers, and its comment says why: bytes about to be thrown away
+-- should not be bytes the collector has to walk. This kit read each frame
+-- into a Lua string anyway - ten kilobytes of garbage thirty times a
+-- second, 300 KB a second, which is the audio server's mistake wearing
+-- different clothes and exactly what `mp4.lua`'s own header claims does
+-- not happen here.
+--
+-- Diego asked why an MP4 is read in Lua at all, which is what found it.
+-- The *index* is Lua and should be: a few hundred boxes, read once, and it
+-- runs on the host so the format is tested without booting. The *frames*
+-- were never supposed to be.
+--
+local function jpeg_frame(at, length) return gfx.jpeg(at, length) end
+
+local MOTION_JPEG = { name = "Motion JPEG", frame = jpeg_frame }
+
 local decoders = {
-  mp4v = { name = "Motion JPEG", frame = function(bytes) return gfx.jpeg(bytes) end },
-  jpeg = { name = "Motion JPEG", frame = function(bytes) return gfx.jpeg(bytes) end },
-  mjpa = { name = "Motion JPEG", frame = function(bytes) return gfx.jpeg(bytes) end },
+  -- QuickTime's two names for a track of JPEGs, which say so themselves.
+  jpeg = MOTION_JPEG,
+  mjpa = MOTION_JPEG,
 }
+
+--
+-- **`mp4v` is not a codec**, and reading it as one was a guess that
+-- happened to be right about the file in front of me. It means "MPEG-4
+-- systems describes this", and which codec is the object type in the
+-- sample entry's `esds`: **0x6c is JPEG** and 0x20 is MPEG-4 Visual, which
+-- is a different thing entirely and would be handed to `gfx.jpeg` to fail
+-- as "would not decode". `mp4.lua` reads that byte for video now - it used
+-- to read `esds` only for audio - so this can tell them apart.
+--
+local OBJECT = {
+  [0x6c] = MOTION_JPEG,
+}
+
+local NAMED = {
+  [0x20] = "MPEG-4 Visual",
+  [0x21] = "H.264",
+  [0x23] = "H.265",
+}
+
+local function decoder_for(track)
+  if track.codec == "mp4v" then
+    return OBJECT[track.object or 0], NAMED[track.object or 0]
+  end
+
+  return decoders[track.codec], nil
+end
 
 --
 -- **What the sound is, in the words a person reads.**
@@ -87,9 +135,13 @@ local function sound_name(track)
 end
 
 -- What a film says when it cannot be played, in the words a person reads.
-local function no_decoder(codec)
-  if codec == "avc1" then
+local function no_decoder(codec, named)
+  if codec == "avc1" or named == "H.264" then
     return "this film is H.264, and this system has no H.264 decoder yet"
+  end
+
+  if named then
+    return "this film is " .. named .. ", which this system cannot decode"
   end
 
   return "this film is " .. tostring(codec) .. ", which this system cannot decode"
@@ -126,12 +178,31 @@ function video.open(path, options)
     return nil, "there is no film at " .. tostring(path)
   end
 
+  --
+  -- Two ways to read, and the difference is who the bytes are for.
+  --
+  -- `read_at` gives a string, for `mp4.open`: it is parsing a box tree in
+  -- Lua, once, and Lua is what it parses with. `frame_at` gives the
+  -- *address* the bytes landed at, for a decoder that is C.
+  --
+  local mapped = sys.memory_map(page)
+
   local function read_at(off, n)
     local got = fs.read_into(path, page, off, n)
 
     if not got or got == 0 then return nil end
 
     return sys.region_read(page, 0, got)
+  end
+
+  local function frame_at(off, n)
+    if n > READ then return nil, "a frame larger than the read buffer" end
+
+    local got = fs.read_into(path, page, off, n)
+
+    if not got or got == 0 then return nil, "the film stopped being readable" end
+
+    return mapped, got
   end
 
   local movie, why = mp4.open(read_at, size)
@@ -147,12 +218,12 @@ function video.open(path, options)
 
   if not track then return nil, "this film has no picture in it" end
 
-  local decoder = decoders[track.codec]
+  local decoder, named = decoder_for(track)
 
-  if not decoder then return nil, no_decoder(track.codec) end
+  if not decoder then return nil, no_decoder(track.codec, named) end
 
   local f = setmetatable({
-    path = path, page = page, read_at = read_at,
+    path = path, page = page, read_at = read_at, frame_at = frame_at,
     movie = movie, track = track, decoder = decoder,
     width = track.width or 0, height = track.height or 0,
     codec = decoder.name,
@@ -271,12 +342,12 @@ function film:frame(n)
   if not s then return nil, "there is no frame " .. tostring(n) end
 
   local before = sys.ticks()
-  local bytes = self.read_at(s.at, s.size)
+  local where, got = self.frame_at(s.at, s.size)
 
-  if not bytes then return nil, "the film stopped being readable" end
+  if not where then return nil, tostring(got) end
 
   local read_done = sys.ticks()
-  local ok, picture = pcall(self.decoder.frame, bytes)
+  local ok, picture = pcall(self.decoder.frame, where, got)
 
   if not ok or not picture then
     return nil, "frame " .. n .. " would not decode: " .. tostring(picture)
@@ -389,8 +460,40 @@ end
 --
 local BADGE = 22
 
+--
+-- **One black pixel, stretched.**
+--
+-- Diego, 20 September, having tried the overlay: "make it black with 60%
+-- transparency so it does not block the video behind". `fill` writes the
+-- colour it is given and does not blend, so a translucent panel is not a
+-- fill at all - but `stretch` takes an alpha, and stretching a single black
+-- pixel over the box composites it over the frame underneath at whatever
+-- alpha is asked for. No new primitive, and the loop stays in C where every
+-- pixel loop here lives.
+--
+-- Made once and kept: a surface a frame would be a surface a frame for the
+-- collector to walk (`gfx.md` 19.1).
+--
+local SHADE = 153                       -- of 255: the box is six tenths black
+
+local dark
+
+local function shade(dest, x, y, w, h)
+  if not dark then
+    dark = gfx.surface{ w = 1, h = 1 }
+
+    if not dark then return false end
+
+    dark:fill(0, 0, 1, 1, 0xff000000)
+  end
+
+  dest:stretch(dark, 0, 0, 1, 1, x, y, w, h, SHADE)
+
+  return true
+end
+
 function film:info(dest, x, y, w, h)
-  local white, black, on = 0xffffffff, 0xdd000000, 0xff3b6ea5
+  local white, on = 0xffffffff, 0xff3b6ea5
   local bx, by = x + w - 8 - BADGE // 2, y + 8 + BADGE // 2
 
   dest:disc(bx, by, BADGE // 2, self.info_open and on or 0xaa000000)
@@ -433,7 +536,11 @@ function film:info(dest, x, y, w, h)
 
   local ox, oy = x + 8, y + 8 + BADGE + 8
 
-  dest:fill(ox, oy, box_w, box_h, black)
+  -- Six tenths black over the film, so what is behind still shows.
+  if not shade(dest, ox, oy, box_w, box_h) then
+    dest:fill(ox, oy, box_w, box_h, 0xdd000000)
+  end
+
   dest:fill(ox, oy, box_w, 1, on)
 
   for i, line in ipairs(lines) do

@@ -94,6 +94,175 @@ def vbr_mp3(path, count=400):
         f.write(id3 + bytes(first) + audio)
 
 
+#
+# **A film, built here, because none goes in the repository.**
+#
+# `test_mp4.lua` says it about the container and it is just as true of the
+# pictures: the clip Diego tests with lives in `~/Kosmos/home`, and a suite
+# that needed it would pass on this Mac and fail everywhere else. So the
+# film is made - a few frames of flat grey, each a different grey, in an
+# MP4 the video kit can really open and really decode.
+#
+# The JPEG is written by hand and is the smallest baseline one that means
+# anything: a single 8x8 block whose only coefficient is DC, which *is* a
+# flat grey square. No transform, no quantisation worth the name, and the
+# standard Huffman tables - so what is exercised is the decoder in the
+# image, not an encoder written here to be exercised by it.
+#
+_DC_BITS = bytes([0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0])
+_DC_VALS = bytes(range(12))
+_AC_BITS = bytes([0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d])
+_AC_VALS = bytes([
+    0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06,
+    0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08,
+    0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0, 0x24, 0x33, 0x62, 0x72,
+    0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25, 0x26, 0x27, 0x28,
+    0x29, 0x2a, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45,
+    0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
+    0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75,
+    0x76, 0x77, 0x78, 0x79, 0x7a, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
+    0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3,
+    0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6,
+    0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9,
+    0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2,
+    0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4,
+    0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa])
+
+
+def _huffman(bits, vals):
+    """The canonical code for each value, as (code, length)."""
+    codes, code, k = {}, 0, 0
+
+    for length in range(1, 17):
+        for _ in range(bits[length - 1]):
+            codes[vals[k]] = (code, length)
+            code += 1
+            k += 1
+
+        code <<= 1
+
+    return codes
+
+
+def jpeg_grey(level, width=8, height=8):
+    """A baseline JPEG of one flat grey, `level` from 0 to 255."""
+    dc = _huffman(_DC_BITS, _DC_VALS)
+    ac = _huffman(_AC_BITS, _AC_VALS)
+
+    # Quantisation of 16 on the DC, 16 everywhere else: a pixel comes back
+    # as 128 + coefficient * 16 / 8, so the coefficient is what to write.
+    quant = bytes([16] * 64)
+    coefficient = max(-127, min(127, round((level - 128) / 2)))
+
+    out, bit_buffer, bit_count = bytearray(), 0, 0
+
+    def put(code, length):
+        nonlocal bit_buffer, bit_count
+
+        for i in range(length - 1, -1, -1):
+            bit_buffer = (bit_buffer << 1) | ((code >> i) & 1)
+            bit_count += 1
+
+            if bit_count == 8:
+                out.append(bit_buffer & 0xff)
+
+                # A 0xFF byte in the entropy data is stuffed, or a decoder
+                # reads it as the start of a marker.
+                if bit_buffer & 0xff == 0xff:
+                    out.append(0)
+
+                bit_buffer, bit_count = 0, 0
+
+    blocks = ((width + 7) // 8) * ((height + 7) // 8)
+
+    for i in range(blocks):
+        value = coefficient if i == 0 else 0     # a difference, so once
+        size = value.bit_length() if value >= 0 else abs(value).bit_length()
+        code, length = dc[size]
+
+        put(code, length)
+
+        if size:
+            bits = value if value > 0 else ((1 << size) - 1 + value)
+            put(bits, size)
+
+        put(*ac[0x00])                           # end of block: no AC at all
+
+    if bit_count:                                # pad with ones, as JPEG says
+        put(0xff, 8 - bit_count)
+
+    def marker(kind, body):
+        return bytes([0xff, kind]) + struct.pack(">H", len(body) + 2) + body
+
+    return (b"\xff\xd8"
+            + marker(0xdb, b"\x00" + quant)
+            + marker(0xc0, struct.pack(">BHHB", 8, height, width, 1)
+                     + bytes([1, 0x11, 0]))
+            + marker(0xc4, b"\x00" + _DC_BITS + _DC_VALS)
+            + marker(0xc4, b"\x10" + _AC_BITS + _AC_VALS)
+            + marker(0xda, bytes([1, 1, 0x00, 0, 63, 0]))
+            + bytes(out)
+            + b"\xff\xd9")
+
+
+def mjpeg_mp4(path, levels, width=8, height=8, fps=10):
+    """An MP4 whose video track is those greys, one to a frame."""
+    frames = [jpeg_grey(level, width, height) for level in levels]
+
+    def box(kind, body):
+        return struct.pack(">I", len(body) + 8) + kind + body
+
+    def full(kind, version, body):
+        return box(kind, bytes([version, 0, 0, 0]) + body)
+
+    def words(*n):
+        return b"".join(struct.pack(">I", v) for v in n)
+
+    payload = b"".join(frames)
+
+    def moov(first):
+        visual = (b"\0" * 6 + struct.pack(">H", 1) + b"\0" * 16
+                  + struct.pack(">HH", width, height) + b"\0" * (78 - 28))
+        #
+        # The `esds` that says these are JPEGs: an ES_Descriptor (tag 3)
+        # holding a DecoderConfigDescriptor (tag 4) whose object type is
+        # 0x6c. Without it `mp4v` means only "MPEG-4 systems describes
+        # this", and a reader is entitled to guess MPEG-4 Visual - which is
+        # what `ffmpeg` does with a file that leaves it out.
+        #
+        es = (b"\x03\x19" + b"\x00\x01" + b"\x00"
+              + b"\x04\x11" + b"\x6c\x11" + b"\0\0\0" + words(0, 0)
+              + b"\x06\x01\x02")
+        stsd = full(b"stsd", 0,
+                    words(1) + box(b"mp4v", visual + full(b"esds", 0, es)))
+        stsz = full(b"stsz", 0, words(0, len(frames), *[len(f) for f in frames]))
+        stsc = full(b"stsc", 0, words(1, 1, 1, 1))
+
+        at, offsets = first, []
+
+        for f in frames:
+            offsets.append(at)
+            at += len(f)
+
+        stco = full(b"stco", 0, words(len(offsets), *offsets))
+        stts = full(b"stts", 0, words(1, len(frames), 1000 // fps))
+        stbl = box(b"stbl", stsd + stts + stsc + stsz + stco)
+        mdhd = full(b"mdhd", 0, words(0, 0, 1000, len(frames) * (1000 // fps))
+                    + b"\0\0\0\0")
+        hdlr = full(b"hdlr", 0, words(0) + b"vide" + b"\0" * 12 + b"V\0")
+
+        return box(b"moov", box(b"mvhd", b"\0" * 100)
+                   + box(b"trak", box(b"mdia", mdhd + hdlr
+                                      + box(b"minf", stbl))))
+
+    ftyp = box(b"ftyp", b"isom" + words(0x200) + b"isomavc1")
+    length = len(moov(0))
+    head = len(ftyp) + length + 8
+
+    with open(path, "wb") as f:
+        f.write(ftyp + moov(head) + box(b"mdat", payload))
+
+
 def png_of(width, height, rgb, quarters=None):
     """A PNG of one colour - or of four, a quarter each.
 
@@ -260,6 +429,7 @@ def main():
     vbr_in = os.path.join(work, "vbr.mp3")
     cover_in = os.path.join(work, "cover.mp3")
     rom_in = os.path.join(work, "kosmos-test.sfc")
+    film_in = os.path.join(work, "tiny.mp4")
     COVER = (0x20, 0xc0, 0x40)
     checks, fails = 0, []
 
@@ -272,12 +442,21 @@ def main():
 
     tone(wav_in)
     vbr_mp3(vbr_in)
+
+    #
+    # Four frames of flat grey, each a different one, at ten a second: the
+    # smallest film that can be *watched* going by. The greys are what the
+    # guest checks it decoded, so they are chosen far apart.
+    #
+    FILM_GREYS = [40, 120, 200, 96]
+    mjpeg_mp4(film_in, FILM_GREYS, width=16, height=16, fps=10)
     mp3_with_cover(cover_in, COVER)
     snes_rom(rom_in)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
                     wav_in + ":/home/tone.wav", vbr_in + ":/home/vbr.mp3",
                     cover_in + ":/home/cover.mp3",
-                    rom_in + ":/home/kosmos-test.sfc"], check=True,
+                    rom_in + ":/home/kosmos-test.sfc",
+                    film_in + ":/home/tiny.mp4"], check=True,
                    capture_output=True, cwd=os.path.dirname(HERE))
 
     # Both read by run_screenshot when it is imported, so they are set first.
@@ -343,6 +522,89 @@ def main():
         check(end is not None and end.group(1) == "true" and float(end.group(2)) >= 5.7,
               "the tone did not finish, at about six seconds: %r"
               % (end.group(0) if end else None))
+
+        #
+        # **A film, decoded and looked at.**
+        #
+        # The kit is asked for the frame at four moments and gives back the
+        # grey each one was made from - so this is the whole path: the
+        # index read, a sample found by its offset, a JPEG decoded, and the
+        # pixels landing where they were asked to land. Four flat greys,
+        # far apart, so a frame off by one is not a near miss.
+        #
+        # `get` rather than a screendump, because what is in question here
+        # is the kit rather than the compositor: the display harness has
+        # its own phase for what reaches the screen.
+        #
+        film_program = (
+            'local media = use("/lib/media.lua") '
+            'local f, why = media.open("/home/tiny.mp4") '
+            'if not f then print("film" .. ": no " .. tostring(why)) return end '
+            'print("film" .. ": " .. f.codec .. " " .. f.width .. "x" .. f.height '
+            '.. " " .. f.frames .. " frames " .. string.format("%.2f", f.duration) '
+            '.. " s") '
+            'local s = gfx.surface{ w = 32, h = 32 } '
+            'local said = {} '
+            'for i = 0, 3 do '
+            '  f:draw(s, i * 0.1 + 0.02) '
+            '  said[#said + 1] = (s:get(4, 4) & 0xff) '
+            'end '
+            'print("film" .. ": greys " .. table.concat(said, " ")) '
+            'print("film" .. ": dropped " .. f.dropped) '
+            'f:close() '
+            'local bad, badwhy = media.open("/home/vbr.mp3") '
+            'print("film" .. ": an mp3 opens as " .. tostring(bad ~= nil)) '
+            'print("film" .. ": done")')
+
+        guest.type('fs.write("/ramfs/film.lua", [[' + film_program + ']])')
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        guest.type("/ramfs/film.lua")
+        guest.wait_for("film: done", "the video kit opened and decoded the film")
+
+        heard = guest.seen[mark:]
+        #
+        # `Motion JPEG` is two words, so the codec is matched up to the
+        # size rather than as one - and every line here ends `\r\n`, which
+        # is why this file's other patterns say `\r?\n` rather than `$`.
+        #
+        opened = re.search(r"^film: (.+?) (\d+)x(\d+) (\d+) frames ([\d.]+) s",
+                           heard, re.M)
+
+        check(opened is not None and opened.group(1) == "Motion JPEG"
+              and opened.group(2) == "16" and opened.group(3) == "16"
+              and opened.group(4) == "4",
+              "the kit should have opened a 16x16 Motion JPEG film of four "
+              "frames, and said: %r"
+              % (opened.group(0) if opened else heard[-200:]))
+
+        greys = re.search(r"^film: greys ([\d ]+)", heard, re.M)
+        got = [int(n) for n in greys.group(1).split()] if greys else []
+
+        #
+        # **Within a few levels, not exactly.** A JPEG is quantised - these
+        # are DC-only blocks at a quantisation of 16 - so 40 comes back as
+        # 40-ish, and a decoder that is right is not a decoder that is
+        # lossless. Far enough apart that the wrong *frame* is never within
+        # the tolerance.
+        #
+        close = (len(got) == len(FILM_GREYS)
+                 and all(abs(a - b) <= 8 for a, b in zip(got, FILM_GREYS)))
+
+        check(close, "the four frames should decode to about %s and came back "
+                     "as %s" % (FILM_GREYS, got))
+
+        check(re.search(r"^film: dropped 0\r?\n", heard, re.M) is not None,
+              "the kit dropped a frame on a film of four, which it cannot "
+              "have needed to: %r" % heard[-200:])
+
+        #
+        # The other half of one door: `media.open` on a song still answers
+        # a player rather than being sent to the picture half.
+        #
+        check(re.search(r"^film: an mp3 opens as true\r?\n", heard, re.M)
+              is not None,
+              "`media.open` stopped opening an MP3 when it learned about films")
 
         first, loudest = settled(wav_out)
 
