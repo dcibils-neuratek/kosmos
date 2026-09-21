@@ -7,6 +7,8 @@
 #   ./run-kosmos.sh -b wm           straight to the desktop
 #   ./run-kosmos.sh -b "wm blocks"  with something on it
 #   ./run-kosmos.sh -fit            scale the window down to fit this screen
+#   ./run-kosmos.sh -smp 8          eight processors (four by default)
+#   ./run-kosmos.sh -m 2G           more memory (512M by default)
 #   ./run-kosmos.sh -serial         no window, serial only
 #   ./run-kosmos.sh path.elf        a particular image
 #
@@ -82,6 +84,17 @@ want_size="no"
 boot=""
 want_boot="no"
 
+# How many processors the machine has, and how much memory.
+#
+# Four and 512 MB are what `make qemu` boots and what every suite is
+# checked on, so they are the shape this system is tested in rather than a
+# guess. Both are worth raising on a large machine and neither is free:
+# see the comment beside the QEMU line below.
+cpus="4"
+want_cpus="no"
+memory="512M"
+want_memory="no"
+
 for arg in "$@"; do
     if [ "$want_size" = "yes" ]; then
         size="$arg"
@@ -95,15 +108,36 @@ for arg in "$@"; do
         continue
     fi
 
+    if [ "$want_cpus" = "yes" ]; then
+        cpus="$arg"
+        want_cpus="no"
+        continue
+    fi
+
+    if [ "$want_memory" = "yes" ]; then
+        memory="$arg"
+        want_memory="no"
+        continue
+    fi
+
     case "$arg" in
         -serial) serial_only="yes" ;;
         -fit)    fit="yes" ;;
         -r)      want_size="yes" ;;
         -b)      want_boot="yes" ;;
+        -smp)    want_cpus="yes" ;;
+        -m)      want_memory="yes" ;;
         -*)      echo "unknown option: $arg" >&2; exit 2 ;;
         *)       image="$arg" ;;
     esac
 done
+
+# A number, and one QEMU will accept. A typo here is otherwise a QEMU
+# usage error three screens long about a machine property.
+case "$cpus" in
+    ''|*[!0-9]*) echo "-smp wants a number of processors, not '$cpus'" >&2
+                 exit 2 ;;
+esac
 
 # `-r list`: what sizes are available here.
 if [ "$size" = "list" ]; then
@@ -288,7 +322,30 @@ fi
 # `set --` is how a POSIX shell holds a list. There are no arrays here and a
 # string is not a substitute for one.
 #
-set -- -M virt,gic-version=3 -cpu cortex-a72 -m 512M
+#
+# **Four processors, because the machine has been SMP since 0.10.22 and
+# this script had not noticed.**
+#
+# It was written when the kernel used one core, so it named no `-smp` at
+# all and QEMU's default is one. That stopped being right months ago:
+# Kosmos starts every processor that arrives, gives each its own runqueue,
+# and homes a new thread on the least busy of them, so a one-core machine
+# is running the desktop, the window manager, the servers and whatever you
+# opened on a single core - which is exactly what it feels like.
+#
+# Four is what `make qemu` boots and what the display suites are checked
+# on, so it is the shape this system is actually tested in. `-smp N` takes
+# another number; more than the host has cores is slower, not faster,
+# because under TCG each guest core is a host thread doing translation.
+#
+# **What this does not fix is the emulation itself.** Every guest
+# instruction is translated on the fly, and one application's render loop
+# is one thread however many cores there are - so the solar system gets
+# a responsive machine around it rather than a higher frame rate. The
+# thing that would change that is `-accel hvf`, and no Kosmos kernel
+# currently boots under it on this Mac (see the note at the end).
+#
+set -- -M virt,gic-version=3 -cpu cortex-a72 -m "$memory" -smp "$cpus"
 
 # QEMU's own NAT: no privileges, no packet on a real network, and this
 # computer is 10.0.2.2 from inside. `ping`, `fetch` and the browser all need
