@@ -857,12 +857,109 @@ int main(void)
               "a MAC string one byte short was read");
     }
 
+    /*
+     * **What an adapter says on its interrupt endpoint** (CDC 1.2 6.3): the
+     * link, its speed, and every way the eight-byte header can be wrong.
+     */
+    {
+        static const uint8_t up[] = {
+            0xA1, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00,
+        };
+        static const uint8_t down[] = {
+            0xA1, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        };
+        /* A gigabit link, both ways: 1000000000 is 0x3B9ACA00. */
+        static const uint8_t speed[] = {
+            0xA1, 0x2A, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00,
+            0x00, 0xCA, 0x9A, 0x3B, 0x00, 0xCA, 0x9A, 0x3B,
+        };
+        static const uint8_t rndis[] = {
+            0xA1, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        };
+        struct usb_notify note;
+        uint8_t bad[16];
+
+        usb_decode_notify(up, sizeof(up), &note);
+        check(note.kind == USB_NOTIFY_CONNECTION && note.up
+              && note.length == 8u,
+              "NETWORK_CONNECTION with wValue 1 is not a link that is up");
+
+        usb_decode_notify(down, sizeof(down), &note);
+        check(note.kind == USB_NOTIFY_CONNECTION && !note.up,
+              "NETWORK_CONNECTION with wValue 0 is not a link that is down");
+
+        usb_decode_notify(speed, sizeof(speed), &note);
+        check(note.kind == USB_NOTIFY_SPEED
+              && note.upstream == 1000000000u
+              && note.downstream == 1000000000u && note.length == 16u,
+              "CONNECTION_SPEED_CHANGE did not read two gigabit rates");
+
+        /*
+         * **Two notifications in one transfer**: `length` is what the first
+         * one takes, so the caller can step to the next. A transfer that
+         * carries more than one is allowed and QEMU's adapter does it.
+         */
+        usb_decode_notify(speed, sizeof(speed) + 8u, &note);
+        check(note.kind == USB_NOTIFY_SPEED && note.length == 16u,
+              "a notification in a longer buffer did not say its own length");
+
+        usb_decode_notify(rndis, sizeof(rndis), &note);
+        check(note.kind == USB_NOTIFY_OTHER && note.code == 0x01,
+              "RNDIS's RESPONSE_AVAILABLE was not named by its code - the "
+              "endpoint is the same one, and which the device sends is "
+              "which configuration it was put in");
+
+        usb_decode_notify(up, 7u, &note);
+        check(note.kind == USB_NOTIFY_MALFORMED,
+              "a notification a byte short of its header was read");
+
+        memcpy(bad, up, sizeof(up));
+        bad[0] = 0x21;
+        usb_decode_notify(bad, sizeof(up), &note);
+        check(note.kind == USB_NOTIFY_MALFORMED,
+              "a header that is not A1h - device to host, class, interface - "
+              "was read");
+
+        memcpy(bad, speed, sizeof(speed));
+        usb_decode_notify(bad, sizeof(speed) - 1u, &note);
+        check(note.kind == USB_NOTIFY_MALFORMED,
+              "a speed notification one byte short of its eight was read");
+
+        memcpy(bad, up, sizeof(up));
+        bad[6] = 0xFF;
+        bad[7] = 0xFF;
+        usb_decode_notify(bad, sizeof(up), &note);
+        check(note.kind == USB_NOTIFY_MALFORMED,
+              "a wLength of 65535 in an eight-byte notification was read");
+
+        memset(bad, 0, sizeof(bad));
+        memcpy(bad, up, sizeof(up));
+        bad[6] = 4u;
+        usb_decode_notify(bad, sizeof(up) + 4u, &note);
+        check(note.kind == USB_NOTIFY_OTHER && note.length == 12u,
+              "NETWORK_CONNECTION with four bytes after it is not the "
+              "notification CDC 6.3.1 describes, which carries none");
+
+        memcpy(bad, speed, sizeof(speed));
+        bad[6] = 0u;
+        bad[7] = 0u;
+        usb_decode_notify(bad, sizeof(speed), &note);
+        check(note.kind == USB_NOTIFY_OTHER,
+              "CONNECTION_SPEED_CHANGE with no rates after it was read as a "
+              "speed");
+
+        usb_decode_notify(NULL, 8u, &note);
+        check(note.kind == USB_NOTIFY_MALFORMED,
+              "no notification at all was read");
+    }
+
     if (fails == 0) {
         printf("PASS: %d checks on USB configuration and report descriptors "
                "(QEMU's mouse, HID 1.11's examples, a sixteen-button mouse, "
                "Report IDs, sticks at high speed and SuperSpeed, an Ethernet "
-               "adapter's two configurations and its MAC address, and the "
-               "lengths a device can get wrong).\n",
+               "adapter's two configurations, its MAC address and what it "
+               "says on its interrupt endpoint, and the lengths a device can "
+               "get wrong).\n",
                checks);
         return 0;
     }

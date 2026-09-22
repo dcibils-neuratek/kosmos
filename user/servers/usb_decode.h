@@ -133,6 +133,38 @@ void usb_decode_ecm(const uint8_t *bytes, unsigned length,
 bool usb_decode_mac(const uint8_t *desc, unsigned length, uint8_t mac[6]);
 
 /*
+ * **What an adapter says on its interrupt endpoint** (CDC 1.2 6.3): an
+ * eight-byte header shaped like a Setup packet the other way round -
+ * bmRequestType A1h, bNotificationCode, wValue, wIndex, wLength - and
+ * `wLength` bytes after it.
+ *
+ * Only the two an Ethernet function sends are read. NETWORK_CONNECTION
+ * (6.3.1) carries the link in wValue and nothing after it;
+ * CONNECTION_SPEED_CHANGE (6.3.3) carries two little-endian rates in bits a
+ * second, upstream then downstream. Anything else is named by its code, and
+ * a device that speaks RNDIS on the same endpoint is exactly that case.
+ */
+enum usb_notify_kind {
+    USB_NOTIFY_MALFORMED,       /* short, not A1h, or data past the end */
+    USB_NOTIFY_OTHER,           /* a notification this does not read */
+    USB_NOTIFY_CONNECTION,      /* NETWORK_CONNECTION: the link */
+    USB_NOTIFY_SPEED,           /* CONNECTION_SPEED_CHANGE: the two rates */
+};
+
+struct usb_notify {
+    enum usb_notify_kind kind;
+    uint8_t  code;              /* bNotificationCode, for OTHER */
+    bool     up;                /* CONNECTION: wValue is 1 for connected */
+    uint32_t upstream;          /* SPEED: bits a second, this end out */
+    uint32_t downstream;        /* ...and in */
+    unsigned length;            /* the whole of it, header and data */
+};
+
+/* Nothing outside `bytes[0 .. length)` is read. */
+void usb_decode_notify(const uint8_t *bytes, unsigned length,
+                       struct usb_notify *out);
+
+/*
  * Where a mouse's buttons and movement are in its reports, out of its Report
  * descriptor (HID 1.11 6.2.2). Bit offsets are counted from the start of the
  * report after its Report ID byte, when it has one. `ok` only for relative X

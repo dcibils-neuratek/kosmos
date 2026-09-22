@@ -1554,11 +1554,24 @@ processors, and still what follows USB:
      Moving frames on the dongle from the Mac will need root, as the pad
      did; the gate uses `usb-net`. **And on the ThinkPad itself, the same
      day** (0.10.105): port 3 of `00:0d.0`, the same two lines.
-   - **5m-b. Bring the link up**, no frames yet: the configuration chosen,
-     the data interface's alternate setting selected (ECM's data interface
-     has a zero-bandwidth alternate 0, and picking it is the classic reason
-     a correct-looking driver never receives anything), the packet filter
-     set, and the link's notifications read - up or down, and its speed.
+   - **5m-b. DONE on 22 September - the link brought up**, no frames yet
+     (`usb.md` 7b, `testing.md` 18.149). The configuration chosen, the Data
+     interface's alternate setting selected - ECM's Data interface has a
+     zero-bandwidth alternate 0, and leaving it there is the classic reason
+     a correct-looking driver never receives anything - the packet filter
+     asked for, and the link's notifications listened for the way a mouse's
+     reports are: one read outstanding, the next queued when it comes back,
+     so nothing polls and no plug waits.
+
+     **The setting is read back with GET_INTERFACE**, because it is the one
+     request in the sequence whose failure is invisible until a frame is
+     expected. The line prints what the device says, so a driver that never
+     sent SET_INTERFACE prints a 0.
+
+     **QEMU's `usb-net` never sends a notification** - forty seconds of one
+     produced none - so the link and its speed are read by
+     `usb_decode_notify` under `test_usbdecode` on the host, and will be seen
+     for the first time on the ThinkPad.
    - **5m-c. One frame out, one frame in.** ARP is the right first traffic:
      small, unsolicited, and something on the other end answers without
      being asked twice.

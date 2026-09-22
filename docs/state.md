@@ -105,7 +105,18 @@ the stable one. The older development images went to the Trash.
   said it has no driver for the second. What it would take, and why the
   ThinkPad's own Intel card with OpenBSD's ISC code is the likelier path,
   is in the roadmap.
-- **Queued next**: the scale's third stage (5z) - the screen's size in
+- **The Ethernet adapter is driven** (5m-b, `usb.md` 7b, 18.149) -
+  committed and not pushed. Diego, on which of Ethernet and WiFi to do
+  first: "So do the Ethernet driver so we can connect the thinkpad to the
+  internet". Its three endpoints are the controller's, its ECM
+  configuration is chosen, its Data interface is off the empty setting 0 -
+  read back with GET_INTERFACE, because that is the one request whose
+  failure is invisible - the packet filter is asked for, and a read is
+  outstanding on its interrupt endpoint for the link. QEMU's `usb-net`
+  never sends a notification, so the link and its speed are held by
+  `usb_decode_notify` on the host and will be seen first on the ThinkPad.
+  **Next: 7c**, one frame out and one in.
+- **Queued after the network**: the scale's third stage (5z) - the screen's size in
   points before a window opens, which is what Lite XL needs, and the
   window manager's own drawings that are not windows: the pointer, the
   level bar, a drag's label, the launcher pad.

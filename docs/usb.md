@@ -1984,13 +1984,66 @@ Nothing is configured yet: an adapter is named and left exactly as it was
 found. **On the ThinkPad on 22 September** (0.10.105) the same two lines
 came from port 3 of `00:0d.0`, the Thunderbolt controller's USB side.
 
+### 7b: the adapter driven, and its link listened for
+
+Five things, in this order, and the order is the specification's:
+
+1. **Configure Endpoint**, with the adapter's three endpoints - the two bulk
+   ones and the interrupt IN. That is xHCI's business and has nothing to do
+   with what the device believes.
+2. **SET_CONFIGURATION**, which puts the device in its ECM configuration -
+   and every interface at setting 0.
+3. **SET_INTERFACE**, which is the whole point of the step. ECM's Data
+   interface at setting 0 has no endpoints at all (ECM 1.2 3.3), so a driver
+   that stops at 2 has a device that answers every request it is sent and
+   never delivers a frame. This is the trap ECM is known for.
+4. **SET_ETHERNET_PACKET_FILTER** (ECM 6.2.4), asking for frames addressed
+   to this machine, broadcast and multicast - D2, D3 and D4. Not promiscuous:
+   a stack handed every frame on the wire throws most of them away, and on a
+   switch there would be few extra ones to have. Multicast is in because
+   neighbour discovery and mDNS are multicast, and a device with no multicast
+   table takes D4 as "all of them", which is the answer we would give it.
+5. **One read on the interrupt endpoint**, and the next queued whenever one
+   comes back. The link is listened for, never asked about.
+
+```
+xhci: 00:02.0 port 5: USB Ethernet, CDC-ECM, in configuration 1: MAC 52:54:00:4b:4d:53, frames up to 1514 bytes
+xhci: 00:02.0 port 5: its frames on interface 1 setting 1, bulk IN 2 and OUT 2 of 64 bytes; its link on interrupt IN 1
+xhci: 00:02.0 port 5: configured, on setting 1 as it says itself, taking frames addressed to it, broadcast and multicast; listening for its link
+```
+
+**"as it says itself" is GET_INTERFACE** (9.4.4), and it is there because
+step 3 is the one request in the sequence whose failure is invisible.
+SET_CONFIGURATION that fails stops everything after it; a filter that is
+refused says so in the line. An interface left on setting 0 behaves exactly
+like one that was set - until a frame is expected, which is 7c, by which
+point the fault is three steps back. So the driver asks the device which
+setting it is on and prints the answer, and a driver that never sent
+SET_INTERFACE prints a 0 there.
+
+**A notification is read the way a mouse's report is**: one request
+outstanding, the next queued when it completes, served in `wait_serving`
+beside every other controller's work. So a link that comes up an hour from
+now is noticed, nothing polls, and no plug anywhere on the machine waits for
+an adapter that has nothing to say. `usb_decode_notify` reads what arrives -
+NETWORK_CONNECTION for the link and CONNECTION_SPEED_CHANGE for the two
+rates (CDC 1.2 6.3.1, 6.3.3) - and says how long each notification is,
+because a transfer may carry more than one. Only a *change* is logged, so an
+adapter that repeats itself does not fill the screen.
+
+### What QEMU cannot show
+
+**Its `usb-net` never sends a notification.** Forty seconds of one running
+produced none on the interrupt endpoint, so NETWORK_CONNECTION and
+CONNECTION_SPEED_CHANGE are read by `test_usbdecode` on the host - including
+RNDIS's RESPONSE_AVAILABLE, which arrives on the same endpoint when a device
+is put in its other configuration - and are seen for the first time on real
+hardware. What the gate can say is that nothing waits for one: the driver
+reaches its watch loop with a read outstanding and every other device on the
+machine still working.
+
 ### What comes next
 
-- **7b**: SET_CONFIGURATION, the Data interface's setting selected, the
-  packet filter set - directed, broadcast and multicast
-  (SET_ETHERNET_PACKET_FILTER, ECM 6.2.4) - and the link's notifications read:
-  NETWORK_CONNECTION, then CONNECTION_SPEED_CHANGE with the two rates (CDC
-  6.3.1, 6.3.3).
 - **7c**: one frame out and one in, ARP; a frame that fills its last packet
   exactly is followed by a zero-length one (ECM 3.3.1).
 - **7d**: the frames reach `net.c` through a ring in a region, not the
@@ -2007,12 +2060,15 @@ came from port 3 of `00:0d.0`, the Thunderbolt controller's USB side.
   of 16 and a short configuration, each refused. The MAC string, and eleven
   characters, a G, a character past U+00FF and a string one byte short,
   refused - with the answer untouched by a failure on the last digit.
-- `run_x86.py`'s `usb_ethernet`: QEMU's `usb-net` with a MAC this machine
-  chose, which must come back from the adapter's string; its ECM
-  configuration, which is its second; its largest frame, its setting and
-  its endpoints. **Control**: the driver reading only the first
-  configuration says `class 02/02/ff - nothing here reads it`, and the
-  check fails.
+- `run_x86.py`'s `usb_ethernet`, eight: QEMU's `usb-net` with a MAC this
+  machine chose, which must come back from the adapter's string; its ECM
+  configuration, its largest frame, its setting and its endpoints; that it
+  is then configured, with the setting the *device* reports and the filter
+  it accepted; and that nothing in the sequence was refused.
+  **Controls**, three: the driver reading only the first configuration says
+  `class 02/02/ff - nothing here reads it`; a SET_INTERFACE never sent leaves
+  the adapter saying it is on setting 0; and a filter asked for with the
+  wrong request number is refused, and the line says so.
 
 ## Sources
 

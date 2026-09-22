@@ -7864,3 +7864,48 @@ strip - which the boot screen satisfies, being black with three coloured
 stripes down it, and a black column reads as icons all the way to the bottom
 of the screen. It waits for most of the screen to be the desktop's own colour
 *and* for that column to end somewhere sensible.
+
+## 18.149 The Ethernet adapter, driven
+
+`usb.md` step 7b, `roadmap.md` 5m-b: the adapter that was named in 0.10.105 is
+now configured - its three endpoints in the controller's hands, its ECM
+configuration chosen, its Data interface taken off the empty setting 0, the
+packet filter asked for, and one read outstanding on its interrupt endpoint
+for whatever it says about its link.
+
+### The checks
+
+- **`test_usbdecode`**, on the host, 119 - eleven of them new, on what an
+  adapter says on that endpoint (CDC 1.2 6.3): a link up and a link down; two
+  gigabit rates out of CONNECTION_SPEED_CHANGE; a notification in a longer
+  buffer saying its own length, so a caller can step to the next one in the
+  same transfer; RNDIS's RESPONSE_AVAILABLE named by its code rather than
+  refused, because it arrives on the same endpoint and which one a device
+  sends is which configuration it was put in; and five ways the eight-byte
+  header can be wrong - a byte short, a request type that is not A1h, a
+  speed one byte short of its eight, a wLength of 65535, and each of the two
+  known codes with the wrong amount of data after it.
+- **`run_x86.py`'s `usb_ethernet`**, 8: everything 7a checked, and then the
+  line that says it is configured - **with the setting the device itself
+  reports**, and the filter it accepted.
+
+### Controls, watched
+
+- **SET_INTERFACE never sent**: the adapter answers GET_INTERFACE with 0 and
+  the check fails naming setting 0. This is the control the step exists for,
+  and it is why the number in that line is the device's answer rather than
+  what the driver chose: every other request in the sequence fails loudly,
+  and this one is invisible until a frame does not arrive three steps later.
+- **The filter asked for with 44h instead of 43h**: QEMU stalls it, the line
+  says the adapter refused a packet filter, and the check fails.
+- **Only the first configuration read** (the 7a control, still watched): the
+  driver says `class 02/02/ff - nothing here reads it`.
+
+### What QEMU cannot show
+
+**Its `usb-net` never sends a notification at all.** A forty-second boot with
+one plugged in produced nothing on the interrupt endpoint, so the link, its
+speed and the decoding of both are held on the host and will be seen for the
+first time on the ThinkPad. What the machine test can say, and does, is that
+nothing waits for one: the driver reaches its watch loop with a read
+outstanding, and every other device on the machine goes on working.

@@ -3845,7 +3845,7 @@ def core(image, check, fails):
 
 
 def usb_ethernet(image, check):
-    """A USB Ethernet adapter, named and not yet driven - `usb.md` step 7a.
+    """A USB Ethernet adapter, named and configured - `usb.md` steps 7a, 7b.
 
     QEMU's `usb-net` is a CDC Ethernet device with two configurations,
     RNDIS first and CDC-ECM second. That is the shape of Diego's RTL8153,
@@ -3861,6 +3861,25 @@ def usb_ethernet(image, check):
     language, end to end. The endpoints are the ones QEMU 11.1.1's `usb-net`
     offered when this was written, as the driver read them; the setting is 1
     because setting 0 of an ECM Data interface has none (ECM 1.2 3.3).
+
+    **And then it is driven** (7b): the three endpoints handed to the
+    controller, the configuration chosen, the Data interface taken off that
+    empty setting 0, and the packet filter *accepted* - which is a request
+    QEMU's adapter answers, so a driver that asked for the wrong thing is
+    told so here rather than on the ThinkPad.
+
+    **The setting in that line is the device's own answer.** Everything else
+    in the sequence fails loudly when it fails; an interface left on setting
+    0 behaves exactly like one that was set until a frame is expected, which
+    is 7c. So the driver asks GET_INTERFACE and prints what comes back, and a
+    driver that never sent SET_INTERFACE prints a 0 here.
+
+    **What QEMU cannot show is the link.** Its `usb-net` never sends a
+    notification on the interrupt endpoint - forty seconds of one running
+    produced none - so NETWORK_CONNECTION and CONNECTION_SPEED_CHANGE are
+    read by `test_usbdecode` on the host and seen for the first time on real
+    hardware. What this can say is that nothing waits for one: the driver
+    reaches its watch loop with a read outstanding.
     """
     mac = "52:54:00:4b:4d:53"
     extra = ("-device", "qemu-xhci,id=usb0",
@@ -3879,7 +3898,7 @@ def usb_ethernet(image, check):
 
     named = re.search(r"xhci: \S+ port \d+: USB Ethernet, CDC-ECM, in "
                       r"configuration (\d+): MAC ([0-9a-f:]{17}), frames up "
-                      r"to (\d+) bytes; not driven yet", out)
+                      r"to (\d+) bytes", out)
 
     check(named is not None,
           "the driver did not name QEMU's USB Ethernet adapter as CDC-ECM:"
@@ -3904,6 +3923,34 @@ def usb_ethernet(image, check):
           and where.groups() == ("1", "1", "2", "2", "64", "1"),
           "the adapter's frames were not on interface 1 setting 1, bulk 2 "
           "each way of 64 bytes, with its link on interrupt IN 1:\n    "
+          + shown)
+
+    #
+    # And driven: 7b. The setting is named in the line because picking the
+    # wrong one is the mistake ECM is known for, and the filter is named
+    # because the adapter answered the request rather than stalling it.
+    #
+    driven = re.search(r"xhci: \S+ port \d+: configured, on setting (\d+) as it "
+                       r"says itself, taking frames addressed to it, broadcast "
+                       r"and multicast; listening for its link", out)
+
+    check(driven is not None,
+          "the adapter was named and not configured. 7b chooses the "
+          "configuration, takes the Data interface off setting 0 - which has "
+          "no endpoints, so no frame would ever arrive - and asks for the "
+          "frames this machine wants:\n    " + shown)
+
+    if driven is not None:
+        check(driven.group(1) == "1",
+              "the adapter says it is on setting %s. Setting 0 of an ECM Data "
+              "interface has no endpoints at all (ECM 1.2 3.3), and leaving "
+              "it there is why a correct-looking driver never receives a "
+              "frame - which is why the number in that line is the device's "
+              "own answer to GET_INTERFACE rather than what it was told."
+              % driven.group(1))
+
+    check("is not driven" not in out and "no frame would ever arrive" not in out,
+          "a request the adapter is configured with was refused:\n    "
           + shown)
 
 

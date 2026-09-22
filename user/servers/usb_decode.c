@@ -618,6 +618,70 @@ bool usb_decode_mac(const uint8_t *desc, unsigned length, uint8_t mac[6])
 }
 
 /*
+ * **A notification off an Ethernet function's interrupt endpoint**, CDC 1.2
+ * 6.3. Eight bytes of header and `wLength` after them.
+ *
+ * **The header's first byte is checked**, and it is the cheapest thing here
+ * that says the endpoint is carrying what this expects: A1h is
+ * device-to-host, class, interface (Table 15). An RNDIS function's
+ * RESPONSE_AVAILABLE carries it too and is named by its code rather than
+ * refused, because the endpoint is the same one and the difference is which
+ * configuration the device was put in.
+ *
+ * **A length that does not fit is malformed rather than truncated.** The
+ * bytes come from a transfer whose residue said how many arrived, so a
+ * `wLength` past the end is a device saying one thing and sending another,
+ * and reading what did arrive would be reading whatever the last
+ * notification left in the page.
+ */
+#define NOTIFY_HEADER       8u
+#define NOTIFY_REQUEST_TYPE 0xA1u
+#define NOTIFY_CONNECTION   0x00u
+#define NOTIFY_SPEED        0x2Au
+#define NOTIFY_SPEED_DATA   8u
+
+void usb_decode_notify(const uint8_t *bytes, unsigned length,
+                       struct usb_notify *out)
+{
+    unsigned said;
+
+    if (out == NULL) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+
+    if (bytes == NULL || length < NOTIFY_HEADER
+        || bytes[0] != NOTIFY_REQUEST_TYPE) {
+        return;
+    }
+
+    said = (unsigned)bytes[6] | ((unsigned)bytes[7] << 8);
+
+    if (said > length - NOTIFY_HEADER) {
+        return;
+    }
+
+    out->code = bytes[1];
+    out->length = NOTIFY_HEADER + said;
+
+    if (bytes[1] == NOTIFY_CONNECTION && said == 0) {
+        out->kind = USB_NOTIFY_CONNECTION;
+        out->up = ((unsigned)bytes[2] | ((unsigned)bytes[3] << 8)) != 0;
+    } else if (bytes[1] == NOTIFY_SPEED && said == NOTIFY_SPEED_DATA) {
+        out->kind = USB_NOTIFY_SPEED;
+        out->upstream = (uint32_t)bytes[8] | ((uint32_t)bytes[9] << 8)
+                      | ((uint32_t)bytes[10] << 16)
+                      | ((uint32_t)bytes[11] << 24);
+        out->downstream = (uint32_t)bytes[12] | ((uint32_t)bytes[13] << 8)
+                        | ((uint32_t)bytes[14] << 16)
+                        | ((uint32_t)bytes[15] << 24);
+    } else {
+        out->kind = USB_NOTIFY_OTHER;
+    }
+}
+
+/*
  * A mouse's Report descriptor, walked for its buttons and its movement.
  *
  * **Why it is read at all.** A boot mouse is asked for the boot protocol

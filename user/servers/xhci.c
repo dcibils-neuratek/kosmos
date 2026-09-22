@@ -235,6 +235,8 @@
 #define DEVICE_PAGE_IN      5u          /* ...and its bulk IN ring */
 #define DEVICE_PAGE_PAD_OUT 6u          /* an Xbox One pad's OUT ring */
 #define DEVICE_PAGE_PAD_SAY 7u          /* ...and what is sent on it */
+#define DEVICE_PAGE_NOTIFY  6u          /* an Ethernet adapter's interrupt ring */
+#define DEVICE_PAGE_NOTE    7u          /* ...and the notifications it reads */
 #define PAD_SAY_SLOT        64u         /* bytes a message, a page of them */
 #define SCRATCH_OFFSET      64u         /* the array, after the table's entry */
 #define SCRATCHPADS_MAX     ((PAGE - SCRATCH_OFFSET) / 8u)
@@ -430,6 +432,47 @@ struct stick {
 };
 
 /*
+ * **An Ethernet adapter**, once it is configured - `usb.md` step 7b.
+ *
+ * Three endpoints: the two bulk ones a frame moves on, and an interrupt IN
+ * the adapter says its link on. The notification is read the way a mouse's
+ * report is - one request out at a time, the next queued when one comes back
+ * - so a link that goes up an hour from now is noticed without anything
+ * waiting for it, and nothing here blocks a plug on the other side of the
+ * machine.
+ *
+ * `link_said` and `speed_said` are whether the adapter has ever said, which
+ * is not the same as what it said: a link that is down and a link nothing
+ * has reported are different things to a person reading the log.
+ */
+struct ether {
+    bool          reading;              /* a notification request is out */
+    unsigned      port;
+    unsigned      in_dci;
+    unsigned      out_dci;
+    unsigned      notify_dci;
+    unsigned      notify_length;        /* a request's buffer: its packet */
+    struct ring   in;
+    struct ring   out;
+    struct ring   notify;
+    uint8_t      *note;                 /* where a notification arrives */
+    uint64_t      note_bus;
+
+    uint8_t       mac[6];
+    bool          have_mac;
+    uint16_t      max_segment;          /* the largest frame it carries */
+
+    bool          link;                 /* what NETWORK_CONNECTION said */
+    bool          link_said;
+    uint32_t      upstream;             /* bits a second, CONNECTION_SPEED */
+    uint32_t      downstream;
+    bool          speed_said;
+
+    /* Its device, kept, for the same reason a stick keeps one. */
+    struct device dev;
+};
+
+/*
  * **How many unit numbers have been given out.** A stick takes the next as it
  * becomes ready and keeps it until it leaves, and no other stick is ever given
  * it (USB step 5e). The disk server keeps the unit its partition is on, so a
@@ -486,6 +529,9 @@ struct controller {
 
     /* ...and its stick, when it is one of those. */
     struct stick  stick[DEVICES_MAX + 1];
+
+    /* ...and its Ethernet adapter. */
+    struct ether  ether[DEVICES_MAX + 1];
 };
 
 static long console = -1;
@@ -889,7 +935,22 @@ static bool is_report(const struct controller *c, const uint32_t *event)
            && TRB_ENDPOINT_OF(event[3]) == c->mouse[slot].dci;
 }
 
+/*
+ * The same for an Ethernet adapter's notification, which arrives whenever the
+ * link changes and must not be mistaken for the answer to whatever a plug on
+ * another port is waiting for.
+ */
+static bool is_note(const struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+
+    return TRB_TYPE_OF(event[3]) == TRB_TRANSFER && slot != 0
+           && slot <= DEVICES_MAX && c->ether[slot].reading
+           && TRB_ENDPOINT_OF(event[3]) == c->ether[slot].notify_dci;
+}
+
 static void take_report(struct controller *c, const uint32_t *event);
+static void take_note(struct controller *c, const uint32_t *event);
 
 /*
  * **A wait that goes on reading mice.** Until `c` has an event that is not a
@@ -956,12 +1017,14 @@ static bool wait_serving(struct controller *c, unsigned long ms,
                        && owner[woke] == o;
 
             while (take_event(o, event)) {
-                if (o == c && out != NULL && !is_report(o, event)) {
+                if (o == c && out != NULL && !is_report(o, event)
+                    && !is_note(o, event)) {
                     memcpy(out, event, sizeof(event));
                     return true;
                 }
 
                 take_report(o, event);
+                take_note(o, event);
             }
         }
 
@@ -1602,6 +1665,16 @@ static bool control_nodata(struct controller *c, struct device *d,
 #define SET_PROTOCOL        (0x21u | (0x0Bu << 8))
 #define CLEAR_FEATURE       (0x02u | (1u << 8))
 #define MASS_STORAGE_RESET  (0x21u | (0xFFu << 8))
+/*
+ * SET_INTERFACE is a standard request to an *interface* - 00000001, the
+ * setting in wValue and the interface in wIndex (9.4.9) - and it is what
+ * takes an ECM Data interface off its empty setting 0.
+ * SET_ETHERNET_PACKET_FILTER is CDC's class request to the Communications
+ * interface, 00100001 and 43h, the filter bits in wValue (ECM 6.2.4).
+ */
+#define SET_INTERFACE       (0x01u | (11u << 8))
+#define GET_INTERFACE       (0x81u | (10u << 8))
+#define SET_ETH_FILTER      (0x21u | (0x43u << 8))
 #define DESC_DEVICE         0x0100u
 #define DESC_CONFIGURATION  0x0200u
 #define DESC_STRING         0x0300u
@@ -3039,25 +3112,193 @@ static void use_stick(struct controller *c, struct device *d,
 /* ------------------------------------------------------- USB Ethernet */
 
 /*
- * **A USB Ethernet adapter**, said and not yet driven - `usb.md` step 7a.
- * `usb_decode_ecm` found a CDC-ECM function in one of its configurations;
- * this reads the MAC address out of the string that function names, and
- * says what the adapter is and where its frames would move.
+ * **The packet filter an adapter is asked for** (ECM 6.2.4, Table 8): frames
+ * addressed to this machine, broadcast, and multicast - D2, D3 and D4.
  *
- * Nothing is configured: SET_CONFIGURATION, the Data interface's setting and
- * the notifications are 7b, and a frame is 7c. So an adapter plugged in
- * today is named on the console and left exactly as the firmware left it.
+ * Not promiscuous, which is D0: a stack that is handed every frame on the
+ * wire has to throw most of them away, and on a switch it would be handed
+ * very few extra ones anyway. Multicast is in because IPv6's neighbour
+ * discovery and mDNS are multicast and both are things this will want; ECM
+ * 6.2.4 says a device with no multicast filter table takes D4 as "all of
+ * them", which is the answer we would give it.
+ */
+#define ETH_FILTER_DIRECTED   0x04u
+#define ETH_FILTER_BROADCAST  0x08u
+#define ETH_FILTER_MULTICAST  0x10u
+#define ETH_FILTER_WANTED     (ETH_FILTER_DIRECTED | ETH_FILTER_BROADCAST \
+                               | ETH_FILTER_MULTICAST)
+
+/*
+ * One request out on the adapter's interrupt endpoint, for the next thing it
+ * has to say about its link. A mouse's reports work the same way and for the
+ * same reason (`ask_for_report`): one request is outstanding, and the next
+ * goes out when that one comes back, so nothing polls and nothing waits.
+ */
+static void ask_for_note(struct controller *c, unsigned slot)
+{
+    struct ether *e = &c->ether[slot];
+
+    e->reading = true;
+    (void)ring_push(&e->notify, (uint32_t)e->note_bus,
+                    (uint32_t)(e->note_bus >> 32), e->notify_length,
+                    TRB_TYPE(TRB_NORMAL) | TRB_ISP | TRB_IOC);
+    mmio_write32(c->doorbells + 4u * slot, e->notify_dci);
+}
+
+/* A rate in bits a second, as the unit a person reads it in. */
+static void say_rate(struct say_line *line, uint32_t bits)
+{
+    if (bits >= 1000000000u) {
+        say_dec(line, bits / 1000000000u);
+        say_text(line, " Gb/s");
+    } else if (bits >= 1000000u) {
+        say_dec(line, bits / 1000000u);
+        say_text(line, " Mb/s");
+    } else if (bits >= 1000u) {
+        say_dec(line, bits / 1000u);
+        say_text(line, " kb/s");
+    } else {
+        say_dec(line, bits);
+        say_text(line, " b/s");
+    }
+}
+
+/*
+ * **What the adapter said about its link.**
  *
- * The buffer is cleared before the string is asked for, so a device that
- * answers with fewer bytes than its string's length claims is read as a
- * short string rather than as whatever the last request left behind.
+ * A transfer may carry more than one notification, so this walks what
+ * arrived rather than reading the first and stopping: QEMU's adapter sends
+ * NETWORK_CONNECTION and CONNECTION_SPEED_CHANGE, and a device is free to
+ * put both in one transfer. `usb_decode_notify` says how long each is.
+ *
+ * **Only a change is said.** The link is reported when it is first heard and
+ * whenever it turns over, not on every notification: an adapter that repeats
+ * itself would otherwise fill the log.
+ */
+static void take_note(struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+    struct say_line line;
+    struct ether *e;
+    struct usb_notify note;
+    uint32_t code, left;
+    unsigned got, at;
+
+    if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER || slot == 0
+        || slot > DEVICES_MAX) {
+        return;
+    }
+
+    e = &c->ether[slot];
+
+    if (!e->reading || TRB_ENDPOINT_OF(event[3]) != e->notify_dci) {
+        return;
+    }
+
+    code = TRB_CODE_OF(event[2]);
+    left = TRB_LEFT_OF(event[2]);
+
+    if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
+        e->reading = false;
+
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, e->port);
+        say_text(&line, ": the adapter's link notification failed: ");
+        say_text(&line, completion_name(code));
+        say_text(&line, " (");
+        say_dec(&line, code);
+        say_text(&line, "); its link is not watched until it is plugged in "
+                        "again");
+        say_send(console, &line);
+        return;
+    }
+
+    got = left < e->notify_length ? e->notify_length - left : 0u;
+
+    for (at = 0; at < got; at += note.length) {
+        usb_decode_notify(e->note + at, got - at, &note);
+
+        if (note.kind == USB_NOTIFY_MALFORMED || note.length == 0) {
+            break;
+        }
+
+        if (note.kind == USB_NOTIFY_CONNECTION
+            && (!e->link_said || e->link != note.up)) {
+            e->link = note.up;
+            e->link_said = true;
+
+            about(&line, c);
+            say_text(&line, " port ");
+            say_dec(&line, e->port);
+            say_text(&line, note.up ? ": its link is up" : ": its link is down");
+            say_send(console, &line);
+        } else if (note.kind == USB_NOTIFY_SPEED
+                   && (!e->speed_said || e->upstream != note.upstream
+                       || e->downstream != note.downstream)) {
+            e->upstream = note.upstream;
+            e->downstream = note.downstream;
+            e->speed_said = true;
+
+            about(&line, c);
+            say_text(&line, " port ");
+            say_dec(&line, e->port);
+            say_text(&line, ": its link runs at ");
+            say_rate(&line, note.downstream);
+            say_text(&line, " in and ");
+            say_rate(&line, note.upstream);
+            say_text(&line, " out");
+            say_send(console, &line);
+        }
+    }
+
+    ask_for_note(c, slot);
+}
+
+/*
+ * **A USB Ethernet adapter, configured** - `usb.md` steps 7a and 7b.
+ *
+ * `usb_decode_ecm` found a CDC-ECM function in one of its configurations.
+ * This reads the MAC address out of the string that function names, puts the
+ * adapter's three endpoints in the controller's hands, chooses the
+ * configuration, takes the Data interface off its empty setting, asks for the
+ * frames this machine wants, and starts listening for what it says about its
+ * link.
+ *
+ * **The order matters and is the specification's.** Configure Endpoint gives
+ * the *controller* the three endpoints - which is xHCI's business and has
+ * nothing to do with what the device thinks - and SET_CONFIGURATION then puts
+ * the device in that configuration, with every interface at setting 0.
+ * ECM's Data interface at setting 0 has no endpoints at all (ECM 3.3), which
+ * is the trap this specification is known for: a driver that stops here has
+ * a device that answers every request and never delivers a frame. SET_INTERFACE
+ * is what turns the endpoints on at the device's end.
+ *
+ * **The filter is asked for and not insisted on.** ECM 6.2.4 makes
+ * SET_ETHERNET_PACKET_FILTER mandatory, and a device that refuses it is
+ * likely to be passing everything anyway; a refusal is said and the adapter
+ * is used. The link, on the other hand, is only ever heard about - nothing
+ * is asked of it.
+ *
+ * The buffer is cleared before the MAC string is asked for, so a device that
+ * answers with fewer bytes than its string's length claims is read as a short
+ * string rather than as whatever the last request left behind.
  */
 static void use_ethernet(struct controller *c, struct device *d,
                          const struct usb_ecm *ecm, struct say_line *line)
 {
-    uint8_t mac[6];
-    bool named = false;
-    unsigned i;
+    struct ether *e = &c->ether[d->slot];
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    uint32_t done[4];
+    uint32_t *icc, *slot, *ep;
+    unsigned last, i, on;
+    bool filtered, confirmed;
+
+    memset(e, 0, sizeof(*e));
+    e->dev = *d;
+    d = &e->dev;                        /* the kept device, from here on */
+    e->port = d->port;
+    e->max_segment = ecm->max_segment;
 
     if (d->language == 0
         && control_in(c, d, GET_DESCRIPTOR, DESC_STRING, 0, 255u)
@@ -3067,10 +3308,10 @@ static void use_ethernet(struct controller *c, struct device *d,
 
     if (d->language != 0) {
         memset(d->buffer, 0, 256u);
-        named = control_in(c, d, GET_DESCRIPTOR,
-                           (uint16_t)(DESC_STRING | ecm->mac_string),
-                           d->language, 255u)
-             && usb_decode_mac(d->buffer, 256u, mac);
+        e->have_mac = control_in(c, d, GET_DESCRIPTOR,
+                                 (uint16_t)(DESC_STRING | ecm->mac_string),
+                                 d->language, 255u)
+                   && usb_decode_mac(d->buffer, 256u, e->mac);
     }
 
     about(line, c);
@@ -3079,7 +3320,7 @@ static void use_ethernet(struct controller *c, struct device *d,
     say_text(line, ": USB Ethernet, CDC-ECM, in configuration ");
     say_dec(line, ecm->configuration);
 
-    if (named) {
+    if (e->have_mac) {
         say_text(line, ": MAC ");
 
         for (i = 0; i < 6u; i++) {
@@ -3087,7 +3328,7 @@ static void use_ethernet(struct controller *c, struct device *d,
                 say_text(line, ":");
             }
 
-            say_hex(line, mac[i], 2);
+            say_hex(line, e->mac[i], 2);
         }
     } else {
         say_text(line, ": its MAC address string would not read");
@@ -3095,7 +3336,7 @@ static void use_ethernet(struct controller *c, struct device *d,
 
     say_text(line, ", frames up to ");
     say_dec(line, ecm->max_segment);
-    say_text(line, " bytes; not driven yet");
+    say_text(line, " bytes");
     say_send(console, line);
 
     about(line, c);
@@ -3119,6 +3360,144 @@ static void use_ethernet(struct controller *c, struct device *d,
     }
 
     say_send(console, line);
+
+    /*
+     * The three endpoints, by their context indexes (4.5.1): twice the
+     * number for an OUT, and one more for an IN.
+     */
+    e->out_dci = 2u * ecm->bulk_out;
+    e->in_dci = 2u * ecm->bulk_in + 1u;
+    e->notify_dci = ecm->notify != 0 ? 2u * ecm->notify + 1u : 0u;
+    last = e->in_dci > e->out_dci ? e->in_dci : e->out_dci;
+
+    if (e->notify_dci > last) {
+        last = e->notify_dci;
+    }
+
+    ring_start(&e->out,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_OUT) * PAGE),
+               c->bus + (page + DEVICE_PAGE_OUT) * PAGE);
+    ring_start(&e->in,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_IN) * PAGE),
+               c->bus + (page + DEVICE_PAGE_IN) * PAGE);
+
+    icc = context(c, d->input, 0);
+    slot = context(c, d->input, 1);
+
+    icc[0] = 0;
+    icc[1] = 1u | (1u << e->out_dci) | (1u << e->in_dci);
+    slot[0] = (slot[0] & ~(0x1Fu << 27)) | (last << 27);
+
+    ep = context(c, d->input, e->out_dci + 1u);
+    memset(ep, 0, c->context);
+    ep[1] = ((uint32_t)ecm->bulk_out_packet << 16)
+          | ((uint32_t)ecm->bulk_out_burst << 8)
+          | (EP_TYPE_BULK_OUT << 3) | (3u << 1);
+    ep[2] = (uint32_t)e->out.bus | 1u;
+    ep[3] = (uint32_t)(e->out.bus >> 32);
+    ep[4] = ecm->max_segment;
+
+    ep = context(c, d->input, e->in_dci + 1u);
+    memset(ep, 0, c->context);
+    ep[1] = ((uint32_t)ecm->bulk_in_packet << 16)
+          | ((uint32_t)ecm->bulk_in_burst << 8)
+          | (EP_TYPE_BULK_IN << 3) | (3u << 1);
+    ep[2] = (uint32_t)e->in.bus | 1u;
+    ep[3] = (uint32_t)(e->in.bus >> 32);
+    ep[4] = ecm->max_segment;
+
+    /*
+     * And its interrupt IN, the way a mouse's is (4.8.2.4): three errors
+     * allowed, its packet, its interval, and its largest payload an interval.
+     */
+    if (e->notify_dci != 0) {
+        e->notify_length = ecm->notify_packet;
+        e->note = (uint8_t *)(c->mem + (page + DEVICE_PAGE_NOTE) * PAGE);
+        e->note_bus = c->bus + (page + DEVICE_PAGE_NOTE) * PAGE;
+        ring_start(&e->notify,
+                   (uint32_t *)(c->mem + (page + DEVICE_PAGE_NOTIFY) * PAGE),
+                   c->bus + (page + DEVICE_PAGE_NOTIFY) * PAGE);
+
+        icc[1] |= 1u << e->notify_dci;
+
+        ep = context(c, d->input, e->notify_dci + 1u);
+        memset(ep, 0, c->context);
+        ep[0] = interval_for(d->speed, ecm->notify_interval) << 16;
+        ep[1] = ((uint32_t)ecm->notify_packet << 16) | (7u << 3) | (3u << 1);
+        ep[2] = (uint32_t)e->notify.bus | 1u;
+        ep[3] = (uint32_t)(e->notify.bus >> 32);
+        ep[4] = ((uint32_t)ecm->notify_packet << 16) | ecm->notify_packet;
+    }
+
+    if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                 TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
+        say_failure(c, d->port, "Configure Endpoint",
+                    "; the adapter is not driven", line);
+        return;
+    }
+
+    if (!control_nodata(c, d, SET_CONFIGURATION, ecm->configuration, 0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION",
+                    "; the adapter is not driven", line);
+        return;
+    }
+
+    if (!control_nodata(c, d, SET_INTERFACE, ecm->data_alternate, ecm->data)) {
+        say_failure(c, d->port, "SET_INTERFACE",
+                    "; its Data interface is on setting 0, which has no "
+                    "endpoints, so no frame would ever arrive", line);
+        return;
+    }
+
+    /*
+     * **And the device is asked which setting it is on** (GET_INTERFACE,
+     * 9.4.4), rather than the line printing what it was told to choose.
+     *
+     * This is the one request in the sequence whose effect is invisible: a
+     * configuration that failed stops everything after it, and a filter that
+     * was refused says so, but an interface left on setting 0 behaves
+     * exactly like one that was set - until a frame is expected, which is
+     * step 7c. So the number in the line is the device's answer, and a
+     * driver that never sent SET_INTERFACE at all prints a 0.
+     */
+    on = ecm->data_alternate;
+    confirmed = control_in(c, d, GET_INTERFACE, 0, ecm->data, 1u);
+
+    if (confirmed) {
+        on = d->buffer[0];
+    }
+
+    filtered = control_nodata(c, d, SET_ETH_FILTER, ETH_FILTER_WANTED,
+                              ecm->control);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": configured, ");
+    say_text(line, confirmed ? "on setting " : "setting ");
+    say_dec(line, on);
+    say_text(line, confirmed ? " as it says itself, " : " chosen, ");
+
+    if (filtered) {
+        say_text(line, "taking frames addressed to it, broadcast and "
+                       "multicast");
+    } else {
+        say_text(line, "and it refused a packet filter, so it decides what "
+                       "reaches this machine");
+    }
+
+    if (e->notify_dci != 0) {
+        say_text(line, "; listening for its link");
+    } else {
+        say_text(line, "; it has no interrupt endpoint, so nothing will say "
+                       "whether its link is up");
+    }
+
+    say_send(console, line);
+
+    if (e->notify_dci != 0) {
+        ask_for_note(c, d->slot);
+    }
 }
 
 /*
