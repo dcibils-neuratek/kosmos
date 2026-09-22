@@ -1440,8 +1440,14 @@ end
 --
 function ui.button(spec)
   local v = ui.view(spec)
-  v.h = v.h > 0 and v.h or (GH + 10)
-  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 24)
+  --
+  -- Sized from the theme's `button_pad` when a caller gives no size: 5 by
+  -- 12 in every theme but Plex, which is the 10 and 24 this said before
+  -- the numbers were the theme's (`roadmap.md` 5s).
+  --
+  v.h = v.h > 0 and v.h or (GH + 2 * theme.button_pad_y)
+  v.w = v.w > 0 and v.w
+        or (gfx.measure(tostring(v.text or "")) + 2 * theme.button_pad_x)
   v.focusable = not v.disabled
 
   function v:draw(g)
@@ -1564,7 +1570,13 @@ end
 
 function ui.field(spec)
   local v = ui.view(spec)
-  v.h = v.h > 0 and v.h or (GH + 6)
+  --
+  -- **The inset is the theme's `field_pad`**, 3 by 4 in every theme but
+  -- Plex - the 6 and the 4 this had written in (`roadmap.md` 5s) - and it
+  -- is read where the words are drawn *and* where a click is turned into a
+  -- column, which have to agree or a click lands a letter off.
+  --
+  v.h = v.h > 0 and v.h or (GH + 2 * theme.field_pad_y)
   v.w = v.w > 0 and v.w or 200
   v.focusable = true
   v.text = v.text or ""
@@ -1595,7 +1607,8 @@ function ui.field(spec)
       g:frame(1, 1, self.w - 2, self.h - 2, "ring")
     end
 
-    local room = (self.w - 8) // GW
+    local inset = theme.field_pad_x
+    local room = (self.w - 2 * inset) // GW
 
     --
     -- What the field is for, while there is nothing in it.
@@ -1605,7 +1618,7 @@ function ui.field(spec)
     -- box, and a box does not say what it searches.
     --
     if self.hint and self.text == "" and not self.focused then
-      g:text(4, (self.h - GH) // 2, tostring(self.hint):sub(1, room),
+      g:text(inset, (self.h - GH) // 2, tostring(self.hint):sub(1, room),
              theme.text_dim, theme.sunken)
       return
     end
@@ -1619,15 +1632,15 @@ function ui.field(spec)
       -- The caret's own colours, for the reason `ui.editor` uses them: a
       -- selection is a widened cursor, and every palette has already had
       -- to make those two readable against each other.
-      g:fill(4, ty, #shown * GW, GH, theme.ring)
-      g:text(4, ty, shown, theme.sunken, theme.ring)
+      g:fill(inset, ty, #shown * GW, GH, theme.ring)
+      g:text(inset, ty, shown, theme.sunken, theme.ring)
       return
     end
 
-    g:text(4, ty, shown, theme.text, theme.sunken)
+    g:text(inset, ty, shown, theme.text, theme.sunken)
 
     if self.focused then
-      local cx = 4 + (self.caret - from) * GW
+      local cx = inset + (self.caret - from) * GW
       g:fill(cx, ty, 1, GH, theme.ring)
     end
   end
@@ -1759,7 +1772,7 @@ function ui.field(spec)
   -- every text field does and what nobody notices until it does not.
   function v:mouse(action, x, y)
     if action == "press" then
-      local col = (x - 4) // GW
+      local col = (x - theme.field_pad_x) // GW
 
       if col < 0 then col = 0 end
       self.caret = math.min(col + 1, #self.text + 1)
@@ -1866,9 +1879,19 @@ function ui.list(spec)
   -- moves - and under a proportional face it is however tall that face is,
   -- which is the whole of the fix.
   --
-  local function row_h() return gfx.height() end
+  --
+  -- **And the theme's `row_pad` above and below**, since 22 September
+  -- (`roadmap.md` 5s): 0 in every theme but Plex, so every list that was
+  -- measured against the face alone still is; Plex's 7 is the indicators
+  -- panel's rows. Read when asked, like the face, so a theme chosen while a
+  -- list is open changes its rows at the next repaint.
+  --
+  local function row_h() return gfx.height() + 2 * theme.row_pad end
 
   v.h = v.h > 0 and v.h or (row_h() * 6)
+
+  -- The same number, for a caller that places something by rows.
+  function v:row_height() return row_h() end
   v.w = v.w > 0 and v.w or 200
   v.focusable = true
   v.items = v.items or {}
@@ -1948,10 +1971,13 @@ function ui.list(spec)
 
         if on then g:fill(2, y, room, row_h(), bg) end
 
+        -- The row's words sit inside its padding; the selection above
+        -- fills the whole row, padding and all, as a row is one thing.
         local tx = 4
+        y = y + theme.row_pad
 
         if self.checks then
-          local box = row_h() - 4
+          local box = gfx.height() - 4
 
           g:sunken(4, y + 2, box, box, "sunken")
 
@@ -2050,7 +2076,7 @@ function ui.list(spec)
     -- because a checklist is read down the boxes and a selection moving
     -- under your eye while you tick things is noise.
     --
-    if self.checks and action == "press" and x < 4 + row_h() + 2 then
+    if self.checks and action == "press" and x < 4 + gfx.height() + 2 then
       local key = tostring(self.items[n])
 
       self.checks[key] = (not self.checks[key]) or nil
@@ -4606,6 +4632,17 @@ function window:run()
         -- is unaffected: the compositor drew that text and has already
         -- changed.
         apply_fonts(ev.fonts)
+
+        --
+        -- **Except the application whose layout is made of the faces.** Most
+        -- are drawn from positions that do not depend on them and need
+        -- nothing. The Appearance panel is the one whose every row is a
+        -- line of the face it is changing: laid out once, at the faces it
+        -- opened with, it cut its last row off and put its status line
+        -- under a group when Diego chose 16 on the ThinkPad (22 September).
+        -- So a window may ask to be told, and only one that asks is.
+        --
+        if self.on_theme then self:on_theme() end
 
         changed = true
       elseif ev.type == "resize" then

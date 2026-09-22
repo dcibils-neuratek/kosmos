@@ -85,7 +85,7 @@
 desktop     = #3d63b8
 window      = #f4f4f1
 ...
-font.ui      = ibmplexsans 14
+font.ui      = ibmplexsans 16
 font.title   = ibmplexsanscondensed 14
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
@@ -123,7 +123,7 @@ row_pad     = 7</pre>
   pixels, as the pages set them.</p>
   <div class="wrap"><table>
     <tr><th>role</th><th>face and size</th><th>what uses it</th><th>from</th></tr>
-    <tr><td>ui</td><td class="v sample" style="font:14px var(--body)">Plex Sans 14</td><td>buttons, lists, menus, the Deskbar's words</td><td class="from">style guide; the indicators panel's 13 was not chosen</td></tr>
+    <tr><td>ui</td><td class="v sample" style="font:16px var(--body)">Plex Sans 16</td><td>buttons, lists, menus, the Deskbar's words</td><td class="from">14 as the style guide has it, then 16 on 22 September: "in the thinkpad fonts look smaller than on qemu"</td></tr>
     <tr><td>title</td><td class="v" style="font:600 14px var(--display)">Plex Sans Condensed SemiBold 14</td><td>a window's title tab</td><td class="from">style guide: the proposed title tab (today 15)</td></tr>
     <tr><td>heading</td><td class="v" style="font:600 15px var(--body)">Plex Sans SemiBold 15</td><td>a heading inside a window: "USB", "Library"</td><td class="from">indicators: a panel's title; the SemiBold file is added</td></tr>
     <tr><td>text</td><td class="v" style="font:16px var(--body)">Plex Sans 16</td><td>paragraphs: About, help, reading text</td><td class="from">every page's running text (today Plex Mono 13)</td></tr>
@@ -150,9 +150,20 @@ row_pad     = 7</pre>
     <tr><td>shadow</td><td class="v">3, 3, 28%</td><td>a hard shadow under panels and menus</td><td class="from">not in the first version</td></tr>
   </table></div>
 
+  <h2>Built, 22 September</h2>
+  <p>The colours, the five faces and the spacing inside a widget - list rows,
+  buttons and fields - are in Plex. <b>Still open: the spacing between
+  widgets</b>, <code>pad</code> and <code>gap</code> above. Each application
+  lays itself out with its own numbers - Appearance 12 and 10, Music and
+  Shortcuts 14, the Deskbar 4 - so making them one theme-wide value would
+  change some applications under every theme, not only Plex.</p>
+
   <h2>Decided, 22 September</h2>
   <ol class="q">
-    <li><b>Widget text is Plex Sans 14</b>, as the style guide has it.</li>
+    <li><b>Widget text is Plex Sans 14</b>, as the style guide has it - and
+    then <b>16</b>, the same morning, on the ThinkPad: "fonts look smaller than
+    on qemu so the default font size for regular and widgets is 16". The
+    defaults every other theme uses went to 16 with it.</li>
     <li><b>Reading text is Plex Sans 16</b>, as the pages have it. The Terminal
     and code stay Plex Mono.</li>
     <li><b>Headings are Plex Sans SemiBold 15</b>, and the SemiBold file joins

@@ -75,6 +75,13 @@ theme.palettes.dark = {
   bar       = 0xffffc700,
   bar_text  = 0xff101010,
 
+  -- The spacing inside a widget, as the kit always had it.
+  row_pad      = 0,
+  button_pad_y = 5,
+  button_pad_x = 12,
+  field_pad_y  = 3,
+  field_pad_x  = 4,
+
   -- Ink for a label lying on the desktop itself, which is not the ink for
   -- a label in a window and cannot be. `text` is chosen to read against
   -- `window`; the desktop is a colour the user picks, and every default
@@ -145,6 +152,12 @@ theme.palettes.light = {
 
   bar       = 0xffffc700,
   bar_text  = 0xff101010,
+
+  row_pad      = 0,
+  button_pad_y = 5,
+  button_pad_x = 12,
+  field_pad_y  = 3,
+  field_pad_x  = 4,
 
   desktop_text = 0xffffffff,
 
@@ -225,6 +238,41 @@ theme.tokens = {
 local known = {}
 
 for _, k in ipairs(theme.tokens) do known[k] = true end
+
+--
+-- **Spacing inside a widget**, since 22 September 2026 (`roadmap.md` 5s,
+-- `docs/plex.html`): how far a list row's words sit from the row's edges,
+-- and how far a button's and a field's words sit from theirs. Numbers of
+-- pixels, carried with the colours - `theme.apply` copies them and
+-- `theme.current` sends them - because they are the same kind of fact: how
+-- the kit draws, the same in every window.
+--
+-- Written in a file as three keys, a padding each, the way CSS writes one:
+--
+--   row_pad    = 7          above and below a list row's words
+--   button_pad = 5 16       a button's: top and bottom, then either side
+--   field_pad  = 5 8        a field's, likewise
+--
+-- What each is today is what every theme but Plex names: rows with no
+-- padding, buttons 5 by 12, fields 3 by 4 - the numbers the kit had
+-- written into it.
+--
+-- The spacing *between* widgets is not here, and that is not an oversight:
+-- each application lays itself out with its own numbers - 12, 14, 10, 4 -
+-- so one theme-wide gap would move some of them under every theme. That is
+-- Diego's to decide, and `docs/plex.html` asks.
+--
+theme.spacing = {
+  "row_pad", "button_pad_y", "button_pad_x", "field_pad_y", "field_pad_x",
+}
+
+local SPACING_KEYS = {
+  row_pad    = { "row_pad" },
+  button_pad = { "button_pad_y", "button_pad_x" },
+  field_pad  = { "field_pad_y", "field_pad_x" },
+}
+
+local SPACE_MOST = 32
 
 -- The five roles and their faces are defined at the end of this file;
 -- these are the bounds a theme's size is held to, the same as anything the
@@ -320,6 +368,27 @@ function theme.read(text, base)
         else
           out.fonts[role] = { font = face, px = px }
         end
+      elseif SPACING_KEYS[key] then
+        local names = SPACING_KEYS[key]
+        local got = {}
+
+        for num in value:gmatch("%S+") do got[#got + 1] = num end
+
+        local ok = #got == #names
+
+        for i = 1, #got do
+          got[i] = ok and tonumber(got[i]) or nil
+          ok = ok and math.type(got[i]) == "integer"
+               and got[i] >= 0 and got[i] <= SPACE_MOST
+        end
+
+        if ok then
+          for i, name in ipairs(names) do out[name] = got[i] end
+        else
+          said[#said + 1] = ("line %d: `%s` wants %d whole number%s of "
+                             .. "pixels, 0 to %d"):format(n, key, #names,
+                             #names == 1 and "" or "s", SPACE_MOST)
+        end
       elseif not known[key] then
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
       elseif key == "name" then
@@ -372,6 +441,7 @@ function theme.current()
   local out = {}
 
   for _, k in ipairs(theme.tokens) do out[k] = theme[k] end
+  for _, k in ipairs(theme.spacing) do out[k] = theme[k] end
 
   return out
 end
@@ -413,6 +483,12 @@ function theme.apply(palette)
 
   for _, k in ipairs(theme.tokens) do
     if palette[k] ~= nil then theme[k] = palette[k] end
+  end
+
+  -- And the spacing, whole numbers only: a palette from somewhere else
+  -- that says nothing about it leaves what is in force.
+  for _, k in ipairs(theme.spacing) do
+    if math.type(palette[k]) == "integer" then theme[k] = palette[k] end
   end
 
   return theme
@@ -565,7 +641,14 @@ theme.roles = { "ui", "title", "text", "mono", "heading" }
 
 theme.fonts = {
   -- Widgets: the words on a button, a list of files, the Open window.
-  ui      = { font = "ibmplexsans", px = 14 },
+  --
+  -- **16, since 22 September**, and the regular text with it: Diego, on
+  -- the ThinkPad, "fonts look smaller than on qemu so the default font
+  -- size for regular and widgets is 16". A 14-inch panel at 1920x1080 is
+  -- about 157 pixels to the inch, and QEMU's window on the Mac is shown
+  -- larger than that, so a size chosen by looking at QEMU reads small on
+  -- the machine it is for.
+  ui      = { font = "ibmplexsans", px = 16 },
 
   -- A title is a label on chrome and can carry a face with character in
   -- it - which is the whole argument for the role being separate.
@@ -574,7 +657,7 @@ theme.fonts = {
   -- Text and the terminal, as the style guide groups them: a column of
   -- characters that has to line up is worth more here than a proportional
   -- face, and it is what the drawing shows.
-  text    = { font = "ibmplexmono", px = 13 },
+  text    = { font = "ibmplexmono", px = 16 },
   mono    = { font = "ibmplexmono", px = 13 },
 
   -- A heading inside a window - "Library", "Palette" - which the guide

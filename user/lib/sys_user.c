@@ -1386,6 +1386,44 @@ static int l_pack(lua_State *L)
     return 1;
 }
 
+/*
+ * How many bytes a value is on the wire, or nil and why it would not go.
+ *
+ * `sys.pack` without the string. A process that builds a reply from a queue
+ * has to know when the next item would not fit, and the only honest answer
+ * is the serialiser's own: an estimate in Lua would drift from the encoding
+ * the first time a table grew a field. The window manager's poll reply is
+ * why - it capped events by *count*, twelve, on the assumption that an
+ * event is small, and a theme event carries a whole palette and five
+ * faces, so three of them in one reply were `value does not fit in a
+ * message` on the ThinkPad on 22 September, and a window lost its events.
+ *
+ * No string is made, which is the difference that matters: this is asked
+ * once per event on the window manager's frame path.
+ */
+static int l_fits(lua_State *L)
+{
+    struct message m;
+    int rc;
+
+    luaL_checkany(L, 1);
+
+    m.tag = 0;
+    m.cap_plus_one = 0;
+    m.length = 0;
+
+    rc = serialize_pack(L, 1, &m);
+
+    if (rc != SERIALIZE_OK) {
+        lua_pushnil(L);
+        lua_pushstring(L, serialize_error(rc));
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)m.length);
+    return 1;
+}
+
 static int l_unpack(lua_State *L)
 {
     size_t len;
@@ -2748,6 +2786,7 @@ static const luaL_Reg sys_functions[] = {
     { "reply",    l_reply },
     { "reply_raw", l_reply_raw },
     { "pack",     l_pack },
+    { "fits",     l_fits },
     { "unpack",   l_unpack },
     { NULL, NULL }
 };

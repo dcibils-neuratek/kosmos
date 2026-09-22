@@ -666,10 +666,18 @@ palette, without one face being loaded to match. It copies the colour
 tokens and nothing else now, and the faces are applied on purpose by
 whoever chose the theme. `tools/test_theme.lua` holds both, with a control.
 
-**Spacing is the part not yet in a theme.** The paddings and row heights
-are still numbers in the kit; gathering them into tokens a theme sets is
-5s's next step, and until then Plex is the mockups' colours and type on
-today's spacing.
+**The spacing inside a widget is in a theme too**: `row_pad` above and
+below a list row's words, `button_pad` and `field_pad` around a button's
+and a field's, carried with the colours and read by the kit when it draws.
+Every theme but Plex names the numbers the kit always had. The spacing
+*between* widgets is each application's own and is not in a theme yet
+(`roadmap.md` 5s).
+
+**A window may ask to be told when the theme changes**: `win.on_theme`,
+which the kit calls after applying a theme event. Almost nothing needs it -
+widgets read the theme when they draw - and the one that does is the
+Appearance panel, whose every row is a line of the face it is changing; it
+lays itself out again there.
 
 **The palette table is mutated in place, never replaced.** Every widget
 reads `theme.text` at the moment it draws, so changing the fields of the one

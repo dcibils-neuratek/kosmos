@@ -83,12 +83,20 @@ ring       = #464646
 stamp      = #7ab3d4
 # The faces this system has shipped with since 19 September - IBM Plex,
 # `docs/styleguide.html` - written here so the theme says what it looks
-# like rather than leaving it to a default (roadmap.md 5s).
+# like rather than leaving it to a default (roadmap.md 5s). Widgets and
+# regular text at 16 since 22 September, which is how they read on the
+# ThinkPad's panel (Diego).
 font.title   = ibmplexsanscondensed 15
-font.ui      = ibmplexsans 14
+font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-bold 18
-font.text    = ibmplexmono 13
+font.text    = ibmplexmono 16
 font.mono    = ibmplexmono 13
+
+# The spacing inside a widget, as the kit has always drawn it: list rows
+# with none, buttons 5 by 12, fields 3 by 4 (roadmap.md 5s).
+row_pad    = 0
+button_pad = 5 12
+field_pad  = 3 4
 ]]
 
 --------------------------------------------------------------------------
@@ -145,12 +153,20 @@ ring       = #0000e5
 stamp      = #5d85ad
 # The faces this system has shipped with since 19 September - IBM Plex,
 # `docs/styleguide.html` - written here so the theme says what it looks
-# like rather than leaving it to a default (roadmap.md 5s).
+# like rather than leaving it to a default (roadmap.md 5s). Widgets and
+# regular text at 16 since 22 September, which is how they read on the
+# ThinkPad's panel (Diego).
 font.title   = ibmplexsanscondensed 15
-font.ui      = ibmplexsans 14
+font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-bold 18
-font.text    = ibmplexmono 13
+font.text    = ibmplexmono 16
 font.mono    = ibmplexmono 13
+
+# The spacing inside a widget, as the kit has always drawn it: list rows
+# with none, buttons 5 by 12, fields 3 by 4 (roadmap.md 5s).
+row_pad    = 0
+button_pad = 5 12
+field_pad  = 3 4
 ]]
 
 --------------------------------------------------------------------------
@@ -203,12 +219,20 @@ ring       = #6666cc
 stamp      = #7777af
 # The faces this system has shipped with since 19 September - IBM Plex,
 # `docs/styleguide.html` - written here so the theme says what it looks
-# like rather than leaving it to a default (roadmap.md 5s).
+# like rather than leaving it to a default (roadmap.md 5s). Widgets and
+# regular text at 16 since 22 September, which is how they read on the
+# ThinkPad's panel (Diego).
 font.title   = ibmplexsanscondensed 15
-font.ui      = ibmplexsans 14
+font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-bold 18
-font.text    = ibmplexmono 13
+font.text    = ibmplexmono 16
 font.mono    = ibmplexmono 13
+
+# The spacing inside a widget, as the kit has always drawn it: list rows
+# with none, buttons 5 by 12, fields 3 by 4 (roadmap.md 5s).
+row_pad    = 0
+button_pad = 5 12
+field_pad  = 3 4
 ]]
 
 --------------------------------------------------------------------------
@@ -259,12 +283,20 @@ ring       = #000000
 stamp      = #5680ab
 # The faces this system has shipped with since 19 September - IBM Plex,
 # `docs/styleguide.html` - written here so the theme says what it looks
-# like rather than leaving it to a default (roadmap.md 5s).
+# like rather than leaving it to a default (roadmap.md 5s). Widgets and
+# regular text at 16 since 22 September, which is how they read on the
+# ThinkPad's panel (Diego).
 font.title   = ibmplexsanscondensed 15
-font.ui      = ibmplexsans 14
+font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-bold 18
-font.text    = ibmplexmono 13
+font.text    = ibmplexmono 16
 font.mono    = ibmplexmono 13
+
+# The spacing inside a widget, as the kit has always drawn it: list rows
+# with none, buttons 5 by 12, fields 3 by 4 (roadmap.md 5s).
+row_pad    = 0
+button_pad = 5 12
+field_pad  = 3 4
 ]]
 
 --------------------------------------------------------------------------
@@ -319,14 +351,23 @@ bad        = #b3261e
 ring       = #2a55c9
 stamp      = #8fa9df
 
-# The mockups' type, as Diego chose it on 22 September: widgets at 14 as
-# the style guide has them, the running text of the pages in Plex Sans at
-# 16, the panels' titles in SemiBold, the data in Plex Mono at 12.
+# The mockups' type, as Diego chose it on 22 September: widgets and the
+# running text of the pages in Plex Sans at 16 - widgets were 14, as the
+# style guide has them, until he saw them on the ThinkPad the same
+# morning: "fonts look smaller than on qemu" - the panels' titles in
+# SemiBold, the data in Plex Mono at 12.
 font.title   = ibmplexsanscondensed 14
-font.ui      = ibmplexsans 14
+font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
 font.mono    = ibmplexmono 12
+
+# And the mockups' spacing inside a widget, from `docs/plex.html`: a list
+# row with 7 pixels above and below its words, as the indicators' panel
+# has them; buttons 5 by 16 and fields 5 by 8, as the style guide proposed.
+row_pad    = 7
+button_pad = 5 16
+field_pad  = 5 8
 ]]
 
 return themes

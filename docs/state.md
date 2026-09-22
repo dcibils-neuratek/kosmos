@@ -20,11 +20,12 @@ Last updated: 2026-09-21
 
 ## 21 September, the night: full screen, the addresses, a wallpaper and an adapter
 
-**Pushed: 0.10.100 to 0.10.104 (`62626cd`), each through a green `make
-prepush`.** Stick `kosmos-usb-0.10.104-development.img` built from `main`
-at 0.10.104 and booted under OVMF (29 checks) - handed to Diego to test
-the wallpaper, the film played twice, and the dongle named on the
-ThinkPad itself (`log xhci`). The last stick he ran is 0.10.101.
+**Pushed: 0.10.100 to 0.10.105 (`8c937d5`), each through a green `make
+prepush`.** Stick `kosmos-usb-0.10.105-development.img` built from `main`
+at 0.10.105 and booted under OVMF (29 checks), replacing the 0.10.104 one
+before Diego had tried it - to test Plex and the wallpaper surviving a
+restart, the film played twice, and the dongle named on the ThinkPad
+itself (`log xhci`). The last stick he ran is 0.10.101.
 
 - **0.10.100, the click** (5g, `testing.md` 18.130) - above.
 - **0.10.101, the solar system full screen** (5h, 18.131): F11, a
@@ -70,9 +71,15 @@ the stick. Not closed until a run says so with bytes written.
 
 1. **What the 0.10.104 stick says on the ThinkPad**, and its row in
    `boot.md`'s table once it has booted there.
-1. **Plex's spacing** (5s): the kit's paddings and row heights gathered
-   into tokens a theme sets. The spec (`docs/plex.html`) was agreed on 22
-   September and its colours and faces are built as 0.10.105 (18.135) -
+1. **0.10.106 on the ThinkPad** (18.136): faces at 16, Appearance laying
+   itself out again, poll replies that fit, the stick's pipes recovered by
+   their real state, Plex's spacing inside a widget. Then Diego's two
+   questions: the Deskbar in Plex stone or yellow, and whether applications'
+   own spacing becomes a theme's. Then the screenshot shortcut, Control-Alt-1
+   to `/home/Desktop` (roadmap).
+1. **Plex** (5s) - done but for the spacing between widgets. The spec
+   (`docs/plex.html`) was agreed on 22 September and its colours and faces
+   are built as 0.10.105 (18.135), the spacing inside a widget as 0.10.106 -
    a theme names its five faces, Plex is the fifth theme, and choosing one
    in Appearance sets them. Found on the way: **a saved theme other than
    `dark` or `light` came back as `dark` at every restart** - the rest of

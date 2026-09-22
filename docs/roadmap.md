@@ -1100,7 +1100,14 @@ processors, and still what follows USB:
 
 5s. **AGREED on 21 September - a theme called Plex, which looks exactly
    like the mockups. Colours and faces DONE on 22 September** (`testing.md`
-   18.135, `ui.md` 16.9); **spacing is what is left.** Diego, on `docs/indicators.html`: "i love the font
+   18.135, `ui.md` 16.9), **and the spacing inside a widget** - list rows,
+   buttons and fields (18.136). **Left: the spacing between widgets**, which
+   every application sets with its own numbers - 12 and 10 in Appearance,
+   14 in Music and Shortcuts, 4 in the Deskbar - so one theme-wide gap moves
+   some of them under every theme. **AGREED on 22 September**: Diego, "yes
+   to theme spacing". So a theme names `pad` and `gap`, the applications lay
+   themselves out with them, and the small moves under the other themes are
+   accepted rather than each application keeping numbers of its own. Diego, on `docs/indicators.html`: "i love the font
    used in the mockups", "can we create a theme for kosmos that has this
    exact fonts selection, sizes and all and add it to the available
    themes?", "the theme is called Plex", and "i want the theme to look
@@ -1144,6 +1151,26 @@ processors, and still what follows USB:
    September**: widgets in Plex Sans 14; reading text in Plex Sans 16;
    headings in Plex Sans SemiBold, a file added from the same family; and
    no rounded corners and no shadow for now.
+
+5u. **AGREED on 22 September - the Deskbar's colour, chosen by the person.**
+   Diego, on seeing Plex's stone bar where BeOS's was yellow: "is that a
+   setting?", "a color in the theme?", and then "keep the deskbar user
+   selectable color". Each theme names its bar (`bar`, `bar_text`, since
+   0.10.105) and that is where it starts; Appearance offers the bar's colour
+   the way it offers the desktop's, and the choice is kept in
+   `/home/.appearance` over whatever the theme says, and survives a restart.
+   The words on the bar follow the colour chosen, dark on a light bar and
+   light on a dark one, so no choice leaves them unreadable.
+
+5t. **WANTED on 22 September - why the boot stick stops answering.** On
+   the ThinkPad with 0.10.105, two READ (10)s to the stick Kosmos booted
+   from got no answer within a second, 21 seconds after boot, and the
+   stick was reset; the recovery then left the bulk OUT pipe in a state Set
+   TR Dequeue Pointer refused (fixed, `testing.md` 18.136), and later that
+   session `/home/.appearance` could not be written. Why a stick that reads
+   fine stops answering for a second is not known, and it is the kind of
+   fault that loses a setting quietly. The next stick logs the endpoint's
+   state if recovery fails again, and Appearance logs why a save failed.
 
 5r. **WANTED on 21 September - a deadlock report that names the holder.**
    `arm-display-2` panicked once at boot with `spinlock: endpoint held by
@@ -1292,7 +1319,8 @@ processors, and still what follows USB:
      dongle itself through `usb-host` with no root needed: MAC
      `00:e0:4c:68:02:86`, configuration 2, frames on interface 1 setting 1.
      Moving frames on the dongle from the Mac will need root, as the pad
-     did; the gate uses `usb-net`.
+     did; the gate uses `usb-net`. **And on the ThinkPad itself, the same
+     day** (0.10.105): port 3 of `00:0d.0`, the same two lines.
    - **5m-b. Bring the link up**, no frames yet: the configuration chosen,
      the data interface's alternate setting selected (ECM's data interface
      has a zero-bandwidth alternate 0, and picking it is the classic reason
@@ -1879,10 +1907,13 @@ the Pi", and the Pi is not here yet.
   own, and is read by its Report descriptor since 13 September (`usb.md` §5).
 - **A stick's LUN 0 only.** Get Max LUN is not asked, because a stick with one
   unit may stall it and a stall on endpoint 0 is not recovered from.
-- **A screenshot shortcut**, Diego's, 14 September: a Super binding - and
-  PrtSc, where the keyboard has one - saves the whole screen as a PNG in
-  `/home/screenshots`, named by the date and time it was taken, with no
-  spaces so the prompt can name it: `2026-09-14-153012.png`. Most of it is
+- **A screenshot shortcut**, Diego's, 14 September, and **made concrete on
+  22 September**: "like ctrl+alt+1 full screen screenshots", "and save them
+  on the desktop as screenshot-date-time.png". So **Control-Alt-1** saves
+  the whole screen as a PNG **in `/home/Desktop`**, where it shows up as an
+  icon, named `screenshot-2026-09-22-114503.png` - the date and time it was
+  taken, with no spaces so the prompt can name it. (The 14 September
+  version said a Super binding and `/home/screenshots`; this replaces it.) Most of it is
   here already: the window manager composes every frame into its backbuffer,
   `SUPER_BINDINGS` in `wm.lua` is where a shortcut goes and what the Shortcuts
   window lists, and `sysinfo`'s `epoch` is the board's real-time clock, in

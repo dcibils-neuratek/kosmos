@@ -1872,8 +1872,10 @@ def check_default_look(guest, ask_wm):
     ui, ui_px, title, title_px, mono, mono_px = parts[0:6]
     loaded, thin, wide = parts[6], int(parts[7]), int(parts[8])
 
-    if ui != "ibmplexsans" or ui_px != "14":
-        raise Failure("the widgets' face is %s %s, not ibmplexsans 14" % (ui, ui_px))
+    # 16 since 22 September: Diego, on the ThinkPad, "the default font size
+    # for regular and widgets is 16".
+    if ui != "ibmplexsans" or ui_px != "16":
+        raise Failure("the widgets' face is %s %s, not ibmplexsans 16" % (ui, ui_px))
 
     checks += 1
 
@@ -1909,9 +1911,9 @@ def check_default_look(guest, ask_wm):
     held = dict(part.split("=", 1) for part in parts[9:13])
     why = parts[13].split("=", 1)[1]
 
-    for role, want in (("ui", "ibmplexsans/14"),
+    for role, want in (("ui", "ibmplexsans/16"),
                        ("title", "ibmplexsanscondensed/15"),
-                       ("text", "ibmplexmono/13"),
+                       ("text", "ibmplexmono/16"),
                        ("mono", "ibmplexmono/13")):
         if held.get(role) != want:
             raise Failure(
@@ -3702,13 +3704,73 @@ def check_appearance(guest):
                       "Appearance panel")
 
     checks += check_theme_plex(guest)
+    checks += check_theme_events(guest)
 
     return checks
 
 
+def check_theme_events(guest):
+    """**Four theme events reach a window that was not polling.**
+
+    A theme event is a whole palette and five faces, several hundred bytes,
+    and the window manager filled a poll's reply by *count* - twelve events -
+    so three of them already made a reply that would not fit in a message.
+    On the ThinkPad on 22 September that was `wm: reply for poll failed:
+    value does not fit in a message`, and the window's events were gone.
+
+    A program opens a window, sends the window manager four theme messages
+    that change nothing - the palette and faces already in force - so four
+    theme events queue for it, and then polls. All four have to arrive,
+    across however many replies it takes.
+    """
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local wmproto = use('/lib/wmproto.lua') "
+        "local w = ui.window{ title = 'Events', w = 200, h = 80, "
+        "x = 100, y = 600 } "
+        "for _ = 1, 4 do fs.send('/app/wm', { type = 'theme', "
+        "palette = ui.theme.current(), fonts = ui.theme.fonts }) end "
+        "local got, polls = 0, 0 "
+        "while got < 4 and polls < 20 do "
+        "local r = wmproto.poll(w.handle, 20) "
+        "polls = polls + 1 "
+        "if not r then break end "
+        "for _, ev in ipairs(r.events or {}) do "
+        "if ev.type == 'theme' then got = got + 1 end end end "
+        "print('theme' .. '-events: ' .. got .. ' in ' .. polls)"
+    )
+    guest.type("fs.write('/ramfs/events.lua', %r)" % program)
+    time.sleep(1.0)
+    mark = len(guest.seen)
+    guest.type("wm events,/ramfs/events.lua")
+
+    try:
+        said = guest.wait_for_line("theme-events: ",
+                                   "a window to count its theme events", mark)
+    finally:
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+    if not said.startswith("4 in "):
+        raise Failure("a window sent four theme events received %r - a "
+                      "reply that did not fit took the rest with it" % said)
+
+    return 1
+
+
 # Plex's five faces, as `docs/plex.html` has them and Diego chose them on
 # 22 September - the same table `tools/test_theme.lua` holds the file to.
-PLEX_HELD = ("ui=ibmplexsans/14 title=ibmplexsanscondensed/14 "
+PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsanscondensed/14 "
              "text=ibmplexsans/16 mono=ibmplexmono/12 "
              "heading=ibmplexsans-semibold/15")
 
@@ -3734,10 +3796,33 @@ def check_theme_plex(guest):
     mark = len(guest.seen)
 
     guest.type("wm appearance:--theme plex")
-    line = guest.wait_for_line("appearance: theme plex",
-                               "Appearance to choose Plex", mark)
 
     try:
+        first = guest.wait_for_line("appearance: ",
+                                    "Appearance to lay itself out", mark)
+        line = guest.wait_for_line("appearance: theme plex",
+                                   "Appearance to choose Plex", mark)
+
+        #
+        # **And the panel laid out again in Plex's faces.** It was laid out
+        # once, at the faces it opened with, and on the ThinkPad on 22
+        # September 16-pixel faces ran its role list off the bottom of its
+        # box and put its status line under the window titles group. The
+        # harness's pinned faces are the 16-pixel bitmap and Plex's are
+        # larger with padded rows, so a panel that follows the theme event
+        # comes out taller.
+        #
+        again = guest.wait_for_line("appearance: laid out again, ",
+                                    "Appearance to lay itself out again in "
+                                    "Plex's faces", mark)
+        before = re.match(r"(\d+)x(\d+),", first)
+        after = re.match(r"(\d+)x(\d+),", again)
+
+        if not (before and after) or int(after.group(2)) <= int(before.group(2)):
+            raise Failure("the Appearance panel was %r and, laid out again in "
+                          "Plex, %r - it did not grow with the faces"
+                          % (first, again))
+
         if not line.startswith("applied, held "):
             raise Failure("choosing Plex was not applied: %r" % line)
 
@@ -3778,10 +3863,23 @@ def check_theme_plex(guest):
     # nothing said. A fresh desktop is asked which theme it wears and which
     # heading face it holds.
     #
-    program = ("local r = fs.send('/app/wm', { type = 'theme' }) "
+    #
+    # And the spacing inside a widget reaching an application: a list's
+    # row is its face and Plex's 7 pixels either side, and a button given
+    # no size is its words and 16 either side (`docs/plex.html`).
+    #
+    program = ("local ui = use('/lib/ui.lua') "
+               "local w = ui.window{ title = 'Spacing', w = 200, h = 90, "
+               "x = 900, y = 500 } "
+               "local l = ui.list{ x = 0, y = 0, w = 100, h = 60, "
+               "items = { 'a' } } "
+               "local b = ui.button{ text = 'Probe' } "
+               "local r = fs.send('/app/wm', { type = 'theme' }) "
                "local h = r and r.held and r.held.heading "
                "print('theme' .. '-now: ' .. tostring(r and r.palette) .. ' ' "
-               ".. tostring(h and (h.font .. '/' .. h.px)))")
+               ".. tostring(h and (h.font .. '/' .. h.px))) "
+               "print('theme' .. '-space: ' .. (l:row_height() - gfx.height()) "
+               ".. ' ' .. (b.w - gfx.measure('Probe')))")
     guest.type("fs.write('/ramfs/themenow.lua', %r)" % program)
     time.sleep(1.0)
     mark = len(guest.seen)
@@ -3791,6 +3889,9 @@ def check_theme_plex(guest):
         now = guest.wait_for_line("theme-now: ",
                                   "the restarted desktop to say its theme",
                                   mark)
+        space = guest.wait_for_line("theme-space: ",
+                                    "an application to measure Plex's "
+                                    "spacing", mark)
     finally:
         back = len(guest.seen)
         guest.proc.stdin.write(STOP_DESKTOP)
@@ -3816,7 +3917,12 @@ def check_theme_plex(guest):
         raise Failure("a desktop started with Plex saved wears %r - the "
                       "theme was written down and did not come back" % now)
 
-    return 3
+    if space != "14 32":
+        raise Failure("under Plex a list's row is its face and %s, and a "
+                      "button its words and %s - wanted 14 and 32, Plex's "
+                      "7 and 16 either side" % tuple((space.split() + ["?", "?"])[:2]))
+
+    return 5
 
 
 def check_tabs(guest):
@@ -7937,7 +8043,8 @@ def main():
           f"{appearance_checks} on the Appearance panel laying itself out "
           f"from the faces in force rather than from a constant, and Plex "
           f"chosen - its five faces loaded, written down, and still worn "
-          f"after a restart, "
+          f"after a restart, and its spacing inside a widget; and four "
+          f"theme events reaching a window across as many replies as fit, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

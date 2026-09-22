@@ -92,21 +92,85 @@ local PER_ROW = 8              -- to a row; `SW` is derived below
 --
 local function line_h() return gfx.height() end
 
-local LH      = line_h() + 6          -- a label, and the room under it
 local GAP     = 10
 local ROWS    = 6                     -- how deep every list is
-local LIST_H  = ROWS * line_h() + 6
+local SIZE_W  = 62                    -- the list of sizes beside the faces
 
---   The left column: the palette, the colour of the ground, the picture.
-local PAL_Y     = PAD
-local LIST_Y    = PAL_Y + LH
-local RESET_H   = line_h() + 10
-local RESET_Y   = LIST_Y + LIST_H + GAP
-local DESK_Y    = RESET_Y + RESET_H + GAP
-local SWATCH_Y  = DESK_Y + LH
-local SW        = (LEFT_W - 7 * 4) // 8
-local WALL_Y    = SWATCH_Y + 2 * (SW + 4) + GAP
-local WALL_LIST = WALL_Y + LH
+--
+-- **As tall as what it draws.** The first number here was a guess - six
+-- lines and a bit - and the paragraph came out underneath the terminal
+-- line at the sizes the desktop actually had. This is the same sum the
+-- preview's drawing makes, in the same order, so the two cannot drift.
+--
+local function preview_h()
+  return 20                                   -- the desktop around it
+         + gfx.height("title") + 4 + 8        -- the tab
+         + gfx.height("heading") + 6          -- the heading
+         + line_h() + 8 + 8                   -- the buttons
+         + 2 * line_h() + 4 + 8               -- the list
+         + gfx.height("text") + 6             -- the paragraph
+         + gfx.height("mono") + 4             -- the terminal
+         + 8
+end
+
+--
+-- **Every number the layout is made of, worked out in one place, and
+-- worked out again when the faces or the theme change** (`layout`, at the
+-- end of this file, runs it at startup and on every theme event).
+--
+-- These were constants computed once, when the panel opened: right at the
+-- faces it opened with and wrong the moment somebody used it for what it is
+-- for. On the ThinkPad, 22 September, Diego chose 16 for the widgets and
+-- the terminal, and the role list's last row ran off the bottom of its box
+-- while the status line - "not saved", and why - slid under the window
+-- titles group, so the one sentence that said the choice had failed could
+-- not be read. A list's height counts the theme's `row_pad` too, which is
+-- what showed three themes of seven under Plex.
+--
+local LH, LIST_H, RESET_H                     -- a label; a list; the button
+local PAL_Y, LIST_Y, RESET_Y, DESK_Y          -- the left column
+local SW, SWATCH_Y, WALL_Y, WALL_LIST
+local FONTS_Y, ROLE_Y, ROLE_H, LISTS_Y        -- the right column
+local FONT_W, PREVIEW_Y, PREVIEW_H
+local TITLES_Y, SHAPE_Y, SHAPE_H
+local TALL                                    -- the window, top to bottom
+
+local function measure()
+  local row = line_h() + 2 * ui.theme.row_pad
+
+  LH        = line_h() + 6
+  LIST_H    = ROWS * row + 6
+  RESET_H   = line_h() + 10
+
+  PAL_Y     = PAD
+  LIST_Y    = PAL_Y + LH
+  RESET_Y   = LIST_Y + LIST_H + GAP
+  DESK_Y    = RESET_Y + RESET_H + GAP
+  SWATCH_Y  = DESK_Y + LH
+  SW        = (LEFT_W - 7 * 4) // 8
+  WALL_Y    = SWATCH_Y + 2 * (SW + 4) + GAP
+  WALL_LIST = WALL_Y + LH
+
+  FONTS_Y   = PAD
+  ROLE_Y    = FONTS_Y + LH
+  ROLE_H    = #ui.theme.roles * (line_h() + 6) + 4
+  LISTS_Y   = ROLE_Y + ROLE_H + GAP
+  FONT_W    = RIGHT_W - SIZE_W - 8
+  PREVIEW_Y = LISTS_Y + LIST_H + GAP
+  PREVIEW_H = preview_h()
+
+  -- The two little windows are 6 down and 22 tall, and their captions a
+  -- line under them: 52 was that at a 16-pixel bitmap and clipped the
+  -- captions at 16-pixel Plex Sans.
+  TITLES_Y  = PREVIEW_Y + PREVIEW_H + GAP
+  SHAPE_Y   = TITLES_Y + LH
+  SHAPE_H   = 6 + 22 + 4 + line_h() + 6
+
+  TALL = math.max(WALL_LIST + LIST_H, SHAPE_Y + SHAPE_H) + GAP + line_h()
+         + PAD
+end
+
+measure()
 
 --
 -- Every theme this machine has: the ones compiled in, plus any `.theme`
@@ -220,11 +284,19 @@ local function send()
   -- The colours alone: a theme's table carries its faces as well, and they
   -- go as `fonts` below - once, as chosen, rather than twice in one
   -- 2048-byte message.
+  --
+  -- **And the spacing inside a widget with them** (`theme.spacing`), which
+  -- this left out when spacing became part of a theme: Plex chosen here
+  -- came with its colours and faces and without its padded rows, and only
+  -- a restart - where the window manager reads the whole theme file - put
+  -- them right. The panel's own relayout check found it by coming out
+  -- shorter in Plex than in the harness's bitmap.
+  --
   local colours = {}
+  local chosen_theme = theme.palettes[chosen_palette] or {}
 
-  for _, k in ipairs(theme.tokens) do
-    colours[k] = (theme.palettes[chosen_palette] or {})[k]
-  end
+  for _, k in ipairs(theme.tokens) do colours[k] = chosen_theme[k] end
+  for _, k in ipairs(theme.spacing) do colours[k] = chosen_theme[k] end
 
   local reply, why = fs.send("/app/wm", { type = "theme",
                                           palette = colours,
@@ -245,6 +317,18 @@ local function send()
                                         fonts = chosen,
                                         tabs = chosen_tabs })
 
+  --
+  -- **A choice that could not be written down is said in the log as well.**
+  -- The status line is the only other place it appeared, and on the
+  -- ThinkPad on 22 September that line read "applied heading =
+  -- ibmplexsans-semibold 16, not saved" with the reason under another
+  -- group - so the one fact that explained why nothing survived a restart
+  -- could not be read. `log appearance` finds this.
+  --
+  if not ok then
+    print("appearance: not saved to " .. SETTINGS .. ": " .. tostring(werr))
+  end
+
   status.text = ok and ("saved: " .. chosen_palette .. ", "
                         .. role() .. " = " .. chosen[role()].font .. " "
                         .. chosen[role()].px)
@@ -255,7 +339,8 @@ local function send()
   return reply
 end
 
-win:add(ui.label{ x = LEFT_X, y = PAL_Y, w = LEFT_W, text = "Theme" })
+local theme_label = ui.label{ x = LEFT_X, y = PAL_Y, w = LEFT_W, text = "Theme" }
+win:add(theme_label)
 
 --
 -- A list rather than a button per theme. Two buttons fitted while there
@@ -294,7 +379,8 @@ local palette_list = ui.list{
 
 win:add(palette_list)
 
-win:add(ui.label{ x = LEFT_X, y = DESK_Y, w = LEFT_W, text = "Desktop" })
+local desk_label = ui.label{ x = LEFT_X, y = DESK_Y, w = LEFT_W, text = "Desktop" }
+win:add(desk_label)
 
 -- The swatches, as a view that draws itself and answers a click.
 --
@@ -377,9 +463,6 @@ end
 -- The right column: type, and the window's shape.
 --------------------------------------------------------------------------
 
-local FONTS_Y = PAD
-local ROLE_Y  = FONTS_Y + LH
-local ROLE_H  = #ROLES * (line_h() + 6) + 4
 
 --
 -- **Every role, with the face it is set to.**
@@ -450,9 +533,6 @@ role_list = ui.view{
   end,
 }
 
-local LISTS_Y = ROLE_Y + ROLE_H + GAP
-local SIZE_W  = 62
-local FONT_W  = RIGHT_W - SIZE_W - 8
 
 local font_list = ui.list{ x = RIGHT_X, y = LISTS_Y, w = FONT_W,
                            h = LIST_H, items = FONTS }
@@ -517,7 +597,8 @@ size_list.on_select = function(self, item)
   send()
 end
 
-win:add(ui.label{ x = RIGHT_X, y = FONTS_Y, w = RIGHT_W, text = "Fonts" })
+local fonts_label = ui.label{ x = RIGHT_X, y = FONTS_Y, w = RIGHT_W, text = "Fonts" }
+win:add(fonts_label)
 win:add(role_list)
 win:add(font_list)
 win:add(size_list)
@@ -539,25 +620,6 @@ win:add(size_list)
 -- therefore never a promise about something that has not happened.
 --------------------------------------------------------------------------
 
---
--- **As tall as what it draws.** The first number here was a guess - six
--- lines and a bit - and the paragraph came out underneath the terminal
--- line at the sizes the desktop actually had. This is the same sum the
--- drawing makes, in the same order, so the two cannot drift.
---
-local function preview_h()
-  return 20                                   -- the desktop around it
-         + gfx.height("title") + 4 + 8        -- the tab
-         + gfx.height("heading") + 6          -- the heading
-         + line_h() + 8 + 8                   -- the buttons
-         + 2 * line_h() + 4 + 8               -- the list
-         + gfx.height("text") + 6             -- the paragraph
-         + gfx.height("mono") + 4             -- the terminal
-         + 8
-end
-
-local PREVIEW_Y = LISTS_Y + LIST_H + GAP
-local PREVIEW_H = preview_h()
 
 local preview = ui.view{
   x = RIGHT_X, y = PREVIEW_Y, w = RIGHT_W, h = PREVIEW_H,
@@ -629,7 +691,7 @@ win:add(preview)
 -- And since a theme names its faces as well, "back to the theme" means
 -- both: the ground it paints and the five faces it sets.
 --
-win:add(ui.button{
+local reset_button = ui.button{
   x = LEFT_X, y = RESET_Y, w = LEFT_W, h = RESET_H,
   text = "Back to this theme",
   on_click = function()
@@ -638,8 +700,9 @@ win:add(ui.button{
     reflect()
     send()
   end,
-})
+}
 
+win:add(reset_button)
 win:add(status)
 
 -- What is in force now, so the window opens saying the truth rather than a
@@ -693,7 +756,8 @@ end
 -- on it. `WALL_Y` and `WALL_LIST` are worked out with the rest of that
 -- column, at the top of this file.
 
-win:add(ui.label{ x = LEFT_X, y = WALL_Y, w = LEFT_W, text = "Wallpaper" })
+local wall_label = ui.label{ x = LEFT_X, y = WALL_Y, w = LEFT_W, text = "Wallpaper" }
+win:add(wall_label)
 
 -- What each line of the list stands for: a label, and the name the window
 -- manager is sent - a path in `/home`, or `wallpaper/<file>` in the image.
@@ -783,16 +847,14 @@ win:add(wall_list)
 -- somebody who can see. Two small windows say it in no words at all, and
 -- the mockup Diego agreed shows them side by side.
 --
-local TITLES_Y = PREVIEW_Y + PREVIEW_H + GAP
-local SHAPE_Y  = TITLES_Y + LH
-local SHAPE_H  = 52
 local TITLES = {
   { key = "beos", text = "A tab, as BeOS drew it" },
   { key = "full", text = "A bar across the window" },
 }
 
-win:add(ui.label{ x = RIGHT_X, y = TITLES_Y, w = RIGHT_W,
-                  text = "Window titles" })
+local titles_label = ui.label{ x = RIGHT_X, y = TITLES_Y, w = RIGHT_W,
+                               text = "Window titles" }
+win:add(titles_label)
 
 local shapes = ui.view{
   x = RIGHT_X, y = SHAPE_Y, w = RIGHT_W, h = SHAPE_H,
@@ -843,34 +905,62 @@ win:add(shapes)
 --
 -- This is also why it is a *resize* rather than a better constant: pick a
 -- 24-pixel widget font in this window and the columns grow, and the window
--- has to grow with them. That part is not wired up yet - it wants a
--- relayout on the theme event, which is `roadmap.md` 5b's remaining half -
--- but the arithmetic is here and correct rather than approximately right.
+-- has to grow with them. **Wired up on 22 September**, which was
+-- `roadmap.md` 5b's remaining half: `win.on_theme`, which the kit calls
+-- after it has applied a theme event, lays the panel out again.
 --
-do
-  local left  = WALL_LIST + LIST_H
-  local right = SHAPE_Y + SHAPE_H
-  local tall  = math.max(left, right) + GAP + line_h() + PAD
+local said_layout = false
 
-  status.y = tall - line_h() - PAD + 2
+local function layout()
+  measure()
 
-  if tall ~= H then win:resize(W, tall) end
+  theme_label.y = PAL_Y
+  palette_list.y, palette_list.h = LIST_Y, LIST_H
+  reset_button.y, reset_button.h = RESET_Y, RESET_H
+  desk_label.y = DESK_Y
+  swatches.y, swatches.h = SWATCH_Y, 2 * (SW + 4)
+  wall_label.y = WALL_Y
+  wall_list.y, wall_list.h = WALL_LIST, LIST_H
+
+  fonts_label.y = FONTS_Y
+  role_list.y, role_list.h = ROLE_Y, ROLE_H
+  font_list.y, font_list.h, font_list.w = LISTS_Y, LIST_H, FONT_W
+  size_list.x, size_list.y, size_list.h = RIGHT_X + FONT_W + 8, LISTS_Y,
+                                          LIST_H
+  preview.y, preview.h = PREVIEW_Y, PREVIEW_H
+  titles_label.y = TITLES_Y
+  shapes.y, shapes.h = SHAPE_Y, SHAPE_H
+
+  -- Under both columns, the whole width: nothing sits beside it now that
+  -- the columns' heights are the ones in force.
+  status.y = TALL - line_h() - PAD + 2
+
+  if TALL ~= win.h then win:resize(W, TALL) end
 
   --
   -- Said out loud, because the interesting part is invisible: a panel whose
   -- height *follows the faces* looks exactly like one whose height is a
   -- constant that happens to fit. The line is what a test can hold to, and
   -- it is how `display`'s `appearance` phase knows this laid itself out
-  -- rather than guessed (`testing.md`).
+  -- rather than guessed (`testing.md`). Once, at the start; a relayout
+  -- says so in the same words, so a test can watch one happen.
   --
   -- **The window's own size, not the sum that asked for it.** Printing
-  -- `tall` would say the arithmetic happened, which is not the thing worth
+  -- `TALL` would say the arithmetic happened, which is not the thing worth
   -- knowing: the regression this guards against is a resize that never
   -- reached the window manager, and after one that did, `win.h` is what the
   -- window manager agreed to.
-  print(("appearance: %dx%d, %d roles, %s"):format(win.w, win.h, #ROLES,
-                                                   chosen_palette))
+  print(("appearance: %s%dx%d, %d roles, %s"):format(
+        said_layout and "laid out again, " or "", win.w, win.h, #ROLES,
+        chosen_palette))
+  said_layout = true
 end
+
+layout()
+
+-- And every time the desktop's faces or theme change - including the
+-- change this panel has just asked for.
+function win:on_theme() layout() end
 
 --
 -- **`wm appearance:--theme plex` - a theme chosen from the command line**,

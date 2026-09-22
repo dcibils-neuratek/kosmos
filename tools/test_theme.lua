@@ -96,6 +96,14 @@ for _, name in ipairs({ "photon", "beos", "platinum", "irix" }) do
   check(p.bar == p.tab and p.bar_text == p.tab_text,
         name .. "'s Deskbar is not its tab's colours any more")
 
+  -- And the spacing the kit always drew with.
+  check(p.row_pad == 0 and p.button_pad_y == 5 and p.button_pad_x == 12
+        and p.field_pad_y == 3 and p.field_pad_x == 4,
+        name .. "'s spacing is not the kit's own: rows " .. tostring(p.row_pad)
+        .. ", buttons " .. tostring(p.button_pad_y) .. "x"
+        .. tostring(p.button_pad_x) .. ", fields " .. tostring(p.field_pad_y)
+        .. "x" .. tostring(p.field_pad_x))
+
   for _, role in ipairs(theme.roles) do
     local want, got = theme.default_fonts[role], p.fonts[role]
 
@@ -124,7 +132,7 @@ do
   end
 
   local faces = {
-    ui      = { "ibmplexsans", 14 },
+    ui      = { "ibmplexsans", 16 },
     title   = { "ibmplexsanscondensed", 14 },
     heading = { "ibmplexsans-semibold", 15 },
     text    = { "ibmplexsans", 16 },
@@ -138,6 +146,12 @@ do
           "plex's " .. role .. " is " .. got.font .. " " .. got.px
           .. ", not " .. f[1] .. " " .. f[2])
   end
+
+  -- And its spacing, `docs/plex.html`'s: rows 7, buttons 5 by 16, fields
+  -- 5 by 8.
+  check(p.row_pad == 7 and p.button_pad_y == 5 and p.button_pad_x == 16
+        and p.field_pad_y == 5 and p.field_pad_x == 8,
+        "plex's spacing is not rows 7, buttons 5x16, fields 5x8")
 
   -- Chosen for its weight: an exact face, not a prefix standing in for one.
   check(resolves("ibmplexsans-semibold") == "ibmplexsans-semibold",
@@ -168,9 +182,31 @@ font.mono = ibmplexmono 400
   local d = theme.default_fonts
   check(p.fonts.text.font == d.text.font and p.fonts.heading.px == d.heading.px,
         "a role the file left out did not come from the defaults")
-  check(d.ui.font == "ibmplexsans" and d.ui.px == 14,
+  check(d.ui.font == "ibmplexsans" and d.ui.px == 16,
         "setting a theme's role changed the defaults to "
         .. d.ui.font .. " " .. d.ui.px)
+end
+
+-- 4b. Spacing a file gets wrong: each told, and the defaults kept.
+do
+  local p, said = theme.read([[
+row_pad = -1
+button_pad = 5
+field_pad = 5 8 9
+row_pad = 40
+button_pad = 4 20
+]], "dark")
+
+  check(#said == 4, "four bad spacing lines gave " .. #said .. " complaints: "
+        .. table.concat(said, "; "))
+  check((said[1] or ""):find("whole number of pixels, 0 to 32", 1, true),
+        "a negative row padding was told as: " .. tostring(said[1]))
+  check((said[2] or ""):find("2 whole numbers", 1, true),
+        "a button padding with one number was told as: " .. tostring(said[2]))
+  check(p.row_pad == 0 and p.field_pad_x == 4,
+        "a bad spacing line changed the spacing")
+  check(p.button_pad_y == 4 and p.button_pad_x == 20,
+        "a good button padding after bad lines was not read")
 end
 
 -- 5. Applying a theme puts its colours in force and never its faces.
@@ -182,6 +218,10 @@ do
   theme.apply(p)
 
   check(theme.desktop == 0xff3d63b8, "applying Plex did not paint its desktop")
+  check(theme.row_pad == 7 and theme.field_pad_x == 8
+        and theme.current().row_pad == 7 and theme.current().button_pad_x == 16,
+        "applying Plex did not put its spacing in force, or current() does "
+        .. "not carry it to other windows")
   check(theme.fonts == before
         and theme.fonts.ui.font .. " " .. theme.fonts.ui.px == ui_before,
         "applying Plex replaced the faces in force with its own, without "

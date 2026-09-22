@@ -1981,7 +1981,8 @@ will need root**, as the 8BitDo pad did (`tools/usbhost.sh`); `usb-net` is
 what the gate uses, and needs nothing.
 
 Nothing is configured yet: an adapter is named and left exactly as it was
-found.
+found. **On the ThinkPad on 22 September** (0.10.105) the same two lines
+came from port 3 of `00:0d.0`, the Thunderbolt controller's USB side.
 
 ### What comes next
 
@@ -2067,6 +2068,10 @@ found.
   and not kept in the repository.
 - QEMU 11.1.1's `usb-net`, used as a device and not read: what it offers is
   what the driver read from it.
+- FreeBSD's `sys/dev/usb/controller/xhci.h`, BSD-licensed - read for one
+  fact on 22 September, the values of an Endpoint Context's EP State
+  (xHCI 1.2 6.2.3), when Intel's copy of the specification would not
+  download; `reset_pipe` acts on that state. Nothing else is taken from it.
 - QEMU 11.1.1, `hw/usb/dev-hid.c` and `hw/input/hid.c` - the mouse the check
   runs against, read for how it behaves: that it attaches at high speed with
   a four-byte packet every 8 ms, honours SET_PROTOCOL, clamps a report's

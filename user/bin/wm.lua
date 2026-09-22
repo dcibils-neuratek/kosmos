@@ -4022,25 +4022,48 @@ end
 -- the caller polls again immediately, and what is left goes in order on the
 -- next reply. What is never correct is a reply that cannot be sent.
 --
+--
+-- **And a count was the wrong bound, the second time.** Twelve assumed an
+-- event is small, and a theme event is a whole palette and five faces:
+-- three of them queue when somebody picks faces in Appearance quickly, and
+-- on the ThinkPad on 22 September that was `wm: reply for poll failed:
+-- value does not fit in a message`, and the window's events went with it.
+-- So the reply is filled while it *fits*, asked of the serialiser itself
+-- (`sys.fits`) rather than estimated, and the count stays as a bound on
+-- how much one pass hands over.
+--
+-- An event too big to go even alone can never be delivered, and waiting
+-- would stop the queue behind it for good; it is dropped and said.
+--
 local EVENTS_PER_REPLY = 12
 
 local function events_for(win)
-  local out = win.events
+  local out, rest = {}, {}
+  local reply = { ok = true, events = out }
 
-  if #out > EVENTS_PER_REPLY then
-    local rest = {}
+  for _, ev in ipairs(win.events) do
+    if #rest > 0 or #out >= EVENTS_PER_REPLY then
+      rest[#rest + 1] = ev
+    else
+      out[#out + 1] = ev
 
-    for i = EVENTS_PER_REPLY + 1, #out do
-      rest[#rest + 1] = out[i]
-      out[i] = nil
+      if not sys.fits(reply) then
+        out[#out] = nil
+
+        if #out == 0 then
+          print(("wm: an event for %s would not fit in a message and is "
+                 .. "dropped: %s"):format(tostring(win.title),
+                                          tostring(ev.type)))
+        else
+          rest[#rest + 1] = ev
+        end
+      end
     end
-
-    win.events = rest
-  else
-    win.events = {}
   end
 
-  return { ok = true, events = out }
+  win.events = rest
+
+  return reply
 end
 
 --------------------------------------------------------------------------

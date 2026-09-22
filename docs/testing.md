@@ -7201,3 +7201,108 @@ line that *starts* with `#` is a comment now, whatever follows.
   leaves the window manager holding
   `title=spleen/16 ui=spleen/16 heading=ibmplexsans-bold/18 ...` - the
   harness's pinned faces - and the check fails.
+
+## 18.136 What the ThinkPad said about 0.10.105
+
+Diego ran the 0.10.105 stick on 22 September and sent two photographs: the
+Appearance panel after choosing faces at 16, and `log`. Five things were in
+them, and each is answered here.
+
+### The adapter, on the machine it is for
+
+```
+xhci: 00:0d.0 port 3: USB Ethernet, CDC-ECM, in configuration 2: MAC 00:e0:4c:68:02:86, frames up to 1514 bytes; not driven yet
+xhci: 00:0d.0 port 3: its frames on interface 1 setting 1, bulk IN 1 and OUT 2 of 1024 bytes; its link on interrupt IN 3
+```
+
+The same two lines the Mac's `usb-host` gave (18.134), on port 3 of the
+Thunderbolt controller at `00:0d.0`. 5m-a is done on metal.
+
+### A reply too big for a message
+
+`wm: reply for poll failed: value does not fit in a message`. The window
+manager filled a poll's reply by count - twelve events - on the assumption
+an event is small, and a theme event is a whole palette and five faces;
+three of them already overflow 2048 bytes, and choosing faces quickly in
+Appearance queues that many. The reply failed and the window's events went
+with it. Now the reply is filled while it fits, asked of the serialiser
+itself through a new `sys.fits` (the byte count `sys.pack` would produce,
+with no string made), and an event too big to go alone is dropped and said
+rather than stopping the queue.
+
+**Check**, the display harness's `appearance` phase: a program sends the
+window manager four theme messages that change nothing, so four theme
+events queue for its window, and then polls - all four have to arrive.
+**Control**: the reply filled by count again reproduces the ThinkPad's own
+line, `wm: reply for poll failed: value does not fit in a message`, and the
+program never counts its events.
+
+### A panel laid out at the faces it opened with
+
+With widgets and the terminal at 16, the Appearance panel's role list ran
+its last row off the bottom of its box, and its status line slid under the
+window titles group - the line that said the choice was "not saved", and
+why. The panel measured its layout once. Now every number it is made of is
+worked out in one `measure`, and `layout` places every widget and sizes the
+window, when the panel opens and again from `win.on_theme`: a hook the kit
+calls after applying a theme event, for the rare window whose layout is
+made of the faces. `roadmap.md` 5b's remaining half.
+
+**Check**: after `--theme plex` the panel must say `appearance: laid out
+again, ...` and come out taller, since the harness's pinned faces are the
+16-pixel bitmap and Plex's are larger with padded rows. **Control**: with no
+`on_theme` the relayout line never comes.
+
+**And the check found a bug of its own.** The first run had the panel
+*shorter* under Plex. Appearance sent the window manager a theme's colours
+and not its spacing, so Plex chosen in the panel arrived without its padded
+rows - only a restart, which reads the whole theme file, put them right. It
+sends both now.
+
+### "Not saved", and a pipe left in the wrong state
+
+The status line read `applied heading = ibmplexsans-semibold 16, not
+saved`: `/home/.appearance` could not be written, so nothing chosen would
+have survived a restart. The reason was under the other group. Two changes,
+and the second is a guess at the cause rather than a finding:
+
+- **Appearance says a failed save in the log**: `appearance: not saved to
+  /home/.appearance: <why>`, so `log appearance` can read it.
+- **The log had the USB stick recovered badly a few minutes earlier**: two
+  READ (10)s that got no answer within a second, the stick reset, and in
+  red, `the bulk OUT's Set TR Dequeue Pointer failed: Context State Error
+  (19)` - on the pipe every write to the stick uses. `reset_pipe` tried
+  Reset Endpoint and read its refusal as "running", tried Stop Endpoint and
+  read *its* refusal as "already stopped" - which is also what a pipe that
+  halted between the two refuses with - and Set TR Dequeue Pointer takes only
+  Stopped or Error. It now reads the EP State the controller keeps in the
+  output context (xHCI 6.2.3, values from FreeBSD's `xhci.h`), stops a
+  Running endpoint, resets a Halted one, reads again, and moves the dequeue
+  pointer only when it is Stopped or Error - or says which state it found.
+  **Checked** by `run_x86.py`'s `usb` part, whose stick stalls a command on
+  purpose: both pipes recover, 28 checks with `usb_blocks` and
+  `usb_ethernet`. **Not checked**: the order the ThinkPad hit, a stall
+  landing while an endpoint is being stopped, which QEMU's stick cannot be
+  made to do. The next stick says so in the log if it happens again.
+
+Why the stick stopped answering READs at 21 seconds is not known.
+
+### Faces at 16
+
+"In the thinkpad fonts look smaller than on qemu so the default font size
+for regular and widgets is 16." The defaults, which Photon, BeOS, Platinum
+and IRIX name, and Plex's widgets, are 16; the default-look checks hold the
+new sizes.
+
+### Plex's spacing, inside a widget
+
+A theme file names three paddings - `row_pad`, `button_pad`, `field_pad` -
+carried with the colours, and the kit's lists, buttons and fields read them.
+Every theme but Plex names the numbers the kit had written in (rows 0,
+buttons 5 by 12, fields 3 by 4), so none of them moves; Plex names the
+spec's 7, 5 by 16 and 5 by 8. `list:row_height()` answers the row's height.
+
+**Checks**: `test_theme.lua`, now 135, holds every theme's spacing and four
+bad spacing lines; the harness's Plex restart probe opens a window and
+requires a list row of its face plus 14 and a button of its words plus 32.
+**Control**: a list that ignores `row_pad` measures "its face and 0".

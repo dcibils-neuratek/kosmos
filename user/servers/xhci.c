@@ -2395,15 +2395,50 @@ static const char *transact_once(struct controller *c, struct device *d,
 }
 
 /*
+ * xHCI 1.2 6.2.3: an Endpoint Context's EP State, bits 2:0 of its first
+ * dword, which the controller keeps in the device's output context. The
+ * values are the specification's - read from FreeBSD's `xhci.h`, which
+ * states them, on 22 September, when Intel's copy of the specification
+ * would not download.
+ */
+#define EP_STATE_MASK       0x7u
+#define EP_STATE_RUNNING    1u
+#define EP_STATE_HALTED     2u
+#define EP_STATE_STOPPED    3u
+#define EP_STATE_ERROR      4u
+
+/* What the controller says an endpoint is in, as of its last command. */
+static unsigned ep_state(const struct controller *c, struct device *d,
+                         unsigned dci)
+{
+    const volatile uint32_t *ep = context(c, d->output, dci);
+
+    return ep[0] & EP_STATE_MASK;
+}
+
+/*
  * **One endpoint made usable again**, from whatever a failure left it in, by
- * xHCI 1.2 4.6.8's "reset a pipe" in its order. Reset Endpoint takes a Halted
- * endpoint to Stopped; one that is not halted - a transfer that never
- * answered, or a status that was not valid - is refused with a Context State
- * Error, and stopped with Stop Endpoint instead (4.6.9). Then the device's
- * halt is cleared, ENDPOINT_HALT to the endpoint's address (USB 2.0 9.4.1),
- * and the controller's dequeue pointer is moved to where the next TRB will
- * go, with the cycle bit it will carry (4.6.10) - so nothing left on the ring
- * from before is tried again. NULL when it worked, and otherwise the step.
+ * xHCI 1.2 4.6.8's "reset a pipe": the endpoint Stopped - with Stop Endpoint
+ * if it is Running (4.6.9), Reset Endpoint if it is Halted - then the
+ * device's halt cleared, ENDPOINT_HALT to the endpoint's address (USB 2.0
+ * 9.4.1), and the controller's dequeue pointer moved to where the next TRB
+ * will go, with the cycle bit it will carry (4.6.10) - so nothing left on
+ * the ring from before is tried again. NULL when it worked, and otherwise the
+ * step.
+ *
+ * **By the state the controller says the endpoint is in**, and not by
+ * trying Reset Endpoint and reading its refusal. That was this, and it was
+ * wrong in one order of events: Reset Endpoint refused because the endpoint
+ * was Running, then the stick stalled it before Stop Endpoint arrived, so
+ * Stop was refused too - which this read as "already stopped" - and Set TR
+ * Dequeue Pointer, which takes only Stopped or Error, found a Halted
+ * endpoint. On the ThinkPad on 22 September: "the bulk OUT's Set TR Dequeue
+ * Pointer failed: Context State Error (19)", on the pipe every write to the
+ * stick goes through, minutes before Appearance could not save to it.
+ *
+ * So the state is read, acted on, and read again - a stall can land while
+ * an endpoint is being stopped - and Set TR Dequeue Pointer is sent only to
+ * an endpoint that is Stopped or Error, or the failure says which it was.
  */
 static const char *reset_pipe(struct controller *c, struct device *d,
                               struct ring *r, unsigned dci, uint8_t address,
@@ -2412,20 +2447,35 @@ static const char *reset_pipe(struct controller *c, struct device *d,
     uint64_t next = r->bus + (uint64_t)r->enqueue * 16u;
     uint32_t target = TRB_ENDPOINT(dci) | TRB_SLOT(d->slot);
     uint32_t done[4];
+    unsigned state = ep_state(c, d, dci);
 
-    if (!command(c, 0, 0, TRB_TYPE(TRB_RESET_ENDPOINT) | target, done)) {
-        if (c->last_code != CC_CONTEXT_STATE) {
-            return named(which, "'s Reset Endpoint");
-        }
-
+    if (state == EP_STATE_RUNNING) {
         if (!command(c, 0, 0, TRB_TYPE(TRB_STOP_ENDPOINT) | target, done)
             && c->last_code != CC_CONTEXT_STATE) {
             return named(which, "'s Stop Endpoint");
         }
+
+        state = ep_state(c, d, dci);
+    }
+
+    if (state == EP_STATE_HALTED) {
+        if (!command(c, 0, 0, TRB_TYPE(TRB_RESET_ENDPOINT) | target, done)) {
+            return named(which, "'s Reset Endpoint");
+        }
+
+        state = ep_state(c, d, dci);
     }
 
     if (!control_nodata(c, d, CLEAR_FEATURE, ENDPOINT_HALT, address)) {
         return named(which, "'s CLEAR_FEATURE");
+    }
+
+    if (state != EP_STATE_STOPPED && state != EP_STATE_ERROR) {
+        return named(which, state == EP_STATE_RUNNING
+                            ? ", still running after Stop Endpoint"
+                            : state == EP_STATE_HALTED
+                            ? ", still halted after Reset Endpoint"
+                            : ", in a state Set TR Dequeue Pointer refuses");
     }
 
     if (!command(c, (uint32_t)next | (r->cycle == TRB_C ? 1u : 0u),
