@@ -3949,6 +3949,15 @@ static bool test_licence_is_carried(void)              { return luatest_role(40)
 static bool test_a_jpeg_decodes(void)                  { return luatest_role(47); }
 
 /*
+ * A palette PNG decodes, with its transparency and an Up-filtered row, and
+ * one without its palette is refused. Colour type 3 was not read at all
+ * until 21 September, which is why Diego's plain-colour wallpapers did not
+ * come back after a restart: Appearance saved them and nothing could load
+ * them. The file is built inside the role, byte by byte.
+ */
+static bool test_a_palette_png_decodes(void)           { return luatest_role(49); }
+
+/*
  * An endpoint ends with the process that made it. A server takes a client's
  * call and is killed before answering: the client has to be woken with an
  * error, and the pool has to get the endpoint back.
@@ -8338,6 +8347,7 @@ static const struct test tests[] = {
     { "pdf: the scanner reads what it should", test_pdf_scanner },
     { "licence: the image carries LICENSE",     test_licence_is_carried },
     { "jpeg: four quadrants, and not a PNG",   test_a_jpeg_decodes },
+    { "png: a palette, its alpha, and no palette", test_a_palette_png_decodes },
     { "ipc: an endpoint ends with its process",  test_endpoint_ends_with_its_process },
     { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },

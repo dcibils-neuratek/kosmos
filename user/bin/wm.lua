@@ -826,8 +826,36 @@ end
 -- And the picture, now that there is a screen to centre it on. A wallpaper
 -- that has gone missing is not an error worth stopping for: the desktop
 -- colour is underneath it and always was.
+--
+-- **And it says which, or why not.**
+--
+-- This threw the reason away: `wallpaper_load` answers `nil, why` and the
+-- `if` took only the truth of it. A wallpaper that had been chosen,
+-- accepted by this process and written to `/home/.appearance` then failed
+-- to come back with the machine saying *nothing at all* - which is what
+-- Diego met on the ThinkPad on 21 September: "the appearance app does not
+-- rememver the wallpapers and other things upon restarting".
+--
+-- The fonts in that same file were being restored perfectly, which the
+-- boot log proves - `wm: faces ui=ibmplexsans/14 ...` is his choice and
+-- not the default - so the file, the disk and the load were all working
+-- and only this one line was quiet about its failure.
+--
+-- A setting that does not apply and does not say so is worse than one
+-- that refuses loudly, because there is nothing to search for. It is the
+-- same lesson as the region error three files away, which had three
+-- causes and named none of them.
+--
 if saved_wallpaper then
-  if wallpaper_load(saved_wallpaper) then wallpaper_place() end
+  local ok, why = wallpaper_load(saved_wallpaper)
+
+  if ok then
+    wallpaper_place()
+    print("wm: wallpaper " .. tostring(saved_wallpaper))
+  else
+    print("wm: wallpaper " .. tostring(saved_wallpaper)
+          .. " would not load: " .. tostring(why))
+  end
 end
 
 local ep = sys.endpoint()

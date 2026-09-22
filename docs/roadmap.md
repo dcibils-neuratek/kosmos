@@ -1098,6 +1098,24 @@ processors, and still what follows USB:
      double-click speed were considered and left out, because none of them
      exist to be set yet.
 
+5o. **WANTED on 21 September - a render resolution for the solar system.**
+   Diego, after 18.131: "the solar simulator works great in fullscreen but
+   i do need a way to set the render resolution as it looks very
+   pixelated in fullscreen". It draws at 960x540 and `stretch`es that to
+   the screen, so on the ThinkPad every pixel is four. The rasterizer is C
+   now and ran at 100 fps at maximum detail, so there is room to draw at
+   the screen's own size; what is wanted is a choice - a scale beside the
+   graphics level, carried across the relaunch that full screen does -
+   rather than a fixed number swapped for a bigger one.
+
+5n. **DONE on 21 September - a wallpaper that comes back** (`testing.md`
+   18.133). Diego: "the appearance app does not rememver the wallpapers
+   and other things upon restarting". The fonts were remembered; only the
+   wallpaper was lost, because his plain-colour PNGs are palette images
+   and the decoder refused them - and the window manager threw the reason
+   away, so nothing said so. `png.c` reads colour type 3 with `tRNS`, and
+   `wm` names the wallpaper it restored or why it could not.
+
 5m. **AGREED on 21 September - a USB Ethernet driver, and the remote
    debugging it unlocks.** Diego: "what if we build a way to connect this
    and the remote machine via a simple protocol over the network so that
@@ -1134,8 +1152,34 @@ processors, and still what follows USB:
    and let Kosmos's own driver print its configuration descriptors.
    `simulate-dont-wait`.
 
+   **Step 0 answered on 21 September: it speaks CDC-ECM.** Plugged into
+   the Mac, the dongle offers two configurations, and macOS runs it in the
+   second with Apple's generic class driver - `AppleUserECM`, which knows
+   nothing about Realtek:
+
+       0bda:8153 "USB 10/100/1000 LAN", bcdDevice 0x3100, 5 Gb/s
+       bNumConfigurations 2, current configuration 2
+         interface 0  class 2/6/0  CDC ECM control, one interrupt endpoint
+         interface 1  class 10     CDC data, alternate 1: two bulk endpoints
+       MAC 00:e0:4c:68:02:86 (Realtek's OUI), MTU 1500
+
+   Configuration 1 is the vendor interface `r8152.c` drives, and Kosmos
+   will not touch it. **So the driver is a CDC-ECM driver, written from
+   the USB-IF's class specification, and it is not an RTL8153 driver at
+   all** - it will run any ECM device, which is most USB Ethernet that is
+   not an ASIX.
+
+   **And it can be tested in the gate with no hardware**: QEMU's
+   `usb-net` emulates a CDC Ethernet device, so the driver's permanent
+   test is a QEMU machine with one plugged in, and the dongle is for the
+   ThinkPad and the last check. Which configuration value `usb-net` gives
+   its ECM interface is for 5m-a's descriptor dump to say, not for this
+   paragraph to guess.
+
    **Then, in order:**
-   - **5m-a. The descriptors**, under QEMU with `usb-host`. Which classes,
+   - **5m-a. The descriptors**, under QEMU with `usb-net` (and `usb-host`
+     for the dongle itself, if macOS lets QEMU take it from
+     `AppleUserECM`). Which classes,
      which configurations, which endpoints, and the MAC address - ECM
      carries it as a string descriptor, which is a pleasant way to find out
      the thing works before a single frame moves.

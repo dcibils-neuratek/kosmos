@@ -6985,3 +6985,61 @@ stronger result than a test that merely goes red.
   and the audio server never reclaims a stream whose client died - eight
   exist and nothing notices a corpse. Recorded as `roadmap.md` 5l rather
   than fixed in the same change.
+
+## 18.133 A wallpaper that would not come back, and said nothing
+
+**Diego, on the ThinkPad, 21 September**: "the appearance app does not
+rememver the wallpapers and other things upon restarting". The other
+things were remembered. The boot log shows `wm: faces ui=ibmplexsans/14`,
+which is his choice rather than the default, so `/home/.appearance`, the
+disk and the load were all working. Only the wallpaper failed, and it
+failed in silence.
+
+### Two faults, one on each side of a line
+
+**The decoder refused palette images.** `blue.png`, `black.png` and
+`white.png` in his wallpaper folder are all colour type 3, because a field
+of one colour is exactly what a palette is for and every tool writes one
+that way. `png.c` read grey, RGB and RGBA and nothing else. It now reads
+`PLTE` and `tRNS`, unfilters the indices and then looks them up, and an
+index past the palette is black rather than a read off the end - the same
+choice the texture reader in `gamesoft.c` makes, for the same reason.
+
+**The window manager threw the reason away.** `wallpaper_load` answers
+`nil, why`, and the restore took only the truth of it. A saved setting that
+does not apply and does not say so leaves nothing to search for. It now
+prints `wm: wallpaper <name>`, or `... would not load: <why>`:
+
+```
+wm: wallpaper /home/blue.png
+wm: wallpaper /home/nosuch.png would not load: cannot read /home/nosuch.png
+```
+
+### The checks
+
+- **`png: a palette, its alpha, and no palette`** (`luatest.lua` role 49).
+  A 4x2 palette PNG built inside the role, byte by byte, with real CRCs
+  and a stored deflate block, so any other program would open it too:
+  three entries, `tRNS` for two of them, one index past the palette, and a
+  second row filtered with Up - so a decoder that looked indices up before
+  unfiltering them gets the deltas and fails. A palette image with no
+  `PLTE` must be refused, and for that reason.
+- **The display harness's wallpaper phase** now also requires the window
+  manager to say `wm: wallpaper <the one it saved>`, and no refusal.
+
+**Control**: `png.c` as it was at 0.10.102, with the new test in place.
+One of 176 fails, and it is this one, for the right reason:
+
+```
+luatest: a palette PNG did not decode: png: a colour type this does not
+do - a palette, or grey+alpha
+not ok 132 - png: a palette, its alpha, and no palette
+```
+
+**And a flake, recorded rather than rerun away.** The first `make prepush`
+of this change failed one test of 172 on x86, `sched: the policy is
+pluggable`, with round robin running its threads `132` - an order its record
+in 18.39, always `231`, has not shown before. Nothing in this change is near the
+scheduler; the same image ran the suite alone five times, 172 of 172 each,
+and the second whole prepush was green in 4:56. It stays the open item
+`roadmap.md` already names.

@@ -407,6 +407,12 @@ static int l_png(lua_State *L)
     size_t rows_pages = 0;
     unsigned long rows_len = 0;
 
+    /* The palette and its transparency, for colour type 3. On the stack
+     * because the format bounds both: 256 entries, and no more. */
+    unsigned char plte[256 * 3];
+    unsigned char trns[256];
+    unsigned plte_n = 0, trns_n = 0;
+
     struct surface *s;
     uint32_t *pixels;
     size_t pitch, bytes, pages;
@@ -447,6 +453,32 @@ static int l_png(lua_State *L)
             depth     = body[8];
             colour    = body[9];
             interlace = body[12];
+        } else if (memcmp(type, "PLTE", 4) == 0) {
+            /*
+             * The palette, for colour type 3. Three bytes an entry and at
+             * most 256 of them, which is the format's own limit rather
+             * than one chosen here.
+             */
+            if (size > sizeof plte || (size % 3u) != 0) {
+                why = "a palette that is not whole RGB triples";
+                goto done;
+            }
+
+            memcpy(plte, body, size);
+            plte_n = size / 3u;
+        } else if (memcmp(type, "tRNS", 4) == 0) {
+            /*
+             * Transparency, one byte an entry, and entries the chunk does
+             * not reach are opaque - which is what the format says and is
+             * why this fills the rest rather than assuming 256 arrived.
+             */
+            if (size > sizeof trns) {
+                why = "more transparency entries than palette entries";
+                goto done;
+            }
+
+            memcpy(trns, body, size);
+            trns_n = size;
         } else if (memcmp(type, "IDAT", 4) == 0) {
             /*
              * The compressed data may be split across any number of chunks
@@ -501,9 +533,26 @@ static int l_png(lua_State *L)
     switch (colour) {
     case 0: channels = 1; break;                /* grey */
     case 2: channels = 3; break;                /* RGB */
+    case 3: channels = 1; break;                /* palette: one index */
     case 6: channels = 4; break;                /* RGBA */
     default:
-        why = "a colour type this does not do - a palette, or grey+alpha";
+        why = "a colour type this does not do - grey with alpha";
+        goto done;
+    }
+
+    /*
+     * **Palette, added because a plain colour could not be a wallpaper.**
+     *
+     * A 1920x1080 field of one colour is exactly what colour type 3 is
+     * for, and every tool produces one that way - so `black.png`,
+     * `blue.png` and `white.png` were all refused, and the window manager
+     * said nothing about it because it threw the reason away. Diego, 21
+     * September: "the appearance app does not rememver the wallpapers".
+     * Both halves are fixed: this reads them, and `wm.lua` now says which
+     * wallpaper it restored or why it could not.
+     */
+    if (colour == 3 && plte_n == 0) {
+        why = "a palette image with no palette in it";
         goto done;
     }
 
@@ -562,7 +611,25 @@ static int l_png(lua_State *L)
             const unsigned char *p = src + (size_t)x * channels;
             uint32_t r, g, b, a;
 
-            if (channels == 1) {
+            if (colour == 3) {
+                unsigned idx = p[0];
+
+                /*
+                 * An index past the palette is a broken file, and black
+                 * is the answer rather than a read past the end - the
+                 * same choice the texture reader makes, and for the same
+                 * reason: this data came from somewhere else.
+                 */
+                if (idx >= plte_n) {
+                    r = g = b = 0;
+                    a = 255;
+                } else {
+                    r = plte[idx * 3];
+                    g = plte[idx * 3 + 1];
+                    b = plte[idx * 3 + 2];
+                    a = (idx < trns_n) ? trns[idx] : 255;
+                }
+            } else if (channels == 1) {
                 r = g = b = p[0];
                 a = 255;
             } else {

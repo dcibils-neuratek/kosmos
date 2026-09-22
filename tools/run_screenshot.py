@@ -3414,6 +3414,17 @@ def check_wallpapers(guest):
         settle(guest, shown,
                "the desktop started and the screen never showed %s at the "
                "three points its decode gave" % counted.group(2), seconds=30)
+
+        # And the window manager says which wallpaper it restored. It used
+        # to say nothing either way, so a saved wallpaper that would not
+        # load - Diego's plain-colour PNGs, on 21 September - left nothing
+        # to search for; the refusal names its reason on the same line.
+        restored = "wm: wallpaper " + counted.group(2)
+        told = guest.seen[mark:]
+
+        if restored not in told or " would not load: " in told:
+            raise Failure("the desktop did not say it restored %s:\n%s"
+                          % (counted.group(2), told[-800:]))
     finally:
         back = len(guest.seen)
         guest.proc.stdin.write(STOP_DESKTOP)
@@ -3432,7 +3443,7 @@ def check_wallpapers(guest):
                    'print("walls" .. "-reset")')
         guest.wait_for("walls-reset", "put the flat desktop back")
 
-    return 3
+    return 4
 
 
 def check_direct_menu(guest):

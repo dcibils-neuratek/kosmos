@@ -70,6 +70,7 @@ local R_NAMES_HOLDER = 45
 local R_NAMES_ASKER  = 46
 local R_JPEG         = 47
 local R_STRETCH      = 48
+local R_PNG_PALETTE  = 49
 
 -- The /app registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
@@ -1737,6 +1738,130 @@ if role == R_STRETCH then
   end)
 
   check(not took, "an alpha of 300 was accepted")
+
+  sys.exit(0)
+end
+
+if role == R_PNG_PALETTE then
+  --------------------------------------------------------------------------
+  -- A palette PNG decodes, transparency and all.
+  --
+  -- Colour type 3 was refused outright until 21 September, and that was
+  -- Diego's forgotten wallpaper: `blue.png`, `black.png` and `white.png`
+  -- are all palette images, because a field of one colour is exactly what
+  -- the format has palettes for, so Appearance saved his choice and the
+  -- window manager could not read it back at the next boot.
+  --
+  -- The file is made here rather than carried, so every byte of it is on
+  -- this page: four by two pixels, three palette entries, transparency for
+  -- two of them, and one index past the end of the palette. The second row
+  -- is filtered with Up, so the indices are unfiltered before they are
+  -- looked up - a decoder that looked up first would get the deltas.
+  --
+  -- The deflate stream is a single stored block, which every inflater must
+  -- read, and the CRCs are real although the decoder does not check them:
+  -- this is a PNG any other program would open too.
+  --------------------------------------------------------------------------
+  local crc_table = {}
+
+  for n = 0, 255 do
+    local c = n
+
+    for _ = 1, 8 do
+      if c & 1 == 1 then c = 0xedb88320 ~ (c >> 1) else c = c >> 1 end
+    end
+
+    crc_table[n] = c
+  end
+
+  local function crc32(bytes)
+    local c = 0xffffffff
+
+    for i = 1, #bytes do
+      c = crc_table[(c ~ bytes:byte(i)) & 0xff] ~ (c >> 8)
+    end
+
+    return c ~ 0xffffffff
+  end
+
+  local function adler32(bytes)
+    local a, b = 1, 0
+
+    for i = 1, #bytes do
+      a = (a + bytes:byte(i)) % 65521
+      b = (b + a) % 65521
+    end
+
+    return (b << 16) | a
+  end
+
+  local function chunk(kind, body)
+    return string.pack(">I4", #body) .. kind .. body
+           .. string.pack(">I4", crc32(kind .. body))
+  end
+
+  local function png(ihdr_colour, with_palette)
+    -- Row 0 is [0 1 2 7] unfiltered; row 1 is [2 1 0 2], sent as its
+    -- difference from row 0 under filter 2, Up.
+    local rows = "\0" .. "\0\1\2\7"
+                 .. "\2" .. string.char(2, 0, 254, 251)
+
+    local zlib = "\x78\x01"
+                 .. "\1" .. string.pack("<I2<I2", #rows, (~#rows) & 0xffff)
+                 .. rows
+                 .. string.pack(">I4", adler32(rows))
+
+    local parts = {
+      "\x89PNG\r\n\x1a\n",
+      chunk("IHDR", string.pack(">I4>I4BBBBB", 4, 2, 8, ihdr_colour, 0, 0, 0)),
+    }
+
+    if with_palette then
+      parts[#parts + 1] = chunk("PLTE", "\xd0\x28\x28" .. "\x28\xb4\x3c"
+                                        .. "\x32\x46\xc8")
+      parts[#parts + 1] = chunk("tRNS", "\x80\xff")
+    end
+
+    parts[#parts + 1] = chunk("IDAT", zlib)
+    parts[#parts + 1] = chunk("IEND", "")
+
+    return table.concat(parts)
+  end
+
+  local ok, s = pcall(gfx.png, png(3, true))
+  check(ok, "a palette PNG did not decode: " .. tostring(s))
+
+  local w, h = s:size()
+  check(w == 4 and h == 2, "the palette PNG is " .. w .. "x" .. h
+        .. ", not 4x2")
+
+  local function is(x, y, want, what)
+    local got = s:get(x, y)
+    check(got == want, what .. " is " .. string.format("%08x", got)
+          .. ", wanted " .. string.format("%08x", want))
+  end
+
+  -- Entry 0 is half transparent, entry 1 opaque by its tRNS byte, entry 2
+  -- opaque because tRNS stops short of it, and index 7 is past a palette of
+  -- three, which is black rather than a read off the end.
+  is(0, 0, 0x80d02828, "index 0, alpha 0x80 from tRNS")
+  is(1, 0, 0xff28b43c, "index 1, alpha 0xff from tRNS")
+  is(2, 0, 0xff3246c8, "index 2, past the end of tRNS")
+  is(3, 0, 0xff000000, "index 7, past the end of the palette")
+
+  -- The Up-filtered row: right only if the filter came off first.
+  is(0, 1, 0xff3246c8, "row 1, index 2 after Up")
+  is(1, 1, 0xff28b43c, "row 1, index 1 after Up")
+  is(2, 1, 0x80d02828, "row 1, index 0 after Up")
+  is(3, 1, 0xff3246c8, "row 1, index 2 after Up, from 7")
+
+  -- The negative control: a palette image with no palette is refused,
+  -- and says why, rather than decoding to black or to noise.
+  local refused, why = pcall(gfx.png, png(3, false))
+  check(not refused, "a palette PNG with no palette decoded")
+  check(tostring(why):find("no palette", 1, true),
+        "a palette PNG with no palette was refused for the wrong reason: "
+        .. tostring(why))
 
   sys.exit(0)
 end
