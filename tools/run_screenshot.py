@@ -3705,8 +3705,86 @@ def check_appearance(guest):
 
     checks += check_theme_plex(guest)
     checks += check_theme_events(guest)
+    checks += check_deskbar_colour(guest)
 
     return checks
+
+
+def check_deskbar_colour(guest):
+    """**The Deskbar's colour, chosen and kept** (`roadmap.md` 5u).
+
+    Diego, 22 September: "keep the deskbar user selectable color". Chosen
+    from the command line as a swatch chooses it - `wm appearance:--bar
+    336698` - it has to be applied and written down; then a desktop started
+    afresh has to paint the bar that blue, and its words white, which is
+    `theme.ink_on` choosing light ink for a dark ground. The bar's rounded
+    corners are only at its top, so its bottom row is the colour exactly.
+    """
+    mark = len(guest.seen)
+    guest.type("wm appearance:--bar 336698")
+
+    try:
+        said = guest.wait_for_line("appearance: bar ",
+                                   "Appearance to choose the bar's colour",
+                                   mark)
+    finally:
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+    if said != "336698 applied":
+        raise Failure("choosing the Deskbar's colour said %r" % said)
+
+    guest.type("wm deskbar")
+
+    def blue_bar(w, h, px):
+        at = (35 * w + w // 2) * 3
+        r, g, b = px[at], px[at + 1], px[at + 2]
+
+        if abs(r - 0x33) > 6 or abs(g - 0x66) > 6 or abs(b - 0x98) > 6:
+            return None
+
+        # Its words, white on that blue: any near-white pixel in the bar.
+        for y in range(4, 32):
+            for x in range(0, w // 3):
+                i = (y * w + x) * 3
+
+                if px[i] > 230 and px[i + 1] > 230 and px[i + 2] > 230:
+                    return True
+
+        return None
+
+    try:
+        settle(guest, blue_bar, "a desktop started after the Deskbar's "
+               "colour was chosen never painted the bar #336698 with white "
+               "words", seconds=30)
+    finally:
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+        guest.type(appearance() + ' print("bar" .. "-reset")')
+        guest.wait_for("bar-reset", "put the harness's appearance back")
+
+    return 2
 
 
 def check_theme_events(guest):
@@ -8045,6 +8123,7 @@ def main():
           f"chosen - its five faces loaded, written down, and still worn "
           f"after a restart, and its spacing inside a widget; and four "
           f"theme events reaching a window across as many replies as fit, "
+          f"and the Deskbar's colour chosen and kept, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

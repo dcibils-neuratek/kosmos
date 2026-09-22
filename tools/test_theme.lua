@@ -209,6 +209,24 @@ button_pad = 4 20
         "a good button padding after bad lines was not read")
 end
 
+-- 4c. Words that read on a Deskbar somebody coloured (`theme.ink_on`):
+-- dark on the light bars, white on the dark ones - every swatch Appearance
+-- offers, by the answer it has to get.
+do
+  local dark, white = 0xff1e1e1e, 0xffffffff
+  local want = {
+    [0xffe7e7e3] = dark,  [0xffffcb00] = dark,  [0xfff2c230] = dark,
+    [0xffcccccc] = dark,  [0xffa59f80] = dark,  [0xff5786da] = white,
+    [0xff2b2b2b] = white, [0xff223344] = white, [0xff336698] = white,
+  }
+
+  for colour, ink in pairs(want) do
+    check(theme.ink_on(colour) == ink,
+          ("words on a %06x bar are %08x, not %08x"):format(colour & 0xffffff,
+          theme.ink_on(colour), ink))
+  end
+end
+
 -- 5. Applying a theme puts its colours in force and never its faces.
 do
   local before = theme.fonts

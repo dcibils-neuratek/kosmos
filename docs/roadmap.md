@@ -1152,7 +1152,8 @@ processors, and still what follows USB:
    headings in Plex Sans SemiBold, a file added from the same family; and
    no rounded corners and no shadow for now.
 
-5u. **AGREED on 22 September - the Deskbar's colour, chosen by the person.**
+5u. **DONE on 22 September - the Deskbar's colour, chosen by the person**
+   (`testing.md` 18.137).
    Diego, on seeing Plex's stone bar where BeOS's was yellow: "is that a
    setting?", "a color in the theme?", and then "keep the deskbar user
    selectable color". Each theme names its bar (`bar`, `bar_text`, since

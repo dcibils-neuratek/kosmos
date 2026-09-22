@@ -673,6 +673,12 @@ Every theme but Plex names the numbers the kit always had. The spacing
 *between* widgets is each application's own and is not in a theme yet
 (`roadmap.md` 5s).
 
+**The Deskbar's colour is the person's as well as the theme's.** A theme
+names where it starts; Appearance offers eight beside the desktop's colour,
+and a choice is kept over the theme's in `/home/.appearance`. The words on
+the bar follow it through `theme.ink_on`, dark on a light ground and white
+on a dark one, since a colour picked by hand has no theme to name them.
+
 **A window may ask to be told when the theme changes**: `win.on_theme`,
 which the kit calls after applying a theme event. Almost nothing needs it -
 widgets read the theme when they draw - and the one that does is the

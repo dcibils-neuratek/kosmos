@@ -129,7 +129,7 @@ end
 --
 local LH, LIST_H, RESET_H                     -- a label; a list; the button
 local PAL_Y, LIST_Y, RESET_Y, DESK_Y          -- the left column
-local SW, SWATCH_Y, WALL_Y, WALL_LIST
+local SW, SWATCH_Y, BAR_Y, BAR_SW_Y, WALL_Y, WALL_LIST
 local FONTS_Y, ROLE_Y, ROLE_H, LISTS_Y        -- the right column
 local FONT_W, PREVIEW_Y, PREVIEW_H
 local TITLES_Y, SHAPE_Y, SHAPE_H
@@ -148,7 +148,9 @@ local function measure()
   DESK_Y    = RESET_Y + RESET_H + GAP
   SWATCH_Y  = DESK_Y + LH
   SW        = (LEFT_W - 7 * 4) // 8
-  WALL_Y    = SWATCH_Y + 2 * (SW + 4) + GAP
+  BAR_Y     = SWATCH_Y + 2 * (SW + 4) + GAP
+  BAR_SW_Y  = BAR_Y + LH
+  WALL_Y    = BAR_SW_Y + (SW + 4) + GAP
   WALL_LIST = WALL_Y + LH
 
   FONTS_Y   = PAD
@@ -229,6 +231,7 @@ end
 
 local chosen_palette = "dark"
 local chosen_desktop = nil     -- nil means "whatever the palette says"
+local chosen_bar     = nil     -- the Deskbar's; nil is the theme's own
 
 -- Declared here rather than beside the font lists because `send` is written
 -- before them and closes over both.
@@ -301,6 +304,7 @@ local function send()
   local reply, why = fs.send("/app/wm", { type = "theme",
                                           palette = colours,
                                           desktop = chosen_desktop,
+                                          bar = chosen_bar,
                                           fonts = chosen,
                                           tabs = chosen_tabs })
 
@@ -313,6 +317,7 @@ local function send()
   -- come to hold an appearance the system never managed to apply.
   local ok, werr = fs.write(SETTINGS, { palette = chosen_palette,
                                         desktop = chosen_desktop,
+                                        bar = chosen_bar,
                                         wallpaper = chosen_wallpaper,
                                         fonts = chosen,
                                         tabs = chosen_tabs })
@@ -420,6 +425,56 @@ local swatches = ui.view{
 }
 
 win:add(swatches)
+
+--
+-- **The Deskbar's colour** (`roadmap.md` 5u). Diego, 22 September, on
+-- seeing Plex's stone bar where BeOS's is yellow: "is that a setting?", and
+-- then "keep the deskbar user selectable color". A theme says where it
+-- starts; a colour here is kept over it and survives a restart, and the
+-- words on the bar follow it (`theme.ink_on`), so none of these can leave
+-- them unreadable. The first eight are the bars the themes that ship paint
+-- - Plex's stone, BeOS's yellow, Plex's yellow, Photon's blue, Platinum's
+-- grey, IRIX's khaki - and two darks. "Back to this theme" gives the
+-- theme's own back.
+--
+local BAR_SWATCHES = {
+  0xffe7e7e3, 0xffffcb00, 0xfff2c230, 0xff5786da,
+  0xffcccccc, 0xffa59f80, 0xff2b2b2b, 0xff223344,
+}
+
+local bar_label = ui.label{ x = LEFT_X, y = BAR_Y, w = LEFT_W, text = "Deskbar" }
+win:add(bar_label)
+
+local bar_swatches = ui.view{
+  x = LEFT_X, y = BAR_SW_Y, w = LEFT_W, h = SW + 4,
+
+  draw = function(self, g)
+    for i, colour in ipairs(BAR_SWATCHES) do
+      local x = (i - 1) * (SW + 4)
+      local on = colour == (chosen_bar or ui.theme.bar)
+
+      g:fill(x, 0, SW, SW, colour)
+
+      if on then
+        g:frame(x, 0, SW, SW, ui.theme.ring)
+        g:frame(x + 1, 1, SW - 2, SW - 2, ui.theme.ring)
+      else
+        g:frame(x, 0, SW, SW, ui.theme.line)
+      end
+    end
+  end,
+
+  on_click = function(self, x, _)
+    local colour = BAR_SWATCHES[x // (SW + 4) + 1]
+
+    if colour then
+      chosen_bar = colour
+      send()
+    end
+  end,
+}
+
+win:add(bar_swatches)
 
 --------------------------------------------------------------------------
 -- Fonts, by role.
@@ -696,6 +751,7 @@ local reset_button = ui.button{
   text = "Back to this theme",
   on_click = function()
     chosen_desktop = nil
+    chosen_bar = nil
     take_theme_faces(chosen_palette)
     reflect()
     send()
@@ -713,6 +769,7 @@ local saved = fs.read(SETTINGS)
 if type(saved) == "table" then
   chosen_palette = saved.palette or chosen_palette
   chosen_desktop = saved.desktop
+  chosen_bar = math.type(saved.bar) == "integer" and saved.bar or nil
   chosen_wallpaper = saved.wallpaper
   chosen_tabs = (saved.tabs == "full") and "full" or "beos"
   if type(saved.fonts) == "table" then
@@ -919,6 +976,8 @@ local function layout()
   reset_button.y, reset_button.h = RESET_Y, RESET_H
   desk_label.y = DESK_Y
   swatches.y, swatches.h = SWATCH_Y, 2 * (SW + 4)
+  bar_label.y = BAR_Y
+  bar_swatches.y, bar_swatches.h = BAR_SW_Y, SW + 4
   wall_label.y = WALL_Y
   wall_list.y, wall_list.h = WALL_LIST, LIST_H
 
@@ -974,6 +1033,23 @@ function win:on_theme() layout() end
 -- names a face the image does not carry says so here instead of looking
 -- right in the panel and drawing in the previous face.
 --
+--
+-- **`--bar rrggbb`**, the Deskbar's colour the way a click on a swatch
+-- chooses it, for the same two reasons.
+--
+do
+  local hex = (args or ""):match("%-%-bar%s+#?(%x%x%x%x%x%x)")
+
+  if hex then
+    chosen_bar = 0xff000000 | tonumber(hex, 16)
+
+    local reply, why = send()
+
+    print(("appearance: bar %06x %s"):format(chosen_bar & 0xffffff,
+          reply and "applied" or ("refused: " .. tostring(why))))
+  end
+end
+
 do
   local want = (args or ""):match("%-%-theme%s+(%S+)")
 

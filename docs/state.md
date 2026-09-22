@@ -71,6 +71,10 @@ the stick. Not closed until a run says so with bytes written.
 
 1. **What the 0.10.104 stick says on the ThinkPad**, and its row in
    `boot.md`'s table once it has booted there.
+1. **0.10.107**: the Deskbar's colour chosen in Appearance (5u, 18.137),
+   and commit subjects that start with their version again (CLAUDE.md).
+   Asked of Diego: the Deskbar's height as a theme value only, or also a
+   control in Appearance; and tags for 0.10.92 to 0.10.106.
 1. **0.10.106 on the ThinkPad** (18.136): faces at 16, Appearance laying
    itself out again, poll replies that fit, the stick's pipes recovered by
    their real state, Plex's spacing inside a widget. Then Diego's two

@@ -12,6 +12,13 @@ system" means Kosmos.
 **Versions are `major.minor.revision`, in the `VERSION` file.** A revision
 per push, a minor when something substantial lands, and a major when we
 decide something was big enough to be one. `make bump`, `make bump-minor`, `make bump-major`.
+**The commit that carries a bump starts its subject with the version** -
+`0.10.107: The Deskbar's colour, chosen in Appearance` - so `git log
+--oneline` says which revision is which. Diego, 22 September: "the git
+commits are not having the version number for some reason as they had in
+the past". They had it while a bump was a commit of its own; from 0.10.92
+the bump went into the change it belonged to and the number left the log
+without anybody deciding it should.
 **A build handed to Diego for the ThinkPad takes a revision of its own** as
 well, and carries a label in its file's name - `-development` until he agrees
 it is stable, `-stable` after (*How to work here*).

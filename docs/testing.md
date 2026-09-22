@@ -7306,3 +7306,29 @@ spec's 7, 5 by 16 and 5 by 8. `list:row_height()` answers the row's height.
 bad spacing lines; the harness's Plex restart probe opens a window and
 requires a list row of its face plus 14 and a button of its words plus 32.
 **Control**: a list that ignores `row_pad` measures "its face and 0".
+
+## 18.137 The Deskbar's colour, chosen
+
+**Diego, 22 September**, on seeing Plex's stone bar where BeOS's is yellow:
+"is that a setting?", "a color in the theme?", and then "keep the deskbar
+user selectable color". A theme names where the bar starts (`bar`,
+`bar_text`, 0.10.105); Appearance now offers it beside the desktop's colour
+- eight swatches: the bars the shipped themes paint, and two darks - and a
+choice is kept in `/home/.appearance` over the theme's and survives a
+restart. `Back to this theme` gives the theme's own back.
+
+**The words follow the colour.** A theme names its bar's words beside its
+bar; a colour picked in Appearance has no theme to say them, so
+`theme.ink_on` works them out - dark on a light ground, white on a dark one,
+by BT.709 luminance with the line at 140 of 255, a little above the middle
+because a mid grey reads better with dark words.
+
+### The checks
+
+- **`test_theme.lua`**, 9 more: every swatch Appearance offers, and one
+  more blue, get the ink they have to.
+- **The display harness's `appearance` phase**, 2 more: `wm
+  appearance:--bar 336698` - the colour chosen as a swatch chooses it - is
+  applied and written down; and a desktop started afresh paints the bar's
+  bottom row `#336698` with white words on it. **Control**: a window manager
+  that ignores a saved bar at startup never paints it, and the check fails.

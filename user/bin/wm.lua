@@ -403,6 +403,12 @@ local function load_appearance()
   end
   if saved.desktop then theme.override { desktop = saved.desktop } end
 
+  -- The Deskbar's colour, when somebody chose one over their theme's, and
+  -- words that read on it (`roadmap.md` 5u).
+  if math.type(saved.bar) == "integer" then
+    theme.override { bar = saved.bar, bar_text = theme.ink_on(saved.bar) }
+  end
+
   --
   -- **`or theme.fonts`, and without it the desktop was two fonts at once.**
   --
@@ -4459,6 +4465,13 @@ handlers.theme = function(req)
   -- so a light theme over a dark desktop is a thing somebody can have.
   if req.desktop then
     theme.override { desktop = req.desktop }
+  end
+
+  -- And the Deskbar's, over the theme's when somebody chose one (5u). A
+  -- theme message with no `bar` leaves the theme's own, which the palette
+  -- above has just put in force.
+  if math.type(req.bar) == "integer" then
+    theme.override { bar = req.bar, bar_text = theme.ink_on(req.bar) }
   end
 
   -- The font travels with the palette, because they are the same decision

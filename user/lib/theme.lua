@@ -507,6 +507,30 @@ function theme.override(fields)
   return theme
 end
 
+--
+-- **Ink that reads on a ground somebody chose**: dark on a light colour,
+-- white on a dark one, by the colour's luminance - the weights ITU-R BT.709
+-- gives red, green and blue, which is how bright each looks rather than how
+-- much of it there is. Here for the Deskbar, whose colour a person picks
+-- since 22 September (`roadmap.md` 5u): a theme names its bar's words beside
+-- its bar, and a colour picked in Appearance has no theme to say them, so
+-- they are worked out rather than left to be unreadable.
+--
+-- 140 of 255, a little above the middle, because a mid grey reads better
+-- with dark words than with white ones.
+--
+function theme.ink_on(colour)
+  local r = (colour >> 16) & 0xff
+  local g = (colour >>  8) & 0xff
+  local b =  colour        & 0xff
+
+  if 0.2126 * r + 0.7152 * g + 0.0722 * b >= 140 then
+    return 0xff1e1e1e
+  end
+
+  return 0xffffffff
+end
+
 --------------------------------------------------------------------------
 -- Chrome that is not flat.
 --
