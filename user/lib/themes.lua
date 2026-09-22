@@ -70,6 +70,8 @@ text_on    = #ffffff
 tab        = #5786da
 tab_idle   = #abbbd2
 tab_text   = #000065
+bar        = #5786da
+bar_text   = #000065
 desktop_text = #ffffff
 console      = #0b0b0b
 console_text = #d8d8d8
@@ -130,6 +132,8 @@ text_on    = #000000
 tab        = #ffcb00
 tab_idle   = #e8e8e8
 tab_text   = #000000
+bar        = #ffcb00
+bar_text   = #000000
 desktop_text = #ffffff
 console      = #0b0b0b
 console_text = #d8d8d8
@@ -186,6 +190,8 @@ text_on    = #000000
 tab        = #cccccc
 tab_idle   = #dddddd
 tab_text   = #000000
+bar        = #cccccc
+bar_text   = #000000
 desktop_text = #ffffff
 console      = #0b0b0b
 console_text = #d8d8d8
@@ -240,6 +246,8 @@ text_on    = #000000
 tab        = #a59f80
 tab_idle   = #808080
 tab_text   = #000000
+bar        = #a59f80
+bar_text   = #000000
 desktop_text = #ffffff
 console      = #0b0b0b
 console_text = #d8d8d8
@@ -275,7 +283,10 @@ themes.plex = [[
 # Cooler than BeOS's greys and warmer than white: the bar and the panels
 # are a faint stone, the rules between things a little darker, and the one
 # saturated colour is a deep IBM-ish blue for the selection and the ring.
-# The yellow tab is BeOS's idea kept, in a softer yellow.
+# The yellow tab is BeOS's idea kept, in a softer yellow - on the windows.
+# The Deskbar is the stone the mockups draw it in, which is why `bar` is a
+# colour of its own: every other theme paints the bar in its tab colour,
+# and says so.
 
 name       = plex
 desktop    = #3d63b8
@@ -296,6 +307,8 @@ text_on    = #ffffff
 tab        = #f2c230
 tab_idle   = #e7e7e3
 tab_text   = #3a2e00
+bar        = #e7e7e3
+bar_text   = #1e1e1e
 desktop_text = #ffffff
 console      = #1c1c1e
 console_text = #ececec

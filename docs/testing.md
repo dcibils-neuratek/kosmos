@@ -7164,6 +7164,16 @@ manager's new `wm: theme` line moved where the serial reads fell. A race
 the check always had. `wait_for_line` waits for the newline as well, and
 the phase's four reads use it.
 
+**The first picture of Plex had a yellow Deskbar and `spleen` highlighted.**
+The Deskbar paints its strip in `theme.tab`, the window tab's colour, and
+Plex's tab is the video mockup's yellow while the indicators mockup draws
+the bar in stone. So the bar has colours of its own, `bar` and `bar_text`:
+every theme that ships sets them to its tab's, so none of them changes,
+and Plex to `#e7e7e3` and `#1e1e1e`; `test_theme.lua` holds both. And
+Appearance highlighted a face only on an exact name, so a title set to
+`ibmplexsanscondensed` - the start of the one file there is - left the list
+on `spleen`; it now matches by `font_asset`'s rule, exact then prefix.
+
 **Every shipped theme was read with complaints, and always had been.** A
 comment line holding a bare `#` - the blank line inside a block of comments,
 in all five - was "not `key = value`", because the rule that strips a
@@ -7173,7 +7183,7 @@ line that *starts* with `#` is a comment now, whatever follows.
 
 ### The checks
 
-- **`tools/test_theme.lua`**, 118 checks, in `make host-check`, handed
+- **`tools/test_theme.lua`**, 124 checks, in `make host-check`, handed
   `FONT_FILES` so every face a theme names is held to what the image
   embeds, by `font_asset`'s own rule: each shipped theme clean and complete;
   the four old ones unchanged; Plex value for value against `docs/plex.html`;

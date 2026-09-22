@@ -87,9 +87,14 @@ for _, name in ipairs(themes.order) do
   end
 end
 
--- 2. The four that were palettes look as they always have.
+-- 2. The four that were palettes look as they always have - their faces,
+-- and a Deskbar in the tab's colours, which is what it was painted in
+-- before `bar` was a colour of its own.
 for _, name in ipairs({ "photon", "beos", "platinum", "irix" }) do
   local p = theme.read(themes[name], "dark")
+
+  check(p.bar == p.tab and p.bar_text == p.tab_text,
+        name .. "'s Deskbar is not its tab's colours any more")
 
   for _, role in ipairs(theme.roles) do
     local want, got = theme.default_fonts[role], p.fonts[role]
@@ -111,7 +116,7 @@ do
     tab_idle = 0xffe7e7e3, tab_text = 0xff3a2e00, desktop_text = 0xffffffff,
     console = 0xff1c1c1e, console_text = 0xffececec, accent = 0xff2a55c9,
     good = 0xff2f8a3e, bad = 0xffb3261e, ring = 0xff2a55c9,
-    stamp = 0xff8fa9df,
+    stamp = 0xff8fa9df, bar = 0xffe7e7e3, bar_text = 0xff1e1e1e,
   }
 
   for k, v in pairs(colours) do

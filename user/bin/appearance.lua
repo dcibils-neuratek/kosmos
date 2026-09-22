@@ -479,9 +479,22 @@ function reflect()
     if name == chosen_palette then palette_list.selected = i end
   end
 
+  --
+  -- **By the rule the face was found by**, an exact name and then a prefix
+  -- (`gfx.c`'s `font_asset`). A theme names Plex's title face
+  -- `ibmplexsanscondensed`, which is the start of the one file there is,
+  -- `ibmplexsanscondensed-semibold`; matched exactly, nothing was
+  -- highlighted and the list kept whatever row it had - `spleen`, for a
+  -- title drawn in Plex (22 September, the first picture of Plex).
+  --
+  local exact, prefix
+
   for i, f in ipairs(FONTS) do
-    if f == c.font then font_list.selected = i end
+    if f == c.font then exact = i end
+    if not prefix and f:sub(1, #c.font) == c.font then prefix = i end
   end
+
+  font_list.selected = exact or prefix or font_list.selected
 
   for i, px in ipairs(SIZES) do
     if px == c.px then size_list.selected = i end

@@ -71,6 +71,10 @@ theme.palettes.dark = {
   tab_idle  = 0xffb8b8b8,
   tab_text  = 0xff101010,
 
+  -- The Deskbar's strip and its words: the tab's, as it always was.
+  bar       = 0xffffc700,
+  bar_text  = 0xff101010,
+
   -- Ink for a label lying on the desktop itself, which is not the ink for
   -- a label in a window and cannot be. `text` is chosen to read against
   -- `window`; the desktop is a colour the user picks, and every default
@@ -138,6 +142,9 @@ theme.palettes.light = {
   -- has no edge at all on a light desktop.
   tab_idle  = 0xffb0b0b0,
   tab_text  = 0xff101010,
+
+  bar       = 0xffffc700,
+  bar_text  = 0xff101010,
 
   desktop_text = 0xffffffff,
 
@@ -210,7 +217,7 @@ theme.palettes.light = {
 theme.tokens = {
   "name", "desktop", "window", "raised", "sunken", "line", "line_soft",
   "edge_light", "edge_dark", "text", "text_dim", "text_on",
-  "tab", "tab_idle", "tab_text", "desktop_text",
+  "tab", "tab_idle", "tab_text", "bar", "bar_text", "desktop_text",
   "console", "console_text",
   "accent", "good", "bad", "ring", "stamp",
 }
