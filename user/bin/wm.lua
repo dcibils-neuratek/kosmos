@@ -189,36 +189,30 @@ local function stamp_colour()    return theme.stamp end
 local SETTINGS = "/home/.appearance"
 
 --
--- **The title's shape: a BeOS tab, or a bar across the whole window.**
+-- **The title's shape: a bar across the whole window, and not a setting.**
 --
--- Diego, 18 September: "i love the tabs in the windows like BEOS instead of
--- the full windoe tab like we have today", and "can we have a appearance
--- setting to switch between full tab like windows or linux or beos". So it
--- is a setting, `tabs` in `/home/.appearance`, and **the tab by default**,
--- the one he prefers.
+-- It was a BeOS tab, as wide as what is on it, from 18 September - Diego:
+-- "i love the tabs in the windows like BEOS instead of the full windoe tab
+-- like we have today" - with the bar across as a choice in Appearance. The
+-- choice left with the looks (`roadmap.md` 5y) and the tab stayed, until
+-- Diego, 22 September: "i want to switch back the tabs from be os style to
+-- full width". So every window's title bar is as wide as the window, and a
+-- `tabs` an older `/home/.appearance` saved is read by nothing: a machine
+-- whose file still says "beos" would have kept the tab under a new default
+-- alone. The tab's width was worked out from the close box, the title and
+-- the two boxes; 0.10.113 has it.
 --
--- A tab is as wide as what is on it - the close box, the title in the title
--- font, the two boxes at its end - and no wider than the window. Beside it,
--- above the window, is whatever is behind: the window is a tab on a body,
--- not a rectangle, and `tabs.shape` is that shape for the three things that
--- need it - the compositor cutting it out of what is behind, the pointer
--- finding what is under it, and the paint staying inside it. `frame_of`
--- stays the rectangle round both, which is right for damage and outlines.
+-- `tabs.shape` is still the window as a title bar on a body, for the three
+-- things that need its shape - the compositor cutting it out of what is
+-- behind, the pointer finding what is under it, and the paint staying
+-- inside it - and the two now make the frame's rectangle.
 --
 -- One table, because the main chunk is at Lua's limit of locals.
 --
-local tabs = { style = "beos", GAP = 12, MIN = 64 }
+local tabs = {}
 
 function tabs.width(win)
-  local frame = win.w + BORDER * 2
-
-  if tabs.style ~= "beos" then return frame end
-
-  local controls = win.pinned and 0 or (CLOSE_W + BOX_W + BOX)
-  local want = MARGIN + controls + gfx.measure(win.title or "", "title")
-               + tabs.GAP + MARGIN
-
-  return math.min(frame, math.max(tabs.MIN, want))
+  return win.w + BORDER * 2
 end
 
 -- The tab and the body, as rectangles, for a decorated window.
@@ -228,10 +222,6 @@ function tabs.shape(win)
 
   return { fx, fy, tabs.width(win), TAB_H },
          { fx, win.y, fw, win.h + BORDER }
-end
-
-function tabs.choose(style)
-  tabs.style = (style == "full") and "full" or "beos"
 end
 
 -- What `load_appearance` found, for the startup below to apply.
@@ -425,7 +415,6 @@ local function load_appearance()
   -- started inside it; buttons sized in Plex held bitmap text and clipped it.
   --
   startup_font_why = apply_fonts(saved.fonts or theme.fonts)
-  tabs.choose(saved.tabs)
 
   -- Kept, not applied: this runs before the framebuffer is taken, and a
   -- picture cannot be centred until something knows how big the screen is.
@@ -2144,14 +2133,29 @@ local function draw_window(i, r)
         raised_box(mx, by, BOX, BOX, theme.raised)
         back:fill(mx + 3, by + BOX - 6, BOX - 6, 2, theme.text)
 
-        if resizable(win) then
-          -- Maximise: a little window - a frame with a title bar on it -
-          -- and the bar is what makes it read as a window rather than as
-          -- an empty box.
-          local zx = mx + BOX_W
+        --
+        -- Maximise: a little window - a frame with a title bar on it - and
+        -- the bar is what makes it read as a window rather than as an
+        -- empty box.
+        --
+        -- **Greyed, not gone, on a window that cannot be maximised** - one
+        -- that draws its own pixels into a surface of a fixed size. It was
+        -- left off, and the tab's controls then changed from one window to
+        -- the next. Diego, 22 September: "when a window cant be maximixed we
+        -- shouldnt remove the button we should just gray it out and disable
+        -- it". Flat rather than raised, since raised is how this look says
+        -- a thing can be pressed (`ui.md` 16.8b), and its glyph dimmed; a
+        -- press on it does nothing.
+        --
+        local zx = mx + BOX_W
 
+        if resizable(win) then
           raised_box(zx, by, BOX, BOX, theme.raised)
           back:fill(zx + 3, by + 3, BOX - 6, BOX - 6, theme.text)
+          back:fill(zx + 4, by + 6, BOX - 8, BOX - 7, theme.raised)
+        else
+          back:fill(zx, by, BOX, BOX, theme.raised)
+          back:fill(zx + 3, by + 3, BOX - 6, BOX - 6, theme.text_dim)
           back:fill(zx + 4, by + 6, BOX - 8, BOX - 7, theme.raised)
         end
 
@@ -4489,9 +4493,6 @@ handlers.theme = function(req)
   -- forwarded, so a window drawing its own pixels changes too.
   local font_why = apply_fonts(req.fonts)
 
-  -- The title's shape, when Appearance says which (`tabs`).
-  if req.tabs then tabs.choose(req.tabs) end
-
   --
   -- The whole palette, not its name.
   --
@@ -5203,8 +5204,10 @@ local function pointer_pass(p)
           dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
         elseif nx >= mx and nx < mx + BOX_W then
           minimise(win)
-        elseif nx >= mx + BOX_W and nx < mx + BOX_W * 2 and resizable(win) then
-          maximise(win)
+        elseif nx >= mx + BOX_W and nx < mx + BOX_W * 2 then
+          -- Greyed on a window that cannot be maximised, and then a press
+          -- on it is nothing: not a maximise, and not the start of a drag.
+          if resizable(win) then maximise(win) end
         elseif nx < fx + MARGIN + CLOSE_W then
           --
           -- The close box. Asked first, taken by force second.

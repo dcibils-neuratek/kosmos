@@ -49,13 +49,14 @@ themes.plex = [[
 # panels, `docs/video.html` for the window's tab and the dark surfaces -
 # and `docs/plex.html` says which, and marks the few no page draws.
 #
-# Cooler than BeOS's greys and warmer than white: the bar and the panels
-# are a faint stone, the rules between things a little darker, and the one
+# Cooler than BeOS's greys and warmer than white: the panels are a faint
+# stone, the rules between things a little darker, and the one
 # saturated colour is a deep IBM-ish blue for the selection and the ring.
-# The yellow tab is BeOS's idea kept, in a softer yellow - on the windows.
-# The Deskbar is the stone the mockups draw it in, which is why `bar` is a
-# colour of its own: every other theme paints the bar in its tab colour,
-# and says so.
+# The yellow tab is BeOS's idea kept, in a softer yellow - on the windows,
+# on the Deskbar and on a scrollbar's thumb, which is where a look's tab
+# colour goes in every look (`theme.lua`). The mockups drew the Deskbar in
+# stone, and it was until Diego, 22 September: "the deskbar tab color should
+# be yellow or at least the same color of the acccent color of the theme".
 
 name       = plex
 desktop    = #3d63b8
@@ -76,8 +77,6 @@ text_on    = #ffffff
 tab        = #f2c230
 tab_idle   = #e7e7e3
 tab_text   = #3a2e00
-bar        = #e7e7e3
-bar_text   = #1e1e1e
 desktop_text = #ffffff
 console      = #1c1c1e
 console_text = #ececec
@@ -130,8 +129,6 @@ text_on    = #ffffff
 tab        = #d9a92a
 tab_idle   = #9aa0a8
 tab_text   = #231a00
-bar        = #23262c
-bar_text   = #e6e8eb
 desktop_text = #e6e8eb
 console      = #0d0f12
 console_text = #d6dae0
@@ -154,8 +151,8 @@ font.mono    = ibmplexmono 14
 themes.classic = [[
 # **Classic**: BeOS R5 as it was, in Plex type. The colours are from
 # Haiku's `_kDefaultColors[]` - which is not a recollection of R5's colours,
-# it is R5's colours - and the Deskbar is R5's grey rather than the tab's
-# yellow, as R5 drew it.
+# it is R5's colours. R5 drew its Deskbar grey; here it is the tab's yellow,
+# as the Deskbar is in every look.
 #
 # The yellow is #ffcb00, which is 255,203,0: a faintly green-shifted
 # saturated yellow, and an exact entry in BeOS's 8-bit palette whose cube
@@ -192,8 +189,6 @@ text_on    = #000000
 tab        = #ffcb00
 tab_idle   = #e8e8e8
 tab_text   = #000000
-bar        = #d8d8d8
-bar_text   = #000000
 desktop_text = #ffffff
 console      = #0b0b0b
 console_text = #d8d8d8
@@ -239,8 +234,6 @@ text_on    = #1a0f05
 tab        = #e8833a
 tab_idle   = #8a8c90
 tab_text   = #1a0f05
-bar        = #141518
-bar_text   = #d9d6d2
 desktop_text = #d9d6d2
 console      = #08090a
 console_text = #d8d4ce

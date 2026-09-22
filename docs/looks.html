@@ -61,7 +61,7 @@
      the look's own, set on the element as custom properties. */
   .desk { position: relative; width: 460px; height: 352px; background: var(--k-desk); overflow: hidden;
           border: 1px solid rgba(0,0,0,.35); }
-  .bar { height: 32px; background: var(--k-bar); color: var(--k-bar-text); display: flex; align-items: center;
+  .bar { height: 32px; background: var(--k-tab); color: var(--k-tab-text); display: flex; align-items: center;
          gap: 14px; padding: 0 12px; font: 16px/1 var(--body); border-bottom: 1px solid var(--k-line); }
   .bar b { font-weight: 600; }
   .bar .sp { flex: 1; }
@@ -69,8 +69,8 @@
   .bar .ico { width: 24px; height: 24px; border-radius: 3px; background: var(--k-accent); opacity: .85; }
 
   .win { position: absolute; left: 22px; top: 58px; width: 416px; }
-  .tab { display: inline-flex; align-items: center; gap: 8px; height: 20px; padding: 0 12px 0 6px;
-         background: var(--k-tab); color: var(--k-tab-text); font: 600 14px/20px var(--display);
+  .tab { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 12px 0 6px;
+         background: var(--k-tab); color: var(--k-tab-text); font: 600 14px/26px var(--display);
          border: 1px solid var(--k-line); border-bottom: 0; }
   .tab i { width: 11px; height: 11px; border: 1px solid var(--k-tab-text); opacity: .55; }
   .body { background: var(--k-window); color: var(--k-text); border: 1px solid var(--k-line);
@@ -106,7 +106,7 @@
   .mini { height: 58px; position: relative; }
   .mini .mb { position: absolute; left: 0; right: 0; top: 0; height: 8px; }
   .mini .mw { position: absolute; left: 10px; top: 16px; width: 70%; height: 34px; border: 1px solid rgba(0,0,0,.4); }
-  .mini .mt { position: absolute; left: 10px; top: 11px; width: 28px; height: 6px; }
+  .mini .mt { position: absolute; left: 10px; top: 11px; width: 70%; height: 6px; }
   .walls { background: #fff; border: 1px solid #777; }
   .walls div { height: 24px; line-height: 24px; padding: 0 8px; }
   .walls .on { background: #2a55c9; color: #fff; }
@@ -130,13 +130,13 @@
   .scaled { --s: 1; overflow-x: auto; margin-top: 16px; padding-bottom: 6px; }
   .sdesk { position: relative; width: calc(620px * var(--s)); height: calc(250px * var(--s)); background: #3d63b8;
            border: 1px solid rgba(0,0,0,.35); font-family: var(--body); }
-  .sbar { height: calc(32px * var(--s)); background: #e7e7e3; color: #1e1e1e; display: flex; align-items: center;
+  .sbar { height: calc(32px * var(--s)); background: #f2c230; color: #3a2e00; display: flex; align-items: center;
           gap: calc(10px * var(--s)); padding: 0 calc(12px * var(--s)); font-size: calc(16px * var(--s));
           border-bottom: 1px solid #cfcfc9; }
   .sbar .ico { width: calc(24px * var(--s)); height: calc(24px * var(--s)); border-radius: 3px; background: #2a55c9; opacity: .85; }
   .sbar .sp { flex: 1; }
   .swin { position: absolute; left: calc(40px * var(--s)); top: calc(56px * var(--s)); width: calc(330px * var(--s)); }
-  .stab { display: inline-flex; align-items: center; height: calc(26px * var(--s)); padding: 0 calc(12px * var(--s));
+  .stab { display: flex; align-items: center; height: calc(26px * var(--s)); padding: 0 calc(12px * var(--s));
           background: #f2c230; color: #3a2e00; font: 600 calc(14px * var(--s))/1 var(--display); border: 1px solid #777; border-bottom: 0; }
   .sbody { background: #f4f4f1; color: #1e1e1e; border: 1px solid #777; padding: calc(12px * var(--s));
            display: grid; gap: calc(12px * var(--s)); font-size: calc(16px * var(--s)); }
@@ -164,7 +164,7 @@
       <h3>Plex</h3>
       <p class="what">The mockups' own look, as built in 0.10.105: light stone, one
       deep IBM blue, BeOS's yellow tab kept.</p>
-      <div class="desk" style="--k-desk:#3d63b8;--k-bar:#e7e7e3;--k-bar-text:#1e1e1e;--k-line:#777;--k-accent:#2a55c9;--k-tab:#f2c230;--k-tab-text:#3a2e00;--k-window:#f4f4f1;--k-text:#1e1e1e;--k-dim:#6c6c66;--k-raised:#e7e7e3;--k-sunken:#fff;--k-edge-light:#fff;--k-edge-dark:#9a9a94;--k-ring:#2a55c9;--k-text-on:#fff;--k-console:#1c1c1e;--k-console-text:#ececec">
+      <div class="desk" style="--k-desk:#3d63b8;--k-line:#777;--k-accent:#2a55c9;--k-tab:#f2c230;--k-tab-text:#3a2e00;--k-window:#f4f4f1;--k-text:#1e1e1e;--k-dim:#6c6c66;--k-raised:#e7e7e3;--k-sunken:#fff;--k-edge-light:#fff;--k-edge-dark:#9a9a94;--k-ring:#2a55c9;--k-text-on:#fff;--k-console:#1c1c1e;--k-console-text:#ececec">
         <div class="bar"><b>Kosmos</b><span>Tracker</span><span class="sp"></span><span class="ico"></span><span class="clock">14:05</span></div>
         <div class="win">
           <div class="tab"><i></i>Tracker</div>
@@ -184,7 +184,7 @@
       <h3>Plex Night</h3>
       <p class="what">The same design in the dark: slate windows on a midnight
       desk, the blue lifted so it still reads, the yellow tab dimmed to amber.</p>
-      <div class="desk" style="--k-desk:#16213a;--k-bar:#23262c;--k-bar-text:#e6e8eb;--k-line:#0a0b0d;--k-accent:#4f7dff;--k-tab:#d9a92a;--k-tab-text:#231a00;--k-window:#1f2227;--k-text:#e6e8eb;--k-dim:#9aa1ab;--k-raised:#2c3038;--k-sunken:#15171b;--k-edge-light:#3a3f48;--k-edge-dark:#0d0e11;--k-ring:#7aa0ff;--k-text-on:#fff;--k-console:#0d0f12;--k-console-text:#d6dae0">
+      <div class="desk" style="--k-desk:#16213a;--k-line:#0a0b0d;--k-accent:#4f7dff;--k-tab:#d9a92a;--k-tab-text:#231a00;--k-window:#1f2227;--k-text:#e6e8eb;--k-dim:#9aa1ab;--k-raised:#2c3038;--k-sunken:#15171b;--k-edge-light:#3a3f48;--k-edge-dark:#0d0e11;--k-ring:#7aa0ff;--k-text-on:#fff;--k-console:#0d0f12;--k-console-text:#d6dae0">
         <div class="bar"><b>Kosmos</b><span>Tracker</span><span class="sp"></span><span class="ico"></span><span class="clock">22:40</span></div>
         <div class="win">
           <div class="tab"><i></i>Tracker</div>
@@ -205,8 +205,8 @@
       <p class="what">BeOS R5 as it was: the panel grey, the saturated yellow tab,
       a grey selection with the text left black, blue only on the desk and the
       focus ring. In Plex type, so it reads on today's screens.</p>
-      <div class="desk" style="--k-desk:#336698;--k-bar:#d8d8d8;--k-bar-text:#000;--k-line:#606060;--k-accent:#bebebe;--k-tab:#ffcb00;--k-tab-text:#000;--k-window:#d8d8d8;--k-text:#000;--k-dim:#808080;--k-raised:#e8e8e8;--k-sunken:#fff;--k-edge-light:#fff;--k-edge-dark:#989898;--k-ring:#0000e5;--k-text-on:#000;--k-console:#0b0b0b;--k-console-text:#d8d8d8">
-        <div class="bar"><b>Kosmos</b><span>Tracker</span><span class="sp"></span><span class="ico" style="background:#ffcb00"></span><span class="clock">14:05</span></div>
+      <div class="desk" style="--k-desk:#336698;--k-line:#606060;--k-accent:#bebebe;--k-tab:#ffcb00;--k-tab-text:#000;--k-window:#d8d8d8;--k-text:#000;--k-dim:#808080;--k-raised:#e8e8e8;--k-sunken:#fff;--k-edge-light:#fff;--k-edge-dark:#989898;--k-ring:#0000e5;--k-text-on:#000;--k-console:#0b0b0b;--k-console-text:#d8d8d8">
+        <div class="bar"><b>Kosmos</b><span>Tracker</span><span class="sp"></span><span class="ico"></span><span class="clock">14:05</span></div>
         <div class="win">
           <div class="tab"><i></i>Tracker</div>
           <div class="body">
@@ -226,7 +226,7 @@
       <p class="what">For the media applications - Video, Music, the solar system:
       near-black and low-glare, so the picture is the brightest thing on the
       screen, with one warm amber for what is selected and in focus.</p>
-      <div class="desk" style="--k-desk:#0e0f12;--k-bar:#141518;--k-bar-text:#d9d6d2;--k-line:#000;--k-accent:#e8833a;--k-tab:#e8833a;--k-tab-text:#1a0f05;--k-window:#18191d;--k-text:#e8e6e3;--k-dim:#8d8a86;--k-raised:#24262c;--k-sunken:#0f1013;--k-edge-light:#30333a;--k-edge-dark:#08090a;--k-ring:#f0a060;--k-text-on:#1a0f05;--k-console:#08090a;--k-console-text:#d8d4ce">
+      <div class="desk" style="--k-desk:#0e0f12;--k-line:#000;--k-accent:#e8833a;--k-tab:#e8833a;--k-tab-text:#1a0f05;--k-window:#18191d;--k-text:#e8e6e3;--k-dim:#8d8a86;--k-raised:#24262c;--k-sunken:#0f1013;--k-edge-light:#30333a;--k-edge-dark:#08090a;--k-ring:#f0a060;--k-text-on:#1a0f05;--k-console:#08090a;--k-console-text:#d8d4ce">
         <div class="bar"><b>Kosmos</b><span>Video</span><span class="sp"></span><span class="ico"></span><span class="clock">21:15</span></div>
         <div class="win">
           <div class="tab"><i></i>Tracker</div>
@@ -263,6 +263,12 @@
   <p>The tab said 20 px here while the window manager drew 26; 26 is what it is.
   The Deskbar was 36, then a choice of 36, 44 or 52, and since 22 September it
   is 32 and not a setting.</p>
+  <p><b>Three more from 22 September</b>, drawn above: a window's title bar is
+  across the whole window again rather than a BeOS tab ("switch back the tabs
+  from be os style to full width"); the Deskbar is each look's tab colour, its
+  accent, rather than a colour of its own ("the deskbar tab color should be
+  yellow or at least the same color of the acccent color of the theme"); and a
+  scrollbar's thumb is that colour too, as Mac OS 9 drew it.</p>
 
   <h2>The Appearance panel, after</h2>
   <p>A look and a wallpaper, and every one of them is a choice among a few. There
@@ -274,10 +280,10 @@
     <div class="panelbody">
       <h4>Look</h4>
       <div class="cards">
-        <div class="card on"><div class="mini" style="background:#3d63b8"><div class="mb" style="background:#e7e7e3"></div><div class="mt" style="background:#f2c230"></div><div class="mw" style="background:#f4f4f1"></div></div>Plex</div>
-        <div class="card"><div class="mini" style="background:#16213a"><div class="mb" style="background:#23262c"></div><div class="mt" style="background:#d9a92a"></div><div class="mw" style="background:#1f2227"></div></div>Plex Night</div>
-        <div class="card"><div class="mini" style="background:#336698"><div class="mb" style="background:#d8d8d8"></div><div class="mt" style="background:#ffcb00"></div><div class="mw" style="background:#d8d8d8"></div></div>Classic</div>
-        <div class="card"><div class="mini" style="background:#0e0f12"><div class="mb" style="background:#141518"></div><div class="mt" style="background:#e8833a"></div><div class="mw" style="background:#18191d"></div></div>Studio</div>
+        <div class="card on"><div class="mini" style="background:#3d63b8"><div class="mb" style="background:#f2c230"></div><div class="mt" style="background:#f2c230"></div><div class="mw" style="background:#f4f4f1"></div></div>Plex</div>
+        <div class="card"><div class="mini" style="background:#16213a"><div class="mb" style="background:#d9a92a"></div><div class="mt" style="background:#d9a92a"></div><div class="mw" style="background:#1f2227"></div></div>Plex Night</div>
+        <div class="card"><div class="mini" style="background:#336698"><div class="mb" style="background:#ffcb00"></div><div class="mt" style="background:#ffcb00"></div><div class="mw" style="background:#d8d8d8"></div></div>Classic</div>
+        <div class="card"><div class="mini" style="background:#0e0f12"><div class="mb" style="background:#e8833a"></div><div class="mt" style="background:#e8833a"></div><div class="mw" style="background:#18191d"></div></div>Studio</div>
       </div>
       <h4>Wallpaper</h4>
       <div class="walls"><div class="on">None - the look's own desk</div><div>blue.png</div><div>thinkpad.jpg</div><div>Alexander Slattery</div></div>

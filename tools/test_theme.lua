@@ -111,13 +111,12 @@ for _, name in ipairs(themes.order) do
           .. ", not the " .. want.font .. " " .. want.px .. " every look has")
   end
 
-  check(math.abs(luminance(p.bar) - luminance(p.bar_text)) >= 100,
-        name .. "'s Deskbar words are too close to its bar to read")
   check(math.abs(luminance(p.window) - luminance(p.text)) >= 100,
         name .. "'s words are too close to its windows to read")
   -- A title's words are drawn in one colour on a focused tab and an idle
   -- one, so both have to hold them: the dark looks' first idle tabs were
-  -- the slate of their windows, and every unfocused title vanished.
+  -- the slate of their windows, and every unfocused title vanished. The
+  -- focused pair is the Deskbar's too (`roadmap.md` 5y).
   check(math.abs(luminance(p.tab) - luminance(p.tab_text)) >= 100,
         name .. "'s title words are too close to its focused tab to read")
   check(math.abs(luminance(p.tab_idle) - luminance(p.tab_text)) >= 100,
@@ -135,7 +134,7 @@ do
     tab_idle = 0xffe7e7e3, tab_text = 0xff3a2e00, desktop_text = 0xffffffff,
     console = 0xff1c1c1e, console_text = 0xffececec, accent = 0xff2a55c9,
     good = 0xff2f8a3e, bad = 0xffb3261e, ring = 0xff2a55c9,
-    stamp = 0xff8fa9df, bar = 0xffe7e7e3, bar_text = 0xff1e1e1e,
+    stamp = 0xff8fa9df,
   }
 
   for k, v in pairs(colours) do
@@ -244,6 +243,15 @@ do
         and theme.fonts.ui.font .. " " .. theme.fonts.ui.px == ui_before,
         "applying Plex replaced the faces in force with its own, without "
         .. "loading one")
+end
+
+-- 5b. The Deskbar is the tab's colour in every look (roadmap 5y): `bar`
+-- and `bar_text` are not tokens, so no look can give it colours of its own.
+do
+  local _, said = theme.read("bar = #e7e7e3\nbar_text = #1e1e1e\n", "dark")
+
+  check(#said == 2 and (said[1] or ""):find("no token called `bar`", 1, true),
+        "a theme naming a Deskbar colour was told: " .. table.concat(said, "; "))
 end
 
 -- 6. `theme.toward`, the tab's colour lit and shaded for a scrollbar's

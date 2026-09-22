@@ -3742,10 +3742,18 @@ def check_deskbar_fixed(guest):
     size should not be changeable let's make it fixed at 32". A `/home`
     written by 0.10.111 still says `bar_h = 52`, so that is what is saved
     here, and a desktop started over it has to paint the bar to its 32nd
-    row and leave the 35th to the desk. The harness's `dark` look has a
-    yellow bar over a dark desk, and one pixel either side says which.
+    row and leave the 35th to the desk.
+
+    **In Plex, whose Deskbar is its tab's yellow** (`roadmap.md` 5y). Diego:
+    "the deskbar tab color should be yellow or at least the same color of
+    the acccent color of the theme". Plex's Deskbar was stone, `#e7e7e3`,
+    until then; its tab is `#f2c230`. The bar is a gradient, so its last
+    row is near the tab's colour rather than on it, and stone is far from
+    it in blue. The later of two `palette` keys in the table is the one
+    Lua keeps.
     """
-    guest.type(appearance("bar_h = 52") + ' print("height" .. "-saved")')
+    guest.type(appearance('bar_h = 52, palette = "plex"')
+               + ' print("height" .. "-saved")')
     guest.wait_for("height-saved", "save a Deskbar height of 52, as 0.10.111 "
                    "did")
     guest.type("wm deskbar")
@@ -3754,10 +3762,10 @@ def check_deskbar_fixed(guest):
         inside = (31 * w + w // 2) * 3
         below = (34 * w + w // 2) * 3
 
-        # The dark look's yellow at the bar's last row, and its desk below.
+        # Plex's tab yellow at the bar's last row, and its desk below.
         def yellow(r_, g_, b_):
-            return (abs(r_ - 0xff) <= 8 and abs(g_ - 0xc7) <= 8
-                    and b_ <= 16)
+            return (abs(r_ - 0xf2) <= 12 and abs(g_ - 0xc2) <= 12
+                    and abs(b_ - 0x30) <= 16)
 
         if yellow(*px[inside:inside + 3]) and not yellow(*px[below:below + 3]):
             return True
@@ -3765,8 +3773,9 @@ def check_deskbar_fixed(guest):
         return None
 
     try:
-        settle(guest, fixed_bar, "a desktop started over a saved height of "
-               "52 never drew a Deskbar 32 pixels tall", seconds=30)
+        settle(guest, fixed_bar, "a desktop started in Plex over a saved "
+               "height of 52 never drew a Deskbar 32 pixels tall in Plex's "
+               "tab yellow", seconds=30)
     finally:
         stop_desktop(guest)
         guest.type(appearance() + ' print("height" .. "-reset")')
@@ -3987,24 +3996,25 @@ def check_theme_plex(guest):
 
 
 def check_tabs(guest):
-    """The title's shape: a BeOS tab by default, a bar across on request.
+    """The title bar: across the whole window, and a maximise box greyed.
 
-    Diego, 18 September: "i love the tabs in the windows like BEOS", and a
-    setting "to switch between full tab like windows or linux or beos". Two
-    windows of one program, Behind (blue) and Front (green) on top of it,
-    placed so the row of Front's tab lies across Behind's body:
+    Diego, 22 September: "i want to switch back the tabs from be os style
+    to full width", and "when a window cant be maximixed we shouldnt remove
+    the button we should just gray it out and disable it". Two windows of
+    one program that draw their own pixels - so neither can be maximised -
+    Behind (blue) and Front (green) on top of it, placed so the row of
+    Front's title bar lies across Behind's body; and a `/home/.appearance`
+    that still says `tabs = "beos"`, as the old panel wrote it:
 
-      with the tab, the point beside Front's tab shows Behind - blue;
-      Front's body clicked, the program asks for the bar across - the same
-      point is Front's tab, not blue;
-      clicked again, the tab - blue again;
-      and that point clicked reaches Behind, which says so: beside a tab is
-      what is behind it, for the pointer as for the eye.
+      the point where a BeOS tab would have ended, in Front's title row, is
+      the tab's yellow - the bar is across, whatever was saved;
+      the window manager says Front's bar is its whole frame wide;
+      Front's maximise box is there, its glyph in `text_dim`;
+      and a press on it that drags does nothing - before, with no box
+      there, the same press took the window by its title and moved it.
 
     Front is only a third over Behind: more than half and the window
     manager would open it somewhere it is not buried.
-
-    Clicks rather than timers step it, so a loaded machine cannot race it.
     """
     program = (
         "local ui = use('/lib/ui.lua') "
@@ -4018,22 +4028,15 @@ def check_tabs(guest):
         "front:surface():fill(0, 0, 500, 150, 0xff30a040) "
         "front:commit{ x = 0, y = 0, w = 500, h = 150 } end "
         "print('tabs' .. ': ready') "
-        "local step = 0 "
         "while back.running and front.running do "
         "local r = wmproto.poll(front.handle, 1) if not r then break end "
         "for _, ev in ipairs(r.events or {}) do "
-        "if ev.type == 'mouse' and ev.action == 'press' then step = step + 1 "
-        "local style = (step == 1) and 'full' or 'beos' "
-        "fs.send('/app/wm', { type = 'theme', tabs = style }) "
-        "print('tabs' .. ': ' .. style .. ' ' .. step) end end "
-        "r = wmproto.poll(back.handle, 0) if not r then break end "
-        "for _, ev in ipairs(r.events or {}) do "
         "if ev.type == 'mouse' and ev.action == 'press' then "
-        "print('tabs' .. ': behind pressed') back:close() front:close() end end "
+        "print('tabs' .. ': front pressed') back:close() front:close() end end "
+        "r = wmproto.poll(back.handle, 0) if not r then break end "
         "end print('tabs' .. ': gone')"
     )
-    # In pieces: a line typed at the prompt is cut at about a kilobyte, and
-    # this program is twice that. Joined at the prompt, then written.
+    # In pieces: a line typed at the prompt is cut at about a kilobyte.
     guest.type("TABS_SRC = ''")
 
     for at in range(0, len(program), 600):
@@ -4041,6 +4044,8 @@ def check_tabs(guest):
         time.sleep(0.3)
 
     guest.type("fs.write('/ramfs/tabs.lua', TABS_SRC) print('tabs' .. '-written')")
+    guest.type(appearance('tabs = "beos"') + ' print("tabs" .. "-saved")')
+    guest.wait_for("tabs-saved", "save the old panel's tab shape")
     time.sleep(1.0)
     mark = len(guest.seen)
     guest.type("wm /ramfs/tabs.lua")
@@ -4058,97 +4063,96 @@ def check_tabs(guest):
 
         return False
 
-    if not said("tabs: ready") or not said("wm: window Front at"):
-        raise Failure("the two windows for the tab never opened:\n"
-                      + guest.seen[mark:][-800:])
+    try:
+        if not said("tabs: ready") or not said("wm: window Front at"):
+            raise Failure("the two windows for the title bar never opened:\n"
+                          + guest.seen[mark:][-800:])
 
-    front = re.search(r"wm: window Front at (\d+),(\d+) (\d+)x(\d+), a tab "
-                      r"(\d+) wide", guest.seen[mark:])
-    behind = re.search(r"wm: window Behind at (\d+),(\d+) (\d+)x(\d+)",
-                       guest.seen[mark:])
+        front = re.search(r"wm: window Front at (\d+),(\d+) (\d+)x(\d+), a "
+                          r"tab (\d+) wide", guest.seen[mark:])
+        behind = re.search(r"wm: window Behind at (\d+),(\d+) (\d+)x(\d+)",
+                           guest.seen[mark:])
 
-    if not front or not behind:
-        raise Failure("the window manager did not say where Front and its "
-                      "tab are:\n" + guest.seen[mark:][-800:])
+        if not front or not behind:
+            raise Failure("the window manager did not say where Front and "
+                          "Behind are:\n" + guest.seen[mark:][-800:])
 
-    fx, fy, fw, fh, tab = (int(v) for v in front.groups())
-    bx, by, bw, bh = (int(v) for v in behind.groups())
-    blue = (0x30, 0x60, 0xc0)
+        fx, fy, fw, fh, bar = (int(v) for v in front.groups())
+        bx, by, bw, bh = (int(v) for v in behind.groups())
 
-    # Beside Front's tab, in its row, and inside Behind's body.
-    px, py = fx - 2 + tab + (fw + 4 - tab) // 2, fy - 13
+        if bar != fw + 4:
+            raise Failure("Front's title bar is %d wide and its frame %d - a "
+                          "bar across is the frame's width, whatever "
+                          "/home/.appearance says" % (bar, fw + 4))
 
-    if tab >= fw + 4 or not (bx <= px < bx + bw and by <= py < by + bh):
-        raise Failure("Front's tab is %d of a %d-pixel frame, so there is no "
-                      "point beside it over Behind to look at" % (tab, fw + 4))
+        # Where a BeOS tab on "Front" would have ended long before: over
+        # Behind's body, in Front's title row, left of the boxes.
+        px, py = fx + fw * 6 // 10, fy - 13
 
-    width, height, _ = parse_ppm(guest.screendump())
+        if not (bx <= px < bx + bw and by <= py < by + bh):
+            raise Failure("Front's title row does not lie over Behind, so "
+                          "the check has nothing to look through")
 
-    def at_point():
-        _, _, px_ = parse_ppm(guest.screendump())
-        o = (py * width + px) * 3
-        return tuple(px_[o:o + 3])
+        width, height, _ = parse_ppm(guest.screendump())
 
-    def click(cx, cy):
-        guest.mouse_to(*_to_tablet(cx, cy, width, height))
+        def pixel(x, y):
+            _, _, px_ = parse_ppm(guest.screendump())
+            o = (y * width + x) * 3
+            return tuple(px_[o:o + 3])
+
+        time.sleep(1.5)
+        across = pixel(px, py)
+
+        # Within `TAB_TOL`: the bar is a gradient over the tab's colour.
+        if any(abs(a - b) > TAB_TOL for a, b in zip(across, TAB)):
+            raise Failure("Front's title row is %r where a BeOS tab would "
+                          "have ended - wanted the tab's yellow %r across the "
+                          "whole window" % (across, TAB))
+
+        # The maximise box, greyed: `boxes_x` in wm.lua puts it 20 in from
+        # the window's right edge, 22 above its top, and the little
+        # window's title bar is its glyph's top rows.
+        zx, zy = fx + fw - 20, fy - 22
+        glyph = pixel(zx + 8, zy + 4)
+        dim = (0x8b, 0x94, 0x9e)
+
+        if glyph != dim:
+            raise Failure("Front cannot be maximised and its maximise box's "
+                          "glyph is %r - wanted it greyed, in text_dim %r, "
+                          "rather than drawn as a box that works or not "
+                          "drawn at all" % (glyph, dim))
+
+        # Pressed and dragged, it does nothing: Front's top-left stays green.
+        corner = pixel(fx + 6, fy + 6)
+        guest.mouse_to(*_to_tablet(zx + 9, zy + 9, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+
+        for step in range(1, 7):
+            guest.mouse_to(*_to_tablet(zx + 9 - 12 * step, zy + 9 + 12 * step,
+                                       width, height))
+            time.sleep(0.1)
+
+        guest.mouse_button(False)
+        time.sleep(1.5)
+        after = pixel(fx + 6, fy + 6)
+
+        if corner != (0x30, 0xa0, 0x40) or after != corner:
+            raise Failure("a press on Front's greyed maximise box, dragged, "
+                          "moved the window: its corner was %r and is %r"
+                          % (corner, after))
+
+        guest.mouse_to(*_to_tablet(fx + fw // 2, fy + fh // 2, width, height))
         time.sleep(0.3)
         guest.mouse_button(True)
         time.sleep(0.2)
         guest.mouse_button(False)
-        time.sleep(0.6)
-
-    time.sleep(1.5)
-    beside = at_point()
-
-    if beside != blue:
-        raise Failure("beside a BeOS tab is %r, not the window behind it "
-                      "(%r) - the tab was drawn across the frame, or the "
-                      "window behind was not drawn there" % (beside, blue))
-
-    click(fx + fw // 2, fy + fh // 2)
-
-    if not said("tabs: full 1"):
-        raise Failure("a press on Front did not reach the program")
-
-    time.sleep(1.5)
-    across = at_point()
-
-    if across == blue:
-        raise Failure("asked for a bar across the window, the point beside "
-                      "where the tab was is still the window behind")
-
-    click(fx + fw // 2, fy + fh // 2)
-
-    if not said("tabs: beos 2"):
-        raise Failure("the second press on Front did not reach the program")
-
-    time.sleep(1.5)
-    back_again = at_point()
-
-    if back_again != blue:
-        raise Failure("the tab asked for again, beside it is %r and not the "
-                      "window behind" % (back_again,))
-
-    click(px, py)
-
-    if not said("tabs: behind pressed"):
-        raise Failure("a press beside Front's tab did not reach Behind - the "
-                      "pointer still takes the whole row as Front's:\n"
-                      + guest.seen[mark:][-600:])
-
-    said("tabs: gone", 10)
-    back = len(guest.seen)
-    guest.proc.stdin.write(STOP_DESKTOP)
-    guest.proc.stdin.flush()
-    deadline = time.monotonic() + 15
-
-    while time.monotonic() < deadline:
-        guest._read_available()
-
-        if PROMPT in guest.seen[back:]:
-            break
-
-        time.sleep(0.3)
+        said("tabs: gone", 10)
+    finally:
+        stop_desktop(guest)
+        guest.type(appearance() + ' print("tabs" .. "-reset")')
+        guest.wait_for("tabs-reset", "put the harness's appearance back")
 
     return 4
 
@@ -8116,9 +8120,9 @@ def main():
           f"after a restart, and its spacing inside a widget; and four "
           f"theme events reaching a window across as many replies as fit, "
           f"and the Deskbar held at 32 over a saved height, "
-          f"{tab_checks} on the title's shape - beside a BeOS tab the "
-          f"window behind, for the eye and the pointer, and a bar across "
-          f"when asked, "
+          f"{tab_checks} on the title bar - across the whole window over a "
+          f"saved BeOS tab, and a maximise box greyed and doing nothing "
+          f"where a window cannot be maximised, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

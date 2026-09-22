@@ -370,21 +370,27 @@ stands and the flat look is one application's.
 That rule was always right. What changed is the answer it gives about
 shading: the answer is dimensional, not flat.
 
-**The tab is BeOS's again, by default, and a setting** (19 September). This
-paragraph recorded the full-width bar as one departure from BeOS that
-stays: a tab as wide as its title keeps stacked windows' titles readable,
-Kosmos does not stack windows, so it bought nothing - and it drew a handle
-narrower than the full row the pointer took. Diego, 18 September: "i love
+**The title bar is across the whole window, and not a setting** (22
+September, `roadmap.md` 5y). It has gone both ways. It was a full-width bar,
+recorded here as a departure from BeOS; then on 18 September Diego: "i love
 the tabs in the windows like BEOS instead of the full windoe tab like we
-have today", and "can we have a appearance setting to switch between full
-tab like windows or linux or beos". So Appearance has **Window titles** - a
-tab as wide as the title, the default, or a bar across the whole window -
-and the second objection is gone: beside a tab is what is behind it for the
-pointer as for the eye (`tabs` in `wm.lua`, the display harness's `tabs`
-phase). The setting left Appearance with the looks on 22 September
-(`roadmap.md` 5y) and a fresh machine has the tab; the window manager still
-honours a shape an older `/home/.appearance` saved, and a theme message
-that names one, which is a leftover (`roadmap.md`, *Smaller, and wanted*).
+have today", so a tab as wide as its title became the default and the bar a
+choice in Appearance, with the pointer reaching what was behind beside the
+tab as the eye saw it. The choice left with the looks, and on 22 September
+Diego again: "i want to switch back the tabs from be os style to full
+width". So every title bar is the window's width, and a shape an older
+`/home/.appearance` saved is read by nothing (`tabs` in `wm.lua`, the
+display harness's `tabs` phase). 0.10.113 has the tab, if it is wanted
+back.
+
+**A control that cannot be used is greyed, not removed.** The maximise box
+of a window that cannot be maximised - one that draws its own pixels into
+a surface of a fixed size - was left off its title bar, so the controls
+changed from window to window. Diego, 22 September: "when a window cant be
+maximixed we shouldnt remove the button we should just gray it out and
+disable it". It is drawn flat, since raised is how this look says a thing
+can be pressed, with its glyph in `text_dim`, and a press on it does
+nothing.
 
 **A scrollbar's thumb is the tab's colour, with a grip** (22 September,
 `roadmap.md` 5y). Mac OS 9's Platinum filled the thumb with the accent a
@@ -698,12 +704,18 @@ and Diego asked for the layout to be fixed instead. The tab's number said
 20 here while the window manager drew 26; it is 26, and `wm.lua` reads it
 from `theme.metrics` rather than keeping a copy.
 
-**The Deskbar's colour and height are its look's and the layout's.** For
-an afternoon each was a choice in Appearance - eight colours, and 36, 44 or
-52 pixels - kept in `/home/.appearance` over the theme. The looks took the
-colour back (`roadmap.md` 5u), and Diego fixed the height: "Taskbar size
-should not be changeable let's make it fixed at 32" (5v). A height saved
-before is ignored. With them went `win.on_theme`, the hook the Deskbar
+**The Deskbar is the look's tab colour, and 32 pixels tall.** For an
+afternoon its colour and its height were each a choice in Appearance -
+eight colours, and 36, 44 or 52 pixels - kept in `/home/.appearance` over
+the theme. The looks took the colour back (`roadmap.md` 5u), and a look
+named its Deskbar's colours, `bar` and `bar_text`, apart from its tab's -
+Plex's stone, as the mockups drew it - until Diego: "the deskbar tab color
+should be yellow or at least the same color of the acccent color of the
+theme". So the tab's colour is the look's accent, on a focused window's
+title bar, across the Deskbar and on a scrollbar's thumb, and `bar` is not
+a token any more. He fixed the height too: "Taskbar size should not be
+changeable let's make it fixed at 32" (5v). A height saved before is
+ignored. With them went `win.on_theme`, the hook the Deskbar
 resized itself from, which nothing else used once the layout was fixed.
 
 **How large all of it is will be one number** (`roadmap.md` 5z, drawn in
@@ -1221,6 +1233,66 @@ measurements - when something really does have to be cut. Cutting is still
 by the character, because half a glyph is worse than a missing one.
 
 ---
+
+## 16.18 Size: one scale for everything
+
+**Asked for on 22 September, drawn in `docs/looks.html` and approved** -
+"the proposed size slider is great as it is", "with the %" (`roadmap.md`
+5z). Diego, on the ThinkPad, where a 14-inch 1920 by 1080 panel makes
+everything read small: "add a setting like Windows does", "a factor
+multiplier of all the things in the UI", "instead of choosing independent
+font sizes", "Something like that slider of iOS". Seven steps - 100, 110,
+120, 135, 150, 175 and 200 per cent - on a slider in Appearance, with the
+percentage beside it, kept in `/home/.appearance` as `scale`.
+
+**Applications do not change.** Every size and position an application
+gives - a window's width, a widget's place, the fixed layout's 24-pixel
+row, a 16-pixel face - stays in the units it gives today, which are the
+screen's pixels at 100 per cent and *points* at any other step. The
+scale is applied where pixels are made, which is the window manager, and
+**at its edge with each application** rather than all through it: inside,
+the window manager goes on working in the screen's own pixels, exactly as
+now - its windows' rectangles, damage, hit tests and composing are
+untouched. What crosses the edge is converted:
+
+- **A window opening**: its asked-for size and place multiplied by the
+  scale, and the size it was given divided back in the reply.
+- **Drawing commands**, the kit's four - `fill`, `triangle`, `text` and
+  `image`: every coordinate multiplied, a rectangle by its two edges so
+  neighbours still meet at a fractional step; a text command in its role's
+  face loaded at the size times the scale (`sized`), so words are drawn at
+  that size rather than magnified; an icon from the largest of Haiku's
+  exports and averaged down (`stretch`'s `smooth`).
+- **Events**, all through `post`: a pointer's position divided back, a
+  new size divided back.
+- **A window that draws its own pixels** keeps a surface of the size it
+  asked for, and the window manager composes it stretched to its place on
+  the screen - so a game, a film and the cube are larger with no change to
+  them. The factor is per window, the surface's size against the window's:
+  a full-screen window asked for the screen in the screen's own pixels and
+  its factor is one.
+- **The window manager's own chrome** - the title bar, its boxes and its
+  words, the borders, the grip - scales with everything else, since those
+  sizes are its, not an application's.
+
+**The screen gets smaller, to a window.** At 150 per cent the ThinkPad's
+1920 by 1080 is 1280 by 720 to an application, and an application that
+sizes itself from the framebuffer - the Deskbar does, by `gfx.screen()` -
+has to take the size it was given instead. A window asked for larger than
+the room is fitted to it, as today.
+
+**What the scale costs.** A text command loads a face per size, and there
+are seven sizes; `sized` keeps each. A stretched composite is an add per
+pixel where a blit is a copy; for a window that redraws every frame it is
+the one new cost on the frame path, and `make frames` is where it is
+watched.
+
+**Built in stages, each a test at 100 and at 150 per cent**: the window
+manager at a scale read at startup - opening, commands, events, chrome,
+own-pixel windows; then the Deskbar and anything else that reads the
+framebuffer's size; then Appearance's slider, and a change of scale while
+windows are open, which rebuilds every window's surface at its new size
+and asks each to draw again.
 
 ## 16.10 What we do not copy from BeOS
 

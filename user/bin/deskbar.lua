@@ -900,7 +900,8 @@ local GAP = 4
 -- The three shades the bar is made of, as a ladder rather than three
 -- numbers scattered through the drawing.
 --
---   the strip      theme.bar, with the gradient over it
+--   the strip      theme.tab - the look's accent, as its windows' tabs
+--                  are (`roadmap.md` 5y) - with the gradient over it
 --   a button       a touch lighter than the strip
 --   pressed        a shade darker *than the button*
 --
@@ -1073,9 +1074,9 @@ function bar:draw(g)
     if inset and self.w > inset * 2 then
       g:fill(0, row, inset, 1, CUT)
       g:fill(self.w - inset, row, inset, 1, CUT)
-      g:fill(inset, row, self.w - inset * 2, 1, lit(theme.bar, k))
+      g:fill(inset, row, self.w - inset * 2, 1, lit(theme.tab, k))
     else
-      g:fill(0, row, self.w, 1, lit(theme.bar, k))
+      g:fill(0, row, self.w, 1, lit(theme.tab, k))
     end
   end
 
@@ -1100,11 +1101,11 @@ function bar:draw(g)
 
   if menu_up then
     rounded(g, 2, 2, kosmos_w() - 4, self.h - 4,
-            lit(lit(theme.bar, FACE), PRESSED))
+            lit(lit(theme.tab, FACE), PRESSED))
   end
 
   g:icon(12, iy, "App_Deskbar.png", ICON)
-  g:text(12 + ICON + 8, ty, "Kosmos", theme.bar_text)
+  g:text(12 + ICON + 8, ty, "Kosmos", theme.tab_text)
 
   --
   -- The right-hand end: the clock, the date, the volume and the network,
@@ -1135,10 +1136,10 @@ function bar:draw(g)
 
   local x = self.w - PAD - gfx.measure(time)
 
-  g:text(x, ty, time, theme.bar_text)
+  g:text(x, ty, time, theme.tab_text)
 
   x = x - KERN - gfx.measure(date)
-  g:text(x, ty, date, theme.bar_text)
+  g:text(x, ty, date, theme.tab_text)
 
   --
   -- The volume, and **nothing is drawn when the machine cannot answer.**
@@ -1197,7 +1198,7 @@ function bar:draw(g)
     self.battery_x = x
 
     g:icon(x, iy, "App_PowerStatus.png", ICON)
-    g:text(x + ICON + 4, ty, label, low and 0xffe04848 or theme.bar_text)
+    g:text(x + ICON + 4, ty, label, low and 0xffe04848 or theme.tab_text)
 
     if self.battery_said ~= label then
       print("deskbar: battery " .. label)
@@ -1266,7 +1267,7 @@ function bar:draw(g)
     -- pressed in - and the one thing a taskbar button has to say is "this
     -- is the window you are in".
     --
-    local face = lit(theme.bar, FACE)
+    local face = lit(theme.tab, FACE)
 
     --
     -- No bevel. The shade says which one you are in and the rounding says
@@ -1306,7 +1307,7 @@ function bar:draw(g)
         text = text:sub(1, #text - 1)
       end
 
-      g:text(s.x + ICON + 8, ty, text, theme.bar_text)
+      g:text(s.x + ICON + 8, ty, text, theme.tab_text)
     end
   end
 end

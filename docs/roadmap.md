@@ -1153,6 +1153,18 @@ processors, and still what follows USB:
    headings in Plex Sans SemiBold, a file added from the same family; and
    no rounded corners and no shadow for now.
 
+5za. **AGREED on 22 September - icons at 16, 32 or 64, chosen where they
+   are shown.** Diego: "with the new icon sizes we should also be able to
+   select icon size on desktop, tracker icon view and else", and then, of
+   the sizes: "16,32,64 are the correct ones" - the three Haiku exports
+   that the image carries since 0.10.112 (5v), so at 100 per cent every
+   icon is drawn pixel for pixel, with nothing averaged. A choice in each
+   place that shows icons: the desktop's own menu, Tracker's View menu for
+   its icon view, and wherever else a grid of icons is drawn; kept per
+   place. **Sizes are points**, like every other size once there is a scale
+   (5z): a 32 at 150 per cent is 48 pixels, averaged down from the 64.
+   **Queued after 5z's first stage.**
+
 5z. **APPROVED on 22 September - a size for everything, not for the
    fonts: a scale.** Drawn in `docs/looks.html` and approved - "the
    proposed size slider is great as it is", "with the %" - and not built. Diego, on the
@@ -1228,6 +1240,26 @@ processors, and still what follows USB:
    same thumb into its own pixels. **Not done: greying it in a window that
    is not in front**, which Mac OS 9 also did - a kit window does not know
    whether it is focused, so that needs the window manager to say.
+
+   **And three more the same afternoon - done, 0.10.114** (`testing.md`
+   18.144), all Diego's on 22 September:
+   - **A title bar across the whole window**, not a BeOS tab: "i want to
+     switch back the tabs from be os style to full width". Not a setting:
+     the shape saved by the old panel (`tabs` in `/home/.appearance`) is
+     read by nothing, which also retires the leftover found while the
+     thumb was written up - a machine whose file said `beos` would have
+     kept the tab under a new default alone.
+   - **The Deskbar in the look's tab colour**: "the deskbar tab color
+     should be yellow or at least the same color of the acccent color of
+     the theme". `bar` and `bar_text` are gone from the theme format, so
+     the tab, the Deskbar and a scrollbar's thumb are one colour that no
+     look can let drift apart. Plex's Deskbar is its yellow now, not the
+     stone the mockups drew; Classic's is yellow where R5's was grey.
+   - **A maximise box greyed, not removed**, on a window that cannot be
+     maximised: "when a window cant be maximixed we shouldnt remove the
+     button we should just gray it out and disable it". Flat, its glyph in
+     `text_dim`, and a press on it does nothing - before, with no box
+     there, the same press took the window by its title.
 
 5x. **DONE on 22 September (0.10.110, `testing.md` 18.140) - one fixed
    layout, and faces that fit it.**
@@ -1879,16 +1911,6 @@ the Pi", and the Pi is not here yet.
   The browser loading a page is the first thing to point it at.
 
 ### Smaller, and wanted
-
-- **FOUND on 22 September - the window manager still reads a tab shape
-  nobody can choose.** The full-width title bar left Appearance with the
-  looks (5y), but `load_appearance` still calls `tabs.choose(saved.tabs)`,
-  so a `/home/.appearance` written by the old panel with `tabs = "full"`
-  keeps full-width bars on a machine where nothing offers them - the same
-  shape as the Deskbar height a `/home` still carries (5v), which is read
-  by nothing now. Found while writing up the scrollbar's thumb. Either it
-  goes, with a check that a saved shape is ignored, or it is a choice
-  again - Diego's call.
 
 - **FOUND on 22 September - Music's two icons have never drawn.**
   `music.lua` asks for `"File_Audio"` and `"Misc_Speaker"` without `.png`,

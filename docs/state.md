@@ -39,6 +39,14 @@ the stable one. The older development images went to the Trash.
   look's tab colour** with Mac OS 9's grip (5y, 18.143). Diego: "i want the
   scrollbar handle to be colored after the tab bar color as an accent color
   like how macos 9 had it".
+- **0.10.114, committed and not pushed - title bars across the window,
+  the Deskbar in the tab's colour, a maximise box greyed** (5y, 18.144):
+  "switch back the tabs from be os style to full width", "the deskbar tab
+  color should be yellow or at least the same color of the acccent color of
+  the theme", "when a window cant be maximixed we shouldnt remove the button
+  we should just gray it out and disable it".
+- **Queued: icons at 16, 32 or 64 per place** (5za), after the scale's
+  first stage.
 - **The fonts were not made bigger.** Diego asked for +2 everywhere and +4
   on the title, then for a scale instead - "a factor multiplier of all the
   things in the UI", "Something like that slider of iOS". **The slider is

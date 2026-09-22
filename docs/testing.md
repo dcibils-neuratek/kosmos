@@ -7550,3 +7550,51 @@ the same as the arrows beside it.
   yellow and 32 of its shaded ridges".
 - **`test_theme.lua`**, 155: `theme.toward` lights the yellow to `ffe58c`
   and shades it to `a58100`, and moves a colour by nothing not at all.
+
+## 18.144 A title bar across, the Deskbar in the tab's colour, a box greyed
+
+Three of Diego's on 22 September, the same afternoon:
+
+- **"i want to switch back the tabs from be os style to full width".**
+  `tabs.width` is the frame's width, and the shape a `/home/.appearance`
+  saved when it was a choice - `tabs` - is read by nothing, and a theme
+  message no longer carries one.
+- **"the deskbar tab color should be yellow or at least the same color of
+  the acccent color of the theme".** `bar` and `bar_text` leave the theme
+  format; the Deskbar draws in `tab` and `tab_text`, as a focused title bar
+  and a scrollbar's thumb do. Appearance's cards draw their Deskbar and a
+  title bar across the miniature window the same way.
+- **"when a window cant be maximixed we shouldnt remove the button we
+  should just gray it out and disable it".** A window that draws its own
+  pixels has its maximise box, flat, its glyph in `text_dim`; a press on it
+  does nothing, where before the same press - with no box there - took the
+  window by its title and dragged it.
+
+### The checks
+
+- **The display harness's `tabs` phase, rewritten.** It tested a BeOS tab:
+  beside it the window behind, for the eye and the pointer. Now, over a
+  `/home/.appearance` saying `tabs = "beos"`, two own-pixel windows: Front's
+  title row, where a tab would have ended, is the tab's yellow (within
+  `TAB_TOL`, since the bar is a gradient); the window manager says Front's
+  bar is its frame's width; Front's maximise glyph is `text_dim`; and a
+  press on that box dragged sixty pixels leaves Front where it was. 4.
+- **The `appearance` phase's Deskbar**, now in Plex: a desktop started over
+  `palette = "plex"` and `bar_h = 52` paints its bar to row 32 in Plex's
+  tab yellow, `#f2c230`, not the stone it was.
+- **`test_theme.lua`**, 150: a theme naming `bar` or `bar_text` is told
+  they are not tokens, and the Deskbar's legibility is the focused tab's.
+- **Four controls, each watched failing its own check**: the tab held to
+  120 pixels ("Front's title bar is 120 wide and its frame 504"); the
+  greyed box not drawn (its glyph read as the tab's yellow); a press on it
+  that drags, as before (Front's corner went from its green to Behind's
+  blue); and the Deskbar drawn in `raised` ("never drew a Deskbar 32
+  pixels tall in Plex's tab yellow").
+- **Seen once and not this change's: the desktop stopped before its `q`.**
+  `x86-display-3` after the part's first pass, at the Appearance phase: the
+  harness's Control-W Q left the window manager ended with a stray `q` at
+  the shell's prompt, which then prefixed the next command, so `wm
+  appearance:--theme plex` was never run. The part passed alone right
+  after. Recorded rather than rerun away: a window manager that ends on
+  Control-W alone would do exactly this, and the harness waits for the
+  prompt rather than for the `q` to be read.

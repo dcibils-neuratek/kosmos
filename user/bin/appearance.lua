@@ -132,8 +132,8 @@ end
 
 --------------------------------------------------------------------------
 -- The look: four cards, each a desktop in miniature in its own colours -
--- the desk, the Deskbar across it, a focused tab and a window with a
--- selected row - and its name under it.
+-- the desk, the Deskbar across it, a window with its title bar across the
+-- top and a selected row - and its name under it.
 --------------------------------------------------------------------------
 
 win:add(ui.label{ x = PAD, y = LOOK_Y, w = W - 2 * PAD, text = "Look",
@@ -156,8 +156,8 @@ local cards = ui.view{
       if on then g:frame(x + 1, 1, CARD_W - 2, CARD_H - 2, "ring") end
 
       g:fill(mx, my, mw, MINI_H, p.desktop or 0xff000000)
-      g:fill(mx, my, mw, 8, p.bar or 0xff808080)
-      g:fill(mx + 10, my + 12, 28, 6, p.tab or 0xffffcb00)
+      g:fill(mx, my, mw, 8, p.tab or 0xff808080)
+      g:fill(mx + 10, my + 12, ww, 6, p.tab or 0xffffcb00)
       g:fill(mx + 10, my + 18, ww, MINI_H - 24, p.window or 0xffd8d8d8)
       g:frame(mx + 10, my + 18, ww, MINI_H - 24, p.line or 0xff000000)
       g:fill(mx + 13, my + 24, ww - 6, 5, p.accent or 0xff2a55c9)
