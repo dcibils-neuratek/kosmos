@@ -7760,3 +7760,76 @@ Three of Diego's from the ThinkPad running 0.10.115 at 110 and 150 per cent.
   pixels down from the window's corner for the grid's first row, which the
   bar displaced; it looks for that row in the window's first seventy
   instead, which holds with a bar or without one.
+
+## 18.148 Icon sizes, chosen where the icons are
+
+Diego, once the 16s and 64s were vendored: "with the new icon sizes we should
+also be able to select icon size on desktop, tracker icon view and else", and
+"16,32,64 are the correct ones" (`roadmap.md` 5za, `ui.md` 16.19). Three
+sizes, in points, kept per place in `/home/.tracker`; Tracker's cell is now
+`px + 8 + 2 * GH` tall, so the grid follows the pictures.
+
+### The checks
+
+- **`tools/test_iconsize.lua`**, in `host-check`, 22: the default when
+  nothing is saved; each of the three chosen, written down under its own key
+  and read back; two places in one file with neither wiping the other; a size
+  no export exists for - a file edited by hand - refused and read as the
+  default; the menu's three items with exactly one marked and the mark moving
+  with the choice; and the hook that recomputes the caller's cells firing once
+  per change and not at all for a choice already in force.
+  **Controls, watched**: writing the file without reading it first fails "one
+  place's choice wiped the other's"; accepting any integer size fails on the
+  hand-edited 48.
+- **The display harness's `icon sizes` phase**, 12, in the gate's fourth
+  display part. Two desktops and a Tracker window, and every claim asked of
+  the thing that decides it:
+  - a right press on bare desktop opens a menu **under the pointer**, with the
+    desktop still bare above it;
+  - that menu marks its second row, Medium, and nothing else;
+  - Large chosen, and the last name in the first column moves down by exactly
+    `N * 32`, `N` being what `fs.list("/home/Desktop")` says is there. That
+    number is the whole of why the measurement is at the *bottom* of a column
+    rather than at an icon: every cell in the column grows by the step and so
+    does the last icon itself, whatever Haiku drew inside its transparent
+    square and however many lines the last name takes;
+  - `/home/.tracker` says 64 afterwards;
+  - the desktop quit and started again comes up large **without being told**,
+    which is what a settings file is for and what a phase that never
+    restarted anything could not claim;
+  - its menu now marks the third row, which is the other half of a menu whose
+    items are worked out when it opens;
+  - Medium chosen again puts the column back where it started, and the file
+    holds no size for the desktop at all;
+  - and a Tracker window's View menu marks its layout *and* its sort column -
+    rows 2 and 4 of six, as a list - and after "as icons" marks rows 1, 4 and
+    9 of ten, the three sizes having appeared under them.
+
+  **Controls, watched**, three:
+  - a `CELL_H` that does not follow the size fails with "moved to row 276,
+    where it should be 340" - the icon grew and the cells did not;
+  - `iconsize:set` that never writes the file fails with "/home/.tracker does
+    not say 64, so it would not survive a restart";
+  - `ui.menu_items` that ignores a function fails on the View menu's marks.
+
+### Two things the phase found before it passed
+
+**The desktop did not know where it was.** `fit_backdrop` moves the backdrop
+below the strip and says so with a `resize`; `swap_surface` posts a `resize`
+and never a `moved`, so the desktop's `origin_y` stayed 0 while the desktop
+sat at 32. A menu is a window placed on the *screen*, so the first menu the
+desktop ever opened came up 32 pixels high, over the Deskbar. It posts
+`moved` as well now.
+
+The control is worth naming because the first version of the check did not
+bite: it counted ink *below* the pointer, and a menu 32 pixels high still has
+most of itself there. It counts ink below the pointer **and none in the
+twenty rows above it**, and the spot it presses is searched for with those
+rows already bare.
+
+**And a predicate that passed on the picture that was already there.** The
+first `drawn` waited for the first column's last row of ink to be below the
+strip - which the boot screen satisfies, being black with three coloured
+stripes down it, and a black column reads as icons all the way to the bottom
+of the screen. It waits for most of the screen to be the desktop's own colour
+*and* for that column to end somewhere sensible.

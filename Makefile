@@ -3003,6 +3003,9 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	@# And a window's own text size - the Terminal's and Log View's View
 	@# menu - which is arithmetic over a settings file and a face name.
 	$(HOSTDIR)/lua tools/test_textsize.lua
+	@# And how big the icons are where a grid of them is drawn: the three
+	@# Haiku exports and nothing else, kept per place in one file.
+	$(HOSTDIR)/lua tools/test_iconsize.lua
 	@# And the tools' temporary files: made only through scratch.py, and gone
 	@# when the tool is (19 GB were left behind before, and filled the disk).
 	python3 tools/test_scratch.py

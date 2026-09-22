@@ -20,11 +20,14 @@ Last updated: 2026-09-22
 
 ## 22 September: four looks, one layout, a 32-pixel Deskbar, and a scale next
 
-**Pushed today: 0.10.106 to 0.10.115 (`3160169`)**, the last four after a
-green `make prepush` and `make stress`, and **released as a stick on
+**Pushed today: 0.10.106 to 0.10.117 (`0b67c94`)**, the last six after a
+green `make prepush` and `make stress`, and **released as sticks on
 GitHub**: <https://github.com/dcibils-neuratek/kosmos/releases/tag/v0.10.115>
-- the image gzipped (15 MB) and `mkusb.sh` with the two scripts it runs, so
-Diego can write it from his MacBook Pro. **Its `/home` is empty**: the
+and, with the fixes on top of it,
+<https://github.com/dcibils-neuratek/kosmos/releases/tag/v0.10.117>
+- the image gzipped (15 MB), `mkusb.sh` with the two scripts it runs, and
+since 0.10.117 `getstick.sh` on its own, so
+Diego can write it from his MacBook Pro in one command. **Its `/home` is empty**: the
 repository is public, and the sticks made here carry `~/Kosmos/home` -
 commercial ROMs, a Green Day MP3, a film clip, his photographs - which must
 never be published. Booted under OVMF (29 checks); not yet on the ThinkPad.
@@ -37,23 +40,23 @@ the stable one. The older development images went to the Trash.
   four looks (Plex, Plex Night, Classic, Studio; `roadmap.md` 5y), one
   fixed layout the faces fit (5x), and Appearance down to a look and a
   wallpaper (`testing.md` 18.135-18.141).
-- **0.10.112, committed and not pushed - the Deskbar is 32, fixed** (5v,
+- **0.10.112 - the Deskbar is 32, fixed** (5v,
   18.142). Diego, on the ThinkPad: "Taskbar size should not be changeable
   let's make it fixed at 32". Its icons are 24, averaged down from Haiku's
   64s, which are vendored now with the 16s (`assets/icons/README.md`), by
   `stretch`'s new `smooth` mode. `theme.metrics.tab` corrected to the 26
   the window manager draws. Three controls watched.
-- **0.10.113, committed and not pushed - a scrollbar's thumb in the
+- **0.10.113 - a scrollbar's thumb in the
   look's tab colour** with Mac OS 9's grip (5y, 18.143). Diego: "i want the
   scrollbar handle to be colored after the tab bar color as an accent color
   like how macos 9 had it".
-- **0.10.114, committed and not pushed - title bars across the window,
+- **0.10.114 - title bars across the window,
   the Deskbar in the tab's colour, a maximise box greyed** (5y, 18.144):
   "switch back the tabs from be os style to full width", "the deskbar tab
   color should be yellow or at least the same color of the acccent color of
   the theme", "when a window cant be maximixed we shouldnt remove the button
   we should just gray it out and disable it".
-- **0.10.115, committed and not pushed - everything at a scale** (5z,
+- **0.10.115 - everything at a scale** (5z,
   18.145, `ui.md` 16.18): the window manager converting at its edge with
   each window, own-pixel windows stretched, Appearance's Size slider with
   the percentage, and a change with windows open. Sized faces are given
@@ -61,7 +64,7 @@ the stable one. The older development images went to the Trash.
   display phase no part runs. Left for the third stage: the screen's size
   in points before a window opens (Lite XL), and the window manager's own
   drawings that are not windows.
-- **0.10.116, committed and not pushed - the drag at a scale, and a text
+- **0.10.116 - the drag at a scale, and a text
   size per window** (5z, 5zc, 18.147): the window manager's drag went
   through the door an application's `move` uses, so a window moved further
   than the pointer at any scale (Diego, at 110 per cent: "the mouse is off
@@ -69,6 +72,29 @@ the stable one. The older development images went to the Trash.
   have a View menu with Larger text, Smaller text and Actual size, kept per
   window. Also `getstick.sh`, a released stick downloaded, checked and
   written in one command (5zb).
+- **0.10.117 - a licence is never a reason not to use something here**:
+  Diego, after a driver was weighed partly on which reference code it could
+  be written from, "we can bring gpl no problem into the project, dont
+  complain about licences any more!". `CLAUDE.md`'s licence section says so
+  now, and the bookkeeping - a vendored file's own notice, `LICENSE`, the
+  About window's list - is all that is left of the old caution.
+- **Released as v0.10.117, and the stick handed to Diego**: `/home` empty
+  again, the image grepped for his filenames, 29 OVMF checks, and
+  `getstick.sh` run against the live release before he was told to use it.
+- **Icons at 16, 32 or 64, chosen where they are shown** (5za, 18.148,
+  `ui.md` 16.19) - committed and not pushed. Diego: "with the new icon
+  sizes we should also be able to select icon size on desktop, tracker
+  icon view and else", "16,32,64 are the correct ones". `/lib/iconsize.lua`
+  keeps the choice per place in `/home/.tracker`; Tracker's cell is
+  `px + 8 + 2 * GH` instead of a number compiled in; the desktop gets the
+  menu on a right press on its background, since it has no menu bar. Two
+  things came with it: a menu item can be **marked** (a diamond in a
+  column of its own), and a menu bar's `items` may be a **function**,
+  worked out when the menu opens - so Tracker's View menu marks its
+  layout, its sort column and its icon size. And a bug it exposed:
+  `fit_backdrop` moved the desktop below the strip with a `resize` and no
+  `moved`, so the desktop's origin stayed 0 and its first-ever menu opened
+  32 pixels high, over the Deskbar. `make test` green, 33 suites in 5:19.
 - **0.10.115 booted on the ThinkPad from the GitHub release**, written on
   his MacBook Pro: `log loader` clean, the desktop at 150 per cent kept
   across a restart (`boot.md`'s table).
@@ -77,7 +103,10 @@ the stable one. The older development images went to the Trash.
   said it has no driver for the second. What it would take, and why the
   ThinkPad's own Intel card with OpenBSD's ISC code is the likelier path,
   is in the roadmap.
-- **Queued: icons at 16, 32 or 64 per place** (5za), next.
+- **Queued next**: the scale's third stage (5z) - the screen's size in
+  points before a window opens, which is what Lite XL needs, and the
+  window manager's own drawings that are not windows: the pointer, the
+  level bar, a drag's label, the launcher pad.
 - **The fonts were not made bigger.** Diego asked for +2 everywhere and +4
   on the title, then for a scale instead - "a factor multiplier of all the
   things in the UI", "Something like that slider of iOS". **The slider is

@@ -42,6 +42,7 @@ local ui    = use("/lib/ui.lua")
 local files = use("/lib/files.lua")
 local types = use("/lib/filetypes.lua")
 local layout = use("/lib/iconlayout.lua")
+local iconsize = use("/lib/iconsize.lua")
 local placelib = use("/lib/places.lua")
 local sidebar  = use("/lib/sidebar.lua")
 local theme = ui.theme
@@ -198,6 +199,24 @@ end
 if backdrop then W, H = win.w, win.h end
 
 local GW, GH = gfx.font.w, gfx.font.h
+
+--
+-- How big the icons are here, which is a choice and is kept (`roadmap.md`
+-- 5za).
+--
+-- **The desktop and a window keep different ones**, in the same file under
+-- different keys, because they are the same program and not the same place:
+-- a desktop of large pictures over a photograph and a window of small ones
+-- you can see two hundred of is the pair of things people actually want.
+--
+-- `resize_cells` is forward-declared below and recomputes the grid, which
+-- is the only thing in this program that a size decides.
+--
+local resize_cells
+
+local icons = iconsize.new("/home/.tracker",
+                           backdrop and "desktop_icon_px" or "window_icon_px",
+                           function() resize_cells() end)
 
 local entries  = {}
 
@@ -656,7 +675,32 @@ rows.focusable = true
 -- and disagreeing about it is the bug where you click one icon and open
 -- another - the same reason `boxes_x` exists in the window manager.
 --
-local CELL_W, CELL_H = 84, 56 + GH    -- a name gets two lines
+--
+-- A cell: two pixels, the icon, four, two lines for the name and two more -
+-- two lines rather than one so a name reads in full up to twice as long.
+-- Written as the sum it is, and at 32 it is the 84 by 72 that was compiled
+-- in before there was a choice.
+--
+-- **The width is the label's, not the icon's.** A name is wider than any of
+-- the three pictures, so 64 and 32 sit in cells of the same width and only
+-- a 16 has room to spare - which also means the desktop's columns do not
+-- move sideways when the size changes, and the places icons were dragged to
+-- still mean what they meant.
+--
+-- Recomputed in one place rather than worked out at each call site, because
+-- the drawing, the hit test, the free-cell layout and a drop all read these
+-- and four copies of the arithmetic is four chances for one to be off.
+--
+local CELL_W, CELL_H = 0, 0
+
+function resize_cells()
+  local px = icons:size()
+
+  CELL_W = math.max(84, px + 20)
+  CELL_H = px + 8 + 2 * GH
+end
+
+resize_cells()
 
 local function cell_of(self, i)
   local across = math.max(1, (self.w - 4) // CELL_W)
@@ -802,7 +846,9 @@ local function draw_icons(self, g, list)
     local ink = on and theme.text_on
                 or (backdrop and theme.desktop_text or theme.text)
 
-    files.icon(g, x + (CELL_W - 4 - files.ICON) // 2, y + 2, e, path_of(e))
+    local px = icons:size()
+
+    files.icon(g, x + (CELL_W - 4 - px) // 2, y + 2, e, path_of(e), px)
 
     -- Two lines of the cell's width rather than one, so a name reads in
     -- full up to twice as long, and past that the second line keeps its
@@ -819,9 +865,9 @@ local function draw_icons(self, g, list)
       g:text(lx, ly, text, ink, bg)
     end
 
-    label(first, y + files.ICON + 6)
+    label(first, y + px + 6)
 
-    if second then label(second, y + files.ICON + 6 + GH) end
+    if second then label(second, y + px + 6 + GH) end
   end
 end
 
@@ -1053,6 +1099,20 @@ function rows:on_context(x, y)
   local e = n and self.shown and self.shown[n]
 
   if not e then
+    --
+    -- Nothing under it: how big the icons here are, which is the one thing
+    -- the background of a view full of icons has to say. On the desktop it
+    -- is the *only* way to it, because a desktop has no menu bar - and a
+    -- press on the background asking about the background is what every
+    -- desktop has meant by a right click since there were two buttons.
+    --
+    if mode == "icons" then
+      win:open_menu(win.origin_x + self.x + x, win.origin_y + self.y + y,
+                    icons:items())
+
+      return true
+    end
+
     status.text = "nothing there"
     return true
   end
@@ -1365,7 +1425,7 @@ function rows:drop(kind, payload, x, y)
         if backdrop and into == where then
           fs.setattr(files.join(into, name), {
             desktop_x = x - CELL_W // 2,
-            desktop_y = y - files.ICON // 2 + (moved - 1) * CELL_H,
+            desktop_y = y - icons:size() // 2 + (moved - 1) * CELL_H,
           })
         end
       else
@@ -2048,6 +2108,40 @@ local function sort_on(key)
   if sort_by == key then reversed = not reversed else sort_by, reversed = key, false end
 end
 
+--
+-- The View menu, worked out when it opens rather than when the window is
+-- made, because every row of it says what is in force: which layout, which
+-- column the listing is sorted on, and how big the icons are. A list built
+-- once would show how things were the moment Tracker started.
+--
+-- The sizes are only offered in icon view, since a list has no icons in it
+-- and a menu that offers a choice which changes nothing is worse than one
+-- that does not offer it.
+--
+local function view_menu()
+  local items = {
+    { text = "as icons", mark = (mode == "icons"),
+      on_choose = function() mode, scroll = "icons", 1 end },
+    { text = "as list", mark = (mode == "list"),
+      on_choose = function() mode, scroll = "list", 1 end },
+    { separator = true },
+    { text = "By name", mark = (sort_by == "name"),
+      on_choose = function() sort_on("name") end },
+    { text = "By size", mark = (sort_by == "size"),
+      on_choose = function() sort_on("size") end },
+    { text = "By kind", mark = (sort_by == "kind"),
+      on_choose = function() sort_on("kind") end },
+  }
+
+  if mode == "icons" then
+    items[#items + 1] = { separator = true }
+
+    for _, it in ipairs(icons:items()) do items[#items + 1] = it end
+  end
+
+  return items
+end
+
 --------------------------------------------------------------------------
 -- The menu bar.
 --
@@ -2087,19 +2181,7 @@ win:add(ui.menubar{
         { text = "Home",    on_choose = function() visit("/home") end },
         { text = "Refresh", on_choose = function() refresh_places() show(where) end },
       } },
-    { title = "View",
-      items = {
-        { text = "as icons", on_choose = function()
-            mode, scroll = "icons", 1
-          end },
-        { text = "as list",  on_choose = function()
-            mode, scroll = "list", 1
-          end },
-        { separator = true },
-        { text = "By name", on_choose = function() sort_on("name") end },
-        { text = "By size", on_choose = function() sort_on("size") end },
-        { text = "By kind", on_choose = function() sort_on("kind") end },
-      } },
+    { title = "View", items = view_menu },
   },
 })
 

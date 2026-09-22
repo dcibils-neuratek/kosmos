@@ -368,8 +368,6 @@ end
 -- table is the one place a different set of pictures would have to change.
 --------------------------------------------------------------------------
 
-files.ICON = 32
-
 -- What Kosmos can actually tell apart, and nothing else. An entry here for
 -- a distinction the system cannot make would be a picture that lies about
 -- what it knows - which is the same rule `filetypes.by_extension` follows
@@ -405,13 +403,19 @@ local BY_PATH = {
 --
 -- `path` is optional and only decides between a folder and a place.
 --
+-- **`size` is the caller's**, in points, and there is no default here on
+-- purpose: this used to hold a `files.ICON = 32` that every caller drew at
+-- and nobody chose, and a place that draws a grid of icons has to know how
+-- big they are before it can lay the grid out (`iconsize.lua`). What the
+-- kit does with a size it is not given is `gc:icon`'s business.
+--
 -- Nothing is decoded here. `gc:icon` sends the *name* and the compositor
 -- loads and caches the picture, which is the same division the rest of this
 -- kit follows: an application says what it wants drawn and never holds what
 -- is drawn. It also means an icon is decoded once for the whole desktop
 -- rather than once per application that shows it.
 --
-function files.icon(g, x, y, entry, path)
+function files.icon(g, x, y, entry, path, size)
   local name
 
   if path == files.TRASH then
@@ -434,7 +438,7 @@ function files.icon(g, x, y, entry, path)
     name = ext and ICONS[ext:lower()] or "File_Generic"
   end
 
-  g:icon(x, y, name .. ".png", files.ICON)
+  g:icon(x, y, name .. ".png", size)
 end
 
 return files

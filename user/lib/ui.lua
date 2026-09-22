@@ -3920,6 +3920,29 @@ end
 -- content out below, and an application that does not is untouched.
 --------------------------------------------------------------------------
 
+--
+-- A menu's items, which may be a list or a function that returns one.
+--
+-- A list is built once and read every time the menu opens, so anything it
+-- says about the *state* of the program - which view mode is in force,
+-- which column it is sorted on, how big the icons are - would be however it
+-- was when the window was made. A function is called when the menu opens,
+-- which is the only moment the answer is known to be current.
+--
+local function menu_items(of)
+  local items = of and of.items
+
+  if type(items) == "function" then
+    local ok, made = pcall(items)
+
+    return (ok and type(made) == "table") and made or {}
+  end
+
+  return items or {}
+end
+
+ui.menu_items = menu_items
+
 function ui.menubar(spec)
   local v = ui.view(spec)
 
@@ -3981,7 +4004,7 @@ function ui.menubar(spec)
         self.open_index = i
         win:open_menu(win.origin_x + self.x + s.x,
                       win.origin_y + self.y + self.h,
-                      self.menus[i].items or {})
+                      menu_items(self.menus[i]))
         return true
       end
     end
@@ -4026,9 +4049,33 @@ local MENU_ARROW = 12
 -- names still line up down the left whether a row has a picture or not.
 local MENU_ICON = 32
 
+--
+-- Room on the left for the mark that says which of a set of choices is in
+-- force - "as icons" against "as list", one of three icon sizes, which
+-- column a listing is sorted on.
+--
+-- **`mark = false` is not the same as no mark**, and that is the whole of
+-- why this reads `~= nil`. An item that *can* be marked and is not still
+-- gives the menu its column, so the names line up and the mark appears
+-- beside a row rather than shifting every row when it moves.
+--
+-- A diamond rather than a tick, because every one of these is a choice
+-- among several rather than something switched on, and because it is five
+-- rectangles where a tick would be a new verb in this file.
+--
+local MENU_MARK = 12
+
 local function menu_pictured(items)
   for _, it in ipairs(items) do
     if it.icon then return true end
+  end
+
+  return false
+end
+
+local function menu_marked(items)
+  for _, it in ipairs(items) do
+    if it.mark ~= nil then return true end
   end
 
   return false
@@ -4052,7 +4099,8 @@ local function menu_metrics(items)
   local row = pictured and math.max(ROW, MENU_ICON + 4) or ROW
 
   return widest + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0)
-                + (pictured and MENU_ICON + 6 or 0),
+                + (pictured and MENU_ICON + 6 or 0)
+                + (menu_marked(items) and MENU_MARK or 0),
          #items * row + 4, row
 end
 
@@ -4071,7 +4119,10 @@ function window:paint_menu(m)
   g.cw, g.ch = m.w, m.h
   g:raised(0, 0, m.w, m.h, "raised")
 
-  local text_x = MENU_PAD + 4 + (menu_pictured(m.items) and MENU_ICON + 6 or 0)
+  local marks  = menu_marked(m.items)
+  local mark_w = marks and MENU_MARK or 0
+  local text_x = MENU_PAD + 4 + mark_w
+                 + (menu_pictured(m.items) and MENU_ICON + 6 or 0)
 
   for i, it in ipairs(m.items) do
     local y = 2 + (i - 1) * m.row
@@ -4084,9 +4135,25 @@ function window:paint_menu(m)
 
       if hot then g:fill(2, y, m.w - 4, m.row, "accent") end
 
+      --
+      -- The mark, when this item is the one in force. Seven stacked rows,
+      -- widest in the middle, which is a diamond at this size and is built
+      -- the same way as the submenu arrow below.
+      --
+      if it.mark then
+        local ink = hot and theme.text_on or theme.text
+        local my = y + (m.row - 7) // 2
+
+        for k = 0, 6 do
+          local run = 7 - 2 * math.abs(k - 3)
+
+          g:fill(MENU_PAD + 2 + (7 - run) // 2, my + k, run, 1, ink)
+        end
+      end
+
       if it.icon then
-        g:icon(MENU_PAD + 2, y + (m.row - MENU_ICON) // 2, it.icon .. ".png",
-               MENU_ICON)
+        g:icon(MENU_PAD + 2 + mark_w, y + (m.row - MENU_ICON) // 2,
+               it.icon .. ".png", MENU_ICON)
       end
 
       g:text(text_x, y + centred(m.row), tostring(it.text or ""),
@@ -4160,7 +4227,7 @@ function window:direct_event(ev)
   if ev.type == "menubar" then
     local m = self.direct_menus and self.direct_menus[ev.index]
 
-    if m then self:open_menu(ev.x, ev.y, m.items or {}) end
+    if m then self:open_menu(ev.x, ev.y, menu_items(m)) end
 
     return true
   end

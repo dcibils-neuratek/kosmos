@@ -1309,6 +1309,93 @@ nothing: the scale's did exactly that, "0 on everything at 150 per cent"
 in a gate that passed, so `gate.py` now refuses to start while
 `run_screenshot.py` has a phase no part names.
 
+## 16.19 Icon sizes, and a menu that says which one
+
+**Asked for on 22 September** (`roadmap.md` 5za). Diego, once the 16s and
+64s were vendored beside the 32s: "with the new icon sizes we should also
+be able to select icon size on desktop, tracker icon view and else", and,
+of the sizes, "16,32,64 are the correct ones".
+
+**Three sizes, and no fourth.** They are the three Haiku exports the image
+carries (`assets/icons/README.md`), so each is drawn pixel for pixel with
+nothing averaged. `gc:icon` will happily draw any size by shrinking the 64
+- that is what the Deskbar's 24 is, and what every icon at a scale is -
+and that is right for a size the *system* worked out and wrong for one a
+person chose. A size somebody picks off a menu should be the best picture
+there is of it.
+
+**In points, like everything else since 16.18.** A 32 at 150 per cent is
+48 pixels, and the window manager does the shrinking: `scale.op` swaps an
+icon's asset for the 64 when it is about to be stretched. Nothing in
+`iconsize.lua` or in Tracker knows there is a scale at all.
+
+**Kept per place**, in `/home/.tracker`, under a key for each -
+`desktop_icon_px`, `window_icon_px`. The desktop and a Tracker window are
+the same program with the frame taken off, and they are not the same
+place: a desktop of large pictures over a photograph and a window of small
+ones you can see two hundred of is the pair of things people want. The
+default, 32, is kept as *nothing*, so a place that never chose follows a
+default that changes rather than freezing the one in force the day
+somebody opened the menu - the same rule as a window's own text size
+(`textsize.lua`).
+
+**The grid follows the pictures**, and this is where the size actually
+does something. Tracker's cell was `84, 56 + GH` compiled in; it is now
+the sum it always was:
+
+```
+CELL_W = max(84, px + 20)     -- the label's width, not the icon's
+CELL_H = px + 8 + 2 * GH      -- 2, the icon, 4, and two lines for the name
+```
+
+At 32 that is the 84 by 72 it was. The width is the *label's*, which is
+why 64 and 32 sit in cells of the same width: a name is wider than any of
+the three pictures. That also means the desktop's columns do not move
+sideways when the size changes, so an icon dragged somewhere still means
+what it meant.
+
+### A menu item can be marked
+
+A menu of three sizes that does not say which one is in force is a menu
+you have to guess at, and `ui.lua`'s menus had no way to say. So an item
+may carry `mark`, and a menu with any markable item gives every row a
+column for it on the left - `mark = false` is not the same as no mark,
+which is what keeps the names lined up and stops every row shifting when
+the mark moves.
+
+A diamond rather than a tick: every one of these is a choice among several
+rather than something switched on, and it is five rectangles where a tick
+would be a new verb in the file. It is built the way the submenu arrow
+beside it is.
+
+**And a menu bar's `items` may be a function**, worked out when the menu
+opens. A list is built once with the window, so anything it says about the
+state of the program would be however things were when the program
+started. Tracker's View menu is a function now, and marks three separate
+things: the layout, the column the listing is sorted on, and the icon
+size. The sizes are only in it in icon view, because a list has no icons
+and a choice that changes nothing is worse than no choice.
+
+### Where the choice lives, and what that exposed
+
+A Tracker window has a menu bar. **The desktop has none** - it is Tracker
+with the frame taken off - so the only place to put this is a right press
+on the background, which is what a right press on a desktop's background
+has meant since there were two buttons.
+
+That was the first menu the desktop had ever opened, and it came up 32
+pixels too high, over the Deskbar. A menu is a *window*, placed on the
+screen, so whoever opens one adds their own origin to a local point - and
+the desktop's origin was 0 while the desktop was at 32. `fit_backdrop` in
+`wm.lua` moves the backdrop below the strip when the strip opens and told
+it with a `resize` and nothing else; `swap_surface` posts a `resize` and
+never a `moved`. Nothing had ever noticed, because the only thing that
+needs a window's origin is a menu.
+
+It is a good example of what a feature is for. Nothing here is about
+window origins, and the bug had been in the tree since the Deskbar could
+start after the desktop.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

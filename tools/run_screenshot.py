@@ -1328,6 +1328,12 @@ STRIP_H = 32
 # were 32 in the 36-pixel one.
 DESKBAR_ICON = 24
 
+# A menu row, `theme.metrics.row` - the one fixed layout the faces fit
+# (`roadmap.md` 5x). `menu_metrics` in `ui.lua` puts two pixels of edge above
+# the first row, so row `i` of a menu opened at `y` starts at
+# `y + 2 + (i - 1) * MENU_ROW`.
+MENU_ROW = 24
+
 
 def check_registry(guest):
     """A window manager started a second time is found by name.
@@ -7217,6 +7223,510 @@ def check_places(guest):
     return 3
 
 
+def check_icon_sizes(guest):
+    """**How big the icons are, chosen on the desktop and kept** (`roadmap.md`
+    5za, `iconsize.lua`).
+
+    Diego, 22 September 2026: "with the new icon sizes we should also be able
+    to select icon size on desktop, tracker icon view and else", and of the
+    sizes: "16,32,64 are the correct ones".
+
+    A desktop has no menu bar, so the choice is a right press on the
+    background - which is what a right press on a desktop's background has
+    meant since there were two buttons. This drives that menu and then asks
+    two different things whether it worked, because either alone would pass
+    for the wrong reason: the screen, and the settings file.
+
+    **The screen, measured by where the last icon's name ends.** The
+    desktop's items stack down the first column, so the bottom of the last
+    label is
+
+        2 + (N - 1) * CELL_H + px + 6 + lines * GH,   CELL_H = px + 8 + 2 * GH
+
+    and every term but `px` is the same before and after. Differentiate it:
+    **choosing a size `d` points larger moves that row down by exactly
+    `N * d`**, whatever the icons look like, however many lines the last name
+    takes and whatever the font is. So the phase measures the lowest row of
+    ink in that column, counts the items at the prompt afterwards, and holds
+    the move to the point.
+
+    That formula is the reason this is measured at the *bottom* rather than
+    at an icon. Every icon-shaped test - is this box mostly ink, how wide is
+    the picture - depends on what Haiku drew inside a transparent square, and
+    on a desktop of stacked cells each icon's neighbours are a few pixels
+    away. The last row of ink in a column is none of that.
+
+    **Two desktops, and the second one is the point.** The size is chosen in
+    the first, which is then quit; the second has to come up already large,
+    which is the claim a settings file is for and the one a phase that never
+    restarted anything could not make. `/home/.tracker` is read between them
+    and has to say 64.
+
+    **Put back to Medium in the second**, and the lowest row has to come back
+    to where it started - the same claim in the other direction. Medium is
+    the default and a default is kept as *nothing*, so the file has to end
+    with no size for the desktop at all, and every other phase finds the
+    desktop as it expects it.
+    """
+    checks = 0
+
+    DESK = (0x1c, 0x25, 0x30)          # the dark palette's `desktop`
+    strip = STRIP_H
+    CELL_W = 84                        # the label's width, at all three sizes
+    STEP = 64 - 32                      # Medium to Large, in points
+
+    # The palette these colours were written against and the bitmap faces the
+    # arithmetic above assumes - `GH` is 16 because the pinned face is - and
+    # at no scale, whatever the phase before this one left behind.
+    guest.type(appearance())
+    time.sleep(2)
+
+    # Nothing opened at login, so the first column of the desktop is the
+    # desktop's own icons and nothing that landed on top of them.
+    guest.type('fs.write("/home/.startup", { items = {} })')
+    time.sleep(2)
+
+    # And no size chosen by an earlier boot: this one starts at the default
+    # and says so.
+    guest.type('fs.write("/home/.tracker", {})')
+    time.sleep(1)
+
+    def lowest_ink(w, h, px):
+        """The last row holding anything but desktop, in the first column."""
+        for yy in range(h - 1, strip, -1):
+            for xx in range(2, min(CELL_W - 2, w)):
+                o = (yy * w + xx) * 3
+
+                if tuple(px[o:o + 3]) != DESK:
+                    return yy
+
+        return None
+
+    def column_at(want, what):
+        """Wait for the first column's last row of ink to be `want`."""
+        def look(w, h, px):
+            low = lowest_ink(w, h, px)
+
+            return (w, h, px) if low is not None and abs(low - want) <= 2 \
+                else None
+
+        return look, what
+
+    def start_desktop():
+        guest.type("wm desktop,deskbar")
+
+        #
+        # Most of the screen its own colour *and* a short first column.
+        #
+        # Both, because either alone passes on the picture that is already
+        # there. The phases above leave the screen black with three coloured
+        # stripes down it, and a black column reads as a column of icons that
+        # reaches the bottom of the screen - which is how the first version of
+        # this measured the boot picture and called it a desktop.
+        #
+        def drawn(w, h, px):
+            seen = 0
+
+            for yy in range(strip + 4, h - 4, 16):
+                for xx in range(4, w - 4, 16):
+                    o = (yy * w + xx) * 3
+
+                    if tuple(px[o:o + 3]) == DESK:
+                        seen += 1
+
+            if seen <= (w // 16) * (h // 16) // 3:
+                return None
+
+            low = lowest_ink(w, h, px)
+
+            return (w, h, px) if low and strip + 40 < low < strip + 600 \
+                else None
+
+        return settle(
+            guest, drawn,
+            "the desktop never drew its first column of icons. "
+            "`wm desktop,deskbar` starts Tracker in backdrop mode, and if it "
+            "died instead the lines above say why.")
+
+    #
+    # The first desktop: at the default, and made large.
+    #
+    width, height, px = start_desktop()
+    before = lowest_ink(width, height, px)
+    checks += 1
+
+    #
+    # Somewhere bare to press, with room for the menu under it and clear of
+    # the right edge so the window manager does not pull the menu back on.
+    #
+    # Searched for rather than named, which the desktop phase learned the
+    # hard way: a fixed point is a bet on what else is on the screen, and it
+    # was what made that phase fail twice for a reason that had nothing to do
+    # with what it was testing.
+    #
+    MENU_W, MENU_H = 200, 3 * MENU_ROW + 8
+
+    def bare(x0, y0):
+        # The menu's room, and the strip above the pointer the check below
+        # wants still empty when the menu is up.
+        for yy in list(range(y0 - 22, y0, 2)) + list(range(y0, y0 + MENU_H, 4)):
+            for xx in range(x0, x0 + MENU_W, 4):
+                o = (yy * width + xx) * 3
+
+                if tuple(px[o:o + 3]) != DESK:
+                    return False
+
+        return True
+
+    spot = next(((x, y)
+                 for y in range(strip + 30, height - MENU_H - 8, 24)
+                 for x in range(CELL_W + 8, width - MENU_W - 8, 48)
+                 if bare(x, y)), None)
+
+    if spot is None:
+        raise Failure("there was no bare piece of desktop to press on, on a "
+                      f"screen of {width}x{height}. Something is covering it, "
+                      "and a right press has to land on the background for "
+                      "the icon sizes to come up.")
+
+    at_x, at_y = spot
+
+    def press(button, x, y):
+        guest.mouse_to(*_to_tablet(x, y, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True, button)
+        time.sleep(0.3)
+        guest.mouse_button(False, button)
+        time.sleep(0.6)
+
+    def choose(row):
+        """Right-press the bare desktop, then release on a row of the menu.
+
+        A menu window opens at the press, with two pixels of edge above its
+        first row and `MENU_ROW` for each - `menu_metrics` in `ui.lua`.
+        """
+        press("right", at_x, at_y)
+        press("left", at_x + 24,
+              at_y + 2 + (row - 1) * MENU_ROW + MENU_ROW // 2)
+
+    #
+    # The menu itself first: a press on the background has to put something
+    # over the desktop where there was nothing. Without this, a phase whose
+    # menu never opened would fail several steps later saying the icons did
+    # not change size - which is true and is not the reason.
+    #
+    guest.mouse_to(*_to_tablet(at_x, at_y, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True, "right")
+    time.sleep(0.3)
+    guest.mouse_button(False, "right")
+
+    def counted(pixels, w, y0, y1):
+        ink = 0
+
+        for yy in range(y0, y1):
+            for xx in range(at_x + 4, at_x + 60):
+                o = (yy * w + xx) * 3
+
+                if tuple(pixels[o:o + 3]) != DESK:
+                    ink += 1
+
+        return ink
+
+    #
+    # **Under the pointer, and not above it.** Both halves, because a menu
+    # is placed on the *screen* from the window's origin and the desktop's
+    # origin is the one thing on this machine that is not where the window
+    # is: `fit_backdrop` moves it below the strip, and until 22 September it
+    # said so with a `resize` and no `moved`. The menu came up 32 pixels
+    # high, over the Deskbar, and a check that only counted ink below the
+    # pointer saw the same menu and passed.
+    #
+    def menu_over(w, h, pixels):
+        if counted(pixels, w, at_y + 4, at_y + 3 * MENU_ROW) <= 200:
+            return None
+
+        return (w, h, pixels) if counted(pixels, w, at_y - 20, at_y - 4) == 0 \
+            else None
+
+    settle(guest, menu_over,
+           "a right press on the bare desktop opened no menu under the "
+           f"pointer at {at_x},{at_y}. The desktop has no menu bar, so "
+           "`rows:on_context` in `tracker.lua` is the only way to the icon "
+           "sizes - and a menu that is there but above the pointer is a "
+           "window that does not know where it is: see `fit_backdrop` in "
+           "`wm.lua`, which has to post `moved` as well as `resize`.")
+    checks += 1
+
+    #
+    # **Which row is marked, which is which size is in force.**
+    #
+    # The mark is a diamond in a column of its own on the left of every row -
+    # `MENU_MARK` in `ui.lua`, 12 wide, the shape drawn from `MENU_PAD + 2`.
+    # What is between it and the text is the menu's own background, and that
+    # is what "ink" means here: the menu is not the desktop's colour, so the
+    # test the rest of this phase uses would count every pixel of it.
+    #
+    def marked_rows(w, pixels, ox, oy, rows, skip=()):
+        #
+        # `skip` names the menu's separators. A groove is drawn from
+        # `MENU_PAD` to the far side, which crosses the mark's column - so a
+        # separator reads as a marked row, and saying which rows are
+        # separators is clearer here than teaching this to tell a diamond
+        # from a line eight pixels wide.
+        #
+        o = ((oy + 2 + MENU_ROW // 2) * w + ox + 20) * 3
+        background = tuple(pixels[o:o + 3])
+        out = []
+
+        for row in range(1, rows + 1):
+            if row in skip:
+                continue
+
+            top = oy + 2 + (row - 1) * MENU_ROW
+            ink = 0
+
+            for yy in range(top + 6, top + 18):
+                for xx in range(ox + 10, ox + 18):
+                    at = (yy * w + xx) * 3
+
+                    if tuple(pixels[at:at + 3]) != background:
+                        ink += 1
+
+            if ink > 8:
+                out.append(row)
+
+        return out
+
+    def only_marked(row):
+        def look(w, h, pixels):
+            return (w, h, pixels) \
+                if marked_rows(w, pixels, at_x, at_y, 3) == [row] else None
+
+        return look
+
+    _, _, px = settle(
+        guest, only_marked(2),
+        "the desktop's menu should mark Medium icons, the second of its three "
+        "rows, as the size in force - and marks "
+        + str(marked_rows(width, px, at_x, at_y, 3) or "none")
+        + ". A menu of choices that "
+        "does not say which one you are looking at is a menu you have to "
+        "guess at: `mark` in `ui.lua`.")
+    checks += 1
+
+    # And away again without choosing: a press outside a menu closes it.
+    press("left", min(at_x + 400, width - 40), at_y + 200)
+
+    choose(3)                          # Large icons
+
+    def grew(w, h, pixels):
+        low = lowest_ink(w, h, pixels)
+
+        return (w, h, pixels) if low is not None and low > before + 8 else None
+
+    _, _, px = settle(
+        guest, grew,
+        "Large icons was chosen from the desktop's menu and the first column "
+        f"did not get taller - its last row of ink is still about {before}.")
+
+    large = lowest_ink(width, height, px)
+    checks += 1
+
+    stop_desktop(guest)
+
+    #
+    # What it was measuring, and what was written down.
+    #
+    guest.type('local t = fs.read("/home/.tracker") or {} '
+               'print("ICON" .. "-KEPT", #(fs.list("/home/Desktop") or {}), '
+               't.desktop_icon_px, t.window_icon_px)')
+    guest.wait_for("ICON-KEPT", "the desktop's listing and the size it kept")
+
+    said = [ln for ln in guest.seen.splitlines() if "ICON-KEPT" in ln][-1]
+    fields = said.split()
+
+    try:
+        items = int(fields[1])
+    except (IndexError, ValueError):
+        raise Failure("could not count what is on the desktop:\n" + said)
+
+    if items < 2:
+        raise Failure(f"the desktop holds {items} things, and this phase needs "
+                      "at least two to measure a grid. Tracker puts the Trash, "
+                      "Drive and the cheat sheet there when they are missing.\n"
+                      + said)
+
+    want = before + items * STEP
+
+    if abs(large - want) > 2:
+        raise Failure(
+            f"the desktop's {items} icons were made large and the last name in "
+            f"the first column moved to row {large}, where it should be "
+            f"{want}. It was at {before} at 32 points, and a size `d` larger "
+            f"moves it down by exactly the number of icons times `d` - "
+            f"{items} x {STEP} here - because every cell in the column grows "
+            "by `d` and so does the last icon itself. See `CELL_H` in "
+            "`tracker.lua`.")
+
+    checks += 1
+
+    if fields[2:3] != ["64"]:
+        raise Failure("the desktop's icon size was chosen and /home/.tracker "
+                      "does not say 64, so it would not survive a restart. "
+                      "`iconsize.lua` writes the key the place names:\n" + said)
+
+    checks += 1
+
+    #
+    # The second desktop, which has to come up large without being told.
+    #
+    start_desktop()
+
+    look, _ = column_at(want, "large again")
+    settle(guest, look,
+           "the desktop was started again after Large icons was chosen and "
+           f"came up with its first column ending at some other row than "
+           f"{want}. A size is kept per place in /home/.tracker and read when "
+           "the place opens.")
+    checks += 1
+
+    #
+    # And the mark has moved to Large, which is the other half of a menu
+    # whose items are worked out when it opens: this menu belongs to a
+    # desktop that started *after* the choice was made, so a list built when
+    # the window was made would say the same thing either way, and a mark
+    # that never moved would be a mark that means nothing.
+    #
+    guest.mouse_to(*_to_tablet(at_x, at_y, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True, "right")
+    time.sleep(0.3)
+    guest.mouse_button(False, "right")
+
+    settle(guest, only_marked(3),
+           "Large icons is in force and the desktop's menu does not mark its "
+           "third row. `ui.menu_items` works a menu's items out when it "
+           "opens, so that a mark says what is true now.")
+    checks += 1
+
+    press("left", at_x + 24, at_y + 2 + MENU_ROW + MENU_ROW // 2)  # Medium
+
+    look, _ = column_at(before, "back where it was")
+    settle(guest, look,
+           "the icons were put back to Medium and the first column's last row "
+           f"did not come back to {before}.")
+    checks += 1
+
+    stop_desktop(guest)
+
+    guest.type('local t = fs.read("/home/.tracker") or {} '
+               'print("ICON" .. "-DEFAULT", t.desktop_icon_px == nil)')
+    guest.wait_for("ICON-DEFAULT", "what Tracker kept for the default size")
+
+    line = [ln for ln in guest.seen.splitlines() if "ICON-DEFAULT" in ln][-1]
+
+    if "true" not in line:
+        raise Failure("Medium was chosen again and /home/.tracker still holds "
+                      "a size for the desktop. The default is kept as nothing, "
+                      "so a place that never chose follows a default that "
+                      "changes rather than freezing one.\n" + line)
+
+    checks += 1
+
+    #
+    # **And a Tracker window's View menu**, which is the other place that
+    # draws a grid of icons and the only one with a menu bar.
+    #
+    # A window opens as a list, so View marks its second row and offers no
+    # sizes at all - a choice that would change nothing is worse than no
+    # choice. Chosen as icons, the same menu has to come up marking its
+    # first row *and* the three sizes below, with Medium marked among them.
+    #
+    # That is what `ui.menu_items` is for: a menu bar's items may be a
+    # function, worked out when the menu opens. Built once with the window,
+    # every row of this would say how things were when Tracker started.
+    #
+    mark = len(guest.seen)
+    guest.type("wm tracker")
+
+    pattern = re.compile(r"wm: window Tracker at (\d+),(\d+) (\d+)x(\d+)")
+    deadline = time.monotonic() + 30
+    where = None
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+        found = pattern.search(guest.seen, mark)
+
+        if found:
+            where = tuple(int(v) for v in found.groups())
+            break
+
+        time.sleep(0.25)
+
+    if where is None:
+        raise Failure("`wm tracker` never opened a window:\n"
+                      + guest.seen[mark:][-1500:])
+
+    #
+    # The View title in the menu bar at the top of the window: the titles
+    # start four pixels in and each is its text plus sixteen, in the bitmap
+    # face the harness pins - File 48, Go 32, so View begins at 84.
+    #
+    win_x, win_y = where[0], where[1]
+    view_x, view_y = win_x + 84 + 20, win_y + MENU_ROW // 2
+    menu_x, menu_y = win_x + 84, win_y + MENU_ROW
+
+    def view_menu(rows, want, skip):
+        guest.mouse_to(*_to_tablet(view_x, view_y, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+        guest.mouse_button(False)
+
+        def look(w, h, pixels):
+            return (w, h, pixels) \
+                if marked_rows(w, pixels, menu_x, menu_y, rows, skip) == want \
+                else None
+
+        return look
+
+    #
+    # Two marks, because a View menu holds two sets of choices: the layout
+    # and the column it is sorted on. A window opens as a list sorted by
+    # name, so rows 2 and 4, and no sizes at all below them.
+    #
+    settle(guest, view_menu(6, [2, 4], (3,)),
+           "a Tracker window opens as a list sorted by name, and its View "
+           "menu should mark both - the second and fourth of its six rows, "
+           "with no icon sizes under them, since a list has no icons and a "
+           "choice that changes nothing is worse than no choice. See "
+           "`view_menu` in `tracker.lua`.")
+    checks += 1
+
+    # "as icons", the first row.
+    guest.mouse_to(*_to_tablet(menu_x + 24, menu_y + 2 + MENU_ROW // 2,
+                               width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(0.8)
+
+    settle(guest, view_menu(10, [1, 4, 9], (3, 7)),
+           "a Tracker window was put into icon view, and its View menu should "
+           "now mark that row and offer the three sizes below it with Medium "
+           "marked - ten rows, with the first, fourth and ninth marked. "
+           "`ui.menu_items` works a menu's items out when it opens, so a menu "
+           "says what is true now rather than what was true when the window "
+           "was made.")
+    checks += 1
+
+    stop_desktop(guest)
+
+    return checks
+
+
 def check_desktop(guest):
     """The desktop: below the strip, holding what it always holds, and an
     icon that stays where it is dragged.
@@ -8359,6 +8869,7 @@ def main():
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
+        icon_size_checks = phase("icon sizes", check_icon_sizes)
         desktop_checks = phase("desktop", check_desktop)
         places_checks = phase("places", check_places)
         panel_checks = phase("panel", check_panel)
@@ -8416,6 +8927,7 @@ def main():
              + panel_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
+             + icon_size_checks
              + sized_checks + fold_checks + tri_checks
              + direct_checks
              + three_d_checks + registry_checks + context_checks
@@ -8465,6 +8977,8 @@ def main():
           f"once, "
           f"{desktop_checks} on the desktop below the strip and an icon "
           f"staying where it is dragged, "
+          f"{icon_size_checks} on the icon size chosen on the desktop and "
+          f"kept, "
           f"{places_checks} on a place made by a drop, opened by a click "
           f"and taken out by a right-click, "
           f"{panel_checks} on the Open window's filter, its one click that "

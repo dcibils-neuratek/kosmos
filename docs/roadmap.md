@@ -1163,17 +1163,41 @@ processors, and still what follows USB:
    that have a stick. **Every stick release carries `SHA256SUMS` from now
    on**, and an empty `/home`.
 
-5za. **AGREED on 22 September - icons at 16, 32 or 64, chosen where they
-   are shown.** Diego: "with the new icon sizes we should also be able to
-   select icon size on desktop, tracker icon view and else", and then, of
-   the sizes: "16,32,64 are the correct ones" - the three Haiku exports
-   that the image carries since 0.10.112 (5v), so at 100 per cent every
-   icon is drawn pixel for pixel, with nothing averaged. A choice in each
-   place that shows icons: the desktop's own menu, Tracker's View menu for
-   its icon view, and wherever else a grid of icons is drawn; kept per
-   place. **Sizes are points**, like every other size once there is a scale
-   (5z): a 32 at 150 per cent is 48 pixels, averaged down from the 64.
-   **Queued after 5z's first stage.**
+5za. **DONE - icons at 16, 32 or 64, chosen where they are shown**
+   (`testing.md` 18.148, `ui.md` 16.19). Diego: "with the new icon sizes we
+   should also be able to select icon size on desktop, tracker icon view
+   and else", and then, of the sizes: "16,32,64 are the correct ones" - the
+   three Haiku exports that the image carries since 0.10.112 (5v), so at
+   100 per cent every icon is drawn pixel for pixel, with nothing averaged.
+   **Sizes are points**, like every other size once there is a scale (5z):
+   a 32 at 150 per cent is 48 pixels, averaged down from the 64 by the
+   window manager, which upgrades an icon's source itself.
+
+   Built: `/lib/iconsize.lua`, the three sizes and the choice, kept per
+   place in `/home/.tracker` under a key for each - `desktop_icon_px` and
+   `window_icon_px` - and read when the place opens. Tracker's cell is the
+   sum it always was and now says so, `CELL_H = px + 8 + 2 * GH`, so the
+   grid follows the pictures. **Two places, and they turned out to be
+   two**: the desktop, where the only way to a menu is a right press on the
+   background, and a Tracker window's View menu, which offers the sizes
+   only in icon view because a list has no icons in it.
+
+   And two things that came out of it. A menu item can be **marked** -
+   a diamond in a column of its own, `mark` in `ui.lua` - so a menu of
+   choices says which one you are looking at; the View menu marks its
+   layout, its sort column and its icon size. And a menu bar's `items` may
+   be a **function**, worked out when the menu opens rather than when the
+   window was made, which is what lets a mark say what is true now.
+
+   **A bug it found**: `fit_backdrop` moves the desktop below the strip and
+   told it with a `resize` and no `moved`, so the desktop's idea of where
+   it was on the screen stayed 0. Nothing had ever needed it, because the
+   only thing that does is a menu and the desktop had none - the first one
+   opened 32 pixels above the pointer, over the Deskbar.
+
+   **Left**: nothing else draws a grid of icons today. The Open/Save panel
+   is a list and has none; a place that grows one takes a key of its own
+   and the same two lines.
 
 5z. **APPROVED on 22 September - a size for everything, not for the
    fonts: a scale. The first two stages DONE, 0.10.115** (`testing.md`

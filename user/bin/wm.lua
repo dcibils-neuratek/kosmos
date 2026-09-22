@@ -2963,6 +2963,15 @@ end
 -- a desktop that draws its icons from its own top-left corner puts them
 -- below the bar without having to know there is one.
 --
+-- **Told that it moved as well as that it resized**, which it was not until
+-- 22 September. `swap_surface` posts a `resize` and nothing else, so a
+-- desktop that started before the Deskbar kept `origin_y = 0` for ever -
+-- and an origin is how a window works out where on the *screen* to put
+-- something that is not inside it. Nothing had ever needed it, because the
+-- only thing that does is a menu, and the desktop had no menu until the
+-- icon sizes (`roadmap.md` 5za): the first one opened 32 pixels above the
+-- pointer, over the Deskbar.
+--
 function fit_backdrop()
   for _, w in ipairs(windows) do
     if w.backdrop and (w.y ~= reserved_top or w.h ~= H - reserved_top) then
@@ -2974,6 +2983,8 @@ function fit_backdrop()
       if swap_surface(w, W, H - reserved_top) then
         print(("wm: the desktop is below the strip, at 0,%d %dx%d")
               :format(w.y, w.w, w.h))
+
+        if w.y ~= was then post(w, { type = "moved", x = w.x, y = w.y }) end
       else
         w.y = was
       end

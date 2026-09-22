@@ -44,6 +44,13 @@ it became 32 pixels tall on 22 September (`roadmap.md` 5v), and every icon
 at a scale when there is one (5z). In the image the 32s keep their names
 and the others are `16x16/<name>` and `64x64/<name>`.
 
+**And the three are what a person can choose between**, on the desktop and
+in Tracker's icon view (`roadmap.md` 5za, `/lib/iconsize.lua`). Three and
+no fourth, for the reason above turned around: a size the system works out
+may be the 64 shrunk, and a size somebody picks off a menu should be the
+best picture there is of it. So a fourth size here would be a fourth size
+in that menu, and a fifth export would be four.
+
 Each is 8 bits a channel, colour type 6 - RGBA - which is what `gfx.png`
 decodes and what `surface:blend` composites. 81 KB for the 32s, 32 KB for
 the 16s and 210 KB for the 64s.
