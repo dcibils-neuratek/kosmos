@@ -3,8 +3,8 @@
  * A configuration descriptor, walked. `usb_decode.h` says what for.
  *
  * Every layout here is the USB 2.0 specification's, with its table beside it,
- * and the class, subclass and protocol numbers are HID 1.11's and the Mass
- * Storage Class's. The SuperSpeed Endpoint Companion's layout is from xHCI
+ * and the class, subclass and protocol numbers are HID 1.11's, the Mass
+ * Storage Class's and the Communications Device Class's. The SuperSpeed Endpoint Companion's layout is from xHCI
  * 1.2, whose Debug Capability declares one.
  *
  * **One device, one use.** A mouse is taken as soon as its endpoint is found;
@@ -18,9 +18,11 @@
  * are refused, as is a total longer than what arrived.
  *
  * **Alternate setting 0 only.** It is the setting an interface is in once its
- * configuration is chosen (9.6.5), and choosing another is `SET_INTERFACE`,
- * which nothing here sends - so an endpoint under any other setting is one the
- * device would not be using.
+ * configuration is chosen (9.6.5), and choosing another is `SET_INTERFACE` -
+ * so an endpoint under any other setting is one the device would not be
+ * using. **An Ethernet adapter is the exception**, and has a walk of its own
+ * below: its frames are only ever under another setting, which the driver
+ * has to select (`usb_decode_ecm`).
  */
 
 #include <stddef.h>
@@ -144,6 +146,10 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
     out->out_interval = 0;
     out->storage_subclass = 0;
     out->storage_protocol = 0;
+    out->first_class = 0;
+    out->first_subclass = 0;
+    out->first_protocol = 0;
+    out->interfaces = 0;
     forget_stick(out);
 
     if (bytes == NULL || length < CONFIG_LENGTH
@@ -170,6 +176,17 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
 
         if (d[1] == DESC_INTERFACE && d[0] >= IFACE_LENGTH) {
             bool is_hid = d[IFACE_CLASS] == CLASS_HID;
+
+            /* What the line says of a device nothing here reads. */
+            if (out->interfaces == 0) {
+                out->first_class = d[IFACE_CLASS];
+                out->first_subclass = d[IFACE_SUBCLASS];
+                out->first_protocol = d[IFACE_PROTOCOL];
+            }
+
+            if (out->interfaces < 255u) {
+                out->interfaces++;
+            }
 
             /* The interface before this one ends here, companions and all:
              * if it was a stick with both endpoints, it is the stick. */
@@ -348,6 +365,256 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
     } else {
         out->kind = hid ? USB_CONFIG_HID_OTHER : USB_CONFIG_NEITHER;
     }
+}
+
+/* ------------------------------------------------------- USB Ethernet */
+
+/*
+ * **The Communications Device Class's Ethernet Control Model.**
+ *
+ * The layouts are the USB-IF's: *Class Definitions for Communications
+ * Devices* 1.2 (CDC) for the class numbers and the functional descriptors,
+ * and its *Subclass Specification for Ethernet Control Model Devices* 1.2
+ * (ECM) for what an Ethernet adapter carries. Nothing here comes from any
+ * vendor's driver, which is the point of it (`roadmap.md` 5m).
+ *
+ * An ECM function is two interfaces, and neither is enough alone:
+ *
+ *   a **Communications** interface, class 02h subclass 06h (CDC Table 4, ECM
+ *   Table 1), whose class-specific part carries a Union functional
+ *   descriptor naming the Data interface (CDC 5.2.3.2), an Ethernet
+ *   Networking one with the MAC address's string and the largest frame
+ *   (ECM 5.4), and an interrupt IN for its notifications;
+ *
+ *   a **Data** interface, class 0Ah (CDC Table 6), whose **alternate setting
+ *   0 has no endpoints**. Frames move only once the host selects a setting
+ *   that has a bulk IN and a bulk OUT (ECM 3.3) - so this walks every
+ *   setting, where `usb_decode_config` reads setting 0 alone, and says which
+ *   one to select.
+ *
+ * Two passes over one walk, because the Data interface is known only once
+ * the Union has named it - and the Union lives in the Communications
+ * interface, which nothing says has to come before the Data one.
+ *
+ * Refused rather than guessed: no Union, a Union whose controlling interface
+ * is not the Communications one, no Ethernet Networking descriptor or a
+ * short one, an iMACAddress of zero - which ECM 5.4 says it cannot be - and a
+ * Data interface with no setting that has both bulk endpoints.
+ */
+
+/* CDC 1.2 Tables 4 and 6; ECM 1.2 Table 1. */
+#define CLASS_COMM          0x02u
+#define SUBCLASS_ECM        0x06u
+#define CLASS_CDC_DATA      0x0Au
+
+/* CDC 1.2 Tables 12 and 13. */
+#define DESC_CS_INTERFACE   0x24u
+#define CDC_UNION           0x06u
+#define CDC_ETHERNET        0x0Fu
+
+/* CDC 1.2 Table 16: bControlInterface, bSubordinateInterface0. */
+#define UNION_LENGTH        5u
+#define UNION_CONTROL       3u
+#define UNION_FIRST         4u
+
+/* ECM 1.2 Table 3. */
+#define ETHERNET_LENGTH     13u
+#define ETHERNET_MAC        3u          /* iMACAddress */
+#define ETHERNET_SEGMENT    8u          /* wMaxSegmentSize, two bytes */
+
+/* USB 2.0 Table 9-15, and ECM 5.4: twelve characters, UTF-16LE. */
+#define DESC_STRING         3u
+#define MAC_STRING_LENGTH   26u
+
+void usb_decode_ecm(const uint8_t *bytes, unsigned length,
+                    struct usb_ecm *out)
+{
+    unsigned total, at, last_bulk = 0;
+    bool have_control = false, have_union = false, have_ethernet = false;
+    bool in_control = false, in_data = false;
+    uint8_t union_control = 0;
+
+    memset(out, 0, sizeof(*out));
+
+    if (bytes == NULL || length < CONFIG_LENGTH
+        || bytes[0] < CONFIG_LENGTH || bytes[1] != DESC_CONFIGURATION) {
+        return;
+    }
+
+    total = bytes[CONFIG_TOTAL] | (unsigned)bytes[CONFIG_TOTAL + 1u] << 8;
+
+    if (total < CONFIG_LENGTH || total > length) {
+        return;
+    }
+
+    /* The first pass: the Communications interface and what it carries. */
+    for (at = 0; at < total; at += bytes[at]) {
+        const uint8_t *d = bytes + at;
+
+        if (total - at < 2u || d[0] < 2u || d[0] > total - at) {
+            memset(out, 0, sizeof(*out));
+            return;
+        }
+
+        if (d[1] == DESC_INTERFACE && d[0] >= IFACE_LENGTH) {
+            /* The first such interface is the one; any other ends it. */
+            in_control = !have_control
+                      && d[IFACE_CLASS] == CLASS_COMM
+                      && d[IFACE_SUBCLASS] == SUBCLASS_ECM
+                      && d[IFACE_ALTERNATE] == 0;
+
+            if (in_control) {
+                have_control = true;
+                out->control = d[IFACE_NUMBER];
+            }
+        } else if (d[1] == DESC_CS_INTERFACE && d[0] >= 3u && in_control) {
+            if (d[2] == CDC_UNION && d[0] >= UNION_LENGTH && !have_union) {
+                have_union = true;
+                union_control = d[UNION_CONTROL];
+                out->data = d[UNION_FIRST];
+            } else if (d[2] == CDC_ETHERNET && d[0] >= ETHERNET_LENGTH
+                       && !have_ethernet) {
+                have_ethernet = true;
+                out->mac_string = d[ETHERNET_MAC];
+                out->max_segment = (uint16_t)(d[ETHERNET_SEGMENT]
+                    | (unsigned)d[ETHERNET_SEGMENT + 1u] << 8);
+            }
+        } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH && in_control
+                   && out->notify == 0) {
+            unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;
+
+            if ((d[EP_ADDRESS] & EP_IN) != 0
+                && (d[EP_ADDRESS] & EP_NUMBER) != 0
+                && (d[EP_ATTRIBUTES] & EP_TYPE) == EP_INTERRUPT
+                && (packet & EP_PACKET_SIZE) != 0) {
+                out->notify = (uint8_t)(d[EP_ADDRESS] & EP_NUMBER);
+                out->notify_packet = (uint16_t)(packet & EP_PACKET_SIZE);
+                out->notify_interval = d[EP_INTERVAL];
+            }
+        }
+    }
+
+    if (!have_control || !have_union || union_control != out->control
+        || !have_ethernet || out->mac_string == 0) {
+        memset(out, 0, sizeof(*out));
+        return;
+    }
+
+    /*
+     * The second: the Data interface the Union named, setting by setting,
+     * until one ends with both of its bulk endpoints. The walk's lengths
+     * were all checked by the first.
+     */
+    for (at = 0; at < total; at += bytes[at]) {
+        const uint8_t *d = bytes + at;
+
+        if (d[1] == DESC_INTERFACE && d[0] >= IFACE_LENGTH) {
+            if (in_data && out->bulk_in != 0 && out->bulk_out != 0) {
+                break;
+            }
+
+            in_data = d[IFACE_NUMBER] == out->data
+                   && d[IFACE_CLASS] == CLASS_CDC_DATA;
+
+            if (in_data) {
+                out->data_alternate = d[IFACE_ALTERNATE];
+                out->bulk_in = out->bulk_out = 0;
+                out->bulk_in_packet = out->bulk_out_packet = 0;
+                out->bulk_in_burst = out->bulk_out_burst = 0;
+            }
+
+            last_bulk = 0;
+        } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH && in_data) {
+            unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;
+            uint8_t number = (uint8_t)(d[EP_ADDRESS] & EP_NUMBER);
+
+            last_bulk = 0;
+
+            if ((d[EP_ATTRIBUTES] & EP_TYPE) == EP_BULK && number != 0
+                && (packet & EP_PACKET_SIZE) != 0) {
+                if ((d[EP_ADDRESS] & EP_IN) != 0 && out->bulk_in == 0) {
+                    out->bulk_in = number;
+                    out->bulk_in_packet = (uint16_t)(packet & EP_PACKET_SIZE);
+                    last_bulk = 1;
+                } else if ((d[EP_ADDRESS] & EP_IN) == 0 && out->bulk_out == 0) {
+                    out->bulk_out = number;
+                    out->bulk_out_packet = (uint16_t)(packet & EP_PACKET_SIZE);
+                    last_bulk = 2;
+                }
+            }
+        } else if (d[1] == DESC_COMPANION && d[0] >= COMPANION_LENGTH
+                   && in_data && last_bulk != 0) {
+            /* As a stick's: past fifteen is no burst, and no endpoint. */
+            if (d[COMPANION_BURST] > BURST_MOST) {
+                if (last_bulk == 1) {
+                    out->bulk_in = 0;
+                } else {
+                    out->bulk_out = 0;
+                }
+            } else if (last_bulk == 1) {
+                out->bulk_in_burst = d[COMPANION_BURST];
+            } else {
+                out->bulk_out_burst = d[COMPANION_BURST];
+            }
+
+            last_bulk = 0;
+        }
+    }
+
+    if (!in_data || out->bulk_in == 0 || out->bulk_out == 0) {
+        memset(out, 0, sizeof(*out));
+        return;
+    }
+
+    out->configuration = bytes[CONFIG_VALUE];
+    out->ok = true;
+}
+
+/*
+ * The MAC address out of its string descriptor (ECM 5.4): exactly twelve
+ * UTF-16 characters, each a hex digit, the first the high nibble of the
+ * first byte. ECM says 30h-39h and 41h-46h; a lower-case a to f is taken as
+ * well, because refusing a working adapter over the case of its letters
+ * would protect nothing.
+ */
+bool usb_decode_mac(const uint8_t *desc, unsigned length, uint8_t mac[6])
+{
+    uint8_t got[6];
+    unsigned i;
+
+    if (desc == NULL || length < MAC_STRING_LENGTH
+        || desc[0] != MAC_STRING_LENGTH || desc[1] != DESC_STRING) {
+        return false;
+    }
+
+    for (i = 0; i < 12u; i++) {
+        unsigned lo = desc[2u + 2u * i], hi = desc[3u + 2u * i];
+        unsigned nibble;
+
+        if (hi != 0) {
+            return false;
+        }
+
+        if (lo >= '0' && lo <= '9') {
+            nibble = lo - '0';
+        } else if (lo >= 'A' && lo <= 'F') {
+            nibble = lo - 'A' + 10u;
+        } else if (lo >= 'a' && lo <= 'f') {
+            nibble = lo - 'a' + 10u;
+        } else {
+            return false;
+        }
+
+        if ((i & 1u) == 0) {
+            got[i / 2u] = (uint8_t)(nibble << 4);
+        } else {
+            got[i / 2u] = (uint8_t)(got[i / 2u] | nibble);
+        }
+    }
+
+    /* Only a whole address is an answer. */
+    memcpy(mac, got, sizeof(got));
+    return true;
 }
 
 /*

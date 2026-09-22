@@ -18,6 +18,65 @@ Last updated: 2026-09-21
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 21 September, the night: full screen, the addresses, a wallpaper and an adapter
+
+**Pushed: 0.10.100 to 0.10.102 (`d5a64f8`). Committed and not pushed:
+0.10.103 (`e649ccb`) and 0.10.104, each through a green `make prepush`,
+waiting for Diego's yes.** The last stick he ran is 0.10.101; none has been
+built since.
+
+- **0.10.100, the click** (5g, `testing.md` 18.130) - above.
+- **0.10.101, the solar system full screen** (5h, 18.131): F11, a
+  relaunch with the level kept, and a window manager that refuses a full
+  screen window smaller than the screen instead of dying on it.
+- **0.10.102, a shared mapping gives its addresses back** (5k, 18.132).
+  Diego's "the video plays once and not a second time" was the kernel's
+  shared window, whose addresses only ever climbed; the filesystem server
+  maps a 4 MB buffer per read and ran out after 1015. LIFO reclaim; the
+  control reproduced 4 GB / 4 MB almost exactly.
+- **0.10.103, a wallpaper that comes back** (5n, 18.133). His plain
+  colour PNGs are palette images, which `png.c` refused, and `wm` said
+  nothing. Both fixed; a palette PNG built byte by byte in the Lua suite.
+  **The ThinkPad has not seen this yet.**
+- **0.10.104, the USB Ethernet adapter named** (5m-a, 18.134,
+  `usb.md` 10). The dongle is an RTL8153 whose *second* configuration is
+  CDC-ECM, so the driver is a class driver written from the USB-IF's
+  specifications and not from GPL `r8152.c`. `use_device` now walks every
+  configuration and names what it cannot read. Kosmos's own driver read
+  the real dongle through QEMU's `usb-host` from the Mac, without root:
+  MAC `00:e0:4c:68:02:86`. The gate uses QEMU's `usb-net`, which has the
+  same two-configuration shape.
+
+**Two faults in the gate, recorded rather than rerun away.**
+`sched: the policy is pluggable` failed once on x86 in a loaded prepush, in
+an order (`132`) its record had not shown; five runs alone and a second
+whole prepush were green (18.133). And 0.10.104's first prepush stopped
+`arm-display-2` at boot with `spinlock: endpoint held by 1, wanted by 2`:
+the part alone passed and thirty boots six at a time did not panic, and
+the bound is ten milliseconds on AArch64 under TCG, so it reads as a paused
+host thread - but a real deadlock prints the same line, which is why 5r
+asks the panic to name what the holder was doing (18.134).
+
+**Diego asked for two indicators the same evening**, both drawn in
+`docs/indicators.html` and waiting on four choices of his: the network's
+four states (5p) - "so we know the adapter is connected and the network is
+on" - and a USB list of every device and what Kosmos does with it (5q).
+
+**5i is probably settled**: the second `diagnose` on the ThinkPad did reach
+the stick. Not closed until a run says so with bytes written.
+
+### Next, in order
+
+1. **Diego's yes to push 0.10.103 and 0.10.104**, then a stick
+   (`make MEGA=1 x86-usb-image`, `run_uefi.py`) so the ThinkPad shows the
+   wallpaper coming back and names the dongle on its own machine.
+2. **5m-b**: SET_CONFIGURATION, the Data interface's setting 1, the packet
+   filter, the link's notifications. Tested on `usb-net`; on the real
+   dongle from the Mac it needs `sudo sh tools/usbhost.sh 0bda:8153`,
+   which is Diego's to run.
+3. 5o, a render resolution for the solar system; 5l, the audio server's
+   dead streams; `docs/gamekit.md` and `PORT_NOTES.md`, still owed.
+
 ## 21 September, the evening: 100 fps on the ThinkPad, and a lost click
 
 **The rasterizer ran at 100 fps at maximum detail on the T14.** Diego,

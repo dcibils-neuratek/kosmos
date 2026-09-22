@@ -5,7 +5,8 @@
 /*
  * What a USB configuration descriptor says, for the xHCI driver: whether the
  * configuration holds a mouse this system can read, and where its reports
- * come from - or a stick, and the two bulk endpoints it is spoken to through.
+ * come from - or a stick, and the two bulk endpoints it is spoken to through,
+ * or an Ethernet adapter, and which of its interfaces carries the frames.
  *
  * Its own file, with no hardware and no system calls in it, for the reason
  * `hal/pc/smbios_decode.c` is: the bytes are the device's to choose, QEMU's
@@ -72,6 +73,14 @@ struct usb_config {
     uint16_t bulk_out_packet;
     uint8_t  bulk_in_burst;
     uint8_t  bulk_out_burst;
+
+    /* The first interface's class, subclass and protocol, and how many
+     * interface descriptors there were - alternate settings included - for
+     * the line that says what a device is when nothing here reads it. */
+    uint8_t  first_class;
+    uint8_t  first_subclass;
+    uint8_t  first_protocol;
+    uint8_t  interfaces;
 };
 
 /*
@@ -80,6 +89,48 @@ struct usb_config {
  */
 void usb_decode_config(const uint8_t *bytes, unsigned length,
                        struct usb_config *out);
+
+/*
+ * **A USB Ethernet adapter**: a configuration's CDC-ECM function, if it has
+ * one (`usb_decode.c` has whose layouts). Which configuration, its two
+ * interfaces, which setting of the Data interface carries the frames - not
+ * setting 0, which has no endpoints - and its endpoints. All zero unless
+ * `ok`.
+ */
+struct usb_ecm {
+    bool     ok;
+    uint8_t  configuration;     /* bConfigurationValue */
+    uint8_t  control;           /* the Communications interface */
+    uint8_t  data;              /* the Data interface, by its Union */
+    uint8_t  data_alternate;    /* its setting with the two bulk endpoints */
+    uint8_t  mac_string;        /* iMACAddress: a string descriptor's index */
+    uint16_t max_segment;       /* wMaxSegmentSize: the largest frame */
+
+    /* Its notifications - link up, link down, the speed - on an interrupt
+     * IN; all zero when there is none. */
+    uint8_t  notify;
+    uint16_t notify_packet;
+    uint8_t  notify_interval;
+
+    /* The frames, a bulk endpoint each way, as a stick's are. */
+    uint8_t  bulk_in;
+    uint8_t  bulk_out;
+    uint16_t bulk_in_packet;
+    uint16_t bulk_out_packet;
+    uint8_t  bulk_in_burst;
+    uint8_t  bulk_out_burst;
+};
+
+/* Nothing outside `bytes[0 .. length)` is read. */
+void usb_decode_ecm(const uint8_t *bytes, unsigned length,
+                    struct usb_ecm *out);
+
+/*
+ * The six bytes of a MAC address out of the string descriptor ECM 5.4 keeps
+ * it in; false, and `mac` untouched, for anything that is not exactly twelve
+ * hex digits.
+ */
+bool usb_decode_mac(const uint8_t *desc, unsigned length, uint8_t mac[6]);
 
 /*
  * Where a mouse's buttons and movement are in its reports, out of its Report

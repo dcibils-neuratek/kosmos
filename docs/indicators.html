@@ -1,0 +1,289 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  How the Deskbar's network and USB indicators should look, before either
+  is built: asked for by Diego on 21 September 2026 - "we need a topbar
+  network indicator icon and status", "so we know the adapter is connected
+  and the network is on", and "a usb top bar indicator that upon clicking
+  shows all things connected and detected on the usb ports" (roadmap.md 5p
+  and 5q). The devices listed are the ThinkPad's own, as the USB driver
+  named them there (usb.md 4 and 5); the MAC is his adapter's, read on the
+  Mac. What is marked as an example is not a reading.
+-->
+<title>Network and USB Indicators</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* Kosmos itself, which does not change with the reader's theme. */
+    --k-desk: #3d63b8;
+    --k-bar: #e7e7e3;
+    --k-bar-edge: #9a9a94;
+    --k-ink: #1e1e1e;
+    --k-dim: #6c6c66;
+    --k-panel: #f4f4f1;
+    --k-line: #cfcfc9;
+    --k-good: #2f8a3e;
+    --k-wait: #b7791f;
+    --k-off: #8a8a84;
+    --k-accent: #2a55c9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 980px; margin: 0 auto; padding: 44px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  /* The desktop, and the Deskbar across its top. */
+  .desk { background: var(--k-desk); border-radius: 10px; padding: 0 0 26px; overflow-x: auto; margin-top: 20px; }
+  .bar { min-width: 900px; height: 36px; display: flex; align-items: center; gap: 16px; padding: 0 16px 0 10px;
+         background: linear-gradient(#f1f1ee, var(--k-bar)); border-bottom: 1px solid var(--k-bar-edge);
+         color: var(--k-ink); font: 14px/1 var(--body); border-radius: 10px 10px 0 0; }
+  .bar .menu { font-weight: 600; }
+  .bar .spacer { flex: 1; }
+  .bar .item { position: relative; display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 2px; }
+  .bar .item img { width: 32px; height: 32px; image-rendering: pixelated; display: block; }
+  .bar .item.open { background: rgba(42,85,201,.14); border-radius: 4px; }
+  .dot { position: absolute; right: 0; bottom: 5px; width: 9px; height: 9px; border-radius: 50%;
+         border: 1.5px solid var(--k-bar); }
+  .dot.good { background: var(--k-good); }
+  .dot.wait { background: var(--k-wait); }
+  .dot.off  { background: var(--k-off); }
+  .count { position: absolute; right: -2px; top: 3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
+           background: var(--k-ink); color: #fff; font: 600 10px/15px var(--mono); text-align: center; }
+  .bar .clock { font-variant-numeric: tabular-nums; }
+  .bar .date { color: var(--k-dim); margin-right: -6px; }
+
+  /* A panel that drops from an icon. */
+  .drops { display: flex; flex-wrap: wrap; gap: 24px; padding: 14px 22px 0; align-items: flex-start; }
+  .panel { background: var(--k-panel); color: var(--k-ink); border: 1px solid #777; box-shadow: 3px 3px 0 rgba(0,0,0,.28);
+           font: 13px/1.4 var(--body); width: 360px; }
+  .panel.wide { width: 560px; }
+  .panel header { display: flex; align-items: center; gap: 10px; padding: 10px 12px 8px; border-bottom: 1px solid var(--k-line); }
+  .panel header img { width: 32px; height: 32px; }
+  .panel header b { font: 600 15px/1.2 var(--body); display: block; }
+  .panel header span { color: var(--k-dim); font-size: 12px; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 3px 12px; padding: 10px 12px 12px; }
+  .kv dt { color: var(--k-dim); }
+  .kv dd { margin: 0; font: 12.5px/1.45 var(--mono); }
+  .foot { border-top: 1px solid var(--k-line); padding: 7px 12px 9px; color: var(--k-accent); font-size: 12.5px; }
+
+  .group { padding: 8px 12px 2px; color: var(--k-dim); font: 500 11px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .dev { display: grid; grid-template-columns: 1fr auto; gap: 1px 12px; padding: 7px 12px; border-top: 1px solid #e3e3de; }
+  .dev:first-of-type { border-top: 0; }
+  .dev .name { font-weight: 500; }
+  .dev .ids { grid-column: 1; color: var(--k-dim); font: 11.5px/1.4 var(--mono); }
+  .dev .use { grid-row: 1 / span 2; grid-column: 2; align-self: center; font: 500 11.5px/1 var(--mono);
+              padding: 4px 7px; border-radius: 3px; white-space: nowrap; border: 1px solid; }
+  .use.driven { color: #1f6a2c; border-color: #8cc497; background: #e8f5ea; }
+  .use.named  { color: #7a5210; border-color: #e0bf85; background: #fbf1df; }
+  .use.none   { color: #5f5f59; border-color: #c9c9c3; background: #eeeeea; }
+  .example { font: 10.5px var(--mono); color: #9a7a10; margin-left: 6px; }
+
+  /* The four states, side by side. */
+  .states { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 16px; }
+  .state { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px 14px; }
+  .state .strip { display: flex; align-items: center; gap: 10px; background: linear-gradient(#f1f1ee, var(--k-bar));
+                  border: 1px solid var(--k-bar-edge); height: 40px; padding: 0 10px; color: var(--k-ink); font: 13px var(--body); }
+  .state .strip .item { position: relative; display: inline-flex; }
+  .state .strip img { width: 32px; height: 32px; }
+  .state .strip img.grey { filter: grayscale(1); opacity: .38; }
+  .state h3 { font: 600 16px/1.3 var(--display); margin: 12px 0 4px; }
+  .state p { font-size: 14px; color: var(--muted); margin: 0; }
+  .state .from { font: 12px var(--mono); color: var(--muted); margin-top: 8px; }
+
+  ol.q { padding-left: 22px; max-width: 70ch; }
+  ol.q li { margin-bottom: 10px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Network and USB in the Deskbar</h1>
+  <p class="lede">Two icons beside the volume and the battery. One says whether
+  the adapter is there and the network is on; the other lists everything on the
+  USB ports and what Kosmos does with each. Both only report what the drivers
+  already know, so neither can show something that isn't true.</p>
+
+  <div class="desk" role="img" aria-label="The Deskbar on the ThinkPad with the USB panel open">
+    <div class="bar">
+      <span class="menu">Kosmos</span>
+      <span>Tracker</span>
+      <span>Terminal</span>
+      <span class="spacer"></span>
+      <span class="item open" title="USB: six devices, three driven">
+        <img src="../assets/icons/Prefs_Devices.png" alt="">
+        <span class="count">6</span>
+      </span>
+      <span class="item" title="Network: a link at 1 Gb/s, 192.168.1.40">
+        <img src="../assets/icons/Prefs_Network.png" alt="">
+        <span class="dot good"></span>
+      </span>
+      <span class="item"><img src="../assets/icons/Misc_Speaker.png" alt=""></span>
+      <span class="item"><img src="../assets/icons/App_PowerStatus.png" alt=""> 78%</span>
+      <span class="date">Mon 21 Sep</span>
+      <span class="clock">23:14</span>
+    </div>
+
+    <div class="drops">
+      <section class="panel wide" aria-label="USB panel">
+        <header>
+          <img src="../assets/icons/Prefs_Devices.png" alt="">
+          <div><b>USB</b><span>Six devices: three driven by Kosmos, three with no driver here</span></div>
+        </header>
+
+        <div class="group">00:14.0 · the ports on the sides</div>
+        <div class="dev">
+          <span class="name">USB Gaming Mouse</span>
+          <span class="use driven">the pointer</span>
+          <span class="ids">04d9:fc38 · port 1 · full speed</span>
+        </div>
+        <div class="dev">
+          <span class="name">Kingston DataTraveler Exodia</span>
+          <span class="use driven">/home</span>
+          <span class="ids">0951:1666 · port 14 · SuperSpeed · 128 GB</span>
+        </div>
+
+        <div class="group">00:0d.0 · the USB-C ports</div>
+        <div class="dev">
+          <span class="name">USB 10/100/1000 LAN</span>
+          <span class="use driven">Ethernet</span>
+          <span class="ids">0bda:8153 · port 4 · SuperSpeed · CDC-ECM, MAC 00:e0:4c:68:02:86</span>
+        </div>
+
+        <div class="group">00:14.0 · inside the machine</div>
+        <div class="dev">
+          <span class="name">Integrated Camera</span>
+          <span class="use none">no driver · class EFh</span>
+          <span class="ids">04f2:b724 · port 4 · high speed</span>
+        </div>
+        <div class="dev">
+          <span class="name">06cb:00bd <span class="example">no name given; Synaptics, likely the fingerprint reader</span></span>
+          <span class="use none">no driver · class FFh</span>
+          <span class="ids">06cb:00bd · port 3 · full speed</span>
+        </div>
+        <div class="dev">
+          <span class="name">8087:0026 <span class="example">Intel, likely Bluetooth</span></span>
+          <span class="use none">no driver · class E0h</span>
+          <span class="ids">8087:0026 · port 10 · full speed</span>
+        </div>
+        <div class="foot">Open Devices…</div>
+      </section>
+
+      <section class="panel" aria-label="Network panel">
+        <header>
+          <img src="../assets/icons/Prefs_Network.png" alt="">
+          <div><b>On the network</b><span>Wired, through USB</span></div>
+        </header>
+        <dl class="kv">
+          <dt>Adapter</dt><dd>USB 10/100/1000 LAN</dd>
+          <dt>MAC</dt><dd>00:e0:4c:68:02:86</dd>
+          <dt>Link</dt><dd>1 Gb/s each way</dd>
+          <dt>Address</dt><dd>192.168.1.40 <span class="example">example</span></dd>
+          <dt>Gateway</dt><dd>192.168.1.1 <span class="example">example</span></dd>
+          <dt>Traffic</dt><dd>41 frames in, 37 out <span class="example">example</span></dd>
+        </dl>
+        <div class="foot">Open Network…</div>
+      </section>
+    </div>
+  </div>
+  <p class="note">The mouse, the stick, the camera, the Synaptics device and the
+  Intel one are exactly what Kosmos's USB driver named on the ThinkPad
+  (<code>usb.md</code> 4 and 5), with the ports and speeds it gave. The adapter's
+  line is what it read from your dongle on the Mac. The address, the gateway and
+  the traffic are examples: nothing gets an address until the frames reach the
+  network stack (<code>roadmap.md</code> 5m-d).</p>
+
+  <h2>The network icon's four states</h2>
+  <p>Each state is a step the driver has actually reached, so the icon never
+  claims more than it knows. Greyed out, then a dot that changes colour: that is
+  all the bar shows, which keeps it steady. The speed is in the panel.</p>
+
+  <div class="states">
+    <div class="state">
+      <div class="strip"><span class="item"><img class="grey" src="../assets/icons/Prefs_Network.png" alt=""></span></div>
+      <h3>No adapter</h3>
+      <p>Nothing plugged in that a driver here can drive. The icon stays, greyed
+      out, so "no network" is something the bar says at a glance; the panel
+      says "no adapter".</p>
+      <div class="from">today on the ThinkPad</div>
+    </div>
+    <div class="state">
+      <div class="strip"><span class="item"><img src="../assets/icons/Prefs_Network.png" alt=""><span class="dot off"></span></span></div>
+      <h3>An adapter, no cable</h3>
+      <p>The adapter is there and named, but no link. The panel shows its name and
+      MAC and says "no cable".</p>
+      <div class="from">5m-a, built</div>
+    </div>
+    <div class="state">
+      <div class="strip"><span class="item"><img src="../assets/icons/Prefs_Network.png" alt=""><span class="dot wait"></span></span></div>
+      <h3>A link, no address</h3>
+      <p>The cable is in and the adapter reports a link and its speed, but nothing
+      has given it an address yet.</p>
+      <div class="from">5m-b: the adapter's link notifications</div>
+    </div>
+    <div class="state">
+      <div class="strip"><span class="item"><img src="../assets/icons/Prefs_Network.png" alt=""><span class="dot good"></span></span></div>
+      <h3>On the network</h3>
+      <p>An address, and frames moving both ways. The panel above.</p>
+      <div class="from">5m-d, and an address to be given one</div>
+    </div>
+  </div>
+
+  <h2>The USB list</h2>
+  <p>Every device on every port, grouped by controller. For each: the name it
+  gave itself, vendor and product, the port and the speed, and on the right,
+  what Kosmos does with it, in one of three colours:</p>
+  <p><span class="use driven" style="display:inline-block;padding:3px 7px;border:1px solid;border-radius:3px;font:500 12px var(--mono)">driven</span>
+  Kosmos uses it, and says for what: the pointer, <code>/home</code>, a pad's
+  buttons, Ethernet.
+  <span class="use named" style="display:inline-block;padding:3px 7px;border:1px solid;border-radius:3px;font:500 12px var(--mono)">not driven yet</span>
+  Kosmos knows what it is but doesn't use it yet, as with the adapter tonight.
+  <span class="use none" style="display:inline-block;padding:3px 7px;border:1px solid;border-radius:3px;font:500 12px var(--mono)">no driver</span>
+  no driver here for it, with its class so you can see what kind of device it is.</p>
+  <p>The count on the icon is every device, including the ones inside the
+  machine, and the panel's first line splits it into driven and not. It changes
+  as something is plugged in or pulled out.</p>
+
+  <h2>Decided, 21 September</h2>
+  <ol class="q">
+    <li><b>No adapter: greyed out</b>, not hidden.</li>
+    <li><b>The link speed in the panel only</b>, not in the bar.</li>
+    <li><b>The camera, the fingerprint reader and Bluetooth are listed</b> with
+    everything else on the bus.</li>
+    <li><b>The count is every device</b>, and the panel says which ones Kosmos
+    drives and which it doesn't, and why.</li>
+  </ol>
+</main>
+</body>
+</html>

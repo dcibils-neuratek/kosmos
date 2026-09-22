@@ -7043,3 +7043,75 @@ in 18.39, always `231`, has not shown before. Nothing in this change is near the
 scheduler; the same image ran the suite alone five times, 172 of 172 each,
 and the second whole prepush was green in 4:56. It stays the open item
 `roadmap.md` already names.
+
+## 18.134 An adapter the driver walked past without a word
+
+The USB Ethernet dongle enumerated on the ThinkPad and said its name -
+`0bda:8153, USB 3.0, class 0, "USB 10/100/1000 LAN"` - and then nothing.
+That silence was two things. `use_device` read a device's **first**
+configuration and stopped, and the RTL8153's first is Realtek's own
+interface; the standard one, CDC-ECM, is its second. And a configuration
+that was none of a mouse, a stick or a pad returned without a line, so
+nothing on the screen said there was anything to look for.
+
+### What changed
+
+- `use_device` asks for each configuration in turn while none is of use,
+  up to eight, and takes a CDC-ECM function where it finds one
+  (`usb_decode_ecm`). A device that is nothing here in all of them is said
+  by its first interface's class - `class 02/02/ff - nothing here reads it`.
+- The adapter is named with its MAC address, read from the string its
+  Ethernet Networking descriptor names in the device's first language, and
+  its frames' interface, setting and endpoints. It is not configured: that
+  is 7b (`usb.md` 10).
+
+### The checks
+
+- **`test_usbdecode`**, 107 checks: both of the RTL8153's configurations
+  as libusb read them from the dongle on this Mac, byte for byte, and every
+  refusal `usb.md` 10 lists. Two controls, each a scratch copy of the
+  decoder with one rule taken out: without the Union's controlling
+  interface held to the Communications one, *"a Union that says interface 5
+  controls was taken"*; without each setting starting its endpoints afresh,
+  nothing failed - the RTL8153's setting 0 has no endpoints to leak - so a
+  configuration with a half setting before the whole one was added, and
+  that control now fails it: *"a setting with half the endpoints lent the
+  next one its bulk IN"*.
+- **`run_x86.py` `usb_ethernet`**, 5 checks, in `x86-usb-1`: QEMU's
+  `usb-net` with the MAC `52:54:00:4b:4d:53` given to it, which must come
+  back; its ECM function in configuration value 1, which is its second
+  descriptor after RNDIS; 1514-byte frames; interface 1 setting 1, bulk 2
+  each way of 64 bytes, and the link on interrupt IN 1. **Control**: the
+  driver built to read only the first configuration says `class 02/02/ff -
+  nothing here reads it`, and the check fails.
+
+### And on the dongle itself
+
+Passed to QEMU with `usb-host`, without root:
+
+```
+xhci: 00:02.0 port 1: USB Ethernet, CDC-ECM, in configuration 2: MAC 00:e0:4c:68:02:86, frames up to 1514 bytes; not driven yet
+xhci: 00:02.0 port 1: its frames on interface 1 setting 1, bulk IN 1 and OUT 2 of 1024 bytes; its link on interrupt IN 3
+```
+
+The same MAC macOS gives `en9`. Descriptor requests reach a device macOS
+holds; interfaces do not (`libusb_detach_kernel_driver: -3 [ACCESS]`), so
+7b on the real dongle, from the Mac, is a `sudo` run for Diego.
+
+**And a panic in the gate, chased before it was rerun.** The first
+`make prepush` of 0.10.104 stopped `arm-display-2` at its first boot, just
+after the banner, with `spinlock: endpoint held by 1, wanted by 2` and
+`PANIC: spinlock: gave up waiting`. Nothing in 0.10.104 is in the kernel
+or on the ARM board's USB path. `spinlock.h` records that the bound, ten
+million spins, is **about ten milliseconds on AArch64 under TCG** - shorter
+than a scheduling slice on a Mac running six four-processor guests on ten
+cores, so a holder whose host thread is paused trips it exactly as a
+deadlock would, and the line cannot say which.
+
+So it was tried again the way it happened: the same part alone passed its
+49 checks, and **thirty boots of the same image, six at a time**, all
+reached userland with no panic. That says rare and load-shaped, and it
+does not say harmless: `smp.md` records the one earlier time this fired,
+when the holder had faulted after taking the lock. What would settle it is
+the holder's side - what core 1 was doing - which the panic does not print.
+Worth having the next time: `spin_panic` asking the holder for its PC.

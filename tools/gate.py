@@ -148,7 +148,8 @@ SUITES = [
           alone=True, x86=True),
     Suite("x86-usb-1", ["python3", "tools/run_x86.py", X86, "--parts",
                         "usb,usb_blocks,usb_diskbench,usb_home,"
-                        "usb_second_stick,usb_home_late"], x86=True),
+                        "usb_second_stick,usb_home_late,usb_ethernet"],
+          x86=True),
     Suite("x86-usb-2", ["python3", "tools/run_x86.py", X86, "--parts",
                         "usb_home_named,usb_home_large,usb_drives,"
                         "usb_flush_refused,"

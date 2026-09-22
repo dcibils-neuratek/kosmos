@@ -139,6 +139,83 @@ _Static_assert(sizeof(xboxone) == 0x49, "the One's wTotalLength is its size");
 #define AT_PAD_PROTOCOL 16              /* interface 0's bInterfaceProtocol */
 #define AT_PAD_IN       37              /* its IN endpoint's address */
 
+/*
+ * **A USB Ethernet adapter**: Diego's LINKON USB-C one, a Realtek RTL8153,
+ * 0bda:8153, read on this Mac on 21 September with libusb's
+ * `libusb_get_descriptor` - both of its configurations, byte for byte.
+ *
+ * The first is Realtek's own interface, class FFh, which only a Realtek
+ * driver speaks. The second is CDC-ECM, which is what macOS runs it in and
+ * what Kosmos will (`roadmap.md` 5m).
+ */
+static const uint8_t rtl8153_vendor[] = {
+    0x09, 0x02, 0x39, 0x00, 0x01, 0x01, 0x00, 0xa0, 0x24,
+    0x09, 0x04, 0x00, 0x00, 0x03, 0xff, 0xff, 0x00, 0x00,
+    0x07, 0x05, 0x81, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x03, 0x00, 0x00, 0x00,
+    0x07, 0x05, 0x02, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x03, 0x00, 0x00, 0x00,
+    0x07, 0x05, 0x83, 0x03, 0x02, 0x00, 0x08,
+    0x06, 0x30, 0x00, 0x00, 0x02, 0x00,
+};
+
+static const uint8_t rtl8153_ecm[] = {
+    0x09, 0x02, 0x62, 0x00, 0x02, 0x02, 0x00, 0xa0, 0x24,
+    /* interface 0: Communications, ECM */
+    0x09, 0x04, 0x00, 0x00, 0x01, 0x02, 0x06, 0x00, 0x05,
+    0x05, 0x24, 0x00, 0x10, 0x01,                   /* Header, CDC 1.10 */
+    0x05, 0x24, 0x06, 0x00, 0x01,                   /* Union: 0 controls 1 */
+    0x0d, 0x24, 0x0f, 0x03, 0x00, 0x00, 0x00, 0x00, /* Ethernet: MAC in string 3 */
+    0xea, 0x05, 0x00, 0x00, 0x00,                   /* frames up to 1514 */
+    0x07, 0x05, 0x83, 0x03, 0x10, 0x00, 0x08,       /* interrupt IN 3 */
+    0x06, 0x30, 0x00, 0x00, 0x08, 0x00,
+    /* interface 1, setting 0: Data, and no endpoints */
+    0x09, 0x04, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
+    /* interface 1, setting 1: Data, bulk IN 1 and bulk OUT 2 */
+    0x09, 0x04, 0x01, 0x01, 0x02, 0x0a, 0x00, 0x00, 0x04,
+    0x07, 0x05, 0x81, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x03, 0x00, 0x00, 0x00,
+    0x07, 0x05, 0x02, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x03, 0x00, 0x00, 0x00,
+};
+
+#define AT_UNION_CONTROL  26            /* the Union's bControlInterface */
+#define AT_UNION_DATA     27            /* its bSubordinateInterface0 */
+#define AT_ETHERNET_TYPE  30            /* the Ethernet descriptor's subtype */
+#define AT_MAC_STRING     31            /* its iMACAddress */
+#define AT_DATA_ONE       54            /* interface 1, setting 0 */
+#define AT_DATA_CLASS     68            /* setting 1's bInterfaceClass */
+#define AT_ECM_IN_BURST   81            /* the bulk IN's bMaxBurst */
+
+/* String 3 of the same adapter: "00E04C680286", UTF-16LE. */
+static const uint8_t rtl8153_mac[] = {
+    26, 3, '0', 0, '0', 0, 'E', 0, '0', 0, '4', 0, 'C', 0,
+    '6', 0, '8', 0, '0', 0, '2', 0, '8', 0, '6', 0,
+};
+
+/* `rtl8153_ecm`, decoded as an adapter, with one byte changed. */
+static struct usb_ecm ecm_with(unsigned at, uint8_t value)
+{
+    uint8_t copy[sizeof(rtl8153_ecm)];
+    struct usb_ecm got;
+
+    memcpy(copy, rtl8153_ecm, sizeof(copy));
+    copy[at] = value;
+    usb_decode_ecm(copy, sizeof(copy), &got);
+    return got;
+}
+
+/* `rtl8153_mac` with one byte changed; true if it still decoded. */
+static int mac_with(unsigned at, uint8_t value)
+{
+    uint8_t copy[sizeof(rtl8153_mac)];
+    uint8_t mac[6];
+
+    memcpy(copy, rtl8153_mac, sizeof(copy));
+    copy[at] = value;
+    return usb_decode_mac(copy, sizeof(copy), mac);
+}
+
 static struct usb_config decode(const uint8_t *bytes, unsigned length)
 {
     struct usb_config got;
@@ -655,10 +732,136 @@ int main(void)
               "a field of 0 or of 33 bits was read");
     }
 
+    /* 11. A USB Ethernet adapter, CDC-ECM, and what it may get wrong. */
+    {
+        struct usb_ecm ecm;
+        struct usb_config got;
+        uint8_t buf[sizeof(rtl8153_ecm)];
+        uint8_t mac[6] = { 1, 2, 3, 4, 5, 6 };
+
+        usb_decode_ecm(rtl8153_ecm, sizeof(rtl8153_ecm), &ecm);
+        check(ecm.ok, "the RTL8153's ECM configuration was not an adapter");
+        check(ecm.configuration == 2,
+              "the RTL8153's ECM configuration: its value");
+        check(ecm.control == 0 && ecm.data == 1,
+              "the RTL8153: its Communications and Data interfaces");
+        check(ecm.data_alternate == 1,
+              "the RTL8153: the Data setting with the endpoints is not 1");
+        check(ecm.mac_string == 3 && ecm.max_segment == 1514,
+              "the RTL8153: its MAC string and largest frame");
+        check(ecm.notify == 3 && ecm.notify_packet == 16
+              && ecm.notify_interval == 8,
+              "the RTL8153: its notification endpoint");
+        check(ecm.bulk_in == 1 && ecm.bulk_out == 2
+              && ecm.bulk_in_packet == 1024 && ecm.bulk_out_packet == 1024,
+              "the RTL8153: its bulk endpoints");
+        check(ecm.bulk_in_burst == 3 && ecm.bulk_out_burst == 3,
+              "the RTL8153: its bulk endpoints' bursts");
+
+        /* Nothing else in it is a mouse, a pad or a stick, so the driver
+         * goes on to ask whether it is an adapter. */
+        got = decode(rtl8153_ecm, sizeof(rtl8153_ecm));
+        check(got.kind == USB_CONFIG_NEITHER && got.first_class == 2
+              && got.first_subclass == 6 && got.interfaces == 3,
+              "the RTL8153's ECM configuration as anything but an adapter");
+
+        /* Its first configuration, Realtek's own: said, and not taken. */
+        got = decode(rtl8153_vendor, sizeof(rtl8153_vendor));
+        check(got.kind == USB_CONFIG_NEITHER && got.first_class == 0xff
+              && got.first_subclass == 0xff && got.first_protocol == 0
+              && got.interfaces == 1,
+              "the RTL8153's vendor configuration: its class");
+        usb_decode_ecm(rtl8153_vendor, sizeof(rtl8153_vendor), &ecm);
+        check(!ecm.ok, "the RTL8153's vendor configuration was an adapter");
+
+        /* The Data interface first and the Communications one after it,
+         * which nothing forbids: the Union still names it. */
+        memcpy(buf, rtl8153_ecm, 9);
+        memcpy(buf + 9, rtl8153_ecm + AT_DATA_ONE,
+               sizeof(rtl8153_ecm) - AT_DATA_ONE);
+        memcpy(buf + 9 + sizeof(rtl8153_ecm) - AT_DATA_ONE, rtl8153_ecm + 9,
+               AT_DATA_ONE - 9);
+        usb_decode_ecm(buf, sizeof(buf), &ecm);
+        check(ecm.ok && ecm.data == 1 && ecm.data_alternate == 1
+              && ecm.bulk_in == 1 && ecm.bulk_out == 2,
+              "the Data interface ahead of the Communications one was missed");
+
+        /* Only setting 0 of the Data interface, the one with no endpoints. */
+        memcpy(buf, rtl8153_ecm, AT_DATA_ONE + 9);
+        buf[2] = (uint8_t)(AT_DATA_ONE + 9);
+        buf[3] = 0;
+        usb_decode_ecm(buf, AT_DATA_ONE + 9, &ecm);
+        check(!ecm.ok, "an adapter with only the setting that has no "
+                       "endpoints was taken");
+
+        /* A setting with a bulk IN alone, then one with both: the answer
+         * is the second setting's pair, not the first's IN kept over. */
+        {
+            static const uint8_t half[] = {
+                0x09, 0x04, 0x01, 0x01, 0x01, 0x0a, 0x00, 0x00, 0x00,
+                0x07, 0x05, 0x85, 0x02, 0x00, 0x04, 0x00,
+            };
+            uint8_t longer[sizeof(rtl8153_ecm) + sizeof(half)];
+            unsigned n = AT_DATA_ONE + 9u;
+
+            memcpy(longer, rtl8153_ecm, n);
+            memcpy(longer + n, half, sizeof(half));
+            memcpy(longer + n + sizeof(half), rtl8153_ecm + n,
+                   sizeof(rtl8153_ecm) - n);
+            longer[2] = (uint8_t)sizeof(longer);
+            longer[n + sizeof(half) + 3u] = 2;      /* the whole one is 2 */
+
+            usb_decode_ecm(longer, sizeof(longer), &ecm);
+            check(ecm.ok && ecm.data_alternate == 2 && ecm.bulk_in == 1
+                  && ecm.bulk_out == 2,
+                  "a setting with half the endpoints lent the next one its "
+                  "bulk IN");
+        }
+
+        check(!ecm_with(AT_UNION_CONTROL, 5).ok,
+              "a Union that says interface 5 controls was taken");
+        check(!ecm_with(AT_UNION_DATA, 2).ok,
+              "a Union naming a Data interface that is not there was taken");
+        check(!ecm_with(AT_ETHERNET_TYPE, 0x10).ok,
+              "an adapter with no Ethernet Networking descriptor was taken");
+        check(!ecm_with(AT_MAC_STRING, 0).ok,
+              "an iMACAddress of zero, which ECM 5.4 forbids, was taken");
+        check(!ecm_with(AT_DATA_CLASS, 0xff).ok,
+              "a Data setting of the wrong class was taken");
+        check(!ecm_with(AT_ECM_IN_BURST, 16).ok,
+              "a burst of sixteen, which no controller can be given, was "
+              "taken");
+        check(!ecm_with(18, 0).ok,
+              "a descriptor of length zero in an adapter was walked");
+
+        usb_decode_ecm(rtl8153_ecm, sizeof(rtl8153_ecm) - 1u, &ecm);
+        check(!ecm.ok, "an adapter's configuration one byte short was read");
+        usb_decode_ecm(NULL, 98, &ecm);
+        check(!ecm.ok, "no configuration at all was an adapter");
+
+        /* Its MAC address, out of string 3. */
+        check(usb_decode_mac(rtl8153_mac, sizeof(rtl8153_mac), mac)
+              && mac[0] == 0x00 && mac[1] == 0xe0 && mac[2] == 0x4c
+              && mac[3] == 0x68 && mac[4] == 0x02 && mac[5] == 0x86,
+              "the RTL8153's MAC address is not 00:e0:4c:68:02:86");
+        check(mac_with(6, 'e'), "a lower-case hex digit was refused");
+        check(!mac_with(6, 'G'), "a G was taken for a hex digit");
+        check(!mac_with(7, 1), "a character past U+00FF was taken");
+        check(!mac_with(0, 24), "eleven characters were taken for a MAC");
+        check(!mac_with(1, 4), "a descriptor that is not a string was taken");
+
+        memset(mac, 0x5a, sizeof(mac));
+        check(!mac_with(25, '-') && mac[0] == 0x5a && mac[5] == 0x5a,
+              "a MAC that failed on its last digit changed the answer");
+        check(!usb_decode_mac(rtl8153_mac, sizeof(rtl8153_mac) - 1u, mac),
+              "a MAC string one byte short was read");
+    }
+
     if (fails == 0) {
         printf("PASS: %d checks on USB configuration and report descriptors "
                "(QEMU's mouse, HID 1.11's examples, a sixteen-button mouse, "
-               "Report IDs, sticks at high speed and SuperSpeed, and the "
+               "Report IDs, sticks at high speed and SuperSpeed, an Ethernet "
+               "adapter's two configurations and its MAC address, and the "
                "lengths a device can get wrong).\n",
                checks);
         return 0;

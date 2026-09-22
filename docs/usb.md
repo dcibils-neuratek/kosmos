@@ -13,7 +13,7 @@ else.
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
-| 7. Ethernet | a USB-C adapter carrying the network stack | not started |
+| 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
@@ -1919,6 +1919,100 @@ The Super Nintendo, Doom and Quake map the codes in their key tables.
   root: on 19 September Diego's SN30 Pro gave every button, down and up, as
   the key its place names.
 
+## 10. Step 7: Ethernet
+
+**Agreed with Diego on 21 September** (`roadmap.md` 5m), for what a
+network on the ThinkPad unlocks: its only card is an Intel AX201 that no
+driver here speaks, and he bought a LINKON USB-C adapter the same evening.
+
+### 7a: the adapter, named
+
+**It is a Realtek RTL8153, `0bda:8153`, and it is not a Realtek driver that
+runs it.** Read on this Mac, it offers two configurations: the first is
+Realtek's own interface, class FFh, which only Linux's `r8152.c` documents;
+the second is the USB-IF's **CDC-ECM**, the Ethernet Control Model, which is
+what macOS runs it in with a class driver that knows nothing about Realtek.
+Kosmos is MIT and `r8152.c` is GPL, so that second configuration is the
+whole reason this can be written - from a published class specification,
+for any ECM adapter rather than one chip.
+
+An ECM function is two interfaces:
+
+| interface | class | carries |
+| --------- | ----- | ------- |
+| Communications | 02h, subclass 06h | a Union naming the Data interface; an Ethernet Networking descriptor with the MAC address's string and the largest frame; an interrupt IN for the link's state |
+| Data | 0Ah | at **setting 0, nothing** - and at another setting a bulk IN and a bulk OUT, one frame a transfer, ended by a short packet |
+
+That empty setting 0 is the trap ECM is known for: it is the setting an
+interface is in once the configuration is chosen, so a driver that does not
+select another sees a device that works and never receives a frame.
+`usb_decode_config` reads setting 0 alone, deliberately, so the adapter has
+a walk of its own, `usb_decode_ecm`, in two passes - the Communications
+interface and what it carries, then the setting of the Data interface the
+Union named that has both bulk endpoints. `usb_decode_mac` reads the address
+out of its string: exactly twelve hex digits, the first the high nibble of
+the first byte (ECM 5.4).
+
+**Every configuration, until one is of use.** `use_device` used to read the
+first and stop, and a device that was nothing it knew was passed over
+without a word - which is why the adapter on the ThinkPad printed its name
+and nothing else. It now asks for each in turn while the answer is none of
+a mouse, a stick or a pad, takes an adapter where it finds one, and
+otherwise says the first interface's class:
+
+```
+xhci: 00:02.0 port 5: class 02/02/ff - nothing here reads it
+```
+
+which is what QEMU's `usb-net` looks like to a driver that stops at its
+first configuration - RNDIS, Microsoft's. Read whole:
+
+```
+xhci: 00:02.0 port 1: 0bda:8153, USB 3.0, class 0, "USB 10/100/1000 LAN"
+xhci: 00:02.0 port 1: USB Ethernet, CDC-ECM, in configuration 2: MAC 00:e0:4c:68:02:86, frames up to 1514 bytes; not driven yet
+xhci: 00:02.0 port 1: its frames on interface 1 setting 1, bulk IN 1 and OUT 2 of 1024 bytes; its link on interrupt IN 3
+```
+
+That is the dongle itself, handed to QEMU from the Mac with `usb-host`. It
+needed no root: reading descriptors is a request to the device, and macOS
+let it through while keeping the interfaces for its own driver
+(`libusb_detach_kernel_driver: ACCESS`). **Moving frames on it from here
+will need root**, as the 8BitDo pad did (`tools/usbhost.sh`); `usb-net` is
+what the gate uses, and needs nothing.
+
+Nothing is configured yet: an adapter is named and left exactly as it was
+found.
+
+### What comes next
+
+- **7b**: SET_CONFIGURATION, the Data interface's setting selected, the
+  packet filter set - directed, broadcast and multicast
+  (SET_ETHERNET_PACKET_FILTER, ECM 6.2.4) - and the link's notifications read:
+  NETWORK_CONNECTION, then CONNECTION_SPEED_CHANGE with the two rates (CDC
+  6.3.1, 6.3.3).
+- **7c**: one frame out and one in, ARP; a frame that fills its last packet
+  exactly is followed by a zero-length one (ECM 3.3.1).
+- **7d**: the frames reach `net.c` through a ring in a region, not the
+  kernel's virtio syscalls (`roadmap.md` 5m-d).
+
+### How it is tested
+
+- `test_usbdecode`, on the host: both of the RTL8153's configurations byte
+  for byte, as libusb read them on this Mac - the ECM one taken with every
+  field, the vendor one said by its class; the Data interface ahead of the
+  Communications one; a setting with half the endpoints that must not lend
+  the next its IN; and a Union pointing anywhere else, no Ethernet
+  descriptor, an iMACAddress of 0, a Data setting of the wrong class, a burst
+  of 16 and a short configuration, each refused. The MAC string, and eleven
+  characters, a G, a character past U+00FF and a string one byte short,
+  refused - with the answer untouched by a failure on the last digit.
+- `run_x86.py`'s `usb_ethernet`: QEMU's `usb-net` with a MAC this machine
+  chose, which must come back from the adapter's string; its ECM
+  configuration, which is its second; its largest frame, its setting and
+  its endpoints. **Control**: the driver reading only the first
+  configuration says `class 02/02/ff - nothing here reads it`, and the
+  check fails.
+
 ## Sources
 
 - Microsoft, *FAT32 File System Specification*, version 1.03, 6 December 2000
@@ -1963,6 +2057,16 @@ The Super Nintendo, Doom and Quake map the codes in their key tables.
   version 1.11 - the boot subclass and the mouse protocol, SET_PROTOCOL and
   SET_IDLE, which of them a boot mouse must support, and a boot mouse's
   report. Downloaded from usb.org on 13 September 2026, and not kept.
+- USB-IF, *Class Definitions for Communications Devices*, revision 1.2
+  with errata and ECNs through 3 April 2025, and its *Subclass Specification
+  for Ethernet Control Model Devices*, revision 1.2 - the class numbers, the
+  Union and Ethernet Networking functional descriptors, the empty setting 0,
+  the MAC string, the packet filter and the link's notifications (step 7).
+  Downloaded from usb.org on 21 September 2026 as
+  `CDC1.2_WMC1.1_012011_0.zip`, 4.0 MB, SHA-256 `25dd732a...aebcd`, to read,
+  and not kept in the repository.
+- QEMU 11.1.1's `usb-net`, used as a device and not read: what it offers is
+  what the driver read from it.
 - QEMU 11.1.1, `hw/usb/dev-hid.c` and `hw/input/hid.c` - the mouse the check
   runs against, read for how it behaves: that it attaches at high speed with
   a four-byte packet every 8 ms, honours SET_PROTOCOL, clamps a report's

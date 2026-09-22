@@ -1098,6 +1098,107 @@ processors, and still what follows USB:
      double-click speed were considered and left out, because none of them
      exist to be set yet.
 
+5s. **AGREED on 21 September - a theme called Plex, which looks exactly
+   like the mockups.** Diego, on `docs/indicators.html`: "i love the font
+   used in the mockups", "can we create a theme for kosmos that has this
+   exact fonts selection, sizes and all and add it to the available
+   themes?", "the theme is called Plex", and "i want the theme to look
+   exactly as the mockup, same fonts same sizes same spacing, same colors".
+
+   **What that asks of the theme format, which today is a palette and
+   nothing else** (`themes.lua`, `theme.read`): fonts and spacing are not
+   part of a theme. The five roles are set one by one in Appearance and
+   kept in `/home/.appearance`, and the spacing - padding, row heights, the
+   bar's height, the gaps between things - is numbers in the kit. So Plex
+   is three pieces of work, in order:
+
+   - **colours**: a fifth shipped theme, `plex`, from the mockups' own
+     values - the desktop `#3d63b8`, the bar `#e7e7e3`, panels `#f4f4f1`,
+     rules `#cfcfc9`, ink `#1e1e1e`, dim `#6c6c66`, accent `#2a55c9`, good
+     `#2f8a3e`;
+   - **fonts**: a theme names a face and a size for each role -
+     `font.ui = ibmplexsans 13` - and Plex's are Plex Sans, Plex Sans
+     Condensed SemiBold and Plex Mono at the mockups' sizes. Diego: "then
+     we either need to add font selection to the theme?", and then "like a
+     theme is a complete color scheme + font selection?" - **yes: a theme
+     is complete**, colours, fonts and spacing, every one written in its
+     file. Proposed first was a theme that could leave the fonts out and
+     so leave them alone; that is a completion rule the reader has to
+     know, which is what *explicit over hidden* rules out. So Photon, BeOS,
+     Platinum and IRIX get the faces and spacing they use today written
+     into them and look exactly as they do; choosing any theme sets all of
+     it; and a role changed afterwards in Appearance is kept as the
+     person's own on top of the theme, and shown as such;
+   - **spacing**: the kit's paddings and row heights become tokens a theme
+     can set, with today's numbers as their defaults.
+
+   **The mockup is a web page and Kosmos is not**, so which element of it
+   is which role is a decision, not a reading: the page's 16 px running
+   text against a 14 px widget, a 42 px page title against a window's
+   title bar. That mapping is written down and agreed with Diego before
+   anything is coded.
+
+5r. **WANTED on 21 September - a deadlock report that names the holder.**
+   `arm-display-2` panicked once at boot with `spinlock: endpoint held by
+   1, wanted by 2` and did not again in a rerun or thirty boots under the
+   same load (`testing.md` 18.134). The report says who waited and not
+   what the holder was doing, so a real deadlock and a paused host thread
+   read the same. The waiting core could ask the holder for its PC and
+   stack - an IPI on both boards - before it panics, and the bound could
+   be measured on the counter rather than in spins, since ten million is
+   ten milliseconds on one board and a second and a half on the other.
+
+5q. **AGREED on 21 September - a USB indicator in the bar.** Diego: "i
+   also want a usb top bar indicator that upon clicking shows all things
+   connected and detected on the usb ports". An icon in the Deskbar, beside
+   the network's (5p), and a click that lists every device on every port:
+   what it said it is - vendor and product, its name, its speed - and **what
+   Kosmos does with it**: the mouse it reads, the stick it mounted as
+   `/home`, the pad whose buttons are keys, the Ethernet adapter it named
+   (5m), or the class of one nothing here reads.
+
+   The driver already knows all of it and says it only to the console:
+   `use_device` decides each device's kind, and since 5m-a a device that is
+   none of them is named by its class rather than passed over. What is
+   missing is a way to ask: the xHCI driver is a process, so the list comes
+   from it through a small declared-struct query (`CLAUDE.md`, *a server
+   receives exactly what it expects*), read by a desklet the way the
+   battery is read - not by parsing the console. Plugging and unplugging
+   changes it, which the driver already sees (`usb_hotplug`). **Drawn**,
+   with 5p's since the two sit side by side, as `docs/indicators.html` on
+   21 September - the ThinkPad's own devices as the driver named them, and
+   four choices for Diego at the end. **His answers**: the devices inside
+   the machine - the camera, the fingerprint reader, Bluetooth - are
+   listed with the rest; and the icon counts every device, with the panel
+   saying which Kosmos drives and which it does not - "no drivers
+   available for example" - so the count and the list agree.
+
+5p. **AGREED on 21 September - a network indicator in the bar.** Diego:
+   "we need a topbar network indicator icon and status", "so we know the
+   adapter is connected and the network is on". An icon in the Deskbar,
+   beside the battery and the volume, whose states are the driver's own
+   steps rather than a guess:
+
+   - **no adapter** - nothing plugged in that the driver can drive, and
+     the icon **greyed out** rather than gone (Diego's choice, below);
+   - **an adapter, no link** - 5m-a names it today, and its MAC is known;
+   - **a link**, and its speed - from the adapter's `NETWORK_CONNECTION`
+     and `CONNECTION_SPEED_CHANGE` notifications, 5m-b;
+   - **on the network** - an address, which needs the frames in `net.c`,
+     5m-d, and an address to be given one.
+
+   **There is an icon already, and it says nothing.** `deskbar.lua` draws
+   `Prefs_Network.png` whenever the network stack answers
+   `fs.net_info("/net")` - on QEMU always, on the ThinkPad never, since no
+   card there is driven - and it has one state, present. So this is that
+   icon given the four above, drawn differently for each, and a click
+   that says them in words: the adapter's name, its MAC, the link's speed,
+   the address. It is built with 5m-b, because before that the only true
+   states are the first two. **Drawn** as `docs/indicators.html`, and
+   Diego's choices the same evening: no adapter is a greyed-out icon, not
+   a missing one; the link's speed is in the panel only, not in the bar. The Wi-Fi card would be a fifth kind of
+   adapter behind the same icon, when there is a driver for one.
+
 5o. **WANTED on 21 September - a render resolution for the solar system.**
    Diego, after 18.131: "the solar simulator works great in fullscreen but
    i do need a way to set the render resolution as it looks very
@@ -1177,17 +1278,19 @@ processors, and still what follows USB:
    paragraph to guess.
 
    **Then, in order:**
-   - **5m-a. The descriptors**, under QEMU with `usb-net` (and `usb-host`
-     for the dongle itself, if macOS lets QEMU take it from
-     `AppleUserECM`). Which classes,
-     which configurations, which endpoints, and the MAC address - ECM
-     carries it as a string descriptor, which is a pleasant way to find out
-     the thing works before a single frame moves.
-   - **5m-b. Bring the link up and read its MAC**, no frames yet: the
-     configuration chosen, the data interface's alternate setting selected
-     (ECM's data interface has a zero-bandwidth alternate 0, and picking it
-     is the classic reason a correct-looking driver never receives
-     anything).
+   - **5m-a. DONE on 21 September - the descriptors** (`usb.md` 10,
+     `testing.md` 18.134). The driver reads every configuration a device
+     has, names an ECM adapter with its MAC and its endpoints, and says the
+     class of anything it cannot read. Under QEMU's `usb-net`, and on the
+     dongle itself through `usb-host` with no root needed: MAC
+     `00:e0:4c:68:02:86`, configuration 2, frames on interface 1 setting 1.
+     Moving frames on the dongle from the Mac will need root, as the pad
+     did; the gate uses `usb-net`.
+   - **5m-b. Bring the link up**, no frames yet: the configuration chosen,
+     the data interface's alternate setting selected (ECM's data interface
+     has a zero-bandwidth alternate 0, and picking it is the classic reason
+     a correct-looking driver never receives anything), the packet filter
+     set, and the link's notifications read - up or down, and its speed.
    - **5m-c. One frame out, one frame in.** ARP is the right first traffic:
      small, unsolicited, and something on the other end answers without
      being asked twice.

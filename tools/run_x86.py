@@ -3843,7 +3843,70 @@ def core(image, check, fails):
 
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+def usb_ethernet(image, check):
+    """A USB Ethernet adapter, named and not yet driven - `usb.md` step 7a.
+
+    QEMU's `usb-net` is a CDC Ethernet device with two configurations,
+    RNDIS first and CDC-ECM second. That is the shape of Diego's RTL8153,
+    whose first configuration is Realtek's own interface and whose second
+    is ECM (`roadmap.md` 5m) - so a driver that reads only a device's first
+    configuration says nothing here, as it said nothing about the adapter
+    on the ThinkPad on 21 September.
+
+    **The MAC address is this machine's choice**, handed to QEMU, and has to
+    come back out of the string descriptor that the adapter's Ethernet
+    Networking descriptor names: the walk of every configuration, the ECM
+    function's two interfaces, and a string read in the adapter's own
+    language, end to end. The endpoints are the ones QEMU 11.1.1's `usb-net`
+    offered when this was written, as the driver read them; the setting is 1
+    because setting 0 of an ECM Data interface has none (ECM 1.2 3.3).
+    """
+    mac = "52:54:00:4b:4d:53"
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-netdev", "user,id=usbnet",
+             "-device", "usb-net,bus=usb0.0,netdev=usbnet,mac=" + mac)
+
+    out = boot(image, None, 90.0, extra=extra, until="plugged in, ")
+
+    if out is None:
+        check(False, "the machine would not boot with a USB Ethernet adapter")
+        return
+
+    said = [l[l.index("xhci:"):].strip()
+            for l in out.replace("\r", "").splitlines() if "xhci:" in l]
+    shown = "\n    ".join(said) or "(the driver said nothing)"
+
+    named = re.search(r"xhci: \S+ port \d+: USB Ethernet, CDC-ECM, in "
+                      r"configuration (\d+): MAC ([0-9a-f:]{17}), frames up "
+                      r"to (\d+) bytes; not driven yet", out)
+
+    check(named is not None,
+          "the driver did not name QEMU's USB Ethernet adapter as CDC-ECM:"
+          "\n    " + shown)
+
+    if named is not None:
+        check(named.group(2) == mac,
+              "the adapter's MAC came back as %s, not the %s QEMU was given"
+              % (named.group(2), mac))
+        check(named.group(1) == "1",
+              "the adapter's ECM function was in configuration %s, not 1, "
+              "which is QEMU's CDC one" % named.group(1))
+        check(named.group(3) == "1514",
+              "the adapter's largest frame was %s bytes, not 1514"
+              % named.group(3))
+
+    where = re.search(r"its frames on interface (\d+) setting (\d+), bulk "
+                      r"IN (\d+) and OUT (\d+) of (\d+) bytes; its link on "
+                      r"interrupt IN (\d+)", out)
+
+    check(where is not None
+          and where.groups() == ("1", "1", "2", "2", "64", "1"),
+          "the adapter's frames were not on interface 1 setting 1, bulk 2 "
+          "each way of 64 bytes, with its link on interrupt IN 1:\n    "
+          + shown)
+
+
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_ethernet', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -3937,6 +4000,8 @@ def main():
     #
     if 'usb_mouse' in wanted:
         usb_mouse(image, check)
+    if 'usb_ethernet' in wanted:
+        usb_ethernet(image, check)
 
     # And what the machine says it is, which it used to read out of the
     # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.

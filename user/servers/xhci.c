@@ -314,6 +314,12 @@ struct device {
     uint64_t  output_bus;
     uint64_t  buffer_bus;
     struct ring ep0;
+
+    /* bNumConfigurations, from its device descriptor (9.6.1), and the first
+     * language its strings are offered in - 0 until one has been asked
+     * for, since no LANGID is 0. */
+    unsigned  configurations;
+    uint16_t  language;
 };
 
 /*
@@ -1681,6 +1687,7 @@ static bool describe(struct controller *c, struct device *d,
 
     bcd = d->buffer[2] | (unsigned)d->buffer[3] << 8;
     class = d->buffer[4];
+    d->configurations = d->buffer[17];
     vendor = d->buffer[8] | (unsigned)d->buffer[9] << 8;
     product = d->buffer[10] | (unsigned)d->buffer[11] << 8;
     iproduct = d->buffer[15];
@@ -1690,6 +1697,8 @@ static bool describe(struct controller *c, struct device *d,
         && d->buffer[0] >= 4u && d->buffer[1] == 3u) {
         uint16_t language = (uint16_t)(d->buffer[2]
                                        | (unsigned)d->buffer[3] << 8);
+
+        d->language = language;
 
         if (control_in(c, d, GET_DESCRIPTOR,
                        (uint16_t)(DESC_STRING | iproduct), language, 255u)
@@ -2977,9 +2986,145 @@ static void use_stick(struct controller *c, struct device *d,
     first_blocks(c, d, s, line);
 }
 
+/* ------------------------------------------------------- USB Ethernet */
+
+/*
+ * **A USB Ethernet adapter**, said and not yet driven - `usb.md` step 7a.
+ * `usb_decode_ecm` found a CDC-ECM function in one of its configurations;
+ * this reads the MAC address out of the string that function names, and
+ * says what the adapter is and where its frames would move.
+ *
+ * Nothing is configured: SET_CONFIGURATION, the Data interface's setting and
+ * the notifications are 7b, and a frame is 7c. So an adapter plugged in
+ * today is named on the console and left exactly as the firmware left it.
+ *
+ * The buffer is cleared before the string is asked for, so a device that
+ * answers with fewer bytes than its string's length claims is read as a
+ * short string rather than as whatever the last request left behind.
+ */
+static void use_ethernet(struct controller *c, struct device *d,
+                         const struct usb_ecm *ecm, struct say_line *line)
+{
+    uint8_t mac[6];
+    bool named = false;
+    unsigned i;
+
+    if (d->language == 0
+        && control_in(c, d, GET_DESCRIPTOR, DESC_STRING, 0, 255u)
+        && d->buffer[0] >= 4u && d->buffer[1] == 3u) {
+        d->language = (uint16_t)(d->buffer[2] | (unsigned)d->buffer[3] << 8);
+    }
+
+    if (d->language != 0) {
+        memset(d->buffer, 0, 256u);
+        named = control_in(c, d, GET_DESCRIPTOR,
+                           (uint16_t)(DESC_STRING | ecm->mac_string),
+                           d->language, 255u)
+             && usb_decode_mac(d->buffer, 256u, mac);
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": USB Ethernet, CDC-ECM, in configuration ");
+    say_dec(line, ecm->configuration);
+
+    if (named) {
+        say_text(line, ": MAC ");
+
+        for (i = 0; i < 6u; i++) {
+            if (i != 0) {
+                say_text(line, ":");
+            }
+
+            say_hex(line, mac[i], 2);
+        }
+    } else {
+        say_text(line, ": its MAC address string would not read");
+    }
+
+    say_text(line, ", frames up to ");
+    say_dec(line, ecm->max_segment);
+    say_text(line, " bytes; not driven yet");
+    say_send(console, line);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": its frames on interface ");
+    say_dec(line, ecm->data);
+    say_text(line, " setting ");
+    say_dec(line, ecm->data_alternate);
+    say_text(line, ", bulk IN ");
+    say_dec(line, ecm->bulk_in);
+    say_text(line, " and OUT ");
+    say_dec(line, ecm->bulk_out);
+    say_text(line, " of ");
+    say_dec(line, ecm->bulk_in_packet);
+    say_text(line, " bytes");
+
+    if (ecm->notify != 0) {
+        say_text(line, "; its link on interrupt IN ");
+        say_dec(line, ecm->notify);
+    }
+
+    say_send(console, line);
+}
+
+/*
+ * One configuration descriptor, whole, into the device's buffer: nine bytes
+ * for its total length (9.4.3), then all of it, up to a page. `index` is the
+ * descriptor's index, 0 to bNumConfigurations - 1, which is not its
+ * bConfigurationValue.
+ */
+static bool read_configuration(struct controller *c, struct device *d,
+                               unsigned index, struct say_line *line,
+                               unsigned *total)
+{
+    uint16_t which = (uint16_t)(DESC_CONFIGURATION | (index & 0xFFu));
+
+    if (!control_in(c, d, GET_DESCRIPTOR, which, 0, 9u)) {
+        say_failure(c, d->port, "GET_DESCRIPTOR for its configuration", "",
+                    line);
+        return false;
+    }
+
+    *total = d->buffer[2] | (unsigned)d->buffer[3] << 8;
+    *total = *total > PAGE ? PAGE : *total;
+
+    if (*total > 9u && !control_in(c, d, GET_DESCRIPTOR, which, 0,
+                                   (uint16_t)*total)) {
+        say_failure(c, d->port, "GET_DESCRIPTOR for all its configuration",
+                    "", line);
+        return false;
+    }
+
+    return true;
+}
+
+/* Whether a configuration holds something `use_device` goes on to use. */
+static bool usable(enum usb_config_kind kind)
+{
+    return kind == USB_CONFIG_BOOT_MOUSE || kind == USB_CONFIG_BULK_ONLY
+        || kind == USB_CONFIG_XBOX360 || kind == USB_CONFIG_XBOXONE;
+}
+
+/* How many of a device's configurations are asked for before it is said to
+ * be none of these. Every device found so far has one or two. */
+#define CONFIGS_TRIED       8u
+
 /*
  * A device that has just said what it is, asked whether it is a mouse or a
  * stick this can use - and if it is, made ready to be used.
+ *
+ * **Every configuration it has, until one is of use.** The first is the one
+ * nearly every device is used in, and the only one a mouse, a stick or a pad
+ * has ever offered; so the others are asked for only when it is none of
+ * those. The RTL8153 Ethernet adapter is why they are asked for at all: its
+ * first configuration is Realtek's own interface, and the standard one,
+ * CDC-ECM, is its second (`roadmap.md` 5m). A device that is nothing here in
+ * any of them is said by its first interface's class, where it used to be
+ * passed over in silence.
  *
  * **Its configuration**, asked for twice: nine bytes for the total length,
  * then all of it, walked by `usb_decode.c`. A HID boot mouse - subclass 1,
@@ -3014,33 +3159,66 @@ static void use_device(struct controller *c, struct device *d,
 {
     struct mouse *m = &c->mouse[d->slot];
     uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
-    struct usb_config found;
+    struct usb_config found, first;
+    struct usb_ecm ecm;
     uint32_t done[4];
     uint32_t *icc, *slot, *ep;
-    unsigned total, dci, interval, payload;
+    unsigned total, dci, interval, payload, index, count;
     const char *why = "it gave no Report descriptor";
 
     memset(m, 0, sizeof(*m));
+    memset(&first, 0, sizeof(first));
 
-    if (!control_in(c, d, GET_DESCRIPTOR, DESC_CONFIGURATION, 0, 9u)) {
-        say_failure(c, d->port, "GET_DESCRIPTOR for its configuration", "",
-                    line);
-        return;
+    count = d->configurations == 0u ? 1u : d->configurations;
+    count = count > CONFIGS_TRIED ? CONFIGS_TRIED : count;
+
+    for (index = 0; index < count; index++) {
+        if (!read_configuration(c, d, index, line, &total)) {
+            return;
+        }
+
+        usb_decode_config(d->buffer, total, &found);
+
+        if (index == 0) {
+            first = found;
+        }
+
+        if (usable(found.kind)) {
+            break;
+        }
+
+        usb_decode_ecm(d->buffer, total, &ecm);
+
+        if (ecm.ok) {
+            use_ethernet(c, d, &ecm, line);
+            return;
+        }
     }
 
-    total = d->buffer[2] | (unsigned)d->buffer[3] << 8;
-    total = total > PAGE ? PAGE : total;
-
-    if (total > 9u && !control_in(c, d, GET_DESCRIPTOR, DESC_CONFIGURATION,
-                                  0, (uint16_t)total)) {
-        say_failure(c, d->port, "GET_DESCRIPTOR for all its configuration",
-                    "", line);
-        return;
+    /* None of them: what is said is about the first, as it always was. */
+    if (index == count) {
+        found = first;
     }
-
-    usb_decode_config(d->buffer, total, &found);
 
     if (found.kind == USB_CONFIG_NEITHER) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": class ");
+        say_hex(line, found.first_class, 2);
+        say_text(line, "/");
+        say_hex(line, found.first_subclass, 2);
+        say_text(line, "/");
+        say_hex(line, found.first_protocol, 2);
+
+        if (count > 1u) {
+            say_text(line, " first, of ");
+            say_dec(line, count);
+            say_text(line, " configurations");
+        }
+
+        say_text(line, " - nothing here reads it");
+        say_send(console, line);
         return;
     }
 
