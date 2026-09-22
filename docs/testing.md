@@ -6906,3 +6906,82 @@ the destination now comes from `win:surface():size()`, which is the only
 thing that knows. The pointer is mapped the same way: at full screen a
 click at the right-hand edge of a 1920 screen has to land at the
 right-hand edge of a 960-wide film, which `ev.x // scale` does not do.
+
+## 18.132 The addresses that never came back
+
+**Diego, on the ThinkPad**: "the video player ran once with the mp4 mjpeg
+video but not a second time", "it looks something remained in memory",
+"that was broken after watching the video the first time". Something had
+remained, and it was not memory.
+
+### What it looked like, and why every guess was wrong
+
+The player reported `no moov box - not an MP4, or not a whole one`, which
+says the file is bad. The file was fine. Four suspects were eliminated by
+measurement before the real one appeared:
+
+| test | result |
+|------|--------|
+| `play` six times with **no window manager** | decoded every time |
+| `play` four times, each under a **fresh desktop** | fails on the 4th, always |
+| `wc` on the whole film after three plays | reads all 2,854,583 bytes |
+| `diskfs` after three plays | alive, healthy |
+| starting and stopping the desktop five times, no film | memory flat |
+
+So not the decoder, not the media kit, not the filesystem, not the window
+manager's lifecycle. Memory looked *flat* the whole time - 72 MB of 512 -
+which is what made it hard: **the pages were being freed all along. Only
+the addresses were lost.**
+
+`play` with no desktop never decodes a frame; it prints the film's details
+and exits. With a desktop it decodes three hundred, and the filesystem
+server maps the caller's entire 4 MB buffer on **every one of those
+reads**. One ten-second film spends over a gigabyte of a 4 GB window.
+
+### The cause
+
+`p->next_share` is where a process's next shared mapping goes, and it only
+ever climbed. `SYS_SHARE_UNMAP` returned the pages to their owner and left
+the addresses spent, so a server that maps and unmaps in a loop walks up
+its window and then can map nothing at all, ever again.
+
+Fixed LIFO: when the range going back is the one most recently handed out,
+the mark comes down. That is deliberately a half-measure and the code says
+so - a free list needs somewhere to keep the holes and this kernel has no
+allocator; a bitmap would be 128 KB a process for a 4 GB window; and every
+server here has the one shape LIFO serves exactly, which is map the
+caller's buffer, answer, unmap, wait.
+
+### What made it findable
+
+Two diagnostics, and the second is the lesson.
+
+`"that is not a region this process can map"` has three causes and named
+none of them. It now says which, and that is what turned a week of
+guessing into an afternoon: the answer was **"the kernel would not map
+it"**, not a full table, which pointed straight at the address space.
+
+**A server cannot print.** It is spawned with one capability, so a
+`kosmos_write` inside `diskfs` goes nowhere - an instrumented build said
+nothing at all and looked like a build that had not taken. The reason had
+to travel *in the reply*. That is worth remembering before instrumenting
+anything below the shell again.
+
+### The check, and the control that confirmed the arithmetic
+
+`tools/run_media.py` hands the filesystem server a 4 MB buffer twelve
+hundred times and requires all twelve hundred. **Control**: disabling the
+two-line fix reports "a server ran out of shared address space after
+**1015** buffers of 1200" - and 4 GB divided by 4 MB is 1024. The number
+the control produced is the number the diagnosis predicts, which is a
+stronger result than a test that merely goes red.
+
+### Also found
+
+- **`wm` never released a direct window's shared region** when the window
+  closed. A real per-window leak, fixed here; it was not this bug, and
+  measuring said so rather than hoping.
+- `film:close()` never closes the audio stream that `player:close()` does,
+  and the audio server never reclaims a stream whose client died - eight
+  exist and nothing notices a corpse. Recorded as `roadmap.md` 5l rather
+  than fixed in the same change.

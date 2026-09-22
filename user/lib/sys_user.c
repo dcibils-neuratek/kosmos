@@ -1900,6 +1900,8 @@ static struct {
 
 static unsigned mapped_count;
 
+static const char *region_fail = "?";
+
 static bool region_of(long cap, uintptr_t *at, size_t *bytes)
 {
     unsigned i;
@@ -1915,18 +1917,21 @@ static bool region_of(long cap, uintptr_t *at, size_t *bytes)
     }
 
     if (mapped_count == MAPPED_MAX) {
+        region_fail = "the mapping table is full";
         return false;
     }
 
     pages = kosmos_mem_size(cap);
 
     if (pages <= 0) {
+        region_fail = "the kernel would not size it";
         return false;
     }
 
     address = kosmos_mem_map(cap);
 
     if (address < 0) {
+        region_fail = "the kernel would not map it";
         return false;
     }
 
@@ -2107,7 +2112,7 @@ static int l_region_write(lua_State *L)
 
     if (!region_of(cap, &at, &bytes)) {
         lua_pushnil(L);
-        lua_pushstring(L, "that is not a region this process can map");
+        lua_pushfstring(L, "that is not a region this process can map: %s", region_fail);
         return 2;
     }
 
@@ -2137,7 +2142,7 @@ static int l_region_read(lua_State *L)
 
     if (!region_of(cap, &at, &bytes)) {
         lua_pushnil(L);
-        lua_pushstring(L, "that is not a region this process can map");
+        lua_pushfstring(L, "that is not a region this process can map: %s", region_fail);
         return 2;
     }
 

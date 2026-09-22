@@ -606,6 +606,56 @@ def main():
               is not None,
               "`media.open` stopped opening an MP3 when it learned about films")
 
+        #
+        # **A server may be handed a buffer for ever.**
+        #
+        # `fs.read_into` gives the filesystem server a capability to the
+        # caller's pages; the server maps them, fills them, and unmaps.
+        # The addresses it used have to come back, and they did not: a
+        # process's shared window was handed out by a pointer that only
+        # ever climbed, so a server that mapped and unmapped in a loop
+        # marched up its window until nothing more would fit - and then
+        # could map nothing at all, ever again, however little memory the
+        # machine was using.
+        #
+        # It broke the Video app on the ThinkPad on 21 September, and it
+        # took a day to find because every obvious measurement said the
+        # machine was fine: the *pages* were being freed all along and
+        # only the addresses were lost, so memory looked flat at 72 MB of
+        # 512. Diego: "it looks something remained in memory". What
+        # remained was addresses.
+        #
+        # A four-megabyte buffer and a 4 GB window is 1024 of these before
+        # the old kernel refused, so 1200 is past it with room to spare and
+        # takes a couple of seconds - each read asks for one page, and what
+        # is being counted is the mapping, not the bytes.
+        #
+        window_program = (
+            'local page = sys.memory(1024) '
+            'local n = 0 '
+            'for _ = 1, 1200 do '
+            '  local got = fs.read_into("/home/tiny.mp4", page, 0, 4096) '
+            '  if not got then break end '
+            '  n = n + 1 '
+            'end '
+            'print("window" .. ": " .. n .. " of 1200") '
+            'print("window" .. ": done")')
+
+        guest.type('fs.write("/ramfs/window.lua", [[' + window_program + ']])')
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        guest.type("/ramfs/window.lua")
+        guest.wait_for("window: done",
+                       "the shared-window check to finish")
+
+        walked = re.search(r"^window: (\d+) of 1200", guest.seen[mark:], re.M)
+
+        check(walked is not None and int(walked.group(1)) == 1200,
+              "a server ran out of shared address space after %s buffers of "
+              "1200: unmapping gives the pages back but not the addresses. "
+              "See SYS_SHARE_UNMAP in kernel/syscall.c."
+              % (walked.group(1) if walked else "?"))
+
         first, loudest = settled(wav_out)
 
         check(2.6 <= first <= 3.5,

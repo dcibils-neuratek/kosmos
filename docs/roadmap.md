@@ -1098,6 +1098,111 @@ processors, and still what follows USB:
      double-click speed were considered and left out, because none of them
      exist to be set yet.
 
+5m. **AGREED on 21 September - a USB Ethernet driver, and the remote
+   debugging it unlocks.** Diego: "what if we build a way to connect this
+   and the remote machine via a simple protocol over the network so that
+   the thinkpad does things and you can read the log and anything you need
+   to try or run on the thinkpad from here... a remote debugging
+   mechanism. is it possible?" - and then, the same evening, "I got the
+   usb Ethernet dongle".
+
+   **It is possible, and the expensive half is already done.** The ThinkPad
+   has no network Kosmos can drive: its only card is `8086:a0f0`, an Intel
+   AX201 over CNVi, which is firmware upload and a vendor host interface.
+   But the dongle enumerated on the machine with nothing written for it:
+
+       xhci: 00:0d.0 port 4: 0bda:8153, USB 3.0, class 0, "USB 10/100/1000 LAN"
+
+   `0bda:8153` is a Realtek RTL8153. Bulk IN and bulk OUT - the same shape
+   as the mass-storage stick that already works there (`usb.md` 6, 7).
+
+   **Step 0, and it decides everything, and it needs no stick.** The device
+   says `class 0`, which means "read the interface descriptors". The
+   question is whether it offers **CDC-ECM or NCM** - published USB class
+   specifications - or only Realtek's vendor interface, which is documented
+   in public only by Linux's `r8152.c`.
+
+   That distinction is not a preference, it is the licence. Kosmos is MIT.
+   Working from a GPL driver's *expression* would make this file GPL;
+   working from a published class specification would not. If the dongle
+   speaks ECM or NCM, the driver is a standards-based one we may write
+   freely, and is simpler besides.
+
+   **And it is answered here rather than on the ThinkPad**: QEMU's
+   `usb-host` passes a real device through to the guest, which is how the
+   8BitDo pad was tested. Plug the dongle into the Mac, pass it to QEMU,
+   and let Kosmos's own driver print its configuration descriptors.
+   `simulate-dont-wait`.
+
+   **Then, in order:**
+   - **5m-a. The descriptors**, under QEMU with `usb-host`. Which classes,
+     which configurations, which endpoints, and the MAC address - ECM
+     carries it as a string descriptor, which is a pleasant way to find out
+     the thing works before a single frame moves.
+   - **5m-b. Bring the link up and read its MAC**, no frames yet: the
+     configuration chosen, the data interface's alternate setting selected
+     (ECM's data interface has a zero-bandwidth alternate 0, and picking it
+     is the classic reason a correct-looking driver never receives
+     anything).
+   - **5m-c. One frame out, one frame in.** ARP is the right first traffic:
+     small, unsolicited, and something on the other end answers without
+     being asked twice.
+   - **5m-d. The frames reach `net.c`.** This is the design decision and it
+     is not small. Today the stack calls `kosmos_net_send`/`recv`, which are
+     *syscalls* into the kernel's virtio driver. The kernel must not learn
+     what USB is, so the stack has to take frames from a **driver process**
+     instead - and a frame is a stream, which `CLAUDE.md` is explicit about:
+     control by message, data by shared memory, single-producer
+     single-consumer rings with indices. The audio server's ring is the
+     precedent to copy, not the message-payload path it replaced.
+   - **5m-e. The debug server**, once there is a network: a small program
+     that takes a request and answers with output. Deliberately small, and
+     the same declared-struct discipline `audioproto.h` uses.
+
+   **A caution to write down before it is built**: a server that runs
+   commands on demand is a remote shell. On a wired link between two
+   machines on one desk that is fine; it must be off unless asked for, and
+   it must not be in a build that leaves the house.
+
+5k. **DONE on 21 September - a shared mapping gives its addresses back**
+   (`testing.md` 18.132). Diego, on the ThinkPad: "the video player ran
+   once with the mp4 mjpeg video but not a second time", "it looks
+   something remained in memory", "that was broken after watching the
+   video the first time".
+
+   **It was the kernel, and not any of the four things it looked like.**
+   `p->next_share` handed out addresses in a process's shared window by a
+   pointer that only ever climbed. `SYS_SHARE_UNMAP` gave the *pages* back
+   and kept the *addresses* spent for ever, so a server that maps and
+   unmaps in a loop marched up its window until nothing more fit - and
+   then could map nothing at all, for the rest of its life, however little
+   memory the machine was using.
+
+   The filesystem server maps the caller's whole buffer on every
+   `read_into`, and the video kit's buffer is 4 MB, so one ten-second film
+   spends over a gigabyte of a 4 GB window. Three films and the fourth had
+   nowhere to go.
+
+   Fixed LIFO - the mark comes down when the range returned is the one
+   most recently handed out - which is a deliberate half-measure argued at
+   the code: a free list needs somewhere to keep holes and this kernel has
+   no allocator, a bitmap would be 128 KB a process, and every server here
+   has exactly the shape LIFO serves.
+
+   Found with it, and fixed: **`wm` never released a direct window's
+   shared region** on close. Found and *not* yet fixed: `film:close()`
+   never closes the audio stream where `player:close()` does, and the
+   audio server never reclaims a stream whose client died - eight exist,
+   and `appfs`'s `forget_the_dead()` is the pattern it wants (5l).
+
+5l. **WANTED on 21 September - the audio server reclaims a dead client's
+   stream.** There are eight; only an explicit `AUDIO_OP_CLOSE` frees one;
+   nothing notices a client that died. `appfs` solved exactly this for the
+   `/app` registry and its comment says the shape - "a full table has had
+   its dead slots back before it says it is full". And `film:close()`
+   should close the stream it opened, which today only `player:close()`
+   does.
+
 5g. **DONE on 21 September - a click is an event, not a state** (`testing.md`
    18.130). Diego,
    after 0.10.99 on the ThinkPad: "i found some quircks like the mouse

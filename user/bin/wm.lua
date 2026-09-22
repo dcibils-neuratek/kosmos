@@ -4218,6 +4218,33 @@ handlers.close = function(req)
   end
 
   win.surface:free()
+
+  --
+  -- **And the application's own region, which this process was holding.**
+  --
+  -- A window that draws its own pixels hands over a capability to the
+  -- memory it draws into, and `open` maps it and keeps it in `win.shared`.
+  -- Nothing gave it back. The surface freed above is the *compositing*
+  -- one, which is this process's; the region is the application's, and a
+  -- capability held after the window is gone is memory that never comes
+  -- back to the machine.
+  --
+  -- It is per window, so it is invisible until something opens and closes
+  -- them in a loop - which is exactly what the Video app does, because
+  -- every File > Open relaunches the player. Diego, 21 September: "the
+  -- video player ran once with the mp4 mjpeg video but not a second time",
+  -- and "it looks something remained in memory". It did, and it was here.
+  --
+  -- The player was blameless: six plays with no window manager at all
+  -- decode perfectly, and four plays each under a fresh desktop fail on
+  -- the fourth. What was reported was `no moov box - not an MP4` - a short
+  -- read, dressed up as a bad file, which is a separate thing to fix.
+  --
+  if win.shared and win.shared.cap then
+    sys.release(win.shared.cap)
+    win.shared = nil
+  end
+
   return { ok = true }
 end
 

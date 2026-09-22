@@ -2126,6 +2126,43 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
 
         result = (as_unmap(p->space, va, pages) == AS_OK) ? 0 : SYS_ERR_FAULT;
+
+        /*
+         * **And the address space comes back, when it was the last thing
+         * handed out.**
+         *
+         * `next_share` only ever climbed. Unmapping returned the *pages*
+         * to whoever owned them and kept the *addresses* spent for ever,
+         * so a process that maps and unmaps in a loop marches up the
+         * window until nothing more will fit - and then cannot map
+         * anything, ever again, however little memory the machine is
+         * using.
+         *
+         * That is not a slow leak in a corner. The filesystem server maps
+         * the caller's whole buffer on every `read_into`, and the video
+         * player's buffer is four megabytes, so one ten-second film spends
+         * more than a gigabyte of window. Diego found it on 21 September:
+         * "the video player ran once with the mp4 mjpeg video but not a
+         * second time... it looks something remained in memory". What
+         * remained was addresses.
+         *
+         * **LIFO, and that is a deliberate half-measure.** A free list
+         * over the window would need somewhere to keep the holes, and this
+         * kernel has no allocator to keep them in; a bitmap would be 128 KB
+         * a process for a 4 GB window. Lowering the mark when the topmost
+         * mapping is the one going back costs two lines and one branch,
+         * and it is exactly the shape every server here actually has: map
+         * the caller's buffer, answer, unmap, wait for the next request.
+         * One at a time, so the top is always the one being returned.
+         *
+         * A server that held two and released the older first keeps the
+         * old behaviour for that range - no worse than before, and it
+         * recovers the moment the newer one goes.
+         */
+        if (result == 0 && va + pages * PAGE_SIZE == p->next_share) {
+            p->next_share = va;
+        }
+
         break;
     }
 
