@@ -1826,8 +1826,8 @@ static int l_set(lua_State *L)
 }
 
 /*
- * `dst:stretch(src, sx, sy, sw, sh, dx, dy, dw, dh [, alpha])` - a rectangle
- * of `src` drawn into a rectangle of `dst` of another size.
+ * `dst:stretch(src, sx, sy, sw, sh, dx, dy, dw, dh [, alpha [, smooth]])` - a
+ * rectangle of `src` drawn into a rectangle of `dst` of another size.
  *
  * **Nearest neighbour, for the reason `snes_blit.c` gives**: what this is for
  * is a cover or an icon, drawn when something changes rather than every
@@ -1852,6 +1852,27 @@ static int l_set(lua_State *L)
  * given, they are composited over what is there. One primitive rather than
  * two, because the difference is a branch and the pair would be two entries
  * in every list that names the primitives.
+ *
+ * **`smooth`, since 22 September: each pixel the average of what it
+ * covers.** Nearest neighbour takes one source pixel and skips the rest, so
+ * an icon drawn at three quarters of its size loses every fourth row of its
+ * outline. With `smooth` each destination pixel is the area-weighted mean
+ * of the source rectangle it covers, partial pixels at its edges counted by
+ * how much of them it covers (`area_sample`). What asked for it is a
+ * 32-pixel Deskbar holding 24-pixel icons drawn from 64-pixel ones
+ * (`roadmap.md` 5v); what will ask next is everything, at a scale
+ * (`roadmap.md` 5z).
+ *
+ * **Weighted by alpha when composited**: a transparent pixel beside an
+ * opaque one says nothing about colour, so it adds to the coverage and not
+ * to the colour - or the edge of every icon would come out darkened
+ * towards the transparent black around it. Copied without `alpha`, the
+ * source is taken as opaque, as `blit` takes it.
+ *
+ * Opt-in rather than the rule, because it reads every source pixel under a
+ * destination pixel where nearest reads one: a 4000-pixel photograph fitted
+ * into 800 is twenty-five times the reads, which is a cost for whoever
+ * wants the quality to choose.
  */
 /*
  * `dst:pixels(t, w, h [, scale])` - a Lua array of pixels onto a surface.
@@ -1956,6 +1977,66 @@ static int l_pixels(lua_State *L)
     return 0;
 }
 
+/*
+ * The mean of the source under one destination pixel: the rectangle from
+ * `fx0` to `fx1` and `fy0` to `fy1`, in 16.16 source pixels from `(sx,
+ * sy)`, each source pixel weighted by how much of it the rectangle covers.
+ * Positions past the source's edges are clamped to it, as the nearest path
+ * clamps them. With `weigh_alpha`, colour is weighted by alpha as well and
+ * the result's alpha is the mean alpha; without it, alpha is ignored and
+ * the result is opaque.
+ */
+static uint32_t area_sample(const struct surface *s, long sx, long sy,
+                            uint64_t fx0, uint64_t fx1,
+                            uint64_t fy0, uint64_t fy1, bool weigh_alpha)
+{
+    uint64_t total = 0, a = 0, r = 0, g = 0, b = 0;
+    uint64_t y;
+
+    for (y = fy0 >> 16; (y << 16) < fy1; y++) {
+        uint64_t top = y << 16, bottom = top + 65536u;
+        uint64_t hy = (bottom < fy1 ? bottom : fy1) - (top > fy0 ? top : fy0);
+        long row = sy + (long)y;
+        const uint32_t *sp;
+        uint64_t x;
+
+        if (row > (long)s->height - 1) row = (long)s->height - 1;
+        if (row < 0) row = 0;
+
+        sp = row_of(s, (unsigned)row);
+
+        for (x = fx0 >> 16; (x << 16) < fx1; x++) {
+            uint64_t left = x << 16, right = left + 65536u;
+            uint64_t wx = (right < fx1 ? right : fx1) - (left > fx0 ? left : fx0);
+            uint64_t w = (wx * hy) >> 16;
+            long col = sx + (long)x;
+            uint32_t p;
+            uint64_t k;
+
+            if (col > (long)s->width - 1) col = (long)s->width - 1;
+            if (col < 0) col = 0;
+
+            p = sp[col];
+            k = weigh_alpha ? w * (p >> 24) : w * 255u;
+
+            total += w;
+            a += k;
+            r += k * ((p >> 16) & 0xffu);
+            g += k * ((p >> 8) & 0xffu);
+            b += k * (p & 0xffu);
+        }
+    }
+
+    if (total == 0 || a == 0) {
+        return 0;
+    }
+
+    return (uint32_t)((a + total / 2) / total) << 24
+         | (uint32_t)((r + a / 2) / a) << 16
+         | (uint32_t)((g + a / 2) / a) << 8
+         | (uint32_t)((b + a / 2) / a);
+}
+
 static int l_stretch(lua_State *L)
 {
     struct surface *d = check_surface(L, 1);
@@ -1969,6 +2050,7 @@ static int l_stretch(lua_State *L)
     long dw = (long)luaL_checkinteger(L, 9);
     long dh = (long)luaL_checkinteger(L, 10);
     long global = (long)luaL_optinteger(L, 11, -1);
+    bool smooth = lua_toboolean(L, 12);
     long x0, y0, x1, y1, y;
     uint32_t xstep, ystep;
 
@@ -1993,6 +2075,25 @@ static int l_stretch(lua_State *L)
 
     xstep = (uint32_t)((sw << 16) / dw);
     ystep = (uint32_t)((sh << 16) / dh);
+
+    if (smooth) {
+        for (y = y0; y < y1; y++) {
+            uint32_t *dp = row_of(d, (unsigned)y) + x0;
+            uint64_t fy0 = (uint64_t)(y - dy) * ystep;
+            long x;
+
+            for (x = x0; x < x1; x++) {
+                uint64_t fx0 = (uint64_t)(x - dx) * xstep;
+                uint32_t p = area_sample(s, sx, sy, fx0, fx0 + xstep,
+                                         fy0, fy0 + ystep, global >= 0);
+
+                *dp = global < 0 ? p : over(p, *dp, (uint32_t)global);
+                dp++;
+            }
+        }
+
+        return 0;
+    }
 
     for (y = y0; y < y1; y++) {
         uint32_t *dp = row_of(d, (unsigned)y) + x0;

@@ -1153,6 +1153,46 @@ processors, and still what follows USB:
    headings in Plex Sans SemiBold, a file added from the same family; and
    no rounded corners and no shadow for now.
 
+5z. **APPROVED on 22 September - a size for everything, not for the
+   fonts: a scale.** Drawn in `docs/looks.html` and approved - "the
+   proposed size slider is great as it is", "with the %" - and not built. Diego, on the
+   ThinkPad with 0.10.111: "fonts are too small on a 1920x1080 14 inch
+   panel like the t14", "Make them 2 point bigger all of them and the
+   window tab title 4 points bigger" - and then, before any of that was
+   built: "What we can do is add a setting like Windows does that allows
+   you to use the UI at a certain magnification factor", "currently it's at
+   1x and you can basically put it in a 1.2x, 1.5x, even 2x", "like a
+   magnification for the UI instead of choosing independent font sizes",
+   "a factor multiplier of all the things in the UI", and, with a picture of
+   iOS's Larger Text: "Something like that slider of iOS" - a stepped
+   slider, a small A at one end and a large A at the other, with detents.
+
+   **So the fonts were not made bigger.** A face that grows alone is what
+   broke windows before 5x; a scale grows the layout and the faces
+   together, so 5x holds at every step, and a larger face on the ThinkPad is
+   the scale's job.
+
+   **Proposed, in the drawing** - the Size row in Appearance, a slider of
+   seven steps: 100, 110, 120, 135, 150, 175 and 200 per cent, which
+   includes the three Diego named. Kept in `/home/.appearance` with the
+   look and the wallpaper. At 150 the ThinkPad's 1920 by 1080 is 1280 by
+   720 to a window, and a window larger than the screen it is given has to
+   be fitted to it.
+
+   **How it would be built** - applications keep their numbers: sizes and
+   positions stay in the units they give today, and the scale is applied
+   where pixels are made. The window manager already draws every kit
+   window from its commands (`gc` in `ui.lua`), so it multiplies them as
+   it draws; each face is loaded at its size times the step, so text is
+   drawn at that size rather than magnified; icons are averaged down from
+   Haiku's 64s (`stretch`'s `smooth`, 5v); a window that draws its own
+   pixels - a game, a film, the cube - is told the step and chooses for
+   itself; the pointer is divided back on the way in; and the window
+   manager's own chrome, the tab and the border, scales with the rest.
+   Every step is a test at 100 and at 150 per cent. **The steps are
+   agreed as drawn**, the percentage beside the slider included; the
+   design goes into `ui.md` before code.
+
 5y. **DONE on 22 September - very few options: four looks, and nothing
    else to tune.** Diego, straight after 5x: "Too many config
    options make the system vulnerable to changes and complicated", "We
@@ -1175,8 +1215,8 @@ processors, and still what follows USB:
    0.10.111** (18.141), built from the drawing in `docs/looks.html` after
    Diego's "the panel is right, build it". The
    per-role faces and sizes, the colour swatches, the title's shape and the
-   other themes leave the Appearance panel; what else stays - a wallpaper,
-   the Deskbar's height - is settled with the drawing.
+   other themes left the Appearance panel, and the Deskbar's height left it
+   in 0.10.112 (5v): what stays beside the look is the wallpaper.
 
 5x. **DONE on 22 September (0.10.110, `testing.md` 18.140) - one fixed
    layout, and faces that fit it.**
@@ -1192,8 +1232,9 @@ processors, and still what follows USB:
    positions broke. Now the geometry is the kit's and it does not move:
 
    - **Fixed sizes, in pixels, the same in every theme**: a list or menu
-     row, a button, a field, a window's tab. Chosen so that 16-pixel IBM
-     Plex fits, which is the size the ThinkPad wants.
+     row, a button, a field, a window's tab, and since 5v the Deskbar.
+     Chosen so that 16-pixel IBM Plex fits, which is the size the ThinkPad
+     wants.
    - **A face fits its box or is not allowed at that size.** Each role
      has a largest size its box can hold; Appearance offers only sizes that
      fit, and the kit clamps anything larger - a theme or a saved setting
@@ -1203,8 +1244,8 @@ processors, and still what follows USB:
    - **Themes change colours and faces, not geometry**: `row_pad`,
      `button_pad` and `field_pad` leave the theme format, and the Appearance
      panel lays itself out once, like any other window.
-   - **The Deskbar's height stays Diego's choice** (5v): it is his, not a
-     theme's, and its fixed steps are this same shape.
+   - **The Deskbar is 32 and part of the layout** (5v). It was Diego's
+     choice among three heights for an afternoon, until he fixed it.
 
 5w. **WANTED on 22 September - the Deskbar collects its events while a menu
    is open.** On the ThinkPad with 0.10.106, after a run of Deskbar menus:
@@ -1214,13 +1255,24 @@ processors, and still what follows USB:
    of its menus is up, if that is what happened - a menu is a window of its
    own, and the bar should go on answering underneath it.
 
-5v. **DONE on 22 September - the Deskbar's height, a theme value and a
-   choice** (`testing.md` 18.138). Diego: "i want to be able to change the
-   deskbar height for instance, where do i do that? is there a file?" - it
-   was `local H = 36` in `/bin/deskbar.lua` - and then "both": a theme
-   names `bar_h`, and Appearance offers 36, 44 and 52 pixels, kept in
-   `/home/.appearance` over the theme's. Not shorter than 36 yet: the bar's
-   icons are 32 pixels and the compositor does not scale a picture.
+5v. **DONE on 22 September - the Deskbar is 32 pixels, fixed** (0.10.112,
+   `testing.md` 18.142). Diego, on the ThinkPad: "Taskbar size should not
+   be changeable let's make it fixed at 32". It is `theme.metrics.deskbar`,
+   beside the rows, buttons and tabs of 5x, and nothing chooses it: the
+   Appearance panel, the theme format, the window manager and
+   `/home/.appearance` carry no height, and one a `/home` saved before is
+   ignored. A 32-pixel icon in a 32-pixel bar touches both edges, so its
+   icons are 24 - Haiku's 64-pixel exports averaged down (`stretch` grew a
+   `smooth` mode for it), with the 16s and 64s vendored beside the 32s
+   (Diego: "We can download haiku icons in 16 and 64 as well"). The tab
+   height `theme.metrics` gave, 20, had been wrong since the tab grew to 26
+   for the ThinkPad; it is 26, and the window manager reads it from there.
+
+   **What it was, for an afternoon** (0.10.108, 18.138): Diego asked "i
+   want to be able to change the deskbar height for instance, where do i do
+   that? is there a file?" - it was `local H = 36` in `/bin/deskbar.lua` -
+   and then "both": a theme named `bar_h`, and Appearance offered 36, 44
+   and 52, kept in `/home/.appearance`.
 
 5u. **WITHDRAWN on 22 September - the Deskbar's colour, chosen by the
    person** (`testing.md` 18.137, then 18.141). Built as 0.10.107, and an
@@ -1816,6 +1868,15 @@ the Pi", and the Pi is not here yet.
   The browser loading a page is the first thing to point it at.
 
 ### Smaller, and wanted
+
+- **FOUND on 22 September - Music's two icons have never drawn.**
+  `music.lua` asks for `"File_Audio"` and `"Misc_Speaker"` without `.png`,
+  and the window manager chooses a decoder by the name's suffix, so both
+  commands draw nothing - the empty cover's note and the speaker beside the
+  volume. Noticed while `gc:icon` learned to draw at a size (5v); the
+  speaker's 14 was a crop of a 32 until then, so it would have been its
+  corner even with the name right. The fix is the two names, and a check
+  in `run_media.py` that the cover's note is drawn.
 
 - **NOT STARTED - an FTP client.** Diego's, 16 September. The natural next
   program on the TCP stack after `telnet`, and a different shape of problem:

@@ -1,7 +1,9 @@
 # assets/icons
 
-Haiku's icons, as exported by `darealshinji/haiku-icons`: 48 of the 452
-PNGs it has at 32x32, chosen because something in Kosmos draws each one -
+Haiku's icons, as exported by `darealshinji/haiku-icons`: 49 of the 452
+it has, at each of the three sizes it exports - 32x32 here, and 16x16 and
+64x64 in the folders of those names - chosen because something in Kosmos
+draws each one -
 Tracker's file icons, the launchers on the desktop, and the Deskbar's
 picture for each application.
 
@@ -17,7 +19,11 @@ close enough to the leaf to wonder about, was left out for that reason.
 They are here byte for byte as the repository has them, from `png/32x32/`
 at commit `ccf434a0cf31aae47cc8aac91934651619c1b9b2` of
 <https://github.com/darealshinji/haiku-icons>, fetched on 11 September
-2026. The names are Haiku's, not ours:
+2026. The same icons from `png/16x16/` and `png/64x64/` at the same commit
+were fetched on 22 September 2026, when the 32s already here were compared
+with that commit's and found identical, all 49. Each folder has the same
+`LICENSE` beside its icons, because the build finds a file's licence in the
+file's own folder. The names are Haiku's, not ours:
 
 | what draws it | icons |
 | ------------- | ----- |
@@ -31,11 +37,16 @@ at commit `ccf434a0cf31aae47cc8aac91934651619c1b9b2` of
 the last, so adding an application that draws a window is one line in its
 header and no change here.
 
-**32x32 as exported, and never scaled.** There is no scaler in this system,
-which is also why a menu row with a picture in it is as tall as the picture.
+**Each size drawn as exported, and any other size from the 64.** `gc:icon`
+draws a 16, a 32 or a 64 pixel for pixel, and averages the 64 down for any
+other size (`stretch`'s `smooth` mode in `gfx.c`) - the Deskbar's 24, since
+it became 32 pixels tall on 22 September (`roadmap.md` 5v), and every icon
+at a scale when there is one (5z). In the image the 32s keep their names
+and the others are `16x16/<name>` and `64x64/<name>`.
 
 Each is 8 bits a channel, colour type 6 - RGBA - which is what `gfx.png`
-decodes and what `surface:blend` composites. 81 KB for all 48.
+decodes and what `surface:blend` composites. 81 KB for the 32s, 32 KB for
+the 16s and 210 KB for the 64s.
 
 **What was here before** was seven icons from the Tango Icon Library 0.8.90,
 public domain. They were replaced because Haiku's are the BeOS lineage's

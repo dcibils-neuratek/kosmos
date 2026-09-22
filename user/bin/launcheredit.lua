@@ -58,7 +58,9 @@ local ICONS = {}
 
 do
   for _, asset in ipairs(sys.asset() or {}) do
-    local base = tostring(asset):match("^(.+)%.png$")
+    -- A name with no folder: the 16s and 64s are the same icons again
+    -- (`16x16/`, `64x64/`), and a list of each three times is not a choice.
+    local base = tostring(asset):match("^([^/]+)%.png$")
 
     if base and base ~= "test-pattern" then ICONS[#ICONS + 1] = base end
   end

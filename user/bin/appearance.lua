@@ -2,12 +2,11 @@
 -- kosmos: application
 -- kosmos: icon Prefs_Appearance
 -- kosmos: section preferences
--- The look of the desktop: which of the four looks, the picture behind
--- everything, and how tall the Deskbar is. Nothing else.
+-- The look of the desktop: which of the four looks, and the picture behind
+-- everything. Nothing else.
 --
 --   wm appearance
 --   wm appearance:--theme plexnight     a look, as a click on its card
---   wm appearance:--bar-height 44       a height, as a click on it
 --
 -- Haiku keeps this under Preferences and calls it Appearance, which is
 -- where the name comes from.
@@ -23,13 +22,18 @@
 -- its colours, its faces, its Deskbar, designed together - and a person
 -- picks a look, not its parts; and the layout is fixed, so no choice here
 -- can move a widget in any window. What is left beside the look is the
--- wallpaper and the Deskbar's height, both a few fixed choices.
+-- wallpaper.
+--
+-- **The Deskbar's height was a third choice, 36, 44 or 52, for an
+-- afternoon** (`roadmap.md` 5v). Diego, 22 September, on the ThinkPad:
+-- "Taskbar size should not be changeable let's make it fixed at 32" - so
+-- it is part of the fixed layout (`theme.metrics.deskbar`) and not here.
 --
 -- Everything is one message to the window manager, which holds the look
 -- because it is the one process already talking to every window; each
 -- application's kit follows without the application knowing. The choice is
--- written to `/home/.appearance` - the look, the wallpaper, the height - and
--- read back at startup.
+-- written to `/home/.appearance` - the look and the wallpaper - and read
+-- back at startup.
 
 local ui = use("/lib/ui.lua")
 local theme = ui.theme
@@ -37,14 +41,13 @@ local LOOKS = use("/lib/themes.lua")
 local M = ui.metrics
 
 local SETTINGS = "/home/.appearance"
-local BAR_HEIGHTS = { 36, 44, 52 }
 
 --
 -- **The layout, fixed** - every position a sum of the fixed layout's own
 -- numbers (`theme.metrics`), so it is the same in every look and at every
 -- face, as `docs/looks.html` draws it: the four looks as cards, each a
--- desktop in miniature above its name; the wallpapers, six rows; the three
--- heights; and a line to say what happened.
+-- desktop in miniature above its name; the wallpapers, six rows; and a
+-- line to say what happened.
 --
 local W       = 560
 local PAD     = M.gap
@@ -59,9 +62,7 @@ local CARDS_Y     = LOOK_Y + M.row
 local WALL_Y      = CARDS_Y + CARD_H + GAP
 local WALL_LIST_Y = WALL_Y + M.row
 local WALL_H      = WALL_ROWS * M.row + 4
-local BAR_Y       = WALL_LIST_Y + WALL_H + GAP
-local BAR_ROW_Y   = BAR_Y + M.row
-local STATUS_Y    = BAR_ROW_Y + M.button + GAP
+local STATUS_Y    = WALL_LIST_Y + WALL_H + GAP
 local H           = STATUS_Y + M.row + PAD
 
 local win, err = ui.window{ title = "Appearance", w = W, h = H,
@@ -88,7 +89,6 @@ end
 
 local chosen_look      = LOOKS.order[1]
 local chosen_wallpaper = nil       -- a path, or nil for the look's own desk
-local chosen_bar_h     = nil       -- nil is the Deskbar's own 36
 
 local status = ui.label{ x = PAD, y = STATUS_Y, w = W - 2 * PAD, text = "",
                          color = "text_dim" }
@@ -110,8 +110,7 @@ local function send()
   for _, k in ipairs(theme.tokens) do colours[k] = look[k] end
 
   local reply, why = fs.send("/app/wm", { type = "theme", palette = colours,
-                                          fonts = look.fonts,
-                                          bar_h = chosen_bar_h })
+                                          fonts = look.fonts })
 
   if not reply then
     status.text = "refused: " .. tostring(why)
@@ -119,8 +118,7 @@ local function send()
   end
 
   local ok, werr = fs.write(SETTINGS, { palette = chosen_look,
-                                        wallpaper = chosen_wallpaper,
-                                        bar_h = chosen_bar_h })
+                                        wallpaper = chosen_wallpaper })
 
   if not ok then
     print("appearance: not saved to " .. SETTINGS .. ": " .. tostring(werr))
@@ -262,47 +260,6 @@ local wall_list = ui.list{
 
 win:add(wall_list)
 
---------------------------------------------------------------------------
--- The Deskbar's height (`roadmap.md` 5v): 36, as it has always been, and two
--- taller. Not shorter: its icons are 32 pixels and the compositor does not
--- scale a picture.
---------------------------------------------------------------------------
-
-win:add(ui.label{ x = PAD, y = BAR_Y, w = W - 2 * PAD, text = "Deskbar height",
-                  role = "heading" })
-
-local HEIGHT_W = 72
-
-local heights = ui.view{
-  x = PAD, y = BAR_ROW_Y, w = #BAR_HEIGHTS * (HEIGHT_W + GAP), h = M.button,
-
-  draw = function(self, g)
-    local now = chosen_bar_h or theme.bar_h or 36
-
-    for i, px in ipairs(BAR_HEIGHTS) do
-      local x = (i - 1) * (HEIGHT_W + GAP)
-      local on = (px == now)
-      local label = tostring(px)
-
-      g:fill(x, 0, HEIGHT_W, self.h, on and "accent" or "raised")
-      g:frame(x, 0, HEIGHT_W, self.h, "line")
-      g:text(x + (HEIGHT_W - gfx.measure(label)) // 2,
-             (self.h - gfx.height()) // 2, label,
-             on and "text_on" or "text")
-    end
-  end,
-
-  on_click = function(self, x, _)
-    local px = BAR_HEIGHTS[x // (HEIGHT_W + GAP) + 1]
-
-    if px then
-      chosen_bar_h = px
-      send()
-    end
-  end,
-}
-
-win:add(heights)
 win:add(status)
 
 --------------------------------------------------------------------------
@@ -315,7 +272,6 @@ if type(saved) == "table" then
   if LOOKS[saved.palette] then chosen_look = saved.palette end
 
   chosen_wallpaper = saved.wallpaper
-  chosen_bar_h = math.type(saved.bar_h) == "integer" and saved.bar_h or nil
 end
 
 for i, item in ipairs(wall_list.items) do
@@ -335,25 +291,12 @@ print(("appearance: %dx%d, %d looks, %s"):format(win.w, win.h, #LOOKS.order,
                                                  chosen_look))
 
 --
--- **`--bar-height 44`** and **`--theme plexnight`**, a height and a look
--- chosen from a command line by the path a click takes - so a script can set
--- them, and a test can choose without aiming the pointer at a card. `--theme`
--- prints the faces the window manager says it *holds* after the look arrived,
--- which is what was loaded rather than what was asked for.
+-- **`--theme plexnight`**, a look chosen from a command line by the path a
+-- click takes - so a script can set it, and a test can choose without
+-- aiming the pointer at a card. It prints the faces the window manager says
+-- it *holds* after the look arrived, which is what was loaded rather than
+-- what was asked for.
 --
-do
-  local px = tonumber((args or ""):match("%-%-bar%-height%s+(%d+)"))
-
-  if px then
-    chosen_bar_h = px
-
-    local reply, why = send()
-
-    print(("appearance: bar height %d %s"):format(px,
-          reply and "applied" or ("refused: " .. tostring(why))))
-  end
-end
-
 do
   local want = (args or ""):match("%-%-theme%s+(%S+)")
 

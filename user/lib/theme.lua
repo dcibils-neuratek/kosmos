@@ -75,9 +75,6 @@ theme.palettes.dark = {
   bar       = 0xffffc700,
   bar_text  = 0xff101010,
 
-  -- The Deskbar's height, as it always was, until somebody chooses.
-  bar_h        = 36,
-
   -- Ink for a label lying on the desktop itself, which is not the ink for
   -- a label in a window and cannot be. `text` is chosen to read against
   -- `window`; the desktop is a colour the user picks, and every default
@@ -148,8 +145,6 @@ theme.palettes.light = {
 
   bar       = 0xffffc700,
   bar_text  = 0xff101010,
-
-  bar_h        = 36,
 
   desktop_text = 0xffffffff,
 
@@ -239,26 +234,34 @@ for _, k in ipairs(theme.tokens) do known[k] = true end
 -- widget layout and just use fonts that adhere to the widget and windows
 -- layout", and "And that layout is fixed".
 --
--- So a list or menu row is 24 pixels, a button 28, a field 26 and a
--- window's tab 20, whatever face is in force; the kit places words inside
--- those boxes, and a look's faces are chosen to fit them
+-- So a list or menu row is 24 pixels, a button 28, a field 26, a window's
+-- tab 26 and the Deskbar 32, whatever face is in force; the kit places
+-- words inside those boxes, and a look's faces are chosen to fit them
 -- (`tools/test_theme.lua` holds each to its box). The same morning a theme
 -- could pad a row, a button and a field; that was the other direction and
--- it is gone. What stays here is the one geometric thing a person chooses:
--- the Deskbar's height (`bar_h`, 5v), 36, 44 or 52, which no look sets.
+-- it is gone.
+--
+-- **The Deskbar is part of it, at 32, since 22 September** (`roadmap.md`
+-- 5v). It was the one geometric thing a person chose - 36, 44 or 52 in
+-- Appearance, carried to every window beside the colours - until Diego,
+-- on the ThinkPad: "Taskbar size should not be changeable let's make it
+-- fixed at 32". Making everything larger is a different setting, and one
+-- that moves every size here together rather than one of them
+-- (`roadmap.md` 5z).
+--
+-- **`tab` is the window manager's `TAB_H`**, which reads it. It said 20
+-- here, with a comment that `wm.lua` agreed, while `wm.lua` had drawn 26
+-- since the tab grew for the ThinkPad - two numbers for one thing, and the
+-- test that held the title face to its box was holding it to the wrong one.
 --
 theme.metrics = {
-  row    = 24,    -- a list, a tree or a menu row
-  button = 28,    -- a button
-  field  = 26,    -- a one-line field
-  tab    = 20,    -- a window's title tab; `TAB_H` in `wm.lua` agrees
-  gap    = 12,    -- between widgets, and from a window's edge
+  row     = 24,   -- a list, a tree or a menu row
+  button  = 28,   -- a button
+  field   = 26,   -- a one-line field
+  tab     = 26,   -- a window's title tab
+  deskbar = 32,   -- the Deskbar
+  gap     = 12,   -- between widgets, and from a window's edge
 }
-
--- Carried with the colours, so every window hears the Deskbar's height.
-theme.spacing = { "bar_h" }
-
-theme.BAR_H_LEAST, theme.BAR_H_MOST = 36, 64
 
 -- The five roles and their faces are defined at the end of this file;
 -- these are the bounds a theme's size is held to, the same as anything the
@@ -406,7 +409,6 @@ function theme.current()
   local out = {}
 
   for _, k in ipairs(theme.tokens) do out[k] = theme[k] end
-  for _, k in ipairs(theme.spacing) do out[k] = theme[k] end
 
   return out
 end
@@ -448,12 +450,6 @@ function theme.apply(palette)
 
   for _, k in ipairs(theme.tokens) do
     if palette[k] ~= nil then theme[k] = palette[k] end
-  end
-
-  -- And the spacing, whole numbers only: a palette from somewhere else
-  -- that says nothing about it leaves what is in force.
-  for _, k in ipairs(theme.spacing) do
-    if math.type(palette[k]) == "integer" then theme[k] = palette[k] end
   end
 
   return theme

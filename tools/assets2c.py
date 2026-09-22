@@ -13,9 +13,12 @@ reported and not refused. See `licence_for`.
 
 Usage: assets2c.py <symbol> <out.c> [--prefix=<text>] <file>...
 
-`--prefix` goes in front of every name in the table: the wallpapers are
-`wallpaper/<file>`, so a caller that lists what the image carries can tell a
-picture meant for the desktop from a test pattern without a second list.
+`--prefix` goes in front of the names of the files after it: the wallpapers
+are `wallpaper/<file>`, so a caller that lists what the image carries can
+tell a picture meant for the desktop from a test pattern without a second
+list. It may come more than once, each applying until the next: Haiku's
+icons at 16 and 64 are `16x16/<file>` and `64x64/<file>` beside the 32s,
+which have no prefix, and two files that would share a name are refused.
 """
 
 import os
@@ -76,13 +79,27 @@ def main():
     if len(sys.argv) < 3:
         raise SystemExit(__doc__.strip().splitlines()[-1])
 
-    symbol, out_path, files = sys.argv[1], sys.argv[2], sys.argv[3:]
+    symbol, out_path, args = sys.argv[1], sys.argv[2], sys.argv[3:]
     prefix = ""
+    named = {}
 
-    if files and files[0].startswith("--prefix="):
-        prefix, files = files[0][len("--prefix="):], files[1:]
+    for arg in args:
+        if arg.startswith("--prefix="):
+            prefix = arg[len("--prefix="):]
+        else:
+            named[arg] = prefix + os.path.basename(arg)
 
-    files = sorted(files)
+    if len(set(named.values())) != len(named):
+        seen = {}
+
+        for path, name in sorted(named.items()):
+            if name in seen:
+                raise SystemExit(f"assets2c: {path} and {seen[name]} would "
+                                 f"both be called {name}")
+
+            seen[name] = path
+
+    files = sorted(named)
 
     # Who wrote each of these and under what terms, repeated here because
     # the generated file is the one that ends up in the binary and it
@@ -140,7 +157,7 @@ def main():
     lines.append(f"const struct kosmos_asset {symbol}[] = {{")
 
     for n, path in enumerate(files):
-        name = prefix + os.path.basename(path)
+        name = named[path]
         lines.append(f'    {{ "{name}", asset_{n}, sizeof(asset_{n}) }},')
 
     lines.append("    { NULL, NULL, 0 },")

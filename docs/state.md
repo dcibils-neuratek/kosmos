@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-21
+Last updated: 2026-09-22
 
 ---
 
@@ -17,6 +17,43 @@ Last updated: 2026-09-21
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 22 September: four looks, one layout, a 32-pixel Deskbar, and a scale next
+
+**Pushed today: 0.10.106 to 0.10.111 (`df00586`)**, and the tags for every
+revision from 0.10.92 on (0.10.99 was never committed). **Stick
+`kosmos-usb-0.10.111-development.img` is on the ThinkPad**; 0.10.88 is still
+the stable one. The older development images went to the Trash.
+
+- **0.10.106-0.10.111** - Plex, then fonts at 16, then very few options:
+  four looks (Plex, Plex Night, Classic, Studio; `roadmap.md` 5y), one
+  fixed layout the faces fit (5x), and Appearance down to a look and a
+  wallpaper (`testing.md` 18.135-18.141).
+- **0.10.112, committed and not pushed - the Deskbar is 32, fixed** (5v,
+  18.142). Diego, on the ThinkPad: "Taskbar size should not be changeable
+  let's make it fixed at 32". Its icons are 24, averaged down from Haiku's
+  64s, which are vendored now with the 16s (`assets/icons/README.md`), by
+  `stretch`'s new `smooth` mode. `theme.metrics.tab` corrected to the 26
+  the window manager draws. Three controls watched.
+- **The fonts were not made bigger.** Diego asked for +2 everywhere and +4
+  on the title, then for a scale instead - "a factor multiplier of all the
+  things in the UI", "Something like that slider of iOS". **The slider is
+  drawn in `docs/looks.html` and approved** ("great as it is", "with the
+  %"): seven steps, 100 to 200 per cent (5z). Next: its design in `ui.md`,
+  then build it.
+
+**What the ThinkPad said about 0.10.111** (his photograph of `log`): the
+boot stick stopped answering again - a WRITE (10)'s status and then a READ
+(10)'s data went unanswered, a Bulk-Only Reset failed, and a READ's command
+came back `USB Transaction Error (4)` - and `appearance: not saved to
+/home/.appearance: the stick failed it, or did not answer`. That is 5t, not
+Appearance: the save reached the stick while the stick was not answering.
+
+**Open, in the order they came**: 5t (why the stick stops answering), 5w
+(the Deskbar dropping events under a menu), 5r (a deadlock report that
+names the holder), 5m-b (the adapter's link), 5p and 5q (the network and USB
+indicators), the Control-Alt-1 screenshot to `/home/Desktop`, and Music's
+two icons that never drew (`roadmap.md`, *Smaller, and wanted*).
 
 ## 21 September, the night: full screen, the addresses, a wallpaper and an adapter
 

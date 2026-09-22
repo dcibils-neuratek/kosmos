@@ -199,11 +199,14 @@ end
 do
   local m = theme.metrics
 
-  check(m.row == 24 and m.button == 28 and m.field == 26 and m.tab == 20,
-        "the fixed layout is not rows 24, buttons 28, fields 26, tabs 20")
+  check(m.row == 24 and m.button == 28 and m.field == 26 and m.tab == 26
+        and m.deskbar == 32,
+        "the fixed layout is not rows 24, buttons 28, fields 26, tabs 26 "
+        .. "and a Deskbar of 32")
 
-  local box = { ui = m.row, text = m.row, heading = m.row, mono = m.row,
-                title = m.tab }
+  -- The Deskbar's words are the `ui` face, and its box is the bar.
+  local box = { ui = math.min(m.row, m.deskbar), text = m.row,
+                heading = m.row, mono = m.row, title = m.tab }
 
   for _, name in ipairs(themes.order) do
     local p = theme.read(themes[name], "dark")
@@ -234,8 +237,9 @@ do
   theme.apply(p)
 
   check(theme.desktop == 0xff3d63b8, "applying Plex did not paint its desktop")
-  check(theme.current().bar_h == 36,
-        "current() does not carry the Deskbar's height to other windows")
+  check(theme.current().bar_h == nil,
+        "current() still carries a Deskbar height to other windows, which "
+        .. "is the fixed layout's since roadmap 5v")
   check(theme.fonts == before
         and theme.fonts.ui.font .. " " .. theme.fonts.ui.px == ui_before,
         "applying Plex replaced the faces in force with its own, without "

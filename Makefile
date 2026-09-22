@@ -1775,6 +1775,13 @@ KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
 # to avoid using a decoder this system needs anyway.
 ICON_FILES := $(sort $(wildcard assets/icons/*.png))
 
+# The same icons at 16 and at 64, as the same release exports them, in the
+# image as `16x16/<name>` and `64x64/<name>` (`assets/icons/README.md`).
+# `gc:icon` draws each size it has as it is, and any other size from the 64
+# averaged down - the Deskbar's 24 today, and every icon at a scale later.
+ICON16_FILES := $(sort $(wildcard assets/icons/16x16/*.png))
+ICON64_FILES := $(sort $(wildcard assets/icons/64x64/*.png))
+
 # Not a picture, and in the same table anyway.
 #
 # `assets/*.txt` is the project's own artwork rather than something
@@ -1811,23 +1818,26 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # which is the flags stamps' trick for the same kind of question.
 #
 ASSET_LIST := $(GEN)/assets.list
-$(shell mkdir -p $(GEN); [ "$$(cat $(ASSET_LIST) 2>/dev/null)" = '$(ICON_FILES) $(ART_FILES)' ] \
-        || printf '%s' '$(ICON_FILES) $(ART_FILES)' > $(ASSET_LIST))
+ASSET_FILES := $(ICON_FILES) $(ICON16_FILES) $(ICON64_FILES) $(ART_FILES)
+$(shell mkdir -p $(GEN); [ "$$(cat $(ASSET_LIST) 2>/dev/null)" = '$(ASSET_FILES)' ] \
+        || printf '%s' '$(ASSET_FILES)' > $(ASSET_LIST))
 
 $(ASSET_LIST):
 	@mkdir -p $(dir $@)
-	@printf '%s' '$(ICON_FILES) $(ART_FILES)' > $@
+	@printf '%s' '$(ASSET_FILES)' > $@
 
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
-                 $(ICON_FILES) $(ART_FILES) $(ASSET_LIST) LICENSE \
+                 $(ASSET_FILES) $(ASSET_LIST) LICENSE \
                  docs/cheatsheet.html tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
 	        assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        assets/images/test-screen.jpg \
 	        $(ICON_FILES) $(ART_FILES) LICENSE \
-	        docs/cheatsheet.html
+	        docs/cheatsheet.html \
+	        --prefix=16x16/ $(ICON16_FILES) \
+	        --prefix=64x64/ $(ICON64_FILES)
 
 # The outline fonts, embedded the same way.
 #

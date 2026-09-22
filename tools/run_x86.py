@@ -2743,7 +2743,8 @@ def battery(image, check):
                 width, height, px = screen
                 red = 0
 
-                for y in range(0, min(36, height)):
+                # The Deskbar's rows: 32, fixed (`theme.metrics.deskbar`).
+                for y in range(0, min(32, height)):
                     for x in range(width // 2, width):
                         o = (y * width + x) * 3
 

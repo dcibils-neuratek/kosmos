@@ -626,8 +626,8 @@ window owns.
 **Since 22 September there are four looks and nothing else to choose**
 (`roadmap.md` 5y): Plex, Plex Night, Classic and Studio, in `themes.lua`,
 each a whole designed in `docs/looks.html`, all four naming the same faces.
-The Appearance panel offers a look, a wallpaper and the Deskbar's height,
-and `/home/.appearance` holds those three. What follows is how a theme came
+The Appearance panel offers a look and a wallpaper, and
+`/home/.appearance` holds those two. What follows is how a theme came
 to carry its faces at all, and the per-role choices the panel no longer has.
 
 **A theme is its colours and its faces.** There were two palettes - `dark`,
@@ -674,30 +674,28 @@ tokens and nothing else now, and the faces are applied on purpose by
 whoever chose the theme. `tools/test_theme.lua` holds both, with a control.
 
 **The layout is fixed, and no theme changes it** (`roadmap.md` 5x,
-`theme.metrics`): a row is 24 pixels, a button 28, a field 26, a tab 20,
-in every look and at every face, and the kit centres the words of the face
-in force inside those boxes. A look's faces are chosen to fit them. For a
-morning on 22 September a theme could pad rows, buttons and fields; a
-larger face then moved every widget below it, and Diego asked for the
-layout to be fixed instead.
+`theme.metrics`): a row is 24 pixels, a button 28, a field 26, a window's
+tab 26 and the Deskbar 32, in every look and at every face, and the kit
+centres the words of the face in force inside those boxes. A look's faces
+are chosen to fit them. For a morning on 22 September a theme could pad
+rows, buttons and fields; a larger face then moved every widget below it,
+and Diego asked for the layout to be fixed instead. The tab's number said
+20 here while the window manager drew 26; it is 26, and `wm.lua` reads it
+from `theme.metrics` rather than keeping a copy.
 
-**The Deskbar's colour is the person's as well as the theme's.** A theme
-names where it starts; Appearance offers eight beside the desktop's colour,
-and a choice is kept over the theme's in `/home/.appearance`. The words on
-the bar follow it through `theme.ink_on`, dark on a light ground and white
-on a dark one, since a colour picked by hand has no theme to name them.
+**The Deskbar's colour and height are its look's and the layout's.** For
+an afternoon each was a choice in Appearance - eight colours, and 36, 44 or
+52 pixels - kept in `/home/.appearance` over the theme. The looks took the
+colour back (`roadmap.md` 5u), and Diego fixed the height: "Taskbar size
+should not be changeable let's make it fixed at 32" (5v). A height saved
+before is ignored. With them went `win.on_theme`, the hook the Deskbar
+resized itself from, which nothing else used once the layout was fixed.
 
-**And its height**: a theme names `bar_h`, 36 in every theme that ships,
-and Appearance offers 36, 44 and 52 kept over it. The Deskbar opens at 36
-- the theme reaches it in the reply that opens its window - and resizes
-itself from `on_theme`; the window manager gives the room above every other
-window back when a strip changes height.
-
-**A window may ask to be told when the theme changes**: `win.on_theme`,
-which the kit calls after applying a theme event. Almost nothing needs it -
-widgets read the theme when they draw - and the one that does is the
-Appearance panel, whose every row is a line of the face it is changing; it
-lays itself out again there.
+**How large all of it is will be one number** (`roadmap.md` 5z, drawn in
+`docs/looks.html` and approved, not built): a scale, chosen on a stepped slider in
+Appearance, applied by the window manager to every length and every face
+as it draws - so the layout above keeps its proportions at every step,
+where a face made larger on its own would not.
 
 **The palette table is mutated in place, never replaced.** Every widget
 reads `theme.text` at the moment it draws, so changing the fields of the one
@@ -900,7 +898,8 @@ and `topbar`, a strip across the top with five shortcuts and a clock. The
 shortcuts were a hard-coded list in a source file - a menu that cannot be
 edited, sitting beside a menu that can.
 
-It is one strip now, 36 pixels tall, and `topbar.lua` is deleted:
+It is one strip now, 32 pixels tall (36 until 22 September), and
+`topbar.lua` is deleted:
 
 - **The Kosmos menu at the left**, which is `/home/Deskbar` read off the
   disk. Right-clicking it offers **Reload Menus** and **Open Deskbar
@@ -915,9 +914,13 @@ It is one strip now, 36 pixels tall, and `topbar.lua` is deleted:
   the network, the volume, the battery, the date and the clock. Each one
   opens the application that owns it.
 
-**32-pixel icons in a 36-pixel bar**, because 32 is the size every icon in
-`assets/icons/` actually is and nothing here scales one - any other number
-would be a crop rather than a smaller picture.
+**24-pixel icons in a 32-pixel bar**, since 22 September (`roadmap.md`
+5v). They were 32 in a 36-pixel bar, because 32 was the only size the image
+carried and nothing scaled a picture - any other number would have been a
+crop. The image carries Haiku's 16s and 64s now, and `gc:icon` draws any
+size other than those three by averaging the 64 down (`stretch`'s
+`smooth`), so a bar Diego fixed at 32 holds its icons with four pixels
+above and below.
 
 **Drawn as one view rather than a row of widgets.** A `ui.button` is a
 bevel, a label and a focus ring, and none of those belong on a bar; what

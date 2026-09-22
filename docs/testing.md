@@ -7479,3 +7479,47 @@ own colours; the wallpapers; and the Deskbar's three heights - 380 lines,
   harness's `dark` is not one. 11 checks.
 - **`test_theme.lua`**, 152, without the ink checks that went with the
   Deskbar's colour.
+
+## 18.142 The Deskbar at 32, and an icon at any size
+
+**Diego, 22 September**, on the ThinkPad with 0.10.111: "Taskbar size should
+not be changeable let's make it fixed at 32". It had been 36, then a choice
+of 36, 44 or 52 for an afternoon (18.138).
+
+- **The Deskbar is `theme.metrics.deskbar`, 32**, beside the rows, buttons
+  and tabs of the fixed layout. `bar_h`, `theme.spacing` and its bounds,
+  the window manager's two overrides, the Appearance panel's height row and
+  `--bar-height`, and the Deskbar's resize on `on_theme` are gone - and
+  `win.on_theme` with it, since nothing else used it. A `bar_h` a `/home`
+  saved before is read by nothing.
+- **Its icons are 24**, because a 32-pixel icon in a 32-pixel bar touches
+  both edges. The image carries Haiku's 16s and 64s beside the 32s now,
+  from the same commit, and `gc:icon` draws those three sizes pixel for
+  pixel and any other by averaging the 64 down - the op carries `smooth`,
+  and `stretch` grew the mode: each destination pixel the area-weighted
+  mean of the source it covers, weighted by alpha when composited.
+- **The tab is 26 in `theme.metrics`**, where it said 20 while the window
+  manager drew 26; `wm.lua` reads it from there.
+- **The Appearance panel is 560 by 362**, a look and a wallpaper.
+
+### The checks
+
+- **The guest suite's `gfx: a picture drawn at another size`**, three
+  more: four greys averaged into one pixel are `ff2b2b2b`; three pixels
+  into two split the middle one, `ff323232 ffdcdcdc`; and white beside a
+  transparent pixel, averaged over blue, is `ff8080ff`. Blue because over
+  black the average that ignores alpha comes out right.
+  **Controls, both watched**: `stretch` ignoring `smooth` fails the first
+  with `ff111111`; `area_sample` weighing every pixel as opaque fails the
+  third with `ff808080`.
+- **The display harness's `appearance` phase**: the panel is 560x362; and
+  over a `/home/.appearance` that says `bar_h = 52`, as 0.10.111 wrote it, a
+  desktop paints the harness's yellow bar to its 32nd row and the desk
+  below its 34th. **Control, watched**: the Deskbar at 36 fails it - "never
+  drew a Deskbar 32 pixels tall".
+- **`test_theme.lua`**, 152: the layout's numbers, the `ui` face in the
+  Deskbar's box, and `theme.current()` carrying no height.
+- **Found by the gate, not by reading**: the harness's own sum for where
+  the Deskbar's first window button starts still had a 32-pixel icon in
+  it, so the focus phase sampled each button's icon instead of its fill.
+  It reads `DESKBAR_ICON` now.

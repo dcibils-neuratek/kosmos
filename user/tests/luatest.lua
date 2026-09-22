@@ -1739,6 +1739,61 @@ if role == R_STRETCH then
 
   check(not took, "an alpha of 300 was accepted")
 
+  --
+  -- **`smooth`: each pixel the mean of what it covers** (`roadmap.md` 5v).
+  -- The four greys into one pixel are their average, 0x2b - where nearest
+  -- neighbour gives the first of them, 0x11.
+  --
+  local one = gfx.surface { w = 1, h = 1 }
+
+  one:fill(0, 0, 1, 1, 0xff000000)
+  one:stretch(src, 0, 0, 2, 2, 0, 0, 1, 1, nil, true)
+
+  check(one:get(0, 0) == 0xff2b2b2b,
+        "four greys averaged to "
+        .. string.format("%08x", one:get(0, 0)) .. ", not ff2b2b2b")
+
+  -- Three into two: the middle source pixel is split between both, so each
+  -- is two thirds of its outer pixel and one third of the middle one. This
+  -- is the partial coverage an icon at three quarters of its size is made
+  -- of, and what fails if a straddled pixel is counted whole or not at all.
+  local three = gfx.surface { w = 3, h = 1 }
+
+  three:set(0, 0, 0xff000000)
+  three:set(1, 0, 0xff969696)
+  three:set(2, 0, 0xffffffff)
+
+  local two = gfx.surface { w = 2, h = 1 }
+
+  two:fill(0, 0, 2, 1, 0xff000000)
+  two:stretch(three, 0, 0, 3, 1, 0, 0, 2, 1, nil, true)
+
+  check(two:get(0, 0) == 0xff323232 and two:get(1, 0) == 0xffdcdcdc,
+        "three pixels into two gave "
+        .. string.format("%08x %08x", two:get(0, 0), two:get(1, 0))
+        .. ", not ff323232 ffdcdcdc")
+
+  -- And weighted by alpha: white beside a transparent pixel, averaged, is
+  -- white at half coverage - a colour the transparent pixel does not
+  -- dilute. Laid over blue that is ff8080ff. Averaged without the weighting
+  -- it would be grey at half coverage, ff4040bf, which is every icon's
+  -- outline darkened; with alpha ignored, opaque grey; with alpha lost, the
+  -- blue untouched. Blue rather than black, because over black the one
+  -- that ignores alpha comes out exactly right.
+  local edge2 = gfx.surface { w = 2, h = 1 }
+
+  edge2:set(0, 0, 0xffffffff)
+  edge2:set(1, 0, 0x00000000)
+
+  local over_blue = gfx.surface { w = 1, h = 1 }
+
+  over_blue:fill(0, 0, 1, 1, 0xff0000ff)
+  over_blue:stretch(edge2, 0, 0, 2, 1, 0, 0, 1, 1, 255, true)
+
+  check(over_blue:get(0, 0) == 0xff8080ff,
+        "white beside transparent, averaged over blue, was "
+        .. string.format("%08x", over_blue:get(0, 0)) .. ", not ff8080ff")
+
   sys.exit(0)
 end
 

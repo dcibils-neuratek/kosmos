@@ -289,10 +289,15 @@ read_sections()
 -- a corner tile is charming and a person hunting for a window wants one
 -- place that is always the same shape.
 --
--- **36 pixels, with 32-pixel icons.** An icon large enough to recognise is
--- what makes a row of buttons scannable rather than a row of words, and 32
--- is the size every icon in `assets/icons/` actually is - nothing here
--- scales one, so any other number would be a crop.
+-- **32 pixels, with 24-pixel icons, and not a setting** (`theme.metrics`,
+-- `roadmap.md` 5v). An icon large enough to recognise is what makes a row
+-- of buttons scannable rather than a row of words. It was 36 with the
+-- icons at 32, because 32 was the only size the image carried and nothing
+-- scaled one; then 36, 44 or 52, chosen in Appearance. Diego, 22 September,
+-- on the ThinkPad: "Taskbar size should not be changeable let's make it
+-- fixed at 32". A 32-pixel icon in a 32-pixel bar touches both edges, so
+-- the icons are 24, averaged down from Haiku's 64-pixel ones (`gc:icon`),
+-- with four pixels above and below.
 --
 -- Drawn as one view rather than as widgets, which is `topbar.lua`'s
 -- decision and its reasoning holds: a button is a bevel, a label and a
@@ -415,8 +420,8 @@ local function network_now()
 end
 
 
-local H = 36
-local ICON = 32
+local H = theme.metrics.deskbar
+local ICON = 24
 local W = sw
 
 local win, err = ui.window{ title = "Deskbar", w = W, h = H, strip = "top" }
@@ -1422,27 +1427,6 @@ function bar:on_context(x, _)
 end
 
 win:add(bar)
-
---
--- **As tall as the theme says** (`theme.bar_h`, `roadmap.md` 5v), and again
--- whenever it changes. The window opens at 36, before this process has
--- been told the theme - that arrives in the reply that opens it - so the
--- first answer is a resize, and so is every later one. The icons stay 32
--- and sit in the middle; `H` is also where a menu opens under the bar.
---
-local function fit_height()
-  local want = math.type(theme.bar_h) == "integer" and theme.bar_h or 36
-
-  if want ~= H then
-    H = want
-    win:resize(W, H)
-    bar.h = H
-  end
-end
-
-fit_height()
-
-function win:on_theme() fit_height() end
 
 --------------------------------------------------------------------------
 -- Startup items.

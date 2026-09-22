@@ -1320,8 +1320,13 @@ SELECTED = (0x1f, 0x6f, 0xeb)
 
 # The Deskbar's height. It is the strip across the top, it is
 # tab-coloured, and it is not a window - so anything counting windows
-# by their title bars starts below it.
-STRIP_H = 36
+# by their title bars starts below it. 32 and fixed since 22 September
+# (`theme.metrics.deskbar`, `roadmap.md` 5v); it was 36.
+STRIP_H = 32
+
+# And its icons, `ICON` in deskbar.lua: 24 in the 32-pixel bar, where they
+# were 32 in the 36-pixel one.
+DESKBAR_ICON = 24
 
 
 def check_registry(guest):
@@ -3629,16 +3634,17 @@ def check_direct_menu(guest):
 
 
 def check_appearance(guest):
-    """**The Appearance panel: a look, a wallpaper, the Deskbar's height.**
+    """**The Appearance panel: a look and a wallpaper.**
 
     Rebuilt on 22 September from `docs/looks.html`, which Diego approved -
     "the panel is right, build it" - after asking for very few options and a
     fixed layout (`roadmap.md` 5x, 5y). It was two columns of a theme list,
     colour swatches, five font roles with a face and a size each, and a
-    title's shape; it is the four looks as cards, the wallpapers and three
-    heights. Its layout is fixed, so its size is a number that does not
-    depend on the faces - 560 by 426, which the panel says as it opens - and
-    it offers exactly the four looks `themes.lua` ships.
+    title's shape; it is the four looks as cards and the wallpapers. The
+    Deskbar's three heights left it the same day, when the bar became part
+    of the fixed layout (5v). Its layout is fixed, so its size is a number
+    that does not depend on the faces - 560 by 362, which the panel says as
+    it opens - and it offers exactly the four looks `themes.lua` ships.
     """
     mark = len(guest.seen)
 
@@ -3654,9 +3660,10 @@ def check_appearance(guest):
                             int(said.group(3)))
     checks = 1
 
-    if (width, height) != (560, 426):
+    if (width, height) != (560, 362):
         raise Failure("the panel is %dx%d; the drawing Diego approved, on the "
-                      "fixed layout, is 560x426" % (width, height))
+                      "fixed layout and without the Deskbar's heights, is "
+                      "560x362" % (width, height))
 
     checks += 1
 
@@ -3692,56 +3699,44 @@ def check_appearance(guest):
 
     checks += check_theme_plex(guest)
     checks += check_theme_events(guest)
-    checks += check_deskbar_height(guest)
+    checks += check_deskbar_fixed(guest)
 
     return checks
 
 
-def check_deskbar_height(guest):
-    """**The Deskbar's height, chosen and kept** (`roadmap.md` 5v).
+def check_deskbar_fixed(guest):
+    """**The Deskbar is 32 pixels, whatever was saved** (`roadmap.md` 5v).
 
-    Diego, 22 September: "i want to be able to change the deskbar height".
-    `wm appearance:--bar-height 52` chooses it as a click does; a desktop
-    started afresh then has to paint the bar to its 52nd row and leave the
-    53rd to the desktop. The panel saves a look with the height - Plex, since
-    the harness's `dark` is not one of the four - so the bar is Plex's stone
-    `#e7e7e3` and the ground its blue, and one pixel either side says which.
+    For an afternoon it was 36, 44 or 52, chosen in Appearance and kept in
+    `/home/.appearance`; then Diego, on the ThinkPad on 22 September: "Taskbar
+    size should not be changeable let's make it fixed at 32". A `/home`
+    written by 0.10.111 still says `bar_h = 52`, so that is what is saved
+    here, and a desktop started over it has to paint the bar to its 32nd
+    row and leave the 35th to the desk. The harness's `dark` look has a
+    yellow bar over a dark desk, and one pixel either side says which.
     """
-    mark = len(guest.seen)
-    guest.type("wm appearance:--bar-height 52")
-
-    try:
-        said = guest.wait_for_line("appearance: bar height ",
-                                   "Appearance to choose the bar's height",
-                                   mark)
-    finally:
-        stop_desktop(guest)
-
-    if said != "52 applied":
-        raise Failure("choosing the Deskbar's height said %r" % said)
-
+    guest.type(appearance("bar_h = 52") + ' print("height" .. "-saved")')
+    guest.wait_for("height-saved", "save a Deskbar height of 52, as 0.10.111 "
+                   "did")
     guest.type("wm deskbar")
 
-    def tall_bar(w, h, px):
-        inside = (51 * w + w // 2) * 3
-        below = (54 * w + w // 2) * 3
-        r, g, b = px[inside], px[inside + 1], px[inside + 2]
-        r2, g2, b2 = px[below], px[below + 1], px[below + 2]
+    def fixed_bar(w, h, px):
+        inside = (31 * w + w // 2) * 3
+        below = (34 * w + w // 2) * 3
 
-        # Plex's stone at the bar's last row, and its blue desk below it.
-        def stone(r_, g_, b_):
-            return (abs(r_ - 0xe7) <= 8 and abs(g_ - 0xe7) <= 8
-                    and abs(b_ - 0xe3) <= 8)
+        # The dark look's yellow at the bar's last row, and its desk below.
+        def yellow(r_, g_, b_):
+            return (abs(r_ - 0xff) <= 8 and abs(g_ - 0xc7) <= 8
+                    and b_ <= 16)
 
-        if stone(r, g, b) and not stone(r2, g2, b2):
+        if yellow(*px[inside:inside + 3]) and not yellow(*px[below:below + 3]):
             return True
 
         return None
 
     try:
-        settle(guest, tall_bar, "a desktop started after the Deskbar's "
-               "height was chosen never drew a bar 52 pixels tall",
-               seconds=30)
+        settle(guest, fixed_bar, "a desktop started over a saved height of "
+               "52 never drew a Deskbar 32 pixels tall", seconds=30)
     finally:
         stop_desktop(guest)
         guest.type(appearance() + ' print("height" .. "-reset")')
@@ -6082,9 +6077,9 @@ def check_deskbar(guest):
     # clicked where the old list was would pass on a Deskbar nobody could
     # use.
     #
-    # deskbar.lua: the strip at 0,0, 36 tall, with the Kosmos button at its
-    # left end - twelve in, a 32-pixel icon, eight, then the word. Its menu
-    # opens under the bar, at the window's own origin.
+    # deskbar.lua: the strip at 0,0, `STRIP_H` tall, with the Kosmos button
+    # at its left end - twelve in, a 24-pixel icon, eight, then the word. Its
+    # menu opens under the bar, at the window's own origin.
     #
     # It used to be a window in the top-right corner and these numbers were
     # measured from there, which is why they had to change: the bar is the
@@ -6095,7 +6090,7 @@ def check_deskbar(guest):
     # pixels in.
     #
     row_h = max(LAYOUT_ROW, 32 + 4)
-    menu_x, menu_y = 0, 36
+    menu_x, menu_y = 0, STRIP_H
 
     # And its width, because the submenu opens beside it: the widest name,
     # `Applications`, then the padding, the arrow and the picture - the sum
@@ -6335,9 +6330,9 @@ def check_focus_shown(guest):
         raise Failure(f"no part of {title}'s tab is clear of the other "
                       "window, so it cannot be pressed.")
 
-    # deskbar.lua: the Kosmos end is 12, a 32-pixel icon, 8, the word and
-    # 12; then a button per window, `TASK_W` 190 wide with a `GAP` of 4.
-    kosmos_w = 12 + 32 + 8 + len("Kosmos") * GLYPH_W + 12
+    # deskbar.lua: the Kosmos end is 12, an icon, 8, the word and 12; then a
+    # button per window, `TASK_W` 190 wide with a `GAP` of 4.
+    kosmos_w = 12 + DESKBAR_ICON + 8 + len("Kosmos") * GLYPH_W + 12
 
     def button_x(i):
         return kosmos_w + 4 + i * (190 + 4)
@@ -6872,9 +6867,8 @@ def check_desktop(guest):
 
         return False
 
-    # The Deskbar's own height, which is a fixed 36: an icon is 32 and
-    # nothing here scales one, so the bar is that plus two rows of air.
-    strip = 36
+    # The Deskbar's own height, fixed (`STRIP_H`).
+    strip = STRIP_H
     below = (f"wm: window Tracker at 0,{strip} ",
              f"wm: the desktop is below the strip, at 0,{strip} ")
 
@@ -8091,7 +8085,7 @@ def main():
           f"chosen - its five faces loaded, written down, and still worn "
           f"after a restart, and its spacing inside a widget; and four "
           f"theme events reaching a window across as many replies as fit, "
-          f"and the Deskbar's height chosen and kept, "
+          f"and the Deskbar held at 32 over a saved height, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

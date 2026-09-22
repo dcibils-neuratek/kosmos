@@ -343,10 +343,42 @@ end
 -- icon scrolled half off the top of a list would draw its top half at the
 -- top of the list rather than its bottom half.
 --
+--
+-- **At a size, since 22 September.** `size` was how much of a 32-pixel
+-- icon to show, so anything else was a crop - Music's speaker at 14 would
+-- have been its top-left corner - and a 32-pixel Deskbar could only have
+-- held its icons edge to edge (`roadmap.md` 5v). Haiku's icons come at 16,
+-- 32 and 64 (`assets/icons/README.md`), so those three are drawn as
+-- exported, pixel for pixel, and any other size is the 64 averaged down to
+-- it (`stretch`'s `smooth`), which keeps an outline a nearest-neighbour
+-- shrink would drop rows of.
+--
+-- **A shrunk icon is drawn whole or not at all**: `stretch` clips only
+-- where it lands on the window, not to a view inside it, so one cut by its
+-- view's edge would draw past it. Nothing that shrinks an icon scrolls.
+--
+local ICON_EXPORTS = { [16] = "16x16/", [32] = "", [64] = "64x64/" }
+
 function gc:icon(x, y, name, size)
   size = size or 32
 
   local ax, ay = self.ox + x, self.oy + y
+  local export = ICON_EXPORTS[size]
+
+  if not export then
+    if ax < self.cx or ay < self.cy or ax + size > self.cx + self.cw
+       or ay + size > self.cy + self.ch or size <= 0 then
+      return
+    end
+
+    self.ops[#self.ops + 1] = {
+      op = "image", asset = "64x64/" .. name, alpha = true, smooth = true,
+      sx = 0, sy = 0, w = 64, h = 64,
+      x = ax, y = ay, dw = size, dh = size,
+    }
+
+    return
+  end
 
   local x0 = (ax > self.cx) and ax or self.cx
   local y0 = (ay > self.cy) and ay or self.cy
@@ -356,7 +388,7 @@ function gc:icon(x, y, name, size)
   if x1 <= x0 or y1 <= y0 then return end
 
   self.ops[#self.ops + 1] = {
-    op = "image", asset = name, alpha = true,
+    op = "image", asset = export .. name, alpha = true,
     sx = x0 - ax, sy = y0 - ay,
     w = x1 - x0, h = y1 - y0,
     x = x0, y = y0,
@@ -4664,17 +4696,6 @@ function window:run()
         -- is unaffected: the compositor drew that text and has already
         -- changed.
         apply_fonts(ev.fonts)
-
-        --
-        -- **Except the application whose layout is made of the faces.** Most
-        -- are drawn from positions that do not depend on them and need
-        -- nothing. The Appearance panel is the one whose every row is a
-        -- line of the face it is changing: laid out once, at the faces it
-        -- opened with, it cut its last row off and put its status line
-        -- under a group when Diego chose 16 on the ThinkPad (22 September).
-        -- So a window may ask to be told, and only one that asks is.
-        --
-        if self.on_theme then self:on_theme() end
 
         changed = true
       elseif ev.type == "resize" then

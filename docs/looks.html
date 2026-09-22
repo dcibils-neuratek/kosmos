@@ -12,6 +12,12 @@
   and complicated", and "Let's just make 3 or 4 good design options in colors
   and fonts and stick to those". Every look below is drawn on the same fixed
   layout, at the pixel sizes the kit will use.
+
+  Then, the same day, on the ThinkPad: "Taskbar size should not be
+  changeable let's make it fixed at 32" (roadmap.md 5v, built), and a size
+  for the whole interface rather than for its fonts - "like Windows does",
+  "a factor multiplier of all the things in the UI", "Something like that
+  slider of iOS" (roadmap.md 5z, drawn below and not built).
 -->
 <title>Kosmos Looks</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -55,12 +61,12 @@
      the look's own, set on the element as custom properties. */
   .desk { position: relative; width: 460px; height: 352px; background: var(--k-desk); overflow: hidden;
           border: 1px solid rgba(0,0,0,.35); }
-  .bar { height: 36px; background: var(--k-bar); color: var(--k-bar-text); display: flex; align-items: center;
+  .bar { height: 32px; background: var(--k-bar); color: var(--k-bar-text); display: flex; align-items: center;
          gap: 14px; padding: 0 12px; font: 16px/1 var(--body); border-bottom: 1px solid var(--k-line); }
   .bar b { font-weight: 600; }
   .bar .sp { flex: 1; }
   .bar .clock { font-variant-numeric: tabular-nums; }
-  .bar .ico { width: 20px; height: 20px; border-radius: 3px; background: var(--k-accent); opacity: .85; }
+  .bar .ico { width: 24px; height: 24px; border-radius: 3px; background: var(--k-accent); opacity: .85; }
 
   .win { position: absolute; left: 22px; top: 58px; width: 416px; }
   .tab { display: inline-flex; align-items: center; gap: 8px; height: 20px; padding: 0 12px 0 6px;
@@ -104,9 +110,42 @@
   .walls { background: #fff; border: 1px solid #777; }
   .walls div { height: 24px; line-height: 24px; padding: 0 8px; }
   .walls .on { background: #2a55c9; color: #fff; }
-  .heights { display: flex; gap: 12px; }
-  .heights span { height: 28px; padding: 0 16px; display: inline-flex; align-items: center; border: 1px solid #777; background: #e7e7e3; }
-  .heights .on { background: #2a55c9; color: #fff; }
+  /* The size: a stepped slider, small A to large A, after iOS's Larger Text. */
+  .size { display: grid; grid-template-columns: auto 1fr auto 5ch; align-items: center; gap: 12px; }
+  .size .a { font: 500 13px/1 var(--body); color: #6c6c66; }
+  .size .a.big { font-size: 24px; }
+  .size output { font: 14px var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+  .track { position: relative; height: 28px; }
+  .track input { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0; background: transparent; position: relative; z-index: 1; cursor: pointer; }
+  .track input::-webkit-slider-runnable-track { height: 4px; background: #cfcfc9; border-radius: 2px; }
+  .track input::-moz-range-track { height: 4px; background: #cfcfc9; border-radius: 2px; }
+  .track input::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; margin-top: -8px; border-radius: 50%; background: #fff; border: 1px solid #777; }
+  .track input::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 1px solid #777; }
+  .track input:focus-visible { outline: 2px solid #2a55c9; outline-offset: 2px; }
+  .ticks { position: absolute; left: 10px; right: 10px; top: 20px; display: flex; justify-content: space-between; }
+  .ticks i { width: 3px; height: 3px; border-radius: 50%; background: #9a9a94; }
+  .size-note { font-size: 13px; color: #6c6c66; margin: 0; }
+
+  /* The same window at the chosen size: every length is the kit's, times --s. */
+  .scaled { --s: 1; overflow-x: auto; margin-top: 16px; padding-bottom: 6px; }
+  .sdesk { position: relative; width: calc(620px * var(--s)); height: calc(250px * var(--s)); background: #3d63b8;
+           border: 1px solid rgba(0,0,0,.35); font-family: var(--body); }
+  .sbar { height: calc(32px * var(--s)); background: #e7e7e3; color: #1e1e1e; display: flex; align-items: center;
+          gap: calc(10px * var(--s)); padding: 0 calc(12px * var(--s)); font-size: calc(16px * var(--s));
+          border-bottom: 1px solid #cfcfc9; }
+  .sbar .ico { width: calc(24px * var(--s)); height: calc(24px * var(--s)); border-radius: 3px; background: #2a55c9; opacity: .85; }
+  .sbar .sp { flex: 1; }
+  .swin { position: absolute; left: calc(40px * var(--s)); top: calc(56px * var(--s)); width: calc(330px * var(--s)); }
+  .stab { display: inline-flex; align-items: center; height: calc(26px * var(--s)); padding: 0 calc(12px * var(--s));
+          background: #f2c230; color: #3a2e00; font: 600 calc(14px * var(--s))/1 var(--display); border: 1px solid #777; border-bottom: 0; }
+  .sbody { background: #f4f4f1; color: #1e1e1e; border: 1px solid #777; padding: calc(12px * var(--s));
+           display: grid; gap: calc(12px * var(--s)); font-size: calc(16px * var(--s)); }
+  .slist { background: #fff; border: 1px solid #cfcfc9; }
+  .slist div { height: calc(24px * var(--s)); line-height: calc(24px * var(--s)); padding: 0 calc(8px * var(--s)); white-space: nowrap; overflow: hidden; }
+  .slist .on { background: #2a55c9; color: #fff; }
+  .srow { display: flex; gap: calc(12px * var(--s)); }
+  .sfield { flex: 1; height: calc(26px * var(--s)); display: flex; align-items: center; padding: 0 calc(8px * var(--s)); background: #fff; border: 1px solid #cfcfc9; color: #6c6c66; }
+  .sbtn { height: calc(28px * var(--s)); padding: 0 calc(16px * var(--s)); display: inline-flex; align-items: center; background: #e7e7e3; border: 1px solid #777; }
   ol.q { padding-left: 22px; max-width: 72ch; }
   ol.q li { margin-bottom: 12px; }
 </style>
@@ -214,17 +253,22 @@
     <tr><td>a list or menu row</td><td class="v">24 px</td><td>Plex Sans 16 (21 px tall), 8 px in from the left</td></tr>
     <tr><td>a button</td><td class="v">28 px</td><td>Plex Sans 16, 16 px either side</td></tr>
     <tr><td>a text field</td><td class="v">26 px</td><td>Plex Sans 16, 8 px in</td></tr>
-    <tr><td>a window's tab</td><td class="v">20 px</td><td>Plex Sans Condensed SemiBold 14</td></tr>
+    <tr><td>a window's tab</td><td class="v">26 px</td><td>Plex Sans Condensed SemiBold 14</td></tr>
     <tr><td>the terminal's line</td><td class="v">24 px</td><td>Plex Mono 14</td></tr>
     <tr><td>between widgets, and from a window's edge</td><td class="v">12 px</td><td>—</td></tr>
-    <tr><td>the Deskbar</td><td class="v">36 px</td><td>32-pixel icons, Plex Sans 16</td></tr>
+    <tr><td>the Deskbar</td><td class="v">32 px</td><td>24-pixel icons, averaged down from Haiku's 64s; Plex Sans 16</td></tr>
   </table></div>
   <p>Text longer than its box is cut there, never spilling into the widget beside
   it: the third row above ends in "…" when the list is narrow.</p>
+  <p>The tab said 20 px here while the window manager drew 26; 26 is what it is.
+  The Deskbar was 36, then a choice of 36, 44 or 52, and since 22 September it
+  is 32 and not a setting.</p>
 
   <h2>The Appearance panel, after</h2>
-  <p>Three things, and every one of them is a choice among a few. There are no
-  font lists, no colour swatches and no title shapes: the look decides those.</p>
+  <p>A look and a wallpaper, and every one of them is a choice among a few. There
+  are no font lists, no colour swatches and no title shapes: the look decides
+  those. The Deskbar's height has left it. The <b>Size</b> row at the bottom is
+  approved and not built yet (roadmap 5z).</p>
   <div class="panelwin">
     <div class="tab" style="--k-tab:#f2c230;--k-tab-text:#3a2e00;--k-line:#777"><i></i>Appearance</div>
     <div class="panelbody">
@@ -237,24 +281,92 @@
       </div>
       <h4>Wallpaper</h4>
       <div class="walls"><div class="on">None - the look's own desk</div><div>blue.png</div><div>thinkpad.jpg</div><div>Alexander Slattery</div></div>
-      <h4>Deskbar height</h4>
-      <div class="heights"><span class="on">36</span><span>44</span><span>52</span></div>
+      <h4>Size</h4>
+      <div class="size">
+        <span class="a" aria-hidden="true">A</span>
+        <div class="track">
+          <input id="size" type="range" min="0" max="6" step="1" value="0" aria-label="Size of everything on the screen">
+          <div class="ticks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <span class="a big" aria-hidden="true">A</span>
+        <output id="size-out" for="size">100%</output>
+      </div>
+      <p class="size-note" id="size-note">Everything at its drawn size. The screen is 1920 × 1080.</p>
     </div>
   </div>
   <p>Choosing applies at once, as the panel does today, and is kept in
-  <code>/home/.appearance</code> as three things: the look, the wallpaper and the
-  height.</p>
+  <code>/home/.appearance</code>: the look, the wallpaper, and the size once it
+  exists.</p>
+
+  <h2>Size: everything at once, not the fonts alone</h2>
+  <p>Diego, on the ThinkPad, where the fonts read small on a 14-inch
+  1920 × 1080 panel: a setting "like Windows does", "a factor multiplier of all
+  the things in the UI", "Something like that slider of iOS". It replaces making
+  the fonts two sizes bigger. A font that grows alone is what broke layouts
+  before the layout was fixed. A size that grows everything together, the rows,
+  buttons, tabs, the Deskbar and the fonts inside them, keeps every window in
+  proportion at every step.</p>
+  <p>Move the slider above. The window below is drawn at the kit's real pixel
+  sizes times the step: the Deskbar, a tab, list rows, a field and a button.</p>
+  <div class="scaled" id="scaled">
+    <div class="sdesk">
+      <div class="sbar"><span class="ico"></span><b>Kosmos</b><span class="sp"></span><span class="ico"></span><span>43%</span><span>Tue 22 Sep 14:51</span></div>
+      <div class="swin">
+        <div class="stab">Tracker</div>
+        <div class="sbody">
+          <div class="slist"><div>Desktop</div><div class="on">Documents</div><div>screenshot-2026-09-22-14-51.png</div></div>
+          <div class="srow"><div class="sfield">Search</div><span class="sbtn">Open</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p><b>How it would be built</b>, in one sentence per layer. Applications keep
+  giving sizes and positions in the numbers they use today. The window manager,
+  which already draws every kit window from its commands, multiplies them as it
+  draws. It renders each font at its size times the step, so text is drawn at
+  that size rather than magnified, and it averages icons down from Haiku's 64s.
+  A window that draws its own pixels, like a game, a film or the cube, is told
+  the step and chooses for itself. The pointer is divided back on the way in.</p>
 
   <h2>Decided, and one question</h2>
   <ol class="q">
     <li><b>The four looks</b>, approved on 22 September: "Those 4 looks are
     great". Built as 0.10.109.</li>
-    <li><b>Plex is a fresh machine's look</b>, and the wallpaper and the Deskbar's
-    height are what Appearance keeps beside the look - taken as recommended,
-    until you say otherwise.</li>
-    <li><b>Is the panel above right?</b> It's built once you say so, after the
-    fixed layout.</li>
+    <li><b>Plex is a fresh machine's look</b>, and the wallpaper is what
+    Appearance keeps beside it. The Deskbar's height left on 22 September: "fixed
+    at 32".</li>
+    <li><b>The panel</b>, approved on 22 September: "the panel is right, build
+    it". Built as 0.10.111.</li>
+    <li><b>The size slider</b>, approved on 22 September: "the proposed size
+    slider is great as it is", "with the %". Seven steps, as iOS has: 100, 110,
+    120, 135, 150, 175 and 200%, which includes the 1.2, 1.5 and 2 you named. At
+    150% the ThinkPad's screen is 1280 × 720 to a window, so a window wider than
+    that has to be made to fit. Not built yet (roadmap 5z).</li>
   </ol>
 </main>
+<script>
+  // The size slider: seven steps, and the sample window redrawn at each.
+  (function () {
+    var steps = [1, 1.1, 1.2, 1.35, 1.5, 1.75, 2];
+    var range = document.getElementById("size");
+    var out = document.getElementById("size-out");
+    var note = document.getElementById("size-note");
+    var scaled = document.getElementById("scaled");
+
+    function show() {
+      var s = steps[Number(range.value)] || 1;
+      var w = Math.round(1920 / s), h = Math.round(1080 / s);
+
+      out.textContent = Math.round(s * 100) + "%";
+      scaled.style.setProperty("--s", s);
+      note.textContent = s === 1
+        ? "Everything at its drawn size. The screen is 1920 × 1080."
+        : "Everything " + Math.round(s * 100) + "% of its drawn size. To a window, the screen is " + w + " × " + h + ".";
+    }
+
+    range.addEventListener("input", show);
+    show();
+  })();
+</script>
 </body>
 </html>

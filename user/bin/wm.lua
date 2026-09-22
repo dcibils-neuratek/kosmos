@@ -106,7 +106,10 @@ local theme = use("/lib/theme.lua")
 -- Six more, because that is what the machine says is comfortable. The
 -- controls stay fourteen: a bigger handle, not bigger buttons.
 --
-local TAB_H      = 26
+-- **Read from the fixed layout** (`theme.metrics.tab`), which said 20 for
+-- as long as this said 26 - the one number, kept in one place.
+--
+local TAB_H      = theme.metrics.tab
 local BORDER     = 2
 --
 -- The three controls on a tab, and the room they take.
@@ -403,12 +406,6 @@ local function load_appearance()
     end
   end
   if saved.desktop then theme.override { desktop = saved.desktop } end
-
-  -- And its height, within what the bar can hold (`roadmap.md` 5v).
-  if math.type(saved.bar_h) == "integer" and saved.bar_h >= theme.BAR_H_LEAST
-     and saved.bar_h <= theme.BAR_H_MOST then
-    theme.override { bar_h = saved.bar_h }
-  end
 
   --
   -- **`or theme.fonts`, and without it the desktop was two fonts at once.**
@@ -1379,12 +1376,17 @@ local ops = {
     -- The primitive arrived first and nothing could reach it: an
     -- application draws through commands, and no command carried a size.
     --
+    -- `smooth` averages what each pixel covers rather than taking the
+    -- nearest (`gfx.c`'s `stretch`): an icon drawn smaller than it is, where
+    -- nearest neighbour drops whole rows of its outline.
+    --
     local dw = tonumber(o.dw) or 0
     local dh = tonumber(o.dh) or 0
 
     if dw > 0 and dh > 0 then
       s:stretch(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
-                o.x or 0, o.y or 0, dw, dh, o.alpha and 255 or nil)
+                o.x or 0, o.y or 0, dw, dh, o.alpha and 255 or nil,
+                o.smooth == true)
     elseif o.alpha then
       s:blend(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
               o.x or 0, o.y or 0)
@@ -4480,11 +4482,6 @@ handlers.theme = function(req)
   -- so a light theme over a dark desktop is a thing somebody can have.
   if req.desktop then
     theme.override { desktop = req.desktop }
-  end
-
-  if math.type(req.bar_h) == "integer" and req.bar_h >= theme.BAR_H_LEAST
-     and req.bar_h <= theme.BAR_H_MOST then
-    theme.override { bar_h = req.bar_h }
   end
 
   -- The font travels with the palette, because they are the same decision
