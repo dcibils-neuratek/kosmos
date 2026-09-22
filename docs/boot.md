@@ -454,6 +454,15 @@ address is.
   stick read back and compared with its image sector by sector, naming the
   file, and in the kernel the page and section, of anything that differs, and
   telling a macOS mount's bookkeeping from damage (`testing.md` §18.45).
+- **A stick from a GitHub release, on any Mac** (`tools/getstick.sh`, 22
+  September): `bash getstick.sh 0.10.115` downloads the release's image and
+  tools into `~/Downloads/kosmos-<version>`, holds both to the release's
+  `SHA256SUMS`, unpacks them, checks the image again, and hands it to the
+  release's own `mkusb.sh`, which asks for the drive as always. A release
+  with no `SHA256SUMS` is refused. A released stick's `/home` is empty: the
+  repository is public, and the sticks made on the development Mac carry
+  files that must never be published. `tools/test_getstick.py` runs it
+  against a release made on the local disk (`testing.md` §18.146).
 
 **What QEMU cannot show**: the ThinkPad's own map at the moment the loader
 runs, whether its firmware writes into memory it has handed out, and the

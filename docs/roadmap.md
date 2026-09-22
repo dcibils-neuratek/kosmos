@@ -1153,6 +1153,16 @@ processors, and still what follows USB:
    headings in Plex Sans SemiBold, a file added from the same family; and
    no rounded corners and no shadow for now.
 
+5zb. **DONE on 22 September - a released stick in one command**
+   (`tools/getstick.sh`, `testing.md` 18.146). Diego, on his MacBook Pro,
+   after writing 0.10.115 from GitHub by hand: "can we make 1 single script
+   that does all this commands at once? just passing by argument the version
+   number to download and write to the stick?" `bash getstick.sh 0.10.115`
+   downloads, checks against the release's `SHA256SUMS`, unpacks, and hands
+   over to the release's `mkusb.sh`; with no version it lists the releases
+   that have a stick. **Every stick release carries `SHA256SUMS` from now
+   on**, and an empty `/home`.
+
 5za. **AGREED on 22 September - icons at 16, 32 or 64, chosen where they
    are shown.** Diego: "with the new icon sizes we should also be able to
    select icon size on desktop, tracker icon view and else", and then, of

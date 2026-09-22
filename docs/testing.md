@@ -7674,3 +7674,36 @@ is great as it is", "with the %" - and "start on the size slider"
   prompt `wm appearance` was typed at already was, so the wait ended at
   once and the next command raced the window manager's exit. It waits from
   the stop now, as the other twenty-one stops did.
+
+## 18.146 A released stick, fetched and checked in one command
+
+**Diego, 22 September**, on his MacBook Pro after writing the 0.10.115
+stick from GitHub by hand: "can we make 1 single script that does all this
+commands at once? just passing by argument the version number to download
+and write to the stick?"
+
+`tools/getstick.sh <version>` finds the release's stick image, its tools and
+its `SHA256SUMS` by the API, downloads into `~/Downloads/kosmos-<version>`
+what is not there already and checking, holds the archive and the tools to
+the sums, unpacks, holds the image to its sum, and `exec`s the release's own
+`mkusb.sh` - which still lists only external drives and asks which. No
+version lists the releases with a stick; `--download-only` stops before the
+drive. A release with no `SHA256SUMS` is refused, and v0.10.115 was given
+one.
+
+### The checks
+
+- **`tools/test_getstick.py`**, in `host-check`, 8: against a release made
+  on the local disk - `GETSTICK_API` pointing at what the API would answer,
+  with `file://` addresses, and a `mkusb.sh` that only says what it was
+  handed - a good release reaches `mkusb.sh` with the published image; a
+  second run fetches nothing; `--download-only` stops short; a download
+  whose sum does not match is refused, saying so, and `mkusb.sh` is never
+  called; and a release with no sums is refused. **Control, watched**:
+  `check` returning at once lets the wrong download through to `mkusb.sh`,
+  and three checks fail.
+- **Against the real release**, by hand: 0.10.115 downloaded, checked and
+  unpacked with `--download-only`; a second run fetched nothing; no version
+  listed it; 0.10.99, which has no release, and an unknown option were
+  refused.
+
