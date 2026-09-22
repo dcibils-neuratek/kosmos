@@ -20,7 +20,15 @@ Last updated: 2026-09-22
 
 ## 22 September: four looks, one layout, a 32-pixel Deskbar, and a scale next
 
-**Pushed today: 0.10.106 to 0.10.111 (`df00586`)**, and the tags for every
+**Pushed today: 0.10.106 to 0.10.115 (`3160169`)**, the last four after a
+green `make prepush` and `make stress`, and **released as a stick on
+GitHub**: <https://github.com/dcibils-neuratek/kosmos/releases/tag/v0.10.115>
+- the image gzipped (15 MB) and `mkusb.sh` with the two scripts it runs, so
+Diego can write it from his MacBook Pro. **Its `/home` is empty**: the
+repository is public, and the sticks made here carry `~/Kosmos/home` -
+commercial ROMs, a Green Day MP3, a film clip, his photographs - which must
+never be published. Booted under OVMF (29 checks); not yet on the ThinkPad.
+Earlier the same day: **pushed 0.10.106 to 0.10.111 (`df00586`)**, and the tags for every
 revision from 0.10.92 on (0.10.99 was never committed). **Stick
 `kosmos-usb-0.10.111-development.img` is on the ThinkPad**; 0.10.88 is still
 the stable one. The older development images went to the Trash.
