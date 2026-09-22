@@ -115,7 +115,16 @@ the stable one. The older development images went to the Trash.
   outstanding on its interrupt endpoint for the link. QEMU's `usb-net`
   never sends a notification, so the link and its speed are held by
   `usb_decode_notify` on the host and will be seen first on the ThinkPad.
-  **Next: 7c**, one frame out and one in.
+- **And frames move on it, both ways** (5m-c, `usb.md` 7c, 18.150) -
+  committed and not pushed. `opt/kosmos/ethprobe=<mine>,<theirs>` sends two
+  ARP requests and writes down what comes back; QEMU's gateway answers both.
+  **Two requests, because the second is the zero-length packet's test**: it
+  is padded to a multiple of the endpoint's packet, which is the case ECM
+  3.3.1 is about, and without the rule one answer comes back instead of two.
+  The probe stays as a diagnostic - is the *adapter* moving frames, asked
+  separately from whether the stack is. **Next: 7d**, the frames reaching
+  `net.c` through a ring in a region rather than the kernel's virtio
+  syscalls, which is the design decision of the lot.
 - **Queued after the network**: the scale's third stage (5z) - the screen's size in
   points before a window opens, which is what Lite XL needs, and the
   window manager's own drawings that are not windows: the pointer, the

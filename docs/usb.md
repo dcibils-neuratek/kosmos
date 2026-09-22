@@ -2031,21 +2031,81 @@ rates (CDC 1.2 6.3.1, 6.3.3) - and says how long each notification is,
 because a transfer may carry more than one. Only a *change* is logged, so an
 adapter that repeats itself does not fill the screen.
 
-### What QEMU cannot show
+### 7c: frames, both ways
 
-**Its `usb-net` never sends a notification.** Forty seconds of one running
-produced none on the interrupt endpoint, so NETWORK_CONNECTION and
-CONNECTION_SPEED_CHANGE are read by `test_usbdecode` on the host - including
-RNDIS's RESPONSE_AVAILABLE, which arrives on the same endpoint when a device
-is put in its other configuration - and are seen for the first time on real
-hardware. What the gate can say is that nothing waits for one: the driver
-reaches its watch loop with a read outstanding and every other device on the
-machine still working.
+**A frame is one bulk transfer, ended by a short packet.** Out on the bulk
+OUT, in on the bulk IN, one frame a transfer (ECM 1.2 3.3.1) - which is why
+a read is queued with `TRB_ISP` and why a short completion is success here
+rather than a fault.
+
+**And a frame whose length is an exact multiple of the endpoint's packet is
+followed by a zero-length one.** Without it the adapter is still waiting for
+the rest of a frame that has already ended, and the next frame sent joins the
+end of this one. It costs a second transfer on exactly the lengths that need
+it - 64, 128, 512, 1024 - and nothing on any other.
+
+**One read outstanding**, as a mouse's report is: the next is queued when one
+comes back, served in `wait_serving` beside every other device on the
+machine. Frames that arrive while this end is busy are NAKed and sent again,
+which is what a bulk endpoint is for. Several reads in flight is what makes
+a link *fast* rather than what makes it work, and it belongs with the ring
+that carries frames to the stack (7d).
+
+**The frames live in a page of their own**, a contiguous run the controller
+can reach, made with the same three calls a stick's transfer buffer is: a
+frame each way with room to spare, since the largest an ECM adapter will
+claim is 1514.
+
+#### `opt/kosmos/ethprobe`, the diagnostic that proves it
+
+```
+opt/kosmos/ethprobe=10.0.2.15,10.0.2.2      this machine, then who to ask about
+```
+
+The driver sends **two ARP requests** and writes down the first four frames
+that arrive with their length, their source and their type:
+
+```
+xhci: 00:02.0 port 5: asking who has 10.0.2.2, twice - 60 bytes and 64 - as opt/kosmos/ethprobe asks
+xhci: 00:02.0 port 5: a frame of 64 bytes from 52:55:0a:00:02:02, type 0806 (ARP)
+xhci: 00:02.0 port 5: its link is up
+xhci: 00:02.0 port 5: a frame of 64 bytes from 52:55:0a:00:02:02, type 0806 (ARP)
+```
+
+ARP is the right first traffic: small, unsolicited, and something on the
+other end answers without being asked twice (RFC 826).
+
+**Two requests, and the second one is the zero-length packet's test.** The
+first is 60 bytes, Ethernet's shortest frame, which no endpoint's packet size
+divides. The second is padded to a multiple of the bulk OUT endpoint's packet
+- 64 on QEMU's adapter, 512 on a high-speed one - which is exactly the case
+3.3.1 is about. A driver without the rule gets one answer instead of two,
+which is a test rather than a specification quoted in a comment. Padding an
+ARP request is legal and every receiver ignores it.
+
+**It is a diagnostic and it stays one.** From 7d the stack sends the real
+traffic; what this is for afterwards is the question a person standing in
+front of the ThinkPad wants answered - *is the adapter moving frames* -
+separately from whether the stack above it is. It is off unless the option
+is there, so nothing this machine has not been told to send goes out.
+
+#### What QEMU shows, and when
+
+**Its `usb-net` sends no notification at all while nothing moves.** A
+forty-second boot with an idle adapter produced none on the interrupt
+endpoint. With frames moving, NETWORK_CONNECTION arrives and the link is
+said. That is an observation rather than a mechanism, and what it means for
+the driver is only what was true anyway: the read is outstanding and nothing
+waits on it.
+
+**CONNECTION_SPEED_CHANGE never arrives**, so the two rates are read by
+`usb_decode_notify` under `test_usbdecode` on the host - along with RNDIS's
+RESPONSE_AVAILABLE, which lands on the same endpoint when a device is put in
+its other configuration - and will be seen for the first time on the
+ThinkPad's dongle.
 
 ### What comes next
 
-- **7c**: one frame out and one in, ARP; a frame that fills its last packet
-  exactly is followed by a zero-length one (ECM 3.3.1).
 - **7d**: the frames reach `net.c` through a ring in a region, not the
   kernel's virtio syscalls (`roadmap.md` 5m-d).
 
@@ -2060,15 +2120,18 @@ machine still working.
   of 16 and a short configuration, each refused. The MAC string, and eleven
   characters, a G, a character past U+00FF and a string one byte short,
   refused - with the answer untouched by a failure on the last digit.
-- `run_x86.py`'s `usb_ethernet`, eight: QEMU's `usb-net` with a MAC this
+- `run_x86.py`'s `usb_ethernet`, twelve: QEMU's `usb-net` with a MAC this
   machine chose, which must come back from the adapter's string; its ECM
   configuration, its largest frame, its setting and its endpoints; that it
   is then configured, with the setting the *device* reports and the filter
-  it accepted; and that nothing in the sequence was refused.
-  **Controls**, three: the driver reading only the first configuration says
+  it accepted; that nothing in the sequence was refused; both ARP requests
+  out; both answered by the gateway at 10.0.2.2; and the link said.
+  **Controls**, four: the driver reading only the first configuration says
   `class 02/02/ff - nothing here reads it`; a SET_INTERFACE never sent leaves
-  the adapter saying it is on setting 0; and a filter asked for with the
-  wrong request number is refused, and the line says so.
+  the adapter saying it is on setting 0; a filter asked for with the wrong
+  request number is refused, and the line says so; and a frame of exactly a
+  packet sent without the zero-length packet after it gets one answer
+  instead of two.
 
 ## Sources
 

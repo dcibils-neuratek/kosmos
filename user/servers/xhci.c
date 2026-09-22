@@ -468,6 +468,25 @@ struct ether {
     uint32_t      downstream;
     bool          speed_said;
 
+    /*
+     * **Where frames go**, a run of its own the controller can reach, the
+     * same three calls a stick's transfer buffer is made with: the frame
+     * being sent at the front and the one being received behind it.
+     *
+     * **One read outstanding**, as a mouse's report is. Frames that arrive
+     * back to back while this end is busy are NAKed and sent again by the
+     * adapter, which is what a bulk endpoint is for; several reads in flight
+     * is what makes a link fast rather than what makes it work, and it
+     * belongs with the ring that carries frames to the stack (7d).
+     */
+    long          frames_cap;
+    uintptr_t     frames;               /* mapped here, or 0 for none */
+    uint64_t      frames_bus;
+    bool          receiving;            /* a read is out on the bulk IN */
+    unsigned long received;
+    unsigned long sent;
+    unsigned      said_frames;          /* of those, written down */
+
     /* Its device, kept, for the same reason a stick keeps one. */
     struct device dev;
 };
@@ -949,8 +968,23 @@ static bool is_note(const struct controller *c, const uint32_t *event)
            && TRB_ENDPOINT_OF(event[3]) == c->ether[slot].notify_dci;
 }
 
+/*
+ * And a frame off an adapter's bulk IN, for the same reason: it arrives
+ * whenever something on the wire sends one, which is not when anything here
+ * asked.
+ */
+static bool is_frame(const struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+
+    return TRB_TYPE_OF(event[3]) == TRB_TRANSFER && slot != 0
+           && slot <= DEVICES_MAX && c->ether[slot].receiving
+           && TRB_ENDPOINT_OF(event[3]) == c->ether[slot].in_dci;
+}
+
 static void take_report(struct controller *c, const uint32_t *event);
 static void take_note(struct controller *c, const uint32_t *event);
+static void take_frame(struct controller *c, const uint32_t *event);
 
 /*
  * **A wait that goes on reading mice.** Until `c` has an event that is not a
@@ -1018,13 +1052,14 @@ static bool wait_serving(struct controller *c, unsigned long ms,
 
             while (take_event(o, event)) {
                 if (o == c && out != NULL && !is_report(o, event)
-                    && !is_note(o, event)) {
+                    && !is_note(o, event) && !is_frame(o, event)) {
                     memcpy(out, event, sizeof(event));
                     return true;
                 }
 
                 take_report(o, event);
                 take_note(o, event);
+                take_frame(o, event);
             }
         }
 
@@ -3129,6 +3164,359 @@ static void use_stick(struct controller *c, struct device *d,
                                | ETH_FILTER_MULTICAST)
 
 /*
+ * **Where an adapter's frames live**: a run of its own the controller can
+ * reach, made with the same three calls a stick's transfer buffer is
+ * (`stick_buffer`), and refused for the same reason when the controller
+ * addresses 32 bits and the run is above 4 GB.
+ *
+ * One page, which holds a frame each way with room to spare: an ECM adapter
+ * says how large a frame it carries and the largest anything will say is
+ * 1514, so 2048 each way is the round number above it.
+ */
+#define ETHER_PAGES         1u
+#define ETHER_SLOT          2048u
+#define ETHER_OUT_AT        0u
+#define ETHER_IN_AT         ETHER_SLOT
+
+static bool ether_buffer(const struct controller *c, struct ether *e)
+{
+    long region = kosmos_mem_create_flags(ETHER_PAGES, MEM_CONTIGUOUS);
+    long mapped = region < 0 ? region : kosmos_mem_map(region);
+    long bus = mapped < 0 ? mapped : kosmos_mem_phys(region);
+
+    if (region < 0 || mapped < 0 || bus <= 0) {
+        return false;
+    }
+
+    if (!c->ac64 && (uint64_t)bus + ETHER_PAGES * PAGE > 0x100000000ull) {
+        return false;
+    }
+
+    e->frames_cap = region;
+    e->frames = (uintptr_t)mapped;
+    e->frames_bus = (uint64_t)bus;
+    return true;
+}
+
+/*
+ * One read out on the adapter's bulk IN, for the next frame that arrives.
+ *
+ * A frame is one transfer, ended by a packet shorter than the endpoint's -
+ * which is what `TRB_ISP` is for, and why a short completion is success
+ * here rather than a fault (ECM 1.2 3.3.1).
+ */
+static void ask_for_frame(struct controller *c, unsigned slot)
+{
+    struct ether *e = &c->ether[slot];
+
+    if (e->frames == 0) {
+        return;
+    }
+
+    e->receiving = true;
+    (void)ring_push(&e->in, (uint32_t)(e->frames_bus + ETHER_IN_AT),
+                    (uint32_t)((e->frames_bus + ETHER_IN_AT) >> 32),
+                    ETHER_SLOT, TRB_TYPE(TRB_NORMAL) | TRB_ISP | TRB_IOC);
+    mmio_write32(c->doorbells + 4u * slot, e->in_dci);
+}
+
+/*
+ * **A frame out**, and the zero-length packet that has to follow one whose
+ * length is an exact multiple of the endpoint's packet (ECM 1.2 3.3.1).
+ *
+ * Without it the adapter is still waiting for the rest of a frame that has
+ * already ended, and the next frame sent joins the end of this one. It costs
+ * a second transfer on exactly the lengths that need it - 64, 128, 512,
+ * 1024 - and nothing on any other.
+ *
+ * Synchronous, because there is one frame in the buffer: the caller has the
+ * frame in hand and a bulk OUT that is refused is a frame that was not sent,
+ * which is something the caller has to know. `wait_serving` goes on reading
+ * every other device on the machine while this waits.
+ */
+static bool ether_send(struct controller *c, unsigned slot,
+                       const uint8_t *frame, unsigned length,
+                       unsigned packet)
+{
+    struct ether *e = &c->ether[slot];
+    unsigned moved = 0;
+
+    if (e->frames == 0 || length == 0 || length > ETHER_SLOT) {
+        return false;
+    }
+
+    memcpy((uint8_t *)(e->frames + ETHER_OUT_AT), frame, length);
+
+    if (!bulk(c, slot, e->out_dci, &e->out, e->frames_bus + ETHER_OUT_AT,
+              length, &moved) || moved != length) {
+        return false;
+    }
+
+    if (packet != 0 && length % packet == 0) {
+        if (!bulk(c, slot, e->out_dci, &e->out, e->frames_bus + ETHER_OUT_AT,
+                  0, &moved)) {
+            return false;
+        }
+    }
+
+    e->sent++;
+    return true;
+}
+
+/*
+ * **A frame in.**
+ *
+ * Today it is written down and dropped: the first four with what they are,
+ * and the rest counted. Step 7d hands them to `net.c` through a ring, and
+ * this is where that will happen - the point of doing it in two steps is
+ * that a frame that never arrives is a fault in the adapter, the endpoint or
+ * the setting, and a frame that arrives and is not understood is a fault
+ * somewhere else entirely.
+ */
+static void take_frame(struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+    struct say_line line;
+    struct ether *e;
+    const uint8_t *frame;
+    uint32_t code, left;
+    unsigned got, type, i;
+
+    if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER || slot == 0
+        || slot > DEVICES_MAX) {
+        return;
+    }
+
+    e = &c->ether[slot];
+
+    if (!e->receiving || TRB_ENDPOINT_OF(event[3]) != e->in_dci) {
+        return;
+    }
+
+    code = TRB_CODE_OF(event[2]);
+    left = TRB_LEFT_OF(event[2]);
+
+    if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
+        e->receiving = false;
+
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, e->port);
+        say_text(&line, ": a frame failed to arrive: ");
+        say_text(&line, completion_name(code));
+        say_text(&line, " (");
+        say_dec(&line, code);
+        say_text(&line, "); nothing is read from it until it is plugged in "
+                        "again");
+        say_send(console, &line);
+        return;
+    }
+
+    got = left < ETHER_SLOT ? ETHER_SLOT - left : 0u;
+    frame = (const uint8_t *)(e->frames + ETHER_IN_AT);
+
+    /* A zero-length packet is the end of the one before it, not a frame. */
+    if (got >= 14u) {
+        e->received++;
+
+        if (e->said_frames < 4u) {
+            e->said_frames++;
+            type = ((unsigned)frame[12] << 8) | frame[13];
+
+            about(&line, c);
+            say_text(&line, " port ");
+            say_dec(&line, e->port);
+            say_text(&line, ": a frame of ");
+            say_dec(&line, got);
+            say_text(&line, " bytes from ");
+
+            for (i = 0; i < 6u; i++) {
+                if (i != 0) {
+                    say_text(&line, ":");
+                }
+
+                say_hex(&line, frame[6u + i], 2);
+            }
+
+            say_text(&line, ", type ");
+            say_hex(&line, type, 4);
+
+            if (type == 0x0806u) {
+                say_text(&line, " (ARP)");
+            } else if (type == 0x0800u) {
+                say_text(&line, " (IPv4)");
+            } else if (type == 0x86DDu) {
+                say_text(&line, " (IPv6)");
+            }
+
+            say_send(console, &line);
+        }
+    }
+
+    ask_for_frame(c, slot);
+}
+
+/*
+ * **Two ARP requests, when `opt/kosmos/ethprobe` asks for them.**
+ *
+ * `opt/kosmos/ethprobe=10.0.2.15,10.0.2.2`: this machine's address, then the
+ * one to ask about. A frame goes out and something on the other end answers
+ * without being asked twice, which is the smallest useful traffic there is
+ * and is what step 7c is proved with (RFC 826).
+ *
+ * **Two, and the second one is the zero-length packet's test.** The first is
+ * 60 bytes, Ethernet's shortest frame, which no endpoint's packet size
+ * divides. The second is padded to a multiple of the bulk OUT endpoint's
+ * packet - 64 bytes on QEMU's adapter, 512 on a high-speed one - which is
+ * exactly the length that needs a zero-length packet after it (ECM 1.2
+ * 3.3.1), because otherwise the adapter is still waiting for the rest of a
+ * frame that has already ended. A driver without that rule gets one answer
+ * and not two, which is a test rather than a specification quoted in a
+ * comment. Padding an ARP request is legal and every receiver ignores it.
+ *
+ * **It is a diagnostic and it stays one.** The stack sends the real ARP from
+ * 7d on; what this is for afterwards is the question a person standing in
+ * front of the ThinkPad wants answered - is the *adapter* moving frames -
+ * separately from whether the stack above it is. It is off unless the option
+ * is there, so nothing this machine has not been told to send goes out.
+ */
+static bool dotted_quad(const char **at, const char *end, uint8_t out[4])
+{
+    unsigned part;
+
+    for (part = 0; part < 4u; part++) {
+        unsigned value = 0, digits = 0;
+
+        while (*at < end && **at >= '0' && **at <= '9' && digits < 3u) {
+            value = value * 10u + (unsigned)(*(*at)++ - '0');
+            digits++;
+        }
+
+        if (digits == 0 || value > 255u) {
+            return false;
+        }
+
+        out[part] = (uint8_t)value;
+
+        if (part < 3u) {
+            if (*at >= end || **at != '.') {
+                return false;
+            }
+
+            (*at)++;
+        }
+    }
+
+    return true;
+}
+
+#define ETHER_LEAST         60u         /* Ethernet's shortest frame, less FCS */
+#define ARP_REQUEST_BYTES   42u
+
+static void ether_probe(struct controller *c, unsigned slot, unsigned packet,
+                        struct say_line *line)
+{
+    struct ether *e = &c->ether[slot];
+    char option[40];
+    uint8_t frame[ETHER_SLOT], mine[4], theirs[4];
+    const char *at, *end;
+    unsigned padded, i;
+    long length = kosmos_boot_option("opt/kosmos/ethprobe", option,
+                                     sizeof(option));
+
+    if (length <= 0 || (unsigned long)length >= sizeof(option)
+        || !e->have_mac) {
+        return;
+    }
+
+    at = option;
+    end = option + length;
+
+    if (!dotted_quad(&at, end, mine) || at >= end || *at != ','
+        || (at++, !dotted_quad(&at, end, theirs))) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, e->port);
+        say_text(line, ": opt/kosmos/ethprobe wants two addresses, "
+                       "<mine>,<theirs>, and no frame is sent");
+        say_send(console, line);
+        return;
+    }
+
+    memset(frame, 0, ETHER_SLOT);
+    memset(frame, 0xFF, 6u);                    /* to everyone */
+    memcpy(frame + 6u, e->mac, 6u);
+    frame[12] = 0x08;
+    frame[13] = 0x06;                           /* ARP */
+    frame[15] = 1u;                             /* Ethernet */
+    frame[16] = 0x08;                           /* IPv4 */
+    frame[18] = 6u;                             /* a hardware address */
+    frame[19] = 4u;                             /* a protocol address */
+    frame[21] = 1u;                             /* a request */
+    memcpy(frame + 22u, e->mac, 6u);
+    memcpy(frame + 28u, mine, 4u);
+    memcpy(frame + 38u, theirs, 4u);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, e->port);
+    /*
+     * The second one's length: the smallest multiple of the endpoint's
+     * packet that holds a request, so it is the case ECM 3.3.1 is about.
+     * An endpoint whose packet is larger than a frame gets one frame only.
+     */
+    padded = packet != 0 ? ((ETHER_LEAST + packet - 1u) / packet) * packet : 0u;
+
+    if (padded > ETHER_SLOT) {
+        padded = 0;
+    }
+
+    say_text(line, ": asking who has ");
+
+    for (i = 0; i < 4u; i++) {
+        if (i != 0) {
+            say_text(line, ".");
+        }
+
+        say_dec(line, theirs[i]);
+    }
+
+    say_text(line, ", twice - ");
+    say_dec(line, ETHER_LEAST);
+    say_text(line, " bytes and ");
+    say_dec(line, padded);
+    say_text(line, " - as opt/kosmos/ethprobe asks");
+
+    /*
+     * Said before they are sent, not after. `ether_send` waits for the
+     * transfer, and a wait goes on serving every device on the machine - so
+     * the answer to the first request is read, and written down, while this
+     * line is still being composed. The log showed the reply above the
+     * question.
+     */
+    say_send(console, line);
+
+    for (i = 0; i < 2u; i++) {
+        unsigned bytes = i == 0 ? ETHER_LEAST : padded;
+
+        if (bytes == 0) {
+            continue;
+        }
+
+        if (!ether_send(c, slot, frame, bytes, packet)) {
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, e->port);
+            say_text(line, ": the ");
+            say_dec(line, bytes);
+            say_text(line, "-byte frame would not go out: ");
+            say_text(line, completion_name(c->last_code));
+            say_send(console, line);
+        }
+    }
+}
+
+/*
  * One request out on the adapter's interrupt endpoint, for the next thing it
  * has to say about its link. A mouse's reports work the same way and for the
  * same reason (`ask_for_report`): one request is outstanding, and the next
@@ -3498,6 +3886,21 @@ static void use_ethernet(struct controller *c, struct device *d,
     if (e->notify_dci != 0) {
         ask_for_note(c, d->slot);
     }
+
+    /*
+     * And the frames: somewhere to put them, a read outstanding for the next
+     * one to arrive, and - only if `opt/kosmos/ethprobe` asks - one ARP
+     * request, which is the smallest traffic that makes something answer.
+     */
+    if (!ether_buffer(c, e)) {
+        c->last_code = CC_SUCCESS;
+        say_failure(c, d->port, "a frame buffer the controller can reach",
+                    " could not be had; no frame moves", line);
+        return;
+    }
+
+    ask_for_frame(c, d->slot);
+    ether_probe(c, d->slot, ecm->bulk_out_packet, line);
 }
 
 /*

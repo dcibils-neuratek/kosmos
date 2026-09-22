@@ -7901,11 +7901,60 @@ for whatever it says about its link.
 - **Only the first configuration read** (the 7a control, still watched): the
   driver says `class 02/02/ff - nothing here reads it`.
 
-### What QEMU cannot show
+### What QEMU shows, and when
 
-**Its `usb-net` never sends a notification at all.** A forty-second boot with
-one plugged in produced nothing on the interrupt endpoint, so the link, its
-speed and the decoding of both are held on the host and will be seen for the
-first time on the ThinkPad. What the machine test can say, and does, is that
-nothing waits for one: the driver reaches its watch loop with a read
-outstanding, and every other device on the machine goes on working.
+**Its `usb-net` sends no notification while nothing moves.** A forty-second
+boot with an idle adapter produced nothing on the interrupt endpoint. This
+section said "never", and 18.150's probe corrected it the same day: with
+frames moving, NETWORK_CONNECTION arrives and the link is said. The speed
+still never comes, so CONNECTION_SPEED_CHANGE stays a host claim.
+
+What the machine test can say either way, and does, is that nothing waits for
+a notification: the driver reaches its watch loop with a read outstanding,
+and every other device on the machine goes on working.
+
+## 18.150 Frames on the Ethernet adapter, both ways
+
+`usb.md` step 7c, `roadmap.md` 5m-c. A frame is one bulk transfer ended by a
+short packet; one read is outstanding at a time and the next is queued when
+one comes back, served in `wait_serving` beside every other device. The frames
+live in a page of their own that the controller can reach.
+
+### The checks
+
+`run_x86.py`'s `usb_ethernet`, now twelve - everything 7a and 7b checked, and
+four more with `opt/kosmos/ethprobe=10.0.2.15,10.0.2.2` in front of the boot:
+
+- both ARP requests went out, at 60 bytes and 64;
+- at least one reply came back from QEMU's gateway at 10.0.2.2, whose MAC is
+  `52:55:` and the address's four bytes;
+- **two** replies came back, which is the zero-length packet's check;
+- and the adapter said its link was up.
+
+**The comma in the option is doubled on QEMU's command line.** Its own option
+parser takes a single one as the end of the value, and a run with one comma
+produced no machine at all rather than an error worth reading.
+
+### The control that is the point of the step
+
+**A frame of exactly one packet, sent without a zero-length packet after it.**
+ECM 1.2 3.3.1: a frame whose length the endpoint's packet size divides has to
+be followed by an empty packet, or the adapter is still waiting for the rest
+of a frame that has already ended. Removing those three lines: one reply comes
+back instead of two, and the check says so by name.
+
+That is why the probe sends **two** requests rather than one. A 42- or 60-byte
+ARP request never exercises the rule at all - no endpoint's packet size
+divides 60 - so a driver without it would have passed a one-request test and
+failed the first time a 512-byte packet went out on the ThinkPad. The second
+request is padded to a multiple of the endpoint's packet, which is legal ARP
+and which every receiver ignores the padding of.
+
+### The probe stays
+
+It is a diagnostic rather than scaffolding. From 5m-d the stack sends the real
+traffic, and the question this answers - *is the adapter moving frames* -
+stops being answerable from the stack's behaviour, which is exactly when
+somebody standing in front of the ThinkPad wants it. It is off unless
+`opt/kosmos/ethprobe` is there, so nothing the machine was not told to send
+goes out.

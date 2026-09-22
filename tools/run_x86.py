@@ -3845,7 +3845,9 @@ def core(image, check, fails):
 
 
 def usb_ethernet(image, check):
-    """A USB Ethernet adapter, named and configured - `usb.md` steps 7a, 7b.
+    """A USB Ethernet adapter, named, configured, and moving frames.
+
+    `usb.md` steps 7a, 7b and 7c.
 
     QEMU's `usb-net` is a CDC Ethernet device with two configurations,
     RNDIS first and CDC-ECM second. That is the shape of Diego's RTL8153,
@@ -3874,17 +3876,34 @@ def usb_ethernet(image, check):
     is 7c. So the driver asks GET_INTERFACE and prints what comes back, and a
     driver that never sent SET_INTERFACE prints a 0 here.
 
-    **What QEMU cannot show is the link.** Its `usb-net` never sends a
-    notification on the interrupt endpoint - forty seconds of one running
-    produced none - so NETWORK_CONNECTION and CONNECTION_SPEED_CHANGE are
-    read by `test_usbdecode` on the host and seen for the first time on real
-    hardware. What this can say is that nothing waits for one: the driver
-    reaches its watch loop with a read outstanding.
+    **And then frames move** (7c). `opt/kosmos/ethprobe` asks the driver for
+    two ARP requests, and QEMU's user networking answers both from its
+    gateway at 10.0.2.2, whose MAC is 52:55: and the address's four bytes.
+
+    **Two requests, because the second one is the zero-length packet's
+    test.** The first is 60 bytes, Ethernet's shortest, which no endpoint's
+    packet size divides; the second is padded to a multiple of the bulk OUT
+    endpoint's packet - 64 here - which is exactly the length ECM 1.2 3.3.1
+    wants a zero-length packet after, since otherwise the adapter is still
+    waiting for the rest of a frame that has already ended. Without that rule
+    one answer comes back instead of two, which is a test rather than a
+    specification quoted in a comment.
+
+    **The link arrives with the traffic.** QEMU's adapter sent no
+    notification at all through forty seconds of an idle link; with frames
+    moving, NETWORK_CONNECTION comes. That is an observation and not a
+    mechanism - what it means for the driver is only that the read is
+    outstanding and nothing waits on it.
+
+    **The comma in the option is doubled** on the command line: QEMU's own
+    option parser takes a single one as the end of the value.
     """
     mac = "52:54:00:4b:4d:53"
     extra = ("-device", "qemu-xhci,id=usb0",
              "-netdev", "user,id=usbnet",
-             "-device", "usb-net,bus=usb0.0,netdev=usbnet,mac=" + mac)
+             "-device", "usb-net,bus=usb0.0,netdev=usbnet,mac=" + mac,
+             "-fw_cfg",
+             "name=opt/kosmos/ethprobe,string=10.0.2.15,,10.0.2.2")
 
     out = boot(image, None, 90.0, extra=extra, until="plugged in, ")
 
@@ -3952,6 +3971,39 @@ def usb_ethernet(image, check):
     check("is not driven" not in out and "no frame would ever arrive" not in out,
           "a request the adapter is configured with was refused:\n    "
           + shown)
+
+    #
+    # And frames: 7c. Both requests out, and both answered by the gateway.
+    #
+    asked = re.search(r"xhci: \S+ port \d+: asking who has 10\.0\.2\.2, twice - "
+                      r"(\d+) bytes and (\d+) -", out)
+
+    check(asked is not None and asked.groups() == ("60", "64"),
+          "the driver did not send two ARP requests of 60 and 64 bytes when "
+          "opt/kosmos/ethprobe asked for them:\n    " + shown)
+
+    replies = len(re.findall(r"xhci: \S+ port \d+: a frame of \d+ bytes from "
+                             r"52:55:0a:00:02:02, type 0806 \(ARP\)", out))
+
+    check(replies >= 1,
+          "no ARP reply came back from QEMU's gateway at 10.0.2.2, whose MAC "
+          "is 52:55: and the address's four bytes. A frame goes out on the "
+          "bulk OUT endpoint and comes back on the bulk IN; if the Data "
+          "interface is on setting 0 there are no endpoints to move it "
+          "on:\n    " + shown)
+
+    check(replies >= 2,
+          "only %d ARP reply came back and two requests went out. The second "
+          "is 64 bytes, an exact multiple of the endpoint's packet, and ECM "
+          "1.2 3.3.1 wants a zero-length packet after one of those - without "
+          "it the adapter is still waiting for the rest of a frame that has "
+          "already ended, and never sends it:\n    %s" % (replies, shown))
+
+    check("its link is up" in out,
+          "the adapter never said its link was up. QEMU's `usb-net` sends no "
+          "notification at all while nothing moves, and sends "
+          "NETWORK_CONNECTION once frames do - so this is downstream of the "
+          "probe above rather than a claim of its own:\n    " + shown)
 
 
 PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_ethernet', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']

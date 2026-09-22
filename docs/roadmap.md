@@ -1568,13 +1568,28 @@ processors, and still what follows USB:
      expected. The line prints what the device says, so a driver that never
      sent SET_INTERFACE prints a 0.
 
-     **QEMU's `usb-net` never sends a notification** - forty seconds of one
-     produced none - so the link and its speed are read by
-     `usb_decode_notify` under `test_usbdecode` on the host, and will be seen
-     for the first time on the ThinkPad.
-   - **5m-c. One frame out, one frame in.** ARP is the right first traffic:
-     small, unsolicited, and something on the other end answers without
-     being asked twice.
+     **QEMU's `usb-net` sends no notification while nothing moves** - forty
+     seconds of an idle adapter produced none - and sends NETWORK_CONNECTION
+     once frames do, which 5m-c's probe is what showed. Its speed never
+     arrives, so CONNECTION_SPEED_CHANGE is read by `usb_decode_notify` under
+     `test_usbdecode` on the host and will be seen first on the ThinkPad.
+   - **5m-c. DONE on 22 September - frames, both ways** (`usb.md` 7c,
+     `testing.md` 18.150). ARP is the right first traffic: small,
+     unsolicited, and something on the other end answers without being asked
+     twice. `opt/kosmos/ethprobe=<mine>,<theirs>` sends **two** requests and
+     writes down the frames that come back.
+
+     **Two, because the second is the zero-length packet's test.** The first
+     is 60 bytes, Ethernet's shortest; the second is padded to a multiple of
+     the bulk OUT endpoint's packet, which is exactly the length ECM 1.2
+     3.3.1 wants a zero-length packet after. Without the rule the adapter is
+     still waiting for the rest of a frame that has already ended and one
+     answer comes back instead of two - watched as a control.
+
+     **The probe stays, as a diagnostic.** From 5m-d the stack sends the real
+     traffic; what this answers afterwards is whether the *adapter* is moving
+     frames, separately from whether the stack above it is. Off unless the
+     option is there.
    - **5m-d. The frames reach `net.c`.** This is the design decision and it
      is not small. Today the stack calls `kosmos_net_send`/`recv`, which are
      *syscalls* into the kernel's virtio driver. The kernel must not learn
