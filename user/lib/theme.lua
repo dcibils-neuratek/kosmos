@@ -634,9 +634,11 @@ theme.fonts = {
   title   = { font = "ibmplexsanscondensed", px = 14 },
 
   -- Running text in the reading face, and the terminal in the one whose
-  -- columns line up - as `docs/looks.html` draws them.
+  -- columns line up - as `docs/looks.html` draws them. **The terminal at
+  -- 16 since 22 September**, where it was 14: Diego, on the ThinkPad, "the
+  -- monospace font in terminal and log view needs to be 16px at least".
   text    = { font = "ibmplexsans", px = 16 },
-  mono    = { font = "ibmplexmono", px = 14 },
+  mono    = { font = "ibmplexmono", px = 16 },
 
   -- A heading inside a window - "Library", "Palette" - which the guide
   -- names and the kit had no role for. Applications that want one stop

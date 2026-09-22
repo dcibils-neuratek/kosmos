@@ -83,7 +83,10 @@ local theme = ui.theme
 -- 420 it was, so it moves whenever the banner does - it is a constant
 -- precisely so that it can.
 --
-local W, H = 640, 580
+-- And a menu bar's row on top, since the View menu arrived (below): the
+-- console is the size it was, and the window one row taller.
+local BAR = ui.metrics.row
+local W, H = 640, 580 + BAR
 local SCROLLBACK = 400          -- lines kept
 
 local win, err = ui.window{ title = "Terminal", w = W, h = H, x = 90, y = 40 }
@@ -178,9 +181,25 @@ end
 -- monospace cell every pass, so the rows and the columns follow from the
 -- view being the right size. The bug was never in the arithmetic.
 --
-local view = ui.view{ x = 8, y = 8, w = W - 16, h = H - 20,
+local view = ui.view{ x = 8, y = BAR + 8, w = W - 16, h = H - BAR - 20,
                       follow = { left = true, right = true,
                                  top = true, bottom = true } }
+
+--
+-- **Its own text size**, from the View menu (`/lib/textsize.lua`): Diego,
+-- 22 September, "a way to increase font size in the menu of the log viewer
+-- and terminal". Kept in `/home/.terminal`. Everything below measures and
+-- draws in `size:face()` at `size:size()`, which is the desktop's `mono`
+-- until somebody chooses otherwise.
+--
+local textsize = use("/lib/textsize.lua")
+local size = textsize.new(ui, "/home/.terminal")
+
+win:add(ui.menubar{
+  x = 0, y = 0, w = W,
+  follow = { "left", "right", "top" },
+  menus = { { title = "View", items = size:items() } },
+})
 
 function view:draw(g)
   g:fill(0, 0, self.w, self.h, "console")
@@ -192,8 +211,9 @@ function view:draw(g)
   -- a terminal that sized its grid with it laid out rows and columns for a
   -- face it was not using.
   --
-  local MH = gfx.height("mono")
-  local MW = math.max(1, gfx.measure("0", "mono"))
+  local face, px = size:face(), size:size()
+  local MH = gfx.height(face)
+  local MW = math.max(1, gfx.measure("0", face))
 
   local rows = (self.h - 6) // MH
   local columns = (self.w - 8) // MW
@@ -230,19 +250,20 @@ function view:draw(g)
       -- window colour, and in a light theme that is black - which on a
       -- black console is nothing at all. A run with a colour of its own
       -- overrides it, and that is the only reason this is not a constant.
-      g:text(x, y, run.text, run.colour or "console_text", "console", "mono")
-      x = x + gfx.measure(run.text, "mono")
+      g:text(x, y, run.text, run.colour or "console_text", "console", "mono",
+             px)
+      x = x + gfx.measure(run.text, face)
     end
   end
 
   local y = 3 + #shown * MH
   local prompt = "> " .. input
 
-  g:text(4, y, prompt:sub(1, columns), "good", "console", "mono")
+  g:text(4, y, prompt:sub(1, columns), "good", "console", "mono", px)
 
   if busy then
     g:text(self.w - 12 * MW, 3, "running " .. busy,
-           "text_dim", "console", "mono")
+           "text_dim", "console", "mono", px)
   end
 
   if self.focused then

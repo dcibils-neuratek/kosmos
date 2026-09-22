@@ -1223,6 +1223,17 @@ processors, and still what follows USB:
    pixels - a game, a film, the cube - is told the step and chooses for
    itself; the pointer is divided back on the way in; and the window
    manager's own chrome, the tab and the border, scales with the rest.
+
+   **The drag, found on the ThinkPad and fixed** (0.10.116): Diego at 110
+   per cent, "if you grab a window by the titlebar ... you will see the
+   mouse is off by a margin", "even worse with more scale". The window
+   manager's own drag called the handler an application's `move` goes
+   through, with the screen's pixels - and that handler multiplies what it
+   is given, so the window went 1.1 or 1.5 times as far as the pointer and
+   slid out from under it. `move_window` places a window in pixels;
+   `handlers.move` converts points and calls it, as `resize_window` and
+   `handlers.resize` already did.
+
    Every step is a test at 100 and at 150 per cent. **The steps are
    agreed as drawn**, the percentage beside the slider included; the
    design goes into `ui.md` before code.
@@ -1536,6 +1547,39 @@ processors, and still what follows USB:
    commands on demand is a remote shell. On a wired link between two
    machines on one desk that is fine; it must be off unless asked for, and
    it must not be in a build that leaves the house.
+
+   - **5m-f. WANTED on 22 September - WiFi.** Diego bought a USB adapter
+     and plugged it into the ThinkPad: "Also I bought a WiFi adapter i
+     plugged it in and see the log". Kosmos read it exactly and said what
+     it could not do. It arrives as a 2 MB virtual disk, `0bda:a192`
+     "Realtek USB Disk autorun" - the driver CD a "Driver Free" adapter
+     carries for Windows - and nine seconds later unplugs itself and comes
+     back as `0bda:f192`, "802.11n WLAN Adapter", class ff/ff/ff: "nothing
+     here reads it". That is Realtek's RTL8192FU, and the dongle's
+     300 Mbps is its two chains.
+
+     **What it would take, and it is two pieces.** The *driver* is a USB
+     device with no public datasheet; and above it there is no 802.11 at
+     all - scanning, association, the WPA2 four-way handshake, CCMP over
+     AES, and rate control - which is ours to write whatever the adapter
+     is, and is the larger half.
+
+     **The licence decides which chip.** This project is MIT and does not
+     copy expression from GPL drivers (the same rule that made the Ethernet
+     driver a CDC-ECM class driver written from the USB-IF's
+     specifications). The RTL8192FU's only free driver is Linux's
+     `rtl8xxxu`, GPLv2. Two chips avoid that: an adapter whose Realtek part
+     is covered by OpenBSD's ISC-licensed `urtwn(4)` - the 8188CUS and
+     8192CU generation - and, better, **the ThinkPad's own Intel card**,
+     `8086:a0f0` at `00:14.3`, which `neofetch` already reports as "not
+     driven": OpenBSD's `iwx(4)` and its `net80211` stack are ISC, which is
+     compatible with MIT and attributable, and Intel publishes the firmware
+     under a licence that allows redistribution. So the likely answer is
+     the internal card with ISC code as the reference, and the dongle stays
+     the thing that proved the USB stack reads an unknown device correctly.
+
+     **Order**: after 5m-b and 5m-c, which put frames through the stack on
+     metal over a wire first - WiFi is that plus everything above.
 
 5k. **DONE on 21 September - a shared mapping gives its addresses back**
    (`testing.md` 18.132). Diego, on the ThinkPad: "the video player ran

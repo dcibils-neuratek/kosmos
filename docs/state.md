@@ -61,6 +61,22 @@ the stable one. The older development images went to the Trash.
   display phase no part runs. Left for the third stage: the screen's size
   in points before a window opens (Lite XL), and the window manager's own
   drawings that are not windows.
+- **0.10.116, committed and not pushed - the drag at a scale, and a text
+  size per window** (5z, 5zc, 18.147): the window manager's drag went
+  through the door an application's `move` uses, so a window moved further
+  than the pointer at any scale (Diego, at 110 per cent: "the mouse is off
+  by a margin"); the looks' `mono` is 16; and the Terminal and Log View
+  have a View menu with Larger text, Smaller text and Actual size, kept per
+  window. Also `getstick.sh`, a released stick downloaded, checked and
+  written in one command (5zb).
+- **0.10.115 booted on the ThinkPad from the GitHub release**, written on
+  his MacBook Pro: `log loader` clean, the desktop at 150 per cent kept
+  across a restart (`boot.md`'s table).
+- **A WiFi adapter arrived** (5m-f): a "Driver Free" dongle that is a
+  Realtek RTL8192FU behind a virtual driver CD. Kosmos read both halves and
+  said it has no driver for the second. What it would take, and why the
+  ThinkPad's own Intel card with OpenBSD's ISC code is the likelier path,
+  is in the roadmap.
 - **Queued: icons at 16, 32 or 64 per place** (5za), next.
 - **The fonts were not made bigger.** Diego asked for +2 everywhere and +4
   on the title, then for a scale instead - "a factor multiplier of all the

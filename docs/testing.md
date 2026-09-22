@@ -7707,3 +7707,56 @@ one.
   listed it; 0.10.99, which has no release, and an unknown option were
   refused.
 
+
+## 18.147 The drag at a scale, and a text size per window
+
+Three of Diego's from the ThinkPad running 0.10.115 at 110 and 150 per cent.
+
+- **"if you grab a window by the titlebar in 110%, you will see the mouse is
+  off by a margin", "even worse with more scale".** The window manager's own
+  drag called `handlers.move` - the door an *application* moves a window
+  through - with the screen's pixels, and since the scale that handler
+  multiplies what it is given. So the window moved 1.1 or 1.5 times as far
+  as the pointer and slid out from under it. `move_window(win, x, y, quiet)`
+  places a window in pixels and the handler converts points and calls it,
+  which is the shape `resize_window` and `handlers.resize` already had. The
+  keyboard's Control-W arrows went through the same door and are fixed with
+  it.
+- **"the monospace font in terminal and log view needs to be 16px at
+  least".** The four looks' `mono` was Plex Mono 14 and is 16.
+- **"a way to increase font size in the menu of the log viewer and
+  terminal".** Both windows have a menu bar with **View: Larger text,
+  Smaller text, Actual size**, and a size of their own in `/home/.terminal`
+  and `/home/.logview`. `/lib/textsize.lua` is the steps, the file and the
+  menu for both; the desktop's `mono` is Actual size and one of the stops,
+  so a window that has chosen nothing follows a look that changes it.
+
+### The checks
+
+- **The display harness's `scale` phase**, one more: at 150 per cent the
+  gallery dragged by its title bar 120 across and 60 down moves 120 across
+  and 60 down, measured by its selection bar before and after. **Control,
+  watched**: the drag calling `handlers.move` again fails it.
+- **Its `log view` phase**, one more: with a 20-pixel face, View → Larger
+  text makes the rows stand at least 24 apart. The menu is opened by
+  clicking its title and the item by where the window manager says the menu
+  went, rather than by arithmetic on the menu bar's padding.
+- **`tools/test_textsize.lua`**, in `host-check`, 20: the desktop's size
+  when nothing is saved, a step each way and each written down, the ends,
+  a hand-edited size taken to the nearest step, a desktop whose size is not
+  a step, and the menu's four items doing what they say. It found two bugs
+  while it was being written: `(px == default) and nil or px`, which cannot
+  give nil, so Actual size never cleared the saved size; and stepping that
+  skipped the desktop's own size when that was not one of the steps.
+- **`test_theme.lua`** holds the looks' `mono` at 16, and the harness's
+  `faces` phase and `PLEX_HELD` with it.
+- **Two measurements in the harness were brittle, and the menu bar showed
+  it.** `_log_view_area` took the bounding box of every pixel exactly the
+  console's colour: black text anti-aliased onto the new bar's grey lands
+  on `#0b0b0b` now and then, so the "area" began twenty pixels above the
+  view, inside the bar - and the corner where a check looks for "new lines
+  below" then held the bar's grey, which is ink. It takes the rows and
+  columns that are *mostly* console now. And `_terminal_grid` probed nine
+  pixels down from the window's corner for the grid's first row, which the
+  bar displaced; it looks for that row in the window's first seventy
+  instead, which holds with a bar or without one.

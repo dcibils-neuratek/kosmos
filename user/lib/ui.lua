@@ -3451,8 +3451,12 @@ local function apply_fonts(fonts)
     end
   end
 
-  -- The faces asked for by size were cut from the old fonts.
+  -- The faces asked for by size were cut from the old fonts - and their
+  -- slots are given back with them, since this cache is the only thing in
+  -- a process holding one (`gfx.release_faces`). Clearing it alone left the
+  -- slots taken, and a process told of new faces a few times ran out.
   sized_faces = {}
+  gfx.release_faces()
 end
 
 --

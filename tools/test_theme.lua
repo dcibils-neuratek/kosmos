@@ -146,7 +146,7 @@ do
     title   = { "ibmplexsanscondensed", 14 },
     heading = { "ibmplexsans-semibold", 15 },
     text    = { "ibmplexsans", 16 },
-    mono    = { "ibmplexmono", 14 },
+    mono    = { "ibmplexmono", 16 },
   }
 
   for role, f in pairs(faces) do

@@ -1927,8 +1927,8 @@ def check_default_look(guest, ask_wm):
 
     checks += 1
 
-    if mono != "ibmplexmono" or mono_px != "14":
-        raise Failure("the terminal's face is %s %s, not ibmplexmono 14"
+    if mono != "ibmplexmono" or mono_px != "16":
+        raise Failure("the terminal's face is %s %s, not ibmplexmono 16"
                       % (mono, mono_px))
 
     checks += 1
@@ -1956,7 +1956,7 @@ def check_default_look(guest, ask_wm):
     for role, want in (("ui", "ibmplexsans/16"),
                        ("title", "ibmplexsanscondensed/14"),
                        ("text", "ibmplexsans/16"),
-                       ("mono", "ibmplexmono/14")):
+                       ("mono", "ibmplexmono/16")):
         if held.get(role) != want:
             raise Failure(
                 "the window manager draws %s in %s, not %s%s - so every "
@@ -3083,15 +3083,30 @@ def _terminal_grid(width, height, px, x, y):
     corner along both to the far edges of the grid. Another window's frame
     stops the walk, so a Log View beside the Terminal, or over it, cannot make
     the grid look bigger than it is.
+
+    **The top is found rather than assumed.** It was `y + 9`, which was the
+    grid's first row until the Terminal grew a menu bar (`roadmap.md` 5zc)
+    and the grid moved a row down. Looked for in the first sixty rows of the
+    window, so this holds whether or not there is a bar.
     """
-    x0, y0 = x + 9, y + 9
+    x0 = x + 9
 
     def console(cx, cy):
         at = (cy * width + cx) * 3
 
         return (px[at], px[at + 1], px[at + 2]) == CONSOLE
 
-    if not (0 <= x0 < width and 0 <= y0 < height) or not console(x0, y0):
+    if not (0 <= x0 < width):
+        return None
+
+    y0 = None
+
+    for cy in range(max(0, y + 9), min(height, y + 70)):
+        if console(x0, cy):
+            y0 = cy
+            break
+
+    if y0 is None:
         return None
 
     x1 = x0
@@ -3871,7 +3886,7 @@ def check_theme_events(guest):
 # Plex's five faces, as `docs/plex.html` has them and Diego chose them on
 # 22 September - the same table `tools/test_theme.lua` holds the file to.
 PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsanscondensed/14 "
-             "text=ibmplexsans/16 mono=ibmplexmono/14 "
+             "text=ibmplexsans/16 mono=ibmplexmono/16 "
              "heading=ibmplexsans-semibold/15")
 
 
@@ -4179,6 +4194,8 @@ def check_scale(guest):
       its list's selection bar is 36 rows, the fixed layout's 24 at 150;
       a click on the list's third row selects the third row - the click
       divided back into points lands where the drawing, multiplied, put it;
+      dragged by its title bar 120 by 60, it moves 120 by 60, under the
+      pointer;
       and the own-pixel window is 300 by 150, its surface stretched to its
       bottom-right corner.
     """
@@ -4328,12 +4345,56 @@ def check_scale(guest):
             raise Failure("a click on the third row left the selection bar at "
                           "%r, not near %d - the click and the drawing do not "
                           "agree on where the row is" % (now, want))
+
+        #
+        # **Dragged by its title bar, it stays under the pointer.** Diego, on
+        # the ThinkPad at 110: "if you grab a window by the titlebar ... the
+        # mouse is off by a margin", "even worse with more scale". The drag
+        # handed screen pixels to the handler that converts an application's
+        # points, so the window went half again as far as the pointer at 150.
+        # 120 across and 60 down is what it has to move - the selection bar,
+        # the one thing of its colour, measured before and after.
+        #
+        def bar_corner():
+            _, _, px_ = parse_ppm(guest.screendump())
+
+            for y in range(gy, min(height, gy + gh + 120)):
+                for x in range(gx, min(width, gx + gw + 200)):
+                    o = (y * width + x) * 3
+
+                    if tuple(px_[o:o + 3]) == SELECTED:
+                        return x, y
+
+            return None
+
+        before = bar_corner()
+        grab_x, grab_y = gx + 300, gy - 20
+        guest.mouse_to(*_to_tablet(grab_x, grab_y, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+
+        for step in range(1, 7):
+            guest.mouse_to(*_to_tablet(grab_x + 20 * step, grab_y + 10 * step,
+                                       width, height))
+            time.sleep(0.1)
+
+        guest.mouse_button(False)
+        time.sleep(1.5)
+        after = bar_corner()
+
+        if (before is None or after is None
+                or abs(after[0] - before[0] - 120) > 2
+                or abs(after[1] - before[1] - 60) > 2):
+            raise Failure("dragged by its title bar 120 across and 60 down, "
+                          "the gallery went from %r to %r - at 150 the drag "
+                          "moved it further than the pointer" % (before, after))
     finally:
         stop_desktop(guest)
         guest.type(appearance() + ' print("scale" .. "-reset")')
         guest.wait_for("scale-reset", "put the harness's appearance back")
 
-    return 6
+    return 7
 
 
 def check_scale_live(guest):
@@ -5145,8 +5206,8 @@ def _log_view_area(width, height, px, win):
     scroll bar the kit draws down the right-hand side, 16 wide and 2 in.
     """
     x, y, w, h = win
-    x0, y0, x1, y1 = width, height, -1, -1
     count = 0
+    rows, columns = {}, {}
 
     for yy in range(max(0, y), min(height, y + h)):
         row = yy * width
@@ -5156,10 +5217,33 @@ def _log_view_area(width, height, px, win):
 
             if (px[at], px[at + 1], px[at + 2]) == CONSOLE:
                 count += 1
-                if xx < x0: x0 = xx
-                if xx > x1: x1 = xx
-                if yy < y0: y0 = yy
-                if yy > y1: y1 = yy
+                rows[yy] = rows.get(yy, 0) + 1
+                columns[xx] = columns.get(xx, 0) + 1
+
+    #
+    # **The rows and columns that are mostly console**, not every pixel that
+    # happens to be its colour. This took the bounding box of all of them,
+    # and the day Log View grew a menu bar (`roadmap.md` 5zc) one
+    # anti-aliased pixel of the word "View" - black text on grey lands on
+    # exactly `#0b0b0b` now and then - put the top of the "area" twenty
+    # pixels above the view, inside the bar. The corner where the check
+    # looks for "new lines below" then held the bar's grey, which is ink,
+    # and a phase that was about following the log failed about a menu.
+    #
+    wanted = max(1, (min(width, x + w) - max(0, x)) // 4)
+    solid_rows = sorted(r for r, n in rows.items() if n >= wanted)
+
+    if not solid_rows:
+        return None
+
+    tall = max(1, len(solid_rows) // 4)
+    solid_columns = sorted(c for c, n in columns.items() if n >= tall)
+
+    if not solid_columns:
+        return None
+
+    y0, y1 = solid_rows[0], solid_rows[-1]
+    x0, x1 = solid_columns[0], solid_columns[-1]
 
     # A quarter of the window at least. Black text anti-aliased onto a grey
     # window has pixels that land on exactly this colour, and the first run
@@ -5600,6 +5684,58 @@ def check_log_view(guest):
             except Failure as e:
                 failures.append(str(e))
 
+        #
+        # 5. **Larger text, from its own View menu** (`/lib/textsize.lua`).
+        # Diego, 22 September: "a way to increase font size in the menu of
+        # the log viewer and terminal". The face here is 20, so a step up is
+        # 24 and the rows have to stand that much apart afterwards. The menu
+        # is opened by clicking its title and the item by where the window
+        # manager says the menu went, rather than by arithmetic on padding.
+        #
+        if pitch:
+            opened = len(guest.seen)
+            click(log[0] + 24, log[1] + 12)
+
+            where = None
+            deadline = time.monotonic() + 10
+
+            while time.monotonic() < deadline:
+                guest._read_available()
+                m = re.search(r"wm: menu of Log at (\d+),(\d+) (\d+)x(\d+)",
+                              guest.seen[opened:])
+
+                if m:
+                    where = tuple(int(v) for v in m.groups())
+                    break
+
+                time.sleep(0.3)
+
+            if where is None:
+                failures.append("Log View's View menu did not open: nothing "
+                                "on the menu bar answered a click.")
+            else:
+                click(where[0] + 30, where[1] + 2 + LAYOUT_ROW // 2)
+
+                def bigger(w_, h_, px_):
+                    bands_ = _text_rows(w_, px_, area)
+                    tops = [b[0] for b in bands_]
+                    steps_ = sorted(b - a for a, b in zip(tops, tops[1:]))
+
+                    if len(steps_) < 3:
+                        return None
+
+                    now_ = steps_[len(steps_) // 2]
+
+                    return True if now_ >= FACE_PX + 4 else None
+
+                try:
+                    settle(guest, bigger,
+                           "Larger text in Log View's View menu did not make "
+                           "its rows taller: a %d-pixel face steps up to 24."
+                           % FACE_PX, seconds=15)
+                except Failure as e:
+                    failures.append(str(e))
+
     stop = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
@@ -5616,6 +5752,10 @@ def check_log_view(guest):
     else:
         failures.append("Control-W Q did not get the screen back.")
 
+    # The size chosen above is this phase's, not the next one's.
+    guest.type('fs.write("/home/.logview", {}) print("log-view" .. "-done")')
+    guest.wait_for("log-view-done", "put Log View's text size back")
+
     # The palette and faces every other phase was written against.
     guest.type(appearance() + ' '
                'print("log-view" .. "-restored")')
@@ -5624,7 +5764,7 @@ def check_log_view(guest):
     if failures:
         raise Failure("\n  - ".join(["Log View:"] + failures))
 
-    return 4
+    return 5
 
 
 # The focus ring and the selection, 0x58a6ff. `ui.editor` draws a selected
@@ -8342,8 +8482,8 @@ def main():
           f"{file_checks} on a program run by its file, in a Terminal and "
           f"as Tracker opens one, "
           f"{log_view_checks} on Log View (rows on black that do not "
-          f"overlap, following what is logged and holding still while "
-          f"scrolled back), "
+          f"overlap, following what is logged, holding still while "
+          f"scrolled back, and larger text from its View menu), "
           f"{repaint_checks} on an idle window drawing nothing at all, "
           f"{power_checks} on the power button reaching a driver outside the kernel, "
           f"{unknown_key_checks} on a key the keyboard driver has no entry for "

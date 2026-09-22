@@ -1612,7 +1612,9 @@ local outline = nil           -- { x, y, w, h }, a frame rectangle
 -- both ask about resizing and both run above the code that answers. Locals
 -- rather than globals: `luaglobals` is what caught this, which is what it
 -- is for - twice now, and both times within a minute of writing the bug.
-local resizable, resize_window
+-- `move_window` too, for the drag and the keyboard (`handlers.move`), and
+-- `luaglobals` caught it a third time.
+local resizable, resize_window, move_window
 
 -- The same, for the queue every handler puts events on. `handlers.move`
 -- reports where a window ended up, and it is written above the function
@@ -4198,10 +4200,21 @@ handlers.retitle = function(req)
   return { ok = true }
 end
 
-handlers.move = function(req)
-  local win = by_handle[req.window]
-  if not win then return { ok = false, error = "no such window" } end
-
+--
+-- **A window put somewhere, in the screen's pixels.** The drag and the
+-- keyboard's Control-W arrows call this; an application's `move` asks in
+-- points and is converted first (`handlers.move`). They were one function
+-- until the scale: the drag called the application's handler with pixels,
+-- which since 0.10.115 multiplies what it is given, so at 150 per cent a
+-- window moved half again as far as the pointer and slid out from under it.
+-- Diego, 22 September, on the ThinkPad: "if you grab a window by the
+-- titlebar in 110%, you will see the mouse is off by a margin", "even worse
+-- with more scale". The same shape as `resize_window` and `handlers.resize`.
+--
+-- Declared with `resizable` and `resize_window`, far above, because the
+-- drag calls it from before this point in the file.
+--
+function move_window(win, x, y, quiet)
   -- The old place has to be repainted as well as the new one, or the window
   -- leaves a copy of itself behind.
   damage_window(win)
@@ -4216,12 +4229,8 @@ handlers.move = function(req)
   -- every other direction, which is always enough of the tab to catch.
   local KEEP = 48
 
-  local pct = win.pct or 100
-  local want_x = tonumber(req.x) and scale.px(tonumber(req.x), pct) or win.x
-  local want_y = tonumber(req.y) and scale.px(tonumber(req.y), pct) or win.y
-
-  win.x = math.min(math.max(want_x, KEEP - win.w), W - KEEP)
-  win.y = math.min(math.max(want_y, top_limit()), H - KEEP)
+  win.x = math.min(math.max(x, KEEP - win.w), W - KEEP)
+  win.y = math.min(math.max(y, top_limit()), H - KEEP)
   damage_window(win)
 
   --
@@ -4237,9 +4246,22 @@ handlers.move = function(req)
   -- movement, and the queue would fill with positions nobody read. `quiet`
   -- is the drag saying it will report the final position itself, on release.
   --
-  if not req.quiet then
+  if not quiet then
     post(win, { type = "moved", x = win.x, y = win.y })
   end
+end
+
+-- An application's `move`, in its points.
+handlers.move = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  local pct = win.pct or 100
+
+  move_window(win,
+              tonumber(req.x) and scale.px(tonumber(req.x), pct) or win.x,
+              tonumber(req.y) and scale.px(tonumber(req.y), pct) or win.y,
+              req.quiet)
 
   return { ok = true, x = scale.pt(win.x, pct), y = scale.pt(win.y, pct) }
 end
@@ -5689,8 +5711,7 @@ local function pointer_pass(p)
   end
 
   if dragging and is_down then
-    handlers.move{ window = dragging.win.handle, quiet = true,
-                   x = nx - dragging.dx, y = ny - dragging.dy }
+    move_window(dragging.win, nx - dragging.dx, ny - dragging.dy, true)
   end
 
   --
@@ -5813,7 +5834,7 @@ local pending_escape = {}
 local function move_focused(dx, dy)
   local win = focused_window()
   if not win then return end
-  handlers.move{ window = win.handle, x = win.x + dx, y = win.y + dy }
+  move_window(win, win.x + dx, win.y + dy)
 end
 
 --

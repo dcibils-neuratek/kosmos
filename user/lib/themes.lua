@@ -97,7 +97,7 @@ font.title   = ibmplexsanscondensed 14
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
-font.mono    = ibmplexmono 14
+font.mono    = ibmplexmono 16
 ]]
 
 --------------------------------------------------------------------------
@@ -143,7 +143,7 @@ font.title   = ibmplexsanscondensed 14
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
-font.mono    = ibmplexmono 14
+font.mono    = ibmplexmono 16
 ]]
 
 --------------------------------------------------------------------------
@@ -203,7 +203,7 @@ font.title   = ibmplexsanscondensed 14
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
-font.mono    = ibmplexmono 14
+font.mono    = ibmplexmono 16
 ]]
 
 --------------------------------------------------------------------------
@@ -248,7 +248,7 @@ font.title   = ibmplexsanscondensed 14
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
-font.mono    = ibmplexmono 14
+font.mono    = ibmplexmono 16
 ]]
 
 return themes

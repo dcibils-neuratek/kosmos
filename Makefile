@@ -3000,6 +3000,9 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	@# And a released stick fetched and checked on another Mac: getstick.sh
 	@# against a release on this disk, its mkusb.sh one that writes nothing.
 	python3 tools/test_getstick.py
+	@# And a window's own text size - the Terminal's and Log View's View
+	@# menu - which is arithmetic over a settings file and a face name.
+	$(HOSTDIR)/lua tools/test_textsize.lua
 	@# And the tools' temporary files: made only through scratch.py, and gone
 	@# when the tool is (19 GB were left behind before, and filled the disk).
 	python3 tools/test_scratch.py

@@ -53,7 +53,10 @@ local ui = use("/lib/ui.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local W, H = 620, 420
+-- A menu bar's row on top, since the View menu arrived: the rows keep
+-- their room and the window is one row taller.
+local BAR = ui.metrics.row
+local W, H = 620, 420 + BAR
 
 local win, err = ui.window{ title = "Log", w = W, h = H, x = 130, y = 110 }
 
@@ -184,11 +187,26 @@ local rows, built_from, built_columns = {}, nil, 0
 -- Pinned to all four edges, like the Terminal's, so a bigger window is a
 -- bigger log rather than the same log with a border of window colour.
 --
-local view = ui.view{ x = 8, y = 8, w = W - 16, h = H - 20,
+local view = ui.view{ x = 8, y = BAR + 8, w = W - 16, h = H - BAR - 20,
                       follow = { left = true, right = true,
                                  top = true, bottom = true } }
 
 view.focusable = true
+
+--
+-- **Its own text size**, from the View menu (`/lib/textsize.lua`): Diego,
+-- 22 September, "a way to increase font size in the menu of the log viewer
+-- and terminal". Kept in `/home/.logview`. The rows are measured and drawn
+-- in `size:face()` at `size:size()`, so a new size rewraps them.
+--
+local textsize = use("/lib/textsize.lua")
+local size = textsize.new(ui, "/home/.logview")
+
+win:add(ui.menubar{
+  x = 0, y = 0, w = W,
+  follow = { "left", "right", "top" },
+  menus = { { title = "View", items = size:items() } },
+})
 
 --
 -- Where everything is, for this size and this face, with `back` held inside
@@ -204,8 +222,9 @@ view.focusable = true
 -- width that depended on the bar would be a circle.
 --
 local function layout(self)
-  local MW = math.max(1, gfx.measure("0", "mono"))
-  local MH = math.max(1, gfx.height("mono"))
+  local face = size:face()
+  local MW = math.max(1, gfx.measure("0", face))
+  local MH = math.max(1, gfx.height(face))
   local columns = math.max(1, (self.w - 8 - ui.SCROLL_W - 4) // MW)
 
   if source ~= built_from or columns ~= built_columns then
@@ -243,7 +262,7 @@ function view:draw(g)
     if not row then break end
 
     g:text(4, 3 + i * MH, row.text, row.colour or "console_text",
-           "console", "mono")
+           "console", "mono", size:size())
   end
 
   ui.scrollbar(g, self.w, self.h, #rows, shown, first)
@@ -256,10 +275,10 @@ function view:draw(g)
   if back > 0 and source ~= latest then
     local note = "new lines below"
     local right = self.w - ui.SCROLL_W - 2
-    local x = right - 8 - gfx.measure(note, "mono")
+    local x = right - 8 - gfx.measure(note, size:face())
 
     g:fill(x - 4, 1, right - (x - 4), MH + 4, "console")
-    g:text(x, 3, note, NOTE, "console", "mono")
+    g:text(x, 3, note, NOTE, "console", "mono", size:size())
   end
 end
 
