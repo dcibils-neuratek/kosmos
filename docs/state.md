@@ -86,8 +86,10 @@ the stable one. The older development images went to the Trash.
   sizes we should also be able to select icon size on desktop, tracker
   icon view and else", "16,32,64 are the correct ones". `/lib/iconsize.lua`
   keeps the choice per place in `/home/.tracker`; Tracker's cell is
-  `px + 8 + 2 * GH` instead of a number compiled in; the desktop gets the
-  menu on a right press on its background, since it has no menu bar. Two
+  `max(84, px + 52)` by `px + 8 + 2 * GH` instead of a pair of numbers
+  compiled in, so a Large icon gets a cell to match - Diego, on the first
+  version: "yes widen the cell at 64"; the desktop gets the menu on a right
+  press on its background, since it has no menu bar. Two
   things came with it: a menu item can be **marked** (a diamond in a
   column of its own), and a menu bar's `items` may be a **function**,
   worked out when the menu opens - so Tracker's View menu marks its

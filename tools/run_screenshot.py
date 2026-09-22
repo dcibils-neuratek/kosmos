@@ -7272,8 +7272,21 @@ def check_icon_sizes(guest):
 
     DESK = (0x1c, 0x25, 0x30)          # the dark palette's `desktop`
     strip = STRIP_H
-    CELL_W = 84                        # the label's width, at all three sizes
-    STEP = 64 - 32                      # Medium to Large, in points
+    STEP = 64 - 32                     # Medium to Large, in points
+
+    # The first column is read over the narrowest cell there is, 84 at 16 and
+    # 32 (`CELL_W` in `tracker.lua`), so the band holds whichever size is in
+    # force. A wider cell only puts more of the same icon and name inside it.
+    COLUMN = 84
+
+    # And the menu is pressed clear of the widest, 116 at 64.
+    #
+    # How wide a cell is, this does not try to measure. It would have to be
+    # read off where an icon's ink begins and ends, and Haiku's 64 and 32 do
+    # not fill their squares to the same fraction: the middle of the first
+    # block moved 14 pixels where the cell moved 16. `iconsize.cell` holds
+    # the arithmetic and `tools/test_iconsize.lua` holds it exactly.
+    WIDEST = 116
 
     # The palette these colours were written against and the bitmap faces the
     # arithmetic above assumes - `GH` is 16 because the pinned face is - and
@@ -7294,7 +7307,7 @@ def check_icon_sizes(guest):
     def lowest_ink(w, h, px):
         """The last row holding anything but desktop, in the first column."""
         for yy in range(h - 1, strip, -1):
-            for xx in range(2, min(CELL_W - 2, w)):
+            for xx in range(2, min(COLUMN - 2, w)):
                 o = (yy * w + xx) * 3
 
                 if tuple(px[o:o + 3]) != DESK:
@@ -7355,6 +7368,7 @@ def check_icon_sizes(guest):
     before = lowest_ink(width, height, px)
     checks += 1
 
+
     #
     # Somewhere bare to press, with room for the menu under it and clear of
     # the right edge so the window manager does not pull the menu back on.
@@ -7380,7 +7394,7 @@ def check_icon_sizes(guest):
 
     spot = next(((x, y)
                  for y in range(strip + 30, height - MENU_H - 8, 24)
-                 for x in range(CELL_W + 8, width - MENU_W - 8, 48)
+                 for x in range(WIDEST + 8, width - MENU_W - 8, 48)
                  if bare(x, y)), None)
 
     if spot is None:
@@ -7533,15 +7547,22 @@ def check_icon_sizes(guest):
     large = lowest_ink(width, height, px)
     checks += 1
 
+
     stop_desktop(guest)
 
     #
     # What it was measuring, and what was written down.
     #
+    #
+    # Waited for by a marker on the *next* line, not by the one being read.
+    # `wait_for` returns the moment its text appears, and the rest of that
+    # line may still be on its way - which is how this read "ICON-KEPT" with
+    # nothing after it once and said the size had not been written down.
+    #
     guest.type('local t = fs.read("/home/.tracker") or {} '
                'print("ICON" .. "-KEPT", #(fs.list("/home/Desktop") or {}), '
-               't.desktop_icon_px, t.window_icon_px)')
-    guest.wait_for("ICON-KEPT", "the desktop's listing and the size it kept")
+               't.desktop_icon_px, t.window_icon_px) print("ICON" .. "-READ-1")')
+    guest.wait_for("ICON-READ-1", "the desktop's listing and the size it kept")
 
     said = [ln for ln in guest.seen.splitlines() if "ICON-KEPT" in ln][-1]
     fields = said.split()
@@ -7567,7 +7588,10 @@ def check_icon_sizes(guest):
             f"moves it down by exactly the number of icons times `d` - "
             f"{items} x {STEP} here - because every cell in the column grows "
             "by `d` and so does the last icon itself. See `CELL_H` in "
-            "`tracker.lua`.")
+            "`tracker.lua`. One other thing would move this row: a wider cell "
+            "fits more of a name on a line, so a last name that took two "
+            "lines at 32 and takes one at 64 is a line fewer and this is what "
+            "would notice.")
 
     checks += 1
 
@@ -7621,8 +7645,9 @@ def check_icon_sizes(guest):
     stop_desktop(guest)
 
     guest.type('local t = fs.read("/home/.tracker") or {} '
-               'print("ICON" .. "-DEFAULT", t.desktop_icon_px == nil)')
-    guest.wait_for("ICON-DEFAULT", "what Tracker kept for the default size")
+               'print("ICON" .. "-DEFAULT", t.desktop_icon_px == nil) '
+               'print("ICON" .. "-READ-2")')
+    guest.wait_for("ICON-READ-2", "what Tracker kept for the default size")
 
     line = [ln for ln in guest.seen.splitlines() if "ICON-DEFAULT" in ln][-1]
 

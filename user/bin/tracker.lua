@@ -676,28 +676,17 @@ rows.focusable = true
 -- another - the same reason `boxes_x` exists in the window manager.
 --
 --
--- A cell: two pixels, the icon, four, two lines for the name and two more -
--- two lines rather than one so a name reads in full up to twice as long.
--- Written as the sum it is, and at 32 it is the 84 by 72 that was compiled
--- in before there was a choice.
+-- The cell the icons in force want - `iconsize.cell`, which is where that
+-- arithmetic lives and where it is tested.
 --
--- **The width is the label's, not the icon's.** A name is wider than any of
--- the three pictures, so 64 and 32 sit in cells of the same width and only
--- a 16 has room to spare - which also means the desktop's columns do not
--- move sideways when the size changes, and the places icons were dragged to
--- still mean what they meant.
---
--- Recomputed in one place rather than worked out at each call site, because
--- the drawing, the hit test, the free-cell layout and a drop all read these
--- and four copies of the arithmetic is four chances for one to be off.
+-- Held in two locals rather than asked for at each call site, because the
+-- drawing, the hit test, the free-cell layout and a drop all read them and
+-- four copies of one sum is four chances for one to be off.
 --
 local CELL_W, CELL_H = 0, 0
 
 function resize_cells()
-  local px = icons:size()
-
-  CELL_W = math.max(84, px + 20)
-  CELL_H = px + 8 + 2 * GH
+  CELL_W, CELL_H = iconsize.cell(icons:size(), GH)
 end
 
 resize_cells()

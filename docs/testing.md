@@ -7767,17 +7767,21 @@ Diego, once the 16s and 64s were vendored: "with the new icon sizes we should
 also be able to select icon size on desktop, tracker icon view and else", and
 "16,32,64 are the correct ones" (`roadmap.md` 5za, `ui.md` 16.19). Three
 sizes, in points, kept per place in `/home/.tracker`; Tracker's cell is now
-`px + 8 + 2 * GH` tall, so the grid follows the pictures.
+`max(84, px + 52)` by `px + 8 + 2 * GH`, so the grid follows the pictures.
+The width was the label's first - 84 at every size - until Diego saw a 64 in
+it: "yes widen the cell at 64".
 
 ### The checks
 
-- **`tools/test_iconsize.lua`**, in `host-check`, 22: the default when
+- **`tools/test_iconsize.lua`**, in `host-check`, 29: the default when
   nothing is saved; each of the three chosen, written down under its own key
   and read back; two places in one file with neither wiping the other; a size
   no export exists for - a file edited by hand - refused and read as the
   default; the menu's three items with exactly one marked and the mark moving
-  with the choice; and the hook that recomputes the caller's cells firing once
-  per change and not at all for a choice already in force.
+  with the choice; **the cell each size wants** - 84 by 72 at 32, 84 wide at
+  16 because below that a name has nowhere to go, 116 by 104 at 64, and a
+  step in the size a step in both; and the hook that recomputes the caller's
+  cells firing once per change and not at all for a choice already in force.
   **Controls, watched**: writing the file without reading it first fails "one
   place's choice wiped the other's"; accepting any integer size fails on the
   hand-edited 48.
@@ -7805,6 +7809,23 @@ sizes, in points, kept per place in `/home/.tracker`; Tracker's cell is now
     rows 2 and 4 of six, as a list - and after "as icons" marks rows 1, 4 and
     9 of ten, the three sizes having appeared under them.
 
+  The column is read over the narrowest cell there is, 84, so the band holds
+  whichever size is in force - a wider cell only puts more of the same icon
+  and name inside it - and the menu is pressed clear of the widest, 116. The
+  `N * 32` above has one other thing that could move it, and the failure says
+  so: a wider cell fits more of a name on a line, so a last name that took
+  two lines at 32 and took one at 64 would be a line fewer.
+
+**How wide the cell is, the screen cannot say.** The obvious check - where
+the first block is centred, since the icon and the name are both centred in
+the cell - was written, and it read 41 at Medium and 55 at Large where the
+cell's middle moves 42 to 58. Haiku's 64 and 32 do not fill their squares to
+the same fraction, so the ink's middle is not the cell's. It is the trap this
+phase's own docstring names, walked into two hours later, and the answer was
+to move the arithmetic rather than to loosen the check: `iconsize.cell(px,
+gh)` is a function over two numbers, it lives with the sizes rather than in
+the one program that draws a grid, and the host test holds it to the point.
+
   **Controls, watched**, three:
   - a `CELL_H` that does not follow the size fails with "moved to row 276,
     where it should be 340" - the icon grew and the cells did not;
@@ -7826,6 +7847,16 @@ bite: it counted ink *below* the pointer, and a menu 32 pixels high still has
 most of itself there. It counts ink below the pointer **and none in the
 twenty rows above it**, and the spot it presses is searched for with those
 rows already bare.
+
+**A read that outran the line it was reading.** `guest.wait_for` returns the
+moment its text appears, and the rest of that line may still be on its way -
+so the phase read `ICON-KEPT` with nothing after it and said the size had not
+been written down, on a machine where it had. Each read prints a marker on
+the *next* line and waits for that, and the two reads use different markers,
+because a `wait_for` searches the whole of what the guest has said and the
+first read's marker is already in it. Three separate shapes of the same
+mistake in one afternoon, and worth naming: **a marker says the line before
+it is complete; a marker inside the line you want says nothing at all.**
 
 **And a predicate that passed on the picture that was already there.** The
 first `drawn` waited for the first column's last row of ink to be below the

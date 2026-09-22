@@ -117,6 +117,38 @@ function methods:set(px)
   return true
 end
 
+--
+-- **The cell a size wants**, in points: the picture, the air around it and
+-- two lines for the name.
+--
+--   local cw, ch = iconsize.cell(icons:size(), gfx.font.h)
+--
+-- Here rather than in the one program that draws a grid, because it is the
+-- arithmetic of *a size* rather than of a file manager - and because here
+-- it is a function over two numbers, which `tools/test_iconsize.lua` can
+-- hold exactly. On a screen it cannot be: the width is read off where an
+-- icon's ink begins and ends, and Haiku's 64 and 32 do not fill their
+-- squares to the same fraction, so the middle of a block moved 14 pixels
+-- where the cell moved 16 (`testing.md` 18.148).
+--
+-- **The width is the icon with 26 pixels either side**, which is what the
+-- 84 that was compiled in gave a 32 - so the air is the same at every size
+-- and a Large icon gets a cell to match. Diego, on the first version, where
+-- the width was the label's at every size and a 64 therefore sat in an 84
+-- with its name cut: "yes widen the cell at 64".
+--
+-- **And never narrower than that 84**, because below it a name has nowhere
+-- to go. That is what keeps Small and Medium the cells they were, so only
+-- Large widens.
+--
+-- **The height is two pixels, the icon, four, and two lines for the name** -
+-- two rather than one so a name reads in full up to twice as long. At 32
+-- the pair is the 84 by 72 that was compiled in before there was a choice.
+--
+function iconsize.cell(px, gh)
+  return math.max(84, px + 52), px + 8 + 2 * gh
+end
+
 -- The menu's items, marked with the one in force. Built fresh each time,
 -- which is why a menu that shows these takes a function rather than a list
 -- (`ui.menu_items`).

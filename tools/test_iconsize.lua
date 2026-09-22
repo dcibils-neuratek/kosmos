@@ -122,7 +122,45 @@ do
         "the mark did not move with the choice")
 end
 
--- 6. The changed hook, which is what recomputes a caller's cells.
+-- 6. The cell each size wants: the width is the icon with the same air
+-- either side at every size and never below 84, so only Large widens; the
+-- height is the icon, a gap and two lines for a name. At 32 the pair is the
+-- 84 by 72 that was compiled in before there was a choice.
+do
+  local GH = 16
+  local w32, h32 = iconsize.cell(32, GH)
+
+  check(w32 == 84 and h32 == 72,
+        "at 32 the cell is " .. w32 .. "x" .. h32 .. ", not the 84x72 it was")
+
+  local w16, h16 = iconsize.cell(16, GH)
+
+  check(w16 == 84, "at 16 the cell is " .. w16 .. " wide - below 84 a name "
+                   .. "has nowhere to go, so Small keeps the width Medium has")
+  check(h16 == 56, "at 16 the cell is " .. h16 .. " tall")
+
+  local w64, h64 = iconsize.cell(64, GH)
+
+  check(w64 == 116, "at 64 the cell is " .. w64 .. " wide, and should be the "
+                    .. "icon with the same 26 pixels either side that 84 "
+                    .. "gives a 32 - Diego: \"yes widen the cell at 64\"")
+  check(h64 == 104, "at 64 the cell is " .. h64 .. " tall")
+
+  -- Every step up is the same step in both, which is what makes the display
+  -- harness able to hold the move of a column's last row to `N * 32`.
+  check(w64 - w32 == 64 - 32 and h64 - h32 == 64 - 32,
+        "a cell should grow by exactly what the icon grows by once it is "
+        .. "past the floor: 32 to 64 moved it " .. (w64 - w32) .. " and "
+        .. (h64 - h32))
+
+  -- And a taller face makes a taller cell, two lines of it.
+  local _, tall = iconsize.cell(32, 20)
+
+  check(tall == h32 + 8, "a face four pixels taller made the cell "
+                         .. (tall - h32) .. " taller, and a name is two lines")
+end
+
+-- 7. The changed hook, which is what recomputes a caller's cells.
 do
   files["/home/.tracker"] = nil
 
@@ -140,8 +178,8 @@ end
 if fails == 0 then
   print(("PASS: %d checks on the icon size where a grid of them is drawn "
          .. "(the default, each of the three saved and read back, two places "
-         .. "in one file, a size no export exists for, the marked menu, and "
-         .. "the hook)."):format(checks))
+         .. "in one file, a size no export exists for, the marked menu, the "
+         .. "cell each size wants, and the hook)."):format(checks))
   os.exit(0)
 end
 

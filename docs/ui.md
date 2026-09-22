@@ -1341,18 +1341,35 @@ somebody opened the menu - the same rule as a window's own text size
 
 **The grid follows the pictures**, and this is where the size actually
 does something. Tracker's cell was `84, 56 + GH` compiled in; it is now
-the sum it always was:
+`iconsize.cell(px, gh)`, the sum it always was:
 
 ```
-CELL_W = max(84, px + 20)     -- the label's width, not the icon's
-CELL_H = px + 8 + 2 * GH      -- 2, the icon, 4, and two lines for the name
+w = max(84, px + 52)     -- the icon, and 26 pixels either side
+h = px + 8 + 2 * gh      -- 2, the icon, 4, and two lines for the name
 ```
 
-At 32 that is the 84 by 72 it was. The width is the *label's*, which is
-why 64 and 32 sit in cells of the same width: a name is wider than any of
-the three pictures. That also means the desktop's columns do not move
-sideways when the size changes, so an icon dragged somewhere still means
-what it meant.
+It lives beside the sizes rather than in Tracker because it is the
+arithmetic of *a size* rather than of a file manager - and because there it
+is a function over two numbers that a host test can hold exactly, which a
+screen cannot: see `testing.md` 18.148 for the check that measured an
+icon's artwork and thought the cell had moved 14 pixels.
+
+At 32 both are the 84 by 72 they were, and 52 is not a number picked for
+this: it is what the old 84 gave a 32, so the air either side is the same
+at every size.
+
+**The first version made the width the label's** - `max(84, px + 20)`,
+which is 84 at all three sizes, since a name is wider than any of the
+three pictures. Diego, looking at a 64 with ten pixels either side and a
+name cut to `cheats~.html`: "yes widen the cell at 64". He is right, and
+the reason is that a cell is not a picture with a caption underneath - it
+is one thing, and at 64 an 84-wide cell reads as a large icon squeezed
+into a small one. At 116 the same name fits whole.
+
+**The floor of 84 is what keeps 16 and 32 where they were.** Below it a
+name has nowhere to go: a grid of tiny icons under two characters each is
+denser and unreadable, which is not what Small icons is for. So only Large
+widens.
 
 ### A menu item can be marked
 

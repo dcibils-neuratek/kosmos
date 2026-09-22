@@ -1176,11 +1176,18 @@ processors, and still what follows USB:
    Built: `/lib/iconsize.lua`, the three sizes and the choice, kept per
    place in `/home/.tracker` under a key for each - `desktop_icon_px` and
    `window_icon_px` - and read when the place opens. Tracker's cell is the
-   sum it always was and now says so, `CELL_H = px + 8 + 2 * GH`, so the
-   grid follows the pictures. **Two places, and they turned out to be
-   two**: the desktop, where the only way to a menu is a right press on the
-   background, and a Tracker window's View menu, which offers the sizes
-   only in icon view because a list has no icons in it.
+   sum it always was and now says so - `max(84, px + 52)` by
+   `px + 8 + 2 * GH`, the 84 by 72 it was at 32 - so the grid follows the
+   pictures. **Two places, and they turned out to be two**: the desktop,
+   where the only way to a menu is a right press on the background, and a
+   Tracker window's View menu, which offers the sizes only in icon view
+   because a list has no icons in it.
+
+   The width was the *label's* first, which is 84 at every size, and Diego
+   said what that looked like at 64: "yes widen the cell at 64". It is the
+   icon with the same 26 pixels either side that the old 84 gave a 32, and
+   never below 84, so only Large widens and a name that was cut to
+   `cheats~.html` fits whole.
 
    And two things that came out of it. A menu item can be **marked** -
    a diamond in a column of its own, `mark` in `ui.lua` - so a menu of
