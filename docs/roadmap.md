@@ -1153,8 +1153,8 @@ processors, and still what follows USB:
    headings in Plex Sans SemiBold, a file added from the same family; and
    no rounded corners and no shadow for now.
 
-5y. **AGREED on 22 September - very few options: three or four looks, and
-   nothing else to tune.** Diego, straight after 5x: "Too many config
+5y. **DONE on 22 September - very few options: four looks, and nothing
+   else to tune.** Diego, straight after 5x: "Too many config
    options make the system vulnerable to changes and complicated", "We
    should stick to very few options in colors and fonts", "To maintain
    clarity and efficiency" - and, correcting a proposal that kept the old
@@ -1170,9 +1170,10 @@ processors, and still what follows USB:
    the dark; **Classic**, BeOS's grey and yellow in Plex type; **Studio**, a
    near-black look for the media applications with one warm accent. Built
    in three steps: **the looks as the themes - done, 0.10.109** (`testing.md`
-   18.139); **the fixed layout - done, 0.10.110** (5x); then the Appearance
-   panel down to a look, a wallpaper and the Deskbar's height, drawn first
-   in `docs/looks.html` and waiting for Diego's word on the drawing. The
+   18.139); **the fixed layout - done, 0.10.110** (5x); and **the Appearance
+   panel down to a look, a wallpaper and the Deskbar's height - done,
+   0.10.111** (18.141), built from the drawing in `docs/looks.html` after
+   Diego's "the panel is right, build it". The
    per-role faces and sizes, the colour swatches, the title's shape and the
    other themes leave the Appearance panel; what else stays - a wallpaper,
    the Deskbar's height - is settled with the drawing.
@@ -1221,8 +1222,11 @@ processors, and still what follows USB:
    `/home/.appearance` over the theme's. Not shorter than 36 yet: the bar's
    icons are 32 pixels and the compositor does not scale a picture.
 
-5u. **DONE on 22 September - the Deskbar's colour, chosen by the person**
-   (`testing.md` 18.137).
+5u. **WITHDRAWN on 22 September - the Deskbar's colour, chosen by the
+   person** (`testing.md` 18.137, then 18.141). Built as 0.10.107, and an
+   hour later the looks (5y) decided colours as a whole: the bar's colour is
+   its look's, and the choice is gone from Appearance and the window
+   manager.
    Diego, on seeing Plex's stone bar where BeOS's was yellow: "is that a
    setting?", "a color in the theme?", and then "keep the deskbar user
    selectable color". Each theme names its bar (`bar`, `bar_text`, since

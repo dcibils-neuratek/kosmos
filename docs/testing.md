@@ -7446,3 +7446,36 @@ fixed" (`roadmap.md` 5x).
   Three checks that found a list's rows by the 16-pixel face - the arrow keys
   moving a selection, the Open window's second row, Tracker's Places - find
   them by the fixed row now (`LAYOUT_ROW`).
+
+## 18.141 Appearance: a look, a wallpaper, the Deskbar's height
+
+**Diego, 22 September**, on the drawing at the foot of `docs/looks.html`:
+"the panel is right, build it". The Appearance panel was a theme list, a
+colour for the desktop and one for the Deskbar, five font roles each with a
+face and a size, a preview, and a title's shape - about 1,070 lines. It is
+the four looks as cards, each a desktop in miniature painted in that look's
+own colours; the wallpapers; and the Deskbar's three heights - 380 lines,
+560 by 426 on the fixed layout, and the same size in every look.
+
+- **Choosing a look sends its colours and its faces** - a look is a whole,
+  and a machine still holding faces picked in the old panel gets the look's
+  back - and `/home/.appearance` holds the look, the wallpaper and the height
+  and nothing else. A failed write still says so in the log.
+- **The Deskbar's colour is the look's again.** 0.10.107 made it a choice
+  of its own the same morning; the looks decided colours an hour later, and
+  the choice, the window manager's override and `theme.ink_on` are gone.
+- **Labels may name a face's role**, `role = "heading"`, which is how the
+  panel's three headings are drawn in the look's heading face.
+
+### The checks
+
+- **The display harness's `appearance` phase**: the panel says it is
+  560x426 and offers four looks; `--theme plex` leaves the window manager
+  holding Plex's five faces; `/home/.appearance` then holds `plex` and no
+  faces of its own; a desktop started afresh wears Plex with its headings in
+  SemiBold 15; the layout probe still finds rows of 24 and buttons of 28;
+  four theme events reach a window; and a height of 52 chosen and kept - now
+  on Plex's stone bar, since the panel saves a look with the height and the
+  harness's `dark` is not one. 11 checks.
+- **`test_theme.lua`**, 152, without the ink checks that went with the
+  Deskbar's colour.

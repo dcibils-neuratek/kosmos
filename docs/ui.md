@@ -626,7 +626,9 @@ window owns.
 **Since 22 September there are four looks and nothing else to choose**
 (`roadmap.md` 5y): Plex, Plex Night, Classic and Studio, in `themes.lua`,
 each a whole designed in `docs/looks.html`, all four naming the same faces.
-What follows is how a theme came to carry its faces at all.
+The Appearance panel offers a look, a wallpaper and the Deskbar's height,
+and `/home/.appearance` holds those three. What follows is how a theme came
+to carry its faces at all, and the per-role choices the panel no longer has.
 
 **A theme is its colours and its faces.** There were two palettes - `dark`,
 which is what Kosmos looked like first, and `light`, the 1998 one on

@@ -3629,60 +3629,40 @@ def check_direct_menu(guest):
 
 
 def check_appearance(guest):
-    """**The Appearance panel lays itself out rather than guessing.**
+    """**The Appearance panel: a look, a wallpaper, the Deskbar's height.**
 
-    Redrawn on 20 September (`docs/appearance.html`, `roadmap.md` 5b) from
-    seven groups in one 380-pixel column to two columns - and the thing
-    worth testing is invisible in a screenshot: the window's height is
-    *measured* from what the two columns came to, at the faces in force,
-    rather than being a constant that happens to fit.
-
-    It regressed twice while being written, both times silently - the sums
-    ran after `win:run()` once, and before the widgets they measured the
-    other time - and both times the window stayed at its starting 530 with
-    the bottom group cut off. So the panel says what it laid out and this
-    holds it to three things: that it opened, that every role the kit has is
-    offered, and that the height is not the starting one.
-
-    The number itself is deliberately not checked against a constant: it
-    depends on the faces, which is the whole point.
+    Rebuilt on 22 September from `docs/looks.html`, which Diego approved -
+    "the panel is right, build it" - after asking for very few options and a
+    fixed layout (`roadmap.md` 5x, 5y). It was two columns of a theme list,
+    colour swatches, five font roles with a face and a size each, and a
+    title's shape; it is the four looks as cards, the wallpapers and three
+    heights. Its layout is fixed, so its size is a number that does not
+    depend on the faces - 560 by 426, which the panel says as it opens - and
+    it offers exactly the four looks `themes.lua` ships.
     """
     mark = len(guest.seen)
 
     guest.type("wm appearance")
     line = guest.wait_for_line("appearance: ",
                                "the Appearance panel to lay itself out", mark)
-    said = re.match(r"(\d+)x(\d+), (\d+) roles, (\S+)", line)
+    said = re.match(r"(\d+)x(\d+), (\d+) looks, (\S+)", line)
 
     if not said:
         raise Failure("the panel said %r, which is not a layout" % line)
 
-    width, height, roles = int(said.group(1)), int(said.group(2)), int(said.group(3))
+    width, height, looks = (int(said.group(1)), int(said.group(2)),
+                            int(said.group(3)))
     checks = 1
 
-    if width != 668:
-        raise Failure("the panel is %d wide, and the drawing agreed with "
-                      "Diego says 668" % width)
+    if (width, height) != (560, 426):
+        raise Failure("the panel is %dx%d; the drawing Diego approved, on the "
+                      "fixed layout, is 560x426" % (width, height))
 
     checks += 1
 
-    if roles != 5:
-        raise Failure("the panel offers %d font roles; the kit has five - "
-                      "window titles, widgets, headings, text and terminal"
-                      % roles)
-
-    checks += 1
-
-    #
-    # **The one that bites.** 530 is what `ui.window` was asked for, before
-    # this process knew what the desktop's faces were; anything that stops
-    # measuring lands back on it exactly.
-    #
-    if height <= 530:
-        raise Failure(
-            "the panel is %d tall, which is the size it asked for before it "
-            "knew the faces - so its layout is not following them, and its "
-            "bottom group is off the end of the window" % height)
+    if looks != 4:
+        raise Failure("the panel offers %d looks; there are four - Plex, Plex "
+                      "Night, Classic and Studio" % looks)
 
     checks += 1
 
@@ -3712,87 +3692,9 @@ def check_appearance(guest):
 
     checks += check_theme_plex(guest)
     checks += check_theme_events(guest)
-    checks += check_deskbar_colour(guest)
     checks += check_deskbar_height(guest)
 
     return checks
-
-
-def check_deskbar_colour(guest):
-    """**The Deskbar's colour, chosen and kept** (`roadmap.md` 5u).
-
-    Diego, 22 September: "keep the deskbar user selectable color". Chosen
-    from the command line as a swatch chooses it - `wm appearance:--bar
-    336698` - it has to be applied and written down; then a desktop started
-    afresh has to paint the bar that blue, and its words white, which is
-    `theme.ink_on` choosing light ink for a dark ground. The bar's rounded
-    corners are only at its top, so its bottom row is the colour exactly.
-    """
-    mark = len(guest.seen)
-    guest.type("wm appearance:--bar 336698")
-
-    try:
-        said = guest.wait_for_line("appearance: bar ",
-                                   "Appearance to choose the bar's colour",
-                                   mark)
-    finally:
-        back = len(guest.seen)
-        guest.proc.stdin.write(STOP_DESKTOP)
-        guest.proc.stdin.flush()
-        deadline = time.monotonic() + 15
-
-        while time.monotonic() < deadline:
-            guest._read_available()
-
-            if PROMPT in guest.seen[back:]:
-                break
-
-            time.sleep(0.3)
-
-    if said != "336698 applied":
-        raise Failure("choosing the Deskbar's colour said %r" % said)
-
-    guest.type("wm deskbar")
-
-    def blue_bar(w, h, px):
-        at = (35 * w + w // 2) * 3
-        r, g, b = px[at], px[at + 1], px[at + 2]
-
-        if abs(r - 0x33) > 6 or abs(g - 0x66) > 6 or abs(b - 0x98) > 6:
-            return None
-
-        # Its words, white on that blue: any near-white pixel in the bar.
-        for y in range(4, 32):
-            for x in range(0, w // 3):
-                i = (y * w + x) * 3
-
-                if px[i] > 230 and px[i + 1] > 230 and px[i + 2] > 230:
-                    return True
-
-        return None
-
-    try:
-        settle(guest, blue_bar, "a desktop started after the Deskbar's "
-               "colour was chosen never painted the bar #336698 with white "
-               "words", seconds=30)
-    finally:
-        back = len(guest.seen)
-        guest.proc.stdin.write(STOP_DESKTOP)
-        guest.proc.stdin.flush()
-        deadline = time.monotonic() + 15
-
-        while time.monotonic() < deadline:
-            guest._read_available()
-
-            if PROMPT in guest.seen[back:]:
-                break
-
-            time.sleep(0.3)
-
-        guest.type(appearance() + ' print("bar" .. "-reset")')
-        guest.wait_for("bar-reset", "put the harness's appearance back")
-
-    return 2
 
 
 def check_deskbar_height(guest):
@@ -3801,8 +3703,9 @@ def check_deskbar_height(guest):
     Diego, 22 September: "i want to be able to change the deskbar height".
     `wm appearance:--bar-height 52` chooses it as a click does; a desktop
     started afresh then has to paint the bar to its 52nd row and leave the
-    53rd to the desktop - the harness's palette paints the bar yellow and
-    the ground a dark blue, so one pixel either side says which it is.
+    53rd to the desktop. The panel saves a look with the height - Plex, since
+    the harness's `dark` is not one of the four - so the bar is Plex's stone
+    `#e7e7e3` and the ground its blue, and one pixel either side says which.
     """
     mark = len(guest.seen)
     guest.type("wm appearance:--bar-height 52")
@@ -3825,9 +3728,12 @@ def check_deskbar_height(guest):
         r, g, b = px[inside], px[inside + 1], px[inside + 2]
         r2, g2, b2 = px[below], px[below + 1], px[below + 2]
 
-        # The bar's yellow at its last row, and not below it.
-        if r > 200 and g > 150 and b < 90 and not (r2 > 200 and g2 > 150
-                                                   and b2 < 90):
+        # Plex's stone at the bar's last row, and its blue desk below it.
+        def stone(r_, g_, b_):
+            return (abs(r_ - 0xe7) <= 8 and abs(g_ - 0xe7) <= 8
+                    and abs(b_ - 0xe3) <= 8)
+
+        if stone(r, g, b) and not stone(r2, g2, b2):
             return True
 
         return None
@@ -3949,29 +3855,8 @@ def check_theme_plex(guest):
     guest.type("wm appearance:--theme plex")
 
     try:
-        first = guest.wait_for_line("appearance: ",
-                                    "Appearance to lay itself out", mark)
         line = guest.wait_for_line("appearance: theme plex",
                                    "Appearance to choose Plex", mark)
-
-        #
-        # **And the panel keeps its size in Plex's faces** (`roadmap.md` 5x).
-        # This held the opposite the same morning - that the panel grew with
-        # larger faces - which was the layout following the face, and Diego
-        # then asked for the layout to be fixed and the faces to fit it. So
-        # laid out again in a different look, the panel is exactly the size
-        # it was; a layout that followed its faces would not be.
-        #
-        again = guest.wait_for_line("appearance: laid out again, ",
-                                    "Appearance to lay itself out again in "
-                                    "Plex's faces", mark)
-        before = re.match(r"(\d+)x(\d+),", first)
-        after = re.match(r"(\d+)x(\d+),", again)
-
-        if not (before and after) or before.groups() != after.groups():
-            raise Failure("the Appearance panel was %r and, laid out again in "
-                          "Plex, %r - its layout moved with the faces"
-                          % (first, again))
 
         if not line.startswith("applied, held "):
             raise Failure("choosing Plex was not applied: %r" % line)
@@ -4000,8 +3885,7 @@ def check_theme_plex(guest):
     mark = len(guest.seen)
     guest.type('local a = fs.read("/home/.appearance") '
                 'print("saved" .. ": " .. tostring(a and a.palette) .. " " '
-                '.. tostring(a and a.fonts and a.fonts.heading '
-                'and a.fonts.heading.font))')
+                '.. tostring(a and a.fonts ~= nil))')
     saved = guest.wait_for_line("saved: ",
                                 "the saved appearance to be read back", mark)
 
@@ -4059,9 +3943,11 @@ def check_theme_plex(guest):
         guest.type(appearance() + ' print("plex" .. "-reset")')
         guest.wait_for("plex-reset", "put the harness's appearance back")
 
-    if saved != "plex ibmplexsans-semibold":
-        raise Failure("/home/.appearance holds %r after choosing Plex, not "
-                      "its palette and its SemiBold headings" % saved)
+    # The look and nothing of its parts: faces come with the look, so
+    # none are written down to outlive it.
+    if saved != "plex false":
+        raise Failure("/home/.appearance holds %r after choosing Plex - "
+                      "wanted the look's name and no faces of its own" % saved)
 
     if now != "plex ibmplexsans-semibold/15":
         raise Failure("a desktop started with Plex saved wears %r - the "
@@ -8205,7 +8091,7 @@ def main():
           f"chosen - its five faces loaded, written down, and still worn "
           f"after a restart, and its spacing inside a widget; and four "
           f"theme events reaching a window across as many replies as fit, "
-          f"and the Deskbar's colour and height chosen and kept, "
+          f"and the Deskbar's height chosen and kept, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

@@ -77,8 +77,10 @@ the stick. Not closed until a run says so with bytes written.
    the themes (18.139), **0.10.110** the fixed layout (18.140): rows 24,
    buttons 28, fields 26, tabs 20 in every look, the spacing options gone
    from the theme format, and four harness checks moved to the fixed row.
-   Next: Appearance down to a look, a wallpaper and the Deskbar's height -
-   drawn in `docs/looks.html`, waiting for Diego's word on the drawing.
+   **0.10.111** the Appearance panel as drawn - a look, a wallpaper, the
+   Deskbar's height (18.141) - and the Deskbar colour choice of 0.10.107
+   withdrawn. Pushed with 0.10.107 to 0.10.110 on Diego's "push when green",
+   and a stick built. Tags for 0.10.92 to 0.10.106 still asked.
 1. **0.10.107** (`8c6e2ee`, committed, not pushed): the Deskbar's colour
    chosen in Appearance (5u, 18.137), and commit subjects that start with
    their version again (CLAUDE.md). **0.10.108**: its height, a theme value

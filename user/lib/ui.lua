@@ -1434,9 +1434,15 @@ function ui.label(spec)
   --
   v.fixed_width = (spec.w or 0) > 0
 
+  --
+  -- **And in a face of its role**, when it names one: `role = "heading"`
+  -- for the headings a window's groups have - "Look", "Wallpaper" - which
+  -- is what the heading role is for, so an application stops choosing a
+  -- size of its own for each.
+  --
   function v:measure()
     if not self.fixed_width then
-      self.w = gfx.measure(tostring(self.text or ""))
+      self.w = gfx.measure(tostring(self.text or ""), self.role)
     end
   end
 
@@ -1444,7 +1450,7 @@ function ui.label(spec)
 
   function v:draw(g)
     g:text(0, 0, tostring(self.text or ""),
-           shade(self.color) or theme.text, shade(self.bg))
+           shade(self.color) or theme.text, shade(self.bg), self.role)
   end
 
   return v
