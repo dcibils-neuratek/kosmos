@@ -97,6 +97,7 @@ font.mono    = ibmplexmono 13
 row_pad    = 0
 button_pad = 5 12
 field_pad  = 3 4
+bar_h      = 36
 ]]
 
 --------------------------------------------------------------------------
@@ -167,6 +168,7 @@ font.mono    = ibmplexmono 13
 row_pad    = 0
 button_pad = 5 12
 field_pad  = 3 4
+bar_h      = 36
 ]]
 
 --------------------------------------------------------------------------
@@ -233,6 +235,7 @@ font.mono    = ibmplexmono 13
 row_pad    = 0
 button_pad = 5 12
 field_pad  = 3 4
+bar_h      = 36
 ]]
 
 --------------------------------------------------------------------------
@@ -297,6 +300,7 @@ font.mono    = ibmplexmono 13
 row_pad    = 0
 button_pad = 5 12
 field_pad  = 3 4
+bar_h      = 36
 ]]
 
 --------------------------------------------------------------------------
@@ -368,6 +372,7 @@ font.mono    = ibmplexmono 12
 row_pad    = 7
 button_pad = 5 16
 field_pad  = 5 8
+bar_h      = 36
 ]]
 
 return themes

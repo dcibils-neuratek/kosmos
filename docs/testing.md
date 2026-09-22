@@ -7332,3 +7332,40 @@ because a mid grey reads better with dark words.
   applied and written down; and a desktop started afresh paints the bar's
   bottom row `#336698` with white words on it. **Control**: a window manager
   that ignores a saved bar at startup never paints it, and the check fails.
+
+## 18.138 The Deskbar's height, chosen
+
+**Diego, 22 September**: "i want to be able to change the deskbar height
+for instance, where do i do that? is there a file?" It was `local H = 36`
+in `/bin/deskbar.lua`, compiled into the image. Asked whether a theme value
+or a choice in Appearance: "both".
+
+- **A theme names `bar_h`**, a spacing value with bounds of its own - 36 to
+  64, because the bar's icons are 32 pixels and the compositor does not
+  scale a picture yet. Every theme that ships names 36.
+- **Appearance offers 36, 44 and 52** under the bar's colours, kept in
+  `/home/.appearance` over the theme's; `Back to this theme` restores it;
+  `--bar-height` chooses one from a command line.
+- **The Deskbar is as tall as the theme says**: it opens at 36, before the
+  theme has reached it, and resizes itself at once and from `on_theme`.
+
+### A refusal nobody heard
+
+The first run of the check drew a 36-pixel bar with 52 chosen, and said
+nothing. The Deskbar's `win:resize` was refused: the window manager's resize
+handler asked `resizable`, which answers whether a window gets a *sizing
+grip*, and a strip rightly gets none. But the question a request needs is
+whether the window may be another size, and a strip may - it is only a
+window that draws its own pixels, with a shared surface of a fixed size, that
+may not. The handler asks that now, and a strip that changes height gives
+the room above every other window back (`recount_strips`).
+
+### The checks
+
+- **`test_theme.lua`**, 151: every theme's `bar_h`, and a 20-pixel bar
+  refused with its bounds.
+- **The display harness's `appearance` phase**, 2 more: `wm
+  appearance:--bar-height 52` is applied and written down, and a desktop
+  started afresh paints the harness's yellow bar to its 52nd row and the
+  desktop below it. **Control**: a window manager that ignores a saved
+  height draws the old 36-pixel bar, and the check fails.

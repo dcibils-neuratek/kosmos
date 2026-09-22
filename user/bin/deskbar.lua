@@ -1423,6 +1423,27 @@ end
 
 win:add(bar)
 
+--
+-- **As tall as the theme says** (`theme.bar_h`, `roadmap.md` 5v), and again
+-- whenever it changes. The window opens at 36, before this process has
+-- been told the theme - that arrives in the reply that opens it - so the
+-- first answer is a resize, and so is every later one. The icons stay 32
+-- and sit in the middle; `H` is also where a menu opens under the bar.
+--
+local function fit_height()
+  local want = math.type(theme.bar_h) == "integer" and theme.bar_h or 36
+
+  if want ~= H then
+    H = want
+    win:resize(W, H)
+    bar.h = H
+  end
+end
+
+fit_height()
+
+function win:on_theme() fit_height() end
+
 --------------------------------------------------------------------------
 -- Startup items.
 --

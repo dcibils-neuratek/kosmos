@@ -209,6 +209,23 @@ button_pad = 4 20
         "a good button padding after bad lines was not read")
 end
 
+-- 4b'. The Deskbar's height: every theme that ships names today's 36, and
+-- a bar too short for its 32-pixel icons is told, with the bounds.
+do
+  for _, name in ipairs(themes.order) do
+    local p = theme.read(themes[name], "dark")
+
+    check(p.bar_h == 36, name .. "'s Deskbar is " .. tostring(p.bar_h)
+          .. " tall, not 36")
+  end
+
+  local p, said = theme.read("bar_h = 20\nbar_h = 44\n", "dark")
+
+  check(#said == 1 and (said[1] or ""):find("36 to 64", 1, true),
+        "a 20-pixel Deskbar was told as: " .. tostring(said[1]))
+  check(p.bar_h == 44, "a 44-pixel Deskbar after a bad line was not read")
+end
+
 -- 4c. Words that read on a Deskbar somebody coloured (`theme.ink_on`):
 -- dark on the light bars, white on the dark ones - every swatch Appearance
 -- offers, by the answer it has to get.

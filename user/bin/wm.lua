@@ -409,6 +409,12 @@ local function load_appearance()
     theme.override { bar = saved.bar, bar_text = theme.ink_on(saved.bar) }
   end
 
+  -- And its height, within what the bar can hold (`roadmap.md` 5v).
+  if math.type(saved.bar_h) == "integer" and saved.bar_h >= theme.BAR_H_LEAST
+     and saved.bar_h <= theme.BAR_H_MOST then
+    theme.override { bar_h = saved.bar_h }
+  end
+
   --
   -- **`or theme.fonts`, and without it the desktop was two fonts at once.**
   --
@@ -3926,12 +3932,26 @@ handlers.resize = function(req)
 
   if not win then return { ok = false, error = "no such window" } end
 
-  if not resizable(win) then
+  --
+  -- **What the application may ask for, which is not what the pointer may
+  -- pull.** This asked `resizable`, and that answers whether a window gets
+  -- a sizing grip - no for a strip, rightly: the bar across the top is not
+  -- a window to be dragged into another shape. But it is a window that may
+  -- ask to be another height, since its height became a choice
+  -- (`roadmap.md` 5v), and asking the grip's question refused the Deskbar's
+  -- own request in silence. A window that draws its own pixels still
+  -- cannot be resized, because its surface is shared and has a size.
+  --
+  if win.shared ~= nil or win.backdrop then
     return { ok = false,
              error = "a window that draws its own pixels cannot be resized yet" }
   end
 
   resize_window(win, tonumber(req.w) or win.w, tonumber(req.h) or win.h)
+
+  -- A strip that changes height changes the room above everything else:
+  -- the Deskbar, since its height became a choice (`roadmap.md` 5v).
+  if win.strip then recount_strips() end
 
   return { ok = true, w = win.w, h = win.h }
 end
@@ -4472,6 +4492,11 @@ handlers.theme = function(req)
   -- above has just put in force.
   if math.type(req.bar) == "integer" then
     theme.override { bar = req.bar, bar_text = theme.ink_on(req.bar) }
+  end
+
+  if math.type(req.bar_h) == "integer" and req.bar_h >= theme.BAR_H_LEAST
+     and req.bar_h <= theme.BAR_H_MOST then
+    theme.override { bar_h = req.bar_h }
   end
 
   -- The font travels with the palette, because they are the same decision

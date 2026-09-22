@@ -1105,9 +1105,10 @@ processors, and still what follows USB:
    every application sets with its own numbers - 12 and 10 in Appearance,
    14 in Music and Shortcuts, 4 in the Deskbar - so one theme-wide gap moves
    some of them under every theme. **AGREED on 22 September**: Diego, "yes
-   to theme spacing". So a theme names `pad` and `gap`, the applications lay
-   themselves out with them, and the small moves under the other themes are
-   accepted rather than each application keeping numbers of its own. Diego, on `docs/indicators.html`: "i love the font
+   to theme spacing" - and **superseded the same day by 5x**: after using
+   it, "we should have a fixed widget layout and just use fonts that adhere
+   to the widget and windows layout". Spacing is the kit's and fixed, not a
+   theme's. Diego, on `docs/indicators.html`: "i love the font
    used in the mockups", "can we create a theme for kosmos that has this
    exact fonts selection, sizes and all and add it to the available
    themes?", "the theme is called Plex", and "i want the theme to look
@@ -1151,6 +1152,68 @@ processors, and still what follows USB:
    September**: widgets in Plex Sans 14; reading text in Plex Sans 16;
    headings in Plex Sans SemiBold, a file added from the same family; and
    no rounded corners and no shadow for now.
+
+5y. **AGREED on 22 September - very few options: three or four looks, and
+   nothing else to tune.** Diego, straight after 5x: "Too many config
+   options make the system vulnerable to changes and complicated", "We
+   should stick to very few options in colors and fonts", "To maintain
+   clarity and efficiency" - and, correcting a proposal that kept the old
+   themes and trimmed around them: "This is different from what we were
+   looking for. Let's just make 3 or 4 good design options in colors and
+   fonts and stick to those."
+
+   So a **look** is a whole: colours, faces, the Deskbar's colour and the
+   desktop's, designed together, on the one fixed layout of 5x. Somebody
+   picks a look, not its parts. Proposed four, drawn before anything is
+   built (`docs/looks.html`): **Plex**, as built; **Plex Night**, the same in
+   the dark; **Classic**, BeOS's grey and yellow in Plex type; **Studio**, a
+   near-black look for the media applications with one warm accent. The
+   per-role faces and sizes, the colour swatches, the title's shape and the
+   other themes leave the Appearance panel; what else stays - a wallpaper,
+   the Deskbar's height - is settled with the drawing.
+
+5x. **AGREED on 22 September - one fixed layout, and faces that fit it.**
+   Diego, after using Plex at 16 on the ThinkPad: "I realized the changing
+   of spacing on fonts alter the window widget placing and brakes it. We
+   should have a fixed widget layout and just use fonts that adhere to the
+   widget and windows layout", and then "And that layout is fixed".
+
+   **This reverses the direction of 5s's spacing half, 0.10.106's padding
+   and the Appearance panel's relayout (0.10.106):** there, a row was as
+   tall as its face plus a theme's padding, so a larger face moved every
+   widget below it - and an application that places its widgets at fixed
+   positions broke. Now the geometry is the kit's and it does not move:
+
+   - **Fixed sizes, in pixels, the same in every theme**: a list or menu
+     row, a button, a field, a window's tab. Chosen so that 16-pixel IBM
+     Plex fits, which is the size the ThinkPad wants.
+   - **A face fits its box or is not allowed at that size.** Each role
+     has a largest size its box can hold; Appearance offers only sizes that
+     fit, and the kit clamps anything larger - a theme or a saved setting
+     that asks for more gets the largest that fits, and the log says so.
+   - **Text longer than its box is cut there**, never spilling onto the
+     widget beside it.
+   - **Themes change colours and faces, not geometry**: `row_pad`,
+     `button_pad` and `field_pad` leave the theme format, and the Appearance
+     panel lays itself out once, like any other window.
+   - **The Deskbar's height stays Diego's choice** (5v): it is his, not a
+     theme's, and its fixed steps are this same shape.
+
+5w. **WANTED on 22 September - the Deskbar collects its events while a menu
+   is open.** On the ThinkPad with 0.10.106, after a run of Deskbar menus:
+   `wm: Deskbar is not collecting its events; dropped a mouse move`. The
+   window manager bounds a window's queue and drops when it is full, which
+   is right; what is not right is the Deskbar stopping its polls while one
+   of its menus is up, if that is what happened - a menu is a window of its
+   own, and the bar should go on answering underneath it.
+
+5v. **DONE on 22 September - the Deskbar's height, a theme value and a
+   choice** (`testing.md` 18.138). Diego: "i want to be able to change the
+   deskbar height for instance, where do i do that? is there a file?" - it
+   was `local H = 36` in `/bin/deskbar.lua` - and then "both": a theme
+   names `bar_h`, and Appearance offers 36, 44 and 52 pixels, kept in
+   `/home/.appearance` over the theme's. Not shorter than 36 yet: the bar's
+   icons are 32 pixels and the compositor does not scale a picture.
 
 5u. **DONE on 22 September - the Deskbar's colour, chosen by the person**
    (`testing.md` 18.137).

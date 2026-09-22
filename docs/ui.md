@@ -679,6 +679,12 @@ and a choice is kept over the theme's in `/home/.appearance`. The words on
 the bar follow it through `theme.ink_on`, dark on a light ground and white
 on a dark one, since a colour picked by hand has no theme to name them.
 
+**And its height**: a theme names `bar_h`, 36 in every theme that ships,
+and Appearance offers 36, 44 and 52 kept over it. The Deskbar opens at 36
+- the theme reaches it in the reply that opens its window - and resizes
+itself from `on_theme`; the window manager gives the room above every other
+window back when a strip changes height.
+
 **A window may ask to be told when the theme changes**: `win.on_theme`,
 which the kit calls after applying a theme event. Almost nothing needs it -
 widgets read the theme when they draw - and the one that does is the

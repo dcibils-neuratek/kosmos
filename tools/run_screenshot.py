@@ -3706,6 +3706,7 @@ def check_appearance(guest):
     checks += check_theme_plex(guest)
     checks += check_theme_events(guest)
     checks += check_deskbar_colour(guest)
+    checks += check_deskbar_height(guest)
 
     return checks
 
@@ -3785,6 +3786,71 @@ def check_deskbar_colour(guest):
         guest.wait_for("bar-reset", "put the harness's appearance back")
 
     return 2
+
+
+def check_deskbar_height(guest):
+    """**The Deskbar's height, chosen and kept** (`roadmap.md` 5v).
+
+    Diego, 22 September: "i want to be able to change the deskbar height".
+    `wm appearance:--bar-height 52` chooses it as a click does; a desktop
+    started afresh then has to paint the bar to its 52nd row and leave the
+    53rd to the desktop - the harness's palette paints the bar yellow and
+    the ground a dark blue, so one pixel either side says which it is.
+    """
+    mark = len(guest.seen)
+    guest.type("wm appearance:--bar-height 52")
+
+    try:
+        said = guest.wait_for_line("appearance: bar height ",
+                                   "Appearance to choose the bar's height",
+                                   mark)
+    finally:
+        stop_desktop(guest)
+
+    if said != "52 applied":
+        raise Failure("choosing the Deskbar's height said %r" % said)
+
+    guest.type("wm deskbar")
+
+    def tall_bar(w, h, px):
+        inside = (51 * w + w // 2) * 3
+        below = (54 * w + w // 2) * 3
+        r, g, b = px[inside], px[inside + 1], px[inside + 2]
+        r2, g2, b2 = px[below], px[below + 1], px[below + 2]
+
+        # The bar's yellow at its last row, and not below it.
+        if r > 200 and g > 150 and b < 90 and not (r2 > 200 and g2 > 150
+                                                   and b2 < 90):
+            return True
+
+        return None
+
+    try:
+        settle(guest, tall_bar, "a desktop started after the Deskbar's "
+               "height was chosen never drew a bar 52 pixels tall",
+               seconds=30)
+    finally:
+        stop_desktop(guest)
+        guest.type(appearance() + ' print("height" .. "-reset")')
+        guest.wait_for("height-reset", "put the harness's appearance back")
+
+    return 2
+
+
+def stop_desktop(guest):
+    """Control-W Q, and the prompt back - the phases above spell it out."""
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[back:]:
+            break
+
+        time.sleep(0.3)
 
 
 def check_theme_events(guest):
@@ -8123,7 +8189,7 @@ def main():
           f"chosen - its five faces loaded, written down, and still worn "
           f"after a restart, and its spacing inside a widget; and four "
           f"theme events reaching a window across as many replies as fit, "
-          f"and the Deskbar's colour chosen and kept, "
+          f"and the Deskbar's colour and height chosen and kept, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

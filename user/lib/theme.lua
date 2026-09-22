@@ -75,12 +75,14 @@ theme.palettes.dark = {
   bar       = 0xffffc700,
   bar_text  = 0xff101010,
 
-  -- The spacing inside a widget, as the kit always had it.
+  -- The spacing inside a widget, as the kit always had it, and the
+  -- Deskbar's height, as it always was.
   row_pad      = 0,
   button_pad_y = 5,
   button_pad_x = 12,
   field_pad_y  = 3,
   field_pad_x  = 4,
+  bar_h        = 36,
 
   -- Ink for a label lying on the desktop itself, which is not the ink for
   -- a label in a window and cannot be. `text` is chosen to read against
@@ -158,6 +160,7 @@ theme.palettes.light = {
   button_pad_x = 12,
   field_pad_y  = 3,
   field_pad_x  = 4,
+  bar_h        = 36,
 
   desktop_text = 0xffffffff,
 
@@ -264,15 +267,24 @@ for _, k in ipairs(theme.tokens) do known[k] = true end
 --
 theme.spacing = {
   "row_pad", "button_pad_y", "button_pad_x", "field_pad_y", "field_pad_x",
+  "bar_h",
 }
 
+--
+-- **And the Deskbar's height**, `bar_h`, since 22 September (`roadmap.md`
+-- 5v): Diego, "i want to be able to change the deskbar height", and then
+-- both - a theme value, and a choice in Appearance kept over it. At least
+-- 36, because the bar's icons are 32 pixels and the compositor does not
+-- scale a picture yet; a shorter bar would cut them.
+--
 local SPACING_KEYS = {
-  row_pad    = { "row_pad" },
-  button_pad = { "button_pad_y", "button_pad_x" },
-  field_pad  = { "field_pad_y", "field_pad_x" },
+  row_pad    = { names = { "row_pad" },                      least = 0,  most = 32 },
+  button_pad = { names = { "button_pad_y", "button_pad_x" }, least = 0,  most = 32 },
+  field_pad  = { names = { "field_pad_y", "field_pad_x" },   least = 0,  most = 32 },
+  bar_h      = { names = { "bar_h" },                        least = 36, most = 64 },
 }
 
-local SPACE_MOST = 32
+theme.BAR_H_LEAST, theme.BAR_H_MOST = 36, 64
 
 -- The five roles and their faces are defined at the end of this file;
 -- these are the bounds a theme's size is held to, the same as anything the
@@ -369,7 +381,8 @@ function theme.read(text, base)
           out.fonts[role] = { font = face, px = px }
         end
       elseif SPACING_KEYS[key] then
-        local names = SPACING_KEYS[key]
+        local spec = SPACING_KEYS[key]
+        local names = spec.names
         local got = {}
 
         for num in value:gmatch("%S+") do got[#got + 1] = num end
@@ -379,15 +392,16 @@ function theme.read(text, base)
         for i = 1, #got do
           got[i] = ok and tonumber(got[i]) or nil
           ok = ok and math.type(got[i]) == "integer"
-               and got[i] >= 0 and got[i] <= SPACE_MOST
+               and got[i] >= spec.least and got[i] <= spec.most
         end
 
         if ok then
           for i, name in ipairs(names) do out[name] = got[i] end
         else
           said[#said + 1] = ("line %d: `%s` wants %d whole number%s of "
-                             .. "pixels, 0 to %d"):format(n, key, #names,
-                             #names == 1 and "" or "s", SPACE_MOST)
+                             .. "pixels, %d to %d"):format(n, key, #names,
+                             #names == 1 and "" or "s", spec.least,
+                             spec.most)
         end
       elseif not known[key] then
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)

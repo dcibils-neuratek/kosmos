@@ -1,0 +1,217 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos's looks, drawn before any of them is built: roadmap.md 5x and 5y.
+  Diego, 22 September 2026: "We should have a fixed widget layout and just
+  use fonts that adhere to the widget and windows layout", "and that layout
+  is fixed", "Too many config options make the system vulnerable to changes
+  and complicated", and "Let's just make 3 or 4 good design options in colors
+  and fonts and stick to those". Every look below is drawn on the same fixed
+  layout, at the pixel sizes the kit will use.
+-->
+<title>Kosmos Looks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1060px; margin: 0 auto; padding: 44px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 68ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 64ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  .looks { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 22px; margin-top: 22px; }
+  .look { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 16px 18px; overflow-x: auto; }
+  .look h3 { font: 600 20px/1.2 var(--display); margin: 0 0 2px; }
+  .look .what { color: var(--muted); font-size: 14px; margin: 0 0 12px; max-width: 60ch; }
+  .look .faces { font: 12.5px/1.5 var(--mono); color: var(--muted); margin-top: 10px; }
+
+  /* A desktop in miniature, at the kit's real pixel sizes. Every colour is
+     the look's own, set on the element as custom properties. */
+  .desk { position: relative; width: 460px; height: 352px; background: var(--k-desk); overflow: hidden;
+          border: 1px solid rgba(0,0,0,.35); }
+  .bar { height: 36px; background: var(--k-bar); color: var(--k-bar-text); display: flex; align-items: center;
+         gap: 14px; padding: 0 12px; font: 16px/1 var(--body); border-bottom: 1px solid var(--k-line); }
+  .bar b { font-weight: 600; }
+  .bar .sp { flex: 1; }
+  .bar .clock { font-variant-numeric: tabular-nums; }
+  .bar .ico { width: 20px; height: 20px; border-radius: 3px; background: var(--k-accent); opacity: .85; }
+
+  .win { position: absolute; left: 22px; top: 58px; width: 416px; }
+  .tab { display: inline-flex; align-items: center; gap: 8px; height: 20px; padding: 0 12px 0 6px;
+         background: var(--k-tab); color: var(--k-tab-text); font: 600 14px/20px var(--display);
+         border: 1px solid var(--k-line); border-bottom: 0; }
+  .tab i { width: 11px; height: 11px; border: 1px solid var(--k-tab-text); opacity: .55; }
+  .body { background: var(--k-window); color: var(--k-text); border: 1px solid var(--k-line);
+          padding: 12px; display: grid; gap: 12px; font: 16px/1.3 var(--body); }
+  .body h4 { margin: 0; font: 600 15px/1.2 var(--body); }
+  .row { display: flex; gap: 12px; align-items: center; }
+  .btn { height: 28px; padding: 0 16px; display: inline-flex; align-items: center; background: var(--k-raised);
+         color: var(--k-text); border: 1px solid var(--k-line); box-shadow: inset 1px 1px 0 var(--k-edge-light), inset -1px -1px 0 var(--k-edge-dark); }
+  .btn.def { outline: 2px solid var(--k-ring); outline-offset: 1px; }
+  .field { height: 26px; flex: 1; display: flex; align-items: center; padding: 0 8px; background: var(--k-sunken);
+           color: var(--k-text); border: 1px solid var(--k-line); box-shadow: inset 1px 1px 0 var(--k-edge-dark); }
+  .field span { color: var(--k-dim); }
+  .list { background: var(--k-sunken); border: 1px solid var(--k-line); box-shadow: inset 1px 1px 0 var(--k-edge-dark); }
+  .list div { height: 24px; line-height: 24px; padding: 0 8px; color: var(--k-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list .on { background: var(--k-accent); color: var(--k-text-on); }
+  .para { color: var(--k-text); }
+  .para em { color: var(--k-dim); font-style: normal; }
+  .term { background: var(--k-console); color: var(--k-console-text); font: 14px/24px var(--mono); padding: 0 8px; height: 24px; }
+
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; margin-top: 12px; }
+  .wrap { overflow-x: auto; }
+  th { text-align: left; font: 500 11px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  td.v { font: 13px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  ol.q { padding-left: 22px; max-width: 72ch; }
+  ol.q li { margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Four looks, one layout</h1>
+  <p class="lede">You pick a look, not its parts. Each look is a finished design:
+  its colours, its fonts and its Deskbar, made together. All four sit on the same
+  fixed layout, so a window looks different in each and behaves the same in
+  all of them.</p>
+
+  <div class="looks">
+
+    <section class="look">
+      <h3>Plex</h3>
+      <p class="what">The mockups' own look, as built in 0.10.105: light stone, one
+      deep IBM blue, BeOS's yellow tab kept.</p>
+      <div class="desk" style="--k-desk:#3d63b8;--k-bar:#e7e7e3;--k-bar-text:#1e1e1e;--k-line:#777;--k-accent:#2a55c9;--k-tab:#f2c230;--k-tab-text:#3a2e00;--k-window:#f4f4f1;--k-text:#1e1e1e;--k-dim:#6c6c66;--k-raised:#e7e7e3;--k-sunken:#fff;--k-edge-light:#fff;--k-edge-dark:#9a9a94;--k-ring:#2a55c9;--k-text-on:#fff;--k-console:#1c1c1e;--k-console-text:#ececec">
+        <div class="bar"><b>Kosmos</b><span>Tracker</span><span class="sp"></span><span class="ico"></span><span class="clock">14:05</span></div>
+        <div class="win">
+          <div class="tab"><i></i>Tracker</div>
+          <div class="body">
+            <h4>Library</h4>
+            <div class="row"><span class="btn def">New folder</span><span class="btn">Delete</span><span class="field"><span>Search</span></span></div>
+            <div class="list"><div class="on">Deskbar</div><div>magicword-mjpeg.mp4</div><div>screenshot-2026-09-22-140501.png</div></div>
+            <div class="para">A paragraph, in the reading face. <em>Quieter words, like this.</em></div>
+            <div class="term">kosmos&gt; play film.mp4</div>
+          </div>
+        </div>
+      </div>
+      <div class="faces">Plex Sans 16 · titles Plex Sans Condensed 14 · headings SemiBold 15 · Plex Mono 14</div>
+    </section>
+
+    <section class="look">
+      <h3>Plex Night</h3>
+      <p class="what">The same design in the dark: slate windows on a midnight
+      desk, the blue lifted so it still reads, the yellow tab dimmed to amber.</p>
+      <div class="desk" style="--k-desk:#16213a;--k-bar:#23262c;--k-bar-text:#e6e8eb;--k-line:#0a0b0d;--k-accent:#4f7dff;--k-tab:#d9a92a;--k-tab-text:#231a00;--k-window:#1f2227;--k-text:#e6e8eb;--k-dim:#9aa1ab;--k-raised:#2c3038;--k-sunken:#15171b;--k-edge-light:#3a3f48;--k-edge-dark:#0d0e11;--k-ring:#7aa0ff;--k-text-on:#fff;--k-console:#0d0f12;--k-console-text:#d6dae0">
+        <div class="bar"><b>Kosmos</b><span>Tracker</span><span class="sp"></span><span class="ico"></span><span class="clock">22:40</span></div>
+        <div class="win">
+          <div class="tab"><i></i>Tracker</div>
+          <div class="body">
+            <h4>Library</h4>
+            <div class="row"><span class="btn def">New folder</span><span class="btn">Delete</span><span class="field"><span>Search</span></span></div>
+            <div class="list"><div class="on">Deskbar</div><div>magicword-mjpeg.mp4</div><div>screenshot-2026-09-22-224001.png</div></div>
+            <div class="para">A paragraph, in the reading face. <em>Quieter words, like this.</em></div>
+            <div class="term">kosmos&gt; play film.mp4</div>
+          </div>
+        </div>
+      </div>
+      <div class="faces">Plex Sans 16 · titles Plex Sans Condensed 14 · headings SemiBold 15 · Plex Mono 14</div>
+    </section>
+
+    <section class="look">
+      <h3>Classic</h3>
+      <p class="what">BeOS R5 as it was: the panel grey, the saturated yellow tab,
+      a grey selection with the text left black, blue only on the desk and the
+      focus ring. In Plex type, so it reads on today's screens.</p>
+      <div class="desk" style="--k-desk:#336698;--k-bar:#d8d8d8;--k-bar-text:#000;--k-line:#606060;--k-accent:#bebebe;--k-tab:#ffcb00;--k-tab-text:#000;--k-window:#d8d8d8;--k-text:#000;--k-dim:#808080;--k-raised:#e8e8e8;--k-sunken:#fff;--k-edge-light:#fff;--k-edge-dark:#989898;--k-ring:#0000e5;--k-text-on:#000;--k-console:#0b0b0b;--k-console-text:#d8d8d8">
+        <div class="bar"><b>Kosmos</b><span>Tracker</span><span class="sp"></span><span class="ico" style="background:#ffcb00"></span><span class="clock">14:05</span></div>
+        <div class="win">
+          <div class="tab"><i></i>Tracker</div>
+          <div class="body">
+            <h4>Library</h4>
+            <div class="row"><span class="btn def">New folder</span><span class="btn">Delete</span><span class="field"><span>Search</span></span></div>
+            <div class="list"><div class="on">Deskbar</div><div>magicword-mjpeg.mp4</div><div>screenshot-2026-09-22-140501.png</div></div>
+            <div class="para">A paragraph, in the reading face. <em>Quieter words, like this.</em></div>
+            <div class="term">kosmos&gt; play film.mp4</div>
+          </div>
+        </div>
+      </div>
+      <div class="faces">Plex Sans 16 · titles Plex Sans Condensed 14 · headings SemiBold 15 · Plex Mono 14</div>
+    </section>
+
+    <section class="look">
+      <h3>Studio</h3>
+      <p class="what">For the media applications - Video, Music, the solar system:
+      near-black and low-glare, so the picture is the brightest thing on the
+      screen, with one warm amber for what is selected and in focus.</p>
+      <div class="desk" style="--k-desk:#0e0f12;--k-bar:#141518;--k-bar-text:#d9d6d2;--k-line:#000;--k-accent:#e8833a;--k-tab:#e8833a;--k-tab-text:#1a0f05;--k-window:#18191d;--k-text:#e8e6e3;--k-dim:#8d8a86;--k-raised:#24262c;--k-sunken:#0f1013;--k-edge-light:#30333a;--k-edge-dark:#08090a;--k-ring:#f0a060;--k-text-on:#1a0f05;--k-console:#08090a;--k-console-text:#d8d4ce">
+        <div class="bar"><b>Kosmos</b><span>Video</span><span class="sp"></span><span class="ico"></span><span class="clock">21:15</span></div>
+        <div class="win">
+          <div class="tab"><i></i>Tracker</div>
+          <div class="body">
+            <h4>Library</h4>
+            <div class="row"><span class="btn def">New folder</span><span class="btn">Delete</span><span class="field"><span>Search</span></span></div>
+            <div class="list"><div class="on">Deskbar</div><div>magicword-mjpeg.mp4</div><div>screenshot-2026-09-22-211501.png</div></div>
+            <div class="para">A paragraph, in the reading face. <em>Quieter words, like this.</em></div>
+            <div class="term">kosmos&gt; play film.mp4</div>
+          </div>
+        </div>
+      </div>
+      <div class="faces">Plex Sans 16 · titles Plex Sans Condensed 14 · headings SemiBold 15 · Plex Mono 14</div>
+    </section>
+
+  </div>
+
+  <h2>The fixed layout all four share</h2>
+  <p>These sizes are the kit's, not a look's, and they don't change when a look
+  does. The fonts in every look are chosen so they fit inside them. That's what
+  makes a look safe to switch: no window can move or break.</p>
+  <div class="wrap"><table>
+    <tr><th>what</th><th>size</th><th>what fits in it</th></tr>
+    <tr><td>a list or menu row</td><td class="v">24 px</td><td>Plex Sans 16 (21 px tall), 8 px in from the left</td></tr>
+    <tr><td>a button</td><td class="v">28 px</td><td>Plex Sans 16, 16 px either side</td></tr>
+    <tr><td>a text field</td><td class="v">26 px</td><td>Plex Sans 16, 8 px in</td></tr>
+    <tr><td>a window's tab</td><td class="v">20 px</td><td>Plex Sans Condensed SemiBold 14</td></tr>
+    <tr><td>the terminal's line</td><td class="v">24 px</td><td>Plex Mono 14</td></tr>
+    <tr><td>between widgets, and from a window's edge</td><td class="v">12 px</td><td>—</td></tr>
+    <tr><td>the Deskbar</td><td class="v">36 px</td><td>32-pixel icons, Plex Sans 16</td></tr>
+  </table></div>
+  <p>Text longer than its box is cut there, never spilling into the widget beside
+  it: the third row above ends in "…" when the list is narrow.</p>
+
+  <h2>For you to choose</h2>
+  <ol class="q">
+    <li><b>Are these the looks?</b> All four, three of them, or one to change.</li>
+    <li><b>What else stays in Appearance:</b> the wallpaper (your pictures, or the
+    look's plain desk), and the Deskbar's height (36, 44, 52). My recommendation
+    is to keep both and nothing else.</li>
+    <li><b>The default</b> on a machine nobody has set up: Plex, I'd suggest.</li>
+  </ol>
+</main>
+</body>
+</html>

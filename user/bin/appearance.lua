@@ -129,7 +129,7 @@ end
 --
 local LH, LIST_H, RESET_H                     -- a label; a list; the button
 local PAL_Y, LIST_Y, RESET_Y, DESK_Y          -- the left column
-local SW, SWATCH_Y, BAR_Y, BAR_SW_Y, WALL_Y, WALL_LIST
+local SW, SWATCH_Y, BAR_Y, BAR_SW_Y, BAR_H_Y, BAR_H_H, WALL_Y, WALL_LIST
 local FONTS_Y, ROLE_Y, ROLE_H, LISTS_Y        -- the right column
 local FONT_W, PREVIEW_Y, PREVIEW_H
 local TITLES_Y, SHAPE_Y, SHAPE_H
@@ -150,7 +150,9 @@ local function measure()
   SW        = (LEFT_W - 7 * 4) // 8
   BAR_Y     = SWATCH_Y + 2 * (SW + 4) + GAP
   BAR_SW_Y  = BAR_Y + LH
-  WALL_Y    = BAR_SW_Y + (SW + 4) + GAP
+  BAR_H_Y   = BAR_SW_Y + SW + 4 + 2
+  BAR_H_H   = line_h() + 8
+  WALL_Y    = BAR_H_Y + BAR_H_H + GAP
   WALL_LIST = WALL_Y + LH
 
   FONTS_Y   = PAD
@@ -232,6 +234,7 @@ end
 local chosen_palette = "dark"
 local chosen_desktop = nil     -- nil means "whatever the palette says"
 local chosen_bar     = nil     -- the Deskbar's; nil is the theme's own
+local chosen_bar_h   = nil     -- its height, likewise
 
 -- Declared here rather than beside the font lists because `send` is written
 -- before them and closes over both.
@@ -305,6 +308,7 @@ local function send()
                                           palette = colours,
                                           desktop = chosen_desktop,
                                           bar = chosen_bar,
+                                          bar_h = chosen_bar_h,
                                           fonts = chosen,
                                           tabs = chosen_tabs })
 
@@ -318,6 +322,7 @@ local function send()
   local ok, werr = fs.write(SETTINGS, { palette = chosen_palette,
                                         desktop = chosen_desktop,
                                         bar = chosen_bar,
+                                        bar_h = chosen_bar_h,
                                         wallpaper = chosen_wallpaper,
                                         fonts = chosen,
                                         tabs = chosen_tabs })
@@ -475,6 +480,45 @@ local bar_swatches = ui.view{
 }
 
 win:add(bar_swatches)
+
+--
+-- **And its height** (`roadmap.md` 5v): 36, as it has always been, and two
+-- taller. Not shorter yet - its icons are 32 pixels and the compositor does
+-- not scale a picture, so a shorter bar would cut them.
+--
+local BAR_HEIGHTS = { 36, 44, 52 }
+
+local bar_heights = ui.view{
+  x = LEFT_X, y = BAR_H_Y, w = LEFT_W, h = BAR_H_H,
+
+  draw = function(self, g)
+    local each = (self.w - 8 * (#BAR_HEIGHTS - 1)) // #BAR_HEIGHTS
+    local now = chosen_bar_h or ui.theme.bar_h
+
+    for i, px in ipairs(BAR_HEIGHTS) do
+      local x = (i - 1) * (each + 8)
+      local on = px == now
+      local label = px .. " pixels"
+
+      g:fill(x, 0, each, self.h, on and "accent" or "raised")
+      g:frame(x, 0, each, self.h, "line")
+      g:text(x + (each - gfx.measure(label)) // 2, (self.h - line_h()) // 2,
+             label, on and "text_on" or "text")
+    end
+  end,
+
+  on_click = function(self, x, _)
+    local each = (self.w - 8 * (#BAR_HEIGHTS - 1)) // #BAR_HEIGHTS
+    local px = BAR_HEIGHTS[math.min(#BAR_HEIGHTS, x // (each + 8) + 1)]
+
+    if px then
+      chosen_bar_h = px
+      send()
+    end
+  end,
+}
+
+win:add(bar_heights)
 
 --------------------------------------------------------------------------
 -- Fonts, by role.
@@ -752,6 +796,7 @@ local reset_button = ui.button{
   on_click = function()
     chosen_desktop = nil
     chosen_bar = nil
+    chosen_bar_h = nil
     take_theme_faces(chosen_palette)
     reflect()
     send()
@@ -770,6 +815,7 @@ if type(saved) == "table" then
   chosen_palette = saved.palette or chosen_palette
   chosen_desktop = saved.desktop
   chosen_bar = math.type(saved.bar) == "integer" and saved.bar or nil
+  chosen_bar_h = math.type(saved.bar_h) == "integer" and saved.bar_h or nil
   chosen_wallpaper = saved.wallpaper
   chosen_tabs = (saved.tabs == "full") and "full" or "beos"
   if type(saved.fonts) == "table" then
@@ -978,6 +1024,7 @@ local function layout()
   swatches.y, swatches.h = SWATCH_Y, 2 * (SW + 4)
   bar_label.y = BAR_Y
   bar_swatches.y, bar_swatches.h = BAR_SW_Y, SW + 4
+  bar_heights.y, bar_heights.h = BAR_H_Y, BAR_H_H
   wall_label.y = WALL_Y
   wall_list.y, wall_list.h = WALL_LIST, LIST_H
 
@@ -1033,6 +1080,22 @@ function win:on_theme() layout() end
 -- names a face the image does not carry says so here instead of looking
 -- right in the panel and drawing in the previous face.
 --
+--
+-- **`--bar-height 44`**, its height the way a click chooses it.
+--
+do
+  local px = tonumber((args or ""):match("%-%-bar%-height%s+(%d+)"))
+
+  if px then
+    chosen_bar_h = px
+
+    local reply, why = send()
+
+    print(("appearance: bar height %d %s"):format(px,
+          reply and "applied" or ("refused: " .. tostring(why))))
+  end
+end
+
 --
 -- **`--bar rrggbb`**, the Deskbar's colour the way a click on a swatch
 -- chooses it, for the same two reasons.
