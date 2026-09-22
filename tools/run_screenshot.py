@@ -128,6 +128,12 @@ QEMU = "qemu-system-aarch64"
 # `monitor` draws its one line of text into.
 GLYPH_W = 8
 GLYPH_H = 16
+
+# **The kit's fixed row** (`theme.metrics.row`, `roadmap.md` 5x): a list, a
+# tree or a menu row is 24 pixels whatever the face. Checks that found a
+# row by the face's height - 16 in the harness's pinned bitmap - measured
+# the layout that followed the face, which is gone.
+LAYOUT_ROW = 24
 RESERVED_PX = 2 * GLYPH_H
 
 
@@ -1671,7 +1677,7 @@ def check_widgets(guest):
             width, height, px = parse_ppm(guest.screendump())
             after = find_colour_anywhere(width, height, px, SELECTED)
 
-            if after is not None and after[1] - bar_before[1] >= step * 16:
+            if after is not None and after[1] - bar_before[1] >= step * LAYOUT_ROW:
                 break
 
             time.sleep(0.3)
@@ -1684,7 +1690,7 @@ def check_widgets(guest):
 
     send(b"\r", 1.0)
 
-    rows = (after[1] - bar_before[1]) / 16.0
+    rows = (after[1] - bar_before[1]) / float(LAYOUT_ROW)
 
     if abs(rows - 2) > 0.5:
         raise Failure(
@@ -3949,13 +3955,12 @@ def check_theme_plex(guest):
                                    "Appearance to choose Plex", mark)
 
         #
-        # **And the panel laid out again in Plex's faces.** It was laid out
-        # once, at the faces it opened with, and on the ThinkPad on 22
-        # September 16-pixel faces ran its role list off the bottom of its
-        # box and put its status line under the window titles group. The
-        # harness's pinned faces are the 16-pixel bitmap and Plex's are
-        # larger with padded rows, so a panel that follows the theme event
-        # comes out taller.
+        # **And the panel keeps its size in Plex's faces** (`roadmap.md` 5x).
+        # This held the opposite the same morning - that the panel grew with
+        # larger faces - which was the layout following the face, and Diego
+        # then asked for the layout to be fixed and the faces to fit it. So
+        # laid out again in a different look, the panel is exactly the size
+        # it was; a layout that followed its faces would not be.
         #
         again = guest.wait_for_line("appearance: laid out again, ",
                                     "Appearance to lay itself out again in "
@@ -3963,9 +3968,9 @@ def check_theme_plex(guest):
         before = re.match(r"(\d+)x(\d+),", first)
         after = re.match(r"(\d+)x(\d+),", again)
 
-        if not (before and after) or int(after.group(2)) <= int(before.group(2)):
+        if not (before and after) or before.groups() != after.groups():
             raise Failure("the Appearance panel was %r and, laid out again in "
-                          "Plex, %r - it did not grow with the faces"
+                          "Plex, %r - its layout moved with the faces"
                           % (first, again))
 
         if not line.startswith("applied, held "):
@@ -4009,9 +4014,9 @@ def check_theme_plex(guest):
     # heading face it holds.
     #
     #
-    # And the spacing inside a widget reaching an application: a list's
-    # row is its face and Plex's 7 pixels either side, and a button given
-    # no size is its words and 16 either side (`docs/plex.html`).
+    # And the fixed layout reaching an application (`roadmap.md` 5x): a
+    # list's row is 24 whatever the face, and a button given no size is its
+    # words and 16 either side, 28 tall.
     #
     program = ("local ui = use('/lib/ui.lua') "
                "local w = ui.window{ title = 'Spacing', w = 200, h = 90, "
@@ -4023,8 +4028,8 @@ def check_theme_plex(guest):
                "local h = r and r.held and r.held.heading "
                "print('theme' .. '-now: ' .. tostring(r and r.palette) .. ' ' "
                ".. tostring(h and (h.font .. '/' .. h.px))) "
-               "print('theme' .. '-space: ' .. (l:row_height() - gfx.height()) "
-               ".. ' ' .. (b.w - gfx.measure('Probe')))")
+               "print('theme' .. '-space: ' .. l:row_height() "
+               ".. ' ' .. (b.w - gfx.measure('Probe')) .. ' ' .. b.h)")
     guest.type("fs.write('/ramfs/themenow.lua', %r)" % program)
     time.sleep(1.0)
     mark = len(guest.seen)
@@ -4062,10 +4067,10 @@ def check_theme_plex(guest):
         raise Failure("a desktop started with Plex saved wears %r - the "
                       "theme was written down and did not come back" % now)
 
-    if space != "14 32":
-        raise Failure("under Plex a list's row is its face and %s, and a "
-                      "button its words and %s - wanted 14 and 32, Plex's "
-                      "7 and 16 either side" % tuple((space.split() + ["?", "?"])[:2]))
+    if space != "24 32 28":
+        raise Failure("under Plex a list's row is %s, a button its words and "
+                      "%s, and %s tall - the fixed layout is 24, 32 and 28"
+                      % tuple((space.split() + ["?", "?", "?"])[:3]))
 
     return 5
 
@@ -6203,7 +6208,7 @@ def check_deskbar(guest):
     # pictures gives every row the picture's height, 32 and four, from two
     # pixels in.
     #
-    row_h = max(GLYPH_H + 6, 32 + 4)
+    row_h = max(LAYOUT_ROW, 32 + 4)
     menu_x, menu_y = 0, 36
 
     # And its width, because the submenu opens beside it: the widest name,
@@ -6681,8 +6686,9 @@ def check_panel(guest):
     width, height, _ = parse_ppm(guest.screendump())
 
     # panel.lua: the list starts at x 12 + 190 + 6 and at y 34 plus a header
-    # a face high and four; its rows are a face high from 2 in. Row two.
-    row_x, row_y = 208 + 60, 34 + 20 + 2 + 16 + 8
+    # a face high and four; its rows are the fixed layout's, from 2 in. The
+    # middle of row two.
+    row_x, row_y = 208 + 60, 34 + 20 + 2 + LAYOUT_ROW + LAYOUT_ROW // 2
 
     def click():
         guest.mouse_to(*_to_tablet(wx + row_x, wy + row_y, width, height))
@@ -6768,7 +6774,7 @@ def check_places(guest):
       - right-clicked, it is no longer in Places.
     """
     NAME = "PlaceProbe"
-    ROW = 16                            # the default face; pinned below
+    ROW = LAYOUT_ROW                    # a tree's row, the fixed layout's
 
     guest.type(appearance())
     guest.type('fs.send("/home/placetest", { type = "mkdir" })')

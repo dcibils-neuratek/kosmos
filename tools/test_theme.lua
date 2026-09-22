@@ -158,12 +158,6 @@ do
           .. ", not " .. f[1] .. " " .. f[2])
   end
 
-  -- And its spacing, `docs/plex.html`'s: rows 7, buttons 5 by 16, fields
-  -- 5 by 8.
-  check(p.row_pad == 7 and p.button_pad_y == 5 and p.button_pad_x == 16
-        and p.field_pad_y == 5 and p.field_pad_x == 8,
-        "plex's spacing is not rows 7, buttons 5x16, fields 5x8")
-
   -- Chosen for its weight: an exact face, not a prefix standing in for one.
   check(resolves("ibmplexsans-semibold") == "ibmplexsans-semibold",
         "Plex Sans SemiBold is not a face the image carries")
@@ -198,43 +192,37 @@ font.mono = ibmplexmono 400
         .. d.ui.font .. " " .. d.ui.px)
 end
 
--- 4b. Spacing a file gets wrong: each told, and the defaults kept.
+-- 4b. The fixed layout (`theme.metrics`, roadmap 5x): the same in every
+-- look, and a look's faces fit it. `gfx.c` sizes a face so its ascent and
+-- descent come to its pixel size, and rounding can add one: so a face of
+-- `px` fits a box of `px + 2` with a pixel above and below it.
 do
-  local p, said = theme.read([[
-row_pad = -1
-button_pad = 5
-field_pad = 5 8 9
-row_pad = 40
-button_pad = 4 20
-]], "dark")
+  local m = theme.metrics
 
-  check(#said == 4, "four bad spacing lines gave " .. #said .. " complaints: "
-        .. table.concat(said, "; "))
-  check((said[1] or ""):find("whole number of pixels, 0 to 32", 1, true),
-        "a negative row padding was told as: " .. tostring(said[1]))
-  check((said[2] or ""):find("2 whole numbers", 1, true),
-        "a button padding with one number was told as: " .. tostring(said[2]))
-  check(p.row_pad == 0 and p.field_pad_x == 4,
-        "a bad spacing line changed the spacing")
-  check(p.button_pad_y == 4 and p.button_pad_x == 20,
-        "a good button padding after bad lines was not read")
-end
+  check(m.row == 24 and m.button == 28 and m.field == 26 and m.tab == 20,
+        "the fixed layout is not rows 24, buttons 28, fields 26, tabs 20")
 
--- 4b'. The Deskbar's height: every theme that ships names today's 36, and
--- a bar too short for its 32-pixel icons is told, with the bounds.
-do
+  local box = { ui = m.row, text = m.row, heading = m.row, mono = m.row,
+                title = m.tab }
+
   for _, name in ipairs(themes.order) do
     local p = theme.read(themes[name], "dark")
 
-    check(p.bar_h == 36, name .. "'s Deskbar is " .. tostring(p.bar_h)
-          .. " tall, not 36")
+    for role, h in pairs(box) do
+      local f = p.fonts[role]
+
+      check(f.px + 2 <= h, ("%s's %s face is %d pixels, which does not fit "
+                            .. "its %d-pixel box"):format(name, role, f.px, h))
+    end
   end
 
-  local p, said = theme.read("bar_h = 20\nbar_h = 44\n", "dark")
+  -- And a theme cannot carry geometry: a padding is a word it does not know.
+  local _, said = theme.read("row_pad = 7\nbar_h = 44\n", "dark")
 
-  check(#said == 1 and (said[1] or ""):find("36 to 64", 1, true),
-        "a 20-pixel Deskbar was told as: " .. tostring(said[1]))
-  check(p.bar_h == 44, "a 44-pixel Deskbar after a bad line was not read")
+  check(#said == 2 and (said[1] or ""):find("no token called `row_pad`", 1, true)
+        and (said[2] or ""):find("no token called `bar_h`", 1, true),
+        "a theme that named a row padding and a bar height was told: "
+        .. table.concat(said, "; "))
 end
 
 -- 4c. Words that read on a Deskbar somebody coloured (`theme.ink_on`):
@@ -264,10 +252,8 @@ do
   theme.apply(p)
 
   check(theme.desktop == 0xff3d63b8, "applying Plex did not paint its desktop")
-  check(theme.row_pad == 7 and theme.field_pad_x == 8
-        and theme.current().row_pad == 7 and theme.current().button_pad_x == 16,
-        "applying Plex did not put its spacing in force, or current() does "
-        .. "not carry it to other windows")
+  check(theme.current().bar_h == 36,
+        "current() does not carry the Deskbar's height to other windows")
   check(theme.fonts == before
         and theme.fonts.ui.font .. " " .. theme.fonts.ui.px == ui_before,
         "applying Plex replaced the faces in force with its own, without "
@@ -276,7 +262,7 @@ end
 
 if fails == 0 then
   print(("PASS: %d checks on the themes that ship (every face carried, the "
-         .. "four looks sharing their faces and legible, Plex as docs/plex.html has it, a bad "
+         .. "four looks sharing their faces, legible and fitting the fixed layout, Plex as docs/plex.html has it, a bad "
          .. "line told, and a palette applied without its faces)."):format(checks))
   os.exit(0)
 end

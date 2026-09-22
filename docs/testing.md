@@ -7407,3 +7407,42 @@ machine's look - BeOS, which it was written against - and looked for its
 console's `#0b0b0b`. With Plex the default, the console was `#1c1c1e` and
 the phase failed on both boards in the first 0.10.109 prepush. It names
 Classic now, BeOS's palette, as its notes always said it meant to.
+
+## 18.140 One fixed layout
+
+**Diego, 22 September**, after using faces at 16 over a layout that
+followed them: "the changing of spacing on fonts alter the window widget
+placing and brakes it. We should have a fixed widget layout and just use
+fonts that adhere to the widget and windows layout", "and that layout is
+fixed" (`roadmap.md` 5x).
+
+### What changed
+
+- **`theme.metrics`**: a list, tree or menu row is **24** pixels, a button
+  **28**, a field **26**, a window's tab **20** - in every look and at every
+  face. `ui.lua` reads them; `ui.metrics` hands them to applications.
+- **The kit's widgets are those sizes**, and the words in them are centred
+  by `gfx.height()`, asked when drawn - where they used to be sized by
+  `GH`, the face as it stood when the kit loaded, which is how a larger face
+  made every row taller and moved everything below it. A checkbox's box is
+  16 pixels; a menu row with a picture is still as tall as its 32-pixel icon.
+- **A theme carries no geometry.** The same morning's `row_pad`,
+  `button_pad` and `field_pad` are gone from the format and from the looks;
+  a file that names one is told it is no token. The Deskbar's height is the
+  one geometric thing left, and it is Diego's choice (5v), never a look's.
+
+### The checks
+
+- **`test_theme.lua`**, 161: the fixed sizes, and **every look's faces fit
+  their boxes** - widgets, text, headings and the terminal a 24-pixel row,
+  titles the 20-pixel tab, with a pixel either side, since `gfx.c` makes a
+  face's ascent and descent come to its size and rounding can add one. A
+  theme naming `row_pad` or `bar_h` is told. **Control**: a look whose
+  widget face is 23 pixels fails it in all four.
+- **The display harness**: under Plex a list's row is 24, a button given
+  no size its words and 32, and 28 tall. And the Appearance panel, laid out
+  again in Plex's faces, **keeps exactly its size** - the check that held
+  the opposite that morning, that it grew with the faces, is turned round.
+  Three checks that found a list's rows by the 16-pixel face - the arrow keys
+  moving a selection, the Open window's second row, Tracker's Places - find
+  them by the fixed row now (`LAYOUT_ROW`).

@@ -124,7 +124,7 @@ end
 -- the terminal, and the role list's last row ran off the bottom of its box
 -- while the status line - "not saved", and why - slid under the window
 -- titles group, so the one sentence that said the choice had failed could
--- not be read. A list's height counts the theme's `row_pad` too, which is
+-- not be read. A list's height is its rows at the fixed layout's 24, which is
 -- what showed three themes of seven under Plex.
 --
 local LH, LIST_H, RESET_H                     -- a label; a list; the button
@@ -136,7 +136,7 @@ local TITLES_Y, SHAPE_Y, SHAPE_H
 local TALL                                    -- the window, top to bottom
 
 local function measure()
-  local row = line_h() + 2 * ui.theme.row_pad
+  local row = ui.metrics.row
 
   LH        = line_h() + 6
   LIST_H    = ROWS * row + 6

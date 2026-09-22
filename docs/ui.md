@@ -671,12 +671,13 @@ palette, without one face being loaded to match. It copies the colour
 tokens and nothing else now, and the faces are applied on purpose by
 whoever chose the theme. `tools/test_theme.lua` holds both, with a control.
 
-**The spacing inside a widget is in a theme too**: `row_pad` above and
-below a list row's words, `button_pad` and `field_pad` around a button's
-and a field's, carried with the colours and read by the kit when it draws.
-Every theme but Plex names the numbers the kit always had. The spacing
-*between* widgets is each application's own and is not in a theme yet
-(`roadmap.md` 5s).
+**The layout is fixed, and no theme changes it** (`roadmap.md` 5x,
+`theme.metrics`): a row is 24 pixels, a button 28, a field 26, a tab 20,
+in every look and at every face, and the kit centres the words of the face
+in force inside those boxes. A look's faces are chosen to fit them. For a
+morning on 22 September a theme could pad rows, buttons and fields; a
+larger face then moved every widget below it, and Diego asked for the
+layout to be fixed instead.
 
 **The Deskbar's colour is the person's as well as the theme's.** A theme
 names where it starts; Appearance offers eight beside the desktop's colour,

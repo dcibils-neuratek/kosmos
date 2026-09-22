@@ -1170,13 +1170,15 @@ processors, and still what follows USB:
    the dark; **Classic**, BeOS's grey and yellow in Plex type; **Studio**, a
    near-black look for the media applications with one warm accent. Built
    in three steps: **the looks as the themes - done, 0.10.109** (`testing.md`
-   18.139); the fixed layout; then the Appearance panel down to a look, a
-   wallpaper and the Deskbar's height, drawn first. The
+   18.139); **the fixed layout - done, 0.10.110** (5x); then the Appearance
+   panel down to a look, a wallpaper and the Deskbar's height, drawn first
+   in `docs/looks.html` and waiting for Diego's word on the drawing. The
    per-role faces and sizes, the colour swatches, the title's shape and the
    other themes leave the Appearance panel; what else stays - a wallpaper,
    the Deskbar's height - is settled with the drawing.
 
-5x. **AGREED on 22 September - one fixed layout, and faces that fit it.**
+5x. **DONE on 22 September (0.10.110, `testing.md` 18.140) - one fixed
+   layout, and faces that fit it.**
    Diego, after using Plex at 16 on the ThinkPad: "I realized the changing
    of spacing on fonts alter the window widget placing and brakes it. We
    should have a fixed widget layout and just use fonts that adhere to the

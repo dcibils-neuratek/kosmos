@@ -75,13 +75,7 @@ theme.palettes.dark = {
   bar       = 0xffffc700,
   bar_text  = 0xff101010,
 
-  -- The spacing inside a widget, as the kit always had it, and the
-  -- Deskbar's height, as it always was.
-  row_pad      = 0,
-  button_pad_y = 5,
-  button_pad_x = 12,
-  field_pad_y  = 3,
-  field_pad_x  = 4,
+  -- The Deskbar's height, as it always was, until somebody chooses.
   bar_h        = 36,
 
   -- Ink for a label lying on the desktop itself, which is not the ink for
@@ -155,11 +149,6 @@ theme.palettes.light = {
   bar       = 0xffffc700,
   bar_text  = 0xff101010,
 
-  row_pad      = 0,
-  button_pad_y = 5,
-  button_pad_x = 12,
-  field_pad_y  = 3,
-  field_pad_x  = 4,
   bar_h        = 36,
 
   desktop_text = 0xffffffff,
@@ -243,46 +232,31 @@ local known = {}
 for _, k in ipairs(theme.tokens) do known[k] = true end
 
 --
--- **Spacing inside a widget**, since 22 September 2026 (`roadmap.md` 5s,
--- `docs/plex.html`): how far a list row's words sit from the row's edges,
--- and how far a button's and a field's words sit from theirs. Numbers of
--- pixels, carried with the colours - `theme.apply` copies them and
--- `theme.current` sends them - because they are the same kind of fact: how
--- the kit draws, the same in every window.
+-- **The fixed layout** (`roadmap.md` 5x), the same in every look and at
+-- every face. Diego, 22 September 2026, after using faces at 16 over a
+-- layout that followed them: "I realized the changing of spacing on fonts
+-- alter the window widget placing and brakes it. We should have a fixed
+-- widget layout and just use fonts that adhere to the widget and windows
+-- layout", and "And that layout is fixed".
 --
--- Written in a file as three keys, a padding each, the way CSS writes one:
+-- So a list or menu row is 24 pixels, a button 28, a field 26 and a
+-- window's tab 20, whatever face is in force; the kit places words inside
+-- those boxes, and a look's faces are chosen to fit them
+-- (`tools/test_theme.lua` holds each to its box). The same morning a theme
+-- could pad a row, a button and a field; that was the other direction and
+-- it is gone. What stays here is the one geometric thing a person chooses:
+-- the Deskbar's height (`bar_h`, 5v), 36, 44 or 52, which no look sets.
 --
---   row_pad    = 7          above and below a list row's words
---   button_pad = 5 16       a button's: top and bottom, then either side
---   field_pad  = 5 8        a field's, likewise
---
--- What each is today is what every theme but Plex names: rows with no
--- padding, buttons 5 by 12, fields 3 by 4 - the numbers the kit had
--- written into it.
---
--- The spacing *between* widgets is not here, and that is not an oversight:
--- each application lays itself out with its own numbers - 12, 14, 10, 4 -
--- so one theme-wide gap would move some of them under every theme. That is
--- Diego's to decide, and `docs/plex.html` asks.
---
-theme.spacing = {
-  "row_pad", "button_pad_y", "button_pad_x", "field_pad_y", "field_pad_x",
-  "bar_h",
+theme.metrics = {
+  row    = 24,    -- a list, a tree or a menu row
+  button = 28,    -- a button
+  field  = 26,    -- a one-line field
+  tab    = 20,    -- a window's title tab; `TAB_H` in `wm.lua` agrees
+  gap    = 12,    -- between widgets, and from a window's edge
 }
 
---
--- **And the Deskbar's height**, `bar_h`, since 22 September (`roadmap.md`
--- 5v): Diego, "i want to be able to change the deskbar height", and then
--- both - a theme value, and a choice in Appearance kept over it. At least
--- 36, because the bar's icons are 32 pixels and the compositor does not
--- scale a picture yet; a shorter bar would cut them.
---
-local SPACING_KEYS = {
-  row_pad    = { names = { "row_pad" },                      least = 0,  most = 32 },
-  button_pad = { names = { "button_pad_y", "button_pad_x" }, least = 0,  most = 32 },
-  field_pad  = { names = { "field_pad_y", "field_pad_x" },   least = 0,  most = 32 },
-  bar_h      = { names = { "bar_h" },                        least = 36, most = 64 },
-}
+-- Carried with the colours, so every window hears the Deskbar's height.
+theme.spacing = { "bar_h" }
 
 theme.BAR_H_LEAST, theme.BAR_H_MOST = 36, 64
 
@@ -379,29 +353,6 @@ function theme.read(text, base)
                                                  FONT_PX_MOST)
         else
           out.fonts[role] = { font = face, px = px }
-        end
-      elseif SPACING_KEYS[key] then
-        local spec = SPACING_KEYS[key]
-        local names = spec.names
-        local got = {}
-
-        for num in value:gmatch("%S+") do got[#got + 1] = num end
-
-        local ok = #got == #names
-
-        for i = 1, #got do
-          got[i] = ok and tonumber(got[i]) or nil
-          ok = ok and math.type(got[i]) == "integer"
-               and got[i] >= spec.least and got[i] <= spec.most
-        end
-
-        if ok then
-          for i, name in ipairs(names) do out[name] = got[i] end
-        else
-          said[#said + 1] = ("line %d: `%s` wants %d whole number%s of "
-                             .. "pixels, %d to %d"):format(n, key, #names,
-                             #names == 1 and "" or "s", spec.least,
-                             spec.most)
         end
       elseif not known[key] then
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)

@@ -99,14 +99,6 @@ font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
 font.mono    = ibmplexmono 14
-
-# And the mockups' spacing inside a widget, from `docs/plex.html`: a list
-# row with 7 pixels above and below its words, as the indicators' panel
-# has them; buttons 5 by 16 and fields 5 by 8, as the style guide proposed.
-row_pad    = 7
-button_pad = 5 16
-field_pad  = 5 8
-bar_h      = 36
 ]]
 
 --------------------------------------------------------------------------
@@ -155,11 +147,6 @@ font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
 font.mono    = ibmplexmono 14
-
-row_pad    = 7
-button_pad = 5 16
-field_pad  = 5 8
-bar_h      = 36
 ]]
 
 --------------------------------------------------------------------------
@@ -222,11 +209,6 @@ font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
 font.mono    = ibmplexmono 14
-
-row_pad    = 7
-button_pad = 5 16
-field_pad  = 5 8
-bar_h      = 36
 ]]
 
 --------------------------------------------------------------------------
@@ -274,11 +256,6 @@ font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
 font.mono    = ibmplexmono 14
-
-row_pad    = 7
-button_pad = 5 16
-field_pad  = 5 8
-bar_h      = 36
 ]]
 
 return themes

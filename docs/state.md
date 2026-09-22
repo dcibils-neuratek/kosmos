@@ -74,10 +74,11 @@ the stick. Not closed until a run says so with bytes written.
 1. **The looks** (5x, 5y): Diego asked for a fixed layout that faces fit,
    very few options, and "3 or 4 good design options in colors and fonts";
    four were drawn (`docs/looks.html`) and approved. **0.10.109** makes them
-   the themes (18.139). Next: the fixed layout (row 24, button 28, field 26,
-   and the spacing options out of the theme format - the display harness
-   will need new numbers throughout), then Appearance down to a look, a
-   wallpaper and the Deskbar's height, drawn first.
+   the themes (18.139), **0.10.110** the fixed layout (18.140): rows 24,
+   buttons 28, fields 26, tabs 20 in every look, the spacing options gone
+   from the theme format, and four harness checks moved to the fixed row.
+   Next: Appearance down to a look, a wallpaper and the Deskbar's height -
+   drawn in `docs/looks.html`, waiting for Diego's word on the drawing.
 1. **0.10.107** (`8c6e2ee`, committed, not pushed): the Deskbar's colour
    chosen in Appearance (5u, 18.137), and commit subjects that start with
    their version again (CLAUDE.md). **0.10.108**: its height, a theme value

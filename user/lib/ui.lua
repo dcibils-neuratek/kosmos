@@ -85,6 +85,22 @@ end
 
 local GW, GH = gfx.font.w, gfx.font.h
 
+--
+-- **The fixed layout** (`theme.metrics`, `roadmap.md` 5x): a row is 24
+-- pixels, a button 28, a field 26, whatever face is in force. Widgets are
+-- those sizes; the words in them are placed by the face - centred in the
+-- box by `gfx.height()`, asked when drawn - and a look's faces are chosen
+-- to fit. `GH` is the face as it stood when this file loaded, and it used
+-- to size rows too, which is how a larger face moved everything below it.
+--
+local ROW, BUTTON, FIELD = theme.metrics.row, theme.metrics.button,
+                           theme.metrics.field
+
+ui.metrics = theme.metrics
+
+-- Where a line of words of the face in force starts, in a box `h` tall.
+local function centred(h) return (h - gfx.height()) // 2 end
+
 --------------------------------------------------------------------------
 -- The graphics context.
 --
@@ -948,7 +964,7 @@ function ui.tree(spec)
   local v = ui.view(spec)
 
   v.w = v.w > 0 and v.w or 180
-  v.h = v.h > 0 and v.h or (GH * 8)
+  v.h = v.h > 0 and v.h or (ROW * 8)
   v.focusable = true
   v.roots = v.roots or {}
   v.top = 1
@@ -964,7 +980,7 @@ function ui.tree(spec)
   -- drift the first time the face changed.
   --
   function v:node_at(y)
-    local r = self.rows and self.rows[self.top + (y - 2) // GH]
+    local r = self.rows and self.rows[self.top + (y - 2) // ROW]
 
     return r and r.node, r
   end
@@ -977,7 +993,7 @@ function ui.tree(spec)
     end
 
     local rows = tree_rows(self.roots, 0, {})
-    local shown = (self.h - 4) // GH
+    local shown = (self.h - 4) // ROW
 
     self.rows = rows
     self.shown = shown
@@ -994,7 +1010,7 @@ function ui.tree(spec)
 
       if not r then break end
 
-      local y = 2 + i * GH
+      local y = 2 + i * ROW
       local x = 4 + r.depth * TREE_INDENT
 
       --
@@ -1017,7 +1033,7 @@ function ui.tree(spec)
                      or ((head or r.node.quiet) and theme.text_dim
                                                 or theme.text)
 
-      if on then g:fill(2, y, room, GH, bg) end
+      if on then g:fill(2, y, room, ROW, bg) end
 
       --
       -- The marker, and only on something that can be opened. Built from
@@ -1025,7 +1041,7 @@ function ui.tree(spec)
       -- which is the one convention every tree in every system shares.
       --
       if r.node.children or r.node.kids then
-        local ax, ay = x, y + (GH - 5) // 2
+        local ax, ay = x, y + (ROW - 5) // 2
 
         for k = 0, 4 do
           if r.node.open then
@@ -1043,7 +1059,8 @@ function ui.tree(spec)
         end
       end
 
-      g:text(x + TREE_ARROW, y, tostring(r.node.text or "?"), fg, bg)
+      g:text(x + TREE_ARROW, y + centred(ROW), tostring(r.node.text or "?"),
+             fg, bg)
 
       --
       -- **What a row is, beside what it is called**: `KOSMOS HOME` and then
@@ -1063,7 +1080,7 @@ function ui.tree(spec)
         -- Only when it does not crowd the name. A note that overlapped
         -- would be worse than no note at all.
         if at > x + TREE_ARROW + gfx.measure(tostring(r.node.text or ""), "ui") + 6 then
-          g:text(at, y, note, theme.text_dim, bg)
+          g:text(at, y + centred(ROW), note, theme.text_dim, bg)
         end
       end
     end
@@ -1445,9 +1462,8 @@ function ui.button(spec)
   -- 12 in every theme but Plex, which is the 10 and 24 this said before
   -- the numbers were the theme's (`roadmap.md` 5s).
   --
-  v.h = v.h > 0 and v.h or (GH + 2 * theme.button_pad_y)
-  v.w = v.w > 0 and v.w
-        or (gfx.measure(tostring(v.text or "")) + 2 * theme.button_pad_x)
+  v.h = v.h > 0 and v.h or BUTTON
+  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 32)
   v.focusable = not v.disabled
 
   function v:draw(g)
@@ -1472,7 +1488,7 @@ function ui.button(spec)
 
     local label = tostring(self.text or "")
     local tx = (self.w - gfx.measure(label)) // 2
-    local ty = (self.h - GH) // 2
+    local ty = centred(self.h)
 
     -- And the label moves with it, a pixel down and right, because a
     -- control that goes in takes its label with it.
@@ -1526,24 +1542,27 @@ end
 
 function ui.checkbox(spec)
   local v = ui.view(spec)
-  v.h = v.h > 0 and v.h or GH
-  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 3 * GW)
+  v.h = v.h > 0 and v.h or ROW
+  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 16 + 8)
   v.focusable = true
   v.checked = v.checked or false
 
+  -- A 16-pixel box, as fixed as the row it sits in, and the words beside it.
   function v:draw(g)
-    local box = GH - 2
-    g:sunken(0, 1, box, box, "sunken")
+    local box = 16
+    local by = (self.h - box) // 2
+
+    g:sunken(0, by, box, box, "sunken")
 
     if self.focused then
-      g:frame(1, 2, box - 2, box - 2, "ring")
+      g:frame(1, by + 1, box - 2, box - 2, "ring")
     end
 
     if self.checked then
-      g:fill(3, 4, box - 6, box - 6, theme.good)
+      g:fill(3, by + 3, box - 6, box - 6, theme.good)
     end
 
-    g:text(box + GW, 0, tostring(self.text or ""), theme.text)
+    g:text(box + 8, centred(self.h), tostring(self.text or ""), theme.text)
   end
 
   function v:key(c)
@@ -1576,7 +1595,7 @@ function ui.field(spec)
   -- is read where the words are drawn *and* where a click is turned into a
   -- column, which have to agree or a click lands a letter off.
   --
-  v.h = v.h > 0 and v.h or (GH + 2 * theme.field_pad_y)
+  v.h = v.h > 0 and v.h or FIELD
   v.w = v.w > 0 and v.w or 200
   v.focusable = true
   v.text = v.text or ""
@@ -1607,7 +1626,7 @@ function ui.field(spec)
       g:frame(1, 1, self.w - 2, self.h - 2, "ring")
     end
 
-    local inset = theme.field_pad_x
+    local inset = 8
     local room = (self.w - 2 * inset) // GW
 
     --
@@ -1618,7 +1637,7 @@ function ui.field(spec)
     -- box, and a box does not say what it searches.
     --
     if self.hint and self.text == "" and not self.focused then
-      g:text(inset, (self.h - GH) // 2, tostring(self.hint):sub(1, room),
+      g:text(inset, centred(self.h), tostring(self.hint):sub(1, room),
              theme.text_dim, theme.sunken)
       return
     end
@@ -1626,13 +1645,13 @@ function ui.field(spec)
     local from = math.max(1, self.caret - room + 1)
     local shown = self.text:sub(from, from + room - 1)
 
-    local ty = (self.h - GH) // 2
+    local ty = centred(self.h)
 
     if self.all and self.text ~= "" then
       -- The caret's own colours, for the reason `ui.editor` uses them: a
       -- selection is a widened cursor, and every palette has already had
       -- to make those two readable against each other.
-      g:fill(inset, ty, #shown * GW, GH, theme.ring)
+      g:fill(inset, ty, #shown * GW, gfx.height(), theme.ring)
       g:text(inset, ty, shown, theme.sunken, theme.ring)
       return
     end
@@ -1641,7 +1660,7 @@ function ui.field(spec)
 
     if self.focused then
       local cx = inset + (self.caret - from) * GW
-      g:fill(cx, ty, 1, GH, theme.ring)
+      g:fill(cx, ty, 1, gfx.height(), theme.ring)
     end
   end
 
@@ -1772,7 +1791,7 @@ function ui.field(spec)
   -- every text field does and what nobody notices until it does not.
   function v:mouse(action, x, y)
     if action == "press" then
-      local col = (x - theme.field_pad_x) // GW
+      local col = (x - 8) // GW
 
       if col < 0 then col = 0 end
       self.caret = math.min(col + 1, #self.text + 1)
@@ -1880,13 +1899,17 @@ function ui.list(spec)
   -- which is the whole of the fix.
   --
   --
-  -- **And the theme's `row_pad` above and below**, since 22 September
-  -- (`roadmap.md` 5s): 0 in every theme but Plex, so every list that was
-  -- measured against the face alone still is; Plex's 7 is the indicators
-  -- panel's rows. Read when asked, like the face, so a theme chosen while a
-  -- list is open changes its rows at the next repaint.
+  -- **And then fixed, the way that fix should have gone** (`roadmap.md`
+  -- 5x). A row that is as tall as its face grows when the face does, and
+  -- the list's neighbours do not - so on 22 September a theme that padded
+  -- rows, and faces at 16, moved and broke windows that place their widgets
+  -- at fixed positions. A row is `theme.metrics.row`, 24 pixels, in every
+  -- look; the words are centred in it by the face in force, which is what
+  -- keeps Diego's 20 September photograph from coming back - the rows no
+  -- longer overlap because the faces the looks carry fit them
+  -- (`tools/test_theme.lua`).
   --
-  local function row_h() return gfx.height() + 2 * theme.row_pad end
+  local function row_h() return ROW end
 
   v.h = v.h > 0 and v.h or (row_h() * 6)
 
@@ -1971,22 +1994,24 @@ function ui.list(spec)
 
         if on then g:fill(2, y, room, row_h(), bg) end
 
-        -- The row's words sit inside its padding; the selection above
-        -- fills the whole row, padding and all, as a row is one thing.
-        local tx = 4
-        y = y + theme.row_pad
+        -- The row's words centred in it; the selection above fills the
+        -- whole row, as a row is one thing.
+        local tx = 8
 
         if self.checks then
-          local box = gfx.height() - 4
+          local box = 16
+          local by = y + (ROW - box) // 2
 
-          g:sunken(4, y + 2, box, box, "sunken")
+          g:sunken(4, by, box, box, "sunken")
 
           if self.checks[tostring(item)] then
-            g:fill(6, y + 4, box - 4, box - 4, theme.good)
+            g:fill(6, by + 2, box - 4, box - 4, theme.good)
           end
 
           tx = 4 + box + 6
         end
+
+        y = y + centred(ROW)
 
         --
         -- **A row a caller draws**, when it has fields rather than a name:
@@ -2076,7 +2101,7 @@ function ui.list(spec)
     -- because a checklist is read down the boxes and a selection moving
     -- under your eye while you tick things is noise.
     --
-    if self.checks and action == "press" and x < 4 + gfx.height() + 2 then
+    if self.checks and action == "press" and x < 4 + 16 + 2 then
       local key = tostring(self.items[n])
 
       self.checks[key] = (not self.checks[key]) or nil
@@ -3828,7 +3853,7 @@ end
 function ui.menubar(spec)
   local v = ui.view(spec)
 
-  v.h = v.h > 0 and v.h or (GH + 8)
+  v.h = v.h > 0 and v.h or ROW
   v.menus = v.menus or {}
   v.follow = { left = true, right = true, top = true }
 
@@ -3865,7 +3890,7 @@ function ui.menubar(spec)
 
       if open then g:fill(s.x, 0, s.w, self.h - 2, "accent") end
 
-      g:text(s.x + 8, (self.h - 2 - GH) // 2, tostring(m.title or ""),
+      g:text(s.x + 8, centred(self.h - 2), tostring(m.title or ""),
              open and theme.text_on or theme.text,
              open and theme.accent or theme.raised)
     end
@@ -3953,7 +3978,8 @@ local function menu_metrics(items)
     if it.submenu then deep = true end
   end
 
-  local row = pictured and math.max(GH + 6, MENU_ICON + 4) or (GH + 6)
+  -- A row of the fixed layout, or tall enough for its 32-pixel icon.
+  local row = pictured and math.max(ROW, MENU_ICON + 4) or ROW
 
   return widest + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0)
                 + (pictured and MENU_ICON + 6 or 0),
@@ -3993,7 +4019,7 @@ function window:paint_menu(m)
                MENU_ICON)
       end
 
-      g:text(text_x, y + (m.row - GH) // 2, tostring(it.text or ""),
+      g:text(text_x, y + centred(m.row), tostring(it.text or ""),
              hot and theme.text_on or theme.text, bg)
 
       --
