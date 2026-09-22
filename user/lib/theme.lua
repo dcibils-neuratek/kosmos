@@ -187,6 +187,21 @@ theme.palettes.light = {
 -- inherited from the palette it is based on. That is what makes "the dark
 -- theme but with a green desktop" a three-line file instead of a copy of
 -- twenty values that then drifts.
+--
+-- **And a face and a size for each of the five roles**, since 22 September
+-- 2026 (`roadmap.md` 5s, `docs/plex.html`):
+--
+--   font.ui      = ibmplexsans 14
+--   font.heading = ibmplexsans-semibold 15
+--
+-- Diego, asking for a theme called Plex that looks "exactly as the mockup":
+-- "like a theme is a complete color scheme + font selection?" A theme was a
+-- palette and nothing else, the faces were chosen role by role, and so no
+-- theme could say how its words look. **Every theme that ships names all
+-- five**, so what each looks like is written in it; a file somebody writes
+-- may name only the roles it changes, and the rest come from the faces the
+-- system ships with - `theme.default_fonts` - by the same rule colours
+-- follow above.
 --------------------------------------------------------------------------
 
 -- Every token a palette has, so a typo in a theme file can be *told* rather
@@ -203,6 +218,12 @@ theme.tokens = {
 local known = {}
 
 for _, k in ipairs(theme.tokens) do known[k] = true end
+
+-- The five roles and their faces are defined at the end of this file;
+-- these are the bounds a theme's size is held to, the same as anything the
+-- Appearance panel offers and a little either side.
+local FONT_PX_LEAST = 6
+local FONT_PX_MOST  = 96
 
 --
 -- `#rrggbb` or `#aarrggbb` to the 0xAARRGGBB this system draws with.
@@ -237,20 +258,61 @@ function theme.read(text, base)
   local out = {}
   local said = {}
   local n = 0
+  local roles = {}
+
+  for _, r in ipairs(theme.roles) do roles[r] = true end
 
   for k, v in pairs(theme.palettes[base or "dark"] or {}) do out[k] = v end
+
+  -- Its own table of faces, copied: a theme that shares the defaults'
+  -- tables would change them for every other theme the first time one of
+  -- its roles was set.
+  out.fonts = {}
+
+  for _, r in ipairs(theme.roles) do
+    local d = theme.default_fonts[r]
+
+    out.fonts[r] = { font = d.font, px = d.px }
+  end
 
   for line in tostring(text or ""):gmatch("([^\n]*)\n?") do
     n = n + 1
 
     -- Comments and blank lines, and a comment may follow a value.
-    local body = line:gsub("#%s.*$", ""):match("^%s*(.-)%s*$")
+    --
+    -- **A line that starts with `#` is a comment whatever follows it**,
+    -- a bare `#` included. The trailing rule wants a space after the `#`
+    -- so that `#ffffff` is a colour rather than a comment, and applied to
+    -- a whole line it made every bare `#` - the blank line inside a block
+    -- of comments, which every shipped theme has - a line that was "not
+    -- `key = value`". `tools/test_theme.lua` found five themes read with
+    -- complaints on 22 September.
+    local body = line:match("^%s*#") and ""
+                 or line:gsub("#%s.*$", ""):match("^%s*(.-)%s*$")
 
     if body ~= "" then
-      local key, value = body:match("^([%w_]+)%s*=%s*(.-)$")
+      local key, value = body:match("^([%w_%.]+)%s*=%s*(.-)$")
+      local role = key and key:match("^font%.([%w_]+)$")
 
       if not key then
         said[#said + 1] = ("line %d: not `key = value`"):format(n)
+      elseif role then
+        local face, px = value:match("^(%S+)%s+(%d+)$")
+
+        px = tonumber(px)
+
+        if not roles[role] then
+          said[#said + 1] = ("line %d: no role called `%s`"):format(n, role)
+        elseif not face then
+          said[#said + 1] =
+            ("line %d: `%s` is not a face and a size"):format(n, value)
+        elseif px < FONT_PX_LEAST or px > FONT_PX_MOST then
+          said[#said + 1] = ("line %d: %d pixels is not a size between %d "
+                             .. "and %d"):format(n, px, FONT_PX_LEAST,
+                                                 FONT_PX_MOST)
+        else
+          out.fonts[role] = { font = face, px = px }
+        end
       elseif not known[key] then
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
       elseif key == "name" then
@@ -324,6 +386,15 @@ end
 -- for the reason at the top of the file.
 --------------------------------------------------------------------------
 
+--
+-- **The colours, and only the colours.** This copied every field of the
+-- palette it was given, which was the same thing while a palette held
+-- nothing else. Since a theme carries its faces too, the copy would have
+-- put a theme's `fonts` over `theme.fonts` - the faces this process has in
+-- force - in every window that was sent the palette, without a single face
+-- being loaded to match. The faces are applied on purpose, by whoever
+-- chooses the theme; applying a palette never touches them.
+--
 function theme.apply(palette)
   if type(palette) == "string" then
     palette = theme.palettes[palette]
@@ -333,8 +404,8 @@ function theme.apply(palette)
     return nil, "no such palette"
   end
 
-  for k, v in pairs(palette) do
-    theme[k] = v
+  for _, k in ipairs(theme.tokens) do
+    if palette[k] ~= nil then theme[k] = palette[k] end
   end
 
   return theme
@@ -504,6 +575,28 @@ theme.fonts = {
   -- choosing a size each.
   heading = { font = "ibmplexsans-bold", px = 18 },
 }
+
+-- The same, kept as they ship and never changed: `theme.fonts` is what is
+-- in force and follows every choice, so a theme that inherited from *it*
+-- would inherit whatever somebody last picked - which is a hidden rule of
+-- exactly the kind a theme naming its faces exists to remove.
+theme.default_fonts = {}
+
+for role, f in pairs(theme.fonts) do
+  theme.default_fonts[role] = { font = f.font, px = f.px }
+end
+
+-- And the two palettes compiled in here name them too, so every theme the
+-- Appearance panel lists says how its words look.
+for _, name in ipairs({ "dark", "light" }) do
+  local fonts = {}
+
+  for role, f in pairs(theme.default_fonts) do
+    fonts[role] = { font = f.font, px = f.px }
+  end
+
+  theme.palettes[name].fonts = fonts
+end
 
 theme.apply("dark")
 

@@ -1099,7 +1099,8 @@ processors, and still what follows USB:
      exist to be set yet.
 
 5s. **AGREED on 21 September - a theme called Plex, which looks exactly
-   like the mockups.** Diego, on `docs/indicators.html`: "i love the font
+   like the mockups. Colours and faces DONE on 22 September** (`testing.md`
+   18.135, `ui.md` 16.9); **spacing is what is left.** Diego, on `docs/indicators.html`: "i love the font
    used in the mockups", "can we create a theme for kosmos that has this
    exact fonts selection, sizes and all and add it to the available
    themes?", "the theme is called Plex", and "i want the theme to look
@@ -1136,7 +1137,13 @@ processors, and still what follows USB:
    is which role is a decision, not a reading: the page's 16 px running
    text against a 14 px widget, a 42 px page title against a window's
    title bar. That mapping is written down and agreed with Diego before
-   anything is coded.
+   anything is coded: **`docs/plex.html`, 21 September** - every colour,
+   face, size and spacing value with the mockup it comes from, the ones no
+   mockup draws marked as proposals, and four choices for Diego where the
+   mockups disagree or the kit would need new drawing. **His answers, 22
+   September**: widgets in Plex Sans 14; reading text in Plex Sans 16;
+   headings in Plex Sans SemiBold, a file added from the same family; and
+   no rounded corners and no shadow for now.
 
 5r. **WANTED on 21 September - a deadlock report that names the holder.**
    `arm-display-2` panicked once at boot with `spinlock: endpoint held by

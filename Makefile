@@ -2937,6 +2937,10 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
 	$(HOSTDIR)/lua tools/test_iconlayout.lua
+	@# The themes that ship, colours and faces (roadmap 5s): each read with
+	@# no complaint, every face one the image embeds - which is why it is
+	@# handed FONT_FILES - and Plex as docs/plex.html lists it.
+	$(HOSTDIR)/lua tools/test_theme.lua $(FONT_FILES)
 	@# The Deskbar's menu, read off a folder tree - what counts as an item,
 	@# what order things come in, how deep a folder may go. The store it
 	@# reads through is a table here, which is the whole reason the reading

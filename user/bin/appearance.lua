@@ -186,6 +186,7 @@ local ROLES                    -- the four of them, defined with the lists
 -- list, and this reads it.
 --
 local role_list                -- defined with the other two, below
+local reflect                  -- the lists catching up; defined with them
 
 local function role()
   return ROLES[role_list.selected or 1].key
@@ -215,15 +216,25 @@ local function send()
   -- The palette *table*, not its name: the window manager forwards what it
   -- is given to every window, and a window cannot look up a theme that only
   -- ever existed as a file on this machine's disk.
+  --
+  -- The colours alone: a theme's table carries its faces as well, and they
+  -- go as `fonts` below - once, as chosen, rather than twice in one
+  -- 2048-byte message.
+  local colours = {}
+
+  for _, k in ipairs(theme.tokens) do
+    colours[k] = (theme.palettes[chosen_palette] or {})[k]
+  end
+
   local reply, why = fs.send("/app/wm", { type = "theme",
-                                          palette = theme.palettes[chosen_palette],
+                                          palette = colours,
                                           desktop = chosen_desktop,
                                           fonts = chosen,
                                           tabs = chosen_tabs })
 
   if not reply then
     status.text = "refused: " .. tostring(why)
-    return
+    return nil, why
   end
 
   -- Written only after the window manager accepted it, so the file cannot
@@ -240,9 +251,11 @@ local function send()
                 or ("applied " .. role() .. " = " .. chosen[role()].font
                     .. " " .. chosen[role()].px .. ", not saved: "
                     .. tostring(werr))
+
+  return reply
 end
 
-win:add(ui.label{ x = LEFT_X, y = PAL_Y, w = LEFT_W, text = "Palette" })
+win:add(ui.label{ x = LEFT_X, y = PAL_Y, w = LEFT_W, text = "Theme" })
 
 --
 -- A list rather than a button per theme. Two buttons fitted while there
@@ -250,11 +263,31 @@ win:add(ui.label{ x = LEFT_X, y = PAL_Y, w = LEFT_W, text = "Palette" })
 -- is right, and a list is the widget that already knows how to be any
 -- length.
 --
+--
+-- **Choosing a theme chooses its faces too** (`roadmap.md` 5s). A theme
+-- names a face and a size for every role, and picking one sets all five -
+-- Diego: "a theme is a complete color scheme + font selection". The role
+-- list below then says which roles somebody has changed since.
+--
+local function take_theme_faces(name)
+  local p = theme.palettes[name]
+
+  if not (p and p.fonts) then return end
+
+  for _, r in ipairs(ROLES) do
+    local f = p.fonts[r.key]
+
+    if f then chosen[r.key] = { font = f.font, px = f.px } end
+  end
+end
+
 local palette_list = ui.list{
   x = LEFT_X, y = LIST_Y, w = LEFT_W, h = LIST_H,
   items = theme_names(),
   on_select = function(_, item)
     chosen_palette = item
+    take_theme_faces(item)
+    reflect()
     send()
   end,
 }
@@ -359,13 +392,27 @@ local ROLE_H  = #ROLES * (line_h() + 6) + 4
 -- A view rather than `ui.list`, because a list row is one string and this
 -- row is two: a name at the left and, quieter and right-aligned, the face.
 --
+--
+-- **And whether it is the theme's.** A face somebody picked after choosing
+-- a theme is theirs, and the row says so - otherwise a panel that sets all
+-- five faces from the theme would hide which of them it did not set.
+--
+local function yours(key)
+  local p = theme.palettes[chosen_palette]
+  local t = p and p.fonts and p.fonts[key]
+  local c = chosen[key]
+
+  return t ~= nil and (t.font ~= c.font or t.px ~= c.px)
+end
+
 local function face_of(key)
   local c = chosen[key]
   local name = c.font:gsub("^ibmplex", "Plex "):gsub("sanscondensed", "Sans Condensed")
                      :gsub("^Plex sans", "Plex Sans"):gsub("^Plex mono", "Plex Mono")
+                     :gsub("%-semibold", " SemiBold")
                      :gsub("%-bold", " Bold"):gsub("%-italic", " Italic")
 
-  return name .. " " .. c.px
+  return name .. " " .. c.px .. (yours(key) and ", yours" or "")
 end
 
 role_list = ui.view{
@@ -425,7 +472,7 @@ for i, px in ipairs(SIZES) do size_list.items[i] = tostring(px) end
 -- fact, which is the same bug the note above `role()` describes, in the
 -- widget beside it.
 --
-local function reflect()
+function reflect()
   local c = chosen[role()]
 
   for i, name in ipairs(palette_list.items) do
@@ -565,10 +612,19 @@ win:add(preview)
 -- thing it affects - with a name, "Palette default", that did not say what
 -- pressing it would do.
 --
+--
+-- And since a theme names its faces as well, "back to the theme" means
+-- both: the ground it paints and the five faces it sets.
+--
 win:add(ui.button{
   x = LEFT_X, y = RESET_Y, w = LEFT_W, h = RESET_H,
-  text = "Back to this palette's colours",
-  on_click = function() chosen_desktop = nil; send() end,
+  text = "Back to this theme",
+  on_click = function()
+    chosen_desktop = nil
+    take_theme_faces(chosen_palette)
+    reflect()
+    send()
+  end,
 })
 
 win:add(status)
@@ -801,6 +857,43 @@ do
   -- window manager agreed to.
   print(("appearance: %dx%d, %d roles, %s"):format(win.w, win.h, #ROLES,
                                                    chosen_palette))
+end
+
+--
+-- **`wm appearance:--theme plex` - a theme chosen from the command line**,
+-- by exactly the path a click on its row takes: its colours, its five
+-- faces, the window manager told, and `/home/.appearance` written. So a
+-- script can set the look, and a test can choose a theme without aiming
+-- the pointer at a row in a list that scrolls.
+--
+-- The line it prints is the window manager's answer rather than the
+-- request: `held` is what that process actually loaded, so a theme that
+-- names a face the image does not carry says so here instead of looking
+-- right in the panel and drawing in the previous face.
+--
+do
+  local want = (args or ""):match("%-%-theme%s+(%S+)")
+
+  if want and not theme.palettes[want] then
+    print("appearance: no theme called " .. want)
+  elseif want then
+    chosen_palette = want
+    take_theme_faces(want)
+    reflect()
+
+    local reply, why = send()
+    local held = {}
+
+    for _, r in ipairs(ROLES) do
+      local f = reply and reply.held and reply.held[r.key]
+
+      held[#held + 1] = r.key .. "=" .. (f and (f.font .. "/" .. f.px) or "?")
+    end
+
+    print(("appearance: theme %s %s, held %s"):format(want,
+          reply and "applied" or ("refused: " .. tostring(why)),
+          table.concat(held, " ")))
+  end
 end
 
 win:run()

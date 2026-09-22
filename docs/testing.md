@@ -7115,3 +7115,79 @@ does not say harmless: `smp.md` records the one earlier time this fired,
 when the holder had faulted after taking the lock. What would settle it is
 the holder's side - what core 1 was doing - which the panic does not print.
 Worth having the next time: `spin_panic` asking the holder for its PC.
+
+## 18.135 A theme that names its faces, and Plex
+
+**Diego, 21 and 22 September**: "i want the theme to look exactly as the
+mockup, same fonts same sizes same spacing, same colors", "like a theme is a
+complete color scheme + font selection?", and then his four choices from
+`docs/plex.html`: widgets in Plex Sans 14, reading text in Plex Sans 16,
+headings in Plex Sans SemiBold, no rounded corners or shadow for now.
+
+### What was built
+
+- **A theme file names a face and a size for each role** -
+  `font.heading = ibmplexsans-semibold 15` - checked for the role and a size
+  between 6 and 96 pixels, and told line by line when it is wrong.
+- **Plex**, the fifth theme in `themes.lua`: the mockups' colours and the
+  five faces chosen. The four themes that were palettes name the faces they
+  always had. `IBMPlexSans-SemiBold.ttf` joins the fonts, from IBM's
+  `@ibm/plex-sans@1.1.0` release - the one `IBMPlexSans-Bold.ttf` is,
+  byte for byte - font version 3.005, under the licence already beside it.
+- **Appearance**: "Theme" where it said "Palette"; choosing one sets its
+  five faces; a face changed afterwards says ", yours"; `Back to this theme`
+  restores both; `wm appearance:--theme <name>` does what a click does and
+  prints the faces the window manager *holds*.
+- **`theme.apply` copies colours only** - a hazard the change would have
+  opened, since it copied every field and a theme now carries `fonts`.
+
+### Found on the way
+
+**A saved theme did not survive a restart, unless it was `dark` or
+`light`.** The window manager applied `/home/.appearance`'s theme by name,
+and the only names it knew were the two palettes compiled into `theme.lua`
+- so Photon, BeOS, Platinum, IRIX and now Plex were written down
+faithfully and came back as `dark`, with the faces restored beside them
+because those are saved spelled out, and nothing said so because
+`theme.apply`'s answer was thrown away. That is the rest of Diego's "does
+not rememver the wallpapers **and other things** upon restarting" - the
+wallpaper was 18.133, his faces came back, and his theme did not. It now
+finds a saved theme where Appearance finds themes, `themes.lua` and
+`/system/themes`, and says `wm: theme <name>` or `... would not load:
+<why>`. Found by writing the restart check before the fix: *"a desktop
+started with Plex saved wears 'dark ibmplexsans-semibold/15'"*.
+
+**The harness read a line before it had arrived.** `wait_for` returns the
+moment its text is on the serial line; the Appearance phase then read to
+the end of the line and got `668x590,` - half of it - once the window
+manager's new `wm: theme` line moved where the serial reads fell. A race
+the check always had. `wait_for_line` waits for the newline as well, and
+the phase's four reads use it.
+
+**Every shipped theme was read with complaints, and always had been.** A
+comment line holding a bare `#` - the blank line inside a block of comments,
+in all five - was "not `key = value`", because the rule that strips a
+comment wants a space after the `#` so that `#ffffff` stays a colour. A
+line that *starts* with `#` is a comment now, whatever follows.
+`tools/test_theme.lua` found it the first time it ran.
+
+### The checks
+
+- **`tools/test_theme.lua`**, 118 checks, in `make host-check`, handed
+  `FONT_FILES` so every face a theme names is held to what the image
+  embeds, by `font_asset`'s own rule: each shipped theme clean and complete;
+  the four old ones unchanged; Plex value for value against `docs/plex.html`;
+  three bad lines told; a role left out coming from defaults a theme cannot
+  change; and a palette applied without its faces. **Control**: the old
+  copy-everything `theme.apply` fails exactly *"applying Plex replaced the
+  faces in force with its own, without loading one"*.
+- **The display harness's `appearance` phase**, 3 more checks: `wm
+  appearance:--theme plex` must leave the window manager holding Plex's five
+  faces; `/home/.appearance` must hold `plex` and its SemiBold headings; and
+  a desktop started afresh must wear `plex` with `ibmplexsans-semibold/15`
+  in force. Then the harness's own appearance goes back. **Controls**: the
+  restart check, run before the window manager could find a shipped theme,
+  failed as above; and an Appearance whose `take_theme_faces` does nothing
+  leaves the window manager holding
+  `title=spleen/16 ui=spleen/16 heading=ibmplexsans-bold/18 ...` - the
+  harness's pinned faces - and the check fails.

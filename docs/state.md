@@ -20,10 +20,11 @@ Last updated: 2026-09-21
 
 ## 21 September, the night: full screen, the addresses, a wallpaper and an adapter
 
-**Pushed: 0.10.100 to 0.10.102 (`d5a64f8`). Committed and not pushed:
-0.10.103 (`e649ccb`) and 0.10.104, each through a green `make prepush`,
-waiting for Diego's yes.** The last stick he ran is 0.10.101; none has been
-built since.
+**Pushed: 0.10.100 to 0.10.104 (`62626cd`), each through a green `make
+prepush`.** Stick `kosmos-usb-0.10.104-development.img` built from `main`
+at 0.10.104 and booted under OVMF (29 checks) - handed to Diego to test
+the wallpaper, the film played twice, and the dongle named on the
+ThinkPad itself (`log xhci`). The last stick he ran is 0.10.101.
 
 - **0.10.100, the click** (5g, `testing.md` 18.130) - above.
 - **0.10.101, the solar system full screen** (5h, 18.131): F11, a
@@ -67,9 +68,16 @@ the stick. Not closed until a run says so with bytes written.
 
 ### Next, in order
 
-1. **Diego's yes to push 0.10.103 and 0.10.104**, then a stick
-   (`make MEGA=1 x86-usb-image`, `run_uefi.py`) so the ThinkPad shows the
-   wallpaper coming back and names the dongle on its own machine.
+1. **What the 0.10.104 stick says on the ThinkPad**, and its row in
+   `boot.md`'s table once it has booted there.
+1. **Plex's spacing** (5s): the kit's paddings and row heights gathered
+   into tokens a theme sets. The spec (`docs/plex.html`) was agreed on 22
+   September and its colours and faces are built as 0.10.105 (18.135) -
+   a theme names its five faces, Plex is the fifth theme, and choosing one
+   in Appearance sets them. Found on the way: **a saved theme other than
+   `dark` or `light` came back as `dark` at every restart** - the rest of
+   Diego's "other things" - and a bare `#` in a theme's comments had made
+   every shipped theme read with complaints. Both fixed.
 2. **5m-b**: SET_CONFIGURATION, the Data interface's setting 1, the packet
    filter, the link's notifications. Tested on `usb-net`; on the real
    dongle from the Mac it needs `sudo sh tools/usbhost.sh 0bda:8153`,

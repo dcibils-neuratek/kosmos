@@ -349,7 +349,58 @@ local function load_appearance()
 
   if not saved.palette then default_appearance() end
 
-  if saved.palette then theme.apply(saved.palette) end
+  --
+  -- **A saved theme, found where Appearance finds themes.**
+  --
+  -- This was `theme.apply(saved.palette)`, and the name reached a table
+  -- holding only the two palettes compiled into `theme.lua`. So Photon,
+  -- BeOS, Platinum, IRIX and Plex - everything `themes.lua` ships and
+  -- every `.theme` file on the disk - were written to `/home/.appearance`
+  -- faithfully, and at the next start came back as `dark`, with the
+  -- faces restored beside them because those are saved spelled out.
+  -- Nothing said so, because the answer `theme.apply` gives was thrown
+  -- away. Diego, 21 September: the Appearance panel "does not rememver the
+  -- wallpapers and other things upon restarting"; the wallpaper was 18.133,
+  -- and this was the other thing (`testing.md` 18.135).
+  --
+  -- Here rather than at the top of the file, whose locals are at Lua's
+  -- limit of two hundred.
+  --
+  local function find_theme(name)
+    if type(name) ~= "string" then return nil, "no name" end
+    if theme.palettes[name] then return theme.palettes[name] end
+
+    local ok, shipped = pcall(use, "/lib/themes.lua")
+
+    if ok and type(shipped) == "table" and type(shipped[name]) == "string" then
+      return theme.install(name, (theme.read(shipped[name], "dark")))
+    end
+
+    for _, file in ipairs(fs.list("/system/themes") or {}) do
+      if file:match("%.theme$") then
+        local p = theme.load("/system/themes/" .. file, "dark")
+
+        if p and (p.name or file:gsub("%.theme$", "")) == name then
+          return theme.install(name, p)
+        end
+      end
+    end
+
+    return nil, "no theme called " .. name .. " in /lib/themes.lua or "
+                .. "/system/themes"
+  end
+
+  if saved.palette then
+    local palette, why = find_theme(saved.palette)
+
+    if palette then
+      theme.apply(palette)
+      print("wm: theme " .. tostring(saved.palette))
+    else
+      print("wm: theme " .. tostring(saved.palette) .. " would not load: "
+            .. tostring(why))
+    end
+  end
   if saved.desktop then theme.override { desktop = saved.desktop } end
 
   --

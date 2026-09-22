@@ -623,10 +623,53 @@ window owns.
 
 ## 16.9 Themes, and colours that are named rather than captured
 
-There are two palettes - `dark`, which is what Kosmos looked like first, and
-`light`, which is the 1998 one on purpose. `appearance` switches between
-them and picks the desktop colour, and the choice is written to
-`/home/.appearance` and read back at startup.
+**A theme is its colours and its faces.** There were two palettes - `dark`,
+which is what Kosmos looked like first, and `light`, the 1998 one on
+purpose - then the four in `themes.lua`, Photon, BeOS, Platinum and IRIX,
+each a system that solved the dimensional look differently (16.8b). They
+were colours and nothing else, and the five font roles were chosen one by
+one. On 22 September 2026 a theme became complete (`roadmap.md` 5s): Diego
+asked for one called **Plex** that looks "exactly as the mockup, same fonts
+same sizes same spacing, same colors", and then "like a theme is a complete
+color scheme + font selection?".
+
+So a theme file names a face and a size for each role beside its colours:
+
+```
+name         = plex
+desktop      = #3d63b8
+font.ui      = ibmplexsans 14
+font.heading = ibmplexsans-semibold 15
+```
+
+Every theme that ships names all five, so what it looks like is written in
+it; the four that were palettes name the faces they have always had and did
+not change. A file somebody writes may name only what it changes, and the
+rest comes from the theme it is based on and the faces the system ships
+with (`theme.default_fonts`) - the rule colours already followed.
+`appearance` lists every theme, and **choosing one sets its colours and its
+five faces**; a face changed afterwards is the person's own, and the panel
+says so beside it (", yours"). `Back to this theme` puts both back. The
+choice is written to `/home/.appearance` - the theme's name, the desktop
+colour, and all five faces spelled out - and read back at startup, where
+the window manager finds the theme by name in `themes.lua` or
+`/system/themes` and says `wm: theme <name>`. It knew only `dark` and
+`light` until 22 September, so every other theme came back as `dark`.
+`wm appearance:--theme plex` does from a command line what a click on the
+row does.
+
+**Applying a palette never touches the faces.** `theme.apply` copied every
+field of what it was given, which was the same thing while a palette held
+only colours; with a theme's faces in it, the copy would have replaced
+`theme.fonts` - the faces a process has in force - in every window sent the
+palette, without one face being loaded to match. It copies the colour
+tokens and nothing else now, and the faces are applied on purpose by
+whoever chose the theme. `tools/test_theme.lua` holds both, with a control.
+
+**Spacing is the part not yet in a theme.** The paddings and row heights
+are still numbers in the kit; gathering them into tokens a theme sets is
+5s's next step, and until then Plex is the mockups' colours and type on
+today's spacing.
 
 **The palette table is mutated in place, never replaced.** Every widget
 reads `theme.text` at the moment it draws, so changing the fields of the one

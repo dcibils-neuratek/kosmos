@@ -492,6 +492,35 @@ class Guest:
             f"--- what it did say ---\n{self.seen}"
         )
 
+    def wait_for_line(self, text, what, since=0):
+        """The rest of the line that `text` begins, once it has all arrived.
+
+        `wait_for` returns the moment `text` is on the serial line, and a
+        check that then reads to the end of its line can take half of it:
+        the Appearance panel's `668x590, 5 roles, dark` was read as
+        `668x590,` on 22 September, when one more line at the desktop's
+        start moved where the serial port's reads fell. So this waits for
+        the newline too. `since` is where in `seen` to start looking.
+        """
+        deadline = time.monotonic() + self.timeout
+
+        while time.monotonic() < deadline:
+            self._read_available()
+            at = self.seen.find(text, since)
+
+            if at >= 0 and "\n" in self.seen[at + len(text):]:
+                return self.seen[at + len(text):].split("\n", 1)[0].strip()
+
+            if self.proc.poll() is not None:
+                raise Failure(f"QEMU exited before {what}.")
+
+            time.sleep(0.05)
+
+        raise Failure(
+            f"the guest never {what} within {self.timeout}s.\n"
+            f"--- what it did say ---\n{self.seen[since:][-1500:]}"
+        )
+
     def line_starting(self, prefix):
         for text in self.seen.splitlines():
             if text.startswith(prefix):
@@ -3612,9 +3641,8 @@ def check_appearance(guest):
     mark = len(guest.seen)
 
     guest.type("wm appearance")
-    guest.wait_for("appearance: ", "the Appearance panel to lay itself out")
-
-    line = guest.seen[mark:].split("appearance: ", 1)[1].split("\n")[0].strip()
+    line = guest.wait_for_line("appearance: ",
+                               "the Appearance panel to lay itself out", mark)
     said = re.match(r"(\d+)x(\d+), (\d+) roles, (\S+)", line)
 
     if not said:
@@ -3673,7 +3701,122 @@ def check_appearance(guest):
         raise Failure("Control-W Q did not get the screen back after the "
                       "Appearance panel")
 
+    checks += check_theme_plex(guest)
+
     return checks
+
+
+# Plex's five faces, as `docs/plex.html` has them and Diego chose them on
+# 22 September - the same table `tools/test_theme.lua` holds the file to.
+PLEX_HELD = ("ui=ibmplexsans/14 title=ibmplexsanscondensed/14 "
+             "text=ibmplexsans/16 mono=ibmplexmono/12 "
+             "heading=ibmplexsans-semibold/15")
+
+
+def check_theme_plex(guest):
+    """**A theme chooses its faces** (`roadmap.md` 5s).
+
+    Diego, 21 September: "a theme is a complete color scheme + font
+    selection". The theme file is held on the host by `test_theme.lua`;
+    what only a machine can show is the rest of the path - the panel taking
+    the theme's five faces, the window manager loading every one of them,
+    and the choice written down. So `wm appearance:--theme plex` chooses it
+    the way a click on its row does, and prints what the window manager
+    says it *holds*, which is what was loaded rather than what was asked
+    for: a face the image lacks would show there as the previous one.
+
+    Then `/home/.appearance` is read back for the palette's name and a face;
+    a fresh desktop is asked what it wears, since a theme that does not
+    survive a restart is not a setting; and the harness's own appearance is
+    put back, since every phase after this one measured its rows in the
+    faces that file pins.
+    """
+    mark = len(guest.seen)
+
+    guest.type("wm appearance:--theme plex")
+    line = guest.wait_for_line("appearance: theme plex",
+                               "Appearance to choose Plex", mark)
+
+    try:
+        if not line.startswith("applied, held "):
+            raise Failure("choosing Plex was not applied: %r" % line)
+
+        held = line[len("applied, held "):]
+
+        # As a set: the panel lists its roles in its own order, which is
+        # not the point.
+        if sorted(held.split()) != sorted(PLEX_HELD.split()):
+            raise Failure("choosing Plex left the window manager holding %r, "
+                          "not Plex's faces %r" % (held, PLEX_HELD))
+    finally:
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+    mark = len(guest.seen)
+    guest.type('local a = fs.read("/home/.appearance") '
+                'print("saved" .. ": " .. tostring(a and a.palette) .. " " '
+                '.. tostring(a and a.fonts and a.fonts.heading '
+                'and a.fonts.heading.font))')
+    saved = guest.wait_for_line("saved: ",
+                                "the saved appearance to be read back", mark)
+
+    #
+    # **And still Plex after a restart**, which is what a theme is for. The
+    # window manager applied a saved theme by name and knew only the two
+    # palettes compiled into `theme.lua`, so Photon, BeOS, Platinum, IRIX
+    # and Plex were written down faithfully and came back as `dark` - with
+    # nothing said. A fresh desktop is asked which theme it wears and which
+    # heading face it holds.
+    #
+    program = ("local r = fs.send('/app/wm', { type = 'theme' }) "
+               "local h = r and r.held and r.held.heading "
+               "print('theme' .. '-now: ' .. tostring(r and r.palette) .. ' ' "
+               ".. tostring(h and (h.font .. '/' .. h.px)))")
+    guest.type("fs.write('/ramfs/themenow.lua', %r)" % program)
+    time.sleep(1.0)
+    mark = len(guest.seen)
+    guest.type("wm themenow,/ramfs/themenow.lua")
+
+    try:
+        now = guest.wait_for_line("theme-now: ",
+                                  "the restarted desktop to say its theme",
+                                  mark)
+    finally:
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+        guest.type(appearance() + ' print("plex" .. "-reset")')
+        guest.wait_for("plex-reset", "put the harness's appearance back")
+
+    if saved != "plex ibmplexsans-semibold":
+        raise Failure("/home/.appearance holds %r after choosing Plex, not "
+                      "its palette and its SemiBold headings" % saved)
+
+    if now != "plex ibmplexsans-semibold/15":
+        raise Failure("a desktop started with Plex saved wears %r - the "
+                      "theme was written down and did not come back" % now)
+
+    return 3
 
 
 def check_tabs(guest):
@@ -7792,7 +7935,9 @@ def main():
           f"own pixels, and its menu reaching the program, "
           f"{drives_app_checks} on the Drives app opening and drawing, "
           f"{appearance_checks} on the Appearance panel laying itself out "
-          f"from the faces in force rather than from a constant, "
+          f"from the faces in force rather than from a constant, and Plex "
+          f"chosen - its five faces loaded, written down, and still worn "
+          f"after a restart, "
           f"{tab_checks} on the title's shape - beside a BeOS tab the "
           f"window behind, for the eye and the pointer, and a bar across "
           f"when asked, "

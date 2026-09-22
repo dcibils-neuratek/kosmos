@@ -7,8 +7,8 @@
 -- parser is a bug in the desktop rather than a bug in a feature nobody uses.
 --
 -- `ui.md` 16.8b decided the look is dimensional: raised, sunken, grooved.
--- These four are that decision applied to four systems that each solved it
--- differently, and the differences are the point - Photon and BeOS share a
+-- The first four are that decision applied to four systems that each solved
+-- it differently, and the differences are the point - Photon and BeOS share a
 -- panel grey and look nothing alike, Platinum paints its buttons the colour
 -- of the panel, and IRIX paints them *darker* than it.
 --
@@ -28,7 +28,7 @@
 local themes = {}
 
 -- The order they are offered in, oldest interface idea first.
-themes.order = { "photon", "beos", "platinum", "irix" }
+themes.order = { "photon", "beos", "platinum", "irix", "plex" }
 
 --------------------------------------------------------------------------
 
@@ -79,6 +79,14 @@ good       = #8d9c88
 bad        = #cc1a15
 ring       = #464646
 stamp      = #7ab3d4
+# The faces this system has shipped with since 19 September - IBM Plex,
+# `docs/styleguide.html` - written here so the theme says what it looks
+# like rather than leaving it to a default (roadmap.md 5s).
+font.title   = ibmplexsanscondensed 15
+font.ui      = ibmplexsans 14
+font.heading = ibmplexsans-bold 18
+font.text    = ibmplexmono 13
+font.mono    = ibmplexmono 13
 ]]
 
 --------------------------------------------------------------------------
@@ -131,6 +139,14 @@ good       = #009800
 bad        = #cb0000
 ring       = #0000e5
 stamp      = #5d85ad
+# The faces this system has shipped with since 19 September - IBM Plex,
+# `docs/styleguide.html` - written here so the theme says what it looks
+# like rather than leaving it to a default (roadmap.md 5s).
+font.title   = ibmplexsanscondensed 15
+font.ui      = ibmplexsans 14
+font.heading = ibmplexsans-bold 18
+font.text    = ibmplexmono 13
+font.mono    = ibmplexmono 13
 ]]
 
 --------------------------------------------------------------------------
@@ -179,6 +195,14 @@ good       = #008800
 bad        = #dd0000
 ring       = #6666cc
 stamp      = #7777af
+# The faces this system has shipped with since 19 September - IBM Plex,
+# `docs/styleguide.html` - written here so the theme says what it looks
+# like rather than leaving it to a default (roadmap.md 5s).
+font.title   = ibmplexsanscondensed 15
+font.ui      = ibmplexsans 14
+font.heading = ibmplexsans-bold 18
+font.text    = ibmplexmono 13
+font.mono    = ibmplexmono 13
 ]]
 
 --------------------------------------------------------------------------
@@ -225,6 +249,71 @@ good       = #23d223
 bad        = #ff0000
 ring       = #000000
 stamp      = #5680ab
+# The faces this system has shipped with since 19 September - IBM Plex,
+# `docs/styleguide.html` - written here so the theme says what it looks
+# like rather than leaving it to a default (roadmap.md 5s).
+font.title   = ibmplexsanscondensed 15
+font.ui      = ibmplexsans 14
+font.heading = ibmplexsans-bold 18
+font.text    = ibmplexmono 13
+font.mono    = ibmplexmono 13
+]]
+
+--------------------------------------------------------------------------
+
+themes.plex = [[
+# Plex: Kosmos's own, and the only one here that is not somebody else's.
+#
+# Diego, on 21 September 2026, looking at the mockups this project draws
+# its applications in before writing them: "i love the font used in the
+# mockups", and then "i want the theme to look exactly as the mockup, same
+# fonts same sizes same spacing, same colors". Every value below is one of
+# those pages' - `docs/indicators.html` for the desktop, the bar and the
+# panels, `docs/video.html` for the window's tab and the dark surfaces -
+# and `docs/plex.html` says which, and marks the few no page draws.
+#
+# Cooler than BeOS's greys and warmer than white: the bar and the panels
+# are a faint stone, the rules between things a little darker, and the one
+# saturated colour is a deep IBM-ish blue for the selection and the ring.
+# The yellow tab is BeOS's idea kept, in a softer yellow.
+
+name       = plex
+desktop    = #3d63b8
+window     = #f4f4f1
+raised     = #e7e7e3
+sunken     = #ffffff
+
+line       = #777777
+line_soft  = #cfcfc9
+
+edge_light = #ffffff
+edge_dark  = #9a9a94
+
+text       = #1e1e1e
+text_dim   = #6c6c66
+text_on    = #ffffff
+
+tab        = #f2c230
+tab_idle   = #e7e7e3
+tab_text   = #3a2e00
+desktop_text = #ffffff
+console      = #1c1c1e
+console_text = #ececec
+
+accent     = #2a55c9
+good       = #2f8a3e
+bad        = #b3261e
+ring       = #2a55c9
+stamp      = #8fa9df
+
+# The mockups' type, as Diego chose it on 22 September: widgets at 14 as
+# the style guide has them, the running text of the pages in Plex Sans at
+# 16, the panels' titles in SemiBold, the data in Plex Mono at 12.
+font.title   = ibmplexsanscondensed 14
+font.ui      = ibmplexsans 14
+font.heading = ibmplexsans-semibold 15
+font.text    = ibmplexsans 16
+font.mono    = ibmplexmono 12
 ]]
 
 return themes

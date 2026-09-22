@@ -1,0 +1,164 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The Plex theme, specified before it is built: roadmap.md 5s. Diego, on
+  21 September 2026: "i want the theme to look exactly as the mockup, same
+  fonts same sizes same spacing, same colors", and "a theme is a complete
+  color scheme + font selection". Every value below says which mockup it
+  comes from - docs/indicators.html, docs/styleguide.html (its "proposed"
+  column) or docs/video.html - and where they disagree, or none of them
+  draws the thing, it says so and asks.
+-->
+<title>The Plex Theme</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --warn: #8a5a00;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28; --warn: #e0b060;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28; --warn: #e0b060;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 980px; margin: 0 auto; padding: 44px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  code, pre { font-family: var(--mono); }
+  code { font-size: 0.88em; background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; font-size: 13px; line-height: 1.5; overflow-x: auto; }
+
+  .wrap { overflow-x: auto; margin-top: 14px; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  th { text-align: left; font: 500 11px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  td.v { font: 13px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.from { color: var(--muted); font-size: 13px; }
+  .chip { display: inline-block; width: 14px; height: 14px; border: 1px solid rgba(0,0,0,.25); vertical-align: -2px; margin-right: 8px; }
+  .ask { color: var(--warn); font-weight: 500; }
+  .sample { font-family: var(--body); }
+
+  ol.q { padding-left: 22px; max-width: 72ch; }
+  ol.q li { margin-bottom: 12px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The Plex theme</h1>
+  <p class="lede">Colours, fonts and spacing, all taken from the mockups, and
+  all written in one theme file. Where the mockups disagree, or don't draw
+  something, this page says so and asks.</p>
+
+  <h2>What a theme file becomes</h2>
+  <p>Today a theme is 22 colours. From now on it's complete: colours, then a face
+  and a size for each of the five roles, then the spacing. Every theme names all
+  of them, so nothing depends on a default nobody can see. Photon, BeOS,
+  Platinum and IRIX get today's fonts and spacing written in, and look exactly
+  as they do now.</p>
+<pre>name        = plex
+desktop     = #3d63b8
+window      = #f4f4f1
+...
+font.ui      = ibmplexsans 14
+font.title   = ibmplexsanscondensed 14
+font.heading = ibmplexsans-semibold 15
+font.text    = ibmplexsans 16
+font.mono    = ibmplexmono 12
+...
+pad         = 12
+gap         = 12
+row_pad     = 7</pre>
+
+  <h2>Colours</h2>
+  <div class="wrap"><table>
+    <tr><th>token</th><th>value</th><th>what it paints</th><th>from</th></tr>
+    <tr><td>desktop</td><td class="v"><i class="chip" style="background:#3d63b8"></i>#3d63b8</td><td>the ground behind every window</td><td class="from">indicators, video</td></tr>
+    <tr><td>window</td><td class="v"><i class="chip" style="background:#f4f4f1"></i>#f4f4f1</td><td>a window's and a panel's body</td><td class="from">indicators: the panels</td></tr>
+    <tr><td>raised</td><td class="v"><i class="chip" style="background:#e7e7e3"></i>#e7e7e3</td><td>the Deskbar, buttons, menu bars</td><td class="from">indicators: the bar</td></tr>
+    <tr><td>sunken</td><td class="v"><i class="chip" style="background:#ffffff"></i>#ffffff</td><td>fields and lists</td><td class="from">the pages' white cards; no field is drawn</td></tr>
+    <tr><td>line</td><td class="v"><i class="chip" style="background:#777777"></i>#777777</td><td>a panel's outline</td><td class="from">indicators</td></tr>
+    <tr><td>line_soft</td><td class="v"><i class="chip" style="background:#cfcfc9"></i>#cfcfc9</td><td>rules inside a panel</td><td class="from">indicators</td></tr>
+    <tr><td>edge_light / edge_dark</td><td class="v"><i class="chip" style="background:#ffffff"></i>#ffffff / <i class="chip" style="background:#9a9a94"></i>#9a9a94</td><td>the two edges of anything raised</td><td class="from">indicators: the bar's bottom edge</td></tr>
+    <tr><td>text / text_dim</td><td class="v"><i class="chip" style="background:#1e1e1e"></i>#1e1e1e / <i class="chip" style="background:#6c6c66"></i>#6c6c66</td><td>words, and the quieter ones</td><td class="from">indicators</td></tr>
+    <tr><td>text_on</td><td class="v"><i class="chip" style="background:#ffffff"></i>#ffffff</td><td>words on the accent</td><td class="from">indicators: the count on the icon</td></tr>
+    <tr><td>tab / tab_text</td><td class="v"><i class="chip" style="background:#f2c230"></i>#f2c230 / <i class="chip" style="background:#3a2e00"></i>#3a2e00</td><td>a focused window's title tab</td><td class="from">video: the window tab</td></tr>
+    <tr><td>tab_idle</td><td class="v"><i class="chip" style="background:#e7e7e3"></i>#e7e7e3</td><td>a window's tab when it isn't focused</td><td class="from"><span class="ask">no mockup draws one: the bar's colour, proposed</span></td></tr>
+    <tr><td>accent, ring</td><td class="v"><i class="chip" style="background:#2a55c9"></i>#2a55c9</td><td>selection, links, the focus ring</td><td class="from">indicators, every page</td></tr>
+    <tr><td>good</td><td class="v"><i class="chip" style="background:#2f8a3e"></i>#2f8a3e</td><td>"on", "driven"</td><td class="from">indicators</td></tr>
+    <tr><td>bad</td><td class="v"><i class="chip" style="background:#b3261e"></i>#b3261e</td><td>errors, a low battery</td><td class="from"><span class="ask">no mockup draws one: proposed</span></td></tr>
+    <tr><td>console / console_text</td><td class="v"><i class="chip" style="background:#1c1c1e"></i>#1c1c1e / <i class="chip" style="background:#ececec"></i>#ececec</td><td>the Terminal and Log View</td><td class="from">video: the player's dark surfaces</td></tr>
+    <tr><td>desktop_text</td><td class="v"><i class="chip" style="background:#ffffff"></i>#ffffff</td><td>icon labels on the desktop</td><td class="from"><span class="ask">not drawn: white on the blue, proposed</span></td></tr>
+    <tr><td>stamp</td><td class="v"><i class="chip" style="background:#8fa9df"></i>#8fa9df</td><td>the version line on the desktop</td><td class="from"><span class="ask">not drawn: a paler blue of the desktop, proposed</span></td></tr>
+  </table></div>
+
+  <h2>Fonts</h2>
+  <p>All IBM Plex, which Kosmos already carries with its licence. Sizes are in
+  pixels, as the pages set them.</p>
+  <div class="wrap"><table>
+    <tr><th>role</th><th>face and size</th><th>what uses it</th><th>from</th></tr>
+    <tr><td>ui</td><td class="v sample" style="font:14px var(--body)">Plex Sans 14</td><td>buttons, lists, menus, the Deskbar's words</td><td class="from">style guide; the indicators panel's 13 was not chosen</td></tr>
+    <tr><td>title</td><td class="v" style="font:600 14px var(--display)">Plex Sans Condensed SemiBold 14</td><td>a window's title tab</td><td class="from">style guide: the proposed title tab (today 15)</td></tr>
+    <tr><td>heading</td><td class="v" style="font:600 15px var(--body)">Plex Sans SemiBold 15</td><td>a heading inside a window: "USB", "Library"</td><td class="from">indicators: a panel's title; the SemiBold file is added</td></tr>
+    <tr><td>text</td><td class="v" style="font:16px var(--body)">Plex Sans 16</td><td>paragraphs: About, help, reading text</td><td class="from">every page's running text (today Plex Mono 13)</td></tr>
+    <tr><td>mono</td><td class="v" style="font:12px var(--mono)">Plex Mono 12</td><td>the Terminal, addresses, IDs, figures</td><td class="from">indicators: the panels' data (today 13)</td></tr>
+  </table></div>
+  <p class="note">One more style the panels use that isn't a role today: the
+  small group label, <span style="font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase">00:14.0 · the ports on the sides</span>,
+  Plex Mono 11, upper case, spaced out by 6%. It would become a sixth role,
+  <code>label</code>.</p>
+
+  <h2>Spacing</h2>
+  <p>Today these are numbers inside each widget in <code>ui.lua</code>, so the
+  first step is gathering them into named values that a theme sets. The
+  Deskbar already matches the mockup, because the mockup was drawn from it.</p>
+  <div class="wrap"><table>
+    <tr><th>token</th><th>Plex</th><th>what it spaces</th><th>from</th></tr>
+    <tr><td>bar_h, icon, bar_gap</td><td class="v">36, 32, 16</td><td>the Deskbar's height, its icons, the gap between them</td><td class="from">indicators; the same as today</td></tr>
+    <tr><td>pad</td><td class="v">12</td><td>from a panel's edge to its content</td><td class="from">indicators: panel rows and headers</td></tr>
+    <tr><td>gap</td><td class="v">12</td><td>between controls in a window</td><td class="from">style guide: proposed</td></tr>
+    <tr><td>row_pad</td><td class="v">7</td><td>above and below each row of a list</td><td class="from">indicators: the device rows (the style guide's list says 3)</td></tr>
+    <tr><td>button</td><td class="v">5 × 16</td><td>inside a button, top and side</td><td class="from">style guide: proposed</td></tr>
+    <tr><td>field</td><td class="v">5 × 8</td><td>inside a text field</td><td class="from">style guide: proposed</td></tr>
+    <tr><td>radius</td><td class="v">3</td><td>the corners of buttons and badges</td><td class="from">not in the first version</td></tr>
+    <tr><td>shadow</td><td class="v">3, 3, 28%</td><td>a hard shadow under panels and menus</td><td class="from">not in the first version</td></tr>
+  </table></div>
+
+  <h2>Decided, 22 September</h2>
+  <ol class="q">
+    <li><b>Widget text is Plex Sans 14</b>, as the style guide has it.</li>
+    <li><b>Reading text is Plex Sans 16</b>, as the pages have it. The Terminal
+    and code stay Plex Mono.</li>
+    <li><b>Headings are Plex Sans SemiBold 15</b>, and the SemiBold file joins
+    the ones Kosmos carries.</li>
+    <li><b>No rounded corners and no shadow</b> for now: square, flat, and the
+    colours, fonts and spacing above.</li>
+  </ol>
+</main>
+</body>
+</html>
