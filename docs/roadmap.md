@@ -1164,10 +1164,14 @@ processors, and still what follows USB:
 
    So a **look** is a whole: colours, faces, the Deskbar's colour and the
    desktop's, designed together, on the one fixed layout of 5x. Somebody
-   picks a look, not its parts. Proposed four, drawn before anything is
-   built (`docs/looks.html`): **Plex**, as built; **Plex Night**, the same in
+   picks a look, not its parts. Four, drawn before anything was built
+   (`docs/looks.html`) and **approved on 22 September** - "Those 4 looks are
+   great": **Plex**, as built, and the default; **Plex Night**, the same in
    the dark; **Classic**, BeOS's grey and yellow in Plex type; **Studio**, a
-   near-black look for the media applications with one warm accent. The
+   near-black look for the media applications with one warm accent. Built
+   in three steps: **the looks as the themes - done, 0.10.109** (`testing.md`
+   18.139); the fixed layout; then the Appearance panel down to a look, a
+   wallpaper and the Deskbar's height, drawn first. The
    per-role faces and sizes, the colour swatches, the title's shape and the
    other themes leave the Appearance panel; what else stays - a wallpaper,
    the Deskbar's height - is settled with the drawing.

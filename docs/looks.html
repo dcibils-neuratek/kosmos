@@ -89,6 +89,24 @@
   th { text-align: left; font: 500 11px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--rule); }
   td { padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
   td.v { font: 13px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* The Appearance panel, drawn in Plex. */
+  .panelwin { width: 560px; margin-top: 16px; }
+  .panelbody { background: #f4f4f1; color: #1e1e1e; border: 1px solid #777; padding: 12px; display: grid; gap: 12px;
+               font: 16px/1.3 var(--body); }
+  .panelbody h4 { margin: 0; font: 600 15px/1.2 var(--body); }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .card { border: 1px solid #777; background: #fff; padding: 6px; display: grid; gap: 6px; font-size: 14px; }
+  .card.on { outline: 2px solid #2a55c9; outline-offset: 1px; }
+  .mini { height: 58px; position: relative; }
+  .mini .mb { position: absolute; left: 0; right: 0; top: 0; height: 8px; }
+  .mini .mw { position: absolute; left: 10px; top: 16px; width: 70%; height: 34px; border: 1px solid rgba(0,0,0,.4); }
+  .mini .mt { position: absolute; left: 10px; top: 11px; width: 28px; height: 6px; }
+  .walls { background: #fff; border: 1px solid #777; }
+  .walls div { height: 24px; line-height: 24px; padding: 0 8px; }
+  .walls .on { background: #2a55c9; color: #fff; }
+  .heights { display: flex; gap: 12px; }
+  .heights span { height: 28px; padding: 0 16px; display: inline-flex; align-items: center; border: 1px solid #777; background: #e7e7e3; }
+  .heights .on { background: #2a55c9; color: #fff; }
   ol.q { padding-left: 22px; max-width: 72ch; }
   ol.q li { margin-bottom: 12px; }
 </style>
@@ -204,13 +222,38 @@
   <p>Text longer than its box is cut there, never spilling into the widget beside
   it: the third row above ends in "…" when the list is narrow.</p>
 
-  <h2>For you to choose</h2>
+  <h2>The Appearance panel, after</h2>
+  <p>Three things, and every one of them is a choice among a few. There are no
+  font lists, no colour swatches and no title shapes: the look decides those.</p>
+  <div class="panelwin">
+    <div class="tab" style="--k-tab:#f2c230;--k-tab-text:#3a2e00;--k-line:#777"><i></i>Appearance</div>
+    <div class="panelbody">
+      <h4>Look</h4>
+      <div class="cards">
+        <div class="card on"><div class="mini" style="background:#3d63b8"><div class="mb" style="background:#e7e7e3"></div><div class="mt" style="background:#f2c230"></div><div class="mw" style="background:#f4f4f1"></div></div>Plex</div>
+        <div class="card"><div class="mini" style="background:#16213a"><div class="mb" style="background:#23262c"></div><div class="mt" style="background:#d9a92a"></div><div class="mw" style="background:#1f2227"></div></div>Plex Night</div>
+        <div class="card"><div class="mini" style="background:#336698"><div class="mb" style="background:#d8d8d8"></div><div class="mt" style="background:#ffcb00"></div><div class="mw" style="background:#d8d8d8"></div></div>Classic</div>
+        <div class="card"><div class="mini" style="background:#0e0f12"><div class="mb" style="background:#141518"></div><div class="mt" style="background:#e8833a"></div><div class="mw" style="background:#18191d"></div></div>Studio</div>
+      </div>
+      <h4>Wallpaper</h4>
+      <div class="walls"><div class="on">None - the look's own desk</div><div>blue.png</div><div>thinkpad.jpg</div><div>Alexander Slattery</div></div>
+      <h4>Deskbar height</h4>
+      <div class="heights"><span class="on">36</span><span>44</span><span>52</span></div>
+    </div>
+  </div>
+  <p>Choosing applies at once, as the panel does today, and is kept in
+  <code>/home/.appearance</code> as three things: the look, the wallpaper and the
+  height.</p>
+
+  <h2>Decided, and one question</h2>
   <ol class="q">
-    <li><b>Are these the looks?</b> All four, three of them, or one to change.</li>
-    <li><b>What else stays in Appearance:</b> the wallpaper (your pictures, or the
-    look's plain desk), and the Deskbar's height (36, 44, 52). My recommendation
-    is to keep both and nothing else.</li>
-    <li><b>The default</b> on a machine nobody has set up: Plex, I'd suggest.</li>
+    <li><b>The four looks</b>, approved on 22 September: "Those 4 looks are
+    great". Built as 0.10.109.</li>
+    <li><b>Plex is a fresh machine's look</b>, and the wallpaper and the Deskbar's
+    height are what Appearance keeps beside the look - taken as recommended,
+    until you say otherwise.</li>
+    <li><b>Is the panel above right?</b> It's built once you say so, after the
+    fixed layout.</li>
   </ol>
 </main>
 </body>

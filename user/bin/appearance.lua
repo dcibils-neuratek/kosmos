@@ -221,14 +221,32 @@ do
   end
 end
 
+--
+-- **The four looks, and only them** (`roadmap.md` 5y), in `themes.lua`'s
+-- order and by the titles a person reads - not every palette this process
+-- happens to hold, which listed the kit's own `dark` and `light` and any
+-- file on the disk beside them. Diego: "Let's just make 3 or 4 good design
+-- options in colors and fonts and stick to those".
+--
+local LOOKS = use("/lib/themes.lua")
+
 local function theme_names()
   local names = {}
 
-  for name in pairs(theme.palettes) do names[#names + 1] = name end
-
-  table.sort(names)
+  for _, name in ipairs(LOOKS.order) do
+    names[#names + 1] = LOOKS.titles[name] or name
+  end
 
   return names
+end
+
+-- A look's name from the title its row shows, and back.
+local function look_of(title)
+  for _, name in ipairs(LOOKS.order) do
+    if (LOOKS.titles[name] or name) == title then return name end
+  end
+
+  return title
 end
 
 local chosen_palette = "dark"
@@ -380,8 +398,8 @@ local palette_list = ui.list{
   x = LEFT_X, y = LIST_Y, w = LEFT_W, h = LIST_H,
   items = theme_names(),
   on_select = function(_, item)
-    chosen_palette = item
-    take_theme_faces(item)
+    chosen_palette = look_of(item)
+    take_theme_faces(chosen_palette)
     reflect()
     send()
   end,
@@ -654,8 +672,8 @@ for i, px in ipairs(SIZES) do size_list.items[i] = tostring(px) end
 function reflect()
   local c = chosen[role()]
 
-  for i, name in ipairs(palette_list.items) do
-    if name == chosen_palette then palette_list.selected = i end
+  for i, title in ipairs(palette_list.items) do
+    if look_of(title) == chosen_palette then palette_list.selected = i end
   end
 
   --

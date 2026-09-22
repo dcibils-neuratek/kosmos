@@ -623,6 +623,11 @@ window owns.
 
 ## 16.9 Themes, and colours that are named rather than captured
 
+**Since 22 September there are four looks and nothing else to choose**
+(`roadmap.md` 5y): Plex, Plex Night, Classic and Studio, in `themes.lua`,
+each a whole designed in `docs/looks.html`, all four naming the same faces.
+What follows is how a theme came to carry its faces at all.
+
 **A theme is its colours and its faces.** There were two palettes - `dark`,
 which is what Kosmos looked like first, and `light`, the 1998 one on
 purpose - then the four in `themes.lua`, Photon, BeOS, Platinum and IRIX,

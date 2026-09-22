@@ -690,19 +690,25 @@ theme.fonts = {
 
   -- A title is a label on chrome and can carry a face with character in
   -- it - which is the whole argument for the role being separate.
-  title   = { font = "ibmplexsanscondensed", px = 15 },
+  title   = { font = "ibmplexsanscondensed", px = 14 },
 
-  -- Text and the terminal, as the style guide groups them: a column of
-  -- characters that has to line up is worth more here than a proportional
-  -- face, and it is what the drawing shows.
-  text    = { font = "ibmplexmono", px = 16 },
-  mono    = { font = "ibmplexmono", px = 13 },
+  -- Running text in the reading face, and the terminal in the one whose
+  -- columns line up - as `docs/looks.html` draws them.
+  text    = { font = "ibmplexsans", px = 16 },
+  mono    = { font = "ibmplexmono", px = 14 },
 
   -- A heading inside a window - "Library", "Palette" - which the guide
   -- names and the kit had no role for. Applications that want one stop
   -- choosing a size each.
-  heading = { font = "ibmplexsans-bold", px = 18 },
+  heading = { font = "ibmplexsans-semibold", px = 15 },
 }
+
+--
+-- **These are the four looks' faces** (`roadmap.md` 5y): every look names
+-- the same five, so the kit's own defaults are that set rather than a
+-- sixth one of their own - a machine nobody has set up and a machine in
+-- Plex draw the same words.
+--
 
 -- The same, kept as they ship and never changed: `theme.fonts` is what is
 -- in force and follows every choice, so a theme that inherited from *it*

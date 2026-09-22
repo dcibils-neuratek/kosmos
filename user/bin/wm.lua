@@ -318,13 +318,14 @@ local function apply_fonts(fonts)
 end
 
 --
--- **What a machine nobody has told looks like, and it is BeOS.**
+-- **What a machine nobody has told looks like, and it is Plex.**
 --
 -- The palette used to be whatever the kit was compiled with, which is a
--- default by omission rather than by choice. This system's whole premise is
--- BeOS's bet brought forward, `themes.lua` ships that palette, and a
--- desktop should look like what it is on the first boot rather than after
--- somebody finds the Appearance panel.
+-- default by omission rather than by choice; then it was BeOS, the bet this
+-- system brings forward. Since 22 September it is **Plex**, the first of the
+-- four looks (`roadmap.md` 5y, `docs/looks.html`), whose faces are the
+-- kit's own defaults - so a first boot is a finished look, not a palette
+-- over faces chosen elsewhere. BeOS is still one look away, as Classic.
 --
 -- Only when nothing was saved: a person who has chosen keeps their choice,
 -- and on a machine with no disk `/home` does not survive a power cut, so
@@ -333,9 +334,9 @@ end
 local function default_appearance()
   local ok, shipped = pcall(use, "/lib/themes.lua")
 
-  if not ok or type(shipped) ~= "table" or not shipped.beos then return end
+  if not ok or type(shipped) ~= "table" or not shipped.plex then return end
 
-  local palette = theme.read(shipped.beos, "dark")
+  local palette = theme.read(shipped.plex, "dark")
 
   if palette then theme.apply(palette) end
 end

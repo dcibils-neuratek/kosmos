@@ -10,8 +10,8 @@
 --   every face it names is a file in `assets/fonts/`, by the rule `gfx.c`'s
 --   `font_asset` resolves names with - so a theme cannot name a face the
 --   image does not carry and fall back to the bitmap in silence;
---   the four themes that were palettes name exactly the faces the system
---   shipped with, so choosing one changes nothing about its words;
+--   the four looks (`docs/looks.html`) each name the faces the kit ships
+--   with and paint words that can be read on their windows and Deskbar;
 --   Plex is the colours and faces `docs/plex.html` lists, value for value;
 --   a line that is not a face and a size is told, and a role a file leaves
 --   out comes from the defaults - which a theme setting a role never
@@ -87,30 +87,41 @@ for _, name in ipairs(themes.order) do
   end
 end
 
--- 2. The four that were palettes look as they always have - their faces,
--- and a Deskbar in the tab's colours, which is what it was painted in
--- before `bar` was a colour of its own.
-for _, name in ipairs({ "photon", "beos", "platinum", "irix" }) do
+-- 2. The four looks (`docs/looks.html`, roadmap 5y): each names the faces
+-- the kit ships with, so a look changes colour and never the words' size -
+-- and each paints a Deskbar whose words can be read on it.
+local function luminance(c)
+  return 0.2126 * ((c >> 16) & 0xff) + 0.7152 * ((c >> 8) & 0xff)
+         + 0.0722 * (c & 0xff)
+end
+
+check(#themes.order == 4, "there are " .. #themes.order .. " looks, not four")
+
+for _, name in ipairs(themes.order) do
   local p = theme.read(themes[name], "dark")
 
-  check(p.bar == p.tab and p.bar_text == p.tab_text,
-        name .. "'s Deskbar is not its tab's colours any more")
-
-  -- And the spacing the kit always drew with.
-  check(p.row_pad == 0 and p.button_pad_y == 5 and p.button_pad_x == 12
-        and p.field_pad_y == 3 and p.field_pad_x == 4,
-        name .. "'s spacing is not the kit's own: rows " .. tostring(p.row_pad)
-        .. ", buttons " .. tostring(p.button_pad_y) .. "x"
-        .. tostring(p.button_pad_x) .. ", fields " .. tostring(p.field_pad_y)
-        .. "x" .. tostring(p.field_pad_x))
+  check(type(themes.titles[name]) == "string",
+        name .. " has no title to be shown by")
 
   for _, role in ipairs(theme.roles) do
     local want, got = theme.default_fonts[role], p.fonts[role]
 
     check(got.font == want.font and got.px == want.px,
           name .. "'s " .. role .. " is " .. got.font .. " " .. got.px
-          .. ", not the " .. want.font .. " " .. want.px .. " it shipped with")
+          .. ", not the " .. want.font .. " " .. want.px .. " every look has")
   end
+
+  check(math.abs(luminance(p.bar) - luminance(p.bar_text)) >= 100,
+        name .. "'s Deskbar words are too close to its bar to read")
+  check(math.abs(luminance(p.window) - luminance(p.text)) >= 100,
+        name .. "'s words are too close to its windows to read")
+  -- A title's words are drawn in one colour on a focused tab and an idle
+  -- one, so both have to hold them: the dark looks' first idle tabs were
+  -- the slate of their windows, and every unfocused title vanished.
+  check(math.abs(luminance(p.tab) - luminance(p.tab_text)) >= 100,
+        name .. "'s title words are too close to its focused tab to read")
+  check(math.abs(luminance(p.tab_idle) - luminance(p.tab_text)) >= 100,
+        name .. "'s title words are too close to an unfocused tab to read")
 end
 
 -- 3. Plex, value for value against `docs/plex.html`.
@@ -136,7 +147,7 @@ do
     title   = { "ibmplexsanscondensed", 14 },
     heading = { "ibmplexsans-semibold", 15 },
     text    = { "ibmplexsans", 16 },
-    mono    = { "ibmplexmono", 12 },
+    mono    = { "ibmplexmono", 14 },
   }
 
   for role, f in pairs(faces) do
@@ -265,7 +276,7 @@ end
 
 if fails == 0 then
   print(("PASS: %d checks on the themes that ship (every face carried, the "
-         .. "four palettes unchanged, Plex as docs/plex.html has it, a bad "
+         .. "four looks sharing their faces and legible, Plex as docs/plex.html has it, a bad "
          .. "line told, and a palette applied without its faces)."):format(checks))
   os.exit(0)
 end

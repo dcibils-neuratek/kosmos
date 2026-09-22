@@ -1879,14 +1879,15 @@ def check_default_look(guest, ask_wm):
 
     checks += 1
 
-    if title != "ibmplexsanscondensed" or title_px != "15":
-        raise Failure("a title's face is %s %s, not ibmplexsanscondensed 15"
+    # The four looks' faces since 22 September (`docs/looks.html`).
+    if title != "ibmplexsanscondensed" or title_px != "14":
+        raise Failure("a title's face is %s %s, not ibmplexsanscondensed 14"
                       % (title, title_px))
 
     checks += 1
 
-    if mono != "ibmplexmono" or mono_px != "13":
-        raise Failure("the terminal's face is %s %s, not ibmplexmono 13"
+    if mono != "ibmplexmono" or mono_px != "14":
+        raise Failure("the terminal's face is %s %s, not ibmplexmono 14"
                       % (mono, mono_px))
 
     checks += 1
@@ -1912,9 +1913,9 @@ def check_default_look(guest, ask_wm):
     why = parts[13].split("=", 1)[1]
 
     for role, want in (("ui", "ibmplexsans/16"),
-                       ("title", "ibmplexsanscondensed/15"),
-                       ("text", "ibmplexmono/16"),
-                       ("mono", "ibmplexmono/13")):
+                       ("title", "ibmplexsanscondensed/14"),
+                       ("text", "ibmplexsans/16"),
+                       ("mono", "ibmplexmono/14")):
         if held.get(role) != want:
             raise Failure(
                 "the window manager draws %s in %s, not %s%s - so every "
@@ -3915,7 +3916,7 @@ def check_theme_events(guest):
 # Plex's five faces, as `docs/plex.html` has them and Diego chose them on
 # 22 September - the same table `tools/test_theme.lua` holds the file to.
 PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsanscondensed/14 "
-             "text=ibmplexsans/16 mono=ibmplexmono/12 "
+             "text=ibmplexsans/16 mono=ibmplexmono/14 "
              "heading=ibmplexsans-semibold/15")
 
 
@@ -5110,7 +5111,7 @@ def check_log_view(guest):
       first time - so it opened at the top of the log and stayed there.
 
     **So the conditions are the ThinkPad's, not the harness's.** This phase
-    runs the BeOS palette, because in the dark one the window colour is
+    runs Classic, BeOS's palette, because in the dark one the window colour is
     already dark and the old window would pass the first check; and a
     TrueType face at 20 pixels, because at spleen's 16 the second bug cannot
     be seen. Both are put back afterwards.
@@ -5168,7 +5169,16 @@ def check_log_view(guest):
     )
 
     guest.type("fs.write('/ramfs/logger.lua', %r)" % program)
-    guest.type('fs.write("/home/.appearance", { fonts = { '
+    #
+    # **Classic, named rather than defaulted to.** This wrote no palette and
+    # took whatever a machine nobody has set up wears - BeOS, which is what
+    # it was written against - and the day the default became Plex (18.139)
+    # its console was `#1c1c1e` where the check looks for `#0b0b0b`, and the
+    # phase failed on both boards. A phase that depends on the default
+    # breaks whenever the default is changed; Classic is BeOS's palette.
+    #
+    guest.type('fs.write("/home/.appearance", { palette = "classic", '
+               'fonts = { '
                'ui = { font = "ibmplexmono", px = %d }, '
                'mono = { font = "ibmplexmono", px = %d } } }) '
                'print("log-view" .. "-ready")' % (FACE_PX, FACE_PX))

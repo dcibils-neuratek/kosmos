@@ -7369,3 +7369,41 @@ the room above every other window back (`recount_strips`).
   started afresh paints the harness's yellow bar to its 52nd row and the
   desktop below it. **Control**: a window manager that ignores a saved
   height draws the old 36-pixel bar, and the check fails.
+
+## 18.139 Four looks
+
+**Diego, 22 September**: "Let's just make 3 or 4 good design options in
+colors and fonts and stick to those", and on the drawing
+(`docs/looks.html`), "Those 4 looks are great". So `themes.lua` ships four
+looks and nothing else - **Plex**, **Plex Night**, **Classic** and **Studio**
+- each its colours and its Deskbar designed together, and all four naming
+the same five faces, which are now the kit's own defaults: a machine nobody
+has set up draws the words Plex draws. Plex is that machine's look, where
+BeOS was. Photon, Platinum and IRIX are in the history; BeOS lives on as
+Classic, its researched values and notes kept. The Appearance panel lists
+the four by their titles - not every palette its process holds, which
+included the kit's own `dark` and `light` - and the panel's own trimming to a
+look, a wallpaper and the Deskbar's height comes after the fixed layout (5x).
+
+### The check that arrived with a bug to find
+
+`test_theme.lua` holds each look to the shared faces and to legibility:
+words on windows, words on the Deskbar, and **a title's words on both of its
+tabs**. The last was written after the first photographs of the dark looks,
+in which every unfocused window's title had vanished: a tab's words are one
+colour on a focused tab and an idle one, and Plex Night's and Studio's idle
+tabs were the slate of their windows, with dark words on them. They are a
+light grey now. **Control**: the first build's idle tabs, `#2c3038` and
+`#24262c`, sit 21 and 22 luminance points from their words against the 100
+the check wants, and fail it.
+
+151 checks. The display harness's default-look phase holds the new
+defaults - titles in Plex Sans Condensed 14, the reading text in Plex Sans
+16, the terminal in Plex Mono 14.
+
+**And one phase that leaned on the default.** The display harness's Log
+View phase wrote an appearance with no palette and so wore a fresh
+machine's look - BeOS, which it was written against - and looked for its
+console's `#0b0b0b`. With Plex the default, the console was `#1c1c1e` and
+the phase failed on both boards in the first 0.10.109 prepush. It names
+Classic now, BeOS's palette, as its notes always said it meant to.
