@@ -120,6 +120,26 @@ not only on the first line. It used to have to be first, and the copyright
 line above it turned every application in `/bin` into a console program
 with an empty Deskbar to show for it.
 
+**A licence is never a reason not to use something here.** Diego, 22
+September 2026, after a driver was assessed partly on which reference code
+it could be written from: "we can bring gpl no problem into the project,
+dont complain about licences any more! this is not a commercial project",
+and "i dont care about mit or gpl licensing, this is an experiment, if at
+the end i need to change the project into gpl i will".
+
+So: GPL code may be read, adapted and vendored like anything else, and a
+part is chosen on what it does and how well it is documented, never on its
+terms. Do not raise a licence objection, and do not offer a worse technical
+answer to avoid one - Linux's drivers are the best description most
+hardware has, and that is what they are for here.
+
+What stays is *bookkeeping*, because it costs nothing and keeps the tree
+honest: vendored code keeps its own notice where it sits, `LICENSE` lists
+what is in the tree and under what terms, and the About window shows that
+list. Doom and Quake are GPLv2 and already make the images that carry them
+GPLv2 works; more of that is fine. If the whole project is one day GPL,
+that is a line in `LICENSE` and a decision Diego makes then.
+
 ---
 
 ## Language

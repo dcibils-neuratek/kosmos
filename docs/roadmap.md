@@ -1559,24 +1559,20 @@ processors, and still what follows USB:
      300 Mbps is its two chains.
 
      **What it would take, and it is two pieces.** The *driver* is a USB
-     device with no public datasheet; and above it there is no 802.11 at
-     all - scanning, association, the WPA2 four-way handshake, CCMP over
-     AES, and rate control - which is ours to write whatever the adapter
-     is, and is the larger half.
+     device with no public datasheet, and Linux's `rtl8xxxu` is the best
+     description it has - which is what it is for here (`CLAUDE.md`: a
+     licence is never a reason not to use something). Above it there is no
+     802.11 at all: scanning, association, the WPA2 four-way handshake,
+     CCMP over AES and rate control, which is ours to write whatever the
+     adapter is, and is the larger half.
 
-     **The licence decides which chip.** This project is MIT and does not
-     copy expression from GPL drivers (the same rule that made the Ethernet
-     driver a CDC-ECM class driver written from the USB-IF's
-     specifications). The RTL8192FU's only free driver is Linux's
-     `rtl8xxxu`, GPLv2. Two chips avoid that: an adapter whose Realtek part
-     is covered by OpenBSD's ISC-licensed `urtwn(4)` - the 8188CUS and
-     8192CU generation - and, better, **the ThinkPad's own Intel card**,
-     `8086:a0f0` at `00:14.3`, which `neofetch` already reports as "not
-     driven": OpenBSD's `iwx(4)` and its `net80211` stack are ISC, which is
-     compatible with MIT and attributable, and Intel publishes the firmware
-     under a licence that allows redistribution. So the likely answer is
-     the internal card with ISC code as the reference, and the dongle stays
-     the thing that proved the USB stack reads an unknown device correctly.
+     **Two ways in, and the choice is technical.** This dongle, with
+     `rtl8xxxu`'s 8192F support as the reference; or **the ThinkPad's own
+     Intel card**, `8086:a0f0` at `00:14.3`, which `neofetch` already
+     reports as "not driven" and which OpenBSD's `iwx(4)` and `net80211`
+     describe in ISC code that is closer in shape to what this system
+     wants. The internal card also saves a USB port and works with the lid
+     shut; the dongle is the one that can be moved to another machine.
 
      **Order**: after 5m-b and 5m-c, which put frames through the stack on
      metal over a wire first - WiFi is that plus everything above.
