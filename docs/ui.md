@@ -1287,12 +1287,27 @@ pixel where a blit is a copy; for a window that redraws every frame it is
 the one new cost on the frame path, and `make frames` is where it is
 watched.
 
-**Built in stages, each a test at 100 and at 150 per cent**: the window
-manager at a scale read at startup - opening, commands, events, chrome,
-own-pixel windows; then the Deskbar and anything else that reads the
-framebuffer's size; then Appearance's slider, and a change of scale while
-windows are open, which rebuilds every window's surface at its new size
-and asks each to draw again.
+**Built in stages, each a test at 100 and at 150 per cent.** The first
+two are done (0.10.115): the window manager at a scale read at startup -
+opening, commands, commits, events, chrome, own-pixel windows - and
+Appearance's slider, which changes the scale with windows open: every
+window is rebuilt at its new size in pixels, keeping its size and place
+in points, and told to draw again, and the log names each one's new size.
+The third is what reads the screen's size before it has a window - Lite
+XL sizes its buffers from `/dev/screen` - and the window manager's
+drawings that are not windows: the pointer, the level bar, a drag's
+label, the launcher pad.
+
+**Three things the building found.** `scale.pt` rounds to the nearest
+point rather than down, so a size taken to pixels and back is the size it
+was and a window changed to 150 and back to 100 comes home at exactly
+the size it left. The window manager's main chunk is at Lua's limit of
+200 locals, counting the block locals of its main loop - so `scale` took
+the minimum window size into itself, two names for the one it cost. And
+a display phase that no part of the gate lists never runs and says
+nothing: the scale's did exactly that, "0 on everything at 150 per cent"
+in a gate that passed, so `gate.py` now refuses to start while
+`run_screenshot.py` has a phase no part names.
 
 ## 16.10 What we do not copy from BeOS
 

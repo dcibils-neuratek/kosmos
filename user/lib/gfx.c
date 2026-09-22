@@ -1619,6 +1619,37 @@ static int l_face(lua_State *L)
     return 2;
 }
 
+/*
+ * `gfx.release_faces()` - every face asked for by size, given back.
+ *
+ * **The pool was fixed and nothing ever left it**, which was right while
+ * the sizes a process asked for were the sizes its pages had. The window
+ * manager asks on behalf of every window, at every size an application
+ * names - and since 22 September at that size times a scale (`roadmap.md`
+ * 5z), so each change of scale asks for a new set, and eight slots were
+ * gone after a few. It keeps what it asked for in a cache it clears when
+ * the faces change; this is the other half of clearing it, so the slots
+ * are free again when the cache says they are.
+ *
+ * The roles are not touched: those are replaced in place by `use_font`.
+ * An index into the sized pool handed out before this means nothing after
+ * it, which is why only the caller that holds all of them may call it.
+ */
+static int l_release_faces(lua_State *L)
+{
+    int i;
+
+    (void)L;
+
+    for (i = ROLE_COUNT; i < FACES_MAX; i++) {
+        if (faces[i].loaded) {
+            outline_release(&faces[i]);
+        }
+    }
+
+    return 0;
+}
+
 static int l_use_font(lua_State *L)
 {
     const char *name = luaL_checkstring(L, 1);
@@ -1826,8 +1857,10 @@ static int l_set(lua_State *L)
 }
 
 /*
- * `dst:stretch(src, sx, sy, sw, sh, dx, dy, dw, dh [, alpha [, smooth]])` - a
- * rectangle of `src` drawn into a rectangle of `dst` of another size.
+ * `dst:stretch(src, sx, sy, sw, sh, dx, dy, dw, dh [, alpha [, smooth
+ * [, cx, cy, cw, ch]]])` - a rectangle of `src` drawn into a rectangle of
+ * `dst` of another size, and only where it falls inside `cx, cy, cw, ch`
+ * when that is given.
  *
  * **Nearest neighbour, for the reason `snes_blit.c` gives**: what this is for
  * is a cover or an icon, drawn when something changes rather than every
@@ -1873,6 +1906,14 @@ static int l_set(lua_State *L)
  * destination pixel where nearest reads one: a 4000-pixel photograph fitted
  * into 800 is twenty-five times the reads, which is a cost for whoever
  * wants the quality to choose.
+ *
+ * **The clip rectangle, since 22 September** (`roadmap.md` 5z): a window
+ * that draws its own pixels, at a scale, is composed stretched - and one
+ * damaged piece of it at a time, since the compositor redraws what changed
+ * and not whole windows. Each destination pixel's source is worked out from
+ * where the *whole* rectangle lands, so the pieces meet exactly; the clip
+ * only says which of those pixels to write. Without it the only clip was
+ * `dst`'s own edges.
  */
 /*
  * `dst:pixels(t, w, h [, scale])` - a Lua array of pixels onto a surface.
@@ -2051,6 +2092,7 @@ static int l_stretch(lua_State *L)
     long dh = (long)luaL_checkinteger(L, 10);
     long global = (long)luaL_optinteger(L, 11, -1);
     bool smooth = lua_toboolean(L, 12);
+    bool clipped = !lua_isnoneornil(L, 13);
     long x0, y0, x1, y1, y;
     uint32_t xstep, ystep;
 
@@ -2068,6 +2110,18 @@ static int l_stretch(lua_State *L)
     y0 = dy < 0 ? 0 : dy;
     x1 = dx + dw > (long)d->width ? (long)d->width : dx + dw;
     y1 = dy + dh > (long)d->height ? (long)d->height : dy + dh;
+
+    if (clipped) {
+        long cx = (long)luaL_checkinteger(L, 13);
+        long cy = (long)luaL_checkinteger(L, 14);
+        long cw = (long)luaL_checkinteger(L, 15);
+        long ch = (long)luaL_checkinteger(L, 16);
+
+        if (cx > x0) x0 = cx;
+        if (cy > y0) y0 = cy;
+        if (cx + cw < x1) x1 = cx + cw;
+        if (cy + ch < y1) y1 = cy + ch;
+    }
 
     if (x0 >= x1 || y0 >= y1) {
         return 0;
@@ -2386,6 +2440,7 @@ int gfx_draw_ascent(int face)
 static const luaL_Reg gfx_functions[] = {
     { "use_font", l_use_font },
     { "face",     l_face },
+    { "release_faces", l_release_faces },
     { "measure",  l_measure },
     { "height",   l_height },
     { "fonts",    l_font_names },

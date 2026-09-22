@@ -988,6 +988,12 @@ end
 
 local bar = ui.view{ x = 0, y = 0, w = win.w, h = win.h }
 
+-- As wide as the screen in points, which a new scale changes (`roadmap.md`
+-- 5z): the bar is told its new size and follows it.
+function win:on_resize(w, h)
+  bar.w, bar.h = w, h
+end
+
 --
 -- Where the indicators start, worked out while drawing and remembered so
 -- that `mouse` can test against the same numbers. Laid out from the right

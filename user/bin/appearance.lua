@@ -2,11 +2,12 @@
 -- kosmos: application
 -- kosmos: icon Prefs_Appearance
 -- kosmos: section preferences
--- The look of the desktop: which of the four looks, and the picture behind
--- everything. Nothing else.
+-- The look of the desktop: which of the four looks, the picture behind
+-- everything, and how large all of it is. Nothing else.
 --
 --   wm appearance
 --   wm appearance:--theme plexnight     a look, as a click on its card
+--   wm appearance:--scale 150           a size, as the slider let go there
 --
 -- Haiku keeps this under Preferences and calls it Appearance, which is
 -- where the name comes from.
@@ -29,11 +30,15 @@
 -- "Taskbar size should not be changeable let's make it fixed at 32" - so
 -- it is part of the fixed layout (`theme.metrics.deskbar`) and not here.
 --
+-- **And the size, since 22 September** (`roadmap.md` 5z, `ui.md` 16.18):
+-- one scale for everything, on a stepped slider as `docs/looks.html` draws
+-- it - Diego, "the proposed size slider is great as it is", "with the %".
+--
 -- Everything is one message to the window manager, which holds the look
 -- because it is the one process already talking to every window; each
 -- application's kit follows without the application knowing. The choice is
--- written to `/home/.appearance` - the look and the wallpaper - and read
--- back at startup.
+-- written to `/home/.appearance` - the look, the wallpaper and the size -
+-- and read back at startup.
 
 local ui = use("/lib/ui.lua")
 local theme = ui.theme
@@ -46,8 +51,8 @@ local SETTINGS = "/home/.appearance"
 -- **The layout, fixed** - every position a sum of the fixed layout's own
 -- numbers (`theme.metrics`), so it is the same in every look and at every
 -- face, as `docs/looks.html` draws it: the four looks as cards, each a
--- desktop in miniature above its name; the wallpapers, six rows; and a
--- line to say what happened.
+-- desktop in miniature above its name; the wallpapers, six rows; the size;
+-- and a line to say what happened.
 --
 local W       = 560
 local PAD     = M.gap
@@ -62,7 +67,10 @@ local CARDS_Y     = LOOK_Y + M.row
 local WALL_Y      = CARDS_Y + CARD_H + GAP
 local WALL_LIST_Y = WALL_Y + M.row
 local WALL_H      = WALL_ROWS * M.row + 4
-local STATUS_Y    = WALL_LIST_Y + WALL_H + GAP
+local SIZE_Y      = WALL_LIST_Y + WALL_H + GAP
+local SLIDER_Y    = SIZE_Y + M.row
+local SLIDER_H    = 32
+local STATUS_Y    = SLIDER_Y + SLIDER_H + GAP
 local H           = STATUS_Y + M.row + PAD
 
 local win, err = ui.window{ title = "Appearance", w = W, h = H,
@@ -89,6 +97,7 @@ end
 
 local chosen_look      = LOOKS.order[1]
 local chosen_wallpaper = nil       -- a path, or nil for the look's own desk
+local chosen_scale     = 100       -- per cent
 
 local status = ui.label{ x = PAD, y = STATUS_Y, w = W - 2 * PAD, text = "",
                          color = "text_dim" }
@@ -118,7 +127,8 @@ local function send()
   end
 
   local ok, werr = fs.write(SETTINGS, { palette = chosen_look,
-                                        wallpaper = chosen_wallpaper })
+                                        wallpaper = chosen_wallpaper,
+                                        scale = chosen_scale })
 
   if not ok then
     print("appearance: not saved to " .. SETTINGS .. ": " .. tostring(werr))
@@ -260,6 +270,120 @@ local wall_list = ui.list{
 
 win:add(wall_list)
 
+--------------------------------------------------------------------------
+-- The size (`roadmap.md` 5z): seven steps, a small A and a large A either
+-- side of a track with a detent at each, a knob in the look's accent - a
+-- scrollbar's thumb is the same colour - and the step as a percentage.
+--
+-- The knob follows the pointer from detent to detent while it is held, at
+-- once, and the scale is applied when it is let go: every window on the
+-- screen is rebuilt at its new size, which is a thing to do once rather
+-- than at every detent the knob crosses on the way.
+--------------------------------------------------------------------------
+
+local STEPS = { 100, 110, 120, 135, 150, 175, 200 }
+
+win:add(ui.label{ x = PAD, y = SIZE_Y, w = W - 2 * PAD, text = "Size",
+                  role = "heading" })
+
+local PCT_W, BIG_A = 56, 24
+local TRACK_X0 = 24
+local TRACK_X1 = (W - 2 * PAD) - PCT_W - 12 - BIG_A - 12
+local KNOB_W, KNOB_H = 14, 22
+
+-- The knob's middle at step `i`.
+local function detent_x(i)
+  return TRACK_X0 + (TRACK_X1 - TRACK_X0) * (i - 1) // (#STEPS - 1)
+end
+
+local function step_at(x)
+  local best, far = 1, math.huge
+
+  for i = 1, #STEPS do
+    local d = math.abs(x - detent_x(i))
+
+    if d < far then best, far = i, d end
+  end
+
+  return best
+end
+
+local function step_of(pct)
+  for i, step in ipairs(STEPS) do
+    if step == pct then return i end
+  end
+
+  return 1
+end
+
+-- Tell the window manager, then write it down with the look, as `send` does.
+local function choose_scale(pct)
+  if pct == chosen_scale then return true end
+
+  local reply, why = fs.send("/app/wm", { type = "scale", pct = pct })
+
+  if not reply or not reply.ok then
+    status.text = "size refused: " .. tostring(why or (reply and reply.error))
+    return nil, why
+  end
+
+  chosen_scale = pct
+
+  local ok, werr = fs.write(SETTINGS, { palette = chosen_look,
+                                        wallpaper = chosen_wallpaper,
+                                        scale = chosen_scale })
+
+  if not ok then
+    print("appearance: not saved to " .. SETTINGS .. ": " .. tostring(werr))
+  end
+
+  status.text = ok and ("saved: " .. pct .. "%")
+                or ("applied, not saved: " .. tostring(werr))
+
+  return reply
+end
+
+local size = ui.view{
+  x = PAD, y = SLIDER_Y, w = W - 2 * PAD, h = SLIDER_H,
+
+  draw = function(self, g)
+    local mid = self.h // 2
+    local at = self.held or step_of(chosen_scale)
+    local label = STEPS[at] .. "%"
+
+    g:text(4, mid - gfx.height() // 2, "A", "text_dim")
+    g:text(TRACK_X1 + 12, mid - BIG_A // 2 - 2, "A", "text_dim", nil,
+           "ui", BIG_A)
+
+    g:fill(TRACK_X0, mid - 2, TRACK_X1 - TRACK_X0, 4, "line_soft")
+
+    for i = 1, #STEPS do
+      g:fill(detent_x(i) - 1, mid + 7, 3, 3, "text_dim")
+    end
+
+    g:raised(detent_x(at) - KNOB_W // 2, mid - KNOB_H // 2, KNOB_W, KNOB_H,
+             "tab")
+
+    g:text(self.w - gfx.measure(label), mid - gfx.height() // 2, label,
+           "text")
+  end,
+}
+
+function size:mouse(action, x, _)
+  if action == "press" or action == "move" then
+    self.held = step_at(x)
+  elseif action == "release" then
+    local i = self.held or step_at(x)
+
+    self.held = nil
+    choose_scale(STEPS[i])
+  end
+
+  return true
+end
+
+win:add(size)
+
 win:add(status)
 
 --------------------------------------------------------------------------
@@ -272,6 +396,8 @@ if type(saved) == "table" then
   if LOOKS[saved.palette] then chosen_look = saved.palette end
 
   chosen_wallpaper = saved.wallpaper
+
+  if math.type(saved.scale) == "integer" then chosen_scale = saved.scale end
 end
 
 for i, item in ipairs(wall_list.items) do
@@ -297,6 +423,20 @@ print(("appearance: %dx%d, %d looks, %s"):format(win.w, win.h, #LOOKS.order,
 -- it *holds* after the look arrived, which is what was loaded rather than
 -- what was asked for.
 --
+--
+-- **`--scale 150`**, a size chosen as the slider let go there chooses it.
+--
+do
+  local pct = tonumber((args or ""):match("%-%-scale%s+(%d+)"))
+
+  if pct then
+    local reply, why = choose_scale(math.tointeger(pct) or 0)
+
+    print(("appearance: scale %d %s"):format(pct,
+          reply and "applied" or ("refused: " .. tostring(why))))
+  end
+end
+
 do
   local want = (args or ""):match("%-%-theme%s+(%S+)")
 

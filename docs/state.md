@@ -45,8 +45,15 @@ the stable one. The older development images went to the Trash.
   color should be yellow or at least the same color of the acccent color of
   the theme", "when a window cant be maximixed we shouldnt remove the button
   we should just gray it out and disable it".
-- **Queued: icons at 16, 32 or 64 per place** (5za), after the scale's
-  first stage.
+- **0.10.115, committed and not pushed - everything at a scale** (5z,
+  18.145, `ui.md` 16.18): the window manager converting at its edge with
+  each window, own-pixel windows stretched, Appearance's Size slider with
+  the percentage, and a change with windows open. Sized faces are given
+  back, the Appearance phase's stop race is fixed, and the gate refuses a
+  display phase no part runs. Left for the third stage: the screen's size
+  in points before a window opens (Lite XL), and the window manager's own
+  drawings that are not windows.
+- **Queued: icons at 16, 32 or 64 per place** (5za), next.
 - **The fonts were not made bigger.** Diego asked for +2 everywhere and +4
   on the title, then for a scale instead - "a factor multiplier of all the
   things in the UI", "Something like that slider of iOS". **The slider is

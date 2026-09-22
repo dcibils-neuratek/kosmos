@@ -3673,8 +3673,9 @@ def check_appearance(guest):
     title's shape; it is the four looks as cards and the wallpapers. The
     Deskbar's three heights left it the same day, when the bar became part
     of the fixed layout (5v). Its layout is fixed, so its size is a number
-    that does not depend on the faces - 560 by 362, which the panel says as
-    it opens - and it offers exactly the four looks `themes.lua` ships.
+    that does not depend on the faces - 560 by 430 since the Size row
+    arrived (`roadmap.md` 5z), which the panel says as it opens - and it
+    offers exactly the four looks `themes.lua` ships.
     """
     mark = len(guest.seen)
 
@@ -3690,10 +3691,10 @@ def check_appearance(guest):
                             int(said.group(3)))
     checks = 1
 
-    if (width, height) != (560, 362):
+    if (width, height) != (560, 430):
         raise Failure("the panel is %dx%d; the drawing Diego approved, on the "
-                      "fixed layout and without the Deskbar's heights, is "
-                      "560x362" % (width, height))
+                      "fixed layout, with the size and without the Deskbar's "
+                      "heights, is 560x430" % (width, height))
 
     checks += 1
 
@@ -3711,6 +3712,14 @@ def check_appearance(guest):
     # shell and hears nothing back. That is exactly how this phase failed
     # the suite the first time it ran beside others.
     #
+    # **Waited for from the stop, not from the phase's start.** `mark` was
+    # taken before `wm appearance` was typed, and the prompt that command
+    # was typed at is after it - so this wait was over before it began, and
+    # the next command raced the window manager's exit: twice on x86 on 22
+    # September, a stray `q` at the prompt and `wm appearance:--theme plex`
+    # never run (`testing.md` 18.145).
+    #
+    back = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
@@ -3719,7 +3728,7 @@ def check_appearance(guest):
     while time.monotonic() < end:
         guest._read_available()
 
-        if PROMPT in guest.seen[mark:]:
+        if PROMPT in guest.seen[back:]:
             break
 
         time.sleep(0.3)
@@ -4155,6 +4164,242 @@ def check_tabs(guest):
         guest.wait_for("tabs-reset", "put the harness's appearance back")
 
     return 4
+
+
+def check_scale(guest):
+    """**Everything at 150 per cent** (`roadmap.md` 5z, `ui.md` 16.18).
+
+    Diego, 22 September: "a factor multiplier of all the things in the UI".
+    With `scale = 150` in `/home/.appearance`, the gallery - a kit window
+    asking for 460 by 330 - and a window drawing its own pixels, 200 by 100
+    of green:
+
+      the window manager says it is at 150;
+      the gallery is 690 by 495 on the screen, and its title bar 39 tall;
+      its list's selection bar is 36 rows, the fixed layout's 24 at 150;
+      a click on the list's third row selects the third row - the click
+      divided back into points lands where the drawing, multiplied, put it;
+      and the own-pixel window is 300 by 150, its surface stretched to its
+      bottom-right corner.
+    """
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local wmproto = use('/lib/wmproto.lua') "
+        "local w = ui.window{ title = 'Direct', w = 200, h = 100, x = 800, "
+        "y = 150, direct = true } "
+        "for _ = 1, 2 do w:surface():fill(0, 0, 200, 100, 0xff30a040) "
+        "w:commit{ x = 0, y = 0, w = 200, h = 100 } end "
+        "print('direct' .. ': ready') "
+        "while w.running do local r = wmproto.poll(w.handle, 1) "
+        "if not r then break end end"
+    )
+    guest.type("fs.write('/ramfs/direct.lua', %r)" % program)
+    guest.type(appearance("scale = 150") + ' print("scale" .. "-saved")')
+    guest.wait_for("scale-saved", "save a scale of 150")
+    time.sleep(0.5)
+    mark = len(guest.seen)
+    guest.type("wm gallery,/ramfs/direct.lua")
+
+    def said(pattern, seconds=30):
+        deadline = time.monotonic() + seconds
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+            m = re.search(pattern, guest.seen[mark:])
+
+            if m:
+                return m
+
+            time.sleep(0.3)
+
+        return None
+
+    try:
+        if not said(r"wm: scale 150"):
+            raise Failure("a window manager started over `scale = 150` never "
+                          "said it was at 150:\n" + guest.seen[mark:][-800:])
+
+        gallery = said(r"wm: window gallery at (\d+),(\d+) (\d+)x(\d+)")
+        direct = said(r"wm: window Direct at (\d+),(\d+) (\d+)x(\d+)")
+
+        if not gallery or not direct or not said(r"direct: ready"):
+            raise Failure("the gallery and the own-pixel window did not both "
+                          "open:\n" + guest.seen[mark:][-800:])
+
+        gx, gy, gw, gh = (int(v) for v in gallery.groups())
+        dx, dy, dw, dh = (int(v) for v in direct.groups())
+
+        if (gw, gh) != (690, 495):
+            raise Failure("the gallery asked for 460x330 and is %dx%d on the "
+                          "screen - at 150 it is 690x495" % (gw, gh))
+
+        if (dw, dh) != (300, 150):
+            raise Failure("the own-pixel window asked for 200x100 and is "
+                          "%dx%d - at 150 it is 300x150" % (dw, dh))
+
+        time.sleep(2.0)
+        shot = guest.screendump()
+        width, height, px = parse_ppm(shot)
+
+        # Kept, so a person can look at the desktop at 150 as the check saw
+        # it - through a file of its own, since both boards run this at once.
+        kept = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                            "build", "scale-150.ppm")
+
+        with open("%s.%d" % (kept, os.getpid()), "wb") as f:
+            f.write(shot)
+
+        os.replace("%s.%d" % (kept, os.getpid()), kept)
+
+        def at(x, y):
+            o = (y * width + x) * 3
+            return tuple(px[o:o + 3])
+
+        # The title bar: the rows straight above the own-pixel window that
+        # are not the desk. Not by the tab's colour, since which of the two
+        # windows opened last - and so is focused and yellow - is a race.
+        desk = at(10, 700)
+        rows = 0
+
+        while rows < 80 and dy - 1 - rows >= 0:
+            if at(dx + dw // 2, dy - 1 - rows) == desk:
+                break
+
+            rows += 1
+
+        if abs(rows - 39) > 2:
+            raise Failure("the own-pixel window's title bar is %d rows tall - "
+                          "the tab's 26 at 150 is 39" % rows)
+
+        # The own-pixel window's surface reaches its bottom-right corner.
+        corner = at(dx + dw - 3, dy + dh - 3)
+
+        if corner != (0x30, 0xa0, 0x40):
+            raise Failure("near the own-pixel window's bottom-right corner is "
+                          "%r, not its green - its 200x100 surface was not "
+                          "stretched to its 300x150 place" % (corner,))
+
+        # The list's selection bar: its height, in the list's column.
+        def selection():
+            _, _, px_ = parse_ppm(guest.screendump())
+            x = gx + 150 * 3 // 2
+            top = run = None
+
+            for y in range(gy, gy + gh):
+                o = (y * width + x) * 3
+
+                if tuple(px_[o:o + 3]) == SELECTED:
+                    if top is None:
+                        top, run = y, 0
+
+                    run += 1
+                elif top is not None:
+                    break
+
+            return top, run
+
+        top, run = selection()
+
+        if top is None or abs(run - 36) > 1:
+            raise Failure("the gallery's selection bar is %r rows tall at %r "
+                          "- a row of 24 at 150 is 36" % (run, top))
+
+        # A click on the third row: `gallery.lua`'s list is at 16,172 in
+        # points, its rows 24 from two in; the third row's middle is 234.
+        guest.mouse_to(*_to_tablet(gx + 150 * 3 // 2, gy + 234 * 3 // 2,
+                                   width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+
+        want = gy + (172 + 2 + 48) * 3 // 2
+        deadline = time.monotonic() + 15
+        now = (top, run)
+
+        while time.monotonic() < deadline:
+            now = selection()
+
+            if now[0] is not None and abs(now[0] - want) <= 2:
+                break
+
+            time.sleep(0.4)
+        else:
+            raise Failure("a click on the third row left the selection bar at "
+                          "%r, not near %d - the click and the drawing do not "
+                          "agree on where the row is" % (now, want))
+    finally:
+        stop_desktop(guest)
+        guest.type(appearance() + ' print("scale" .. "-reset")')
+        guest.wait_for("scale-reset", "put the harness's appearance back")
+
+    return 6
+
+
+def check_scale_live(guest):
+    """**The scale changed with windows open** (`roadmap.md` 5z).
+
+    Appearance's slider let go at 150 - `wm gallery,appearance:--scale 150`
+    - has to rebuild the gallery, already open at 460 by 330, at 690 by
+    495, say so, and write 150 down; and let go at 100 again, the gallery
+    comes back to 460 by 330 exactly, not a point smaller for the trip.
+    """
+    guest.type(appearance() + ' print("live" .. "-reset")')
+    guest.wait_for("live-reset", "start the live scale at 100")
+    mark = len(guest.seen)
+    guest.type("wm gallery,appearance:--scale 150")
+
+    def said(pattern, since, seconds=30):
+        deadline = time.monotonic() + seconds
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+            m = re.search(pattern, guest.seen[since:])
+
+            if m:
+                return m
+
+            time.sleep(0.3)
+
+        return None
+
+    try:
+        if not said(r"appearance: scale 150 applied", mark):
+            raise Failure("Appearance never applied a scale of 150:\n"
+                          + guest.seen[mark:][-800:])
+
+        up = said(r"wm: rescaled gallery to (\d+)x(\d+)", mark)
+
+        if not up or (int(up.group(1)), int(up.group(2))) != (690, 495):
+            raise Failure("the open gallery was rescaled to %s - at 150 it is "
+                          "690x495" % (up and up.group(0)))
+    finally:
+        stop_desktop(guest)
+
+    mark = len(guest.seen)
+    guest.type('local a = fs.read("/home/.appearance") '
+               'print("saved" .. "-scale " .. tostring(a and a.scale))')
+    kept = said(r"saved-scale (\S+)", mark)
+
+    if not kept or kept.group(1) != "150":
+        raise Failure("/home/.appearance holds scale %r after 150 was chosen"
+                      % (kept and kept.group(1)))
+
+    mark = len(guest.seen)
+    guest.type("wm gallery,appearance:--scale 100")
+
+    try:
+        back = said(r"wm: rescaled gallery to (\d+)x(\d+)", mark)
+
+        if not back or (int(back.group(1)), int(back.group(2))) != (460, 330):
+            raise Failure("back at 100 the gallery is %s - it asked for "
+                          "460x330" % (back and back.group(0)))
+    finally:
+        stop_desktop(guest)
+        guest.type(appearance() + ' print("live" .. "-done")')
+        guest.wait_for("live-done", "put the harness's appearance back")
+
+    return 3
 
 
 def check_drives_app(guest):
@@ -7967,6 +8212,8 @@ def main():
         wallpaper_checks = phase("wallpapers", check_wallpapers)
         direct_menu_checks = phase("direct menu", check_direct_menu)
         tab_checks = phase("tabs", check_tabs)
+        scale_checks = phase("scale", check_scale)
+        scale_live_checks = phase("scale changed", check_scale_live)
         appearance_checks = phase("appearance", check_appearance)
         drives_app_checks = phase("drives app", check_drives_app)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
@@ -8120,6 +8367,10 @@ def main():
           f"after a restart, and its spacing inside a widget; and four "
           f"theme events reaching a window across as many replies as fit, "
           f"and the Deskbar held at 32 over a saved height, "
+          f"{scale_checks} on everything at 150 per cent - a kit window, "
+          f"its title bar, its rows and a click, and a window drawing its own "
+          f"pixels stretched, {scale_live_checks} on the scale changed with "
+          f"windows open and back again, "
           f"{tab_checks} on the title bar - across the whole window over a "
           f"saved BeOS tab, and a maximise box greyed and doing nothing "
           f"where a window cannot be maximised, "

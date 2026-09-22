@@ -71,6 +71,7 @@ local R_NAMES_ASKER  = 46
 local R_JPEG         = 47
 local R_STRETCH      = 48
 local R_PNG_PALETTE  = 49
+local R_FACES_BACK   = 50
 
 -- The /app registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
@@ -1793,6 +1794,49 @@ if role == R_STRETCH then
   check(over_blue:get(0, 0) == 0xff8080ff,
         "white beside transparent, averaged over blue, was "
         .. string.format("%08x", over_blue:get(0, 0)) .. ", not ff8080ff")
+
+  --
+  -- **A clip rectangle** (`roadmap.md` 5z): the two-by-two source drawn at
+  -- four-by-four, only inside 1,1 to 3,3. Inside, each pixel is the source
+  -- pixel the *whole* rectangle puts there - 1,1 is still the first grey
+  -- and 2,2 the fourth - and outside nothing is written.
+  --
+  local clip = gfx.surface { w = 4, h = 4 }
+
+  clip:fill(0, 0, 4, 4, 0xff000000)
+  clip:stretch(src, 0, 0, 2, 2, 0, 0, 4, 4, nil, false, 1, 1, 2, 2)
+
+  check(clip:get(1, 1) == 0xff111111 and clip:get(2, 2) == 0xff444444,
+        "inside the clip, 1,1 and 2,2 were "
+        .. string.format("%08x %08x", clip:get(1, 1), clip:get(2, 2)))
+  check(clip:get(0, 0) == 0xff000000 and clip:get(3, 3) == 0xff000000
+        and clip:get(3, 0) == 0xff000000,
+        "a clipped stretch wrote outside its clip")
+
+  sys.exit(0)
+end
+
+if role == R_FACES_BACK then
+  --------------------------------------------------------------------------
+  -- **Faces asked for by size are given back** (`gfx.release_faces`).
+  --
+  -- Eight sizes fill the pool and a ninth is refused, with the reason; given
+  -- back, a ninth loads. The window manager asks for a new set at every
+  -- change of scale (`roadmap.md` 5z), so a pool that only filled was a
+  -- desktop whose sized text fell back after a few.
+  --------------------------------------------------------------------------
+  for px = 10, 17 do
+    check(gfx.face("ibmplexsans", px), "the face at " .. px .. " did not load")
+  end
+
+  local none, why = gfx.face("ibmplexsans", 18)
+
+  check(none == nil and why == "no room for another face",
+        "a ninth size was " .. tostring(none) .. " / " .. tostring(why))
+
+  gfx.release_faces()
+
+  check(gfx.face("ibmplexsans", 30), "given back, a face did not load again")
 
   sys.exit(0)
 end

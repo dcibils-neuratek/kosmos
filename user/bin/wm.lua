@@ -164,10 +164,75 @@ local CLOSE_W    = BOX + 6        -- the close box at the left of a tab
 local GRIP       = 16
 local BOX_W      = BOX + 4        -- minimise and maximise, at the right
 
--- Nothing may be resized smaller than this. Below it a window is all
--- decoration and no window.
-local MIN_W      = 120
-local MIN_H      = 60
+-- Nothing may be resized smaller than `scale.MIN_W` by `scale.MIN_H`, 120 by
+-- 60 at 100 per cent. Below it a window is all decoration and no window.
+-- They live in `scale`, below, since it rewrites them - and because this
+-- chunk is at Lua's limit of locals, so the table had to cost no more
+-- names than it brought.
+
+--
+-- **The scale** (`ui.md` 16.18, `roadmap.md` 5z): how many of the
+-- screen's pixels a point is, as a percentage - 100, or one of the steps
+-- above it that Appearance offers. Diego, 22 September: "a factor
+-- multiplier of all the things in the UI".
+--
+-- Applications give every size in points and do not change. This process
+-- works in the screen's pixels, as it always has, and converts at its edge
+-- with each window - a window opening, its drawing commands, its events -
+-- by that window's own factor, `win.pct`: the scale for every window but a
+-- full-screen one, which asked for the screen in the screen's own pixels.
+-- The chrome - the title bar, its boxes, the border and the grip - is this
+-- process's own, so its sizes are rewritten here, in pixels at the scale.
+--
+local scale = { pct = 100, STEPS = { 100, 110, 120, 135, 150, 175, 200 },
+                MIN_W = 120, MIN_H = 60 }
+
+-- Points to pixels, to the nearest.
+function scale.px(v, pct)
+  return math.floor(v * (pct or scale.pct) / 100 + 0.5)
+end
+
+-- Pixels to points, to the nearest - so a size taken to pixels and back is
+-- the size it was, at every step, and a window changed from one scale to
+-- another and back does not come home a point smaller.
+function scale.pt(v, pct)
+  return math.floor(v * 100 / (pct or scale.pct) + 0.5)
+end
+
+function scale.valid(pct)
+  for _, step in ipairs(scale.STEPS) do
+    if step == pct then return true end
+  end
+
+  return false
+end
+
+function scale.chrome()
+  TAB_H   = scale.px(theme.metrics.tab)
+  BORDER  = scale.px(2)
+  BOX     = scale.px(18)
+  MARGIN  = scale.px(4)
+  CASCADE = TAB_H + scale.px(8)
+  CLOSE_W = BOX + scale.px(6)
+  GRIP    = scale.px(16)
+  BOX_W   = BOX + scale.px(4)
+  scale.MIN_W = scale.px(120)
+  scale.MIN_H = scale.px(60)
+end
+
+--
+-- An event on its way to a window, in that window's points: a pointer's
+-- place, a window's new place or size. Every event goes through `post`,
+-- so this is the one door. Fields that are not positions - a key, a
+-- button, a title - pass untouched.
+--
+function scale.event(event, pct)
+  for _, k in ipairs({ "x", "y", "w", "h" }) do
+    if math.type(event[k]) == "integer" then
+      event[k] = scale.pt(event[k], pct)
+    end
+  end
+end
 
 -- The decoration reads the palette at the moment it draws rather than
 -- copying it into constants here, which is what lets the theme change
@@ -247,18 +312,25 @@ local function sized(role, px)
 
   local want = theme.fonts[role]
 
-  if not want or px == want.px then return role end
+  -- `px` is in points, like the role's; both are drawn at the scale.
+  px = scale.px(px)
+
+  if not want or px == scale.px(want.px) then return role end
 
   local key = role .. "@" .. px
   local got = sized_faces[key]
 
   if got == nil then
-    got = gfx.face(want.font, px) or false
+    local face, why = gfx.face(want.font, px)
+
+    got = face or false
     sized_faces[key] = got
 
+    -- The reason `gfx` gave, which is not always room: a bitmap face has
+    -- no other sizes to make.
     if not got and not sized_full then
       sized_full = true
-      print("wm: no room for another face, so " .. key
+      print("wm: " .. tostring(why) .. ", so " .. key
             .. " draws at the role's size")
     end
   end
@@ -282,7 +354,9 @@ local function apply_fonts(fonts)
 
     if type(want) == "table" and want.font then
       local px = tonumber(want.px) or 16
-      local ok, err = gfx.use_font(want.font, px, role)
+      -- Loaded at the scale; what is recorded and sent is the size in
+      -- points, which is what every application lays itself out in.
+      local ok, err = gfx.use_font(want.font, scale.px(px), role)
 
       if ok then
         in_force[role] = { font = want.font, px = px }
@@ -305,7 +379,10 @@ local function apply_fonts(fonts)
   end
 
   -- Sized faces were cut from the fonts that have just been replaced.
+  -- And the slots behind them: the cache is the only holder of a sized
+  -- face, so clearing it without giving them back would leave them taken.
   sized_faces, sized_full = {}, false
+  gfx.release_faces()
 
   return why
 end
@@ -340,6 +417,15 @@ local function load_appearance()
   local saved = fs.read(SETTINGS)
 
   if type(saved) ~= "table" then saved = {} end
+
+  -- The scale first: the chrome's sizes and every face below follow it.
+  if math.type(saved.scale) == "integer" and scale.valid(saved.scale) then
+    scale.pct = saved.scale
+  end
+
+  scale.chrome()
+
+  if scale.pct ~= 100 then print("wm: scale " .. scale.pct) end
 
   if not saved.palette then default_appearance() end
 
@@ -1267,6 +1353,65 @@ end
 -- its window.
 --------------------------------------------------------------------------
 
+--
+-- **A drawing command, in the screen's pixels at a scale** (`ui.md` 16.18).
+-- A rectangle by its two edges, so neighbours still meet at a step that is
+-- not whole; text at its place, since its face is already loaded at the
+-- scale (`apply_fonts`, `sized`); a triangle's corners, which `gfx` takes
+-- as doubles; and a picture drawn at its scaled size, averaged - an icon
+-- from its 64-pixel export when there is one, which is every icon Haiku's
+-- set gives, so it is shrunk rather than blown up.
+--
+function scale.op(o, pct)
+  local kind = o.op
+
+  if kind == "fill" then
+    local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
+    local w, h = tonumber(o.w) or 0, tonumber(o.h) or 0
+    local x0, y0 = scale.px(x, pct), scale.px(y, pct)
+
+    o.x, o.y = x0, y0
+    o.w, o.h = scale.px(x + w, pct) - x0, scale.px(y + h, pct) - y0
+  elseif kind == "text" then
+    o.x = scale.px(tonumber(o.x) or 0, pct)
+    o.y = scale.px(tonumber(o.y) or 0, pct)
+  elseif kind == "triangle" then
+    for _, k in ipairs({ "x1", "y1", "x2", "y2", "x3", "y3" }) do
+      o[k] = (tonumber(o[k]) or 0) * pct / 100
+    end
+  elseif kind == "image" then
+    local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
+    local dw, dh = tonumber(o.dw) or 0, tonumber(o.dh) or 0
+
+    -- No size given is a crop drawn pixel for pixel: its size is the crop's.
+    if dw <= 0 or dh <= 0 then
+      dw, dh = tonumber(o.w) or 0, tonumber(o.h) or 0
+    end
+
+    local x0, y0 = scale.px(x, pct), scale.px(y, pct)
+
+    o.x, o.y = x0, y0
+    o.dw, o.dh = scale.px(x + dw, pct) - x0, scale.px(y + dh, pct) - y0
+    o.smooth = true
+
+    -- An icon's 64: `16x16/<name>` or a bare 32 name, when the 64 exists.
+    local asset = tostring(o.asset or "")
+    local name, from = asset:match("^16x16/(.+)$"), 16
+
+    if not name and not asset:find("/", 1, true) then
+      name, from = asset, 32
+    end
+
+    if name and picture_named("64x64/" .. name) then
+      local k = 64 // from
+
+      o.asset = "64x64/" .. name
+      o.sx, o.sy = (tonumber(o.sx) or 0) * k, (tonumber(o.sy) or 0) * k
+      o.w, o.h = (tonumber(o.w) or 0) * k, (tonumber(o.h) or 0) * k
+    end
+  end
+end
+
 local ops = {
   fill = function(s, o)
     s:fill(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0xff000000)
@@ -1943,7 +2088,15 @@ function strips.compose(win, from, x0, y0, x1, y1)
   if y1 > split then
     local ya = math.max(y0, split)
 
-    back:blit(from, x0 - win.x, ya - split, x1 - x0, y1 - ya, x0, ya)
+    local lower = win.h - win.menubar.h
+
+    if win.src_w and (win.src_w ~= win.w or win.src_h ~= lower) then
+      back:stretch(from, 0, 0, win.src_w, win.src_h,
+                   win.x, split, win.w, lower, nil, false,
+                   x0, ya, x1 - x0, y1 - ya)
+    else
+      back:blit(from, x0 - win.x, ya - split, x1 - x0, y1 - ya, x0, ya)
+    end
   end
 end
 
@@ -2191,6 +2344,14 @@ local function draw_window(i, r)
                      x1 - x0, y1 - y0, x0, y0)
         elseif win.menubar then
           strips.compose(win, from, x0, y0, x1, y1)
+        elseif win.src_w and (win.src_w ~= win.w or win.src_h ~= win.h) then
+          --
+          -- A surface in the application's points, at a scale: stretched
+          -- to its place, and only this damaged piece of it written.
+          --
+          back:stretch(from, 0, 0, win.src_w, win.src_h,
+                       win.x, win.y, win.w, win.h, nil, false,
+                       x0, y0, x1 - x0, y1 - y0)
         else
           back:blit(from, x0 - win.x, y0 - win.y,
                     x1 - x0, y1 - y0, x0, y0)
@@ -2926,6 +3087,30 @@ handlers.open = function(req, who, cap)
   -- edge where the desktop shows past it - which is what happened, and
   -- read as a border because a border is what it looked like.
   --
+  --
+  -- **Points in, the screen's pixels from here** (`ui.md` 16.18). Every
+  -- size and place asked for is multiplied by the window's factor before
+  -- anything else looks at it, and the reply divides back. A full-screen
+  -- window's factor is one: it asked for the screen in its own pixels.
+  --
+  local pct = req.fullscreen and 100 or scale.pct
+  local asked_w, asked_h = tonumber(req.w), tonumber(req.h)
+
+  if pct ~= 100 then
+    local function px(v)
+      v = tonumber(v)
+      return v and scale.px(v, pct) or nil
+    end
+
+    req.w, req.h, req.x, req.y = px(req.w), px(req.h), px(req.x), px(req.y)
+  end
+
+  -- What was given, in points: exactly what was asked for when it fitted,
+  -- rather than a rounding of it back.
+  local function given(v, asked)
+    return (asked and v == scale.px(asked, pct)) and asked or scale.pt(v, pct)
+  end
+
   local room_w = (req.strip == "top") and W or (W - 8)
   local room_h = (req.strip == "top") and H or (H - TAB_H - 8)
 
@@ -3020,6 +3205,7 @@ handlers.open = function(req, who, cap)
                           H - h_ - BORDER),
     w       = w_,
     h       = h_,
+    pct     = pct,
     surface = gfx.surface{ w = w_, h = h_ },
     events  = {},
 
@@ -3055,12 +3241,19 @@ handlers.open = function(req, who, cap)
     local at, why = sys.memory_map(cap)
 
     if at then
-      local bytes = gfx.bytes(w_, h_)
+      --
+      -- **The surface is the application's size, in its points**, and at
+      -- a scale that is not the window's size on the screen: it is
+      -- composed stretched to its place (`src_w`, `src_h`).
+      --
+      local src_w, src_h = given(w_, asked_w), given(h_, asked_h)
+      local bytes = gfx.bytes(src_w, src_h)
 
+      win.src_w, win.src_h = src_w, src_h
       win.shared = {
         cap = cap,
-        [1] = gfx.wrap{ at = at, w = w_, h = h_ },
-        [2] = gfx.wrap{ at = at + bytes, w = w_, h = h_ },
+        [1] = gfx.wrap{ at = at, w = src_w, h = src_h },
+        [2] = gfx.wrap{ at = at + bytes, w = src_w, h = src_h },
         live = 1,
       }
     else
@@ -3472,8 +3665,14 @@ handlers.open = function(req, who, cap)
   -- `x` and `y` go back as well as `w` and `h`. A menu asks to appear at a
   -- particular place on the screen and may have been pulled back to fit, and
   -- a caller that does not know where its menu ended up cannot hit-test it.
-  return { ok = true, window = win.handle, w = w_, h = h_,
-           x = win.x, y = win.y,
+  --
+  -- In the window's points, and the screen's size in them as well: at a
+  -- scale the framebuffer's size is not the room an application has.
+  --
+  return { ok = true, window = win.handle,
+           w = given(w_, asked_w), h = given(h_, asked_h),
+           x = scale.pt(win.x, pct), y = scale.pt(win.y, pct),
+           screen_w = scale.pt(W, pct), screen_h = scale.pt(H, pct),
            palette = theme.current(), desktop = theme.desktop,
            fonts = theme.fonts }
 end
@@ -3484,7 +3683,11 @@ handlers.draw = function(req)
 
   for _, o in ipairs(req.ops or {}) do
     local fn = ops[o.op]
-    if fn then fn(win.surface, o) end
+    if fn then
+      if win.pct and win.pct ~= 100 then scale.op(o, win.pct) end
+
+      fn(win.surface, o)
+    end
   end
 
   --
@@ -3828,13 +4031,24 @@ handlers.commit = function(req)
   -- the window has one (`strips`): the damage moves down with it, and is
   -- held to the buffer rather than to the window around it.
   local below = strips.below(win)
+  local sw_ = win.src_w or win.w
+  local sh_ = win.src_h or (win.h - below)
   local x = math.max(0, math.floor(tonumber(req.x) or 0))
   local y = math.max(0, math.floor(tonumber(req.y) or 0))
-  local w_ = math.min(win.w - x, math.floor(tonumber(req.w) or win.w))
-  local h_ = math.min(win.h - below - y, math.floor(tonumber(req.h) or win.h))
+  local w_ = math.min(sw_ - x, math.floor(tonumber(req.w) or sw_))
+  local h_ = math.min(sh_ - y, math.floor(tonumber(req.h) or sh_))
 
   if w_ > 0 and h_ > 0 then
-    add_damage(win.x + x, win.y + below + y, w_, h_)
+    --
+    -- In the surface's pixels, which at a scale are not the screen's: the
+    -- damage is where they land, rounded outwards (`ui.md` 16.18).
+    --
+    local dw_, dh_ = win.w, win.h - below
+    local x0, y0 = x * dw_ // sw_, y * dh_ // sh_
+    local x1 = ((x + w_) * dw_ + sw_ - 1) // sw_
+    local y1 = ((y + h_) * dh_ + sh_ - 1) // sh_
+
+    add_damage(win.x + x0, win.y + below + y0, x1 - x0, y1 - y0)
   end
 
   -- The buffer the application should draw into next: the one this process
@@ -3948,13 +4162,16 @@ handlers.resize = function(req)
              error = "a window that draws its own pixels cannot be resized yet" }
   end
 
-  resize_window(win, tonumber(req.w) or win.w, tonumber(req.h) or win.h)
+  local pct = win.pct or 100
 
-  -- A strip that changes height changes the room above everything else:
-  -- the Deskbar, since its height became a choice (`roadmap.md` 5v).
+  resize_window(win,
+                tonumber(req.w) and scale.px(tonumber(req.w), pct) or win.w,
+                tonumber(req.h) and scale.px(tonumber(req.h), pct) or win.h)
+
+  -- A strip that changes height changes the room above everything else.
   if win.strip then recount_strips() end
 
-  return { ok = true, w = win.w, h = win.h }
+  return { ok = true, w = scale.pt(win.w, pct), h = scale.pt(win.h, pct) }
 end
 
 handlers.retitle = function(req)
@@ -3999,10 +4216,12 @@ handlers.move = function(req)
   -- every other direction, which is always enough of the tab to catch.
   local KEEP = 48
 
-  win.x = math.min(math.max(tonumber(req.x) or win.x, KEEP - win.w),
-                   W - KEEP)
-  win.y = math.min(math.max(tonumber(req.y) or win.y, top_limit()),
-                   H - KEEP)
+  local pct = win.pct or 100
+  local want_x = tonumber(req.x) and scale.px(tonumber(req.x), pct) or win.x
+  local want_y = tonumber(req.y) and scale.px(tonumber(req.y), pct) or win.y
+
+  win.x = math.min(math.max(want_x, KEEP - win.w), W - KEEP)
+  win.y = math.min(math.max(want_y, top_limit()), H - KEEP)
   damage_window(win)
 
   --
@@ -4022,7 +4241,7 @@ handlers.move = function(req)
     post(win, { type = "moved", x = win.x, y = win.y })
   end
 
-  return { ok = true, x = win.x, y = win.y }
+  return { ok = true, x = scale.pt(win.x, pct), y = scale.pt(win.y, pct) }
 end
 
 --
@@ -4407,6 +4626,18 @@ end
 function post(win, event)
   if not win then return end
 
+  -- In the window's points (`scale.event`), on a copy: an event table may
+  -- be on its way to more than one window.
+  if win.pct and win.pct ~= 100
+     and (event.x or event.y or event.w or event.h) then
+    local copy = {}
+
+    for k, v in pairs(event) do copy[k] = v end
+
+    scale.event(copy, win.pct)
+    event = copy
+  end
+
   local events = win.events
 
   events[#events + 1] = event
@@ -4471,6 +4702,91 @@ handlers.wallpaper = function(req)
   add_damage(0, 0, W, H)
 
   return { ok = true }
+end
+
+--
+-- **A new scale, with windows open** (`roadmap.md` 5z, `ui.md` 16.18) -
+-- Appearance's slider, let go. The chrome and the faces follow the scale;
+-- every window keeps its size and place in points, so its pixels change:
+-- one drawn by commands gets a surface of the new size and is told to draw
+-- again, one drawing its own pixels is stretched to its new place, the
+-- strip keeps its height in points and the desktop the room it leaves. A
+-- full-screen window is the screen at any scale and is left alone.
+--
+-- Said in the log per window, in its new pixels, since nothing else on the
+-- screen names a size.
+--
+function scale.rescale(pct)
+  local old = scale.pct
+  local KEEP = 48
+
+  scale.pct = pct
+  scale.chrome()
+  apply_fonts(theme.fonts)
+
+  for _, win in ipairs(windows) do
+    if win.pct == old then
+      local lx, ly = scale.pt(win.x, old), scale.pt(win.y, old)
+
+      win.pct = pct
+      damage_window(win)
+
+      if win.strip then
+        swap_surface(win, W, scale.px(scale.pt(win.h, old), pct))
+      elseif win.backdrop then
+        -- Sized from what the strip leaves, below.
+      elseif win.shared then
+        if win.menubar then
+          win.menubar.h = strips.height()
+          win.menubar.surface:free()
+          win.menubar.surface = gfx.surface{ w = scale.px(win.src_w, pct),
+                                             h = win.menubar.h }
+        end
+
+        win.w = scale.px(win.src_w, pct)
+        win.h = scale.px(win.src_h, pct) + strips.below(win)
+
+        if win.menubar then strips.paint(win) end
+      else
+        resize_window(win, scale.px(scale.pt(win.w, old), pct),
+                      scale.px(scale.pt(win.h, old), pct))
+      end
+
+      if not (win.strip or win.backdrop) then
+        win.x = math.min(math.max(scale.px(lx, pct), KEEP - win.w), W - KEEP)
+        win.y = math.min(math.max(scale.px(ly, pct), top_limit()), H - KEEP)
+      end
+
+      damage_window(win)
+      print(("wm: rescaled %s to %dx%d"):format(tostring(win.title),
+                                                 win.w, win.h))
+    end
+  end
+
+  recount_strips()
+
+  local now = theme.current()
+
+  for _, win in ipairs(windows) do
+    post(win, { type = "theme", palette = now, desktop = theme.desktop,
+                fonts = theme.fonts })
+  end
+
+  add_damage(0, 0, W, H)
+  print("wm: scale " .. pct)
+end
+
+handlers.scale = function(req)
+  local pct = math.tointeger(tonumber(req.pct) or 0)
+
+  if not pct or not scale.valid(pct) then
+    return { ok = false, error = "a scale is 100, 110, 120, 135, 150, 175 "
+                                 .. "or 200 per cent" }
+  end
+
+  if pct ~= scale.pct then scale.rescale(pct) end
+
+  return { ok = true, pct = scale.pct }
 end
 
 handlers.theme = function(req)
@@ -4587,8 +4903,8 @@ function resize_window(win, w, h)
 
   -- Not smaller than a window, and not bigger than the screen it has to fit
   -- inside along with its own decoration.
-  if w < MIN_W then w = MIN_W end
-  if h < MIN_H then h = MIN_H end
+  if w < scale.MIN_W then w = scale.MIN_W end
+  if h < scale.MIN_H then h = scale.MIN_H end
   if w > W - BORDER * 2 then w = W - BORDER * 2 end
   if h > H - TAB_H - BORDER then h = H - TAB_H - BORDER end
 
@@ -5327,8 +5643,8 @@ local function pointer_pass(p)
     local w = resizing.ow + (nx - resizing.ox)
     local h = resizing.oh + (ny - resizing.oy)
 
-    if w < MIN_W then w = MIN_W end
-    if h < MIN_H then h = MIN_H end
+    if w < scale.MIN_W then w = scale.MIN_W end
+    if h < scale.MIN_H then h = scale.MIN_H end
     if w > W - BORDER * 2 then w = W - BORDER * 2 end
     if h > H - TAB_H - BORDER then h = H - TAB_H - BORDER end
 

@@ -247,7 +247,7 @@ DISPLAY_PARTS = [
      "Super Nintendo --scale", "deskbar", "deskbar focus", "desktop",
      "places", "panel"],
     ["clipboard", "cores", "reaped", "clicks", "graphical", "replicants",
-     "window_manager", "drives app"],
+     "window_manager", "drives app", "scale", "scale changed"],
 
     # **Alone, and that is the point.** It is the only check that wants a
     # desktop on a machine nobody has told anything, and every other phase
@@ -325,6 +325,28 @@ def uncovered_x86_parts():
     return [p for p in module.PARTS if p not in named]
 
 
+def uncovered_display_phases():
+    """The display harness's phases that no part here names.
+
+    **The same trap as `uncovered_x86_parts`, one harness over.** Each part
+    runs the phases it lists and a phase in no list is skipped without a
+    word - it counts nothing and runs nothing. The scale's phase was that on
+    22 September: written, wired into the harness, and reported as "0 on
+    everything at 150 per cent" by a gate that passed. So the phases are
+    read from `run_screenshot.py`, every `phase("<name>", ...)`, and each
+    has to be in a part - the board's own, `@@BOARD@@`, standing for both.
+    """
+    import re
+
+    with open(os.path.join(ROOT, "tools", "run_screenshot.py")) as f:
+        called = re.findall(r'phase\("([^"]+)"', f.read())
+
+    named = set(ph for part in DISPLAY_PARTS for ph in part)
+    named.update(("power button", "unknown keys"))
+
+    return [ph for ph in called if ph not in named]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4,
@@ -334,6 +356,14 @@ def main():
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")
     args = parser.parse_args()
+
+    unrun = uncovered_display_phases()
+
+    if unrun:
+        print("FAIL: run_screenshot.py has phases no display part runs: %s - "
+              "name each in one of DISPLAY_PARTS in tools/gate.py"
+              % ", ".join(unrun), flush=True)
+        return 1
 
     missing = uncovered_x86_parts()
 

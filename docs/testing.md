@@ -7595,6 +7595,82 @@ Three of Diego's on 22 September, the same afternoon:
   harness's Control-W Q left the window manager ended with a stray `q` at
   the shell's prompt, which then prefixed the next command, so `wm
   appearance:--theme plex` was never run. The part passed alone right
-  after. Recorded rather than rerun away: a window manager that ends on
-  Control-W alone would do exactly this, and the harness waits for the
-  prompt rather than for the `q` to be read.
+  after. It came back on the next change and was found then: the phase
+  waited for the prompt from its own start, not from the stop (18.145).
+
+## 18.145 Everything at a scale
+
+**Diego, 22 September**: a setting "like Windows does", "a factor
+multiplier of all the things in the UI", "Something like that slider of
+iOS"; the drawing in `docs/looks.html` approved - "the proposed size slider
+is great as it is", "with the %" - and "start on the size slider"
+(`roadmap.md` 5z, `ui.md` 16.18).
+
+- **The window manager converts at its edge with each window** and works
+  in the screen's pixels inside, as before. `scale` holds the percentage,
+  one of seven steps, and the window's own factor is `win.pct`: a window
+  opening has its size and place multiplied and the reply divided back; a
+  drawing command has its rectangle multiplied by its two edges, its text
+  placed in a face loaded at the scale, its triangle's corners multiplied,
+  and a picture drawn at its scaled size, averaged, an icon from its 64;
+  a commit's damage lands where the surface's pixels do; every event
+  through `post` is divided back; a move or a resize asked for is in
+  points. The chrome's sizes are rewritten at the scale.
+- **A window drawing its own pixels keeps its surface** at the size it
+  asked for, and the compositor stretches it to its place: `stretch` took
+  a clip rectangle so a damaged piece can be composed without the rest. A
+  full-screen window's factor is one.
+- **Appearance's Size row**: the slider as drawn, seven steps, a knob in
+  the look's accent that follows the pointer at once and applies when let
+  go, the percentage beside it, and `--scale` for a script. The panel is
+  560 by 430. The Deskbar follows its width when a scale changes it.
+- **A change of scale with windows open** rebuilds each at its new size in
+  pixels, keeping its size and place in points, posts a theme event so each
+  draws again, and says `wm: rescaled <title> to WxH`. `scale.pt` rounds to
+  the nearest point, so a trip to 150 and back comes home exact.
+- **Sized faces are given back** (`gfx.release_faces`), where the window
+  manager clears its cache of them - which a change of scale does. The
+  pool was eight, fixed, and never emptied; a few changes of scale would
+  have filled it. And its message says the reason `gfx` gave, where it
+  said "no room" for everything: under the harness's pinned bitmap faces
+  the Appearance slider's large A asked for a size a bitmap cannot make.
+
+### The checks
+
+- **`scale`, a new display phase, at 150**: the window manager says so;
+  the gallery, asking for 460 by 330, is 690 by 495; the own-pixel
+  window's title bar is 39 rows, counted as the rows above it that are not
+  the desk - by the tab's colour it failed once, because which of the two
+  windows opens last, and is focused, is a race; the gallery's selection
+  bar is 36; a click on its
+  third row selects the third row; and a 200 by 100 own-pixel window is 300
+  by 150 with its green reaching the corner. The screen it saw is kept in
+  `build/scale-150.ppm`. 6.
+- **`scale changed`**: `wm gallery,appearance:--scale 150` rebuilds the
+  open gallery at 690 by 495 and writes 150 down; `--scale 100` brings it
+  back to 460 by 330. 3.
+- **The `appearance` phase**: the panel is 560 by 430.
+- **The guest suite**: `stretch` with a clip writes inside it only, each
+  pixel the one the whole rectangle would put there; and `gfx: faces by
+  size are given back` - eight fill the pool, a ninth is refused, and after
+  a release one loads.
+- **Six controls, each watched failing its own check**: windows opened at
+  100 ("asked for 460x330 and is 460x330"); events not divided back ("the
+  selection bar at 396, not near 468"); an own-pixel window blitted rather
+  than stretched (its corner the tab's yellow, not its green); the chrome
+  at 100 ("title bar is 26 rows"); a change of scale that does not resize
+  ("rescaled gallery to 460x330"); and a release that releases nothing
+  ("given back, a face did not load again").
+- **The gate refuses a display phase no part runs.** The scale's phase was
+  written, wired into the harness, and reported as "0 on everything at 150
+  per cent" by a gate that passed: `DISPLAY_PARTS` names each part's
+  phases and nothing checked that every phase was in one. `gate.py` reads
+  `run_screenshot.py`'s phases now and will not start while one is left
+  out - held, like `uncovered_x86_parts`, with the scale's phase taken out
+  of its part as the control.
+- **The Appearance phase's race, found and fixed.** Seen twice on x86 -
+  the second time on this change - as `wm appearance:--theme plex` never
+  run: its stop waited for the prompt from the phase's start, where the
+  prompt `wm appearance` was typed at already was, so the wait ended at
+  once and the next command raced the window manager's exit. It waits from
+  the stop now, as the other twenty-one stops did.

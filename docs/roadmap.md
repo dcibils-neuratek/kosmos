@@ -1166,8 +1166,20 @@ processors, and still what follows USB:
    **Queued after 5z's first stage.**
 
 5z. **APPROVED on 22 September - a size for everything, not for the
-   fonts: a scale.** Drawn in `docs/looks.html` and approved - "the
-   proposed size slider is great as it is", "with the %" - and not built. Diego, on the
+   fonts: a scale. The first two stages DONE, 0.10.115** (`testing.md`
+   18.145, `ui.md` 16.18). Drawn in `docs/looks.html` and approved - "the
+   proposed size slider is great as it is", "with the %" - and then Diego:
+   "start on the size slider". Built: the window manager at a scale, read
+   at startup and applied at its edge with each window - opening, drawing
+   commands, commits, events, its own chrome and faces, own-pixel windows
+   stretched - and changed with windows open from Appearance's Size row,
+   which rebuilds every window at its new size. **Left, the third stage**:
+   a way for an application to learn the screen's size in points *before*
+   it opens a window - Lite XL sizes its buffers from `/dev/screen` first,
+   so at 150 its bottom is cut; the window manager's own drawings that are
+   not windows - the pointer, the level bar, a drag's label, the launcher
+   pad; the small offsets inside the title bar's boxes; and a menu strip's
+   padding over an own-pixel window. Diego, on the
    ThinkPad with 0.10.111: "fonts are too small on a 1920x1080 14 inch
    panel like the t14", "Make them 2 point bigger all of them and the
    window tab title 4 points bigger" - and then, before any of that was

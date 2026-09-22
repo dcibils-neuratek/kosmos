@@ -3958,6 +3958,13 @@ static bool test_a_jpeg_decodes(void)                  { return luatest_role(47)
 static bool test_a_palette_png_decodes(void)           { return luatest_role(49); }
 
 /*
+ * Faces asked for by size are given back. Eight fill the pool, a ninth is
+ * refused, and after `gfx.release_faces` a ninth loads - which the window
+ * manager depends on since a change of scale asks for a new set.
+ */
+static bool test_sized_faces_given_back(void)          { return luatest_role(50); }
+
+/*
  * An endpoint ends with the process that made it. A server takes a client's
  * call and is killed before answering: the client has to be woken with an
  * error, and the pool has to get the endpoint back.
@@ -8348,6 +8355,7 @@ static const struct test tests[] = {
     { "licence: the image carries LICENSE",     test_licence_is_carried },
     { "jpeg: four quadrants, and not a PNG",   test_a_jpeg_decodes },
     { "png: a palette, its alpha, and no palette", test_a_palette_png_decodes },
+    { "gfx: faces by size are given back",     test_sized_faces_given_back },
     { "ipc: an endpoint ends with its process",  test_endpoint_ends_with_its_process },
     { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
