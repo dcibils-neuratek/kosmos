@@ -455,6 +455,24 @@ function theme.apply(palette)
   return theme
 end
 
+--
+-- A colour `k` per cent of the way to white, or to black when `k` is
+-- negative. What a scrollbar's grip is drawn in - the tab's colour lit and
+-- shaded - by the kit and by the browser, which draws its own.
+--
+function theme.toward(c, k)
+  local r, g, b = (c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff
+
+  if k >= 0 then
+    r, g, b = r + (255 - r) * k // 100, g + (255 - g) * k // 100,
+              b + (255 - b) * k // 100
+  else
+    r, g, b = r + r * k // 100, g + g * k // 100, b + b * k // 100
+  end
+
+  return 0xff000000 | (r << 16) | (g << 8) | b
+end
+
 -- Whatever a caller hands over on top of a palette: the desktop colour is
 -- chosen separately from the palette it sits with, so a light theme with a
 -- dark desktop is a thing somebody can have.

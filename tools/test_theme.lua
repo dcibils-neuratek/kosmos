@@ -246,10 +246,23 @@ do
         .. "loading one")
 end
 
+-- 6. `theme.toward`, the tab's colour lit and shaded for a scrollbar's
+-- grip: the numbers the display harness looks for on the gallery's thumb.
+do
+  check(theme.toward(0xffffc700, 55) == 0xffffe58c,
+        ("yellow lit by 55 is %08x, not ffffe58c"):format(
+          theme.toward(0xffffc700, 55)))
+  check(theme.toward(0xffffc700, -35) == 0xffa58100,
+        ("yellow shaded by 35 is %08x, not ffa58100"):format(
+          theme.toward(0xffffc700, -35)))
+  check(theme.toward(0xff123456, 0) == 0xff123456,
+        "a colour moved by nothing changed")
+end
+
 if fails == 0 then
   print(("PASS: %d checks on the themes that ship (every face carried, the "
          .. "four looks sharing their faces, legible and fitting the fixed layout, Plex as docs/plex.html has it, a bad "
-         .. "line told, and a palette applied without its faces)."):format(checks))
+         .. "line told, a palette applied without its faces, and a grip's shades)."):format(checks))
   os.exit(0)
 end
 

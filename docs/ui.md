@@ -381,7 +381,22 @@ tab like windows or linux or beos". So Appearance has **Window titles** - a
 tab as wide as the title, the default, or a bar across the whole window -
 and the second objection is gone: beside a tab is what is behind it for the
 pointer as for the eye (`tabs` in `wm.lua`, the display harness's `tabs`
-phase).
+phase). The setting left Appearance with the looks on 22 September
+(`roadmap.md` 5y) and a fresh machine has the tab; the window manager still
+honours a shape an older `/home/.appearance` saved, and a theme message
+that names one, which is a leftover (`roadmap.md`, *Smaller, and wanted*).
+
+**A scrollbar's thumb is the tab's colour, with a grip** (22 September,
+`roadmap.md` 5y). Mac OS 9's Platinum filled the thumb with the accent a
+person chose and ridged its middle; Diego, showing its Appearance control
+panel: "i want the scrollbar handle to be colored after the tab bar color
+as an accent color like how macos 9 had it". So the thumb is `tab` - the
+part of a list you drag coloured like the part of a window you drag it
+by - with four raised ridges, lit and shaded from the same colour
+(`theme.toward`); the trough and the arrows stay the widget grey, so the
+colour marks exactly the thing that moves. Mac OS 9 also emptied the thumb
+in a window behind the front one, and that is not done: a kit window does
+not know whether it is in front.
 
 **The measurement that keeps this honest.** A bevel is more pixels per
 widget than a flat rectangle, and `make frames` exists now. Composing is

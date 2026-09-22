@@ -35,6 +35,10 @@ the stable one. The older development images went to the Trash.
   64s, which are vendored now with the 16s (`assets/icons/README.md`), by
   `stretch`'s new `smooth` mode. `theme.metrics.tab` corrected to the 26
   the window manager draws. Three controls watched.
+- **0.10.113, committed and not pushed - a scrollbar's thumb in the
+  look's tab colour** with Mac OS 9's grip (5y, 18.143). Diego: "i want the
+  scrollbar handle to be colored after the tab bar color as an accent color
+  like how macos 9 had it".
 - **The fonts were not made bigger.** Diego asked for +2 everywhere and +4
   on the title, then for a scale instead - "a factor multiplier of all the
   things in the UI", "Something like that slider of iOS". **The slider is

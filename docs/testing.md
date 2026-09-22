@@ -7523,3 +7523,30 @@ of 36, 44 or 52 for an afternoon (18.138).
   the Deskbar's first window button starts still had a 32-pixel icon in
   it, so the focus phase sampled each button's icon instead of its fill.
   It reads `DESKBAR_ICON` now.
+
+## 18.143 A scrollbar's thumb in the tab's colour
+
+**Diego, 22 September**, with a picture of Mac OS 9's Appearance control
+panel: "i want the scrollbar handle to be colored after the tab bar color as
+an accent color like how macos 9 had it". The thumb was the widget grey,
+the same as the arrows beside it.
+
+- **The kit's thumb is filled with `tab`** and carries Platinum's grip:
+  four raised ridges, eight pixels wide, each a line of the tab's colour lit
+  by 55 per cent over one shaded by 35 (`theme.toward`). The trough and the
+  arrows stay grey. Every list, tree and text view that scrolls draws
+  through `draw_scrollbar`, so all of them changed at once.
+- **The browser draws its own scrollbar** into its own pixels, and draws
+  the same thumb.
+
+### The checks
+
+- **The display harness's `widgets` phase**: in the gallery's list - five
+  items in four rows, so it has a bar - the strip the bar occupies holds at
+  least 200 pixels of the harness look's yellow tab and 16 of the grip's
+  shaded ridge, `a58100`. Counted inside the list's last eighteen columns,
+  so the window's own tab cannot be what was found. **Control, watched**:
+  the thumb filled with `raised` again fails it - "0 pixels of the tab's
+  yellow and 32 of its shaded ridges".
+- **`test_theme.lua`**, 155: `theme.toward` lights the yellow to `ffe58c`
+  and shades it to `a58100`, and moves a colour by nothing not at all.

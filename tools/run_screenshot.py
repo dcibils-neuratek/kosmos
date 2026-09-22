@@ -1613,6 +1613,36 @@ def check_widgets(guest):
             "the window never opened or the kit did not draw it."
         )
 
+    #
+    # **The list's thumb wears the tab's colour, ridged** (`roadmap.md` 5y).
+    # Diego, 22 September: "i want the scrollbar handle to be colored after
+    # the tab bar color as an accent color like how macos 9 had it". The
+    # gallery's list is five items in four rows, so it has a bar; in the
+    # harness's `dark` look the tab is yellow, and the grip's shaded ridges
+    # are that yellow 35 per cent darker (`theme.toward`). Counted in the
+    # strip the bar occupies - the list's last eighteen columns - so the
+    # window's own yellow tab cannot be what was found.
+    #
+    list_x, list_y = 60 + 16, 90 + 172
+    yellow = ridges = 0
+
+    for y in range(list_y, list_y + 112):
+        for x in range(list_x + 240 - 18, list_x + 240):
+            at = (y * width + x) * 3
+            p = (px[at], px[at + 1], px[at + 2])
+
+            if p == TAB:
+                yellow += 1
+            elif p == (0xa5, 0x81, 0x00):
+                ridges += 1
+
+    if yellow < 200 or ridges < 16:
+        raise Failure(
+            f"the gallery's scrollbar thumb has {yellow} pixels of the tab's "
+            f"yellow and {ridges} of its shaded ridges - wanted a thumb in "
+            "the tab's colour with a grip across it, as Mac OS 9 drew one."
+        )
+
     def send(data, wait=0.4):
         guest.proc.stdin.write(data)
         guest.proc.stdin.flush()

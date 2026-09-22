@@ -656,6 +656,23 @@ local function triangle(g, x, y, up)
   end
 end
 
+--
+-- **The thumb wears the tab's colour, with a grip across it** - Mac OS 9's
+-- Platinum, which filled the thumb with the accent a person chose and
+-- ridged its middle. Diego, 22 September: "i want the scrollbar handle to
+-- be colored after the tab bar color as an accent color like how macos 9
+-- had it". The accent here is the look's tab - Plex's yellow, Studio's
+-- orange - so the one part of a list you drag is coloured like the one
+-- part of a window you drag it by. The trough and the arrows stay grey.
+--
+-- Four ridges, each a lit line over a shaded one - raised, in the same
+-- vocabulary as the bevel around them - eight pixels wide and centred, in
+-- the tab's colour lit and shaded (`theme.toward`) when drawn, so a new
+-- look repaints them like everything else. The browser draws its own
+-- scrollbar into its own pixels, and draws the same thumb.
+--
+local GRIP_W, RIDGES = 8, 4
+
 local function draw_scrollbar(g, w, h, total, shown, top)
   local y, size = thumb_of(h, total, shown, top)
 
@@ -664,7 +681,18 @@ local function draw_scrollbar(g, w, h, total, shown, top)
   local x = w - SCROLL_W - 2
 
   g:sunken(x, 2, SCROLL_W, h - 4, "window")
-  g:raised(x + 1, y, SCROLL_W - 2, size, "raised")
+  g:raised(x + 1, y, SCROLL_W - 2, size, "tab")
+
+  if size >= 2 * RIDGES + 6 then
+    local gx = x + 1 + (SCROLL_W - 2 - GRIP_W) // 2
+    local gy = y + (size - 2 * RIDGES) // 2
+    local lit, dark = theme.toward(theme.tab, 55), theme.toward(theme.tab, -35)
+
+    for i = 0, RIDGES - 1 do
+      g:fill(gx, gy + 2 * i, GRIP_W, 1, lit)
+      g:fill(gx, gy + 2 * i + 1, GRIP_W, 1, dark)
+    end
+  end
 
   if has_arrows(h) then
     g:raised(x + 1, 3, SCROLL_W - 2, ARROW - 2, "raised")

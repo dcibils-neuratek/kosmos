@@ -1218,6 +1218,17 @@ processors, and still what follows USB:
    other themes left the Appearance panel, and the Deskbar's height left it
    in 0.10.112 (5v): what stays beside the look is the wallpaper.
 
+   **And a scrollbar's thumb in the look's tab colour - done, 0.10.113**
+   (`testing.md` 18.143). Diego, 22 September, with a picture of Mac OS 9's
+   Appearance control panel: "i want the scrollbar handle to be colored
+   after the tab bar color as an accent color like how macos 9 had it". The
+   thumb is filled with `tab` and carries Platinum's grip, four raised
+   ridges across its middle; the trough and the arrows stay grey. Every
+   list, tree and text view gets it from the kit, and the browser draws the
+   same thumb into its own pixels. **Not done: greying it in a window that
+   is not in front**, which Mac OS 9 also did - a kit window does not know
+   whether it is focused, so that needs the window manager to say.
+
 5x. **DONE on 22 September (0.10.110, `testing.md` 18.140) - one fixed
    layout, and faces that fit it.**
    Diego, after using Plex at 16 on the ThinkPad: "I realized the changing
@@ -1868,6 +1879,16 @@ the Pi", and the Pi is not here yet.
   The browser loading a page is the first thing to point it at.
 
 ### Smaller, and wanted
+
+- **FOUND on 22 September - the window manager still reads a tab shape
+  nobody can choose.** The full-width title bar left Appearance with the
+  looks (5y), but `load_appearance` still calls `tabs.choose(saved.tabs)`,
+  so a `/home/.appearance` written by the old panel with `tabs = "full"`
+  keeps full-width bars on a machine where nothing offers them - the same
+  shape as the Deskbar height a `/home` still carries (5v), which is read
+  by nothing now. Found while writing up the scrollbar's thumb. Either it
+  goes, with a check that a saved shape is ignored, or it is a choice
+  again - Diego's call.
 
 - **FOUND on 22 September - Music's two icons have never drawn.**
   `music.lua` asks for `"File_Audio"` and `"Misc_Speaker"` without `.png`,

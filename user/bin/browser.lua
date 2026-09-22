@@ -533,8 +533,24 @@ local function draw_scrollbar(s)
           4, a.dir, theme.text)
   end
 
-  s:fill(x, ty, SBAR, th, theme.raised)
+  --
+  -- The thumb in the tab's colour with a grip across it, as the kit draws
+  -- every other one (`ui.lua`'s `draw_scrollbar`; Diego, 22 September: "i
+  -- want the scrollbar handle to be colored after the tab bar color as an
+  -- accent color like how macos 9 had it").
+  --
+  s:fill(x, ty, SBAR, th, theme.tab)
   bevel(s, x, ty, SBAR, th, false)
+
+  if th >= 14 then
+    local gx, gy = x + (SBAR - 8) // 2, ty + (th - 8) // 2
+    local lit, dark = theme.toward(theme.tab, 55), theme.toward(theme.tab, -35)
+
+    for i = 0, 3 do
+      s:fill(gx, gy + 2 * i, 8, 1, lit)
+      s:fill(gx, gy + 2 * i + 1, 8, 1, dark)
+    end
+  end
 end
 
 --------------------------------------------------------------------------
