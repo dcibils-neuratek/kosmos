@@ -190,6 +190,33 @@ function gc:fill(x, y, w, h, color)
 end
 
 --
+-- A rounded rectangle, filled or outlined.
+--
+-- **Not clipped like `fill` is**, and that is the one difference worth
+-- knowing. A rounded shape's corners belong to the whole control, so a
+-- rectangle cut down to the visible part would round the *cut* - a button
+-- half off the edge of a list would grow a corner in the middle of it. The
+-- primitive clips itself against the surface, so what is lost is the view's
+-- own clipping, and every caller here draws a control that is inside its
+-- view already.
+--
+local function round_op(self, kind, x, y, w, h, color, r)
+  if w <= 0 or h <= 0 then return end
+
+  self.ops[#self.ops + 1] = { op = kind, x = self.ox + x, y = self.oy + y,
+                              w = w, h = h, color = shade(color),
+                              r = r or 0 }
+end
+
+function gc:fill_round(x, y, w, h, color, r)
+  round_op(self, "fill_round", x, y, w, h, color, r)
+end
+
+function gc:frame_round(x, y, w, h, color, r)
+  round_op(self, "frame_round", x, y, w, h, color, r)
+end
+
+--
 -- **The longest prefix of `s` that fits in `budget` pixels**, as a byte
 -- count and the width it takes, or nil when the string is not valid UTF-8
 -- and the caller has to fall back.
@@ -530,6 +557,16 @@ end
 local DOUBLE_MIN = 16
 
 --
+-- How round a control is in a flat look.
+--
+-- Six points: enough that a button reads as rounded at the sizes this
+-- system draws them and small enough that a 16-pixel checkbox does not
+-- become a circle. The primitive clamps it to half the shorter side, so a
+-- control too small to take it comes out square rather than wrong.
+--
+local CONTROL_R = 6
+
+--
 -- **A flat look draws a hairline where a dimensional one draws a bevel.**
 --
 -- Diego, 23 September 2026: "the endeavor theme uses flat shading and our
@@ -548,7 +585,12 @@ function gc:raised(x, y, w, h, face)
   if face then self:fill(x, y, w, h, face) end
 
   if theme.flat then
-    self:frame(x, y, w, h, theme.line_soft)
+    -- Filled again, rounded this time: the square fill above painted the
+    -- corners, and a frame drawn round them would leave the colour outside
+    -- its own outline.
+    if face then self:fill_round(x, y, w, h, face, CONTROL_R) end
+
+    self:frame_round(x, y, w, h, theme.line_soft, CONTROL_R)
     return
   end
 
@@ -565,7 +607,9 @@ function gc:sunken(x, y, w, h, face)
   if face then self:fill(x, y, w, h, face) end
 
   if theme.flat then
-    self:frame(x, y, w, h, theme.line_soft)
+    if face then self:fill_round(x, y, w, h, face, CONTROL_R) end
+
+    self:frame_round(x, y, w, h, theme.line_soft, CONTROL_R)
     return
   end
 

@@ -1159,6 +1159,152 @@ static int l_shadow(lua_State *L)
     return 0;
 }
 
+/*
+ * `dst:fill_round(x, y, w, h, colour, radius)`
+ *
+ * A filled rectangle with rounded corners, blended at the edge.
+ *
+ * The same geometry that rounds a window (`round_cover`), one level down:
+ * there it decides which of two pictures a pixel comes from, here it decides
+ * how much of a colour goes onto what is already there. A button drawn this
+ * way sits on whatever is behind it without knowing what that is, which is
+ * what lets one live in a list, on a title bar and on a card.
+ *
+ * Every row outside the corner bands is a plain fill, so a control of any
+ * size costs the corners and nothing else.
+ */
+static int l_fill_round(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    long x = (long)luaL_checkinteger(L, 2);
+    long y = (long)luaL_checkinteger(L, 3);
+    long w = (long)luaL_checkinteger(L, 4);
+    long h = (long)luaL_checkinteger(L, 5);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 6);
+    long r = (long)luaL_optinteger(L, 7, 0);
+    long row;
+
+    if (w <= 0 || h <= 0) {
+        return 0;
+    }
+
+    if (r * 2 > w) { r = w / 2; }
+    if (r * 2 > h) { r = h / 2; }
+
+    for (row = 0; row < h; row++) {
+        long py = y + row;
+        long col;
+
+        if (py < 0 || py >= (long)dst->height) {
+            continue;
+        }
+
+        for (col = 0; col < w; col++) {
+            long px = x + col;
+            long cover;
+            uint32_t *p;
+
+            if (px < 0 || px >= (long)dst->width) {
+                continue;
+            }
+
+            cover = round_cover(px, py, x, y, w, h, r);
+
+            if (cover <= 0) {
+                continue;
+            }
+
+            p = row_of(dst, (unsigned)py) + px;
+
+            if (cover >= 255) {
+                *p = colour;
+            } else {
+                *p = over((colour & 0x00ffffffu) | ((uint32_t)cover << 24),
+                          *p, 255);
+            }
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * `dst:frame_round(x, y, w, h, colour, radius)`
+ *
+ * A one-pixel outline of the same shape.
+ *
+ * The ring is the difference between two coverages - the rectangle and the
+ * same rectangle inset by one - which gives a line that is solid on the
+ * straights and correctly faint where the arc passes between two pixels.
+ * Drawing it as four fills and four arcs would be the same picture with a
+ * seam at each corner.
+ */
+static int l_frame_round(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    long x = (long)luaL_checkinteger(L, 2);
+    long y = (long)luaL_checkinteger(L, 3);
+    long w = (long)luaL_checkinteger(L, 4);
+    long h = (long)luaL_checkinteger(L, 5);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 6);
+    long r = (long)luaL_optinteger(L, 7, 0);
+    long row;
+
+    if (w <= 2 || h <= 2) {
+        return 0;
+    }
+
+    if (r * 2 > w) { r = w / 2; }
+    if (r * 2 > h) { r = h / 2; }
+
+    for (row = 0; row < h; row++) {
+        long py = y + row;
+        long col;
+
+        /* Inside the straight part, only the two edge columns can be on the
+         * ring - which is most of a control's height. */
+        int band = (row < r || row >= h - r);
+
+        if (py < 0 || py >= (long)dst->height) {
+            continue;
+        }
+
+        for (col = 0; col < w; col++) {
+            long px = x + col;
+            long cover, inner, ring;
+            uint32_t *p;
+
+            if (!band && col > 0 && col < w - 1) {
+                continue;
+            }
+
+            if (px < 0 || px >= (long)dst->width) {
+                continue;
+            }
+
+            cover = round_cover(px, py, x, y, w, h, r);
+            inner = round_cover(px, py, x + 1, y + 1, w - 2, h - 2,
+                                r > 0 ? r - 1 : 0);
+            ring = cover - inner;
+
+            if (ring <= 0) {
+                continue;
+            }
+
+            p = row_of(dst, (unsigned)py) + px;
+
+            if (ring >= 255) {
+                *p = colour;
+            } else {
+                *p = over((colour & 0x00ffffffu) | ((uint32_t)ring << 24),
+                          *p, 255);
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int l_blend(lua_State *L)
 {
     struct surface *dst = check_surface(L, 1);
@@ -2479,6 +2625,8 @@ static const luaL_Reg surface_methods[] = {
     { "blit",   l_blit },
     { "blit_round", l_blit_round },
     { "shadow", l_shadow },
+    { "fill_round",  l_fill_round },
+    { "frame_round", l_frame_round },
     { "blend",  l_blend },
     { "stretch", l_stretch },
     { "pixels",  l_pixels },

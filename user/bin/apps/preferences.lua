@@ -125,11 +125,35 @@ win:add(side)
 -- rebuilding it is what this exists to end, so `smp=N` and the rest are here
 -- with what they are set to and a line saying a restart is needed.
 --
+--
+-- **A setting the window manager draws with, told at once.**
+--
+-- Rounded corners and drop shadows are its business rather than any
+-- window's: it composes the desktop. A setting written to a file and left
+-- there would take effect at the next restart, which is a setting nobody
+-- believes in - `instant-feedback` applied to something that is not even a
+-- control.
+--
+-- The same `theme` request the Appearance panel sends for the look, with
+-- one field in it. A manager that does not know the field ignores it, which
+-- is what makes adding another of these one line here.
+--
+local function live(it, value)
+  if not it.live then return end
+
+  local ok, why = fs.send("/app/wm", { type = "theme", [it.live] = value })
+
+  if not ok then
+    print("preferences: " .. tostring(it.live) .. ": " .. tostring(why))
+  end
+end
+
 local function control_for(it, x, y, changed)
   if it.kind == "switch" then
     return ui.switch{ x = x, y = y, on = settings.get(it) == true,
                       on_change = function(_, on)
                         settings.set(it, on)
+                        live(it, on)
                         if changed then changed() end
                       end }
   end

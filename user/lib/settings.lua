@@ -103,6 +103,25 @@ settings.ITEMS = {
         choices = { { 100, "100%" }, { 125, "125%" }, { 150, "150%" },
                     { 200, "200%" } } },
 
+  --
+  -- **Two that are not stored the way the rest are.** They live in
+  -- `/home/.appearance` like the look, but changing one has to reach the
+  -- window manager immediately - it draws the corners and the shadows, and
+  -- a setting that took effect at the next restart would be one nobody
+  -- believed. `preferences.lua` sends them in the same `theme` request the
+  -- Appearance panel uses for the look.
+  --
+  item{ category = "appearance", group = "Windows",
+        label = "Rounded corners", note = "The four corners of every window",
+        kind = "switch", file = settings.APPEARANCE, key = "corner",
+        default = true, live = "corner" },
+
+  item{ category = "appearance", group = "Windows",
+        label = "Drop shadows",
+        note = "A soft edge under every window. Costly on a slow machine",
+        kind = "switch", file = settings.APPEARANCE, key = "shadow",
+        default = false, live = "shadow" },
+
   item{ category = "appearance", group = "Icons",
         label = "On the desktop", note = "Small 16, Normal 32, Large 64",
         kind = "choice", file = settings.TRACKER, key = "desktop_icon_px",

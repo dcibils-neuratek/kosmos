@@ -129,7 +129,22 @@ local TAB_H      = theme.metrics.tab
 -- not, which is Diego's reading after watching it under TCG - and both are
 -- settings now (`handlers.theme`), so this is only where they start.
 --
-local OUT = { corner  = theme.metrics.corner or 0,
+--
+-- **`want_corner` and `want_shadow` are the settings; `corner` and `shadow`
+-- are this scale's pixels.** Two fields rather than one, and the version
+-- with one was wrong in a way worth recording: the shadow was turned off by
+-- setting `shadow = 0` here, and the code that rescales everything then set
+-- it straight back from `theme.metrics.shadow`, because that is what it does
+-- to every other metric. Diego ran 0.10.141 and saw the shadow he had just
+-- been told was off.
+--
+-- A number that is both "how big" and "whether at all" cannot survive being
+-- recomputed. So the answer is kept as a flag and the pixels derived from
+-- it, which is the same shape `scale` gives every other metric.
+--
+local OUT = { want_corner = true,
+              want_shadow = false,
+              corner  = theme.metrics.corner or 0,
               shadow  = 0,
               -- How far each new window steps from the last, when the
               -- quarters are gone. A title bar and a little, so the one
@@ -236,8 +251,8 @@ end
 
 function scale.chrome()
   TAB_H   = scale.px(theme.metrics.tab)
-  OUT.corner = scale.px(theme.metrics.corner or 0)
-  OUT.shadow = scale.px(theme.metrics.shadow or 0)
+  OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
+  OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
   BORDER  = scale.px(2)
   BOX     = scale.px(18)
   MARGIN  = scale.px(4)
@@ -446,7 +461,20 @@ local function load_appearance()
 
   if type(saved) ~= "table" then saved = {} end
 
-  -- The scale first: the chrome's sizes and every face below follow it.
+  --
+  -- **Whether a window is rounded and whether it casts a shadow, before
+  -- the scale** - because `scale.chrome` below derives the pixels from
+  -- these flags, and reading them after would give the first frame the
+  -- defaults and every frame after them the setting.
+  --
+  -- Absent means the default, which is rounded and no shadow. A file
+  -- written before these existed therefore reads exactly as a fresh
+  -- machine does, which is the behaviour every other key here has.
+  --
+  if saved.corner ~= nil then OUT.want_corner = saved.corner and true end
+  if saved.shadow ~= nil then OUT.want_shadow = saved.shadow and true end
+
+  -- The scale next: the chrome's sizes and every face below follow it.
   if math.type(saved.scale) == "integer" and scale.valid(saved.scale) then
     scale.pct = saved.scale
   end
@@ -1506,13 +1534,18 @@ end
 function scale.op(o, pct)
   local kind = o.op
 
-  if kind == "fill" then
+  if kind == "fill" or kind == "fill_round" or kind == "frame_round" then
     local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
     local w, h = tonumber(o.w) or 0, tonumber(o.h) or 0
     local x0, y0 = scale.px(x, pct), scale.px(y, pct)
 
     o.x, o.y = x0, y0
     o.w, o.h = scale.px(x + w, pct) - x0, scale.px(y + h, pct) - y0
+
+    -- The radius is a length like any other, so a control at 150 per cent
+    -- is rounded a half more rather than keeping the pixels of a smaller
+    -- screen.
+    if o.r then o.r = scale.px(o.r, pct) end
   elseif kind == "text" then
     o.x = scale.px(tonumber(o.x) or 0, pct)
     o.y = scale.px(tonumber(o.y) or 0, pct)
@@ -1556,6 +1589,25 @@ end
 local ops = {
   fill = function(s, o)
     s:fill(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0xff000000)
+  end,
+
+  --
+  -- **A rounded rectangle, filled or outlined**, for the controls a flat
+  -- look draws (`ui.lua`, `gc:raised`). Blended at the arc, so a button
+  -- sits on whatever is behind it without knowing what that is.
+  --
+  -- `r` is the radius and is clamped by the primitive to half the shorter
+  -- side, so a control too small to round is simply square rather than
+  -- being drawn wrong.
+  --
+  fill_round = function(s, o)
+    s:fill_round(o.x or 0, o.y or 0, o.w or 0, o.h or 0,
+                 o.color or 0xff000000, o.r or 0)
+  end,
+
+  frame_round = function(s, o)
+    s:frame_round(o.x or 0, o.y or 0, o.w or 0, o.h or 0,
+                  o.color or 0xff000000, o.r or 0)
   end,
 
   --
@@ -5041,12 +5093,16 @@ handlers.theme = function(req)
   -- costs a band per frame and the other costs 256 pixels.
   --
   if req.corner ~= nil then
-    OUT.corner = req.corner and scale.px(theme.metrics.corner) or 0
+    OUT.want_corner = req.corner and true or false
+    OUT.corner = OUT.want_corner
+                 and scale.px(theme.metrics.corner or 0) or 0
     add_damage(0, 0, W, H)
   end
 
   if req.shadow ~= nil then
-    OUT.shadow = req.shadow and scale.px(theme.metrics.shadow) or 0
+    OUT.want_shadow = req.shadow and true or false
+    OUT.shadow = OUT.want_shadow
+                 and scale.px(theme.metrics.shadow or 0) or 0
     add_damage(0, 0, W, H)
   end
 
