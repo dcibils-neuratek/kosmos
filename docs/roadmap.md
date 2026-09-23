@@ -1626,6 +1626,49 @@ processors, and still what follows USB:
      hundred, so a machine on 766 of its 8192 is a machine running - but it
      is now two machines wasting most of their memory, and that is what
      turns a known ceiling into work worth doing.
+
+     **The plan, agreed 23 September, and it is not the full high-half
+     split.** What `mmu.h` promises in four places is the kernel moved out
+     of every process's address space - `-mcmodel=kernel`, a new linker
+     script, the trampoline, the loader's handoff, and every early address
+     in `start.S`. That removes the ceiling *and* the reason for the
+     division, and it is a large change to the one part of the system a
+     mistake in makes unbootable.
+
+     The ceiling alone needs less, and the less is worth taking first: **a
+     direct map of all physical memory in the kernel's upper half**, at PML4
+     slot 256, with the kernel's own text and data left identity mapped
+     where they are. The small code model constrains how a *symbol* is
+     addressed, not what a pointer may hold, so the kernel's code does not
+     move and nothing is relinked; what changes is that a physical address
+     stops being a pointer.
+
+     Three steps, each one testable on its own:
+
+     1. **The window.** `PHYS_WINDOW_BASE` in the upper half, all of RAM
+        mapped there with large pages, and `phys_to_virt` / `virt_to_phys`.
+        The cap stays, so the window is a second name for memory that is
+        already reachable - which is exactly what makes it checkable: the
+        same page read both ways is the same bytes.
+     2. **The conversions.** Every place that treats a physical address as
+        a pointer goes through `phys_to_virt`: `pmm`, the page-table walks,
+        `memobj`, the framebuffer, the contiguous regions a driver gets.
+        Still no behaviour change, and a missed one is a page fault rather
+        than a wrong answer, because the low identity map ends where it
+        always did.
+     3. **The ceiling.** `cap_to_what_can_be_mapped` stops clipping,
+        `mmu_init` stops panicking, and `pmm` is given the whole range. Only
+        now can a page live above 768 MB, and only now does step 2 have to
+        have been complete.
+
+     `as_create` copies the kernel's PML4 entries into every new space and
+     will have to copy slot 256 as well - one line, and the one place where
+     forgetting it is silent until a driver's buffer is touched.
+
+     **AArch64 is not in this.** The same shape is there - `USER_VA_BASE` at
+     2 GB, RAM identity mapped below it - and the board this project runs on
+     has 512 MB, so nothing is waiting on it. It gets the same three steps
+     when a machine asks for them.
    - **5zd-b. A USB keyboard.** Diego: "usb mouse works, but usb keyboard is
      yet to be added", and "we need to add support for usb keyboard!". The
      mini PC has no PS/2 port, so `hal/pc/i8042.c` finds nothing and the
