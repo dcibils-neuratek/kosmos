@@ -391,11 +391,19 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
 {
     struct thread *self = thread_current();
     uint64_t deadline = 0;
-    unsigned order[IPC_WATCH_MAX] = { 0, 1 };
+    uintptr_t where[IPC_WATCH_MAX];
+    unsigned order[IPC_WATCH_MAX];
     unsigned i, e, k;
 
-    if (set == NULL || count == 0 || ends > IPC_WATCH_MAX
-        || (ends > 0 && endpoints == NULL)) {
+    /*
+     * **No lines and some endpoints is a wait**, and it is what a driver with
+     * no hardware to watch has: the xHCI server on a machine with no
+     * controller still answers `/dev/blocks` and the network stack, and
+     * polling those two would be twenty wakes a second on a machine where
+     * nothing is happening at all. What is refused is a wait on nothing.
+     */
+    if ((count == 0 && ends == 0) || (count > 0 && set == NULL)
+        || ends > IPC_WATCH_MAX || (ends > 0 && endpoints == NULL)) {
         return SYS_ERR_DENIED;
     }
 
@@ -405,20 +413,46 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
         }
     }
 
-    /* Lower first, and one endpoint named twice refused, because its lock
-     * would be taken twice. */
-    if (ends == 2 && endpoints[0] >= 0 && endpoints[1] >= 0) {
-        uintptr_t first = (uintptr_t)ipc_endpoint_peek(self, endpoints[0]);
-        uintptr_t second = (uintptr_t)ipc_endpoint_peek(self, endpoints[1]);
+    /*
+     * **Lowest address first, and one endpoint named twice refused**, because
+     * its lock would be taken twice.
+     *
+     * Written for two until 22 September, when a driver needed three: the
+     * xHCI server watches the disk server's writes, `/dev/blocks`, and - once
+     * a USB Ethernet adapter is plugged in - the network stack's frames
+     * (`usb.md` 7d). The argument does not change with the number: take them
+     * in a total order every caller agrees on, and two waits naming the same
+     * set cannot each hold one and want another. An insertion sort over at
+     * most three, which is smaller than the special case it replaced.
+     *
+     * An endpoint that names nothing peeks as 0 and sorts to the front; the
+     * loops below skip it, so where it ends up does not matter.
+     */
+    for (e = 0; e < ends; e++) {
+        order[e] = e;
+        where[e] = endpoints[e] < 0
+                 ? 0 : (uintptr_t)ipc_endpoint_peek(self, endpoints[e]);
+    }
 
-        if (first != 0 && first == second) {
-            return SYS_ERR_DENIED;
+    for (e = 0; e < ends; e++) {
+        for (k = e + 1u; k < ends; k++) {
+            if (where[e] != 0 && where[e] == where[k]) {
+                return SYS_ERR_DENIED;
+            }
+        }
+    }
+
+    for (e = 1; e < ends; e++) {
+        unsigned hold = order[e];
+
+        k = e;
+
+        while (k > 0 && where[order[k - 1u]] > where[hold]) {
+            order[k] = order[k - 1u];
+            k--;
         }
 
-        if (second < first) {
-            order[0] = 1;
-            order[1] = 0;
-        }
+        order[k] = hold;
     }
 
     if (ticks != 0) {
@@ -426,8 +460,8 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
     }
 
     for (;;) {
-        struct endpoint *ep[IPC_WATCH_MAX] = { NULL, NULL };
-        unsigned long epflags[IPC_WATCH_MAX] = { 0, 0 };
+        struct endpoint *ep[IPC_WATCH_MAX] = { NULL };
+        unsigned long epflags[IPC_WATCH_MAX] = { 0 };
         unsigned long flags, before = 0;
         long answer = SYS_NO_INTERRUPT;
         bool done = false, held = false;

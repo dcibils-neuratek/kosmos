@@ -2104,10 +2104,101 @@ RESPONSE_AVAILABLE, which lands on the same endpoint when a device is put in
 its other configuration - and will be seen for the first time on the
 ThinkPad's dongle.
 
-### What comes next
+### 7d: the frames reach the stack, and the machine is on the network
 
-- **7d**: the frames reach `net.c` through a ring in a region, not the
-  kernel's virtio syscalls (`roadmap.md` 5m-d).
+**This is the design decision of the lot.** Until now the stack called
+`kosmos_net_send` and `kosmos_net_recv`, which are *syscalls* into the
+kernel's own virtio driver. A USB adapter is driven by a process, and the
+kernel must not learn what USB is - so frames have to cross from one EL0
+process to another.
+
+**Control by message, data by shared memory** (`CLAUDE.md`), and a frame is
+the case that rule names. `ethring.h` is the region: two rings, each
+single-producer and single-consumer with monotonic indices, the same
+discipline `tcpring.h` sets out. Slots rather than bytes, because a frame
+has a length and a boundary; an array beside the indices says how long each
+one is, published with it.
+
+`ethproto.h` is the conversation, three operations and no more: **attach**,
+which hands over the region and asks what the adapter is; **send**, which
+says "look at the ring" and carries no frame and no count, so a stack with
+five frames to put out writes five and calls once; and **info**.
+
+```
+xhci: 00:02.0 port 5: the network stack has it; frames go through a ring of 32 each way
+kosmos> ping 10.0.2.2
+64 bytes from 10.0.2.2: seq=1 ttl=255 time=0.607 ms
+```
+
+**The stack makes the region and the driver maps it**, which is the shape
+`audioproto.h` uses: the client owns the memory, the server maps what it is
+given, and a region of the wrong shape is refused rather than read.
+
+**Only when the kernel has no card.** A machine with virtio-net keeps every
+path it had; this is what a machine without one gets instead.
+
+**Attaching waits for the driver**, because a call waits for whoever
+receives it. So init spawns the USB driver *before* the stack and hands the
+capability on only when that spawn succeeded - a capability to an endpoint
+nobody will ever receive on is a stack that hangs on its first attempt.
+
+#### Four things this found, and none of them was the ring
+
+- **The driver's idle pass swallowed frames.** `service` drained the event
+  ring into `take_report` alone, so an adapter's frames and its link
+  notifications were read only when something else happened to be inside
+  `wait_serving` - often during a plug, never once the machine is idle.
+  Exactly one frame ever reached the stack: the one that arrived while the
+  adapter was still being configured.
+- **The stack drained the wire after blocking rather than before.** A reply
+  to something it had just sent - which is where the answer to a ping lands -
+  sat in the ring until its own deadline came round. **103 ms over the
+  kernel's virtio card, 104 over this, on a link whose real round trip is
+  under a millisecond**, and it had been that way for as long as there has
+  been a stack.
+- **`process_wake_net` stopped at the first holder**, and init holds every
+  grant it passes on and comes first in the table. So the wake went to init.
+  It wakes every holder now; the cost is one pass of a loop each of them was
+  about to make anyway.
+- **A machine with no card was given no address.** init's `may_pass_net`
+  gated the configuration as well as the capability, so a machine whose
+  network arrived on USB came up with frames moving and `ping` saying "this
+  machine has no address yet". An address is the *stack's*, not a card's.
+
+#### What it cost the kernel, and why
+
+Three small changes, each with the same cause - a driver in userland needs
+what a driver in the kernel had:
+
+- **`SYS_NET_WAKE`**, for a driver process to cut short the stack's timed
+  receive, which is what `hal/virtio/net.c` does from its interrupt handler.
+  Refused to a process that does not drive devices.
+- **A wait watches three endpoints, not two**, and takes them as an array
+  rather than two arguments: a syscall has five and all five were spoken
+  for. The driver watches the disk server's writes, `/dev/blocks` and now
+  the stack's frames, and an endpoint that is not on the wait waits out the
+  driver's whole watch interval - which is the fault that made this two
+  rather than one.
+- **A wait on endpoints with no interrupt lines**, which is what the same
+  driver has on a machine with no USB controller at all: it still answers
+  `/dev/blocks` and the stack, and polling the two would be wakes a second
+  where nothing is happening.
+- **`process_grant_net` no longer asks whether there is a card.** The grant
+  says who holds the network, and the kernel's part in that is that it is
+  one process; whether there is a card is `SYS_NET_INFO`'s question, and it
+  answers a machine without one honestly.
+
+### How it is tested
+
+- `run_x86.py`'s `usb_stack`, four: the stack attaches, it has an address,
+  four pings come back from QEMU's gateway through the adapter, and **the
+  slowest round trip is under 50 ms** - which is the check that holds the
+  drain, since the stack's own deadline is 100.
+  **Controls**, two: the driver's idle pass draining reports alone gives
+  nought of four pings; the stack draining after blocking gives 104 ms.
+- `tests/tests.c`, in the guest suite: three endpoints on one wait, one of
+  them naming nothing; a wait on endpoints with no lines; and a wait on
+  nothing at all still refused.
 
 ### How it is tested
 

@@ -3844,6 +3844,77 @@ def core(image, check, fails):
 
 
 
+def usb_stack(image, check):
+    """**The machine on the network through a USB Ethernet adapter** -
+    `usb.md` 7d, `roadmap.md` 5m-d.
+
+    No virtio card at all, so the kernel has no network of its own: the
+    stack finds the adapter through the USB driver, takes its MAC and its
+    MTU, and moves every frame through a ring the two of them share
+    (`ethring.h`). Then `ping 10.0.2.2`, which is QEMU's gateway, and four
+    replies.
+
+    **The round trip is the check that matters most**, and not because it is
+    fast. The stack drained its card *after* blocking on its next message,
+    so a reply that arrived while it was busy - which is exactly where the
+    answer to something it just sent lands - waited out the deadline: 103 ms
+    over the kernel's own virtio card, 104 over this, on a link whose real
+    round trip is under a millisecond. Anything under 50 here says the stack
+    is answering the network rather than its own clock.
+
+    **Nothing is configured.** init gives the stack 10.0.2.15 and a gateway
+    at 10.0.2.2 whether or not the kernel found a card, which it did not
+    until this work: `may_pass_net` gated it, so a machine whose network
+    arrived on USB came up with frames moving and no address at all.
+    """
+    mac = "52:54:00:4b:4d:53"
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-netdev", "user,id=usbnet",
+             "-device", "usb-net,bus=usb0.0,netdev=usbnet,mac=" + mac)
+
+    out = boot(image, None, 120.0, extra=extra, typed=("ping 10.0.2.2",))
+
+    if out is None:
+        check(False, "the machine would not boot with a USB Ethernet adapter "
+                     "and no card")
+        return
+
+    out = out.replace("\r", "")
+    said = [l for l in out.splitlines() if "xhci:" in l or "ping" in l]
+    shown = "\n    ".join(said[-14:]) or "(nothing was said)"
+
+    check("the network stack has it; frames go through a ring of" in out,
+          "the stack never attached to the adapter. It asks the USB driver "
+          "for one when the kernel has no card of its own, and the driver "
+          "answers with the MAC, the MTU and the ring it was handed:\n    "
+          + shown)
+
+    check("this machine has no address yet" not in out,
+          "the stack came up with no address. init gives it one whether or "
+          "not the kernel found a card - an address is the stack's, not a "
+          "card's - and a machine whose network arrives on USB has no card "
+          "here:\n    " + shown)
+
+    times = [float(m) for m in
+             re.findall(r"64 bytes from 10\.0\.2\.2: seq=\d+ ttl=\d+ "
+                        r"time=([0-9.]+) ms", out)]
+
+    check(len(times) == 4,
+          "%d of four pings came back from 10.0.2.2 through the adapter. A "
+          "frame goes out on the bulk OUT endpoint and comes back on the "
+          "bulk IN, through the ring the stack and the driver share:\n    %s"
+          % (len(times), shown))
+
+    if times:
+        check(max(times) < 50.0,
+              "the slowest round trip was %.1f ms, on a link whose real one "
+              "is under a millisecond. That is the stack's own receive "
+              "deadline, not the network: it drained the wire after blocking "
+              "on its next message rather than before, so a reply that "
+              "arrived while it was busy waited out the deadline. See "
+              "`drain` in `net.c`." % max(times))
+
+
 def usb_ethernet(image, check):
     """A USB Ethernet adapter, named, configured, and moving frames.
 
@@ -4006,7 +4077,7 @@ def usb_ethernet(image, check):
           "probe above rather than a claim of its own:\n    " + shown)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_ethernet', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_ethernet', 'usb_stack', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -4102,6 +4173,9 @@ def main():
         usb_mouse(image, check)
     if 'usb_ethernet' in wanted:
         usb_ethernet(image, check)
+
+    if 'usb_stack' in wanted:
+        usb_stack(image, check)
 
     # And what the machine says it is, which it used to read out of the
     # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.

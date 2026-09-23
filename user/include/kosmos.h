@@ -278,20 +278,27 @@ static inline long kosmos_irq_ack(long cap)
 }
 
 /*
- * The same wait on up to `IRQ_WAIT_ANY_MAX` lines at once, and on `endpoint`
- * and `second` when each is not negative: which of `caps` had an interrupt,
- * as its place in the array; `IRQ_WAIT_CALLER` when a caller is waiting on
- * `endpoint` instead, and `IRQ_WAIT_CALLER + 1` on `second`, for a receive
- * that does not block; or `SYS_NO_INTERRUPT` when `ticks` ran out. What a
- * driver with several devices, one thread and clients of its own waits with,
- * rather than on each in turn.
+ * The same wait on up to `IRQ_WAIT_ANY_MAX` lines at once, and on `ends`
+ * endpoints - up to `IRQ_WAIT_ENDPOINTS_MAX`, each watched when it is not
+ * negative. It answers with which of `caps` had an interrupt, as its place
+ * in the array; `IRQ_WAIT_CALLER + n` when a caller is waiting on
+ * `endpoints[n]` instead, for a receive that does not block; or
+ * `SYS_NO_INTERRUPT` when `ticks` ran out. What a driver with several
+ * devices, one thread and clients of its own waits with, rather than on each
+ * in turn.
+ *
+ * **The endpoints are an array**, which they became on 22 September when the
+ * xHCI driver needed a third - the network stack's frames beside the disk
+ * server's writes and `/dev/blocks`. A syscall has five arguments and all
+ * five were spoken for (`usb.md` 7d).
  */
 static inline long kosmos_irq_wait_any(const long *caps, unsigned long count,
-                                       unsigned long ticks, long endpoint,
-                                       long second)
+                                       unsigned long ticks,
+                                       const long *endpoints,
+                                       unsigned long ends)
 {
     return sys5(SYS_IRQ_WAIT_ANY, (long)(uintptr_t)caps, (long)count,
-                (long)ticks, endpoint, second);
+                (long)ticks, (long)(uintptr_t)endpoints, (long)ends);
 }
 
 /*
@@ -326,6 +333,18 @@ static inline long kosmos_setname(const char *name, unsigned long len)
  * libc calls this once as a process starts, and every thread will call it as
  * it starts; the first thing in the block is `errno`.
  */
+/*
+ * **A driver saying a frame arrived**, for the process that holds the wire.
+ *
+ * The kernel's virtio driver wakes the stack from its own interrupt handler;
+ * a USB adapter is driven by a process, so this is the same wake reached
+ * from EL0. Refused to a process that does not drive devices.
+ */
+static inline long kosmos_net_wake(void)
+{
+    return sys0(SYS_NET_WAKE);
+}
+
 static inline long kosmos_set_tls(void *block)
 {
     return sys1(SYS_SET_TLS, (long)(uintptr_t)block);

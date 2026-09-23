@@ -125,6 +125,28 @@ the stable one. The older development images went to the Trash.
   separately from whether the stack is. **Next: 7d**, the frames reaching
   `net.c` through a ring in a region rather than the kernel's virtio
   syscalls, which is the design decision of the lot.
+- **And the frames reach the stack: the machine is on the network** (5m-d,
+  `usb.md` 7d, 18.151) - committed and not pushed. `ethring.h` is the
+  region - two single-producer rings of 32 slots - and `ethproto.h` the
+  three operations: attach, send, info. `ping 10.0.2.2` through a USB
+  adapter in **0.6 ms**, on a machine with no card the kernel can see.
+  Four faults came out of it and none was the ring: the driver's idle pass
+  swallowed frames; the stack drained the wire after blocking rather than
+  before, which cost **every round trip 100 ms on the kernel's own card
+  too**; `process_wake_net` woke init rather than the stack; and a machine
+  with no card was given no address. The kernel gained a wake a driver can
+  reach, a wait that watches three endpoints, and a wait on endpoints with
+  no interrupt lines.
+- **KOSMOS BOOTS ON A SECOND REAL MACHINE.** Diego, 22 September: "i have
+  some fantastic news.. i bought a lenovo thinkcentre m700 mini pc and
+  kosmos boots!! it works!" - a ThinkCentre M700 10J0/S1CK00, a
+  6th-generation Core i7 with HD Graphics 530, first time. **Two things it
+  needs** (5zd): the screen comes up at 800x600 and the loader should ask
+  UEFI's GOP for the modes it has rather than taking the one it is handed
+  (5zd-a); and there is no PS/2 port, so the USB mouse works and there is
+  **no keyboard at all** until a boot keyboard is read the way the boot
+  mouse already is (5zd-b). Diego: "we need to add support for usb
+  keyboard!"
 - **Queued after the network**: the scale's third stage (5z) - the screen's size in
   points before a window opens, which is what Lite XL needs, and the
   window manager's own drawings that are not windows: the pointer, the

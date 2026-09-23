@@ -1147,7 +1147,14 @@ void process_wake_audio(void)
             p->thread->wake_at = 0;
             ipc_timed_out(p->thread);
             thread_wake(p->thread);
-            return;
+
+            /*
+             * **Every holder, not the first**, for the reason
+             * `process_wake_net` sets out at length: init holds every grant
+             * it passes on and comes first in this table, so stopping at the
+             * first one woke init and left the server that wanted the wake
+             * asleep until its own deadline.
+             */
         }
     }
 }
@@ -1201,17 +1208,31 @@ bool process_grant_disk(struct process *p)
 }
 
 /*
- * The network card.
+ * The network.
  *
  * `hal_net_init` was already called at boot - the card needs its receive
  * buffers before the first frame arrives, not when somebody first asks - so
  * this only records who may use it. Asking the HAL again would re-run the
  * handshake on a device that is already running, which is a reset with
  * frames in flight.
+ *
+ * **It does not ask whether there is a card**, and did until 22 September.
+ * The grant says *who holds the network*, and the kernel's part in that is
+ * making sure it is one process; whether this machine has a card the kernel
+ * can see is a different question, and `SYS_NET_INFO` is where it is asked
+ * and answered. A machine whose network arrives on a USB Ethernet adapter
+ * has no card here and one stack all the same (`usb.md` 7d) - and it needs
+ * this flag, because `process_wake_net` finds the stack by it. Without the
+ * change a frame taken off a USB adapter woke nobody, and a ping over it
+ * came back in the stack's receive deadline, 104 ms, rather than the
+ * network's.
+ *
+ * Nothing is reachable that was not: every syscall behind this flag asks
+ * `hal_net_present` for itself and answers a machine with no card honestly.
  */
 bool process_grant_net(struct process *p)
 {
-    if (p == NULL || !hal_net_present()) {
+    if (p == NULL) {
         return false;
     }
 
@@ -1220,21 +1241,38 @@ bool process_grant_net(struct process *p)
 }
 
 /*
- * Wake whoever holds the network card, because a frame arrived.
+ * Wake whoever holds the network, because a frame arrived.
  *
  * The same shape as `process_wake_audio` next door, down to the `wake_at`
  * check that says this is the timed wait in `ipc_receive` rather than a
- * thread blocked on something it is owed. There is exactly one such process
- * - that is what `SPAWN_NET` means - so there is no ambiguity about who.
+ * thread blocked on something it is owed.
  *
- * Without it the stack has to come back and ask, which is a poll wearing a
- * different hat: it would look at the card at a rate somebody picked, and
- * the round-trip time it reported would be that rate rather than the
- * network's.
+ * **Every one of them, not the first**, and that correction is worth the
+ * paragraph. This said "there is exactly one such process - that is what
+ * `SPAWN_NET` means", and there is not: a process can only pass on a grant
+ * it holds, so **init holds it too**, and init comes first in this table. So
+ * the wake went to init, which was blocked in its own timed receive and had
+ * nothing to do with the frame, and the stack was left to find out when its
+ * deadline came round.
+ *
+ * It cost 100 milliseconds on every round trip and nobody noticed, because
+ * it looks exactly like a network that is slow: a ping over the kernel's own
+ * virtio card came back in 103 ms, and with the stack's deadline shortened
+ * by hand it came back in 6. Found on 22 September, in the USB Ethernet work
+ * (`usb.md` 7d), by a wake that was added for a driver in userland and
+ * changed nothing at all.
+ *
+ * Waking the others costs each of them one pass of a loop they were about to
+ * make anyway. Waking the wrong one costs every packet a tenth of a second.
+ *
+ * Without any of it the stack has to come back and ask, which is a poll
+ * wearing a different hat: it would look at the card at a rate somebody
+ * picked, and the round-trip time it reported would be that rate rather than
+ * the network's - which is precisely what it did.
  */
-void process_wake_net(void)
+unsigned process_wake_net(void)
 {
-    unsigned i;
+    unsigned i, woke = 0;
 
     for (i = 0; i < procs_made(); i++) {
         struct process *p = proc(i);
@@ -1245,9 +1283,11 @@ void process_wake_net(void)
             p->thread->wake_at = 0;
             ipc_timed_out(p->thread);
             thread_wake(p->thread);
-            return;
+            woke++;
         }
     }
+
+    return woke;
 }
 
 bool process_grant_screen(struct process *p)

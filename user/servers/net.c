@@ -41,6 +41,8 @@
 #include <string.h>
 
 #include "kosmos.h"
+#include "ethproto.h"
+#include "ethring.h"
 #include "netproto.h"
 #include "tcpring.h"
 
@@ -424,6 +426,113 @@ static void arp_learn(const struct net_addr *ip, const uint8_t *mac)
     e->known = true;
 }
 
+/*------------------------------------------------------------------------
+ * The wire, when it is a driver rather than the kernel.
+ *
+ * **Two ways a frame can leave this process**, and which one is decided
+ * once, at start-up. The kernel's virtio card is three syscalls -
+ * `kosmos_net_info`, `_send`, `_recv` - and is what every machine with a
+ * card in it uses. A USB Ethernet adapter is driven by a *process*
+ * (`xhci.c`), the kernel must not learn what USB is, and so the frames
+ * cross between two EL0 processes through a ring in a region
+ * (`ethring.h`, `usb.md` 7d).
+ *
+ * **Only when the kernel has no card.** A machine with virtio-net keeps
+ * every path it had; this is what a machine without one gets instead, which
+ * is the ThinkPad and every machine whose network arrived on a cable from a
+ * USB port.
+ *
+ * **Attaching waits for the driver**, because a call waits for whoever
+ * receives it. init spawns the USB driver before this process and hands
+ * this capability on only when that spawn succeeded, so the wait is bounded
+ * by how long the driver takes to enumerate its controllers and reach its
+ * loop. A driver that dies before it ever answers would hold this here, and
+ * that is the same exposure every client of every server has.
+ *----------------------------------------------------------------------*/
+
+static struct {
+    long              cap;              /* the driver's endpoint, or -1 */
+    long              region;           /* the ring's capability */
+    struct eth_ring  *ring;             /* mapped here */
+    bool              attached;
+    uint64_t          asked_at;         /* counter, for the next attempt */
+} wire;
+
+/* Ask the driver something. False when there is no driver or it refused. */
+static bool wire_ask(uint32_t op, long cap, struct eth_reply *out)
+{
+    struct eth_request req;
+    struct message msg;
+    struct message rep;
+
+    if (wire.cap < 0) {
+        return false;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.op = op;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    msg.cap_plus_one = cap < 0 ? 0 : (uint32_t)(cap + 1);
+    memcpy(msg.data, &req, sizeof(req));
+
+    memset(&rep, 0, sizeof(rep));
+
+    if (kosmos_call(wire.cap, &msg, &rep) != 0
+        || rep.length < sizeof(*out)) {
+        return false;
+    }
+
+    memcpy(out, rep.data, sizeof(*out));
+    return out->error == ETH_OK;
+}
+
+/*
+ * The region made here and handed over, which is the shape `audioproto.h`
+ * uses: the client owns the memory, the server maps what it is given, and a
+ * region of the wrong shape is refused rather than read.
+ */
+static bool wire_attach(void)
+{
+    struct eth_reply rep;
+    long at;
+
+    if (wire.cap < 0 || wire.attached) {
+        return wire.attached;
+    }
+
+    if (wire.ring == NULL) {
+        wire.region = kosmos_mem_create(
+            (ETH_RING_REGION + 4095u) / 4096u);
+
+        at = wire.region < 0 ? wire.region : kosmos_mem_map(wire.region);
+
+        if (at < 0) {
+            wire.cap = -1;              /* no memory for it; stop asking */
+            return false;
+        }
+
+        wire.ring = (struct eth_ring *)(uintptr_t)at;
+        memset(wire.ring, 0, sizeof(*wire.ring));
+        wire.ring->magic = ETH_RING_MAGIC;
+        wire.ring->slots = ETH_RING_SLOTS;
+        wire.ring->slot_bytes = ETH_RING_SLOT;
+    }
+
+    memset(&rep, 0, sizeof(rep));
+
+    if (!wire_ask(ETH_OP_ATTACH, wire.region, &rep) || rep.present == 0) {
+        return false;
+    }
+
+    wire.attached = true;
+    net.has_card = true;
+    net.mtu = rep.mtu > ETH_HEADER ? rep.mtu - ETH_HEADER : rep.mtu;
+    memcpy(net.mac, rep.mac, sizeof(net.mac));
+    return true;
+}
+
 static bool send_frame(const uint8_t *dst, uint16_t type,
                        const uint8_t *body, unsigned length)
 {
@@ -435,6 +544,28 @@ static bool send_frame(const uint8_t *dst, uint16_t type,
     memcpy(net.frame + ETH_SRC, net.mac, 6);
     put16(net.frame + ETH_TYPE, type);
     memcpy(net.frame + ETH_HEADER, body, length);
+
+    if (wire.attached) {
+        struct eth_reply rep;
+        uint32_t write = wire.ring->out_write;
+        uint32_t read = eth_ring_acquire(&wire.ring->out_read);
+        unsigned bytes = ETH_HEADER + length;
+
+        if (eth_ring_space(write, read) == 0 || bytes > ETH_RING_SLOT) {
+            return false;
+        }
+
+        memcpy(eth_ring_out(wire.ring, write), net.frame, bytes);
+        wire.ring->out_length[write % ETH_RING_SLOTS] = bytes;
+        eth_ring_publish(&wire.ring->out_write, write + 1u);
+
+        /*
+         * One message, whatever is in the ring. It says "look", and the
+         * driver drains - so a burst is one call rather than one a frame,
+         * which is the whole reason the frames are not in the message.
+         */
+        return wire_ask(ETH_OP_SEND, -1, &rep);
+    }
 
     return kosmos_net_send(net.frame, ETH_HEADER + length) == 0;
 }
@@ -1839,10 +1970,36 @@ static void poll_service(void)
 static void drain(void)
 {
     for (;;) {
-        long got = kosmos_net_recv(net.frame, sizeof(net.frame));
+        long got;
         uint16_t type;
 
+        if (wire.attached) {
+            uint32_t read = wire.ring->in_read;
+            uint32_t write = eth_ring_acquire(&wire.ring->in_write);
+            uint32_t bytes;
+
+            if (eth_ring_ready(write, read) == 0) {
+                return;
+            }
+
+            bytes = wire.ring->in_length[read % ETH_RING_SLOTS];
+
+            if (bytes > ETH_RING_SLOT || bytes > sizeof(net.frame)) {
+                bytes = 0;              /* a length the driver got wrong */
+            }
+
+            memcpy(net.frame, eth_ring_in(wire.ring, read), bytes);
+            eth_ring_publish(&wire.ring->in_read, read + 1u);
+            got = (long)bytes;
+        } else {
+            got = kosmos_net_recv(net.frame, sizeof(net.frame));
+        }
+
         if (got < (long)ETH_HEADER) {
+            if (wire.attached) {
+                continue;               /* a bad slot, not an empty ring */
+            }
+
             return;
         }
 
@@ -2513,17 +2670,21 @@ static void expire(uint64_t hz)
     }
 }
 
-void net_server(long endpoint)
+void net_server(long endpoint, long frames)
 {
     struct netinfo card;
     uint64_t hz;
 
     memset(&net, 0, sizeof(net));
+    memset(&wire, 0, sizeof(wire));
+    wire.cap = frames;
+    wire.region = -1;
 
     if (kosmos_net_info(&card) == 0 && card.present != 0) {
         net.has_card = true;
         net.mtu      = card.mtu;
         memcpy(net.mac, card.mac, sizeof(net.mac));
+        wire.cap = -1;                  /* the kernel's card is the wire */
     }
 
     {
@@ -2566,7 +2727,44 @@ void net_server(long endpoint)
          * mechanism - the same arrangement the audio server has, and for the
          * same reason.
          */
+        /*
+         * **Everything that has arrived, before blocking on anything.**
+         *
+         * The loop drained after the receive and not before it, so a frame
+         * that arrived while this process was *busy* - which is exactly
+         * where the answer to a request it had just sent lands - sat in the
+         * card's ring, or the driver's, until the deadline below came round.
+         * A ping over the kernel's own virtio card came back in 103 ms and
+         * over a USB adapter in 104, and both were this: a tenth of a second
+         * of sleeping on an answer that was already here.
+         *
+         * The wake (`process_wake_net`) is the other half and covers the
+         * other case - a frame that arrives while this process is asleep.
+         * Neither is enough alone: the wake only finds a thread in a timed
+         * receive, and the whole point of this one is that it was not in a
+         * receive at all.
+         */
+        drain();
+
         status = kosmos_receive(endpoint, &msg, &sender, 0, 25UL);
+
+        /*
+         * **An adapter, if there is one and this machine has no card.**
+         *
+         * Asked here rather than before the loop so that a dongle plugged in
+         * after boot is picked up, and no oftener than once a second so a
+         * machine with no network is not calling the USB driver in a loop.
+         * The call waits for the driver to receive it, which is why it is
+         * only made when the kernel had no card to offer.
+         */
+        if (wire.cap >= 0 && !wire.attached) {
+            uint64_t now = kosmos_ticks();
+
+            if (wire.asked_at == 0 || now - wire.asked_at >= hz) {
+                wire.asked_at = now;
+                (void)wire_attach();
+            }
+        }
 
         drain();
         expire(hz);

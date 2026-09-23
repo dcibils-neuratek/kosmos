@@ -5288,6 +5288,20 @@ if role == ROLE_INIT then
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
   local BLOCKS_WRITE_EP = sys.endpoint()
+
+  --
+  -- **Frames, between the USB driver and the network stack** (`usb.md` 7d).
+  --
+  -- Both ends are given it: the stack calls, the driver answers. What
+  -- crosses on it is control only - attach, send, info - and the frames
+  -- themselves live in a region the stack makes and hands over
+  -- (`ethring.h`), which is `CLAUDE.md`'s rule about a stream.
+  --
+  -- The driver is given it even on a machine with no USB controller,
+  -- because the stack asks whether there is an adapter either way and a
+  -- question nobody can answer is a stack that never starts.
+  --
+  local FRAMES_EP = sys.endpoint()
   local DRIVES_EP = sys.endpoint()
   local BACKLIGHT_EP = sys.endpoint()
 
@@ -5378,8 +5392,62 @@ if role == ROLE_INIT then
   -- to run. The server starts either way and answers "there is no card",
   -- which is what makes `ping` say something useful rather than not start.
   --
-  local net = start("the network stack", ROLE_NET, { NET_EP },
-                    may_pass_net() and SPAWN_NET or 0)
+  --
+  -- The USB host controllers: a driver with device authority and the
+  -- console's endpoint to report through. On a machine with none it asks, is
+  -- told so, and exits without a word.
+  --
+  -- **Before the network stack**, since 22 September, because the stack asks
+  -- this driver whether there is an Ethernet adapter and a call waits for
+  -- whoever receives it (`usb.md` 7d). `usb_driver` is whether it started at
+  -- all, and the stack is given `FRAMES_EP` only when it did.
+  --
+  -- It is given the block endpoint it serves (USB step 5d) - a stick's
+  -- blocks, to whoever is given `/dev/blocks` - and the write endpoint, which
+  -- only the disk server is given as well (USB step 5e): the right to write
+  -- to a stick is holding it.
+  --
+  local usb_driver = false
+
+  do
+    local _, err = sys.spawn(ROLE_XHCI,
+                             { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
+                               FRAMES_EP },
+                             SPAWN_DEVICES)
+
+    if err then
+      line("init: no USB driver: " .. tostring(err))
+    else
+      usb_driver = true
+    end
+  end
+
+  --
+  -- **`FRAMES_EP` only when a USB driver was started**, which is what makes
+  -- the stack's attach safe: a call waits for whoever receives it, so a
+  -- capability to an endpoint nobody will ever receive on is a stack that
+  -- hangs on its first attempt. The driver is spawned above this line for
+  -- the same reason.
+  --
+  --
+  -- **`SPAWN_NET` whether or not the kernel found a card**, since 22
+  -- September. The grant says *who holds the network*, and the kernel's part
+  -- in it is that there is one such process; whether this machine has a card
+  -- the kernel can see is a different question that `sys.net` answers for
+  -- itself. A machine whose network arrives on a USB Ethernet adapter has no
+  -- card here and one stack all the same - and it needs the flag, because
+  -- that is how the kernel finds the stack to wake when a frame arrives
+  -- (`process_wake_net`, `usb.md` 7d). Without it a ping over the adapter
+  -- came back in the stack's own receive deadline, 104 ms, rather than the
+  -- network's.
+  --
+  -- **`may_pass_net` still gates an application's**, further down: a program
+  -- that declares `needs network` on a machine with no card gets nothing,
+  -- which keeps the stack the only holder exactly where it matters.
+  --
+  local net = start("the network stack", ROLE_NET,
+                    usb_driver and { NET_EP, FRAMES_EP } or { NET_EP },
+                    SPAWN_NET)
 
   --
   -- **The power button**, the first driver outside the kernel.
@@ -5420,25 +5488,6 @@ if role == ROLE_INIT then
   end
 
   --
-  -- The USB host controllers, the same way and for the same reason: a driver
-  -- with device authority and the console's endpoint to report through. On a
-  -- machine with none it asks, is told so, and exits without a word.
-  --
-  do
-    -- And the block endpoint it serves (USB step 5d): a stick's blocks, to
-    -- whoever is given `/dev/blocks`.
-    -- And the write endpoint, which only the disk server is given as well
-    -- (USB step 5e): the right to write to a stick is holding it.
-    local _, err = sys.spawn(ROLE_XHCI,
-                             { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP },
-                             SPAWN_DEVICES)
-
-    if err then
-      line("init: no USB driver: " .. tostring(err))
-    end
-  end
-
-  --
   -- And the drive server, which reads what is on those sticks (USB step 6b).
   --
   -- **It is given `BLOCKS_EP` and never `BLOCKS_WRITE_EP`**, so `/drives` is
@@ -5464,7 +5513,16 @@ if role == ROLE_INIT then
   -- 10.0.2.3. `/home/.network` overrides them, so a real board is a file
   -- rather than a rebuild - the same arrangement `.appearance` has.
   --
-  if may_pass_net() then
+  -- **Given whether or not the kernel found a card**, which it was not until
+  -- 22 September. An address is the *stack's*, not a card's: a machine whose
+  -- network arrives on a USB Ethernet adapter has no card the kernel knows
+  -- about and a wire all the same (`usb.md` 7d), and `may_pass_net` guarding
+  -- this meant it came up with no address at all - `ping` said "this machine
+  -- has no address yet" with the adapter attached and frames moving. That
+  -- flag is about the *capability* the stack is spawned with, which the
+  -- kernel does refuse without a card, and it still guards that.
+  --
+  do
     --
     -- init has no namespace of its own - it hands them out - so this makes
     -- one holding only what the address needs: `/net` to configure, and the

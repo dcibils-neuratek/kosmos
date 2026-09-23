@@ -1484,6 +1484,28 @@ processors, and still what follows USB:
    away, so nothing said so. `png.c` reads colour type 3 with `tRNS`, and
    `wm` names the wallpaper it restored or why it could not.
 
+5zd. **WANTED on 22 September - the ThinkCentre M700, and what it needs.**
+   Diego: "i have some fantastic news.. i bought a lenovo thinkcentre m700
+   mini pc and kosmos boots!! it works!". A 10J0/S1CK00, a 6th-generation
+   Core i7 with HD Graphics 530, and **Kosmos came up on it first time** -
+   the second real machine, and the first that is not the ThinkPad.
+
+   What it needs, in the order it was found:
+
+   - **5zd-a. A resolution worth having.** It comes up at 800x600, which is
+     what the firmware's mode is when nothing asks for another. The loader
+     picks a mode through UEFI's Graphics Output Protocol, so this is a
+     matter of asking GOP for the modes it has and choosing rather than
+     taking what it hands over (`boot.md`). HD 530's own driver is a far
+     larger thing and is not what this is.
+   - **5zd-b. A USB keyboard.** Diego: "usb mouse works, but usb keyboard is
+     yet to be added", and "we need to add support for usb keyboard!". The
+     mini PC has no PS/2 port, so `hal/pc/i8042.c` finds nothing and the
+     machine has a pointer and no keys. A boot keyboard is the same shape
+     as the boot mouse the driver already reads - an interrupt IN endpoint
+     and a fixed report (HID 1.11 B.1) - so this is `usb.md` step 9 beside
+     the pad rather than anything new.
+
 5m. **AGREED on 21 September - a USB Ethernet driver, and the remote
    debugging it unlocks.** Diego: "what if we build a way to connect this
    and the remote machine via a simple protocol over the network so that
@@ -1590,14 +1612,31 @@ processors, and still what follows USB:
      traffic; what this answers afterwards is whether the *adapter* is moving
      frames, separately from whether the stack above it is. Off unless the
      option is there.
-   - **5m-d. The frames reach `net.c`.** This is the design decision and it
-     is not small. Today the stack calls `kosmos_net_send`/`recv`, which are
-     *syscalls* into the kernel's virtio driver. The kernel must not learn
-     what USB is, so the stack has to take frames from a **driver process**
-     instead - and a frame is a stream, which `CLAUDE.md` is explicit about:
+   - **5m-d. DONE on 22 September - the frames reach `net.c`, and the
+     machine is on the network** (`usb.md` 7d, `testing.md` 18.151). The
+     stack called `kosmos_net_send`/`recv`, which are *syscalls* into the
+     kernel's virtio driver; the kernel must not learn what USB is, so the
+     stack takes frames from the **driver process** through a region -
      control by message, data by shared memory, single-producer
-     single-consumer rings with indices. The audio server's ring is the
-     precedent to copy, not the message-payload path it replaced.
+     single-consumer rings with indices, as `CLAUDE.md` says and as the
+     audio server's ring already does. `ethring.h` and `ethproto.h`.
+
+     **`ping 10.0.2.2` through a USB Ethernet adapter, in 0.6 ms**, on a
+     machine with no card the kernel can see.
+
+     **Four faults it found, and none was the ring**: the driver's idle pass
+     drained only mouse reports, so frames were read only while something
+     else was waiting; the stack drained the wire *after* blocking on its
+     next message, which cost every round trip a tenth of a second on the
+     kernel's own card too; `process_wake_net` stopped at the first holder
+     of the grant, which is init; and a machine with no card was given no
+     address at all, so `ping` said "this machine has no address yet" with
+     frames moving underneath it.
+
+     **And three things the kernel owed a driver in userland**: a wake it
+     can reach (`SYS_NET_WAKE`), a wait that watches three endpoints rather
+     than two, and a wait on endpoints with no interrupt lines - which is
+     what that driver has on a machine with no USB controller in it.
    - **5m-e. The debug server**, once there is a network: a small program
      that takes a request and answers with output. Deliberately small, and
      the same declared-struct discipline `audioproto.h` uses.

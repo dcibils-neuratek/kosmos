@@ -4774,6 +4774,9 @@ static volatile long both_first;
 static volatile bool both_first_early;
 static volatile bool both_first_collected;
 static volatile long both_twice;
+static volatile long both_three;
+static volatile long both_no_lines;
+static volatile long both_nothing;
 static volatile bool both_unwatched;
 static volatile int both_call_result;
 
@@ -4820,6 +4823,33 @@ static void both_waiter(void *arg)
     twice[0] = both_waiter_caps[0];
     twice[1] = both_waiter_caps[0];
     both_twice = irq_wait_any(both_lines, 2, 1, twice, 2);
+
+    /*
+     * **Three endpoints**, which is what the xHCI driver watches since 22
+     * September: the disk server's writes, `/dev/blocks`, and the network
+     * stack's frames (`usb.md` 7d). Two was the limit and the third was
+     * refused outright; what this asks is that three are taken, with one of
+     * them naming nothing - which is how the driver says "no adapter here"
+     * without a wait of a different shape.
+     */
+    {
+        int three[3];
+
+        three[0] = both_waiter_caps[0];
+        three[1] = both_waiter_caps[1];
+        three[2] = -1;
+        both_three = irq_wait_any(both_lines, 2, 1, three, 3);
+
+        /*
+         * **And no lines at all**, which is the wait a driver with no
+         * hardware has: the same server answers its clients on a machine
+         * with no USB controller in it, and polling them would be wakes a
+         * second on a machine where nothing is happening. A wait on nothing
+         * whatever is still refused.
+         */
+        both_no_lines = irq_wait_any(NULL, 0, 1, three, 3);
+        both_nothing = irq_wait_any(NULL, 0, 1, NULL, 0);
+    }
 
     both_waiter_done = true;
     thread_exit();
@@ -4884,6 +4914,9 @@ static bool test_an_interrupt_wait_takes_a_caller_on_either_endpoint(void)
     both_first_early = false;
     both_first_collected = false;
     both_twice = 0;
+    both_three = -1;
+    both_no_lines = -1;
+    both_nothing = 0;
     both_unwatched = false;
     both_call_result = IPC_OK;
 
@@ -4955,6 +4988,9 @@ static bool test_an_interrupt_wait_takes_a_caller_on_either_endpoint(void)
         && both_first == IRQ_WAIT_CALLER && both_first_early
         && both_first_collected
         && both_twice == SYS_ERR_DENIED
+        && both_three == SYS_NO_INTERRUPT
+        && both_no_lines == SYS_NO_INTERRUPT
+        && both_nothing == SYS_ERR_DENIED
         && both_unwatched
         && both_call_result == IPC_OK;
 }

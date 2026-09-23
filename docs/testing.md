@@ -7958,3 +7958,62 @@ stops being answerable from the stack's behaviour, which is exactly when
 somebody standing in front of the ThinkPad wants it. It is off unless
 `opt/kosmos/ethprobe` is there, so nothing the machine was not told to send
 goes out.
+
+## 18.151 The machine on the network through a USB adapter
+
+`usb.md` step 7d, `roadmap.md` 5m-d: the frames reach `net.c` through a ring
+in a region rather than the kernel's virtio syscalls, and `ping 10.0.2.2`
+comes back in 0.6 ms on a machine with no card the kernel can see.
+
+### The checks
+
+`run_x86.py`'s `usb_stack`, four, on a machine with a USB Ethernet adapter
+and **no virtio card at all**:
+
+- the stack attached to the adapter and took its ring;
+- it has an address - init gives it one whether or not the kernel found a
+  card, which it did not until this work;
+- four of four pings came back from QEMU's gateway;
+- and **the slowest round trip is under 50 ms**, where the stack's own
+  receive deadline is 100. That number is the check, not the speed: it is
+  what says the stack is answering the network rather than its own clock.
+
+`tests/tests.c`, in the guest suite, extending the wait that already covered
+two endpoints: three on one wait with one of them naming nothing; a wait on
+endpoints with no interrupt lines; and a wait on nothing at all still
+refused.
+
+### Controls, watched
+
+- **The driver's idle pass draining mouse reports alone**: nought of four
+  pings. This is not a hypothetical - it is what the code did, and it is why
+  exactly one frame ever reached the stack before it was found.
+- **The stack draining after blocking rather than before**: 104 ms, and the
+  failure names `drain` in `net.c`.
+
+### The hundred milliseconds nobody had measured
+
+**A ping over the kernel's own virtio card came back in 103 ms**, and had
+done for as long as there has been a stack. It looks exactly like a slow
+network, which is why it survived: there was nothing to compare it with.
+
+What found it was the USB path measuring the same 104 - and the two cannot
+both be the wire. Shortening the stack's receive deadline by hand gave 6 ms,
+which said the delay was the deadline; draining before blocking rather than
+after gave 0.6.
+
+**Two mechanisms were needed and neither is enough alone.** Draining first
+covers a frame that arrives while the stack is *busy*, which is where the
+answer to something it just sent lands. The wake (`process_wake_net`) covers
+a frame that arrives while it is *asleep* - and that one is not exercised by
+the gate, because under QEMU the reply always beats the stack back to its
+receive. It is kept because the case is real on a network with latency in
+it, and because a stack that only drains on its own clock is the poll this
+whole arrangement exists to avoid.
+
+**And a wake that reached nobody.** `process_wake_net` stopped at the first
+process holding the network, and init holds every grant it passes on and
+comes first in the table - so the wake went to init. `SYS_NET_WAKE` returns
+how many it woke now, which is what made that visible: a mechanism that
+silently does nothing is worse than none, and this one had been doing
+nothing since it was written.

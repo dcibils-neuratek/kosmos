@@ -67,13 +67,13 @@ void binfs_server(long endpoint, int libraries);
 void appfs_server(long endpoint);
 void console_server(long endpoint);
 void ramfs_server(long endpoint);
-void net_server(long endpoint);
+void net_server(long endpoint, long frames);
 
 /* Not a server anyone asks, and handed the console's endpoint rather than an
  * endpoint of its own: it is a driver, and it reports as a client. */
 void powerbutton_server(long console);
 void backlight_server(long console, long endpoint);
-void xhci_server(long console, long blocks, long writes);
+void xhci_server(long console, long blocks, long writes, long frames);
 
 /* Its own endpoint, the USB driver's *read* endpoint, and the console's.
  * Never the write endpoint: `/drives` is read-only by what it was handed
@@ -257,7 +257,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_NET) {
         named("net");
-        net_server(0);
+        net_server(0, 1);
     }
 
     if (arg == ROLE_POWERBUTTON) {
@@ -272,7 +272,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_XHCI) {
         named("xhci");
-        xhci_server(0, 1, 2);
+        xhci_server(0, 1, 2, 3);
     }
 
     if (arg == ROLE_DRIVES) {

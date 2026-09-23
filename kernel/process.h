@@ -562,7 +562,7 @@ void process_wake_audio(void);
 /* Wake whoever holds the network card, because a frame arrived. The same
  * shape as `process_wake_audio` and for the same reason: without it the
  * stack polls, and a stack that polls is a core. */
-void process_wake_net(void);
+unsigned process_wake_net(void);   /* how many were woken */
 
 /* Hands a process authority over every other one. Like the console, this is
  * a flag and nothing to map. Always succeeds; there is no device to be

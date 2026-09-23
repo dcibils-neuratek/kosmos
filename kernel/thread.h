@@ -103,7 +103,16 @@ struct addrspace;
  * (`irq_wait_any`). `ipc.watching` has a slot for each, so a thread that dies
  * watching both is taken off both.
  */
-#define IPC_WATCH_MAX 2u
+/*
+ * How many endpoints one thread can have a wait watching at once.
+ *
+ * Two until 22 September, which was what the xHCI driver needed then: the
+ * disk server's writes and `/dev/blocks`. A USB Ethernet adapter adds the
+ * network stack's frames, and an endpoint that is not watched waits out the
+ * driver's whole watch interval - which is the fault that made this two
+ * rather than one (`usb.md` 7d).
+ */
+#define IPC_WATCH_MAX 3u
 
 struct thread {
     /* First, because switch.S reaches it through the thread pointer and a

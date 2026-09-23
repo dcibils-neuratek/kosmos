@@ -389,7 +389,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SYS_IRQ_WAIT_ANY 52 /* (&caps, count, ticks, ep, ep2) -> which, caller, none */
 
 #define IRQ_WAIT_ANY_MAX       8u
-#define IRQ_WAIT_ENDPOINTS_MAX 2u
+#define IRQ_WAIT_ENDPOINTS_MAX 3u
 /* Never a line's place; plus one, the second endpoint's caller. */
 #define IRQ_WAIT_CALLER  ((long)IRQ_WAIT_ANY_MAX)
 
@@ -455,7 +455,30 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SYS_THREAD_EXIT   57 /* (code)                -> does not return    */
 #define SYS_THREAD_WAIT   58 /* (index)               -> its code or error  */
 
-#define SYS_MAX         59
+/*
+ * **Wake whoever holds the network card, because a frame arrived.**
+ *
+ * The kernel's own virtio driver calls `process_wake_net` from its interrupt
+ * handler; a network adapter on the USB bus is driven by a *process*, and
+ * the kernel must not learn what USB is. So the one thing the kernel has
+ * that a userland driver cannot do for itself - cutting short the stack's
+ * timed receive - is reachable here (`usb.md` 7d, `roadmap.md` 5m-d).
+ *
+ * **For a process that drives devices**, `owns_devices`, and refused to
+ * anything else. Not because waking the stack early is dangerous - the worst
+ * it does is make it look at a ring - but because a process that could do it
+ * in a loop would spend the stack's time, and the only processes with frames
+ * to report are the ones holding hardware.
+ *
+ * Without it the stack has to come back and ask, which is a poll wearing a
+ * different hat: it would look at the ring at a rate somebody picked, and
+ * the round-trip time it reported would be that rate rather than the
+ * network's. That sentence is `process_wake_net`'s own, and it is why this
+ * exists rather than a shorter deadline.
+ */
+#define SYS_NET_WAKE   59   /* ()                     -> 0 or error         */
+
+#define SYS_MAX         60
 
 /*
  * What a spawn may hand its child beyond capabilities.

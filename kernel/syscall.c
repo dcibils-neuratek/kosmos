@@ -1262,6 +1262,25 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
+    case SYS_NET_WAKE:
+        /*
+         * A driver process saying a frame is in the ring it shares with the
+         * stack. The kernel knows nothing about the ring: what it does is
+         * what it already does for its own card, which is cut short the one
+         * process that holds the network's timed receive.
+         */
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+        } else {
+            /*
+             * **How many were woken**, rather than 0 for "asked". A wake
+             * that reaches nobody is a mechanism that silently does nothing,
+             * and this one did: see `process_wake_net`.
+             */
+            result = (long)process_wake_net();
+        }
+        break;
+
     case SYS_SET_TLS:
         /*
          * Kept with the thread and loaded now, so the caller can use it on
@@ -1855,25 +1874,39 @@ void syscall_dispatch(struct syscall_frame *sc)
          * The array is read once, into the kernel, before anything waits, so
          * a process that rewrote it during the wait would change nothing.
          *
-         * And two endpoints, `arg[3]` and `arg[4]`, each when it is not
-         * negative, resolved by `ipc.c` as every endpoint is: a number that
-         * names none refuses the wait.
+         * And the endpoints, `arg[3]` pointing at `arg[4]` of them, each one
+         * watched when it is not negative and resolved by `ipc.c` as every
+         * endpoint is: a number that names none refuses the wait.
+         *
+         * **An array rather than two arguments**, which is what they were
+         * until 22 September. A syscall has five, all five were spoken for,
+         * and the xHCI driver needed a third endpoint - the network stack's
+         * frames beside the disk server's writes and `/dev/blocks`
+         * (`usb.md` 7d). Reading them out of the caller's memory costs one
+         * `process_may_read` and takes the ceiling off.
+         *
+         * **No lines and some endpoints is a wait**: a driver with no
+         * hardware to watch still answers its clients, and polling them
+         * would be wakes a second on a machine where nothing is happening.
          */
         uintptr_t at = (uintptr_t)sc->arg[0];
         unsigned long count = (unsigned long)sc->arg[1];
         unsigned long ticks = (unsigned long)sc->arg[2];
-        long endpoint = (long)sc->arg[3];
-        long second = (long)sc->arg[4];
+        uintptr_t eps_at = (uintptr_t)sc->arg[3];
+        unsigned long ends = (unsigned long)sc->arg[4];
         int endpoints[IRQ_WAIT_ENDPOINTS_MAX];
         struct irq_line *set[IRQ_WAIT_ANY_MAX];
         unsigned long i;
 
-        if (count == 0 || count > IRQ_WAIT_ANY_MAX) {
+        if ((count == 0 && ends == 0) || count > IRQ_WAIT_ANY_MAX
+            || ends > IRQ_WAIT_ENDPOINTS_MAX) {
             result = SYS_ERR_DENIED;
             break;
         }
 
-        if (!process_may_read(p, at, count * sizeof(long))) {
+        if ((count > 0 && !process_may_read(p, at, count * sizeof(long)))
+            || (ends > 0 && !process_may_read(p, eps_at,
+                                              ends * sizeof(long)))) {
             result = SYS_ERR_FAULT;
             break;
         }
@@ -1890,13 +1923,14 @@ void syscall_dispatch(struct syscall_frame *sc)
             ticks = (unsigned long)TICK_HZ * 3600UL;
         }
 
-        endpoints[0] = endpoint < 0 ? -1
-                     : endpoint > INT_MAX ? INT_MAX : (int)endpoint;
-        endpoints[1] = second < 0 ? -1
-                     : second > INT_MAX ? INT_MAX : (int)second;
+        for (i = 0; i < ends; i++) {
+            long cap = ((const long *)eps_at)[i];
+
+            endpoints[i] = cap < 0 ? -1 : cap > INT_MAX ? INT_MAX : (int)cap;
+        }
 
         result = irq_wait_any(set, (unsigned)count, ticks, endpoints,
-                              IRQ_WAIT_ENDPOINTS_MAX);
+                              (unsigned)ends);
         break;
     }
 

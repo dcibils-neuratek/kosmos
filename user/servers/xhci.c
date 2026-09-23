@@ -71,6 +71,8 @@
 #include "mmio.h"
 #include "say.h"
 #include "blockproto.h"
+#include "ethproto.h"
+#include "ethring.h"
 #include "storage_decode.h"
 #include "pad_decode.h"
 #include "usb_decode.h"
@@ -450,6 +452,7 @@ struct ether {
     unsigned      port;
     unsigned      in_dci;
     unsigned      out_dci;
+    unsigned      out_packet;           /* its wMaxPacketSize, for ECM 3.3.1 */
     unsigned      notify_dci;
     unsigned      notify_length;        /* a request's buffer: its packet */
     struct ring   in;
@@ -485,6 +488,7 @@ struct ether {
     bool          receiving;            /* a read is out on the bulk IN */
     unsigned long received;
     unsigned long sent;
+    unsigned long dropped;              /* arrived with the stack's ring full */
     unsigned      said_frames;          /* of those, written down */
 
     /* Its device, kept, for the same reason a stick keeps one. */
@@ -554,6 +558,22 @@ struct controller {
 };
 
 static long console = -1;
+/*
+ * **The network stack, once it has attached** - `usb.md` 7d.
+ *
+ * One stack and one adapter: `SPAWN_NET` means there is exactly one process
+ * that may hold the wire, and the first adapter plugged in is the one it
+ * gets. A second adapter is named and left alone, which is honest about what
+ * this does rather than pretending to a generality it has not got.
+ */
+static long frames_endpoint = -1;
+static struct eth_ring *frames_ring;    /* the stack's region, mapped here */
+static long frames_ring_cap = -1;
+static struct controller *frames_on;    /* whose adapter the stack has */
+static unsigned frames_slot;
+
+struct say_line;
+static void serve_frames(struct say_line *line);
 
 /*
  * As many controllers as the closing line names and the driver keeps. The
@@ -1076,7 +1096,7 @@ static bool wait_serving(struct controller *c, unsigned long ms,
             ticks = 1;
         }
 
-        woke = count > 0 ? kosmos_irq_wait_any(lines, count, ticks, -1, -1)
+        woke = count > 0 ? kosmos_irq_wait_any(lines, count, ticks, NULL, 0)
                          : SYS_NO_INTERRUPT;
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */
@@ -3319,7 +3339,49 @@ static void take_frame(struct controller *c, const uint32_t *event)
     if (got >= 14u) {
         e->received++;
 
-        if (e->said_frames < 4u) {
+        /*
+         * **To the stack, if it is holding this adapter** - into its ring
+         * and a wake, which is all the driver does with a frame from here
+         * on (`usb.md` 7d). A ring with no room is a frame dropped, which is
+         * what a full receive queue means on any card: the stack is behind,
+         * and the far end will send it again.
+         */
+        if (frames_ring != NULL && frames_on == c && frames_slot == slot
+            && got <= ETH_RING_SLOT) {
+            uint32_t write = frames_ring->in_write;
+            uint32_t read = eth_ring_acquire(&frames_ring->in_read);
+
+            if (eth_ring_space(write, read) > 0) {
+                memcpy(eth_ring_in(frames_ring, write), frame, got);
+                frames_ring->in_length[write % ETH_RING_SLOTS] = got;
+                eth_ring_publish(&frames_ring->in_write, write + 1u);
+
+                /*
+                 * And the stack, if it is asleep. It is often not - a reply
+                 * to something it just sent lands while it is still busy,
+                 * which is what `drain` before the receive is for - so this
+                 * is the other case: a frame nobody here asked for.
+                 */
+
+                /*
+                 * And the stack, if it is asleep. It often is not - a reply
+                 * to something it just sent lands while it is still busy,
+                 * which is what draining before the receive is for - so this
+                 * is the other case: a frame nobody here asked for.
+                 */
+                (void)kosmos_net_wake();
+            } else {
+                e->dropped++;
+            }
+        }
+
+        /*
+         * **The first four, and only while nobody is holding the adapter.**
+         * Before the stack attaches these are the whole of what a person can
+         * see - `opt/kosmos/ethprobe` is read by them - and after it they are
+         * a driver narrating traffic that belongs to somebody else.
+         */
+        if (e->said_frames < 4u && frames_ring == NULL) {
             e->said_frames++;
             type = ((unsigned)frame[12] << 8) | frame[13];
 
@@ -3754,6 +3816,7 @@ static void use_ethernet(struct controller *c, struct device *d,
      * number for an OUT, and one more for an IN.
      */
     e->out_dci = 2u * ecm->bulk_out;
+    e->out_packet = ecm->bulk_out_packet;
     e->in_dci = 2u * ecm->bulk_in + 1u;
     e->notify_dci = ecm->notify != 0 ? 2u * ecm->notify + 1u : 0u;
     last = e->in_dci > e->out_dci ? e->in_dci : e->out_dci;
@@ -4675,8 +4738,22 @@ static void service(struct controller *c, struct say_line *line)
 
     acknowledge(c);
 
+    /*
+     * **Every kind of unasked-for event, not only a mouse's report.**
+     *
+     * This drained into `take_report` alone, so an Ethernet adapter's frames
+     * and its link notifications were read only when something else happened
+     * to be inside `wait_serving` - which during a plug is often and once the
+     * machine is idle is never. Exactly one frame ever reached the stack:
+     * the one that arrived while the adapter was still being configured.
+     *
+     * The three are the three things that arrive because the *device* had
+     * something to say. Each returns at once if the event is not its own.
+     */
     while (take_event(c, trb)) {
         take_report(c, trb);
+        take_note(c, trb);
+        take_frame(c, trb);
     }
 
     for (port = 1; port <= c->ports; port++) {
@@ -4723,6 +4800,7 @@ struct opened {
 static struct opened opens[OPENS_MAX];
 static long blocks_endpoint = -1;
 static long writes_endpoint = -1;       /* the disk server's, and nobody else's */
+
 
 /*
  * **The stick given the number `unit`**, while it is ready (`units_named`).
@@ -5158,21 +5236,226 @@ static void serve_without_controllers(int code)
     struct say_line line;
     struct message msg;
     uint64_t sender = 0;
+    const long ends[2] = { blocks_endpoint, frames_endpoint };
 
     say_begin(&line);
 
-    for (;;) {
-        long status = blocks_endpoint >= 0
-                      ? kosmos_receive(blocks_endpoint, &msg, &sender, 0, 0)
-                      : SYS_ERR_DENIED;
+    if (blocks_endpoint < 0 && frames_endpoint < 0) {
+        kosmos_exit(code);
+    }
 
-        if (status != 0) {
+    for (;;) {
+        /*
+         * **Both endpoints, and no interrupt lines**, which the kernel's
+         * wait takes since 22 September. The network stack asks this process
+         * whether there is an adapter even on a machine with no USB
+         * controller at all, and its call would wait for ever on a receive
+         * that only watched `/dev/blocks` - so the stack would never
+         * start. Polling the two instead would be wakes a second on a
+         * machine where nothing is happening.
+         */
+        long woke = kosmos_irq_wait_any(NULL, 0, 0, ends, 2u);
+
+        if (woke < 0 && woke != SYS_NO_INTERRUPT) {
             kosmos_exit(code);
         }
 
-        block_answer(&msg, sender,
-                     msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1,
-                     false, &line);
+        while (blocks_endpoint >= 0
+               && kosmos_receive(blocks_endpoint, &msg, &sender, 1, 0) == 0) {
+            block_answer(&msg, sender,
+                         msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1,
+                         false, &line);
+        }
+
+        serve_frames(&line);
+    }
+}
+
+/*-------------------------------------------------------- the stack's frames */
+
+/*
+ * **The adapter the stack is holding**, or none - `usb.md` 7d.
+ *
+ * Found by walking the controllers rather than kept as a pointer, because an
+ * adapter unplugged leaves its `struct ether` behind with nothing driving it:
+ * `receiving` is what says it is still there.
+ */
+static struct ether *attached_adapter(struct controller **c_out,
+                                      unsigned *slot_out)
+{
+    unsigned i, slot;
+
+    for (i = 0; i < controllers_found; i++) {
+        for (slot = 1; slot <= DEVICES_MAX; slot++) {
+            struct ether *e = &controllers[i].ether[slot];
+
+            if (e->frames != 0 && e->have_mac) {
+                if (c_out != NULL) {
+                    *c_out = &controllers[i];
+                }
+
+                if (slot_out != NULL) {
+                    *slot_out = slot;
+                }
+
+                return e;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static void eth_about(struct eth_reply *rep, const struct ether *e)
+{
+    rep->present = 1;
+    rep->mtu = e->max_segment;
+    rep->link = (e->link_said && e->link) ? 1u : 0u;
+    rep->sent = (uint32_t)e->sent;
+    rep->received = (uint32_t)e->received;
+    memcpy(rep->mac, e->mac, sizeof(rep->mac));
+}
+
+/*
+ * **Everything in the ring's `out`, onto the wire.**
+ *
+ * The stack writes as many frames as it has and calls once, so this drains
+ * rather than sending one: the number of messages is the number of times the
+ * stack went idle rather than the number of frames.
+ *
+ * A frame that will not go out is counted and stepped over. There is nothing
+ * else to do with it - the stack has moved on, and a driver that stopped
+ * draining would hold every frame behind the one the wire refused.
+ */
+static void eth_drain_out(struct controller *c, unsigned slot,
+                          struct ether *e, unsigned packet)
+{
+    uint32_t read = frames_ring->out_read;
+    uint32_t write = eth_ring_acquire(&frames_ring->out_write);
+
+    while (eth_ring_ready(write, read) > 0) {
+        uint32_t length = frames_ring->out_length[read % ETH_RING_SLOTS];
+
+        if (length >= 14u && length <= ETH_RING_SLOT) {
+            (void)ether_send(c, slot, eth_ring_out(frames_ring, read),
+                             length, packet);
+        }
+
+        read++;
+        eth_ring_publish(&frames_ring->out_read, read);
+    }
+
+    (void)e;
+}
+
+/*
+ * One request from the network stack, answered - `ethproto.h`.
+ *
+ * **Attach takes the region and keeps it**, mapped here for as long as this
+ * process runs, exactly as the audio server keeps a stream's ring. A second
+ * attach while one is held is refused rather than taken: two stacks on one
+ * wire is not a thing this system has, and silently swapping the ring under
+ * the first would be worse than saying no.
+ */
+static void eth_answer(const struct message *msg, uint64_t sender, long cap,
+                       struct say_line *line)
+{
+    struct eth_request req;
+    struct eth_reply rep;
+    struct message out;
+    struct controller *c = NULL;
+    struct ether *e;
+    unsigned slot = 0;
+
+    memset(&req, 0, sizeof(req));
+    memset(&rep, 0, sizeof(rep));
+
+    if (msg->length >= sizeof(req)) {
+        memcpy(&req, msg->data, sizeof(req));
+    } else {
+        rep.error = ETH_ERR_BAD_OP;
+    }
+
+    e = attached_adapter(&c, &slot);
+
+    if (rep.error == ETH_OK && e == NULL) {
+        rep.error = ETH_ERR_NO_ADAPTER;
+    }
+
+    if (rep.error == ETH_OK) {
+        switch (req.op) {
+        case ETH_OP_ATTACH: {
+            long at;
+
+            if (frames_ring != NULL) {
+                rep.error = ETH_ERR_TAKEN;
+                break;
+            }
+
+            at = cap < 0 ? -1 : kosmos_mem_map(cap);
+
+            if (at < 0 || !eth_ring_valid((struct eth_ring *)(uintptr_t)at)) {
+                rep.error = ETH_ERR_NO_RING;
+                break;
+            }
+
+            frames_ring = (struct eth_ring *)(uintptr_t)at;
+            frames_ring_cap = cap;
+            frames_on = c;
+            frames_slot = slot;
+            eth_about(&rep, e);
+
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, e->port);
+            say_text(line, ": the network stack has it; frames go through a "
+                           "ring of ");
+            say_dec(line, ETH_RING_SLOTS);
+            say_text(line, " each way");
+            say_send(console, line);
+            break;
+        }
+
+        case ETH_OP_SEND:
+            if (frames_ring == NULL) {
+                rep.error = ETH_ERR_NO_RING;
+                break;
+            }
+
+            eth_drain_out(frames_on, frames_slot,
+                          &frames_on->ether[frames_slot],
+                          frames_on->ether[frames_slot].out_packet);
+            eth_about(&rep, e);
+            break;
+
+        case ETH_OP_INFO:
+            eth_about(&rep, e);
+            break;
+
+        default:
+            rep.error = ETH_ERR_BAD_OP;
+            break;
+        }
+    }
+
+    memset(&out, 0, sizeof(out));
+    out.tag = msg->tag;
+    out.length = sizeof(rep);
+    memcpy(out.data, &rep, sizeof(rep));
+    (void)kosmos_reply(sender, &out);
+}
+
+/* Whatever the stack has asked for since the last look, answered. */
+static void serve_frames(struct say_line *line)
+{
+    struct message msg;
+    uint64_t sender = 0;
+
+    while (frames_endpoint >= 0
+           && kosmos_receive(frames_endpoint, &msg, &sender, 1, 0) == 0) {
+        eth_answer(&msg, sender,
+                   msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1,
+                   line);
     }
 }
 
@@ -5213,15 +5496,19 @@ static void watch(struct controller *list, unsigned count,
     for (;;) {
         long woke = SYS_NO_INTERRUPT;
 
-        /* And both block endpoints on the same wait: the disk server's write
-         * endpoint (USB step 5c) and `/dev/blocks`, whose reads waited out
-         * WATCH_MS while the wait could watch one endpoint - 17 a second, on
-         * the ThinkPad and under QEMU alike. A caller answers
-         * IRQ_WAIT_CALLER or IRQ_WAIT_CALLER + 1, a line with an interrupt
-         * first; both are served after every wake (`serve_blocks`). */
+        /* And this driver's endpoints on the same wait: the disk server's
+         * write endpoint (USB step 5c), `/dev/blocks`, and the network
+         * stack's frames (7d). An endpoint not on the wait waits out
+         * WATCH_MS - 17 a second, on the ThinkPad and under QEMU alike -
+         * which is what watching one cost and is why the kernel now watches
+         * three. A caller answers IRQ_WAIT_CALLER + its place, a line with
+         * an interrupt first; all three are served after every wake. */
+        const long ends[3] = { writes_endpoint, blocks_endpoint,
+                               frames_endpoint };
+
         if (waited > 0) {
             woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS),
-                                       writes_endpoint, blocks_endpoint);
+                                       ends, 3u);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */
@@ -5238,10 +5525,12 @@ static void watch(struct controller *list, unsigned count,
         }
 
         serve_blocks(line);
+        serve_frames(line);
     }
 }
 
-void xhci_server(long console_cap, long blocks_cap, long writes_cap)
+void xhci_server(long console_cap, long blocks_cap, long writes_cap,
+                 long frames_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -5253,6 +5542,7 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap)
     console = console_cap;
     blocks_endpoint = blocks_cap;
     writes_endpoint = writes_cap;
+    frames_endpoint = frames_cap;
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;
