@@ -1800,7 +1800,19 @@ function ui.dropdown(spec)
       at = at.parent
     end
 
-    return x, y, win or self.window
+    --
+    -- **On the screen, not in the window.** `window:open_menu` places a
+    -- window of its own and the window manager puts windows on the screen,
+    -- which is why `origin_x` exists at all - `ui.menubar` adds it too
+    -- (`window:move` keeps it current). A menu opened without it lands
+    -- wherever the window happens not to be.
+    --
+    if win then
+      x = x + (win.origin_x or 0)
+      y = y + (win.origin_y or 0)
+    end
+
+    return x, y, win
   end
 
   function v:open()

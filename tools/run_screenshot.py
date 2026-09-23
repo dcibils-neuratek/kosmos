@@ -3859,9 +3859,21 @@ def check_appearance(guest):
 
     checks += 1
 
-    if looks != 4:
-        raise Failure("the panel offers %d looks; there are four - Plex, Plex "
-                      "Night, Classic and Studio" % looks)
+    #
+    # **Five, and the number is Diego's to move.** This asked for four and
+    # was right to: "Let's just make 3 or 4 good design options in colors and
+    # fonts and stick to those", 22 September. Endeavour is the fifth and he
+    # asked for it by name on 23 September, with two screenshots of a GNOME
+    # desktop beside him (`roadmap.md` 5zk).
+    #
+    # The check stays a number rather than becoming `len(themes.order)`,
+    # because what it is guarding is that nobody adds a sixth without a
+    # conversation - and a check that counts whatever is there guards
+    # nothing.
+    #
+    if looks != 5:
+        raise Failure("the panel offers %d looks; there are five - Plex, Plex "
+                      "Night, Classic, Studio and Endeavour" % looks)
 
     checks += 1
 
@@ -7249,10 +7261,20 @@ def check_places(guest):
     def to(x, y):
         guest.mouse_to(*_to_tablet(wx + x, wy + y, width, height))
 
-    # The one folder is the list's first row; the sidebar is x 12 to 222,
-    # its rows from y 88, one ROW each: Places, Home, Desktop, then places.
-    first_row_y = 115
-    place_row_y = 86 + 2 + 3 * ROW + ROW // 2
+    #
+    # The one folder is the list's first row; the sidebar is x 12 to 222 and
+    # its rows run from `CONTENT_Y`, one ROW each: Places, Home, Desktop,
+    # then places.
+    #
+    # **`CONTENT_Y` is 41 and was 86** until 23 September, when Tracker's
+    # menu bar, toolbar and trail became one header (`roadmap.md` 5zg). The
+    # three bands above the files became one, so everything under them rose
+    # by forty-five pixels - and a phase that drops on a row by its position
+    # has to be told, which is what this comment is for the next time.
+    #
+    content_y = 41
+    first_row_y = content_y + 29
+    place_row_y = content_y + 2 + 3 * ROW + ROW // 2
 
     to(260, first_row_y)
     time.sleep(0.4)
@@ -7834,13 +7856,20 @@ def check_icon_sizes(guest):
                       + guest.seen[mark:][-1500:])
 
     #
-    # The View title in the menu bar at the top of the window: the titles
-    # start four pixels in and each is its text plus sixteen, in the bitmap
-    # face the harness pins - File 48, Go 32, so View begins at 84.
+    # **The View button in the header**, which is where it went when Tracker
+    # lost its menu bar (`roadmap.md` 5zg, 23 September). A menu bar of
+    # three menus, a toolbar and a trail became one band: back, forward, the
+    # place, and Find / New / View / `...` from the right edge.
     #
-    win_x, win_y = where[0], where[1]
-    view_x, view_y = win_x + 84 + 20, win_y + MENU_ROW // 2
-    menu_x, menu_y = win_x + 84, win_y + MENU_ROW
+    # The numbers are the application's own - `right_button(102, 50)` places
+    # View 102 from the right and 50 wide, at `TOOLBAR_Y` 7 and
+    # `TOOLBAR_H` 26 - and they are written out here rather than derived, so
+    # that moving a button in one file has to be agreed with in the other.
+    #
+    win_x, win_y, win_w = where[0], where[1], where[2]
+    view_x = win_x + win_w - 102 + 25
+    view_y = win_y + 7 + 13
+    menu_x, menu_y = win_x + win_w - 102, win_y + 7 + 26
 
     def view_menu(rows, want, skip):
         guest.mouse_to(*_to_tablet(view_x, view_y, width, height))

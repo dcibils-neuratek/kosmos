@@ -1,0 +1,334 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The whole desktop in one language: the Deskbar, the desktop, and eight
+  windows drawn the way Tracker and Preferences were rebuilt. Drawn on 23
+  September 2026 after Diego asked "how would the entire kosmos desktop look
+  with that design language and style? can you mockup the desktop, at least 5
+  of the most used apps" - roadmap.md 5zj, in the Endeavour look (5zk).
+
+  The point of putting them on one page is that a language cannot be judged
+  a window at a time. What this has to settle is shape rather than colour:
+  what a window with a list looks like, one with a canvas, one with a single
+  field, and where each puts the two or three controls it needs.
+-->
+<title>Kosmos Desktop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#f3f4f7; --ink:#1b2330; --muted:#5b6677; --rule:#dde2ea;
+    --accent:#2a55c9; --card:#fff;
+    --display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+    --body:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+
+    /* Endeavour, exactly as user/lib/themes.lua names it. */
+    --desk:#2e5cb8; --win:#f6f5f4; --view:#ffffff;
+    --line:#cdc7c2; --line-soft:#e3e0dd;
+    --text:#241f31; --dim:#77767b; --on:#ffffff;
+    --tab:#a7c7ee; --tab-idle:#ddd9d5; --tab-text:#1b3557;
+    --acc:#3584e4; --good:#2ec27e; --bad:#e01b24; --stamp:#99c1f1;
+    --console:#241f31; --console-text:#f6f5f4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+       font-family:var(--body);font-size:15px;line-height:1.55}
+  .wrap{max-width:1160px;margin:0 auto;padding:40px 20px 80px}
+  h1{font-family:var(--display);font-size:30px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:74ch}
+  h2{font-family:var(--display);font-size:19px;margin:40px 0 10px;
+     padding-top:22px;border-top:1px solid var(--rule)}
+  h3{font-family:var(--display);font-size:15px;margin:22px 0 8px;color:var(--muted)}
+  p{max-width:74ch} code,.k{font-family:var(--mono);font-size:.88em}
+  .note{background:var(--card);border:1px solid var(--rule);
+        border-left:3px solid var(--accent);border-radius:8px;padding:14px 18px;margin:18px 0}
+  .note p:first-child{margin-top:0} .note p:last-child{margin-bottom:0}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-family:var(--display);font-weight:600}
+
+  /* ------------------------------------------------ the desktop itself */
+  .screen{background:linear-gradient(160deg,#4a74cc 0%,#2e5cb8 45%,#24488f 100%);
+          border-radius:12px;padding:0;overflow:hidden;position:relative;
+          box-shadow:0 14px 34px rgba(0,0,0,.22);margin:20px 0 8px}
+  .bar{height:32px;background:var(--tab);display:flex;align-items:center;
+       gap:2px;padding:0 8px;color:var(--tab-text);font-size:12.5px;font-weight:500}
+  .bar .app{padding:4px 9px;border-radius:6px;cursor:default}
+  .bar .app.on{background:rgba(255,255,255,.55)}
+  .bar .sp{flex:1}
+  .bar .ind{opacity:.85;padding:0 6px}
+  .desk{position:relative;height:560px;padding:14px}
+
+  .dicon{position:absolute;width:74px;text-align:center;color:#fff;font-size:11.5px;
+         text-shadow:0 1px 2px rgba(0,0,0,.45)}
+  .dicon .g{width:44px;height:36px;margin:0 auto 5px;border-radius:5px;position:relative;
+            background:linear-gradient(180deg,#6f9be8,#3c6fd0)}
+  .dicon .g:before{content:"";position:absolute;left:0;top:-5px;width:18px;height:7px;
+                   border-radius:3px 3px 0 0;background:#6f9be8}
+
+  /* a window */
+  .w{position:absolute;background:var(--win);border-radius:9px;overflow:hidden;
+     box-shadow:0 12px 26px rgba(0,0,0,.30);font-size:12px;color:var(--text)}
+  .t{height:26px;background:var(--tab);color:var(--tab-text);display:flex;
+     align-items:center;padding:0 8px;font-size:11.5px;font-weight:500;gap:6px}
+  .t.idle{background:var(--tab-idle);color:#5a565a}
+  .t .sp{flex:1}
+  .t .b{width:11px;height:11px;border-radius:3px;background:rgba(0,0,0,.14)}
+  .hd{height:32px;background:var(--view);border-bottom:1px solid var(--line-soft);
+      display:flex;align-items:center;gap:5px;padding:0 6px}
+  .btn{padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--view);
+       font-size:11px;color:var(--text)}
+  .btn.q{border-color:transparent;background:transparent;color:var(--dim);padding:3px 6px}
+  .sp{flex:1}
+  .side{background:var(--win);border-right:1px solid var(--line-soft);padding:6px}
+  .srow{padding:4px 8px;border-radius:6px;font-size:11.5px}
+  .srow.on{background:var(--stamp);color:var(--tab-text)}
+  .view{background:var(--view);flex:1;overflow:hidden}
+  .hdr{display:flex;padding:4px 8px;color:var(--dim);font-size:10.5px;
+       border-bottom:1px solid var(--line-soft)}
+  .r{display:flex;padding:3px 8px;font-size:11px}
+  .r.on{background:var(--stamp)}
+  .grid2{display:grid;grid-template-columns:120px 1fr;height:calc(100% - 26px)}
+  .col{display:flex;flex-direction:column;height:100%}
+
+  .cap{color:var(--muted);font-size:13px;margin:4px 0 26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Kosmos, in one language</h1>
+<p class="sub">The Deskbar, the desktop and eight windows, drawn the way Tracker and
+Preferences were rebuilt and in the Endeavour look. Drawn on 23 September 2026 &mdash;
+<code>roadmap.md</code> 5zj. A language cannot be judged a window at a time, which is the
+whole reason these are on one page.</p>
+
+<div class="screen">
+  <div class="bar">
+    <div class="app on">Tracker</div><div class="app">Processes</div>
+    <div class="app">Editor</div><div class="app">Music</div>
+    <div class="sp"></div>
+    <div class="ind">8190 MB</div><div class="ind">10.0.2.15</div><div class="ind">14:32</div>
+  </div>
+  <div class="desk" id="desk"></div>
+</div>
+<p class="cap">The Deskbar is the look&rsquo;s tab colour, as it has been since 0.10.112 &mdash;
+one token for the focused title bar, the bar and a scrollbar&rsquo;s thumb.</p>
+
+<h2>The eight, larger</h2>
+<div id="apps"></div>
+
+<h2>What the page settles</h2>
+
+<p class="tight">Colour is 5zk&rsquo;s and this page only wears it. What eight windows
+together decide is <strong>shape</strong>, and it comes out as four kinds:</p>
+
+<table>
+<tr><th>Kind</th><th>What it looks like</th><th>Which ones</th></tr>
+<tr><td><b>A list with places</b></td>
+    <td>Sidebar, a header of back / where / two or three words, a white view</td>
+    <td>Tracker, Preferences, Music, Scheduler</td></tr>
+<tr><td><b>A table</b></td>
+    <td>No sidebar. A header of what it is doing, columns, and a foot that counts</td>
+    <td>Processes</td></tr>
+<tr><td><b>A canvas</b></td>
+    <td>Tools down the left as a strip, the work on white, nothing above it but the title</td>
+    <td>Paint, Photo</td></tr>
+<tr><td><b>A page of text</b></td>
+    <td>The text is the window. One header, and the chrome disappears while typing</td>
+    <td>Editor, Terminal</td></tr>
+</table>
+
+<div class="note">
+<p><strong>Three controls is the rule the header follows.</strong> Tracker has Find, New,
+View and <code>...</code>; Preferences has none at all, because a sidebar and rows are the
+whole of it; Paint has its tools in a strip rather than a bar, because a tool is chosen far
+more often than a menu is opened. When a window wants a fourth button it wants a
+<code>...</code> instead.</p>
+</div>
+
+<h3>And what it deliberately keeps</h3>
+<p>The Deskbar is the tab colour and the desktop is Tracker with <code>--backdrop</code>;
+replicants still live in the bar, the right button still reaches the application, and an
+icon still stays where it is dragged. Those are how this desktop <em>works</em>, and a
+screenshot is not asking about them (<code>roadmap.md</code> 5zi).</p>
+
+</div>
+
+<script>
+const ICONS = [
+  ["Home",20,16],["Development",20,96],["Drive",20,176],["Trash",20,470],
+];
+document.getElementById("desk").innerHTML = ICONS.map(([n,x,y])=>
+  `<div class="dicon" style="left:${x}px;top:${y}px"><div class="g"></div>${n}</div>`).join("")
++ `
+<div class="w" style="left:120px;top:20px;width:430px;height:290px">
+  <div class="t">Tracker<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="grid2">
+    <div class="side"><div class="srow on">Home</div><div class="srow">Recent</div>
+      <div class="srow">Trash</div><div class="srow" style="margin-top:8px">Documents</div>
+      <div class="srow">Music</div><div class="srow">Kingston</div></div>
+    <div class="col">
+      <div class="hd"><span class="btn q">&lsaquo;</span><span class="btn q">&rsaquo;</span>
+        <span class="btn" style="min-width:110px;text-align:center">home</span>
+        <span class="sp"></span><span class="btn">Find</span><span class="btn">New</span>
+        <span class="btn">View</span><span class="btn">...</span></div>
+      <div class="view">
+        <div class="hdr"><span style="flex:1">Name ^</span><span style="width:60px">Size</span><span style="width:60px">Kind</span></div>
+        ${["development|&mdash;|folder","screenshots|&mdash;|folder","magicword.mp4|4.2 MB|film",
+           "notes.md|1.4 KB|note","doom1.wad|4.1 MB|data","roms|&mdash;|folder"]
+          .map((r,i)=>{const [a,b,c]=r.split("|");return `<div class="r${i===1?" on":""}"><span style="flex:1">${a}</span><span style="width:60px">${b}</span><span style="width:60px">${c}</span></div>`}).join("")}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="w" style="left:580px;top:60px;width:360px;height:230px">
+  <div class="t idle">Processes<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="col" style="height:calc(100% - 26px)">
+    <div class="hd"><span style="font-weight:500">17 processes &middot; 8 cores</span>
+      <span class="sp"></span><span class="btn">End</span><span class="btn">...</span></div>
+    <div class="view">
+      <div class="hdr"><span style="flex:1">Name</span><span style="width:52px">CPU</span><span style="width:60px">Memory</span></div>
+      ${["wm|12%|4.1 MB","tracker|3%|2.8 MB","deskbar|2%|1.9 MB","music|8%|6.2 MB",
+         "e1000|0%|0.3 MB","xhci|1%|0.4 MB","diskfs|0%|1.1 MB"]
+        .map((r,i)=>{const [a,b,c]=r.split("|");return `<div class="r${i===0?" on":""}"><span style="flex:1">${a}</span><span style="width:52px">${b}</span><span style="width:60px">${c}</span></div>`}).join("")}
+    </div>
+  </div>
+</div>
+
+<div class="w" style="left:250px;top:330px;width:400px;height:200px">
+  <div class="t idle">notes.md &mdash; Editor<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="col" style="height:calc(100% - 26px)">
+    <div class="hd"><span class="btn q">notes.md</span><span class="sp"></span>
+      <span class="btn">Save</span><span class="btn">...</span></div>
+    <div class="view" style="padding:10px 12px;font-family:var(--mono);font-size:11px;line-height:1.7">
+      # The memory work<br>
+      <br>
+      767 MB to 8190, in four steps. The window in the<br>
+      kernel's own half is what made it possible; the<br>
+      bitmap spanning the PCI hole is what finished it.
+      <span style="display:inline-block;width:6px;height:13px;background:var(--acc);vertical-align:-2px"></span>
+    </div>
+  </div>
+</div>
+
+<div class="w" style="left:680px;top:320px;width:300px;height:210px">
+  <div class="t idle">Music<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="col" style="height:calc(100% - 26px)">
+    <div class="hd"><span class="btn q">&#9654;</span><span class="btn q">&#9646;&#9646;</span>
+      <span style="flex:1;color:var(--dim);font-size:11px">Basket Case</span>
+      <span class="btn">...</span></div>
+    <div class="view" style="padding:0">
+      <div style="height:4px;background:var(--line-soft);margin:10px 12px 12px">
+        <div style="width:42%;height:4px;background:var(--acc)"></div></div>
+      ${["Basket Case|3:03","Longview|3:59","When I Come Around|2:58","She|2:14"]
+        .map((r,i)=>{const [a,b]=r.split("|");return `<div class="r${i===0?" on":""}" style="padding:4px 12px"><span style="flex:1">${a}</span><span style="color:var(--dim)">${b}</span></div>`}).join("")}
+    </div>
+  </div>
+</div>
+`;
+
+const APPS = {
+"Preferences &mdash; a list with places, and no header buttons at all":`
+<div class="w" style="position:relative;left:0;top:0;width:520px;height:250px;margin:0 auto">
+  <div class="t">Preferences<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="grid2" style="grid-template-columns:150px 1fr">
+    <div class="side">${["Appearance","Displays","Sound","Power","Network","Keyboard","System"]
+      .map((n,i)=>`<div class="srow${i===0?" on":""}">${n}</div>`).join("")}</div>
+    <div class="col"><div class="hd"><span style="font-weight:500">Appearance</span></div>
+      <div class="view" style="padding:10px 14px">
+        <div style="font-weight:600;font-size:11px;margin-bottom:5px">Look</div>
+        <div style="border:1px solid var(--line-soft);border-radius:8px">
+          <div style="display:flex;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line-soft)">
+            <span style="flex:1">Theme<br><span style="color:var(--dim);font-size:10.5px">The colours every window uses</span></span>
+            <span class="btn">Endeavour &#9662;</span></div>
+          <div style="display:flex;align-items:center;padding:7px 10px">
+            <span style="flex:1">Wallpaper</span><span class="btn">Nebula &#9662;</span></div>
+        </div>
+      </div></div>
+  </div>
+</div>`,
+
+"Scheduler &mdash; the same shape, a list of things that will happen":`
+<div class="w" style="position:relative;width:520px;height:230px;margin:0 auto">
+  <div class="t">Scheduler<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="grid2" style="grid-template-columns:130px 1fr">
+    <div class="side">${["Every day","Every week","At boot","Once"]
+      .map((n,i)=>`<div class="srow${i===0?" on":""}">${n}</div>`).join("")}</div>
+    <div class="col"><div class="hd"><span style="font-weight:500">Every day</span>
+      <span class="sp"></span><span class="btn">New</span><span class="btn">...</span></div>
+      <div class="view">
+        <div class="hdr"><span style="flex:1">What</span><span style="width:70px">When</span><span style="width:60px">Last</span></div>
+        ${["Empty the Trash|03:00|ok","Back up /home|04:30|ok","Check the disk|05:00|&mdash;"]
+          .map((r,i)=>{const [a,b,c]=r.split("|");return `<div class="r${i===0?" on":""}"><span style="flex:1">${a}</span><span style="width:70px">${b}</span><span style="width:60px;color:var(--dim)">${c}</span></div>`}).join("")}
+      </div></div>
+  </div>
+</div>`,
+
+"Paint &mdash; a canvas: the tools are a strip, not a bar":`
+<div class="w" style="position:relative;width:520px;height:250px;margin:0 auto">
+  <div class="t">Paint<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div style="display:grid;grid-template-columns:44px 1fr;height:calc(100% - 26px)">
+    <div class="side" style="padding:6px 5px;display:flex;flex-direction:column;gap:4px">
+      ${["&#9998;","&#9633;","&#9711;","&#9608;","&#10005;"].map((g,i)=>
+        `<div style="height:30px;border-radius:6px;display:grid;place-items:center;font-size:13px;
+             ${i===0?"background:var(--stamp);color:var(--tab-text)":"color:var(--dim)"}">${g}</div>`).join("")}
+      <div style="flex:1"></div>
+      <div style="height:22px;border-radius:5px;background:var(--acc)"></div>
+      <div style="height:22px;border-radius:5px;background:var(--bad)"></div>
+    </div>
+    <div class="view" style="position:relative;background:#fff">
+      <svg viewBox="0 0 400 200" style="width:100%;height:100%">
+        <path d="M40 150 C 110 40, 180 190, 250 90 S 350 60, 380 120" fill="none"
+              stroke="#3584e4" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="120" cy="70" r="26" fill="none" stroke="#e01b24" stroke-width="4"/>
+        <rect x="270" y="130" width="70" height="46" fill="none" stroke="#2ec27e" stroke-width="4"/>
+      </svg>
+    </div>
+  </div>
+</div>`,
+
+"Photo &mdash; the same canvas shape with no tools at all":`
+<div class="w" style="position:relative;width:440px;height:250px;margin:0 auto">
+  <div class="t">magicword.jpg &mdash; Photo<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="col" style="height:calc(100% - 26px)">
+    <div class="hd"><span class="btn q">&lsaquo;</span><span class="btn q">&rsaquo;</span>
+      <span style="flex:1;color:var(--dim);font-size:11px">3 of 48 &middot; 2048 &times; 1365</span>
+      <span class="btn">...</span></div>
+    <div style="flex:1;background:#241f31;display:grid;place-items:center">
+      <div style="width:70%;height:78%;border-radius:4px;
+           background:linear-gradient(135deg,#f5a45d,#e0556b 45%,#5b4b9a)"></div>
+    </div>
+  </div>
+</div>`,
+
+"Terminal &mdash; a page of text, and the chrome gets out of the way":`
+<div class="w" style="position:relative;width:440px;height:220px;margin:0 auto">
+  <div class="t">Terminal<div class="sp"></div><i class="b"></i><i class="b"></i></div>
+  <div class="col" style="height:calc(100% - 26px)">
+    <div class="hd"><span style="flex:1;color:var(--dim);font-size:11px">/home</span>
+      <span class="btn">...</span></div>
+    <div style="flex:1;background:var(--console);color:var(--console-text);
+         font-family:var(--mono);font-size:11px;padding:9px 11px;line-height:1.65">
+      kosmos&gt; neofetch<br>
+      <span style="color:#a7c7ee">Memory</span>&nbsp;&nbsp;&nbsp;&nbsp;91 of 8190 MB used<br>
+      <span style="color:#a7c7ee">Network</span>&nbsp;&nbsp;&nbsp;Intel 8086:15b8 at 10.0.2.15<br>
+      <span style="color:#a7c7ee">Display</span>&nbsp;&nbsp;&nbsp;3440 x 1440, 32-bit<br>
+      kosmos&gt; <span style="display:inline-block;width:7px;height:12px;background:#f6f5f4;vertical-align:-2px"></span>
+    </div>
+  </div>
+</div>`,
+};
+
+document.getElementById("apps").innerHTML =
+  Object.entries(APPS).map(([t,h])=>`<h3>${t}</h3>${h}`).join("");
+</script>
+</body>
+</html>

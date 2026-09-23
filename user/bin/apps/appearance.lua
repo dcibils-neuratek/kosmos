@@ -57,7 +57,23 @@ local SETTINGS = "/home/.appearance"
 local W       = 560
 local PAD     = M.gap
 local GAP     = M.gap
-local CARD_W  = (W - 2 * PAD - 3 * GAP) // 4
+--
+-- **A card each, however many looks there are.**
+--
+-- This divided the row by four, because there were four and
+-- `docs/looks.html` drew four. Endeavour is the fifth (`roadmap.md` 5zk)
+-- and Diego asked for it by name, so the number is his; what must not
+-- happen is the row being divided by a constant that stopped being true,
+-- which draws four cards over five looks and hides the last one.
+--
+-- The window's width is fixed (5x) and the cards share it, so a fifth look
+-- makes each narrower rather than making the window wider. A miniature
+-- desktop is legible at this size and there is room for one or two more;
+-- past that this wants to be a list, which is a decision for whoever asks
+-- for a seventh.
+--
+local LOOKS_N = #LOOKS.order
+local CARD_W  = (W - 2 * PAD - (LOOKS_N - 1) * GAP) // LOOKS_N
 local MINI_H  = 58
 local CARD_H  = 6 + MINI_H + 4 + M.row + 2
 local WALL_ROWS = 6

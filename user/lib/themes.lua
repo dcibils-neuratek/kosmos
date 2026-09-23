@@ -28,12 +28,12 @@
 local themes = {}
 
 -- The order they are offered in, the default first.
-themes.order = { "plex", "plexnight", "classic", "studio" }
+themes.order = { "plex", "plexnight", "classic", "studio", "endeavour" }
 
 -- What each is called where a person reads it.
 themes.titles = {
   plex = "Plex", plexnight = "Plex Night", classic = "Classic",
-  studio = "Studio",
+  studio = "Studio", endeavour = "Endeavour",
 }
 
 --------------------------------------------------------------------------
@@ -244,6 +244,88 @@ bad        = #ff6b5e
 ring       = #f0a060
 stamp      = #2a2c31
 
+font.title   = ibmplexsanscondensed 14
+font.ui      = ibmplexsans 16
+font.heading = ibmplexsans-semibold 15
+font.text    = ibmplexsans 16
+font.mono    = ibmplexmono 16
+]]
+
+themes.endeavour = [[
+# Endeavour: a white view on a very light ground, and one blue.
+#
+# Diego, 23 September 2026, with two screenshots of a GNOME desktop beside
+# him: "can we make a new theme called endeavor and has the same colors and
+# asthetics as the screenshots i uploaded from linux". Named as he named
+# it, spelled the way this project spells everything else.
+#
+# **What it takes from them is the palette and the flatness, and nothing
+# else** (`roadmap.md` 5zk, 5zi). A quieter surface is a shading decision
+# and `beos.md` has always said those are ours to make fresh; replicants,
+# the Deskbar and the right button reaching the application are how this
+# desktop *works*, and a screenshot is not asking about them.
+#
+# The difference from every look before it is where the light is. Plex,
+# Classic and Studio are dimensional - a raised surface is lighter than its
+# window and a sunken one darker, which is how a 1995 desktop said "this is
+# a control". Here the view is the *lightest* thing and the window around it
+# a shade down, which is how a 2015 one says "this is the content". So
+# `raised` and `sunken` are close together and the separation is carried by
+# `line_soft` instead: a hairline rather than a bevel.
+#
+# **The tab is the thing this look forces a decision about**, and it is the
+# one place the screenshots could not simply be copied.
+#
+# One token has carried the focused title bar, the Deskbar and a scrollbar's
+# thumb since 0.10.112, because Diego asked for one accent rather than two
+# that drift. The screenshots' title bar is nearly white, and three things
+# go wrong if this one is: a nearly-white Deskbar is hard to find, a nearly
+# white thumb on a white track is invisible, and `tab_text` has to read on
+# the *unfocused* tab as well, which is a light grey.
+#
+# So the tab is the accent at low saturation - a pale blue that is plainly
+# visible on the blue desktop, plainly visible as a thumb on a white track,
+# and dark enough for near-black words. It is the same idea the screenshots
+# have, one colour saying what has your attention, in the one token this
+# system already has. Splitting that token is a decision of its own and not
+# one a new look should take on its way past (`roadmap.md` 5zk).
+
+name       = endeavour
+desktop    = #2e5cb8
+window     = #f6f5f4
+raised     = #ffffff
+sunken     = #ffffff
+
+# A hairline, not a bevel: `line` is what a list's frame and a pane's edge
+# are drawn with, and `line_soft` the rules between rows.
+line       = #cdc7c2
+line_soft  = #e3e0dd
+
+# Both near the surface, so nothing looks moulded. They cannot be equal to
+# it - `theme.chrome` shades from them - but they are within a step.
+edge_light = #ffffff
+edge_dark  = #d8d4d0
+
+text       = #241f31
+text_dim   = #77767b
+text_on    = #ffffff
+
+tab        = #a7c7ee
+tab_idle   = #ddd9d5
+tab_text   = #1b3557
+desktop_text = #ffffff
+
+console      = #241f31
+console_text = #f6f5f4
+
+accent     = #3584e4
+good       = #2ec27e
+bad        = #e01b24
+ring       = #3584e4
+stamp      = #99c1f1
+
+# The same faces as the other four, at the same sizes: a look is colour
+# here, and the fixed layout (`roadmap.md` 5x) holds because of it.
 font.title   = ibmplexsanscondensed 14
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15

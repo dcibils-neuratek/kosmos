@@ -95,7 +95,23 @@ local function luminance(c)
          + 0.0722 * (c & 0xff)
 end
 
-check(#themes.order == 4, "there are " .. #themes.order .. " looks, not four")
+--
+-- **Five, and the number is a decision rather than a count.**
+--
+-- This asked for four, and it was right to: Diego on 22 September 2026,
+-- "Too many config options make the system vulnerable to changes and
+-- complicated", and "Let's just make 3 or 4 good design options in colors
+-- and fonts and stick to those". A check on the number is how that decision
+-- stays true when somebody adds a look without thinking about it.
+--
+-- Endeavour is the fifth and he asked for it by name on 23 September, with
+-- two screenshots of a GNOME desktop: "can we make a new theme called
+-- endeavor and has the same colors and asthetics as the screenshots i
+-- uploaded from linux". So the number moves because he moved it, which is
+-- the only reason it may move - and it is still a number, so the next one
+-- is a conversation rather than a commit.
+--
+check(#themes.order == 5, "there are " .. #themes.order .. " looks, not five")
 
 for _, name in ipairs(themes.order) do
   local p = theme.read(themes[name], "dark")

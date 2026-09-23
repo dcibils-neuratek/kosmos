@@ -1484,6 +1484,49 @@ processors, and still what follows USB:
    away, so nothing said so. `png.c` reads colour type 3 with `tRNS`, and
    `wm` names the wallpaper it restored or why it could not.
 
+5zj. **WANTED on 23 September - the whole desktop in the new language.**
+   Diego, on seeing Tracker rebuilt: "the new design tracker is amazing! how
+   would the entire kosmos desktop look with that design language and style?
+   can you mockup the desktop, at least 5 of the most used apps like
+   processes, editor, preferences, scheduler, paint. photo viewer, music
+   player, terminal".
+
+   A mockup of the desktop and the applications together, in one page, so
+   the language can be judged as a *system* rather than a window at a time -
+   which is the thing a screenshot of one application cannot show and the
+   reason this is worth drawing before any of it is built.
+
+   What it has to settle is not colour, which 5zk does, but **shape**: what
+   a window with a list in it looks like, what one with a canvas looks like,
+   what one with a single field looks like, and where each puts the two or
+   three controls it needs. Tracker and Preferences each answered that for
+   themselves; a page with eight windows on it is where they have to agree.
+
+5zk. **DONE on 23 September - a look called Endeavour.** Diego: "can we
+   make a new theme called endeavor and has the same colors and asthetics as
+   the screenshots i uploaded from linux".
+
+   A fifth look beside Plex, Plex Night, Classic and Studio (`roadmap.md`
+   5y), taking the palette from the GNOME screenshots he sent: a white view
+   on a very light ground, a hairline rather than a border, one blue accent
+   carrying both the selection and the focus, near-black text with a grey
+   second level, and a title bar that is part of the window rather than a
+   coloured tab above it.
+
+   **A look is a palette and it is allowed to be** - `theme.tokens` is
+   twenty-odd names and `themes.lua` is where the four live, so this is a
+   table rather than a project. What it is *not* allowed to do is change
+   behaviour: a flatter surface is a shading decision and `beos.md` has
+   always said those are ours to make fresh, while replicants, the Deskbar
+   and the right button reaching the application are how the desktop works
+   (5zi).
+
+   **The one thing to watch is the tab.** Since 0.10.112 one token carries
+   the focused title bar, the Deskbar and a scrollbar's thumb, so a look
+   whose title bar is nearly white makes all three nearly white - and a
+   Deskbar that cannot be told from the desktop is a Deskbar nobody can
+   find. Whether that token splits is the decision this look forces.
+
 5zg. **WANTED on 23 September - Tracker, simpler.** Diego, with a screenshot
    of GNOME's Files beside it: "lets redesign the tracker. right now is too
    complicated. i want to simplify it like the one in the image."
@@ -1504,7 +1547,10 @@ processors, and still what follows USB:
    which of them earn their place in the *default* view and which can be one
    press away.
 
-   **Mockup drawn on 23 September: `docs/tracker2.html`**, waiting on Diego.
+   **DONE on 23 September**, mockup agreed and built. Diego, seeing it run:
+   "the new design tracker is amazing!" The columns stay, on his call.
+
+   **Mockup: `docs/tracker2.html`.**
    Two views - icons and list - and the second half of the page is what was
    *not* removed, because that is the part worth agreeing before any code.
 

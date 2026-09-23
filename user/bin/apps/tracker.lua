@@ -56,16 +56,18 @@ local W, H = 780, 520
 -- have to agree about them and the version where they did not is what put
 -- the status line through the middle of the places tree.
 --
-local TOOLBAR_Y = 6                -- under the menu bar
-local TOOLBAR_H = 24
-local PATH_Y    = TOOLBAR_Y + TOOLBAR_H + 8
-local CONTENT_Y = PATH_Y + gfx.font.h + 8
-local FOOT_H    = 26               -- the status line at the bottom
+-- **One band, where there were three** (`roadmap.md` 5zg). A menu bar, a
+-- row of buttons and a trail of every path segment each took a strip across
+-- the top; the header is the one strip that replaced them, and the files
+-- start immediately under it.
+local TOOLBAR_Y = 7
+local TOOLBAR_H = 26
+local CONTENT_Y = TOOLBAR_Y + TOOLBAR_H + 8
+local FOOT_H    = 26               -- the status line, when there is one
 
--- The menu bar's height, which everything below it is offset by. A menu bar
--- is an ordinary widget in this window rather than a band the desktop
--- reserves, so the offset is this program's business - see `ui.menubar`.
-local BAR_H = gfx.font.h + 8
+-- Nothing is offset by a menu bar any more. Kept as a name rather than
+-- deleted at thirty call sites, and zero because there is no bar.
+local BAR_H = 0
 
 --
 -- `wm tracker:/bin icons` - a path, then the words that change how it opens.
@@ -238,6 +240,23 @@ local entries  = {}
 -- drag a rectangle over what you want.
 --
 local rename_field, rename_of   -- the box a new name is typed in
+
+--
+-- The last segment of a path, which is what a header says you are in.
+--
+-- `files.lua` has `parent` and `label` and no name-of-a-path, because
+-- nothing had wanted one: an entry already carries its own name, and a path
+-- was only ever shown whole. A header that shows one segment wants this.
+--
+local function last_part(path)
+  return (tostring(path):match("([^/]+)/?$")) or "/"
+end
+
+-- The button that says where you are and opens the path as a menu, the one
+-- that turns the header into a search field, and the menu of path segments
+-- it opens. Declared here because `visit` retitles the first, the header
+-- defines them, and the menu is written next to the other menus.
+local place_button, search, search_on, trail_menu, more_menu, view_menu
 local place_pending             -- what a place dropped on Places will be,
                                 -- while the same box asks for its name
 
@@ -412,9 +431,13 @@ local reversed = false
 -- The trail is the kit's now (`ui.trail`), shared with the Open and Save
 -- window; its rules are `ui.md` 16.8d.
 --
-local here = ui.trail{ x = 12, y = PATH_Y + BAR_H, w = W - 24, text = where,
-                       follow = { "left", "right", "top" },
-                       on_visit = function(path) visit(path) end }
+--
+-- **The trail is a menu now, not a band.** `ui.trail` is still what the
+-- Open and Save window uses and its rules are still `ui.md` 16.8d; what
+-- changed here is that a row of segments across the whole width was most of
+-- a line spent on something looked at once a minute. `trail_menu` builds
+-- the same segments as menu items and `place_button` opens them.
+--
 
 -- The left of the status line carries what just happened; the right carries
 -- how many things there are, which is the one number always worth a place
@@ -443,9 +466,23 @@ rename_field = ui.field{ x = 12, y = H - FOOT_H - 30, w = 300, text = "",
 -- window widens the gap between the buttons and the box instead of leaving
 -- it stranded in the middle.
 --
-local search = ui.field{ x = W - 232, y = TOOLBAR_Y + BAR_H, w = 220,
-                         h = TOOLBAR_H, text = "", hint = "Search",
-                         follow = { "right", "top" } }
+--
+-- **The search box is a press away rather than always on screen.**
+--
+-- It was a field in the toolbar, which is where every file manager puts
+-- one - and a field that is always there is a field that is always taking
+-- room from the thing being searched. The magnifier swaps it for the place
+-- button, which is the one control it can take the room from without
+-- costing anything: you are either looking at where you are or typing what
+-- you want.
+--
+-- **The queries are untouched.** `kind:note` is Tracker's own idea and the
+-- thing it has that a file manager usually does not; simplifying a window
+-- is not a reason to lose a feature (`roadmap.md` 5zg).
+--
+search = ui.field{ x = 80, y = TOOLBAR_Y, w = 200,
+                   h = TOOLBAR_H, text = "", hint = "Search",
+                   hidden = true, follow = { "left", "top" } }
 
 --------------------------------------------------------------------------
 -- The columns.
@@ -1525,7 +1562,12 @@ function show(path)
   -- list nobody could account for.
   where, entries, found, asked = path, listed, nil, nil
   selected = (#listed > 0) and 1 or 0
-  here.text = path
+
+  -- The header says where you are, which is the innermost segment and not
+  -- the whole path: the whole path is what pressing it opens.
+  if place_button then
+    place_button.text = (path == "/") and "/" or last_part(path)
+  end
 
   recount()
   status.text = ""
@@ -1592,17 +1634,18 @@ local function chrome(widget)
   if not backdrop then win:add(widget) end
 end
 
-chrome(here)
 
 local function button(x, w, text, fn)
-  chrome(ui.button{ x = x, y = TOOLBAR_Y + BAR_H, w = w, h = TOOLBAR_H,
-                    text = text, on_click = fn })
+  local b = ui.button{ x = x, y = TOOLBAR_Y, w = w, h = TOOLBAR_H,
+                       text = text, on_click = fn }
+  chrome(b)
+  return b
 end
 
 --
 -- Back and Forward first, where every browser and every file manager has
 -- put them since 1995. Arrows rather than words because two words is a
--- third of the toolbar for something that is understood at a glance.
+-- third of the header for something that is understood at a glance.
 --
 button(12, 28, "<", go_back)
 button(44, 28, ">", go_forward)
@@ -1611,8 +1654,97 @@ function go_up()
   if where ~= "/" then visit(files.parent(where)) end
 end
 
-button(80,  44, "Up",   go_up)
-button(128, 56, "Home", function() visit("/home") end)
+--
+-- **Where you are, as one button.** It opens the whole path as a menu, so
+-- Up and Home are in it - the innermost segment is what it says and every
+-- one above is a row. Up was a button of its own and Home another, and both
+-- are one press from here rather than nought, which is the trade the whole
+-- header is: three bands of chrome for one.
+--
+place_button = button(80, 200, "Home", function()
+  -- On the screen: `open_menu` opens a window of its own and the window
+  -- manager places windows on the screen. `ui.menubar` adds the origin the
+  -- same way.
+  if win.open_menu then
+    win:open_menu(win.origin_x + 80, win.origin_y + TOOLBAR_Y + TOOLBAR_H,
+                  trail_menu())
+  end
+end)
+
+--
+-- The right of the header: what makes something, what changes how it is
+-- shown, what searches, and everything else.
+--
+-- Placed from the right edge and pinned to it, so widening the window
+-- widens the gap in the middle rather than stranding these.
+--
+local function right_button(from_right, w, text, fn)
+  local b = ui.button{ x = W - from_right, y = TOOLBAR_Y, w = w,
+                       h = TOOLBAR_H, text = text, on_click = fn,
+                       follow = { "right", "top" } }
+  chrome(b)
+  return b
+end
+
+--
+-- **Words rather than glyphs**, and that is a decision rather than a
+-- shortfall. `docs/tracker2.html` draws these as icons, which is what the
+-- screenshot beside it has; `ui.button` takes text, and a magnifier or a
+-- folder-with-a-plus would be either a character the face may not have or a
+-- new kind of button in the kit. Four short words are legible today and
+-- read the same at every scale, and an icon button is a piece of work with
+-- its own name (`roadmap.md` 5zg).
+--
+right_button(46, 34, "...", function()
+  if win.open_menu then
+    win:open_menu(win.origin_x + W - 46,
+                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, more_menu())
+  end
+end)
+
+--
+-- **View opens its own menu rather than toggling.** The drawing has an icon
+-- for the layout and a chevron beside it for the rest, which is two
+-- controls for one idea; one button that opens the six rows - as icons, as
+-- list, and the sort and sizes under them - is the same thing with less
+-- chrome, and it keeps every mark in one place.
+--
+right_button(102, 50, "View", function()
+  -- `view_menu` is the function the menu bar used to hand `ui.menu_items`,
+  -- which resolves a menu's `items` when it is one. Called directly here,
+  -- because what `open_menu` wants is the items and not the menu.
+  if win.open_menu then
+    win:open_menu(win.origin_x + W - 102,
+                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, view_menu())
+  end
+end)
+
+right_button(156, 48, "New", function() new_folder() end)
+
+--
+-- The magnifier, which swaps the place button for the field and back.
+--
+-- **Focus follows it**, because a search box that appears and does not take
+-- the keyboard is a box you have to click after asking for it - which is
+-- the kind of half-done control that makes a window feel slow without
+-- anything being slow.
+--
+local function toggle_search()
+  search_on = not search_on
+  search.hidden = not search_on
+  place_button.hidden = search_on
+
+  if search_on then
+    win:focus(search)
+  else
+    search.text = ""
+    show(where)
+  end
+
+  win:paint()
+end
+
+right_button(212, 50, "Find", toggle_search)
 
 --
 -- Named, because the menu and the toolbar do the same things and the same
@@ -1726,8 +1858,14 @@ local function empty_trash()
                      #names, (#names == 1) and "" or "s")
 end
 
-button(192, 96, "New folder", new_folder)
-button(296, 62, "Delete", delete_selected)
+--
+-- New folder and Delete were buttons here, beside the place. New folder is
+-- the `+` in the header - it is the one action that *makes* something and
+-- worth a press of its own - and Delete is in the `...` menu with the rest
+-- of File, where it already was and where the right button has always had
+-- it. A button that removes things is not one to leave under a hand that is
+-- aiming at a path.
+--
 
 --------------------------------------------------------------------------
 -- Copying, which is the thing a file manager is for and this one could not
@@ -2107,7 +2245,7 @@ end
 -- and a menu that offers a choice which changes nothing is worse than one
 -- that does not offer it.
 --
-local function view_menu()
+function view_menu()
   local items = {
     { text = "as icons", mark = (mode == "icons"),
       on_choose = function() mode, scroll = "icons", 1 end },
@@ -2139,40 +2277,85 @@ end
 -- where it sits in the view tree does not decide where it is drawn.
 --------------------------------------------------------------------------
 
-win:add(ui.menubar{
-  x = 0, y = 0, w = W,
-  follow = { "left", "right", "top" },
-  menus = {
-    { title = "File",
-      items = {
-        { text = "Open",       on_choose = do_open },
-        { text = "Edit",       on_choose = do_edit },
-        { text = "New folder", on_choose = function() new_folder() end },
-        { separator = true },
-        { text = "Rename",     on_choose = function() do_rename() end },
-        { separator = true },
-        { text = "Cut",        on_choose = do_cut },
-        { text = "Copy",       on_choose = do_copy },
-        { text = "Paste",      on_choose = do_paste },
-        { separator = true },
-        { text = "Select all", on_choose = select_all },
-        { text = "Select none", on_choose = select_none },
-        { separator = true },
-        { text = "Delete",     on_choose = function() delete_selected() end },
-        { text = "Empty Trash", on_choose = function() empty_trash() end },
-      } },
-    { title = "Go",
-      items = {
-        { text = "Back",    on_choose = go_back },
-        { text = "Forward", on_choose = go_forward },
-        { separator = true },
-        { text = "Up",      on_choose = go_up },
-        { text = "Home",    on_choose = function() visit("/home") end },
-        { text = "Refresh", on_choose = function() refresh_places() show(where) end },
-      } },
-    { title = "View", items = view_menu },
-  },
-})
+--
+-- **One header instead of a menu bar, a toolbar and a trail.**
+--
+-- Diego, 23 September 2026, with GNOME's Files beside it: "right now is too
+-- complicated. i want to simplify it like the one in the image."
+-- `docs/tracker2.html` is what was drawn and `roadmap.md` 5zg the
+-- agreement.
+--
+-- **Nothing was deleted.** Three menus of twenty items became one `...`
+-- menu of the same twenty, in the same order, with the same marks - and
+-- every one of them was already on the right button too. What changed is
+-- how much of the window is spent saying so: a menu bar, a row of buttons
+-- and a trail of every path segment were three bands of chrome above the
+-- files, and they are one band now.
+--
+-- The trail is the part worth arguing about and it is the part that gains
+-- most. It was a row of clickable segments across the whole width, which on
+-- `Drives > Kingston DataTraveler > KOSMOS HOME > photos` is most of a line
+-- for something looked at once a minute. It is a button saying where you
+-- are, and pressing it opens the same segments as a menu.
+--
+local more_items = {
+  { text = "Open",        on_choose = do_open },
+  { text = "Edit",        on_choose = do_edit },
+  { text = "Rename",      on_choose = function() do_rename() end },
+  { separator = true },
+  { text = "Cut",         on_choose = do_cut },
+  { text = "Copy",        on_choose = do_copy },
+  { text = "Paste",       on_choose = do_paste },
+  { separator = true },
+  { text = "Select all",  on_choose = select_all },
+  { text = "Select none", on_choose = select_none },
+  { separator = true },
+  { text = "Delete",      on_choose = function() delete_selected() end },
+  { text = "Empty Trash", on_choose = function() empty_trash() end },
+  { separator = true },
+  { text = "Refresh",     on_choose = function() refresh_places() show(where) end },
+}
+
+--
+-- The `...` menu: everything File and Go held, in the order they held it.
+-- View is a button of its own beside it, because its rows carry marks and
+-- are asked for far more often than Empty Trash.
+--
+function more_menu()
+  local out = {}
+
+  for _, it in ipairs(more_items) do out[#out + 1] = it end
+
+  return out
+end
+
+--
+-- Where you are, as a menu: every segment of the path, innermost last, each
+-- one a place to go back to. The same list the trail drew across the window.
+--
+function trail_menu()
+  local out, at = {}, where
+
+  while true do
+    -- A copy per item: `at` is reassigned every turn of the loop, so a
+    -- closure over it would send every segment to the last one.
+    local step = at
+
+    table.insert(out, 1, { text = (step == "/") and "/" or last_part(step),
+                           mark = (step == where),
+                           on_choose = function() visit(step) end })
+
+    if at == "/" then break end
+
+    local up = files.parent(at)
+
+    if up == at then break end
+
+    at = up
+  end
+
+  return out
+end
 
 chrome(places)
 chrome(split)
