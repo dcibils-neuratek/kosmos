@@ -263,6 +263,100 @@ static bool test_rodata_is_not_writable(void)
         && fault_was_not_permitted(&f);
 }
 
+#if defined(__x86_64__)
+/*
+ * The window that lifts the memory ceiling names the same bytes as the
+ * identity map does.
+ *
+ * `mmu.h`'s `PHYS_WINDOW_BASE` maps all of physical memory a second time, in
+ * the kernel's own half of the address space, so that RAM the identity map
+ * cannot describe - anything past `USER_VA_BASE` - is still reachable. It is
+ * step one of `roadmap.md` 5zd-d, and **nothing uses it yet**: while the
+ * board still caps RAM at what the identity map holds, every page has both
+ * names and the two must agree.
+ *
+ * That is precisely why the check is worth having *now* rather than after
+ * the conversions. Once code starts reaching pages only through the window,
+ * a window that was mapped wrong - the wrong base, a partial last block, the
+ * page tables built at the wrong level - stops being a mismatch and becomes
+ * a fault in whatever ran next. Here it is one comparison.
+ *
+ * Written through the identity map and read through the window, and then the
+ * other way round, because a window that was accidentally mapped *over* the
+ * identity map rather than beside it would pass a test that only went one
+ * way.
+ */
+static bool test_phys_window_is_the_same_memory(void)
+{
+    volatile uint64_t *low = pmm_alloc_page();
+    volatile uint64_t *high;
+    bool ok;
+
+    if (low == NULL) {
+        return false;
+    }
+
+    /* The page came from the identity map, so its address is its physical
+     * address - which is the one assumption this whole window rests on, and
+     * the one the conversions in step two will remove. */
+    high = phys_to_virt((uintptr_t)low);
+
+    ok = high != low && (const void *)virt_to_phys((void *)high) == low;
+
+    low[0]   = 0x0123456789abcdefULL;
+    low[511] = 0xfedcba9876543210ULL;
+
+    ok = ok && high[0] == 0x0123456789abcdefULL
+            && high[511] == 0xfedcba9876543210ULL;
+
+    high[0] = 0xa5a5a5a5a5a5a5a5ULL;
+
+    ok = ok && low[0] == 0xa5a5a5a5a5a5a5a5ULL;
+
+    pmm_free_page((void *)low);
+    return ok;
+}
+
+/*
+ * And it reaches the last byte of RAM, not merely the first megabyte.
+ *
+ * The window is laid in 2 MB blocks rounded *up*, so a machine whose memory
+ * does not end on a block boundary still has its last page addressable. A
+ * round-down would leave up to 2 MB that one name reaches and the other does
+ * not, and the page allocator would hand those pages out perfectly happily.
+ *
+ * **The round-up is not what this proves here, and saying so is the point.**
+ * The control was run - the rounding changed to down - and this still
+ * passed, because QEMU's usable range on this board already ends on a block
+ * boundary, so the two roundings compute the same number. What it does prove
+ * is that the window spans the whole range rather than its first block,
+ * which is a different and still worth having: a window built with the wrong
+ * count is the failure that shows up only once a driver's buffer lands high
+ * in memory.
+ *
+ * It will bite on a machine whose memory does not end block-aligned, which
+ * is what a real PC's e820 map usually gives. Until one is in the gate, the
+ * rounding is held by reading it rather than by running it.
+ */
+static bool test_phys_window_reaches_the_top_of_ram(void)
+{
+    struct memrange ram;
+    volatile uint64_t *last;
+
+    hal_ram_range(&ram);
+
+    if (ram.size < PAGE_SIZE) {
+        return false;
+    }
+
+    last = phys_to_virt(ram.base + ram.size - PAGE_SIZE);
+
+    last[0] = 0xdeadbeefcafef00dULL;
+
+    return last[0] == 0xdeadbeefcafef00dULL;
+}
+#endif
+
 static bool test_memory_still_works_through_translation(void)
 {
     /* Trivial on its face, and the thing that fails when MAIR, the shared
@@ -8334,6 +8428,12 @@ static const struct test tests[] = {
     { "mmu: kernel text is not writable",      test_kernel_text_is_not_writable },
     { "mmu: rodata is not writable",           test_rodata_is_not_writable },
     { "mmu: memory works through translation", test_memory_still_works_through_translation },
+#if defined(__x86_64__)
+    { "mmu: the physical window is the same memory",
+      test_phys_window_is_the_same_memory },
+    { "mmu: the physical window reaches the top of RAM",
+      test_phys_window_reaches_the_top_of_ram },
+#endif
     { "libc: memcpy and memcmp",               test_memcpy_and_memcmp },
     { "libc: memset fills exactly its range",  test_memset_fills_exactly },
     { "libc: memmove handles overlap",         test_memmove_handles_overlap },

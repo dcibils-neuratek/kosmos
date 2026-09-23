@@ -1752,11 +1752,21 @@ processors, and still what follows USB:
 
      Three steps, each one testable on its own:
 
-     1. **The window.** `PHYS_WINDOW_BASE` in the upper half, all of RAM
-        mapped there with large pages, and `phys_to_virt` / `virt_to_phys`.
-        The cap stays, so the window is a second name for memory that is
-        already reachable - which is exactly what makes it checkable: the
-        same page read both ways is the same bytes.
+     1. **DONE on 23 September - the window.** `PHYS_WINDOW_BASE` at
+        `0xFFFF800000000000`, PML4 slot 256, all of RAM mapped there in 2 MB
+        blocks, never executable, with `phys_to_virt` / `virt_to_phys` beside
+        it in `mmu.h`. `as_create` copies every PML4 entry, so the slot is in
+        every address space without anything being added to say so.
+
+        The cap stays, so the window is a second name for memory the identity
+        map already reaches - which is what makes it checkable before
+        anything depends on it. `tests/tests.c` writes through one name and
+        reads through the other, both directions, and checks the window spans
+        the whole range rather than its first block. **Control watched**: the
+        window shifted by one block fails the first by name. The second's
+        round-up does *not* bite under QEMU, because the range there already
+        ends block-aligned - that is written into the test rather than left
+        to read as proven.
      2. **The conversions.** Every place that treats a physical address as
         a pointer goes through `phys_to_virt`: `pmm`, the page-table walks,
         `memobj`, the framebuffer, the contiguous regions a driver gets.

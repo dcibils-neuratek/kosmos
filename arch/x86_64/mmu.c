@@ -647,6 +647,39 @@ void mmu_init(void)
     }
 
     /*
+     * **And the same memory again, in the upper half.**
+     *
+     * `mmu.h`'s `PHYS_WINDOW_BASE` is the long version. In short: the
+     * identity map above shares a PML4 slot with the region processes are
+     * given, so it cannot describe more RAM than `USER_VA_BASE` - which is
+     * the whole of why a machine with eight gigabytes runs on 767 megabytes
+     * of them. The window has a slot to itself and no such ceiling.
+     *
+     * Rounded up rather than down, and from zero rather than from the first
+     * byte of RAM: a window whose arithmetic is `PHYS_WINDOW_BASE + pa` has
+     * to hold for every `pa`, and a partial block at the end would be a page
+     * that is addressable through one name and not the other - which is
+     * exactly the kind of difference that shows up six months later as a
+     * fault nobody can place.
+     *
+     * Never executable. Nothing runs out of this window; it exists so the
+     * kernel can *reach* a page, and marking it NX means a wild jump into
+     * data faults here rather than executing it.
+     *
+     * **Nothing uses it yet, and that is deliberate** (`roadmap.md` 5zd-d
+     * step 1). While the cap is still in place this is a second name for
+     * memory the identity map already reaches, which is what makes it
+     * checkable before anything depends on it: `tests/tests.c` writes
+     * through one name and reads through the other.
+     */
+    {
+        uintptr_t blocks = (ram_end + BLOCK_2M - 1) / BLOCK_2M;
+
+        map_blocks_2m(kernel_pml4, PHYS_WINDOW_BASE, 0, blocks,
+                      MAP_RW | PTE_NX);
+    }
+
+    /*
      * Now narrow the two regions that should not be writable. Done as a
      * second pass over an already complete map, so there is one place that
      * decides what is mapped and a separate one that decides what may be

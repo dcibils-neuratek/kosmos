@@ -242,6 +242,57 @@ _Static_assert((MAP_USER_FB     & (PTE_PAT | PTE_PCD | PTE_PWT))
 #define DEVICE_WINDOW_END   USER_VA_BASE
 
 /*
+ * **A second name for every byte of physical memory, in the kernel's own
+ * half of the address space.**
+ *
+ * The identity map below `DEVICE_WINDOW_BASE` is what the kernel reads and
+ * writes RAM through, and it is also what puts a ceiling on how much RAM
+ * there can be: it shares a 512 GB PML4 slot with the region processes are
+ * given, so it has to stop before `USER_VA_BASE` at 1 GB. That is why a
+ * machine with eight gigabytes runs on 767 megabytes of them, and why
+ * `hal_ram_capped` exists to say so out loud.
+ *
+ * This is the way out, and it is *not* the high-half split this header
+ * promises elsewhere. The kernel's code and data stay exactly where they
+ * are, identity mapped and linked low; what moves is only the kernel's
+ * *view of memory as data*. x86-64's small code model constrains how a
+ * symbol is addressed - a sign-extended 32-bit displacement - and says
+ * nothing about what a pointer may hold, so a window at the bottom of the
+ * upper half costs no relink, no new linker script and no change to
+ * `start.S`.
+ *
+ * PML4 slot 256 is the first address of the upper half, and the upper half
+ * is the kernel's by the same division that gives a process slot 0's upper
+ * region: `as_create` copies every PML4 entry, so this slot is in every
+ * address space without anything being added to say so.
+ *
+ * **What has to change to use it is every place that treats a physical
+ * address as a pointer**, and `docs/roadmap.md` 5zd-d has the three steps.
+ * Until those are done this window is a second name for memory the identity
+ * map already reaches - which is exactly what makes it checkable before it
+ * is relied on: the same page read both ways is the same bytes.
+ */
+#define PHYS_WINDOW_BASE    0xFFFF800000000000UL
+
+/*
+ * Physical to kernel-virtual, and back.
+ *
+ * Valid for any address the machine has RAM at, whether or not the identity
+ * map reaches it. `virt_to_phys` is only for pointers that came from
+ * `phys_to_virt`; a kernel symbol's address is identity mapped and is its
+ * own physical address.
+ */
+static inline void *phys_to_virt(uintptr_t pa)
+{
+    return (void *)(PHYS_WINDOW_BASE + pa);
+}
+
+static inline uintptr_t virt_to_phys(const void *va)
+{
+    return (uintptr_t)va - PHYS_WINDOW_BASE;
+}
+
+/*
  * Maps `bytes` of device registers and answers where they landed.
  *
  * Uncached and never executable, a page at a time because a BAR is
