@@ -41,6 +41,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mmu.h"
 #include "mmio.h"
 #include "hal.h"
 #include "keys.h"
@@ -295,7 +296,7 @@ static void offer(struct vinput *v, unsigned i)
 {
     uint16_t at = v->queue.avail.idx % QUEUE_SIZE;
 
-    v->queue.desc[i].addr  = (uint64_t)(uintptr_t)&v->events[i];
+    v->queue.desc[i].addr  = (uint64_t)virt_to_phys(&v->events[i]);
     v->queue.desc[i].len   = sizeof(v->events[i]);
     v->queue.desc[i].flags = VRING_DESC_F_WRITE;   /* the device writes it */
     v->queue.desc[i].next  = 0;

@@ -845,7 +845,7 @@ static long sys_map(struct process *p, size_t pages)
          * memory without either of them doing anything wrong. */
         memset(page, 0, PAGE_SIZE);
 
-        if (as_map(p->space, base + i * PAGE_SIZE, (uintptr_t)page,
+        if (as_map(p->space, base + i * PAGE_SIZE, virt_to_phys(page),
                    1, MAP_USER_RW) != AS_OK) {
             pmm_free_page(page);
             break;
@@ -863,7 +863,7 @@ static long sys_map(struct process *p, size_t pages)
 
             if (phys != 0) {
                 (void)as_unmap(p->space, va, 1);
-                pmm_free_page((void *)phys);
+                pmm_free_page(phys_to_virt(phys));
             }
         }
 
@@ -917,7 +917,7 @@ static long sys_unmap(struct process *p, uintptr_t va, size_t pages)
         }
 
         (void)as_unmap(p->space, at, 1);
-        pmm_free_page((void *)phys);
+        pmm_free_page(phys_to_virt(phys));
         freed++;
     }
 
@@ -1658,7 +1658,7 @@ void syscall_dispatch(struct syscall_frame *sc)
 
         for (i = 0; i < m->pages; i++) {
             if (as_map(p->space, base + i * PAGE_SIZE,
-                       (uintptr_t)memobj_page(m, i),
+                       virt_to_phys(memobj_page(m, i)),
                        1, MAP_USER_RW) != AS_OK) {
                 break;
             }

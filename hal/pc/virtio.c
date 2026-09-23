@@ -327,9 +327,9 @@ bool virtio_queue_attach(const struct virtio_device *dev, unsigned index,
      * storage is already the physical address the device needs - the same
      * sentence the other transport writes, and the same thing that ends the
      * day the kernel moves out of every address space. */
-    write64(dev->base + COMMON_QUEUE_DESC,   (uint64_t)(uintptr_t)desc);
-    write64(dev->base + COMMON_QUEUE_DRIVER, (uint64_t)(uintptr_t)avail);
-    write64(dev->base + COMMON_QUEUE_DEVICE, (uint64_t)(uintptr_t)used);
+    write64(dev->base + COMMON_QUEUE_DESC,   (uint64_t)virt_to_phys(desc));
+    write64(dev->base + COMMON_QUEUE_DRIVER, (uint64_t)virt_to_phys(avail));
+    write64(dev->base + COMMON_QUEUE_DEVICE, (uint64_t)virt_to_phys(used));
 
     virtio_publish();
     write16(dev->base + COMMON_QUEUE_ENABLE, 1);

@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mmu.h"
 #include "hal.h"
 #include "syscall.h"
 #include "qemu-virt.h"
@@ -136,15 +137,15 @@ bool virtio_queue_attach(const struct virtio_device *dev, unsigned index,
      * equality ends the day the kernel moves to TTBR1, and this is the one
      * place that would have to learn about it.
      */
-    reg_write(dev, REG_QUEUE_DESC_LOW,   (uint32_t)(uintptr_t)desc);
+    reg_write(dev, REG_QUEUE_DESC_LOW,   (uint32_t)virt_to_phys(desc));
     reg_write(dev, REG_QUEUE_DESC_HIGH,
-              (uint32_t)((uint64_t)(uintptr_t)desc >> 32));
-    reg_write(dev, REG_QUEUE_AVAIL_LOW,  (uint32_t)(uintptr_t)avail);
+              (uint32_t)((uint64_t)virt_to_phys(desc) >> 32));
+    reg_write(dev, REG_QUEUE_AVAIL_LOW,  (uint32_t)virt_to_phys(avail));
     reg_write(dev, REG_QUEUE_AVAIL_HIGH,
-              (uint32_t)((uint64_t)(uintptr_t)avail >> 32));
-    reg_write(dev, REG_QUEUE_USED_LOW,   (uint32_t)(uintptr_t)used);
+              (uint32_t)((uint64_t)virt_to_phys(avail) >> 32));
+    reg_write(dev, REG_QUEUE_USED_LOW,   (uint32_t)virt_to_phys(used));
     reg_write(dev, REG_QUEUE_USED_HIGH,
-              (uint32_t)((uint64_t)(uintptr_t)used >> 32));
+              (uint32_t)((uint64_t)virt_to_phys(used) >> 32));
 
     virtio_publish();
     reg_write(dev, REG_QUEUE_READY, 1);

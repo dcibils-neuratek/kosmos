@@ -45,6 +45,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "mmu.h"
 #include "hal.h"
 #include "spinlock.h"
 #include "virtio.h"
@@ -160,7 +161,7 @@ static void offer(unsigned i)
 {
     uint16_t at = net.rx.avail.idx % QUEUE_SIZE;
 
-    net.rx.desc[i].addr  = (uint64_t)(uintptr_t)&net.rx_buf[i];
+    net.rx.desc[i].addr  = (uint64_t)virt_to_phys(&net.rx_buf[i]);
     net.rx.desc[i].len   = sizeof(net.rx_buf[i]);
     net.rx.desc[i].flags = VRING_DESC_F_WRITE;
     net.rx.desc[i].next  = 0;
@@ -287,7 +288,7 @@ static bool hal_net_send_locked(const void *frame, unsigned bytes)
     memset(&p->hdr, 0, sizeof(p->hdr));
     memcpy(p->frame, frame, bytes);
 
-    net.tx.desc[i].addr  = (uint64_t)(uintptr_t)p;
+    net.tx.desc[i].addr  = (uint64_t)virt_to_phys(p);
     net.tx.desc[i].len   = sizeof(p->hdr) + bytes;
     net.tx.desc[i].flags = 0;       /* the device reads it */
     net.tx.desc[i].next  = 0;

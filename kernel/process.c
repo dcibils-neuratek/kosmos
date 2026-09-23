@@ -349,7 +349,7 @@ static bool give_thread_a_block(struct process *p, struct thread *t,
     memset(page, 0, PAGE_SIZE);
     *(unsigned long *)page = (unsigned long)USER_TBLOCK(index);
 
-    if (as_map(p->space, (uintptr_t)USER_TBLOCK(index), (uintptr_t)page, 1,
+    if (as_map(p->space, (uintptr_t)USER_TBLOCK(index), virt_to_phys(page), 1,
                MAP_USER_RW) != AS_OK) {
         kputs("block: as_map refused index ");
         kputu(index);
@@ -421,7 +421,8 @@ int process_thread_create(struct process *p, unsigned long entry,
     /* The stack at the top of its slot, and the rest of the slot left
      * unmapped: an overflow faults rather than reaching a neighbour. */
     if (as_map(p->space, top - USER_STACK_PAGES * PAGE_SIZE,
-               (uintptr_t)pages, USER_STACK_PAGES, MAP_USER_RW) != AS_OK) {
+               virt_to_phys(pages), USER_STACK_PAGES,
+               MAP_USER_RW) != AS_OK) {
         free_pages(pages, USER_STACK_PAGES);
         return -2;
     }
@@ -751,14 +752,22 @@ struct process *process_create(const char *name, const void *image,
      * A page is executable by exactly one exception level and writable by at
      * most one purpose.
      */
-    if (as_map(p->space, USER_TEXT_VA, (uintptr_t)image,
+    /*
+     * `image` is the userland blob the build linked in - a symbol in
+     * `.rodata`, identity mapped, so its address already is its physical
+     * address - while everything else mapped here came from the page
+     * allocator and lives in the window. `virt_to_phys` answers for both,
+     * which is why `mmu.h` makes it total over kernel pointers rather than
+     * leaving each caller to know which kind it is holding.
+     */
+    if (as_map(p->space, USER_TEXT_VA, virt_to_phys(image),
                rx_pages, MAP_USER_RX) != AS_OK) {
         goto fail;
     }
 
     if (p->image_page_count > 0
         && as_map(p->space, USER_TEXT_VA + rx_bytes,
-                  (uintptr_t)p->image_pages,
+                  virt_to_phys(p->image_pages),
                   p->image_page_count, MAP_USER_RW) != AS_OK) {
         goto fail;
     }
@@ -767,13 +776,13 @@ struct process *process_create(const char *name, const void *image,
     p->next_share   = USER_SHARE_VA;
     p->mapped_pages = 0;
 
-    if (as_map(p->space, USER_HEAP_VA, (uintptr_t)p->heap_pages,
+    if (as_map(p->space, USER_HEAP_VA, virt_to_phys(p->heap_pages),
                USER_HEAP_PAGES, MAP_USER_RW) != AS_OK) {
         goto fail;
     }
 
     if (as_map(p->space, USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE,
-               (uintptr_t)p->stack_pages, USER_STACK_PAGES,
+               virt_to_phys(p->stack_pages), USER_STACK_PAGES,
                MAP_USER_RW) != AS_OK) {
         goto fail;
     }
@@ -1540,7 +1549,7 @@ static void release_memory(struct process *p)
         uintptr_t phys = as_page_phys(p->space, va);
 
         if (phys != 0) {
-            pmm_free_page((void *)phys);
+            pmm_free_page(phys_to_virt(phys));
         }
     }
 

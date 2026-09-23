@@ -288,20 +288,30 @@ static bool test_rodata_is_not_writable(void)
  */
 static bool test_phys_window_is_the_same_memory(void)
 {
-    volatile uint64_t *low = pmm_alloc_page();
-    volatile uint64_t *high;
+    volatile uint64_t *high = pmm_alloc_page();
+    volatile uint64_t *low;
     bool ok;
 
-    if (low == NULL) {
+    if (high == NULL) {
         return false;
     }
 
-    /* The page came from the identity map, so its address is its physical
-     * address - which is the one assumption this whole window rests on, and
-     * the one the conversions in step two will remove. */
-    high = phys_to_virt((uintptr_t)low);
+    /*
+     * **The allocator hands out window pointers now**, which is step two of
+     * 5zd-d and the thing that makes every `virt_to_phys` in the kernel
+     * mean something. So the page's *physical* address is one conversion
+     * away, and while the board still caps RAM at what the identity map
+     * holds, that number is also a valid pointer - which is what lets this
+     * compare the two names at all.
+     *
+     * When step three lifts the cap this second name stops existing for a
+     * page above the line, and this test will have to allocate deliberately
+     * low to keep working. That is a good sign rather than a problem: it is
+     * the moment the identity map stops being the truth.
+     */
+    low = (volatile uint64_t *)virt_to_phys((void *)high);
 
-    ok = high != low && (const void *)virt_to_phys((void *)high) == low;
+    ok = high != low && phys_to_virt((uintptr_t)low) == (void *)high;
 
     low[0]   = 0x0123456789abcdefULL;
     low[511] = 0xfedcba9876543210ULL;
@@ -313,7 +323,7 @@ static bool test_phys_window_is_the_same_memory(void)
 
     ok = ok && low[0] == 0xa5a5a5a5a5a5a5a5ULL;
 
-    pmm_free_page((void *)low);
+    pmm_free_page((void *)high);
     return ok;
 }
 
@@ -1926,12 +1936,15 @@ static bool test_a_space_maps_and_unmaps(void)
         return false;
     }
 
-    ok = as_map(as, USER_VA_BASE, (uintptr_t)page, 1, MAP_RW) == AS_OK;
+    ok = as_map(as, USER_VA_BASE, virt_to_phys(page), 1, MAP_RW) == AS_OK;
 
     entry = as_page_entry(as, USER_VA_BASE);
     ok = ok && entry != NULL
             && test_pte_is_mapped(*entry)
-            && test_pte_frame(*entry) == (uintptr_t)page;
+            /* The frame in the entry is physical; `page` is the window
+             * pointer the allocator gave. Comparing them raw was the same
+             * number until the kernel got a window (5zd-d step two). */
+            && test_pte_frame(*entry) == virt_to_phys(page);
 
     /* And the kernel's own map is untouched: this is a different space. */
     ok = ok && mmu_page_entry(USER_VA_BASE) == NULL;
@@ -1984,15 +1997,15 @@ static bool test_a_space_refuses_the_kernel_region(void)
     }
 
     ok = /* One page below where user space starts. */
-         as_map(as, USER_VA_BASE - PAGE_SIZE, (uintptr_t)page, 1, MAP_RW)
+         as_map(as, USER_VA_BASE - PAGE_SIZE, virt_to_phys(page), 1, MAP_RW)
              == AS_ERR_RANGE
          /* And a low address, well inside the half the kernel keeps. */
-      && as_map(as, PAGE_SIZE, (uintptr_t)page, 1, MAP_RW) == AS_ERR_RANGE
+      && as_map(as, PAGE_SIZE, virt_to_phys(page), 1, MAP_RW) == AS_ERR_RANGE
          /* Not page-aligned, which is a different refusal. */
-      && as_map(as, USER_VA_BASE + 1, (uintptr_t)page, 1, MAP_RW)
+      && as_map(as, USER_VA_BASE + 1, virt_to_phys(page), 1, MAP_RW)
              == AS_ERR_ALIGN
          /* And one past the end. */
-      && as_map(as, USER_VA_END, (uintptr_t)page, 1, MAP_RW) == AS_ERR_RANGE;
+      && as_map(as, USER_VA_END, virt_to_phys(page), 1, MAP_RW) == AS_ERR_RANGE;
 
     pmm_free_page(page);
     as_destroy(as);
@@ -2066,7 +2079,7 @@ static bool test_switching_to_a_space_makes_its_mapping_real(void)
     physical = page;
     *physical = 0;
 
-    if (as_map(as, USER_VA_BASE, (uintptr_t)page, 1, MAP_RW) != AS_OK) {
+    if (as_map(as, USER_VA_BASE, virt_to_phys(page), 1, MAP_RW) != AS_OK) {
         pmm_free_page(page);
         as_destroy(as);
         return false;
@@ -5107,7 +5120,9 @@ static bool test_a_region_can_be_one_physical_run(void)
 
     /* Every page where the hardware would expect to find it. */
     for (i = 0; i < RING_PAGES; i++) {
-        if ((uintptr_t)memobj_page(run, i) != base + i * PAGE_SIZE) {
+        /* `memobj_phys` answers what a device is programmed with, so the
+         * comparison is between two physical addresses. */
+        if (virt_to_phys(memobj_page(run, i)) != base + i * PAGE_SIZE) {
             consecutive = false;
         }
     }
@@ -5653,10 +5668,25 @@ static bool test_the_framebuffer_is_page_aligned_and_in_ram(void)
     }
 
     hal_ram_range(&ram);
-    base  = (uintptr_t)fb.pixels;
+
+    /*
+     * **`fb.phys` and not `fb.pixels`**, because "inside RAM" is a claim
+     * about physical memory: `ram_range` is what the board says it has, and
+     * a pointer the kernel reads through is not that number once the kernel
+     * reaches memory through a window. Checking the pointer instead was the
+     * same test while the two were equal, and became a comparison of an
+     * upper-half address against a half-gigabyte range the moment they were
+     * not.
+     *
+     * It is also the better check: `phys` is what a process's mapping of
+     * the screen is built from, so this now holds the number that actually
+     * leaves the kernel.
+     */
+    base  = fb.phys;
     bytes = (size_t)fb.pitch * fb.height;
 
     return (base % PAGE_SIZE) == 0
+        && ((uintptr_t)fb.pixels % PAGE_SIZE) == 0
         && base >= ram.base
         && base + bytes <= ram.base + ram.size;
 }
@@ -7546,8 +7576,8 @@ static bool test_a_changed_mapping_reaches_every_processor(void)
     *first = TLB_FIRST;
     *second = TLB_SECOND;
 
-    if (as_map(tlb_space, one, (uintptr_t)first, 1, MAP_RW) != AS_OK
-        || as_map(tlb_space, two, (uintptr_t)first, 1, MAP_RW) != AS_OK) {
+    if (as_map(tlb_space, one, virt_to_phys(first), 1, MAP_RW) != AS_OK
+        || as_map(tlb_space, two, virt_to_phys(first), 1, MAP_RW) != AS_OK) {
         return false;
     }
 
@@ -7568,13 +7598,13 @@ static bool test_a_changed_mapping_reaches_every_processor(void)
 
     /* Unmapped here and given the other page, while core 1 is elsewhere. */
     ok = ok && as_unmap(tlb_space, one, 1) == AS_OK
-            && as_map(tlb_space, one, (uintptr_t)second, 1, MAP_RW) == AS_OK;
+            && as_map(tlb_space, one, virt_to_phys(second), 1, MAP_RW) == AS_OK;
 
     tlb_address = one;
     ok = ok && tlb_reader_sees(TLB_SECOND, 10000UL);
 
     /* And mapped over while core 1 is reading it. */
-    ok = ok && as_map(tlb_space, one, (uintptr_t)first, 1, MAP_RW) == AS_OK;
+    ok = ok && as_map(tlb_space, one, virt_to_phys(first), 1, MAP_RW) == AS_OK;
     ok = ok && tlb_reader_sees(TLB_FIRST, 10000UL);
 
     tlb_stop = true;

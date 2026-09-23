@@ -263,7 +263,7 @@ static uint64_t *split_2m(uint64_t *entry)
      * against each other, and the page walker is coherent with them, so the
      * table is visible by the time the entry describing it is.
      */
-    *entry = (uint64_t)(uintptr_t)table | TABLE_ATTRS;
+    *entry = (uint64_t)virt_to_phys(table) | TABLE_ATTRS;
 
     /*
      * The old 2 MB entry may be cached in the TLB. `invlpg` on one address
@@ -284,7 +284,7 @@ static uint64_t *descend(uint64_t *table, unsigned index)
 
     if ((table[index] & PTE_P) == 0) {
         next = alloc_table();
-        table[index] = (uint64_t)(uintptr_t)next | TABLE_ATTRS;
+        table[index] = (uint64_t)virt_to_phys(next) | TABLE_ATTRS;
         return next;
     }
 
@@ -298,7 +298,7 @@ static uint64_t *descend(uint64_t *table, unsigned index)
         return split_2m(&table[index]);
     }
 
-    return (uint64_t *)(uintptr_t)(table[index] & PTE_ADDR_MASK);
+    return (uint64_t *)phys_to_virt(table[index] & PTE_ADDR_MASK);
 }
 
 /* PML4 down to the PD, which is the walk every mapping call shares. */
@@ -349,18 +349,18 @@ static uint64_t *page_entry(uint64_t *root, uintptr_t va)
     if ((root[PML4_INDEX(va)] & PTE_P) == 0) {
         return NULL;
     }
-    pdpt = (uint64_t *)(uintptr_t)(root[PML4_INDEX(va)] & PTE_ADDR_MASK);
+    pdpt = (uint64_t *)phys_to_virt(root[PML4_INDEX(va)] & PTE_ADDR_MASK);
 
     if ((pdpt[PDPT_INDEX(va)] & PTE_P) == 0
         || (pdpt[PDPT_INDEX(va)] & PTE_PS) != 0) {
         return NULL;
     }
-    pd = (uint64_t *)(uintptr_t)(pdpt[PDPT_INDEX(va)] & PTE_ADDR_MASK);
+    pd = (uint64_t *)phys_to_virt(pdpt[PDPT_INDEX(va)] & PTE_ADDR_MASK);
 
     if ((pd[PD_INDEX(va)] & PTE_P) == 0 || (pd[PD_INDEX(va)] & PTE_PS) != 0) {
         return NULL;    /* a 2 MB page, or nothing at all */
     }
-    pt = (uint64_t *)(uintptr_t)(pd[PD_INDEX(va)] & PTE_ADDR_MASK);
+    pt = (uint64_t *)phys_to_virt(pd[PD_INDEX(va)] & PTE_ADDR_MASK);
 
     return &pt[PT_INDEX(va)];
 }
@@ -469,7 +469,7 @@ static void enable(void)
         __asm__ volatile("movq %0, %%cr0" :: "r"(cr0 | (1UL << 16)));
     }
 
-    __asm__ volatile("movq %0, %%cr3" :: "r"((uint64_t)(uintptr_t)kernel_pml4)
+    __asm__ volatile("movq %0, %%cr3" :: "r"((uint64_t)virt_to_phys(kernel_pml4))
                      : "memory");
 }
 
@@ -568,7 +568,7 @@ void mmu_init(void)
 
     kernel_pml4 = alloc_table();
     kernel_pdpt = alloc_table();
-    kernel_pml4[0] = (uint64_t)(uintptr_t)kernel_pdpt | TABLE_ATTRS;
+    kernel_pml4[0] = (uint64_t)virt_to_phys(kernel_pdpt) | TABLE_ATTRS;
 
     /* The low megabyte, minus page 0. Uncached, never executed. */
     map_pages(kernel_pml4, LOW_BASE, LOW_BASE,
@@ -753,7 +753,7 @@ void mmu_boot_uncached(uintptr_t base, size_t bytes)
     last = base + bytes - 1;
 
     for (at = base & ~(BLOCK_2M - 1); at <= last; at += BLOCK_2M) {
-        uint64_t *table = (uint64_t *)(uintptr_t)(cr3 & PTE_ADDR_MASK);
+        uint64_t *table = (uint64_t *)phys_to_virt(cr3 & PTE_ADDR_MASK);
         uint64_t *entry;
         unsigned level;
 
@@ -766,7 +766,7 @@ void mmu_boot_uncached(uintptr_t base, size_t bytes)
                 return;
             }
 
-            table = (uint64_t *)(uintptr_t)(table[index] & PTE_ADDR_MASK);
+            table = (uint64_t *)phys_to_virt(table[index] & PTE_ADDR_MASK);
         }
 
         entry = &table[(at >> 21) & 511];
@@ -814,7 +814,7 @@ static uint64_t *boot_table_under(uint64_t *entry)
         /* A large page here would be a map this was not written for. */
         return (*entry & PTE_PS) != 0
                ? NULL
-               : (uint64_t *)(uintptr_t)(*entry & PTE_ADDR_MASK);
+               : (uint64_t *)phys_to_virt(*entry & PTE_ADDR_MASK);
     }
 
     if (boot_spare_used == sizeof(boot_spare) / sizeof(boot_spare[0])) {
@@ -822,7 +822,7 @@ static uint64_t *boot_table_under(uint64_t *entry)
     }
 
     table = boot_spare[boot_spare_used++];
-    *entry = (uint64_t)(uintptr_t)table | PTE_P | PTE_RW;
+    *entry = (uint64_t)virt_to_phys(table) | PTE_P | PTE_RW;
 
     return table;
 }
@@ -857,7 +857,7 @@ bool mmu_boot_map_high(uintptr_t base, size_t bytes)
     __asm__ volatile("movq %%cr3, %0" : "=r"(cr3));
 
     for (at = base & ~(BLOCK_2M - 1); at <= last; at += BLOCK_2M) {
-        uint64_t *pml4 = (uint64_t *)(uintptr_t)(cr3 & PTE_ADDR_MASK);
+        uint64_t *pml4 = (uint64_t *)phys_to_virt(cr3 & PTE_ADDR_MASK);
         uint64_t *pdpt = boot_table_under(&pml4[(at >> 39) & 511]);
         uint64_t *pd = (pdpt == NULL)
                      ? NULL
@@ -1189,7 +1189,8 @@ again:
             space(i)->pdpt[e] = kernel_pdpt[e];
         }
 
-        space(i)->pml4[0] = (uint64_t)(uintptr_t)space(i)->pdpt | TABLE_ATTRS;
+        space(i)->pml4[0] = (uint64_t)virt_to_phys(space(i)->pdpt)
+                            | TABLE_ATTRS;
 
         return space(i);
     }
@@ -1322,7 +1323,7 @@ unsigned as_walk(struct addrspace *as, uintptr_t va, uint64_t entries[4])
             return level + 1;
         }
 
-        table = (uint64_t *)(uintptr_t)(entries[level] & PTE_ADDR_MASK);
+        table = (uint64_t *)phys_to_virt(entries[level] & PTE_ADDR_MASK);
     }
 
     return 4;
@@ -1388,7 +1389,7 @@ void as_switch(struct addrspace *as)
      * cheap by *not* flushing. Worth having when there are processes
      * switching often, and the same milestone as ARM's ASIDs.
      */
-    __asm__ volatile("movq %0, %%cr3" :: "r"((uint64_t)(uintptr_t)root)
+    __asm__ volatile("movq %0, %%cr3" :: "r"((uint64_t)virt_to_phys(root))
                                       : "memory");
 
     cpu_interrupts_restore(flags);
@@ -1417,11 +1418,11 @@ void as_destroy(struct addrspace *as)
             continue;
         }
 
-        pd = (uint64_t *)(uintptr_t)(as->pdpt[pdpti] & PTE_ADDR_MASK);
+        pd = (uint64_t *)phys_to_virt(as->pdpt[pdpti] & PTE_ADDR_MASK);
 
         for (pdi = 0; pdi < ENTRIES_PER_TABLE; pdi++) {
             if ((pd[pdi] & PTE_P) != 0 && (pd[pdi] & PTE_PS) == 0) {
-                pmm_free_page((void *)(uintptr_t)(pd[pdi] & PTE_ADDR_MASK));
+                pmm_free_page(phys_to_virt(pd[pdi] & PTE_ADDR_MASK));
             }
         }
 

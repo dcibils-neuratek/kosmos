@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "pmm.h"
+#include "mmu.h"
 #include "pmm_place.h"
 #include "panic.h"
 #include "spinlock.h"
@@ -143,7 +144,7 @@ void *pmm_alloc_page(void)
         set_used(i);
         cursor = w;
         spin_unlock(&pmm_lock, flags);
-        return (void *)(ram_base + i * PAGE_SIZE);
+        return phys_to_virt(ram_base + i * PAGE_SIZE);
     }
 
     spin_unlock(&pmm_lock, flags);
@@ -194,7 +195,7 @@ void *pmm_alloc_contiguous(size_t count)
         }
 
         spin_unlock(&pmm_lock, flags);
-        return (void *)(ram_base + start * PAGE_SIZE);
+        return phys_to_virt(ram_base + start * PAGE_SIZE);
     }
 
     spin_unlock(&pmm_lock, flags);
@@ -204,7 +205,7 @@ void *pmm_alloc_contiguous(size_t count)
 void pmm_free_page(void *page)
 {
     unsigned long flags;
-    uintptr_t addr = (uintptr_t)page;
+    uintptr_t addr = virt_to_phys(page);
     size_t i;
 
     if ((addr & PAGE_MASK) != 0) {

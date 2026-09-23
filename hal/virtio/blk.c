@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "mmu.h"
 #include "hal.h"
 #include "spinlock.h"
 #include "virtio.h"
@@ -202,19 +203,19 @@ static bool request(uint32_t type, uint64_t sector, void *buf, uint32_t bytes)
 
     /* The chain. Three descriptors, and which way the middle one points is
      * the only difference between a read and a write. */
-    blk.queue.desc[0].addr  = (uint64_t)(uintptr_t)&blk.header;
+    blk.queue.desc[0].addr  = (uint64_t)virt_to_phys(&blk.header);
     blk.queue.desc[0].len   = sizeof(blk.header);
     blk.queue.desc[0].flags = VRING_DESC_F_NEXT;
     blk.queue.desc[0].next  = 1;
 
-    blk.queue.desc[1].addr  = (uint64_t)(uintptr_t)buf;
+    blk.queue.desc[1].addr  = (uint64_t)virt_to_phys(buf);
     blk.queue.desc[1].len   = bytes;
     blk.queue.desc[1].flags = VRING_DESC_F_NEXT
                             | ((type == VIRTIO_BLK_T_IN)
                                ? VRING_DESC_F_WRITE : 0u);
     blk.queue.desc[1].next  = 2;
 
-    blk.queue.desc[2].addr  = (uint64_t)(uintptr_t)&blk.status;
+    blk.queue.desc[2].addr  = (uint64_t)virt_to_phys((const void *)&blk.status);
     blk.queue.desc[2].len   = 1;
     blk.queue.desc[2].flags = VRING_DESC_F_WRITE;
     blk.queue.desc[2].next  = 0;

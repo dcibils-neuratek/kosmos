@@ -42,6 +42,7 @@
 #include <string.h>
 
 #include "hal.h"
+#include "mmu.h"
 #include "fwcfg.h"
 #include "page.h"
 #include "pmm.h"
@@ -231,7 +232,11 @@ bool ramfb_init(struct fb *out)
      * and it is the first proof that these eight megabytes are writable. */
     memset(framebuffer, 0, FB_BYTES);
 
-    cfg.addr   = __builtin_bswap64((uint64_t)(uintptr_t)framebuffer);
+    /* The address QEMU's device scans out of, so it is physical: the
+     * hardware reads this memory without a page table, and on a board whose
+     * kernel reaches RAM through a window the pointer and the address are
+     * different numbers. */
+    cfg.addr   = __builtin_bswap64((uint64_t)virt_to_phys(framebuffer));
     cfg.fourcc = __builtin_bswap32(DRM_FORMAT_XRGB8888);
     cfg.flags  = 0;
     cfg.width  = __builtin_bswap32(FB_WIDTH);
@@ -251,7 +256,9 @@ bool ramfb_init(struct fb *out)
 
     /* The guest chose this memory out of its own RAM and the kernel is
      * identity mapped, so the two are the same number here. */
-    out->phys = (uintptr_t)framebuffer;
+    /* `phys` is what a process's mapping is built from, and `pixels` is
+     * what this kernel writes through - the same memory, two names. */
+    out->phys = virt_to_phys(framebuffer);
     out->width  = FB_WIDTH;
     out->height = FB_HEIGHT;
     out->pitch  = FB_PITCH;

@@ -45,6 +45,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "mmu.h"
 #include "mmio.h"
 #include "virtio.h"
 #include "hal.h"
@@ -261,12 +262,12 @@ static bool control(const void *request, unsigned request_len,
     unsigned long spins;
     unsigned at;
 
-    q->desc[0].addr  = (uint64_t)(uintptr_t)request;
+    q->desc[0].addr  = (uint64_t)virt_to_phys(request);
     q->desc[0].len   = request_len;
     q->desc[0].flags = VRING_DESC_F_NEXT;
     q->desc[0].next  = 1;
 
-    q->desc[1].addr  = (uint64_t)(uintptr_t)reply;
+    q->desc[1].addr  = (uint64_t)virt_to_phys(reply);
     q->desc[1].len   = reply_len;
     q->desc[1].flags = VRING_DESC_F_WRITE;
     q->desc[1].next  = 0;
@@ -647,17 +648,17 @@ static bool virtio_snd_write_locked(const void *pcm, unsigned bytes)
 
     head = slot * 3;
 
-    q->desc[head].addr      = (uint64_t)(uintptr_t)&snd.xfer[slot];
+    q->desc[head].addr      = (uint64_t)virt_to_phys(&snd.xfer[slot]);
     q->desc[head].len       = sizeof(struct snd_pcm_xfer);
     q->desc[head].flags     = VRING_DESC_F_NEXT;
     q->desc[head].next      = (uint16_t)(head + 1);
 
-    q->desc[head + 1].addr  = (uint64_t)(uintptr_t)snd.period[slot];
+    q->desc[head + 1].addr  = (uint64_t)virt_to_phys(snd.period[slot]);
     q->desc[head + 1].len   = bytes;
     q->desc[head + 1].flags = VRING_DESC_F_NEXT;
     q->desc[head + 1].next  = (uint16_t)(head + 2);
 
-    q->desc[head + 2].addr  = (uint64_t)(uintptr_t)&snd.xstat[slot];
+    q->desc[head + 2].addr  = (uint64_t)virt_to_phys(&snd.xstat[slot]);
     q->desc[head + 2].len   = sizeof(struct snd_pcm_status);
     q->desc[head + 2].flags = VRING_DESC_F_WRITE;
     q->desc[head + 2].next  = 0;

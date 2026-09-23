@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "memobj.h"
+#include "mmu.h"
 #include "spinlock.h"
 #include "pmm.h"
 #include "page.h"
@@ -438,5 +439,13 @@ uintptr_t memobj_phys(const struct memobj *m)
         return 0;
     }
 
-    return (uintptr_t)memobj_page(m, 0);
+    /*
+     * `virt_to_phys` because this number leaves the address space: it is
+     * programmed into a device's descriptor base, and the hardware does not
+     * consult a page table on the way. On a board whose kernel reaches RAM
+     * through a window rather than an identity map, the pointer the
+     * allocator gave and the address the device needs are different numbers
+     * (`arch/x86_64/mmu.h`, `PHYS_WINDOW_BASE`).
+     */
+    return virt_to_phys(memobj_page(m, 0));
 }

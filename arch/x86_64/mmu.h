@@ -277,10 +277,27 @@ _Static_assert((MAP_USER_FB     & (PTE_PAT | PTE_PCD | PTE_PWT))
 /*
  * Physical to kernel-virtual, and back.
  *
- * Valid for any address the machine has RAM at, whether or not the identity
- * map reaches it. `virt_to_phys` is only for pointers that came from
- * `phys_to_virt`; a kernel symbol's address is identity mapped and is its
- * own physical address.
+ * `phys_to_virt` is valid for any address the machine has RAM at, whether or
+ * not the identity map reaches it.
+ *
+ * **`virt_to_phys` is total over kernel pointers, and that is a decision
+ * rather than a convenience.** The kernel has *two* regions whose physical
+ * address is known: its own image and everything the linker placed, which is
+ * identity mapped and so is already its own physical address; and the
+ * window, where the page allocator's pages live. A `virt_to_phys` that
+ * handled only the second would be a function most callers must not call,
+ * and the caller cannot always tell which kind it has - `fwcfg_dma` hands a
+ * device the address of a *stack local*, and a kernel stack is allocator
+ * pages while a boot stack is a linker symbol.
+ *
+ * Both were found the hard way within an hour of each other: the userland
+ * blob mapped at an address with reserved bits set, and fw_cfg reading a
+ * boot option into nowhere. One comparison makes the whole question go
+ * away, and it is honest rather than defensive - both answers are right for
+ * their own input.
+ *
+ * What it does *not* cover is a user pointer or a device window, and neither
+ * ever had a physical address the kernel could compute.
  */
 static inline void *phys_to_virt(uintptr_t pa)
 {
@@ -289,7 +306,9 @@ static inline void *phys_to_virt(uintptr_t pa)
 
 static inline uintptr_t virt_to_phys(const void *va)
 {
-    return (uintptr_t)va - PHYS_WINDOW_BASE;
+    uintptr_t at = (uintptr_t)va;
+
+    return at >= PHYS_WINDOW_BASE ? at - PHYS_WINDOW_BASE : at;
 }
 
 /*

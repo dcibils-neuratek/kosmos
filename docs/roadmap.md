@@ -1668,6 +1668,12 @@ processors, and still what follows USB:
      the answer, because a test that asked whether the ping came back
      passed at 103 ms twice while all three faults were live.
 
+     **Confirmed on the machine it was written for, 23 September.** Diego,
+     after the 0.10.129 stick: "ethernet did come up on 10.127 in m700!" So
+     the I219 at `00:1f.6` takes an MSI, brings its link up and carries
+     frames on real silicon, not only against QEMU's 82574L - which is the
+     half a gate cannot check.
+
      **What is left**: the first ping of a run is still lost. The stack has
      no queue for a packet whose address is not resolved yet, so the packet
      that triggers the ARP request is the packet that is dropped - which is
@@ -1767,12 +1773,57 @@ processors, and still what follows USB:
         round-up does *not* bite under QEMU, because the range there already
         ends block-aligned - that is written into the test rather than left
         to read as proven.
-     2. **The conversions.** Every place that treats a physical address as
-        a pointer goes through `phys_to_virt`: `pmm`, the page-table walks,
-        `memobj`, the framebuffer, the contiguous regions a driver gets.
-        Still no behaviour change, and a missed one is a page fault rather
-        than a wrong answer, because the low identity map ends where it
-        always did.
+     2. **DONE on 23 September - the conversions.** `pmm_alloc_page` and
+        `pmm_alloc_contiguous` hand out *window* pointers now, and every
+        place that took one and stored it as a physical address says
+        `virt_to_phys`, while every place that took a physical address and
+        dereferenced it says `phys_to_virt`. The page-table walks in
+        `arch/x86_64/mmu.c`, CR3, `memobj_phys`, the framebuffer handed to
+        ramfb, the mappings in `process.c` and `syscall.c`, and the page
+        tables freed in `as_destroy`.
+
+        **AArch64 gets the same two names as the identity**, in
+        `arch/aarch64/mmu.h`, so the shared kernel compiles once and says
+        which of the two it means on both boards. They cost nothing there
+        and the 177-check guest suite is unchanged, which is the evidence
+        that the conversions are conversions and not behaviour.
+
+        **`start.S` maps the window too**, at PML4 slot 256 pointing at the
+        PDPT the identity map already uses. The allocator hands out pages
+        *before* `mmu_init` builds anything - they are what it hands them
+        out for - so a window that only existed after `mmu_init` would be
+        missing during exactly the work that needs it. One store closes it.
+
+        **The kernel has two regions with a known physical address, and
+        `virt_to_phys` is total over both.** A page from the allocator is a
+        window pointer; anything the linker placed - the userland blob, a
+        static buffer, the boot stack - is identity mapped and already is its
+        own physical address. The first version handled only the window, and
+        it was wrong twice within an hour: the blob mapped a process's text
+        at an address with reserved bits set, so every EL0 check failed in a
+        process that never ran; and `fwcfg_dma` hands a device the address of
+        a *stack local*, where a kernel stack is allocator pages and a boot
+        stack is a linker symbol - so the boot option was read into nowhere
+        and six x86 suites failed at once.
+
+        A caller often cannot tell which kind it is holding, and both answers
+        are right for their own input, so one comparison inside the function
+        removes the whole class. That is the decision, and `mmu.h` records
+        it.
+
+        **Then an audit of everything that hands a pointer to hardware**,
+        because that is where the mistake lands: virtio's descriptor rings on
+        both boards, NVMe's queues and PRPs, HDA's CORB, RIRB and buffer
+        descriptor list, virtio-input's event buffers, virtio-net's and
+        virtio-blk's descriptors, virtio-snd's periods, fw_cfg and ramfb.
+        Twenty-odd sites, all of them `virt_to_phys` now. On AArch64 every
+        one compiles to nothing.
+
+        Four checks changed rather than being made to pass: they compared a
+        pointer against a physical address and were the same number until
+        now. The framebuffer's is better for it - it holds `fb.phys`, which
+        is the number that actually leaves the kernel, instead of the
+        pointer the kernel reads through.
      3. **The ceiling.** `cap_to_what_can_be_mapped` stops clipping,
         `mmu_init` stops panicking, and `pmm` is given the whole range. Only
         now can a page live above 768 MB, and only now does step 2 have to

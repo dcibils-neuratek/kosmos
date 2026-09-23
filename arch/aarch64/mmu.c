@@ -706,7 +706,7 @@ void as_destroy(struct addrspace *as)
 
         for (l2i = 0; l2i < ENTRIES_PER_TABLE; l2i++) {
             if ((l2[l2i] & 3) == DESC_TABLE) {
-                pmm_free_page((void *)(uintptr_t)(l2[l2i] & DESC_ADDR_MASK));
+                pmm_free_page(phys_to_virt(l2[l2i] & DESC_ADDR_MASK));
             }
         }
 

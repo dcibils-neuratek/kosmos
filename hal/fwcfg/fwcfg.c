@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "mmu.h"
 #include "fwcfg.h"
 #include "spinlock.h"
 
@@ -66,12 +67,17 @@ static bool fwcfg_dma(uint32_t control, void *buffer, uint32_t length)
 
     access.control = __builtin_bswap32(control);
     access.length  = __builtin_bswap32(length);
-    access.address = __builtin_bswap64((uint64_t)(uintptr_t)buffer);
+    /* The address a device reads, so physical: `buffer` may be a linker
+     * symbol or an allocator page and `virt_to_phys` answers for both. */
+    access.address = __builtin_bswap64((uint64_t)virt_to_phys(buffer));
 
     /* mmio_write32 carries a `dmb oshst` before its store, which is what
      * orders these three normal stores ahead of the register write that
      * tells the device to go and read them. */
-    fwcfg_reg_write((uint64_t)(uintptr_t)&access);
+    /* And the descriptor itself, which is a stack local - and a kernel
+     * stack is allocator pages, so this is a window pointer on a board that
+     * has a window. */
+    fwcfg_reg_write((uint64_t)virt_to_phys(&access));
 
     for (spins = 0; spins < 1000000u; spins++) {
         uint32_t now = __builtin_bswap32(access.control);

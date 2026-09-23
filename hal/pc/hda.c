@@ -534,9 +534,9 @@ static bool rings_start(void)
      * already the physical address the controller needs - and the upper
      * halves are zero because everything this kernel maps is below 4 GB.
      * `arch/x86_64/mmu.h` is where that stops being true. */
-    mmio_write32(hda.base + CORBLBASE, (uint32_t)(uintptr_t)corb);
+    mmio_write32(hda.base + CORBLBASE, (uint32_t)virt_to_phys(corb));
     mmio_write32(hda.base + CORBUBASE, 0);
-    mmio_write32(hda.base + RIRBLBASE, (uint32_t)(uintptr_t)rirb);
+    mmio_write32(hda.base + RIRBLBASE, (uint32_t)virt_to_phys(rirb));
     mmio_write32(hda.base + RIRBUBASE, 0);
 
     /*
@@ -1193,7 +1193,7 @@ static void stream_setup(void)
     }
 
     for (i = 0; i < RING_PERIODS; i++) {
-        bdl[i].address = (uint64_t)(uintptr_t)&ring[i * HAL_SND_PERIOD_BYTES];
+        bdl[i].address = (uint64_t)virt_to_phys(&ring[i * HAL_SND_PERIOD_BYTES]);
         bdl[i].length = HAL_SND_PERIOD_BYTES;
         bdl[i].flags = 1u;      /* interrupt on completion, on every one */
     }
@@ -1203,7 +1203,7 @@ static void stream_setup(void)
     mmio_write32(hda.sd + SD_CBL, RING_BYTES);
     write16(hda.sd + SD_LVI, (uint16_t)(RING_PERIODS - 1u));
     write16(hda.sd + SD_FMT, FORMAT_44100_S16_STEREO);
-    mmio_write32(hda.sd + SD_BDPL, (uint32_t)(uintptr_t)bdl);
+    mmio_write32(hda.sd + SD_BDPL, (uint32_t)virt_to_phys(bdl));
     mmio_write32(hda.sd + SD_BDPU, 0);
     mmio_write8(hda.sd + SD_STS, SD_STS_CLEAR);
 

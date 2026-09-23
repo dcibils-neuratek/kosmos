@@ -218,7 +218,7 @@ static uintptr_t doorbell(unsigned queue, bool completion)
  */
 static void set_prp1(struct sqe *command, const void *at)
 {
-    uint64_t pa = (uint64_t)(uintptr_t)at;
+    uint64_t pa = (uint64_t)virt_to_phys(at);
 
     command->dw[6] = (uint32_t)pa;
     command->dw[7] = (uint32_t)(pa >> 32);
@@ -463,8 +463,8 @@ bool nvme_init(struct blkdev *out)
 
     mmio_write32(nvme.base + REG_AQA,
                  (QUEUE_SLOTS - 1u) | ((QUEUE_SLOTS - 1u) << 16));
-    write64(REG_ASQ, (uint64_t)(uintptr_t)admin_sq);
-    write64(REG_ACQ, (uint64_t)(uintptr_t)admin_cq);
+    write64(REG_ASQ, (uint64_t)virt_to_phys(admin_sq));
+    write64(REG_ACQ, (uint64_t)virt_to_phys(admin_cq));
 
     mmio_write32(nvme.base + REG_CC,
                  CC_EN | CC_CSS_NVM | CC_MPS_4K | CC_AMS_RR

@@ -264,6 +264,27 @@ _start:
     orl     $0x03, %eax
     movl    %eax, pml4
 
+    /*
+     * And the same four gigabytes again at PML4 slot 256, the first address
+     * of the upper half - `mmu.h`'s `PHYS_WINDOW_BASE`.
+     *
+     * **It has to exist before `mmu_init` runs, which is why it is here and
+     * not there.** The page allocator hands out pages before the real page
+     * tables are built - they are what it hands them out *for* - so a
+     * kernel that only gets its window from `mmu_init` has a window that
+     * does not exist during exactly the work that needs it most. One entry
+     * pointing at the PDPT the identity map already uses costs a single
+     * store and closes the ordering hole completely.
+     *
+     * `mmu_init` then builds the real one over all of RAM rather than the
+     * first four gigabytes, and this becomes a boot-time stand-in that has
+     * already been thrown away by the time anything cares.
+     *
+     * Slot 256 is `(0xFFFF800000000000 >> 39) & 0x1ff`, and the entry is
+     * eight bytes, so the offset is 256 * 8.
+     */
+    movl    %eax, pml4 + 256 * 8
+
     movl    $pdpt, %edi
     movl    $pd, %eax
     orl     $0x03, %eax

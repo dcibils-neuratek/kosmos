@@ -26,6 +26,35 @@
  */
 
 /* Descriptor types. Bits [1:0]. */
+/*
+ * Physical to kernel-virtual, and back - the identity, here.
+ *
+ * **The same two names the x86-64 side has, so that shared kernel code can
+ * say which of the two it means without knowing which board it is on.**
+ * There, a window at the top of the address space gives the kernel a way to
+ * reach RAM the identity map cannot describe (`arch/x86_64/mmu.h`,
+ * `PHYS_WINDOW_BASE`); here the identity map still describes all of it,
+ * because the board this runs on has 512 MB and the region processes get
+ * starts at 2 GB.
+ *
+ * So these compile to nothing and exist for the reader: a `virt_to_phys`
+ * around a pointer on its way into a descriptor is the code saying *this
+ * number is leaving the address space*, which is true on both boards and
+ * enforced on one. When AArch64 meets a machine with more memory than the
+ * identity map holds, this file is where the window goes and nothing above
+ * it changes - which is the whole reason the pair is here rather than
+ * `#ifdef`ed into the callers.
+ */
+static inline void *phys_to_virt(uintptr_t pa)
+{
+    return (void *)pa;
+}
+
+static inline uintptr_t virt_to_phys(const void *va)
+{
+    return (uintptr_t)va;
+}
+
 #define DESC_INVALID    0UL
 #define DESC_BLOCK      1UL     /* levels 1 and 2: a 1 GB or 2 MB block */
 #define DESC_TABLE      3UL     /* levels 0 to 2: points at the next level */
