@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
-#ifndef KOSMOS_SERVERS_STORAGE_DECODE_H
-#define KOSMOS_SERVERS_STORAGE_DECODE_H
+#ifndef KOSMOS_DRIVERS_USB_STORAGE_DECODE_H
+#define KOSMOS_DRIVERS_USB_STORAGE_DECODE_H
 
 /*
  * What a USB stick is sent and what it answers, for the xHCI driver: Bulk-Only

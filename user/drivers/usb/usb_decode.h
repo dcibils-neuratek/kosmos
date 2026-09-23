@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
-#ifndef KOSMOS_SERVERS_USB_DECODE_H
-#define KOSMOS_SERVERS_USB_DECODE_H
+#ifndef KOSMOS_DRIVERS_USB_USB_DECODE_H
+#define KOSMOS_DRIVERS_USB_USB_DECODE_H
 
 /*
  * What a USB configuration descriptor says, for the xHCI driver: whether the
@@ -243,4 +243,4 @@ void usb_decode_mouse_report(const uint8_t *bytes, unsigned length,
 int32_t usb_report_field(const uint8_t *report, unsigned length, unsigned at,
                          unsigned bits, bool is_signed);
 
-#endif /* KOSMOS_SERVERS_USB_DECODE_H */
+#endif /* KOSMOS_DRIVERS_USB_USB_DECODE_H */

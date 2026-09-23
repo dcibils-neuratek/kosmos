@@ -14,7 +14,7 @@
  */
 
 #include "drives_decode.h"
-#include "storage_decode.h"
+#include "drivers/usb/storage_decode.h"
 
 static uint16_t le16(const uint8_t *p)
 {

@@ -57,7 +57,7 @@ Drives app; **6f** exFAT.
   (`MEM_CONTIGUOUS` and `SYS_MEM_PHYS`), and its interrupt as a capability
   (`SYS_IRQ_CLAIM`, `WAIT` - with a deadline since 0.10.52 - and `ACK`).
   The kernel does not know what USB is.
-- **The driver** (`user/servers/xhci.c`) is a C server, spawned by init with
+- **The driver** (`user/drivers/usb/xhci.c`) is a C server, spawned by init with
   device authority and the console's endpoint to report through.
 
 The power button proved those primitives on a device where a failure could
@@ -294,7 +294,7 @@ size. Past the last device of a kind the answer is `SYS_ERR_NO_DEVICE`.
 Kind 2 is `DEV_XHCI`, held equal to the board's `HAL_DEV_XHCI` by a static
 assertion as `DEV_PL061_POWER_KEY` already was.
 
-### The driver: `user/servers/xhci.c`
+### The driver: `user/drivers/usb/xhci.c`
 
 For controller 0, 1, 2 until there are no more:
 
@@ -712,7 +712,7 @@ that was the fault is the ThinkPad's to say.
 
 Once a device has said what it is, **its configuration is asked for** - nine
 bytes for the total, then all of it - and walked by
-`user/servers/usb_decode.c`. That file has no hardware and no system calls in
+`user/drivers/usb/usb_decode.c`. That file has no hardware and no system calls in
 it, so a host test can hand it what QEMU never sends: a length of zero, a
 descriptor past the end, a total longer than what arrived. The walk steps by
 each descriptor's own length (USB 2.0 9.5) and refuses one that does not add

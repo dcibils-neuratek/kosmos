@@ -33,8 +33,8 @@
 #include "drivesproto.h"
 #include "drives_decode.h"
 #include "fat_decode.h"
-#include "storage_decode.h"
-#include "say.h"
+#include "drivers/usb/storage_decode.h"
+#include "lib/say.h"
 
 /* The two halves of the volume list must agree about how long a name is, and
  * they are written down twice because a client has no business including the

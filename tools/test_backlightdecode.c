@@ -14,7 +14,7 @@
 
 #include <stdio.h>
 
-#include "../user/servers/backlight_decode.h"
+#include "../user/drivers/display/backlight_decode.h"
 
 static int checks;
 static int fails;

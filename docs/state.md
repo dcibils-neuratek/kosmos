@@ -41,7 +41,7 @@ asked:
   window was a sixteen-megabyte gap between two addresses that nobody had
   ever written down as a number. Found in Diego's photograph.
 - **0.10.127 - an Intel Ethernet driver** (5zd-f, 18.155). The M700's card
-  is an I219 at `00:1f.6`. `user/servers/e1000.c` at EL0 like every other
+  is an I219 at `00:1f.6`. `user/drivers/net/e1000.c` at EL0 like every other
   driver, decoding in `e1000_decode.c` so the link, the MAC and a frame's
   error bits are checked on this Mac.
 
@@ -2546,7 +2546,7 @@ and the `codec` line in Log View; a Terminal dragged to full size with no
 ### 12 September: USB step one, the controllers up
 
 **Every xHCI controller is found, taken from the firmware, reset, and its
-ports read, by a driver in a process** - `user/servers/xhci.c`, and
+ports read, by a driver in a process** - `user/drivers/usb/xhci.c`, and
 `docs/usb.md`, which Diego asked for as a document written as USB is built
 rather than after. Two controllers and a stick on the second under QEMU; both
 halves of the check broken on purpose and watched fail (`testing.md`
@@ -2555,7 +2555,7 @@ halves of the check broken on purpose and watched fail (`testing.md`
 What changed underneath: `SYS_DEV_FIND` takes an index and reports the PCI
 address; the PC board finds xHCI controllers by class, sizes their BAR and
 enables each once (`hal/pc/devices.c`, `pci_bar_size`); and the power
-button's print helpers are `user/servers/say.h` now, shared.
+button's print helpers are `user/lib/say.h` now, shared.
 
 **"Bring the display up early" was already done**, since 0.10.12. The
 roadmap, `drivers.md` §6 and an entry below said otherwise and are corrected.
@@ -2917,7 +2917,7 @@ physical address - and the other two landed in this session:
 
 Both architectures, both tested with negative controls run and watched fail.
 **And the first driver outside the kernel, which is what tested the one piece
-no suite could.** `user/servers/powerbutton.c` drives QEMU `virt`'s PL061,
+no suite could.** `user/drivers/power/powerbutton.c` drives QEMU `virt`'s PL061,
 where the power key is wired: told where it is by `SYS_DEV_FIND`, maps it,
 checks its PrimeCell ID, claims interrupt 39, and blocks. The display harness
 presses the key twice over QMP. Two presses because the second is the test of

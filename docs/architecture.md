@@ -252,7 +252,7 @@ and *where*; the loop over the pixels happens inside a surface, in C, and
 nothing in Lua ever computes a pixel offset - the pitch is not `width * 4`
 and pretending it is produces diagonal lines. `gfx.md` §19.
 
-### `user/init/init.lua` and `user/servers/` - init and every server
+### `user/init/init.lua`, `user/servers/` and `user/drivers/` - init, every server and every driver
 
 One binary, many roles. The image carries a single userland ELF and the role
 number it is spawned with decides what it becomes.
@@ -263,6 +263,16 @@ processes have no collector at all rather than a promise not to allocate:
 `/dev/audio`, `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/ramfs` are
 each one file in `user/servers/`, speaking a struct declared in
 `user/include/`.
+
+**The drivers are the same kind of thing and live apart from them**, in
+`user/drivers/`, grouped by what the device is: `net/`, `usb/`, `display/`,
+`power/`. Nothing about how they are built or spawned differs - a driver is
+an EL0 process with an endpoint and a role number, exactly as a server is,
+which is the point `drivers.md` §3 makes at length. The split is for the
+person reading the tree, and the line between the two is Diego's:
+**a driver drives hardware.** `/drives` serves a namespace out of FAT that
+something else read off the wire, so it is a server; `e1000` owns a card, so
+it is not.
 
 What is left in `init.lua` is init itself, the shell, the runner that hosts
 one program, `diskfs`, and the namespace - which is a *kit* rather than a

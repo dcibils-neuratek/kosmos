@@ -130,6 +130,7 @@ still compiled into the image rather than read from a disk.
 | programs and applications | inside the kernel image, served from `/bin` | write them to the disk at build time |
 | libraries | inside the image, served from `/lib` | the same |
 | the servers | one C file each in `user/servers/`, chosen by a role number that `user/init/main.c` dispatches before Lua is opened | see below |
+| the drivers | the same, one C file each in `user/drivers/`, under the device's kind - `net/`, `usb/`, `display/`, `power/`. Built and spawned identically to a server; the directory is for whoever is reading | see below |
 | fonts and images | inside the image, ~700 KB of it | write them to the disk; the wallpaper case wants this first |
 | `/home` | a real disk, real files, journalled | done |
 | `/tmp` | the ramfs, at `/ramfs` today | rename |

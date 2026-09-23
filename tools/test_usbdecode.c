@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../user/servers/usb_decode.h"
+#include "../user/drivers/usb/usb_decode.h"
 
 static int checks;
 static int fails;

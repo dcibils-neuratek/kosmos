@@ -1304,7 +1304,7 @@ deadline and the suite reaches that half too (§18.35); the power button stays,
 because it is still the one test in which a device is what ends the wait.
 
 QEMU `virt` wires its power key to a PL061 GPIO controller, and QMP's
-`system_powerdown` pulses it. `user/servers/powerbutton.c` finds the
+`system_powerdown` pulses it. `user/drivers/power/powerbutton.c` finds the
 controller, maps it, claims its interrupt and blocks; the display harness
 waits for `powerbutton: waiting on line 3`, presses, and expects
 `powerbutton: pressed`.
@@ -1637,7 +1637,7 @@ size: (11, 507, 632, 1064) before the drag, (11, 507, 632, 1064) after.
 
 `tools/run_x86.py` boots q35 with two `qemu-xhci` controllers, a
 `usb-storage` device on the second and a `usb-kbd` on the first, and reads
-what `user/servers/xhci.c` says. It passes when the driver reports two
+what `user/drivers/usb/xhci.c` says. It passes when the driver reports two
 controllers at different PCI addresses, exactly one USB 3 device, on the
 second of them, the keyboard's USB 2 port with its speed unknown, and a
 closing line that names both controllers. The first boot of the harness,
@@ -5409,7 +5409,7 @@ did not bite. The second counts, takes exactly one file, and is the row above.
 (`thinkpad.md` 8b), and the offsets of its registers are in no public Intel
 manual - they come from Linux. So the first driver for it only reads: the
 board finds Intel's graphics at 0/2/0, by vendor, class and a 64-bit BAR,
-and says where the backlight block is; `user/servers/backlight.c` maps that
+and says where the backlight block is; `user/drivers/display/backlight.c` maps that
 one page and reports both controllers - on or off, the share of each period
 the output is driven, and the raw control, period and on-time. A controller
 on, with its on-time inside its period, is what confirms the offsets on the
@@ -8175,7 +8175,7 @@ rather than a line here.
 ## 18.155 An Intel Ethernet card, and the interrupt that never arrived
 
 `roadmap.md` 5zd-f. The M700's wired Ethernet is an Intel I219 at
-`00:1f.6`, so `user/servers/e1000.c` is the first network card here that is
+`00:1f.6`, so `user/drivers/net/e1000.c` is the first network card here that is
 not virtio and not on a USB bus. QEMU has no I219; it has the 82540EM,
 which is the same legacy descriptor path, so that is what the gate boots.
 
@@ -8237,6 +8237,43 @@ are the point of the part:
 back to 16 fails the interrupt-number check *and* the time; `apic_mask` put
 back to composing the word fails the time alone; MSI numbering put back to
 20 fails the overlap check *and* the time.
+
+### What this part does **not** catch, and the instrument that does
+
+The `ethernet` part boots QEMU's **82574L** and not the 82540EM it was
+first written against. The 82574L has an MSI capability; the 82540EM does
+not, and falls back to an INTx line whose I/O APIC input this system can
+only guess at. Testing on the 82540EM was therefore testing the guess, and
+on 23 September that guess was changed to q35's measured value - 20 to 23
+instead of 16 to 19 - which is right for q35 and wrong for a PCH. **It
+broke Diego's M700**, and the gate was green the whole time.
+
+The second half of the same afternoon was worse and is the reason for the
+paragraph below. MSI numbering was changed to derive from the I/O APIC's
+count of inputs, and `pci.c` asked for a number one line *before*
+`pc_irq_on_apic()`, which is the call that initialises the controller. So
+the first device probed on any machine was told there were no MSI numbers
+and fell back to a line. On q35 that device is one whose interrupt nothing
+checks. On the M700 it was the xHCI holding the mouse, the keyboard and
+`/home`: three minutes to a desktop, and unusable once there.
+
+**Both controls were run and both passed.** Reintroducing the ordering
+fault leaves every check here green, because the machine QEMU builds does
+not put an MSI-capable device first. That is stated rather than worked
+around: a suite that cannot reproduce a fault should say so, because the
+alternative is a green suite read as evidence.
+
+So the instrument is not a test here, it is a line in the boot log.
+`pci_enable` now prints **`pci: a device with an MSI capability is on a
+legacy line - its driver will poll`** whenever a device that could have had
+an MSI does not, and `core` and `ethernet` both check it never appears.
+That line would have named the fault on the M700's first boot; what the log
+said instead was the interrupt's *number*, which looked entirely ordinary.
+
+The general shape, which is the third time this session it has come up: **a
+fault that makes the system slower rather than wrong has no natural
+symptom.** Everything works. Only a number is off, and only if somebody is
+looking at that number.
 
 ### Why the part checks the time
 

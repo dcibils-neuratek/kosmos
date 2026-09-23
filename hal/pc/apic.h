@@ -69,11 +69,12 @@ void apic_mask(unsigned irq);
 bool apic_handle(void);
 
 /*
- * The first and last numbers `pci.c` may mint for an MSI. Above every input
- * this I/O APIC has, and below the vectors the local APIC keeps for itself.
+ * One MSI number, or zero when there is none to give - because the
+ * controller is not up yet, or because this machine's inputs leave no
+ * vector free. Allocated here because only this file knows how many inputs
+ * the I/O APIC has, and that count is what tells a line from an MSI.
  */
-unsigned apic_msi_first(void);
-unsigned apic_msi_last(void);
+unsigned apic_msi_take(void);
 
 /* The tick, from the local APIC's own timer rather than from the 8253. */
 bool apic_timer_init(unsigned hz);

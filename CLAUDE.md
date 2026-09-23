@@ -683,7 +683,7 @@ bool          hal_device_find(unsigned kind, unsigned index, struct hal_device *
 ```
 
 The last three arrived together, with the first driver outside the kernel -
-`user/servers/powerbutton.c` - and each answers a question only the board
+`user/drivers/power/powerbutton.c` - and each answers a question only the board
 can: which interrupt numbers the machine spends on itself and a process may
 therefore never claim, how this controller masks one line, and where a device
 of a given kind is. The third is what keeps *no hardware addresses outside
@@ -914,7 +914,10 @@ lua/            upstream/ + kosmos/
 runtime/        minimal libc, bindings, serializer, and upstream/
 user/           everything at EL0:
   init/           init, the roles, and the namespace kit
-  servers/        the servers, in C, one file each
+  servers/        the servers, in C, one file each: someone you ask, who
+                  owns a namespace and no hardware
+  drivers/        the drivers, in C, by device type - net/, usb/,
+                  display/, power/. A driver drives hardware
   include/        the protocol headers both sides compile against
   lib/            libraries: Lua, and C kits reached the same way
   bin/            programs and applications, in Lua. Carried in the image
@@ -949,6 +952,7 @@ fails loudly rather than quietly.
 nothing but a `.gitkeep` each, and both this file and `README.md` documented
 them as the real layout for months - `servers/ Lua: namespace, fs, console,
 appserver`, which by the end was wrong in three ways at once: those servers
-are C, they live in `user/servers/`, and the namespace is a kit rather than a
+are C, they live in `user/servers/` - or in `user/drivers/` where they drive
+hardware - and the namespace is a kit rather than a
 server. Removed in the review before 0.8.
 

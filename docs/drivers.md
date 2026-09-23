@@ -161,7 +161,7 @@ device memory and uncached, buffers are ordinary memory and cached, and a
 driver that confuses them is refused rather than left to find out. With the
 interrupt beside them a driver in a process has everything a driver in the
 kernel had: it can reach the device, give it memory, and be told when it has
-something to say. **And the first one exists.** `user/servers/powerbutton.c` (0.10.43) drives QEMU
+something to say. **And the first one exists.** `user/drivers/power/powerbutton.c` (0.10.43) drives QEMU
 `virt`'s PL061, where the power key is wired, and uses all of it: the board
 says where the controller is (`SYS_DEV_FIND` - init is userland too, so the
 address has to come from `hal/`), the driver maps it, checks its PrimeCell ID
@@ -173,13 +173,13 @@ owning the console would also let it read every key on the machine.
 
 A device this simple was chosen so a failure would point at the primitives
 rather than at the device. The next driver is xHCI, and its first step
-exists: `user/servers/xhci.c` (0.10.48) finds every controller, takes each
+exists: `user/drivers/usb/xhci.c` (0.10.48) finds every controller, takes each
 from the firmware, resets it and reads its ports; its second (0.10.54) gives
 each device a slot and an address and reads what it is, and since 0.10.55 it
 stays and does the same for a device plugged in later. `usb.md` is how USB
 works here, written as each step lands.
 
-**The third is the backlight** (0.10.81): `user/servers/backlight.c` maps one
+**The third is the backlight** (0.10.81): `user/drivers/display/backlight.c` maps one
 page of the Intel graphics device - the block holding its two backlight PWM
 controllers - and reads them. It only read at first, because those offsets
 are Linux's rather than a datasheet's (`thinkpad.md` 8b), and a driver that
@@ -222,6 +222,32 @@ real tax; the mitigation is that new drivers go to userland and old ones
 migrate only when they are being touched anyway.
 
 ---
+
+## 4b. Where a driver's file goes
+
+`user/drivers/`, under the device's kind: `net/`, `usb/`, `display/`,
+`power/`. Diego, 23 September, looking at a `user/servers/` that had reached
+28 files: "shouldnt drivers have their on directory sorted by device type?
+drivers/net/e1000.c".
+
+**The test for which is which is his, and it is one line: a driver drives
+hardware.** Asked whether `drives.c` counted, since it is about USB sticks:
+"drives.c is a server then, not a driver, a driver drives hardware". So
+`/drives` serves a namespace out of FAT that something else read off the
+wire, and stays a server; `e1000`, `xhci`, `backlight` and `powerbutton` each
+own a piece of silicon.
+
+**Nothing about a driver changes because of this.** It is still an EL0
+process with an endpoint and a role number, built and spawned exactly as a
+server is, on the three primitives above - which is §3's whole argument and
+is why the two sat in one directory until now. What the split buys is not a
+distinction in the system; it is a tree somebody can find something in. Two
+of the four directories hold a single driver, which is the point rather than
+an accident: a GPU driver has somewhere to go, and so does a battery.
+
+`say.c` went to `user/lib/` in the same move, because it is neither one: it
+is how a process that was handed the console's *endpoint* reports anyway, and
+its fifth caller is a server.
 
 ## 5. The four subsystems, and where each one's code comes from
 
@@ -287,7 +313,7 @@ bulk transfers landed.
 
 ### Intel Ethernet - written, and what it found underneath
 
-`user/servers/e1000.c`, 23 September 2026. The M700's card is an **I219-V**
+`user/drivers/net/e1000.c`, 23 September 2026. The M700's card is an **I219-V**
 at `00:1f.6`, `8086:15b8`; the same controller sits in the ThinkPad T14
 variants that have a socket (`thinkpad.md` §9), so one driver serves both
 machines and most Skylake-era PCs.

@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../user/servers/pad_decode.h"
+#include "../user/drivers/usb/pad_decode.h"
 
 static int checks;
 static int fails;

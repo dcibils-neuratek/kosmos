@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../user/servers/storage_decode.h"
+#include "../user/drivers/usb/storage_decode.h"
 
 static int checks;
 static int fails;

@@ -673,7 +673,7 @@ processors, and still what follows USB:
       they come from Linux's i915 (two controllers, control, period and
       on-time at C8250h/C8254h/C8258h and C8350h on), and the base from
       Intel's own (`GTTMMADR`, BAR0 of 0/2/0). **4a, reading only**: a
-      driver at EL0, `user/servers/backlight.c`, reads both controllers and
+      driver at EL0, `user/drivers/display/backlight.c`, reads both controllers and
       says what they hold - a controller on, with its on-time inside its
       period, confirms the offsets on the ThinkPad before anything is
       written. **4a is built** (`c0df73d`, `testing.md` 18.96) and on stick
@@ -1484,6 +1484,43 @@ processors, and still what follows USB:
    away, so nothing said so. `png.c` reads colour type 3 with `tRNS`, and
    `wm` names the wallpaper it restored or why it could not.
 
+5ze. **DONE on 23 September - drivers in a directory of their own, by device
+   type.** Diego, looking at the tree: "i see the servers living in the same
+   tree as drivers... shouldnt drivers have their on directory sorted by
+   device type? drivers/net/e1000.c... right now is all in 1 single directory
+   with servers and drivers which might be confusing as this grows".
+
+   He is right, and `user/servers/` had reached 28 files holding two kinds of
+   thing. **The rule for which is which is his, and it is one line**: *a
+   driver drives hardware.* Asked whether `drives.c` was one, since it is
+   about USB sticks: "drives.c is a server then, not a driver, a driver
+   drives hardware". So `/drives` serves a namespace out of FAT that
+   something else read off the wire, and it stays; `e1000`, `xhci`,
+   `backlight` and `powerbutton` each own a piece of silicon, and they move.
+
+   **Why they were together, and why that was not wrong.** `drivers.md` §3
+   argues a driver here is not special: an ordinary EL0 process with an
+   endpoint, on the same three primitives as anything else, and
+   `glossary.md`'s test - *a kit is code you run, a server is someone you
+   ask* - is one a driver passes. The flat directory was that argument made
+   visible, and the argument still holds. What it missed is that a category
+   being true does not make it a good directory: the tree is read by people
+   looking for something, and "everything at EL0 with an endpoint" is not
+   what anybody is looking for.
+
+       user/drivers/net/e1000.c, e1000_decode.c/h
+       user/drivers/usb/xhci.c, usb_decode.c/h, pad_decode.c/h,
+                                storage_decode.c/h
+       user/drivers/display/backlight.c, backlight_decode.c/h
+       user/drivers/power/powerbutton.c
+
+   Two of those hold one driver each, which is the point rather than an
+   accident: a GPU driver has a place to go, and so does a battery.
+
+   `say.c` moves to `user/lib/`, because it is neither. It is how a process
+   that was not given the console reports anyway - four drivers use it and so
+   does `drives`, which is exactly the shape of a library.
+
 5zd. **WANTED on 22 September - the ThinkCentre M700, and what it needs.**
    Diego: "i have some fantastic news.. i bought a lenovo thinkcentre m700
    mini pc and kosmos boots!! it works!". A 10J0/S1CK00, a 6th-generation
@@ -1521,7 +1558,7 @@ processors, and still what follows USB:
      (4k-and-no-hard-limits).
    - **5zd-f. DONE on 23 September - an Intel Ethernet driver, and three
      faults in the interrupt path underneath it.**
-     `user/servers/e1000.c`, a driver at EL0 like every other, with its
+     `user/drivers/net/e1000.c`, a driver at EL0 like every other, with its
      register decoding in `e1000_decode.c` so the link, the MAC and a
      frame's error bits are checked on this Mac. Under QEMU's 82540EM it
      finds the card, brings the link up at a gigabit, hands `net.c` a ring
@@ -1552,6 +1589,20 @@ processors, and still what follows USB:
        entry into an edge-triggered active-high one on every delivery, so
        every device on a PCI line had exactly one interrupt in it. Masking
        is now one bit set in what is there.
+
+     **Two of those three were q35's and not the architecture's, and
+     shipping them broke the M700.** The link base and the MSI numbering
+     are both chipset facts; measuring one on QEMU and applying it to a PCH
+     is the mistake, and `interrupt_of`'s own comment had called itself a
+     convention rather than a promise. Worse, deriving the MSI base from the
+     I/O APIC's input count put `pci.c` one line ahead of the call that
+     initialises the controller, so the *first* device probed lost its MSI -
+     on Diego's machine the xHCI holding the mouse, the keyboard and
+     `/home`. Three minutes to a desktop, unusable once there, every suite
+     green. Both are reverted to the numbers every machine that has booted
+     this system used; what is kept is `apic_mask`, which is machine
+     independent, and MSI allocation moved into `apic.c` so the ordering
+     cannot recur. `testing.md` 18.155 has the account and the instrument.
 
      **All three were invisible.** The system worked throughout: frames
      moved, pings came back, nothing logged a complaint. What they cost was

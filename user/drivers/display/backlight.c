@@ -57,7 +57,7 @@
 #include "backlight_decode.h"
 #include "backlightproto.h"
 #include "mmio.h"
-#include "say.h"
+#include "lib/say.h"
 
 /* Within the block `DEV_INTEL_BACKLIGHT` names: the first controller's
  * control, period and on-time, and the second's 100h further on. */

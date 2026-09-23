@@ -3552,6 +3552,17 @@ def core(image, check, fails):
     # 1. It boots, all the way, and takes what is typed at it.
     out = boot(image, None, 90.0, typed=("mem", "cpu"))
 
+    # Checked on the default machine as well as in `ethernet`, because the
+    # devices differ and this is the one fault in the interrupt path that
+    # breaks nothing: the driver polls, the machine works, and it is a
+    # hundred times slower. `pci_enable` says it; nothing else can.
+    if out is not None:
+        check("a device with an MSI capability is on a legacy line" not in out,
+              "`pci_enable` reported a device with an MSI capability sitting "
+              "on a legacy line, so its driver polls:\n    "
+              + "\n    ".join(l.strip() for l in out.splitlines()
+                              if "legacy line" in l))
+
     if out is None:
         check(False, "the machine would not boot")
         return
@@ -4204,10 +4215,17 @@ def usb_ethernet(image, check):
 def ethernet(image, check):
     """An Intel Ethernet card, driven by `user/servers/e1000.c`, on its line.
 
-    The M700's own card is an I219 at 00:1f.6 and QEMU has no model of it;
-    what QEMU has is the 82540EM, which is the same legacy descriptor path
-    and the same register family, so this is the driver checked rather than
-    the exact silicon.
+    The M700's own card is an I219 at 00:1f.6 and QEMU has no model of it.
+    What QEMU has that is closest is the **82574L** (`e1000e`): the same
+    register family and the same legacy descriptors, and - the part that
+    matters - an MSI capability, which is how every Intel card made this
+    century is actually wired. The 82540EM has none and falls back to an
+    INTx line, whose I/O APIC input this system can only guess at, so
+    testing on it tested the guess rather than the driver.
+
+    That guess is what broke Diego's M700: it was changed to q35's measured
+    value, which is right for q35 and wrong for a PCH. Under MSI there is no
+    guess to get wrong.
 
     **The round trip is the check, not the answer.** Every bug this found
     answered the ping: the driver waits on its interrupt *or* on a deadline
@@ -4225,7 +4243,7 @@ def ethernet(image, check):
     # The xHCI is here for its MSI, not for USB: it is the machine's other
     # interrupting device, and the numbers the two report have to come from
     # different spaces. See the check on them below.
-    extra = ("-netdev", "user,id=n0", "-device", "e1000,netdev=n0",
+    extra = ("-netdev", "user,id=n0", "-device", "e1000e,netdev=n0",
              "-device", "qemu-xhci,id=usb0")
     out = boot(image, None, 120.0, extra=extra,
                typed=("ping 10.0.2.2", "ping 10.0.2.2"))
@@ -4245,18 +4263,18 @@ def ethernet(image, check):
           "the driver did not find and name QEMU's 82540EM:\n    " + shown)
 
     if found is not None:
-        check(found.group(1) == "100e",
-              "the card came back as 8086:%s, not the 100e QEMU emulates"
+        check(found.group(1) == "10d3",
+              "the card came back as 8086:%s, not the 10d3 of QEMU's 82574L"
               % found.group(1))
 
-        # 20 + ((slot + pin - 1) mod 4), and the card is at slot 2, pin A.
-        # Written out rather than recomputed, so that a change to the
-        # swizzle in `hal/pc/pci.c` has to be agreed with here.
-        check(found.group(5) == "22",
-              "the card's interrupt came back as %s. q35 routes slot 2's "
-              "INTA to I/O APIC input 22 - measured by walking a card across "
-              "four slots with all eight links claimed at once - and the "
-              "swizzle in `hal/pc/pci.c` is what has to produce it"
+        # An MSI, not a line. A card with the capability that ends up on a
+        # line is a card whose driver polls, and on real silicon it is the
+        # normal case for it to have one.
+        check(int(found.group(5)) >= 20,
+              "the card's interrupt is %s, which is a PCI link and not an "
+              "MSI. An 82574L has an MSI capability, so landing on a line "
+              "means `pci_enable` could not give it a number - which is how "
+              "the M700 lost its USB controller's interrupt on 23 September"
               % found.group(5))
 
     #
@@ -4276,13 +4294,29 @@ def ethernet(image, check):
           "the xHCI never said which interrupt it took, so the number an "
           "MSI gets could not be compared with the number a line gets")
 
-    if msi is not None and found is not None:
-        check(int(msi.group(1)) > 23,
-              "the xHCI's MSI is number %s and a PCI link is 16 to 23, so "
-              "the two spaces overlap. An MSI number that is also an I/O "
-              "APIC input leaves that input masked, because `apic_unmask` "
-              "tells them apart by exactly that comparison."
+    if msi is not None:
+        check(int(msi.group(1)) >= 20,
+              "the xHCI's interrupt is %s, a PCI link rather than an MSI. "
+              "This is the M700's fault exactly: `pci.c` asked for a number "
+              "before `pc_irq_on_apic()` had initialised the controller, so "
+              "the first device probed was refused one and fell back to a "
+              "line nothing routed - and on that machine the first device "
+              "was the xHCI holding the mouse, the keyboard and /home"
               % msi.group(1))
+
+    check("answered a No-Op command on its event ring, by interrupt" in out,
+          "the xHCI did not answer its No-Op by interrupt. It says `found by "
+          "looking: no interrupt within a second` instead when its MSI never "
+          "arrives, and then every transfer on that controller waits for a "
+          "poll - which is what three minutes to a desktop looks like")
+
+    #
+    # And the line that would have said so on the machine itself.
+    #
+    check("a device with an MSI capability is on a legacy line" not in out,
+          "`pci_enable` reported a device that has an MSI capability sitting "
+          "on a legacy line. That is always a driver that polls, and the "
+          "line it lands on is a convention this system guesses at")
 
     check("e1000: its link is up at 1000 Mb/s, full duplex" in out,
           "the card never reported its link up. The driver reads STATUS and "

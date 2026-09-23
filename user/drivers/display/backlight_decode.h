@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
-#ifndef KOSMOS_SERVERS_BACKLIGHT_DECODE_H
-#define KOSMOS_SERVERS_BACKLIGHT_DECODE_H
+#ifndef KOSMOS_DRIVERS_DISPLAY_BACKLIGHT_DECODE_H
+#define KOSMOS_DRIVERS_DISPLAY_BACKLIGHT_DECODE_H
 
 /*
  * What an Intel backlight PWM controller's three registers say, for the

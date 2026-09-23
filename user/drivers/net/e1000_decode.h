@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
-#ifndef KOSMOS_SERVERS_E1000_DECODE_H
-#define KOSMOS_SERVERS_E1000_DECODE_H
+#ifndef KOSMOS_DRIVERS_NET_E1000_DECODE_H
+#define KOSMOS_DRIVERS_NET_E1000_DECODE_H
 
 /*
  * What an Intel Ethernet controller's registers and descriptors say, for the
@@ -80,4 +80,4 @@ void e1000_decode_rx(const uint8_t *desc, struct e1000_rx *out);
  * Done bit, which it writes back only for one that asked (Report Status). */
 bool e1000_decode_tx_done(const uint8_t *desc);
 
-#endif /* KOSMOS_SERVERS_E1000_DECODE_H */
+#endif /* KOSMOS_DRIVERS_NET_E1000_DECODE_H */

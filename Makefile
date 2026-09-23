@@ -752,19 +752,19 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/console.c \
              user/servers/ramfs.c \
              user/servers/net.c \
-             user/servers/powerbutton.c \
-             user/servers/backlight.c \
-             user/servers/backlight_decode.c \
-             user/servers/xhci.c \
-             user/servers/usb_decode.c \
-             user/servers/e1000.c \
-             user/servers/e1000_decode.c \
-             user/servers/pad_decode.c \
-             user/servers/storage_decode.c \
              user/servers/drives.c \
              user/servers/drives_decode.c \
              user/servers/fat_decode.c \
-             user/servers/say.c \
+             user/drivers/net/e1000.c \
+             user/drivers/net/e1000_decode.c \
+             user/drivers/usb/xhci.c \
+             user/drivers/usb/usb_decode.c \
+             user/drivers/usb/pad_decode.c \
+             user/drivers/usb/storage_decode.c \
+             user/drivers/display/backlight.c \
+             user/drivers/display/backlight_decode.c \
+             user/drivers/power/powerbutton.c \
+             user/lib/say.c \
              user/lib/net_kosmos.c \
              user/lib/crypto.c \
              user/lib/lua_glue.c \
@@ -1591,10 +1591,10 @@ $(HOSTDIR)/test_smbiosdecode: tools/test_smbiosdecode.c hal/pc/smbios_decode.c h
 # more so: QEMU has no Intel graphics at all, so the driver's only reading
 # under QEMU is none, and the ThinkPad gives one. `backlight_decode.h` has more.
 #
-$(HOSTDIR)/test_backlightdecode: tools/test_backlightdecode.c user/servers/backlight_decode.c user/servers/backlight_decode.h
+$(HOSTDIR)/test_backlightdecode: tools/test_backlightdecode.c user/drivers/display/backlight_decode.c user/drivers/display/backlight_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
-	        tools/test_backlightdecode.c user/servers/backlight_decode.c
+	        tools/test_backlightdecode.c user/drivers/display/backlight_decode.c
 
 #
 # And a ThinkPad's battery registers, for the backlight's reason again: QEMU
@@ -1621,30 +1621,30 @@ $(HOSTDIR)/test_s5decode: tools/test_s5decode.c hal/pc/s5_decode.c hal/pc/s5_dec
 # And an Xbox 360 controller's reports, for the same reason: QEMU has no
 # game controller to plug in. `pad_decode.h` has more.
 #
-$(HOSTDIR)/test_paddecode: tools/test_paddecode.c user/servers/pad_decode.c user/servers/pad_decode.h
+$(HOSTDIR)/test_paddecode: tools/test_paddecode.c user/drivers/usb/pad_decode.c user/drivers/usb/pad_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
-	        tools/test_paddecode.c user/servers/pad_decode.c
+	        tools/test_paddecode.c user/drivers/usb/pad_decode.c
 
-$(HOSTDIR)/test_usbdecode: tools/test_usbdecode.c user/servers/usb_decode.c user/servers/usb_decode.h
+$(HOSTDIR)/test_usbdecode: tools/test_usbdecode.c user/drivers/usb/usb_decode.c user/drivers/usb/usb_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
-	        tools/test_usbdecode.c user/servers/usb_decode.c
+	        tools/test_usbdecode.c user/drivers/usb/usb_decode.c
 
-$(HOSTDIR)/test_e1000decode: tools/test_e1000decode.c user/servers/e1000_decode.c user/servers/e1000_decode.h
+$(HOSTDIR)/test_e1000decode: tools/test_e1000decode.c user/drivers/net/e1000_decode.c user/drivers/net/e1000_decode.h
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/servers -o $@ \
-	        tools/test_e1000decode.c user/servers/e1000_decode.c
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/drivers/net -o $@ \
+	        tools/test_e1000decode.c user/drivers/net/e1000_decode.c
 
 #
 # And what a stick is sent and what it answers - Bulk-Only's wrappers, SCSI's
 # command blocks, capacity, sense and a GPT header - for that reason once
 # more: QEMU's stick answers every command, well. `storage_decode.h` has more.
 #
-$(HOSTDIR)/test_storagedecode: tools/test_storagedecode.c user/servers/storage_decode.c user/servers/storage_decode.h
+$(HOSTDIR)/test_storagedecode: tools/test_storagedecode.c user/drivers/usb/storage_decode.c user/drivers/usb/storage_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
-	        tools/test_storagedecode.c user/servers/storage_decode.c
+	        tools/test_storagedecode.c user/drivers/usb/storage_decode.c
 
 #
 # And what a FAT volume's bytes mean - its boot sector, its table, and a
@@ -1688,13 +1688,13 @@ $(HOSTDIR)/kfs-fixture.img: tools/kfs.lua user/lib/kfs.lua $(HOSTDIR)/lua
 $(HOSTDIR)/test_drivesdecode: tools/test_drivesdecode.c \
 	        user/servers/drives_decode.c user/servers/drives_decode.h \
 	        user/servers/fat_decode.c user/servers/fat_decode.h \
-	        user/servers/storage_decode.c user/servers/storage_decode.h \
+	        user/drivers/usb/storage_decode.c user/drivers/usb/storage_decode.h \
 	        $(HOSTDIR)/kfs-fixture.img
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser -o $@ \
 	        -DKFS_FIXTURE='"$(HOSTDIR)/kfs-fixture.img"' \
 	        tools/test_drivesdecode.c user/servers/drives_decode.c \
-	        user/servers/fat_decode.c user/servers/storage_decode.c
+	        user/servers/fat_decode.c user/drivers/usb/storage_decode.c
 
 #
 # And whether the userland image's canary works, which is the same argument

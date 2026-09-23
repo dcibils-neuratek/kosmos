@@ -17,6 +17,7 @@
 #include "hal.h"
 #include "mmio.h"
 #include "mmu.h"
+#include "console.h"
 #include "pci.h"
 #include "apic.h"
 #include "pc.h"
@@ -36,8 +37,8 @@
 #define PCI_CLASS            0x08
 #define PCI_INTERRUPT_LINE  0x3C
 
-/* The first of the four I/O APIC inputs q35 routes its PCI links to. */
-#define PCI_LINK_FIRST      20u
+/* The first of the four I/O APIC inputs the PCI links are taken to be on. */
+#define PCI_LINK_FIRST      16u
 #define PCI_INTERRUPT_PIN   0x3D
 
 /*
@@ -439,41 +440,15 @@ static bool find(const struct match *want, unsigned from,
 }
 
 /*
- * The numbers an MSI may be delivered on, and why they are a range of their
- * own.
+ * **Where an MSI's number comes from, and why it is not here.**
  *
- * The I/O APIC's inputs are the chipset's lines - the sixteen ISA ones and
- * the PCI links above them, reached by the swizzle in `interrupt_of`. An
- * MSI is none of those: the device writes to the local APIC itself, so its
- * number only has to be a number nothing else uses, and everything above
- * the last input is free.
- *
- * **Asked of `apic.c` rather than agreed with it**, and that is the whole
- * of the fix. This said 20 and 23, with a comment claiming the links were
- * inputs 16 to 19. On q35 they are 20 to 23, so the four numbers this
- * handed out were also four real inputs - and `apic_unmask` read them as
- * MSIs and left those inputs masked for ever. An Ethernet card routed to
- * one of them asserted its line into an entry nobody had written, and the
- * only symptom was a driver that woke on its own deadline.
- *
- * Both arrangements exist at once because both are needed: a device with
- * no MSI capability still has to arrive somehow.
+ * `apic.c` hands them out. An MSI's number has to be one no I/O APIC input
+ * has, because that comparison is how a line is told from an MSI when one
+ * is masked - and the count of inputs lives there. This file held the
+ * number as a constant for a while, and briefly derived it by asking; both
+ * had two ends that could disagree, and the second disagreed the moment it
+ * asked before the controller was up. `apic_msi_take` says what that cost.
  */
-static unsigned next_msi;
-static unsigned last_msi;
-
-/*
- * Filled on first use rather than at build time, because the count of
- * inputs comes from the I/O APIC's version register and that is read when
- * the machine boots.
- */
-static void msi_range(void)
-{
-    if (next_msi == 0) {
-        next_msi = apic_msi_first();
-        last_msi = apic_msi_last();
-    }
-}
 
 /*
  * Where capability `id` is in a device's list, or 0 when it has none.
@@ -538,9 +513,12 @@ static bool msi_enable(struct pci_device *dev)
     uint8_t at;
     unsigned irq;
 
-    msi_range();
-
-    if (!pc_irq_on_apic() || next_msi == 0 || next_msi > last_msi) {
+    /*
+     * The controller first, because asking for it is what decides and
+     * initialises it - and a number asked for before that would be no
+     * number at all.
+     */
+    if (!pc_irq_on_apic()) {
         return false;
     }
 
@@ -550,7 +528,11 @@ static bool msi_enable(struct pci_device *dev)
         return false;
     }
 
-    irq = next_msi;
+    irq = apic_msi_take();
+
+    if (irq == 0) {
+        return false;
+    }
 
     {
         uint32_t control = pci_config_read(dev->bus, dev->slot, dev->function,
@@ -584,7 +566,6 @@ static bool msi_enable(struct pci_device *dev)
                          (control & 0xFFFFu) | ((uint32_t)message << 16));
     }
 
-    next_msi++;
     dev->irq = (uint8_t)irq;
 
     return true;
@@ -621,9 +602,8 @@ static bool msix_enable(struct pci_device *dev)
     unsigned bir, irq;
     uint8_t at;
 
-    msi_range();
-
-    if (!pc_irq_on_apic() || next_msi == 0 || next_msi > last_msi) {
+    /* The controller first: asking for it is what initialises it. */
+    if (!pc_irq_on_apic()) {
         return false;
     }
 
@@ -648,7 +628,16 @@ static bool msix_enable(struct pci_device *dev)
         return false;           /* the device window is full */
     }
 
-    irq = next_msi;
+    /*
+     * Taken last, after everything that can still refuse: a number given
+     * back is a number this machine does not get to use again.
+     */
+    irq = apic_msi_take();
+
+    if (irq == 0) {
+        return false;
+    }
+
     control = pci_config_read(dev->bus, dev->slot, dev->function, at);
     message = (uint16_t)(control >> 16);
 
@@ -669,7 +658,6 @@ static bool msix_enable(struct pci_device *dev)
                      | ((uint32_t)(uint16_t)((message | MSIX_ENABLE)
                                              & ~MSIX_FUNCTION_MASK) << 16));
 
-    next_msi++;
     dev->irq = (uint8_t)irq;
 
     return true;
@@ -758,6 +746,33 @@ void pci_enable(struct pci_device *dev)
      * is the whole reason this takes a pointer.
      */
     if (!msi_enable(dev) && !msix_enable(dev)) {
+        /*
+         * **A device that could have had an MSI and did not, said out
+         * loud.**
+         *
+         * Falling back to the line is correct and is how a device with no
+         * MSI capability has always worked. What is not correct is a device
+         * that *has* one ending up on a line anyway, because the line it
+         * lands on is the swizzle in `interrupt_of` - a convention this
+         * machine may not follow - and the failure is a driver that polls.
+         * Nothing breaks. It is merely a hundred times slower, which is the
+         * hardest kind of fault to notice and the one this system has now
+         * had twice.
+         *
+         * The second time was `apic_msi_take` being asked before the
+         * controller was up, so the first device probed lost its MSI: on
+         * Diego's ThinkCentre that was the xHCI holding the mouse, the
+         * keyboard and `/home`, and the machine took three minutes to reach
+         * a desktop. The boot log said the number and not that it was the
+         * wrong *kind* of number. Now it says.
+         */
+        if (pc_irq_on_apic()
+            && (capability_at(dev, CAP_ID_MSI) != 0
+                || capability_at(dev, CAP_ID_MSIX) != 0)) {
+            kputs("pci: a device with an MSI capability is on a legacy "
+                  "line - its driver will poll\n");
+        }
+
         /*
          * **Left on its legacy line, so the line has to be let through.**
          * A device the firmware finished with may have Interrupt Disable

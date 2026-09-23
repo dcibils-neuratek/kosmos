@@ -117,6 +117,29 @@
 #define ISA_LINES           16u
 #define OVERRIDE_MAX        16u
 
+/*
+ * **The first number an MSI may use, and it is a constant on purpose.**
+ *
+ * It has to be a number no I/O APIC input has, because `apic_unmask` tells a
+ * line from an MSI by exactly this comparison. The obvious way to get that
+ * is to ask the I/O APIC how many inputs it has and start above them - and
+ * that was tried, on 23 September, and broke Diego's ThinkCentre M700. A
+ * count read from the hardware differs per machine, so every number in this
+ * file became machine-dependent at once: the links `interrupt_of` computes,
+ * the MSIs handed out, and the test that tells them apart. q35 answers 24
+ * and his machine does not.
+ *
+ * So it is 20 again, which is what every machine that has ever booted this
+ * system used, and the four inputs below it are where `interrupt_of` puts
+ * the PCI links. A machine whose I/O APIC has more than 20 inputs simply
+ * does not use the ones above: that costs nothing, because a device with an
+ * MSI capability never wants a line, and `pci.c` now says out loud when one
+ * ends up on a line anyway.
+ */
+#define MSI_IRQ_FIRST       20u
+
+static unsigned next_msi = MSI_IRQ_FIRST;
+
 static struct {
     bool      present;
     uintptr_t lapic;
@@ -234,7 +257,7 @@ void apic_unmask(unsigned irq)
      * interrupt that arrives once and then never again, because nothing
      * ever sees the transition a second time.
      */
-    if (irq >= apic.inputs) {
+    if (irq >= MSI_IRQ_FIRST) {
         /*
          * An MSI has nothing to unmask. The device writes to the local
          * APIC directly, so there is no I/O APIC entry and no line - which
@@ -283,7 +306,7 @@ void apic_mask(unsigned irq)
     uint32_t extra;
     unsigned input;
 
-    if (!apic.present || irq >= apic.inputs) {
+    if (!apic.present || irq >= MSI_IRQ_FIRST) {
         return;
     }
 
@@ -361,27 +384,42 @@ static unsigned in_service(void)
 }
 
 /*
- * The numbers `pci.c` may mint for an MSI: above every input this I/O APIC
- * has, and below the two vectors the local APIC spends on itself.
+ * One MSI number, or zero when there is none to give.
  *
- * **Derived rather than agreed**, because the two ends disagreed once and
- * the symptom was a card that never interrupted. An input's number *is* an
- * input; anything above them is nobody's line, which is exactly what an
- * MSI needs.
+ * **Allocated here rather than in `pci.c`, and that is the whole point.**
+ * An MSI's number has to be one no I/O APIC input has, because that
+ * comparison is how `apic_mask` and `apic_unmask` tell the two apart - and
+ * the only file that knows how many inputs there are is this one. It was a
+ * constant in `pci.c` kept in step by hand, then briefly a number `pci.c`
+ * derived by asking here, and both arrangements had two ends that could
+ * disagree.
  *
- * A machine whose I/O APIC has more inputs than there are vectors left
- * gets no MSI numbers at all, and `msi_enable` then declines - which
- * leaves every device on its line. That is slower and correct, where
- * handing out a number that is also an input is neither.
+ * The second one disagreed badly. `pci.c` asked before anything had
+ * initialised the controller - `pc_irq_on_apic()` is what does that, and it
+ * was evaluated on the line *after* - so the first device probed on the
+ * machine was told there were no MSI numbers and fell back to its INTx
+ * line. On Diego's ThinkCentre that device was the xHCI controller holding
+ * the mouse, the keyboard and `/home`, and the machine took three minutes
+ * to reach a desktop it could not be used from. Every suite here stayed
+ * green, because on q35 the first device probed is not one whose interrupt
+ * anything checks.
+ *
+ * Allocating here cannot go wrong that way: `apic.present` is false until
+ * `apic_init` has run, so a caller that asks too early is told no rather
+ * than told zero, and `apic.inputs` is set in the same function that sets
+ * `apic.present`.
+ *
+ * The ceiling is the last vector before the two the local APIC keeps for
+ * itself. A machine with more inputs than that has no MSI numbers at all
+ * and every device stays on its line, which is slower and correct.
  */
-unsigned apic_msi_first(void)
+unsigned apic_msi_take(void)
 {
-    return apic.present ? apic.inputs : 0u;
-}
+    if (!apic.present || next_msi > IRQ_OF(WAKE_VECTOR) - 1u) {
+        return 0;
+    }
 
-unsigned apic_msi_last(void)
-{
-    return IRQ_OF(WAKE_VECTOR) - 1u;
+    return next_msi++;
 }
 
 bool apic_handle(void)

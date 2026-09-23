@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
-#ifndef KOSMOS_SERVERS_PAD_DECODE_H
-#define KOSMOS_SERVERS_PAD_DECODE_H
+#ifndef KOSMOS_DRIVERS_USB_PAD_DECODE_H
+#define KOSMOS_DRIVERS_USB_PAD_DECODE_H
 
 /*
  * A game controller's report, and the presses a program sees in it.
@@ -130,4 +130,4 @@ unsigned pad_xone_ack(uint8_t seq, uint8_t *out);
 #define PAD_STICK_RELEASE  12288        /* and let go inside three eighths */
 #define PAD_TRIGGER_PRESS  128u
 
-#endif /* KOSMOS_SERVERS_PAD_DECODE_H */
+#endif /* KOSMOS_DRIVERS_USB_PAD_DECODE_H */

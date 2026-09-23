@@ -69,7 +69,7 @@
 
 #include "kosmos.h"
 #include "mmio.h"
-#include "say.h"
+#include "lib/say.h"
 #include "blockproto.h"
 #include "ethproto.h"
 #include "ethring.h"
