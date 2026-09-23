@@ -2287,7 +2287,7 @@ PASS: 5 programs-by-name checks
 with the leftover:
 
 ```
-user/kits/snes/snes_kosmos.c:400:    lua_setglobal(L, "snes");
+user/bin/apps/snes/snes_kosmos.c:400:    lua_setglobal(L, "snes");
 FAIL (exit 1)
 ```
 

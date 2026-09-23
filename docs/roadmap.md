@@ -1521,6 +1521,62 @@ processors, and still what follows USB:
    that was not given the console reports anyway - four drivers use it and so
    does `drives`, which is exactly the shape of a library.
 
+5zf. **WANTED on 23 September - an app on the disk, with its parts.** Diego,
+   after `user/kits/doom/` moved into `user/bin/apps/doom/`: "we shouldnt be
+   compiling all these app specific code in the kernel build but it should
+   live as part of the disk drive as apps that contain all the assets to run.
+   correct?"
+
+   **Correct as a direction, and `layout.md`'s table has said so for
+   months** - "programs and applications: inside the kernel image, served
+   from `/bin`; to change it: write them to the disk at build time". The
+   image is where everything lives because there was no disk when it was
+   written. There is one now.
+
+   **But the two halves of an app cost very different things, and the
+   difference is the whole of this item.**
+
+   - **Lua and assets can go to disk now.** `/bin` is served by `binfs` out
+     of a blob the build makes; making it serve a directory on `/home` or a
+     second partition instead is a filesystem read and a namespace mount.
+     Nothing new has to exist. This is what `layout.md` has been describing.
+   - **C cannot.** `doom_kosmos.c` is compiled into `init.elf`, and this
+     system has **no dynamic linking** - `design.md` §10 records hot reload
+     being withdrawn partly for that reason. There is no loader that can
+     take code off a disk and put it in a running process, and the principle
+     against precompiled Lua bytecode says exactly why one would need care:
+     a loader that verifies nothing is arbitrary execution.
+
+   **So the real question underneath is: what is an app, as a thing the
+   machine runs?** Today it is Lua, interpreted by a process that was spawned
+   with a role number, out of one ELF that contains every role and every
+   engine. An app with its own C has to become one of:
+
+   1. **Its own ELF, spawned as a process.** The kernel already spawns
+      processes; what does not exist is reading a second binary off a disk
+      and starting it. That is an ELF loader at EL0 and a `spawn` that takes
+      bytes rather than a role - a well-shaped piece of work, and the one
+      that makes Kosmos a system you can *install a program on* rather than
+      rebuild.
+   2. **Dynamic linking**, which is more machinery for less: relocations, a
+      symbol table, and a verifier, to end up where (1) already is.
+
+   (1) is the answer, and it is large enough to be its own milestone rather
+   than a line here. It also arrives with a question this project has not had
+   to answer yet - what an app is *permitted*, when it is no longer something
+   the build vouched for - and `per-launcher-permissions` is waiting on the
+   same ground.
+
+   **Nothing blocks on it.** The image is 24 MB and a stick is 704; Doom in
+   the image costs nothing anybody is short of. What it buys is not space, it
+   is the difference between a system that is rebuilt and a system that is
+   used.
+
+   Until then the directory layout is the part that was free, and it is done:
+   an app that has parts owns a directory holding them
+   (`user/bin/apps/doom/`), so when the bundle becomes real the bundle is
+   already what is on disk.
+
 5zd. **WANTED on 22 September - the ThinkCentre M700, and what it needs.**
    Diego: "i have some fantastic news.. i bought a lenovo thinkcentre m700
    mini pc and kosmos boots!! it works!". A 10J0/S1CK00, a 6th-generation

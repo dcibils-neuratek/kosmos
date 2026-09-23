@@ -2468,7 +2468,7 @@ game in a 1024 by 960 window. Diego asked for it after seeing it at 512 by
 the form was decided here for all three: options before the file, as
 `--name value`, because a launcher keeps the rest of its line and ROM names
 have spaces. Nearest neighbour, whole numbers, 2 at most. The copy is C in
-`user/kits/snes/snes_blit.c`, tested on the host (`tools/test_snesblit.c`), and the
+`user/bin/apps/snes/snes_blit.c`, tested on the host (`tools/test_snesblit.c`), and the
 option's parsing in the display harness; `testing.md` §18.34 has both
 controls. **Not yet seen with a real game**, here or on the ThinkPad, and its
 cost in frames is not measured: four times the pixels to compose, on a window
@@ -2803,7 +2803,7 @@ Open:
 one - and runs it in a 512 by 480 window at the console's own rate, with the
 keyboard as the first pad. LakeSnes, dink's fork at `048a0d7`, vendored
 unmodified under `runtime/upstream/lakesnes/`; Kosmos's half is
-`user/kits/snes/snes_kosmos.c`, and the loop is `user/bin/apps/snes.lua`. In `FULL=1`,
+`user/bin/apps/snes/snes_kosmos.c`, and the loop is `user/bin/apps/snes/snes.lua`. In `FULL=1`,
 the default, and out of `FULL=0`: it is MIT, so the flag is about the ninety
 kilobytes every process would carry rather than the licence.
 
@@ -3382,7 +3382,7 @@ starts with the T14's DSDT.
 e1m3, the Necropolis, drawn through the palette at twice its 320 by 240, and
 Escape brings up the main menu. Chocolate Quake at `edb8209`, vendored
 unmodified under `runtime/upstream/quake/`, with Kosmos's platform in
-`user/kits/quake/quake_kosmos.c` and the loop in `user/bin/apps/quake.lua`. Only in an
+`user/bin/apps/quake/quake_kosmos.c` and the loop in `user/bin/apps/quake/quake.lua`. Only in an
 image built with `make QUAKE=1`, which `FULL=1` does not include.
 
 Not quakegeneric, which the plan named: it builds only for 32-bit machines.

@@ -161,12 +161,18 @@ def main():
     #    menu from that list, could not offer Tracker, the Terminal, the top
     #    bar or the web server. No error anywhere; the menu was just short,
     #    and had been since the seventy-fifth program was added.
+    #    Walked rather than listed, because an app may be a directory: the
+    #    five with a vendored engine under them own one, holding their own
+    #    C beside their Lua. `/bin` is still flat - `progs2c.py` serves each
+    #    file under its basename - so a count that stopped at the top level
+    #    would be five short and say the machine had lost them.
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     expected = 0
 
     for half in ("apps", "programs"):
-        here = os.path.join(root, "user", "bin", half)
-        expected += len([f for f in os.listdir(here) if f.endswith(".lua")])
+        for _base, _dirs, names in os.walk(os.path.join(root, "user", "bin",
+                                                        half)):
+            expected += len([f for f in names if f.endswith(".lua")])
 
     #
     # `ls /bin`, because the boot option runs a *program* rather than

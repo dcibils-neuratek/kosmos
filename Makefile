@@ -215,7 +215,16 @@ LUA_HOST_SRCS := $(filter-out lua/upstream/lua.c lua/upstream/luac.c \
 # Both halves of user/bin/, in one list. `apps/` and `programs/` are a
 # reading order for whoever opens the tree; `/bin` itself is flat, and
 # `progs2c.py` serves each file under its basename.
-BIN_LUA := $(wildcard user/bin/apps/*.lua) $(wildcard user/bin/programs/*.lua)
+#
+# **An app is one file or a directory, and both are gathered here.** Most
+# are a single `.lua`. The five with a vendored engine under them - Doom,
+# Quake, the Super Nintendo, Lite XL and the browser - own a directory with
+# their own C in it, because that C is not reusable and never was: it is
+# the binding to one engine, for one app. Diego, 23 September: "a kit is a
+# reusable piece of code that an app, service, or server can leverage and
+# reuse. doom is an specific app."
+BIN_LUA := $(wildcard user/bin/apps/*.lua) $(wildcard user/bin/apps/*/*.lua) \
+           $(wildcard user/bin/programs/*.lua)
 
 LUA_FILES := user/init/init.lua $(BIN_LUA) \
              $(wildcard user/lib/*.lua) $(wildcard user/tests/*.lua)
@@ -558,14 +567,14 @@ USER_LIBC := runtime/libc/string.c \
 # are somebody else's warnings and this build has no business failing on
 # them.
 #
-# **`-Iuser/kits/litexl` is the whole mechanism of this port.** The shim
+# **`-Iuser/bin/apps/litexl` is the whole mechanism of this port.** The shim
 # directory is on the include path, so the vendored `#include <SDL.h>` -
 # which appears in three of upstream's headers and reaches every source
-# file through them - resolves to `user/kits/litexl/SDL.h`, and not one line
+# file through them - resolves to `user/bin/apps/litexl/SDL.h`, and not one line
 # of what upstream released has to be touched.
 LITEXL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/lite-xl/src \
-                 -Iuser/kits/litexl \
+                 -Iuser/bin/apps/litexl \
                  -Iuser
 
 #
@@ -585,16 +594,16 @@ LITEXL_CFLAGS := -w -Wno-error \
 # be: the compiler says which files are done, every time, rather than a
 # checklist in a document saying so once.
 #
-LITEXL_SRCS := user/kits/litexl/litexl_sdl.c \
-               user/kits/litexl/litexl_render.c \
+LITEXL_SRCS := user/bin/apps/litexl/litexl_sdl.c \
+               user/bin/apps/litexl/litexl_render.c \
                runtime/upstream/lite-xl/src/api/utf8.c \
                runtime/upstream/lite-xl/src/arena_allocator.c \
                runtime/upstream/lite-xl/src/renwindow.c \
                runtime/upstream/lite-xl/src/rencache.c \
                runtime/upstream/lite-xl/src/api/renderer.c \
                runtime/upstream/lite-xl/src/api/api.c \
-               user/kits/litexl/litexl_system.c \
-               user/kits/litexl/litexl_match.c
+               user/bin/apps/litexl/litexl_system.c \
+               user/bin/apps/litexl/litexl_match.c
 
 # Nothing is waiting on the renderer any more. `api/system.c` and `main.c`
 # join this when step five writes their half of the shim.
@@ -611,7 +620,7 @@ LITEXL_STAGED :=
 # **Two lists.** `QUAKE_ENGINE` is upstream's - 78 files, which `make quake`
 # compiles on their own to say whether they still build against the shim.
 # `QUAKE_SRCS` is what goes into the image: the engine, and
-# `user/kits/quake/quake_kosmos.c`, the platform under it (`Sys_*`, `VID_*`, `IN_*`,
+# `user/bin/apps/quake/quake_kosmos.c`, the platform under it (`Sys_*`, `VID_*`, `IN_*`,
 # `SNDDMA_*`), which is Kosmos's and held to the ordinary flags.
 #
 # **Left out, to be replaced rather than patched**: `main.c`,
@@ -626,7 +635,7 @@ LITEXL_STAGED :=
 # `screen.h` are also the names of headers in `kernel/`, which every
 # userland compile has on its path; `-iquote` directories are searched first
 # for `#include "..."`, so no ordering of flags can pick the wrong one.
-# `-Iuser/kits/quake` is the SDL shim the engine's `#include <SDL.h>` and
+# `-Iuser/bin/apps/quake` is the SDL shim the engine's `#include <SDL.h>` and
 # `<SDL_stdinc.h>` resolve to, so nothing upstream released is touched.
 #
 # `HAVE_STRCPY` and its two siblings are what upstream's CMake detects, and
@@ -636,8 +645,8 @@ QUAKE_DIR := runtime/upstream/quake/src
 
 QUAKE_INCLUDES := $(addprefix -iquote ,$(wildcard $(QUAKE_DIR)/*/include)) \
                   -iquote $(QUAKE_DIR) \
-                  -Iuser/kits/quake \
-                  -include user/kits/quake/kosmos_quake.h
+                  -Iuser/bin/apps/quake \
+                  -include user/bin/apps/quake/kosmos_quake.h
 
 QUAKE_CFLAGS := -w -Wno-error \
                 -DHAVE_STRCPY -DHAVE_STRNCPY -DHAVE_STRCAT \
@@ -723,7 +732,7 @@ QUAKE_ENGINE := $(addprefix $(QUAKE_DIR)/, \
                   status_bar/src/sbar.c \
                   wad/src/wad.c)
 
-QUAKE_SRCS := $(QUAKE_ENGINE) user/kits/quake/quake_kosmos.c
+QUAKE_SRCS := $(QUAKE_ENGINE) user/bin/apps/quake/quake_kosmos.c
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
@@ -849,14 +858,14 @@ endif
 #
 # The twelve files upstream's own Makefile names for the core, listed rather
 # than globbed for the reason Doom's are. Its SDL frontend, tracer and zip
-# reader are not built: `user/kits/snes/snes_kosmos.c` stands where the frontend
+# reader are not built: `user/bin/apps/snes/snes_kosmos.c` stands where the frontend
 # was. `runtime/upstream/lakesnes/README.kosmos.md` is the account.
 #
 SNES_DIR   := runtime/upstream/lakesnes/snes
 SNES_NAMES := spc dsp apu cpu dma ppu cart cx4 input statehandler snes \
               snes_other
 SNES_SRCS  := $(addprefix $(SNES_DIR)/,$(addsuffix .c,$(SNES_NAMES))) \
-              user/kits/snes/snes_kosmos.c user/kits/snes/snes_blit.c
+              user/bin/apps/snes/snes_kosmos.c user/bin/apps/snes/snes_blit.c
 SNES_CFLAGS := -w -Wno-error -iquote $(SNES_DIR)
 
 ifdef SNES
@@ -887,7 +896,7 @@ DOOM_NAMES := dummy am_map doomdef doomstat dstrings d_event d_items \
               w_main w_wad z_zone i_input i_video doomgeneric
 
 DOOM_SRCS := $(addprefix runtime/upstream/doom/,$(addsuffix .c,$(DOOM_NAMES))) \
-             user/kits/doom/doom_kosmos.c
+             user/bin/apps/doom/doom_kosmos.c
 USER_SRCS += $(DOOM_SRCS)
 
 #
@@ -973,8 +982,8 @@ WEB_SRCS += $(NS)/libdom/bindings/hubbub/parser.c
 
 # Kosmos's own side of it, held to the ordinary flags rather than the
 # vendored ones - it is not vendored.
-WEB_SRCS += user/kits/web/web_kosmos.c user/kits/web/web_select.c user/kits/web/web_style.c \
-            user/kits/web/web_paint.c
+WEB_SRCS += user/bin/apps/browser/web_kosmos.c user/bin/apps/browser/web_select.c user/bin/apps/browser/web_style.c \
+            user/bin/apps/browser/web_paint.c
 
 # The property names, read out of the same file their own build reads.
 WEB_PROPS   := $(shell sed -n 's/^\([^\#][^:]*\):.*/\1/p' \
@@ -1192,19 +1201,19 @@ $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%
 # An explicit rule each, because the generic userland rule carries only
 # `UCFLAGS` and this is the one kit that needs more.
 #
-$(UBUILD)/user/kits/litexl/litexl_sdl.c.o: user/kits/litexl/litexl_sdl.c $(UFLAGS_FILE)
+$(UBUILD)/user/bin/apps/litexl/litexl_sdl.c.o: user/bin/apps/litexl/litexl_sdl.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/kits/litexl/litexl_render.c.o: user/kits/litexl/litexl_render.c $(UFLAGS_FILE)
+$(UBUILD)/user/bin/apps/litexl/litexl_render.c.o: user/bin/apps/litexl/litexl_render.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/kits/litexl/litexl_system.c.o: user/kits/litexl/litexl_system.c $(UFLAGS_FILE)
+$(UBUILD)/user/bin/apps/litexl/litexl_system.c.o: user/bin/apps/litexl/litexl_system.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/kits/litexl/litexl_match.c.o: user/kits/litexl/litexl_match.c $(UFLAGS_FILE)
+$(UBUILD)/user/bin/apps/litexl/litexl_match.c.o: user/bin/apps/litexl/litexl_match.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -1256,7 +1265,7 @@ $(UBUILD)/runtime/upstream/netsurf/%.c.o: runtime/upstream/netsurf/%.c \
 # `-Wall -Wextra -Werror` and `-fno-common`, plus the public headers of the
 # libraries it calls. `gl_kosmos.c` has the same arrangement with TinyGL.
 #
-$(UBUILD)/user/kits/web/web_%.c.o: user/kits/web/web_%.c $(UFLAGS_FILE) | $(WEB_GEN)
+$(UBUILD)/user/bin/apps/browser/web_%.c.o: user/bin/apps/browser/web_%.c $(UFLAGS_FILE) | $(WEB_GEN)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) \
 	      $(foreach l,$(WEB_LIBS),-Iruntime/upstream/netsurf/$(l)/include) \
@@ -1352,7 +1361,7 @@ $(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(UFLAGS_FILE
 # because this file is ours - all but `-Wcomment`, which five `//` comments
 # in Quake's own headers set off by ending in a backslash, and which is about
 # upstream's text rather than anything this file does.
-$(UBUILD)/user/kits/quake/quake_kosmos.c.o: user/kits/quake/quake_kosmos.c $(UFLAGS_FILE)
+$(UBUILD)/user/bin/apps/quake/quake_kosmos.c.o: user/bin/apps/quake/quake_kosmos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(QUAKE_INCLUDES) -Wno-comment -MMD -MP -c $< -o $@
 
@@ -1362,7 +1371,7 @@ $(UBUILD)/runtime/upstream/lakesnes/%.c.o: runtime/upstream/lakesnes/%.c $(UFLAG
 	$(CC) $(UCFLAGS) $(SNES_CFLAGS) -MMD -MP -c $< -o $@
 
 # And Kosmos's half: the core's headers on the path, and every warning on.
-$(UBUILD)/user/kits/snes/snes_kosmos.c.o: user/kits/snes/snes_kosmos.c $(UFLAGS_FILE)
+$(UBUILD)/user/bin/apps/snes/snes_kosmos.c.o: user/bin/apps/snes/snes_kosmos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -iquote $(SNES_DIR) -MMD -MP -c $< -o $@
 
@@ -1474,16 +1483,16 @@ $(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
 # and `-Wall -Wextra -Werror` here is a second compiler's opinion of code the
 # vendored build compiles with `-w`.
 #
-$(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/kits/litexl/litexl_sdl.c \
-                        user/kits/litexl/litexl_render.c user/kits/litexl/litexl_match.c \
-                        user/kits/litexl/SDL.h \
+$(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/bin/apps/litexl/litexl_sdl.c \
+                        user/bin/apps/litexl/litexl_render.c user/bin/apps/litexl/litexl_match.c \
+                        user/bin/apps/litexl/SDL.h \
                         runtime/upstream/lite-xl/src/renwindow.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -O1 -o $@ \
-	    -Iuser/kits/litexl -Iruntime/upstream/lite-xl/src \
+	    -Iuser/bin/apps/litexl -Iruntime/upstream/lite-xl/src \
 	    -Iruntime/upstream/stb \
-	    tools/test_litexl_surface.c user/kits/litexl/litexl_sdl.c \
-	    user/kits/litexl/litexl_render.c user/kits/litexl/litexl_match.c \
+	    tools/test_litexl_surface.c user/bin/apps/litexl/litexl_sdl.c \
+	    user/bin/apps/litexl/litexl_render.c user/bin/apps/litexl/litexl_match.c \
 	    runtime/upstream/stb/stb_impl.c \
 	    runtime/upstream/lite-xl/src/renwindow.c -lm
 
@@ -1542,10 +1551,10 @@ $(HOSTDIR)/test_efiboot: tools/test_efiboot.c boot/efi/mbi.c boot/efi/mbi.h boot
 # core's pixels and the window, asked without a core or a ROM, including
 # every byte it must not touch.
 #
-$(HOSTDIR)/test_snesblit: tools/test_snesblit.c user/kits/snes/snes_blit.c user/kits/snes/snes_blit.h
+$(HOSTDIR)/test_snesblit: tools/test_snesblit.c user/bin/apps/snes/snes_blit.c user/bin/apps/snes/snes_blit.h
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/kits/snes -o $@ \
-	        tools/test_snesblit.c user/kits/snes/snes_blit.c
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/bin/apps/snes -o $@ \
+	        tools/test_snesblit.c user/bin/apps/snes/snes_blit.c
 
 #
 # And where the page bitmap goes, for the same reason one layer down.
@@ -3306,7 +3315,7 @@ quake:
 	done; \
 	echo; \
 	echo "  $$ok of $$((ok + fail)) Quake engine files compile."; \
-	echo "  A QUAKE=1 image carries them and user/kits/quake/quake_kosmos.c."; \
+	echo "  A QUAKE=1 image carries them and user/bin/apps/quake/quake_kosmos.c."; \
 	test $$fail -eq 0
 
 # Lite XL on the machine: a window, a title that follows its file, a file

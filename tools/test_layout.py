@@ -118,6 +118,39 @@ def main():
 
         checks += 1
 
+    #
+    # A kit is reusable. An app's own C is the app's.
+    #
+    # Diego, 23 September 2026, finding `user/kits/doom/`: "a kit is a
+    # reusable piece of code that an app, service, or server can leverage and
+    # reuse. doom is an specific app. so all the doom specific code should
+    # live in a doom specific directory".
+    #
+    # Checked as a name collision because that is what the mistake looks
+    # like every time: `/kits/doom` existed beside `doom.lua`, and so did
+    # quake, snes, litexl and web. A kit that shares its name with an app is
+    # a binding to one engine wearing a general word - it can have no second
+    # caller, which is the whole of what makes something a kit.
+    #
+    # Caller-counting was tried first and is the wrong test: `/kits/game` has
+    # one caller today and is a rasterizer written to have many.
+    #
+    apps = os.path.join(ROOT, "user", "bin", "apps")
+
+    if os.path.isdir(drivers) and os.path.isdir(apps):
+        named = {n for n in os.listdir(apps)
+                 if os.path.isdir(os.path.join(apps, n))}
+
+        for kind in sorted(os.listdir(os.path.join(ROOT, "user", "kits"))):
+            checks += 1
+
+            if kind in named:
+                fails.append(
+                    "user/kits/%s/ has the same name as the app "
+                    "user/bin/apps/%s/, so it is that app's own code rather "
+                    "than a kit - a kit is reusable (docs/glossary.md)"
+                    % (kind, kind))
+
     if fails:
         print("FAIL: %d of %d checks on where servers and drivers live:"
               % (len(fails), checks))

@@ -7,7 +7,7 @@
  * should be tested without booting a machine, because a test that costs
  * thirty seconds and an emulator is a test somebody runs less often.
  *
- * `user/kits/litexl/litexl_sdl.c` needs `stdlib.h` and `string.h` and nothing else -
+ * `user/bin/apps/litexl/litexl_sdl.c` needs `stdlib.h` and `string.h` and nothing else -
  * no syscalls, no Kosmos headers, no framebuffer - so it compiles with the
  * host compiler exactly as it does with the cross one. That property is
  * worth keeping: it is what makes this file possible, and losing it would
@@ -25,7 +25,7 @@
 
 #include <stdlib.h>
 
-#include "../user/kits/litexl/SDL.h"
+#include "../user/bin/apps/litexl/SDL.h"
 #include "../runtime/upstream/lite-xl/src/renderer.h"
 
 static int checks;
@@ -391,7 +391,7 @@ int main(void)
         /*
          * `system`'s other thirty functions are questions for a server and
          * cannot be checked without a machine. These two are loops over
-         * bytes, and `user/kits/litexl/litexl_match.c` keeps them away from Lua so
+         * bytes, and `user/bin/apps/litexl/litexl_match.c` keeps them away from Lua so
          * that they can be checked here instead.
          */
         int score, worse;
