@@ -1,0 +1,597 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Preferences: one place to configure Kosmos, before any of it is built.
+  Designed on 23 September 2026 after Diego asked for "a preferences app
+  where we will put all the settings of the kosmos system in one place
+  divided by category or part. very simple. one place to configure all
+  kosmos", with GNOME's Settings beside it as the aesthetic to aim at.
+  roadmap.md 5zh. The page to build the app from.
+
+  Every row below is a setting that exists today. Where it lives now is
+  written under it, because the survey that produced this page is half the
+  design: the settings are already one format in one place, and what was
+  missing is not a server but a list of what there is.
+-->
+<title>Kosmos Preferences</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The window itself, in the quieter surface Diego asked for. */
+    --w-desk: #3d63b8;
+    --w-side: #f1f2f4;
+    --w-body: #fafafb;
+    --w-card: #ffffff;
+    --w-line: #e0e2e6;
+    --w-ink: #1d1f24;
+    --w-dim: #74787f;
+    --w-sel: #dfe3ea;
+    --w-accent: #2a55c9;
+    --w-head: #ffffff;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 20px 80px; }
+
+  h1 {
+    font-family: var(--display);
+    font-size: 30px;
+    letter-spacing: .2px;
+    margin: 0 0 6px;
+  }
+
+  .sub { color: var(--muted); margin: 0 0 30px; max-width: 70ch; }
+
+  h2 {
+    font-family: var(--display);
+    font-size: 19px;
+    margin: 42px 0 10px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+  }
+
+  p { max-width: 74ch; }
+  p.tight { margin: 0 0 12px; }
+
+  code, .k { font-family: var(--mono); font-size: .88em; }
+
+  .note {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 18px 0;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note p:first-child { margin-top: 0; }
+
+  /* ---------------------------------------------------- the window */
+
+  .stage {
+    background: var(--w-desk);
+    background-image: radial-gradient(120% 90% at 30% 10%,
+                      #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+    padding: 34px 24px;
+    border-radius: 12px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .win {
+    width: 840px;
+    max-width: 100%;
+    background: var(--w-body);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+    display: grid;
+    grid-template-columns: 216px 1fr;
+    font-size: 13.5px;
+    color: var(--w-ink);
+  }
+
+  /* the sidebar */
+  .side {
+    background: var(--w-side);
+    border-right: 1px solid var(--w-line);
+    display: flex;
+    flex-direction: column;
+    min-height: 500px;
+  }
+
+  .side-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 10px 10px 12px;
+    height: 46px;
+  }
+
+  .side-title {
+    font-weight: 600;
+    font-size: 14px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .ico {
+    width: 26px; height: 26px;
+    border-radius: 6px;
+    display: grid; place-items: center;
+    color: var(--w-dim);
+    flex: none;
+  }
+  .ico:hover { background: rgba(0,0,0,.06); }
+  .ico svg { width: 15px; height: 15px; }
+
+  .cats { padding: 2px 8px 10px; overflow: auto; }
+
+  .cat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    color: var(--w-ink);
+    user-select: none;
+  }
+  .cat:hover { background: rgba(0,0,0,.05); }
+  .cat.on { background: var(--w-sel); font-weight: 500; }
+  .cat svg { width: 15px; height: 15px; flex: none; color: var(--w-dim); }
+  .cat.on svg { color: var(--w-accent); }
+
+  .cat-gap { height: 12px; }
+
+  /* the content side */
+  .pane { display: flex; flex-direction: column; background: var(--w-body); }
+
+  .head {
+    height: 46px;
+    background: var(--w-head);
+    border-bottom: 1px solid var(--w-line);
+    display: flex;
+    align-items: center;
+    padding: 0 10px 0 18px;
+    gap: 8px;
+  }
+  .head .t { flex: 1; font-weight: 600; font-size: 14px; }
+
+  .body { padding: 22px 26px 30px; overflow: auto; }
+  .body-inner { max-width: 470px; margin: 0 auto; }
+
+  .grouplabel {
+    font-weight: 600;
+    font-size: 12.5px;
+    margin: 20px 0 7px 3px;
+  }
+  .grouplabel:first-child { margin-top: 0; }
+
+  .group {
+    background: var(--w-card);
+    border: 1px solid var(--w-line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--w-line);
+    min-height: 48px;
+  }
+  .row:last-child { border-bottom: 0; }
+
+  .row .label { flex: 1; min-width: 0; }
+  .row .label b { font-weight: 500; display: block; }
+  .row .label span {
+    color: var(--w-dim);
+    font-size: 12px;
+    display: block;
+    line-height: 1.4;
+  }
+
+  /* controls */
+  .sw {
+    width: 40px; height: 23px;
+    border-radius: 12px;
+    background: #cdd0d6;
+    position: relative;
+    flex: none;
+    cursor: pointer;
+  }
+  .sw.on { background: var(--w-accent); }
+  .sw::after {
+    content: "";
+    position: absolute;
+    top: 2.5px; left: 3px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,.28);
+    transition: left .12s;
+  }
+  .sw.on::after { left: 19px; }
+
+  .drop {
+    display: flex; align-items: center; gap: 7px;
+    padding: 5px 9px;
+    border: 1px solid var(--w-line);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--w-ink);
+    font-size: 12.5px;
+    cursor: pointer;
+    flex: none;
+  }
+  .drop svg { width: 11px; height: 11px; color: var(--w-dim); }
+
+  .radio {
+    width: 17px; height: 17px;
+    border-radius: 50%;
+    border: 1.5px solid #b9bcc3;
+    flex: none;
+    background: #fff;
+  }
+  .radio.on {
+    border: 5px solid var(--w-accent);
+    background: #fff;
+  }
+
+  .value { color: var(--w-dim); font-size: 12.5px; flex: none; }
+
+  .slider {
+    width: 132px; height: 4px;
+    background: #d6d9df;
+    border-radius: 2px;
+    position: relative;
+    flex: none;
+  }
+  .slider i {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: var(--w-accent);
+    border-radius: 2px;
+  }
+  .slider::after {
+    content: "";
+    position: absolute;
+    top: -6px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid #c3c6cc;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+
+  .swatches { display: flex; gap: 7px; flex: none; }
+  .swatch {
+    width: 26px; height: 26px;
+    border-radius: 6px;
+    border: 1px solid rgba(0,0,0,.12);
+    cursor: pointer;
+  }
+  .swatch.on { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+
+  .page { display: none; }
+  .page.on { display: block; }
+
+  /* Where the setting lives today. Outside the card on purpose: it is a
+     note for whoever builds this, not a row somebody can press. */
+  .lives {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: #9aa0ab;
+    padding: 6px 4px 0;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: var(--display); font-weight: 600; }
+  td.k { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14171c;
+      --ink: #e8eaee;
+      --muted: #9aa2ae;
+      --rule: #2a2f38;
+      --card: #1b1f26;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Kosmos Preferences</h1>
+<p class="sub">One place to configure Kosmos, divided by part. Drawn on 23 September 2026,
+before any of it is built &mdash; <code>roadmap.md</code> 5zh. Every row on this page is a
+setting that exists in Kosmos today; under each group is the file it lives in now.</p>
+
+<div class="stage">
+<div class="win">
+
+  <div class="side">
+    <div class="side-head">
+      <div class="ico" title="Search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></div>
+      <div class="side-title">Preferences</div>
+      <div class="ico" title="Menu"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M2 4h12M2 8h12M2 12h12"/></svg></div>
+    </div>
+    <div class="cats" id="cats"></div>
+  </div>
+
+  <div class="pane">
+    <div class="head">
+      <div class="t" id="title">Appearance</div>
+      <div class="ico" title="Close"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></div>
+    </div>
+    <div class="body"><div class="body-inner" id="pages"></div></div>
+  </div>
+
+</div>
+</div>
+
+<h2>Why this is a list and not a server</h2>
+
+<p>The open question on this was where the settings should live: a window that reads and
+writes each app&rsquo;s own file is a second copy of every format, and one that owns them all
+is a settings server and a protocol &mdash; which is the shape this system normally reaches
+for.</p>
+
+<div class="note">
+<p><strong>The survey answered it, and the answer is neither.</strong> Every settings file in
+Kosmos is already <em>the same format</em>: a Lua table written with <code>fs.write</code>
+and read back with <code>fs.read</code>, through the system&rsquo;s own serialiser. There is no
+second format to copy, because there is only one.</p>
+<p>What is missing is not storage. It is a <em>list of what there is</em> &mdash; which file,
+which key, what kind of thing it is, and one line saying what it does. Preferences renders
+from that list; every app goes on reading its own file exactly as it does now.</p>
+</div>
+
+<p class="tight">So the work is a schema in one place, and it is the part to get right:</p>
+
+<table>
+<tr><th>What</th><th>Where it lives today</th><th>Owner</th></tr>
+<tr><td>Look, wallpaper, scale</td><td class="k">/home/.appearance</td><td>Appearance</td></tr>
+<tr><td>Icon size, on the desktop and in a window</td><td class="k">/home/.tracker</td><td>Tracker</td></tr>
+<tr><td>Text size</td><td class="k">/home/.terminal, .logview, .music</td><td>each window</td></tr>
+<tr><td>What runs at startup</td><td class="k">/home/.startup</td><td>startup</td></tr>
+<tr><td>The clock&rsquo;s offset</td><td class="k">/home/.clock</td><td>Clock</td></tr>
+<tr><td>The address</td><td class="k">/home/.network</td><td>Network</td></tr>
+<tr><td>Super key bindings</td><td class="k">/home/.super</td><td>init</td></tr>
+<tr><td>Processors, screen mode, controller</td><td class="k">boot options &mdash; no window at all</td><td>&mdash;</td></tr>
+</table>
+
+<div class="note">
+<p><strong>The last row is the finding.</strong> <code>opt/kosmos/smp</code>,
+<code>video=WxH</code> and <code>irq=pic</code> can only be set by rebuilding a stick or
+editing a line on one. They are marked <span class="k">boot</span> in the mockup: shown,
+explained, and needing a restart. A machine you can only configure by rebuilding it is the
+thing Preferences exists to end.</p>
+</div>
+
+<h2>What is deliberately not here</h2>
+
+<p><strong>No settings that belong to one window.</strong> A Terminal&rsquo;s own text size
+stays in that Terminal&rsquo;s View menu, because it is a property of <em>this</em> window and
+not of the system; Preferences sets the default a new one starts at. The same rule decides
+every borderline case: if changing it should change one window, it is not here.</p>
+
+<p><strong>No search results page, yet.</strong> The search field is drawn because the
+screenshot has one and because a list this long wants it, but what it searches is the schema
+above &mdash; so it is one function over a table, and it arrives with the table rather than
+before it.</p>
+
+<h2>The aesthetic</h2>
+
+<p>Flatter and quieter than Kosmos draws today: one accent, rounded groups of rows, a
+sidebar with no tree, and chrome that is a title and two icons. That is a <em>shading</em>
+decision, which <code>beos.md</code> has always said is ours to make fresh &mdash;
+<code>roadmap.md</code> 5zi. What it deliberately does not touch is behaviour: replicants,
+the Deskbar, the right button reaching the application. Those are BeOS decisions about how
+the desktop works, and a screenshot is not asking for them.</p>
+
+</div>
+
+<script>
+const CATS = [
+  { id:"appearance", name:"Appearance", icon:"M8 2a6 6 0 100 12c1 0 1.5-.6 1.5-1.3 0-.8-.7-1.1-.7-1.8 0-.5.4-.9 1-.9H11a3 3 0 003-3c0-2.8-2.7-5-6-5z" },
+  { id:"desktop", name:"Desktop", icon:"M2 3h12v8H2zM6 14h4" },
+  { id:"display", name:"Displays", icon:"M2 3h12v9H2zM6 14h4" },
+  { id:"sound", name:"Sound", icon:"M3 6v4h2.5L9 13V3L5.5 6zM11.5 6a3 3 0 010 4" },
+  { id:"power", name:"Power", icon:"M8 2v6M5 4a5 5 0 106 0" },
+  { id:"gap1", gap:true },
+  { id:"network", name:"Network", icon:"M2 6a9 9 0 0112 0M4.5 8.5a5.5 5.5 0 017 0M8 12h.01" },
+  { id:"keyboard", name:"Keyboard", icon:"M2 4h12v8H2zM4.5 6.5h.01M7 6.5h.01M9.5 6.5h.01M12 6.5h.01M5 9.5h6" },
+  { id:"startup", name:"Startup", icon:"M8 2l5 3v6l-5 3-5-3V5z" },
+  { id:"datetime", name:"Date & Time", icon:"M8 2a6 6 0 100 12A6 6 0 008 2zM8 5v3.2l2 1.2" },
+  { id:"gap2", gap:true },
+  { id:"system", name:"System", icon:"M5 5h6v6H5zM8 2v2M8 12v2M2 8h2M12 8h2" },
+];
+
+const sw  = on => `<div class="sw${on?" on":""}"></div>`;
+const dd  = v  => `<div class="drop">${v}<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div>`;
+const rad = on => `<div class="radio${on?" on":""}"></div>`;
+const sl  = p  => `<div class="slider" style="--p:${p}"><i style="width:${p}%"></i></div>`;
+const row = (t, s, c) => `<div class="row"><div class="label"><b>${t}</b>${s?`<span>${s}</span>`:""}</div>${c}</div>`;
+const grp = (label, rows, lives) =>
+  `<div class="grouplabel">${label}</div><div class="group">${rows.join("")}</div>` +
+  (lives ? `<div class="lives">${lives}</div>` : "");
+
+const SWATCH = [["#f2c230","on"],["#3d63b8"],["#d8d8d4"],["#1e1e1e"]];
+
+const PAGES = {
+appearance:
+  grp("Look", [
+    row("Theme", "The colours and faces every window uses",
+        `<div class="swatches">${SWATCH.map(([c,o])=>`<div class="swatch${o?" on":""}" style="background:${c}"></div>`).join("")}</div>`),
+    row("Wallpaper", "Carried in the image, or a picture in /home", dd("Nebula")),
+  ], "/home/.appearance &middot; palette, wallpaper") +
+  grp("Size", [
+    row("Scale", "Everything larger, for a small screen at a high resolution", dd("150%")),
+    row("Text size", "What a new window starts at", dd("Normal")),
+  ], "/home/.appearance &middot; scale"),
+
+desktop:
+  grp("Icons", [
+    row("On the desktop", "Small 16, Normal 32, Large 64", dd("Large")),
+    row("In a Tracker window", "", dd("Normal")),
+    row("Show the Trash", "", sw(true)),
+  ], "/home/.tracker &middot; desktop_icon_px, window_icon_px") +
+  grp("Deskbar", [
+    row("Launchers", "The programs in the bar, and their order", dd("9 items")),
+    row("Clock", "", sw(true)),
+    row("Processor meter", "", sw(false)),
+  ], "the Deskbar's own folder"),
+
+display:
+  grp("Screen", [
+    row("Resolution", "The largest the firmware offers, unless told otherwise", dd("3440 &times; 1440")),
+    row("Scale", "The same setting as Appearance, shown where it is looked for", dd("150%")),
+  ], "boot option <b>video=WxH</b> &middot; needs a restart") +
+  grp("Brightness", [
+    row("Backlight", "", sl(70)),
+    row("Dim after a while", "Turn the panel down when nothing has happened", sw(false)),
+  ], "the backlight driver"),
+
+sound:
+  grp("Output", [
+    row("Volume", "", sl(55)),
+    row("Device", "", dd("ALC257")),
+    row("Mute", "", sw(false)),
+  ], "the audio server") +
+  grp("Sounds", [
+    row("Sound on a key that does nothing", "", sw(true)),
+  ], ""),
+
+power:
+  grp("Power button", [
+    row("When it is pressed", "", dd("Shut down")),
+  ], "the power button driver") +
+  grp("Saving", [
+    row("Blank the screen", "Turn the screen off after a period of inactivity", sw(false)),
+    row("Delay", "", dd("5 minutes")),
+  ], "") +
+  grp("Battery", [
+    row("Show in the Deskbar", "", sw(true)),
+    row("Warn when low", "", dd("10%")),
+  ], "the embedded controller, on a laptop"),
+
+network:
+  grp("Address", [
+    row("Configure", "", dd("Automatic")),
+    row("Address", "", `<div class="value">10.0.2.15</div>`),
+    row("Gateway", "", `<div class="value">10.0.2.2</div>`),
+  ], "/home/.network") +
+  grp("Interfaces", [
+    row("Intel 8086:15b8", "Wired, up at 1000 Mb/s", sw(true)),
+    row("USB adapter", "Not plugged in", sw(false)),
+  ], "the network stack"),
+
+keyboard:
+  grp("The Super key", [
+    row("Press it alone", "", dd("Launcher")),
+    row("Super + Tab", "", dd("Switch windows")),
+  ], "/home/.super") +
+  grp("Shortcuts", [
+    row("Screenshot", "Save the screen to /home/screenshots", `<div class="value">Print</div>`),
+    row("Volume", "", `<div class="value">F2 / F3</div>`),
+    row("Show all shortcuts", "", dd("Open")),
+  ], "the window manager"),
+
+startup:
+  grp("What runs when the machine starts", [
+    row("Deskbar", "", sw(true)),
+    row("Tracker &mdash; the desktop", "", sw(true)),
+    row("Web server", "Serve /home on port 80", sw(false)),
+    row("Add a program&hellip;", "", dd("Choose")),
+  ], "/home/.startup"),
+
+datetime:
+  grp("Clock", [
+    row("Time zone", "The board keeps UTC; this is the offset from it", dd("UTC&minus;3")),
+    row("24-hour clock", "", sw(true)),
+    row("Show seconds", "", sw(false)),
+  ], "/home/.clock &middot; offset"),
+
+system:
+  grp("Processors", [
+    row("Use", "How many of the machine's processors threads are spread across", dd("All 8")),
+  ], "boot option <b>smp=N</b> &middot; needs a restart") +
+  grp("Interrupts", [
+    row("Controller", "The legacy pair is for a machine the I/O APIC path fails on", dd("I/O APIC")),
+  ], "boot option <b>irq=pic</b> &middot; needs a restart") +
+  grp("About", [
+    row("Kosmos", "", `<div class="value">0.10.136</div>`),
+    row("Machine", "", `<div class="value">ThinkCentre M700</div>`),
+    row("Memory", "", `<div class="value">8190 MB</div>`),
+    row("Licences", "What is in this image and under what terms", dd("Show")),
+  ], ""),
+};
+
+const catsEl = document.getElementById("cats");
+const pagesEl = document.getElementById("pages");
+const titleEl = document.getElementById("title");
+
+catsEl.innerHTML = CATS.map(c => c.gap
+  ? `<div class="cat-gap"></div>`
+  : `<div class="cat${c.id==="appearance"?" on":""}" data-id="${c.id}">
+       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
+            stroke-linejoin="round"><path d="${c.icon}"/></svg>${c.name}</div>`).join("");
+
+pagesEl.innerHTML = Object.entries(PAGES)
+  .map(([id, html]) => `<div class="page${id==="appearance"?" on":""}" id="p-${id}">${html}</div>`)
+  .join("");
+
+catsEl.addEventListener("click", e => {
+  const el = e.target.closest(".cat");
+  if (!el) return;
+  catsEl.querySelectorAll(".cat").forEach(c => c.classList.remove("on"));
+  el.classList.add("on");
+  pagesEl.querySelectorAll(".page").forEach(p => p.classList.remove("on"));
+  const page = document.getElementById("p-" + el.dataset.id);
+  if (page) page.classList.add("on");
+  titleEl.textContent = CATS.find(c => c.id === el.dataset.id).name;
+});
+
+document.addEventListener("click", e => {
+  const s = e.target.closest(".sw");
+  if (s) s.classList.toggle("on");
+  const w = e.target.closest(".swatch");
+  if (w) {
+    w.parentElement.querySelectorAll(".swatch").forEach(x => x.classList.remove("on"));
+    w.classList.add("on");
+  }
+});
+</script>
+</body>
+</html>

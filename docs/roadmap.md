@@ -1526,14 +1526,31 @@ processors, and still what follows USB:
    Network, Keyboard. Each row is a control with its own label and a short
    line under it saying what it does.
 
-   **The open question is where the settings live**, and it is the
-   interesting half. A Preferences window that reads and writes each app's
-   own file is a second copy of every format; one that owns them all is a
-   settings *server* and a protocol, which is the shape this system
-   normally reaches for. Worth deciding before the window is drawn, because
-   it decides what the window is.
+   **The open question was where the settings live**, and the survey
+   answered it on 23 September: **neither a server nor a second format.**
+   Every settings file in Kosmos is already the same thing - a Lua table
+   written with `fs.write` and read back with `fs.read`, through the
+   system's own serialiser. There is no second format to copy because there
+   is only one, and there is nothing for a server to own that a file does
+   not already own.
 
-   Mockup first: `docs/preferences.html`.
+   What is missing is a **schema**: which file, which key, what kind of
+   thing it is, and one line saying what it does. Preferences renders from
+   that list and every app goes on reading its own file exactly as it does
+   now. That list is the work, and it is where the care goes.
+
+   **And the finding the survey turned up**: `opt/kosmos/smp`, `video=WxH`
+   and `irq=pic` can only be set by rebuilding a stick or editing a line on
+   one. A machine you can only configure by rebuilding it is the thing this
+   app exists to end, so they are in it, marked as needing a restart.
+
+   **The rule for what is not here**: a setting that belongs to one window
+   stays in that window. A Terminal's text size is a property of *that*
+   Terminal and lives in its View menu; Preferences sets what a new one
+   starts at. If changing it should change one window, it is not here.
+
+   **Mockup drawn: `docs/preferences.html`**, ten categories over the
+   settings that exist today, waiting on Diego.
 
 5zi. **WANTED on 23 September - a simpler look, and what it costs.** Diego:
    "i want to adopt an aesthetic similar to the screenshots attached, which
