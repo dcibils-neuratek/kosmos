@@ -176,6 +176,17 @@ the stable one. The older development images went to the Trash.
   The compositor-budget phase refuses to run anywhere but 1920x1080 by its
   own guard, so that one claim is still only made at the size it was written
   for.
+- **The compositor paints the whole display** (18.154) - committed and not
+  pushed. 0.10.125 booted on the M700 at 3440x1440 and the desktop painted
+  only its top, with the kernel's boot log through the rest. A process's
+  window for the framebuffer was the *gap* between `USER_SCREEN_VA` and
+  `USER_MAP_VA` - sixteen megabytes, and 3440x1440 is 18.9 - so the mapping
+  ran past it and the compositor's first surface was mapped over the bottom
+  of the screen. The window is 208 MB now and is a named number with two
+  static assertions on it; a display too large for it is refused and said;
+  and the display harness checks that the last rows of the screen are the
+  desktop's. **The USB keyboard works on the M700** - Diego: "USB keyboard
+  works great!".
 - **Stick `kosmos-usb-0.10.125-development.img` built for the M700** - MEGA,
   `/home` from `~/Kosmos/home` at 512 MB, `make prepush` green (33 suites,
   5:41), `make stress` 60 rounds with nothing leaked, and 32 OVMF checks.

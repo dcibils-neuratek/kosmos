@@ -1519,6 +1519,13 @@ processors, and still what follows USB:
      framebuffer against 800x600's 1.9, and the compositor's budget and every
      "the screen is 1920x1080" assumption meet a wider one for the first time
      (4k-and-no-hard-limits).
+   - **5zd-e. A wide screen in the gate.** Everything here is drawn at
+     1920x1080 and the M700 is 3440x1440 - four times the pixels the display
+     harness has ever seen, and where a framebuffer that did not fit its
+     window was found by looking at a photograph (`testing.md` 18.154).
+     `FB=3440x1440` and the `desktop`, `widgets` and `clicks` phases pass by
+     hand; making that the gate's needs a second kernel build, since the
+     size is compiled in for ramfb, which is why it is its own piece of work.
    - **5zd-d. The 768-megabyte ceiling, on a machine with eight gigabytes.**
      Diego: "the m700 has 8 gigs of ram installed", and `diagnose` says
      `ram_size = 804257792`. **This is not a fault**: `hal_ram_capped` in

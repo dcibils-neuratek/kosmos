@@ -1321,6 +1321,26 @@ bool process_grant_screen(struct process *p)
     pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 
     /*
+     * **A screen too large for its window is refused, and said.**
+     *
+     * The window was sixteen megabytes and nothing checked: a 3440x1440
+     * framebuffer is 18.9, so the mapping ran past it and into
+     * `USER_MAP_VA`, where the next surface the compositor asked for was
+     * mapped over the bottom of the screen. The desktop drew its top three
+     * quarters and the kernel's console showed through the rest, and
+     * nothing anywhere said why (`USER_SCREEN_MAX`).
+     *
+     * A machine with no screen is a supported way to run, so this is a
+     * refusal rather than a panic - and it is printed, because a desktop
+     * that does not start is a question somebody will have to answer.
+     */
+    if (bytes > USER_SCREEN_MAX) {
+        kputs("screen: this display needs more of a process's address space "
+              "than the window for it holds; not handed over\n");
+        return false;
+    }
+
+    /*
      * **`MAP_USER_FB`, not `MAP_USER_RW`**, and the difference is the
      * memory type rather than the permissions.
      *

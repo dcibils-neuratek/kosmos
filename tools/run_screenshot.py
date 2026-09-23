@@ -7899,6 +7899,44 @@ def check_desktop(guest):
            "occlude the layer under it - see `compose_rect`.")
     checks += 1
 
+    #
+    # **And the bottom of the screen is the compositor's**, which is a
+    # different claim from anything above it: every check so far looks at the
+    # top-left, where the icons are, and would pass on a machine painting
+    # three quarters of its display.
+    #
+    # That is what a 3440x1440 screen did on the ThinkCentre M700. A
+    # process's window for the framebuffer was sixteen megabytes - a gap
+    # between two addresses that nothing checked - and 3440x1440 is 18.9, so
+    # the mapping ran into the window above it and the compositor's first
+    # surface was mapped over the bottom of the screen. The desktop drew its
+    # top and the kernel's console showed through the rest.
+    #
+    # Mostly, rather than every pixel: the version stamp is down there and is
+    # meant to be.
+    #
+    def bottom_is_desktop(w, h, px):
+        seen, looked = 0, 0
+
+        for yy in range(h - 48, h - 2):
+            for xx in range(4, w - 4, 8):
+                o = (yy * w + xx) * 3
+                looked += 1
+
+                if tuple(px[o:o + 3]) == DESK:
+                    seen += 1
+
+        return (w, h, px) if looked > 0 and seen > looked * 3 // 4 else None
+
+    settle(guest, bottom_is_desktop,
+           "the last rows of the screen are not the desktop's colour, so the "
+           "compositor is painting some of the display and not all of it. "
+           "The framebuffer is mapped into the process holding the screen at "
+           "`USER_SCREEN_VA` and bounded by `USER_SCREEN_MAX`; a display "
+           "larger than that window used to be mapped past it, into the "
+           "addresses the next surface is given.")
+    checks += 1
+
     def drawn(x, y):
         """An icon's 32 pixels at x, y are not all desktop."""
         def look(w, h, px):

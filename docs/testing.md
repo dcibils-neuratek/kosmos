@@ -8118,3 +8118,56 @@ registers, and it jumped into nothing.
 
 **A build that succeeds is not a build that is right**, and an attribute on
 its own line is the shape of thing an edit lands in the middle of.
+
+## 18.154 The compositor paints the whole display
+
+`roadmap.md` 5zd-a. Diego's ThinkCentre M700 came up at 3440x1440 - the
+loader's new mode choice working exactly as asked - **and the desktop painted
+only its top**, with the kernel's boot log showing through the rest.
+
+### What it was
+
+A process that holds the screen gets the framebuffer mapped at
+`USER_SCREEN_VA`. How much room that mapping had was never a number: it was
+the gap between that address and `USER_MAP_VA`, the window `SYS_MAP` puts
+surfaces in, and the gap was sixteen megabytes. The comment above it said
+"three megabytes of it", which is 1024x768 - the size it was written for.
+
+3440x1440 at four bytes a pixel is **18.9 MB**. So the mapping ran past the
+window, `p->next_map` still started at `USER_MAP_VA`, and the first surface
+the compositor asked for was mapped **over the bottom of the screen**. Writes
+meant for those rows went into the surface's pages instead, and what stayed
+on the display was whatever the kernel console had left there.
+
+Nothing reported it, because nothing was wrong as far as any one piece of
+code could tell: the mapping succeeded, the surface succeeded, and each was
+doing what it was asked.
+
+### The checks
+
+- **Two `_Static_assert`s in `process.h`**: the screen's window does not run
+  into the map window, and it holds 7680x4320 at four bytes - 126 MB, the
+  largest display anyone sells, in a window of 208. A number that is the gap
+  between two other numbers is a number nobody checks, so it is a number now.
+- **A refusal with a line**, for a display larger than the window: a machine
+  with no screen is a supported way to run, and a desktop that does not start
+  is a question somebody has to answer.
+- **The display harness's `desktop` phase, one more**: the last rows of the
+  screen are mostly the desktop's own colour. Every other check in that phase
+  looks at the top-left, where the icons are, and would pass on a machine
+  painting three quarters of its display - which is exactly what this one was
+  doing.
+
+**Control, watched**: the window put back to sixteen megabytes, at
+`FB=3440x1440`, fails that check by name.
+
+### And what this says about the harness
+
+**The gate has never drawn on a screen larger than 1920x1080**, and that is
+now a machine Diego owns. The bug was found by looking at a photograph.
+
+`FB=3440x1440` and the harness's `desktop`, `widgets` and `clicks` phases run
+green by hand, and that is where the evidence for this fix comes from - but by
+hand is not the gate. A wide display suite is `roadmap.md` 5zd-e, and it wants
+a second kernel build, which is the reason it is a separate piece of work
+rather than a line here.

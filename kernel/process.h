@@ -147,13 +147,32 @@ struct thread;
 /*
  * Where the framebuffer lands in a process that holds the screen.
  *
- * Above the stack, two megabytes clear of its top. Three megabytes of it, mapped from
- * the same physical pages the board is scanning out - not a copy, because a
- * copy would need somewhere to put three megabytes and would then need
- * flushing, and the whole point of a linear framebuffer is that there is
- * nothing between the write and the screen.
+ * Above the stack, two megabytes clear of its top, and mapped from the same
+ * physical pages the board is scanning out - not a copy, because a copy
+ * would need somewhere to put it and would then need flushing, and the
+ * whole point of a linear framebuffer is that there is nothing between the
+ * write and the screen.
+ *
+ * **How much room it has is `USER_SCREEN_MAX`, and it used to be sixteen
+ * megabytes by accident.** The window was whatever happened to be left
+ * between this address and `USER_MAP_VA`, and this comment said "three
+ * megabytes of it" - which is 1024x768. A 3440x1440 screen is 18.9, so on
+ * Diego's ThinkCentre M700 the framebuffer ran *past* the window and the
+ * first surface the compositor asked for was mapped over the bottom of the
+ * screen: the desktop drew the top three quarters and the kernel console
+ * showed through the rest, which is what it looked like.
+ *
+ * 208 megabytes now, which holds 7680x4320 with room over. It is address
+ * space rather than memory - nothing is mapped that the screen does not
+ * need - and there are four gigabytes between here and `USER_MAP_END`, so
+ * the map window loses a twentieth of its addresses and nothing else.
+ *
+ * **And a screen that does not fit is refused** (`process_grant_screen`),
+ * because the alternative is what happened: a mapping that runs into the
+ * next window and a desktop that is wrong in a way nothing reports.
  */
-#define USER_SCREEN_VA   (USER_VA_BASE + 0x03000000UL)      /* 0x83000000 */
+#define USER_SCREEN_VA   (USER_VA_BASE + 0x03000000UL)      /* base + 48 MB */
+#define USER_SCREEN_MAX  (USER_MAP_VA - USER_SCREEN_VA)     /* 208 MB */
 
 /*
  * Where SYS_MAP puts pages a process asks for, growing upward.
@@ -172,7 +191,25 @@ struct thread;
  * normally. Tracking freed ranges to reuse addresses would need an
  * allocator, which is the thing this kernel does not have.
  */
-#define USER_MAP_VA      (USER_VA_BASE + 0x04000000UL)      /* 0x84000000 */
+#define USER_MAP_VA      (USER_VA_BASE + 0x10000000UL)      /* base + 256 MB */
+
+/*
+ * **The screen's window holds any screen this system means to drive**, and
+ * does not run into the one above it.
+ *
+ * Both halves, because the second is what went wrong: the window was
+ * whatever was left between two addresses and nothing said so, so a 3440x1440
+ * framebuffer mapped past it and the compositor's first surface landed on
+ * the bottom of the screen. A number that is a gap between two other numbers
+ * is a number nobody checks.
+ *
+ * 7680x4320 at four bytes is 126 MB, which is the largest thing anyone sells
+ * and is still half the window.
+ */
+_Static_assert(USER_SCREEN_VA + USER_SCREEN_MAX <= USER_MAP_VA,
+               "the screen's window runs into the map window");
+_Static_assert(USER_SCREEN_MAX >= 7680UL * 4320UL * 4UL,
+               "the screen's window does not hold a 7680x4320 display");
 
 /*
  * **How many pages a process may have mapped at once: as many as it has
