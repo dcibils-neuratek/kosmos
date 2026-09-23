@@ -23,12 +23,36 @@ local settings = use("/lib/settings.lua")
 local hardware = use("/lib/hardware.lua")
 local theme = ui.theme
 
-local SIDE   = 168          -- the category list
-local PAD    = 14
-local GAP    = 10           -- between a card and the next heading
-local ROW_H  = 40           -- a row with a label and a note in it
-local ROW_1  = 30           -- a row with only a label
-local W, H   = 700, 500
+--
+-- **The spacing is `docs/preferences.html`'s**, measured off the drawing
+-- rather than chosen again here. Diego, 23 September 2026: "i want it to
+-- look exactly like the mockup, spacing, button style, borders, titles,
+-- rounded buttons and selectors".
+--
+-- The numbers that matter and why each is what it is:
+--
+--   SIDE     the category list, wide enough for "Date & Time" and no wider
+--   PAD      from the window's edge to a card, and from a card to the next
+--   ROW_H    a row with a note under its label: two lines and air
+--   ROW_1    a row with only a label
+--   CARD_R   the card's corner, which matches a control's (`ui.lua`)
+--   HEAD_Y   from a card to the heading below it, and from that to the next
+--
+-- **A page is a column of at most `BODY_W`, centred.** The mockup's is 470
+-- and the reason is not taste: a row is a label on the left and a control
+-- on the right, and past about sixty characters the eye loses which control
+-- belongs to which label. A window that is wider gets margins rather than
+-- longer rows.
+--
+local SIDE   = 176
+local PAD    = 18
+local GAP    = 22           -- between a card and the next heading
+local ROW_H  = 48           -- a row with a label and a note in it
+local ROW_1  = 40           -- a row with only a label
+local CARD_R = 10
+local BODY_W = 470
+local HEAD_Y = 8            -- from a heading to its card
+local W, H   = 720, 520
 
 local win, err = ui.window{ title = "Preferences", w = W, h = H,
                             x = 150, y = 100 }
@@ -69,17 +93,41 @@ local page = ui.view{ x = SIDE, y = 0, w = W - SIDE, h = H }
 
 local cards = {}            -- { y, h } for each card, in page coordinates
 
+--
+-- Where the column of cards sits: `BODY_W` wide, centred, and never wider
+-- than the pane can hold.
+--
+local function column(w)
+  local width = math.min(BODY_W, w - 2 * PAD)
+
+  return (w - width) // 2, width
+end
+
 function page:draw(g)
+  local x, width = column(self.w)
+
   g:fill(0, 0, self.w, self.h, theme.window)
   g:fill(0, 0, 1, self.h, theme.line_soft)
 
   for _, c in ipairs(cards) do
-    g:fill(PAD, c.y, self.w - 2 * PAD - 1, c.h, theme.raised)
-    g:frame(PAD, c.y, self.w - 2 * PAD - 1, c.h, theme.line_soft)
+    --
+    -- **Rounded when the look is flat**, which is the same rule its
+    -- controls follow (`ui.lua`, `gc:raised`): a look that says nothing
+    -- about light says everything with a line, and a square card under
+    -- rounded buttons is the one combination that looks like a mistake.
+    --
+    if theme.flat then
+      g:fill_round(x, c.y, width, c.h, theme.raised, CARD_R)
+      g:frame_round(x, c.y, width, c.h, theme.line_soft, CARD_R)
+    else
+      g:fill(x, c.y, width, c.h, theme.raised)
+      g:frame(x, c.y, width, c.h, theme.line_soft)
+    end
 
-    -- The lines between rows, not around them: one card, several rows.
+    -- The lines between rows, not around them: one card, several rows. They
+    -- stop short of the corners so a rule does not run into the arc.
     for _, at in ipairs(c.rules) do
-      g:fill(PAD + 1, at, self.w - 2 * PAD - 3, 1, theme.line_soft)
+      g:fill(x + 1, at, width - 2, 1, theme.line_soft)
     end
   end
 end
@@ -214,13 +262,17 @@ rebuild = function()
   for i = #page.children, 1, -1 do page.children[i] = nil end
   cards = {}
 
+  local cx, width = column(page.w)
   local y = PAD
 
   for _, group in ipairs(settings.groups(showing)) do
-    page:add(ui.label{ x = PAD + 2, y = y, w = page.w - 2 * PAD,
+    -- The heading sits just left of the card's own inset, so a page reads
+    -- as a column of headings with their cards under them rather than as
+    -- two columns.
+    page:add(ui.label{ x = cx + 2, y = y, w = width,
                        text = group.name, role = "heading" })
 
-    y = y + gfx.height() + 6
+    y = y + gfx.height("heading") + HEAD_Y
 
     local card = { y = y, h = 0, rules = {} }
     local first = true
@@ -238,7 +290,7 @@ rebuild = function()
       -- sentence that does not fit simply stops, with no sign that it did.
       -- Asking the control how wide it is costs nothing and cannot be wrong.
       --
-      local right = page.w - PAD - 12
+      local right = cx + width - 14
       local c = control_for(it, 0, 0, nil)
       local taken = 0
 
@@ -258,16 +310,26 @@ rebuild = function()
         end
       end
 
-      local words = right - taken - 12 - (PAD + 12)
+      local words = right - taken - 14 - (cx + 14)
+
+      --
+      -- **Two lines centred in the row as a pair**, not a label at a fixed
+      -- offset with a note under it. A row with a note is two lines of
+      -- text and a row without is one, and a row that put the first line
+      -- in the same place either way leaves the single-line one sitting
+      -- high in its own box.
+      --
+      local lines = it.note and 2 or 1
+      local block = lines * gfx.height()
+      local ty = y + (h - block) // 2
 
       if it.label ~= "" then
-        page:add(ui.label{ x = PAD + 12, y = y + 6, w = words,
+        page:add(ui.label{ x = cx + 14, y = ty, w = words,
                            text = it.label })
       end
 
       if it.note then
-        page:add(ui.label{ x = PAD + 12, y = y + 6 + gfx.height(),
-                           w = words,
+        page:add(ui.label{ x = cx + 14, y = ty + gfx.height(), w = words,
                            text = it.note, color = theme.text_dim })
       end
 

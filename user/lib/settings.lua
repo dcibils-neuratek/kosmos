@@ -87,8 +87,18 @@ settings.ITEMS = {
         label = "Theme", note = "The colours and faces every window uses",
         kind = "choice", file = settings.APPEARANCE, key = "palette",
         default = "plex",
+        --
+        -- **The looks that ship, and it has to be all of them.** Endeavour
+        -- arrived in `themes.lua` and not here, so the dropdown showed the
+        -- four it knew and the fifth as the raw word `endeavour` - which is
+        -- what `name_of` falls back to and exactly what it should have
+        -- looked like. `tools/test_settings.lua` holds this list to
+        -- `themes.order` now, because a list of the same thing in two files
+        -- is a list that drifts.
+        --
         choices = { { "plex", "Plex" }, { "plexnight", "Plex Night" },
-                    { "classic", "Classic" }, { "studio", "Studio" } } },
+                    { "classic", "Classic" }, { "studio", "Studio" },
+                    { "endeavour", "Endeavour" } } },
 
   item{ category = "appearance", group = "Look",
         label = "Wallpaper", note = "Carried in the image, or a picture in /home",

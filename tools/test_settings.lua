@@ -159,6 +159,40 @@ if #scales == 2 then
 end
 
 --
+-- **The Theme setting offers every look that ships, and no other.**
+--
+-- Two lists of the same thing in two files, which is a list that drifts -
+-- and it did, the day it was written: Endeavour went into `themes.lua` and
+-- not into `settings.lua`, so Preferences showed four looks by name and the
+-- fifth as the raw word `endeavour`. Nothing was broken; it just looked
+-- like somebody had not finished.
+--
+local themes = dofile("user/lib/themes.lua")
+local theme_item
+
+for _, it in ipairs(settings.ITEMS) do
+  if it.label == "Theme" then theme_item = it end
+end
+
+check(theme_item ~= nil, "there is no Theme setting at all")
+
+if theme_item then
+  local offered = {}
+
+  for _, c in ipairs(theme_item.choices or {}) do offered[c[1]] = c[2] end
+
+  for _, name in ipairs(themes.order) do
+    check(offered[name] ~= nil,
+          ("the look %q ships and Preferences does not offer it, so it "
+           .. "would show as its own raw name"):format(name))
+  end
+
+  check(#(theme_item.choices or {}) == #themes.order,
+        ("Preferences offers %d looks and %d ship")
+        :format(#(theme_item.choices or {}), #themes.order))
+end
+
+--
 -- name_of turns a value into what the control shows.
 --
 check(settings.name_of(look, "plexnight") == "Plex Night",
