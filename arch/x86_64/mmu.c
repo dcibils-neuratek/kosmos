@@ -534,6 +534,7 @@ void mmu_init(void)
     uintptr_t fine_start;
     uintptr_t fine_end;
     uintptr_t ram_end;
+    uintptr_t identity_end;
     uintptr_t blocks_end;
     struct memrange ram;
     uintptr_t text_start   = (uintptr_t)__text_start;
@@ -544,20 +545,23 @@ void mmu_init(void)
     ram_end = ram.base + ram.size;
 
     /*
-     * RAM is identity mapped, so it cannot reach into the region processes
-     * are given. `mmu.h` explains why that region starts at 1 GB here and
-     * what removes the limit.
+     * **The identity map stops at the device window; the window below does
+     * not.**
      *
-     * **The board has already capped its answer to fit**, in
-     * `cap_to_what_can_be_mapped`, which is where the argument for capping
-     * rather than refusing is written down. This is the assertion that it
-     * did: a range past the line at this point is a board that reported
-     * more than the architecture can describe, and mapping it would put a
-     * process's first page inside the kernel's own tables.
+     * The identity map shares a PML4 slot with the region processes are
+     * given, so it can never describe memory past `DEVICE_WINDOW_BASE` -
+     * that has not changed and cannot. What has changed is that it no
+     * longer has to: `PHYS_WINDOW_BASE` maps all of physical memory in the
+     * kernel's own half, the page allocator hands out pointers into it, and
+     * everything that needs a physical address says `virt_to_phys`
+     * (`roadmap.md` 5zd-d).
+     *
+     * So a board reporting more RAM than the identity map holds is now an
+     * ordinary machine rather than a panic. The identity map covers what it
+     * can - which is what the kernel's own image, the early boot path and
+     * `mmu_map_device` need - and the window covers the rest.
      */
-    if (ram_end > DEVICE_WINDOW_BASE) {
-        panic("mmu: the board reported RAM the address space has no room for");
-    }
+    identity_end = ram_end < DEVICE_WINDOW_BASE ? ram_end : DEVICE_WINDOW_BASE;
 
     /*
      * The PAT first, before a single entry is written, so that
@@ -636,14 +640,14 @@ void mmu_init(void)
      * allocator, which reads the same range, hands those pages out happily.
      * The fault would arrive much later and somewhere else entirely.
      */
-    blocks_end = fine_end + ((ram_end - fine_end) / BLOCK_2M) * BLOCK_2M;
+    blocks_end = fine_end + ((identity_end - fine_end) / BLOCK_2M) * BLOCK_2M;
 
     map_blocks_2m(kernel_pml4, fine_end, fine_end,
                   (blocks_end - fine_end) / BLOCK_2M, MAP_RW);
 
-    if (blocks_end < ram_end) {
+    if (blocks_end < identity_end) {
         map_pages(kernel_pml4, blocks_end, blocks_end,
-                  (ram_end - blocks_end) / PAGE_SIZE, MAP_RW);
+                  (identity_end - blocks_end) / PAGE_SIZE, MAP_RW);
     }
 
     /*

@@ -76,6 +76,8 @@ def boot(image, option, timeout, typed=(), extra=(), until=None, after=None,
         print("FAIL: no %s beside the ELF. Run `make x86-build`." % binary)
         return None
 
+    # `-m` last wins in QEMU, so a caller may give a different size in
+    # `extra` without this having to know about it.
     cmd = [QEMU] + ARGS + list(extra)
 
     if option:
@@ -3825,21 +3827,44 @@ def core(image, check, fails):
                       if "PANIC" in l or "fault" in l),
                      "and said nothing about why"))
 
-        # It says what it gave up. A kernel that identity maps RAM below the
-        # process region cannot describe a laptop's memory, and a number
-        # that is quietly five per cent of the truth has to be printed
-        # rather than discovered.
+        # It says what it gave up, and a number that is quietly a fraction
+        # of the truth has to be printed rather than discovered.
         told = re.search(r"of (\d+) MB this machine has", big)
 
         check(told is not None and int(told.group(1)) > 16000,
               "the machine did not report the memory it cannot map; the cap "
               "is silent, which is how it would be found on hardware")
 
-        used = re.search(r"(\d+) MB of RAM at 0x[0-9a-f]+, in \d+ pages", big)
+        used = re.search(r"(\d+) MB of RAM at 0x0*([0-9a-f]+), in \d+ pages",
+                         big)
 
-        check(used is not None and 700 < int(used.group(1)) < 768,
-              "the usable memory is not the region below the device window, "
-              "so the board chose a block on the far side of the PCI hole")
+        #
+        # **The range the kernel is in, whole**, which on q35 with this much
+        # memory is the 2046 MB below the PCI hole at 2 GB.
+        #
+        # This asked for 700 to 768 until 23 September, and was right to:
+        # RAM was identity mapped below the region processes are given, so
+        # 768 MB was the ceiling on every machine whatever it had. The window
+        # in `mmu.h` removed that, and what is left is the hole - the page
+        # allocator holds one range and the memory above four gigabytes is
+        # the other one.
+        #
+        # The base matters as much as the size: 0x100000 is the low range,
+        # which is the one the kernel was loaded into and therefore the only
+        # one `pmm_place` can put a bitmap in. A machine that adopted the
+        # far block would report a plausible size and fail to boot.
+        #
+        check(used is not None and 2000 < int(used.group(1)) <= 2048,
+              "with 16 GB the machine adopted %s MB, not the ~2046 of the "
+              "range below the PCI hole. Near 767 is the old identity-map "
+              "ceiling back; much more would be memory one range cannot hold"
+              % (used.group(1) if used else "no"))
+
+        check(used is not None and int(used.group(2), 16) == 0x100000,
+              "the adopted range starts at 0x%s, not the low 0x100000 - so "
+              "the board chose a block on the far side of the PCI hole, "
+              "which is not the one the kernel is in"
+              % (used.group(2) if used else "?"))
 
     #
     # **Both interrupt controllers, because this machine has two and a
@@ -4343,8 +4368,86 @@ def ethernet(image, check):
               % min(times))
 
 
+def memory(image, check):
+    """More RAM than the kernel used to be able to describe.
+
+    Until 23 September every machine ran on at most 768 megabytes, whatever
+    it had: RAM was identity mapped and the identity map shares a PML4 slot
+    with the region processes are given, so it had to stop before
+    `USER_VA_BASE`. Diego's ThinkCentre has eight gigabytes and ran on 767 of
+    them; his ThinkPad has sixteen and ran on the same 767.
+
+    `roadmap.md` 5zd-d lifted it by giving the kernel a window over all of
+    physical memory in its own half of the address space, so the identity map
+    stopped being how the kernel reaches RAM. **Nothing in the gate had ever
+    booted a machine with more than 512 MB**, which is why the ceiling could
+    sit there for months being nobody's failure.
+
+    Two sizes, and the second is the point:
+
+    - **2 GB**, where the whole of it is one range below the PCI hole. The
+      machine should adopt all of it, and the old code would have reported
+      767 MB here.
+    - **4 GB**, where QEMU's q35 puts the hole at 2 GB and the rest above
+      four. One range is still all the page allocator holds, so the machine
+      adopts 2046 MB *and says so* - naming the hole rather than the address
+      space, because the address space is no longer what limits it.
+    """
+    for size, least, most in (("2G", 2000, 2048), ("4G", 2000, 2048)):
+        out = boot(image, None, 120.0, typed=("mem",), extra=("-m", size))
+
+        if out is None:
+            check(False, "the machine would not boot with %s of RAM" % size)
+            continue
+
+        found = re.search(r"(\d+) MB of RAM at 0x([0-9a-f]+), in (\d+) pages",
+                          out)
+
+        check(found is not None,
+              "with %s of RAM the machine never said how much it had:\n    %s"
+              % (size, out[-400:]))
+
+        if found is None:
+            continue
+
+        megabytes = int(found.group(1))
+
+        check(least <= megabytes <= most,
+              "with %s of RAM the machine adopted %d MB, not between %d and "
+              "%d. Below that range is the 768 MB identity-map ceiling back "
+              "again; above it is memory the page allocator cannot be holding "
+              "in one range" % (size, megabytes, least, most))
+
+        # The pages have to agree with the megabytes, because a bitmap sized
+        # from one and indexed by the other is the failure this whole change
+        # could produce and nothing else would notice.
+        pages = int(found.group(3))
+
+        check(abs(pages * 4 // 1024 - megabytes) <= 1,
+              "with %s of RAM the machine says %d MB and %d pages of 4 KB, "
+              "which do not describe the same memory"
+              % (size, megabytes, pages))
+
+    #
+    # And the machine says what it is not using, with the true reason.
+    #
+    out = boot(image, None, 120.0, typed=("mem",), extra=("-m", "4G"))
+
+    if out is None:
+        check(False, "the machine would not boot with 4G to be asked twice")
+        return
+
+    said = next((l.strip() for l in out.splitlines()
+                 if "this machine has" in l), "")
+
+    check("the one range holding the kernel" in said,
+          "with 4 GB the machine did not say why it is using less than all "
+          "of it, or gave the old reason. The identity map is no longer what "
+          "limits this; the PCI hole and a one-range allocator are: %r" % said)
+
+
 PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet',
-    'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+    'memory', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -4450,6 +4553,10 @@ def main():
     # And what the machine says it is, which it used to read out of the
     # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.
     #
+    # And a machine with more memory than the kernel used to describe.
+    if 'memory' in wanted:
+        memory(image, check)
+
     # And an Intel Ethernet card on a PCI line, which is the M700's.
     if 'ethernet' in wanted:
         ethernet(image, check)

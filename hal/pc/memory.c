@@ -148,6 +148,9 @@ const char *pc_loader_cmdline(void)
  */
 static unsigned long beyond;
 
+/* Where the kernel image ends, so the range holding it can be recognised. */
+extern char __image_end[];
+
 /*
  * The RSDP the loader handed over, if it did.
  *
@@ -365,40 +368,39 @@ whole += length;
     }
 
         /*
-         * **Clipped to what this kernel can map, before it competes to
-         * be the largest.**
+         * **The range the kernel was loaded into, whole.**
          *
-         * RAM is identity mapped and a process's space begins at
-         * `USER_VA_BASE`, so nothing past `DEVICE_WINDOW_BASE` has
-         * anywhere to live that is not already somebody's - and a
-         * region entirely above the line is not a candidate at all.
+         * This used to clip every range at `DEVICE_WINDOW_BASE` before
+         * comparing them, because RAM was identity mapped and a
+         * process's space begins at `USER_VA_BASE`, so nothing past
+         * that line had anywhere to live. That is what put a machine
+         * with eight gigabytes on 767 megabytes of them. Since
+         * `roadmap.md` 5zd-d the kernel reaches memory through a window
+         * in its own half of the address space (`mmu.h`,
+         * `PHYS_WINDOW_BASE`) and the line is gone.
          *
-         * **Clipping after choosing was the bug, and it is the
-         * interesting one.** A PC with four gigabytes or more does not
-         * have one block of memory: the PCI hole splits it, so there is
-         * a piece below two gigabytes and a larger piece above four -
-         * and "the largest usable region" is the one the kernel is not
-         * loaded into and cannot reach. `pmm_init` said `the kernel
-         * image does not fit in RAM` and it was exactly right.
+         * **What replaces it is the requirement `pmm_place` actually
+         * has**, stated directly instead of approximated: the bitmap
+         * goes after the kernel image, so the range has to be the one
+         * the image is in. A PC with four gigabytes or more does not
+         * have one block of memory - the PCI hole splits it, a piece
+         * below and a larger piece above four gigabytes - and picking
+         * "the largest" would pick the piece the kernel is not in.
+         * `pmm_init` would then say `the kernel image does not fit in
+         * RAM`, and be exactly right.
          *
-         * Every machine this is aimed at has that shape. QEMU with the
-         * five hundred megabytes the tests use does not, which is why
-         * it took booting one with sixteen gigabytes to see it.
+         * So the memory above the hole is counted as `beyond` and not
+         * used yet. Using it needs a page allocator that can hold more
+         * than one range, which is `roadmap.md` 5zd-d step four.
          */
-        if (hi > DEVICE_WINDOW_BASE) {
-            beyond += hi - (lo > DEVICE_WINDOW_BASE
-                            ? lo : DEVICE_WINDOW_BASE);
-        }
-
-        if (lo < DEVICE_WINDOW_BASE) {
-            if (hi > DEVICE_WINDOW_BASE) {
-                hi = DEVICE_WINDOW_BASE;
-            }
-
+        if (lo <= (unsigned long)(uintptr_t)__image_end
+            && hi > (unsigned long)(uintptr_t)__image_end) {
             if (hi - lo > found.size) {
                 found.base = lo;
                 found.size = hi - lo;
             }
+        } else {
+            beyond += hi - lo;
         }
 }
 
@@ -645,17 +647,23 @@ void hal_ram_range(struct memrange *out)
  * **The cap is a kernel limit rather than a machine one, and saying so is
  * the whole reason this exists.**
  *
- * A ThinkPad has sixteen gigabytes and this kernel can describe the first
- * 768 megabytes of them. Until the scan above clipped, that machine either
- * panicked to a serial port a laptop does not have or faulted before there
- * was a screen to fault on - so the first thing anybody would have seen was
- * nothing at all.
+ * It used to be 768 megabytes on every machine, because RAM was identity
+ * mapped below the region processes are given. That is gone: the kernel
+ * reaches memory through a window in its own half of the address space
+ * (`arch/x86_64/mmu.h`, `PHYS_WINDOW_BASE`), and the range holding the
+ * kernel is now adopted whole - 2046 megabytes where QEMU gives four
+ * gigabytes, against 767 before.
  *
- * It runs on what it can reach now. Kosmos is six and a half megabytes and
- * holds a desktop in five hundred, so a laptop on 766 of its 16384 is a
- * laptop running - and `mmu.h`'s high-half split is what lifts the ceiling
- * for good. A number that is quietly five per cent of the truth is exactly
- * the kind of thing that has to be printed rather than discovered.
+ * **What is left is a different limit and it is worth not confusing with
+ * the old one.** A PC with four gigabytes or more does not have one block
+ * of memory: the PCI hole splits it, a piece below and a larger piece
+ * above four gigabytes. The page allocator holds one range - one base, one
+ * bitmap - so the piece the kernel is not in is counted here and not used.
+ * Lifting that is `roadmap.md` 5zd-d step four, and it is a change to
+ * `pmm` rather than to the address space.
+ *
+ * A number that is quietly a fraction of the truth is exactly the kind of
+ * thing that has to be printed rather than discovered.
  */
 bool hal_ram_capped(unsigned long *whole_bytes)
 {

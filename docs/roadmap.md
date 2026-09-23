@@ -1824,10 +1824,49 @@ processors, and still what follows USB:
         now. The framebuffer's is better for it - it holds `fb.phys`, which
         is the number that actually leaves the kernel, instead of the
         pointer the kernel reads through.
-     3. **The ceiling.** `cap_to_what_can_be_mapped` stops clipping,
-        `mmu_init` stops panicking, and `pmm` is given the whole range. Only
-        now can a page live above 768 MB, and only now does step 2 have to
-        have been complete.
+     3. **DONE on 23 September - the ceiling.** The board stops clipping
+        every range at `DEVICE_WINDOW_BASE` and adopts **the range the kernel
+        was loaded into, whole**; `mmu_init` stops panicking on a board that
+        reports more than the identity map holds, and instead maps the
+        identity region up to `DEVICE_WINDOW_BASE` and the window over all of
+        it.
+
+        **767 MB to 2046 MB**, measured: QEMU with 2 GB, 4 GB and 16 GB all
+        adopt the whole range below the PCI hole where every one of them used
+        to adopt 767. The permanent check is `run_x86.py`'s `memory` part,
+        which boots 2 GB and 4 GB and holds the megabytes and the page count
+        to describing the same memory - a bitmap sized from one and indexed
+        by the other is the failure this change could produce and nothing
+        else would see. **Control watched**: the clip put back reports 767
+        and fails by name.
+
+        **What replaces the clip is the requirement `pmm_place` actually
+        has**, stated instead of approximated: the bitmap goes after the
+        kernel image, so the range must be the one the image is in. Picking
+        "the largest" would pick the block above four gigabytes on any real
+        PC, and `pmm_init` would say `the kernel image does not fit in RAM`
+        and be right.
+
+        The boot line that says what the machine is not using was corrected
+        rather than deleted: it named the identity map, which is no longer
+        what limits this.
+     4. **The other side of the PCI hole.** What is left. A PC with four
+        gigabytes or more has its memory in two pieces, and `pmm` holds one
+        range - one base, one bitmap - so the piece the kernel is not in is
+        counted and unused. On Diego's M700 that is about five of its eight
+        gigabytes.
+
+        The shape is small and the bitmap is what makes it so: **span it from
+        the lowest usable byte to the highest and mark everything that is not
+        usable as already taken.** Nine gigabytes of address space at one bit
+        per 4 KB page is 288 KB of bitmap, which is nothing, and the holes
+        cost only the time to set their bits at boot. `hal_ram_range` grows
+        to report every usable range rather than the best one, and
+        `pmm_place` places the bitmap in the range holding the image exactly
+        as it does now.
+
+        Not started. It is a change to `pmm` and the board's scan, and
+        nothing in the address space.
 
      `as_create` copies the kernel's PML4 entries into every new space and
      will have to copy slot 256 as well - one line, and the one place where

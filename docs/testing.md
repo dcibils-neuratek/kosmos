@@ -8290,3 +8290,72 @@ drops the packet that provoked it, so `seq=1` has no answer and a second
 `ping` answers 4 of 4. That is `net.c`'s and true of the USB adapter too, so
 it is `roadmap.md` 5zd-h rather than part of this. The check above asks for
 six of eight for exactly that reason, and says so.
+
+## 18.156 A machine with more memory than the kernel could describe
+
+`roadmap.md` 5zd-d. Until 23 September every machine ran on at most 768
+megabytes, whatever it had. Diego's ThinkCentre M700 has eight gigabytes
+and ran on 767 of them; his ThinkPad has sixteen and ran on the same 767.
+
+### Why nothing caught it
+
+**Nothing in the gate had ever booted a machine with more than 512 MB.**
+`run_x86.py` passes `-m 512M` and always had, so the ceiling at 768 was a
+number no suite could reach - and a limit that cannot be reached is a limit
+nobody tests. It was not a missing check; it was a missing *machine*.
+
+That it was reported rather than silent is the only reason it was ever
+known: `hal_ram_capped` prints what the board had against what the kernel
+took. A kernel that had quietly used 767 of 16384 would have been a laptop
+that felt fine.
+
+### What changed
+
+The identity map shares a PML4 slot with the region processes are given, so
+it has to stop before `USER_VA_BASE` at 1 GB - that is still true and cannot
+change. What changed is that it is no longer how the kernel reaches RAM:
+`PHYS_WINDOW_BASE` maps all of physical memory in the kernel's own half, the
+page allocator hands out pointers into it, and everything needing a physical
+address says `virt_to_phys` (18.155's sibling; the three steps are in the
+roadmap).
+
+So the board adopts the range the kernel was loaded into **whole**, and
+`mmu_init` maps the identity region up to the device window and the window
+over everything.
+
+### The checks
+
+`run_x86.py`'s `memory`, seven, in `x86-storage`:
+
+- **2 GB and 4 GB adopted between 2000 and 2048 MB.** Below that range is
+  the old ceiling back; above it is memory one range cannot be holding.
+- **The megabytes and the page count describe the same memory.** A bitmap
+  sized from one and indexed by the other is the failure this change could
+  produce, and it is the one nothing else would see - the machine would boot,
+  report a plausible number, and hand out pages that do not exist.
+- **The machine says what it is not using, and gives the true reason.** The
+  boot line named the identity map; it now names the PCI hole and the
+  one-range allocator, because that is what limits it now.
+
+And in `core`, the 16 GB boot that already existed, corrected rather than
+deleted: **2046 MB, based at 0x100000.** The base matters as much as the
+size - the low range is the one the kernel was loaded into and therefore the
+only one `pmm_place` can put a bitmap in. A machine that adopted the far
+block would report a plausible size and fail to boot.
+
+**Control, watched**: the clip put back reports 767 MB at both sizes and
+fails by name.
+
+### What is still not used
+
+A PC with four gigabytes or more has its memory in two pieces, split by the
+PCI hole, and `pmm` holds one range. On the M700 that leaves about five of
+its eight gigabytes counted and unused. `roadmap.md` 5zd-d step four, and
+the shape is small: span the bitmap from the lowest usable byte to the
+highest and mark the holes taken. Nine gigabytes at one bit per page is
+288 KB.
+
+**The number is printed either way**, which is the part worth keeping: this
+system has now twice had a limit that cost most of a machine's memory and
+broke nothing, and both times the only reason anybody knew was a line in the
+boot log.

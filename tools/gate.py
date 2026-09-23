@@ -136,7 +136,7 @@ SUITES = [
     Suite("x86-core", ["python3", "tools/run_x86.py", X86, "--parts",
                        "core,power_button,battery,ethernet"], x86=True),
     Suite("x86-storage", ["python3", "tools/run_x86.py", X86, "--parts",
-                          "storage,memdisk,identity,firmware,machine_report"],
+                          "storage,memdisk,memory,identity,firmware,machine_report"],
           x86=True),
 
     # **The HDA sessions on a quiet machine**: `audiolag` measures the ring

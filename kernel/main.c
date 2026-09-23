@@ -767,8 +767,9 @@ void kmain(void)
             boot_fact_begin();
             kputs("of ");
             kputu(whole / (1024 * 1024));
-            kputs(" MB this machine has, that is all this kernel can map: "
-                  "RAM is identity mapped below the process region");
+            kputs(" MB this machine has, that is the one range holding the "
+                  "kernel: the PCI hole splits a PC's memory and the page "
+                  "allocator holds one range");
             boot_fact_end();
         }
     }
