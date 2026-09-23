@@ -1484,7 +1484,25 @@ processors, and still what follows USB:
    away, so nothing said so. `png.c` reads colour type 3 with `tRNS`, and
    `wm` names the wallpaper it restored or why it could not.
 
-5zj. **WANTED on 23 September - the whole desktop in the new language.**
+5zj. **Mockup done 23 September, and the two things it wanted that the
+   machine could not do are now built.** Diego, on seeing it: "the mockup is
+   amazing!... i like the window chrome as well which is minimal but very
+   practical. i like we play with shades of colors and shadows."
+
+   **A window has a rounded corner and casts a shadow.** Both were
+   impossible for one reason - the compositor blitted windows opaquely, so
+   nothing showed through a corner and nothing could be drawn outside one -
+   and both are one change: `round_cover` in the gfx kit, `blit_round` with
+   a flag that inverts it, and `shadow`. The manager saves a window's four
+   corner squares before it paints and puts them back afterwards, which
+   rounds everything the window drew without any drawing call knowing.
+   `theme.metrics.corner` and `.shadow` are points like every other metric,
+   so a look may ask for square and hard-edged. `testing.md` 18.158.
+
+   **What is left of the mockup**: the applications. Processes, Editor,
+   Music and Terminal are drawn and only Tracker and Preferences are built.
+
+5zj-a. **The original entry - the whole desktop in the new language.**
    Diego, on seeing Tracker rebuilt: "the new design tracker is amazing! how
    would the entire kosmos desktop look with that design language and style?
    can you mockup the desktop, at least 5 of the most used apps like

@@ -260,6 +260,23 @@ theme.metrics = {
   tab     = 26,   -- a window's title tab
   deskbar = 32,   -- the Deskbar
   gap     = 12,   -- between widgets, and from a window's edge
+
+  --
+  -- **What a window's outside looks like**, which the compositor reads and
+  -- nothing else does.
+  --
+  -- `corner` is how far the four corners are rounded; `shadow` how far the
+  -- soft edge reaches past the frame. Both are in points and go through
+  -- `scale.px` like every other metric, so a desktop at 150 per cent gets a
+  -- corner and a shadow that are a half larger rather than the same pixels
+  -- on a bigger screen.
+  --
+  -- Zero for either is a square, hard-edged window, which is what this drew
+  -- until 23 September and what a look may still ask for: the metrics are
+  -- the same table a theme may set, so a look that wants 1995 can have it.
+  --
+  corner  = 8,    -- a window's rounded corner
+  shadow  = 14,   -- how far its shadow reaches
 }
 
 -- The five roles and their faces are defined at the end of this file;

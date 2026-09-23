@@ -880,6 +880,285 @@ static int l_blit(lua_State *L)
     return 0;
 }
 
+/*
+ * **A rounded rectangle, as the one question both new primitives ask.**
+ *
+ * Is the destination pixel (x, y) inside the rectangle (rx, ry, rw, rh)
+ * with corners of `r`? Everywhere but the four corner squares the answer is
+ * yes without arithmetic, which is what makes a rounded blit cost almost
+ * nothing: only `4 * r * r` pixels are ever tested, whatever the window's
+ * size.
+ *
+ * The corner test is the circle's, on integers: a pixel is outside when its
+ * distance from the corner's centre is more than the radius. Squared on
+ * both sides, so there is no square root and no float - `CLAUDE.md` puts
+ * floats out of the kernel and there is no reason to want one here either.
+ *
+ * Half a pixel is added to the radius before squaring. Without it the
+ * boundary lands between two integers and the arc comes out visibly
+ * flat-sided at small radii, which is exactly the size a window corner is.
+ */
+/*
+ * How much of this pixel is inside: 0 outside, 255 in, and a ramp across
+ * the one-pixel band the arc passes through.
+ *
+ * **The ramp is what makes a corner look round at eight pixels.** Without
+ * it the test is a yes or a no and the result is geometrically exact and
+ * visibly a chamfer - thirteen pixels removed from a 64-pixel square, which
+ * is precisely a quarter disc's area and looks like a cut corner because
+ * every one of them is all or nothing.
+ *
+ * Squared distances throughout, so there is no square root: the band is
+ * between `(r - 1/2)^2` and `(r + 1/2)^2` and coverage is linear across it.
+ * That is not the true area of a circle's intersection with a pixel, and at
+ * this size nobody can tell - what it has to do is stop the edge stepping.
+ */
+static long round_cover(long x, long y, long rx, long ry, long rw, long rh,
+                        long r)
+{
+    long dx, dy;
+    long d2, lo, hi;
+
+    if (x < rx || y < ry || x >= rx + rw || y >= ry + rh) {
+        return 0;
+    }
+
+    if (r <= 0) {
+        return 255;
+    }
+
+    /* How far into a corner square this pixel is, or zero when it is in the
+     * straight part of an edge - which is the common case and costs one
+     * comparison each way. */
+    if (x < rx + r) {
+        dx = rx + r - x;
+    } else if (x >= rx + rw - r) {
+        dx = x - (rx + rw - r) + 1;
+    } else {
+        return 255;
+    }
+
+    if (y < ry + r) {
+        dy = ry + r - y;
+    } else if (y >= ry + rh - r) {
+        dy = y - (ry + rh - r) + 1;
+    } else {
+        return 255;
+    }
+
+    /* Everything times four, so the halves disappear: `(2r - 1)^2` is
+     * `4 (r - 1/2)^2` and `(2r + 1)^2` is `4 (r + 1/2)^2`. */
+    d2 = 4 * (dx * dx + dy * dy);
+    lo = (2 * r - 1) * (2 * r - 1);
+    hi = (2 * r + 1) * (2 * r + 1);
+
+    if (d2 <= lo) {
+        return 255;
+    }
+
+    if (d2 >= hi) {
+        return 0;
+    }
+
+    return 255 * (hi - d2) / (hi - lo);
+}
+
+/*
+ * `dst:blit_round(src, sx, sy, w, h, dx, dy, rx, ry, rw, rh, radius)`
+ *
+ * A blit that leaves the destination alone outside a rounded rectangle.
+ *
+ * **Written this way round because of how the desktop composes.** The
+ * window manager paints back to front into one backbuffer, a damaged
+ * rectangle at a time, so when a window's pixels are written everything
+ * behind it is already there. A blit that skips the corner pixels therefore
+ * *shows what is behind* without knowing or caching anything about it - and
+ * it works when the damaged rectangle is only part of a corner, which a
+ * "round off the window afterwards" primitive could not.
+ *
+ * The rounded rectangle is given in destination coordinates and separately
+ * from the copy, because they are not the same thing: the copy is the piece
+ * being repainted and the rounding belongs to the whole window.
+ *
+ * **A fourteenth argument inverts it**, copying only what is *outside* -
+ * which is how the desktop actually rounds a window. Everything a window
+ * draws goes through half a dozen calls (a gradient for the tab, fills for
+ * the border, a blit for the content), and rounding each of them would be
+ * six places to keep in step. So the manager saves the four corner squares
+ * before the window is painted and puts them back afterwards with this,
+ * which rounds the whole thing in one place and needs no drawing call to
+ * know it is happening.
+ */
+static int l_blit_round(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    struct surface *src = check_surface(L, 2);
+    long sx = (long)luaL_checkinteger(L, 3);
+    long sy = (long)luaL_checkinteger(L, 4);
+    long w  = (long)luaL_checkinteger(L, 5);
+    long h  = (long)luaL_checkinteger(L, 6);
+    long dx = (long)luaL_checkinteger(L, 7);
+    long dy = (long)luaL_checkinteger(L, 8);
+    long rx = (long)luaL_checkinteger(L, 9);
+    long ry = (long)luaL_checkinteger(L, 10);
+    long rw = (long)luaL_checkinteger(L, 11);
+    long rh = (long)luaL_checkinteger(L, 12);
+    long r  = (long)luaL_checkinteger(L, 13);
+    /* `outside` inverts the test, which is what puts a corner back: the
+     * same geometry, copying exactly the pixels the other call skipped. */
+    int outside = lua_toboolean(L, 14);
+    long row;
+
+    if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
+        return 0;
+    }
+
+    if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
+        return 0;
+    }
+
+    for (row = 0; row < h; row++) {
+        const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
+        uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
+        long y = dy + row;
+        long col;
+
+        /* A row that is clear of both corner bands is a memcpy, which is
+         * every row of a window but the first and last `r` of them. The
+         * inverted call has nothing to do on such a row at all. */
+        if (y >= ry + r && y < ry + rh - r) {
+            if (!outside) {
+                memcpy(dp, sp, (size_t)w * 4);
+            }
+
+            continue;
+        }
+
+        for (col = 0; col < w; col++) {
+            long cover = round_cover(dx + col, y, rx, ry, rw, rh, r);
+
+            /* Restoring wants the complement: the background comes back
+             * over exactly as much of the pixel as the window does not
+             * cover. */
+            if (outside) {
+                cover = 255 - cover;
+            }
+
+            if (cover >= 255) {
+                dp[col] = sp[col];
+            } else if (cover > 0) {
+                dp[col] = over((sp[col] & 0x00ffffffu)
+                               | ((uint32_t)cover << 24), dp[col], 255);
+            }
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * `dst:shadow(rx, ry, rw, rh, radius, spread, alpha)`
+ *
+ * The soft edge a window casts, blended onto what is already there.
+ *
+ * **Outside the rounded rectangle and nowhere else.** The window's own
+ * pixels are written over this immediately afterwards, so drawing under
+ * them would be work thrown away; and the desktop composes damaged
+ * rectangles, so a shadow that assumed it owned the whole band would paint
+ * over its neighbours.
+ *
+ * The falloff is linear in the distance past the edge, which is not what a
+ * Gaussian blur gives and is what this wants: a blur of a hard rectangle is
+ * expensive to compute per frame and its extra realism is invisible under a
+ * window at these sizes. What a shadow has to do is separate a window from
+ * what is behind it, and a ramp does that.
+ *
+ * Offset downwards by a third of the spread, because a shadow with no
+ * direction reads as a glow. Down and slightly nowhere else - a light
+ * source directly above is what every desktop since 1995 has drawn and the
+ * one nobody has to think about.
+ */
+static int l_shadow(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    long rx = (long)luaL_checkinteger(L, 2);
+    long ry = (long)luaL_checkinteger(L, 3);
+    long rw = (long)luaL_checkinteger(L, 4);
+    long rh = (long)luaL_checkinteger(L, 5);
+    long r  = (long)luaL_checkinteger(L, 6);
+    long spread = (long)luaL_checkinteger(L, 7);
+    long alpha  = (long)luaL_optinteger(L, 8, 90);
+    long drop = spread / 3;
+    long y;
+
+    if (spread <= 0 || alpha <= 0) {
+        return 0;
+    }
+
+    if (alpha > 255) {
+        alpha = 255;
+    }
+
+    for (y = ry - spread + drop; y < ry + rh + spread + drop; y++) {
+        long x;
+
+        if (y < 0 || y >= (long)dst->height) {
+            continue;
+        }
+
+        for (x = rx - spread; x < rx + rw + spread; x++) {
+            long near_x, near_y, dx2, dy2, d, a;
+            uint32_t *p;
+
+            if (x < 0 || x >= (long)dst->width) {
+                continue;
+            }
+
+            /* Never under the window itself. */
+            if (round_cover(x, y, rx, ry, rw, rh, r) >= 255) {
+                continue;
+            }
+
+            /*
+             * Distance to the rectangle, which for a point outside is the
+             * distance to the nearest edge or corner. The rounding is
+             * ignored here: a shadow a pixel off at a corner is a shadow
+             * nobody can see, and the exact version costs a second circle
+             * test per pixel of the band.
+             */
+            near_x = x < rx ? rx - x : (x >= rx + rw ? x - (rx + rw) + 1 : 0);
+            near_y = y - drop;
+            near_y = near_y < ry ? ry - near_y
+                     : (near_y >= ry + rh ? near_y - (ry + rh) + 1 : 0);
+
+            dx2 = near_x;
+            dy2 = near_y;
+            d = dx2 > dy2 ? dx2 : dy2;
+
+            /* The diagonal, so a corner does not read as square. */
+            if (dx2 > 0 && dy2 > 0) {
+                d = (dx2 + dy2) * 3 / 4;
+            }
+
+            if (d >= spread) {
+                continue;
+            }
+
+            a = alpha * (spread - d) / spread;
+            a = a * (spread - d) / spread;      /* squared: a softer knee */
+
+            if (a <= 0) {
+                continue;
+            }
+
+            p = row_of(dst, (unsigned)y) + x;
+            *p = over(0x000000u | ((uint32_t)a << 24), *p, 255);
+        }
+    }
+
+    return 0;
+}
+
 static int l_blend(lua_State *L)
 {
     struct surface *dst = check_surface(L, 1);
@@ -2198,6 +2477,8 @@ static const luaL_Reg surface_methods[] = {
     { "triangle", l_triangle },
     { "disc",   l_disc },
     { "blit",   l_blit },
+    { "blit_round", l_blit_round },
+    { "shadow", l_shadow },
     { "blend",  l_blend },
     { "stretch", l_stretch },
     { "pixels",  l_pixels },

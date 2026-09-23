@@ -4430,14 +4430,30 @@ def check_scale(guest):
             o = (y * width + x) * 3
             return tuple(px[o:o + 3])
 
+        #
         # The title bar: the rows straight above the own-pixel window that
-        # are not the desk. Not by the tab's colour, since which of the two
-        # windows opened last - and so is focused and yellow - is a race.
+        # are neither the desk nor its shadow. Not by the tab's colour,
+        # since which of the two windows opened last - and so is focused -
+        # is a race.
+        #
+        # **The shadow is why "not the desk" is not enough** (`roadmap.md`
+        # 5zj, 23 September). A window casts one now, so between its tab and
+        # the desk there are a dozen rows that are the desk *darkened* - and
+        # this counted them as title bar and read 49 where the tab is 39.
+        #
+        # A shadow is darker than the desk in every channel and a tab is
+        # not: every look's tab is lighter than its desktop, because a title
+        # bar that recedes into the background is a title bar nobody finds.
+        # So "darker than the desk everywhere" separates the two without
+        # knowing either colour.
+        #
         desk = at(10, 700)
         rows = 0
 
         while rows < 80 and dy - 1 - rows >= 0:
-            if at(dx + dw // 2, dy - 1 - rows) == desk:
+            here = at(dx + dw // 2, dy - 1 - rows)
+
+            if here == desk or all(here[i] <= desk[i] for i in range(3)):
                 break
 
             rows += 1

@@ -110,6 +110,22 @@ local theme = use("/lib/theme.lua")
 -- as long as this said 26 - the one number, kept in one place.
 --
 local TAB_H      = theme.metrics.tab
+
+--
+-- **A window's outside, in one table rather than two names.**
+--
+-- `corner` is how far its corners are rounded and `shadow` how far its soft
+-- edge reaches; both are points and both are rescaled with everything else.
+-- One table because this file is within a handful of Lua's two hundred
+-- locals - adding two names cost more than adding two fields, which is a
+-- silly reason and a real one.
+--
+local OUT = { corner  = theme.metrics.corner or 0,
+              shadow  = theme.metrics.shadow or 0,
+              -- How far each new window steps from the last, when the
+              -- quarters are gone. A title bar and a little, so the one
+              -- underneath is still grabbable.
+              cascade = theme.metrics.tab + 8 }
 local BORDER     = 2
 --
 -- The three controls on a tab, and the room they take.
@@ -145,7 +161,7 @@ local MARGIN     = 4
 -- corner. A tab's height, so the one underneath always has a strip of its
 -- own title bar showing - which is the whole point: a window you can see a
 -- piece of is a window you can pick up.
-local CASCADE    = TAB_H + 8
+
 
 local CLOSE_W    = BOX + 6        -- the close box at the left of a tab
 
@@ -209,10 +225,12 @@ end
 
 function scale.chrome()
   TAB_H   = scale.px(theme.metrics.tab)
+  OUT.corner = scale.px(theme.metrics.corner or 0)
+  OUT.shadow = scale.px(theme.metrics.shadow or 0)
   BORDER  = scale.px(2)
   BOX     = scale.px(18)
   MARGIN  = scale.px(4)
-  CASCADE = TAB_H + scale.px(8)
+  OUT.cascade = TAB_H + scale.px(8)
   CLOSE_W = BOX + scale.px(6)
   GRIP    = scale.px(16)
   BOX_W   = BOX + scale.px(4)
@@ -1281,8 +1299,104 @@ local function frame_of(win)
          win.h + TAB_H + BORDER
 end
 
+--
+-- **The frame plus its shadow**, which is what has to be repainted when a
+-- window moves or goes away - and is *not* what a click hits.
+--
+-- `frame_of` stays the window: hit-testing, stacking and the outline a drag
+-- draws all mean the thing somebody can grab, and a shadow is not that. A
+-- shadow that took clicks would be a window with an invisible border a
+-- fortnight wide, which is the failure every compositor with soft edges has
+-- had at least once.
+--
+-- Damage is the other question - what is on the screen because of this
+-- window - and the answer there does include it. Separating the two is the
+-- whole of what shadows cost in this design, because `frame_of`'s comment
+-- was already true: it is the only place that has to know.
+--
+--
+-- **Rounding a window, by keeping its corners and putting them back.**
+--
+-- Everything a window puts on the screen goes through half a dozen calls -
+-- a gradient for the tab, fills for the border and the controls, a blit or
+-- a stretch for the content - and rounding each of them would be six places
+-- to keep in step and six chances to miss one. A window that was rounded in
+-- five of them has a square notch, which is worse than a square window.
+--
+-- So the corners are *saved* from the backbuffer before the window is
+-- painted and copied back afterwards over the pixels outside the arc. The
+-- backbuffer at that moment holds everything behind this window, because
+-- the desktop composes back to front - so what goes back is exactly what
+-- should show through, whatever it is, and no drawing call has to know any
+-- of this is happening.
+--
+-- Four squares of `corner` a side, clipped to the damaged rectangle: 256
+-- pixels at the default radius, saved and restored once per window per
+-- rectangle. Against a window of half a million it does not appear in a
+-- profile.
+--
+OUT.keep_surface = gfx.surface{ w = 64, h = 64 }
+
+--
+-- The four corner squares of a frame, clipped to `r`, as
+-- `{ sx, sy, w, h, kx, ky }` - where in the backbuffer, and where in the
+-- scratch it goes. Empty when the rectangle touches no corner, which is the
+-- common case for a window being dragged across the middle of the screen.
+--
+function OUT.corners(fx, fy, fw, fh, r)
+  local c = OUT.corner
+  local out = {}
+
+  if c <= 0 or c > 32 then return out end
+
+  for _, at in ipairs({ { fx, fy, 0, 0 },
+                        { fx + fw - c, fy, c, 0 },
+                        { fx, fy + fh - c, 0, c },
+                        { fx + fw - c, fy + fh - c, c, c } }) do
+    local x0 = math.max(at[1], r.x)
+    local y0 = math.max(at[2], r.y)
+    local x1 = math.min(at[1] + c, r.x + r.w)
+    local y1 = math.min(at[3] and at[2] + c or 0, r.y + r.h)
+
+    if x1 > x0 and y1 > y0 then
+      out[#out + 1] = { x0, y0, x1 - x0, y1 - y0,
+                        at[3] + (x0 - at[1]), at[4] + (y0 - at[2]) }
+    end
+  end
+
+  return out
+end
+
+function OUT.keep(list)
+  for _, c in ipairs(list) do
+    OUT.keep_surface:blit(back, c[1], c[2], c[3], c[4], c[5], c[6])
+  end
+end
+
+function OUT.put_back(list, fx, fy, fw, fh)
+  for _, c in ipairs(list) do
+    back:blit_round(OUT.keep_surface, c[5], c[6], c[3], c[4], c[1], c[2],
+                    fx, fy, fw, fh, OUT.corner, true)
+  end
+end
+
+function OUT.shadowed(win)
+  local fx, fy, fw, fh = frame_of(win)
+
+  if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen then
+    return fx, fy, fw, fh
+  end
+
+  local s = OUT.shadow
+
+  if s <= 0 then return fx, fy, fw, fh end
+
+  -- Down by a third, as `shadow` in the gfx kit draws it.
+  return fx - s, fy - s + s // 3, fw + s * 2, fh + s * 2
+end
+
 local function damage_window(win)
-  add_damage(frame_of(win))
+  add_damage(OUT.shadowed(win))
 end
 
 --
@@ -2149,6 +2263,31 @@ local function draw_window(i, r)
       --
       local bare = win.backdrop or win.strip
 
+      --
+      -- **The shadow first, because everything else is drawn over it.**
+      --
+      -- Outside the frame and nowhere else - the gfx kit's `shadow` skips
+      -- the rounded rectangle itself, so this is not work thrown away under
+      -- the window. Clipped to `r` by the primitive's own bounds check, the
+      -- same way every other call here is.
+      --
+      -- A bare window casts none: the backdrop is the thing everything sits
+      -- on and the strip is chrome, and a shadow under either would be a
+      -- dark band across a desktop that has nothing above it.
+      --
+      if not bare and OUT.shadow > 0 and not win.fullscreen then
+        back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow)
+      end
+
+      --
+      -- The corners, kept before anything is painted over them. Put back at
+      -- the end of this window's drawing, which is what rounds it.
+      --
+      local kept = (not bare and not win.fullscreen)
+                   and OUT.corners(fx, fy, fw, fh, r) or nil
+
+      if kept then OUT.keep(kept) end
+
       -- The whole decoration in one colour: the tab and the border all the
       -- way round, yellow when this window has the focus and grey when it
       -- does not.
@@ -2385,6 +2524,14 @@ local function draw_window(i, r)
           end
         end
       end
+
+      --
+      -- **And the corners back, last of all.** Everything this window drew
+      -- is on the screen now, square; this copies what was behind over the
+      -- pixels outside the arc and the window is round. One place, after
+      -- every drawing call rather than inside any of them.
+      --
+      if kept then OUT.put_back(kept, fx, fy, fw, fh) end
     end
 end
 
@@ -3362,7 +3509,7 @@ handlers.open = function(req, who, cap)
       --
       -- **The quarters first, and the cascade only when they are gone.**
       --
-      -- A cascade steps by `CASCADE`, which is a title bar and a little -
+      -- A cascade steps by `OUT.cascade`, which is a title bar and a little -
       -- about thirty pixels. That is the right amount to prove two windows
       -- are not the same window, and it is nowhere near enough to *read*
       -- the one underneath: four windows opened at login came up in a stack
@@ -3438,12 +3585,12 @@ handlers.open = function(req, who, cap)
         for _ = 1, 8 do
           if not taken_at(win.x, win.y) then break end
 
-          win.x = win.x + CASCADE
-          win.y = win.y + CASCADE
+          win.x = win.x + OUT.cascade
+          win.y = win.y + OUT.cascade
 
           -- Back to the top left rather than off the bottom right.
           if win.x + win.w > W - BORDER or win.y + win.h > H - BORDER then
-            win.x, win.y = BORDER + CASCADE, top + CASCADE
+            win.x, win.y = BORDER + OUT.cascade, top + OUT.cascade
             break
           end
         end

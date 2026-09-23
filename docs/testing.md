@@ -8433,3 +8433,71 @@ exactly like a window with no argument; and a label is clipped to its own
 width, so a fixed reserve on the right cut the longest note in half with no
 sign that it had. The control now says how wide it is and the words take
 what is left.
+
+## 18.158 A window with a rounded corner and a shadow
+
+`roadmap.md` 5zj. Diego, on the desktop mockup: "i like we play with shades
+of colors and shadows", and "i like the window chrome as well which is
+minimal but very practical". The two things that drawing had which the
+machine could not do were a soft edge under a window and a rounded corner -
+and both for the same reason: the compositor blitted windows **opaquely**,
+so nothing could show through a corner and nothing could be drawn outside
+one.
+
+### Why it is one primitive and not six
+
+Everything a window puts on the screen goes through half a dozen calls: a
+gradient for the tab, fills for the border and the controls, a blit or a
+stretch for the content, three more for the sizing grip. Rounding each of
+them would be six places to keep in step and six chances to miss one - and a
+window rounded in five of them has a square notch, which looks worse than a
+square window.
+
+So the corners are **saved and put back**. Before a window is painted, the
+four corner squares are copied out of the backbuffer; after everything it
+draws is on the screen, they are copied back over the pixels outside the
+arc. The backbuffer at that moment holds exactly what is behind this window,
+because the desktop composes back to front - so what returns is the right
+thing whatever it is, and no drawing call knows any of this is happening.
+
+Four squares of eight pixels a side, clipped to the damaged rectangle: 256
+pixels saved and restored per window per rectangle, against a window of half
+a million.
+
+### The two things that had to be separated
+
+**Damage and hit-testing.** `frame_of` already said it was "the only place
+that has to know" a window's outer rectangle, and that turned out to be
+exactly half true. A shadow *is* on the screen because of the window, so it
+has to be repainted when the window moves - and it is *not* something anyone
+can click, or a window would have an invisible border a fortnight wide.
+`OUT.shadowed` is the first; `frame_of` stays the second.
+
+**Coverage, not a yes or a no.** The first version tested each pixel and
+copied it or did not, which is geometrically exact - thirteen pixels removed
+from a 64-pixel square is precisely a quarter disc - and looks like a
+chamfer, because every one of them is all or nothing. `round_cover` returns
+a ramp across the one-pixel band the arc passes through, in squared
+distances so there is no square root, and the corner reads as round.
+
+### The checks
+
+The display harness had two phases that measured things the shadow changed,
+and both were corrected rather than loosened:
+
+- **The title bar's height at 150 per cent** counted rows above a window
+  that were "not the desk", and a shadow is a dozen rows of the desk
+  *darkened*. It read 49 where the tab is 39. A shadow is darker than the
+  desk in every channel and a tab never is - every look's tab is lighter
+  than its desktop, because a title bar that recedes is one nobody finds -
+  so the two separate without knowing either colour.
+- **The places drop** put a folder on a sidebar row by its position, and
+  Tracker's three bands of chrome becoming one moved every row up
+  forty-five pixels.
+
+**And one that was not mine.** `deskbar focus` failed the same run, with the
+clock's button pressed and Calculator's not. Those are the phase's own two
+yellows, caught a frame early: it passed alone and on the next run. Worth
+writing down because the colours *look* like a shadow darkening a button,
+which is what I assumed before reading the message - a wrong explanation
+that fits is the expensive kind.
