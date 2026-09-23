@@ -24,6 +24,7 @@ enum usb_config_kind {
     USB_CONFIG_NEITHER,         /* no HID interface and no mass storage one */
     USB_CONFIG_HID_OTHER,       /* HID, and no boot mouse this can read */
     USB_CONFIG_BOOT_MOUSE,      /* a boot mouse, with an interrupt IN endpoint */
+    USB_CONFIG_BOOT_KEYBOARD,   /* a boot keyboard, the same shape */
     USB_CONFIG_STORAGE_OTHER,   /* mass storage, and no stick this can speak to */
     USB_CONFIG_BULK_ONLY,       /* SCSI over Bulk-Only, a bulk IN and a bulk OUT */
     USB_CONFIG_XBOX360,         /* an Xbox 360 controller's interface, FFh/5Dh/01h,
@@ -131,6 +132,48 @@ void usb_decode_ecm(const uint8_t *bytes, unsigned length,
  * hex digits.
  */
 bool usb_decode_mac(const uint8_t *desc, unsigned length, uint8_t mac[6]);
+
+/*
+ * **A key off a boot keyboard**, as one change: a code and whether it went
+ * down. The code is evdev's, which is what every key in this system is
+ * (`hal/keys.c`) - the driver pushes them and the board's tables turn them
+ * into characters and escapes.
+ */
+struct usb_key_change {
+    uint16_t code;
+    uint8_t  down;
+    uint8_t  reserved;
+};
+
+/*
+ * **A boot keyboard's report against the one before it** (HID 1.11 B.1):
+ * eight bytes - a byte of modifier bits, a reserved byte, and six usages,
+ * in no particular order. A usage in `now` and not in `before` went down;
+ * one in `before` and not in `now` came up; and the eight modifier bits are
+ * the same comparison a bit at a time.
+ *
+ * **Not a list of what is down.** A keyboard sends its whole state every
+ * time, so a driver that pushed what it read would repeat every held key at
+ * the report rate. What the system wants is the change, which is what this
+ * gives.
+ *
+ * **Rollover is not six keys.** A keyboard with more keys down than it can
+ * tell apart fills all six slots with `ErrorRollOver` (01h); this reports no
+ * key changes at all for such a report - the modifiers still count, since
+ * they are bits rather than slots - and the next ordinary report says what
+ * is really down. Usages 02h and 03h are the other two errors and are
+ * skipped the same way.
+ *
+ * Returns how many changes were written, up to `max`. A report shorter than
+ * eight bytes is not a boot report and gives none.
+ */
+unsigned usb_decode_keys(const uint8_t *now, unsigned length,
+                         const uint8_t *before, unsigned before_length,
+                         struct usb_key_change *out, unsigned max);
+
+/* The evdev code a HID keyboard usage means, or 0 for one this does not
+ * know. Exposed for the test; the driver goes through `usb_decode_keys`. */
+uint16_t usb_decode_key(uint8_t usage);
 
 /*
  * **What an adapter says on its interrupt endpoint** (CDC 1.2 6.3): an

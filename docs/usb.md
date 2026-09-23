@@ -1919,6 +1919,86 @@ The Super Nintendo, Doom and Quake map the codes in their key tables.
   root: on 19 September Diego's SN30 Pro gave every button, down and up, as
   the key its place names.
 
+### 9c: a keyboard
+
+**Diego's ThinkCentre M700 has no PS/2 port** (`roadmap.md` 5zd-b), so the
+USB keyboard plugged into it is the machine's only one - and this driver
+read it as *a mouse*:
+
+```
+xhci: 00:14.0 port 4: 05ac:0220, USB 1.1, class 0, "USB Keyboard"
+xhci: 00:14.0 port 4: a mouse, read from endpoint 2, up to 8 bytes every 32 ms
+xhci: 00:14.0 port 4: read as a boot mouse, because its Report descriptor lays out no relative X and Y
+```
+
+It walked past the boot keyboard interface looking for something it knew,
+found the Apple keyboard's *second* HID interface - the one carrying its
+media and system keys - and settled on that. A machine with a pointer and no
+keys.
+
+**A boot keyboard is the same shape as a boot mouse**: HID class 3, subclass
+1 (boot), protocol 1, with an interrupt IN endpoint. What is different is
+that there is nothing to work out: the boot protocol's report is eight fixed
+bytes - a byte of modifier bits, a reserved byte and six usages in no
+particular order (HID 1.11 B.1) - which is what the firmware types on and
+what every keyboard offers. No Report descriptor is read.
+
+**It is found before a mouse**, and that is the whole fix for the machine
+above: a configuration yields one device and the first interface that
+yields anything settles it, so a keyboard's own interface - which comes
+first on every keyboard there is - now wins.
+
+**The report is read against the one before it.** A keyboard sends its whole
+state every time, so a driver that pushed what it read would repeat every
+held key at the report rate. `usb_decode_keys` does the comparing, in
+`usb_decode.c` where a host test can hold it: a usage in this report and not
+the one before went down, one in that and not this came up, and the eight
+modifier bits are the same comparison a bit at a time. The slots are in no
+order, so each is looked for in the other report - a keyboard is free to
+move a held key from one slot to another and several do.
+
+**Rollover is not six keys.** A keyboard with more down than it can tell
+apart fills all six slots with `ErrorRollOver`; that report says nothing
+about which keys are down and is read as no key changes at all. The
+modifiers still count, being bits rather than slots.
+
+**What it holds, it lets go.** A keyboard unplugged with Control held is a
+machine holding Control for ever, because the thing that would have sent the
+release is gone. The driver keeps what it pushed and undoes it, the same way
+the pad lets go of its buttons.
+
+#### A key is two things
+
+The keys go out through `kosmos_key_push`, which is what the game pad
+already used - and that only ever made an **event**, which the window
+manager reads. The **character** - what the console server, the shell and
+every program reading a line read - was never made, because a pad's buttons
+are not characters.
+
+For a keyboard that is half a keyboard: a key could move a window and could
+not type its own name. So `hal/keys.c` now turns a pushed key into
+characters as well, through the same `hal_key_sequence`, `hal_key_char` and
+`hal_key_super` a key on a cable goes through, with the modifiers tracked
+from the pushed stream itself. A board's `keyboard_getchar` reads its own
+keyboard's characters and then those.
+
+**That is also what the on-screen keyboard will need** (`roadmap.md`
+5zd-c), and it is why this belongs in `keys.c` rather than in the USB
+driver.
+
+### How it is tested
+
+- `test_usbdecode`, on the host: every letter, digit, arrow, function key
+  and modifier against the usage page; a key held sending nothing the second
+  time; a held key moved between slots sending nothing; two let go together;
+  shift down and up; a rollover report; a report too short; and room for
+  fewer changes than there are.
+- `run_x86.py`'s `usb_keyboard`, five: QEMU's `usb-kbd` named as a keyboard
+  with an eight-byte report, not as a mouse; a key arriving; and **`devices`
+  typed on it**, a key at a time through QEMU's monitor, and running.
+  **Controls**, two: the keyboard interface walked past gives a mouse again;
+  and a pushed key that makes no character types nothing at the prompt.
+
 ## 10. Step 7: Ethernet
 
 **Agreed with Diego on 21 September** (`roadmap.md` 5m), for what a

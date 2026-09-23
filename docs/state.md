@@ -147,6 +147,17 @@ the stable one. The older development images went to the Trash.
   **no keyboard at all** until a boot keyboard is read the way the boot
   mouse already is (5zd-b). Diego: "we need to add support for usb
   keyboard!"
+- **The USB keyboard is done** (5zd-b, `usb.md` 9c, 18.152) - committed and
+  not pushed. `diagnose` off the M700 named the fault exactly: its Apple
+  keyboard, `05ac:0220`, was read as *a mouse*, because the driver walked
+  past the boot keyboard interface and took the second HID one. A boot
+  keyboard is found first now, its eight-byte report is compared against the
+  one before (`usb_decode_keys`, on the host), and what it holds it lets go
+  when it is unplugged. **And a key is two things**: `kosmos_key_push` only
+  ever made an *event*, which the window manager reads, and never a
+  *character* - right for a game pad, half a keyboard for a keyboard. `keys.c`
+  makes both now, through the same tables a key on a cable goes through.
+  `devices` typed on a USB keyboard runs, watched in the gate.
 - **Queued after the network**: the scale's third stage (5z) - the screen's size in
   points before a window opens, which is what Lite XL needs, and the
   window manager's own drawings that are not windows: the pointer, the

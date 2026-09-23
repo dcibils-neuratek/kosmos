@@ -98,6 +98,7 @@
 
 #define CLASS_HID           3u
 #define SUBCLASS_BOOT       1u
+#define PROTOCOL_KEYBOARD   1u
 #define PROTOCOL_MOUSE      2u
 
 /* HID 1.11 6.2.1: the HID descriptor, and in it each class descriptor's type
@@ -128,6 +129,7 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
 {
     unsigned total, at;
     bool hid = false, in_mouse = false, in_pad = false, in_one = false;
+    bool in_keyboard = false;
     bool storage = false, in_stick = false, stick_found = false;
     unsigned last_bulk = 0;             /* 1 IN, 2 OUT: the endpoint just read */
 
@@ -205,6 +207,32 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                     && d[IFACE_PROTOCOL] == PROTOCOL_MOUSE;
 
             if (in_mouse) {
+                out->interface = d[IFACE_NUMBER];
+                out->report_length = 0;
+            }
+
+            /*
+             * **A boot keyboard**, the same three fields with protocol 1
+             * (HID 1.11 4.3). It is how a keyboard is typed on before an
+             * operating system loads, so every keyboard has one, and its
+             * report is fixed - eight bytes, no Report descriptor to read
+             * (B.1).
+             *
+             * **Found before a mouse, because a keyboard is often both.**
+             * The Apple keyboard on the ThinkCentre M700 declares a boot
+             * keyboard and then a second HID interface for its system and
+             * media keys, and this driver took the second one and called the
+             * machine's only keyboard "a mouse": `read as a boot mouse,
+             * because its Report descriptor lays out no relative X and Y`.
+             * The interfaces are walked in order and the first that yields
+             * a device wins, so a keyboard's own interface - which comes
+             * first on every keyboard there is - now settles it.
+             */
+            in_keyboard = is_hid && d[IFACE_ALTERNATE] == 0
+                       && d[IFACE_SUBCLASS] == SUBCLASS_BOOT
+                       && d[IFACE_PROTOCOL] == PROTOCOL_KEYBOARD;
+
+            if (in_keyboard) {
                 out->interface = d[IFACE_NUMBER];
                 out->report_length = 0;
             }
@@ -332,7 +360,7 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                 return;
             }
         } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH
-                   && (in_mouse || in_pad)) {
+                   && (in_mouse || in_pad || in_keyboard)) {
             unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;
 
             /* The first interrupt IN: the pad's OUT, for its lights and
@@ -341,7 +369,9 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                 && (d[EP_ADDRESS] & EP_NUMBER) != 0
                 && (d[EP_ATTRIBUTES] & EP_TYPE) == EP_INTERRUPT
                 && (packet & 0x7FFu) != 0) {
-                out->kind = in_pad ? USB_CONFIG_XBOX360 : USB_CONFIG_BOOT_MOUSE;
+                out->kind = in_keyboard ? USB_CONFIG_BOOT_KEYBOARD
+                          : in_pad ? USB_CONFIG_XBOX360
+                          : USB_CONFIG_BOOT_MOUSE;
                 out->endpoint = (uint8_t)(d[EP_ADDRESS] & EP_NUMBER);
                 out->packet = (uint16_t)(packet & 0x7FFu);
                 out->extra = (uint8_t)((packet >> 11) & 0x3u);
@@ -615,6 +645,204 @@ bool usb_decode_mac(const uint8_t *desc, unsigned length, uint8_t mac[6])
     /* Only a whole address is an answer. */
     memcpy(mac, got, sizeof(got));
     return true;
+}
+
+/*
+ * **What a keyboard usage means**, HID Usage Tables 1.12 section 10, the
+ * Keyboard/Keypad page - into evdev's numbers, which is what every key in
+ * this system is (`hal/keys.c`).
+ *
+ * **Written out rather than copied.** Linux has this table and so does every
+ * other system; what is here is the usage page read against
+ * `input-event-codes.h`, with each entry's name beside it, because a wrong
+ * entry is a key that types the wrong letter and there is no way to see that
+ * in a table of bare numbers.
+ *
+ * Only 04h to 65h and the eight modifiers. Past that are keys this system
+ * has no name for - Power, Undo, the international and language keys - and a
+ * usage with no entry is a key that does nothing rather than a key that does
+ * something else.
+ */
+static const uint16_t keyboard_usages[] = {
+    0, 0, 0, 0,                 /* 00-03: none, and the three errors */
+    30, 48, 46, 32, 18, 33,     /* 04-09: a b c d e f */
+    34, 35, 23, 36, 37, 38,     /* 0A-0F: g h i j k l */
+    50, 49, 24, 25, 16, 19,     /* 10-15: m n o p q r */
+    31, 20, 22, 47, 17, 45,     /* 16-1B: s t u v w x */
+    21, 44,                     /* 1C-1D: y z */
+    2, 3, 4, 5, 6,              /* 1E-22: 1 2 3 4 5 */
+    7, 8, 9, 10, 11,            /* 23-27: 6 7 8 9 0 */
+    28,                         /* 28: Enter */
+    1,                          /* 29: Escape */
+    14,                         /* 2A: Backspace */
+    15,                         /* 2B: Tab */
+    57,                         /* 2C: Space */
+    12, 13,                     /* 2D-2E: - = */
+    26, 27,                     /* 2F-30: [ ] */
+    43, 43,                     /* 31-32: backslash, and non-US # beside it */
+    39, 40, 41,                 /* 33-35: ; ' ` */
+    51, 52, 53,                 /* 36-38: , . / */
+    58,                         /* 39: Caps Lock */
+    59, 60, 61, 62, 63, 64,     /* 3A-3F: F1 to F6 */
+    65, 66, 67, 68, 87, 88,     /* 40-45: F7 to F12 */
+    99,                         /* 46: Print Screen */
+    70,                         /* 47: Scroll Lock */
+    119,                        /* 48: Pause */
+    110,                        /* 49: Insert */
+    102,                        /* 4A: Home */
+    104,                        /* 4B: Page Up */
+    111,                        /* 4C: Delete */
+    107,                        /* 4D: End */
+    109,                        /* 4E: Page Down */
+    106, 105, 108, 103,         /* 4F-52: Right Left Down Up */
+    69,                         /* 53: Num Lock */
+    98, 55, 74, 78, 96,         /* 54-58: keypad / * - + Enter */
+    79, 80, 81,                 /* 59-5B: keypad 1 2 3 */
+    75, 76, 77,                 /* 5C-5E: keypad 4 5 6 */
+    71, 72, 73,                 /* 5F-61: keypad 7 8 9 */
+    82, 83,                     /* 62-63: keypad 0 . */
+    86,                         /* 64: the key beside the left shift */
+    127,                        /* 65: Application, the menu key */
+};
+
+/*
+ * The eight modifier bits, E0h to E7h (HID 1.11 8.3): control, shift and alt
+ * on the left, then the left GUI key - which this system calls Super and
+ * binds the launcher to - and the same four on the right.
+ */
+static const uint16_t keyboard_modifiers[8] = {
+    29,     /* left control */
+    42,     /* left shift */
+    56,     /* left alt */
+    125,    /* left GUI */
+    97,     /* right control */
+    54,     /* right shift */
+    100,    /* right alt */
+    126,    /* right GUI */
+};
+
+#define KEY_SLOTS       6u          /* HID 1.11 B.1: six usages a report */
+#define KEY_REPORT      8u
+#define KEY_MODIFIERS   0u
+#define KEY_FIRST       2u
+#define USAGE_ERRORS    4u          /* 00h none, 01h-03h the three errors */
+
+uint16_t usb_decode_key(uint8_t usage)
+{
+    if (usage >= 0xE0u && usage <= 0xE7u) {
+        return keyboard_modifiers[usage - 0xE0u];
+    }
+
+    if (usage < sizeof(keyboard_usages) / sizeof(keyboard_usages[0])) {
+        return keyboard_usages[usage];
+    }
+
+    return 0;
+}
+
+/* Whether `usage` is among the six slots of `report`. */
+static bool holds(const uint8_t *report, uint8_t usage)
+{
+    unsigned i;
+
+    for (i = 0; i < KEY_SLOTS; i++) {
+        if (report[KEY_FIRST + i] == usage) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* Every slot `ErrorRollOver`: more keys down than the keyboard can tell
+ * apart, so its six slots say nothing about which. */
+static bool rolled_over(const uint8_t *report)
+{
+    unsigned i;
+
+    for (i = 0; i < KEY_SLOTS; i++) {
+        if (report[KEY_FIRST + i] != 0x01u) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static unsigned put(struct usb_key_change *out, unsigned max, unsigned at,
+                    uint16_t code, bool down)
+{
+    if (code == 0 || at >= max) {
+        return at;
+    }
+
+    out[at].code = code;
+    out[at].down = down ? 1u : 0u;
+    out[at].reserved = 0;
+    return at + 1u;
+}
+
+unsigned usb_decode_keys(const uint8_t *now, unsigned length,
+                         const uint8_t *before, unsigned before_length,
+                         struct usb_key_change *out, unsigned max)
+{
+    static const uint8_t none[KEY_REPORT] = { 0 };
+    unsigned at = 0, i;
+    uint8_t was;
+
+    if (now == NULL || out == NULL || length < KEY_REPORT) {
+        return 0;
+    }
+
+    /* No report before this one - the keyboard has just been plugged in -
+     * is every key up, which is what a keyboard's first report is against. */
+    if (before == NULL || before_length < KEY_REPORT) {
+        before = none;
+    }
+
+    was = before[KEY_MODIFIERS];
+
+    for (i = 0; i < 8u; i++) {
+        uint8_t bit = (uint8_t)(1u << i);
+
+        if (((now[KEY_MODIFIERS] ^ was) & bit) != 0) {
+            at = put(out, max, at, keyboard_modifiers[i],
+                     (now[KEY_MODIFIERS] & bit) != 0);
+        }
+    }
+
+    /*
+     * The six slots, both ways round: a usage in this report and not the one
+     * before went down, and one in that report and not this came up. The
+     * slots are in no particular order, so each is looked for in the other
+     * report rather than compared position by position - a keyboard is free
+     * to move a held key from one slot to another and several do.
+     */
+    if (rolled_over(now)) {
+        return at;
+    }
+
+    for (i = 0; i < KEY_SLOTS; i++) {
+        uint8_t usage = now[KEY_FIRST + i];
+
+        if (usage >= USAGE_ERRORS && !holds(before, usage)) {
+            at = put(out, max, at, usb_decode_key(usage), true);
+        }
+    }
+
+    if (rolled_over(before)) {
+        return at;
+    }
+
+    for (i = 0; i < KEY_SLOTS; i++) {
+        uint8_t usage = before[KEY_FIRST + i];
+
+        if (usage >= USAGE_ERRORS && !holds(now, usage)) {
+            at = put(out, max, at, usb_decode_key(usage), false);
+        }
+    }
+
+    return at;
 }
 
 /*

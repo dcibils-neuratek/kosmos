@@ -358,6 +358,23 @@ struct mouse {
     unsigned      said;
 
     /*
+     * **Or a keyboard**, read on the same ring the same way: a boot
+     * keyboard's report is eight fixed bytes (HID 1.11 B.1), so there is no
+     * Report descriptor to read and nothing to work out. `was` is the report
+     * before this one, which is what a change is measured against - a
+     * keyboard sends its whole state every time.
+     *
+     * `held` is what this keyboard has told the system is down, so a
+     * keyboard unplugged with a key held can have it let go. Without that a
+     * Control taken out of its port is a Control held down for ever.
+     */
+    bool          keyboard;
+    uint8_t       was[8];
+    uint16_t      held[8];
+    unsigned      holding;
+    unsigned long keys;                 /* changes pushed, for its last line */
+
+    /*
      * **An Xbox One or Series pad** (`xone`) is spoken to as well: its
      * interrupt OUT, a ring and a page of 64-byte messages taken in turn,
      * the sequence number of the next one, and the state its messages build
@@ -2154,6 +2171,88 @@ static void pad_report(struct controller *c, unsigned slot, unsigned got)
  * which QEMU's mouse can be made to need, so none of which a test here could
  * reach. A mouse unplugged and plugged in again is read from the start.
  */
+/*
+ * **What this keyboard has told the system is down, let go of.**
+ *
+ * A keyboard unplugged with Control held is a machine holding Control for
+ * ever: nothing else will ever send the release, because the thing that
+ * would have is gone. So the driver keeps what it pushed and undoes it -
+ * the same reason the pad lets go of its buttons and the mouse of its own.
+ */
+static void keyboard_release(struct mouse *m)
+{
+    unsigned i;
+
+    for (i = 0; i < m->holding; i++) {
+        (void)kosmos_key_push(m->held[i], 0);
+    }
+
+    m->holding = 0;
+    memset(m->was, 0, sizeof(m->was));
+}
+
+static void keyboard_hold(struct mouse *m, uint16_t code, bool down)
+{
+    unsigned i;
+
+    for (i = 0; i < m->holding; i++) {
+        if (m->held[i] == code) {
+            if (!down) {
+                m->held[i] = m->held[--m->holding];
+            }
+
+            return;
+        }
+    }
+
+    if (down && m->holding < sizeof(m->held) / sizeof(m->held[0])) {
+        m->held[m->holding++] = code;
+    }
+}
+
+/*
+ * **One report off a boot keyboard, as changes.**
+ *
+ * `usb_decode_keys` does the comparing - it is arithmetic over two
+ * eight-byte reports and lives where a host test can hold it - and this
+ * pushes what it says. Eight modifiers and six slots cannot produce more
+ * than fourteen changes at once.
+ *
+ * The first report is read against all-up, so a keyboard plugged in with a
+ * key already held says so rather than saying nothing until it is let go.
+ */
+static void keyboard_report(struct controller *c, unsigned slot, unsigned got)
+{
+    struct mouse *m = &c->mouse[slot];
+    struct usb_key_change changes[14];
+    struct say_line line;
+    unsigned n, i;
+
+    n = usb_decode_keys(m->report, got, m->was, sizeof(m->was),
+                        changes, sizeof(changes) / sizeof(changes[0]));
+
+    for (i = 0; i < n; i++) {
+        keyboard_hold(m, changes[i].code, changes[i].down != 0);
+        (void)kosmos_key_push(changes[i].code, changes[i].down);
+    }
+
+    if (n > 0 && m->keys == 0) {
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, m->port);
+        say_text(&line, ": the keyboard's first key: ");
+        say_dec(&line, changes[0].code);
+        say_text(&line, changes[0].down ? " down" : " up");
+        say_send(console, &line);
+    }
+
+    m->keys += n;
+
+    if (got >= sizeof(m->was)) {
+        memcpy(m->was, m->report, sizeof(m->was));
+    }
+}
+
 static void take_report(struct controller *c, const uint32_t *event)
 {
     unsigned slot = TRB_SLOT_OF(event[3]);
@@ -2190,6 +2289,10 @@ static void take_report(struct controller *c, const uint32_t *event)
             pad_keys(c, m, 0);          /* let go of whatever it held */
         }
 
+        if (m->keyboard) {
+            keyboard_release(m);
+        }
+
         about(&line, c);
         say_text(&line, " port ");
         say_dec(&line, m->port);
@@ -2200,6 +2303,15 @@ static void take_report(struct controller *c, const uint32_t *event)
         say_dec(&line, code);
         say_text(&line, "); not read again until it is plugged in again");
         say_send(console, &line);
+        return;
+    }
+
+    if (m->keyboard) {
+        if (left < m->length) {
+            keyboard_report(c, slot, m->length - left);
+        }
+
+        ask_for_report(c, slot);
         return;
     }
 
@@ -4001,7 +4113,8 @@ static bool read_configuration(struct controller *c, struct device *d,
 static bool usable(enum usb_config_kind kind)
 {
     return kind == USB_CONFIG_BOOT_MOUSE || kind == USB_CONFIG_BULK_ONLY
-        || kind == USB_CONFIG_XBOX360 || kind == USB_CONFIG_XBOXONE;
+        || kind == USB_CONFIG_XBOX360 || kind == USB_CONFIG_XBOXONE
+        || kind == USB_CONFIG_BOOT_KEYBOARD;
 }
 
 /* How many of a device's configurations are asked for before it is said to
@@ -4123,6 +4236,7 @@ static void use_device(struct controller *c, struct device *d,
     }
 
     if ((found.kind != USB_CONFIG_BOOT_MOUSE
+         && found.kind != USB_CONFIG_BOOT_KEYBOARD
          && found.kind != USB_CONFIG_XBOX360
          && found.kind != USB_CONFIG_XBOXONE) || d->speed >= 4u) {
         about(line, c);
@@ -4289,6 +4403,42 @@ static void use_device(struct controller *c, struct device *d,
         say_text(line, ", up to ");
         say_dec(line, found.packet);
         say_text(line, " bytes; its buttons are keys");
+        say_send(console, line);
+        return;
+    }
+
+    /*
+     * **A boot keyboard** - `roadmap.md` 5zd-b. Diego's ThinkCentre M700 has
+     * no PS/2 port, so this is the machine's only keyboard.
+     *
+     * Nothing to read and nothing to work out: the boot protocol's report is
+     * eight bytes with a fixed layout (HID 1.11 B.1), which is what the
+     * firmware types on and what every keyboard offers. A Report descriptor
+     * would say more - media keys, a keypad's own usages - and reading it is
+     * the same step a mouse takes and is not this one.
+     */
+    if (found.kind == USB_CONFIG_BOOT_KEYBOARD) {
+        if (!control_nodata(c, d, SET_PROTOCOL, PROTOCOL_BOOT,
+                            found.interface)) {
+            say_failure(c, d->port, "SET_PROTOCOL for the boot protocol",
+                        "; the keyboard is not read", line);
+            return;
+        }
+
+        m->keyboard = true;
+        m->reading = true;
+        ask_for_report(c, d->slot);
+
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": a keyboard, read from endpoint ");
+        say_dec(line, found.endpoint);
+        say_text(line, ", up to ");
+        say_dec(line, found.packet);
+        say_text(line, " bytes every ");
+        say_dec(line, found.interval);
+        say_text(line, " ms; its keys are the machine's");
         say_send(console, line);
         return;
     }

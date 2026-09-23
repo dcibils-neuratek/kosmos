@@ -8017,3 +8017,53 @@ comes first in the table - so the wake went to init. `SYS_NET_WAKE` returns
 how many it woke now, which is what made that visible: a mechanism that
 silently does nothing is worse than none, and this one had been doing
 nothing since it was written.
+
+## 18.152 A USB keyboard, on a machine whose only keyboard it is
+
+`usb.md` step 9c, `roadmap.md` 5zd-b. Diego's ThinkCentre M700 has no PS/2
+port, and this driver read its Apple keyboard as *a mouse*: it walked past
+the boot keyboard interface looking for something it knew, found the second
+HID interface - the media keys - and settled on that.
+
+### The checks
+
+- **`test_usbdecode`**, on the host, now 138 - nineteen new. Every letter,
+  digit, arrow, function key and modifier held against the usage page, which
+  is the part nothing else could catch: a wrong entry is a key that types the
+  wrong character, and a table of bare numbers shows nothing. Then the
+  comparison itself: a key held sending nothing the second time; a held key
+  moved from one slot to another sending nothing, which keyboards do; two let
+  go together; shift down and up, which are bits rather than slots; a
+  rollover report, whose six slots are all `ErrorRollOver` and say nothing;
+  a report too short to be a boot report; and room for fewer changes than
+  there are.
+- **`run_x86.py`'s `usb_keyboard`**, five: QEMU's `usb-kbd` named as a
+  keyboard with an eight-byte report and not as a mouse, a key arriving, and
+  **`devices` typed on it and run**.
+
+**The keys go in through QEMU's monitor**, not down the serial cable, because
+the cable is the console and the whole question is whether the *keyboard*
+works. `boot` grew a `poke`: a line to wait for and something to do when it
+appears, so the keys are sent when the machine is up rather than after a
+sleep somebody guessed at.
+
+### Controls, watched
+
+- **The keyboard interface walked past**, which is what the driver did: the
+  keyboard is read as a mouse again and three of the five fail.
+- **A pushed key that makes no character**: the keys arrive, the driver says
+  so, and `devices` never runs.
+
+### A key is two things, and only one of them was reaching anybody
+
+`kosmos_key_push` made an **event**, which the window manager reads. It never
+made a **character**, which is what the console server, the shell and every
+program reading a line read - and that was right for the only thing that had
+ever pushed keys, a game pad, whose buttons are not characters.
+
+For a keyboard it is half a keyboard: a key could move a window and could not
+type its own name. `hal/keys.c` makes both now, through the same
+`hal_key_sequence`, `hal_key_char` and `hal_key_super` that a key on a cable
+goes through, with the modifiers tracked from the pushed stream itself. That
+is also what the on-screen keyboard will need (`roadmap.md` 5zd-c), which is
+why it lives there rather than in the USB driver.

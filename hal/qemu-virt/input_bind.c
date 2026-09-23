@@ -18,8 +18,17 @@
 #include "keys.h"
 
 bool hal_keyboard_init(void)   { return virtio_keyboard_init(); }
-int  keyboard_getchar(void)    { return virtio_keyboard_getchar(); }
 bool keyboard_present(void)    { return virtio_keyboard_present(); }
+
+/* The keyboard's characters, then the ones a process pushed - a key is an
+ * event *and* a character, and both have to reach somebody. `hal/pc` says
+ * the same sentence for the same reason. */
+int keyboard_getchar(void)
+{
+    int c = virtio_keyboard_getchar();
+
+    return c >= 0 ? c : keys_pushed_char();
+}
 
 /* The keyboard's keys, then the keys a process pressed (`hal_key_push`). */
 bool hal_key_event(unsigned *code, bool *down)
@@ -51,12 +60,14 @@ bool hal_pointer_move(int dx, int dy, uint32_t buttons)
 
 bool hal_input_pending(void)
 {
-    return virtio_input_pending() || keys_pushed_pending();
+    return virtio_input_pending() || keys_pushed_pending()
+        || keys_pushed_char_pending();
 }
 
 bool hal_input_pending_peek(void)
 {
-    return virtio_input_pending_peek() || keys_pushed_pending();
+    return virtio_input_pending_peek() || keys_pushed_pending()
+        || keys_pushed_char_pending();
 }
 
 void input_interrupt(unsigned line) { virtio_input_interrupt(line); }

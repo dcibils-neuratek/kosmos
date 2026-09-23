@@ -67,6 +67,95 @@ static bool pushed_put(unsigned code, bool down)
     return true;
 }
 
+/*
+ * **And the characters those keys mean**, which is the half this did not
+ * have until 22 September.
+ *
+ * A pushed key became an *event*, which is what the window manager reads,
+ * and never a *character*, which is what the console server, the shell and
+ * every program reading a line read. That was right while the only thing
+ * pushing keys was a game pad, whose buttons are not characters. It is
+ * wrong for a keyboard: the ThinkCentre M700 has no PS/2 port, so its USB
+ * keyboard is the machine's only one, and without this a key pressed on it
+ * moved a window and could not type its own name (`roadmap.md` 5zd-b).
+ *
+ * **The same three functions the PS/2 driver uses** - `hal_key_sequence`
+ * for a key that is not a character, `hal_key_char` for one that is, and
+ * `hal_key_super` for a key held with Super - so a pushed key means exactly
+ * what the same key on a cable means, which is the whole point of there
+ * being one table.
+ *
+ * **The modifiers are tracked from the pushed stream itself**, because that
+ * is where they arrive: a keyboard sends shift as a key like any other. A
+ * source that pushes a letter and never a shift gets lower case, which is
+ * the truthful answer to what it sent.
+ */
+#define PUSHED_CHARS 128u
+
+static unsigned char pushed_chars[PUSHED_CHARS];
+static unsigned pushed_chars_head, pushed_chars_tail;
+static bool pushed_shift, pushed_ctrl, pushed_caps, pushed_super;
+
+static void pushed_char(unsigned char c)
+{
+    unsigned next = (pushed_chars_head + 1u) % PUSHED_CHARS;
+
+    if (next != pushed_chars_tail) {
+        pushed_chars[pushed_chars_head] = c;
+        pushed_chars_head = next;
+    }
+}
+
+static void pushed_string(const char *s)
+{
+    while (s != NULL && *s != '\0') {
+        pushed_char((unsigned char)*s++);
+    }
+}
+
+/* Called with the lock held, so what a key means and the event it made
+ * cannot be interleaved with another core's. */
+static void pushed_typed(unsigned code, bool down)
+{
+    const char *sequence;
+    int c;
+
+    switch (code) {
+    case KEY_LEFTSHIFT:
+    case KEY_RIGHTSHIFT:  pushed_shift = down; return;
+    case KEY_LEFTCTRL:
+    case KEY_RIGHTCTRL:   pushed_ctrl = down;  return;
+    case KEY_CAPSLOCK:    if (down) { pushed_caps = !pushed_caps; } return;
+    case KEY_LEFTMETA:
+    case KEY_RIGHTMETA:   pushed_super = down; return;
+    default: break;
+    }
+
+    if (!down) {
+        return;
+    }
+
+    sequence = hal_key_sequence(code);
+
+    if (sequence != NULL) {
+        pushed_string(sequence);
+        return;
+    }
+
+    c = hal_key_char(code, pushed_shift, pushed_ctrl, pushed_caps);
+
+    if (c < 0) {
+        return;
+    }
+
+    if (pushed_super) {
+        pushed_string(hal_key_super(c));
+        return;
+    }
+
+    pushed_char((unsigned char)c);
+}
+
 bool hal_key_push(unsigned code, bool down)
 {
     unsigned long flags;
@@ -78,9 +167,35 @@ bool hal_key_push(unsigned code, bool down)
 
     flags = spin_lock(&pushed_lock);
     took = pushed_put(code, down);
+
+    /*
+     * The character even when the event's queue was full: they are read by
+     * different things at different rates, and a full event queue is no
+     * reason for a letter not to arrive.
+     */
+    pushed_typed(code, down);
     spin_unlock(&pushed_lock, flags);
 
     return took;
+}
+
+int keys_pushed_char(void)
+{
+    unsigned long flags = spin_lock(&pushed_lock);
+    int c = -1;
+
+    if (pushed_chars_head != pushed_chars_tail) {
+        c = (int)pushed_chars[pushed_chars_tail];
+        pushed_chars_tail = (pushed_chars_tail + 1u) % PUSHED_CHARS;
+    }
+
+    spin_unlock(&pushed_lock, flags);
+    return c;
+}
+
+bool keys_pushed_char_pending(void)
+{
+    return pushed_chars_head != pushed_chars_tail;
 }
 
 bool hal_key_release_all(void)

@@ -79,6 +79,17 @@
 bool keys_pushed_event(unsigned *code, bool *down);
 bool keys_pushed_pending(void);
 
+/*
+ * And what those keys *typed*: a character, or -1 when there is none.
+ *
+ * A key is two things and both have to reach somebody. The event goes to
+ * the window manager; the character goes to the console server, the shell
+ * and every program reading a line, which know nothing about keyboards.
+ * A board's `hal_getchar` reads this beside its own keyboard's.
+ */
+int keys_pushed_char(void);
+bool keys_pushed_char_pending(void);
+
 /* The escape sequence a terminal would have sent for a key that is not a
  * character, or NULL. */
 const char *hal_key_sequence(unsigned code);

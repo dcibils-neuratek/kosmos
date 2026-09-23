@@ -47,7 +47,8 @@ ARGS = [
 PAGE_SIZE = 4096
 
 
-def boot(image, option, timeout, typed=(), extra=(), until=None, after=None):
+def boot(image, option, timeout, typed=(), extra=(), until=None, after=None,
+         poke=None):
     """Boots, optionally types at the prompt, and returns everything printed.
 
     One line per prompt, and only after the machine has been quiet for a
@@ -62,6 +63,12 @@ def boot(image, option, timeout, typed=(), extra=(), until=None, after=None):
     answer depends on something that starts on its own clock - the USB
     driver taking its controllers, which a report asked for sooner has, and
     truthfully, as undriven.
+
+    `poke` is `(line, function)`: the function is called once, when that line
+    has been printed. It is for input that does not go down the serial cable
+    - a key sent to an emulated USB keyboard through QEMU's monitor - where
+    "the machine is up" is the only moment worth doing it at, and a sleep
+    would be a guess about how long booting takes.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
 
@@ -87,6 +94,7 @@ def boot(image, option, timeout, typed=(), extra=(), until=None, after=None):
     start = time.time()
     quiet = time.time()
     sent = 0
+    poked = poke is None
 
     try:
         while time.time() - start < timeout:
@@ -99,6 +107,11 @@ def boot(image, option, timeout, typed=(), extra=(), until=None, after=None):
                 time.sleep(0.05)
 
             prompts = out.count(b"kosmos>")
+
+            if not poked and poke[0].encode() in out:
+                poked = True
+                poke[1]()
+                quiet = time.time()
 
             if (sent < len(typed) and prompts > sent
                     and time.time() - quiet > 0.4
@@ -3844,6 +3857,99 @@ def core(image, check, fails):
 
 
 
+def usb_keyboard(image, check):
+    """**A USB keyboard, on a machine whose only keyboard it is** -
+    `usb.md` step 9b, `roadmap.md` 5zd-b.
+
+    Diego's ThinkCentre M700 has no PS/2 port. Its Apple keyboard was read
+    as *a mouse*: the driver walked past the boot keyboard interface looking
+    for something it knew, found the second HID interface - the one for the
+    media keys - and settled on that. A machine with a pointer and no keys.
+
+    So this plugs QEMU's `usb-kbd` in and **types a command on it**, through
+    QEMU's own monitor rather than down the serial cable, which is the only
+    way to put a key into the emulated keyboard rather than into the
+    console. Then the command has to run.
+
+    **Two claims, and they are different.** That the keys arrive at all is
+    the driver reading an eight-byte boot report and pushing what changed;
+    that they arrive as *characters* is `keys.c` turning them into what the
+    same key on a cable would mean. A key is both things and both have to
+    reach somebody - the event goes to the window manager, the character to
+    the shell - and until this the pushed half was only ever the event, so a
+    key pressed on a USB keyboard could move a window and could not type its
+    own name.
+    """
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-monitor", "tcp:127.0.0.1:%d,server,nowait" % port)
+
+    def typed_on_the_keyboard():
+        """`devices`, a key at a time, into the emulated keyboard."""
+        try:
+            line = socket.create_connection(("127.0.0.1", port), 10)
+        except OSError as why:
+            print("usb_keyboard: no monitor at %d: %s" % (port, why))
+            return
+
+        time.sleep(0.5)
+
+        for key in ("d", "e", "v", "i", "c", "e", "s", "ret"):
+            line.sendall(("sendkey " + key + "\n").encode())
+            time.sleep(0.25)
+
+        line.close()
+
+    out = boot(image, None, 90.0, extra=extra,
+               poke=("Type `help` for what there is", typed_on_the_keyboard),
+               until="Devices found on this machine")
+
+    if out is None:
+        check(False, "the machine would not boot with a USB keyboard")
+        return
+
+    out = out.replace("\r", "")
+    said = [l for l in out.splitlines() if "xhci:" in l]
+    shown = "\n    ".join(said[-8:]) or "(the driver said nothing)"
+
+    named = re.search(r"xhci: \S+ port \d+: a keyboard, read from endpoint "
+                      r"(\d+), up to (\d+) bytes", out)
+
+    check(named is not None,
+          "the driver did not name QEMU's USB keyboard as one. A boot "
+          "keyboard is HID class 3, subclass 1, protocol 1 with an interrupt "
+          "IN endpoint - the same shape as the boot mouse beside it, and it "
+          "is found first because a keyboard often declares both:\n    "
+          + shown)
+
+    if named is not None:
+        check(named.group(2) == "8",
+              "the keyboard's report is %s bytes, and a boot keyboard's is "
+              "eight with a fixed layout (HID 1.11 B.1)" % named.group(2))
+
+    check("a mouse, read from endpoint" not in out,
+          "the keyboard was read as a mouse, which is what the ThinkCentre "
+          "M700's was:\n    " + shown)
+
+    check("the keyboard's first key:" in out,
+          "no key ever arrived from the keyboard. The driver reads its "
+          "report on an interrupt IN endpoint and pushes what changed "
+          "against the report before:\n    " + shown)
+
+    check("Devices found on this machine" in out,
+          "`devices` was typed on the USB keyboard and did not run. The keys "
+          "arrive as events; what makes them *characters* is `keys.c`, "
+          "through the same tables a key on a cable goes through - and until "
+          "22 September a pushed key was only ever an event, so it could "
+          "move a window and not type its own name.")
+
+
 def usb_stack(image, check):
     """**The machine on the network through a USB Ethernet adapter** -
     `usb.md` 7d, `roadmap.md` 5m-d.
@@ -4077,7 +4183,8 @@ def usb_ethernet(image, check):
           "probe above rather than a claim of its own:\n    " + shown)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_ethernet', 'usb_stack', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack',
+    'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -4171,6 +4278,9 @@ def main():
     #
     if 'usb_mouse' in wanted:
         usb_mouse(image, check)
+    if 'usb_keyboard' in wanted:
+        usb_keyboard(image, check)
+
     if 'usb_ethernet' in wanted:
         usb_ethernet(image, check)
 

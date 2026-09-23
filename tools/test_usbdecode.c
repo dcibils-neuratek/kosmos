@@ -384,19 +384,30 @@ int main(void)
     check(got.extra == 0, "QEMU's mouse: additional transactions");
     check(got.interval == 7, "QEMU's mouse: interval");
 
-    /* 2. A keyboard first and the mouse second: the mouse's interface and
-     *    endpoint, not the keyboard's, and the keyboard as the first HID. */
+    /*
+     * 2. A keyboard first and a mouse second - HID 1.11's own example - and
+     *    **the keyboard is what this reads**, since 22 September.
+     *
+     *    It used to be the mouse: a keyboard was walked past as something
+     *    the driver had no use for. The ThinkCentre M700 is what changed it.
+     *    Its Apple keyboard declares a boot keyboard and then a second HID
+     *    interface for its media keys, so the driver took the second and
+     *    called the machine's only keyboard "a mouse" - on a machine with no
+     *    PS/2 port, which is to say with no other keyboard at all.
+     */
     got = decode(hid_example, sizeof(hid_example));
-    check(got.kind == USB_CONFIG_BOOT_MOUSE,
-          "HID 1.11's example: the mouse behind the keyboard was not found");
-    check(got.interface == 1 && got.endpoint == 2,
-          "HID 1.11's example: took the keyboard's interface or endpoint");
+    check(got.kind == USB_CONFIG_BOOT_KEYBOARD,
+          "HID 1.11's example: the keyboard in front of the mouse was not "
+          "found");
+    check(got.interface == 0 && got.endpoint == 1,
+          "HID 1.11's example: the keyboard's own interface and endpoint are "
+          "0 and 1; the mouse behind it is 1 and 2");
     check(got.packet == 8 && got.interval == 10,
           "HID 1.11's example: packet size or interval");
     check(got.hid_subclass == 1 && got.hid_protocol == 1,
           "HID 1.11's example: the first HID interface is its keyboard");
 
-    /* 3. The keyboard alone: HID, and no mouse in it. */
+    /* 3. The keyboard alone, which is what most keyboards are. */
     {
         uint8_t keyboard[34];
 
@@ -404,8 +415,8 @@ int main(void)
         keyboard[2] = sizeof(keyboard);
         keyboard[4] = 1;
         got = decode(keyboard, sizeof(keyboard));
-        check(got.kind == USB_CONFIG_HID_OTHER,
-              "a keyboard alone is not HID without a mouse");
+        check(got.kind == USB_CONFIG_BOOT_KEYBOARD,
+              "a keyboard on its own was not read as one");
         check(got.hid_subclass == 1 && got.hid_protocol == 1,
               "a keyboard alone: its subclass and protocol");
     }
@@ -526,9 +537,11 @@ int main(void)
         both[4] = 2;
         both[34 + 2] = 1;                   /* the stick is interface 1 */
         got = decode(both, sizeof(both));
-        check(is_stick(got, 1, 2, 512, 512, 0, 0)
-              && got.storage_interface == 1,
-              "a keyboard and a stick: the stick behind it was not found");
+        check(got.kind == USB_CONFIG_BOOT_KEYBOARD,
+              "a keyboard with a stick behind it: the keyboard is what this "
+              "reads now, as it is for a mouse with one behind it - a "
+              "configuration yields one device, and the first interface that "
+              "yields anything settles it");
     }
 
     /* QEMU's mouse with a stick behind it: the mouse is taken, and the
@@ -605,15 +618,23 @@ int main(void)
           && got.extra == 1,
           "wMaxPacketSize 0x0804 is not 4 bytes with one extra transaction");
 
-    /* 8. How long the Report descriptor is, from the mouse's own HID
-     *    descriptor - in HID 1.11's pair the mouse's 0x32, not the 0x3f of
-     *    the keyboard in front of it. */
+    /*
+     * 8. How long the Report descriptor is, from the *mouse's* own HID
+     *    descriptor, since a mouse is the only thing here that reads one.
+     *
+     *    A keyboard's is not read at all and the length comes back 0: a boot
+     *    keyboard's report is fixed at eight bytes by the specification
+     *    (HID 1.11 B.1), so there is nothing to work out and nothing to get
+     *    wrong. HID 1.11's own example is a keyboard and a mouse, and what
+     *    this now reads from it is the keyboard - so the 0x32 that used to
+     *    be checked here has moved to the mouse-only descriptor above.
+     */
     got = decode(qemu_mouse, sizeof(qemu_mouse));
     check(got.report_length == 52, "QEMU's mouse: its Report descriptor's length");
     got = decode(hid_example, sizeof(hid_example));
-    check(got.report_length == 0x32,
-          "HID 1.11's example: the keyboard's Report descriptor length was "
-          "taken for the mouse's");
+    check(got.report_length == 0,
+          "HID 1.11's example: a boot keyboard has no Report descriptor to "
+          "read, and its length did not come back 0");
 
     /* 9. Report descriptors: where the buttons, X and Y are. */
     {
@@ -953,13 +974,131 @@ int main(void)
               "no notification at all was read");
     }
 
+    /*
+     * **A boot keyboard's reports**, HID 1.11 B.1: a byte of modifiers, a
+     * reserved byte and six usages in no particular order. What comes out is
+     * the *change* against the report before, in evdev's codes.
+     */
+    {
+        struct usb_key_change out[16];
+        uint8_t now[8] = { 0 }, was[8] = { 0 };
+        unsigned n;
+
+        /* The letters, against the usage page. A wrong entry here is a key
+         * that types the wrong character, which nothing else would catch. */
+        check(usb_decode_key(0x04) == 30 && usb_decode_key(0x1D) == 44,
+              "a and z are not KEY_A and KEY_Z");
+        check(usb_decode_key(0x1E) == 2 && usb_decode_key(0x27) == 11,
+              "1 and 0 are not KEY_1 and KEY_0");
+        check(usb_decode_key(0x28) == 28 && usb_decode_key(0x29) == 1
+              && usb_decode_key(0x2A) == 14 && usb_decode_key(0x2B) == 15
+              && usb_decode_key(0x2C) == 57,
+              "Enter, Escape, Backspace, Tab and Space are not 28, 1, 14, "
+              "15 and 57");
+        check(usb_decode_key(0x3A) == 59 && usb_decode_key(0x45) == 88,
+              "F1 and F12 are not KEY_F1 and KEY_F12");
+        check(usb_decode_key(0x4F) == 106 && usb_decode_key(0x50) == 105
+              && usb_decode_key(0x51) == 108 && usb_decode_key(0x52) == 103,
+              "the arrows are not right, left, down, up");
+        check(usb_decode_key(0x53) == 69 && usb_decode_key(0x62) == 82
+              && usb_decode_key(0x63) == 83,
+              "Num Lock and the keypad's 0 and . are not 69, 82 and 83");
+        check(usb_decode_key(0xE0) == 29 && usb_decode_key(0xE1) == 42
+              && usb_decode_key(0xE3) == 125 && usb_decode_key(0xE6) == 100,
+              "the modifiers are not control, shift, the GUI key and right "
+              "alt");
+        check(usb_decode_key(0x00) == 0 && usb_decode_key(0x01) == 0
+              && usb_decode_key(0xFF) == 0 && usb_decode_key(0x9A) == 0,
+              "a usage with no entry gave a key");
+
+        /* 'a' pressed, against nothing before it. */
+        now[2] = 0x04;
+        n = usb_decode_keys(now, 8, NULL, 0, out, 16);
+        check(n == 1 && out[0].code == 30 && out[0].down,
+              "the first report with 'a' in it is not one press of KEY_A");
+
+        /* Held: the same report again says nothing. */
+        memcpy(was, now, 8);
+        n = usb_decode_keys(now, 8, was, 8, out, 16);
+        check(n == 0, "a key held sent a second press - a keyboard sends its "
+                      "whole state every report, and what the system wants "
+                      "is the change");
+
+        /* 'b' as well, in the second slot. */
+        now[3] = 0x05;
+        n = usb_decode_keys(now, 8, was, 8, out, 16);
+        check(n == 1 && out[0].code == 48 && out[0].down,
+              "a second key down was not one press of KEY_B");
+
+        /* And a keyboard free to move a held key into another slot: 'a'
+         * into the second, 'b' into the first, and nothing changed. */
+        memcpy(was, now, 8);
+        now[2] = 0x05;
+        now[3] = 0x04;
+        n = usb_decode_keys(now, 8, was, 8, out, 16);
+        check(n == 0, "a held key moved from one slot to another was read as "
+                      "a release and a press");
+
+        /* Both let go. */
+        memcpy(was, now, 8);
+        now[2] = 0;
+        now[3] = 0;
+        n = usb_decode_keys(now, 8, was, 8, out, 16);
+        check(n == 2 && !out[0].down && !out[1].down
+              && ((out[0].code == 30 && out[1].code == 48)
+                  || (out[0].code == 48 && out[1].code == 30)),
+              "letting both keys go was not two releases");
+
+        /* Shift down, and up, which are bits rather than slots. */
+        memset(was, 0, 8);
+        memset(now, 0, 8);
+        now[0] = 0x02;
+        n = usb_decode_keys(now, 8, was, 8, out, 16);
+        check(n == 1 && out[0].code == 42 && out[0].down,
+              "left shift down was not one press of KEY_LEFTSHIFT");
+
+        memcpy(was, now, 8);
+        now[0] = 0;
+        n = usb_decode_keys(now, 8, was, 8, out, 16);
+        check(n == 1 && out[0].code == 42 && !out[0].down,
+              "left shift up was not one release");
+
+        /* Rollover: six slots of 01h say nothing about which keys are down,
+         * and a modifier in the same report still counts. */
+        memset(was, 0, 8);
+        was[2] = 0x04;
+        memset(now, 0x01, 8);
+        now[0] = 0x01;                  /* left control, and rollover */
+        now[1] = 0;
+        n = usb_decode_keys(now, 8, was, 8, out, 16);
+        check(n == 1 && out[0].code == 29 && out[0].down,
+              "a rollover report was read as keys; its six slots are all "
+              "ErrorRollOver and say nothing about what is down");
+
+        /* A report shorter than eight bytes is not a boot report. */
+        check(usb_decode_keys(now, 7, was, 8, out, 16) == 0,
+              "a report of seven bytes was read");
+        check(usb_decode_keys(NULL, 8, was, 8, out, 16) == 0,
+              "no report at all was read");
+
+        /* And room for fewer changes than there are: what fits, no more. */
+        memset(was, 0, 8);
+        memset(now, 0, 8);
+        now[2] = 0x04;
+        now[3] = 0x05;
+        now[4] = 0x06;
+        n = usb_decode_keys(now, 8, was, 8, out, 2);
+        check(n == 2, "three presses into room for two did not stop at two");
+    }
+
     if (fails == 0) {
         printf("PASS: %d checks on USB configuration and report descriptors "
                "(QEMU's mouse, HID 1.11's examples, a sixteen-button mouse, "
                "Report IDs, sticks at high speed and SuperSpeed, an Ethernet "
                "adapter's two configurations, its MAC address and what it "
-               "says on its interrupt endpoint, and the lengths a device can "
-               "get wrong).\n",
+               "says on its interrupt endpoint, a boot keyboard's reports "
+               "against the one before, and the lengths a device can get "
+               "wrong).\n",
                checks);
         return 0;
     }

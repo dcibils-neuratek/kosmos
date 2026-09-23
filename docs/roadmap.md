@@ -1492,12 +1492,23 @@ processors, and still what follows USB:
 
    What it needs, in the order it was found:
 
-   - **5zd-a. A resolution worth having.** It comes up at 800x600, which is
-     what the firmware's mode is when nothing asks for another. The loader
-     picks a mode through UEFI's Graphics Output Protocol, so this is a
-     matter of asking GOP for the modes it has and choosing rather than
-     taking what it hands over (`boot.md`). HD 530's own driver is a far
-     larger thing and is not what this is.
+   - **5zd-a. A resolution worth having, and as large as the screen will
+     take.** Diego: "lets go with as much as possible as currently the
+     monitor supports 3440x1440 and it already worked under linux in the
+     same lenovo m700". It comes up at 800x600, which is the firmware's mode
+     when nothing asks for another. The loader picks a mode through UEFI's
+     Graphics Output Protocol, so this is asking GOP for the modes it has
+     and choosing the largest rather than taking what it hands over
+     (`boot.md`). HD 530's own driver is a far larger thing and is not what
+     this is - the firmware already drove 3440x1440 for Linux on this
+     machine, so the mode is there to be asked for.
+
+     **What it will cost elsewhere**: 3440x1440 is 19.8 MB of framebuffer
+     against 800x600's 1.9, and the compositor's budget, the screenshot
+     harness and every "the screen is 1920x1080" assumption meet a wider one
+     for the first time (`roadmap.md` 4k-and-no-hard-limits). A mode to
+     choose also wants a way to say which - a boot option before there is a
+     panel.
    - **5zd-b. A USB keyboard.** Diego: "usb mouse works, but usb keyboard is
      yet to be added", and "we need to add support for usb keyboard!". The
      mini PC has no PS/2 port, so `hal/pc/i8042.c` finds nothing and the
@@ -1505,6 +1516,23 @@ processors, and still what follows USB:
      as the boot mouse the driver already reads - an interrupt IN endpoint
      and a fixed report (HID 1.11 B.1) - so this is `usb.md` step 9 beside
      the pad rather than anything new.
+   - **5zd-c. A keyboard on the screen, driven with the mouse.** Diego, on
+     the same afternoon: "we coould do a very simple virtual keyboard app
+     that would help in these cases". It is the answer to a machine that has
+     a pointer and no keys, and it goes on being useful afterwards - a
+     keyboard nothing recognises, a keyboard unplugged, and a touch screen
+     when there is one.
+
+     **It needs no new authority**, which is the reason to build it this
+     way: `SYS_KEY_PUSH` is device authority and an application has none, so
+     the keys go to the *window manager* as a message and out to the focused
+     window exactly as a real key does. What that does not reach is the
+     console at the bare prompt, which is right - a window is what an
+     application may type into.
+
+     **Drawn before it is written**, as every application here is
+     (`CLAUDE.md`): `docs/keyboard.html` first, and the code after Diego has
+     looked at it.
 
 5m. **AGREED on 21 September - a USB Ethernet driver, and the remote
    debugging it unlocks.** Diego: "what if we build a way to connect this

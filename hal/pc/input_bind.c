@@ -31,8 +31,24 @@
 #include "pointer.h"
 
 bool hal_keyboard_init(void)   { return i8042_keyboard_init(); }
-int  keyboard_getchar(void)    { return i8042_getchar(); }
 bool keyboard_present(void)    { return i8042_present(); }
+
+/*
+ * **The chip's characters, then the ones a process pushed.**
+ *
+ * A key is two things - an event and a character - and until 22 September a
+ * pushed key was only ever the first. That was right while the only thing
+ * pushing keys was a game pad; it is wrong for the USB keyboard on a
+ * machine with no PS/2 port, which is Diego's ThinkCentre M700
+ * (`roadmap.md` 5zd-b). `keys.c` makes the characters, through the same
+ * tables the chip's keys go through.
+ */
+int keyboard_getchar(void)
+{
+    int c = i8042_getchar();
+
+    return c >= 0 ? c : keys_pushed_char();
+}
 
 /*
  * **The keyboard first, then the firmware's keys** - the power button and a
@@ -128,14 +144,14 @@ bool hal_input_pending(void)
 {
     return i8042_input_pending() || pc_pointer_moved()
         || virtio_input_pending() || ec_input_pending()
-        || keys_pushed_pending();
+        || keys_pushed_pending() || keys_pushed_char_pending();
 }
 
 bool hal_input_pending_peek(void)
 {
     return i8042_input_pending_peek() || pc_pointer_moved()
         || virtio_input_pending_peek() || ec_input_pending()
-        || keys_pushed_pending();
+        || keys_pushed_pending() || keys_pushed_char_pending();
 }
 
 /*
