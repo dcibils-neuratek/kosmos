@@ -3033,6 +3033,10 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	@# And how big the icons are where a grid of them is drawn: the three
 	@# Haiku exports and nothing else, kept per place in one file.
 	$(HOSTDIR)/lua tools/test_iconsize.lua
+	@# And the list Preferences draws itself from: every setting in a
+	@# category that exists, every default on its own list of choices, and
+	@# a write that keeps what another program put in the same file.
+	$(HOSTDIR)/lua tools/test_settings.lua
 	@# And an Intel Ethernet controller's registers and descriptors: the
 	@# link, the MAC, and the errors a frame can arrive with.
 	$(HOSTDIR)/test_e1000decode

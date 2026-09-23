@@ -1549,8 +1549,23 @@ processors, and still what follows USB:
    Terminal and lives in its View menu; Preferences sets what a new one
    starts at. If changing it should change one window, it is not here.
 
-   **Mockup drawn: `docs/preferences.html`**, ten categories over the
-   settings that exist today, waiting on Diego.
+   **Mockup drawn and agreed on 23 September: `docs/preferences.html`.**
+   Diego's four answers: the desktop's icons and the Deskbar fold into
+   Appearance, leaving **nine** categories, "because they are what the
+   machine looks like"; the accent stays Kosmos blue - "Perfect with kosmos
+   blue and I love the look, we might replicate it all over the system";
+   Startup is a list of toggles; About lives inside System.
+
+   **"We might replicate it all over the system" is the important one**, and
+   it turns 5zi from a wish into a direction: this window is the first thing
+   drawn in the quieter surface, so what it settles - the grouped rows in a
+   rounded card, the sidebar with no tree, one accent, a header of a title
+   and two icons - is what the rest would follow. Worth building it as
+   widgets in the kit rather than as drawing inside one application.
+
+   **Built, in order**: `user/lib/settings.lua` first, because the list is
+   the design and it can be checked on this Mac
+   (`tools/test_settings.lua`).
 
 5zi. **WANTED on 23 September - a simpler look, and what it costs.** Diego:
    "i want to adopt an aesthetic similar to the screenshots attached, which
