@@ -1965,8 +1965,24 @@ end
 -- same colour tokens, so the two agree about what raised looks like even
 -- though neither can call the other.
 --
+--
+-- A control on the tab, raised - or in a flat look, outlined.
+--
+-- The same rule the kit follows (`ui.lua`, `gc:raised`): a look that says
+-- `flat` has nothing to say about which way a surface faces, so what
+-- separates a control from the bar it sits on is the line alone.
+--
 local function raised_box(x, y, w, h, face)
   back:fill(x, y, w, h, face)
+
+  if theme.flat then
+    back:fill(x, y, w, 1, theme.line_soft)
+    back:fill(x, y + h - 1, w, 1, theme.line_soft)
+    back:fill(x, y, 1, h, theme.line_soft)
+    back:fill(x + w - 1, y, 1, h, theme.line_soft)
+    return
+  end
+
   back:fill(x, y, w - 1, 1, theme.edge_light)
   back:fill(x, y, 1, h - 1, theme.edge_light)
   back:fill(x, y + h - 1, w, 1, theme.edge_dark)

@@ -1530,9 +1530,23 @@ processors, and still what follows USB:
      `ui.md` 16.8b is the rule this follows rather than breaks - copy a
      decision about *behaviour*, decide one about *shape* fresh.
    - **"the endeavor theme uses flat shading and our theme uses bevels in
-     the deskbar and else, lets use flat shading like the mockups"** - not
-     started. A look would carry a `flat` flag and the kit's raised and
-     sunken would draw a hairline instead of two edges.
+     the deskbar and else, lets use flat shading like the mockups"** - done.
+     `flat = yes` is a token a look may carry, and it is the only one that
+     is not a colour. `gc:raised` and `gc:sunken` draw one hairline where
+     they drew two edges, the window manager's tab controls do the same, and
+     `theme.chrome` returns one colour twice so the title bar's gradient
+     becomes a fill.
+
+     **It is a look's property rather than a setting**, because it is not a
+     preference about bevels - it is what makes Endeavour itself. The four
+     before it are dimensional on purpose: a bevel is how a 1995 desktop
+     said "this is a control", and copying that decision is what Classic is
+     for.
+
+     Three display phases had to be told, and all three were the buttons
+     moving rather than the shading: a greyed maximise glyph sampled 20 in
+     from the right edge is 42 in now, and a minimise click two slots from
+     the edge is three.
 
 5zm. **A spawn refused after the desktop has been up a while.** Diego, 23
    September, with a desktop five minutes old and several windows: `wm

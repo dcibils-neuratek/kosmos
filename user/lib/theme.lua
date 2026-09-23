@@ -219,6 +219,22 @@ theme.tokens = {
   "tab", "tab_idle", "tab_text", "desktop_text",
   "console", "console_text",
   "accent", "good", "bad", "ring", "stamp",
+
+  --
+  -- **`flat` is not a colour, and it is the only one.**
+  --
+  -- Diego, 23 September 2026: "the endeavor theme uses flat shading and our
+  -- theme uses bevels in the deskbar and else, lets use flat shading like
+  -- the mockups". A look that says `flat = yes` gets a hairline everywhere
+  -- this system would draw two edges - `gc:raised` and `gc:sunken` in the
+  -- kit, and the window manager's own boxes.
+  --
+  -- It is a *look's* property rather than a setting, because it is not a
+  -- preference about bevels: it is what makes Endeavour Endeavour. Plex,
+  -- Classic and Studio are dimensional on purpose and a flat one of those
+  -- would be a fourth thing nobody designed (`ui.md` 16.8b).
+  --
+  "flat",
 }
 
 local known = {}
@@ -377,6 +393,15 @@ function theme.read(text, base)
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
       elseif key == "name" then
         out.name = value
+      elseif key == "flat" then
+        -- `yes` or `no`, which is what a person writing a theme file would
+        -- try first, and the only two words this format has.
+        if value == "yes" or value == "no" then
+          out.flat = (value == "yes")
+        else
+          said[#said + 1] =
+            ("line %d: `flat` is yes or no, not `%s`"):format(n, value)
+        end
       else
         local c = colour(value)
 
@@ -555,6 +580,12 @@ end
 -- Light from above, which is where every bevel in this kit already puts it.
 --
 function theme.chrome(base)
+  -- A flat look has no ramp: the bar is one colour, which is what makes a
+  -- title bar read as a surface rather than as a moulding. The pair is
+  -- still returned, because every caller draws a gradient and a gradient
+  -- between one colour and itself is a fill.
+  if theme.flat then return base, base end
+
   return theme.lift(base, 13), theme.lift(base, -9)
 end
 

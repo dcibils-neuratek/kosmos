@@ -529,8 +529,28 @@ end
 --
 local DOUBLE_MIN = 16
 
+--
+-- **A flat look draws a hairline where a dimensional one draws a bevel.**
+--
+-- Diego, 23 September 2026: "the endeavor theme uses flat shading and our
+-- theme uses bevels in the deskbar and else, lets use flat shading like the
+-- mockups". `theme.flat` is a look's own property (`theme.lua`), so the
+-- four dimensional looks are untouched and Endeavour is one line.
+--
+-- One rule for both: raised and sunken are the same rectangle in a flat
+-- look, because the whole idea of the two is *light*, and a surface with no
+-- light has nothing to say about which way it faces. What separates a
+-- control from its ground is then the line alone - which is why the look
+-- that wants this has `line` and `line_soft` a shade apart rather than the
+-- deep grey a bevelled one needs.
+--
 function gc:raised(x, y, w, h, face)
   if face then self:fill(x, y, w, h, face) end
+
+  if theme.flat then
+    self:frame(x, y, w, h, theme.line_soft)
+    return
+  end
 
   if w >= DOUBLE_MIN and h >= DOUBLE_MIN then
     bevel(self, x, y, w, h, "edge_light", "line")
@@ -543,6 +563,11 @@ end
 -- Something you can put things in.
 function gc:sunken(x, y, w, h, face)
   if face then self:fill(x, y, w, h, face) end
+
+  if theme.flat then
+    self:frame(x, y, w, h, theme.line_soft)
+    return
+  end
 
   if w >= DOUBLE_MIN and h >= DOUBLE_MIN then
     bevel(self, x, y, w, h, "edge_dark", "edge_light")

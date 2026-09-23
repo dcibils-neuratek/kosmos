@@ -4291,10 +4291,14 @@ def check_tabs(guest):
                           "have ended - wanted the tab's yellow %r across the "
                           "whole window" % (across, TAB))
 
-        # The maximise box, greyed: `boxes_x` in wm.lua puts it 20 in from
-        # the window's right edge, 22 above its top, and the little
-        # window's title bar is its glyph's top rows.
-        zx, zy = fx + fw - 20, fy - 22
+        #
+        # The maximise box, greyed. `boxes_x` in wm.lua used to put it last,
+        # 20 in from the window's right edge; since 23 September the close
+        # box joined the run at the right (`roadmap.md` 5zl) and maximise is
+        # one slot - `BOX_W`, 22 - further left. 22 above the top, and the
+        # little window's title bar is its glyph's top rows.
+        #
+        zx, zy = fx + fw - 20 - 22, fy - 22
         glyph = pixel(zx + 8, zy + 4)
         dim = (0x8b, 0x94, 0x9e)
 
@@ -7065,9 +7069,16 @@ def check_focus_shown(guest):
     #
     # Minimised by its own box, and not drawn as the window you are in.
     #
+    #
+    # The minimise box, which is the *first* of the three at the right.
+    # `boxes_x` in wm.lua ends the run `MARGIN` from the frame and each box
+    # takes a `BOX_W` slot, so the run's start moved one slot - 22 - further
+    # left when the close box joined it on 23 September (`roadmap.md` 5zl).
+    # 44 was two slots; 66 is three.
+    #
     since = len(guest.seen)
     fx, fy, fw, _ = frame(current)
-    click(fx + (tab_wide.get(current) or fw) - 44 + 9, fy + 13)
+    click(fx + (tab_wide.get(current) or fw) - 66 + 9, fy + 13)
 
     limit = time.monotonic() + 6
 

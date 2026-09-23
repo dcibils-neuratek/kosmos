@@ -291,6 +291,23 @@ themes.endeavour = [[
 # one a new look should take on its way past (`roadmap.md` 5zk).
 
 name       = endeavour
+
+# **Flat, which is the whole of what makes this look itself.**
+#
+# Diego, 23 September 2026: "the endeavor theme uses flat shading and our
+# theme uses bevels in the deskbar and else, lets use flat shading like the
+# mockups". Every place this system draws two edges to say "this sticks
+# out" draws one hairline instead - the kit's raised and sunken, the window
+# manager's tab controls, and the title bar's gradient, which becomes a
+# fill.
+#
+# The four looks before it are dimensional on purpose and stay so
+# (`ui.md` 16.8b): a bevel is how a 1995 desktop said "this is a control",
+# and copying that decision is what Classic is for. This one says it with
+# a line, and the palette is built for that - `line` and `line_soft` are a
+# shade apart rather than the deep grey a moulded edge needs.
+flat       = yes
+
 desktop    = #2e5cb8
 window     = #f6f5f4
 raised     = #ffffff
