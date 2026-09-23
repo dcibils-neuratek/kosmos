@@ -350,22 +350,89 @@ static bool test_phys_window_is_the_same_memory(void)
  */
 static bool test_phys_window_reaches_the_top_of_ram(void)
 {
-    struct memrange ram;
+    struct memrange usable[PMM_RANGES_MAX];
+    unsigned count = hal_ram_ranges(usable, PMM_RANGES_MAX);
+    uintptr_t top = 0;
     volatile uint64_t *last;
+    unsigned r;
 
-    hal_ram_range(&ram);
-
-    if (ram.size < PAGE_SIZE) {
+    if (count == 0) {
         return false;
     }
 
-    last = phys_to_virt(ram.base + ram.size - PAGE_SIZE);
+    /*
+     * The *highest* range, not the one the kernel is in. On a PC with four
+     * gigabytes or more the PCI hole splits memory and the far piece is
+     * above four - which is exactly the memory the identity map could never
+     * describe and the window exists for. On the 512 MB machine the gate
+     * boots there is one range and this is the same page as before.
+     */
+    for (r = 0; r < count; r++) {
+        uintptr_t end = usable[r].base + usable[r].size;
+
+        if (end > top) {
+            top = end;
+        }
+    }
+
+    if (top < PAGE_SIZE) {
+        return false;
+    }
+
+    last = phys_to_virt(top - PAGE_SIZE);
 
     last[0] = 0xdeadbeefcafef00dULL;
 
     return last[0] == 0xdeadbeefcafef00dULL;
 }
+
 #endif
+
+/*
+ * The allocator manages every usable page the board reported, and no more.
+ *
+ * **The bitmap spans the gaps and the count must not.** One bitmap runs from
+ * the lowest usable byte to the highest, so it also covers the PCI hole and
+ * whatever the firmware kept; those bits are never freed and cost nothing.
+ * What they must not do is get counted as memory - and they were, for about
+ * ten minutes on 23 September, during which a machine with four gigabytes
+ * announced 6143 MB of RAM and a machine with eight announced 10239.
+ *
+ * Nothing else would have caught it. The machine boots, the free count is
+ * right, allocation works; only the number it tells you about itself is
+ * wrong, and it is wrong in the flattering direction.
+ *
+ * **This check cannot bite on the machine that runs it**, and that is worth
+ * saying rather than leaving to be assumed: the gate boots 512 MB, which is
+ * one range with no hole in it, so the span and the count are the same
+ * number and the control passes here. What caught it - and what catches it
+ * now - is `run_x86.py`'s `memory` part, which boots 4 GB and 8 GB. This is
+ * the invariant stated where it belongs, so that a board with a hole gets it
+ * for free the moment one is in the suite.
+ */
+static bool test_the_allocator_manages_every_usable_page(void)
+{
+    struct memrange usable[PMM_RANGES_MAX];
+    unsigned count = hal_ram_ranges(usable, PMM_RANGES_MAX);
+    size_t pages = 0;
+    unsigned r;
+
+    if (count == 0) {
+        return false;
+    }
+
+    for (r = 0; r < count; r++) {
+        pages += usable[r].size / PAGE_SIZE;
+    }
+
+    /*
+     * Within a page either way: the allocator drops a partial page at the
+     * end of a range and starts its bitmap on a page boundary, so the two
+     * counts agree to the page rather than to the byte.
+     */
+    return pmm_total_pages() <= pages
+        && pages - pmm_total_pages() <= count;
+}
 
 static bool test_memory_still_works_through_translation(void)
 {
@@ -8464,6 +8531,8 @@ static const struct test tests[] = {
     { "mmu: the physical window reaches the top of RAM",
       test_phys_window_reaches_the_top_of_ram },
 #endif
+    { "pmm: every usable page is managed, and no gap is",
+      test_the_allocator_manages_every_usable_page },
     { "libc: memcpy and memcmp",               test_memcpy_and_memcmp },
     { "libc: memset fills exactly its range",  test_memset_fills_exactly },
     { "libc: memmove handles overlap",         test_memmove_handles_overlap },

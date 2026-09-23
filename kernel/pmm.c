@@ -23,7 +23,24 @@ extern char __image_end[];
  * a zero bit inside a word of ones.
  */
 static uint64_t *bitmap;
-static size_t    total;         /* pages the bitmap covers */
+static size_t    total;         /* pages the bitmap covers, holes included */
+
+/*
+ * **Pages this allocator actually manages, which is not what the bitmap
+ * spans.**
+ *
+ * Since the bitmap covers every usable range in one sweep, it also covers
+ * the gaps between them - the PCI hole above all - and those bits are
+ * simply never freed. `total` is the span because that is what an index is
+ * bounded by; this is the number that means "memory", and it is what gets
+ * reported.
+ *
+ * Keeping one number for both was briefly the arrangement, and a machine
+ * with four gigabytes announced 6143 MB of RAM. A number the machine prints
+ * about itself has to be true, which is the whole argument in
+ * `hal_ram_capped`'s comment applied one layer down.
+ */
+static size_t    managed;
 static size_t    freecount;
 static uintptr_t ram_base;
 
@@ -62,11 +79,54 @@ uintptr_t pmm_ram_base(void)
 void pmm_init(void)
 {
     struct memrange ram;
+    struct memrange usable[PMM_RANGES_MAX];
+    unsigned count;
+    unsigned r;
+    uintptr_t span_base;
+    uintptr_t span_end;
     size_t i;
 
     struct pmm_layout at;
 
     hal_ram_range(&ram);
+
+    /*
+     * **One bitmap over every usable range, with the gaps between them
+     * marked taken.**
+     *
+     * A PC with four gigabytes or more does not have one block of memory:
+     * the PCI hole splits it, a piece below and a larger piece above four
+     * gigabytes. Managing only one of them left Diego's ThinkCentre on
+     * about three of its eight (`roadmap.md` 5zd-d step four).
+     *
+     * The cheap answer is the one taken here: span the bitmap from the
+     * lowest usable byte to the highest and start with everything used, so
+     * a hole costs only the bits nobody ever frees. Nine gigabytes of span
+     * at one bit per 4 KB page is 288 KB of bitmap - against the five
+     * gigabytes it buys back, that is not a trade anyone has to think
+     * about. The alternative, a descriptor per range and a search across
+     * them on every allocation, is more code and more state to keep
+     * consistent for the same answer.
+     *
+     * The *bitmap* still goes in the range holding the kernel image, which
+     * is what `hal_ram_range` answers and why both calls exist.
+     */
+    count = hal_ram_ranges(usable, PMM_RANGES_MAX);
+
+    span_base = ram.base;
+    span_end  = ram.base + ram.size;
+
+    for (r = 0; r < count; r++) {
+        uintptr_t end = usable[r].base + usable[r].size;
+
+        if (usable[r].base < span_base) {
+            span_base = usable[r].base;
+        }
+
+        if (end > span_end) {
+            span_end = end;
+        }
+    }
 
     /*
      * The bitmap has to live somewhere and there is no allocator yet to ask
@@ -77,8 +137,8 @@ void pmm_init(void)
      * 512 MB of 4 KB pages is 131072 bits, so 16 KB of bitmap. Four pages
      * to describe half a gigabyte.
      */
-    if (!pmm_place((uintptr_t)__image_end, ram.base, ram.size, PAGE_SIZE,
-                   &at)) {
+    if (!pmm_place((uintptr_t)__image_end, span_base, span_end - span_base,
+                   PAGE_SIZE, &at)) {
         panic("pmm_init: no room for the page bitmap in the memory the "
               "board reported");
     }
@@ -96,9 +156,53 @@ void pmm_init(void)
         bitmap[i] = 0;
     }
     freecount = 0;
+    managed   = 0;
 
-    for (i = at.reserved; i < total; i++) {
-        set_free(i);
+    /*
+     * **Freed range by range rather than from `at.reserved` upwards.** The
+     * span is not all memory: between the ranges are the PCI hole, ACPI
+     * tables and whatever else the firmware kept, and a page in one of
+     * those is not this allocator's to hand out. Starting from "all used"
+     * means a gap needs no code at all - it is simply never freed - and a
+     * range this loop somehow missed stays out of circulation, which fails
+     * safely.
+     *
+     * `at.reserved` is the bitmap and the image at the bottom of the span,
+     * so a page below it is skipped wherever its range begins.
+     */
+    for (r = 0; r < count; r++) {
+        uintptr_t at_page = usable[r].base;
+        uintptr_t end     = usable[r].base + usable[r].size;
+
+        if (at_page < ram_base) {
+            at_page = ram_base;
+        }
+
+        for (; at_page + PAGE_SIZE <= end; at_page += PAGE_SIZE) {
+            size_t index = (at_page - ram_base) / PAGE_SIZE;
+
+            if (index < total) {
+                managed++;
+
+                if (index >= at.reserved) {
+                    set_free(index);
+                }
+            }
+        }
+    }
+
+    /*
+     * A board with no `hal_ram_ranges` answer at all is one this kernel
+     * would give no memory, so the range it was loaded into is freed the
+     * old way. Nothing reaches this today; it is here so that adding a
+     * board cannot silently produce a machine with no free pages.
+     */
+    if (count == 0) {
+        managed = total;
+
+        for (i = at.reserved; i < total; i++) {
+            set_free(i);
+        }
     }
 }
 
@@ -256,7 +360,7 @@ size_t pmm_free_pages(void)
 
 size_t pmm_total_pages(void)
 {
-    return total;
+    return managed;
 }
 
 /*

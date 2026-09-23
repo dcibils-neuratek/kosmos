@@ -3827,38 +3827,41 @@ def core(image, check, fails):
                       if "PANIC" in l or "fault" in l),
                      "and said nothing about why"))
 
-        # It says what it gave up, and a number that is quietly a fraction
-        # of the truth has to be printed rather than discovered.
+        # And it gives nothing up any more. `hal_ram_capped` printed a line
+        # here on every machine with more than 768 MB until 23 September and
+        # on every machine with a PCI hole until later the same day; there is
+        # nothing left on QEMU for it to report, and a machine that prints it
+        # again has lost a range.
         told = re.search(r"of (\d+) MB this machine has", big)
 
-        check(told is not None and int(told.group(1)) > 16000,
-              "the machine did not report the memory it cannot map; the cap "
-              "is silent, which is how it would be found on hardware")
+        check(told is None,
+              "with 16 GB the machine still reports memory it is not using, "
+              "so a range is counted and not adopted: %s"
+              % (told.group(0) if told else ""))
 
         used = re.search(r"(\d+) MB of RAM at 0x0*([0-9a-f]+), in \d+ pages",
                          big)
 
         #
-        # **The range the kernel is in, whole**, which on q35 with this much
-        # memory is the 2046 MB below the PCI hole at 2 GB.
+        # **All of it**, which took three numbers to get to and is worth
+        # keeping the history of in one place.
         #
-        # This asked for 700 to 768 until 23 September, and was right to:
-        # RAM was identity mapped below the region processes are given, so
-        # 768 MB was the ceiling on every machine whatever it had. The window
-        # in `mmu.h` removed that, and what is left is the hole - the page
-        # allocator holds one range and the memory above four gigabytes is
-        # the other one.
+        # This asked for 700 to 768 until 23 September, and was right to: RAM
+        # was identity mapped below the region processes are given, so 768 MB
+        # was the ceiling on every machine whatever it had. A window in the
+        # kernel's own half of the address space removed that and it became
+        # 2046, the range below the PCI hole. One bitmap spanning every range
+        # with the holes marked taken removed that too.
         #
-        # The base matters as much as the size: 0x100000 is the low range,
-        # which is the one the kernel was loaded into and therefore the only
-        # one `pmm_place` can put a bitmap in. A machine that adopted the
-        # far block would report a plausible size and fail to boot.
+        # The base still matters as much as the size: 0x100000 is the low
+        # range, the one the kernel was loaded into and therefore the only
+        # one `pmm_place` can put a bitmap in.
         #
-        check(used is not None and 2000 < int(used.group(1)) <= 2048,
-              "with 16 GB the machine adopted %s MB, not the ~2046 of the "
-              "range below the PCI hole. Near 767 is the old identity-map "
-              "ceiling back; much more would be memory one range cannot hold"
-              % (used.group(1) if used else "no"))
+        check(used is not None and 16300 < int(used.group(1)) <= 16384,
+              "with 16 GB the machine adopted %s MB rather than nearly all "
+              "of it. 767 is the old identity-map ceiling, 2046 is holding "
+              "one range, and anything above 16384 is the bitmap's span "
+              "being reported as memory" % (used.group(1) if used else "no"))
 
         check(used is not None and int(used.group(2), 16) == 0x100000,
               "the adopted range starts at 0x%s, not the low 0x100000 - so "
@@ -4388,12 +4391,20 @@ def memory(image, check):
     - **2 GB**, where the whole of it is one range below the PCI hole. The
       machine should adopt all of it, and the old code would have reported
       767 MB here.
-    - **4 GB**, where QEMU's q35 puts the hole at 2 GB and the rest above
-      four. One range is still all the page allocator holds, so the machine
-      adopts 2046 MB *and says so* - naming the hole rather than the address
-      space, because the address space is no longer what limits it.
+    - **4 GB and 8 GB**, where QEMU's q35 puts the PCI hole at 2 GB and the
+      rest above four. Until step four the allocator held one range and
+      adopted 2046 MB of either; now one bitmap spans both pieces with the
+      hole marked taken, and the machine adopts nearly all of what it has.
+
+    8190 of 8192 rather than 8192: the firmware keeps a little of the first
+    megabyte and a little at the top, and the allocator drops a partial page
+    at the end of a range. A number within a couple of megabytes of the whole
+    is the right shape of answer; the wrong shapes are 767 (the old ceiling),
+    2046 (one range) and anything *above* the machine's size, which is the
+    bitmap's span being counted as memory.
     """
-    for size, least, most in (("2G", 2000, 2048), ("4G", 2000, 2048)):
+    for size, least, most in (("2G", 2000, 2048), ("4G", 4000, 4096),
+                              ("8G", 8100, 8192)):
         out = boot(image, None, 120.0, typed=("mem",), extra=("-m", size))
 
         if out is None:
@@ -4414,9 +4425,10 @@ def memory(image, check):
 
         check(least <= megabytes <= most,
               "with %s of RAM the machine adopted %d MB, not between %d and "
-              "%d. Below that range is the 768 MB identity-map ceiling back "
-              "again; above it is memory the page allocator cannot be holding "
-              "in one range" % (size, megabytes, least, most))
+              "%d. Below that range is either the 768 MB identity-map "
+              "ceiling or the 2046 MB of holding one range; above it is the "
+              "bitmap's span being reported as memory, holes included"
+              % (size, megabytes, least, most))
 
         # The pages have to agree with the megabytes, because a bitmap sized
         # from one and indexed by the other is the failure this whole change
@@ -4429,21 +4441,26 @@ def memory(image, check):
               % (size, megabytes, pages))
 
     #
-    # And the machine says what it is not using, with the true reason.
+    # And it no longer says it is giving anything up.
     #
-    out = boot(image, None, 120.0, typed=("mem",), extra=("-m", "4G"))
+    # `hal_ram_capped` prints that line when the board found memory this
+    # kernel does not adopt. It fired on every machine with more than 768 MB
+    # until step three and on every machine with a PCI hole until step four;
+    # on QEMU there is nothing left for it to report, and a machine that
+    # prints it again has lost a range somewhere.
+    #
+    out = boot(image, None, 120.0, typed=("mem",), extra=("-m", "8G"))
 
     if out is None:
-        check(False, "the machine would not boot with 4G to be asked twice")
+        check(False, "the machine would not boot with 8G to be asked twice")
         return
 
     said = next((l.strip() for l in out.splitlines()
                  if "this machine has" in l), "")
 
-    check("the one range holding the kernel" in said,
-          "with 4 GB the machine did not say why it is using less than all "
-          "of it, or gave the old reason. The identity map is no longer what "
-          "limits this; the PCI hole and a one-range allocator are: %r" % said)
+    check(said == "",
+          "with 8 GB the machine still reports memory it is not using, so a "
+          "range is being counted and not adopted: %r" % said)
 
 
 PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet',

@@ -31,6 +31,25 @@ void hal_ram_range(struct memrange *out)
 }
 
 /*
+ * One range, which is what this board has.
+ *
+ * A device tree's `/memory` node can describe several and QEMU's `virt`
+ * describes one, starting at 1 GB and running for however much `-m` asked
+ * for. There is no PCI hole through it and nothing below it, so the answer
+ * is `hal_ram_range`'s and the interface costs this board four lines.
+ */
+unsigned hal_ram_ranges(struct memrange *out, unsigned max)
+{
+    if (out == NULL || max == 0) {
+        return 0;
+    }
+
+    hal_ram_range(&out[0]);
+
+    return out[0].size > 0 ? 1u : 0u;
+}
+
+/*
  * Never, on this board. `virt` is given its memory on the command line and
  * `make qemu` asks for 512 MB, which is comfortably inside what AArch64's
  * identity map describes - so there has never been anything to cap and the

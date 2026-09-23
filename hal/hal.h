@@ -71,6 +71,28 @@ struct memrange {
 void hal_ram_range(struct memrange *out);
 
 /*
+ * **Every usable range the board found, not merely the best one.**
+ *
+ * `hal_ram_range` answers with the range the kernel was loaded into,
+ * because that is the one the page allocator can put its bitmap in. This
+ * answers with all of them, so the allocator can *manage* the rest.
+ *
+ * A PC with four gigabytes or more does not have one block of memory: the
+ * PCI hole splits it, a piece below and a larger piece above four
+ * gigabytes. Until this existed the far piece was counted and unused, and
+ * Diego's ThinkCentre ran on about three of its eight (`roadmap.md`
+ * 5zd-d).
+ *
+ * Ranges come back in address order, none below one megabyte - the first
+ * megabyte is the firmware's, the real-mode trampoline's and the BIOS
+ * area's, and `hal_low_region` is how anything asks for that. Returns how
+ * many were written, which is never more than `max`; a board that has one
+ * range answers one, and the answer is the same range `hal_ram_range`
+ * gives.
+ */
+unsigned hal_ram_ranges(struct memrange *out, unsigned max);
+
+/*
  * Whether the board is reporting less RAM than the machine has, and how
  * much there really is.
  *

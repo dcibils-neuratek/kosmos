@@ -8346,16 +8346,36 @@ block would report a plausible size and fail to boot.
 **Control, watched**: the clip put back reports 767 MB at both sizes and
 fails by name.
 
-### What is still not used
+### And then the other side of the hole
 
 A PC with four gigabytes or more has its memory in two pieces, split by the
-PCI hole, and `pmm` holds one range. On the M700 that leaves about five of
-its eight gigabytes counted and unused. `roadmap.md` 5zd-d step four, and
-the shape is small: span the bitmap from the lowest usable byte to the
-highest and mark the holes taken. Nine gigabytes at one bit per page is
-288 KB.
+PCI hole, and holding one range left 2046 MB of any machine. One bitmap now
+spans every usable range with the gaps marked taken, so the far piece is
+managed like any other: **8190 MB of 8192, and 16382 of 16384.**
+
+The `memory` part boots 512 MB, 2, 4 and 8 GB, and the 16 GB boot in `core`
+carries the history in one place - 767, then 2046, then all of it.
+
+**Two failures on the way, and both are the interesting kind.**
+
+`pmm_total_pages` returned the bitmap's *span*, holes included, so a
+four-gigabyte machine announced 6143 MB and an eight-gigabyte one 10239.
+Everything worked: the machine booted, the free count was right, allocation
+was correct. Only the number it told you about itself was wrong, and wrong in
+the flattering direction. The guest suite now holds the allocator's count to
+the board's - and **that check cannot bite on the machine that runs it**,
+because the gate boots 512 MB, which is one range with no hole. It is stated
+where it belongs so a board with a hole gets it free; what catches it today
+is the 4 GB and 8 GB boots.
+
+`keep_disk_out_of_ram` trimmed only the range the kernel is in, so once
+every range was managed, `pmm` was handing out the pages the loader's disk
+sits on. The memdisk check found it and named it before anybody looked: *"the
+allocator was given its pages and something was built on top of it"*. A
+failure message written as a hypothesis is worth the extra sentence it costs.
 
 **The number is printed either way**, which is the part worth keeping: this
 system has now twice had a limit that cost most of a machine's memory and
 broke nothing, and both times the only reason anybody knew was a line in the
-boot log.
+boot log. That line now prints nothing on QEMU at any size, and a suite
+checks that it stays silent.

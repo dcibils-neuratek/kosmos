@@ -21,7 +21,12 @@
  * the kernel. Fixed-size pools and whole pages, per CLAUDE.md.
  */
 
-/* Reads the RAM range from the HAL, places the bitmap after the kernel
+/* How many usable ranges the allocator will ask the board for. A PC's map
+ * has two pieces of ordinary memory, below and above the PCI hole. */
+#define PMM_RANGES_MAX 8
+
+/* Reads every usable RAM range from the HAL, spans one bitmap across them
+ * with the gaps between marked taken, places that bitmap after the kernel
  * image, and marks everything the kernel already occupies as used. */
 void pmm_init(void);
 

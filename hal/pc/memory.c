@@ -35,6 +35,20 @@
 
 static struct memrange found = { 0, 0 };
 
+/*
+ * Every usable range at or above one megabyte, in the order the firmware
+ * listed them - which is address order on every machine this has met.
+ *
+ * Eight is generous: a PC's map has two pieces of ordinary memory, below
+ * and above the PCI hole, and the rest of its entries are reserved, ACPI or
+ * firmware. A machine with more than eight is one this will under-report
+ * rather than misbehave on, and `hal_ram_capped` will say so.
+ */
+#define RANGES_MAX 8
+
+static struct memrange ranges[RANGES_MAX];
+static unsigned range_count;
+
 /* Every usable byte the loader listed, mappable or not. */
 static unsigned long whole;
 
@@ -393,14 +407,31 @@ whole += length;
          * used yet. Using it needs a page allocator that can hold more
          * than one range, which is `roadmap.md` 5zd-d step four.
          */
+        /*
+         * **Recorded whether or not it is the one the kernel is in.** The
+         * allocator manages all of them since `roadmap.md` 5zd-d step four;
+         * `found` stays the range holding the image because that is where
+         * the bitmap has to go, and `hal_ram_ranges` answers with the rest.
+         *
+         * Below a megabyte is not offered: the first one holds the BIOS
+         * area, the real-mode trampoline and whatever the firmware still
+         * wants, and `hal_low_region` is how anything asks for a piece of
+         * it deliberately.
+         */
+        if (lo >= 0x100000UL && range_count < RANGES_MAX) {
+            ranges[range_count].base = lo;
+            ranges[range_count].size = hi - lo;
+            range_count++;
+        } else if (lo >= 0x100000UL) {
+            beyond += hi - lo;      /* more ranges than this board records */
+        }
+
         if (lo <= (unsigned long)(uintptr_t)__image_end
             && hi > (unsigned long)(uintptr_t)__image_end) {
             if (hi - lo > found.size) {
                 found.base = lo;
                 found.size = hi - lo;
             }
-        } else {
-            beyond += hi - lo;
         }
 }
 
@@ -437,30 +468,63 @@ static void remember_disk(uint64_t base, uint64_t end)
  * Whole pages, because the allocator counts in them: the module's first page
  * rounded down and its last rounded up.
  */
-static void keep_disk_out_of_ram(void)
+/*
+ * One range, with the loader's disk cut out of it.
+ *
+ * The larger of the two sides is kept and the smaller is given up, because
+ * a range is a base and a size and this board does not split one in two.
+ * The disk is eight megabytes low down, so the side given up is small.
+ */
+static void trim_disk_from(struct memrange *r)
 {
     unsigned long lo, hi, top, below, above;
 
-    if (!loader_disk.valid || found.size == 0) {
+    if (r->size == 0) {
         return;
     }
 
     lo = (unsigned long)(loader_disk.base & ~(uint64_t)0xfff);
     hi = (unsigned long)((loader_disk.end + 0xfff) & ~(uint64_t)0xfff);
-    top = found.base + found.size;
+    top = r->base + r->size;
 
-    if (hi <= found.base || lo >= top) {
-        return;                         /* not in the region at all */
+    if (hi <= r->base || lo >= top) {
+        return;                         /* not in this range at all */
     }
 
-    below = lo > found.base ? lo - found.base : 0;
+    below = lo > r->base ? lo - r->base : 0;
     above = top > hi ? top - hi : 0;
 
     if (above >= below) {
-        found.base = hi;
-        found.size = above;
+        r->base = hi;
+        r->size = above;
     } else {
-        found.size = below;
+        r->size = below;
+    }
+}
+
+/*
+ * **Every range, not only the one the kernel is in.**
+ *
+ * This trimmed `found` alone until 23 September, which was right while
+ * `found` was the only memory the allocator managed. Since step four of
+ * `roadmap.md` 5zd-d it manages all of them, and a range that still
+ * contained the loader's disk was a range whose pages `pmm` handed out -
+ * with the disk on top of them. `run_x86.py`'s memdisk check said exactly
+ * that, in those words, before anybody looked: "the allocator was given its
+ * pages and something was built on top of it".
+ */
+static void keep_disk_out_of_ram(void)
+{
+    unsigned i;
+
+    if (!loader_disk.valid) {
+        return;
+    }
+
+    trim_disk_from(&found);
+
+    for (i = 0; i < range_count; i++) {
+        trim_disk_from(&ranges[i]);
     }
 }
 
@@ -641,6 +705,22 @@ void pc_capture_memory(void)
 void hal_ram_range(struct memrange *out)
 {
     *out = found;
+}
+
+unsigned hal_ram_ranges(struct memrange *out, unsigned max)
+{
+    unsigned n = range_count < max ? range_count : max;
+    unsigned i;
+
+    if (out == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < n; i++) {
+        out[i] = ranges[i];
+    }
+
+    return n;
 }
 
 /*

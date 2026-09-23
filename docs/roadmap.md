@@ -1928,23 +1928,32 @@ processors, and still what follows USB:
         The boot line that says what the machine is not using was corrected
         rather than deleted: it named the identity map, which is no longer
         what limits this.
-     4. **The other side of the PCI hole.** What is left. A PC with four
-        gigabytes or more has its memory in two pieces, and `pmm` holds one
-        range - one base, one bitmap - so the piece the kernel is not in is
-        counted and unused. On Diego's M700 that is about five of its eight
-        gigabytes.
+     4. **DONE on 23 September - the other side of the PCI hole.** One
+        bitmap spans every usable range with the gaps between them marked
+        taken, so the piece of memory the kernel is not in is managed like
+        any other. `hal_ram_ranges` is the new board call - every usable
+        range, none below a megabyte - beside `hal_ram_range`, which still
+        answers with the one holding the kernel, because that is where the
+        bitmap has to go.
 
-        The shape is small and the bitmap is what makes it so: **span it from
-        the lowest usable byte to the highest and mark everything that is not
-        usable as already taken.** Nine gigabytes of address space at one bit
-        per 4 KB page is 288 KB of bitmap, which is nothing, and the holes
-        cost only the time to set their bits at boot. `hal_ram_range` grows
-        to report every usable range rather than the best one, and
-        `pmm_place` places the bitmap in the range holding the image exactly
-        as it does now.
+        **8190 MB of 8192 on an eight-gigabyte machine**, and 16382 of 16384
+        on Diego's ThinkPad's size. Measured at 512 MB, 2, 4, 8 and 16 GB.
+        Nothing in the address space changed; the whole of step four is
+        `pmm_init` and the board's scan.
 
-        Not started. It is a change to `pmm` and the board's scan, and
-        nothing in the address space.
+        The span costs 288 KB of bitmap for nine gigabytes of address space
+        and the holes cost the bits nobody frees, which is why this shape was
+        chosen over a descriptor per range and a search across them.
+
+        **Two things it got wrong first, both caught, both worth keeping.**
+        `pmm_total_pages` returned the bitmap's span, so a four-gigabyte
+        machine announced 6143 MB and an eight-gigabyte one 10239 - a number
+        wrong in the flattering direction, with everything else working.
+        `managed` is separate from `total` now, and the guest suite holds the
+        allocator's count to the board's. And `keep_disk_out_of_ram` trimmed
+        only the range the kernel is in, so `pmm` was handing out the pages
+        the loader's disk sits on; the memdisk check said so in exactly those
+        words before anybody looked.
 
      `as_create` copies the kernel's PML4 entries into every new space and
      will have to copy slot 256 as well - one line, and the one place where
