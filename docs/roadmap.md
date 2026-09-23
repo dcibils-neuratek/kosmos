@@ -1504,9 +1504,29 @@ processors, and still what follows USB:
    which of them earn their place in the *default* view and which can be one
    press away.
 
-   **The mockup comes first** - `docs/tracker2.html` beside `drives.html`,
-   shown to Diego and changed until he agrees, then the code. That is the
-   rule from 14 September and this is exactly the case it was made for.
+   **Mockup drawn on 23 September: `docs/tracker2.html`**, waiting on Diego.
+   Two views - icons and list - and the second half of the page is what was
+   *not* removed, because that is the part worth agreeing before any code.
+
+   **Nothing is deleted; six things move one press away.** A menu bar of
+   three menus, a toolbar with a permanent search field, a trail of every
+   path segment and a status line become a header bar: back, forward, one
+   breadcrumb button that opens the whole trail, a new-folder icon, a view
+   toggle and a `...` menu. Search is the magnifier in the sidebar's header
+   and turns that header into the field. The status line appears only when
+   something is selected.
+
+   **The queries stay exactly as they are.** `kind:note` is Tracker's own
+   idea and the thing it has that a file manager usually does not - it is a
+   feature rather than chrome, and simplifying a window is not a reason to
+   lose one. What changes is that the field is a press away.
+
+   **The one open question is the columns.** The list view has Name, Size
+   and Kind and the screenshot that started this has no list view at all.
+   The mockup keeps it, and keeps the header that sorts, because a file
+   manager with no way to see a size is one you leave to answer a question -
+   but it is sixty lines and they are the sixty this is otherwise about
+   removing. Diego's call.
 
 5zh. **WANTED on 23 September - Preferences: one place to configure Kosmos.**
    Diego, with GNOME's Settings beside it: "i want to create a preferences

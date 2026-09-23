@@ -1,0 +1,278 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Tracker, simpler: what it looks like after the menu bar, the toolbar and
+  the trail become one header. Drawn on 23 September 2026 after Diego asked
+  for it with GNOME's Files beside it - "right now is too complicated. i want
+  to simplify it like the one in the image" - roadmap.md 5zg. The page to
+  rebuild the app from.
+
+  Half of this is removal, and the second half of the page is about what was
+  *not* removed and where it went instead. Nothing here is deleted; six
+  things move one press away.
+-->
+<title>Tracker, simpler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    --w-desk: #3d63b8; --w-side: #f1f2f4; --w-body: #ffffff;
+    --w-line: #e0e2e6; --w-ink: #1d1f24; --w-dim: #74787f;
+    --w-sel: #dfe3ea; --w-accent: #2a55c9; --w-head: #ffffff;
+    --folder: #4f7fe0; --folder-dark: #2f5bb5;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font-family:var(--body); font-size:15px; line-height:1.55; }
+  .wrap { max-width:1040px; margin:0 auto; padding:40px 20px 80px; }
+  h1 { font-family:var(--display); font-size:30px; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0 0 28px; max-width:72ch; }
+  h2 { font-family:var(--display); font-size:19px; margin:42px 0 10px;
+       padding-top:22px; border-top:1px solid var(--rule); }
+  h3 { font-family:var(--display); font-size:16px; margin:26px 0 8px; }
+  p { max-width:74ch; } p.tight { margin:0 0 12px; }
+  code,.k { font-family:var(--mono); font-size:.88em; }
+  .note { background:var(--card); border:1px solid var(--rule);
+          border-left:3px solid var(--accent); border-radius:8px;
+          padding:14px 18px; margin:18px 0; }
+  .note p:last-child{margin-bottom:0} .note p:first-child{margin-top:0}
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:14px; }
+  th,td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--rule);
+          vertical-align:top; }
+  th { font-family:var(--display); font-weight:600; }
+
+  .stage { background:radial-gradient(120% 90% at 30% 10%,#5679cc 0%,#3d63b8 45%,#2f4e99 100%);
+           padding:30px 22px; border-radius:12px; display:flex; justify-content:center; }
+  .win { width:860px; max-width:100%; background:var(--w-body); border-radius:12px;
+         overflow:hidden; box-shadow:0 18px 40px rgba(0,0,0,.28);
+         display:grid; grid-template-columns:200px 1fr; font-size:13.5px;
+         color:var(--w-ink); }
+
+  .side { background:var(--w-side); border-right:1px solid var(--w-line);
+          min-height:440px; }
+  .side-head { display:flex; align-items:center; gap:6px; padding:9px 8px 9px 10px; height:46px; }
+  .side-title { font-weight:600; font-size:14px; flex:1; text-align:center; }
+  .ico { width:26px; height:26px; border-radius:6px; display:grid; place-items:center;
+         color:var(--w-dim); flex:none; cursor:pointer; }
+  .ico:hover { background:rgba(0,0,0,.06); }
+  .ico svg { width:15px; height:15px; }
+  .places { padding:2px 8px 10px; }
+  .place { display:flex; align-items:center; gap:10px; padding:6px 10px;
+           border-radius:7px; cursor:pointer; }
+  .place:hover { background:rgba(0,0,0,.05); }
+  .place.on { background:var(--w-sel); font-weight:500; }
+  .place svg { width:15px; height:15px; flex:none; color:var(--w-dim); }
+  .place.on svg { color:var(--w-accent); }
+  .sep { height:1px; background:var(--w-line); margin:9px 10px; }
+
+  .pane { display:flex; flex-direction:column; }
+  .head { height:46px; background:var(--w-head); border-bottom:1px solid var(--w-line);
+          display:flex; align-items:center; padding:0 8px 0 6px; gap:4px; }
+  .crumb { display:flex; align-items:center; gap:7px; padding:5px 11px;
+           border:1px solid var(--w-line); border-radius:8px; background:#fff;
+           font-weight:500; cursor:pointer; margin:0 6px; }
+  .crumb svg { width:14px; height:14px; color:var(--w-dim); }
+  .grow { flex:1; }
+
+  .body { padding:18px; }
+  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px 4px; }
+  .item { display:flex; flex-direction:column; align-items:center; gap:7px;
+          padding:12px 6px 10px; border-radius:9px; cursor:pointer; }
+  .item:hover { background:#f2f4f8; }
+  .item.on { background:var(--w-sel); }
+  .item .nm { font-size:12.5px; text-align:center; }
+  .fold { width:58px; height:46px; position:relative; }
+  .fold i { position:absolute; inset:0; border-radius:5px;
+            background:linear-gradient(180deg,var(--folder) 0%,var(--folder-dark) 100%); }
+  .fold b { position:absolute; left:0; top:-6px; width:24px; height:8px;
+            border-radius:3px 3px 0 0; background:var(--folder); }
+  .fold svg { position:absolute; left:50%; top:52%; transform:translate(-50%,-50%);
+              width:17px; height:17px; color:#dbe6ff; }
+
+  /* the list view */
+  .rows { font-size:12.5px; }
+  .hdr { display:grid; grid-template-columns:1fr 90px 110px; gap:8px;
+         padding:6px 10px; color:var(--w-dim); border-bottom:1px solid var(--w-line);
+         font-weight:500; }
+  .row { display:grid; grid-template-columns:1fr 90px 110px; gap:8px;
+         padding:6px 10px; align-items:center; }
+  .row:nth-child(odd){ background:#fafbfc; }
+  .row.on { background:var(--w-sel); }
+  .row .n { display:flex; align-items:center; gap:8px; }
+  .mini { width:16px; height:13px; border-radius:2px; background:var(--folder); flex:none; }
+  .mini.f { background:#c9ced6; }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#14171c; --ink:#e8eaee; --muted:#9aa2ae; --rule:#2a2f38; --card:#1b1f26;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Tracker, simpler</h1>
+<p class="sub">Drawn on 23 September 2026 &mdash; <code>roadmap.md</code> 5zg. Diego, with
+GNOME&rsquo;s Files beside it: &ldquo;right now is too complicated. i want to simplify it
+like the one in the image.&rdquo; Half of this is removal, so the second half of this page
+is about what was <em>not</em> removed and where it went.</p>
+
+<div class="stage">
+<div class="win">
+  <div class="side">
+    <div class="side-head">
+      <div class="ico" title="Search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></div>
+      <div class="side-title">Files</div>
+      <div class="ico" title="Menu"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M2 4h12M2 8h12M2 12h12"/></svg></div>
+    </div>
+    <div class="places">
+      <div class="place on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home</div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.2l2 1.2"/></svg>Recent</div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h10v9H3zM6 5V3h4v2"/></svg>Trash</div>
+      <div class="sep"></div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h7l3 3v9H3z"/></svg>Documents</div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 12V4l7-1v8"/><circle cx="4" cy="12" r="2"/><circle cx="11" cy="11" r="2"/></svg>Music</div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v10H2z"/><path d="M2 11l4-4 3 3 2-2 3 3"/></svg>Pictures</div>
+      <div class="sep"></div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12v8H2z"/><path d="M4 7h3"/></svg>Kingston, 115 GB</div>
+    </div>
+  </div>
+
+  <div class="pane">
+    <div class="head">
+      <div class="ico" title="Back"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3L5 8l5 5"/></svg></div>
+      <div class="ico" title="Forward"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3l5 5-5 5"/></svg></div>
+      <div class="crumb"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6l4 4 4-4"/></svg></div>
+      <div class="grow"></div>
+      <div class="ico" title="New folder"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h4l1.5 2H14v7H2z"/><path d="M8 8.5v3M6.5 10h3"/></svg></div>
+      <div class="ico" title="As icons or as list"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4h12M2 8h12M2 12h12"/></svg></div>
+      <div class="ico" title="More"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/></svg></div>
+      <div class="ico" title="Close"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></div>
+    </div>
+    <div class="body">
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<h3>And as a list, which is the same window with one icon pressed</h3>
+
+<div class="stage" style="padding:22px">
+<div class="win" style="width:700px">
+  <div class="side" style="min-height:270px">
+    <div class="side-head"><div class="ico"></div><div class="side-title">Files</div><div class="ico"></div></div>
+    <div class="places">
+      <div class="place on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home</div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.2l2 1.2"/></svg>Recent</div>
+      <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h10v9H3zM6 5V3h4v2"/></svg>Trash</div>
+    </div>
+  </div>
+  <div class="pane">
+    <div class="head">
+      <div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3L5 8l5 5"/></svg></div>
+      <div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3l5 5-5 5"/></svg></div>
+      <div class="crumb"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6l4 4 4-4"/></svg></div>
+      <div class="grow"></div>
+      <div class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/></svg></div>
+    </div>
+    <div class="body" style="padding:0">
+      <div class="rows">
+        <div class="hdr"><span>Name</span><span>Size</span><span>Kind</span></div>
+        <div class="row"><span class="n"><i class="mini"></i>development</span><span>&mdash;</span><span>folder</span></div>
+        <div class="row on"><span class="n"><i class="mini"></i>screenshots</span><span>&mdash;</span><span>folder</span></div>
+        <div class="row"><span class="n"><i class="mini f"></i>magicword-clip.mp4</span><span>4.2 MB</span><span>film</span></div>
+        <div class="row"><span class="n"><i class="mini f"></i>notes.md</span><span>1.4 KB</span><span>note</span></div>
+        <div class="row"><span class="n"><i class="mini f"></i>doom1.wad</span><span>4.1 MB</span><span>data</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2>What was removed, and what only moved</h2>
+
+<p class="tight">Tracker has a menu bar of three menus, a toolbar with a search field, a
+trail of every path segment, a status line and a sidebar. The window above has a header
+bar and a sidebar. <strong>Nothing is deleted.</strong> Six things move one press away:</p>
+
+<table>
+<tr><th>Today</th><th>In the window above</th></tr>
+<tr><td>Menu bar: <b>File</b> &mdash; Open, Edit, New folder, Rename, Cut, Copy, Paste, Select all / none, Delete, Empty Trash</td>
+    <td>New folder is an icon, because it is the one that makes something. The rest is the <b>&#8942;</b> menu and the right button, where they already are</td></tr>
+<tr><td>Menu bar: <b>Go</b> &mdash; Back, Forward, Up, Home, Refresh</td>
+    <td>Back and Forward are the two arrows. Up and Home are the breadcrumb, which opens the trail. Refresh is in <b>&#8942;</b></td></tr>
+<tr><td>Menu bar: <b>View</b> &mdash; as icons / as list, sort, icon size</td>
+    <td>One icon toggles icons and list. Sort and size are in <b>&#8942;</b>, marked as they are now</td></tr>
+<tr><td>Toolbar with a search field always on screen</td>
+    <td>The magnifier in the sidebar&rsquo;s header. Pressing it turns the header into the field</td></tr>
+<tr><td>A trail of every segment: <span class="k">Drives &rsaquo; Kingston &rsaquo; KOSMOS HOME &rsaquo; photos</span></td>
+    <td>One button saying where you are. It opens the same trail as a menu &mdash; so a deep path costs one press instead of a row of chrome on every window</td></tr>
+<tr><td>A status line</td>
+    <td>Gone while nothing is selected; the count appears at the foot when something is</td></tr>
+</table>
+
+<div class="note">
+<p><strong>The queries stay exactly as they are.</strong> <span class="k">kind:note</span>
+in the search field is Tracker&rsquo;s own idea and the thing it has that a file manager
+usually does not &mdash; it is not chrome, it is a feature, and simplifying the window is
+not a reason to lose it. What changes is that the field is a press away rather than
+permanently on screen.</p>
+</div>
+
+<h3>The one thing I would argue about</h3>
+
+<p><strong>The columns.</strong> The list view has Name, Size and Kind, and the screenshot
+that started this has no list view at all. I have kept it, and kept the header that sorts
+&mdash; because a file manager with no way to see a size is a file manager you leave to
+answer a question. The icons view is what opens; the list is one press.</p>
+
+<p>If you would rather the list went too, say so and it goes: it is about sixty lines and
+they are the sixty this page is otherwise about removing.</p>
+
+<h2>What this does not touch</h2>
+
+<p>The desktop is Tracker with <code>--backdrop</code>, and it has no menu bar, no toolbar
+and no sidebar already. Icons on it, where they are dragged to, and the icon sizes chosen
+per place are all unchanged &mdash; and so are drag and drop, the right button reaching the
+application, and a place made by dropping a folder on the sidebar. Those are how the
+desktop <em>works</em>, and a screenshot is not asking about them
+(<code>roadmap.md</code> 5zi).</p>
+
+</div>
+
+<script>
+const ITEMS = [
+  ["Desktop","doc"],["Documents","doc"],["Downloads","down"],["Music","music"],
+  ["Pictures","pic"],["development","code"],["screenshots","pic"],["roms","game"],
+];
+const GLYPH = {
+  doc:'<path d="M4 2h5l3 3v9H4z"/>', down:'<path d="M8 3v8M5 8l3 3 3-3M3 14h10"/>',
+  music:'<path d="M6 12V4l7-1v8"/><circle cx="4" cy="12" r="2"/><circle cx="11" cy="11" r="2"/>',
+  pic:'<path d="M2 3h12v10H2z"/><path d="M2 11l4-4 3 3 2-2 3 3"/>',
+  code:'<path d="M6 4L2 8l4 4M10 4l4 4-4 4"/>', game:'<path d="M3 6h10v6H3z"/><path d="M6 9h2M11 8v2"/>',
+};
+document.getElementById("grid").innerHTML = ITEMS.map(([n,g],i)=>`
+  <div class="item${i===0?" on":""}">
+    <div class="fold"><b></b><i></i>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+           stroke-linejoin="round">${GLYPH[g]}</svg></div>
+    <div class="nm">${n}</div>
+  </div>`).join("");
+</script>
+</body>
+</html>
