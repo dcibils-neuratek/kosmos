@@ -83,9 +83,14 @@ local theme = ui.theme
 -- 420 it was, so it moves whenever the banner does - it is a constant
 -- precisely so that it can.
 --
--- And a menu bar's row on top, since the View menu arrived (below): the
--- console is the size it was, and the window one row taller.
-local BAR = ui.metrics.row
+-- And a header on top, since the View menu arrived (below): the console is
+-- the size it was, and the window one band taller. It was a menu bar and is
+-- now a row carrying the working directory on the left and a `...` on the
+-- right (`docs/desktop.html`) - the chrome a terminal should have, which is
+-- as little as will still say where you are.
+local TOOLBAR_Y = 7
+local TOOLBAR_H = 26
+local BAR = TOOLBAR_Y + TOOLBAR_H
 local W, H = 640, 580 + BAR
 local SCROLLBACK = 400          -- lines kept
 
@@ -195,10 +200,38 @@ local view = ui.view{ x = 8, y = BAR + 8, w = W - 16, h = H - BAR - 20,
 local textsize = use("/lib/textsize.lua")
 local size = textsize.new(ui, "/home/.terminal")
 
-win:add(ui.menubar{
-  x = 0, y = 0, w = W,
-  follow = { "left", "right", "top" },
-  menus = { { title = "View", items = size:items() } },
+--
+-- The header: where you are, and everything else behind one button.
+--
+-- The path is a label rather than a control. A terminal already has a way
+-- to change directory and it is the one a person came here to use; a
+-- clickable trail would be a second answer to a question this window
+-- answers better than any window in the system.
+--
+local where = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 70, text = cwd,
+                        color = "text_dim" }
+win:add(where)
+
+--
+-- Every change of directory goes through here, so the header cannot drift
+-- from the shell. There are two call sites and there was one a version ago;
+-- a third written the obvious way would have set `cwd` and left the label
+-- saying where the terminal used to be.
+--
+local function go(path)
+  cwd = path
+  where.text = path
+end
+
+win:add(ui.button{
+  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
+  follow = { "right", "top" },
+  on_click = function()
+    if win.open_menu then
+      win:open_menu(win.origin_x + W - 46,
+                    win.origin_y + TOOLBAR_Y + TOOLBAR_H, size:items())
+    end
+  end,
 })
 
 function view:draw(g)
@@ -318,7 +351,7 @@ local function launch(text)
     if not entries then
       emit("cd: " .. target .. ": " .. tostring(why) .. "\n")
     else
-      cwd = target
+      go(target)
       emit(cwd .. "\n")
     end
 
@@ -691,7 +724,7 @@ if asked ~= "" then
   local folder = asked:match("^(.*)/[^/]+$")
 
   if folder then
-    cwd = folder == "" and "/" or folder
+    go(folder == "" and "/" or folder)
   end
 
   launch(asked)

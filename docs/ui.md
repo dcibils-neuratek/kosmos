@@ -1058,8 +1058,7 @@ shown it.
 output**: `theme.console` and `console_text`, black in every theme; the `mono`
 face; the row height and column width asked of `gfx.height("mono")` and
 `gfx.measure("0", "mono")` on every draw, so a face changed while the window
-is open is followed. No heading, because the title bar already says what the
-window is. Lines are wrapped by character rather than clipped: a log line is
+is open is followed. Lines are wrapped by character rather than clipped: a log line is
 whatever somebody wrote, and the end of a boot line is usually the part worth
 reading.
 
@@ -1078,6 +1077,14 @@ stays what it was however much is written, and `new lines below` appears in
 the corner where the Terminal says what it is running. Back at the bottom it
 takes the newest text there is at that moment and follows again. Each of
 those is painted in the same pass as the input that caused it.
+
+**And the header says which of the two it is in** (16.20): `following . 127
+lines`, or `held, 40 back . 127 lines`. This window had no heading for a
+long time, on the grounds that the title bar already says what it is - which
+was right about the *name* and missed the state. The note in the corner is
+not the same fact: it appears when something has arrived and says nothing
+when nothing has, so a held window on a quiet machine looked exactly like a
+following one.
 
 **Held rather than adjusted**, and this is the decision. The alternative goes
 on following underneath and adds the arriving rows to `back`, so the same
@@ -1385,7 +1392,7 @@ rather than something switched on, and it is five rectangles where a tick
 would be a new verb in the file. It is built the way the submenu arrow
 beside it is.
 
-**And a menu bar's `items` may be a function**, worked out when the menu
+**And a menu's `items` may be a function**, worked out when the menu
 opens. A list is built once with the window, so anything it says about the
 state of the program would be however things were when the program
 started. Tracker's View menu is a function now, and marks three separate
@@ -1393,12 +1400,17 @@ things: the layout, the column the listing is sorted on, and the icon
 size. The sizes are only in it in icon view, because a list has no icons
 and a choice that changes nothing is worse than no choice.
 
+It said *a menu bar's* `items` when it was written, because a menu bar was
+where a menu came from. Since 16.20 they come from a `...` in a header, and
+the property is the same one and matters more: a menu built at the press is
+the only kind that can say what is true at the press.
+
 ### Where the choice lives, and what that exposed
 
-A Tracker window has a menu bar. **The desktop has none** - it is Tracker
-with the frame taken off - so the only place to put this is a right press
-on the background, which is what a right press on a desktop's background
-has meant since there were two buttons.
+A Tracker window has a header with a `...` in it. **The desktop has
+none** - it is Tracker with the frame taken off - so the only place to put
+this is a right press on the background, which is what a right press on a
+desktop's background has meant since there were two buttons.
 
 That was the first menu the desktop had ever opened, and it came up 32
 pixels too high, over the Deskbar. A menu is a *window*, placed on the
@@ -1412,6 +1424,60 @@ needs a window's origin is a menu.
 It is a good example of what a feature is for. Nothing here is about
 window origins, and the bug had been in the tree since the Deskbar could
 start after the desktop.
+
+## 16.20 One header, and three controls in it
+
+`docs/desktop.html`, `roadmap.md` 5zj. Every window in Kosmos now opens with
+the same row across its top: **what it is doing on the left, and on the
+right the one or two things anybody does to it, plus a `...` for the rest.**
+
+```
+TOOLBAR_Y = 7          the row's top
+TOOLBAR_H = 26         its height
+CONTENT_Y = 41         where the window's own content starts
+W - 46, w 34           the `...`
+W - 100, w 48          the button beside it
+```
+
+with `follow = { "right", "top" }` on the right-hand controls, so a window
+that is resized keeps them at its corner.
+
+**Three is the rule.** Tracker has Find, New, View and `...`; Preferences has
+none at all, because a sidebar and rows are the whole of it; Paint has its
+tools in a strip rather than a bar, because a tool is chosen far more often
+than a menu is opened. **A window that wants a fourth button wants a `...`
+instead** - which is what the Editor's Save, Open, Save as and Run became.
+
+**Why five numbers repeated in six files and not a widget.** A widget that
+took a list of buttons and arranged them would be `ui.menubar` with a
+different name, and the thing being replaced is exactly the idea that every
+window's top is the same shape. What each header holds is different in each
+one: Tracker's is a place and three verbs, Processes' is a sentence about
+the machine, Log View's is a state, the Terminal's is a path. What they
+share is where the controls sit, and that is five numbers.
+
+### What the left-hand side is for
+
+It is the one fact the window would otherwise not say. Two of the five
+found one nobody had noticed was missing:
+
+- **Log View** follows the log until you scroll back, and then holds. The
+  only sign of it was a note saying *new lines below* - which appears when
+  something has arrived and says nothing when nothing has, so a held window
+  on a quiet machine looked exactly like a following one. The header says
+  `following . 127 lines` or `held, 40 back . 127 lines`.
+- **Processes** said its summary under the menu bar; it says it in the
+  header, and the `View` menu that used to sit beside it turned out to have
+  two items that did nothing at all.
+
+### The trap it sets
+
+A header carries state, and state in two places drifts. The Terminal's
+working directory and the Editor's path each changed in two places, and each
+now changes in one function that also updates the header. **Both were one
+call site a version ago**: the third one written the obvious way sets the
+variable, leaves the label saying where the window used to be, and is a bug
+nothing catches, because the label is right most of the time.
 
 ## 16.10 What we do not copy from BeOS
 

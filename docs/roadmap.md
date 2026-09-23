@@ -1499,8 +1499,54 @@ processors, and still what follows USB:
    `theme.metrics.corner` and `.shadow` are points like every other metric,
    so a look may ask for square and hard-edged. `testing.md` 18.158.
 
-   **What is left of the mockup**: the applications. Processes, Editor,
-   Music and Terminal are drawn and only Tracker and Preferences are built.
+   **The applications followed on 23 September** (0.10.145). Processes,
+   Terminal, Editor, Photo and Log View each had a menu bar or a row of
+   buttons; each now has the one header the page draws - what the window is
+   doing on the left, and on the right the one or two things anybody does to
+   it plus a `...` for the rest.
+
+   - **Processes**: `21 processes . 28 threads (7 in the kernel) . 20 spaces
+     . up 0:42`, then `End` and `...`. Its `View` menu had two items and
+     both were `on_choose = function() end` - written with the menu bar and
+     never connected. They sort now, and carry a mark saying which is on.
+   - **Terminal** and **Log View**: the working directory, and *following .
+     127 lines* or *held, 40 back*. Log View never said which of those it
+     was in; the note inside the console says only that there is something
+     new, and that is a different fact.
+   - **Editor**: four buttons became the file's name, `Save` and a `...`
+     holding Open, Save as and Run. The name is a control and opens another
+     file, and the title bar carries it too.
+   - **Photo**: a `File` menu of two items became a `...` of two items.
+
+   **Music was left as it is, and deliberately.** `docs/music.html` is a
+   design Diego approved on 14 September as the pilot of a *second* look -
+   dark, flat, an orange accent - and the window is built to it. Changing it
+   to this language would be answering a question he has already answered
+   the other way. Which of the two the system ends up wearing is 5zk's
+   descendant and his call, not a tidy-up.
+
+   **`ui.menubar` now has no users**, and neither does the window manager's
+   `strips` - the band it paints above a window that draws its own pixels.
+   The kit's widget is dead code; `strips` still has one, the display
+   harness's direct-window phase, which is a wm feature with a test rather
+   than an application's. Removing either is its own piece of work and is
+   not folded into a look (5zn).
+
+5zn. **WANTED on 23 September - take `ui.menubar` out.** Nothing in the
+   system opens a menu bar any more (5zj). The kit's `ui.menubar` has no
+   callers at all, and the window manager's `strips` has one: the display
+   harness's direct-window phase.
+
+   The work is to decide whether a window that draws its own pixels should
+   be able to ask for a band the manager paints - which is what `strips` is
+   for and what a game or a video player would want a menu in - and then to
+   delete whichever half the answer says is not needed, with the harness
+   phase going with it or staying.
+
+   **Not done with the look, on purpose.** Deleting a widget while five
+   applications are changing shape is two changes in one commit, and the
+   second one is the kind that is only noticed when something that used to
+   work does not.
 
 5zl. **WANTED on 23 September - what running it in QEMU asked for.** Diego,
    after `make qemu`:

@@ -5863,16 +5863,22 @@ def check_log_view(guest):
                 failures.append(str(e))
 
         #
-        # 5. **Larger text, from its own View menu** (`/lib/textsize.lua`).
+        # 5. **Larger text, from the `...` menu** (`/lib/textsize.lua`).
         # Diego, 22 September: "a way to increase font size in the menu of
         # the log viewer and terminal". The face here is 20, so a step up is
         # 24 and the rows have to stand that much apart afterwards. The menu
-        # is opened by clicking its title and the item by where the window
+        # is opened by clicking the button and the item by where the window
         # manager says the menu went, rather than by arithmetic on padding.
+        #
+        # **The button moved with the look** (0.10.145): Log View's menu bar
+        # became the header every other window has, so the press is at the
+        # right-hand end of that header rather than at its left. Measured
+        # from the window's own width, which `wm` reports, so a window that
+        # opens at another size is still clicked in the right place.
         #
         if pitch:
             opened = len(guest.seen)
-            click(log[0] + 24, log[1] + 12)
+            click(log[0] + log[2] - 29, log[1] + 20)
 
             where = None
             deadline = time.monotonic() + 10
@@ -5889,8 +5895,8 @@ def check_log_view(guest):
                 time.sleep(0.3)
 
             if where is None:
-                failures.append("Log View's View menu did not open: nothing "
-                                "on the menu bar answered a click.")
+                failures.append("Log View's `...` menu did not open: "
+                                "nothing in its header answered a click.")
             else:
                 click(where[0] + 30, where[1] + 2 + LAYOUT_ROW // 2)
 

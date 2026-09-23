@@ -38,11 +38,23 @@ local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 
 local W, H = 850, 482
 
--- The menu bar's height, which everything below it is offset by. A menu bar
--- is an ordinary widget in this window rather than a band the window
--- manager reserves, so the offset is this program's business - see
--- `ui.menubar`.
-local BAR_H = gfx.font.h + 8
+-- The header band, the same numbers Tracker and Preferences use: one row
+-- of controls across the top, and everything else below `CONTENT_Y`.
+--
+-- `BAR_H` is what a menu bar used to add to every y in this file. The menu
+-- bar is gone, so it is zero, and it is kept rather than deleted because
+-- the offsets below still read as "the content, under the header" - and a
+-- window that grows a band again has one number to change.
+local TOOLBAR_Y = 7
+local TOOLBAR_H = 26
+local CONTENT_Y = TOOLBAR_Y + TOOLBAR_H + 8
+local BAR_H     = 0
+
+-- The meters sit directly under the header, and the list under them.
+local METER_Y   = CONTENT_Y
+local METER_H   = gfx.font.h + 18
+local LIST_Y    = METER_Y + METER_H + 12
+local FOOT_H    = 34
 local ROW = gfx.font.h + 4
 
 local win, err = ui.window{ title = "Processes", w = W, h = H, x = 150, y = 90 }
@@ -151,6 +163,9 @@ local BANDS = { [0] = "idle", "low", "normal", "display", "input" }
 -- highlight moves with the process as the list reorders around it.
 local selected_id = nil
 local selected = 1
+
+-- Which order the list is in: "busy" or "id". The `...` menu sets it.
+local order = "busy"
 local followed = nil     -- the selection the view last scrolled to
 local top = 1            -- the first row drawn, for a list taller than the view
 
@@ -165,8 +180,8 @@ local top = 1            -- the first row drawn, for a list taller than the view
 -- Follows all four edges, so it grows with the window. The first widget in
 -- Kosmos to use a follow mode for real - see `ui.md` 16.4 for why that took
 -- until something could be resized.
-local table_view = ui.view{ x = 12, y = 112 + BAR_H, w = W - 24,
-                            h = H - 158 - BAR_H,
+local table_view = ui.view{ x = 12, y = LIST_Y + BAR_H, w = W - 24,
+                            h = H - LIST_Y - BAR_H - FOOT_H,
                             follow = { "left", "right", "top", "bottom" } }
 
 --
@@ -382,35 +397,53 @@ function table_view:key(c)
   return false
 end
 
--- Declared before the menu bar refers to them and defined below: the menu
--- and the button do the same thing, and the same thing should be one
--- function rather than two that drift.
+-- Declared before the header refers to them and defined below. The header
+-- is written where it is drawn, at the top of the window, and what its
+-- controls do is written where it belongs - so the two have to be able to
+-- name each other.
 local end_selected
 local sampler
 
+--------------------------------------------------------------------------
+-- The header.
 --
--- A menu bar, and the first in Kosmos.
+-- **One row across the top instead of a menu bar**, the same shape Tracker
+-- and Preferences took (`docs/desktop.html`, `roadmap.md` 5zj): what the
+-- machine is doing on the left, and on the right the one action plus a
+-- `...` for the rest.
 --
--- `Process > End` does what the button does, which is the point rather than
--- a duplication: a menu that only holds things with no other way to reach
--- them is a menu nobody learns. Every desktop puts its common actions in
--- both places.
+-- End keeps a control of its own because it is why this window is open
+-- when it is open. Everything else a person does here is *looking*, and
+-- looking needs no control at all.
 --
-win:add(ui.menubar{
-  x = 0, y = 0, w = W,
-  menus = {
-    { title = "Process",
-      items = {
-        { text = "End",     on_choose = function() end_selected() end },
-        { separator = true },
-        { text = "Refresh", on_choose = function() sampler:tick() end },
-      } },
-    { title = "View",
-      items = {
-        { text = "Busiest first", on_choose = function() end },
-        { text = "By id",         on_choose = function() end },
-      } },
-  },
+-- **The two order items used to be in a `View` menu and did nothing** -
+-- `on_choose = function() end`, both of them, since the menu bar was
+-- written. They sort now, and they carry a mark saying which is on, which
+-- is the thing that makes an order worth offering: an order you cannot see
+-- is an order you cannot trust.
+--------------------------------------------------------------------------
+
+-- Rebuilt on every press, because the marks are read at that moment.
+local function more_menu()
+  return {
+    { text = "Refresh", on_choose = function() sampler:tick() end },
+    { separator = true },
+    { text = "Busiest first", mark = (order == "busy"),
+      on_choose = function() order = "busy" sampler:tick() end },
+    { text = "By id", mark = (order == "id"),
+      on_choose = function() order = "id" sampler:tick() end },
+  }
+end
+
+win:add(ui.button{
+  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
+  follow = { "right", "top" },
+  on_click = function()
+    if win.open_menu then
+      win:open_menu(win.origin_x + W - 46,
+                    win.origin_y + TOOLBAR_Y + TOOLBAR_H, more_menu())
+    end
+  end,
 })
 
 win:add(table_view)
@@ -488,7 +521,7 @@ do
   local n    = 4
   local gap  = 14
   local each = (W - 24 - gap * (n - 1)) // n
-  local ty   = 70 + BAR_H
+  local ty   = METER_Y + BAR_H
 
   local rows = {
     { "memory", function()
@@ -513,7 +546,9 @@ do
   end
 end
 
-local heading = ui.label{ x = 12, y = 12 + BAR_H, text = "", color = "text" }
+-- What the machine is doing, in the header rather than under it.
+local heading = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 160, text = "",
+                          color = "text" }
 win:add(heading)
 
 local note = ui.label{ x = 12, y = 16, text = "", color = "text_dim" }
@@ -588,14 +623,16 @@ function end_selected()
     end
 end
 
--- The button, which is the same action under a different control.
+-- End, in the header beside the `...` menu: the one action this window is
+-- opened to perform.
 win:add(ui.button{
-  x = 12, y = 38 + BAR_H, w = 60, h = 24, text = "End",
+  x = W - 100, y = TOOLBAR_Y, w = 48, h = TOOLBAR_H, text = "End",
+  follow = { "right", "top" },
   on_click = end_selected,
 })
 
-note.x = 130
-note.y = H - 30
+note.x = 12
+note.y = H - FOOT_H + 10
 win:add(note)
 
 --------------------------------------------------------------------------
@@ -660,9 +697,12 @@ function sampler:tick()
     end
   end
 
-  -- Busiest first, which is what a list like this is for.
+  -- Busiest first by default, which is what a list like this is for; by id
+  -- when somebody asked for it, which is the order a machine grew in and
+  -- the one to read when you are looking for a particular process rather
+  -- than for whatever is eating the processor.
   table.sort(fresh, function(a, b)
-    if a.pct ~= b.pct then return a.pct > b.pct end
+    if order == "busy" and a.pct ~= b.pct then return a.pct > b.pct end
     return a.id < b.id
   end)
 
@@ -722,8 +762,13 @@ function sampler:tick()
 
   local up = sys.ticks() // counter_hz
 
-  heading.text = ("%d processes, %d threads; %d in the kernel, drivers too"
-                  .. "   -   %d address space%s, up %d:%02d")
+  --
+  -- One line of the same facts, in the header. The separator is a middle
+  -- dot rather than a dash surrounded by spaces, which is what the rest of
+  -- the new windows use (`docs/desktop.html`).
+  --
+  heading.text = ("%d processes . %d threads (%d in the kernel) . "
+                  .. "%d space%s . up %d:%02d")
                  :format(totals.procs, totals.threads,
                          math.max(0, totals.threads - totals.procs),
                          totals_state.spaces,

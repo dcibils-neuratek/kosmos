@@ -18,10 +18,10 @@ Last updated: 2026-09-23
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
-## 23 September: the M700, and an Intel Ethernet driver
+## 23 September: the M700, 8 GB, the tree sorted, and a new look
 
-**Nothing pushed. 0.10.118 to 0.10.127 are local**, on `main`, each one
-committed and none of them out. `make test` is green: 33 suites, 5:39.
+**Nothing pushed. 0.10.118 to 0.10.145 are local**, on `main`, each one
+committed and none of them out.
 
 Diego bought a **Lenovo ThinkCentre M700** - an i7 6th gen with HD 530 - and
 Kosmos booted on it first try. What that machine asked for, in the order he
@@ -63,21 +63,62 @@ races. There was no race. I had restored `apic.c` from a negative control
 and not rebuilt, so the broken control was still in the binary.
 `make x86-build`, every time.
 
+### Then the memory, the tree, and a look
+
+- **0.10.128-0.10.133 - the full 8 GB** (5zd-d), in four steps:
+  `PHYS_WINDOW_BASE` at `0xFFFF800000000000` maps every physical page in the
+  kernel's upper half; `phys_to_virt` and `virt_to_phys` became **total**
+  over kernel pointers, which the userland blob and a stack local in
+  `fwcfg_dma` each found separately; one bitmap spans every usable range
+  with the holes marked taken; and `managed` was separated from `total`,
+  because 4 GB was being announced as 6143 MB.
+- **0.10.134-0.10.137 - the tree, sorted by what things are.** Diego:
+  "shouldnt drivers have their on directory sorted by device type", and
+  "why jpeg.c is in the same directory as clock.lua". `user/drivers/net`,
+  `usb`, `display`, `power`; `user/kits/` for reusable C; `user/lib/` for
+  Lua libraries; `user/bin/apps` and `user/bin/programs` split. The
+  vocabulary is in `glossary.md` and now in `README.md` as *how to read the
+  source tree* - a driver drives hardware, a server owns something, a kit is
+  code you run, a library is the same in Lua.
+- **0.10.138-0.10.139 - Preferences** (5zh), which turned out to be a
+  *schema* rather than a server: every setting in Kosmos was already a Lua
+  table in a file of its own, so `user/lib/settings.lua` describes what is
+  there and the app is a second window onto the same files.
+- **0.10.140 - Tracker, simpler** (5zg). Diego, with GNOME's Files beside
+  it: "right now is too complicated". A menu bar, a toolbar and a trail
+  became one header.
+- **0.10.140-0.10.144 - the look.** A window has a rounded corner and casts
+  a shadow (18.158); Endeavour, a fifth look taken from the GNOME
+  screenshots he sent; flat shading, which gave `theme.tokens` its first
+  non-colour; the corner and the shadow as rows in Preferences; rounded
+  controls; and Preferences spaced as `preferences.html` draws it.
+- **0.10.145 - the rest of the applications in the language** (5zj,
+  18.159). Processes, Terminal, Editor, Photo and Log View each had a menu
+  bar or a row of buttons and each now has the one header. It found two menu
+  items that had never been connected to anything and a window that never
+  said whether it was following its log or holding.
+
+**Music was left as it is**, because `docs/music.html` is a design Diego
+approved on 14 September as the pilot of a *second* look, and changing it
+would be answering a question he has already answered.
+
 ### Next, in Diego's order
 
-1. **The full 8 GB of memory** (5zd-d) - he asked for it in the same message
-   as the driver. The 768 MB ceiling is `hal_ram_capped`; lifting it is
-   `mmu.h`'s high-half split.
+1. **5zm** - his `wm preferences` returned `wm: no process` on a desktop
+   that had been up five minutes, with 22 of 512 processes in use. The
+   suspicion is fragmented contiguous memory; the thing to check first is
+   whether *every* application stops starting at that moment, which would
+   say it is not about Preferences at all.
 2. **5zd-h**, small: the first packet to any host is dropped, because the
    stack has no queue for one whose address is not resolved yet.
 3. Then 5zd-c (an on-screen keyboard, mockup first), 5zd-e (a wide screen in
    the gate), 5zd-g (two things the machine says about itself that are not
-   true).
+   true), and 5zn (take `ui.menubar` out, now that nothing opens one).
 
 ### And the question that is still his
 
 **Nothing since 0.10.117 is pushed**, and the sticks on GitHub are 0.10.115
-and 0.10.117. Whether 0.10.118-0.10.127 go out, and whether the M700 gets a
+and 0.10.117. Whether 0.10.118-0.10.145 go out, and whether the M700 gets a
 stick with the Ethernet driver on it, is his call.
 
 ---

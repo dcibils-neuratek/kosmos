@@ -53,8 +53,12 @@ end
 
 local W, H = 560, 420
 
--- The menu bar's height, which everything below it is offset by.
-local BAR_H = gfx.font.h + 8
+-- The header band, the same numbers every other window in the new look
+-- uses. `docs/desktop.html` calls this shape a *canvas*: the picture is the
+-- window, and above it one row saying what you are looking at.
+local TOOLBAR_Y = 7
+local TOOLBAR_H = 26
+local BAR_H     = TOOLBAR_Y + TOOLBAR_H
 
 local win, err = ui.window{ title = "Photo", w = W, h = H, x = 110, y = 70,
 
@@ -68,10 +72,10 @@ if not win then
   return
 end
 
-local where   = ui.label{ x = 10, y = 10 + BAR_H, w = W - 20, text = name,
-                          color = "text" }
-local picture = ui.image{ x = 10, y = 30 + BAR_H, w = W - 20,
-                          h = H - 66 - BAR_H, asset = name,
+local where   = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 70, text = name,
+                          color = "text_dim" }
+local picture = ui.image{ x = 10, y = BAR_H + 8, w = W - 20,
+                          h = H - BAR_H - 44, asset = name,
                           follow = { "left", "right", "top", "bottom" } }
 local status  = ui.label{ x = 10, y = H - 26, w = W - 20, text = "",
                           follow = { "left", "bottom" } }
@@ -144,27 +148,35 @@ function win:on_drop(kind, payload)
   return true
 end
 
-win:add(ui.menubar{
-  x = 0, y = 0, w = W,
-  menus = {
-    { title = "File",
-      items = {
-        { text = "Open", on_choose = open_one },
-        { separator = true },
-        { text = "Set as wallpaper", on_choose = function()
-            if not name:find("/") then
-              status.text = "only a file can be the wallpaper"
-              return
-            end
+--
+-- **A `...` instead of a File menu**, which is the whole of what a window
+-- this quiet needs: two items, neither of them something anybody does
+-- twice in a row (`docs/desktop.html`).
+--
+win:add(ui.button{
+  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
+  follow = { "right", "top" },
+  on_click = function()
+    if not win.open_menu then return end
 
-            local ok, why = fs.send("/app/wm", { type = "wallpaper",
-                                                path = name })
+    win:open_menu(win.origin_x + W - 46,
+                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, {
+      { text = "Open...", on_choose = open_one },
+      { separator = true },
+      { text = "Set as wallpaper", on_choose = function()
+          if not name:find("/") then
+            status.text = "only a file can be the wallpaper"
+            return
+          end
 
-            status.text = ok and "that is the desktop now"
-                          or ("wallpaper: " .. tostring(why))
-          end },
-      } },
-  },
+          local ok, why = fs.send("/app/wm", { type = "wallpaper",
+                                              path = name })
+
+          status.text = ok and "that is the desktop now"
+                        or ("wallpaper: " .. tostring(why))
+        end },
+    })
+  end,
 })
 
 win:add(where)

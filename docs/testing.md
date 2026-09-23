@@ -7725,11 +7725,13 @@ Three of Diego's from the ThinkPad running 0.10.115 at 110 and 150 per cent.
 - **"the monospace font in terminal and log view needs to be 16px at
   least".** The four looks' `mono` was Plex Mono 14 and is 16.
 - **"a way to increase font size in the menu of the log viewer and
-  terminal".** Both windows have a menu bar with **View: Larger text,
+  terminal".** Both windows gained a menu bar with **View: Larger text,
   Smaller text, Actual size**, and a size of their own in `/home/.terminal`
-  and `/home/.logview`. `/lib/textsize.lua` is the steps, the file and the
-  menu for both; the desktop's `mono` is Actual size and one of the stops,
-  so a window that has chosen nothing follows a look that changes it.
+  and `/home/.logview`. (The menu bar became a header with the same items
+  behind a `...` in 0.10.145; 18.159.) `/lib/textsize.lua` is the steps,
+  the file and the menu for both; the desktop's `mono` is Actual size and
+  one of the stops, so a window that has chosen nothing follows a look that
+  changes it.
 
 ### The checks
 
@@ -7737,10 +7739,12 @@ Three of Diego's from the ThinkPad running 0.10.115 at 110 and 150 per cent.
   gallery dragged by its title bar 120 across and 60 down moves 120 across
   and 60 down, measured by its selection bar before and after. **Control,
   watched**: the drag calling `handlers.move` again fails it.
-- **Its `log view` phase**, one more: with a 20-pixel face, View → Larger
-  text makes the rows stand at least 24 apart. The menu is opened by
-  clicking its title and the item by where the window manager says the menu
-  went, rather than by arithmetic on the menu bar's padding.
+- **Its `log view` phase**, one more: with a 20-pixel face, Larger text
+  makes the rows stand at least 24 apart. The menu is opened by clicking
+  the control that holds it and the item by where the window manager says
+  the menu went, rather than by arithmetic on any padding. (The control was
+  the `View` title on a menu bar and is the `...` in a header since
+  0.10.145; 18.159.)
 - **`tools/test_textsize.lua`**, in `host-check`, 20: the desktop's size
   when nothing is saved, a step each way and each written down, the ends,
   a hand-edited size taken to the nearest step, a desktop whose size is not
@@ -8501,3 +8505,66 @@ yellows, caught a frame early: it passed alone and on the next run. Worth
 writing down because the colours *look* like a shadow darkening a button,
 which is what I assumed before reading the message - a wrong explanation
 that fits is the expensive kind.
+
+## 18.159 Five windows lose their menu bar
+
+`roadmap.md` 5zj. The mockup put one header across the top of every window -
+what it is doing on the left, one or two controls and a `...` on the right -
+and Tracker and Preferences were built to it. Processes, Terminal, Editor,
+Photo and Log View still had a menu bar or a row of buttons, so five windows
+in one system were two different systems.
+
+### What a header is, exactly
+
+`TOOLBAR_Y = 7`, `TOOLBAR_H = 26`, `CONTENT_Y = TOOLBAR_Y + TOOLBAR_H + 8`,
+and the right-hand controls counted back from the window's width: `...` at
+`W - 46` and 34 wide, the button beside it at `W - 100` and 48 wide, both
+with `follow = { "right", "top" }` so a resized window keeps them at its
+corner. The same five numbers in six files rather than a widget, because
+what they arrange is different in each one and a widget that took a list of
+buttons would be `ui.menubar` with a different name.
+
+### What the conversion found
+
+**Two menu items that had never done anything.** Processes' `View` menu
+offered *Busiest first* and *By id*, and both were `on_choose = function()
+end` - written the day the menu bar was and never connected to the sort.
+They work now, and carry a `mark` saying which is on, which is the thing
+that makes an order worth offering at all.
+
+**A window that never said which state it was in.** Log View follows the
+log until you scroll back, and then holds. The only sign of it was a note
+saying *new lines below*, which appears when something has arrived and says
+nothing when nothing has - so a held window with a quiet machine looked
+exactly like a following one. The header says `following . 127 lines` or
+`held, 40 back . 127 lines`, from inside `layout`, which is where both
+halves of the sentence are already known.
+
+**Two setters, for the same reason twice.** The Terminal's working
+directory and the Editor's path each changed in two places, and each now
+changes in one function that also updates the header - `go` and `opened`.
+Both were one call site a version ago. A third written the obvious way sets
+the variable and leaves the header saying where the window used to be, and
+that is a bug nothing would catch: the label is right most of the time.
+
+### The harness
+
+One click moved. The Log View phase opened the text-size menu by pressing
+`View` at the window's top left; the press is now at the right-hand end of
+the header, and it is measured from the width `wm` reports rather than from
+the 620 the window happens to open at.
+
+Two checks did not have to move, and it is worth saying why: `_terminal_grid`
+**looks for** the console's first row within the first sixty rows of the
+window rather than assuming it, and `_log_view_area` takes the rows that are
+*mostly* console rather than the bounding box of every pixel that is its
+colour. Both were made that way by earlier bugs (18.147, the day Log View
+grew a menu bar), and both paid for themselves the day the bar left again.
+
+### Music, and why it was not touched
+
+`docs/music.html` is a design Diego approved on 14 September as the pilot of
+a second look for the whole system - dark, flat, an orange accent - and the
+window is built to it. Converting it would be answering a question he has
+already answered the other way. Which look the system ends up wearing is his
+call; it is not something to settle by tidying.

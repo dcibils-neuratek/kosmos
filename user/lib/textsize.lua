@@ -7,7 +7,7 @@
 --   local size = textsize.new(ui, "/home/.terminal")
 --   size:face()                   -- the face to measure and draw with
 --   size:size()                   -- its size, to hand `g:text`
---   { title = "View", items = size:items() }   -- a menu for the bar
+--   size:items()                  -- the menu, built at the press
 --
 -- Diego, 22 September 2026, on the ThinkPad: "the monospace font in terminal
 -- and log view needs to be 16px at least", and then "a way to increase font
@@ -150,7 +150,9 @@ function methods:step(by)
   return pick ~= nil and self:set(pick)
 end
 
--- The View menu's items.
+-- The menu, which is behind the `...` in the window's header (`ui.md`
+-- 16.20) and was a `View` menu on a menu bar before that. Built each time
+-- it is opened, so `Actual size` knows what the desktop's size is *now*.
 function methods:items()
   return {
     { text = "Larger text",  on_choose = function() self:step(1) end },

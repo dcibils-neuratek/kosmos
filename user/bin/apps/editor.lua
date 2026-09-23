@@ -30,7 +30,31 @@ local path = tostring(args or ""):match("^%s*(%S+)") or "/ramfs/untitled.lua"
 
 local W, H = 560, 420
 
-local win, err = ui.window{ title = "Editor", w = W, h = H, x = 100, y = 60 }
+--
+-- The header band, the same numbers Tracker, Preferences, Processes and the
+-- Terminal use. `docs/desktop.html` calls this window a *page of text*: the
+-- text is the window, and there is one row above it.
+--
+local TOOLBAR_Y = 7
+local TOOLBAR_H = 26
+local CONTENT_Y = TOOLBAR_Y + TOOLBAR_H + 8
+local FOOT_H    = 34
+
+local function base(p) return p:match("([^/]+)$") or p end
+
+--
+-- **The name's control is as wide as the name**, between a floor and a
+-- ceiling. A fixed width puts a short file name in the middle of a lot of
+-- nothing, which is what `docs/desktop.html` does not draw; the floor keeps
+-- `a.lua` from being a control too small to hit, and the ceiling keeps a
+-- long name from reaching the buttons at the other end.
+--
+local function name_w(p)
+  return math.max(96, math.min(260, gfx.measure(base(p)) + 28))
+end
+
+local win, err = ui.window{ title = base(path) .. " - Editor",
+                            w = W, h = H, x = 100, y = 60 }
 
 if not win then
   print("editor: " .. tostring(err))
@@ -38,18 +62,22 @@ if not win then
 end
 
 local existing = fs.read(path)
-local status = ui.label{ x = 12, y = H - 26,
+local status = ui.label{ x = 12, y = H - 26, follow = { "left", "bottom" },
                          text = (type(existing) == "string")
                                 and ("opened " .. path)
                                 or (path .. " is new"),
                          color = "text_dim" }
 
-local text = ui.editor{ x = 12, y = 62, w = W - 24, h = H - 96,
+local text = ui.editor{ x = 12, y = CONTENT_Y, w = W - 24,
+                        h = H - CONTENT_Y - FOOT_H,
+                        follow = { "left", "right", "top", "bottom" },
                         text = (type(existing) == "string") and existing or "" }
 
-local where = ui.label{ x = 12, y = 14, text = path, color = "text" }
-win:add(where)
 win:add(text)
+
+-- Declared here and filled below: the header's controls are written after
+-- the actions they run, and two of the actions name each other.
+local where, open_file, save_as, run_file
 
 local function save()
   local ok, why = fs.write(path, text:content())
@@ -62,8 +90,53 @@ local function save()
   end
 end
 
-win:add(ui.button{ x = 12, y = 30, w = 60, h = 24, text = "Save",
+--------------------------------------------------------------------------
+-- The header.
+--
+-- **Four buttons became two and a menu.** `docs/desktop.html`: three
+-- controls is the rule, and a window that wants a fourth wants a `...`
+-- instead. Save stays a button because it is the one thing done over and
+-- over; Open, Save as and Run happen once each and go behind the press.
+--
+-- The file's name is a control rather than a label, and what it does is
+-- open another one - which is the question a person is asking when they
+-- look at a file name and reach for it.
+--------------------------------------------------------------------------
+
+where = ui.button{
+  x = 12, y = TOOLBAR_Y, w = name_w(path), h = TOOLBAR_H, text = base(path),
+  on_click = function() open_file() end,
+}
+win:add(where)
+
+-- Both places the path changes go through here, so the name in the header,
+-- the title bar and the path this window saves to cannot drift apart.
+local function opened(p)
+  path = p
+  where.text = base(p)
+  where.w = name_w(p)
+  win:retitle(base(p) .. " - Editor")
+end
+
+win:add(ui.button{ x = W - 100, y = TOOLBAR_Y, w = 48, h = TOOLBAR_H,
+                   text = "Save", follow = { "right", "top" },
                    on_click = save })
+
+win:add(ui.button{
+  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
+  follow = { "right", "top" },
+  on_click = function()
+    if not win.open_menu then return end
+
+    win:open_menu(win.origin_x + W - 46,
+                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, {
+      { text = "Open...",    on_choose = function() open_file() end },
+      { text = "Save as...", on_choose = function() save_as() end },
+      { separator = true },
+      { text = "Run",        on_choose = function() run_file() end },
+    })
+  end,
+})
 
 -- Write a program here, run it here.
 --
@@ -75,22 +148,19 @@ win:add(ui.button{ x = 12, y = 30, w = 60, h = 24, text = "Save",
 -- It saves first, and that is not a convenience. Running the file while the
 -- buffer holds something else means the thing that ran is not the thing on
 -- screen, and every confusing minute that follows comes from there.
-win:add(ui.button{
-  x = 246, y = 30, w = 56, h = 24, text = "Run",
-  on_click = function()
-    if not path:match("%.lua$") then
-      status.text = "only a .lua file can be run"
-      return
-    end
+function run_file()
+  if not path:match("%.lua$") then
+    status.text = "only a .lua file can be run"
+    return
+  end
 
-    save()
+  save()
 
-    local ok, why = fs.send("/app/wm", { type = "launch", program = path })
+  local ok, why = fs.send("/app/wm", { type = "launch", program = path })
 
-    status.text = ok and ("running " .. path)
-                  or ("could not run it: " .. tostring(why))
-  end,
-})
+  status.text = ok and ("running " .. path)
+                or ("could not run it: " .. tostring(why))
+end
 
 -- Somewhere else, chosen from a list rather than typed blind.
 --
@@ -99,51 +169,42 @@ win:add(ui.button{
 -- window stops reading events until the panel closes. Its pixels stay on
 -- screen the whole time because the window manager owns them, which is the
 -- same property that lets a hung application keep its window.
--- Somewhere else, chosen from a list.
 --
--- The same panel the Save button opens, in its reading mode: a directory is
--- entered and a *file* is chosen, where saving takes a name instead.
-win:add(ui.button{
-  x = 176, y = 30, w = 62, h = 24, text = "Open",
-  on_click = function()
-    local chooser = panel.open{
-      start = path:match("^(.*)/") or "/home",
-      on_choose = function(chosen)
-        local body, why = fs.read(chosen)
+-- This is its reading mode, where a directory is entered and a *file* is
+-- chosen; `save_as` below is the same panel taking a name instead.
+function open_file()
+  local chooser = panel.open{
+    start = path:match("^(.*)/") or "/home",
+    on_choose = function(chosen)
+      local body, why = fs.read(chosen)
 
-        if not body then
-          status.text = "could not open " .. chosen .. ": " .. tostring(why)
-          return
-        end
+      if not body then
+        status.text = "could not open " .. chosen .. ": " .. tostring(why)
+        return
+      end
 
-        path = chosen
-        where.text = path
-        text:set(body)
-        status.text = ("opened %s, %d lines"):format(path, #text.lines)
-      end,
-    }
+      opened(chosen)
+      text:set(body)
+      status.text = ("opened %s, %d lines"):format(path, #text.lines)
+    end,
+  }
 
-    if chooser then chooser:run() end
-  end,
-})
+  if chooser then chooser:run() end
+end
 
-win:add(ui.button{
-  x = 80, y = 30, w = 88, h = 24, text = "Save as",
-  on_click = function()
-    local chooser = panel.save{
-      start = path:match("^(.*)/") or "/home",
-      name  = path:match("([^/]+)$") or "untitled.lua",
-      on_choose = function(chosen)
-        path = chosen
-        where.text = path
-        save()
-      end,
-    }
+-- The same panel, writing: a directory and a name rather than a file.
+function save_as()
+  local chooser = panel.save{
+    start = path:match("^(.*)/") or "/home",
+    name  = base(path),
+    on_choose = function(chosen)
+      opened(chosen)
+      save()
+    end,
+  }
 
-    if chooser then chooser:run() end
-  end,
-})
-
+  if chooser then chooser:run() end
+end
 
 win:add(status)
 

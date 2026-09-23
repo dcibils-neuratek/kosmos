@@ -38,9 +38,13 @@
 --
 -- So it is drawn the way the console is: black in every theme,
 -- `console_text`, the monospace face, and every row measured in that face on
--- every draw - the Terminal's arithmetic rather than a widget's. The title
--- bar already says what this window is, so there is no heading to collide
--- with anything.
+-- every draw - the Terminal's arithmetic rather than a widget's.
+--
+-- There was no heading at all for a long time, on the grounds that the title
+-- bar already says what this window is. That was right about the *name* and
+-- missed the state: the header says whether the window is following the log
+-- or holding still, which is the one thing about it a person has to know
+-- (`ui.md` 16.20).
 --------------------------------------------------------------------------
 
 local ui = use("/lib/ui.lua")
@@ -53,9 +57,13 @@ local ui = use("/lib/ui.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
--- A menu bar's row on top, since the View menu arrived: the rows keep
--- their room and the window is one row taller.
-local BAR = ui.metrics.row
+-- A header on top, since the View menu arrived: the rows keep their room
+-- and the window is one band taller. It was a menu bar and is now the row
+-- every other window in the look has - what this one is doing on the left,
+-- and a `...` on the right (`docs/desktop.html`).
+local TOOLBAR_Y = 7
+local TOOLBAR_H = 26
+local BAR = TOOLBAR_Y + TOOLBAR_H
 local W, H = 620, 420 + BAR
 
 local win, err = ui.window{ title = "Log", w = W, h = H, x = 130, y = 110 }
@@ -202,10 +210,25 @@ view.focusable = true
 local textsize = use("/lib/textsize.lua")
 local size = textsize.new(ui, "/home/.logview")
 
-win:add(ui.menubar{
-  x = 0, y = 0, w = W,
-  follow = { "left", "right", "top" },
-  menus = { { title = "View", items = size:items() } },
+--
+-- **Following, or held**, which is the one thing about this window a person
+-- has to know and the one thing it never used to say. The note inside the
+-- console says *new lines below* when there are some; this says what state
+-- the window is in whether or not anything has arrived.
+--
+local state = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 70, text = "",
+                        color = "text_dim" }
+win:add(state)
+
+win:add(ui.button{
+  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
+  follow = { "right", "top" },
+  on_click = function()
+    if win.open_menu then
+      win:open_menu(win.origin_x + W - 46,
+                    win.origin_y + TOOLBAR_Y + TOOLBAR_H, size:items())
+    end
+  end,
 })
 
 --
@@ -237,6 +260,15 @@ local function layout(self)
 
   if back > most then back = most end
   if back < 0 then back = 0 end
+
+  --
+  -- Said here rather than in `draw`, because this is where both halves of
+  -- the sentence are known: `back` after it has been held inside what
+  -- exists, and how many rows there are for this width and this face.
+  --
+  state.text = (back == 0)
+               and ("following . %d lines"):format(#rows)
+               or ("held, %d back . %d lines"):format(back, #rows)
 
   return MH, shown, math.max(1, #rows - shown - back + 1)
 end
@@ -415,5 +447,16 @@ win:add(view)
 
 -- The log is on the first paint, not half a second after it.
 refresh()
+
+--
+-- And so is the header, for the same reason and a subtler one. `layout` is
+-- what works out how many rows there are and where `back` sits inside them,
+-- and it is what writes the header's sentence - but it runs from the
+-- *view's* draw, which happens after the label's. So the first painted
+-- frame would have shown an empty header, and the second would have fixed
+-- it - except that this window only repaints when the log changes, so on a
+-- quiet machine there is no second frame.
+--
+layout(view)
 
 win:run()
