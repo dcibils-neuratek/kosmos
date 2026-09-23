@@ -120,8 +120,17 @@ local TAB_H      = theme.metrics.tab
 -- locals - adding two names cost more than adding two fields, which is a
 -- silly reason and a real one.
 --
+--
+-- **The shadow starts off and the corner starts on.**
+--
+-- A shadow is a band around every window, redrawn whenever anything under
+-- it changes; a corner is 256 pixels once per window per damaged rectangle.
+-- One of those is worth having without being asked for and the other is
+-- not, which is Diego's reading after watching it under TCG - and both are
+-- settings now (`handlers.theme`), so this is only where they start.
+--
 local OUT = { corner  = theme.metrics.corner or 0,
-              shadow  = theme.metrics.shadow or 0,
+              shadow  = 0,
               -- How far each new window steps from the last, when the
               -- quarters are gone. A title bar and a little, so the one
               -- underneath is still grabbable.
@@ -130,9 +139,12 @@ local BORDER     = 2
 --
 -- The three controls on a tab, and the room they take.
 --
--- `BOX` is the control; `CLOSE_W` and `BOX_W` are the *slots*, so there is
--- a gap between two adjacent controls without either of them knowing about
--- the other.
+-- `BOX` is the control and `BOX_W` is the *slot*, so there is a gap between
+-- two adjacent controls without either of them knowing about the other.
+--
+-- There was a `CLOSE_W` beside it, a wider slot for a close box that sat
+-- alone at the left. All three are at the right now and share one slot
+-- (`boxes_x`), so it went rather than staying as a number nothing reads.
 --
 -- **Eighteen, and it was fourteen until the tab grew.**
 --
@@ -163,7 +175,6 @@ local MARGIN     = 4
 -- piece of is a window you can pick up.
 
 
-local CLOSE_W    = BOX + 6        -- the close box at the left of a tab
 
 --
 -- The sizing grip, bottom right, and how far into the window it reaches.
@@ -231,7 +242,6 @@ function scale.chrome()
   BOX     = scale.px(18)
   MARGIN  = scale.px(4)
   OUT.cascade = TAB_H + scale.px(8)
-  CLOSE_W = BOX + scale.px(6)
   GRIP    = scale.px(16)
   BOX_W   = BOX + scale.px(4)
   scale.MIN_W = scale.px(120)
@@ -1447,11 +1457,28 @@ end
 local function boxes_x(win)
   local fx = frame_of(win)
 
-  -- The pair spans from here to `BOX_W + BOX` further on: the first box
-  -- starts the slot, the second starts one slot in and is `BOX` wide. Put
-  -- the far edge `MARGIN` from the frame and the right side matches the
-  -- left, which it did not - close sat four pixels in and these sat twelve.
-  return fx + tabs.width(win) - MARGIN - (BOX_W + BOX)
+  --
+  -- **Three boxes now, all at the right** - minimise, maximise, close, in
+  -- that order. Diego, 23 September 2026: "i would like the close, minimize
+  -- and maximize buttons to be placed in the right side of the bar like
+  -- windows does", with a screenshot of one beside it.
+  --
+  -- This was BeOS's split - close at the left, the other two at the right -
+  -- and the argument for it was real and is worth keeping written down:
+  -- close is the irreversible one, and a window's width between it and the
+  -- two harmless ones means a slip hides a window instead of ending it.
+  --
+  -- What outweighs it is that every machine anybody has used for thirty
+  -- years puts them together at the right, and a hand that has been aiming
+  -- there since Windows 95 does not care which arrangement is safer in
+  -- principle. `ui.md` 16.8b is the rule this follows rather than breaks:
+  -- copy a decision about *behaviour*, decide a decision about *shape*
+  -- fresh - and where the controls sit is shape.
+  --
+  -- The run spans from here to `2 * BOX_W + BOX`: each box starts a slot
+  -- and the last is `BOX` wide, with the far edge `MARGIN` from the frame.
+  --
+  return fx + tabs.width(win) - MARGIN - (BOX_W * 2 + BOX)
 end
 
 --------------------------------------------------------------------------
@@ -2376,20 +2403,9 @@ local function draw_window(i, r)
         -- looks like a control and not like a hole in the amber.
         --
         local by = fy + (TAB_H - BOX) // 2
-        local bx = fx + MARGIN
 
-        if not win.pinned then
-          raised_box(bx, by, BOX, BOX, theme.raised)
-
-        -- Close: a square, the way BeOS drew it. A cross would need
-        -- diagonals, and there is no line primitive - it would be fourteen
-        -- one-pixel fills to say what a square says in two.
-          back:fill(bx + 4, by + 4, BOX - 8, BOX - 8, theme.text)
-          back:fill(bx + 5, by + 5, BOX - 10, BOX - 10, theme.raised)
-        end
-
-        -- A pinned window's title starts where its close box would have
-        -- been, rather than leaving a hole the shape of a missing control.
+        -- The title starts at the margin: nothing is to the left of it any
+        -- more, since the close box moved to the right with the other two.
         --
         -- In the title font, which is its own role.
         --
@@ -2403,21 +2419,13 @@ local function draw_window(i, r)
         -- `gfx.measure` with the same role, so the vertical centring is of
         -- the font that will actually be drawn.
         --
-        back:text(fx + MARGIN + (win.pinned and 0 or CLOSE_W),
+        back:text(fx + MARGIN,
                   fy + (TAB_H - gfx.height("title")) // 2,
                   win.title, title_colour(), tab, "title")
 
         --
-        -- Minimise and maximise, at the *right*, with close staying at the
-        -- left where BeOS put it and `ui.md` 16.8b records it.
-        --
-        -- Not all three together at one end, which is what Photon does and
-        -- what every system since has copied. Splitting them is the older
-        -- arrangement and it is the better one for a reason that outlived
-        -- the fashion: close is the irreversible one, and putting it a
-        -- window's width away from the two harmless ones means a slip
-        -- hides a window instead of ending it.
-        --
+        -- Minimise, maximise and close, all at the right and in that
+        -- order - `boxes_x` says why the split went.
         local mx = boxes_x(win)
 
         if win.pinned then goto no_controls end
@@ -2452,6 +2460,18 @@ local function draw_window(i, r)
           back:fill(zx + 3, by + 3, BOX - 6, BOX - 6, theme.text_dim)
           back:fill(zx + 4, by + 6, BOX - 8, BOX - 7, theme.raised)
         end
+
+        --
+        -- Close, last and furthest right, which is where a hand that has
+        -- used anything else goes. A square, the way BeOS drew it: a cross
+        -- would need diagonals and there is no line primitive, so it would
+        -- be fourteen one-pixel fills to say what a square says in two.
+        --
+        local cx = mx + BOX_W * 2
+
+        raised_box(cx, by, BOX, BOX, theme.raised)
+        back:fill(cx + 4, by + 4, BOX - 8, BOX - 8, theme.text)
+        back:fill(cx + 5, by + 5, BOX - 10, BOX - 10, theme.raised)
 
         ::no_controls::
       end
@@ -4984,6 +5004,36 @@ handlers.theme = function(req)
     theme.override { desktop = req.desktop }
   end
 
+  --
+  -- **Rounded corners and shadows, each on or off.**
+  --
+  -- Diego, 23 September 2026, after running it: "i can already tell the
+  -- drop shadows are super expensive so put them in an optional appearance
+  -- menu option", and the same for the corners.
+  --
+  -- He is right about the cost and it is worth writing down where it comes
+  -- from. A shadow is a band around the window - about `2 * spread *
+  -- (w + h)` pixels - and every one of them is a distance and an alpha
+  -- blend, redrawn whenever anything under it changes. A window of 800 by
+  -- 520 with a 14-pixel shadow is some thirty-eight thousand blended pixels
+  -- a frame, against a blit of the window itself which is a memcpy. Under
+  -- TCG that is felt immediately; on the ThinkPad it is not. **Neither is a
+  -- reason to decide for somebody**, which is exactly why these are
+  -- settings rather than a number somebody like me picked.
+  --
+  -- Off is the default for the shadow and on for the corner, because one
+  -- costs a band per frame and the other costs 256 pixels.
+  --
+  if req.corner ~= nil then
+    OUT.corner = req.corner and scale.px(theme.metrics.corner) or 0
+    add_damage(0, 0, W, H)
+  end
+
+  if req.shadow ~= nil then
+    OUT.shadow = req.shadow and scale.px(theme.metrics.shadow) or 0
+    add_damage(0, 0, W, H)
+  end
+
   -- The font travels with the palette, because they are the same decision
   -- from the user's side and arrive from the same window. Applied here and
   -- forwarded, so a window drawing its own pixels changes too.
@@ -5704,7 +5754,7 @@ local function pointer_pass(p)
           -- Greyed on a window that cannot be maximised, and then a press
           -- on it is nothing: not a maximise, and not the start of a drag.
           if resizable(win) then maximise(win) end
-        elseif nx < fx + MARGIN + CLOSE_W then
+        elseif nx >= mx + BOX_W * 2 then
           --
           -- The close box. Asked first, taken by force second.
           --

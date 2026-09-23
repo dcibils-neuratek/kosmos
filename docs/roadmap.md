@@ -1502,6 +1502,54 @@ processors, and still what follows USB:
    **What is left of the mockup**: the applications. Processes, Editor,
    Music and Terminal are drawn and only Tracker and Preferences are built.
 
+5zl. **WANTED on 23 September - what running it in QEMU asked for.** Diego,
+   after `make qemu`:
+
+   - **"i can already tell the drop shadows are super expensive so put them
+     in an optional appearance menu option"** - and the same for the rounded
+     corners. Both are settings now, through the `theme` request the window
+     manager already takes, and **the shadow is off until asked for**. He is
+     right about the cost and where it comes from is worth writing down: a
+     shadow is a band of about `2 * spread * (w + h)` pixels and every one
+     is a distance and an alpha blend, redrawn whenever anything under it
+     changes - some thirty-eight thousand a frame for an 800x520 window
+     against a blit that is a memcpy. Under TCG that is felt at once and on
+     the ThinkPad it is not, which is exactly why it is a setting and not a
+     number somebody picked.
+   - **"the rounded corners need anti aliasing as well"** - they have it
+     since 0.10.140 and a ten-times zoom of the build he ran shows the ramp.
+     What is true is that a radius of eight with a one-pixel band still
+     reads hard at 1:1. The answer is a larger radius, which is now his to
+     set rather than mine to guess.
+   - **"i would like the close, minimize and maximize buttons to be placed
+     in the right side of the bar like windows does"** - done. This was
+     BeOS's split, close alone at the left, and the argument for it was
+     real: close is the irreversible one and a window's width between it and
+     the two harmless ones means a slip hides a window instead of ending it.
+     What outweighs it is thirty years of hands aiming at the right, and
+     `ui.md` 16.8b is the rule this follows rather than breaks - copy a
+     decision about *behaviour*, decide one about *shape* fresh.
+   - **"the endeavor theme uses flat shading and our theme uses bevels in
+     the deskbar and else, lets use flat shading like the mockups"** - not
+     started. A look would carry a `flat` flag and the kit's raised and
+     sunken would draw a hairline instead of two edges.
+
+5zm. **A spawn refused after the desktop has been up a while.** Diego, 23
+   September, with a desktop five minutes old and several windows: `wm
+   preferences` answered `wm: no process`, which is `init.lua`'s message for
+   `sys.spawn` returning nothing. The same command on a fresh boot of the
+   same image starts it.
+
+   Twenty-two of 512 processes were in use, so it is not the pool. **The
+   suspicion is contiguous memory**: a process wants its image, its heap and
+   its stack as runs, and `pmm_alloc_contiguous` needs a run rather than
+   pages. A desktop that has opened and closed windows for five minutes is
+   exactly how a bitmap gets holes in it.
+
+   If that is what it is, it is not about Preferences and every application
+   would stop starting at the same moment - which is the thing to check
+   first, and the reason this is its own item rather than a note on 5zh.
+
 5zj-a. **The original entry - the whole desktop in the new language.**
    Diego, on seeing Tracker rebuilt: "the new design tracker is amazing! how
    would the entire kosmos desktop look with that design language and style?
