@@ -284,8 +284,10 @@ struct efi_gop_mode {
 };
 
 struct efi_gop {
-    void *query_mode;
-    void *set_mode;
+    efi_status (EFIAPI *query_mode)(struct efi_gop *self, uint32_t mode,
+                                    uint64_t *size_of_info,
+                                    struct efi_gop_mode_info **info);
+    efi_status (EFIAPI *set_mode)(struct efi_gop *self, uint32_t mode);
     void *blt;
     struct efi_gop_mode *mode;
 };
@@ -295,10 +297,13 @@ _Static_assert(offsetof(struct efi_gop_mode, frame_buffer_base) == 24,
 _Static_assert(offsetof(struct efi_gop_mode_info, pixels_per_scan_line) == 32,
                "EFI_GRAPHICS_OUTPUT_MODE_INFORMATION.PixelsPerScanLine");
 
-/* EFI_GRAPHICS_PIXEL_FORMAT */
+/* EFI_GRAPHICS_PIXEL_FORMAT. `PIXEL_BLT_ONLY` has no framebuffer to write
+ * to at all - the firmware will only copy blocks for you - so a mode in it
+ * is a mode this cannot use. */
 #define PIXEL_RGBX      0u
 #define PIXEL_BGRX      1u
 #define PIXEL_BITMASK   2u
+#define PIXEL_BLT_ONLY  3u
 
 static const struct efi_guid LOADED_IMAGE_GUID =
     { 0x5B1B31A1, 0x9562, 0x11d2, { 0x8E, 0x3F, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B } };
@@ -993,10 +998,143 @@ struct screen {
 };
 
 /*
- * The firmware's current mode, as it is: that is the mode GRUB passed on.
- * Silent, because it runs before the first line, which it is there to draw;
- * `find_screen` says what it found, later.
+ * **The largest mode the firmware offers, chosen** - `roadmap.md` 5zd-a.
+ *
+ * Diego's ThinkCentre M700 came up at 800x600 on a monitor that does
+ * 3440x1440, and had driven 3440x1440 under Linux on the same machine: the
+ * mode was in the firmware's list all along and nobody asked for it. What
+ * this used to do was read `gop->mode` - whatever mode the firmware happened
+ * to be in - which is the mode the firmware picked for its own setup screen.
+ *
+ * **Every mode is asked about and the largest taken**, by pixel count, with
+ * the wider one first where two hold the same number. A mode whose format is
+ * `PIXEL_BLT_ONLY` has no framebuffer to write into and is passed over; so
+ * is one this cannot work out a pixel's shape for, since `probe_screen`
+ * below would refuse it and the screen would be lost rather than small.
+ *
+ * **`chosen` is what it is worth saying afterwards**: which mode, how many
+ * there were, and whether it had to be changed at all. The firmware's own
+ * mode is often already the largest on a machine with one output.
+ *
+ * Nothing here fails: a firmware that will not answer `QueryMode`, or will
+ * not take `SetMode`, leaves the mode as it was, which is what every machine
+ * before this got.
  */
+struct chosen_mode {
+    uint32_t mode;          /* the one in force when this is done */
+    uint32_t modes;         /* how many the firmware has */
+    uint32_t width, height; /* of the one chosen */
+    bool     changed;
+};
+
+static void choose_mode(struct efi_gop *gop, struct chosen_mode *out)
+{
+    uint64_t pixels = 0;
+    uint32_t best = gop->mode->mode, i;
+
+    out->mode = gop->mode->mode;
+    out->modes = gop->mode->max_mode;
+    out->width = gop->mode->info->width;
+    out->height = gop->mode->info->height;
+    out->changed = false;
+
+    for (i = 0; i < gop->mode->max_mode; i++) {
+        struct efi_gop_mode_info *info = NULL;
+        uint64_t size = 0, area;
+
+        if (gop->query_mode(gop, i, &size, &info) != EFI_SUCCESS
+            || info == NULL || size < sizeof(*info)) {
+            continue;
+        }
+
+        area = (uint64_t)info->width * info->height;
+
+        if (info->pixel_format != PIXEL_BLT_ONLY && info->width != 0
+            && info->height != 0
+            && (area > pixels
+                || (area == pixels && info->width > out->width))) {
+            pixels = area;
+            best = i;
+            out->width = info->width;
+            out->height = info->height;
+        }
+
+        boot->free_pool(info);
+    }
+
+    if (best != gop->mode->mode && gop->set_mode(gop, best) == EFI_SUCCESS) {
+        out->changed = true;
+    }
+
+    /* What the firmware says it is in, which after a refused `SetMode` is
+     * the mode it was in before - so this is read rather than assumed. */
+    out->mode = gop->mode->mode;
+    out->width = gop->mode->info->width;
+    out->height = gop->mode->info->height;
+}
+
+/*
+ * **A mode named on the command line**, `video=1920x1080` in
+ * `\boot\kosmos.cmdline`, which is a file on the stick's FAT partition and
+ * so is a file somebody can edit on another computer.
+ *
+ * That is the point of it: the largest mode is the right default and it is
+ * a default that can go wrong - a firmware that offers a mode the monitor
+ * will not show leaves a black screen, and a machine with no keyboard
+ * cannot be told anything except through this file. So the escape hatch is
+ * a text editor and a USB port.
+ *
+ * An exact match only. A near miss would be a mode nobody asked for, and
+ * the loader says what it did either way.
+ */
+static bool wanted_mode(const char *cmdline, uint32_t *w, uint32_t *h)
+{
+    const char *at = cmdline;
+
+    while (*at != '\0') {
+        if ((at == cmdline || at[-1] == ' ')
+            && at[0] == 'v' && at[1] == 'i' && at[2] == 'd' && at[3] == 'e'
+            && at[4] == 'o' && at[5] == '=') {
+            uint32_t got = 0;
+
+            at += 6;
+            *w = 0;
+            *h = 0;
+
+            while (*at >= '0' && *at <= '9') {
+                *w = *w * 10u + (uint32_t)(*at++ - '0');
+                got++;
+            }
+
+            if (got == 0 || *at != 'x') {
+                return false;
+            }
+
+            at++;
+            got = 0;
+
+            while (*at >= '0' && *at <= '9') {
+                *h = *h * 10u + (uint32_t)(*at++ - '0');
+                got++;
+            }
+
+            return got > 0 && *w > 0 && *h > 0;
+        }
+
+        at++;
+    }
+
+    return false;
+}
+
+/*
+ * The screen, in the largest mode the firmware has. Silent, because it runs
+ * before the first line, which it is there to draw; `find_screen` says what
+ * it found, later.
+ */
+static struct chosen_mode picked;
+static bool mode_named;         /* the command line asked for this one */
+
 static const char *probe_screen(struct screen *s, uint32_t *mode,
                                 uint32_t *modes)
 {
@@ -1009,6 +1147,16 @@ static const char *probe_screen(struct screen *s, uint32_t *mode,
         || gop == NULL || gop->mode == NULL || gop->mode->info == NULL) {
         return "the firmware has no graphics output; Kosmos starts without a "
                "screen";
+    }
+
+    /*
+     * Once, before the loader draws anything: `SetMode` clears the screen,
+     * and this function is called again later to fill in the struct the
+     * kernel is handed. Choosing twice would be harmless and would clear the
+     * loader's own lines off the screen halfway through booting.
+     */
+    if (picked.modes == 0) {
+        choose_mode(gop, &picked);
     }
 
     info = gop->mode->info;
@@ -1069,6 +1217,20 @@ static void find_screen(struct screen *s)
     add_dec(&l, mode);
     add_text(&l, " of ");
     add_dec(&l, modes);
+
+    /*
+     * And whether it was chosen or inherited, which is the difference
+     * between a machine at its screen's size and one at whatever its
+     * firmware left behind.
+     */
+    if (mode_named) {
+        add_text(&l, ", named on the command line");
+    } else if (picked.changed) {
+        add_text(&l, ", the largest this firmware offers");
+    } else if (picked.modes > 1) {
+        add_text(&l, ", already the largest this firmware offers");
+    }
+
     send(&l);
 }
 
@@ -1183,6 +1345,87 @@ static const char *console_ready(void)
 /*------------------------------------------------------------------------
  * The loader.
  *----------------------------------------------------------------------*/
+
+/*
+ * The mode the command line named, if the firmware has exactly it. The
+ * screen the loader is drawing on is described again afterwards, since it
+ * has just moved and changed size underneath.
+ */
+static void set_named_mode(uint32_t want_w, uint32_t want_h)
+{
+    struct efi_gop *gop;
+    uint32_t i, was_w = 0, was_h = 0;
+    struct line l;
+
+    if (boot->locate_protocol(&GOP_GUID, NULL, (void **)&gop) != EFI_SUCCESS
+        || gop == NULL || gop->mode == NULL) {
+        return;
+    }
+
+    for (i = 0; i < gop->mode->max_mode; i++) {
+        struct efi_gop_mode_info *info = NULL;
+        uint64_t size = 0;
+        bool match;
+
+        if (gop->query_mode(gop, i, &size, &info) != EFI_SUCCESS
+            || info == NULL || size < sizeof(*info)) {
+            continue;
+        }
+
+        match = info->width == want_w && info->height == want_h
+             && info->pixel_format != PIXEL_BLT_ONLY;
+        boot->free_pool(info);
+
+        if (!match) {
+            continue;
+        }
+
+        if (i != gop->mode->mode && gop->set_mode(gop, i) != EFI_SUCCESS) {
+            break;
+        }
+
+        was_w = picked.width;
+        was_h = picked.height;
+        mode_named = true;
+        picked.mode = gop->mode->mode;
+        picked.width = gop->mode->info->width;
+        picked.height = gop->mode->info->height;
+        picked.changed = true;
+
+        /* The loader's own surface, which has just moved. */
+        shown_rows = 0;
+        (void)probe_screen(&shown, &picked.mode, &picked.modes);
+
+        begin(&l);
+        add_text(&l, "video=");
+        add_dec(&l, want_w);
+        add_text(&l, "x");
+        add_dec(&l, want_h);
+        add_text(&l, " on the command line: mode ");
+        add_dec(&l, picked.mode);
+
+        /*
+         * And what it was before, which is the mode this loader would have
+         * chosen on its own - so one line says both what was asked for and
+         * what the firmware's largest is.
+         */
+        add_text(&l, ", where the largest is ");
+        add_dec(&l, was_w);
+        add_text(&l, "x");
+        add_dec(&l, was_h);
+        send(&l);
+        return;
+    }
+
+    begin(&l);
+    add_text(&l, "video=");
+    add_dec(&l, want_w);
+    add_text(&l, "x");
+    add_dec(&l, want_h);
+    add_text(&l, " on the command line, and this firmware has no such mode; "
+                 "staying as found");
+    send(&l);
+}
 
 /* Enough of the file to find the header in: it is inside the first 32 KB. */
 static uint8_t head[36u * 1024];
@@ -1426,6 +1669,22 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     /* The command line, and four fields filled in as the facts arrive. */
     cmdline_n = read_cmdline(root, cmdline, CMDLINE_MAX);
     cmdline[cmdline_n] = '\0';
+
+    /*
+     * **And a mode it may name**, before the screen is described to the
+     * kernel. Read here because this is where the command line first
+     * exists: the mode was chosen before the loader's first line, which is
+     * the right moment for the default and too early for a file that has
+     * not been opened yet. So a named mode changes the screen under the
+     * loader's own lines, which is the rarer case and worth the flicker.
+     */
+    {
+        uint32_t want_w = 0, want_h = 0;
+
+        if (wanted_mode(cmdline, &want_w, &want_h)) {
+            set_named_mode(want_w, want_h);
+        }
+    }
 
     if (cmdline_n > 0) {
         append(cmdline, &cmdline_n, " ");

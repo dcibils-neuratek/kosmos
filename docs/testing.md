@@ -8067,3 +8067,54 @@ type its own name. `hal/keys.c` makes both now, through the same
 goes through, with the modifiers tracked from the pushed stream itself. That
 is also what the on-screen keyboard will need (`roadmap.md` 5zd-c), which is
 why it lives there rather than in the USB driver.
+
+## 18.153 The screen, in the largest mode the firmware has
+
+`boot.md` 3b, `roadmap.md` 5zd-a. The loader read whatever mode the firmware
+happened to be in; it asks for every mode now and takes the largest, and
+`video=WxH` on the command line names one instead.
+
+### The checks
+
+`run_uefi.py`, now 45 across four sticks - fourteen more than before, and one
+more boot:
+
+- **The screen is the size the loader said it chose.** The number is no
+  longer written in the harness: under OVMF it is whatever QEMU's VGA memory
+  allows - 2048x2048, where the loader used to take OVMF's own 1280x800 - and
+  on a real machine it is the monitor's. What is held is that the two agree,
+  which is the claim the old fixed 1280x800 was standing in for: a fallback
+  to ramfb would be 1920x1080 and would mean the laptop path never ran.
+- The loader says whether the mode is the largest the firmware has, so a
+  loader that silently went back to inheriting one is caught.
+- **A fourth stick, `kosmos-uefi-video.img`, carries `video=1024x768`**: the
+  machine comes up at exactly that, the loader says the mode was named rather
+  than chosen, and the same line says what the largest was - so one boot says
+  both that the named mode was taken and that a larger one existed to be
+  taken instead.
+
+### What a larger screen found, in the harness itself
+
+**Two checks that had always passed began to fail on a machine drawing
+exactly what it had always drawn.** The kernel's wordmark and the loader's
+refusal text were held to a *fraction* of the screen - 0.05% of 1280x800 is
+about five hundred pixels - and a drawing of a fixed size is a smaller
+fraction of a larger screen. At 2048x2048 the same wordmark was 0.02%.
+
+They are counted now, at the numbers those fractions always meant. A fraction
+is right for the ground, which is however much of the screen nobody wrote on
+and does scale; it is wrong for anything drawn. **That distinction is the
+lesson**, and it is going to come up again: a 3440x1440 panel is four times
+the pixels this harness has ever seen.
+
+### And a mistake worth writing down
+
+The loader would not boot at all, with `#UD - Invalid Opcode` at an address
+in VGA memory and not one line of its own. The new function had been inserted
+between `EFIAPI` and `efi_status efi_main(...)` - two lines that look like a
+comment and a definition and are one declaration. So `efi_main` lost its
+calling convention, the firmware called it with arguments in the wrong
+registers, and it jumped into nothing.
+
+**A build that succeeds is not a build that is right**, and an attribute on
+its own line is the shape of thing an edit lands in the middle of.

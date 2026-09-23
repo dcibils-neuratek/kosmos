@@ -3050,6 +3050,7 @@ gate-images: $(TARGET) $(HOSTDIR)/lua
 	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-home.img --loader $(EFI_LOADER) --home build/x86_64/uefi-disk.img >/dev/null && \
+	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-video.img --loader $(EFI_LOADER) video=1024x768 >/dev/null && \
 	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && \
 	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null; \
 	else \

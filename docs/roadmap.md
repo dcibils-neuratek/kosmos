@@ -1492,8 +1492,8 @@ processors, and still what follows USB:
 
    What it needs, in the order it was found:
 
-   - **5zd-a. A resolution worth having, and as large as the screen will
-     take.** Diego: "lets go with as much as possible as currently the
+   - **5zd-a. DONE on 22 September - the largest mode the firmware has**
+     (`boot.md` 3b, `testing.md` 18.153). Diego: "lets go with as much as possible as currently the
      monitor supports 3440x1440 and it already worked under linux in the
      same lenovo m700". It comes up at 800x600, which is the firmware's mode
      when nothing asks for another. The loader picks a mode through UEFI's
@@ -1503,12 +1503,32 @@ processors, and still what follows USB:
      this is - the firmware already drove 3440x1440 for Linux on this
      machine, so the mode is there to be asked for.
 
-     **What it will cost elsewhere**: 3440x1440 is 19.8 MB of framebuffer
-     against 800x600's 1.9, and the compositor's budget, the screenshot
-     harness and every "the screen is 1920x1080" assumption meet a wider one
-     for the first time (`roadmap.md` 4k-and-no-hard-limits). A mode to
-     choose also wants a way to say which - a boot option before there is a
-     panel.
+     Built: every mode asked for through GOP's `QueryMode` and the largest
+     taken, before the loader's first line since `SetMode` clears the screen;
+     and `video=WxH` in `\boot\kosmos.cmdline` to name one instead, which is
+     the escape hatch a machine with no keyboard needs when the largest mode
+     is one its monitor will not show - that file is on the stick's FAT
+     partition, so the way out is a text editor and a USB port.
+
+     **What a larger screen cost already**: under OVMF the loader now picks
+     2048x2048 where it took 1280x800, and two checks that had always passed
+     began to fail on a machine drawing exactly what it had always drawn -
+     the wordmark and the loader's refusal were held to a *fraction* of the
+     screen, and a drawing of a fixed size is a smaller fraction of a larger
+     one. Counted now. **That is the first of it**: 3440x1440 is 19.8 MB of
+     framebuffer against 800x600's 1.9, and the compositor's budget and every
+     "the screen is 1920x1080" assumption meet a wider one for the first time
+     (4k-and-no-hard-limits).
+   - **5zd-d. The 768-megabyte ceiling, on a machine with eight gigabytes.**
+     Diego: "the m700 has 8 gigs of ram installed", and `diagnose` says
+     `ram_size = 804257792`. **This is not a fault**: `hal_ram_capped` in
+     `hal/pc/memory.c` says exactly why, and the ThinkPad has sixteen
+     gigabytes and the same 768. The kernel identity-maps what it can
+     describe, and lifting it is `mmu.h`'s high-half split rather than a
+     number to change. Kosmos is six megabytes and holds a desktop in five
+     hundred, so a machine on 766 of its 8192 is a machine running - but it
+     is now two machines wasting most of their memory, and that is what
+     turns a known ceiling into work worth doing.
    - **5zd-b. A USB keyboard.** Diego: "usb mouse works, but usb keyboard is
      yet to be added", and "we need to add support for usb keyboard!". The
      mini PC has no PS/2 port, so `hal/pc/i8042.c` finds nothing and the

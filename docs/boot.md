@@ -373,6 +373,67 @@ that can be repeated is one that can be found.
 
 ---
 
+## 3b. The screen, in the largest mode the firmware has
+
+**Diego's ThinkCentre M700 came up at 800x600 on a monitor that does
+3440x1440** (`roadmap.md` 5zd-a), and had driven 3440x1440 under Linux on the
+same machine. The mode was in the firmware's list all along and nobody asked
+for it: the loader read `gop->mode`, which is whatever mode the firmware
+happened to be in - the one it drew its own setup screen in.
+
+**It asks now.** Every mode, through `QueryMode`, and the largest by pixel
+count is taken, with the wider one first where two hold the same number. A
+mode whose format is `PIXEL_BLT_ONLY` has no framebuffer to write into and is
+passed over; so is one whose pixels cannot be described, since the screen
+would then be lost rather than small. Nothing here can fail: a firmware that
+will not answer, or will not take `SetMode`, leaves the mode as it was, which
+is what every machine before this got.
+
+**Before the first line**, because `SetMode` clears the screen. The loader
+says what it did afterwards:
+
+```
+kosmos-boot: the screen: 2048x2048, 8192 bytes a row, at 0x0000000080000000, mode 5 of 30, the largest this firmware offers
+```
+
+### `video=WxH`, the escape hatch
+
+The largest mode is the right default and it is a default that can go wrong.
+A firmware that offers a mode the monitor will not show leaves a black
+screen - and a machine with no keyboard, which is exactly the machine this
+was written for, cannot be told anything at all.
+
+So `\boot\kosmos.cmdline` may say `video=1024x768`. That file is on the
+stick's FAT partition, which every computer mounts, so the way out of a black
+screen is a text editor and a USB port.
+
+An exact match only - a near miss would be a mode nobody asked for - and the
+loader says either way, including what the largest was:
+
+```
+kosmos-boot: video=1024x768 on the command line: mode 2, where the largest is 2048x2048
+kosmos-boot: the screen: 1024x768, 4096 bytes a row, at 0x0000000080000000, mode 2 of 30, named on the command line
+```
+
+**It is read where the command line first exists**, which is after the screen
+has already been chosen and drawn on - so a named mode changes the screen
+under the loader's own lines. That is the rarer case and worth the flicker;
+the alternative is opening the stick's filesystem before there is anywhere to
+report a failure.
+
+### What a larger screen cost
+
+**Two checks that had always passed began to fail on a machine drawing
+exactly what it had always drawn.** The wordmark and the loader's refusal
+text were held to a *fraction* of the screen - 0.05% of 1280x800 is about
+five hundred pixels - and a drawing of a fixed size is a smaller fraction of
+a larger screen. They are counted now. A fraction is right for the ground,
+which is however much of the screen nobody wrote on; it is wrong for anything
+drawn.
+
+That is the first of what a wider screen will find. `roadmap.md`
+4k-and-no-hard-limits is where the rest of it lives.
+
 ## 4. Why the kernel is at 16 MB
 
 `boot/x86_64/kosmos.ld` put the image at 1 MB, because that is where a

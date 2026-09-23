@@ -184,7 +184,8 @@ SUITES = [
     Suite("x86-uefi", ["python3", "tools/run_uefi.py",
                        "build/x86_64/kosmos-uefi.img",
                        "build/x86_64/kosmos-refusal.img",
-                       "build/x86_64/kosmos-uefi-home.img"], x86=True),
+                       "build/x86_64/kosmos-uefi-home.img",
+                       "build/x86_64/kosmos-uefi-video.img"], x86=True),
 
     # `test_stickcheck.py` streams that stick, with faults put where mtools
     # says they are, into the check `mkusb.sh` runs on every stick it writes:

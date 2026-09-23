@@ -158,6 +158,17 @@ the stable one. The older development images went to the Trash.
   *character* - right for a game pad, half a keyboard for a keyboard. `keys.c`
   makes both now, through the same tables a key on a cable goes through.
   `devices` typed on a USB keyboard runs, watched in the gate.
+- **And the resolution** (5zd-a, `boot.md` 3b, 18.153) - committed and not
+  pushed. The loader read whatever mode the firmware was in - 800x600 on the
+  M700, on a monitor that does 3440x1440 and had done so under Linux on the
+  same machine. It asks GOP for every mode now and takes the largest, before
+  its first line since `SetMode` clears the screen; and `video=WxH` in
+  `\boot\kosmos.cmdline` names one instead, which is the escape hatch for a
+  machine with no keyboard whose largest mode its monitor will not show.
+  Under OVMF the loader now picks 2048x2048 where it took 1280x800 - and two
+  harness checks failed at once, because a wordmark held to a *fraction* of
+  the screen shrinks as the screen grows. Counted now; that is the first of
+  what a wider screen will find.
 - **Queued after the network**: the scale's third stage (5z) - the screen's size in
   points before a window opens, which is what Lite XL needs, and the
   window manager's own drawings that are not windows: the pointer, the

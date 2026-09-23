@@ -56,9 +56,17 @@ GROUND = (13, 17, 23)           # the ground the whole desktop sits on
 GREEN  = (63, 185, 80)          # the boot log's stage headings
 RED    = (204, 34, 51)          # the wordmark
 
-# The mode OVMF's GOP offers, which is *not* the 1920x1080 ramfb is asked
-# for - so the size alone says which of the two answered.
-LOADER_MODE = (1280, 800)
+# **What size the screen is, is the loader's to say and this harness's to
+# believe.** It was 1280x800, OVMF's own mode, and it is whatever the loader
+# picks now that it asks the firmware for the largest it has (`roadmap.md`
+# 5zd-a) - which under OVMF is a mode QEMU invents from its VGA memory and on
+# a real machine is the monitor's. So the number is read out of the loader's
+# own line rather than written here, and what is checked is that the screen
+# the kernel drew on is the size the loader said it chose.
+#
+# Kept as the smallest a mode can sensibly be, so a loader that said
+# something absurd is still caught.
+LOADER_LEAST = (640, 400)
 
 # The loader's own lines, in the colour `draw_line` in `boot/efi/loader.c`
 # gives them, on the kernel's GROUND.
@@ -232,8 +240,8 @@ def capture(iso, moments):
     return frames, out.decode("utf-8", "replace")
 
 
-def share(pixels, colour):
-    """What fraction of the screen is exactly this colour."""
+def count(pixels, colour):
+    """How many pixels are exactly this colour."""
     r, g, b = colour
     n = 0
 
@@ -241,7 +249,22 @@ def share(pixels, colour):
         if pixels[i] == r and pixels[i + 1] == g and pixels[i + 2] == b:
             n += 1
 
-    return n / (len(pixels) / 3.0)
+    return n
+
+
+def share(pixels, colour):
+    """What fraction of the screen is exactly this colour.
+
+    **A fraction is right for the ground and wrong for a drawing.** The
+    ground is however much of the screen nobody wrote on, which scales with
+    the screen; a wordmark, a heading and a line of the loader's text are the
+    same number of pixels whatever size the screen is, so as a fraction they
+    shrink as the screen grows. Since the loader asks the firmware for the
+    largest mode (`roadmap.md` 5zd-a), the screen grew from 1280x800 to
+    2048x2048 under OVMF and two checks that had always passed began to fail
+    - on a machine that was drawing exactly what it had always drawn.
+    """
+    return count(pixels, colour) / (len(pixels) / 3.0)
 
 
 class Gdb:
@@ -517,6 +540,94 @@ def thinkpad_screen(image, elf):
     return heard.decode("utf-8", "replace"), tagged, early, late
 
 
+def video_boot(image, check):
+    """**A mode named on the command line** - `roadmap.md` 5zd-a.
+
+    The largest mode is the right default and it is a default that can go
+    wrong: a firmware that offers a mode the monitor will not show leaves a
+    black screen, and a machine with no keyboard cannot be told anything
+    except through `\\boot\\kosmos.cmdline` - which is a text file on the
+    stick's FAT partition, so the escape hatch is an editor and a USB port.
+
+    This stick says `video=1024x768`, and OVMF's largest is bigger than that,
+    so one boot says both things: the named mode is what the machine came up
+    in, and the line says what the largest was, which is what the loader
+    would have chosen on its own.
+    """
+    fw, why = firmware()
+
+    if fw is None:
+        check(False, "no firmware to boot the video stick with: %s" % why)
+        return
+
+    code, varsfd = fw
+    work = scratch.directory()
+    writable = os.path.join(work, "vars.fd")
+    mon = os.path.join(work, "mon")
+    shutil.copy(varsfd, writable)
+
+    cmd = [QEMU, "-M", "q35", "-m", "4G", "-no-reboot",
+           "-vga", "std", "-display", "none", "-serial", "stdio",
+           "-monitor", "unix:%s,server,nowait" % mon,
+           "-drive", "if=pflash,format=raw,unit=0,readonly=on,file=" + code,
+           "-drive", "if=pflash,format=raw,unit=1,file=" + writable,
+           "-device", "qemu-xhci,id=xhci",
+           "-drive", "if=none,id=stick,format=raw,file=" + image,
+           "-device", "usb-storage,bus=xhci.0,drive=stick"]
+
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
+    os.set_blocking(p.stdout.fileno(), False)
+
+    out = b""
+    start = time.time()
+
+    try:
+        while time.time() - start < 40.0:
+            chunk = p.stdout.read()
+
+            if chunk:
+                out += chunk
+
+            if b"named on the command line" in out:
+                break
+
+            time.sleep(0.2)
+    finally:
+        p.kill()
+        p.wait()
+        shutil.rmtree(work, ignore_errors=True)
+
+    serial = out.decode("utf-8", "replace")
+    said = re.search(r"video=1024x768 on the command line: mode \d+, where "
+                     r"the largest is (\d+)x(\d+)", serial)
+
+    check(said is not None,
+          "the loader did not take the mode named on the command line. "
+          "`video=WxH` in \\boot\\kosmos.cmdline is the only way to tell a "
+          "machine with no keyboard what to do about a screen it cannot "
+          "show:\n" + "\n".join(serial.splitlines()[-12:]))
+
+    screen = re.search(r"the screen: (\d+)x(\d+), \d+ bytes a row", serial)
+
+    check(screen is not None
+          and (int(screen.group(1)), int(screen.group(2))) == (1024, 768),
+          "the loader said `video=1024x768` and then described a screen that "
+          "is not 1024x768:\n" + "\n".join(serial.splitlines()[-12:]))
+
+    check("named on the command line" in serial,
+          "the loader did not say the mode was named rather than chosen")
+
+    if said is not None:
+        largest = (int(said.group(1)), int(said.group(2)))
+
+        check(largest[0] * largest[1] > 1024 * 768,
+              "the loader says the largest mode this firmware has is %dx%d, "
+              "which is no larger than the 1024x768 that was named - so this "
+              "boot says nothing about a named mode being taken over a "
+              "larger one" % largest)
+
+
 def home_boot(image, check):
     """**USB step 5f: `/home` on a partition of the stick the machine started
     from.**
@@ -676,6 +787,7 @@ def main():
     iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos-uefi.img"
     refusal = sys.argv[2] if len(sys.argv) > 2 else None
     home = sys.argv[3] if len(sys.argv) > 3 else None
+    video = sys.argv[4] if len(sys.argv) > 4 else None
     checks = 0
     fails = []
 
@@ -821,14 +933,44 @@ def main():
           "second one, so stages one to five reached nothing but a serial "
           "port that a laptop does not have")
 
-    # 1. The loader answered the video request, and the mode says which one
-    #    did: ramfb is asked for 1920x1080 and the firmware's GOP is its
-    #    own size. A fallback to ramfb would be the wrong size *and* would
-    #    mean the laptop path did not run.
-    check((width, height) == LOADER_MODE,
-          "the screen is %dx%d and OVMF's GOP is %dx%d; something other than "
-          "the loader's framebuffer answered"
-          % (width, height, LOADER_MODE[0], LOADER_MODE[1]))
+    #
+    # 1. **The screen is the size the loader said it chose.**
+    #
+    #    The loader asks the firmware for every mode it has and takes the
+    #    largest (`roadmap.md` 5zd-a), so the number is not one this file can
+    #    know: under OVMF it is whatever QEMU's VGA memory allows and on a
+    #    real machine it is the monitor's. What the harness holds is that the
+    #    two agree - the screen the kernel drew on is the one the loader
+    #    picked - which is the claim the fixed 1280x800 was standing in for:
+    #    a fallback to ramfb would be 1920x1080 and would mean the laptop
+    #    path never ran.
+    #
+    said = re.search(r"the screen: (\d+)x(\d+), \d+ bytes a row", serial)
+
+    check(said is not None,
+          "the loader never said what screen it found. It says so before it "
+          "draws its first line:\n"
+          + "\n".join(l for l in serial.splitlines()[:20]))
+
+    if said is not None:
+        chose = (int(said.group(1)), int(said.group(2)))
+
+        check((width, height) == chose,
+              "the screen is %dx%d and the loader said it chose %dx%d; "
+              "something other than the loader's framebuffer answered"
+              % (width, height, chose[0], chose[1]))
+
+        check(chose[0] >= LOADER_LEAST[0] and chose[1] >= LOADER_LEAST[1],
+              "the loader chose %dx%d, which is smaller than any mode worth "
+              "choosing. It asks the firmware for every mode it has and "
+              "takes the largest that has a framebuffer to write into."
+              % chose)
+
+        check("the largest this firmware offers" in serial,
+              "the loader did not say whether the mode it is in is the "
+              "largest the firmware has. It used to take whatever mode the "
+              "firmware happened to be in, which on the ThinkCentre M700 was "
+              "800x600 on a monitor that does 3440x1440.")
 
     # 2. Kosmos owns the screen rather than the firmware. Before the
     #    framebuffer was mapped this capture was TianoCore's logo and GRUB's
@@ -862,10 +1004,18 @@ def main():
         # 3. And it drew its own content into it: the boot log's headings and
         #    the wordmark. A cleared screen and a drawn one are the same
         #    fraction of ground.
-        check(share(pixels, GREEN) > 0.001,
-              "the boot log's green is not on the screen")
-        check(share(pixels, RED) > 0.0005,
-              "the wordmark is not on the screen")
+        #
+        # **Counted, not shared.** Both of these are drawings of a fixed
+        # size: the thresholds were 0.1% and 0.05% of a 1280x800 screen,
+        # which is about a thousand and five hundred pixels, and those are
+        # the numbers they always meant.
+        #
+        check(count(pixels, GREEN) > 800,
+              "the boot log's green is not on the screen: %d pixels of it"
+              % count(pixels, GREEN))
+        check(count(pixels, RED) > 400,
+              "the wordmark is not on the screen: %d pixels of it"
+              % count(pixels, RED))
 
     # 4. **The deadlock, which is the one that cannot report itself.** An
     #    unmapped framebuffer faults inside a console write, and the fault
@@ -1068,16 +1218,16 @@ def main():
             rwidth, rheight, rpixels = rframes[0]
             lower = rpixels[(rheight // 2) * rwidth * 3:]
             ground_low = share(lower, GROUND)
-            ink_low = share(lower, LOADER_INK)
+            ink_low = count(lower, LOADER_INK)
 
             check("Press a key to return to the firmware" in rserial,
                   "a stick whose kernel is zeros was not refused on the serial "
                   "line: " + next((l.strip() for l in rserial.splitlines()
                                    if "kosmos-boot:" in l), "no loader line"))
-            check(ground_low > 0.05 and ink_low > 0.005,
+            check(ground_low > 0.05 and ink_low > 2000,
                   "the loader's refusal is not drawn in the lower half of the "
-                  "screen: %.1f%% ground, %.2f%% ink"
-                  % (100.0 * ground_low, 100.0 * ink_low))
+                  "screen: %.1f%% ground, %d pixels of ink"
+                  % (100.0 * ground_low, ink_low))
 
     #
     # **A stick that does not hold what the build wrote is refused, with the
@@ -1108,6 +1258,9 @@ def main():
 
     if home is not None:
         home_boot(home, check)
+
+    if video is not None:
+        video_boot(video, check)
 
     if fails:
         print("FAIL: %d of %d checks booting through Kosmos's loader under "
