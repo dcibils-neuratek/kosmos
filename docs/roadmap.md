@@ -1484,6 +1484,84 @@ processors, and still what follows USB:
    away, so nothing said so. `png.c` reads colour type 3 with `tRNS`, and
    `wm` names the wallpaper it restored or why it could not.
 
+5zg. **WANTED on 23 September - Tracker, simpler.** Diego, with a screenshot
+   of GNOME's Files beside it: "lets redesign the tracker. right now is too
+   complicated. i want to simplify it like the one in the image."
+
+   What the screenshot has that Tracker does not: one toolbar instead of a
+   menu bar and a toolbar, a sidebar of *places* with no tree and no
+   disclosure triangles, a path shown as a single breadcrumb button rather
+   than a trail of segments, and a grid of large folder icons with the name
+   under each and nothing else - no columns, no attributes, no sort header
+   until you ask for one. Search is an icon, not a field. The window has no
+   tab and no border.
+
+   **Not a skin.** Half of that is removal rather than restyling, and
+   removal is the part to get right: Tracker's queries, its attribute
+   columns and its several view modes are real features that exist because
+   they were wanted, and a redesign that deletes them to look like a
+   photograph is a worse program that photographs well. The thing to find is
+   which of them earn their place in the *default* view and which can be one
+   press away.
+
+   **The mockup comes first** - `docs/tracker2.html` beside `drives.html`,
+   shown to Diego and changed until he agrees, then the code. That is the
+   rule from 14 September and this is exactly the case it was made for.
+
+5zh. **WANTED on 23 September - Preferences: one place to configure Kosmos.**
+   Diego, with GNOME's Settings beside it: "i want to create a preferences
+   app like the one attached where we will put all the settings of the
+   kosmos system in one place divided by category or part. very simple. one
+   place to configure all kosmos."
+
+   Today the settings are scattered by accident rather than by design:
+   Appearance owns the look and the wallpaper, the Deskbar owns its own
+   height and its launchers, Tracker owns icon sizes and sort order,
+   Terminal and Log View own their text size, the volume keys own the
+   mixer, and several things - the scale, `smp=N`, `video=WxH`, `irq=pic` -
+   are boot options with no window at all.
+
+   **A list of categories on the left, one page of rows on the right**, as
+   the screenshot has it: Displays, Sound, Power, Appearance, Apps,
+   Network, Keyboard. Each row is a control with its own label and a short
+   line under it saying what it does.
+
+   **The open question is where the settings live**, and it is the
+   interesting half. A Preferences window that reads and writes each app's
+   own file is a second copy of every format; one that owns them all is a
+   settings *server* and a protocol, which is the shape this system
+   normally reaches for. Worth deciding before the window is drawn, because
+   it decides what the window is.
+
+   Mockup first: `docs/preferences.html`.
+
+5zi. **WANTED on 23 September - a simpler look, and what it costs.** Diego:
+   "i want to adopt an aesthetic similar to the screenshots attached, which
+   is simpler and more designed towards simplicity."
+
+   The screenshots are GNOME's Adwaita: flat light surfaces, one blue
+   accent, rounded corners on windows and on grouped rows, generous
+   whitespace, almost no borders, and chrome that disappears - a header bar
+   holding a title and two or three icons, and nothing else.
+
+   **This sits against the BeOS lineage, and that is worth saying out loud
+   rather than discovering halfway through.** `beos.md` and `ui.md` §16.8b
+   record the position this system took: copy a decision about *behaviour*,
+   decide a decision about *shading* fresh. So a flatter, quieter surface is
+   entirely allowed - it is a shading decision, and Diego's to make. What
+   would be a different kind of change is anything that follows from it
+   about behaviour: replicants, the Deskbar as a tab strip, a title bar you
+   can drag a window by anywhere along, the right button reaching the
+   application. Those are BeOS decisions about how the desktop *works* and
+   they are not what a screenshot is asking for.
+
+   So: the four looks (`roadmap.md` 5y) are where this lands - a fifth look,
+   or a rework of Plex - and `theme.lua`'s tokens are already the right
+   shape for it, since 0.10.112 put the tab colour and the accent on one
+   token. What needs deciding is how far the *metrics* go: Adwaita's
+   whitespace is much larger than this system's, and a layout that is fixed
+   (5x) has to grow rather than be worked around.
+
 5ze. **DONE on 23 September - drivers in a directory of their own, by device
    type.** Diego, looking at the tree: "i see the servers living in the same
    tree as drivers... shouldnt drivers have their on directory sorted by
