@@ -1519,6 +1519,39 @@ processors, and still what follows USB:
      framebuffer against 800x600's 1.9, and the compositor's budget and every
      "the screen is 1920x1080" assumption meet a wider one for the first time
      (4k-and-no-hard-limits).
+   - **5zd-f. The M700 has wired Ethernet, and it is an Intel I219.**
+     `diagnose` on 23 September: `Network not driven: Intel 8086:15b8 at
+     00:1f.6`. That is an I219-V behind a real RJ-45 - the same controller
+     `thinkpad.md` §9 names for the T14 variants that have a socket, so one
+     driver would serve both machines and every other Skylake-era PC.
+
+     **It is a better answer for that machine than the dongle**: no USB port
+     spent, nothing to lose, and a gigabit link rather than a hub's share of
+     one. The dongle already works there (5m-d landed the whole path), so
+     this is not blocking - it is the difference between a machine that can
+     be put on a network and a machine that is on one.
+
+     **What it is**: PCIe, memory-mapped registers, descriptor rings in
+     ordinary memory - the e1000e family, whose datasheets Intel publishes
+     for the I21x series, and whose drivers exist in Linux, the BSDs and
+     everything else. The first network card here that is not virtio, and
+     the first PCIe device with rings of its own. `net.c` needs nothing: it
+     takes frames from a ring already (`ethring.h`), and where those frames
+     come from is the driver's business.
+   - **5zd-g. Two things the machine says about itself that are not true.**
+     Found in the same diagnosis, both small and both worth fixing because a
+     report that is wrong is worse than one that is missing:
+     - `/dev/keyboard` says `transport = virtio-input, polled` on a machine
+       whose keyboard is USB and whose PS/2 controller has nothing on it.
+       The comment in `devices.c` explains the string as what was true on
+       both *emulated* boards, which is exactly the assumption real hardware
+       broke. `sysinfo` carries `has_keyboard` and not how one was found, so
+       the answer is either to carry it or to stop naming a transport this
+       node cannot know.
+     - `has_keyboard = 1` and `keyboard: i8042, scancode set 1, on IRQ 1` on
+       a machine with no PS/2 port at all. The i8042 answers for a chip that
+       is there with nothing attached to it, which is a different fact from
+       "this machine has a keyboard" and reads as the same one.
    - **5zd-e. A wide screen in the gate.** Everything here is drawn at
      1920x1080 and the M700 is 3440x1440 - four times the pixels the display
      harness has ever seen, and where a framebuffer that did not fit its
