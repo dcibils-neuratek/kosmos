@@ -1519,8 +1519,56 @@ processors, and still what follows USB:
      framebuffer against 800x600's 1.9, and the compositor's budget and every
      "the screen is 1920x1080" assumption meet a wider one for the first time
      (4k-and-no-hard-limits).
-   - **5zd-f. The M700 has wired Ethernet, and it is an Intel I219.**
-     `diagnose` on 23 September: `Network not driven: Intel 8086:15b8 at
+   - **5zd-f. DONE on 23 September - an Intel Ethernet driver, and three
+     faults in the interrupt path underneath it.**
+     `user/servers/e1000.c`, a driver at EL0 like every other, with its
+     register decoding in `e1000_decode.c` so the link, the MAC and a
+     frame's error bits are checked on this Mac. Under QEMU's 82540EM it
+     finds the card, brings the link up at a gigabit, hands `net.c` a ring
+     of 32 frames each way and answers a ping in **0.7 ms**. The M700's own
+     I219 is the same legacy descriptor path; QEMU has no model of it, so
+     what the gate checks is the driver rather than the exact silicon.
+
+     **The driver was the easy half.** It worked on the first boot and
+     answered every ping - at 103 ms, which is its own deadline of 25 ticks
+     and not the card's interrupt. Three faults sat between the card and the
+     driver, and none of them was in the driver:
+
+     - `hal/pc/pci.c` computed a PCI link's I/O APIC input as `16 +
+       ((device + pin - 1) mod 4)`, reasoned from the PCI Express routing
+       recommendation. q35 routes them to **20 to 23**, measured by walking
+       an 82540EM across four slots with all eight links claimed at once:
+       slots 2, 3, 4 and 5 asserted 22, 23, 20 and 21.
+     - `pci.c` minted MSI numbers from 20, with a comment saying the links
+       were inputs 16 to 19. They are 20 to 23, so the two spaces overlapped
+       - and `apic_unmask` reads anything at or above the first MSI number
+       as an MSI and returns, leaving those four inputs masked for ever. The
+       range is now asked of `apic.c`, which answers from the I/O APIC's own
+       count of inputs rather than from a constant kept in step by hand.
+     - `apic_mask` composed the entry's low word as `VECTOR_OF(irq) |
+       ENTRY_MASKED`, which drops the trigger mode and the polarity. On an
+       ISA line that is invisible - edge and active high are what those bits
+       already are. On a PCI line it turned a level-triggered active-low
+       entry into an edge-triggered active-high one on every delivery, so
+       every device on a PCI line had exactly one interrupt in it. Masking
+       is now one bit set in what is there.
+
+     **All three were invisible.** The system worked throughout: frames
+     moved, pings came back, nothing logged a complaint. What they cost was
+     150x on the round trip, and the only reason they were found is that
+     somebody looked at the number. The permanent test is
+     `run_x86.py`'s `ethernet` part, and it checks the *time* rather than
+     the answer, because a test that asked whether the ping came back
+     passed at 103 ms twice while all three faults were live.
+
+     **What is left**: the first ping of a run is still lost. The stack has
+     no queue for a packet whose address is not resolved yet, so the packet
+     that triggers the ARP request is the packet that is dropped - which is
+     the stack's, not the driver's, and true of the USB adapter too. A
+     second `ping` answers 4 of 4. Worth fixing and small; it goes below.
+
+     The original entry, for the record: `diagnose` on 23 September said
+     `Network not driven: Intel 8086:15b8 at
      00:1f.6`. That is an I219-V behind a real RJ-45 - the same controller
      `thinkpad.md` §9 names for the T14 variants that have a socket, so one
      driver would serve both machines and every other Skylake-era PC.
@@ -1538,6 +1586,15 @@ processors, and still what follows USB:
      the first PCIe device with rings of its own. `net.c` needs nothing: it
      takes frames from a ring already (`ethring.h`), and where those frames
      come from is the driver's business.
+   - **5zd-h. A packet sent before its address is known is dropped.**
+     `ping 10.0.2.2` on a fresh boot loses `seq=1` and answers the rest; a
+     second `ping` answers all four. The stack sends the ARP request and
+     drops the packet that provoked it, so the first packet to any host is
+     always lost - on the Intel card, on the USB adapter, and on virtio.
+     Every other stack holds one packet per unresolved address until the
+     reply arrives, or until a short timer gives up, and that is all this
+     needs. Found while measuring 5zd-f, and left out of it because it is
+     `net.c`'s and not a driver's.
    - **5zd-g. Two things the machine says about itself that are not true.**
      Found in the same diagnosis, both small and both worth fixing because a
      report that is wrong is worse than one that is missing:

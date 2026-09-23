@@ -8171,3 +8171,85 @@ green by hand, and that is where the evidence for this fix comes from - but by
 hand is not the gate. A wide display suite is `roadmap.md` 5zd-e, and it wants
 a second kernel build, which is the reason it is a separate piece of work
 rather than a line here.
+
+## 18.155 An Intel Ethernet card, and the interrupt that never arrived
+
+`roadmap.md` 5zd-f. The M700's wired Ethernet is an Intel I219 at
+`00:1f.6`, so `user/servers/e1000.c` is the first network card here that is
+not virtio and not on a USB bus. QEMU has no I219; it has the 82540EM,
+which is the same legacy descriptor path, so that is what the gate boots.
+
+### The driver worked, and was 150 times too slow
+
+It found the card, brought the link up at a gigabit, handed `net.c` a ring
+of 32 frames each way and answered `ping 10.0.2.2`. **At 103 ms.**
+
+103 ms is not a network number; it is 25 ticks at 250 Hz, which is the
+deadline the driver passes to `kosmos_irq_wait_any` so that a card whose
+line cannot be claimed is still looked at. The card's interrupt was never
+arriving, the fallback was doing all the work, and **everything above it was
+correct**: frames moved, replies came back, and not one line of log said
+anything was wrong.
+
+### Three faults, none of them in the driver
+
+Found by claiming every one of q35's eight PCI links at once and printing
+which one fired, and by printing each I/O APIC redirection entry as it was
+written.
+
+- **The input a PCI link lands on.** `pci.c` computed `16 + ((device + pin
+  - 1) mod 4)`, reasoned from the PCI Express routing recommendation. An
+  82540EM walked across slots 2, 3, 4 and 5 asserted inputs **22, 23, 20 and
+  21** - so q35 puts them on 20 to 23, and the base is now measured rather
+  than derived.
+- **MSI numbering overlapped them.** `pci.c` minted MSI numbers from 20 with
+  a comment saying the links were 16 to 19. `apic_unmask` treats any number
+  at or above the first MSI number as an MSI and returns without writing an
+  entry - so inputs 20 to 23 were masked for ever. The range now comes from
+  `apic_msi_first`, which answers out of the I/O APIC's own count of inputs
+  instead of a constant kept in step by hand.
+- **The mask wrote the trigger mode away.** `apic_mask` composed the low
+  word as `VECTOR_OF(irq) | ENTRY_MASKED`, which is the right vector, the
+  right mask bit, and *no* level bit and *no* polarity bit. On an ISA line
+  that is invisible - edge and active high are what zero means. On a PCI
+  line it turned a level-triggered active-low entry into an edge-triggered
+  active-high one, on every delivery, because `kernel/irq.c` masks each time
+  it delivers. Every device on a PCI line therefore had exactly one
+  interrupt in it. Masking is now one bit set in what is already there.
+
+With all three fixed the same ping is **0.69 ms**.
+
+### The checks
+
+`run_x86.py`'s `ethernet`, nine, in `x86-core`: the card named with its
+device id, its interrupt number, the link up at a gigabit full duplex, the
+stack attached, six of eight pings answered across two runs - and two that
+are the point of the part:
+
+- **the quickest round trip is under 25 ms.** Far below anything the 100 ms
+  deadline can produce and far above the sub-millisecond the line gives, so
+  it separates polling from interrupting without being a number to tune.
+- **the xHCI's MSI number is above 23**, on a machine that has both an
+  Ethernet card on a line and an xHCI on an MSI. That is the invariant the
+  second fault broke, stated as the two numbering spaces not overlapping.
+
+**Controls, watched, each rebuilt and run on its own**: the link base put
+back to 16 fails the interrupt-number check *and* the time; `apic_mask` put
+back to composing the word fails the time alone; MSI numbering put back to
+20 fails the overlap check *and* the time.
+
+### Why the part checks the time
+
+Because a part that asked whether the ping came back would have passed. It
+did pass, twice, by hand, while all three faults were live - the system
+answers either way and only the clock knows. **When a fallback exists,
+test that it is not being used**, or the fallback is the only thing the
+test ever proves.
+
+### And one thing left
+
+The first ping of a run is still lost: the stack sends an ARP request and
+drops the packet that provoked it, so `seq=1` has no answer and a second
+`ping` answers 4 of 4. That is `net.c`'s and true of the USB adapter too, so
+it is `roadmap.md` 5zd-h rather than part of this. The check above asks for
+six of eight for exactly that reason, and says so.

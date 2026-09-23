@@ -3346,14 +3346,25 @@ def identity(image, check):
 
     network = row(out, "Network") or ""
 
-    check(re.match(r"not driven: Intel 8086:10d3 at 00:[0-9a-f]{2}\.\d$",
-                   network) is not None,
-          "neofetch's Network is %r on a machine with an undriven e1000e and "
-          "no virtio-net" % network)
+    # q35's own card, and `user/servers/e1000.c` drives it - so the row is
+    # the card's name and the address slirp handed it, not the "not driven"
+    # sentence this asked for until 0.10.127. The second boot below keeps
+    # that sentence tested with a card nothing here drives.
+    check(re.match(r"Intel 8086:10d3 at \d+\.\d+\.\d+\.\d+$", network)
+          is not None,
+          "neofetch's Network is %r on a machine whose e1000e this system "
+          "drives" % network)
 
+    # A Realtek, and q35's own card turned off so it is the only one: class
+    # 02 like any other, and nothing in this system claims it - which is the
+    # branch that says so rather than calling the machine cardless. It is
+    # also a vendor `hardware.VENDORS` does not name, so the row comes back
+    # as the number instead of a guess at a model, which is the whole of
+    # what that fallback is for and had no test until now.
     extra = ("-machine", "smbios-entry-point-type=64",
              "-smbios", "type=1,manufacturer=LENOVO,product=20W000T9US,"
-                        "version=ThinkPad T14 Gen 2i")
+                        "version=ThinkPad T14 Gen 2i",
+             "-nic", "none", "-device", "rtl8139")
 
     out = boot(image, None, 120.0, typed=("neofetch",), extra=extra)
 
@@ -3372,6 +3383,13 @@ def identity(image, check):
 
     check(host == "LENOVO 20W000T9US ThinkPad T14 Gen 2i, x86-64",
           "neofetch's Host on the ThinkPad's table is %r" % host)
+
+    network = row(out, "Network") or ""
+
+    check(re.match(r"not driven: vendor 0x10ec 10ec:8139 "
+                   r"at 00:[0-9a-f]{2}\.\d$", network) is not None,
+          "neofetch's Network is %r on a machine whose only card nothing "
+          "here drives" % network)
 
 
 def test_ssdt():
@@ -4183,7 +4201,115 @@ def usb_ethernet(image, check):
           "probe above rather than a claim of its own:\n    " + shown)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack',
+def ethernet(image, check):
+    """An Intel Ethernet card, driven by `user/servers/e1000.c`, on its line.
+
+    The M700's own card is an I219 at 00:1f.6 and QEMU has no model of it;
+    what QEMU has is the 82540EM, which is the same legacy descriptor path
+    and the same register family, so this is the driver checked rather than
+    the exact silicon.
+
+    **The round trip is the check, not the answer.** Every bug this found
+    answered the ping: the driver waits on its interrupt *or* on a deadline
+    of 25 ticks, so a line that never arrives is a system that still works
+    and is 150 times slower. A test that asked whether the ping came back
+    passed at 103 ms, twice, while two separate faults sat in the interrupt
+    path - the wrong I/O APIC input for a PCI link, and a mask that wrote
+    the trigger mode away. So the bar here is the time.
+
+    A tick is 4 ms at 250 Hz and the driver's deadline is a hundred of them.
+    Twenty-five milliseconds is far below anything the deadline can produce
+    and far above the 0.7 ms the line gives, so it separates the two without
+    being a number to tune.
+    """
+    # The xHCI is here for its MSI, not for USB: it is the machine's other
+    # interrupting device, and the numbers the two report have to come from
+    # different spaces. See the check on them below.
+    extra = ("-netdev", "user,id=n0", "-device", "e1000,netdev=n0",
+             "-device", "qemu-xhci,id=usb0")
+    out = boot(image, None, 120.0, extra=extra,
+               typed=("ping 10.0.2.2", "ping 10.0.2.2"))
+
+    if out is None:
+        check(False, "the machine would not boot with an Intel Ethernet card")
+        return
+
+    shown = "\n    ".join(l.strip() for l in out.splitlines()
+                          if l.strip().startswith("e1000:"))
+
+    found = re.search(r"e1000: 8086:([0-9a-f]{4}) at (\S+), MAC "
+                      r"([0-9a-f:]{17}), (\d+) descriptors each way, "
+                      r"interrupt (\d+)", out)
+
+    check(found is not None,
+          "the driver did not find and name QEMU's 82540EM:\n    " + shown)
+
+    if found is not None:
+        check(found.group(1) == "100e",
+              "the card came back as 8086:%s, not the 100e QEMU emulates"
+              % found.group(1))
+
+        # 20 + ((slot + pin - 1) mod 4), and the card is at slot 2, pin A.
+        # Written out rather than recomputed, so that a change to the
+        # swizzle in `hal/pc/pci.c` has to be agreed with here.
+        check(found.group(5) == "22",
+              "the card's interrupt came back as %s. q35 routes slot 2's "
+              "INTA to I/O APIC input 22 - measured by walking a card across "
+              "four slots with all eight links claimed at once - and the "
+              "swizzle in `hal/pc/pci.c` is what has to produce it"
+              % found.group(5))
+
+    #
+    # A line and an MSI on one machine, and the two numbers disjoint.
+    #
+    # `pci.c` used to mint MSI numbers from 20, with a comment saying the
+    # PCI links were inputs 16 to 19. On q35 the links are 20 to 23, so the
+    # numbers it handed out were also real inputs - and `apic_unmask` read
+    # anything from 20 up as an MSI and left those inputs masked for ever.
+    # An MSI number is now whatever is above the last input this I/O APIC
+    # has, asked of `apic.c` rather than agreed with it, and this is the
+    # check that the two ends still agree.
+    #
+    msi = re.search(r"xhci: \S+ .*?interrupt (\d+)", out)
+
+    check(msi is not None,
+          "the xHCI never said which interrupt it took, so the number an "
+          "MSI gets could not be compared with the number a line gets")
+
+    if msi is not None and found is not None:
+        check(int(msi.group(1)) > 23,
+              "the xHCI's MSI is number %s and a PCI link is 16 to 23, so "
+              "the two spaces overlap. An MSI number that is also an I/O "
+              "APIC input leaves that input masked, because `apic_unmask` "
+              "tells them apart by exactly that comparison."
+              % msi.group(1))
+
+    check("e1000: its link is up at 1000 Mb/s, full duplex" in out,
+          "the card never reported its link up. The driver reads STATUS and "
+          "decodes it in `e1000_decode_link`:\n    " + shown)
+
+    check("e1000: the network stack has it" in out,
+          "the stack never attached to the card. `net.c` asks each driver in "
+          "turn and takes the first that answers with a ring:\n    " + shown)
+
+    times = [float(t) for t in re.findall(r"ttl=255 time=([\d.]+) ms", out)]
+
+    check(len(times) >= 6,
+          "%d of 8 pings came back across two runs. The first of a run is "
+          "lost to ARP - the stack has no queue for a packet whose address "
+          "is not resolved yet - so six is every one that can answer:\n    %s"
+          % (len(times), shown))
+
+    if times:
+        check(min(times) < 25.0,
+              "the quickest round trip was %.1f ms. The driver's own "
+              "deadline is 25 ticks, 100 ms, so anything near that is a "
+              "card whose interrupt never arrives and a driver that is "
+              "polling. On the line it is under one millisecond."
+              % min(times))
+
+
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet',
     'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -4290,6 +4416,10 @@ def main():
     # And what the machine says it is, which it used to read out of the
     # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.
     #
+    # And an Intel Ethernet card on a PCI line, which is the M700's.
+    if 'ethernet' in wanted:
+        ethernet(image, check)
+
     if 'identity' in wanted:
         identity(image, check)
 

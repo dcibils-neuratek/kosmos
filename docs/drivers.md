@@ -285,6 +285,38 @@ controller up, enumeration, bulk transfers, mass storage, Ethernet, "the
 first two are built" - and was three steps behind the table by the time
 bulk transfers landed.
 
+### Intel Ethernet - written, and what it found underneath
+
+`user/servers/e1000.c`, 23 September 2026. The M700's card is an **I219-V**
+at `00:1f.6`, `8086:15b8`; the same controller sits in the ThinkPad T14
+variants that have a socket (`thinkpad.md` §9), so one driver serves both
+machines and most Skylake-era PCs.
+
+**A driver at EL0 like every other**, on the three primitives of §4:
+`SYS_DEV_MAP` for the registers, a contiguous region for the descriptor
+rings and the frame buffers, and `SYS_IRQ_CLAIM`/`WAIT`/`ACK` for the line.
+The register decoding - the link out of STATUS, the MAC out of RAL0/RAH0,
+the error bits a received descriptor can carry - is in `e1000_decode.c` so
+it is checked on this Mac by `tools/test_e1000decode.c` rather than only on
+a booted machine. `net.c` needed nothing: it already takes frames from a
+ring (`ethring.h`), and where they come from is the driver's business.
+
+QEMU has no model of the I219. What it has is the **82540EM**, which is the
+same legacy 16-byte descriptors and the same register family, so that is
+what the gate boots - the driver checked, not the exact silicon.
+
+**The driver was the easy half and the interrupt path was not.** It worked
+on the first boot, brought the link up, attached to the stack and answered
+every ping - at 103 ms, which is its own fallback deadline of 25 ticks and
+not the card's interrupt. What was wrong was all in `hal/pc`, and all three
+are written up where they live: the input a PCI link lands on and the MSI
+numbering in `pci.c`, and the mask that wrote a trigger mode away in
+`apic.c`. The lesson that generalises is the one in §3's spirit: **none of
+the three broke anything.** Frames moved, pings came back, no log said a
+word. They cost 150x on the round trip and were found only because somebody
+looked at the number - so the permanent test checks the *time*, not the
+answer.
+
 ### WiFi - OpenBSD, not FreeBSD
 
 The card is an **Intel AX201**, `VEN_8086&DEV_A0F0`. It is **CNVi**: the MAC

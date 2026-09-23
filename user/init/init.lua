@@ -39,6 +39,7 @@ local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
 local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are any
 local ROLE_DRIVES     = 20 -- serves /drives: every volume on every drive, read only
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /dev/backlight
+local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -5302,6 +5303,14 @@ if role == ROLE_INIT then
   -- question nobody can answer is a stack that never starts.
   --
   local FRAMES_EP = sys.endpoint()
+
+  --
+  -- And a second, for the Intel Ethernet driver (`roadmap.md` 5zd-f). One
+  -- endpoint each rather than one between them: two servers receiving on one
+  -- endpoint is a race about which of them answers, and the stack asks each
+  -- in turn and takes the first with a card.
+  --
+  local PCI_FRAMES_EP = sys.endpoint()
   local DRIVES_EP = sys.endpoint()
   local BACKLIGHT_EP = sys.endpoint()
 
@@ -5407,6 +5416,26 @@ if role == ROLE_INIT then
   -- only the disk server is given as well (USB step 5e): the right to write
   -- to a stick is holding it.
   --
+  --
+  -- **The Intel Ethernet controller**, where the machine has one: a driver
+  -- with device authority and the console's endpoint to report through, the
+  -- same shape the USB driver has and for the same reasons (`drivers.md`).
+  -- On a machine with no such card it asks, is told so, and answers the
+  -- stack that there is none.
+  --
+  local ether_driver = false
+
+  do
+    local _, err = sys.spawn(ROLE_E1000, { CONSOLE_EP, PCI_FRAMES_EP },
+                             SPAWN_DEVICES)
+
+    if err then
+      line("init: no Intel Ethernet driver: " .. tostring(err))
+    else
+      ether_driver = true
+    end
+  end
+
   local usb_driver = false
 
   do
@@ -5445,9 +5474,16 @@ if role == ROLE_INIT then
   -- that declares `needs network` on a machine with no card gets nothing,
   -- which keeps the stack the only holder exactly where it matters.
   --
-  local net = start("the network stack", ROLE_NET,
-                    usb_driver and { NET_EP, FRAMES_EP } or { NET_EP },
-                    SPAWN_NET)
+  --
+  -- **The card on the bus before the adapter in a socket.** A machine may
+  -- have both, and a socket is the one somebody may want for something else.
+  --
+  local wires = { NET_EP }
+
+  if ether_driver then wires[#wires + 1] = PCI_FRAMES_EP end
+  if usb_driver then wires[#wires + 1] = FRAMES_EP end
+
+  local net = start("the network stack", ROLE_NET, wires, SPAWN_NET)
 
   --
   -- **The power button**, the first driver outside the kernel.

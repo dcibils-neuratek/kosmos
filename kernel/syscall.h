@@ -1232,6 +1232,15 @@ void syscall_dispatch(struct syscall_frame *sc);
  */
 #define DEV_INTEL_BACKLIGHT  3u
 
+/*
+ * An Intel Ethernet controller: `base` and `size` are its first BAR, `intid`
+ * the interrupt it raises, `where` its address on PCI, and `line` its device
+ * identifier - which the driver does not need to work and does need to say,
+ * since one register set covers an I219 in a ThinkCentre and the 82540EM and
+ * 82574L an emulator offers (`roadmap.md` 5zd-f).
+ */
+#define DEV_INTEL_ETHERNET   4u
+
 struct dev_info {
     uint32_t kind;
     uint32_t intid;         /* for SYS_IRQ_CLAIM */

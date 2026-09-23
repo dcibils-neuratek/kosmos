@@ -450,22 +450,38 @@ static void arp_learn(const struct net_addr *ip, const uint8_t *mac)
  * that is the same exposure every client of every server has.
  *----------------------------------------------------------------------*/
 
+/*
+ * **More than one driver may have a wire**, since 23 September. The USB
+ * adapter is one and the Intel card on the PCI bus is another, they are
+ * different processes, and which of them a machine has is a fact about the
+ * machine. So the stack holds an endpoint for each driver it was given and
+ * asks them in turn; the first with an adapter gets the ring.
+ *
+ * In the order init passes them, which is the order they should be
+ * preferred: a card on the bus before an adapter in a socket, because the
+ * socket is the one somebody may want for something else.
+ */
+#define WIRES_MAX 2u
+
 static struct {
-    long              cap;              /* the driver's endpoint, or -1 */
+    long              caps[WIRES_MAX];  /* the drivers' endpoints */
+    unsigned          count;
+    long              cap;              /* the one that answered, or -1 */
     long              region;           /* the ring's capability */
     struct eth_ring  *ring;             /* mapped here */
     bool              attached;
     uint64_t          asked_at;         /* counter, for the next attempt */
 } wire;
 
-/* Ask the driver something. False when there is no driver or it refused. */
-static bool wire_ask(uint32_t op, long cap, struct eth_reply *out)
+/* Ask a driver something. False when there is none or it refused. */
+static bool wire_ask_at(long cap, uint32_t op, long region,
+                        struct eth_reply *out)
 {
     struct eth_request req;
     struct message msg;
     struct message rep;
 
-    if (wire.cap < 0) {
+    if (cap < 0) {
         return false;
     }
 
@@ -474,18 +490,23 @@ static bool wire_ask(uint32_t op, long cap, struct eth_reply *out)
 
     memset(&msg, 0, sizeof(msg));
     msg.length = sizeof(req);
-    msg.cap_plus_one = cap < 0 ? 0 : (uint32_t)(cap + 1);
+    msg.cap_plus_one = region < 0 ? 0 : (uint32_t)(region + 1);
     memcpy(msg.data, &req, sizeof(req));
 
     memset(&rep, 0, sizeof(rep));
 
-    if (kosmos_call(wire.cap, &msg, &rep) != 0
-        || rep.length < sizeof(*out)) {
+    if (kosmos_call(cap, &msg, &rep) != 0 || rep.length < sizeof(*out)) {
         return false;
     }
 
     memcpy(out, rep.data, sizeof(*out));
     return out->error == ETH_OK;
+}
+
+/* The one that answered, for everything after the attach. */
+static bool wire_ask(uint32_t op, long region, struct eth_reply *out)
+{
+    return wire_ask_at(wire.cap, op, region, out);
 }
 
 /*
@@ -496,9 +517,10 @@ static bool wire_ask(uint32_t op, long cap, struct eth_reply *out)
 static bool wire_attach(void)
 {
     struct eth_reply rep;
+    unsigned i;
     long at;
 
-    if (wire.cap < 0 || wire.attached) {
+    if (wire.count == 0 || wire.attached) {
         return wire.attached;
     }
 
@@ -509,7 +531,7 @@ static bool wire_attach(void)
         at = wire.region < 0 ? wire.region : kosmos_mem_map(wire.region);
 
         if (at < 0) {
-            wire.cap = -1;              /* no memory for it; stop asking */
+            wire.count = 0;             /* no memory for it; stop asking */
             return false;
         }
 
@@ -520,17 +542,28 @@ static bool wire_attach(void)
         wire.ring->slot_bytes = ETH_RING_SLOT;
     }
 
-    memset(&rep, 0, sizeof(rep));
+    /*
+     * Each driver in turn, and the first with an adapter keeps the ring.
+     * A driver with none answers `ETH_ERR_NO_ADAPTER` and is asked again the
+     * next time round, because an adapter can be plugged in later.
+     */
+    for (i = 0; i < wire.count; i++) {
+        memset(&rep, 0, sizeof(rep));
 
-    if (!wire_ask(ETH_OP_ATTACH, wire.region, &rep) || rep.present == 0) {
-        return false;
+        if (!wire_ask_at(wire.caps[i], ETH_OP_ATTACH, wire.region, &rep)
+            || rep.present == 0) {
+            continue;
+        }
+
+        wire.cap = wire.caps[i];
+        wire.attached = true;
+        net.has_card = true;
+        net.mtu = rep.mtu > ETH_HEADER ? rep.mtu - ETH_HEADER : rep.mtu;
+        memcpy(net.mac, rep.mac, sizeof(net.mac));
+        return true;
     }
 
-    wire.attached = true;
-    net.has_card = true;
-    net.mtu = rep.mtu > ETH_HEADER ? rep.mtu - ETH_HEADER : rep.mtu;
-    memcpy(net.mac, rep.mac, sizeof(net.mac));
-    return true;
+    return false;
 }
 
 static bool send_frame(const uint8_t *dst, uint16_t type,
@@ -2670,21 +2703,29 @@ static void expire(uint64_t hz)
     }
 }
 
-void net_server(long endpoint, long frames)
+void net_server(long endpoint, long frames, long frames2)
 {
     struct netinfo card;
     uint64_t hz;
 
     memset(&net, 0, sizeof(net));
     memset(&wire, 0, sizeof(wire));
-    wire.cap = frames;
+    wire.cap = -1;
     wire.region = -1;
+
+    if (frames >= 0) {
+        wire.caps[wire.count++] = frames;
+    }
+
+    if (frames2 >= 0 && wire.count < WIRES_MAX) {
+        wire.caps[wire.count++] = frames2;
+    }
 
     if (kosmos_net_info(&card) == 0 && card.present != 0) {
         net.has_card = true;
         net.mtu      = card.mtu;
         memcpy(net.mac, card.mac, sizeof(net.mac));
-        wire.cap = -1;                  /* the kernel's card is the wire */
+        wire.count = 0;                 /* the kernel's card is the wire */
     }
 
     {
@@ -2757,7 +2798,7 @@ void net_server(long endpoint, long frames)
          * The call waits for the driver to receive it, which is why it is
          * only made when the kernel had no card to offer.
          */
-        if (wire.cap >= 0 && !wire.attached) {
+        if (wire.count > 0 && !wire.attached) {
             uint64_t now = kosmos_ticks();
 
             if (wire.asked_at == 0 || now - wire.asked_at >= hz) {

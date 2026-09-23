@@ -115,9 +115,6 @@
 #define IRQ_OF(vector)      ((vector) - PC_IRQ_BASE)
 
 #define ISA_LINES           16u
-
-/* Kept in step with `pci.c`, which allocates them. */
-#define MSI_IRQ_FIRST       20u
 #define OVERRIDE_MAX        16u
 
 static struct {
@@ -237,11 +234,18 @@ void apic_unmask(unsigned irq)
      * interrupt that arrives once and then never again, because nothing
      * ever sees the transition a second time.
      */
-    if (irq >= MSI_IRQ_FIRST) {
+    if (irq >= apic.inputs) {
         /*
          * An MSI has nothing to unmask. The device writes to the local
          * APIC directly, so there is no I/O APIC entry and no line - which
          * is exactly why `pci.c` reaches for one where it can.
+         *
+         * **A number above every input is what makes it one**, rather than
+         * a constant kept in step with `pci.c` by hand. That constant was
+         * 20 and the I/O APIC has 24 inputs, so inputs 20 to 23 - which on
+         * q35 are half the PCI links - were read as MSIs here and left
+         * masked for ever. A card routed to one of them never interrupted,
+         * and nothing said so: the entry was simply never written.
          */
         return;
     }
@@ -279,7 +283,7 @@ void apic_mask(unsigned irq)
     uint32_t extra;
     unsigned input;
 
-    if (!apic.present || irq >= MSI_IRQ_FIRST) {
+    if (!apic.present || irq >= apic.inputs) {
         return;
     }
 
@@ -290,12 +294,31 @@ void apic_mask(unsigned irq)
     }
 
     /*
-     * The low word alone. Masking is one bit and the destination in the high
-     * word is left as it is, so unmasking later does not have to know where
-     * this line was aimed - `apic_unmask` rewrites both anyway.
+     * **One bit, set in what is already there.** The low word alone - the
+     * destination in the high word is left as it is, so unmasking later
+     * does not have to know where this line was aimed.
+     *
+     * This used to compose the low word from nothing: `VECTOR_OF(irq) |
+     * ENTRY_MASKED`, which is the right vector and the right mask bit and
+     * *drops the trigger mode and the polarity*. On an ISA line that is
+     * invisible, because edge and active high are what those bits are
+     * anyway. On a PCI line it turns a level-triggered active-low entry
+     * into an edge-triggered active-high one at the moment the line is
+     * still asserted, and the I/O APIC decides which of the two it is
+     * looking at from the entry as it stands - so the assertion that
+     * arrives next is counted the wrong way and never delivered.
+     *
+     * The symptom was an Ethernet card that interrupted exactly once and
+     * then answered on its driver's deadline, at 103 ms a ping where the
+     * line is worth 0.6. `kernel/irq.c` masks on every delivery, so every
+     * device on a PCI line had one interrupt in it and no more.
+     *
+     * Bits 12 and 14 - delivery status and remote IRR - are read-only, and
+     * writing back what was read is what both real hardware and QEMU's
+     * model expect.
      */
     ioapic_write(IOAPIC_REG_ENTRY + input * 2,
-                 VECTOR_OF(irq) | ENTRY_MASKED);
+                 ioapic_read(IOAPIC_REG_ENTRY + input * 2) | ENTRY_MASKED);
 }
 
 static void mask_everything(void)
@@ -335,6 +358,30 @@ static unsigned in_service(void)
     }
 
     return 0;
+}
+
+/*
+ * The numbers `pci.c` may mint for an MSI: above every input this I/O APIC
+ * has, and below the two vectors the local APIC spends on itself.
+ *
+ * **Derived rather than agreed**, because the two ends disagreed once and
+ * the symptom was a card that never interrupted. An input's number *is* an
+ * input; anything above them is nobody's line, which is exactly what an
+ * MSI needs.
+ *
+ * A machine whose I/O APIC has more inputs than there are vectors left
+ * gets no MSI numbers at all, and `msi_enable` then declines - which
+ * leaves every device on its line. That is slower and correct, where
+ * handing out a number that is also an input is neither.
+ */
+unsigned apic_msi_first(void)
+{
+    return apic.present ? apic.inputs : 0u;
+}
+
+unsigned apic_msi_last(void)
+{
+    return IRQ_OF(WAKE_VECTOR) - 1u;
 }
 
 bool apic_handle(void)

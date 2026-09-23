@@ -73,9 +73,25 @@
 #define BACKLIGHT_BLOCK     0xC8000u
 #define BACKLIGHT_BYTES     0x1000u
 
+/*
+ * **Intel Ethernet**, class 2 subclass 0 with Intel's vendor identifier -
+ * which is the I219 on Diego's ThinkCentre M700 (`roadmap.md` 5zd-f) and the
+ * 82540EM and 82574L QEMU offers, all of one register family.
+ *
+ * By class *and* vendor rather than by device id, because the id differs
+ * with every chipset and the register set does not; and by vendor as well as
+ * class, because virtio-net is class 2 subclass 0 too and is the kernel's
+ * own.
+ */
+#define CLASS_NETWORK       0x02u
+#define SUBCLASS_ETHERNET   0x00u
+#define ETHERNET_KEPT       2u
+
 static struct spinlock devices_lock = SPINLOCK("devices");
 static struct hal_device xhci_kept[XHCI_KEPT];
 static bool xhci_known[XHCI_KEPT];
+static struct hal_device ether_kept[ETHERNET_KEPT];
+static bool ether_known[ETHERNET_KEPT];
 
 static bool nth_xhci(unsigned index, struct pci_device *out)
 {
@@ -86,6 +102,25 @@ static bool nth_xhci(unsigned index, struct pci_device *out)
                                         PCI_CLASS_WORD);
 
         if (((word >> 8) & 0xFFu) == INTERFACE_XHCI) {
+            if (seen == index) {
+                return true;
+            }
+
+            seen++;
+        }
+
+        from = at + 1;
+    }
+
+    return false;
+}
+
+static bool nth_intel_ethernet(unsigned index, struct pci_device *out)
+{
+    unsigned from = 0, at, seen = 0;
+
+    while (pci_find_class(CLASS_NETWORK, SUBCLASS_ETHERNET, from, out, &at)) {
+        if (out->vendor == INTEL) {
             if (seen == index) {
                 return true;
             }
@@ -138,6 +173,46 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 
     if (out != NULL && kind == HAL_DEV_INTEL_BACKLIGHT) {
         return index == 0 && intel_backlight(out);
+    }
+
+    /*
+     * **Enabled and sized once, and kept**, for the reason the controllers
+     * above are: `pci_enable` switches the device to MSI and `pci_bar_size`
+     * writes all ones into a BAR with decoding off, and neither is a thing
+     * to do twice to a device a driver is already using.
+     */
+    if (out != NULL && kind == HAL_DEV_INTEL_ETHERNET
+        && index < ETHERNET_KEPT) {
+        bool found = false;
+
+        flags = spin_lock(&devices_lock);
+
+        if (!ether_known[index]) {
+            struct pci_device pci;
+            uint64_t size;
+
+            if (nth_intel_ethernet(index, &pci) && pci.bar[0] != 0
+                && (size = pci_bar_size(&pci, 0)) != 0) {
+                pci_enable(&pci);
+
+                ether_kept[index].base  = (unsigned long)pci.bar[0];
+                ether_kept[index].size  = (unsigned long)size;
+                ether_kept[index].intid = pci.irq;
+                ether_kept[index].line  = pci.device;
+                ether_kept[index].where = ((unsigned)pci.bus << 8)
+                                        | ((unsigned)pci.slot << 3)
+                                        | (unsigned)pci.function;
+                ether_known[index] = true;
+            }
+        }
+
+        if (ether_known[index]) {
+            *out = ether_kept[index];
+            found = true;
+        }
+
+        spin_unlock(&devices_lock, flags);
+        return found;
     }
 
     if (out == NULL || kind != HAL_DEV_XHCI || index >= XHCI_KEPT) {

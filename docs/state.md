@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-22
+Last updated: 2026-09-23
 
 ---
 
@@ -17,6 +17,70 @@ Last updated: 2026-09-22
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 23 September: the M700, and an Intel Ethernet driver
+
+**Nothing pushed. 0.10.118 to 0.10.127 are local**, on `main`, each one
+committed and none of them out. `make test` is green: 33 suites, 5:39.
+
+Diego bought a **Lenovo ThinkCentre M700** - an i7 6th gen with HD 530 - and
+Kosmos booted on it first try. What that machine asked for, in the order he
+asked:
+
+- **0.10.118-0.10.122 - icon sizes per place** (`roadmap.md` 5za): 16, 32
+  and 64, chosen where the icons are drawn and kept per place; the cell
+  widened at 64; a menu that marks the size in force.
+- **0.10.123 - a USB keyboard**, on a machine whose only keyboard it is
+  (5zd-b, `testing.md` 18.152). Diego afterwards: "USB keyboard works
+  great!"
+- **0.10.124 - the largest mode the firmware has** (5zd-a), with
+  `video=WxH` as the escape hatch. The M700 came up at 3440x1440.
+- **0.10.125 - a stick for the M700.**
+- **0.10.126 - the compositor paints the whole display** (18.154): at
+  3440x1440 the desktop painted only its top, because the framebuffer's
+  window was a sixteen-megabyte gap between two addresses that nobody had
+  ever written down as a number. Found in Diego's photograph.
+- **0.10.127 - an Intel Ethernet driver** (5zd-f, 18.155). The M700's card
+  is an I219 at `00:1f.6`. `user/servers/e1000.c` at EL0 like every other
+  driver, decoding in `e1000_decode.c` so the link, the MAC and a frame's
+  error bits are checked on this Mac.
+
+**The driver was the easy half.** It worked on its first boot and answered
+every ping at 103 ms - its own fallback deadline, not the card's interrupt.
+Three faults sat under it in `hal/pc` and **not one of them broke
+anything**: the I/O APIC input a PCI link lands on (16 to 19 where q35 puts
+it on 20 to 23, measured by walking a card across four slots), MSI numbers
+minted from 20 and so overlapping those inputs, and `apic_mask` composing an
+entry's low word from nothing, which drops the level bit and the polarity on
+every delivery. Fixed, the same ping is **0.69 ms**. The `ethernet` part
+checks the time rather than the answer, because the answer was right
+throughout.
+
+**One thing I got wrong and it is worth remembering**: mid-way the test
+started failing whenever an xHCI was on the machine beside the card, and I
+spent a run building a theory about level-triggered entries and assertion
+races. There was no race. I had restored `apic.c` from a negative control
+and not rebuilt, so the broken control was still in the binary.
+`make x86-build`, every time.
+
+### Next, in Diego's order
+
+1. **The full 8 GB of memory** (5zd-d) - he asked for it in the same message
+   as the driver. The 768 MB ceiling is `hal_ram_capped`; lifting it is
+   `mmu.h`'s high-half split.
+2. **5zd-h**, small: the first packet to any host is dropped, because the
+   stack has no queue for one whose address is not resolved yet.
+3. Then 5zd-c (an on-screen keyboard, mockup first), 5zd-e (a wide screen in
+   the gate), 5zd-g (two things the machine says about itself that are not
+   true).
+
+### And the question that is still his
+
+**Nothing since 0.10.117 is pushed**, and the sticks on GitHub are 0.10.115
+and 0.10.117. Whether 0.10.118-0.10.127 go out, and whether the M700 gets a
+stick with the Ethernet driver on it, is his call.
+
+---
 
 ## 22 September: four looks, one layout, a 32-pixel Deskbar, and a scale next
 

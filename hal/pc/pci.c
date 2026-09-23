@@ -35,6 +35,9 @@
 #define PCI_BAR0            0x10
 #define PCI_CLASS            0x08
 #define PCI_INTERRUPT_LINE  0x3C
+
+/* The first of the four I/O APIC inputs q35 routes its PCI links to. */
+#define PCI_LINK_FIRST      20u
 #define PCI_INTERRUPT_PIN   0x3D
 
 /*
@@ -78,6 +81,18 @@
 #define COMMAND_IO          (1u << 0)
 #define COMMAND_MEMORY      (1u << 1)
 #define COMMAND_MASTER      (1u << 2)
+
+/*
+ * **Interrupt Disable**, which stops a device raising its legacy INTx and
+ * says nothing else. Firmware sets it on devices it has finished with, and
+ * a device left on INTx with it set is one that works perfectly and never
+ * interrupts - which reads as a driver that is polling, because it is.
+ *
+ * Found on 23 September with the Intel Ethernet driver: its frames arrived
+ * on the driver's deadline rather than on its interrupt, so a ping over a
+ * gigabit link came back in 103 milliseconds.
+ */
+#define COMMAND_INTX_OFF    (1u << 10)
 
 #define BAR_IO              (1u << 0)
 #define BAR_TYPE_MASK       (3u << 1)
@@ -305,19 +320,31 @@ bool pci_find_class(uint8_t class, uint8_t subclass, unsigned from,
  * AML, and `acpi.h` says plainly that there is no interpreter here and
  * there is not going to be one.
  *
- * So the standard PCIe arrangement is computed instead: the four pins are
- * swizzled by device number so that the four functions of a slot do not all
- * land on the same link, and the links occupy the four inputs above the
- * sixteen legacy ones. `GSI = 16 + ((device + pin - 1) mod 4)`, which is
- * what q35 implements and what the PCI Express specification's routing
- * recommendation describes.
+ * So the arrangement q35 actually implements is computed instead. The four
+ * pins are swizzled by device number so that the four functions of a slot
+ * do not all land on the same link, and the links sit on the *upper* four
+ * of the chipset's eight: `GSI = 20 + ((device + pin - 1) mod 4)`.
  *
- * **It is a convention rather than a promise**, and this is the one place
- * in the APIC path that could be wrong on a machine nobody has tried. A
- * board that routes differently would give a device that never interrupts -
- * which is why `hal_irq_describe` says which controller is running, and why
+ * **The 20 is measured, not derived**, and it replaced a 16 that had been
+ * reasoned to. An 82540EM was walked across four slots with every one of
+ * the eight links claimed at once, and it asserted 22, 23, 20, 21 from
+ * slots 2, 3, 4 and 5 - PIRQ E to H, period four, exactly as written above.
+ * The 16 had been a reading of the PCI Express routing recommendation, and
+ * it named four inputs the card never touched, so the driver woke on its
+ * own deadline and a ping took 103 ms instead of 0.6.
+ *
+ * **It is still a convention rather than a promise**, and this is the one
+ * place in the APIC path that could be wrong on a machine nobody has tried:
+ * what a real chipset does is in its `_PRT`, which is AML, and `acpi.h` says
+ * plainly that there is no interpreter here. A board that routes
+ * differently gives a device that never interrupts - which is why
+ * `hal_irq_describe` says which controller is running, and why
  * `opt/kosmos/irq=pic` exists to put a machine back on the legacy path
  * without a rebuild.
+ *
+ * It bites less than it reads: a device with an MSI capability never comes
+ * here at all, and on a machine recent enough to have no 8259 pair, very
+ * nearly everything has one.
  */
 static uint8_t interrupt_of(uint8_t bus, uint8_t slot, uint8_t fn)
 {
@@ -329,7 +356,7 @@ static uint8_t interrupt_of(uint8_t bus, uint8_t slot, uint8_t fn)
         return line;            /* the legacy path, or a device with no pin */
     }
 
-    return (uint8_t)(16u + ((slot + pin - 1u) & 3u));
+    return (uint8_t)(PCI_LINK_FIRST + ((slot + pin - 1u) & 3u));
 }
 
 static bool find(const struct match *want, unsigned from,
@@ -412,19 +439,41 @@ static bool find(const struct match *want, unsigned from,
 }
 
 /*
- * The vectors an MSI may be delivered on, and why they are a range of their
+ * The numbers an MSI may be delivered on, and why they are a range of their
  * own.
  *
- * Inputs 16 to 19 of the I/O APIC are the chipset's four PCI links and are
- * reached by the swizzle in `interrupt_of`; these are above them. Both
- * arrangements exist at once because both are needed: a device with no MSI
- * capability still has to arrive somehow, and a chipset's own integrated
- * devices are exactly the ones whose link routing only AML describes.
+ * The I/O APIC's inputs are the chipset's lines - the sixteen ISA ones and
+ * the PCI links above them, reached by the swizzle in `interrupt_of`. An
+ * MSI is none of those: the device writes to the local APIC itself, so its
+ * number only has to be a number nothing else uses, and everything above
+ * the last input is free.
+ *
+ * **Asked of `apic.c` rather than agreed with it**, and that is the whole
+ * of the fix. This said 20 and 23, with a comment claiming the links were
+ * inputs 16 to 19. On q35 they are 20 to 23, so the four numbers this
+ * handed out were also four real inputs - and `apic_unmask` read them as
+ * MSIs and left those inputs masked for ever. An Ethernet card routed to
+ * one of them asserted its line into an entry nobody had written, and the
+ * only symptom was a driver that woke on its own deadline.
+ *
+ * Both arrangements exist at once because both are needed: a device with
+ * no MSI capability still has to arrive somehow.
  */
-#define MSI_IRQ_FIRST   20u
-#define MSI_IRQ_LAST    23u
+static unsigned next_msi;
+static unsigned last_msi;
 
-static unsigned next_msi = MSI_IRQ_FIRST;
+/*
+ * Filled on first use rather than at build time, because the count of
+ * inputs comes from the I/O APIC's version register and that is read when
+ * the machine boots.
+ */
+static void msi_range(void)
+{
+    if (next_msi == 0) {
+        next_msi = apic_msi_first();
+        last_msi = apic_msi_last();
+    }
+}
 
 /*
  * Where capability `id` is in a device's list, or 0 when it has none.
@@ -489,7 +538,9 @@ static bool msi_enable(struct pci_device *dev)
     uint8_t at;
     unsigned irq;
 
-    if (!pc_irq_on_apic() || next_msi > MSI_IRQ_LAST) {
+    msi_range();
+
+    if (!pc_irq_on_apic() || next_msi == 0 || next_msi > last_msi) {
         return false;
     }
 
@@ -570,7 +621,9 @@ static bool msix_enable(struct pci_device *dev)
     unsigned bir, irq;
     uint8_t at;
 
-    if (!pc_irq_on_apic() || next_msi > MSI_IRQ_LAST) {
+    msi_range();
+
+    if (!pc_irq_on_apic() || next_msi == 0 || next_msi > last_msi) {
         return false;
     }
 
@@ -704,8 +757,21 @@ void pci_enable(struct pci_device *dev)
      * where the device has only that. `dev->irq` changes when it can, which
      * is the whole reason this takes a pointer.
      */
-    if (!msi_enable(dev)) {
-        (void)msix_enable(dev);
+    if (!msi_enable(dev) && !msix_enable(dev)) {
+        /*
+         * **Left on its legacy line, so the line has to be let through.**
+         * A device the firmware finished with may have Interrupt Disable
+         * set, and with it set the device raises nothing. Cleared only in
+         * this branch: a device switched to MSI disables INTx itself, and
+         * clearing the bit then would be asking for both.
+         */
+        command = pci_config_read(dev->bus, dev->slot, dev->function,
+                                  PCI_COMMAND);
+
+        if ((command & COMMAND_INTX_OFF) != 0) {
+            pci_config_write(dev->bus, dev->slot, dev->function, PCI_COMMAND,
+                             command & ~(uint32_t)COMMAND_INTX_OFF);
+        }
     }
 }
 

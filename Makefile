@@ -757,6 +757,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/backlight_decode.c \
              user/servers/xhci.c \
              user/servers/usb_decode.c \
+             user/servers/e1000.c \
+             user/servers/e1000_decode.c \
              user/servers/pad_decode.c \
              user/servers/storage_decode.c \
              user/servers/drives.c \
@@ -1628,6 +1630,11 @@ $(HOSTDIR)/test_usbdecode: tools/test_usbdecode.c user/servers/usb_decode.c user
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_usbdecode.c user/servers/usb_decode.c
+
+$(HOSTDIR)/test_e1000decode: tools/test_e1000decode.c user/servers/e1000_decode.c user/servers/e1000_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/servers -o $@ \
+	        tools/test_e1000decode.c user/servers/e1000_decode.c
 
 #
 # And what a stick is sent and what it answers - Bulk-Only's wrappers, SCSI's
@@ -2915,7 +2922,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3006,6 +3013,9 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	@# And how big the icons are where a grid of them is drawn: the three
 	@# Haiku exports and nothing else, kept per place in one file.
 	$(HOSTDIR)/lua tools/test_iconsize.lua
+	@# And an Intel Ethernet controller's registers and descriptors: the
+	@# link, the MAC, and the errors a frame can arrive with.
+	$(HOSTDIR)/test_e1000decode
 	@# And the tools' temporary files: made only through scratch.py, and gone
 	@# when the tool is (19 GB were left behind before, and filled the disk).
 	python3 tools/test_scratch.py
