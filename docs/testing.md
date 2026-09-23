@@ -41,7 +41,7 @@ Two lessons, and the second is the one that generalises:
 
 **A benchmark of an operation says nothing about the machine it runs on.**
 Latency between operations needs its own measurement, and `bench/` had none.
-`user/bin/latency.lua` is that measurement now, and the display harness
+`user/bin/programs/latency.lua` is that measurement now, and the display harness
 reads its verdict.
 
 **Where a test can run decides what it can see.** The obvious place for this
@@ -1196,7 +1196,7 @@ whatever it left inherited this window as its console.
 `gfx.jpeg` is stb_image, and stb_image is not what the test is for. What is
 on trial is this *build* of it - `STBI_ONLY_JPEG`, `STBI_NO_STDIO`,
 `STBI_NO_THREAD_LOCALS`, the last of which is the difference between linking
-and not - and the conversion in `user/lib/jpeg.c` from stb's RGBA in memory
+and not - and the conversion in `user/kits/gfx/jpeg.c` from stb's RGBA in memory
 order to this system's `0xAARRGGBB` word on a padded pitch.
 
 `assets/images/test-quads.jpg` is four solid 64x64 blocks: red, green, blue,
@@ -2287,7 +2287,7 @@ PASS: 5 programs-by-name checks
 with the leftover:
 
 ```
-user/lib/snes_kosmos.c:400:    lua_setglobal(L, "snes");
+user/kits/snes/snes_kosmos.c:400:    lua_setglobal(L, "snes");
 FAIL (exit 1)
 ```
 
@@ -6607,7 +6607,7 @@ believed**, and this section is the reason that is not special pleading.
 
 **Nine hundred lines of numeric C, and the only thing that makes them
 legitimate is that they draw the picture the Lua already drew.**
-`user/lib/gamesoft.c` is `user/lib/solar/soft.lua` function for function -
+`user/kits/game/gamesoft.c` is `user/lib/solar/soft.lua` function for function -
 clear, blend, point, rect, frame, line, lineFast, circle, text, and the
 three expensive ones: a lit textured sphere, ray-traced rings and the sun.
 The core on disk is untouched and still runs under stock `lua` and LÖVE;

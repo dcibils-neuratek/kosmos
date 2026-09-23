@@ -38,7 +38,7 @@
 
 #include "kosmos.h"
 #include "mmio.h"
-#include "lib/say.h"
+#include "init/say.h"
 #include "ethproto.h"
 #include "ethring.h"
 #include "e1000_decode.h"

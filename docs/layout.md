@@ -131,6 +131,9 @@ still compiled into the image rather than read from a disk.
 | libraries | inside the image, served from `/lib` | the same |
 | the servers | one C file each in `user/servers/`, chosen by a role number that `user/init/main.c` dispatches before Lua is opened | see below |
 | the drivers | the same, one C file each in `user/drivers/`, under the device's kind - `net/`, `usb/`, `display/`, `power/`. Built and spawned identically to a server; the directory is for whoever is reading | see below |
+| the kits | C compiled into every process, one directory each in `user/kits/`, reached as `use("/kits/<name>")` | see `glossary.md` |
+| the libraries | the same position in Lua, one file each in `user/lib/`, reached as `use("/lib/<name>.lua")` | the same |
+| the apps and programs | Lua, in `user/bin/apps/` and `user/bin/programs/`, both served flat at `/bin` | write them to the disk at build time |
 | fonts and images | inside the image, ~700 KB of it | write them to the disk; the wallpaper case wants this first |
 | `/home` | a real disk, real files, journalled | done |
 | `/tmp` | the ramfs, at `/ramfs` today | rename |

@@ -19,6 +19,13 @@ for them or it does not.
     registers, or asks the board where a device is.
   - Every directory under `user/drivers/` holds something that does. A kind
     with nothing driving anything is a directory that should not exist yet.
+
+**And the language line, which drifts the same way.** `user/lib/` is Lua and
+`user/kits/` is C - `glossary.md`: *a library is a kit's position, in Lua*.
+They were one directory until 23 September, and Diego asked the question
+that ends the argument: "why jpeg.c is in the same directory as clock.lua?".
+A `.c` under `user/lib/` or a `.lua` under `user/kits/` is that directory
+growing back together.
 """
 
 import os
@@ -84,6 +91,32 @@ def main():
                     "user/drivers/%s/ holds no file that claims an interrupt, "
                     "maps registers or asks the board for a device - so it is "
                     "a kind with no driver in it" % kind)
+
+    #
+    # Lua on one side of the line, C on the other.
+    #
+    for where, wanted, wrong in (
+            (os.path.join("user", "lib"), ".lua", (".c", ".h")),
+            (os.path.join("user", "kits"), None, (".lua",))):
+        root = os.path.join(ROOT, where)
+
+        for base, _dirs, names in os.walk(root):
+            # Vendored data keeps whatever its author shipped.
+            if "solar" in base:
+                continue
+
+            for name in sorted(names):
+                if not name.endswith(wrong):
+                    continue
+
+                checks += 1
+                fails.append(
+                    "%s holds %s, and that directory is %s (docs/glossary.md: "
+                    "a kit is C that runs inside your process, a library is "
+                    "the same position in Lua)"
+                    % (where, name, "Lua" if wanted == ".lua" else "C"))
+
+        checks += 1
 
     if fails:
         print("FAIL: %d of %d checks on where servers and drivers live:"

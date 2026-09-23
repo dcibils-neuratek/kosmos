@@ -827,7 +827,7 @@ processors, and still what follows USB:
    the videokit you are working on to include those capabilities in my app?"
    Yes, and that decides the shape rather than following from it: the
    playing lives in a library reached through the namespace - `video.open`,
-   a frame for a moment, audio fed out - and `user/bin/video.lua` is a thin
+   a frame for a moment, audio fed out - and `user/bin/apps/video.lua` is a thin
    caller of it, as Music is a caller of `media.lua`. **Which decoder is
    behind it is not a fact its user should have to know** (`CLAUDE.md`, on
    kits): MJPEG today, H.264 when libavcodec lands, and not one call site
@@ -898,10 +898,10 @@ processors, and still what follows USB:
    decided by `solar/soft.lua` years before Kosmos saw it. `gamekit.md` is
    still owed, and is now better informed for having one real user.
 
-   - `user/lib/game.c` - `game.clear` and `game.line` against a surface
+   - `user/kits/game/game.c` - `game.clear` and `game.line` against a surface
      *or* a Lua array, for a program that already has a framebuffer of its
      own. Written first, and **it was the wrong answer**: see below.
-   - `user/lib/gamesoft.c` - `game.soft`, the whole rasterizer, owning a
+   - `user/kits/game/gamesoft.c` - `game.soft`, the whole rasterizer, owning a
      surface. Clear, blend, point, rect, frame, line, lineFast, circle,
      text, and lit textured spheres, ray-traced rings and the sun.
 
@@ -2335,7 +2335,7 @@ the Pi", and the Pi is not here yet.
   and not a standard one; a transfer wants `/drives` and `/home` to write
   into, which USB step 6 has now made real.
 
-  **`telnet` is already built** (`user/bin/telnet.lua`, 7 September) and is
+  **`telnet` is already built** (`user/bin/programs/telnet.lua`, 7 September) and is
   deliberately not a terminal: it sends what you type and prints what comes
   back, which is enough for SMTP, HTTP or a daemon's banner. Option
   negotiation - window size, echo, line mode - is a protocol of its own and

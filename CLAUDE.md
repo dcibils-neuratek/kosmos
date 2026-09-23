@@ -913,15 +913,19 @@ assets/         vendored data: fonts/ (BDF + its licence), icons/, images/
 lua/            upstream/ + kosmos/
 runtime/        minimal libc, bindings, serializer, and upstream/
 user/           everything at EL0:
-  init/           init, the roles, and the namespace kit
-  servers/        the servers, in C, one file each: someone you ask, who
-                  owns a namespace and no hardware
-  drivers/        the drivers, in C, by device type - net/, usb/,
-                  display/, power/. A driver drives hardware
+  init/           the first process, the roles it becomes, and the
+                  environment every process is born with: `sys`, Lua's,
+                  panic, and `say`
+  servers/        C. A process that owns something and rents it out
+  drivers/        C. A process that drives hardware, by device kind:
+                  net/ usb/ display/ power/
+  kits/           C that runs inside your own process, one directory per
+                  kit: gfx/ gl/ pdf/ compress/ web/ game/ network/
+                  console/ mp3/ doom/ quake/ snes/ litexl/
+  lib/            the same position, in Lua. All .lua and nothing else
   include/        the protocol headers both sides compile against
-  lib/            libraries: Lua, and C kits reached the same way
-  bin/            programs and applications, in Lua. Carried in the image
-                  and served at /bin
+  bin/            apps/ and programs/, in Lua, both served flat at /bin.
+                  An app opens a window; a program prints
   tests/          the Lua suite
 tests/          guest-side tests, in C
 bench/          benchmarks and baselines.json
@@ -942,7 +946,7 @@ named four of them and left six, which is how they accumulated.
 The Makefile said a distinct top-level directory was necessary because
 `build/user/x.c.o` would also match the kernel's `build/%.c.o` rule. It does
 not: an object keeps its source's path under the build root, so a userland
-object is `build/user/user/lib/gfx.c.o`, and the kernel's pattern matches
+object is `build/user/user/kits/gfx/gfx.c.o`, and the kernel's pattern matches
 that only with a stem whose prerequisite does not exist. Make discards such
 a rule, so there was never a tie to break - and the kernel's
 `-mgeneral-regs-only` means a userland file compiled by the wrong rule

@@ -18,7 +18,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "litexl/SDL.h"
+#include "SDL.h"   /* the shim beside this file, not a system header */
 
 /*
  * ASCII case folding, written out rather than taken from `<ctype.h>`.

@@ -145,9 +145,15 @@ def main():
 
     # 4. And `/bin` reports every program in it.
     #
-    #    Counted on this side from `user/bin/*.lua` and on that side from
-    #    the namespace, which is what makes it a check rather than a
-    #    restatement: two independent counts of the same thing.
+    #    Counted on this side from `user/bin/apps/` and `user/bin/programs/`
+    #    and on that side from the namespace, which is what makes it a check
+    #    rather than a restatement: two independent counts of the same thing.
+    #
+    #    **Both halves, because `/bin` is flat and the directories are not.**
+    #    The split into apps and programs is a reading order (`README.md`,
+    #    "How to read this source tree"); the namespace has one `/bin` and
+    #    always did. Counting one directory would quietly halve the
+    #    expectation and pass.
     #
     #    It exists because they disagreed. A listing reply holds 74 names
     #    and the image had 82 programs, so `fs.list("/bin")` answered with
@@ -155,9 +161,12 @@ def main():
     #    menu from that list, could not offer Tracker, the Terminal, the top
     #    bar or the web server. No error anywhere; the menu was just short,
     #    and had been since the seventy-fifth program was added.
-    here = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
-        __file__))), "user", "bin")
-    expected = len([f for f in os.listdir(here) if f.endswith(".lua")])
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    expected = 0
+
+    for half in ("apps", "programs"):
+        here = os.path.join(root, "user", "bin", half)
+        expected += len([f for f in os.listdir(here) if f.endswith(".lua")])
 
     #
     # `ls /bin`, because the boot option runs a *program* rather than

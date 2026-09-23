@@ -436,7 +436,7 @@ folder when the file is missing.
 
 ## 21 September: the solar system's rasterizer moved to C
 
-**`user/lib/gamesoft.c`, the Game Kit's 2D half, and 6 to 8 times faster at
+**`user/kits/game/gamesoft.c`, the Game Kit's 2D half, and 6 to 8 times faster at
 every graphics level.** Diego, on the port running at a few frames a second:
 "we need to make it FAST", and then the shape of it - "this planet sim is a
 great exercise for us to create a reusable kit of high performance
@@ -2468,7 +2468,7 @@ game in a 1024 by 960 window. Diego asked for it after seeing it at 512 by
 the form was decided here for all three: options before the file, as
 `--name value`, because a launcher keeps the rest of its line and ROM names
 have spaces. Nearest neighbour, whole numbers, 2 at most. The copy is C in
-`user/lib/snes_blit.c`, tested on the host (`tools/test_snesblit.c`), and the
+`user/kits/snes/snes_blit.c`, tested on the host (`tools/test_snesblit.c`), and the
 option's parsing in the display harness; `testing.md` §18.34 has both
 controls. **Not yet seen with a real game**, here or on the ThinkPad, and its
 cost in frames is not measured: four times the pixels to compose, on a window
@@ -2555,7 +2555,7 @@ halves of the check broken on purpose and watched fail (`testing.md`
 What changed underneath: `SYS_DEV_FIND` takes an index and reports the PCI
 address; the PC board finds xHCI controllers by class, sizes their BAR and
 enables each once (`hal/pc/devices.c`, `pci_bar_size`); and the power
-button's print helpers are `user/lib/say.h` now, shared.
+button's print helpers are `user/init/say.h` now, shared.
 
 **"Bring the display up early" was already done**, since 0.10.12. The
 roadmap, `drivers.md` §6 and an entry below said otherwise and are corrected.
@@ -2803,7 +2803,7 @@ Open:
 one - and runs it in a 512 by 480 window at the console's own rate, with the
 keyboard as the first pad. LakeSnes, dink's fork at `048a0d7`, vendored
 unmodified under `runtime/upstream/lakesnes/`; Kosmos's half is
-`user/lib/snes_kosmos.c`, and the loop is `user/bin/snes.lua`. In `FULL=1`,
+`user/kits/snes/snes_kosmos.c`, and the loop is `user/bin/apps/snes.lua`. In `FULL=1`,
 the default, and out of `FULL=0`: it is MIT, so the flag is about the ninety
 kilobytes every process would carry rather than the licence.
 
@@ -3382,7 +3382,7 @@ starts with the T14's DSDT.
 e1m3, the Necropolis, drawn through the palette at twice its 320 by 240, and
 Escape brings up the main menu. Chocolate Quake at `edb8209`, vendored
 unmodified under `runtime/upstream/quake/`, with Kosmos's platform in
-`user/lib/quake_kosmos.c` and the loop in `user/bin/quake.lua`. Only in an
+`user/kits/quake/quake_kosmos.c` and the loop in `user/bin/apps/quake.lua`. Only in an
 image built with `make QUAKE=1`, which `FULL=1` does not include.
 
 Not quakegeneric, which the plan named: it builds only for 32-bit machines.
@@ -3940,7 +3940,7 @@ different operating system would mean carrying a regex engine to do it.
 
 ### The up-arrow, in two line editors
 
-`user/servers/console.c` for the boot prompt, `user/bin/terminal.lua` for
+`user/servers/console.c` for the boot prompt, `user/bin/apps/terminal.lua` for
 the window, with the same semantics: 0 is the line being typed, 1 is the
 most recent, anything that ends a line resets it. They cannot share a ring -
 one is in another process - and the thing they must not do is disagree.
@@ -4276,13 +4276,13 @@ character became three hollow boxes on screen while the serial line showed it
 correctly - the same output looking like two different outputs, which is the
 complaint the early-run colour list answers in the other direction.
 
-`user/lib/gfx.c` carries the same lookup, and the size check at the top of
+`user/kits/gfx/gfx.c` carries the same lookup, and the size check at the top of
 `luaopen_gfx` is what forced it to: it panicked on the first boot after the
 font grew, which is exactly what it exists for.
 
 ### `neofetch`
 
-`user/bin/neofetch.lua`. The banner is `assets/kosmos-ascii-art.txt`, carried
+`user/bin/programs/neofetch.lua`. The banner is `assets/kosmos-ascii-art.txt`, carried
 in the image through `sys.asset` - which is already "a small file compiled
 in" and so needed one line in the Makefile rather than a mechanism.
 
@@ -4355,7 +4355,7 @@ character that caused the wrap is dropped. Pre-existing, found while making
 that function take a codepoint, and deliberately not fixed in the same change
 - it is a behaviour change the display harness has opinions about.
 
-**`kits <name>` has never worked.** `user/bin/kits.lua` does `args[1]`, and
+**`kits <name>` has never worked.** `user/bin/programs/kits.lua` does `args[1]`, and
 `args` is a string, so indexing it reaches the `string` table and returns
 nil. Unrelated to any of this; found while reading for `neofetch`.
 
@@ -4769,7 +4769,7 @@ because it was reasoned about and reviewed, which is the honest status.
   accumulated. The Makefile said a distinct top-level directory was
   necessary because `build/user/x.c.o` would also match the kernel's
   `build/%.c.o` pattern. It does not: an object keeps its source's path, so
-  a userland object is `build/user/user/lib/gfx.c.o` and the kernel's
+  a userland object is `build/user/user/kits/gfx/gfx.c.o` and the kernel's
   pattern matches that only with a stem whose prerequisite does not exist.
   Make discards such a rule. Checked by building every variant rather than
   by arguing.
@@ -7495,7 +7495,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
   page - the interpreter does not run again and no glyph is rasterised
   twice.
 
-  `user/lib/docfont.c` is the C half: a font loaded from bytes in the
+  `user/kits/gfx/docfont.c` is the C half: a font loaded from bytes in the
   document, rasterised **by glyph index** rather than codepoint, cached per
   face per size, and a `draw` that takes a whole page as a flat array so a
   page is two or three crossings instead of two thousand. `pdfview` is a
@@ -8292,7 +8292,7 @@ nil	no such path: /nowhere
 
 **Two halves of the display are tested, and neither can prove the other.** `make test` proves what the kernel wrote into its own memory: that the framebuffer exists, is page aligned, is writable to the last row, and that the padded stride really moves rows. It cannot prove a pixel ever reached a screen — a wrong fourcc, a wrong stride in the ramfb config or a wrong address would leave all six passing and the display black. `make screenshot` asks QEMU instead, through the monitor, on the far side of everything this kernel controls. Both were made to fail on purpose before being trusted.
 
-**Lua draws, and no line of it computes a pixel offset.** `gfx.surface{w=,h=}` is a userdata over flat bytes with `fill`, `span`, `blit`, `blend`, `get` and `set`; every pixel loop is in `user/lib/gfx.c` and every primitive clips rather than raising, because a window half off the edge of the screen is the normal case. `gfx.screen()` is the framebuffer as a surface, for the one process that was handed it.
+**Lua draws, and no line of it computes a pixel offset.** `gfx.surface{w=,h=}` is a userdata over flat bytes with `fill`, `span`, `blit`, `blend`, `get` and `set`; every pixel loop is in `user/kits/gfx/gfx.c` and every primitive clips rather than raising, because a window half off the edge of the screen is the normal case. `gfx.screen()` is the framebuffer as a surface, for the one process that was handed it.
 
 **The boot log says what each stage is *for*, in one sentence.** Twelve stages: a line saying why the stage exists, then the facts it found. A log that prints "physical memory" and a number teaches nothing to somebody who does not already know why an operating system needs a page allocator before it can build a page table.
 

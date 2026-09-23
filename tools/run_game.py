@@ -2,7 +2,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """The Game Kit's rasterizer, held to the portable one it was ported from.
 
-`user/lib/gamesoft.c` is about nine hundred lines of numeric C, and every
+`user/kits/game/gamesoft.c` is about nine hundred lines of numeric C, and every
 one of them exists to draw the picture `user/lib/solar/soft.lua` already
 drew - the same `floor` in the same three places, the same coverage on an
 anti-aliased line, the same texel out of the same equirectangular lookup.

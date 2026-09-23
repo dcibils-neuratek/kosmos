@@ -34,7 +34,7 @@
 #include "drives_decode.h"
 #include "fat_decode.h"
 #include "drivers/usb/storage_decode.h"
-#include "lib/say.h"
+#include "init/say.h"
 
 /* The two halves of the volume list must agree about how long a name is, and
  * they are written down twice because a client has no business including the

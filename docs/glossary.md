@@ -44,8 +44,30 @@ network is. It runs at EL1 and is the only thing that does. Its whole job is
 to make processes exist, keep them apart, and let them send each other
 messages.
 
-**A driver** is the code that touches hardware, in `hal/`. A UART, a timer,
-a block device, a virtio queue. One per board, behind a common interface.
+**A driver** is the code that touches hardware, and it lives in one of two
+places depending on *who* has to touch it.
+
+What the kernel itself needs before there is a userland - a UART, a timer,
+an interrupt controller, a framebuffer - is in `hal/`, one per board, behind
+a common interface.
+
+Everything else is **a process**, in `user/drivers/`, grouped by the kind of
+device: `net/`, `usb/`, `display/`, `power/`. It maps its own registers,
+claims its own interrupt and answers its own endpoint, on the three
+primitives `docs/drivers.md` §4 names - so a driver that crashes takes
+nothing with it. The power button was the first, in September 2026, and the
+xHCI controller, the Intel Ethernet card and the backlight followed.
+
+**The test for which is which is one line: a driver drives hardware.** Asked
+whether `/drives` was one, since it is about USB sticks: Diego, 23 September
+2026, "drives.c is a server then, not a driver, a driver drives hardware".
+It reads FAT off blocks somebody else fetched, so it owns a namespace rather
+than a device, and it is a server. `tools/test_layout.py` holds the line
+mechanically: nothing in `user/servers/` may claim an interrupt or map a
+device's registers.
+
+This paragraph said "in `hal/`" and nothing else for a year after that
+stopped being true, which is the failure mode prose has and code does not.
 
 **A server is a process that owns something.** That is the definition, and
 it is about ownership rather than about code. A server was handed a

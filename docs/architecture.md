@@ -252,7 +252,7 @@ and *where*; the loop over the pixels happens inside a surface, in C, and
 nothing in Lua ever computes a pixel offset - the pitch is not `width * 4`
 and pretending it is produces diagonal lines. `gfx.md` §19.
 
-### `user/init/init.lua`, `user/servers/` and `user/drivers/` - init, every server and every driver
+### `user/` - init, the servers, the drivers, the kits and the libraries
 
 One binary, many roles. The image carries a single userland ELF and the role
 number it is spawned with decides what it becomes.
@@ -273,6 +273,24 @@ person reading the tree, and the line between the two is Diego's:
 **a driver drives hardware.** `/drives` serves a namespace out of FAT that
 something else read off the wire, so it is a server; `e1000` owns a card, so
 it is not.
+
+**Beside them, the two things that are not processes at all.** A *kit* is C
+compiled into whoever asks for it - `use("/kits/pdf")` - and lives in
+`user/kits/`, one directory per kit. A *library* is the same position in
+Lua - `use("/lib/ui.lua")` - and lives in `user/lib/`. No message crosses
+either: calling one is a function call in your own address space, which is
+the whole difference from a server.
+
+Those two were one directory until 23 September 2026, and Diego asked the
+question that ended it: "why jpeg.c is in the same directory as clock.lua?"
+Both were right where the *build* wanted them and neither was where a person
+would look. `README.md`'s "How to read this source tree" is the map now, and
+`tools/test_layout.py` keeps it true: a `.c` under `user/lib/` fails the
+gate.
+
+And `user/bin/` divides the same way it was always described and never
+stored: `apps/` opens windows, `programs/` prints. Both are served flat at
+`/bin`, so nothing anybody types changes.
 
 What is left in `init.lua` is init itself, the shell, the runner that hosts
 one program, `diskfs`, and the namespace - which is a *kit* rather than a

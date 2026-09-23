@@ -59,7 +59,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "litexl/SDL.h"
+#include "SDL.h"   /* the shim beside this file, not a system header */
 #include "renderer.h"
 #include "renwindow.h"
 

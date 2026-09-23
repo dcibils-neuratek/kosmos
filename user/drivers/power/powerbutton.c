@@ -57,7 +57,7 @@
 #include "kosmos.h"
 #include "conproto.h"
 #include "mmio.h"
-#include "lib/say.h"
+#include "init/say.h"
 
 #define PL061_DIR           0x400u      /* 1 = output */
 #define PL061_IS            0x404u      /* 1 = level-sensitive */

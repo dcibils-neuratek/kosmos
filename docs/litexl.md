@@ -59,8 +59,8 @@ make a second.
       `runtime/upstream/lite-xl/`, byte for byte, checked with `diff -r`.
       `make LITEXL=1` puts `api/utf8.c` and `arena_allocator.c` into the
       image, which links and boots.
-- [x] **Step 2. `SDL.h`.** `user/lib/litexl/SDL.h` and
-      `user/lib/litexl_sdl.c`: the types, and the software surface -
+- [x] **Step 2. `SDL.h`.** `user/kits/litexl/SDL.h` and
+      `user/kits/litexl/litexl_sdl.c`: the types, and the software surface -
       `SDL_Surface` over ordinary memory, `FillRect`, `BlitScaled`,
       `MapRGB`/`MapRGBA`/`GetRGBA`, clip rects, `IntersectRect`.
       `rencache.c` and `api/renderer.c` fell out of it as predicted, both
@@ -71,7 +71,7 @@ make a second.
       and `SDL_UpdateWindowSurfaceRects` records damage, so **upstream's
       `renwindow.c` compiles and works unmodified**. Six translation units
       now, and 35 checks on the shim in `make test`.
-- [x] **Step 4. The renderer.** `user/lib/litexl_render.c`, on
+- [x] **Step 4. The renderer.** `user/kits/litexl/litexl_render.c`, on
       `stb_truetype`. **The whole rendering half now links into a Kosmos
       image** - seven translation units, nothing waiting - and 49 checks in
       `make test` rasterise a real font and look at the pixels.
@@ -127,7 +127,7 @@ once.
 
 ## Who owns the window, which decided step three
 
-**`user/lib/doom_kosmos.c` had already answered this** and its reasoning is
+**`user/kits/doom/doom_kosmos.c` had already answered this** and its reasoning is
 the one that matters: *a port that owns its own loop is an application that
 cannot be closed, which on this desktop means a window the compositor keeps
 drawing for ever.* So the Lua side owns the window and the loop, and the C
@@ -144,7 +144,7 @@ buffer with no copy anywhere.
 
 **The editor never touches the framebuffer**, and it is worth being plain
 about that because "writes into a surface" sounds like it might. Lite XL is
-a `direct` window in the sense `user/bin/procs.lua` defines - it owns a
+a `direct` window in the sense `user/bin/apps/procs.lua` defines - it owns a
 region the compositor blits from - exactly as Doom and the cubes are. The
 window manager remains the only thing that touches the screen.
 
@@ -159,7 +159,7 @@ other side.
 Barely, and it is worth saying so plainly rather than leaving the filename
 to imply otherwise.
 
-Nothing from SDL is linked, vendored or downloaded. `user/lib/litexl_sdl.c`
+Nothing from SDL is linked, vendored or downloaded. `user/kits/litexl/litexl_sdl.c`
 is Kosmos C: a pixel buffer with fill, blit and a clip rectangle. And Lite
 XL's *hot* path never enters it - `renderer.c`'s glyph loop writes straight
 into `surface->pixels` through `->pitch`, with a comment saying it avoids
@@ -184,7 +184,7 @@ has no editable outline to hand back, so an `ft2build.h` shim of the kind
 `SDL.h` is would mean *implementing a font engine* rather than adapting
 one.
 
-So the build leaves `renderer.c` out and `user/lib/litexl_render.c`
+So the build leaves `renderer.c` out and `user/kits/litexl/litexl_render.c`
 provides `renderer.h`'s interface instead. **That is still not a fork**:
 the vendored tree is byte for byte what upstream released and one more file
 simply is not compiled, exactly as `api/process.c` and `api/dirmonitor/`

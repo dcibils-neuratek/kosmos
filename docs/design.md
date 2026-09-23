@@ -1155,7 +1155,7 @@ The line was crossed the moment `fork`, signals, a global `/`, or a server handi
 `console.c` calls `unlink`, and its `-condebug` log calls `open`, `write` and
 `close`. The tree under `runtime/upstream/quake/` is not modified, so the
 patch is a header included ahead of every Quake file,
-`user/lib/quake/kosmos_quake.h`: `unlink` becomes ISO C's `remove`, and the
+`user/kits/quake/kosmos_quake.h`: `unlink` becomes ISO C's `remove`, and the
 other three do nothing. Kosmos gained no POSIX name, and everything done to
 the port can be read in one file.
 

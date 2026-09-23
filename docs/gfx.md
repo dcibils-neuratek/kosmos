@@ -336,7 +336,7 @@ Two halves:
   bytes arrive there one at a time - `kputc` is one character. The serial
   side never goes through it: it has had the raw bytes already.
 
-`user/lib/gfx.c` carries the same lookup, and it has to: both read the same
+`user/kits/gfx/gfx.c` carries the same lookup, and it has to: both read the same
 generated array, so a font whose layout only one of them understood would
 draw one picture at the boot console and a different one in a window. The
 check at the top of `luaopen_gfx` is what enforces that - it fired on the
@@ -542,7 +542,7 @@ lane 0 and wrong for lane 3 is exactly the bug this shape invites.
 
 ## 19.15 Two decoders, and why one of them is somebody else's
 
-PNG is decoded by `user/lib/png.c`, which is this project's own code: an
+PNG is decoded by `user/kits/gfx/png.c`, which is this project's own code: an
 inflate and five row filters, written from the specification, and a file you
 can read in an afternoon and be sure of. JPEG is decoded by `stb_image`,
 vendored, and the difference is not taste.

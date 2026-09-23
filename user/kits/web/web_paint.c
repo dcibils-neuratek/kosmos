@@ -45,7 +45,7 @@
 
 #include <dom/dom.h>
 
-#include "gfx_draw.h"
+#include "kits/gfx/gfx_draw.h"
 #include "web_paint.h"
 #include "web_style.h"
 
