@@ -1653,6 +1653,199 @@ function ui.checkbox(spec)
   return v
 end
 
+--
+-- A switch: a checkbox for a setting rather than for a choice in a dialog.
+--
+-- **The same state as `ui.checkbox` and a different promise about when it
+-- takes effect.** A checkbox sits in a dialog and means "this is what I will
+-- ask for"; a switch sits in a row of settings and means "this is how the
+-- machine is *now*", so it paints its new state on the press and the thing
+-- behind it follows. That is `instant-feedback` applied to a control rather
+-- than to a window: never wait for a reply to draw what the hand just did.
+--
+-- Drawn as a track and a knob instead of a box and a tick, because a row of
+-- settings is read by scanning down the right edge and a knob's *position*
+-- is legible at a glance where a tick is not.
+--
+-- Arrived with Preferences (`roadmap.md` 5zh) and is in the kit rather than
+-- in that application because Diego, seeing the mockup: "we might replicate
+-- it all over the system".
+--
+function ui.switch(spec)
+  local v = ui.view(spec)
+  local W, H = 34, 18
+
+  v.h = v.h > 0 and v.h or ROW
+  v.w = v.w > 0 and v.w or W
+  v.focusable = true
+  v.on = v.on or false
+
+  local function flip(self)
+    self.on = not self.on
+    if self.on_change then self.on_change(self, self.on) end
+  end
+
+  function v:draw(g)
+    local y = (self.h - H) // 2
+    local knob = H - 6
+    local kx = self.on and (W - knob - 3) or 3
+
+    g:fill(0, y, W, H, self.on and theme.accent or theme.sunken)
+    g:frame(0, y, W, H, theme.line_soft)
+
+    if self.focused then
+      g:frame(-2, y - 2, W + 4, H + 4, theme.ring)
+    end
+
+    g:fill(kx, y + 3, knob, knob, theme.window)
+    g:frame(kx, y + 3, knob, knob, theme.line_soft)
+  end
+
+  function v:key(c)
+    if c == 32 or c == 10 or c == 13 then flip(self) return true end
+    return false
+  end
+
+  function v:mouse(action, x, y)
+    if action == "release" and x >= 0 and x < self.w
+       and y >= 0 and y < self.h then
+      flip(self)
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--
+-- A dropdown: the value in force, and a menu of the others under it.
+--
+-- **It shows the value rather than the setting's name**, because the name is
+-- already the label to its left and a control that repeats it says nothing.
+-- So the width follows the longest choice and not the current one, or the
+-- row would shift every time somebody changed it - which is the kind of
+-- thing that is invisible in a screenshot and unbearable in use.
+--
+-- The menu is the window's own (`window:open_menu`), so it is the same menu
+-- the menu bar and a right-click open: one implementation, one look, and a
+-- choice marked the way `ui.menu_items` marks any other.
+--
+function ui.dropdown(spec)
+  local v = ui.view(spec)
+
+  v.focusable = true
+  v.choices = v.choices or {}
+  v.value = v.value
+
+  local widest = 0
+
+  for _, c in ipairs(v.choices) do
+    local w = gfx.measure(tostring(c[2]))
+    if w > widest then widest = w end
+  end
+
+  v.h = v.h > 0 and v.h or ROW
+  v.w = v.w > 0 and v.w or (widest + 30)
+
+  function v:name()
+    for _, c in ipairs(self.choices) do
+      if c[1] == self.value then return tostring(c[2]) end
+    end
+
+    return tostring(self.value == nil and "" or self.value)
+  end
+
+  function v:draw(g)
+    g:fill(0, 0, self.w, self.h, theme.window)
+    g:frame(0, 0, self.w, self.h, theme.line_soft)
+
+    if self.focused then
+      g:frame(1, 1, self.w - 2, self.h - 2, theme.ring)
+    end
+
+    g:text(8, centred(self.h), self:name(), theme.text)
+
+    -- The chevron, three fills: a triangle nobody has to rasterise.
+    local ax, ay = self.w - 14, self.h // 2 - 1
+
+    for i = 0, 2 do
+      g:fill(ax + i, ay + i, 6 - i * 2, 1, theme.text_dim)
+    end
+  end
+
+  --
+  -- Where this sits in its window, and which window that is.
+  --
+  -- **Both by walking `parent`**, which `ui.view` has kept since the first
+  -- container and which nothing had needed until a widget wanted to open
+  -- something *outside* itself. A menu is drawn by the window, in the
+  -- window's coordinates, so a control that opens one has to say where it is
+  -- in those - and only the chain knows, because a view's own `x` is its
+  -- offset inside whatever holds it.
+  --
+  -- The window is taken from the chain too, so an application places a
+  -- dropdown exactly as it places a button and passes nothing extra. A
+  -- `window` in the spec wins, for a caller that has one and no chain yet.
+  --
+  function v:where()
+    local x, y, at = self.x, self.y, self.parent
+    local win = self.window
+
+    while at do
+      if not win then win = at.window end
+
+      x = x + (at.x or 0)
+      y = y + (at.y or 0)
+      at = at.parent
+    end
+
+    return x, y, win or self.window
+  end
+
+  function v:open()
+    local items = {}
+
+    for _, c in ipairs(self.choices) do
+      local value, name = c[1], c[2]
+
+      items[#items + 1] = {
+        text = tostring(name),
+        mark = (value == self.value),
+        on_choose = function()
+          self.value = value
+          if self.on_change then self.on_change(self, value) end
+        end,
+      }
+    end
+
+    local x, y, win = self:where()
+
+    if win and win.open_menu then
+      win:open_menu(x, y + self.h, items)
+      return true
+    end
+
+    return false
+  end
+
+  function v:key(c)
+    if c == 32 or c == 10 or c == 13 then return self:open() end
+    return false
+  end
+
+  function v:mouse(action, x, y)
+    if action == "release" and x >= 0 and x < self.w
+       and y >= 0 and y < self.h then
+      self:open()
+    end
+
+    return true
+  end
+
+  return v
+end
+
 function ui.field(spec)
   local v = ui.view(spec)
   --
@@ -3665,6 +3858,19 @@ function ui.window(spec)
     ticking = {},
     tick_every = spec.tick_every or 0,
   }, window)
+
+  --
+  -- **The root view points back at its window**, so a control can find the
+  -- window it is in by walking `parent` - which is how `ui.dropdown` opens a
+  -- menu without every application having to hand it one.
+  --
+  -- The chain stops at `root`, because `win:add` places children under it
+  -- and `root.parent` is nothing. Nothing needed to cross that gap until a
+  -- widget wanted to draw outside itself; a menu belongs to the window and
+  -- is drawn in the window's coordinates, so a control that opens one has to
+  -- reach it.
+  --
+  w.root.window = w
 
   --
   -- What every window exposes, before the application adds anything.

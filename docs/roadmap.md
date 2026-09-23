@@ -1563,9 +1563,28 @@ processors, and still what follows USB:
    and two icons - is what the rest would follow. Worth building it as
    widgets in the kit rather than as drawing inside one application.
 
-   **Built, in order**: `user/lib/settings.lua` first, because the list is
-   the design and it can be checked on this Mac
-   (`tools/test_settings.lua`).
+   **DONE on 23 September.** `user/lib/settings.lua` is the list,
+   `user/bin/apps/preferences.lua` the window, and `ui.switch` and
+   `ui.dropdown` are new in the kit rather than drawing inside one
+   application - because of Diego's "we might replicate it all over the
+   system". The dropdown opens the window's own menu, which needed the root
+   view to point back at its window: `win:add` places children under `root`
+   and the chain stopped there, so nothing could reach the window from
+   inside until a widget wanted to draw outside itself.
+
+   Checked in two places and for two different reasons: the list on this Mac
+   (`tools/test_settings.lua`, 106) because it is arithmetic over a table,
+   and the window in the display harness (`preferences`) because the one
+   thing a list cannot tell you is whether the page follows the sidebar.
+   `testing.md` 18.157.
+
+   **Not in it yet**: the Deskbar's launchers, the clock and the processor
+   meter, which the mockup shows and which have no settings file to read -
+   they are the Deskbar's own folder. Sound's volume, the backlight and the
+   network's address are rows without controls for the same reason: they
+   live behind a server rather than in a file, and each needs a message
+   rather than a key. Shown rather than hidden, which is the rule the boot
+   options set.
 
 5zi. **WANTED on 23 September - a simpler look, and what it costs.** Diego:
    "i want to adopt an aesthetic similar to the screenshots attached, which

@@ -8379,3 +8379,57 @@ system has now twice had a limit that cost most of a machine's memory and
 broke nothing, and both times the only reason anybody knew was a line in the
 boot log. That line now prints nothing on QEMU at any size, and a suite
 checks that it stays silent.
+
+## 18.157 Preferences, and the page that follows the category
+
+`roadmap.md` 5zh. One window over every setting the system has, drawn from
+`user/lib/settings.lua` - so the application is the drawing and that file is
+the design.
+
+### Checked in two places, on purpose
+
+**The list, on this Mac.** `tools/test_settings.lua`, 106 checks: every item
+in a category that exists, every choice's default on its own list of
+choices, the two Scale rows agreeing since the same setting appears on two
+pages, and a damaged file reading as the default. A list is arithmetic over
+a table and needs no window.
+
+**And the one thing that is worth testing hardest is the write.** Two places
+share `/home/.appearance` and two share `/home/.tracker`, so a write that
+rebuilt the file from what one process happened to know would silently drop
+the other's keys. That is not a crash. It is a setting that comes back wrong
+an hour later, which a window test would never see. **Control watched**:
+composing the file instead of reading, changing one key and writing it back
+fails by name.
+
+### And the window, in the display harness
+
+`run_screenshot.py`'s `preferences` phase, in `arm-display-1` and
+`x86-display-1`. It opens the window, moves down the sidebar five
+categories, and compares a histogram of the *content area* before and after.
+
+**What it checks is that the content changed, not that the highlight
+moved.** A sidebar whose selection bar slides down while the right-hand side
+stays put is precisely the bug this application can have and nothing else
+can: the list works, the rebuild runs, and the category never reaches it.
+Comparing the selection would pass through that; comparing the page does
+not. **Control watched**: the page built from a fixed category instead of
+the chosen one reports "the content beside the sidebar is 100% the same".
+
+### What the harness taught, which is about the harness
+
+The phase could not use `started()`. Both it and `settle` call `parse_ppm`
+without catching it, so a screendump that comes back empty - which QEMU's
+monitor does, answering keys and pictures on one socket - ends the phase
+instead of being retried. Every other phase asks for a picture only when the
+screen has been still for a while; this one asks right after typing, and
+again right after a burst of keys. It waits for its own window and retries a
+bad dump, and the reason is written where it does it.
+
+Three smaller things the machine found that no amount of reading would have:
+`win:draw()` is `win:paint()`; `args` is the string after the colon and not
+a list, so indexing it made every launch open on the first category and look
+exactly like a window with no argument; and a label is clipped to its own
+width, so a fixed reserve on the right cut the longest note in half with no
+sign that it had. The control now says how wide it is and the words take
+what is left.

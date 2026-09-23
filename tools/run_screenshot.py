@@ -1589,6 +1589,146 @@ def check_context(guest):
     return checks
 
 
+
+def check_preferences(guest):
+    """Preferences: the sidebar picks a page, and the page changes.
+
+    One window drawn from `user/lib/settings.lua` - every row on every page
+    comes out of that list, so this phase is really asking whether the list
+    reaches the screen at all.
+
+    **What it checks is that the content changes**, not that the highlight
+    moves. A sidebar whose selection bar slides down while the right-hand
+    side stays put is exactly the bug this application can have and nothing
+    else would: the list works, the page is rebuilt, and the rebuild draws
+    the same thing because the category never reached it. Comparing the two
+    pictures over the content area alone catches that; comparing the
+    selection would not.
+
+    Driven from the keyboard, like every other phase here. The sidebar is
+    the first focusable thing in the window, so Down moves it.
+    """
+    guest.type("wm preferences")
+
+    # Through `settle` rather than a bare `screendump`, which is the
+    # harness's own idiom: the monitor answers a dump and a key on one
+    # socket, and a dump asked for immediately after another can come back
+    # as nothing at all. `settle` retries until the picture parses.
+    def picture(what):
+        """A parsed screendump, retried.
+
+        The monitor answers keys and pictures on one socket and a dump can
+        come back empty; `settle` does not catch that, because every other
+        phase asks for one only when the screen has already been still for a
+        while. This one asks right after a burst of keys.
+        """
+        for _ in range(12):
+            try:
+                return parse_ppm(guest.screendump())
+            except Failure:
+                time.sleep(0.5)
+
+        raise Failure("no picture of Preferences: " + what)
+
+    #
+    # **Its own wait, rather than `started`.** `started` and `settle` both
+    # call `parse_ppm` without catching it, so a dump that comes back empty
+    # - which the monitor does, sharing one socket with the keys - ends the
+    # phase instead of being retried. Every other phase asks for a picture
+    # only when the screen has been still for a while; this one asks right
+    # after typing, and again right after a burst of keys.
+    #
+    deadline = time.monotonic() + 30
+    width = height = 0
+    px = b""
+
+    while time.monotonic() < deadline:
+        width, height, px = picture("when it opened")
+
+        if count_windows(width, height, px) >= 1:
+            break
+
+        time.sleep(0.4)
+    else:
+        raise Failure("Preferences never put a window on the screen.")
+
+
+    # Where the window is: its title bar is the only tab-coloured run, and
+    # the application asked for 150,100 so this is a check as much as a
+    # measurement - a window that opened somewhere else would read nothing.
+    found = find_colour_anywhere(width, height, px, TAB)
+
+    check = []
+
+    if found is None:
+        raise Failure("Preferences opened no window with a title bar on it.")
+
+    wx, wy = found
+
+    # The content area: right of the sidebar, below the title bar. Numbers
+    # from the application's own SIDE and the window's size, kept here so a
+    # layout change has to be agreed with rather than silently tracked.
+    x0, y0 = wx + 180, wy + 30
+    x1, y1 = wx + 690, wy + 400
+
+    def content(px_):
+        """A histogram of the content area, which is enough to say whether
+        the page is the same page - and cheap, where comparing pixel by
+        pixel would fail on a cursor or a one-pixel scroll.
+
+        Indexed straight into the pixels: `pixel_reader` takes a whole
+        screendump and parses it again, and this already has the parsed
+        bytes."""
+        seen = {}
+
+        for y in range(y0, min(y1, height), 3):
+            base = y * width * 3
+
+            for x in range(x0, min(x1, width), 3):
+                at = base + x * 3
+                c = bytes(px_[at:at + 3])
+                seen[c] = seen.get(c, 0) + 1
+
+        return seen
+
+    before = content(px)
+
+    # Down the sidebar. The list has the focus when the window opens, so no
+    # Tab is needed; five presses clears the gap rows and lands well away
+    # from where it started.
+    # A pause between them, as every other phase here does: the monitor
+    # answers keys and pictures on one socket, and a burst with no gap both
+    # loses presses and collides with the dump that follows.
+    for _ in range(5):
+        guest.sendkey("down")
+        time.sleep(0.3)
+
+    time.sleep(1.5)
+
+    width2, height2, px2 = picture("after moving down the sidebar")
+    after = content(px2)
+
+    same = sum(min(before.get(c, 0), after.get(c, 0))
+               for c in set(before) | set(after))
+    total = max(sum(before.values()), 1)
+
+    check.append((
+        same < total * 0.92,
+        "the content beside the sidebar is %d%% the same after moving down "
+        "five categories, so the page did not change. The selection can move "
+        "while the page does not: the list works, the rebuild runs, and the "
+        "category never reaches it." % (100 * same // total)))
+
+    stop_desktop(guest)
+
+    failed = [why for ok, why in check if not ok]
+
+    for why in failed:
+        print("FAIL: " + why)
+
+    return len(check) - len(failed) if not failed else -len(failed)
+
+
 def check_widgets(guest):
     """The UI kit, driven from the keyboard.
 
@@ -8904,6 +9044,7 @@ def main():
         registry_checks = phase("registry", check_registry)
         context_checks = phase("context", check_context)
         widget_checks = phase("widgets", check_widgets)
+        prefs_checks = phase("preferences", check_preferences)
         script_checks = phase("scripting", check_scripting)
         idle_checks = phase("idle", check_idle)
         direct_checks = phase("direct", check_direct)
@@ -8984,7 +9125,8 @@ def main():
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
              + wm_latency_checks
-             + widget_checks + script_checks + replicant_checks
+             + widget_checks + prefs_checks + script_checks
+             + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
              + focus_checks + desktop_checks + places_checks
              + panel_checks
@@ -9030,6 +9172,8 @@ def main():
           f"{context_checks} on the right button reaching an application "
           f"and pressing nothing, "
           f"{widget_checks} on the widget kit, "
+          f"{prefs_checks} on Preferences changing its page when the "
+          f"sidebar changes category, "
           f"{script_checks} on scripting a running application, "
           f"{replicant_checks} on a replicant moved between processes, "
           f"{graphical_checks} on the console staying off the screen while "

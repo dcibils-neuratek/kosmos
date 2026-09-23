@@ -118,7 +118,7 @@ settings.ITEMS = {
   ----------------------------------------------------------------- displays
   item{ category = "displays", group = "Screen",
         label = "Resolution",
-        note = "The largest the firmware offers, unless told otherwise",
+        note = "The largest the firmware offers, unless told, video=WxH",
         kind = "boot", boot = "video=WxH" },
 
   item{ category = "displays", group = "Screen",
@@ -171,18 +171,20 @@ settings.ITEMS = {
 
   ------------------------------------------------------------------- system
   item{ category = "system", group = "Processors",
-        label = "Use",
-        note = "How many of the machine's processors threads spread across",
+        label = "Use", note = "How many threads are spread across, smp=N",
         kind = "boot", boot = "smp=N" },
 
   item{ category = "system", group = "Interrupts",
         label = "Controller",
-        note = "The legacy pair is for a machine the I/O APIC path fails on",
+        note = "The legacy pair, for a machine the APIC path fails on, irq=pic",
         kind = "boot", boot = "irq=pic" },
 
-  item{ category = "system", group = "About", label = "Kosmos", kind = "fact" },
-  item{ category = "system", group = "About", label = "Machine", kind = "fact" },
-  item{ category = "system", group = "About", label = "Memory", kind = "fact" },
+  item{ category = "system", group = "About", label = "Kosmos",
+        kind = "fact", fact = "version" },
+  item{ category = "system", group = "About", label = "Machine",
+        kind = "fact", fact = "machine" },
+  item{ category = "system", group = "About", label = "Memory",
+        kind = "fact", fact = "memory" },
   item{ category = "system", group = "About",
         label = "Licences", note = "What is in this image and under what terms",
         kind = "action" },
