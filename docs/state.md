@@ -169,6 +169,16 @@ the stable one. The older development images went to the Trash.
   harness checks failed at once, because a wordmark held to a *fraction* of
   the screen shrinks as the screen grows. Counted now; that is the first of
   what a wider screen will find.
+- **The desktop runs at 3440x1440.** Asked before handing Diego a stick for
+  the M700, since its monitor is that size and nothing above 1920x1080 had
+  ever been tried: `make FB=3440x1440` and the display harness's `desktop`,
+  `widgets`, `deskbar` and `clicks` phases - 37 and 39 checks, both green.
+  The compositor-budget phase refuses to run anywhere but 1920x1080 by its
+  own guard, so that one claim is still only made at the size it was written
+  for.
+- **Stick `kosmos-usb-0.10.125-development.img` built for the M700** - MEGA,
+  `/home` from `~/Kosmos/home` at 512 MB, `make prepush` green (33 suites,
+  5:41), `make stress` 60 rounds with nothing leaked, and 32 OVMF checks.
 - **Queued after the network**: the scale's third stage (5z) - the screen's size in
   points before a window opens, which is what Lite XL needs, and the
   window manager's own drawings that are not windows: the pointer, the
