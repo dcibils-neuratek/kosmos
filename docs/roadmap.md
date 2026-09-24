@@ -1662,7 +1662,7 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
-6i. **OPEN on 24 September, for Diego - the drivers' band.** The USB
+6i. **AGREED on 24 September - the drivers' band.** Diego: "Do 6i yes". The USB
    driver runs at NORMAL and the desktop at DISPLAY, so a busy desktop holds
    it off its core: on the camera's first runs that overflowed QEMU's 32 ms
    of camera and dropped Transfer Events. On the ThinkPad the same driver is
@@ -1670,7 +1670,9 @@ processors, and still what follows USB:
    band for a process holding device authority, as the audio server has;
    `process.c` says why a band above that is not safe yet.
 
-6h. **ASKED on 24 September - Monitor with 8, 10 or 16 cores.** Diego: "what
+6h. **AGREED on 24 September - Monitor with 8, 10 or 16 cores.** "6h yes as
+   well". **Drawn** the same evening in `docs/apps.html` - Monitor at 8, 16
+   and 32 cores - for Diego to change before it is built. Diego: "what
    happens when i have 8 or 10 cores? does the app shows one graph per core
    up to 10? smaller graphs?" It does: two across up to four cores, four
    across above, a row a core in the list - 777 tall at 8, 987 at 10 and
@@ -1688,12 +1690,19 @@ processors, and still what follows USB:
    reads "app", after the Drives app. The kind should come from what init
    started, not from a name.
 
-6f. **WANTED on 24 September - Tracker's icon view names like the Finder's.**
+6f. **DONE on 24 September (0.10.159) - Tracker's icon view names like the Finder's.**
    Diego: "the name of files is being broken into 2 lines where it could it
    in 1 line", "make the space for the file name wider like macos does".
    `Deskbar` wraps as `Deskb` / `ar` in a column no wider than its tile. A
    name gets a column wider than its icon, breaks only between words, and a
    long one is shortened in the middle, as the Finder's two lines are.
+   **Built**: a name is measured in the face's pixels, not counted in its
+   widest glyph, which gave "Deskbar" five characters' room for sixty pixels;
+   it breaks after a space, `-` or `_`, or before the extension; a second line
+   too long is shortened in the middle with its end kept ("Recordi...M.mov");
+   and the cell is the icon with 40 either side and never under 112 - 112 at
+   Small and Medium, 144 at Large (18.175). The Finder's "Screen Recording"
+   on one line is a smaller face than this system's 18.
 
 6e. **DONE on 24 September (0.10.154) - the three title bar buttons in
    macOS's order.** Diego: "the windows bar close, maximize and minimize

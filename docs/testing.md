@@ -9298,3 +9298,31 @@ and QEMU reading a Frame ID in the wrong window near MFINDEX's wrap.
   sizes changed from the dropdown, no TD back late. And the TDs put back
   after a dropped event, which no run has needed since the fix: "0 events
   lost" in every report.
+
+## 18.175 A name under an icon, as the Finder sets it
+
+`roadmap.md` 6f. Diego: "the name of files is being broken into 2 lines
+where it could it in 1 line", "make the space for the file name wider like
+macos does". `iconlayout.label` counted characters - the cell's 76 pixels
+over the face's widest glyph, about five - and the face is proportional, so
+"Deskbar" wrapped as "Deskb" and "ar". It measures in pixels now, breaks
+between words or before the extension, shortens a long second line in the
+middle with its end kept, and the cell is 112 at Small and Medium, 144 at
+Large.
+
+- `tools/test_iconlayout.lua`, 13, in a stand-in face with narrow and wide
+  letters: "Deskbar" one line; "PSP MEMORY" / "CARD"; "cheatsheet" /
+  ".html"; a long name ending "M.mov" after "..."; a 64-character one
+  keeping ".txt"; UTF-8 cut between characters; and no line wider than its
+  room. **Controls**, each on a copy: counting widest glyphs again fails 6;
+  no word break fails 2.
+- `tools/test_iconsize.lua`: 112 at 16 and 32, 144 at 64, the air the same
+  above the floor.
+- **icon sizes** (display, both boards) now holds the cell before the last:
+  the last name, the cheat sheet, took two lines at 32 and one at 64 in the
+  wider cell, and its ink moved a line less than its cell - which the
+  check's own message had said would be the thing to notice it. The Drive's
+  name is one line at every size, and moves by `(items - 1) x d`.
+- **desktop** waited for `DESK-TRASH` and read that line before the rest of
+  it had arrived: "Drive ... is not in it" of a Trash the guest had just
+  listed it in. It waits for a marker on the next line now.

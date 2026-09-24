@@ -131,22 +131,21 @@ end
 -- squares to the same fraction, so the middle of a block moved 14 pixels
 -- where the cell moved 16 (`testing.md` 18.148).
 --
--- **The width is the icon with 26 pixels either side**, which is what the
--- 84 that was compiled in gave a 32 - so the air is the same at every size
--- and a Large icon gets a cell to match. Diego, on the first version, where
--- the width was the label's at every size and a 64 therefore sat in an 84
--- with its name cut: "yes widen the cell at 64".
---
--- **And never narrower than that 84**, because below it a name has nowhere
--- to go. That is what keeps Small and Medium the cells they were, so only
--- Large widens.
+-- **The width is the icon with 40 pixels either side, and never under 112**
+-- - 112 at Small and Medium, 144 at Large. It was 26 either side and never
+-- under 84, a name had 76 pixels of an 18-pixel face, and "PSP MEMORY" or
+-- "Screen Recording" could not be one line of it. Diego, 24 September:
+-- "make the space for the file name wider like macos does" (`roadmap.md`
+-- 6f). The same air at every size above the floor is what keeps "a Large
+-- icon gets a cell to match" - his "yes widen the cell at 64" - and lets the
+-- display harness hold a column's move to the icon's.
 --
 -- **The height is two pixels, the icon, four, and two lines for the name** -
 -- two rather than one so a name reads in full up to twice as long. At 32
 -- the pair is the 84 by 72 that was compiled in before there was a choice.
 --
 function iconsize.cell(px, gh)
-  return math.max(84, px + 52), px + 8 + 2 * gh
+  return math.max(112, px + 80), px + 8 + 2 * gh
 end
 
 -- The menu's items, marked with the one in force. Built fresh each time,

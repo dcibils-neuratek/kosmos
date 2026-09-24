@@ -32,19 +32,74 @@ local function none_overlap(rects, w, h)
 end
 
 -- Labels ------------------------------------------------------------------
+--
+-- In a stand-in for a proportional face: narrow letters 4 wide, wide ones
+-- 14 to 16, a space 5, the rest 9, and the widest - which the old counting
+-- divided by - 16. The room is 104, what a 112 cell gives a name.
 
-local a, b = layout.label("notes.txt", 9)
-check(a == "notes.txt" and b == nil, "a name that fits is one line")
+local WIDE = { i = 4, l = 4, ["."] = 4, [" "] = 5, m = 14, w = 13, M = 15,
+               W = 16 }
 
-a, b = layout.label("cheatsheet.html", 9)
-check(a == "cheatshee" and b == "t.html",
-      "a name too long for one line carries on to the second")
+local function face(s)
+  local n = 0
+
+  for _, c in utf8.codes(s) do n = n + (WIDE[utf8.char(c)] or 9) end
+
+  return n
+end
+
+local ROOM = 104
+
+local function fits(line)
+  return line == nil or (utf8.len(line) ~= nil and face(line) <= ROOM)
+end
+
+local a, b = layout.label("Deskbar", ROOM, face)
+check(a == "Deskbar" and b == nil,
+      "\"Deskbar\" is one line - it was \"Deskb\" and \"ar\", six widest "
+      .. "glyphs' room for 61 pixels of name (Diego, 24 September)")
+
+a, b = layout.label("PSP MEMORY CARD", ROOM, face)
+check(a == "PSP MEMORY" and b == "CARD",
+      "a name breaks between words: " .. tostring(a) .. " / " .. tostring(b))
+
+a, b = layout.label("cheatsheet.html", ROOM, face)
+check(a == "cheatsheet" and b == ".html",
+      "with no word to end on, before the extension: "
+      .. tostring(a) .. " / " .. tostring(b))
+
+a, b = layout.label("Screen Recording 2026-09-24 at 11.05.13 AM.mov", ROOM,
+                    face)
+check(fits(a) and fits(b) and b:find("...", 1, true) and b:sub(-5) == "M.mov",
+      "a long name is shortened in the middle, its end kept: "
+      .. tostring(a) .. " / " .. tostring(b))
 
 local long = string.rep("a", 60) .. ".txt"
-a, b = layout.label(long, 9)
-check(#long == 64 and #a == 9 and #b == 9 and b:sub(1, 1) == "~"
-      and b:sub(-4) == ".txt",
+a, b = layout.label(long, ROOM, face)
+check(#long == 64 and fits(a) and fits(b) and b:sub(-4) == ".txt"
+      and b:find("...", 1, true),
       "a sixty-four character name keeps its extension on the second line")
+
+a, b = layout.label("Café au lait menu.pdf", ROOM, face)
+check(a == "Café au lait" and b == "menu.pdf",
+      "UTF-8, cut between characters: " .. tostring(a) .. " / "
+      .. tostring(b))
+
+-- And no line of any of these is wider than its room, or cut inside a
+-- character.
+local every = true
+
+for _, name in ipairs({ "x", "Deskbar", "Trash", "PSP MEMORY CARD",
+                        "cheatsheet.html", long, "WWWWWWWWWWWWWWWWWW",
+                        "a_very_long_file_name_without_spaces.txt",
+                        "ñandú ñandú ñandú ñandú ñandú.ogg",
+                        "Screen Recording 2026-09-24 at 11.05.13 AM.mov" }) do
+  local p, q = layout.label(name, ROOM, face)
+
+  every = every and fits(p) and fits(q)
+end
+
+check(every, "no line wider than its room, and none cut inside a character")
 
 -- Placement ---------------------------------------------------------------
 

@@ -125,6 +125,8 @@ next**, after kfs journals only metadata (decided that evening, `design.md`
 8.3b); `minih264e` and `minimp4` are downloaded. Raised by Diego the same
 evening and in the roadmap: Tracker's icon names (6f), Processes' kinds (6g),
 Monitor with many cores (6h), and the drivers' band, his to decide (6i).
+**0.10.159**: Tracker's names (6f) measured in pixels, broken between words,
+shortened in the middle, in a 112 cell (18.175).
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

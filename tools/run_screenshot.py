@@ -8425,19 +8425,19 @@ def check_icon_sizes(guest):
     strip = STRIP_H
     STEP = 64 - 32                     # Medium to Large, in points
 
-    # The first column is read over the narrowest cell there is, 84 at 16 and
-    # 32 (`CELL_W` in `tracker.lua`), so the band holds whichever size is in
-    # force. A wider cell only puts more of the same icon and name inside it.
-    COLUMN = 84
+    # The first column is read over the narrowest cell there is, 112 at 16
+    # and 32 (`CELL_W` in `tracker.lua`), so the band holds whichever size is
+    # in force. A wider cell only puts more of the same icon and name in it.
+    COLUMN = 112
 
-    # And the menu is pressed clear of the widest, 116 at 64.
+    # And the menu is pressed clear of the widest, 144 at 64.
     #
     # How wide a cell is, this does not try to measure. It would have to be
     # read off where an icon's ink begins and ends, and Haiku's 64 and 32 do
     # not fill their squares to the same fraction: the middle of the first
     # block moved 14 pixels where the cell moved 16. `iconsize.cell` holds
     # the arithmetic and `tools/test_iconsize.lua` holds it exactly.
-    WIDEST = 116
+    WIDEST = 144
 
     # The palette these colours were written against and the bitmap faces the
     # arithmetic above assumes - `GH` is 16 because the pinned face is - and
@@ -8455,9 +8455,10 @@ def check_icon_sizes(guest):
     guest.type('fs.write("/home/.tracker", {})')
     time.sleep(1)
 
-    def lowest_ink(w, h, px):
-        """The last row holding anything but desktop, in the first column."""
-        for yy in range(h - 1, strip, -1):
+    def lowest_ink(w, h, px, above=None):
+        """The last row holding anything but desktop, in the first column -
+        or in the part of it above row `above`."""
+        for yy in range((above or h) - 1, strip, -1):
             for xx in range(2, min(COLUMN - 2, w)):
                 o = (yy * w + xx) * 3
 
@@ -8466,10 +8467,17 @@ def check_icon_sizes(guest):
 
         return None
 
-    def column_at(want, what):
-        """Wait for the first column's last row of ink to be `want`."""
+    def cell_top(n, icon):
+        """Where the first column's cell `n` (from 0) begins, at `icon`
+        points: `iconsize.cell`'s height, two lines of the face under the
+        picture and its air."""
+        return strip + 2 + n * (icon + 8 + 2 * GLYPH_H)
+
+    def column_at(want, what, above):
+        """Wait for the ink above row `above` in the first column to end at
+        `want`."""
         def look(w, h, px):
-            low = lowest_ink(w, h, px)
+            low = lowest_ink(w, h, px, above)
 
             return (w, h, px) if low is not None and abs(low - want) <= 2 \
                 else None
@@ -8516,6 +8524,7 @@ def check_icon_sizes(guest):
     # The first desktop: at the default, and made large.
     #
     width, height, px = start_desktop()
+    px_default = px
     before = lowest_ink(width, height, px)
     checks += 1
 
@@ -8695,7 +8704,7 @@ def check_icon_sizes(guest):
         "Large icons was chosen from the desktop's menu and the first column "
         f"did not get taller - its last row of ink is still about {before}.")
 
-    large = lowest_ink(width, height, px)
+    px_large = px
     checks += 1
 
 
@@ -8729,20 +8738,28 @@ def check_icon_sizes(guest):
                       "Drive and the cheat sheet there when they are missing.\n"
                       + said)
 
-    want = before + items * STEP
+    #
+    # **The cell before the last, not the last.** A wider cell fits more of
+    # a name on a line, so a last name that took two lines at 32 takes one
+    # at 64 - and on 24 September, when a name began to be measured in
+    # pixels and the cell widened to 112 (`roadmap.md` 6f), the desktop's
+    # cheat sheet did exactly that, and the column's last ink moved a line
+    # less than its cells did. The cell before it is the Drive or the Trash,
+    # a name one line long at every size, so its ink moves by the cells
+    # above it and the picture: `(items - 1) x d`.
+    #
+    before = lowest_ink(width, height, px_default, cell_top(items - 1, 32))
+    large = lowest_ink(width, height, px_large, cell_top(items - 1, 64))
+    want = before + (items - 1) * STEP
 
-    if abs(large - want) > 2:
+    if before is None or large is None or abs(large - want) > 2:
         raise Failure(
-            f"the desktop's {items} icons were made large and the last name in "
-            f"the first column moved to row {large}, where it should be "
-            f"{want}. It was at {before} at 32 points, and a size `d` larger "
-            f"moves it down by exactly the number of icons times `d` - "
-            f"{items} x {STEP} here - because every cell in the column grows "
-            "by `d` and so does the last icon itself. See `CELL_H` in "
-            "`tracker.lua`. One other thing would move this row: a wider cell "
-            "fits more of a name on a line, so a last name that took two "
-            "lines at 32 and takes one at 64 is a line fewer and this is what "
-            "would notice.")
+            f"the desktop's {items} icons were made large and the name before "
+            f"the last in the first column moved to row {large}, where it "
+            f"should be {want}. It was at {before} at 32 points, and a size "
+            f"`d` larger moves it down by exactly the icons above it and its "
+            f"own - {items - 1} x {STEP} here - because every cell in the "
+            "column grows by `d`. See `iconsize.cell`.")
 
     checks += 1
 
@@ -8758,7 +8775,7 @@ def check_icon_sizes(guest):
     #
     start_desktop()
 
-    look, _ = column_at(want, "large again")
+    look, _ = column_at(want, "large again", cell_top(items - 1, 64))
     settle(guest, look,
            "the desktop was started again after Large icons was chosen and "
            f"came up with its first column ending at some other row than "
@@ -8787,10 +8804,10 @@ def check_icon_sizes(guest):
 
     press("left", at_x + 24, at_y + 2 + MENU_ROW + MENU_ROW // 2)  # Medium
 
-    look, _ = column_at(before, "back where it was")
+    look, _ = column_at(before, "back where it was", cell_top(items - 1, 32))
     settle(guest, look,
-           "the icons were put back to Medium and the first column's last row "
-           f"did not come back to {before}.")
+           "the icons were put back to Medium and the first column's name "
+           f"before the last did not come back to {before}.")
     checks += 1
 
     stop_desktop(guest)
@@ -9013,7 +9030,7 @@ def check_desktop(guest):
     checks += 1
 
     DESK = (0x1c, 0x25, 0x30)          # the dark palette's `desktop`
-    CELL_W, CELL_H = 84, 56 + GLYPH_H  # tracker.lua's cell
+    CELL_W, CELL_H = 112, 56 + GLYPH_H  # tracker.lua's cell
 
     #
     # And on the screen, before anything is looked for on it.
@@ -9231,8 +9248,14 @@ def check_desktop(guest):
                'print("DESK" .. "-HAS", table.concat(fs.list("/home/Desktop") '
                'or {}, ",")) '
                'print("DESK" .. "-TRASH", '
-               'table.concat(fs.list("/home/Desktop/Trash") or {}, ","))')
-    guest.wait_for("DESK-TRASH", "the desktop and Trash listings")
+               'table.concat(fs.list("/home/Desktop/Trash") or {}, ",")) '
+               'print("DESK" .. "-READ")')
+
+    # Waited for by a marker on the *next* line, as `ICON-READ-1` is: on 24
+    # September this waited for `DESK-TRASH` itself, read the line before the
+    # rest of it had come, and said Drive was not in a Trash the guest had
+    # just listed it in.
+    guest.wait_for("DESK-READ", "the desktop and Trash listings")
 
     at = [line for line in guest.seen.splitlines() if "DESK-AT" in line][-1]
     has = [line for line in guest.seen.splitlines() if "DESK-HAS" in line][-1]

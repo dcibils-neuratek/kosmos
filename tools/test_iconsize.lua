@@ -123,26 +123,27 @@ do
 end
 
 -- 6. The cell each size wants: the width is the icon with the same air
--- either side at every size and never below 84, so only Large widens; the
+-- either side at every size and never below 112, so Large widens; the
 -- height is the icon, a gap and two lines for a name. At 32 the pair is the
 -- 84 by 72 that was compiled in before there was a choice.
 do
   local GH = 16
   local w32, h32 = iconsize.cell(32, GH)
 
-  check(w32 == 84 and h32 == 72,
-        "at 32 the cell is " .. w32 .. "x" .. h32 .. ", not the 84x72 it was")
+  check(w32 == 112 and h32 == 72,
+        "at 32 the cell is " .. w32 .. "x" .. h32 .. ", not 112x72 - "
+        .. "Diego: \"make the space for the file name wider like macos does\"")
 
   local w16, h16 = iconsize.cell(16, GH)
 
-  check(w16 == 84, "at 16 the cell is " .. w16 .. " wide - below 84 a name "
+  check(w16 == 112, "at 16 the cell is " .. w16 .. " wide - below 112 a name "
                    .. "has nowhere to go, so Small keeps the width Medium has")
   check(h16 == 56, "at 16 the cell is " .. h16 .. " tall")
 
   local w64, h64 = iconsize.cell(64, GH)
 
-  check(w64 == 116, "at 64 the cell is " .. w64 .. " wide, and should be the "
-                    .. "icon with the same 26 pixels either side that 84 "
+  check(w64 == 144, "at 64 the cell is " .. w64 .. " wide, and should be the "
+                    .. "icon with the same 40 pixels either side that 112 "
                     .. "gives a 32 - Diego: \"yes widen the cell at 64\"")
   check(h64 == 104, "at 64 the cell is " .. h64 .. " tall")
 

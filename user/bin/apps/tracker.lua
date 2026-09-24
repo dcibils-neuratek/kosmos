@@ -226,7 +226,7 @@ if backdrop then W, H = win.w, win.h end
 -- bitmap the kit loads before a window exists, so under the look's faces
 -- the rows of the list were 16 apart with 21-pixel words in them.
 --
-local GW, GH = gfx.font.w, gfx.height()
+local GH = gfx.height()
 local LROW = ui.metrics.row
 
 --
@@ -984,11 +984,10 @@ local function draw_icons(self, g, list)
 
     files.icon(g, x + (CELL_W - 4 - px) // 2, y + 2, e, path_of(e), px)
 
-    -- Two lines of the cell's width rather than one, so a name reads in
-    -- full up to twice as long, and past that the second line keeps its
-    -- end - where the extension is - rather than half a glyph.
-    local room = (CELL_W - 8) // GW
-    local first, second = layout.label(files.label(e), room)
+    -- Two lines of the cell's width, measured in the face's own pixels
+    -- rather than counted in its widest glyph (`iconlayout.lua`).
+    local first, second = layout.label(files.label(e), CELL_W - 8,
+                                       gfx.measure)
 
     local function label(text, ly)
       local lx = x + (CELL_W - 4 - gfx.measure(text)) // 2

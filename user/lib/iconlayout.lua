@@ -9,24 +9,120 @@
 local layout = {}
 
 --
--- A name as at most two lines of `room` characters.
+-- **A name as at most two lines, each no wider than `width`**, as `measure`
+-- says a string is wide - `gfx.measure` in Tracker, anything on the host.
 --
--- The first line is the start of the name and the second carries on from
--- it. A name too long even for two keeps its *end* on the second line,
--- after a `~`, because the end is where the extension is and the extension
--- is what says what the file is.
+-- It counted characters, `width` over the face's widest glyph, and the face
+-- is proportional: about five of them fitted in a cell where "Deskbar" is
+-- sixty pixels of seventy-six, so it wrapped as "Deskb" and "ar". Diego, 24
+-- September: "the name of files is being broken into 2 lines where it could
+-- it in 1 line", "make the space for the file name wider like macos does"
+-- (`roadmap.md` 6f). So as the Finder does it:
 --
-function layout.label(name, room)
+--   - a name that fits is one line;
+--   - the first line ends where a word does - after a space, a `-` or a
+--     `_` - or, with none, before the extension: "cheatsheet", ".html";
+--   - a second line too long for the cell is shortened in the middle, with
+--     its end kept whole - where the extension is, and the extension is
+--     what says what a file is: "2026-0...AM.mov".
+--
+-- Cut between characters and never inside one: UTF-8 where the name is.
+--
+local function starts(name)
+  local out = {}
+
+  if utf8.len(name) then
+    for p in utf8.codes(name) do out[#out + 1] = p end
+  else
+    for i = 1, #name do out[i] = i end
+  end
+
+  out[#out + 1] = #name + 1
+  return out
+end
+
+-- How many bytes from the start of `s` fit in `width`, whole characters.
+local function head_fits(s, width, measure)
+  local at, n = starts(s), 0
+
+  for k = 2, #at do
+    if measure(s:sub(1, at[k] - 1)) > width then break end
+    n = at[k] - 1
+  end
+
+  return n
+end
+
+-- Where the most of the end of `s` that fits in `width` begins.
+local function tail_fits(s, width, measure)
+  local at, from = starts(s), #s + 1
+
+  for k = #at - 1, 1, -1 do
+    if measure(s:sub(at[k])) > width then break end
+    from = at[k]
+  end
+
+  return from
+end
+
+local BREAK_AFTER = { [" "] = true, ["-"] = true, ["_"] = true }
+
+function layout.label(name, width, measure)
   name = tostring(name or "")
-  room = math.max(2, room)
+  measure = measure or function(s) return #s end
 
-  if #name <= room then return name, nil end
+  if measure(name) <= width then return name, nil end
 
-  local rest = name:sub(room + 1)
+  -- The first line: as much as fits, back to where a word last ended - but
+  -- not so far back that it holds a third of a line or less.
+  local cut = math.max(1, head_fits(name, width, measure))
+  local first, rest = name:sub(1, cut), name:sub(cut + 1)
+  local broke = false
 
-  if #rest > room then rest = "~" .. rest:sub(-(room - 1)) end
+  for i = cut, 2, -1 do
+    local c = name:sub(i, i)
 
-  return name:sub(1, room), rest
+    if BREAK_AFTER[c] and measure(name:sub(1, i)) >= width // 3 then
+      first = (c == " ") and name:sub(1, i - 1) or name:sub(1, i)
+      rest = name:sub(i + 1)
+      broke = true
+      break
+    end
+  end
+
+  local ext = name:match(".*()%.")
+
+  if not broke and ext and ext > 2 and ext - 1 <= cut
+     and measure(name:sub(1, ext - 1)) >= width // 3 then
+    first, rest = name:sub(1, ext - 1), name:sub(ext)
+  end
+
+  rest = rest:gsub("^ +", "")
+
+  if measure(rest) <= width then return first, rest end
+
+  -- The second line, shortened in the middle: two fifths of it for the end,
+  -- stretched to the whole extension and a character before its dot when
+  -- that fits in two thirds, and the rest for as much of the start as fits.
+  local dots = "..."
+  local room = width - measure(dots)
+  local from = tail_fits(rest, room * 2 // 5, measure)
+  local dot = rest:match(".*()%.")
+
+  if dot and dot < from and measure(rest:sub(dot)) <= room * 2 // 3 then
+    from = dot
+  end
+
+  if dot and from == dot and dot > 1 then
+    local before = (utf8.len(rest) and utf8.offset(rest, -1, dot)) or dot - 1
+
+    if measure(rest:sub(before)) <= room * 2 // 3 then from = before end
+  end
+
+  local tail = rest:sub(from)
+  local lead = head_fits(rest, room - measure(tail), measure)
+
+  return first, rest:sub(1, lead) .. dots .. tail
 end
 
 --
