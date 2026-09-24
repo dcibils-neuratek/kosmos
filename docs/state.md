@@ -111,6 +111,21 @@ and not rebuilt, so the broken control was still in the binary.
 approved on 14 September as the pilot of a *second* look, and changing it
 would be answering a question he has already answered.
 
+### The stick for the M700
+
+**`kosmos-usb-0.10.146-development.img`**, built from `0686135` with
+`make MEGA=1 x86-usb-image`: MEGA, `/home` made fresh from `~/Kosmos/home`
+at 512 MB in a partition of its own - the layout `docs/boot.md` shows
+booting on that machine. 32 checks under OVMF, `make test` green (33
+suites, 6:02), `make stress` clean (60 rounds, nothing leaked).
+
+**The window since the last confirmed boot there is wide.** 0.10.129 is the
+last build Diego said booted on the M700; 0.10.136 was handed over and never
+reported on. So this stick carries the memory work, the tree reorganised by
+what things are, Preferences, Tracker, the Endeavour look and every window's
+new header at once. If it stops, that is the range to bisect - and 0.10.129's
+and 0.10.136's images are still in `build/x86_64/`.
+
 ### Next, in Diego's order
 
 1. **5zm** - his `wm preferences` returned `wm: no process` on a desktop
