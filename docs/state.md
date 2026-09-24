@@ -111,6 +111,30 @@ and not rebuilt, so the broken control was still in the binary.
 approved on 14 September as the pilot of a *second* look, and changing it
 would be answering a question he has already answered.
 
+### 0.10.147 - what the M700 found
+
+**The stick booted and worked.** Diego, 23 September: *"it booted and worked!"*
+- and then the two things that matter more than that:
+
+- **"the tracker closed on me a couple of times".** `diagnose` had the line:
+  `tracker.lua:1738: attempt to call a number value (method 'focus')`. The
+  Find button was `win:focus(search)` and `focus` is an *index*, not a
+  method. The kit has `window:focus_on(view)` now, and
+  `tools/test_winmethods.py` holds every `win:name(...)` in the userland to
+  a method that exists - the class, not the instance, because Lua resolves a
+  method at the press and nothing static saw this one.
+- **"the preferences pane that is usable but does nothing to the system".**
+  Four faults under one sentence: the dropdown never applied anything, the
+  apply could only send one field of a `theme` request (so a look could
+  never have gone through it), the window manager said nothing when a
+  palette landed, and the sidebar could not be reached from the keyboard at
+  all. All four fixed; `testing.md` 18.161 has them and the checks.
+
+**And he is right about the rest of the feeling.** Six applications have the
+new header and eleven still have buttons where they were put; Appearance and
+Preferences' first page now do the same job. That is `roadmap.md` 5zo, with
+the order that makes it go away fastest.
+
 ### The stick for the M700
 
 **`kosmos-usb-0.10.146-development.img`**, built from `0686135` with

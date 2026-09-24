@@ -1532,6 +1532,33 @@ processors, and still what follows USB:
    than an application's. Removing either is its own piece of work and is
    not folded into a look (5zn).
 
+5zo. **WANTED on 23 September - the half that is still the old look.**
+   Diego, on the M700 running 0.10.146: *"I have the feeling we have a half
+   baked UI now with old parts and new parts"*. He is right, and it is
+   worth being exact about the count rather than agreeing vaguely.
+
+   **Six applications have the header** (`ui.md` 16.20): Tracker,
+   Preferences, Processes, Terminal, Editor, Photo, Log View.
+
+   **Eleven have buttons where they were put, and no header**: Calculator,
+   Cores, Drives, the widget gallery, the launcher editor, Mixer, Network,
+   Reader, Scheduler, Video, Web Server. Each is one to three buttons, and
+   each is a small conversion of the kind 0.10.145 did five of.
+
+   **The rest have no chrome at all** and mostly want none - the demos, the
+   clock, a full-window canvas like Paint or the solar system. Those are
+   *finished*, not unconverted, and saying so is half of answering the
+   feeling.
+
+   **And two windows now do the same job**, which is the sharpest instance
+   of it: **Appearance** sets the look, the wallpaper and the scale, and so
+   does Preferences' first page. One of them should go, and the answer is
+   almost certainly that Appearance folds into Preferences - it was the
+   place looks lived before there was a place for everything.
+
+   The order that makes the feeling go away fastest is probably: fold
+   Appearance in, then the eleven, cheapest first.
+
 5zn. **WANTED on 23 September - take `ui.menubar` out.** Nothing in the
    system opens a menu bar any more (5zj). The kit's `ui.menubar` has no
    callers at all, and the window manager's `strips` has one: the display
@@ -1805,7 +1832,48 @@ processors, and still what follows USB:
    network's address are rows without controls for the same reason: they
    live behind a server rather than in a file, and each needs a message
    rather than a key. Shown rather than hidden, which is the rule the boot
-   options set.
+   options set - and each of those rows says **"Not yet"** on its right
+   since 0.10.147, because a row with a label and a blank beside it is a
+   row that looks broken rather than one that is unfinished, and a person
+   cannot tell those apart by looking.
+
+   **0.10.147 - it wrote files and changed nothing, which is what it felt
+   like.** Diego, on the ThinkCentre M700: *"I have the feeling we have a
+   half baked UI now with old parts and new parts like the preferences pane
+   that is usable but does nothing to the system"*. He was right, and there
+   were four separate faults under that one sentence:
+
+   - **`control_for`'s dropdown never applied anything.** The switch called
+     `live` and the dropdown did not, so *every choice in the window* - the
+     look above all - stored a value and returned.
+   - **And the look could not have been applied by that code anyway.**
+     `live` sent one *field* in a `theme` request, which is right for
+     `corner` and `shadow` and wrong for a palette: a look is a resolved
+     colour table and a set of faces, which is what `appearance.lua` builds
+     before it sends. An apply is a function per setting now, keyed by the
+     setting's own `key`, so there is no second list to keep in step - the
+     look, the scale and the wallpaper apply through the same requests the
+     Appearance panel uses, and a setting with no entry is one that
+     genuinely waits for a restart.
+   - **The window manager said nothing when a palette landed**, so the log
+     could not tell a look that was chosen from one that was never sent.
+     `handlers.theme` prints the window and desktop colours now.
+   - **The sidebar could not be reached from the keyboard at all.**
+     `win:add(page)` came before `win:add(side)`, and `root:focusables()`
+     walks the tree in the order things were added - so the first control
+     to receive a key was the Theme dropdown and the *navigation* of the
+     window was last. Worse, arrowing the sidebar moved a highlight and
+     changed nothing: `ui.list` fires `on_select` on Enter. It has an
+     opt-in `arrows_choose` now, which the sidebar sets, because a list
+     that *is* navigation should change the page as you look down it.
+
+   **The display harness believed the opposite and had for weeks.** Its
+   Preferences phase says in its own words that "the sidebar is the first
+   focusable thing in the window, so Down moves it" - and neither half was
+   true. The phase passed anyway, which is the part worth keeping: a check
+   whose premise is false can still be green, and the only reason this one
+   was ever looked at was Diego saying the window felt dead. `testing.md`
+   18.161.
 
 5zi. **WANTED on 23 September - a simpler look, and what it costs.** Diego:
    "i want to adopt an aesthetic similar to the screenshots attached, which

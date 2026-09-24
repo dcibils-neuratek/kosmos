@@ -24,6 +24,27 @@ local hardware = use("/lib/hardware.lua")
 local theme = ui.theme
 
 --
+-- **The looks, parsed here, because choosing one means sending it.**
+--
+-- `themes.lua` ships each look as *text* in the format a `.theme` file on
+-- the disk uses, and `theme.read` is the parser the window manager reads
+-- one with. A look is a table of colours and faces only after that has
+-- run - which is why this window could not apply one until it did, and why
+-- `appearance.lua` has had these six lines since it was written.
+--
+local LOOKS = use("/lib/themes.lua")
+
+for _, name in ipairs(LOOKS.order) do
+  local palette, said = theme.read(LOOKS[name], "dark")
+
+  theme.install(name, palette)
+
+  for _, why in ipairs(said) do
+    print("preferences: " .. name .. ": " .. why)
+  end
+end
+
+--
 -- **The spacing is `docs/preferences.html`'s**, measured off the drawing
 -- rather than chosen again here. Diego, 23 September 2026: "i want it to
 -- look exactly like the mockup, spacing, button style, borders, titles,
@@ -132,7 +153,26 @@ function page:draw(g)
   end
 end
 
-win:add(page)
+--
+-- **The sidebar is added first, and that is a keyboard decision rather than
+-- a drawing one.** They do not overlap - the sidebar is `0..SIDE` and the
+-- page is `SIDE..W` - so the order changes nothing about the picture. What
+-- it changes is `root:focusables()`, which walks the tree in the order
+-- things were added, and therefore the order Tab visits them in and which
+-- control holds the keyboard when the window opens.
+--
+-- The page went in first for a version, so the *first* thing to receive a
+-- key was the Theme dropdown and the sidebar was last. A person opening
+-- Preferences and pressing Down moved nothing at all: the navigation of
+-- the window could not be reached from the keyboard until you had tabbed
+-- past every control on the page you were trying to leave.
+--
+-- Found by the display harness, which had believed the opposite - its
+-- Preferences phase says in its own words that "the sidebar is the first
+-- focusable thing in the window, so Down moves it", and it was not.
+--
+-- The sidebar is the navigation. It goes first.
+--
 
 --
 -- The sidebar, as a list of names with the gaps `settings.CATEGORIES` asks
@@ -153,6 +193,12 @@ local rebuild                      -- forward, so the list can call it
 local side = ui.list{
   x = 0, y = PAD, w = SIDE, h = H - 2 * PAD,
   items = names,
+
+  -- The arrows change the page, rather than moving a highlight that does
+  -- nothing until Enter. This list is the window's navigation, and a
+  -- category you cannot reach without pressing Enter on it is a category
+  -- nobody browses (`ui.list`'s `arrows_choose`).
+  arrows_choose = true,
   on_select = function(_, item)
     local id = index_of[item]
 
@@ -164,6 +210,7 @@ local side = ui.list{
 }
 
 win:add(side)
+win:add(page)
 
 --
 -- One row's control, whichever kind it is.
@@ -175,33 +222,102 @@ win:add(side)
 --
 --
 -- **A setting the window manager draws with, told at once.**
+--------------------------------------------------------------------------
+-- Applying a setting, rather than only writing it down.
 --
--- Rounded corners and drop shadows are its business rather than any
--- window's: it composes the desktop. A setting written to a file and left
--- there would take effect at the next restart, which is a setting nobody
--- believes in - `instant-feedback` applied to something that is not even a
--- control.
+-- **This window wrote files and changed nothing, and that is what it felt
+-- like.** Diego, on the ThinkCentre M700 running 0.10.146: "the preferences
+-- pane that is usable but does nothing to the system". He is right, and it
+-- was two faults at once:
 --
--- The same `theme` request the Appearance panel sends for the look, with
--- one field in it. A manager that does not know the field ignores it, which
--- is what makes adding another of these one line here.
+--   - `control_for`'s **dropdown never called this at all**, so a row could
+--     be marked live and still do nothing - which is every choice in the
+--     window, the look among them.
+--   - and the look, the scale and the wallpaper were not marked live
+--     either, because the first version of this could only send *one field*
+--     in a `theme` request. A look is not one field: it is the resolved
+--     colour table and the faces together, which is what `appearance.lua`
+--     builds before it sends.
+--
+-- So an apply is a **function per setting** rather than a field name, and
+-- the table is keyed by the setting's own `key` - there is no second list
+-- to keep in step, and a row that has no entry here is one that genuinely
+-- takes effect at the next restart.
+--
+-- The window manager is the only thing that can do any of these: it
+-- composes the desktop, it owns the wallpaper, and the scale is its
+-- arithmetic. The requests are the ones it already takes, which is why
+-- `appearance.lua` and this window can both send them.
+--------------------------------------------------------------------------
+
+local APPLY = {
+  --
+  -- A look is a *whole*: the colours the tokens name, and the faces beside
+  -- them. Sent exactly as the Appearance panel sends it, because a machine
+  -- that kept faces from an older panel should get the look's back the
+  -- moment a look is chosen.
+  --
+  palette = function(name)
+    local look = theme.palettes[name] or {}
+    local colours = {}
+
+    for _, k in ipairs(theme.tokens) do colours[k] = look[k] end
+
+    return fs.send("/app/wm", { type = "theme", palette = colours,
+                                fonts = look.fonts })
+  end,
+
+  scale = function(pct)
+    return fs.send("/app/wm", { type = "scale", pct = pct })
+  end,
+
+  wallpaper = function(path)
+    return fs.send("/app/wm", { type = "wallpaper",
+                                path = (path ~= "") and path or nil })
+  end,
+
+  -- One field each, and the manager ignores a field it does not know - so
+  -- another of these is one line.
+  corner = function(on)
+    return fs.send("/app/wm", { type = "theme", corner = on })
+  end,
+
+  shadow = function(on)
+    return fs.send("/app/wm", { type = "theme", shadow = on })
+  end,
+}
+
+--
+-- **Applied first, written second**, which is `appearance.lua`'s order and
+-- the right one: a file that holds an appearance the system refused is a
+-- file that lies about the machine. When the manager says no, the setting
+-- is not stored and the reason reaches the log.
 --
 local function live(it, value)
-  if not it.live then return end
+  local apply = APPLY[it.key]
 
-  local ok, why = fs.send("/app/wm", { type = "theme", [it.live] = value })
+  if not apply then return true end
+
+  local ok, why = apply(value)
 
   if not ok then
-    print("preferences: " .. tostring(it.live) .. ": " .. tostring(why))
+    print("preferences: " .. tostring(it.key) .. ": " .. tostring(why))
   end
+
+  return ok
 end
 
+--
+-- **Both controls go through `live` and then `settings.set`, in that
+-- order.** The dropdown did neither for a version: it stored the value and
+-- returned, so every choice in this window - the look above all - wrote a
+-- file and changed nothing anybody could see.
+--
 local function control_for(it, x, y, changed)
   if it.kind == "switch" then
     return ui.switch{ x = x, y = y, on = settings.get(it) == true,
                       on_change = function(_, on)
-                        settings.set(it, on)
-                        live(it, on)
+                        if live(it, on) then settings.set(it, on) end
                         if changed then changed() end
                       end }
   end
@@ -210,7 +326,7 @@ local function control_for(it, x, y, changed)
     return ui.dropdown{ x = x, y = y, choices = it.choices,
                         value = settings.get(it),
                         on_change = function(_, v)
-                          settings.set(it, v)
+                          if live(it, v) then settings.set(it, v) end
                           if changed then changed() end
                         end }
   end
@@ -249,8 +365,19 @@ local function value_text(it)
   if it.kind == "boot" then return "Needs a restart" end
   if it.kind == "action" then return "Show" end
   if it.kind == "fact" then return fact[it.fact] or "-" end
-  if it.kind == "level" then return "" end
-  if it.kind == "text" then return "" end
+
+  --
+  -- **A row with nothing on the right is a row that looks broken**, and two
+  -- kinds drew one: a `level` and a `text`, which have no control in the
+  -- kit that fits a settings row yet. Each says so now.
+  --
+  -- It is the difference between a window that is unfinished and a window
+  -- that is wrong, and a person cannot tell which from a blank. Diego, on
+  -- the M700: "the preferences pane that is usable but does nothing to the
+  -- system" - half of that feeling was the looks not applying, and half was
+  -- these (`roadmap.md` 5zh).
+  --
+  if it.kind == "level" or it.kind == "text" then return "Not yet" end
 
   return tostring(settings.get(it) or "")
 end

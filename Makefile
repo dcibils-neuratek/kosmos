@@ -3037,6 +3037,10 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	@# category that exists, every default on its own list of choices, and
 	@# a write that keeps what another program put in the same file.
 	$(HOSTDIR)/lua tools/test_settings.lua
+	@# And every method an application calls on its window: Lua resolves one
+	@# at the call, so a name the kit does not have is a control that ends
+	@# the program when somebody presses it, and nothing else notices.
+	python3 tools/test_winmethods.py
 	@# And an Intel Ethernet controller's registers and descriptors: the
 	@# link, the MAC, and the errors a frame can arrive with.
 	$(HOSTDIR)/test_e1000decode

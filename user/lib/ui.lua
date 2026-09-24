@@ -2368,15 +2368,42 @@ function ui.list(spec)
   end
 
   function v:key(c)
+    --
+    --
+    -- **`arrows_choose` - moving the selection chooses it.** Off by
+    -- default, because a list of files is a list you arrow through to reach
+    -- the one you want, and opening each on the way past would be
+    -- unbearable. On for a list that *is* navigation, where the arrows are
+    -- how you look at things: Preferences' sidebar, where a page that waits
+    -- for Enter is a window whose categories cannot be browsed at all.
+    --
+    -- Opt-in rather than the default, so `ui.list`'s every other caller -
+    -- Tracker, the Open panel, the launcher editor - behaves exactly as it
+    -- did.
+    --
+    -- **Not `follow`, which this was called for one build.** A view already
+    -- has a `follow`: the list of edges it keeps its distance to when its
+    -- parent is resized. Setting it to `true` made `#self.follow` a length
+    -- of a boolean, and Preferences died on its first arrow key. A name the
+    -- kit already uses for something else is not a name.
+    --
+    local function moved(self_)
+      if self_.arrows_choose and self_.on_select then
+        self_.on_select(self_, self_.items[self_.selected], self_.selected)
+      end
+
+      return true
+    end
+
     -- Arrows arrive already decoded, as negative codes. See `dispatch`.
     if c == -1 then
       self.selected = math.max(1, self.selected - 1)
-      return true
+      return moved(self)
     end
 
     if c == -2 then
       self.selected = math.min(#self.items, self.selected + 1)
-      return true
+      return moved(self)
     end
 
     -- Space, because a checklist you can reach with the arrows and cannot
@@ -4165,6 +4192,41 @@ function window:add(child)
   end
 
   return added
+end
+
+--
+-- **Put the keyboard on a widget.**
+--
+-- The window keeps `focus` as an index into `root:focusables()`, because
+-- that is what a click sets and what Tab steps through. An application has
+-- a *view*, not an index, so it had to walk the list itself - and Tracker
+-- did, in a function of its own, under a comment saying there was no
+-- `win:focus(v)` in the kit and that adding one for a single caller would
+-- be a widget change made for an application.
+--
+-- **That argument expired the day there were two callers**, and the way it
+-- expired is why this is here rather than in Tracker. The second caller was
+-- written as `win:focus(search)` - the name the field already has - which
+-- is `self.focus(self, v)` on a *number*, so pressing Find ended Tracker
+-- every time. Diego, on the ThinkCentre M700: "the tracker closed on me a
+-- couple of times".
+--
+-- Nothing could have caught it but running it: Lua resolves the call at the
+-- moment of the press, so the file loads, the window opens, and the button
+-- is there and wrong.
+--
+-- Returns false when the view is not focusable or not in this window, which
+-- is a question worth being able to ask rather than a silent nothing.
+--
+function window:focus_on(view)
+  for i, v in ipairs(self.root:focusables()) do
+    if v == view then
+      self.focus = i
+      return true
+    end
+  end
+
+  return false
 end
 
 function window:close()

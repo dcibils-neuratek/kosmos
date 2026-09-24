@@ -114,23 +114,28 @@ settings.ITEMS = {
                     { 200, "200%" } } },
 
   --
-  -- **Two that are not stored the way the rest are.** They live in
-  -- `/home/.appearance` like the look, but changing one has to reach the
-  -- window manager immediately - it draws the corners and the shadows, and
-  -- a setting that took effect at the next restart would be one nobody
-  -- believed. `preferences.lua` sends them in the same `theme` request the
-  -- Appearance panel uses for the look.
+  -- **Two the window manager draws rather than any window.** They live in
+  -- `/home/.appearance` like the look, and like the look, the scale and the
+  -- wallpaper they have to reach the manager the moment they change - a
+  -- setting that took effect at the next restart is one nobody believes in.
+  --
+  -- **How that happens is not declared here.** It was, for a version, as
+  -- `live = "corner"`, and that shape could only ever send one field - so
+  -- the look, which is a resolved colour table and a set of faces, could
+  -- not use it and quietly did nothing. `preferences.lua` keys its applies
+  -- by a setting's own `key`, so there is no second list in this file to
+  -- fall out of step with that one.
   --
   item{ category = "appearance", group = "Windows",
         label = "Rounded corners", note = "The four corners of every window",
         kind = "switch", file = settings.APPEARANCE, key = "corner",
-        default = true, live = "corner" },
+        default = true },
 
   item{ category = "appearance", group = "Windows",
         label = "Drop shadows",
         note = "A soft edge under every window. Costly on a slow machine",
         kind = "switch", file = settings.APPEARANCE, key = "shadow",
-        default = false, live = "shadow" },
+        default = false },
 
   item{ category = "appearance", group = "Icons",
         label = "On the desktop", note = "Small 16, Normal 32, Large 64",

@@ -1479,6 +1479,36 @@ call site a version ago**: the third one written the obvious way sets the
 variable, leaves the label saying where the window used to be, and is a bug
 nothing catches, because the label is right most of the time.
 
+## 16.21 A list that is navigation, and one that is a list of things
+
+`ui.list` fires `on_select` when you press Enter or click a row. Arrowing
+through it moves a highlight and nothing else, and that is right for almost
+every list in the system: a list of files is one you arrow through to *reach*
+the row you want, and opening each on the way past would be unbearable.
+
+It is exactly wrong for a list that **is** the navigation of its window.
+Preferences' sidebar is nine categories, and a page that waits for Enter is a
+window whose categories cannot be browsed at all - you cannot look down them,
+you have to commit to each one.
+
+So `arrows_choose = true`, opt-in, set by the sidebar and by nothing else.
+Every other caller behaves exactly as it did.
+
+**Two things about that sidebar were wrong together and are worth keeping.**
+It could not be reached from the keyboard at all: `win:add(page)` came before
+`win:add(side)`, and `root:focusables()` walks the tree in the order things
+were added - so the first control to receive a key was the Theme dropdown
+and the window's own navigation was last. The order of `win:add` calls is a
+*keyboard* decision as much as a drawing one, and for two views that do not
+overlap it is only a keyboard decision.
+
+And the name: `arrows_choose` was `follow` for one build, which is already a
+view's list of edges to keep its distance to when its parent resizes. `#self.follow`
+over a boolean ended the window on its first arrow key. A name the kit
+already uses for something else is not a name.
+
+`testing.md` 18.161.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

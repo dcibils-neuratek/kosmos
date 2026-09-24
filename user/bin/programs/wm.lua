@@ -5064,6 +5064,23 @@ handlers.theme = function(req)
     if not ok then
       return { ok = false, error = tostring(err) }
     end
+
+    --
+    -- **Said, because nothing said it.** A theme request is a person
+    -- pressing something, and this handler answered every one of them in
+    -- silence - so a look that was chosen and a look that was never sent
+    -- read the same in the log. Diego, on the ThinkCentre M700 with
+    -- Preferences open: "the preferences pane that is usable but does
+    -- nothing to the system", and the log could not tell him which half of
+    -- the path was missing.
+    --
+    -- The window colour rather than a name, because a palette arrives as a
+    -- table of resolved colours and not as the word somebody picked - see
+    -- the note below about why a name stopped working.
+    --
+    print(("wm: theme applied, window #%06x desktop #%06x")
+          :format((theme.window or 0) & 0xffffff,
+                  (theme.desktop or 0) & 0xffffff))
   end
 
   -- The desktop colour is chosen separately from the palette it sits with,

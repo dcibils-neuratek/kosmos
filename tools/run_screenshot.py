@@ -1719,7 +1719,153 @@ def check_preferences(guest):
         "while the page does not: the list works, the rebuild runs, and the "
         "category never reaches it." % (100 * same // total)))
 
+    #
+    # **And that choosing a look changes the machine.**
+    #
+    # Diego, on the ThinkCentre M700 running 0.10.146: *"the preferences
+    # pane that is usable but does nothing to the system"*. He was right,
+    # and the phase above could not have seen it: it asks whether the page
+    # changes when the category does, which was always true. Every *choice*
+    # in the window stored a value and returned - `control_for`'s dropdown
+    # never called `live` at all - so the look was written to
+    # `/home/.appearance` and the desktop went on wearing the old one until
+    # the next boot.
+    #
+    # The look is the right one to drive, because it is the loudest: a
+    # palette reaches every window and the desktop behind them, so "did
+    # anything happen" is a question about the whole screen rather than
+    # about one control's pixels.
+    #
+    # Driven by the keyboard as far as it goes and by the pointer for the
+    # last step, which is the Log View phase's idiom: **the menu is clicked
+    # where the window manager says it went**, not where arithmetic on the
+    # application's padding says it should be.
+    #
+    #
+    # **Back to Appearance first**, because the check above left the sidebar
+    # five categories down and the page with it. The first version of this
+    # did not, tabbed into whatever control that page happened to start
+    # with, and opened a four-item menu 72 pixels wide - the Scale, on
+    # Displays. A menu opening is not evidence that the right one opened.
+    #
+    for _ in range(6):
+        guest.sendkey("up")
+        time.sleep(0.25)
+
+    time.sleep(1.0)
+    mark = len(guest.seen)
+
+    # One Tab from the sidebar is the Theme dropdown: the sidebar holds the
+    # focus when the window opens, and Theme is the first control the
+    # Appearance page adds. Space opens a dropdown (`ui.dropdown:key`).
+    guest.sendkey("tab")
+    time.sleep(0.4)
+    guest.sendkey("spc")
+
+    where = None
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+        m = re.search(r"wm: menu of Preferences at (\d+),(\d+) (\d+)x(\d+)",
+                      guest.seen[mark:])
+
+        if m:
+            where = tuple(int(v) for v in m.groups())
+            break
+
+        time.sleep(0.3)
+
+    if where is None:
+        check.append((False,
+                      "the Theme dropdown did not open: one Tab from the "
+                      "sidebar and Space reached nothing that answers. It is "
+                      "the first control the Appearance page adds, so either "
+                      "the page has grown a control above it or a dropdown "
+                      "no longer takes the keyboard."))
+    else:
+        def whole(px_, w_, h_):
+            """A histogram of the whole screen. A look reaches the desk,
+            every window's tab and every window's inside, so this is the
+            measurement that matches the claim - where one sampled pixel
+            would be asking whether one thing happened to change."""
+            seen = {}
+
+            for y in range(0, h_, 6):
+                base = y * w_ * 3
+
+                for x in range(0, w_, 6):
+                    at = base + x * 3
+                    c = bytes(px_[at:at + 3])
+                    seen[c] = seen.get(c, 0) + 1
+
+            return seen
+
+        w0, h0, px0 = picture("before the look was changed")
+        looked = whole(px0, w0, h0)
+
+        #
+        # The **last** item, which is the look furthest from the one in
+        # force: the menu is the five `themes.order` names and the first is
+        # the default, so choosing the last cannot be a no-op. Clicked where
+        # the window manager says the menu went, and measured off its
+        # reported height rather than off a row constant.
+        #
+        guest.mouse_to(*_to_tablet(where[0] + where[2] // 2,
+                                   where[1] + where[3] - LAYOUT_ROW // 2,
+                                   width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+
+        def changed(w_, h_, px_):
+            now = whole(px_, w_, h_)
+            same = sum(min(looked.get(c, 0), now.get(c, 0))
+                       for c in set(looked) | set(now))
+            total = max(sum(looked.values()), 1)
+
+            return True if same < total * 0.90 else None
+
+        try:
+            settle(guest, changed,
+                   "the screen is the same after another look was chosen in "
+                   "Preferences, so the choice was stored and never "
+                   "applied. A `theme` request reaches the desk, every "
+                   "window's tab and every window's inside; `control_for` "
+                   "has to send one as well as write the file.", seconds=15)
+            check.append((True, ""))
+        except Failure as e:
+            check.append((False, str(e)))
+
+        # And the manager said so, which is what a person reads on a machine
+        # with no harness (`log`).
+        guest._read_available()
+        check.append((
+            "wm: theme applied" in guest.seen[mark:],
+            "the window manager applied a palette and said nothing about "
+            "it. `handlers.theme` answers a person's press, and a look that "
+            "was chosen has to read differently in the log from one that "
+            "was never sent - which is exactly what could not be told apart "
+            "on the M700."))
+
     stop_desktop(guest)
+
+    #
+    # **The look this phase chose is this phase's, not the next one's.**
+    #
+    # It writes `/home/.appearance` through Preferences, exactly as a person
+    # would, so the desktop that starts after this one wears Endeavour - and
+    # every phase after it counts windows by the tab colour it was written
+    # against and finds none. Two suites failed that way on the first full
+    # run, in phases that have nothing to do with Preferences.
+    #
+    # The same tidy-up Log View does after choosing a text size, and for the
+    # same reason: a phase that changes a setting owns putting it back.
+    #
+    guest.type(appearance() + ' print("preferences" .. "-restored")')
+    guest.wait_for("preferences-restored",
+                   "put the harness's own palette and faces back")
 
     failed = [why for ok, why in check if not ok]
 

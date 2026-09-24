@@ -340,8 +340,8 @@ local select_all, select_none, do_rename
 local start_drag
 
 -- And the one that changes directory, because the places tree calls it and
--- is built above it - and `focus_on`, because the tree's drop handler does.
-local show, visit, focus_on
+-- is built above it.
+local show, visit
 local go_back, go_forward, go_up
 local sort_by  = "name"
 local scroll   = 1        -- the first row shown; the bar moves this
@@ -637,7 +637,7 @@ function places:drop(kind, payload, _, _)
   rename_field.text = placelib.suggest(first)
   rename_field.caret = #rename_field.text + 1
   rename_field.hidden = false
-  focus_on(rename_field)
+  win:focus_on(rename_field)
 
   ui.dropped(win, true, 0, nil)
   status.text = "a name for this place, then Enter"
@@ -1735,7 +1735,7 @@ local function toggle_search()
   place_button.hidden = search_on
 
   if search_on then
-    win:focus(search)
+    win:focus_on(search)
   else
     search.text = ""
     show(where)
@@ -2002,21 +2002,6 @@ end
 -- pattern, and a pattern is a different feature with different mistakes in
 -- it.
 --
---
--- Focus, set by hand.
---
--- The window keeps `focus` as an index into `root:focusables()`, which is
--- what a click sets. There is no `win:focus(v)` in the kit, and adding one
--- for a single caller would be a widget change made for an application.
---
-function focus_on(v)
-  for i, w in ipairs(win.root:focusables()) do
-    if w == v then win.focus = i return true end
-  end
-
-  return false
-end
-
 function do_rename()
   local list = marked_entries(rows.shown)
 
@@ -2032,7 +2017,7 @@ function do_rename()
   rename_field.caret = #rename_of + 1
   rename_field.hidden = false
 
-  focus_on(rename_field)
+  win:focus_on(rename_field)
   status.text = "new name for " .. rename_of .. ", then Enter"
 end
 

@@ -8612,3 +8612,111 @@ widgets moving to 16 while the title stayed - if it had compared the roles
 to each other instead of to a table. It does not, and that is the follow-up
 this leaves: **a check that no chrome role is smaller than `ui`**, which is
 a rule rather than a list of numbers (`roadmap.md` 5zl).
+
+## 18.161 What the M700 found: a control that ends the program, and a window that changed nothing
+
+Diego, on the ThinkCentre M700 running the 0.10.146 stick: *"it booted and
+worked"*, then *"I have the feeling we have a half baked UI now with old
+parts and new parts like the preferences pane that is usable but does
+nothing to the system"*, and *"the tracker closed on me a couple of times"*.
+He ran `diagnose` and `make stick-log`, which is how the first of those
+became one line.
+
+### Tracker's Find button ended Tracker
+
+```
+[374.815] /bin/tracker.lua:1738: attempt to call a number value (method 'focus')
+[374.815] process 37 (tracker) ended, code 0
+```
+
+`win:focus(search)` - and the window keeps `focus` as an **index** into
+`root:focusables()`. So the call was `(5)(win, search)`.
+
+**The bug was invited by the name.** Tracker already had a working
+`focus_on(v)` of its own, under a comment saying there is no `win:focus(v)`
+in the kit and that adding one for a single caller would be a widget change
+made for an application. The header rebuilt in 0.10.140 added a second
+caller, written as the name the field already has.
+
+The argument in that comment expired the moment there were two callers, so
+the kit has `window:focus_on(view)` and all three of Tracker's call sites
+use it.
+
+**Nothing static caught it and nothing could have.** Lua resolves a method at
+the call: the file parses, `luac -p` is happy, `luaglobals.py` sees no global
+(`win` is a local, `focus` a field), the window opens, and the button sits
+there looking exactly like the others until somebody presses it.
+
+So `tools/test_winmethods.py`, in `host-check`: **for every `win:name(...)`
+in the userland, `ui.lua` defines `function window:name`** - or the file
+itself defines `function win:name`, which is how an application supplies its
+own `on_key` and `on_frame`. 335 calls today. It is a heuristic in one
+respect and deliberately so: it trusts that a local called `win` is a
+window, which is the convention every application here follows.
+
+**Negative control**: put `win:focus(search)` back and it names the file, the
+line and the method.
+
+### Preferences wrote files and changed nothing
+
+Four faults under one sentence, and only the first is the one anybody would
+guess:
+
+1. **The dropdown never applied anything.** `control_for`'s switch called
+   `live` and its dropdown did not - so every *choice* in the window stored
+   a value and returned, the look included.
+2. **And `live` could not have applied a look anyway.** It sent one field in
+   a `theme` request, which is right for `corner` and `shadow` and wrong for
+   a palette: a look is a resolved colour table and a set of faces. An apply
+   is a function per setting now, keyed by the setting's own `key`, and the
+   look, the scale and the wallpaper go through the same requests
+   `appearance.lua` uses. Preferences also has to *parse* the looks before
+   it can send one - `themes.lua` ships them as text.
+3. **The manager said nothing when a palette landed.** `handlers.theme`
+   prints the window and desktop colours now, so a look that was chosen
+   reads differently in the log from one that was never sent. That is what
+   the M700 could not tell apart.
+4. **The sidebar could not be reached from the keyboard.** `win:add(page)`
+   came before `win:add(side)` and `root:focusables()` walks in add order,
+   so the first control to receive a key was the Theme dropdown and the
+   window's own navigation was last. And arrowing it changed nothing:
+   `ui.list` fires `on_select` on Enter. It takes an opt-in `arrows_choose`
+   now, which the sidebar sets.
+
+### The check, and what it says about the old one
+
+The `preferences` phase drives the window to Appearance, tabs to the Theme
+dropdown, opens it with Space, clicks the **last** look where the window
+manager says the menu went, and then asks two things: that the whole screen
+differs by more than a tenth, and that `wm: theme applied` is in the log.
+
+**Negative control**: put the dropdown back to `settings.set` alone and both
+fail - the screen does not change and the manager never speaks.
+
+The phase already there asked whether the page changes when the sidebar
+moves, and **its premise was false**: its own docstring says "the sidebar is
+the first focusable thing in the window, so Down moves it", and neither half
+was true. It passed anyway. That is the part worth keeping: a check can be
+green because of something other than the thing it claims to measure, and
+the only reason this one was ever examined is that Diego said the window
+felt dead.
+
+### And the one the phase itself caused
+
+The check writes `/home/.appearance` through Preferences, exactly as a
+person would - so the desktop that starts after it wears Endeavour, and
+every later phase counts windows by the tab colour it was written against
+and finds none. Two suites failed that way on the first full run, in phases
+that have nothing to do with Preferences.
+
+**A phase that changes a setting owns putting it back**, which Log View has
+done since it grew a text size. One line at the end, at the prompt.
+
+### And one I made while fixing it
+
+`arrows_choose` was called `follow` for one build. A view already has a
+`follow` - the edges it keeps its distance to when its parent resizes - so
+`#self.follow` took the length of a boolean and Preferences died on its
+first arrow key. **A name the kit already uses for something else is not a
+name**, and the harness found it in one run because the phase drives the
+window with the keyboard.
