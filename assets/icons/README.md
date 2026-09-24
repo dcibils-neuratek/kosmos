@@ -1,6 +1,6 @@
 # assets/icons
 
-Haiku's icons, as exported by `darealshinji/haiku-icons`: 49 of the 452
+Haiku's icons, as exported by `darealshinji/haiku-icons`: 50 of the 452
 it has, at each of the three sizes it exports - 32x32 here, and 16x16 and
 64x64 in the folders of those names - chosen because something in Kosmos
 draws each one -
@@ -32,6 +32,14 @@ file's own folder. The names are Haiku's, not ours:
 | a launcher | `Device_Harddisk` for Drive, `App_Generic` for one that names none |
 | the Trash | `Trash_Empty` and `Trash_Full`, by whether anything is in it |
 | the Deskbar | whatever each program's `-- kosmos: icon` line names: `App_Tracker`, `App_Terminal`, `TeamIcon` for Processes, `App_Poorman` for the web server, and the rest |
+
+**One of them is renamed, and only its name.** CodyCam, Haiku's webcam
+application, is drawn separately at each size, so the repository exports it
+as `App_CodyCam_16.png`, `App_CodyCam_32.png` and `App_CodyCam_64.png` - one
+in each folder. The kit finds a picture's three sizes by one name, so here
+all three are `App_CodyCam.png`, each in its own folder and each byte for byte
+as fetched on 24 September 2026 from the same commit. The Camera app wears it
+(`roadmap.md` 6d).
 
 `files.lua` holds the first four rows and the programs' own headers hold
 the last, so adding an application that draws a window is one line in its

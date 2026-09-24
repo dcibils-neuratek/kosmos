@@ -21,7 +21,9 @@
 #  **A camera needs it for the same reason** (`usb.md` §11): macOS keeps the
 #  C920's video interfaces for its own driver. Without root the driver names
 #  the camera and is refused at SET_CONFIGURATION; with it, the camera
-#  streams and the driver says how many frames arrive every five seconds.
+#  streams - `opt/kosmos/camera=count` asks it to at once, with no window to
+#  open it - and the driver says how many frames arrive every five seconds.
+#  `tools/camera.sh` is the same camera in the Camera app, in a window.
 #
 #  The kernel is build/x86_64/kosmos.bin as it stands - `make x86-build`
 #  first. It boots to a prompt and runs for the seconds given; use the
@@ -41,6 +43,7 @@ qemu-system-x86_64 -M q35,vmport=off -m 512M -no-reboot \
     -display none -vga none -device ramfb -serial "file:$LOG" \
     -device qemu-xhci,id=xhci \
     -device "usb-host,bus=xhci.0,vendorid=0x$VENDOR,productid=0x$PRODUCT" \
+    -fw_cfg name=opt/kosmos/camera,string=count \
     -kernel "$HERE/build/x86_64/kosmos.bin" < /dev/null &
 QEMU=$!
 

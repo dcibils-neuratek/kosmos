@@ -6488,6 +6488,18 @@ static bool test_higher_priority_runs_first(void)
     }
 
     /*
+     * **Both on this processor**, which is the question: one runqueue, two
+     * bands. New threads spread across the cores, and on two of them the
+     * lower one - woken first - simply started on its own core before the
+     * higher one was chosen on the other, which is a race and not an order.
+     * It failed once in a gate run, 24 September, with six machines
+     * emulated at once, and passed three runs of three alone. The home is
+     * set between creating and waking, the one window where it can be.
+     */
+    low->sched.cpu = this_cpu()->index;
+    high->sched.cpu = this_cpu()->index;
+
+    /*
      * The "low" one is at NORMAL, not LOW - the same band as the thread
      * running this test, so round robin gives it a turn. At LOW it would
      * never run at all while this test is spinning at NORMAL, and the test

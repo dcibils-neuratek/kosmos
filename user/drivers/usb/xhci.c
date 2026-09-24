@@ -73,6 +73,7 @@
 #include "blockproto.h"
 #include "ethproto.h"
 #include "ethring.h"
+#include "cameraproto.h"
 #include "storage_decode.h"
 #include "pad_decode.h"
 #include "usb_decode.h"
@@ -4154,10 +4155,12 @@ static void use_ethernet(struct controller *c, struct device *d,
 #define CC_RING_UNDERRUN    14u
 #define CC_RING_OVERRUN     15u
 #define CC_MISSED_SERVICE   23u
+#define CC_STOPPED          26u         /* ...and 27, 28: stopped mid-TD */
 
 struct camera {
     bool          used;
     bool          streaming;
+    bool          stopping;             /* no TD goes back on the ring */
     struct controller *c;
     unsigned      slot;
     struct device dev;
@@ -4333,6 +4336,8 @@ static void camera_bells(const struct controller *c)
     }
 }
 
+static void stream_frame(struct camera *k, uint32_t length);
+
 static void say_camera_size(struct say_line *line, const struct uvc_frame *f)
 {
     say_text(line, f->pixels == UVC_PIXELS_YUY2 ? "YUY2 "
@@ -4355,6 +4360,7 @@ static void camera_frame(struct camera *k)
     struct say_line line;
 
     k->frames++;
+    stream_frame(k, k->as.length);
 
     if (now - k->said_at < span) {
         return;
@@ -4416,6 +4422,12 @@ static void take_video(struct controller *c, const uint32_t *event)
         return;
     }
 
+    /* The endpoint stopped with this TD in hand (4.6.9): not an error, and
+     * not a TD to put back - the stream is ending. */
+    if (code >= CC_STOPPED && code <= CC_STOPPED + 2u) {
+        return;
+    }
+
     if (at < k->ring.bus || at >= k->ring.bus + (uint64_t)RING_TRBS * 16u
         || (at - k->ring.bus) % 16u != 0) {
         k->errors++;
@@ -4458,7 +4470,9 @@ static void take_video(struct controller *c, const uint32_t *event)
         }
     }
 
-    camera_queue(k, which);
+    if (!k->stopping) {
+        camera_queue(k, which);
+    }
 }
 
 /*
@@ -4499,7 +4513,8 @@ static bool control_out(struct controller *c, struct device *d,
  *      endpoint's context - then SET_INTERFACE, the order 4.6.6.1 gives;
  *   5. somewhere for the TDs and somewhere for a frame, and the ring full.
  */
-static bool camera_start(struct camera *k, int size, struct say_line *line)
+static bool camera_start(struct camera *k, int size, uint8_t *target,
+                         uint32_t room, struct say_line *line)
 {
     struct controller *c = k->c;
     struct device *d = &k->dev;
@@ -4574,13 +4589,17 @@ static bool camera_start(struct camera *k, int size, struct say_line *line)
 
     k->tds_pages = ((unsigned long)CAMERA_TDS * k->td_bytes + PAGE - 1u)
                    / PAGE;
-    k->frame_pages = ((unsigned long)capacity + PAGE - 1u) / PAGE;
+    k->frame_pages = target != NULL ? 0
+                   : ((unsigned long)capacity + PAGE - 1u) / PAGE;
 
+    /* Into the program's region when one opened it (8d); into a frame of
+     * its own when it streams only to be counted. */
     if (capacity == 0
         || !camera_region(c, k->tds_pages, true, &k->tds_cap, &k->tds,
                           &k->tds_bus)
-        || !camera_region(c, k->frame_pages, false, &k->frame_cap,
-                          &k->frame, NULL)) {
+        || (target == NULL
+            && !camera_region(c, k->frame_pages, false, &k->frame_cap,
+                              &k->frame, NULL))) {
         camera_release(k);
         c->last_code = CC_SUCCESS;
         say_failure(c, d->port, "memory for the camera's stream",
@@ -4632,9 +4651,15 @@ static bool camera_start(struct camera *k, int size, struct say_line *line)
         return false;
     }
 
-    uvc_assembly_init(&k->as, (uint8_t *)k->frame, k->frame_pages * PAGE,
-                      expect);
+    if (target != NULL) {
+        uvc_assembly_init(&k->as, target, room, expect);
+    } else {
+        uvc_assembly_init(&k->as, (uint8_t *)k->frame, k->frame_pages * PAGE,
+                          expect);
+    }
+
     k->queued = 0;
+    k->stopping = false;
     k->said_at = kosmos_ticks();
     k->streaming = true;
 
@@ -4665,9 +4690,10 @@ static bool camera_start(struct camera *k, int size, struct say_line *line)
 }
 
 /*
- * **A camera plugged in.** Said, configured, and - until `/dev/camera`
- * (8d) lets an application ask for one - streamed at once at 640x480, so a
- * live test has frames to count.
+ * **A camera plugged in.** Said and configured, and then left until a
+ * program opens it through `/dev/camera` - or, with `opt/kosmos/camera=count`
+ * (`tools/usbhost.sh`), streamed at once at 640x480 with nobody watching, so
+ * a test with no window has frames to count.
  */
 static void use_camera(struct controller *c, struct device *d,
                        const struct uvc_camera *info, struct say_line *line)
@@ -4743,6 +4769,16 @@ static void use_camera(struct controller *c, struct device *d,
         return;
     }
 
+    {
+        char option[16] = { 0 };
+
+        if (kosmos_boot_option("opt/kosmos/camera", option,
+                               sizeof(option)) != 5
+            || memcmp(option, "count", 5) != 0) {
+            return;                     /* until a program opens it */
+        }
+    }
+
     size = uvc_find_frame(info, 0, 640, 480);
 
     if (size < 0) {
@@ -4758,15 +4794,59 @@ static void use_camera(struct controller *c, struct device *d,
         return;
     }
 
-    (void)camera_start(k, size, line);
+    (void)camera_start(k, size, NULL, 0, line);
+}
+
+/*
+ * **A stream ended** (4.6.9, 4.6.6): the endpoint stopped, the camera told to
+ * send nothing (setting 0), the endpoint dropped from the controller's
+ * context, and its buffers given back. `stopping` first, so a TD the
+ * controller hands back meanwhile is not put on the ring again.
+ */
+static void camera_stop(struct camera *k, struct say_line *line)
+{
+    struct controller *c = k->c;
+    struct device *d = &k->dev;
+    uint32_t done[4], *icc;
+
+    if (!k->streaming) {
+        return;
+    }
+
+    k->stopping = true;
+
+    (void)command(c, 0, 0, TRB_TYPE(TRB_STOP_ENDPOINT) | TRB_SLOT(d->slot)
+                           | TRB_ENDPOINT(k->dci), done);
+    (void)control_nodata(c, d, SET_INTERFACE, 0, k->info.streaming);
+
+    icc = context(c, d->input, 0);
+    icc[0] = 1u << k->dci;
+    icc[1] = 1u;
+    (void)command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                  TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done);
+
+    k->streaming = false;
+    k->bell = false;
+    camera_release(k);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": camera: stopped after ");
+    say_dec(line, k->frames);
+    say_text(line, k->frames == 1 ? " frame" : " frames");
+    say_send(console, line);
 }
 
 /* A camera unplugged: forgotten, and its memory given back. */
+static void stream_lost(struct camera *k);
+
 static void camera_gone(struct controller *c, unsigned slot)
 {
     struct camera *k = camera_on(c, slot);
 
     if (k != NULL) {
+        stream_lost(k);
         camera_release(k);
         memset(k, 0, sizeof(*k));
     }
@@ -6092,16 +6172,21 @@ static void serve_blocks(struct say_line *line)
  * the disk server finds its partition through `/dev/blocks` before it ever
  * calls the write endpoint (`usb.md` §7).
  */
+static void serve_camera(struct say_line *line);
+static unsigned long camera_wait_ms(unsigned long otherwise);
+static long camera_endpoint_now(void);
+
 static void serve_without_controllers(int code)
 {
     struct say_line line;
     struct message msg;
     uint64_t sender = 0;
-    const long ends[2] = { blocks_endpoint, frames_endpoint };
+    const long ends[3] = { blocks_endpoint, frames_endpoint,
+                           camera_endpoint_now() };
 
     say_begin(&line);
 
-    if (blocks_endpoint < 0 && frames_endpoint < 0) {
+    if (blocks_endpoint < 0 && frames_endpoint < 0 && ends[2] < 0) {
         kosmos_exit(code);
     }
 
@@ -6115,7 +6200,10 @@ static void serve_without_controllers(int code)
          * start. Polling the two instead would be wakes a second on a
          * machine where nothing is happening.
          */
-        long woke = kosmos_irq_wait_any(NULL, 0, 0, ends, 2u);
+        /* Forever, unless a stream wants looking at: the test pattern's
+         * frames, and a lease, come round on the clock (`/dev/camera`). */
+        long woke = kosmos_irq_wait_any(NULL, 0, ticks_for(camera_wait_ms(0)),
+                                        ends, 3u);
 
         if (woke < 0 && woke != SYS_NO_INTERRUPT) {
             kosmos_exit(code);
@@ -6129,6 +6217,7 @@ static void serve_without_controllers(int code)
         }
 
         serve_frames(&line);
+        serve_camera(&line);
     }
 }
 
@@ -6320,6 +6409,517 @@ static void serve_frames(struct say_line *line)
     }
 }
 
+/*--------------------------------------------------------- `/dev/camera` */
+
+/*
+ * **The one stream, and whose it is** (`cameraproto.h`, `usb.md` §11 8d).
+ *
+ * One at a time for the whole driver: a camera streams to one window, and a
+ * second window is told the camera is in use. The program made the region
+ * and handed it over with OPEN; the driver writes whole frames into its
+ * slots and publishes the newest.
+ *
+ * **Two sources behind one protocol.** A USB camera (`struct camera`), and -
+ * with `opt/kosmos/camera=pattern` - a test pattern this driver draws itself:
+ * eight colour bars and a square that moves, at thirty frames a second. QEMU
+ * has no camera and a real one needs root on the Mac, so the pattern is what
+ * lets `/dev/camera`, the kit and the Camera app be held by the gate on both
+ * boards; a real camera arrives at the same slots through the same calls.
+ */
+static long camera_endpoint = -1;
+static bool pattern_offered;
+
+static struct {
+    bool          open;
+    bool          pattern;
+    struct camera *k;                   /* the USB camera, when not the pattern */
+    long          cap;
+    uintptr_t     at;
+    unsigned long pages;
+    volatile struct camera_ring *ring;
+    unsigned      writing;              /* the slot being filled */
+    uint32_t      sequence;
+    uint32_t      taken_seen;           /* the program's lease */
+    unsigned long taken_at;
+    unsigned long next_at;              /* the pattern's next frame, counter */
+    unsigned long every;                /* and the counter between two */
+    unsigned      phase;
+    uint32_t      handle;               /* what OPEN answered, CLOSE quotes */
+} stream;
+
+static uint32_t stream_handles;         /* never 0, never the same twice */
+
+/* The sizes the pattern offers, all YUY2 at thirty a second. */
+static const uint16_t PATTERN_SIZES[][2] = {
+    { 320, 240 }, { 640, 480 }, { 1280, 720 },
+};
+#define PATTERN_SIZE_COUNT  (sizeof(PATTERN_SIZES) / sizeof(PATTERN_SIZES[0]))
+
+/* How many cameras there are: the USB ones, then the pattern. */
+static unsigned cameras_listed(struct camera **out, unsigned most)
+{
+    unsigned i, n = 0;
+
+    for (i = 0; i < CAMERAS_MAX && n < most; i++) {
+        if (cameras[i].used) {
+            out[n++] = &cameras[i];
+        }
+    }
+
+    return n;
+}
+
+/*
+ * A USB camera's sizes as LIST gives them: its frames in the order it
+ * described them, the formats this can say anything about. `index` counts
+ * those only; the answer is its place in `info.frames`, or -1.
+ */
+static int camera_size_frame(const struct camera *k, unsigned index)
+{
+    unsigned i, n = 0;
+
+    for (i = 0; i < k->info.nframes && i < UVC_FRAMES_MAX; i++) {
+        unsigned pixels = k->info.frames[i].pixels;
+
+        if (pixels != UVC_PIXELS_YUY2 && pixels != UVC_PIXELS_MJPEG) {
+            continue;
+        }
+
+        if (n++ == index) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+static uint32_t frame_slot_bytes(const struct uvc_frame *f)
+{
+    return f->pixels == UVC_PIXELS_YUY2
+           ? (uint32_t)f->width * f->height * 2u : f->max_bytes;
+}
+
+static void camera_list(uint32_t which, struct camera_reply *rep)
+{
+    struct camera *list[CAMERAS_MAX];
+    unsigned usb = cameras_listed(list, CAMERAS_MAX), i, n = 0;
+
+    rep->cameras = usb + (pattern_offered ? 1u : 0u);
+
+    if (which < usb) {
+        const struct camera *k = list[which];
+
+        memcpy(rep->name, k->c->name[k->slot],
+               NAME_MAX_CHARS < CAMERA_NAME_MAX - 1u
+               ? NAME_MAX_CHARS : CAMERA_NAME_MAX - 1u);
+
+        if (rep->name[0] == '\0') {
+            memcpy(rep->name, "USB camera", 11);
+        }
+
+        for (i = 0; n < CAMERA_SIZES_MAX; i++) {
+            int f = camera_size_frame(k, i);
+            const struct uvc_frame *fr;
+
+            if (f < 0) {
+                break;
+            }
+
+            fr = &k->info.frames[f];
+            rep->size[n].width = fr->width;
+            rep->size[n].height = fr->height;
+            rep->size[n].pixels = fr->pixels;
+            rep->size[n].fps = (uint8_t)(fr->interval != 0
+                                         ? 10000000u / fr->interval : 0u);
+            rep->size[n].slot_bytes = frame_slot_bytes(fr);
+            n++;
+        }
+    } else if (which == usb && pattern_offered) {
+        memcpy(rep->name, "Test pattern", 13);
+
+        for (i = 0; i < PATTERN_SIZE_COUNT; i++) {
+            rep->size[n].width = PATTERN_SIZES[i][0];
+            rep->size[n].height = PATTERN_SIZES[i][1];
+            rep->size[n].pixels = CAMERA_PIXELS_YUY2;
+            rep->size[n].fps = 30;
+            rep->size[n].slot_bytes = (uint32_t)PATTERN_SIZES[i][0]
+                                      * PATTERN_SIZES[i][1] * 2u;
+            n++;
+        }
+    } else {
+        rep->error = CAMERA_ERR_NONE;
+        return;
+    }
+
+    rep->sizes = n;
+}
+
+static uint8_t *stream_slot(unsigned slot)
+{
+    return (uint8_t *)(stream.at + CAMERA_RING_DATA
+                       + (uintptr_t)slot * stream.ring->slot_bytes);
+}
+
+/*
+ * The frame in `writing` is whole: publish it, and move to a slot that is
+ * neither the newest nor the one the program says it is reading - of three,
+ * there is always one (`cameraproto.h`).
+ */
+static void stream_publish(uint32_t length)
+{
+    volatile struct camera_ring *r = stream.ring;
+    unsigned next, i, reading;
+
+    r->length[stream.writing] = length;
+    CAMERA_FENCE();
+    r->latest = stream.writing;
+    CAMERA_FENCE();
+    r->sequence = ++stream.sequence;
+    CAMERA_FENCE();
+
+    reading = r->reading;
+    next = stream.writing;
+
+    for (i = 1; i <= CAMERA_SLOTS; i++) {
+        unsigned s = (stream.writing + i) % CAMERA_SLOTS;
+
+        if (s != stream.writing && s != reading) {
+            next = s;
+            break;
+        }
+    }
+
+    stream.writing = next;
+}
+
+/* A USB camera's whole frame, from `camera_frame`: into the program's region
+ * when it is the camera the program opened. */
+static void stream_frame(struct camera *k, uint32_t length)
+{
+    if (!stream.open || stream.pattern || stream.k != k) {
+        return;
+    }
+
+    stream_publish(length);
+    k->as.frame = stream_slot(stream.writing);
+}
+
+/* The region given back, and the program told, however the stream ended. */
+static void stream_end(void)
+{
+    if (!stream.open) {
+        return;
+    }
+
+    stream.ring->stopped = 1;
+    CAMERA_FENCE();
+    (void)kosmos_share_unmap((unsigned long)stream.at, stream.pages);
+    (void)kosmos_cap_drop(stream.cap);
+    memset(&stream, 0, sizeof(stream));
+}
+
+/* The camera a program was watching was pulled out. */
+static void stream_lost(struct camera *k)
+{
+    if (stream.open && !stream.pattern && stream.k == k) {
+        stream_end();
+    }
+}
+
+static void stream_close(struct say_line *line)
+{
+    if (stream.open && !stream.pattern && stream.k != NULL) {
+        camera_stop(stream.k, line);
+    }
+
+    stream_end();
+}
+
+/*
+ * **The test pattern's frame**: eight bars, 100% colours as YUY2 - white,
+ * yellow, cyan, green, magenta, red, blue, black - over the top three
+ * quarters, and below them a white square on black that moves a step each
+ * frame. The bars say the colours arrive right and which way round the
+ * picture is; the square says the frames keep coming.
+ */
+static void pattern_draw(uint8_t *to, unsigned width, unsigned height,
+                         unsigned phase)
+{
+    static const uint8_t BARS[8][3] = {
+        { 235, 128, 128 }, { 210,  16, 146 }, { 170, 166,  16 },
+        { 145,  54,  34 }, { 106, 202, 222 }, {  81,  90, 240 },
+        {  41, 240, 110 }, {  16, 128, 128 },
+    };
+    unsigned x, y, split = height * 3u / 4u;
+    unsigned side = height / 8u;
+    unsigned span = width > side ? width - side : 1u;
+    unsigned at = (phase * 4u) % span;
+
+    for (y = 0; y < height; y++) {
+        uint8_t *row = to + (unsigned long)y * width * 2u;
+
+        for (x = 0; x + 1u < width; x += 2u) {
+            uint8_t yy, u, v;
+
+            if (y < split) {
+                const uint8_t *bar = BARS[(x * 8u) / width];
+
+                yy = bar[0];
+                u = bar[1];
+                v = bar[2];
+            } else {
+                bool in = x >= at && x < at + side
+                          && y >= split + (height - split - side) / 2u
+                          && y < split + (height - split - side) / 2u + side;
+
+                yy = in ? 235 : 16;
+                u = 128;
+                v = 128;
+            }
+
+            row[x * 2u] = yy;
+            row[x * 2u + 1u] = u;
+            row[x * 2u + 2u] = yy;
+            row[x * 2u + 3u] = v;
+        }
+    }
+}
+
+/*
+ * **Every look the driver takes**: the pattern's next frame when it is due,
+ * and the lease - a program that has not taken a frame for
+ * `CAMERA_LEASE_SECONDS` has gone, and its stream is closed.
+ */
+static void stream_tick(struct say_line *line)
+{
+    unsigned long now = kosmos_ticks();
+    uint32_t taken;
+
+    if (!stream.open) {
+        return;
+    }
+
+    taken = stream.ring->taken;
+
+    if (taken != stream.taken_seen) {
+        stream.taken_seen = taken;
+        stream.taken_at = now;
+    } else if (now - stream.taken_at
+               > counter_hz * (unsigned long)CAMERA_LEASE_SECONDS) {
+        say_begin(line);
+        say_text(line, "xhci: camera: nobody has taken a frame for ");
+        say_dec(line, CAMERA_LEASE_SECONDS);
+        say_text(line, " s; the stream is closed");
+        say_send(console, line);
+        stream_close(line);
+        return;
+    }
+
+    if (stream.pattern && (long)(now - stream.next_at) >= 0) {
+        unsigned width = stream.ring->width, height = stream.ring->height;
+
+        pattern_draw(stream_slot(stream.writing), width, height,
+                     stream.phase++);
+        stream_publish(width * height * 2u);
+        stream.next_at += stream.every;
+
+        /* Behind by more than a frame - the driver was busy: catch up by
+         * skipping, not by drawing a burst. */
+        if ((long)(now - stream.next_at) > (long)stream.every) {
+            stream.next_at = now + stream.every;
+        }
+    }
+}
+
+static void camera_open(const struct camera_request *req, long cap,
+                        struct camera_reply *rep, struct say_line *line)
+{
+    struct camera *list[CAMERAS_MAX];
+    unsigned usb = cameras_listed(list, CAMERAS_MAX);
+    bool pattern = pattern_offered && req->camera == usb;
+    uint32_t width, height, pixels, slot_bytes, interval;
+    long pages, at;
+    int f = -1;
+
+    if (stream.open) {
+        rep->error = CAMERA_ERR_IN_USE;
+        return;
+    }
+
+    if (req->camera >= usb && !pattern) {
+        rep->error = CAMERA_ERR_NONE;
+        return;
+    }
+
+    if (pattern) {
+        if (req->size >= PATTERN_SIZE_COUNT) {
+            rep->error = CAMERA_ERR_SIZE;
+            return;
+        }
+
+        width = PATTERN_SIZES[req->size][0];
+        height = PATTERN_SIZES[req->size][1];
+        pixels = CAMERA_PIXELS_YUY2;
+        slot_bytes = width * height * 2u;
+        interval = 333333u;
+    } else {
+        const struct uvc_frame *fr;
+
+        f = camera_size_frame(list[req->camera], req->size);
+
+        if (f < 0) {
+            rep->error = CAMERA_ERR_SIZE;
+            return;
+        }
+
+        fr = &list[req->camera]->info.frames[f];
+        width = fr->width;
+        height = fr->height;
+        pixels = fr->pixels;
+        slot_bytes = frame_slot_bytes(fr);
+        interval = fr->interval;
+    }
+
+    pages = cap < 0 ? -1 : kosmos_mem_size(cap);
+
+    if (pages < 0 || (unsigned long)pages * PAGE
+                     < CAMERA_RING_DATA + CAMERA_SLOTS * (unsigned long)slot_bytes) {
+        rep->error = CAMERA_ERR_REGION;
+        return;
+    }
+
+    at = kosmos_mem_map(cap);
+
+    if (at < 0) {
+        rep->error = CAMERA_ERR_REGION;
+        return;
+    }
+
+    memset(&stream, 0, sizeof(stream));
+    stream.open = true;
+    stream.handle = ++stream_handles != 0 ? stream_handles : ++stream_handles;
+    rep->handle = stream.handle;
+    stream.pattern = pattern;
+    stream.cap = cap;
+    stream.at = (uintptr_t)at;
+    stream.pages = (unsigned long)pages;
+    stream.ring = (volatile struct camera_ring *)(uintptr_t)at;
+    stream.taken_at = kosmos_ticks();
+    stream.every = counter_hz / 30u;
+    stream.next_at = stream.taken_at;
+
+    stream.ring->width = width;
+    stream.ring->height = height;
+    stream.ring->pixels = pixels;
+    stream.ring->slots = CAMERA_SLOTS;
+    stream.ring->slot_bytes = slot_bytes;
+    stream.ring->interval = interval;
+    stream.ring->latest = 0;
+    stream.ring->sequence = 0;
+    stream.ring->stopped = 0;
+    stream.ring->reading = CAMERA_NOT_READING;
+    stream.ring->taken = 0;
+    CAMERA_FENCE();
+    stream.ring->magic = CAMERA_RING_MAGIC;
+
+    if (!pattern) {
+        stream.k = list[req->camera];
+
+        if (!camera_start(stream.k, f, stream_slot(0), slot_bytes, line)) {
+            memset(&stream, 0, sizeof(stream));
+            (void)kosmos_share_unmap((unsigned long)at, (unsigned long)pages);
+            rep->error = CAMERA_ERR_STREAM;
+            return;
+        }
+    }
+
+    say_begin(line);
+    say_text(line, "xhci: camera: ");
+    say_text(line, pattern ? "the test pattern" : "a camera");
+    say_text(line, " opened at ");
+    say_dec(line, width);
+    say_text(line, "x");
+    say_dec(line, height);
+    say_send(console, line);
+}
+
+static void camera_answer(const struct message *in, uint64_t sender, long cap,
+                          struct say_line *line)
+{
+    struct message out;
+    struct camera_reply *rep = (struct camera_reply *)(void *)out.data;
+    const struct camera_request *req =
+        (const struct camera_request *)(const void *)in->data;
+
+    memset(&out, 0, sizeof(out));
+    out.tag = in->tag;
+    out.length = (uint32_t)sizeof(*rep);
+
+    if (in->length != sizeof(*req)) {
+        rep->error = CAMERA_ERR_REQUEST;
+    } else {
+        switch (req->op) {
+        case CAMERA_OP_LIST:
+            camera_list(req->camera, rep);
+            break;
+        case CAMERA_OP_OPEN:
+            camera_open(req, cap, rep, line);
+            if (rep->error == CAMERA_OK) {
+                cap = -1;               /* kept, in `stream` */
+            }
+            break;
+        case CAMERA_OP_CLOSE:
+            /* Only the stream it opened: one that ended already and was
+             * opened again by somebody else is not this caller's. */
+            if (stream.open && req->handle == stream.handle) {
+                stream_close(line);
+            }
+            break;
+        default:
+            rep->error = CAMERA_ERR_REQUEST;
+            break;
+        }
+    }
+
+    if (cap >= 0) {
+        (void)kosmos_cap_drop(cap);
+    }
+
+    (void)kosmos_reply(sender, &out);
+}
+
+static void serve_camera(struct say_line *line)
+{
+    struct message msg;
+    uint64_t sender = 0;
+
+    while (camera_endpoint >= 0
+           && kosmos_receive(camera_endpoint, &msg, &sender, 1, 0) == 0) {
+        camera_answer(&msg, sender,
+                      msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1,
+                      line);
+    }
+
+    stream_tick(line);
+}
+
+/* Whether the pattern is on offer: `opt/kosmos/camera=pattern`. */
+static void camera_options(void)
+{
+    char option[16] = { 0 };
+
+    pattern_offered = kosmos_boot_option("opt/kosmos/camera", option,
+                                         sizeof(option)) == 7
+                      && memcmp(option, "pattern", 7) == 0;
+}
+
+/* How long a wait may be while a stream wants looking at: a pattern frame
+ * is due every 33 ms, and a lease is counted in seconds. */
+static unsigned long camera_wait_ms(unsigned long otherwise)
+{
+    return stream.open ? 10u : otherwise;
+}
+
 /*
  * Until the machine stops: **every running controller's interrupt waited on
  * at once**, and every controller looked at after any of them.
@@ -6364,12 +6964,13 @@ static void watch(struct controller *list, unsigned count,
          * which is what watching one cost and is why the kernel now watches
          * three. A caller answers IRQ_WAIT_CALLER + its place, a line with
          * an interrupt first; all three are served after every wake. */
-        const long ends[3] = { writes_endpoint, blocks_endpoint,
-                               frames_endpoint };
+        const long ends[4] = { writes_endpoint, blocks_endpoint,
+                               frames_endpoint, camera_endpoint };
 
         if (waited > 0) {
-            woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS),
-                                       ends, 3u);
+            woke = kosmos_irq_wait_any(lines, waited,
+                                       ticks_for(camera_wait_ms(WATCH_MS)),
+                                       ends, 4u);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */
@@ -6387,11 +6988,17 @@ static void watch(struct controller *list, unsigned count,
 
         serve_blocks(line);
         serve_frames(line);
+        serve_camera(line);
     }
 }
 
+static long camera_endpoint_now(void)
+{
+    return camera_endpoint;
+}
+
 void xhci_server(long console_cap, long blocks_cap, long writes_cap,
-                 long frames_cap)
+                 long frames_cap, long camera_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -6404,6 +7011,8 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     blocks_endpoint = blocks_cap;
     writes_endpoint = writes_cap;
     frames_endpoint = frames_cap;
+    camera_endpoint = camera_cap;
+    camera_options();
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;

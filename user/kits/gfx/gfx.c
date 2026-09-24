@@ -31,6 +31,8 @@
  */
 
 #include "shadow.h"
+#include "yuv.h"
+#include "cameraproto.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -2553,6 +2555,105 @@ static int l_stretch(lua_State *L)
     return 0;
 }
 
+/*
+ * `surface:camera(at, mirror, last)` - the newest whole frame from a camera's
+ * region into this surface (`cameraproto.h`, `roadmap.md` 6d).
+ *
+ * `at` is where the program mapped the region it handed the driver;
+ * `mirror` flips the picture left for right; `last` is the sequence the
+ * program last drew, so an unchanged picture costs nothing. The answer is
+ * the frame's sequence when one was drawn, or false and why not: "same",
+ * "waiting" before the first frame, "stopped" once the driver has closed the
+ * stream, or "mjpeg" for a format this does not convert yet.
+ *
+ * **The handshake is here, in C, and not in Lua**, because it is three
+ * stores and a fence in an order that matters (`cameraproto.h`): say which
+ * slot is being read, make sure it is still the newest, convert it, let it
+ * go. A Lua program cannot fence, and should not have to know it needs to.
+ * `taken` moves forward with every frame, which is what keeps the stream
+ * open: a program that stops calling this loses the camera three seconds
+ * later.
+ */
+static int l_camera(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    lua_Integer at = luaL_checkinteger(L, 2);
+    int mirror = lua_toboolean(L, 3);
+    uint32_t last = (uint32_t)luaL_optinteger(L, 4, 0);
+    volatile struct camera_ring *r = (volatile struct camera_ring *)(uintptr_t)at;
+    uint32_t sequence, slot = CAMERA_NOT_READING, width, height, length;
+    unsigned tries;
+
+    if (at == 0 || r->magic != CAMERA_RING_MAGIC) {
+        return luaL_error(L, "that is not a camera's region");
+    }
+
+    if (r->stopped) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "stopped");
+        return 2;
+    }
+
+    sequence = r->sequence;
+    CAMERA_FENCE();
+
+    if (sequence == 0 || sequence == last) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, sequence == 0 ? "waiting" : "same");
+        return 2;
+    }
+
+    /* Mark a slot, then make sure it is still the newest: the driver
+     * never writes into the one marked, but it may have moved on first. */
+    for (tries = 0; tries < 8; tries++) {
+        slot = r->latest;
+        r->reading = slot;
+        CAMERA_FENCE();
+
+        if (r->latest == slot) {
+            break;
+        }
+    }
+
+    sequence = r->sequence;
+    width = r->width;
+    height = r->height;
+
+    if (slot >= CAMERA_SLOTS || slot >= r->slots) {
+        r->reading = CAMERA_NOT_READING;
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "waiting");
+        return 2;
+    }
+
+    length = r->length[slot];
+
+    if (r->pixels != CAMERA_PIXELS_YUY2) {
+        CAMERA_FENCE();
+        r->reading = CAMERA_NOT_READING;
+        r->taken = sequence;
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "mjpeg");
+        return 2;
+    }
+
+    if (length == width * height * 2u && dst->width >= width
+        && dst->height >= height && r->slot_bytes >= length) {
+        const uint8_t *src = (const uint8_t *)(uintptr_t)at + CAMERA_RING_DATA
+                             + (uintptr_t)slot * r->slot_bytes;
+
+        gfx_yuy2(dst->pixels, dst->pitch, src, width, height, mirror != 0);
+    }
+
+    /* Done with it: let the driver have the slot back, and renew the lease. */
+    CAMERA_FENCE();
+    r->reading = CAMERA_NOT_READING;
+    r->taken = sequence;
+
+    lua_pushinteger(L, (lua_Integer)sequence);
+    return 1;
+}
+
 static const luaL_Reg surface_methods[] = {
     { "size",   l_size },
     { "pitch",  l_pitch },
@@ -2563,6 +2664,7 @@ static const luaL_Reg surface_methods[] = {
     { "blit",   l_blit },
     { "blit_round", l_blit_round },
     { "shadow", l_shadow },
+    { "camera", l_camera },
     { "fill_round",  l_fill_round },
     { "frame_round", l_frame_round },
     { "blend",  l_blend },

@@ -9168,3 +9168,33 @@ driver will read come from a real one - Diego's C920 - and the fixture is the
   sanitizer hangs before `main` on this Mac, and the guard page does its job.
 - **Controls**: a decoder that reads one byte past a length crashes on the
   guard page; one that forgets a setting's extra transactions fails 7.
+
+## 18.170 `/dev/camera` and the Camera app, on a test pattern
+
+`roadmap.md` 6d, `usb.md` §11 8d and 8e. The real camera needs root on the
+Mac, so the gate holds everything else against a pattern the USB driver draws
+itself when the harness boots with `opt/kosmos/camera=pattern` - the same
+region, handshake, lease and kit call a real camera's frames go through.
+
+- **camera** (display harness, both boards), 4: the pattern's bars arrive in
+  their colours and mirrored by default; M turns the mirror off; the square
+  moves in a second and a half; the app's count of frames grows - a count
+  and not a rate, because on x86-64 in the gate, six machines emulated side
+  by side, it drew fewer than one a second and the rate rounded to 0 in a run
+  whose picture had moved. Control: the graphics
+  kit with its mirror inverted - *"mirrored, the pattern's left bar is (255,
+  255, 255) and its right (0, 0, 0)"*.
+- `tools/test_yuv.c`, 10, on the host: BT.601 for every Y, U and V; a frame
+  straight and mirrored. Control: U and V swapped.
+
+**And a kernel check that was a race.** "sched: the higher priority runs
+first" failed once in a gate run and passed three of three alone: it woke a
+NORMAL thread and then a DISPLAY one, and new threads spread across the
+cores, so the first could simply start on its own core before the second was
+chosen on another. Its two threads are homed on the test's own core now,
+which is the question it asks - one runqueue, two bands.
+
+A first screenshot found the one bug the check had not: a window that draws
+its own pixels flips between two surfaces on each commit, and the app drew
+only the picture each frame, so its header was in one surface and black in
+the other. It draws the whole window every frame now.

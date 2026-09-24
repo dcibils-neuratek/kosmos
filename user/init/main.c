@@ -73,7 +73,8 @@ void net_server(long endpoint, long frames, long frames2);
  * endpoint of its own: it is a driver, and it reports as a client. */
 void powerbutton_server(long console);
 void backlight_server(long console, long endpoint);
-void xhci_server(long console, long blocks, long writes, long frames);
+void xhci_server(long console, long blocks, long writes, long frames,
+                 long camera);
 void e1000_server(long console, long frames);
 
 /* Its own endpoint, the USB driver's *read* endpoint, and the console's.
@@ -274,7 +275,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_XHCI) {
         named("xhci");
-        xhci_server(0, 1, 2, 3);
+        xhci_server(0, 1, 2, 3, 4);
     }
 
     if (arg == ROLE_E1000) {

@@ -97,9 +97,18 @@ Pushed with 0.10.118 onwards after `make prepush` (6:12), and released as
 `v0.10.154` for the MacBook after `make stress`, both images booted and
 drawing Monitor's history.
 
-**The camera** is drawn (`docs/camera.html`, with Record) and agreed as a
-USB Video Class driver (6d). macOS keeps the C920 unless QEMU runs as root,
-so live tests are Diego's, with `sudo`; the steps are 8a-8f in `usb.md`.
+**The camera** (6d, `usb.md` §11): 8a-8e built on 24 September - the C920's
+descriptors from its own bytes, the isochronous stream in the xHCI driver,
+`/dev/camera` with a triple-buffered region and a lease, and the Camera app,
+held by the gate on a test pattern on both boards. macOS keeps the real
+camera unless QEMU runs as root: `sudo sh tools/camera.sh` is the first
+picture, Diego's to start when he is home (Tailscale on the Mac mini would
+let him from the office). 8f, recording to H.264 with `minih264e` and
+`minimp4`, is next.
+The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
+something - a layout-sensitive x86 kernel fault (recorded, Known and
+unexplained), a frame-rate check that was a QEMU number, and a scheduler
+check that was a race between cores.
 
 **Queued, in order**: the camera (6d); then the eleven windows drawn in
 `docs/apps.html` on 24 September and not yet built (5zs); the pixel loops

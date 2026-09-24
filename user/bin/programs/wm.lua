@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: server
--- kosmos: needs processes screen network audio
+-- kosmos: needs processes screen network audio camera
 --
 -- `network` is here so the desktop can *pass it on*. The kernel refuses a
 -- spawn that hands over authority the parent does not hold, so without this

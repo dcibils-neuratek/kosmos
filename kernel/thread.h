@@ -110,9 +110,10 @@ struct addrspace;
  * disk server's writes and `/dev/blocks`. A USB Ethernet adapter adds the
  * network stack's frames, and an endpoint that is not watched waits out the
  * driver's whole watch interval - which is the fault that made this two
- * rather than one (`usb.md` 7d).
+ * rather than one (`usb.md` 7d). And four since 24 September: `/dev/camera`
+ * is the same driver's fourth (`usb.md` §11 8d), eight bytes a thread.
  */
-#define IPC_WATCH_MAX 3u
+#define IPC_WATCH_MAX 4u
 
 struct thread {
     /* First, because switch.S reaches it through the thread pointer and a

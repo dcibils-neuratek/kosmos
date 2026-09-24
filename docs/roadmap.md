@@ -1699,7 +1699,10 @@ processors, and still what follows USB:
      ("yes is perfect").
    - The steps, in `usb.md` §11 as they land: **8a built** - the camera's
      descriptors read and its formats known (on the Mac, from the C920's
-     own bytes, `testing.md` 18.169);
+     own bytes, `testing.md` 18.169); **8b-8e built** on 24 September -
+     the stream, `/dev/camera`, and the Camera app on a test pattern on
+     both boards (18.170), the real C920 waiting for `sudo sh
+     tools/camera.sh`;
      8b isochronous IN in the xHCI driver; 8c the stream negotiated and
      frames put together; 8d `/dev/camera` and its region; 8e the app; 8f recording.
 
@@ -3492,6 +3495,23 @@ should be the default, and `make usb` should write the image that was
 checked rather than a new one.
 
 ## Known and unexplained
+
+**A kernel thread's capability table read as null, in one build's layout**
+(24 September, 0.10.155). The gate's x86-64 test image panicked on test 58,
+"cap: a table holds more than it has room for", three runs of three: a
+page fault writing address 0 at `spin_lock` in `captable_count`, called
+with the test thread's `self->caps` - so either `current` named a slot
+whose table was never set, or something wrote over the pointer. What moved
+it: the thread struct grew when `IPC_WATCH_MAX` went from 3 to 4 for
+`/dev/camera` - with 3, that layout passed 177 of 177 - but a rebuild of the
+same source, 48 bytes larger in its embedded image, passes 177 of 177 five
+runs of five, and so did the same build with a print added to the test. So
+the size is the trigger and not an evident cause: something in the kernel
+depends on where things land. On a single processor it passed too, which
+leans towards a race over a plain overwrite. The failing image was rebuilt
+over before it could be kept; the next time it appears, keep the binary
+(`cp build/x86_64-test/kosmos.elf` somewhere) - it fails every time, which
+is the only thing that makes it findable.
 
 **Three to four audio underruns per 2.3 seconds.** Six structural changes
 did not move it: the ring, the priority band, an eight-times buffer, the

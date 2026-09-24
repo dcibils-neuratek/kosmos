@@ -890,12 +890,12 @@ local function new_namespace()
   --
   local BIN_NAME_MAX = 64                 -- has to match binproto.h
   local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
-  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c32"
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c32"
 
   assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
-  local BIN_DATA = 24 + 96 + 32 + 1   -- past the header and the icon, 1-based
+  local BIN_DATA = 24 + 128 + 32 + 1  -- past the header and the icon, 1-based
   local BIN_OPS = { list = 1, read = 2, getattr = 3 }
   local BIN_ERRORS = {
     [1] = "no such program",
@@ -923,7 +923,8 @@ local function new_namespace()
     if #reply < BIN_DATA then return nil, "a /bin reply of the wrong size" end
 
     local err, count, size, length, more, windowed,
-          kind, section, n1, n2, n3, n4, icon = string.unpack(BIN_HEAD, reply)
+          kind, section, n1, n2, n3, n4, n5, n6, icon =
+      string.unpack(BIN_HEAD, reply)
 
     if err ~= 0 then
       return nil, BIN_ERRORS[err] or ("bin error " .. tostring(err))
@@ -955,7 +956,7 @@ local function new_namespace()
     if op == "getattr" then
       local needs = nil
 
-      for _, w in ipairs({ n1, n2, n3, n4 }) do
+      for _, w in ipairs({ n1, n2, n3, n4, n5, n6 }) do
         w = trim(w)
 
         if w ~= "" then
@@ -3912,7 +3913,7 @@ local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
-                          blocks_cap, drives_cap, backlight_cap)
+                          blocks_cap, drives_cap, backlight_cap, camera_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap, nil, "console")
   ns.mount("/ramfs", ramfs_cap, nil, "ram")
@@ -4667,6 +4668,7 @@ query. `find` and `watch` are built on exactly these two calls.
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
+    local camera = nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -4676,14 +4678,18 @@ query. `find` and `watch` are built on exactly these two calls.
       if want == "network" and may_pass_net() then
         flags = flags | SPAWN_NET
       end
+      if want == "camera" then camera = camera_cap end
     end
 
-    local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
-                                        bin_cap, devices_cap, lib_cap,
-                                        app_cap, disk_cap, audio_cap,
-                                        net_cap, blocks_cap, drives_cap,
-                                        backlight_cap },
-                         flags)
+    -- The camera last, and only when declared: everything before it keeps
+    -- its number, and a program that did not ask never holds it.
+    local caps = { ep, console_cap, ramfs_cap, bin_cap, devices_cap,
+                   lib_cap, app_cap, disk_cap, audio_cap, net_cap,
+                   blocks_cap, drives_cap, backlight_cap }
+
+    if camera then caps[#caps + 1] = camera end
+
+    local id = sys.spawn(RUNNER_ROLE, caps, flags)
 
     if not id then
       sys.destroy(ep)
@@ -4695,7 +4701,7 @@ query. `find` and `watch` are built on exactly these two calls.
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12,
+      backlight = 12, camera = camera and 13 or nil,
       home_in_memory = home_in_memory or nil,
     })
 
@@ -5314,6 +5320,15 @@ if role == ROLE_INIT then
   local DRIVES_EP = sys.endpoint()
   local BACKLIGHT_EP = sys.endpoint()
 
+  --
+  -- **`/dev/camera`**, answered by the USB driver (`usb.md` §11 8d). Handed
+  -- down only to a program that declares `kosmos: needs camera` - and to
+  -- the desktop, which declares it so it can pass it on - because a camera
+  -- is a thing a program should have to say it wants: what a program was
+  -- not handed it cannot reach.
+  --
+  local CAMERA_EP = sys.endpoint()
+
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
     sys.exit(1)
@@ -5441,7 +5456,7 @@ if role == ROLE_INIT then
   do
     local _, err = sys.spawn(ROLE_XHCI,
                              { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
-                               FRAMES_EP },
+                               FRAMES_EP, CAMERA_EP },
                              SPAWN_DEVICES)
 
     if err then
@@ -5631,7 +5646,7 @@ if role == ROLE_INIT then
                       -- runner names them by number further down.
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
-                        DRIVES_EP, BACKLIGHT_EP },
+                        DRIVES_EP, BACKLIGHT_EP, CAMERA_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5703,7 +5718,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
   return
 end
 
@@ -5864,6 +5879,7 @@ if role == ROLE_RUNNER then
   if req.backlight then
     ns.mount("/dev/backlight", req.backlight, nil, "backlight")
   end
+  if req.camera  then ns.mount("/dev/camera",  req.camera, nil, "camera") end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -5993,6 +6009,7 @@ if role == ROLE_RUNNER then
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
+    local camera_at = nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -6001,6 +6018,14 @@ if role == ROLE_RUNNER then
       end
       if want == "network" and may_pass_net() then
         flags = flags | SPAWN_NET
+      end
+
+      -- The camera, only to a program that declares it, and only from a
+      -- program that holds it: on the end, after the shares, with its
+      -- index named in the request the way theirs are.
+      if want == "camera" and req.camera then
+        caps[#caps + 1] = req.camera
+        camera_at = #caps - 1
       end
     end
 
@@ -6016,7 +6041,7 @@ if role == ROLE_RUNNER then
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12,
+      backlight = 12, camera = camera_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Inherited rather than decided again. This is a program starting a

@@ -65,7 +65,7 @@
  */
 #define BIN_NAME_MAX    64u
 #define BIN_WORD_MAX    16u       /* a kind, a section, one `needs` word */
-#define BIN_NEEDS_MAX    4u       /* authorities one program may declare */
+#define BIN_NEEDS_MAX    6u       /* authorities one program may declare */
 #define BIN_ICON_MAX    32u       /* `Misc_Deskbar_Group` is eighteen */
 #define BIN_CHUNK     1792u       /* source bytes, or 28 names, per reply */
 

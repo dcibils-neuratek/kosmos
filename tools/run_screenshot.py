@@ -221,6 +221,7 @@ def extra_args(image, more):
 X86_ARGS = [
     "-M", "q35",
     "-m", "512M",
+    "-fw_cfg", "name=opt/kosmos/camera,string=pattern",   # `QEMU_ARGS` says
     "-display", "none",
     "-vga", "none",
     "-device", "ramfb",
@@ -270,6 +271,12 @@ QEMU_ARGS = [
 ] + ([
     "-fw_cfg", "name=opt/kosmos/smp,string=" + os.environ["KOSMOS_SMPWORK"],
 ] if os.environ.get("KOSMOS_SMPWORK") else []) + [
+    #
+    # The USB driver's test pattern, offered at `/dev/camera` (`usb.md` §11
+    # 8d): QEMU has no camera, and the real one needs root on the Mac, so
+    # this is what the Camera app is held to.
+    #
+    "-fw_cfg", "name=opt/kosmos/camera,string=pattern",
     "-display", "none",
     "-device", "ramfb",
     # force-legacy=false is not optional: QEMU's virtio-mmio transports
@@ -6672,6 +6679,116 @@ def check_monitor(guest):
     return 2
 
 
+def check_camera(guest):
+    """**The Camera app shows what `/dev/camera` sends** (`roadmap.md` 6d,
+    `usb.md` §11 8d, `docs/camera.html`).
+
+    Against the USB driver's test pattern, which this harness offers with
+    `opt/kosmos/camera=pattern`: eight bars, white to black, over a square
+    that moves. The whole path is the real one - `/dev/camera` handed only to
+    a program that declares it, a region made by the app and handed over,
+    whole frames published by the driver, and `surface:camera` taking the
+    newest in C - with the pattern where a camera would be.
+
+    Four things. **The colours arrive right and the picture is mirrored**, as
+    it is by default: the left bar is the pattern's last, black, and the
+    right its first, white. **M turns the mirror off**, and they swap.
+    **Frames keep coming**: the square is somewhere else a second later.
+    **The app counts them**, and says more than none a second.
+    """
+    mark = len(guest.seen)
+    guest.type("wm camera")
+    started(guest)
+
+    try:
+        line = guest.wait_for_line("camera: Test pattern at ",
+                                   "the Camera app to open the test pattern",
+                                   mark)
+
+        if "640x480" not in line or "mirrored" not in line:
+            raise Failure("Camera opened the pattern as %r - wanted 640x480, "
+                          "mirrored" % line)
+
+        found = re.findall(r"wm: window Camera at (\d+),(\d+) (\d+)x(\d+)",
+                           guest.seen[mark:])
+
+        if not found:
+            raise Failure("the window manager never placed the Camera window")
+
+        wx, wy, _, _ = (int(v) for v in found[-1])
+
+        # The picture: 640 by 480, 20 in and 20 below the 46 of header.
+        px, py = wx + 20, wy + 46 + 20
+
+        def bars():
+            width, height, pixels = parse_ppm(guest.screendump())
+
+            def at(x, y):
+                o = (y * width + x) * 3
+                return tuple(pixels[o:o + 3])
+
+            return at(px + 40, py + 100), at(px + 600, py + 100), \
+                   [at(px + x, py + 420) for x in range(0, 640, 8)]
+
+        deadline = time.monotonic() + 20
+
+        while True:
+            left, right, bottom = bars()
+
+            if left == (0, 0, 0) and right == (255, 255, 255):
+                break
+
+            if time.monotonic() > deadline:
+                raise Failure("mirrored, the pattern's left bar is %r and its "
+                              "right %r - wanted black and white, the last "
+                              "bar and the first" % (left, right))
+
+            time.sleep(0.5)
+
+        time.sleep(1.5)
+        _, _, later = bars()
+
+        if later == bottom:
+            raise Failure("the square under the bars did not move in a second "
+                          "and a half - frames are not arriving")
+
+        guest.sendkey("m")
+        guest.wait_for_line("camera: as the camera sees it",
+                            "M to turn the mirror off", mark)
+        deadline = time.monotonic() + 10
+
+        while True:
+            left, right, _ = bars()
+
+            if left == (255, 255, 255) and right == (0, 0, 0):
+                break
+
+            if time.monotonic() > deadline:
+                raise Failure("with the mirror off the left bar is %r and the "
+                              "right %r - wanted white and black" % (left, right))
+
+            time.sleep(0.5)
+
+        #
+        # **A count, not a rate.** This asked for more than none a second,
+        # and on x86-64 in the gate - six machines emulated side by side -
+        # the app drew fewer than one a second and said 0 five times over,
+        # in a run whose picture had moved. How fast is a QEMU number; that
+        # the frames it counted keep adding up is the check.
+        #
+        totals = [int(n) for n in
+                  re.findall(r"camera: \d+ frames a second, (\d+) in all",
+                             guest.seen[mark:])]
+
+        if len(totals) < 2 or totals[-1] <= totals[0] or totals[-1] < 2:
+            raise Failure("the Camera app's count of frames did not grow: %r"
+                          % totals)
+    finally:
+        stop_desktop(guest)
+
+    return 4
+
+
 def check_cores(guest):
     """A meter that moves when the machine is given something to do.
 
@@ -9892,6 +10009,7 @@ def main():
         cores_checks = phase("cores", check_cores)
         split_checks = phase("cpu split", check_cpu_split)
         monitor_checks = phase("monitor", check_monitor)
+        camera_checks = phase("camera", check_camera)
         reaped_checks = phase("reaped", check_reaped)
         click_checks = phase("clicks", check_clicks)
         graphical_checks = phase("graphical", check_graphical_mode)
@@ -9953,7 +10071,7 @@ def main():
              + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
-             + split_checks + monitor_checks
+             + split_checks + monitor_checks + camera_checks
              + drives_app_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
@@ -10062,6 +10180,8 @@ def main():
           f"{split_checks} on a processor's busy time split into a thread's "
           f"own and the kernel's, "
           f"{monitor_checks} on Monitor's minute of history filling in, "
+          f"{camera_checks} on the Camera app showing the test pattern, "
+          f"mirrored and not, and moving, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

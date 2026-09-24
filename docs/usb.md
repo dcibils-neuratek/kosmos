@@ -14,7 +14,7 @@ else.
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
-| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a built; 8b and 8c written, found and refused without root, waiting for a run with it |
+| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a-8e built: the app on the test pattern, both boards; the real C920 found and refused without root, waiting for `sudo sh tools/camera.sh`; 8f, recording, next |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
@@ -2406,6 +2406,60 @@ The camera found and read right by the driver itself; then refused, because
 macOS holds its interfaces. `sudo sh tools/usbhost.sh 046d:08e5 30` is the
 run with root, and Diego's to start.
 
+### 8d and 8e: `/dev/camera`, and the Camera app
+
+**Asked for, not streamed at plug.** A camera is configured when it is
+plugged in and streams only when a program opens it - or, with
+`opt/kosmos/camera=count`, at once and to nobody, which is how
+`tools/usbhost.sh` counts frames with no window.
+
+**`/dev/camera`** is the USB driver's fourth endpoint (the kernel's wait now
+watches four, `IPC_WATCH_MAX`), and speaks `cameraproto.h`: LIST a camera's
+name and sizes, OPEN one size with a region the program made, CLOSE by the
+handle OPEN answered. The frames are in that region, never in a message:
+
+- **a triple buffer, not a queue** - the driver writes whole frames into
+  three slots and publishes the newest; the program marks the slot it reads
+  and checks it is still the newest; the driver never writes into the
+  newest or the marked one. That handshake is a store then a load on each
+  side, which x86 may reorder, so it takes `mfence` there (`CAMERA_FENCE`);
+- **a lease** - a program that has not taken a frame for three seconds has
+  gone, and the driver closes its stream, so a Camera window that died
+  cannot keep the camera "in use";
+- **a handle** - CLOSE names the stream it opened, so a window whose stream
+  already ended cannot close another's.
+
+**Only to a program that declares it.** `/dev/camera` is handed down to a
+program whose header says `kosmos: needs camera`, and to the window manager,
+which declares it to pass it on - so a program in a Terminal never holds the
+camera at all. `/bin` now reads six needs a program, not four: the window
+manager has five.
+
+**A test pattern behind the same door.** With `opt/kosmos/camera=pattern`
+the driver offers a camera of its own - eight colour bars and a square that
+moves, 30 a second, at three sizes - on both boards; on AArch64, which has
+no USB controller, from the loop that serves `/dev/blocks` there. That is
+what the gate holds the Camera app to, since QEMU has no camera.
+
+**The app** (`camera.lua`, `docs/camera.html`) draws its own pixels, as the
+video player does: `pixelkit`'s header, Record greyed until 8f, the size as
+a dropdown, Mirror and the cameras behind the dots, M for the mirror, and the
+picture from `surface:camera` - the handshake and the YUY2 conversion in C,
+in the graphics kit (`yuv.c`, BT.601 studio range). No pixel passes through
+Lua. It wears Haiku's CodyCam icon.
+
+Run on 24 September with the C920 through `tools/camera.sh`, without root:
+
+```
+xhci: 00:03.0 port 5: a camera, USB Video Class 1.0: 18 sizes in YUY2 and 17 in MJPEG, streaming on interface 1 in 11 settings up to 3072 bytes an interval
+xhci: 00:03.0 port 5: SET_CONFIGURATION for the camera failed: Stall Error (6); it is not driven
+wm: started /bin/camera.lua as 20
+camera: no camera - there is no camera with that number
+```
+
+The picture from the real camera is `sudo sh tools/camera.sh`: the same
+machine in a window, with root.
+
 ### How it is tested
 
 - `tools/test_uvcdecode.c`, 63, on the host, against **Diego's C920's own
@@ -2421,6 +2475,14 @@ run with root, and Diego's to start.
 - **Controls**, two: a decoder that trusts a length one byte too far dies on
   the guard page (exit 138), and one that forgets a setting's extra
   transactions fails 7 checks.
+- `tools/test_yuv.c`, 10: every one of the 16,777,216 Y, U and V within a
+  step of BT.601 in floating point, the known colours, a frame straight and
+  mirrored with nothing written past a row. 0.36 ms for 640x480 on the Mac.
+  Control: U and V swapped fails 2.
+- **camera** (display harness, both boards): the Camera app on the test
+  pattern - the bars in the right colours, mirrored by default; M turning the
+  mirror off; the square moving; the app counting frames (29 a second under
+  TCG on AArch64). Control: the kit with its mirror inverted fails the first.
 
 ## Sources
 

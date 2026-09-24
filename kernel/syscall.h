@@ -389,7 +389,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SYS_IRQ_WAIT_ANY 52 /* (&caps, count, ticks, ep, ep2) -> which, caller, none */
 
 #define IRQ_WAIT_ANY_MAX       8u
-#define IRQ_WAIT_ENDPOINTS_MAX 3u
+#define IRQ_WAIT_ENDPOINTS_MAX 4u
 /* Never a line's place; plus one, the second endpoint's caller. */
 #define IRQ_WAIT_CALLER  ((long)IRQ_WAIT_ANY_MAX)
 
