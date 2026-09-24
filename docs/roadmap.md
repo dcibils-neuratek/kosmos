@@ -1697,8 +1697,9 @@ processors, and still what follows USB:
      lieff's `minih264e`, beside the `minimp3` already vendored, with his
      `minimp4` to write the file; and the rest of the drawing as it is
      ("yes is perfect").
-   - The steps, in `usb.md` §11 as they land: 8a the camera's descriptors
-     read and its formats known (on the Mac, from the C920's own bytes);
+   - The steps, in `usb.md` §11 as they land: **8a built** - the camera's
+     descriptors read and its formats known (on the Mac, from the C920's
+     own bytes, `testing.md` 18.169);
      8b isochronous IN in the xHCI driver; 8c the stream negotiated and
      frames put together; 8d `/dev/camera` and its region; 8e the app; 8f recording.
 

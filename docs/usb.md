@@ -14,7 +14,7 @@ else.
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
-| 8. a camera | a USB Video Class camera's live picture in a window (`roadmap.md` 6d) | agreed on 24 September; nothing built |
+| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a built: the C920's descriptors, on the Mac |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
@@ -2304,6 +2304,86 @@ what a driver in the kernel had:
   request number is refused, and the line says so; and a frame of exactly a
   packet sent without the zero-length packet after it gets one answer
   instead of two.
+
+## 11. Step 8: a camera
+
+`roadmap.md` 6d. Diego, 24 September: "now work on a simple camera capture
+app", "I have a logitech camera connected to the mac mini", "i want to have a
+simple app that shows the live feed of the camera" - and then a Record button.
+The camera is an HD Pro Webcam C920, 046d:08e5, high speed, USB Video Class
+1.0; the app is drawn in `docs/camera.html`.
+
+**Kosmos drives it itself**, Diego's choice over frames sent from the Mac
+over the network. What that costs on this Mac was found first, with a
+program using libusb the way QEMU's `usb-host` does: macOS lets anybody read
+the camera's descriptors, and keeps both its video interfaces for its own
+driver - `libusb_claim_interface` answers `LIBUSB_ERROR_ACCESS` on each, and
+only root may take them. So the live test runs QEMU with `sudo`, as the game
+pad's did (§9), and is Diego's to start; everything that can be held without
+the camera is held on the Mac and in the gate.
+
+The steps, each written here when it lands:
+
+- **8a** - the camera's descriptors read, its formats and sizes known, the
+  stream's setting chosen, and payloads put together into frames. On the Mac.
+- **8b** - isochronous IN transfers in the xHCI driver.
+- **8c** - the stream negotiated with the camera and frames put together, in
+  the driver.
+- **8d** - `/dev/camera`, and the region the frames are in.
+- **8e** - the app, as drawn.
+- **8f** - recording, to H.264 in an MP4.
+
+### 8a: what a camera says it is
+
+`user/drivers/usb/uvc_decode.c`, with no hardware and no system calls in it,
+like the decoders beside it. A camera is a Video Interface Collection: a
+**VideoControl** interface (class 0Eh, subclass 01h), whose class-specific
+header says the UVC version, and a **VideoStreaming** one (subclass 02h),
+whose setting 0 lists the formats and their sizes and whose other settings
+each carry one isochronous IN endpoint of a different size. A camera may
+stream on a bulk endpoint in setting 0 instead, and that is read too.
+
+The C920 says: UVC 1.0, VideoControl on interface 0 and VideoStreaming on 1;
+format 1 uncompressed YUY2 in 18 sizes from 160x90 to 2560x1472, format 2
+MJPEG in 17 up to 1920x1080; and eleven settings of endpoint 1 IN carrying
+192, 384, 512, 640, 800, 944, 1280, 1600, 1984, 2688 and 3072 bytes a
+microframe - the last three with two or three transactions each, which
+`wMaxPacketSize` 12:11 says. YUY2 640x480 is 614,400 bytes a frame at 30 a
+second; at 1920x1080 YUY2 manages 5 a second, and MJPEG 30.
+
+**Probe and commit** (UVC 1.1 4.3.1.1) are one block the host and camera
+pass back and forth: the host names a format, a size and an interval; the
+camera answers with the largest frame and the largest payload it will send;
+the host commits that answer. The block is 26 bytes in UVC 1.0, 34 in 1.1 and
+48 in 1.5, and a camera refuses one of the wrong length - so its version,
+from the VideoControl header, decides it. The setting to stream on is then
+the least of those that carry the largest payload, because the bus's
+bandwidth is shared and a camera that takes all of it leaves none for the
+mouse.
+
+**Payloads into frames** (UVC 1.1 2.4.3.3). Each payload starts with a
+header: its length, a flag for the frame's identity (FID) that toggles from
+one frame to the next, a flag for its end (EOF), and one for an error (ERR).
+A frame is whole at EOF, or when FID changes without one. A stream is joined
+in the middle of a frame, so nothing is kept until a boundary has gone past;
+and a YUY2 frame whose size is not exactly width by height by two lost a
+payload on the way, and is dropped rather than shown with a tear in it.
+
+### How it is tested
+
+- `tools/test_uvcdecode.c`, 63, on the host, against **Diego's C920's own
+  2,427 bytes** (`tools/uvc_c920.h`), read from the camera through libusb on
+  the Mac: its interfaces, version, 35 sizes and eleven settings - the same
+  eleven libusb listed - a size and a setting chosen, the probe both ways,
+  every length of the configuration cut short, a bulk camera, a keyboard,
+  and payloads into frames: mid-frame, EOF, FID without EOF, short, ERR, too
+  large, and a header longer than its payload.
+- **The cut-short lengths end on a page nobody may read**, so a read one byte
+  past the end is a fault rather than a pass. The address sanitizer was the
+  first choice and hangs before `main` on this Mac.
+- **Controls**, two: a decoder that trusts a length one byte too far dies on
+  the guard page (exit 138), and one that forgets a setting's extra
+  transactions fails 7 checks.
 
 ## Sources
 

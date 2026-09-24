@@ -774,6 +774,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/drivers/usb/xhci.c \
              user/drivers/usb/usb_decode.c \
              user/drivers/usb/pad_decode.c \
+             user/drivers/usb/uvc_decode.c \
              user/drivers/usb/storage_decode.c \
              user/drivers/display/backlight.c \
              user/drivers/display/backlight_decode.c \
@@ -1640,6 +1641,19 @@ $(HOSTDIR)/test_paddecode: tools/test_paddecode.c user/drivers/usb/pad_decode.c 
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_paddecode.c user/drivers/usb/pad_decode.c
+
+#
+# A USB Video Class camera's descriptors, probe and payloads (`roadmap.md`
+# 6d): QEMU has no camera, so Diego's C920's own bytes are the fixture.
+# With the undefined-behaviour sanitizer; the address sanitizer hangs before
+# `main` on this Mac, so the reads past the end it would have caught are
+# caught by a guard page in the test itself.
+#
+$(HOSTDIR)/test_uvcdecode: tools/test_uvcdecode.c tools/uvc_c920.h user/drivers/usb/uvc_decode.c user/drivers/usb/uvc_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -D_DARWIN_C_SOURCE -D_DEFAULT_SOURCE -Wall -Wextra \
+	        -Werror -O1 -g -fsanitize=undefined -fno-sanitize-recover=all \
+	        -o $@ tools/test_uvcdecode.c user/drivers/usb/uvc_decode.c
 
 $(HOSTDIR)/test_usbdecode: tools/test_usbdecode.c user/drivers/usb/usb_decode.c user/drivers/usb/usb_decode.h
 	@mkdir -p $(dir $@)
@@ -2960,7 +2974,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3023,6 +3037,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_smbiosdecode
 	$(HOSTDIR)/test_usbdecode
+	$(HOSTDIR)/test_uvcdecode
 	$(HOSTDIR)/test_backlightdecode
 	$(HOSTDIR)/test_s5decode
 	$(HOSTDIR)/test_batterydecode

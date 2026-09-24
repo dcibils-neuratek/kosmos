@@ -9154,3 +9154,17 @@ their clock, beside the ticks.
 **The title bar's order** is `OUT.SLOT`, green, amber, red, read by both the
 drawing and the press; **tabs** and **deskbar focus** aim at the maximise and
 minimise boxes where they now are.
+
+## 18.169 A camera's descriptors, from the camera's own bytes
+
+`roadmap.md` 6d, `usb.md` §11 8a. QEMU has no camera, so the descriptors the
+driver will read come from a real one - Diego's C920 - and the fixture is the
+2,427 bytes it sent to libusb on the Mac (`tools/uvc_c920.h`).
+
+- `tools/test_uvcdecode.c`, 63: the C920 read whole - UVC 1.0, 35 sizes, 11
+  settings; a size, a setting and the probe; every length of it cut short,
+  each on the edge of an unreadable page; a bulk camera; a keyboard; payloads
+  into frames. Built with the undefined-behaviour sanitizer. The address
+  sanitizer hangs before `main` on this Mac, and the guard page does its job.
+- **Controls**: a decoder that reads one byte past a length crashes on the
+  guard page; one that forgets a setting's extra transactions fails 7.
