@@ -216,18 +216,19 @@ window says which one has it rather than showing black.</p>
 <tr><td>Header</td><td>The kit's <code>ui.header</code>: <i>Camera</i>, the camera's name and size beside it, the size as a dropdown, and &#8942;</td></tr>
 <tr><td>Picture</td><td>A surface the app draws each frame into, converted from the camera's bytes in C &mdash; YUY2 by arithmetic, MJPEG by the JPEG decoder the video player uses</td></tr>
 <tr><td>Frames</td><td>In a region the driver writes and the app reads, one ring, no copy through a message (<code>CLAUDE.md</code>: control by message, data by shared memory)</td></tr>
-<tr><td>Record</td><td>A button, then Stop, filled red; into <code>/home/videos</code> as MP4. Whether the camera's own MJPEG goes into the file as it comes or is encoded to H.264 is measured first (<code>roadmap.md</code> 6d)</td></tr>
+<tr><td>Record</td><td>A button, then Stop, filled red; into <code>/home/videos</code> as MP4, the picture encoded to H.264 (<code>roadmap.md</code> 6d)</td></tr>
 <tr><td>Foot</td><td>30 tall: frames a second as they arrive, the format and its rate over USB, and <i>Mirrored</i> when it is</td></tr>
 <tr><td>Window</td><td>680 by 596 for 640 by 480 &mdash; the picture, the header, the foot and the frame</td></tr>
 </table>
 
-<h2>For Diego to decide</h2>
+<h2>Decided, 24 September</h2>
 <ul class="ask">
-  <li><b>Mirrored by default?</b> Drawn on, as macOS's own preview is &mdash; and a recording is never mirrored.</li>
-  <li><b>The file's format inside the MP4</b>: the camera's MJPEG as it comes (free, but QuickTime will not play it)
-      or H.264 (plays everywhere, costs a processor while recording).</li>
-  <li><b>The size dropdown</b>, or always 640 &times; 480 and nothing to choose.</li>
-  <li><b>A picture button</b> &mdash; take a still into <code>/home/pictures</code> &mdash; is left out: it needs a PNG writer,
+  <li><b>Mirrored by default, with a choice</b> &mdash; Diego: "yes but put an option to mirror or not". The
+      window's &#8942; menu has it, as drawn above; a recording is never mirrored.</li>
+  <li><b>The size dropdown</b>, of every size the camera offers.</li>
+  <li><b>H.264 in the MP4</b> &mdash; "as all modern video players are h264".</li>
+  <li><b>The rest as drawn</b> &mdash; "yes is perfect".</li>
+  <li><b>A picture button</b> &mdash; take a still into <code>/home/pictures</code> &mdash; stays out: it needs a PNG writer,
       which the screenshot shortcut is waiting for too (<code>roadmap.md</code>).</li>
 </ul>
 

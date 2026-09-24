@@ -1689,13 +1689,14 @@ processors, and still what follows USB:
    - **Drawn first**, as every app is: `docs/camera.html`.
    - **And a Record button**, Diego the same afternoon: "for the camera
      app, expect a record option as well to save the video stream into a
-     mp4 file". Into `/home`, as an MP4 the video player opens. How the
-     picture goes into the file is open, and measured before it is chosen:
-     the camera's own MJPEG frames put into the file as they come, which
-     costs nothing and plays in Kosmos and VLC but not in QuickTime; or
-     H.264 through a small encoder (lieff's `minih264e`, beside the
-     `minimp3` already vendored, with `minimp4` to write the file), which
-     plays everywhere and costs a processor.
+     mp4 file". Into `/home/videos`, as an MP4 the video player opens.
+   - **Decided by Diego the same evening**, on the drawing: mirrored by
+     default *with a choice* in the window's menu ("yes but put an option
+     to mirror or not"); the size as a dropdown of what the camera offers;
+     the recording **H.264** ("as all modern video players are h264") -
+     lieff's `minih264e`, beside the `minimp3` already vendored, with his
+     `minimp4` to write the file; and the rest of the drawing as it is
+     ("yes is perfect").
    - The steps, in `usb.md` §11 as they land: 8a the camera's descriptors
      read and its formats known (on the Mac, from the C920's own bytes);
      8b isochronous IN in the xHCI driver; 8c the stream negotiated and
