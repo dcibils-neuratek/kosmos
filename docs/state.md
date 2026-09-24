@@ -83,6 +83,12 @@ had dark corners, because the compositor had never rounded a menu - it does
 now, and the `corners` phase holds a menu's corners to the desk.
 The gate: 33 suites in 6:00.
 
+**Released as `v0.10.153`** for QEMU on a Mac, at Diego's asking ("upload
+a binary to releases so i can test on my macbook pro under qemu"): the full
+image at 1920x1080 and 1280x720 with `run-kosmos.sh` and `SHA256SUMS`,
+after `make stress` (60 rounds, nothing leaked) and each image booted to its
+size. Only the tag was pushed; `main` on GitHub is still at 0.10.117.
+
 **Monitor's history is drawn** in `docs/apps.html` (5zx): a row a core with
 kernel red under user green, and a minute of history a core on dark panels.
 Waiting for Diego's word before it is built.

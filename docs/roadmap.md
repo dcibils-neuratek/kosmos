@@ -1662,6 +1662,13 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6c. **WANTED on 24 September - Preferences on a 1280x720 screen.** Seen
+   while checking the `v0.10.153` release image at that size: the window is
+   680 tall and runs off the bottom of a 720 screen under the Deskbar, and
+   the Wallpaper row's note is clipped to "or a picture in /hom" beside its
+   dropdown. A window should fit the screen it opens on, and a note should
+   wrap or shorten rather than lose its last letters.
+
 5zz. **DONE on 24 September (0.10.152, 0.10.153) - three sizes, from using it in QEMU.**
    - **The Deskbar square.** "i want to remove the rounded borders in the
      top bar in the deskbar, just remove the rounded borders as i dont see
