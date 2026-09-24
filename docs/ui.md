@@ -1538,9 +1538,11 @@ four corners - so at a bottom corner the arc cut through the page while the
 line ran square past it, which on a dark console is a sliver of console
 outside the frame. Diego: *"We need to add some extra chrome to the other
 borders of the apps as now it looks weird and make better rounded
-borders"*. The frame is 6, and the page is rounded *inside* it by the corner
+borders"*. The frame is 4 - it was 6 for an afternoon, until *"the chrome
+arround the window is too thick, we should take a couple of pixels
+out"* - and the page is rounded *inside* it by the corner
 less the frame (`OUT.round_inside` in `wm.lua`): the frame's colour painted
-over the page's pixels outside an arc of 6, with the coverage that rounds
+over the page's pixels outside an arc of 8, with the coverage that rounds
 the frame itself - so the frame is one width all the way round. The page's
 top corners meet the title bar and stay square.
 

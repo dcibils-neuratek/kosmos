@@ -37,7 +37,14 @@ local menu = {}
 -- a desktop that does not come up; twelve is far past any menu worth
 -- having.
 --
-function menu.read(store, path, depth)
+--
+-- `exists`, when given, answers whether a launcher's program is still
+-- there: a launcher to a program `/bin` no longer has is not shown. It was
+-- - Appearance's, on every machine seeded before it folded into
+-- Preferences (`roadmap.md` 5zp) - and it opened nothing. The file stays;
+-- it is the person's, and a program can come back.
+--
+function menu.read(store, path, depth, exists)
   depth = depth or 12
 
   local folders, launchers = {}, {}
@@ -48,7 +55,8 @@ function menu.read(store, path, depth)
 
     if attrs.kind == "directory" then
       if depth > 0 then folders[#folders + 1] = { name = name, path = full } end
-    elseif attrs.kind == "launcher" then
+    elseif attrs.kind == "launcher"
+           and (not exists or exists(tostring(attrs.program or ""))) then
       launchers[#launchers + 1] = {
         name = name,
         path = full,
@@ -71,7 +79,7 @@ function menu.read(store, path, depth)
       name = folder.name,
       path = folder.path,
       folder = true,
-      items = menu.read(store, folder.path, depth - 1),
+      items = menu.read(store, folder.path, depth - 1, exists),
     }
   end
 
@@ -95,7 +103,7 @@ end
 -- one, and one loose in the root has nowhere to appear - so it does not,
 -- rather than appearing in a section it was never put in.
 --
-function menu.sections(store, root)
+function menu.sections(store, root, exists)
   local names = {}
 
   for _, name in ipairs(store.list(root) or {}) do
@@ -112,8 +120,67 @@ function menu.sections(store, root)
     out[#out + 1] = {
       name = name,
       path = root .. "/" .. name,
-      items = menu.read(store, root .. "/" .. name),
+      items = menu.read(store, root .. "/" .. name, nil, exists),
     }
+  end
+
+  return out
+end
+
+--
+-- **Which applications a launcher names**, anywhere under `root`: the short
+-- name of each, `/bin/doom.lua` and `doom` alike - the two ways a launcher
+-- has recorded one.
+--
+function menu.programs_in(store, root, depth)
+  depth = depth or 12
+
+  local found = {}
+
+  for _, name in ipairs(store.list(root) or {}) do
+    local full = root .. "/" .. name
+    local attrs = store.getattr(full) or {}
+
+    if attrs.kind == "directory" and depth > 0 then
+      for short in pairs(menu.programs_in(store, full, depth - 1)) do
+        found[short] = true
+      end
+    elseif attrs.kind == "launcher" then
+      local program = tostring(attrs.program or "")
+      local short = program:match("^/bin/([^/]+)%.lua$")
+
+      if not short and not program:find("/", 1, true) then
+        short = (program:gsub("%.lua$", ""))
+      end
+
+      if short and short ~= "" then found[short] = true end
+    end
+  end
+
+  return found
+end
+
+--
+-- **What to add to the menu**: the applications `/bin` declares that the
+-- menu has never been given.
+--
+-- The menu was made once, the first time `/home/Deskbar` did not exist,
+-- and never again - so every application that arrived after that had no
+-- launcher, and on a `/home` older than Preferences there was no
+-- Preferences in the menu at all (Diego, 24 September: "where is the
+-- preferences app in the menu? please add it").
+--
+-- `seeded` is the record of what the menu has been given, kept beside it;
+-- an application in it whose launcher is gone was taken out by a person,
+-- and stays out. Without a record - a menu made before there was one - the
+-- launchers themselves are the record: `present`, what they name.
+--
+function menu.missing(launchable, seeded, present)
+  local out = {}
+  local known = seeded or present or {}
+
+  for _, short in ipairs(launchable) do
+    if not known[short] then out[#out + 1] = short end
   end
 
   return out

@@ -2,6 +2,7 @@
 -- kosmos: application
 -- kosmos: icon Prefs_Devices
 -- kosmos: section preferences
+-- kosmos: needs network
 -- One place to configure Kosmos, divided by part.
 --
 --   wm preferences
@@ -29,6 +30,9 @@
 local ui = use("/lib/ui.lua")
 local settings = use("/lib/settings.lua")
 local hardware = use("/lib/hardware.lua")
+local audio = use("/lib/audio.lua")
+local clock = use("/lib/clock.lua")
+local backlight_ok, backlight = pcall(use, "/lib/backlight.lua")
 local theme = ui.theme
 
 --
@@ -76,7 +80,15 @@ end
 -- height: a name and a note, a name beside a dropdown, a name beside a
 -- switch.
 --
-local W, H       = 840, 920
+--
+-- **740 by 680 since 24 September**, where the drawing was 840 by 920:
+-- Diego, using it, "the entire preferences app looks too big with a lot of
+-- whitespace unused". The column stays the drawing's 470 and the page is
+-- now exactly that with its margins, and a window as tall as its tallest
+-- page - Appearance - once the space between groups is the 20 every other
+-- page of cards uses rather than the drawing's 42.
+--
+local W, H       = 740, 680
 local SIDE       = 216
 local HEAD       = 46
 local BODY_TOP   = 22
@@ -84,7 +96,7 @@ local BODY_SIDE  = 26
 local BODY_W     = 470
 local GROUP_LINE = 19
 local GROUP_CARD = 26
-local CARD_NEXT  = 42
+local CARD_NEXT  = 20
 local CARD_R     = 10
 local ROW_PAD    = 11
 local ROW_IN     = 14
@@ -202,8 +214,8 @@ end
 -- **The header draws no icons**, and the drawing has two - a search and a
 -- menu. They would be two controls that do nothing, and a control that does
 -- nothing is exactly the half-built feeling Diego named on the M700 ("usable
--- but does nothing to the system"). The name is drawn where the drawing
--- puts it, centred.
+-- but does nothing to the system"). The name is at the left, where every
+-- other window's title is.
 --
 local rebuild                      -- forward, so the list can call it
 
@@ -215,8 +227,15 @@ function side_head:draw(g)
 
   g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
   g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
-  g:text((self.w - 1 - gfx.measure(word, face)) // 2,
-         (self.h - 1 - gfx.height(face)) // 2, word, theme.text, nil, face)
+
+  --
+  -- **At the left, 18 in, as every header's title is** - and so over the
+  -- sidebar's icons, which start 18 in. The drawing centred it; Diego, 24
+  -- September: "the preferences title in the app looks out of place, it
+  -- should be aligned to the left to the content as the rest of the apps".
+  --
+  g:text(ui.layout.head_in, (self.h - 1 - gfx.height(face)) // 2, word,
+         theme.text, nil, face)
 end
 
 local items = {}
@@ -325,6 +344,16 @@ local APPLY = {
 
   shadow = function(on)
     return fs.send("/app/wm", { type = "theme", shadow = on })
+  end,
+
+  -- What the power button and the Super key do: the manager acts on both
+  -- in its key path and holds them rather than reading a file there.
+  button = function(what)
+    return fs.send("/app/wm", { type = "keys", power = what })
+  end,
+
+  super = function(what)
+    return fs.send("/app/wm", { type = "keys", super = what })
   end,
 }
 
@@ -440,6 +469,9 @@ local function swatches(it)
   return v
 end
 
+local row_room = 400                -- a whole-row control's width, per page
+local now_label = nil               -- the clock's row, which keeps time
+
 local function control_for(it, x, y, changed)
   if it.key == "palette" then return swatches(it) end
 
@@ -454,6 +486,109 @@ local function control_for(it, x, y, changed)
                         if live(it, on) then settings.set(it, on) end
                         if changed then changed() end
                       end }
+  end
+
+  --
+  -- **The rows that act on the machine now rather than on a file**: the
+  -- master volume and its mute on the audio server, the brightness on the
+  -- backlight. Nothing is written - the server holds the level, as the
+  -- Mixer and the volume keys find it - and a machine without the device
+  -- gets words instead of a control that moves nothing.
+  --
+  if it.kind == "volume" or it.kind == "mute" then
+    local _, st = audio.streams()
+
+    if not st or audio.format().period == 0 then return nil end
+
+    if it.kind == "volume" then
+      return ui.slider{ x = x, y = y, w = 200, max = 256,
+                        value = st.master or 256,
+                        on_change = function(_, v) audio.set{ master = v } end }
+    end
+
+    return ui.switch{ x = x, y = y, on = st.master_muted == true,
+                      on_change = function(_, on)
+                        audio.set{ master_muted = on }
+                      end }
+  end
+
+  if it.kind == "brightness" then
+    local now = backlight_ok and backlight.get() or nil
+
+    if not now then return nil end
+
+    return ui.slider{ x = x, y = y, w = 200, max = 256, value = now,
+                      on_change = function(_, v) backlight.set(v) end }
+  end
+
+  -- A button that opens the window a row is about.
+  if it.kind == "open" then
+    return ui.button{ x = x, y = y, text = "Open",
+                      on_click = function()
+                        fs.send("/app/wm", { type = "launch",
+                                             program = it.program })
+                      end }
+  end
+
+  --
+  -- **The time zone, as a stepper**: thirty-seven offsets are a menu taller
+  -- than the screen, so a choice among them is a step either way.
+  --
+  if it.kind == "stepper" then
+    local choices = {}
+
+    for _, m in ipairs(clock.OFFSETS) do
+      choices[#choices + 1] = { m, clock.offset_name(m) }
+    end
+
+    return ui.stepper{ x = x, y = y, choices = choices,
+                       value = settings.get(it) or 0,
+                       on_change = function(_, v)
+                         -- The clock's row reads the time again on its next
+                         -- tick, with the new offset.
+                         settings.set(it, v)
+                         if changed then changed() end
+                       end }
+  end
+
+  --
+  -- **What opens with the desktop**, as the Startup window lists it: every
+  -- application, ticked or not, eight rows showing and the rest a scroll
+  -- away, across the whole card.
+  --
+  if it.kind == "startup" then
+    local names, ticked = {}, {}
+
+    for _, file in ipairs(fs.list("/bin") or {}) do
+      local attrs = fs.getattr("/bin/" .. file)
+
+      if attrs and attrs.kind == "application" then
+        local short = file:gsub("%.lua$", "")
+
+        if short ~= "deskbar" then names[#names + 1] = short end
+      end
+    end
+
+    table.sort(names)
+
+    for _, name in ipairs(use("/lib/startup.lua").items()) do
+      ticked[tostring(name)] = true
+    end
+
+    return ui.list{ x = x, y = y, w = row_room, h = 4 + 8 * ui.metrics.row,
+                    items = names, checks = ticked, bare = true,
+                    -- A checklist is read down its boxes; a row lit as
+                    -- chosen would be a second, meaningless state.
+                    selected = 0,
+                    on_toggle = function()
+                      local items = {}
+
+                      for _, name in ipairs(names) do
+                        if ticked[name] then items[#items + 1] = name end
+                      end
+
+                      fs.write(settings.STARTUP, { items = items })
+                    end }
   end
 
   if it.kind == "choice" and it.choices then
@@ -483,12 +618,59 @@ end
 local function facts()
   local b = sys.build() or {}
   local mem = fs.read("/dev/memory") or {}
-
-  return {
+  local info = sys.info() or {}
+  local screen = fs.read("/dev/screen") or {}
+  local out = {
     version = tostring(b.version or "?"),
-    machine = tostring(hardware.name(sys.info() or {}) or "this machine"),
-    memory = ("%d MB"):format(mem.total_mb or 0),
+    -- The firmware's name for it, or the board's where there is no
+    -- firmware table to ask - as About and `neofetch` fall back.
+    machine = tostring(hardware.name(info) or b.platform or "this machine"),
+    memory = ("%d MB, %d free"):format(mem.total_mb or 0, mem.free_mb or 0),
   }
+
+  out.resolution = (screen.width and screen.width > 0)
+                   and ("%d × %d"):format(screen.width, screen.height)
+                   or "no screen"
+
+  local fmt = audio.format()
+
+  out.sound = (fmt.period == 0) and "No sound device"
+              or ("%d Hz · %s"):format(fmt.rate, (fmt.channels == 2)
+                                        and "stereo"
+                                        or (fmt.channels .. " channels"))
+
+  local present = info.cpus_present or info.cpus or 1
+  local using = info.cpus or 1
+
+  out.processors = (present == using)
+                   and ("%d, all given work"):format(present)
+                   or ("%d of %d given work"):format(using, present)
+
+  out.now = clock.now() and ("%s · %s"):format(clock.date_string(clock.now()),
+                                                clock.time_string(clock.now()))
+            or "this machine has no clock"
+
+  --
+  -- The card as the bus names it, and its address and gateway as the stack
+  -- says them - the same two questions `neofetch` asks, for the reason it
+  -- gives: a card the stack does not answer for is not "no card".
+  --
+  local driven = hardware.network(sys.bus())
+  local net = fs.net_info and fs.net_info("/net") or nil
+
+  local function dotted(a)
+    if type(a) == "string" and #a == 4 and a ~= "\0\0\0\0" then
+      return ("%d.%d.%d.%d"):format(a:byte(1, 4))
+    end
+
+    return nil
+  end
+
+  out.net_card = driven[1] and driven[1].name or "No card found"
+  out.net_address = net and net.card and dotted(net.address) or "none"
+  out.net_gateway = net and net.card and dotted(net.gateway) or "none"
+
+  return out
 end
 
 local fact = facts()
@@ -496,9 +678,9 @@ local fact = facts()
 local function value_text(it)
   -- The option's name is in the note; this is the part that is not obvious
   -- from reading the row, and the part a long note must not squeeze out.
-  if it.kind == "boot" then return "Needs a restart" end
-  if it.kind == "action" then return "Show" end
   if it.kind == "fact" then return fact[it.fact] or "-" end
+  if it.kind == "volume" or it.kind == "mute" then return "No sound device" end
+  if it.kind == "brightness" then return "Not on this screen" end
 
   --
   -- **A row with nothing on the right is a row that looks broken**, and two
@@ -511,7 +693,6 @@ local function value_text(it)
   -- system" - half of that feeling was the looks not applying, and half was
   -- these (`roadmap.md` 5zh).
   --
-  if it.kind == "level" or it.kind == "text" then return "Not yet" end
 
   return tostring(settings.get(it) or "")
 end
@@ -529,6 +710,10 @@ rebuild = function()
 
   local cx, width = column(page.w)
   local y = HEAD + BODY_TOP
+
+  fact = facts()
+  row_room = width - 2 - 2 * ROW_IN
+  now_label = nil
 
   for gi, group in ipairs(settings.groups(showing)) do
     if gi > 1 then y = y + CARD_NEXT end
@@ -576,9 +761,15 @@ rebuild = function()
         c.y = y + (h - c.h) // 2
         page:add(c)
       elseif taken > 0 then
-        page:add(ui.label{ x = right - taken, y = y + (h - ch) // 2,
-                           w = taken + 2, text = value_text(it),
-                           color = theme.text_dim, role = "ui" })
+        local shown = ui.label{ x = right - taken, y = y + (h - ch) // 2,
+                                w = taken + 2, text = value_text(it),
+                                color = theme.text_dim, role = "ui" }
+
+        page:add(shown)
+
+        -- The clock's row is kept right on the window's tick, from the
+        -- right edge it was placed against.
+        if it.fact == "now" then now_label, shown.right = shown, right end
       end
 
       local room = right - (taken > 0 and taken + ROW_IN or 0)
@@ -627,6 +818,32 @@ rebuild = function()
 end
 
 rebuild()
+
+--
+-- **The time, kept**: twice a second the clock's row says it again, placed
+-- from its right edge so a narrower minute does not leave it adrift.
+--
+local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+
+function ticker:tick()
+  if not now_label then return end
+
+  local now = clock.now()
+
+  if not now then return end
+
+  local text = ("%s · %s"):format(clock.date_string(now),
+                                   clock.time_string(now))
+
+  if text ~= now_label.text then
+    local w = gfx.measure(text)
+
+    now_label.text = text
+    now_label.x, now_label.w = now_label.right - w, w + 2
+  end
+end
+
+win:add(ticker)
 
 --------------------------------------------------------------------------
 -- The command line: a choice made the way a click makes it.

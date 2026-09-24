@@ -138,6 +138,19 @@
   .key.eq { background: var(--w-accent); border-color: var(--w-accent); color: #fff; }
   .key.wide { grid-column: span 2; }
 
+  /* Shortcuts: a key as a cap. */
+  .cap { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--w-line);
+         border-bottom-width: 2px; border-radius: 6px; background: #fff; font-family: var(--mono); font-size: 12px;
+         color: var(--w-ink); margin-left: 4px; }
+  /* Paint's tools, on the sidebar's colour. */
+  .tools { width: 96px; background: #f1f2f4; border-right: 1px solid var(--w-line); padding: 12px 10px;
+           display: flex; flex-direction: column; gap: 10px; flex: none; }
+  .swatches { display: grid; grid-template-columns: repeat(3, 22px); gap: 6px; }
+  .swatches i { width: 22px; height: 22px; border-radius: 6px; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .swatches i.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--w-accent); }
+  .sizes div { height: 30px; border-radius: 7px; display: grid; place-items: center; }
+  .sizes div.on { background: var(--w-line); }
+  .sizes b { display: block; border-radius: 50%; background: var(--w-ink); }
   .rules { font-size: 14px; }
   .rules td { padding: 6px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
   .rules td:first-child { font-weight: 600; white-space: nowrap; }
@@ -346,6 +359,108 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
      row("Directory", "", `<span class="field" style="width:220px">/home/www</span>`)]) +
    `<div class="gl">Requests</div></div>` +
    `<div class="view" style="margin:0 26px 26px;border:1px solid var(--w-line);border-radius:10px;flex:1"><div class="empty">Nothing yet</div></div>`)],
+
+["Monitor", "What every processor is doing, and nothing else: the header says which processor, the card is a row a core.",
+ win(420, 272,
+   head("Monitor", "4 cores &middot; ARM Cortex-A72 r0p3", "") +
+   `<div class="body" style="padding-top:18px"><div class="group">` +
+   [["Core 0",3],["Core 1",12],["Core 2",0],["Core 3",41]]
+     .map(([n,p])=>`<div class="row" style="min-height:40px;padding:8px 14px"><div style="width:60px;font-weight:500">${n}</div><span class="bar"><i style="width:${p}%"></i></span><span class="num v" style="width:36px;text-align:right">${p}%</span></div>`).join("") +
+   `</div></div>`)],
+
+["Date &amp; Time", "Now in the header, the time zone as a list to choose from.",
+ win(360, 470,
+   head("Date &amp; Time", "Thu 24 Sep &middot; 13:50", "") +
+   `<div class="body"><div class="gl">Time zone</div><div class="list" style="height:302px">` +
+   ["UTC-03:00","UTC-02:00","UTC-01:00","UTC+00:00","UTC+01:00","UTC+02:00","UTC+03:00","UTC+03:30","UTC+04:00"]
+     .map((t,i)=>`<div class="${i===3?"on":""}">${t}</div>`).join("") +
+   `<i></i></div><div class="foot">Kept for the next start.</div></div>`)],
+
+["Startup", "What opens with the desktop: a list of applications, each ticked or not. The header counts them.",
+ win(360, 480,
+   head("Startup", "2 open with the desktop", "") +
+   `<div class="body"><div class="gl">Open when the desktop starts</div><div class="list" style="height:326px">` +
+   [["about",0],["calc",0],["clock",1],["cores",0],["drives",0],["editor",0],["gallery",0],["logview",0],["mixer",0],["monitor",1]]
+     .map(([t,on])=>`<div><span class="tick${on?" on":""}" style="width:18px;height:18px;margin-right:12px">${on?'<svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5l2.6 2.6L12 5.2"/></svg>':''}</span>${t}</div>`).join("") +
+   `<i></i></div></div>`)],
+
+["Shortcuts", "Every key the desktop keeps, in three cards; the keys as caps on the right.",
+ win(580, 760,
+   head("Shortcuts", "every key the desktop keeps", "") +
+   `<div class="body">` +
+   group("Editing", [["Select everything","Control","A"],["Copy","Control","C"],["Cut","Control","X"],["Paste","Control","V"]]
+     .map(([w,a,b])=>`<div class="row" style="min-height:34px;padding:5px 14px"><div class="l">${w}</div><span class="cap">${a}</span><span class="cap">${b}</span></div>`)) +
+   group("The Super key", [["Open the Kosmos menu","Super"],["Start something by typing","Super","Space"],["This window","Super","/"],["Go round the open windows","Super","Tab"],["Close the window in front","Super","Q"],["Get the window in front out of the way","Super","H"]]
+     .map(([w,...k])=>`<div class="row" style="min-height:34px;padding:5px 14px"><div class="l">${w}</div>${k.map(c=>`<span class="cap">${c}</span>`).join("")}</div>`)) +
+   group("Control-W, and then", [["End the desktop","Q"],["Go round the open windows","Tab"],["Move the window in front","arrows"],["Send a real Control-C through","C"],["Send a real Control-W through","Control-W"]]
+     .map(([w,k])=>`<div class="row" style="min-height:34px;padding:5px 14px"><div class="l">${w}</div><span class="cap">${k}</span></div>`)) +
+   `</div>`)],
+
+["Open", "Super and Space: the field is the header, and what matches is under it.",
+ win(520, 420,
+   `<div class="head" style="padding:0 10px"><span class="field" style="flex:1;height:31px"><svg viewBox="0 0 16 16" style="width:15px;height:15px;margin-right:8px;color:var(--w-dim)" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><span style="color:var(--w-dim)">Type a name to open it</span></span></div>` +
+   `<div class="body"><div class="list" style="height:300px">` +
+   ["about","browser","calc","clock","cores","drives","editor","gallery","logview"]
+     .map((t,i)=>`<div class="${i===0?"on":""}">${t}</div>`).join("") +
+   `<i></i></div></div>`)],
+
+["About Kosmos", "The machine in a card on the left, what Kosmos is on the right, and the licences under it.",
+ win(700, 560,
+   head("About Kosmos", "0.10.150 &middot; Nebula", "") +
+   `<div class="body" style="display:grid;grid-template-columns:260px 1fr;gap:20px">` +
+   `<div>` + group("This machine", [
+     row("Machine", "QEMU virt aarch64"), row("Processor", "Cortex-A72, 4 cores"),
+     row("Kernel", "Nebula 0.10.150"), row("Running", "0 minutes, 33 seconds"),
+     row("Memory", "512 MB, 396 free")]) + `</div>` +
+   `<div><div class="gl">What Kosmos is</div><div class="group" style="padding:12px 16px;height:405px;font-size:13px;line-height:1.5">` +
+   `<p style="margin:0 0 8px">A microkernel with a Lua userland, on aarch64. The kernel knows about threads, address spaces, IPC and capabilities, and about nothing else.</p>` +
+   `<b style="font-weight:500">Everything else is a process</b><p style="margin:4px 0 8px;color:var(--w-dim)">The filesystem is a process. The console is a process. This window's pixels live in another process...</p>` +
+   `<b style="font-weight:500">You cannot name what you were not given</b><p style="margin:4px 0 0;color:var(--w-dim)">A process holds capabilities by index...</p></div></div></div>`)],
+
+["This Machine", "A report, as a page in a card: the header says which machine, the dots copy it.",
+ win(700, 720,
+   head("This Machine", "QEMU virt aarch64", MORE) +
+   `<div class="body" style="height:674px"><div class="group" style="height:100%;padding:12px 14px;font-family:var(--mono);font-size:12.3px;line-height:1.3;white-space:pre">QEMU virt aarch64
+Nebula 0.10.150   v0.10.117-42-gc1ba5ee
+
+Processor
+---------
+Model           ARM Cortex-A72 r0p3
+Cores           4</div></div>`)],
+
+["System Benchmark", "Six cards in two columns, a row a measurement; the mark in the header when it is done.",
+ win(900, 640,
+   head("System Benchmark", "ARM Cortex-A72 r0p3 &middot; 4 cores &middot; 12 of 22", "") +
+   `<div class="body" style="display:grid;grid-template-columns:1fr 1fr;gap:20px">` +
+   [[["Processor","253"],[["integer arithmetic","3.98 M ops","154"],["floating point","2.16 M ops","337"],["function calls","6.56 M calls","312"]]],
+    [["Kernel",""],[["system call","",""],["context switch","",""],["round trip to a server","",""]]]]
+     .map(([[g,sc],rows])=>`<div><div class="gl" style="display:flex">${g}<span style="flex:1"></span><span class="num">${sc}</span></div><div class="group">` +
+       rows.map(([n,r,x])=>`<div class="row" style="min-height:33px;padding:5px 14px"><div class="l">${n}</div><span class="v num" style="width:120px">${r}</span><span class="num" style="width:40px;text-align:right">${x}</span></div>`).join("") + `</div></div>`).join("") +
+   `</div>`)],
+
+["PDF", "A document: its name and page in the header, the pages turned and opened there; the page on a dark ground.",
+ win(760, 620,
+   head("odyssey.pdf", "page 3 of 120 &middot; 100%", `<div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3L5 8l5 5"/></svg></div><div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3l5 5-5 5"/></svg></div>` + btn("Open")) +
+   `<div style="flex:1;background:#1c1c1e;display:flex;justify-content:center;padding-top:16px"><div style="width:520px;height:520px;background:#f4f1ea"></div></div>`)],
+
+["Paint", "The tools on the sidebar's colour, the canvas beside them; Clear in the header.",
+ win(640, 450,
+   head("Paint", "520 &times; 380", btn("Clear")) +
+   `<div style="display:flex;flex:1"><div class="tools"><div class="swatches">` +
+   ["#000","#fff","#808080","#c0c0c0","#e00000","#e07000","#e0e000","#20a020","#2060e0","#8020c0","#00c0c0","#e060a0"]
+     .map((c,i)=>`<i class="${i===0?"on":""}" style="background:${c}"></i>`).join("") +
+   `</div><div class="sizes"><div><b style="width:4px;height:4px"></b></div><div class="on"><b style="width:10px;height:10px"></b></div><div><b style="width:22px;height:22px"></b></div></div>` +
+   `<div style="display:flex;align-items:center;gap:8px;font-size:12.5px">${sw(true)}</div><div style="font-size:12px;color:var(--w-dim)">Smooth</div></div>` +
+   `<div style="flex:1;background:#fff"></div></div>`)],
+
+["Browser", "A page of the web: the arrows, reload and home as icons, the address as the field, the page under it.",
+ win(900, 520,
+   `<div class="head" style="padding:0 10px">` +
+   ["M10 3L5 8l5 5","M6 3l5 5-5 5"].map(d=>`<div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="${d}"/></svg></div>`).join("") +
+   `<div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.2 8.6A5.3 5.3 0 1 1 11.8 4.1"/><path d="M12.6 1.8v3h-3"/></svg></div>` +
+   `<div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg></div>` +
+   `<span class="field" style="flex:1;margin-left:6px">about:start</span></div>` +
+   `<div class="view" style="padding:14px 18px"><div style="font-weight:600;font-size:22px">Kosmos</div><p>This page is inside the image. Nothing was fetched to show it...</p></div>`)],
 ];
 
 document.getElementById("all").innerHTML = APPS.map(([name, why, html]) =>

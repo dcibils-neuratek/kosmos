@@ -61,7 +61,16 @@ on x86 - and passed three runs of three alone; recorded, not rerun away.
 after Diego's "The fonts look small here" - measured, the file names were
 the drawing's size and the old tree round them was not.
 
-**Next**: the M700 stick (`make MEGA=1
+**0.10.151 - Preferences that does what it says, a menu that grows, and
+shadows fast enough to drag** (18.165): every Preferences row acts or
+reports; the Deskbar adds new applications to an old menu; the frame is 4;
+the shadow 27 times faster, held on the Mac by `test_shadow`.
+
+**Queued, in order**: the scroll wheel (5zv); the eleven windows drawn in
+`docs/apps.html` on 24 September and not yet built (5zs); the pixel loops
+measured and vectorised (5zw).
+
+**The M700**: 0.10.150's stick was built and handed over (`make MEGA=1
 x86-usb-image`, `run_uefi.py`, `make stress`, a `boot.md` row), then the
 twelve windows of 5zs.
 

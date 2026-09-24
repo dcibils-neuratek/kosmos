@@ -1341,9 +1341,10 @@ def find_colour_in(width, px, box, want):
 SELECTED = (0x1f, 0x6f, 0xeb)
 
 # A window's frame down its sides and along its bottom, `BORDER` in
-# `wm.lua`: 6 since 24 September, when Diego asked for "some extra chrome to
-# the other borders"; it was 2.
-FRAME = 6
+# `wm.lua`: 4 since 24 September - Diego asked for "some extra chrome to the
+# other borders", it was 6 for an afternoon and then "a couple of pixels"
+# less; it had been 2.
+FRAME = 4
 
 # The Deskbar's height. It is the strip across the top, it is
 # tab-coloured, and it is not a window - so anything counting windows
@@ -4026,9 +4027,9 @@ def check_appearance(guest):
     September its look, wallpaper and scale folded into Preferences'
     Appearance page, which `docs/preferences.html` draws and Diego asked to
     be "pixel perfect as the html mockups" (`roadmap.md` 5zp). So the
-    window is held to the drawing's size - 840 by 920, measured off the page
-    rendered at one pixel to one - which it says as it opens, and it offers
-    exactly the looks `themes.lua` ships.
+    window is held to its size - the drawing's column, at 740 by 680 since
+    Diego found the drawing's 840 by 920 too big - which it says as it
+    opens, and it offers exactly the looks `themes.lua` ships.
     """
     mark = len(guest.seen)
 
@@ -4044,9 +4045,15 @@ def check_appearance(guest):
                             int(said.group(3)))
     checks = 1
 
-    if (width, height) != (840, 920):
-        raise Failure("Preferences is %dx%d; the drawing Diego approved, "
-                      "measured at one pixel to one, is 840x920"
+    #
+    # **740 by 680, which is Diego's call over the drawing's 840 by 920**:
+    # "the entire preferences app looks too big with a lot of whitespace
+    # unused" (24 September). The column is the drawing's; the window is
+    # the column with its margins and as tall as the tallest page.
+    #
+    if (width, height) != (740, 680):
+        raise Failure("Preferences is %dx%d; it is 740x680 - the drawing's "
+                      "column with its margins, as tall as Appearance"
                       % (width, height))
 
     checks += 1
@@ -5140,6 +5147,69 @@ def check_volume_keys(guest):
             "\n" + said[-600:])
 
     return 2
+
+
+def check_power_setting(guest):
+    """**The power button does what Preferences says** (`roadmap.md` 5zp).
+
+    Power's row - Shut down, Open the menu, Do nothing - wrote
+    `/home/.power` and nothing read it: the window manager shut the machine
+    down on every press. Diego, 24 September: "go thrpugh all the settings
+    options and make sure they do something useful".
+
+    So: "Do nothing" written where Preferences writes it, a desktop
+    started, the button pressed through QEMU (`system_powerdown`, which the
+    kernel hears as the ACPI button and the window manager as a key), and
+    the manager has to say it did nothing - and the machine has to be
+    running afterwards, which is the half that matters. The control is the
+    manager before `OUT.keys`, which shuts down and takes QEMU with it.
+
+    x86-64 only: on the ARM board the button reaches its driver, which
+    reports it and nothing else.
+    """
+    guest.type('fs.write("/home/.power", { button = "nothing" }) '
+               'print("power" .. "-set")')
+    guest.wait_for("power-set", "write the power button's setting")
+    mark = len(guest.seen)
+    guest.type("wm gallery")
+    started(guest)
+    time.sleep(2.0)
+
+    try:
+        guest._qmp("system_powerdown", {})
+
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if "wm: the power button" in guest.seen[mark:]:
+                break
+
+            time.sleep(0.3)
+
+        said = guest.seen[mark:]
+
+        if "wm: the power button - set to do nothing" not in said:
+            raise Failure("the power button was set to do nothing and the "
+                          "window manager did not say it did nothing:\n"
+                          + said[-600:])
+
+        time.sleep(2.0)
+
+        if guest.proc.poll() is not None:
+            raise Failure("the power button was set to do nothing and the "
+                          "machine shut down anyway")
+    finally:
+        # Only a machine still running can be put back; one that shut down
+        # has said why above, and a write to its pipe would bury that.
+        if guest.proc.poll() is None:
+            stop_desktop(guest)
+            guest.type('fs.write("/home/.power", {}) '
+                       'print("power" .. "-reset")')
+            guest.wait_for("power-reset", "put the power button back")
+
+    return 1
 
 
 def check_unknown_keys(guest):
@@ -9502,6 +9572,8 @@ def main():
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
                         if machine(args.image) == "aarch64" else 0)
+        power_setting_checks = (phase("power setting", check_power_setting)
+                                if machine(args.image) == "x86_64" else 0)
         unknown_key_checks = (phase("unknown keys", check_unknown_keys)
                               if machine(args.image) == "x86_64" else 0)
         volume_key_checks = phase("volume keys", check_volume_keys)
@@ -9582,7 +9654,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
+             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
              + default_look_checks
              + tab_checks + corner_checks + drives_app_checks
              + name_checks + file_checks)
@@ -9652,6 +9724,8 @@ def main():
           f"scrolled back, and larger text from its View menu), "
           f"{repaint_checks} on an idle window drawing nothing at all, "
           f"{power_checks} on the power button reaching a driver outside the kernel, "
+          f"{power_setting_checks} on the power button doing what Preferences "
+          f"says, "
           f"{unknown_key_checks} on a key the keyboard driver has no entry for "
           f"being named once rather than dropped in silence, "
           f"{volume_key_checks} on the volume keys reaching the window "

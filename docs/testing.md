@@ -8966,3 +8966,77 @@ and reads where Tracker says the new place went (`tracker: place <name> at
 <y>`) - after a hairline now, not at a tree's fourth row - to click it and
 take it out again. The icon-size phase opens View where Tracker says it is,
 which counts the sidebar's width.
+
+## 18.165 Preferences that does what it says, a menu that grows, and shadows fast enough to drag
+
+`roadmap.md` 5zp, 5zu. Diego, 24 September, using 0.10.150 in QEMU:
+*"where is the preferences app in the menu? please add it"*, *"the chrome
+arround the window is too thick"*, *"the preferences title in the app looks
+out of place"*, *"the entire preferences app looks too big"*, *"clock
+settings are missing and misaligned"*, a photograph of Startup printing
+`table: 0x...`, *"go thrpugh all the settings options and make sure they do
+something useful, look good, stick to the design guidelines"*, and *"the
+drop shadow makes the entire UI unsable because of the slowness when
+dragging windows"*.
+
+### The menu grows
+
+The Deskbar made `/home/Deskbar` from what `/bin` declares once, the first
+time it did not exist, and never again - so an application newer than a
+person's `/home` was never in their menu, and Preferences was not in his. It
+keeps a record beside the menu now (`.seeded`): what `/bin` declared at the
+last start. What is new gets a launcher; what is in the record and has no
+launcher was taken out by a person and stays out; a menu older than the
+record takes its launchers as the record. And a launcher to a program `/bin`
+no longer has - Appearance's - is not shown. `tools/test_deskbarmenu.lua`, 15,
+holds all four; its control is the library without the filter, which fails
+the dead-launcher check.
+
+### Preferences, row by row
+
+Every row does something or says something true. Volume and Mute act on the
+audio server's master; Brightness on the backlight, where there is one; the
+power button and the Super key do what their rows say - the window manager
+holds both, read at its start and told by Preferences, because both are
+acted on in the key path where a read from the disk may not be made; the
+time zone is a stepper (`ui.stepper`), since thirty-seven offsets are a menu
+taller than the screen; Startup is the list of applications with their
+ticks; Network, Resolution, Processors and the About rows are what the
+machine reports; Shortcuts, Licences and the addresses open the window they
+are about. The Interrupts row is gone: nothing reports which controller is
+in use, and a row that cannot say something true was the complaint.
+
+The window is 740 by 680, the drawing's column with its margins, and its
+sidebar's title is at the left like every other window's.
+
+- **power setting** (display harness, x86-64): "Do nothing" written as
+  Preferences writes it, the button pressed through QEMU, and the manager
+  says it did nothing and the machine is still running. Its control is the
+  manager ignoring the setting, which shuts the machine down.
+- **appearance**: Preferences at 740 by 680.
+- `test_settings.lua`, 137: every row's kind, file and choices.
+
+### Shadows
+
+`shadow` walked every pixel of a window's rectangle and its band, testing
+each against the rounded corner and dividing twice for its falloff, clipped
+to the screen and to nothing smaller - so every rectangle a drag repainted
+computed the whole shadow of every window it touched. It walks the band now,
+inside the rectangle being composed; the falloff is a table; a row above or
+below a window is one amount and is darkened four pixels at a time (NEON on
+AArch64, SSE2 on x86-64).
+
+`tools/test_shadow.c` holds it on the Mac to the method it replaced, which it
+keeps whole as the specification: 61,440,000 checks over 400 windows,
+corners and clips - the same pixels touched, each within a step, and a clip
+that changes nothing inside it. The two faults it found while it was being
+written - rows skipped where the diagonal still reaches, and the rows just
+under a window skipped as covered - are its control.
+
+    shadow of a 900x700 window: 1.139 ms as it was, 0.042 ms whole now
+    (27x), 0.0021 ms for a 96-pixel rectangle a drag repaints
+
+### And
+
+The frame is 4 pixels, not 6 ("a couple of pixels out"), and the harness's
+`FRAME` with it.

@@ -42,11 +42,7 @@ end
 -- would be 105 entries of which most have never been anybody's time. These
 -- are the ones that exist.
 --
-local OFFSETS = {
-  -720, -660, -600, -570, -540, -480, -420, -360, -300, -240, -210, -180,
-  -120, -60, 0, 60, 120, 180, 210, 240, 270, 300, 330, 345, 360, 390, 420,
-  480, 540, 570, 600, 630, 660, 720, 765, 780, 840,
-}
+local OFFSETS = clock.OFFSETS
 
 local names = {}
 local index_of = {}

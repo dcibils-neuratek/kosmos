@@ -64,6 +64,8 @@ settings.APPEARANCE = "/home/.appearance"
 settings.TRACKER    = "/home/.tracker"
 settings.CLOCK      = "/home/.clock"
 settings.STARTUP    = "/home/.startup"
+settings.POWER      = "/home/.power"
+settings.KEYBOARD   = "/home/.keyboard"
 
 --
 -- One setting.
@@ -72,19 +74,26 @@ settings.STARTUP    = "/home/.startup"
 --   group     the heading above it, and the card it shares
 --   label     what it is called
 --   note      one line under the label, or nil for none
---   kind      "choice" | "switch" | "text" | "action" | "boot"
+--   kind      "choice" | "switch" | "stepper" | "fact" | "open" | and the
+--             ones only one row has, each named for what it is: "volume",
+--             "mute", "brightness", "startup"
+--   fact      for a fact: which one, as Preferences reads it
+--   program   for an `open`: what the button starts
 --   file/key  where it lives; nil for something read from elsewhere
 --   keep_default  written even when it equals the default
 --   clears    other keys in the same file that this choice makes stale
 --   choices   for a choice: { { value, name }, ... }
 --   default   what it is when the file does not say
 --
--- **`boot` is a kind of its own and that is the point.** `opt/kosmos/smp`,
--- `video=WxH` and `irq=pic` can only be set by rebuilding a stick or editing
--- a line on one, so they are shown, explained, and marked as needing a
--- restart. A machine you can only configure by rebuilding it is the thing
--- this application exists to end; listing them is the first step and lets
--- somebody see what a machine is running before anything can change it.
+-- **Every row does something or says something true** (24 September,
+-- Diego: "go thrpugh all the settings options and make sure they do
+-- something useful, look good, stick to the design guidelines of kosmos").
+-- Until then five rows were placeholders - a volume and a mute wired to
+-- nothing, a power button and a Super key whose choice nothing read, an
+-- address that said "Not yet", a startup list printed as `table:`, a time
+-- zone printed as a number of minutes - and three said "Needs a restart"
+-- about options set on a boot line. What a boot line sets is shown now as
+-- what the machine *is* running, a `fact`, with the option in the note.
 --
 local function item(t) return t end
 
@@ -168,8 +177,8 @@ settings.ITEMS = {
   ----------------------------------------------------------------- displays
   item{ category = "displays", group = "Screen",
         label = "Resolution",
-        note = "The largest the firmware offers, unless told, video=WxH",
-        kind = "boot", boot = "video=WxH" },
+        note = "The largest the firmware offers, or video=WxH at boot",
+        kind = "fact", fact = "resolution" },
 
   item{ category = "displays", group = "Screen",
         label = "Scale", note = "The same setting Appearance has, here too",
@@ -178,56 +187,64 @@ settings.ITEMS = {
         choices = { { 100, "100%" }, { 125, "125%" }, { 150, "150%" },
                     { 200, "200%" } } },
 
+  item{ category = "displays", group = "Screen",
+        label = "Brightness", kind = "brightness" },
+
   -------------------------------------------------------------------- sound
   item{ category = "sound", group = "Output",
-        label = "Volume", kind = "level" },
+        label = "Device", kind = "fact", fact = "sound" },
   item{ category = "sound", group = "Output",
-        label = "Mute", kind = "switch" },
+        label = "Volume", kind = "volume" },
+  item{ category = "sound", group = "Output",
+        label = "Mute", note = "Everything, until it is switched back",
+        kind = "mute" },
 
   -------------------------------------------------------------------- power
   item{ category = "power", group = "Power button",
         label = "When it is pressed", kind = "choice",
-        default = "off",
-        choices = { { "off", "Shut down" }, { "ask", "Ask" },
+        file = settings.POWER, key = "button", default = "off",
+        choices = { { "off", "Shut down" }, { "menu", "Open the menu" },
                     { "nothing", "Do nothing" } } },
 
   ------------------------------------------------------------------ network
-  item{ category = "network", group = "Address",
-        label = "Configure", kind = "choice", default = "dhcp",
-        choices = { { "dhcp", "Automatic" }, { "static", "Manual" } } },
-  item{ category = "network", group = "Address",
-        label = "Address", kind = "text" },
-  item{ category = "network", group = "Address",
-        label = "Gateway", kind = "text" },
+  item{ category = "network", group = "Connection",
+        label = "Card", kind = "fact", fact = "net_card" },
+  item{ category = "network", group = "Connection",
+        label = "Address", kind = "fact", fact = "net_address" },
+  item{ category = "network", group = "Connection",
+        label = "Gateway", kind = "fact", fact = "net_gateway" },
+  item{ category = "network", group = "Connection",
+        label = "Addresses by hand", note = "In the Network window",
+        kind = "open", program = "network" },
 
   ----------------------------------------------------------------- keyboard
   item{ category = "keyboard", group = "The Super key",
-        label = "Press it alone", kind = "choice", default = "launcher",
-        choices = { { "launcher", "Launcher" }, { "nothing", "Nothing" } } },
+        label = "Pressed alone", kind = "choice",
+        file = settings.KEYBOARD, key = "super", default = "menu",
+        choices = { { "menu", "Opens the menu" },
+                    { "nothing", "Does nothing" } } },
   item{ category = "keyboard", group = "Shortcuts",
-        label = "Show all shortcuts",
-        note = "Every key the window manager answers", kind = "action" },
+        label = "Every shortcut",
+        note = "Each key the desktop keeps, and what it does",
+        kind = "open", program = "shortcuts" },
 
   ------------------------------------------------------------------ startup
-  item{ category = "startup", group = "What runs when the machine starts",
+  item{ category = "startup", group = "Open when the desktop starts",
         label = "", kind = "startup", file = settings.STARTUP, key = "items" },
 
   ---------------------------------------------------------------- date/time
   item{ category = "datetime", group = "Clock",
+        label = "Now", kind = "fact", fact = "now" },
+  item{ category = "datetime", group = "Clock",
         label = "Time zone",
         note = "The board keeps UTC; this is the offset from it",
-        kind = "choice", file = settings.CLOCK, key = "offset", default = 0,
-        choices = nil },   -- filled at run time: the offsets in minutes
+        kind = "stepper", file = settings.CLOCK, key = "offset", default = 0,
+        choices = nil },   -- filled at run time from `clock.OFFSETS`
 
   ------------------------------------------------------------------- system
   item{ category = "system", group = "Processors",
-        label = "Use", note = "How many threads are spread across, smp=N",
-        kind = "boot", boot = "smp=N" },
-
-  item{ category = "system", group = "Interrupts",
-        label = "Controller",
-        note = "The legacy pair, for a machine the APIC path fails on, irq=pic",
-        kind = "boot", boot = "irq=pic" },
+        label = "In use", note = "opt/kosmos/smp=N at boot narrows it",
+        kind = "fact", fact = "processors" },
 
   item{ category = "system", group = "About", label = "Kosmos",
         kind = "fact", fact = "version" },
@@ -237,7 +254,7 @@ settings.ITEMS = {
         kind = "fact", fact = "memory" },
   item{ category = "system", group = "About",
         label = "Licences", note = "What is in this image and under what terms",
-        kind = "action" },
+        kind = "open", program = "about" },
 }
 
 --

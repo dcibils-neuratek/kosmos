@@ -171,73 +171,106 @@ end
 -- drive gets a menu too, and loses it at the power switch along with
 -- everything else it wrote.
 --
-local function seed()
-  if fs.getattr(DESKBAR) then return end
+--
+-- **The record of what the menu has been given**, beside it: every
+-- application `/bin` declared the last time the Deskbar looked. What is in
+-- it and has no launcher was taken out by a person and stays out; what is
+-- not in it is new, and gets a launcher (`deskbarmenu.missing`).
+--
+local SEEDED = DESKBAR .. "/.seeded"
+local made = {}
 
-  local ok, why = fs.send(DESKBAR, { type = "mkdir" })
+-- A launcher for one application, in the folder its header names.
+local function add_launcher(short)
+  local attrs = programs[short]
+  local said = attrs.section or "applications"
+  local where, group = said:match("^([^/]+)/(.+)$")
 
-  if not ok then
-    print("deskbar: no " .. DESKBAR .. ": " .. tostring(why))
-    return
-  end
+  where = where or said
 
-  local made = {}
+  -- Capitalised here and nowhere else. The folder's name *is* what the
+  -- menu shows from now on, so this is the one moment the identifier in a
+  -- program's header becomes a word on the screen.
+  local folder = DESKBAR .. "/" .. where:sub(1, 1):upper() .. where:sub(2)
 
-  for _, short in ipairs(launchable) do
-    local attrs = programs[short]
-    local said = attrs.section or "applications"
-    local where, group = said:match("^([^/]+)/(.+)$")
+  if group then folder = folder .. "/" .. group end
 
-    where = where or said
+  if not made[folder] then
+    made[folder] = true
 
-    -- Capitalised here and nowhere else. The folder's name *is* what the
-    -- menu shows from now on, so this is the one moment the identifier in a
-    -- program's header becomes a word on the screen.
-    local folder = DESKBAR .. "/" .. where:sub(1, 1):upper() .. where:sub(2)
+    if not fs.getattr(folder) then
+      local fine, oops = fs.send(folder, { type = "mkdir" })
 
-    if group then folder = folder .. "/" .. group end
-
-    if not made[folder] then
-      made[folder] = true
-
-      if not fs.getattr(folder) then
-        local fine, oops = fs.send(folder, { type = "mkdir" })
-
-        if not fine then
-          print(("deskbar: no %s: %s"):format(folder, tostring(oops)))
-        end
+      if not fine then
+        print(("deskbar: no %s: %s"):format(folder, tostring(oops)))
       end
     end
+  end
 
-    local path = folder .. "/" .. short
-    local fine, oops = fs.write(path, "")
+  local path = folder .. "/" .. short
+  local fine, oops = fs.write(path, "")
 
-    if fine then
-      --
-      -- The whole path, not the short name.
-      --
-      -- `handlers.launch` accepts either - a bare name becomes
-      -- `/bin/<name>.lua` - and what a *file* records should not depend on
-      -- a completion rule the file cannot state. A launcher that says
-      -- `/bin/doom.lua` says what it runs; one that says `doom` says what
-      -- it runs only to somebody who knows the rule, and reads as broken to
-      -- anybody who does not.
-      --
-      -- Launchers already written the short way keep working, because the
-      -- window manager still completes a bare name. Nothing has to be
-      -- migrated.
-      --
-      fine, oops = fs.setattr(path, { kind = "launcher", type = "launcher",
-                                      program = "/bin/" .. short .. ".lua",
-                                      args = "", icon = attrs.icon })
+  if fine then
+    --
+    -- The whole path, not the short name.
+    --
+    -- `handlers.launch` accepts either - a bare name becomes
+    -- `/bin/<name>.lua` - and what a *file* records should not depend on
+    -- a completion rule the file cannot state. A launcher that says
+    -- `/bin/doom.lua` says what it runs; one that says `doom` says what
+    -- it runs only to somebody who knows the rule, and reads as broken to
+    -- anybody who does not.
+    --
+    -- Launchers already written the short way keep working, because the
+    -- window manager still completes a bare name. Nothing has to be
+    -- migrated.
+    --
+    fine, oops = fs.setattr(path, { kind = "launcher", type = "launcher",
+                                    program = "/bin/" .. short .. ".lua",
+                                    args = "", icon = attrs.icon })
+  end
+
+  if not fine then
+    print(("deskbar: no launcher for %s: %s"):format(short, tostring(oops)))
+  end
+end
+
+local function seed()
+  if not fs.getattr(DESKBAR) then
+    local ok, why = fs.send(DESKBAR, { type = "mkdir" })
+
+    if not ok then
+      print("deskbar: no " .. DESKBAR .. ": " .. tostring(why))
+      return
     end
 
-    if not fine then
-      print(("deskbar: no launcher for %s: %s"):format(short, tostring(oops)))
+    for _, short in ipairs(launchable) do add_launcher(short) end
+
+    print(("deskbar: made %s from what /bin declares"):format(DESKBAR))
+  else
+    --
+    -- **And every start after that, what arrived since.** The folder was
+    -- made once and never again, so an application newer than a person's
+    -- `/home` was not in their menu - Preferences, on 24 September.
+    --
+    local record = fs.read(SEEDED)
+    local seeded = nil
+
+    if type(record) == "table" and type(record.programs) == "table" then
+      seeded = {}
+
+      for _, short in ipairs(record.programs) do seeded[short] = true end
+    end
+
+    local present = (not seeded) and menudata.programs_in(fs, DESKBAR) or nil
+
+    for _, short in ipairs(menudata.missing(launchable, seeded, present)) do
+      add_launcher(short)
+      print(("deskbar: added %s to the menu"):format(short))
     end
   end
 
-  print(("deskbar: made %s from what /bin declares"):format(DESKBAR))
+  fs.write(SEEDED, { programs = launchable })
 end
 
 --
@@ -266,8 +299,24 @@ end
 --
 local sections = {}
 
+--
+-- A launcher to a program that is gone is not shown: `programs` is what
+-- `/bin` declared at the start, and a path outside `/bin` is somebody's own
+-- and trusted.
+--
+local function exists(program)
+  local short = program:match("^/bin/([^/]+)%.lua$")
+
+  if short then return programs[short] ~= nil end
+  if not program:find("/", 1, true) then
+    return programs[(program:gsub("%.lua$", ""))] ~= nil
+  end
+
+  return true
+end
+
 local function read_sections()
-  sections = menudata.sections(fs, DESKBAR)
+  sections = menudata.sections(fs, DESKBAR, exists)
 end
 
 seed()

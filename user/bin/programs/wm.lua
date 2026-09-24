@@ -152,18 +152,22 @@ local OUT = { want_corner = true,
               cascade = theme.metrics.tab + 8 }
 --
 -- **The frame down the sides and along the bottom**, in the title bar's
--- colour: 6, where it was 2. Diego, 24 September, looking at a Log View
+-- colour: 4, where it was 2. Diego, 24 September, looking at a Log View
 -- whose console ran to the window's edge: "We need to add some extra
 -- chrome to the other borders of the apps as now it looks weird and make
 -- better rounded borders". Two pixels was a line rather than chrome, so a
 -- window whose page runs edge to edge - a terminal, a log, a photograph -
 -- had a title bar on top and nothing holding the other three sides; and at
 -- the bottom the corner's arc cut straight through the page while the line
--- ran square past it. Six carries the bar's colour round the window, and
--- the page is rounded inside it (`OUT.round_inside`), so the frame follows
--- the curve.
+-- ran square past it. A frame carries the bar's colour round the window,
+-- and the page is rounded inside it (`OUT.round_inside`), so the frame
+-- follows the curve.
 --
-local BORDER     = 6
+-- **Four, not the six it was for an afternoon**: "the chrome arround the
+-- window is too thick, we should take a couple of pixels out". Six read as
+-- a picture frame; four holds the page without being looked at.
+--
+local BORDER     = 4
 --
 -- The three controls on a tab, and the room they take.
 --
@@ -279,7 +283,7 @@ function scale.chrome()
   TAB_H   = scale.px(theme.metrics.tab)
   OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
   OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
-  BORDER  = scale.px(6)
+  BORDER  = scale.px(4)
   BOX     = scale.px(18)
   MARGIN  = scale.px(10)
   TITLE_IN = scale.px(18)
@@ -1536,6 +1540,32 @@ function OUT.uncover(keep, round, x0, y0, x1, y1)
   end
 end
 
+--
+-- **What the power button and the Super key do**, as Preferences' Power
+-- and Keyboard pages set them (`/home/.power`, `/home/.keyboard`). Read
+-- once at the start and told again by `handlers.keys` when a row changes,
+-- because both are acted on in the key path, where a read from the disk is
+-- a call that may not be made. Until 24 September both rows wrote files
+-- nothing read: the button always shut down and the key always opened the
+-- menu.
+--
+OUT.keys = { power = "off", super = "menu" }
+
+function OUT.load_keys()
+  local power = fs.read("/home/.power")
+  local keyboard = fs.read("/home/.keyboard")
+
+  if type(power) == "table" and power.button then
+    OUT.keys.power = power.button
+  end
+
+  if type(keyboard) == "table" and keyboard.super then
+    OUT.keys.super = keyboard.super
+  end
+end
+
+OUT.load_keys()
+
 function OUT.shadowed(win)
   local fx, fy, fw, fh = frame_of(win)
 
@@ -2049,6 +2079,18 @@ local resizable, resize_window, move_window
 -- reports where a window ended up, and it is written above the function
 -- that does the reporting.
 local post
+
+-- The Deskbar's Kosmos menu, opened as if its button were pressed: the
+-- Super key's, and the power button's when Preferences asks for the menu.
+-- Posted, never sent - it runs on the key path.
+function OUT.open_kosmos_menu()
+  for _, win in ipairs(windows) do
+    if win.strip then
+      post(win, { type = "menu" })
+      break
+    end
+  end
+end
 local grabbed = nil           -- the window a press landed in, until release
 
 --------------------------------------------------------------------------
@@ -2599,15 +2641,17 @@ local function draw_window(i, r)
       --
       -- Outside the frame and nowhere else - the gfx kit's `shadow` skips
       -- the rounded rectangle itself, so this is not work thrown away under
-      -- the window. Clipped to `r` by the primitive's own bounds check, the
-      -- same way every other call here is.
+      -- the window.
       --
       -- A bare window casts none: the backdrop is the thing everything sits
       -- on and the strip is chrome, and a shadow under either would be a
       -- dark band across a desktop that has nothing above it.
       --
       if not bare and OUT.shadow > 0 and not win.fullscreen then
-        back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow)
+        -- Clipped to `r`, the rectangle being composed: the primitive
+        -- walks only the band inside it (`gfx.c`'s `shadow`).
+        back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow, nil,
+                    r.x, r.y, r.w, r.h)
       end
 
       --
@@ -5292,6 +5336,22 @@ handlers.scale = function(req)
   return { ok = true, pct = scale.pct }
 end
 
+--
+-- Preferences, telling the manager what the power button or the Super key
+-- now does. The fields are the files' own words, and anything else is
+-- ignored rather than stored.
+--
+handlers.keys = function(req)
+  for _, pair in ipairs({ { "power", { off = 1, menu = 1, nothing = 1 } },
+                          { "super", { menu = 1, nothing = 1 } } }) do
+    local v = req[pair[1]]
+
+    if v ~= nil and pair[2][v] then OUT.keys[pair[1]] = v end
+  end
+
+  return { ok = true }
+end
+
 handlers.theme = function(req)
   if req.palette then
     local ok, err = theme.apply(req.palette)
@@ -5640,8 +5700,17 @@ end
 function machine_keys.take(code, down)
   if code == machine_keys.POWER then
     if down then
-      print("wm: the power button - shutting down")
-      handlers.power({ action = "off" })
+      -- Shut down, the menu - which has Restart and Shut Down in it, so it
+      -- is the "ask" - or nothing, as Preferences' Power page says.
+      if OUT.keys.power == "nothing" then
+        print("wm: the power button - set to do nothing")
+      elseif OUT.keys.power == "menu" then
+        print("wm: the power button - the menu")
+        OUT.open_kosmos_menu()
+      else
+        print("wm: the power button - shutting down")
+        handlers.power({ action = "off" })
+      end
     end
 
     return true
@@ -6663,12 +6732,12 @@ local SUPER_BINDINGS = {
       -- every mouse press and close request already does. Nothing in here
       -- may block: this runs between reading a key and reading the next one.
       --
-      for _, win in ipairs(windows) do
-        if win.strip then
-          post(win, { type = "menu" })
-          break
-        end
-      end
+      -- **Unless Preferences says it does nothing** - Keyboard's "Pressed
+      -- alone", held in `OUT.keys` rather than read here, for this
+      -- comment's reason.
+      if OUT.keys.super == "nothing" then return end
+
+      OUT.open_kosmos_menu()
     end,
   },
 

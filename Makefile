@@ -784,6 +784,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/init/lua_glue.c \
              user/init/sys_user.c \
              user/kits/gfx/gfx.c \
+             user/kits/gfx/shadow.c \
              user/kits/game/game.c \
              user/kits/game/gamesoft.c \
              user/kits/gfx/png.c \
@@ -1668,6 +1669,16 @@ $(HOSTDIR)/test_storagedecode: tools/test_storagedecode.c user/drivers/usb/stora
 # else's reading of the same format, and `tools/test_fat.py` holds the two to
 # the files that went in. `fat_decode.h` has more.
 #
+#
+# A window's shadow, held on this computer to the method it replaced
+# (`roadmap.md` 5zu): the same pixels, each within a step, a clip that
+# changes nothing inside it - and how long each takes.
+#
+$(HOSTDIR)/test_shadow: tools/test_shadow.c user/kits/gfx/shadow.c user/kits/gfx/shadow.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
+	        tools/test_shadow.c user/kits/gfx/shadow.c
+
 $(HOSTDIR)/test_fatdecode: tools/test_fatdecode.c user/servers/fat_decode.c user/servers/fat_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
@@ -2949,7 +2960,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3009,6 +3020,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_efiboot
 	$(HOSTDIR)/test_apicdecode
 	$(HOSTDIR)/test_snesblit
+	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_smbiosdecode
 	$(HOSTDIR)/test_usbdecode
 	$(HOSTDIR)/test_backlightdecode

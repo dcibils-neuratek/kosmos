@@ -156,6 +156,59 @@ local spun = menu.sections(deep, "/L")
 check(type(spun) == "table" and #spun == 1,
       "a folder that contains itself is read to a depth and then stops")
 
+--------------------------------------------------------------------------
+-- A new application reaches the menu, and one a person took out does not
+-- come back (24 September: Preferences was not in a menu seeded before it
+-- existed).
+--------------------------------------------------------------------------
+
+local seeded_tree = {
+  ["/D/Applications"] = DIR,
+  ["/D/Applications/tracker"] = launcher("/bin/tracker.lua", ""),
+  ["/D/Applications/calc"] = launcher("calc", ""),
+  ["/D/Applications/notes.txt"] = { kind = "file" },
+  ["/D/Preferences"] = DIR,
+  ["/D/Preferences/appearance"] = launcher("/bin/appearance.lua", ""),
+}
+local seeded_store = store_of(seeded_tree)
+local present = menu.programs_in(seeded_store, "/D")
+
+check(present.tracker and present.calc and present.appearance,
+      "the launchers name their programs, a full path and a bare name alike")
+check(not present["notes.txt"] and not present.notes,
+      "a file that is not a launcher names nothing")
+
+local launchable = { "calc", "gallery", "preferences", "tracker" }
+local add = menu.missing(launchable, nil, present)
+
+check(#add == 2 and add[1] == "gallery" and add[2] == "preferences",
+      "with no record, what the launchers do not name is added: "
+      .. table.concat(add, ", "))
+
+-- With a record: the person took calc out, and it stays out.
+local record = { calc = true, tracker = true, gallery = true }
+add = menu.missing(launchable, record, present)
+
+check(#add == 1 and add[1] == "preferences",
+      "with a record, only what it has never held is added: "
+      .. table.concat(add, ", "))
+
+-- A launcher to a program that is gone is not shown; the rest are.
+local exists = function(program)
+  return program ~= "/bin/appearance.lua"
+end
+local shown = menu.sections(seeded_store, "/D", exists)
+local prefs = nil
+
+for _, section in ipairs(shown) do
+  if section.name == "Preferences" then prefs = section end
+end
+
+check(prefs and #prefs.items == 0,
+      "a launcher whose program is gone is not in the menu")
+check(#shown[1].items == 2,
+      "and the launchers whose programs are there still are")
+
 if failed == 0 then
   print(("PASS: %d checks on the Deskbar's menu as it is read off the disk, "
          .. "on this machine."):format(checks))

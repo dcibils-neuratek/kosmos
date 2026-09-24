@@ -77,6 +77,9 @@ ICONS = {
     "home":       PLACE + ('<path d="M2 7l6-5 6 5v7H2z"/>',),
     "newfolder":  PLACE + ('<path d="M2 4h4l1.5 2H14v7H2z"/>'
                            '<path d="M8 8.5v3M6.5 10h3"/>',),
+    # The browser's reload: a circle nearly closed, and the arrow's head.
+    "reload":     HEAD + ('<path d="M13.2 8.6A5.3 5.3 0 1 1 11.8 4.1"/>'
+                          '<path d="M12.6 1.8v3h-3"/>',),
     # The new folder's folder without its plus: Tracker's place button,
     # anywhere that is not Home, the Trash or a drive.
     "folder":     PLACE + ('<path d="M2 4h4l1.5 2H14v7H2z"/>',),

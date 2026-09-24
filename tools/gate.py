@@ -261,8 +261,17 @@ DISPLAY_PARTS = [
     ["default look"],
 ]
 
-for board, image, own in (("arm", ARM, "power button"),
-                          ("x86", X86, "unknown keys")):
+#
+# The phases only one board runs, standing where a part says `@@BOARD@@`,
+# and named once: the check below that every phase is in a part reads the
+# same table, so a phase added here cannot be missing from there.
+#
+BOARD_OWN = {"arm": ["power button"],
+             "x86": ["unknown keys", "power setting"]}
+
+for board, image in (("arm", ARM), ("x86", X86)):
+    own = ",".join(BOARD_OWN[board])
+
     for n, phases in enumerate(DISPLAY_PARTS, 1):
         cmd = ["python3", "tools/run_screenshot.py", image, "--phases",
                ",".join(own if ph == "@@BOARD@@" else ph for ph in phases)]
@@ -346,7 +355,8 @@ def uncovered_display_phases():
         called = re.findall(r'phase\("([^"]+)"', f.read())
 
     named = set(ph for part in DISPLAY_PARTS for ph in part)
-    named.update(("power button", "unknown keys"))
+    for phases in BOARD_OWN.values():
+        named.update(phases)
 
     return [ph for ph in called if ph not in named]
 

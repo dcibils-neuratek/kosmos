@@ -80,6 +80,18 @@ function clock.set_offset(minutes)
 end
 
 --
+-- **The offsets anybody lives at**, in minutes east of UTC: every whole hour
+-- from -12 to +14, and the half and quarter hours places actually keep -
+-- Newfoundland, India, Nepal, the Chathams. One list, read by the Date &
+-- Time window and by Preferences, so the two offer the same places.
+--
+clock.OFFSETS = {
+  -720, -660, -600, -570, -540, -480, -420, -360, -300, -240, -210, -180,
+  -120, -60, 0, 60, 120, 180, 210, 240, 270, 300, 330, 345, 360, 390, 420,
+  480, 540, 570, 600, 630, 660, 720, 765, 780, 840,
+}
+
+--
 -- The offset as people write it: UTC-03:00.
 --
 -- Signed and zero-padded, because "UTC-3" and "UTC-3:30" do not line up in

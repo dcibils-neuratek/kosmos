@@ -1840,7 +1840,7 @@ function ui.checkbox(spec)
   v.checked = v.checked or false
 
   --
-  -- **In a flat look, the drawings' box**: 18 across with a radius of 5, a
+  -- **In a flat look, the drawings' box**: 18 across with a radius of 4, a
   -- white well in a one-pixel rule, and ticked, the accent with a white
   -- check - the switch's colours, since a tick and a switch are the same
   -- state promised differently. The drawings have no checkbox of their own,
@@ -1852,11 +1852,11 @@ function ui.checkbox(spec)
     local by = (self.h - box) // 2
 
     if self.checked then
-      g:fill_round(0, by, box, box, theme.accent, 5)
+      g:fill_round(0, by, box, box, theme.accent, 4)
       g:line_icon((box - 15) // 2, by + (box - 15) // 2, "check", 0xffffffff)
     else
-      g:fill_round(0, by, box, box, theme.sunken, 5)
-      g:frame_round(0, by, box, box, theme.line, 5)
+      g:fill_round(0, by, box, box, theme.sunken, 4)
+      g:frame_round(0, by, box, box, theme.line, 4)
     end
 
     if self.focused and self.keyed then
@@ -2142,6 +2142,97 @@ function ui.dropdown(spec)
     if action == "release" and x >= 0 and x < self.w
        and y >= 0 and y < self.h then
       self:open()
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--
+-- **A stepper**: the dropdown's box, a chevron at each end and the value in
+-- the middle - a choice among many that follow one another, where a menu
+-- of them would not fit on the screen. Preferences' time zone is 37
+-- offsets, and a menu of 37 rows at 32 is taller than 1080.
+--
+-- A press on either end steps, as do the arrows - left and down back,
+-- right and up on - and it stops at the ends rather than wrapping, because
+-- UTC+14:00 is not next to UTC-12:00 in any sense a person means.
+--
+function ui.stepper(spec)
+  local v = ui.view(spec)
+
+  v.focusable = true
+  v.choices = v.choices or {}
+
+  local PAD, END = 9, 26
+
+  function v:fit()
+    local widest = 0
+
+    for _, c in ipairs(self.choices) do
+      widest = math.max(widest, gfx.measure(tostring(c[2])))
+    end
+
+    if not self.fixed_width then
+      self.w = 1 + END + PAD + widest + PAD + END + 1
+    end
+  end
+
+  v.fixed_width = (spec.w or 0) > 0
+  v.h = v.h > 0 and v.h or 31
+  v:fit()
+
+  local function index(self)
+    for i, c in ipairs(self.choices) do
+      if c[1] == self.value then return i end
+    end
+
+    return 1
+  end
+
+  local function step(self, d)
+    local i = math.max(1, math.min(#self.choices, index(self) + d))
+    local c = self.choices[i]
+
+    if c and c[1] ~= self.value then
+      self.value = c[1]
+      if self.on_change then self.on_change(self, c[1]) end
+    end
+  end
+
+  function v:draw(g)
+    local i = index(self)
+    local name = self.choices[i] and tostring(self.choices[i][2]) or ""
+    local dim = theme.mix(theme.sunken, theme.text_dim, 350)
+
+    g:fill_round(0, 0, self.w, self.h, theme.sunken, 7)
+    g:frame_round(0, 0, self.w, self.h,
+                  self.focused and self.keyed and theme.ring or theme.line_soft,
+                  7)
+
+    -- The ends, and each dimmed where there is nowhere further to go.
+    g:line_icon(1 + (END - 15) // 2, (self.h - 15) // 2, "back",
+                (i > 1) and theme.text_dim or dim)
+    g:line_icon(self.w - 1 - END + (END - 15) // 2, (self.h - 15) // 2,
+                "forward", (i < #self.choices) and theme.text_dim or dim)
+
+    g:text((self.w - gfx.measure(name)) // 2, centred(self.h), name,
+           theme.text)
+  end
+
+  function v:key(c)
+    if c == -3 or c == -1 then step(self, 1) return true end
+    if c == -4 or c == -2 then step(self, -1) return true end
+
+    return false
+  end
+
+  function v:mouse(action, x)
+    if action == "press" then
+      if x < self.w // 3 then step(self, -1)
+      elseif x >= self.w - self.w // 3 then step(self, 1) end
     end
 
     return true
@@ -3150,7 +3241,17 @@ function ui.list(spec)
     -- row, since both say "this one" - and the ring round the card when
     -- the keyboard is in it.
     --
-    if flat then
+    --
+    -- `bare` is a list inside something that is already a card -
+    -- Preferences' Startup row - which draws no second card round itself.
+    --
+    if flat and self.bare then
+      g:fill(0, 0, self.w, self.h, theme.sunken)
+
+      if self.focused and self.keyed then
+        g:frame_round(0, 0, self.w, self.h, theme.ring, 7)
+      end
+    elseif flat then
       g:fill_round(0, 0, self.w, self.h, theme.sunken, 10)
       g:frame_round(0, 0, self.w, self.h,
                     self.focused and self.keyed and theme.ring
@@ -3225,7 +3326,27 @@ function ui.list(spec)
         -- whole row, as a row is one thing.
         local tx = flat and 12 or 8
 
-        if self.checks then
+        if self.checks and flat then
+          --
+          -- The kit's checkbox as a flat look draws it: 18 across with a
+          -- radius of 4, a white well in a rule, and ticked the accent with
+          -- a white check.
+          --
+          local box = 18
+          local by = y + (ROW - box) // 2
+          local on_ = self.checks[tostring(item)]
+
+          if on_ then
+            g:fill_round(12, by, box, box, theme.accent, 4)
+            g:line_icon(12 + (box - 15) // 2, by + (box - 15) // 2, "check",
+                        0xffffffff)
+          else
+            g:fill_round(12, by, box, box, theme.sunken, 4)
+            g:frame_round(12, by, box, box, theme.line, 4)
+          end
+
+          tx = 12 + box + 12
+        elseif self.checks then
           local box = 16
           local by = y + (ROW - box) // 2
 
@@ -3356,7 +3477,10 @@ function ui.list(spec)
     -- because a checklist is read down the boxes and a selection moving
     -- under your eye while you tick things is noise.
     --
-    if self.checks and action == "press" and x < 4 + 16 + 2 then
+    -- The flat look's box is 12 in and 18 across (`draw` above).
+    local box_end = theme.flat and (12 + 18 + 4) or (4 + 16 + 2)
+
+    if self.checks and action == "press" and x < box_end then
       local key = tostring(self.items[n])
 
       self.checks[key] = (not self.checks[key]) or nil

@@ -1636,7 +1636,9 @@ processors, and still what follows USB:
      2-pixel line beside it, and at the bottom corner the arc cut through
      the page while the line ran square past it. Diego: "We need to add
      some extra chrome to the other borders of the apps as now it looks
-     weird and make better rounded borders". So `BORDER` is 6 (it was 2),
+     weird and make better rounded borders". So `BORDER` is 4 (it was 2;
+     6 for an afternoon, until "the chrome arround the window is too
+     thick, we should take a couple of pixels out"),
      in the title bar's colour down both sides and along the bottom, and
      the page is rounded *inside* it at its two bottom corners
      (`OUT.round_inside`), so the frame is one width all the way round the
@@ -1659,6 +1661,53 @@ processors, and still what follows USB:
      look a thin grey pill with no arrows (`docs/apps.html`'s list). The
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
+
+5zw. **AGREED on 24 September - the pixel loops, measured and vectorised
+   where it pays.** Diego, after the shadow went 27 times faster: "wouldnt
+   it be good to go through our code that does things repeatedly in lua or
+   c that can be recoded in a SIMD way ... there are some loops in our
+   window manager, etc that do a lot of multiply and math operations that
+   caan be parallelized into SIMD instructions?"
+
+   Yes, and in the shadow's order: **measure, then move the loop into a
+   file of its own, hold it on the host to what it replaces, and time
+   both.** The candidates are the graphics kit's per-pixel loops - `blend`
+   (source-over, every icon and every translucent thing), `stretch` with
+   `smooth` (Photo, and every window at a scale other than 100),
+   `text` (a glyph's coverage over what is behind it), `tint` (every line
+   icon), `fill_round`/`frame_round` and `blit_round` (every control and
+   every window's corners). `blit` and `fill` are row copies and fills the
+   compiler already turns into wide stores. The window manager's Lua
+   decides what is drawn and where; it computes no pixel, so what it costs
+   is `frames`' question (a pass's time by stage), asked first.
+   `testing.md` gets a row per loop with its speed before and after.
+
+5zv. **AGREED on 24 September - the scroll wheel.** Diego: "add scrollwheel
+   mouse suppor to tracker and apps so i can scroll a list of files in
+   tracker without going to the scrollbars all the time". Nothing in the
+   system reads a wheel today, from the drivers up. So, in order:
+   - **The drivers**: virtio-input's `REL_WHEEL` under QEMU, the PS/2
+     IntelliMouse fourth byte and a USB mouse's wheel byte on the PC - each
+     adding to one count the board reports beside the position.
+   - **The kernel's pointer record** carries the count, as it carries the
+     buttons.
+   - **The window manager** turns it into a `wheel` event for the window
+     under the pointer - the pointer, not the focus, as every desktop does.
+   - **The kit**: a list, a tree, a text view and an editor scroll by three
+     rows a notch; Tracker's rows and icons, Log View, Processes and the
+     browser the same.
+   - **A check**: the display harness sends a wheel notch through QEMU's
+     input and watches a list move.
+
+5zu. **DONE on 24 September (0.10.151) - shadows fast enough to drag
+   with** (`testing.md` 18.165: 27 times faster whole, and a drag's small
+   rectangles no longer pay for the whole shadow). Diego:
+   "the drop shadow makes the entire UI unsable because of the slowness when
+   dragging windows and else, can we make drop shadows faster with a C
+   function and SIMD usage?" The shadow is C already (`gfx.c`'s `shadow`),
+   so the question is what it does per pixel and how often; measured first,
+   then the falloff computed once per size rather than per pixel per frame,
+   and the blend over runs of one alpha - which is where SIMD pays.
 
 5zt. **DONE on 24 September (0.10.150) - Tracker's body as
    `docs/tracker2.html` draws it, not only its header** (`testing.md`

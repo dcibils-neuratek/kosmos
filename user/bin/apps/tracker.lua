@@ -1828,8 +1828,8 @@ end
 -- and the sort and sizes under them - is the same thing with every mark in
 -- one place.
 --
-local find_button = ui.iconbutton{ x = 10, y = 10, icon = "search",
-                                   on_click = toggle_search }
+local find_button = ui.iconbutton{ x = SIDE_W - 8 - 26 - 1 - 4 - 26, y = 10,
+                                   icon = "search", on_click = toggle_search }
 local new_button = ui.iconbutton{ icon = "newfolder",
                                   on_click = function() new_folder() end }
 local view_button = ui.iconbutton{ icon = "menu" }
@@ -1855,14 +1855,17 @@ header = ui.header{
 }
 
 --
--- **The sidebar's head**: the magnifier at its left, "Files" in the title
--- face in its middle, and a menu at its right - of what concerns Tracker
--- and its places rather than the files in front of you, which is the dots'.
+-- **The sidebar's head**: "Files" in the title face at the left, 18 in as
+-- every header's title is, and the magnifier and a menu at the right - the
+-- menu of what concerns Tracker and its places rather than the files in
+-- front of you, which is the dots'. The drawing centred the word between
+-- the two icons; Diego, of Preferences' the same: "it should be aligned to
+-- the left to the content as the rest of the apps".
 --
 side_menu = ui.iconbutton{ x = SIDE_W - 8 - 26 - 1, y = 10, icon = "menu" }
 
-search.x, search.y = 40, (L.head - 1 - 31) // 2
-search.w = SIDE_W - 40 - 9
+search.x, search.y = 10, (L.head - 1 - 31) // 2
+search.w = find_button.x - 4 - 10
 
 local side_ground = ui.view{ x = 0, y = 0, w = SIDE_W, h = H,
                              follow = { "left", "top", "bottom" } }
@@ -1879,9 +1882,8 @@ function side_head:draw(g)
 
   local word = "Files"
 
-  g:text((self.w - 1 - gfx.measure(word, "title")) // 2,
-         (self.h - 1 - gfx.height("title")) // 2, word, theme.text, nil,
-         "title")
+  g:text(L.head_in, (self.h - 1 - gfx.height("title")) // 2, word,
+         theme.text, nil, "title")
 end
 
 --
