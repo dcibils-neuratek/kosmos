@@ -1660,8 +1660,9 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
-5zt. **AGREED on 24 September - Tracker's body as `docs/tracker2.html`
-   draws it, not only its header.** Diego, with a photograph of 0.10.149's
+5zt. **DONE on 24 September (0.10.150) - Tracker's body as
+   `docs/tracker2.html` draws it, not only its header** (`testing.md`
+   18.164). Diego, with a photograph of 0.10.149's
    Tracker: "The fonts look small here", "Make sure they are pixel perfect
    it's the mockups". Measured at one pixel to one, the file names are the
    drawing's size - 12.5 there, 16 here, the same em - and what is not the

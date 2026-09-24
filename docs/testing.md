@@ -8926,3 +8926,43 @@ View phases, held copies of layouts that moved twice in two days.
   drawing context left as it was entered.
 - `test_settings.lua`, `test_theme.lua`: Endeavour the default in both, the
   fixed layout's 32, 26 and 31.
+
+## 18.164 Tracker's body as its drawing, not only its header
+
+`roadmap.md` 5zt. Diego, with a photograph of 0.10.149's Tracker: *"The
+fonts look small here"*, *"Make sure they are pixel perfect it's the
+mockups"*.
+
+**Measured first, and the finding was not the fonts.** `docs/tracker2.html`
+rendered by headless Chrome at a device scale of 1, beside a screendump:
+the file names are the drawing's size - 12.5 px there, `ui` 16 here, the
+same em. What made the window read small was everything round them: the
+drawing's sidebar is a list of places at 13.5 with an icon each under a
+head of its own, and Tracker drew the old tree - Places, System, Drives - at
+12.5, in a framed well 12 in from the window's edge, with the files in a
+second well beside it.
+
+**What it is now.** A sidebar 200 wide on the sidebar's colour: a head with
+the magnifier, "Files" in the title face and a menu (New window, Empty
+Trash); the places at 33 apart with their icons - Home, Desktop, the Trash;
+then Documents, Music and Pictures where they exist and the places a person
+made; then the drives - grouped by hairlines. The header spans the file pane
+only, 6 and 8 in, the place button 6 clear of the arrows and named as the
+sidebar names a place. The files sit on the pane with no frame, each row
+marked as a folder or a file, every other row a shade off the page.
+
+Left out, and said: the drawing's **Recent** - nothing here keeps a list of
+recent files, so it would be a row that leads nowhere; and **System**, which
+the drawing does not have - `/` and every mount under it are one press away
+in the place button's menu.
+
+**The kit**: `ui.sidebar` takes a `pitch` and gaps with a `rule`, answers
+`item_at(y)` and `row_of(id)`, and dims a `quiet` row that leads nowhere
+(a place whose drive is away); `ui.header` takes an `edge` of its own and a
+control's `space`.
+
+**The checks**: the places phase drops a folder on the sidebar, names it,
+and reads where Tracker says the new place went (`tracker: place <name> at
+<y>`) - after a hairline now, not at a tree's fourth row - to click it and
+take it out again. The icon-size phase opens View where Tracker says it is,
+which counts the sidebar's width.

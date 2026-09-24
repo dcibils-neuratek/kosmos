@@ -2486,20 +2486,48 @@ function ui.sidebar(spec)
   v.focusable = true
   v.items = v.items or {}
 
+  --
+  -- **`pitch`, and a gap with a `rule`**, for Tracker's places
+  -- (`docs/tracker2.html`): its rows are 33 apart where Preferences' are
+  -- 35, and its groups are parted by a hairline 9 below the last row, 10
+  -- in from either side, rather than by space alone - 19 in all.
+  --
+  local PITCH = v.pitch or SIDE_PITCH
+  local RULE_GAP = 19
+
   -- Where each row is, worked out once from the list.
   local function rows(self)
     local out, y = {}, 0
 
     for _, it in ipairs(self.items) do
       if it.gap then
-        y = y + SIDE_GAP
+        y = y + (it.rule and RULE_GAP or SIDE_GAP)
       else
         out[#out + 1] = { item = it, y = y }
-        y = y + SIDE_PITCH
+        y = y + PITCH
       end
     end
 
     return out
+  end
+
+  -- The item under a point, for a right-click or a drop; nil between rows.
+  function v:item_at(y)
+    for _, r in ipairs(rows(self)) do
+      if y >= r.y and y < r.y + PITCH then return r.item, r.y end
+    end
+
+    return nil
+  end
+
+  -- Where an item's row is, by its id - for a caller that says where
+  -- things are (Tracker tells the display harness where a new place went).
+  function v:row_of(id)
+    for _, r in ipairs(rows(self)) do
+      if r.item.id == id then return r.y, PITCH end
+    end
+
+    return nil
   end
 
   local function index_of(self, list)
@@ -2519,12 +2547,27 @@ function ui.sidebar(spec)
 
   function v:draw(g)
     local w = self.w - 2 * SIDE_INSET
+    local y = 0
+
+    -- The hairlines between groups, where a gap asks for one.
+    for _, it in ipairs(self.items) do
+      if it.gap then
+        if it.rule then
+          g:fill(SIDE_INSET + 10, y + 9, self.w - 2 * (SIDE_INSET + 10), 1,
+                 theme.line_soft)
+        end
+
+        y = y + (it.rule and RULE_GAP or SIDE_GAP)
+      else
+        y = y + PITCH
+      end
+    end
 
     for _, r in ipairs(rows(self)) do
       local on = r.item.id == self.selected
 
       if on then
-        g:fill_round(SIDE_INSET, r.y, w, SIDE_PITCH, theme.line_soft, SIDE_R)
+        g:fill_round(SIDE_INSET, r.y, w, PITCH, theme.line_soft, SIDE_R)
       end
 
       --
@@ -2536,19 +2579,21 @@ function ui.sidebar(spec)
       -- where the keys will go; a press with the pointer puts it away.
       --
       if self.focused and self.keyed and on then
-        g:frame_round(SIDE_INSET, r.y, w, SIDE_PITCH, theme.ring, SIDE_R)
+        g:frame_round(SIDE_INSET, r.y, w, PITCH, theme.ring, SIDE_R)
       end
 
       if r.item.icon then
-        g:line_icon(SIDE_INSET + SIDE_ICON, r.y + (SIDE_PITCH - 15) // 2,
+        g:line_icon(SIDE_INSET + SIDE_ICON, r.y + (PITCH - 15) // 2,
                     r.item.icon, on and theme.accent or theme.text_dim)
       end
 
-      -- The chosen one's words in `label`, the drawing's weight 500.
+      -- The chosen one's words in `label`, the drawing's weight 500; a row
+      -- with nowhere to go (`quiet`) dim.
       local face = on and "label" or "text"
 
-      g:text(SIDE_INSET + SIDE_WORD, r.y + (SIDE_PITCH - gfx.height(face)) // 2,
-             r.item.name or "", theme.text, nil, face)
+      g:text(SIDE_INSET + SIDE_WORD, r.y + (PITCH - gfx.height(face)) // 2,
+             r.item.name or "", r.item.quiet and theme.text_dim or theme.text,
+             nil, face)
     end
   end
 
@@ -2569,8 +2614,9 @@ function ui.sidebar(spec)
     if action ~= "press" then return true end
 
     for _, r in ipairs(rows(self)) do
-      if y >= r.y and y < r.y + SIDE_PITCH
-         and x >= SIDE_INSET and x < self.w - SIDE_INSET then
+      if y >= r.y and y < r.y + PITCH
+         and x >= SIDE_INSET and x < self.w - SIDE_INSET
+         and not r.item.quiet then
         choose(self, r.item.id)
         break
       end
@@ -2706,13 +2752,23 @@ function ui.header(spec)
 
   local function centre(c) return (L.head - 1 - c.h) // 2 end
 
+  --
+  -- `edge` is `{ left, right }` where a drawing's header has insets of its
+  -- own - Tracker's pane is 6 and 8 (`docs/tracker2.html`) - and a control's
+  -- `space` is room before it beyond the gap, for the drawing's place
+  -- button, which stands 6 clear of the arrows.
+  --
+  local edge_l = v.edge and v.edge[1] or L.head_edge
+  local edge_r = v.edge and v.edge[2] or L.head_edge
+
   function v:measure()
-    local x = L.head_edge
+    local x = edge_l
 
     -- A hidden control takes no room on either side: Tracker's place
     -- button and its search field share one slot, one of them hidden.
     for _, c in ipairs(self.left) do
       if not c.hidden then
+        x = x + (c.space or 0)
         c.x, c.y = x, centre(c)
         x = x + c.w + L.head_gap
       end
@@ -2721,7 +2777,7 @@ function ui.header(spec)
     self.title_x = (#self.left > 0) and (x + L.head_edge - L.head_gap)
                    or L.head_in
 
-    local r = self.w - L.head_edge
+    local r = self.w - edge_r
 
     for i = #self.right, 1, -1 do
       local c = self.right[i]

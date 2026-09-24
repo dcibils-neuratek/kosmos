@@ -57,7 +57,11 @@ controls made before their window measured the wrong face.
 is pluggable` on AArch64 under the gate's load - the flake 18.133 recorded
 on x86 - and passed three runs of three alone; recorded, not rerun away.
 
-**Next**: Tracker's body as `tracker2.html` draws it (5zt), then the M700 stick (`make MEGA=1
+**0.10.150 - Tracker's body as `tracker2.html` draws it** (5zt, 18.164),
+after Diego's "The fonts look small here" - measured, the file names were
+the drawing's size and the old tree round them was not.
+
+**Next**: the M700 stick (`make MEGA=1
 x86-usb-image`, `run_uefi.py`, `make stress`, a `boot.md` row), then the
 twelve windows of 5zs.
 

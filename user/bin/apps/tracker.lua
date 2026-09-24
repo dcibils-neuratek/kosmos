@@ -69,8 +69,19 @@ local W, H = 780, 520
 -- icon buttons now, and the drawing was always icons.
 --
 local L = ui.layout
-local CONTENT_Y = L.head + 12
+local CONTENT_Y = L.head
 local FOOT_H    = 26               -- the status line, when there is one
+
+--
+-- **The sidebar, as `docs/tracker2.html` draws it** (`roadmap.md` 5zt): 200
+-- wide on the sidebar's own colour with a rule down its right edge, a head
+-- of its own 46 tall - the search, "Files", a menu - and the places under
+-- it, 33 apart, grouped by hairlines. The header is the file pane's only,
+-- and the files sit on the pane with nothing drawn round them. It was a
+-- tree of Places, System and Drives in a framed well 210 wide, with the
+-- files in another, both 12 in from the window's edges.
+--
+local SIDE_W = 200
 
 -- Nothing is offset by a menu bar any more. Kept as a name rather than
 -- deleted at thirty call sites, and zero because there is no bar.
@@ -473,9 +484,11 @@ local reversed = false
 -- how many things there are, which is the one number always worth a place
 -- of its own. Two labels rather than one string, so a message never pushes
 -- the count off the end.
-local status = ui.label{ x = 12, y = H - FOOT_H + 4, w = W - 200, text = "",
+local status = ui.label{ x = SIDE_W + 12, y = H - FOOT_H + 4,
+                         w = W - SIDE_W - 200, text = "", color = "text_dim",
                          follow = { "left", "right", "bottom" } }
 local count  = ui.label{ x = W - 180, y = H - FOOT_H + 4, w = 168, text = "",
+                         color = "text_dim",
                          follow = { "right", "bottom" } }
 
 --
@@ -486,7 +499,8 @@ local count  = ui.label{ x = W - 180, y = H - FOOT_H + 4, w = 168, text = "",
 -- has one now (`view.hidden`), and it is three lines in `ui.lua` that every
 -- panel benefits from.
 --
-rename_field = ui.field{ x = 12, y = H - FOOT_H - 30, w = 300, text = "",
+rename_field = ui.field{ x = SIDE_W + 12, y = H - FOOT_H - 34, w = 300,
+                         text = "",
                          hidden = true, follow = { "left", "bottom" } }
 
 --
@@ -588,38 +602,91 @@ local function sorted()
 end
 
 --
--- A pane of places on the left, the listing on the right, a grip between.
+-- The places on the left, the listing on the right.
 --
--- The tree is *lazy*: a node's children are read the first time it is
--- opened and kept after that. A tree that loaded eagerly would walk every
--- filesystem on the machine to draw a pane four rows tall, and one of them
--- is a disk.
+-- **Home, Desktop and the Trash; then Documents, Music and Pictures where
+-- they exist, and the places a person made; then the drives** - the
+-- drawing's groups, less its Recent, which would be a row that leads
+-- nowhere: nothing here keeps a list of recent files yet. The system's
+-- mounts are one press away through the place button's menu, which starts
+-- at `/`.
 --
--- **210 rather than 150, Diego's call on 16 September.**
---
--- `drives.html` puts a volume's filesystem beside its name - `KOSMOS HOME`
--- and then `kfs`, quieter and to the right. At 150 a depth-one row left
--- about 104 pixels and only a short pair fit: `BACKUP FAT16` drew, while
--- `KOSMOS HOME kfs`, `PHOTOS 2024 FAT32` and `Untitled 2 FAT32` all
--- suppressed the type. That is a feature which works under QEMU, where
--- there are no drives, and vanishes on the ThinkPad, where there are - so
--- the pane carries the design instead of the design being cut to the pane.
-local PLACES_W = 210
-
---
--- The sidebar's rows are `/lib/sidebar.lua`'s, shared with every Open and
--- Save window; what is Tracker's is below - a drop that makes a place, and
--- a right-click that takes one out.
+-- `/lib/sidebar.lua` still answers for the drives and is what the Open and
+-- Save window draws; Tracker lists them itself because its sidebar is the
+-- drawing's list and not a tree.
 --
 local side = sidebar.new()
+local place_by_id = {}
 
-local places = ui.tree{
-  x = 12, y = CONTENT_Y + BAR_H, w = PLACES_W,
-  h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
+local function place_items()
+  local items, by = {}, {}
+
+  local function add(name, path, icon, extra)
+    local it = { id = path or ("#" .. name), name = name, path = path,
+                 icon = icon }
+
+    for k, v in pairs(extra or {}) do it[k] = v end
+
+    items[#items + 1] = it
+    by[it.id] = it
+  end
+
+  add("Home", "/home", "home")
+  add("Desktop", "/home/Desktop", "folder")
+  add("Trash", files.TRASH, "trash")
+
+  local mine = {}
+
+  for _, f in ipairs({ { "Documents", "document" }, { "Music", "music" },
+                       { "Pictures", "pictures" } }) do
+    local path = "/home/" .. f[1]
+
+    if fs.getattr(path) then mine[#mine + 1] = { f[1], path, f[2] } end
+  end
+
+  --
+  -- The places a person made, the drawing's `MyPhotos on PHOTOS 2024`: a
+  -- place whose drive is away stays, dim and going nowhere (`quiet`), which
+  -- is `drives.html`'s "Unplug the drive and MyPhotos stays in Places,
+  -- greyed out".
+  --
+  for _, p in ipairs(placelib.read(fs)) do
+    local volumes = p.attrs.volume and side.volumes() or {}
+    local path = placelib.resolve(p.attrs, volumes)
+
+    mine[#mine + 1] = { p.name, path, "folder", { place = p,
+                                                  quiet = (path == nil) } }
+  end
+
+  if #mine > 0 then items[#items + 1] = { gap = true, rule = true } end
+
+  for _, m in ipairs(mine) do add(m[1], m[2], m[3], m[4]) end
+
+  local drives = side.volumes() or {}
+
+  if #drives > 0 then items[#items + 1] = { gap = true, rule = true } end
+
+  for _, v in ipairs(drives) do
+    add(v.name, files.join("/drives", v.name), "drive")
+  end
+
+  return items, by
+end
+
+local places = ui.sidebar{
+  x = 0, y = L.head + 2, w = SIDE_W - 1, h = H - L.head - 2, pitch = 33,
   follow = { "left", "top", "bottom" },
-  roots = side.roots(),
-  on_select = function(_, node) visit(node.path) end,
+  on_select = function(_, id)
+    local it = place_by_id[id]
+
+    if it and it.path then visit(it.path) end
+  end,
 }
+
+-- The chosen row is the place you are in, when you are in one.
+local function mark_place(path)
+  places.selected = place_by_id[path] and path or nil
+end
 
 --
 -- **Places and Drives read again**: after a place is made or removed, and on
@@ -628,6 +695,8 @@ local places = ui.tree{
 --
 local function refresh_places()
   side.refresh()
+  places.items, place_by_id = place_items()
+  mark_place(where)
 end
 
 --
@@ -679,56 +748,43 @@ end
 -- files anybody made, and say so.
 --
 function places:on_context(_, y)
-  local node = self:node_at(y)
+  local it = self:item_at(y)
 
-  if not node then return true end
+  if not it then return true end
 
-  if not node.place then
-    if not node.heading then
-      status.text = node.text .. " is built in, not a place you made"
-    end
-
+  if not it.place then
+    status.text = it.name .. " is built in, not a place you made"
     return true
   end
 
-  local name, why = files.free_name(files.TRASH, node.place.name)
+  local name, why = files.free_name(files.TRASH, it.place.name)
   local ok = false
 
   if name then
-    ok, why = files.move(node.place.file, files.join(files.TRASH, name))
+    ok, why = files.move(it.place.file, files.join(files.TRASH, name))
   end
 
-  status.text = ok and (node.place.name .. " is out of Places, and in the Trash")
+  status.text = ok and (it.place.name .. " is out of Places, and in the Trash")
                 or ("could not remove it: " .. tostring(why))
 
   refresh_places()
   return true
 end
 
-local split = ui.splitter{
-  x = 12 + PLACES_W, y = CONTENT_Y + BAR_H, w = 6,
-  h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
-  follow = { "left", "top", "bottom" },
-}
-
-local rows = ui.view{ x = 12 + PLACES_W + 6, y = CONTENT_Y + BAR_H,
-                      w = W - 24 - PLACES_W - 6,
-                      h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
+local rows = ui.view{ x = SIDE_W, y = CONTENT_Y, w = W - SIDE_W,
+                      h = H - CONTENT_Y - FOOT_H,
                       follow = { "left", "right", "top", "bottom" } }
 
 --
--- The grip moves the boundary, and the two panes are told their new size
--- rather than working it out: `view:resize` is what applies a follow mode,
--- and a view whose width changed without it would keep drawing at the old
--- one until the window itself was resized.
+-- The pane's ground to the window's bottom, under the foot line as well,
+-- so the files and what is said about them are one white page.
 --
-function split:on_move(dx)
-  local w = math.min(math.max(80, places.w + dx), self.parent.w - 160)
+local pane_ground = ui.view{ x = SIDE_W, y = CONTENT_Y, w = W - SIDE_W,
+                             h = H - CONTENT_Y,
+                             follow = { "left", "right", "top", "bottom" } }
 
-  places.w = w
-  self.x = 12 + w
-  rows.x = 12 + w + 6
-  rows.w = self.parent.w - 24 - w - 6
+function pane_ground:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.sunken)
 end
 
 rows.focusable = true
@@ -939,10 +995,6 @@ function rows:draw(g)
   --
   g:fill(0, 0, self.w, self.h, backdrop and 0x00000000 or theme.sunken)
 
-  if not backdrop then
-    g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
-  end
-
   local shown = sorted()
   self.shown = shown
 
@@ -1045,12 +1097,27 @@ function rows:draw(g)
                or theme.sunken
     local fg = (on and not flat) and theme.text_on or theme.text
 
+    local wide = self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0)
+
     if on then
-      g:fill(1, ry, self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0), LROW,
-             bg)
+      g:fill(1, ry, wide, LROW, bg)
+    elseif flat and n % 2 == 0 then
+      -- Every other row a shade off the page, as the drawing's list is.
+      bg = theme.mix(theme.sunken, theme.window, 300)
+      g:fill(1, ry, wide, LROW, bg)
     end
 
-    g:text(COLUMNS[1].x, y, files.label(e), fg, bg)
+    --
+    -- A folder or a file, as the drawing marks them before the name: a
+    -- small rounded block, the accent's for a folder and the rail's grey for
+    -- anything else.
+    --
+    g:fill_round(COLUMNS[1].x, ry + (LROW - 13) // 2, 16, 13,
+                 (e.kind == "directory") and theme.mix(theme.accent,
+                                                       theme.sunken, 250)
+                 or theme.track, 2)
+
+    g:text(COLUMNS[1].x + 24, y, files.label(e), fg, bg)
     g:text(COLUMNS[2].x, y,
            (e.kind == "directory") and "--" or files.size(e.size), fg, bg)
     --
@@ -1609,7 +1676,12 @@ function show(path)
   -- The header says where you are, which is the innermost segment and not
   -- the whole path: the whole path is what pressing it opens.
   if place_button then
-    place_button.text = (path == "/") and "/" or last_part(path)
+    -- A place's own name where it is one - "Home", as the sidebar and the
+    -- drawing say it - and the folder's name everywhere else.
+    local known = place_by_id[path]
+
+    place_button.text = known and known.name
+                        or ((path == "/") and "/" or last_part(path))
     place_button.icon = place_icon(path)
     place_button:fit()
 
@@ -1617,6 +1689,9 @@ function show(path)
     -- just changed.
     if header then header:measure() end
   end
+
+  -- And the sidebar marks the place you are in, when you are in one.
+  mark_place(path)
 
   recount()
   status.text = ""
@@ -1706,28 +1781,32 @@ end
 -- `chevron`), in the label face, as `docs/tracker2.html` draws it.
 --
 place_button = ui.button{ text = "Home", icon = "home", chevron = true,
-                          role = "label" }
+                          role = "label", space = 6 }
 
 place_button.on_click = function()
   -- On the screen: `open_menu` opens a window of its own and the window
-  -- manager places windows on the screen.
-  win:open_menu(win.origin_x + place_button.x, win.origin_y + L.head,
+  -- manager places windows on the screen - and the button is in the
+  -- header, which starts at the sidebar's edge.
+  win:open_menu(win.origin_x + SIDE_W + place_button.x, win.origin_y + L.head,
                 trail_menu())
 end
 
 --
--- The magnifier, which swaps the place button for the field and back.
+-- **The magnifier, in the sidebar's head**, which turns that head into the
+-- field and back - `docs/tracker2.html`: "Pressing it turns the header into
+-- the field". "Files" and the menu give it their room while it is open.
 --
 -- **Focus follows it**, because a search box that appears and does not take
 -- the keyboard is a box you have to click after asking for it - which is
 -- the kind of half-done control that makes a window feel slow without
 -- anything being slow.
 --
+local side_menu                    -- the sidebar's menu, below
+
 local function toggle_search()
   search_on = not search_on
   search.hidden = not search_on
-  place_button.hidden = search_on
-  header:measure()
+  side_menu.hidden = search_on
 
   if search_on then
     win:focus_on(search)
@@ -1740,15 +1819,17 @@ local function toggle_search()
 end
 
 --
--- The right of the header: what searches, what makes something, what
--- changes how it is shown, and everything else - four icons, as drawn.
+-- The right of the header: what makes something, what changes how it is
+-- shown, and everything else - three icons, as drawn. The drawing's fourth,
+-- a close, is the title bar's.
 --
 -- **View opens its own menu rather than toggling.** The drawing has an icon
 -- for the layout; one button that opens the six rows - as icons, as list,
 -- and the sort and sizes under them - is the same thing with every mark in
 -- one place.
 --
-local find_button = ui.iconbutton{ icon = "search", on_click = toggle_search }
+local find_button = ui.iconbutton{ x = 10, y = 10, icon = "search",
+                                   on_click = toggle_search }
 local new_button = ui.iconbutton{ icon = "newfolder",
                                   on_click = function() new_folder() end }
 local view_button = ui.iconbutton{ icon = "menu" }
@@ -1758,22 +1839,50 @@ view_button.on_click = function()
   -- `view_menu` is the function the menu bar used to hand `ui.menu_items`,
   -- which resolves a menu's `items` when it is one. Called directly here,
   -- because what `open_menu` wants is the items and not the menu.
-  win:open_menu(win.origin_x + view_button.x, win.origin_y + L.head,
+  win:open_menu(win.origin_x + SIDE_W + view_button.x, win.origin_y + L.head,
                 view_menu())
 end
 
 more_button.on_click = function()
-  win:open_menu(win.origin_x + more_button.x, win.origin_y + L.head,
+  win:open_menu(win.origin_x + SIDE_W + more_button.x, win.origin_y + L.head,
                 more_menu())
 end
 
 header = ui.header{
-  x = 0, y = 0, w = W, title = "",
-  left = { back_button, forward_button, place_button, search },
-  right = { find_button, new_button, view_button, more_button },
+  x = SIDE_W, y = 0, w = W - SIDE_W, title = "", edge = { 6, 8 },
+  left = { back_button, forward_button, place_button },
+  right = { new_button, view_button, more_button },
 }
 
-chrome(header)
+--
+-- **The sidebar's head**: the magnifier at its left, "Files" in the title
+-- face in its middle, and a menu at its right - of what concerns Tracker
+-- and its places rather than the files in front of you, which is the dots'.
+--
+side_menu = ui.iconbutton{ x = SIDE_W - 8 - 26 - 1, y = 10, icon = "menu" }
+
+search.x, search.y = 40, (L.head - 1 - 31) // 2
+search.w = SIDE_W - 40 - 9
+
+local side_ground = ui.view{ x = 0, y = 0, w = SIDE_W, h = H,
+                             follow = { "left", "top", "bottom" } }
+
+function side_ground:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
+end
+
+local side_head = ui.view{ x = 0, y = 0, w = SIDE_W, h = L.head }
+
+function side_head:draw(g)
+  if search_on then return end
+
+  local word = "Files"
+
+  g:text((self.w - 1 - gfx.measure(word, "title")) // 2,
+         (self.h - 1 - gfx.height("title")) // 2, word, theme.text, nil,
+         "title")
+end
 
 --
 -- Where the header's controls and the files are, in points inside the
@@ -1784,7 +1893,7 @@ chrome(header)
 if not backdrop then
   header:measure()
   print(("tracker: content at %d, view at %d,%d"):format(
-        CONTENT_Y, view_button.x + view_button.w // 2,
+        CONTENT_Y, SIDE_W + view_button.x + view_button.w // 2,
         view_button.y + view_button.h // 2))
 end
 
@@ -2384,8 +2493,6 @@ function trail_menu()
   return out
 end
 
-chrome(places)
-chrome(split)
 
 -- The one widget the desktop is made of, and on the desktop it is the whole
 -- window: no insets, because there is no frame to be inset from.
@@ -2448,6 +2555,22 @@ local function name_place(field, text)
                 or ("could not make it: " .. tostring(why))
 
   refresh_places()
+
+  --
+  -- Where it went, in the window, for the display harness - which clicks it
+  -- and right-clicks it, and would otherwise count rows it cannot see: a
+  -- new place comes after a hairline, not at a fixed row.
+  --
+  for id, it in pairs(place_by_id) do
+    if it.place and it.name == text then
+      local y, pitch = places:row_of(id)
+
+      if y then
+        print(("tracker: place %s at %d"):format(text,
+                                                 places.y + y + pitch // 2))
+      end
+    end
+  end
 end
 
 function rename_field:on_enter(text)
@@ -2523,11 +2646,38 @@ function win:on_dropped(ok, count, err)
   end
 end
 
+--
+-- **Added in the order the keyboard should meet them**: the files first,
+-- so arrows move among them from the start; then the places, the
+-- sidebar's head and the header. And in the order they are drawn: the
+-- grounds under everything, the status line over the pane's foot.
+--
+-- The sidebar's menu: here, because `empty_trash` is defined above it.
+side_menu.on_click = function()
+  win:open_menu(win.origin_x + side_menu.x, win.origin_y + L.head, {
+    { text = "New window", on_choose = function()
+        fs.send("/app/wm", { type = "launch", program = "tracker",
+                             args = where })
+      end },
+    { separator = true },
+    { text = "Empty Trash", on_choose = function() empty_trash() end },
+  })
+end
+
+chrome(side_ground)
+chrome(pane_ground)
 win:add(rows)
+chrome(places)
+chrome(side_head)
+chrome(find_button)
+chrome(side_menu)
 chrome(search)
+chrome(header)
 chrome(rename_field)
 chrome(status)
 chrome(count)
+
+refresh_places()
 
 show(where)
 win:run()

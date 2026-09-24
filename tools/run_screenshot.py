@@ -7621,9 +7621,9 @@ def check_places(guest):
         guest.mouse_to(*_to_tablet(wx + x, wy + y, width, height))
 
     #
-    # The one folder is the list's first row; the sidebar is x 12 to 222 and
-    # its rows run from `CONTENT_Y`, one ROW each: Places, Home, Desktop,
-    # then places.
+    # The one folder is the list's first row; the sidebar is x 0 to 200,
+    # its places from under its own head, and Tracker says where a new one
+    # lands (below).
     #
     # **`CONTENT_Y` is Tracker's to say**, and it says it: `tracker: content
     # at N`. It was 86 until 23 September, when the menu bar, toolbar and
@@ -7646,7 +7646,6 @@ def check_places(guest):
     # The list's heading is a row of the fixed layout with a hairline under
     # it (0.10.149), so the first file's middle is a row and a half down.
     first_row_y = content_y + LAYOUT_ROW + 1 + LAYOUT_ROW // 2
-    place_row_y = content_y + 2 + 3 * ROW + ROW // 2
 
     to(260, first_row_y)
     time.sleep(0.4)
@@ -7675,6 +7674,26 @@ def check_places(guest):
 
     _, _, before = parse_ppm(guest.screendump())
     held = differing(before, 236, first_row_y - 7, 180, 14)
+
+    #
+    # **Where the new place went, as Tracker says**: after the built-in
+    # three and a hairline since 0.10.150 (`docs/tracker2.html`), where it
+    # had been the fourth row of a tree.
+    #
+    placed_at = None
+    deadline = time.monotonic() + 10
+
+    while placed_at is None and time.monotonic() < deadline:
+        guest._read_available()
+        placed_at = re.search(r"tracker: place (\S+) at (\d+)",
+                              guest.seen[mark:])
+        time.sleep(0.25)
+
+    if placed_at is None:
+        raise Failure("Tracker never said where the new place went:\n"
+                      + guest.seen[mark:][-900:])
+
+    place_row_y = int(placed_at.group(2))
 
     to(60, place_row_y)                 # the new place: click it
     time.sleep(0.3)

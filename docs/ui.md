@@ -1522,6 +1522,12 @@ already uses for something else is not a name.
 
 `testing.md` 18.161.
 
+**Tracker's places are a sidebar too** (0.10.150, `docs/tracker2.html`):
+`ui.sidebar` with a `pitch` of 33 and gaps that carry a `rule`, a hairline
+between the built-in places, the ones a person has, and the drives. A row
+that leads nowhere - a place whose drive is away - is `quiet`: dim, and a
+press on it chooses nothing.
+
 ## 16.22 A frame on every side, and a scrollbar in one colour
 
 `roadmap.md` 5zr. Two photographs of corners, the same afternoon.
