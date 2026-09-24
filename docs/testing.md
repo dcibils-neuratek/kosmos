@@ -9225,3 +9225,28 @@ a 640x480 frame: 0.408 ms one pair at a time, 0.215 ms with SSE2 (1.9x, under Ro
 
 The guest objects have 31 NEON instructions in the conversion and 28 SSE2,
 where they had none.
+
+## 18.172 `run-kosmos.sh`, held to the command line it gives QEMU
+
+For the v0.10.156 release. Diego ran the camera on his MacBook, where QEMU has
+no camera to hand the guest: a USB one needs QEMU as root and the x86-64
+image, and a MacBook's own camera is not a USB device at all. So
+`run-kosmos.sh -camera pattern` puts `opt/kosmos/camera=pattern` on the fw_cfg
+line and the Camera app shows the driver's test pattern, the whole way a real
+picture goes. Anything else after `-camera` is refused and names
+`tools/camera.sh`.
+
+The script is the one file that travels beside a released image, and nothing
+had ever run it - which is how `-b "wm blocks"` reached QEMU split in two for
+months.
+
+- `tools/test_runscript.sh`, 9, in `make host-check`: a stand-in
+  `qemu-system-aarch64` on the PATH prints each argument on a line of its
+  own. The two flags nobody could guess, the image last, no camera unless
+  asked, `-b "wm blocks"` as one argument, `-camera pattern` after a
+  `-fw_cfg`, and a USB camera's numbers or a bare `-camera` refused without
+  QEMU starting. **Controls**, each on a copy of the script: the camera line
+  dropped fails 1; `-b` unquoted again, as it once was, fails 1; the
+  refusal dropped fails 2.
+- Both release images booted with the pattern on: the Camera app at 29 and
+  30 frames a second, the bars right way round once mirrored back.

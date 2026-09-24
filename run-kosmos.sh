@@ -10,6 +10,7 @@
 #   ./run-kosmos.sh -fast           this Mac's own cores, if hvf works here
 #   ./run-kosmos.sh -smp 8          eight processors (four by default)
 #   ./run-kosmos.sh -m 2G           more memory (512M by default)
+#   ./run-kosmos.sh -camera pattern a test pattern for the Camera app
 #   ./run-kosmos.sh -serial         no window, serial only
 #   ./run-kosmos.sh path.elf        a particular image
 #
@@ -102,6 +103,21 @@ want_memory="no"
 # the default.
 fast="no"
 
+# `-camera pattern`: something for the Camera app to show.
+#
+# QEMU hands a real USB camera to the guest on a Mac only as root, and a
+# MacBook's own camera is not a USB device it can hand over at all. So the
+# camera driver draws a test pattern of its own when `opt/kosmos/camera`
+# says `pattern` - eight colour bars, and a white square that moves a step
+# each frame - and it goes the whole way a real camera's picture goes:
+# `/dev/camera`, the shared ring, and the conversion into the window. The
+# bars say the colours arrive right and which way round the picture is; the
+# square says the frames keep coming.
+#
+# A real camera is `tools/camera.sh` in the repository, run as root.
+camera=""
+want_camera="no"
+
 for arg in "$@"; do
     if [ "$want_size" = "yes" ]; then
         size="$arg"
@@ -121,6 +137,12 @@ for arg in "$@"; do
         continue
     fi
 
+    if [ "$want_camera" = "yes" ]; then
+        camera="$arg"
+        want_camera="no"
+        continue
+    fi
+
     if [ "$want_memory" = "yes" ]; then
         memory="$arg"
         want_memory="no"
@@ -135,6 +157,7 @@ for arg in "$@"; do
         -b)      want_boot="yes" ;;
         -smp)    want_cpus="yes" ;;
         -m)      want_memory="yes" ;;
+        -camera) want_camera="yes" ;;
         -*)      echo "unknown option: $arg" >&2; exit 2 ;;
         *)       image="$arg" ;;
     esac
@@ -146,6 +169,20 @@ case "$cpus" in
     ''|*[!0-9]*) echo "-smp wants a number of processors, not '$cpus'" >&2
                  exit 2 ;;
 esac
+
+# The one camera this script can give it. A USB one needs root and the
+# device's numbers, which is what `tools/camera.sh` is for.
+case "$camera" in
+    ''|pattern) ;;
+    *) echo "-camera takes 'pattern', not '$camera': a real camera needs" >&2
+       echo "  QEMU as root, which is tools/camera.sh in the repository." >&2
+       exit 2 ;;
+esac
+
+if [ "$want_camera" = "yes" ]; then
+    echo "-camera wants a word after it: -camera pattern" >&2
+    exit 2
+fi
 
 # `-r list`: what sizes are available here.
 if [ "$size" = "list" ]; then
@@ -444,6 +481,10 @@ fi
 # what to do without being rebuilt.
 if [ -n "$boot" ]; then
     set -- "$@" -fw_cfg "name=opt/kosmos/boot,string=$boot"
+fi
+
+if [ "$camera" = "pattern" ]; then
+    set -- "$@" -fw_cfg "name=opt/kosmos/camera,string=pattern"
 fi
 
 exec qemu-system-aarch64 "$@" -kernel "$image"

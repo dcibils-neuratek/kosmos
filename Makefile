@@ -3056,6 +3056,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv
 	$(HOSTDIR)/test_yuv_x86
+	@# And the script that travels beside a released image, held to the
+	@# command line it gives QEMU (a stand-in QEMU prints it).
+	sh tools/test_runscript.sh
 	$(HOSTDIR)/test_smbiosdecode
 	$(HOSTDIR)/test_usbdecode
 	$(HOSTDIR)/test_uvcdecode

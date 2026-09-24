@@ -108,6 +108,9 @@ let him from the office). 8f, recording to H.264 with `minih264e` and
 **0.10.156**: the camera's YUY2 conversion in NEON and SSE2, bit for bit
 with the scalar loop, 4.0x on the Mac (18.171), after Diego asked whether new
 code uses vector arithmetic - it did not.
+Released as v0.10.156 for QEMU on a Mac, with `run-kosmos.sh -camera pattern`
+(18.172): the AArch64 image has no USB controller, so on a Mac the pattern is
+the only camera it has; a real one is the x86-64 image as root.
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler
