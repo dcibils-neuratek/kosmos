@@ -1662,6 +1662,30 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6d. **AGREED on 24 September - a camera, and an app that shows it live.**
+   Diego: "now work on a simple camera capture app", "I have a logitech
+   camera connected to the mac mini", "i want to have a simple app that
+   shows the live feed of the camera". The camera is an HD Pro Webcam C920
+   (046d:08e5, USB 2.0 high speed, USB Video Class, YUY2 and MJPEG).
+   - **Kosmos drives it over USB itself**, Diego's choice between that and
+     frames sent from the Mac over the network: isochronous IN transfers
+     in the xHCI driver, a USB Video Class driver beside the mouse, the
+     stick and the Ethernet adapter, frames in a region the app maps
+     (control by message, data by shared memory), and the app. The same
+     driver is what the ThinkPad's built-in camera and the C920 on the
+     M700 need.
+   - **Under QEMU on the Mac, QEMU runs as root for it.** macOS keeps the
+     camera for its own driver and only root may take it away: a libusb
+     program here was refused both interfaces (`LIBUSB_ERROR_ACCESS`), and
+     QEMU's passthrough is refused the same way. So the live test is
+     started with `sudo`, by Diego; everything that can be held without
+     the camera is held on the Mac and in the gate.
+   - **Drawn first**, as every app is: `docs/camera.html`.
+   - The steps, in `usb.md` §11 as they land: 8a the camera's descriptors
+     read and its formats known (on the Mac, from the C920's own bytes);
+     8b isochronous IN in the xHCI driver; 8c the stream negotiated and
+     frames put together; 8d `/dev/camera` and its region; 8e the app.
+
 6c. **WANTED on 24 September - Preferences on a 1280x720 screen.** Seen
    while checking the `v0.10.153` release image at that size: the window is
    680 tall and runs off the bottom of a 720 screen under the Deskbar, and

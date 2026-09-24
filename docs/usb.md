@@ -14,6 +14,7 @@ else.
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
+| 8. a camera | a USB Video Class camera's live picture in a window (`roadmap.md` 6d) | agreed on 24 September; nothing built |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot

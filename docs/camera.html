@@ -1,0 +1,196 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The Camera app, drawn before it is written (roadmap.md 6d). One CSS pixel
+  to one screen pixel, in the Plex look, as docs/apps.html draws the others.
+
+  Diego, 24 September 2026: "now work on a simple camera capture app", "i
+  want to have a simple app that shows the live feed of the camera".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos Camera</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    --w-desk: #3d63b8; --w-body: #fafafb; --w-line: #e0e2e6; --w-ink: #1d1f24;
+    --w-dim: #74787f; --w-accent: #2a55c9; --w-head: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; }
+  }
+  :root[data-theme="dark"] { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  h2 { font-family: var(--display); font-size: 19px; margin: 46px 0 6px;
+       padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  .sub, .why { color: var(--muted); max-width: 74ch; }
+  .why { margin: 0 0 14px; font-size: 14px; }
+  code { font-family: var(--mono); font-size: .88em; }
+
+  .stage { background: var(--w-desk);
+           background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+           padding: 30px 24px; border-radius: 12px; overflow-x: auto;
+           display: flex; gap: 24px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+  .win { background: var(--w-body); border-radius: 10px; overflow: hidden;
+         box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+         font-size: 13.5px; color: var(--w-ink); flex: none; display: flex; flex-direction: column; }
+  .head { height: 46px; background: var(--w-head); border-bottom: 1px solid var(--w-line);
+          display: flex; align-items: center; gap: 4px; padding: 0 10px 0 18px; flex: none; }
+  .head .t { font-weight: 600; font-size: 14px; }
+  .head .s { color: var(--w-dim); font-size: 12.5px; margin-left: 8px; white-space: nowrap;
+             font-variant-numeric: tabular-nums; }
+  .sp { flex: 1; }
+  .drop { height: 31px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px 0 12px;
+          border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px;
+          font-variant-numeric: tabular-nums; flex: none; }
+  .drop svg { width: 10px; height: 10px; color: var(--w-dim); }
+  .ico { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
+         color: var(--w-dim); flex: none; }
+  .ico svg { width: 15px; height: 15px; }
+
+  /* The picture: black around it, never stretched. */
+  .picture { background: #000; display: grid; place-items: center; flex: 1; position: relative; }
+  .scene { width: 640px; height: 480px; position: relative; overflow: hidden;
+           background:
+             radial-gradient(38% 30% at 50% 44%, #d9b39a 0%, #c79a80 55%, rgba(0,0,0,0) 56%),
+             radial-gradient(60% 46% at 50% 108%, #2f3a4a 0%, #2f3a4a 60%, rgba(0,0,0,0) 61%),
+             linear-gradient(180deg, #c9cfd6 0%, #b7bfc9 55%, #8a8f95 56%, #7d8288 100%); }
+  .scene .shelf { position: absolute; left: 36px; top: 86px; width: 150px; height: 10px; background: #6b5543; }
+  .scene .book { position: absolute; bottom: 394px; width: 14px; background: #2a55c9; }
+  .scene .lamp { position: absolute; right: 70px; top: 60px; width: 70px; height: 70px; border-radius: 50%;
+                 background: radial-gradient(circle, #fff6d8 0%, #f3d98a 45%, rgba(243,217,138,0) 70%); }
+  .foot { height: 30px; display: flex; align-items: center; padding: 0 18px; gap: 18px;
+          color: var(--w-dim); font-size: 12px; border-top: 1px solid var(--w-line); background: var(--w-body);
+          font-variant-numeric: tabular-nums; flex: none; }
+
+  .empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--w-dim);
+           font-size: 13.5px; padding: 30px; background: var(--w-body); }
+  .empty b { display: block; color: var(--w-ink); font-weight: 500; margin: 10px 0 4px; font-size: 14px; }
+  .empty svg { width: 34px; height: 34px; color: #b0b4bb; }
+
+  .menu { position: absolute; right: 12px; top: 40px; width: 190px; background: #fff; border-radius: 10px;
+          border: 1px solid var(--w-line); box-shadow: 0 10px 28px rgba(0,0,0,.22); padding: 4px 0; font-size: 12.5px; }
+  .menu div { height: 32px; display: flex; align-items: center; padding: 0 12px 0 34px; position: relative; }
+  .menu div.on::before { content: ""; position: absolute; left: 13px; top: 11px; width: 9px; height: 5px;
+                         border-left: 2px solid var(--w-ink); border-bottom: 2px solid var(--w-ink); transform: rotate(-45deg); }
+  .menu hr { border: 0; border-top: 1px solid var(--w-line); margin: 4px 0; }
+
+  table.rules { border-collapse: collapse; font-size: 14px; margin: 10px 0 18px; }
+  table.rules td { padding: 5px 16px 5px 0; vertical-align: top; border-bottom: 1px solid var(--rule); }
+  table.rules td:first-child { color: var(--muted); white-space: nowrap; }
+  ul.ask { max-width: 74ch; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Camera</h1>
+<p class="sub">The live picture from a USB camera, and nothing else. Drawn at the size the machine draws it
+&mdash; one pixel here is one pixel on the screen &mdash; before any of it is written (<code>roadmap.md</code> 6d).
+The camera is Diego's Logitech C920; Kosmos drives it over USB itself, as a USB Video Class device.</p>
+
+<h2>Live</h2>
+<p class="why">The header names the window and, beside it, the camera and what it is sending. On the right the size
+&mdash; every size the camera offers, from its own descriptors &mdash; and <b>&#8942;</b> for the rest. The picture is
+at one pixel to one, black around it when the window is larger, scaled down and never stretched when it is smaller.
+Under it, how fast frames are really arriving: a camera that promised 30 and delivers 12 should say so.</p>
+
+<div class="stage">
+  <div class="win" style="width:680px;height:596px">
+    <div class="head">
+      <span class="t">Camera</span><span class="s">HD Pro Webcam C920 &middot; 640 &times; 480</span>
+      <span class="sp"></span>
+      <span class="drop">640 &times; 480 <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5l3 3 3-3"/></svg></span>
+      <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
+    </div>
+    <div class="picture">
+      <div class="scene"><div class="shelf"></div>
+        <div class="book" style="left:44px;height:40px"></div><div class="book" style="left:60px;height:34px;background:#c0392b"></div>
+        <div class="book" style="left:76px;height:44px;background:#2f8a3e"></div><div class="lamp"></div></div>
+    </div>
+    <div class="foot"><span>30 frames a second</span><span>YUY2, 18.4 MB a second over USB</span><span class="sp"></span><span>Mirrored</span></div>
+  </div>
+</div>
+
+<h2>&#8942;, and the size</h2>
+<p class="why">Two things, because it is a simple app. <b>Mirror</b>, on by default, as a Mac's own camera
+preview is: a picture of yourself that moves the wrong way is hard to use. <b>Camera</b> lists the cameras Kosmos
+found when there is more than one &mdash; the ThinkPad's own and a C920 plugged into it, say.</p>
+
+<div class="stage">
+  <div class="win" style="width:680px;height:280px;position:relative">
+    <div class="head">
+      <span class="t">Camera</span><span class="s">HD Pro Webcam C920 &middot; 640 &times; 480</span>
+      <span class="sp"></span>
+      <span class="drop">640 &times; 480 <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5l3 3 3-3"/></svg></span>
+      <span class="ico" style="background:#eceef1"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
+    </div>
+    <div class="picture"><div class="scene" style="height:233px"></div></div>
+    <div class="menu"><div class="on">Mirror</div><hr><div class="on">HD Pro Webcam C920</div><div>Integrated Camera</div></div>
+  </div>
+  <div class="win" style="width:240px;height:280px;position:relative">
+    <div class="head"><span class="t">Size</span></div>
+    <div style="padding:6px 0;font-size:12.5px;font-variant-numeric:tabular-nums">
+      <div style="height:30px;display:flex;align-items:center;padding:0 16px">320 &times; 240</div>
+      <div style="height:30px;display:flex;align-items:center;padding:0 16px;background:#dfe3ea">640 &times; 480</div>
+      <div style="height:30px;display:flex;align-items:center;padding:0 16px">800 &times; 600</div>
+      <div style="height:30px;display:flex;align-items:center;padding:0 16px">1280 &times; 720</div>
+      <div style="height:30px;display:flex;align-items:center;padding:0 16px">1920 &times; 1080</div>
+      <div style="height:30px;display:flex;align-items:center;padding:0 16px;color:var(--w-dim)">&hellip; as the camera lists them</div>
+    </div>
+  </div>
+</div>
+
+<h2>No camera, and a camera already in use</h2>
+<p class="why">An empty state that says what to do. A camera streams to one window at a time, so a second Camera
+window says which one has it rather than showing black.</p>
+
+<div class="stage">
+  <div class="win" style="width:420px;height:300px">
+    <div class="head"><span class="t">Camera</span><span class="s">no camera</span></div>
+    <div class="empty"><div>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 7.5h3l1.5-2h9l1.5 2h3v11H3z"/><circle cx="12" cy="13" r="3.6"/></svg>
+      <b>No camera</b>Plug in a USB camera. Most webcams are<br>USB Video Class, which is what Kosmos drives.</div></div>
+  </div>
+  <div class="win" style="width:420px;height:300px">
+    <div class="head"><span class="t">Camera</span><span class="s">HD Pro Webcam C920</span></div>
+    <div class="empty"><div>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 7.5h3l1.5-2h9l1.5 2h3v11H3z"/><circle cx="12" cy="13" r="3.6"/></svg>
+      <b>In use</b>Another Camera window has it.</div></div>
+  </div>
+</div>
+
+<h2>What the window is made of</h2>
+<table class="rules">
+<tr><td>Header</td><td>The kit's <code>ui.header</code>: <i>Camera</i>, the camera's name and size beside it, the size as a dropdown, and &#8942;</td></tr>
+<tr><td>Picture</td><td>A surface the app draws each frame into, converted from the camera's bytes in C &mdash; YUY2 by arithmetic, MJPEG by the JPEG decoder the video player uses</td></tr>
+<tr><td>Frames</td><td>In a region the driver writes and the app reads, one ring, no copy through a message (<code>CLAUDE.md</code>: control by message, data by shared memory)</td></tr>
+<tr><td>Foot</td><td>30 tall: frames a second as they arrive, the format and its rate over USB, and <i>Mirrored</i> when it is</td></tr>
+<tr><td>Window</td><td>680 by 596 for 640 by 480 &mdash; the picture, the header, the foot and the frame</td></tr>
+</table>
+
+<h2>For Diego to decide</h2>
+<ul class="ask">
+  <li><b>Mirrored by default?</b> Drawn on, as macOS's own preview is.</li>
+  <li><b>The size dropdown</b>, or always 640 &times; 480 and nothing to choose.</li>
+  <li><b>A picture button</b> &mdash; take a still into <code>/home/pictures</code> &mdash; is left out: it needs a PNG writer,
+      which the screenshot shortcut is waiting for too (<code>roadmap.md</code>).</li>
+</ul>
+
+</div>
+</body>
+</html>
