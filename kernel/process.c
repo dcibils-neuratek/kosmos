@@ -311,6 +311,7 @@ static void process_main(void *arg)
     as_switch(p->space);
 
     /* Past the header, which is data rather than code. */
+    thread_time_return(1);     /* from here on this is the process's time */
     enter_user(USER_TEXT_VA + USER_IMAGE_HEADER, USER_STACK_TOP, p->arg);
 }
 
@@ -378,6 +379,7 @@ static void user_thread_main(void *arg)
 
     (void)arg;
     as_switch(self->space);
+    thread_time_return(1);
     enter_user(self->user_entry, USER_TSTACK_TOP(self->index),
                self->user_arg);
 }

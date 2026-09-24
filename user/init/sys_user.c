@@ -2523,7 +2523,11 @@ static int l_pointer(lua_State *L)
  * Not `sys.cpus`, which would sit confusingly beside `sys.info().cpus` -
  * that is the *count* and this is the detail.
  *
- * An array of `{ index, idle, busy }`, one per core, in ticks. **Not a
+ * An array of `{ index, idle, busy, user_counter, kernel_counter }`, one
+ * per core: `idle` and `busy` in scheduler ticks, and busy split into a
+ * thread's own time and the kernel's in the counter's units (`sys.info()`'s
+ * `counter_hz`), which the names say because the two clocks differ.
+ * **Not a
  * percentage**, for the reason every other counter here is not one: a
  * percentage is the difference between two readings, and only the caller
  * knows how far apart it wants them.
@@ -2551,7 +2555,7 @@ static int l_cpuload(lua_State *L)
     lua_createtable(L, (int)info.cpus, 0);
 
     for (i = 0; i < info.cpus && i < CPUS_MAX; i++) {
-        lua_createtable(L, 0, 3);
+        lua_createtable(L, 0, 5);
 
         lua_pushinteger(L, (lua_Integer)i);
         lua_setfield(L, -2, "index");
@@ -2561,6 +2565,12 @@ static int l_cpuload(lua_State *L)
 
         lua_pushinteger(L, (lua_Integer)info.cpu[i].busy_ticks);
         lua_setfield(L, -2, "busy");
+
+        lua_pushinteger(L, (lua_Integer)info.cpu[i].user_counter);
+        lua_setfield(L, -2, "user_counter");
+
+        lua_pushinteger(L, (lua_Integer)info.cpu[i].kernel_counter);
+        lua_setfield(L, -2, "kernel_counter");
 
         lua_rawseti(L, -2, (lua_Integer)i + 1);
     }

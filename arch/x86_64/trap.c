@@ -251,6 +251,9 @@ static void die_if_killed(void)
 void trap_syscall_leave(void)
 {
     die_if_killed();
+
+    /* `sysretq` goes to ring 3 and nowhere else. */
+    thread_time_return(1);
 }
 
 /*
@@ -293,6 +296,11 @@ bool fault_expect_end(struct fault_info *out)
 void trap_handle(struct trapframe *f)
 {
     uint64_t cr2;
+
+    /* From ring 3: the process's time ends here (`thread_time_enter`). */
+    if (f->cs & 3) {
+        thread_time_enter();
+    }
 
     /*
      * A hardware interrupt, which is not a failure and must not print.

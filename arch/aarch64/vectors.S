@@ -123,6 +123,17 @@ trap_entry:
     bl      thread_preempt_if_needed
 
     /*
+     * Whether the frame about to be resumed is a process's - M[3:0] of its
+     * SPSR is 0 for EL0t - which after a switch is the incoming thread's.
+     * If it is, the time from here is the process's own (`thread.c`,
+     * `thread_time_return`). Everything this clobbers is reloaded below.
+     */
+    ldr     x0, [sp, #TF_SPSR]
+    tst     x0, #0xf
+    cset    x0, eq
+    bl      thread_time_return
+
+    /*
      * The handler may have moved elr, which is how an expected fault steps
      * past the instruction that caused it. Write both back before restoring
      * the general registers, because x0 and x1 are still needed as scratch.

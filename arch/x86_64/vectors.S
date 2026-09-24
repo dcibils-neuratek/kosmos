@@ -194,6 +194,16 @@ isr_common:
      */
     call    thread_preempt_if_needed
 
+    /*
+     * Whether the frame about to be resumed is ring 3's - its CS, past the
+     * fifteen registers, the vector and the error code - which after a
+     * switch is the incoming thread's (`thread_time_return`). The
+     * registers it clobbers are the ones popped below.
+     */
+    movq    144(%rsp), %rdi
+    andq    $3, %rdi
+    call    thread_time_return
+
     popq    %rax
     popq    %rbx
     popq    %rcx

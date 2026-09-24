@@ -380,7 +380,7 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
    head("Monitor", "4 cores &middot; ARM Cortex-A72 r0p3", `<span class="lg"><i class="u"></i>User<i class="k"></i>Kernel</span>`) +
    `<div class="body" style="padding-top:18px"><div class="group">` +
    [["Core 0",2,1],["Core 1",8,4],["Core 2",0,0],["Core 3",32,9]]
-     .map(([n,u,k])=>`<div class="row" style="min-height:44px;padding:6px 14px"><div class="l" style="flex:none;width:118px"><b>${n}</b><span class="num">${u}% user &middot; ${k}% kernel</span></div><span class="bar"><i class="k" style="width:${k}%"></i><i class="u" style="left:${k}%;width:${u}%"></i></span><span class="num v" style="width:40px;text-align:right">${u+k}%</span></div>`).join("") +
+     .map(([n,u,k])=>`<div class="row" style="min-height:48px;padding:6px 14px"><div class="l" style="flex:none;width:150px"><b>${n}</b><span class="num">${u}% user &middot; ${k}% kernel</span></div><span class="bar"><i class="k" style="width:${k}%"></i><i class="u" style="left:${k}%;width:${u}%"></i></span><span class="num v" style="width:40px;text-align:right">${u+k}%</span></div>`).join("") +
    `</div><div class="gl">The last minute</div><div class="hists">` +
    [["Core 0",1,3],["Core 1",2,12],["Core 2",3,1],["Core 3",4,38]].map(([n,seed,busy])=>{
      let s = seed * 7919, cols = "";

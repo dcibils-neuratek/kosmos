@@ -497,6 +497,20 @@ void thread_wake(struct thread *t);
 void thread_tick(void);
 
 /*
+ * **The crossings between a thread's own code and the kernel**, which is
+ * where this core's busy time is split into user and kernel (`percpu.h`).
+ *
+ * `thread_time_enter` is called by an architecture's trap on the way in
+ * from EL0 or ring 3, before anything else; `thread_time_return` on the way
+ * out of every trap, told whether the frame it is about to resume is a
+ * thread's own code - after a switch that is the incoming thread's, which is
+ * why the trap asks the frame rather than remembering. A switch into or out
+ * of the idle thread is a crossing too, and `thread.c` makes it itself.
+ */
+void thread_time_enter(void);
+void thread_time_return(unsigned long to_user);
+
+/*
  * This processor adopts the idle thread core zero reserved for it.
  *
  * Called once by each secondary in `secondary_main`, after it has its own
@@ -563,6 +577,9 @@ void thread_place_across(unsigned cores);
  * are opposite situations.
  */
 void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy);
+
+/* One processor's busy time split in two, in counter units (`percpu.h`). */
+void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel);
 
 /* Slots in the pool now, and the most it may grow to (`thread.c`). */
 /* This thread's own pointer, kept and loaded (`SYS_SET_TLS`). */

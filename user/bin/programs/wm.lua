@@ -1605,7 +1605,7 @@ local function damage_outline(o)
 end
 
 --
--- Where the minimise box starts. The maximise box is `BOX_W` further right.
+-- Where the first of the three boxes starts; `OUT.SLOT` says which is where.
 --
 -- One function rather than the same arithmetic in the compositor and in the
 -- pointer, because those two agreeing by coincidence is how a control ends
@@ -1634,10 +1634,11 @@ local function boxes_x(win)
   local fx = frame_of(win)
 
   --
-  -- **Three boxes now, all at the right** - minimise, maximise, close, in
-  -- that order. Diego, 23 September 2026: "i would like the close, minimize
-  -- and maximize buttons to be placed in the right side of the bar like
-  -- windows does", with a screenshot of one beside it.
+  -- **Three boxes now, all at the right** - maximise, minimise, close
+  -- since 24 September (`OUT.SLOT`). Diego, 23 September 2026: "i would
+  -- like the close, minimize and maximize buttons to be placed in the
+  -- right side of the bar like windows does", with a screenshot of one
+  -- beside it.
   --
   -- This was BeOS's split - close at the left, the other two at the right -
   -- and the argument for it was real and is worth keeping written down:
@@ -1679,6 +1680,19 @@ OUT.LIGHTS = {
   minimise = { fill = 0xfffebc2e, ring = 0xffdea123, mark = 0xff985b00 },
   maximise = { fill = 0xff28c840, ring = 0xff1aab29, mark = 0xff0b6a1d },
 }
+
+--
+-- **Which slot each is in, from the left: green, amber, red.** Diego, 24
+-- September: "the windows bar close, maximize and minimize buttons are
+-- incorect oder", "from left to right: green - maximixze, yellow -
+-- minimize, red - close". They were minimise, maximise, close - Windows's
+-- order in macOS's colours. Close stays outermost.
+--
+-- One table that the drawing and the press both read, so a box cannot be
+-- drawn in one slot and pressed in another.
+--
+OUT.SLOT = { maximise = 0, minimise = 1, close = 2 }
+OUT.IN_SLOT = { [0] = "maximise", [1] = "minimise", [2] = "close" }
 
 --
 -- The window whose three the pointer is over, or nil - and the rectangle
@@ -2757,8 +2771,8 @@ local function draw_window(i, r)
                   win.title, title_colour(), tab, "title")
 
         --
-        -- Minimise, maximise and close, all at the right and in that
-        -- order - `boxes_x` says why the split went.
+        -- Maximise, minimise and close, all at the right and in the slots
+        -- `OUT.SLOT` gives them - `boxes_x` says why the split went.
         local mx = boxes_x(win)
 
         if win.pinned then goto no_controls end
@@ -2766,7 +2780,7 @@ local function draw_window(i, r)
         local lit = (OUT.hover_boxes == win)
 
         -- Minimise, amber (`OUT.light`, `roadmap.md` 5zq).
-        OUT.light(mx, by, "minimise", lit)
+        OUT.light(mx + BOX_W * OUT.SLOT.minimise, by, "minimise", lit)
 
         --
         -- Maximise: a little window - a frame with a title bar on it - and
@@ -2783,7 +2797,7 @@ local function draw_window(i, r)
         -- press on it does nothing.
         --
         -- Green, or grey and without a glyph when it cannot be used.
-        local zx = mx + BOX_W
+        local zx = mx + BOX_W * OUT.SLOT.maximise
 
         OUT.light(zx, by, "maximise", lit, not resizable(win))
 
@@ -2794,7 +2808,7 @@ local function draw_window(i, r)
         -- be fourteen one-pixel fills to say what a square says in two.
         --
         -- Red, outermost.
-        local cx = mx + BOX_W * 2
+        local cx = mx + BOX_W * OUT.SLOT.close
 
         OUT.light(cx, by, "close", lit)
 
@@ -6230,13 +6244,13 @@ local function pointer_pass(p)
         if win.pinned then
           -- Nothing on this tab but the tab. Drag it and that is all.
           dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
-        elseif nx >= mx and nx < mx + BOX_W then
+        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // BOX_W] == "minimise" then
           minimise(win)
-        elseif nx >= mx + BOX_W and nx < mx + BOX_W * 2 then
+        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // BOX_W] == "maximise" then
           -- Greyed on a window that cannot be maximised, and then a press
           -- on it is nothing: not a maximise, and not the start of a drag.
           if resizable(win) then maximise(win) end
-        elseif nx >= mx + BOX_W * 2 then
+        elseif nx >= mx + BOX_W * OUT.SLOT.close then
           --
           -- The close box. Asked first, taken by force second.
           --

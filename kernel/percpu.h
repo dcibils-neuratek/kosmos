@@ -99,6 +99,22 @@ struct percpu {
     unsigned long busy_ticks;
 
     /*
+     * **And the busy time split by whose it was**, in the counter's units
+     * (`counter_hz`), measured at each crossing rather than sampled at the
+     * tick (`roadmap.md` 5zx; `thread.c` has the crossings).
+     *
+     * Sampling at the tick was tried first and read every system call as a
+     * process's own time: the kernel runs with interrupts masked, so a tick
+     * that falls due inside one is taken on the way back to EL0 and looks
+     * like user code. 200,000 `yield`s read as 1,144 user ticks and none in
+     * the kernel.
+     */
+    uint64_t time_mark;         /* the counter at the last crossing */
+    uint64_t user_counter;      /* at EL0, ring 3: a thread's own code */
+    uint64_t kernel_counter;    /* in the kernel, and not idling */
+    unsigned char time_side;    /* which of the two the time since the mark is */
+
+    /*
      * A switch is owed on the way out of the current exception.
      *
      * Per-CPU because it is a statement about *this* core's return path.

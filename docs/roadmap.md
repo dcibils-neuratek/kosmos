@@ -1662,6 +1662,12 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6e. **DONE on 24 September (0.10.154) - the three title bar buttons in
+   macOS's order.** Diego: "the windows bar close, maximize and minimize
+   buttons are incorect oder", "from left to right: green - maximixze,
+   yellow - minimize, red - close". `OUT.SLOT` in `wm.lua` is the order, and
+   the drawing and the press both read it.
+
 6d. **AGREED on 24 September - a camera, and an app that shows it live.**
    Diego: "now work on a simple camera capture app", "I have a logitech
    camera connected to the mac mini", "i want to have a simple app that
@@ -1732,7 +1738,7 @@ processors, and still what follows USB:
    a field. The field is the kit's (`ui.field` with an icon), so any window
    can have one.
 
-5zx. **AGREED on 24 September - Monitor with history, kernel time and
+5zx. **DONE on 24 September (0.10.154) - Monitor with history, kernel time and
    user time.** Diego, with macOS's CPU History beside Monitor: "the
    monitor app needds some historical graph data like we have on mac os",
    "its good to have the current usage but historical graph data is also
@@ -1747,8 +1753,18 @@ processors, and still what follows USB:
      green and the kernel part red under it, as macOS draws it, with the
      numbers now above - drawn in `docs/apps.html` on 24 September: a
      row a core with its two parts in the bar, and under the card a minute
-     of history a core, a column a second, on a dark panel. For Diego to
-     agree before it is built.
+     of history a core, a column a second, on a dark panel. Built the same
+     day, when Diego said he was "still seeing the old cpu monitoring app
+     without the history".
+   - **What was built differs from the plan above in one place, and it was
+     measured.** The tick cannot tell kernel time from user time here: the
+     kernel runs with interrupts masked, so a tick due inside a system call
+     is taken on the way back to EL0 and looks like user code - 200,000
+     `yield`s read as all user. So the kernel measures the split with the
+     counter at each crossing between a thread's code and itself
+     (`thread_time_enter`, `thread_time_return`, `time_cross`), and
+     `sys.cpuload` carries `user_counter` and `kernel_counter` beside the
+     ticks. `testing.md` 18.168.
 
 5zw. **AGREED on 24 September - the pixel loops, measured and vectorised
    where it pays.** Diego, after the shadow went 27 times faster: "wouldnt

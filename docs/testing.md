@@ -9123,3 +9123,34 @@ line on the compositor's arc, `theme.metrics.corner`.
   desk. Its control is the build before the menu loop rounded, where the
   corner is the menu's own face: *"the corner of a menu at 700,300 52x68 is
   (66, 74, 85) at 700,300 where the desk behind it is (28, 37, 48)"*.
+
+## 18.168 Monitor with a minute of history, and the kernel's time measured
+
+`roadmap.md` 5zx, 6e. Diego, 24 September, running 0.10.153 on his MacBook:
+*"i am still seeing the old cpu monitoring app without the history"*, and
+*"the windows bar close, maximize and minimize buttons are incorect oder"*.
+
+**The kernel's share cannot be sampled here.** The first version charged each
+tick to user or kernel by what it interrupted, and 200,000 `yield`s read as
+1,144 user ticks and none in the kernel: the kernel runs with interrupts
+masked, so a tick due inside a system call is taken on the way back to EL0.
+So each core keeps a mark and two totals in counter units, and the time since
+the mark is charged at every crossing - in from EL0 or ring 3
+(`thread_time_enter`, from the trap), back out to a thread's own code
+(`thread_time_return`, from the trap's epilogue, which asks the frame it is
+about to resume), and into or out of the idle thread, which is neither.
+`sysinfo`'s `cpu[]` carries `user_counter` and `kernel_counter`, named for
+their clock, beside the ticks.
+
+- **cpu split** (display harness, both boards): at the prompt, a Lua loop is
+  at least nine tenths user on the core that ran it, and a loop of system
+  calls at least four tenths kernel - measured at 99.7% and 75% on AArch64,
+  99.6% and 64% on x86-64. The control is 0.10.153, which has no split: *"a
+  loop in Lua was 0 user and 0 kernel"*.
+- **monitor** (both boards): Monitor beside `spin`, and its history panels
+  on the screen with the user green in them. The control is 0.10.153's
+  Monitor: *"Monitor drew no history panel"*.
+
+**The title bar's order** is `OUT.SLOT`, green, amber, red, read by both the
+drawing and the press; **tabs** and **deskbar focus** aim at the maximise and
+minimise boxes where they now are.

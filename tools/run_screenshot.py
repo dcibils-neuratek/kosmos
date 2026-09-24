@@ -4493,12 +4493,12 @@ def check_tabs(guest):
                           "whole window" % (across, TAB))
 
         #
-        # The maximise box, greyed. It is the middle of the three at the
-        # right: the run ends `MARGIN` - 10 since 0.10.149, it was 4 - in
-        # from the frame, each box a `BOX_W` slot of 22 and the last one
-        # `BOX`, 18, so maximise starts 50 in from the frame's right edge
-        # (`boxes_x`), which is `FRAME` outside the content's. 22 above the
-        # top.
+        # The maximise box, greyed. It is the first of the three at the
+        # right since 24 September (`OUT.SLOT`: green, amber, red): the run
+        # ends `MARGIN` - 10 since 0.10.149, it was 4 - in from the frame,
+        # each box a `BOX_W` slot of 22 and the last one `BOX`, 18, so
+        # maximise starts 72 in from the frame's right edge (`boxes_x`),
+        # which is `FRAME` outside the content's. 22 above the top.
         #
         # **Since 0.10.149 the three are coloured circles** (`roadmap.md`
         # 5zq), and a maximise that cannot be used is a grey one with no
@@ -4506,7 +4506,7 @@ def check_tabs(guest):
         # middle: grey - its three channels together - and not the green,
         # which holds in any look without knowing the look's grey.
         #
-        zx, zy = fx + fw + FRAME - 50, fy - 22
+        zx, zy = fx + fw + FRAME - 72, fy - 22
         glyph = pixel(zx + 9, zy + 9)
         green = (0x28, 0xc8, 0x40)
 
@@ -6556,6 +6556,122 @@ def _meter_area(width, height, px):
             + _colour_area(width, height, px, METER_BUSY))
 
 
+def check_cpu_split(guest):
+    """**A processor's busy time, split into a thread's own and the kernel's.**
+
+    Diego, 24 September, with macOS's CPU History beside Monitor: "havint
+    the kernel and user space times is great in red and green" (`roadmap.md`
+    5zx). The kernel measures the two at each crossing between a thread's
+    code and itself (`thread_time_enter`, `thread_time_return`), because the
+    tick cannot: the kernel runs with interrupts masked, so a tick due inside
+    a system call is taken on the way back out and looks like user code.
+    Sampled that way, 200,000 `yield`s read as all user and no kernel.
+
+    At the prompt, with nothing else to do: a loop in Lua has to be at least
+    nine tenths user on the core that ran it, and a loop of system calls at
+    least four tenths kernel. Measured on 24 September at 99.7% and 75% on
+    AArch64, 99.6% and 64% on x86-64. The control is 0.10.153, which has no
+    split to read.
+    """
+    program = (
+        "local function snap() local t = {} for i, c in ipairs(sys.cpuload()) "
+        "do t[i] = { c.user_counter or -1, c.kernel_counter or -1 } end "
+        "return t end "
+        "local function busiest(f) local a = snap() f() local b = snap() "
+        "local bu, bk = 0, 0 for i = 1, #a do "
+        "local du, dk = b[i][1] - a[i][1], b[i][2] - a[i][2] "
+        "if du + dk > bu + bk then bu, bk = du, dk end end return bu, bk end "
+        "local u1, k1 = busiest(function() local x = 0 "
+        "for i = 1, 10000000 do x = x + i end end) "
+        "local u2, k2 = busiest(function() for i = 1, 50000 do sys.yield() end end) "
+        "print(('split' .. ': %d %d %d %d'):format(u1, k1, u2, k2))"
+    )
+    mark = len(guest.seen)
+    guest.type(program)
+    line = guest.wait_for_line("split: ", "the split to be measured", mark)
+
+    try:
+        u1, k1, u2, k2 = (int(v) for v in line.split()[:4])
+    except ValueError:
+        raise Failure("the split came back as %r" % line)
+
+    if u1 + k1 <= 0 or u1 < 0.9 * (u1 + k1):
+        raise Failure("a loop in Lua was %d user and %d kernel on the core "
+                      "that ran it - wanted at least nine tenths user"
+                      % (u1, k1))
+
+    if u2 + k2 <= 0 or k2 < 0.4 * (u2 + k2):
+        raise Failure("a loop of system calls was %d user and %d kernel on "
+                      "the core that ran it - wanted at least four tenths "
+                      "kernel, which is the time the tick cannot see"
+                      % (u2, k2))
+
+    return 2
+
+
+def check_monitor(guest):
+    """**Monitor draws a minute of history, in green and red.**
+
+    Diego, 24 September: "the monitor app needds some historical graph data
+    like we have on mac os" (`roadmap.md` 5zx, `docs/apps.html`). Monitor
+    keeps a panel a core on a dark ground and puts a column in it every
+    second, the thread's own time in green over the kernel's in red.
+
+    With `spin` beside it burning a core for ten seconds, the panels have
+    to be on the screen and hold a good few pixels of the user green - the
+    legend's swatch in the header is the same green, which is why the count
+    is of green *inside* the panels' ground and not anywhere. The control
+    is 0.10.153's Monitor, which has no panels at all.
+    """
+    PANEL = (0x16, 0x18, 0x1d)
+    GREEN = (0x34, 0xc7, 0x59)
+
+    mark = len(guest.seen)
+    guest.type("wm sysmon,spin")
+    started(guest)
+
+    try:
+        time.sleep(8.0)
+        width, height, px = parse_ppm(guest.screendump())
+
+        x0, y0, x1, y1 = width, height, -1, -1
+
+        for y in range(0, height, 2):
+            row = y * width * 3
+
+            for x in range(0, width, 2):
+                o = row + x * 3
+
+                if (px[o], px[o + 1], px[o + 2]) == PANEL:
+                    x0, y0 = min(x0, x), min(y0, y)
+                    x1, y1 = max(x1, x), max(y1, y)
+
+        if x1 < 0:
+            raise Failure("Monitor drew no history panel: nothing on the "
+                          "screen is its dark ground %r" % (PANEL,))
+
+        green = 0
+
+        for y in range(y0, y1 + 1):
+            row = y * width * 3
+
+            for x in range(x0, x1 + 1):
+                o = row + x * 3
+
+                if (px[o], px[o + 1], px[o + 2]) == GREEN:
+                    green += 1
+
+        if green < 200:
+            raise Failure("Monitor's history panels, %d,%d to %d,%d, hold %d "
+                          "pixels of the user green after eight seconds of a "
+                          "core burning - its columns are not being drawn"
+                          % (x0, y0, x1, y1, green))
+    finally:
+        stop_desktop(guest)
+
+    return 2
+
+
 def check_cores(guest):
     """A meter that moves when the machine is given something to do.
 
@@ -7483,8 +7599,8 @@ def check_focus_shown(guest):
     time.sleep(2)
     width, height, _ = parse_ppm(guest.screendump())
 
-    # wm.lua: BORDER is `FRAME` and TAB_H is 26, and the minimise box is the first
-    # of the pair `boxes_x` puts 44 pixels in from the *tab's* right edge -
+    # wm.lua: BORDER is `FRAME` and TAB_H is 26, and the boxes are the run
+    # `boxes_x` puts 72 pixels in from the *tab's* right edge -
     # the whole frame's with a bar across it, the title's end with a BeOS
     # tab, whose width the window manager says as it places the window.
     def frame(title):
@@ -7648,14 +7764,15 @@ def check_focus_shown(guest):
     # Minimised by its own box, and not drawn as the window you are in.
     #
     #
-    # The minimise box, which is the *first* of the three at the right.
-    # `boxes_x` in wm.lua ends the run `MARGIN` from the frame and each box
-    # takes a `BOX_W` slot: three slots and the margin, 62 and 10 since
-    # 0.10.149 (the margin was 4, and 66 was the sum).
+    # The minimise box, which is the *second* of the three at the right
+    # since 24 September (`OUT.SLOT`: green, amber, red). `boxes_x` in
+    # wm.lua ends the run `MARGIN` from the frame and each box takes a
+    # `BOX_W` slot: three slots and the margin, 62 and 10 since 0.10.149, so
+    # the run starts 72 in and minimise 22 after that.
     #
     since = len(guest.seen)
     fx, fy, fw, _ = frame(current)
-    click(fx + (tab_wide.get(current) or fw) - 72 + 9, fy + 13)
+    click(fx + (tab_wide.get(current) or fw) - 50 + 9, fy + 13)
 
     limit = time.monotonic() + 6
 
@@ -9773,6 +9890,8 @@ def main():
         panel_checks = phase("panel", check_panel)
         clip_checks = phase("clipboard", check_clipboard)
         cores_checks = phase("cores", check_cores)
+        split_checks = phase("cpu split", check_cpu_split)
+        monitor_checks = phase("monitor", check_monitor)
         reaped_checks = phase("reaped", check_reaped)
         click_checks = phase("clicks", check_clicks)
         graphical_checks = phase("graphical", check_graphical_mode)
@@ -9834,6 +9953,7 @@ def main():
              + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
+             + split_checks + monitor_checks
              + drives_app_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
@@ -9939,6 +10059,9 @@ def main():
           f"it when it moves, "
           f"{wheel_checks} on the scroll wheel scrolling the list under the "
           f"pointer, both ways, "
+          f"{split_checks} on a processor's busy time split into a thread's "
+          f"own and the kernel's, "
+          f"{monitor_checks} on Monitor's minute of history filling in, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

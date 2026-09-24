@@ -207,6 +207,11 @@ static void die_if_killed(void)
 
 void trap_handler(unsigned index, struct trapframe *tf)
 {
+    /* Vectors 8 to 11 are from EL0: the process's time ends here. */
+    if (index >= 8) {
+        thread_time_enter();
+    }
+
     /*
      * An armed test fault: record it and step over the instruction that
      * caused it. Every A64 instruction is four bytes, so advancing elr by

@@ -635,6 +635,8 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
             thread_load_cpu(c, &ci, &cb);
             info.cpu[c].idle_ticks = ci;
             info.cpu[c].busy_ticks = cb;
+            thread_time_cpu(c, &info.cpu[c].user_counter,
+                            &info.cpu[c].kernel_counter);
         }
     }
 

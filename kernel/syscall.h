@@ -850,6 +850,15 @@ struct bus_device {
 struct cpuload {
     uint64_t idle_ticks;
     uint64_t busy_ticks;
+
+    /*
+     * Busy split by whose it was - a thread's own code, or the kernel's
+     * work for it - in the **counter's** units, `counter_hz` a second, and
+     * named for them: these are measured at each crossing, not counted in
+     * scheduler ticks like the two above (`roadmap.md` 5zx).
+     */
+    uint64_t user_counter;
+    uint64_t kernel_counter;
 };
 
 /*

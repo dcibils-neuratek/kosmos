@@ -198,6 +198,10 @@ syscall_entry:
     movq    %r8,  40(%rsp)          /* arg 4 */
     movq    $0,   48(%rsp)          /* result */
 
+    /* Out of ring 3: the process's time ends here. The frame above holds
+     * everything this may clobber. */
+    call    thread_time_enter
+
     movq    %rsp, %rdi
     call    syscall_dispatch
 

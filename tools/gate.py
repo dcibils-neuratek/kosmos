@@ -251,8 +251,9 @@ DISPLAY_PARTS = [
     ["faces", "wallpapers", "direct menu", "tabs", "appearance",
      "Super Nintendo --scale", "deskbar", "deskbar focus", "desktop",
      "places", "panel"],
-    ["clipboard", "cores", "reaped", "clicks", "graphical", "replicants",
-     "window_manager", "drives app", "scale", "scale changed", "icon sizes"],
+    ["clipboard", "cores", "cpu split", "monitor", "reaped", "clicks",
+     "graphical", "replicants", "window_manager", "drives app", "scale",
+     "scale changed", "icon sizes"],
 
     # **Alone, and that is the point.** It is the only check that wants a
     # desktop on a machine nobody has told anything, and every other phase

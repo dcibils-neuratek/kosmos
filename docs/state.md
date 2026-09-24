@@ -20,7 +20,7 @@ Last updated: 2026-09-24
 
 ## 24 September: every window from its drawing, a frame all round, Endeavour first
 
-**Nothing pushed. 0.10.118 to 0.10.153 are local.** 0.10.147 fixed what the
+**0.10.118 to 0.10.154 pushed on 24 September, at Diego's asking.** 0.10.147 fixed what the
 M700 found (Tracker ending on Find, Preferences changing nothing) and
 0.10.148 put the screen at the mockups' sizes (a font size here is 1.30
 times the CSS one) with Appearance folded into Preferences. **0.10.149** is
@@ -89,14 +89,18 @@ image at 1920x1080 and 1280x720 with `run-kosmos.sh` and `SHA256SUMS`,
 after `make stress` (60 rounds, nothing leaked) and each image booted to its
 size. Only the tag was pushed; `main` on GitHub is still at 0.10.117.
 
-**Monitor's history is drawn** in `docs/apps.html` (5zx): a row a core with
-kernel red under user green, and a minute of history a core on dark panels.
-Waiting for Diego's word before it is built.
+**0.10.154 - Monitor with history, and the three buttons in a Mac's order**
+(5zx, 6e, 18.168): a row a core, kernel red under user green, and a minute
+of history a core; the kernel measures the split at each crossing, because
+a tick cannot see a system call here. Title bar: green, amber, red.
 
-**Queued, in order**: Monitor with history and kernel and user time (5zx),
-once the drawing is agreed; the eleven windows drawn in `docs/apps.html` on
-24 September and not yet built (5zs); the pixel loops measured and
-vectorised (5zw).
+**The camera** is drawn (`docs/camera.html`, with Record) and agreed as a
+USB Video Class driver (6d). macOS keeps the C920 unless QEMU runs as root,
+so live tests are Diego's, with `sudo`; the steps are 8a-8f in `usb.md`.
+
+**Queued, in order**: the camera (6d); then the eleven windows drawn in
+`docs/apps.html` on 24 September and not yet built (5zs); the pixel loops
+measured and vectorised (5zw).
 
 **The M700**: 0.10.150's stick was built and handed over (`make MEGA=1
 x86-usb-image`, `run_uefi.py`, `make stress`, a `boot.md` row), then the

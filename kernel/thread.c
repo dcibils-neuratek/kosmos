@@ -958,6 +958,56 @@ void thread_switch_finished(void)
 }
 
 /*
+ * Where the time since the last crossing goes.
+ *
+ * Three sides rather than two because idling is the kernel's code and not
+ * its work: the idle thread runs at EL1, and counting it as kernel time
+ * would make an idle machine look like one spending itself on system
+ * calls. Idle is already `idle_ticks`; here it is simply not counted.
+ */
+enum { TIME_KERNEL = 0, TIME_USER = 1, TIME_IDLE = 2 };
+
+/*
+ * Charge the time since the mark to the side it was on, and start the new
+ * side. Per core and with interrupts masked - every caller is a trap or a
+ * switch - so nothing here needs a lock; another core reading the two
+ * totals reads each whole, since each is one aligned 64-bit word.
+ */
+static void time_cross(unsigned char side)
+{
+    /*
+     * Masked for the few lines it takes. Every trap and every switch is
+     * masked already; the one caller that may not be is the first drop to
+     * EL0 (`process.c`), and a tick there could switch into idle half-way
+     * through this and leave a mark older than the one it just set.
+     */
+    bool was_on = cpu_interrupts_enabled();
+
+    if (was_on) {
+        cpu_irq_disable();
+    }
+
+    struct percpu *c = this_cpu();
+    uint64_t now = cpu_cycles();
+
+    /* The first crossing after boot has no mark to measure from. */
+    if (c->time_mark != 0) {
+        if (c->time_side == TIME_USER) {
+            c->user_counter += now - c->time_mark;
+        } else if (c->time_side == TIME_KERNEL) {
+            c->kernel_counter += now - c->time_mark;
+        }
+    }
+
+    c->time_mark = now;
+    c->time_side = side;
+
+    if (was_on) {
+        cpu_irq_enable();
+    }
+}
+
+/*
  * Hands the CPU to `next`, from `prev`.
  *
  * The one place a switch happens. thread_exit used to have its own copy of
@@ -1019,6 +1069,17 @@ static void switch_into(struct thread *prev, struct thread *next)
     next->state = THREAD_RUNNING;
     next->switches++;
     current = next;
+
+    /*
+     * Into idle, or out of it, is a crossing (`time_cross`): the time
+     * before it was the kernel's - a switch is always made from kernel code
+     * - and the time after it is nobody's until something runs.
+     */
+    if (next == this_cpu()->idle_thread) {
+        time_cross(TIME_IDLE);
+    } else if (prev == this_cpu()->idle_thread) {
+        time_cross(TIME_KERNEL);
+    }
 
     /*
      * The address space follows the thread. Safe to do here, from kernel
@@ -1290,6 +1351,31 @@ void thread_load(unsigned long *idle, unsigned long *busy)
         *idle += cpus[i].idle_ticks;
         *busy += cpus[i].busy_ticks;
     }
+}
+
+
+void thread_time_enter(void)
+{
+    time_cross(TIME_KERNEL);
+}
+
+void thread_time_return(unsigned long to_user)
+{
+    if (to_user) {
+        time_cross(TIME_USER);
+    }
+}
+
+void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel)
+{
+    if (index >= NR_CPUS) {
+        *user = 0;
+        *kernel = 0;
+        return;
+    }
+
+    *user = cpus[index].user_counter;
+    *kernel = cpus[index].kernel_counter;
 }
 
 void thread_tick(void)
