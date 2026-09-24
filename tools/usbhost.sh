@@ -4,7 +4,8 @@
 #  Kosmos on x86-64 under QEMU with one of this Mac's USB devices handed to
 #  it, and everything it says kept in build/usbhost.log.
 #
-#      sudo sh tools/usbhost.sh 045e:028e 60
+#      sudo sh tools/usbhost.sh 045e:028e 60      the SN30 Pro pad
+#      sudo sh tools/usbhost.sh 046d:08e5 30      the C920 camera
 #
 #  **Why this exists**: QEMU has no game controller of its own, so the only
 #  way to try the USB driver on a real one without the ThinkPad is to give it
@@ -17,9 +18,15 @@
 #  SET_CONFIGURATION, and Kosmos says so. macOS takes the pad back when QEMU
 #  ends.
 #
+#  **A camera needs it for the same reason** (`usb.md` §11): macOS keeps the
+#  C920's video interfaces for its own driver. Without root the driver names
+#  the camera and is refused at SET_CONFIGURATION; with it, the camera
+#  streams and the driver says how many frames arrive every five seconds.
+#
 #  The kernel is build/x86_64/kosmos.bin as it stands - `make x86-build`
-#  first. It boots to a prompt and runs for the seconds given; press the
-#  pad's buttons meanwhile, and the driver says each one.
+#  first. It boots to a prompt and runs for the seconds given; use the
+#  device meanwhile - a pad's buttons, say - and the driver says what it
+#  sees.
 
 set -eu
 
@@ -38,7 +45,7 @@ qemu-system-x86_64 -M q35,vmport=off -m 512M -no-reboot \
 QEMU=$!
 
 echo "Kosmos is running with $DEVICE for $SECONDS_TO_RUN seconds."
-echo "Press the buttons now: each face button, the D-pad, the sticks, the triggers."
+echo "Use it now - a pad's buttons, say; a camera needs nothing."
 sleep "$SECONDS_TO_RUN"
 kill "$QEMU" 2>/dev/null || true
 wait "$QEMU" 2>/dev/null || true

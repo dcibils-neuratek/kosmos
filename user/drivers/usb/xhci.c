@@ -76,6 +76,7 @@
 #include "storage_decode.h"
 #include "pad_decode.h"
 #include "usb_decode.h"
+#include "uvc_decode.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
 #define CAP_LENGTH_VERSION  0x00u   /* CAPLENGTH 7:0, HCIVERSION 31:16 (BCD) */
@@ -1023,6 +1024,11 @@ static void take_report(struct controller *c, const uint32_t *event);
 static void take_note(struct controller *c, const uint32_t *event);
 static void take_frame(struct controller *c, const uint32_t *event);
 
+/* A camera's TDs coming back (`usb.md` §11), and the doorbells they owe. */
+static bool is_video(const struct controller *c, const uint32_t *event);
+static void take_video(struct controller *c, const uint32_t *event);
+static void camera_bells(const struct controller *c);
+
 /*
  * **A wait that goes on reading mice.** Until `c` has an event that is not a
  * mouse's report - put in `out`, and true - or until `ms` have passed, and
@@ -1089,7 +1095,9 @@ static bool wait_serving(struct controller *c, unsigned long ms,
 
             while (take_event(o, event)) {
                 if (o == c && out != NULL && !is_report(o, event)
-                    && !is_note(o, event) && !is_frame(o, event)) {
+                    && !is_note(o, event) && !is_frame(o, event)
+                    && !is_video(o, event)) {
+                    camera_bells(o);
                     memcpy(out, event, sizeof(event));
                     return true;
                 }
@@ -1097,7 +1105,10 @@ static bool wait_serving(struct controller *c, unsigned long ms,
                 take_report(o, event);
                 take_note(o, event);
                 take_frame(o, event);
+                take_video(o, event);
             }
+
+            camera_bells(o);
         }
 
         passed = kosmos_ticks() - start;
@@ -4095,6 +4106,672 @@ static void use_ethernet(struct controller *c, struct device *d,
     ether_probe(c, d->slot, ecm->bulk_out_packet, line);
 }
 
+/* ---------------------------------------------------------------- a camera */
+
+/*
+ * **A USB Video Class camera** (`usb.md` §11, `roadmap.md` 6d): the stream
+ * negotiated with it, an isochronous IN endpoint kept full of transfers, and
+ * each transfer's payload put back into frames by `uvc_decode.c`.
+ *
+ * **Isochronous is the first of its kind in this driver.** A mouse, a stick
+ * and an adapter are interrupt and bulk: a transfer is asked for, and comes
+ * when the device has something. An isochronous endpoint is a slot on the
+ * bus every interval whether or not anybody asked - 125 us at high speed -
+ * and a slot with no transfer waiting in it is a picture's worth of bytes
+ * lost. So `CAMERA_TDS` of them are kept on the ring, each one interval's
+ * worth, and each is queued again the moment it comes back.
+ *
+ * **One event each, one interrupt in eight** (`TRB_BEI`, 4.17.5). A payload's
+ * length is only known from its Transfer Event, so every TD asks for one;
+ * but eight thousand interrupts a second would be the whole of this process,
+ * so seven in eight are blocked and the events wait on the ring for the
+ * eighth. A millisecond between looks; the event ring's 256 are 32 of them.
+ */
+#define CAMERAS_MAX         2u
+#define CAMERA_TDS          64u         /* 8 ms of intervals in flight */
+#define CAMERA_BELL_EVERY   8u          /* an interrupt a millisecond */
+#define CAMERA_SAY_SECONDS  5u
+
+/*
+ * Its requests (UVC 1.1 4.2.1, A.8, A.9.8): SET_CUR and GET_CUR, class
+ * requests to an interface, the control selector in wValue's high byte -
+ * VS_PROBE_CONTROL 1 and VS_COMMIT_CONTROL 2 - and the interface in wIndex.
+ */
+#define UVC_SET_CUR         (0x21u | (0x01u << 8))
+#define UVC_GET_CUR         (0xA1u | (0x81u << 8))
+#define UVC_PROBE           0x0100u
+#define UVC_COMMIT          0x0200u
+
+/* The Isoch TRB and its fields (6.4.1.3), and the endpoint's type (6.2.3). */
+#define TRB_ISOCH           5u
+#define TRB_BEI             (1u << 9)
+#define TRB_SIA             (1u << 31)
+#define TRB_TBC(n)          ((uint32_t)(n) << 7)
+#define TRB_TLBPC(n)        ((uint32_t)(n) << 16)
+#define EP_TYPE_ISOCH_IN    5u
+
+/* Completion codes an isochronous endpoint gives (6.4.5). */
+#define CC_RING_UNDERRUN    14u
+#define CC_RING_OVERRUN     15u
+#define CC_MISSED_SERVICE   23u
+
+struct camera {
+    bool          used;
+    bool          streaming;
+    struct controller *c;
+    unsigned      slot;
+    struct device dev;
+    struct uvc_camera info;
+
+    /* What is streaming: its size, the camera's answer, and the setting. */
+    int           size;                 /* index in `info.frames` */
+    struct uvc_probe agreed;
+    unsigned      alt;                  /* index in `info.alts` */
+    unsigned      dci;
+    uint32_t      td_bytes;             /* one TD: the setting's bytes */
+
+    struct ring   ring;
+    unsigned char td_of[RING_TRBS];     /* which buffer each place points at */
+    unsigned      queued;               /* TDs put on the ring, ever */
+    bool          bell;                 /* queued since the doorbell */
+
+    long          tds_cap;              /* CAMERA_TDS buffers, contiguous */
+    uintptr_t     tds;
+    uint64_t      tds_bus;
+    unsigned long tds_pages;
+
+    long          frame_cap;            /* where a frame is put together */
+    uintptr_t     frame;
+    unsigned long frame_pages;
+    struct uvc_assembly as;
+
+    /* Counted, and said every CAMERA_SAY_SECONDS while it streams. */
+    unsigned long intervals, missed, errors, overruns;
+    unsigned long frames, said_frames, said_dropped, said_missed;
+    unsigned long said_at;
+};
+
+static struct camera cameras[CAMERAS_MAX];
+
+static struct camera *camera_on(const struct controller *c, unsigned slot)
+{
+    unsigned i;
+
+    for (i = 0; i < CAMERAS_MAX; i++) {
+        if (cameras[i].used && cameras[i].c == c && cameras[i].slot == slot) {
+            return &cameras[i];
+        }
+    }
+
+    return NULL;
+}
+
+/* Whether an event is a TD coming back off a streaming camera. */
+static bool is_video(const struct controller *c, const uint32_t *event)
+{
+    struct camera *k;
+
+    if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER) {
+        return false;
+    }
+
+    k = camera_on(c, TRB_SLOT_OF(event[3]));
+
+    return k != NULL && k->streaming
+           && TRB_ENDPOINT_OF(event[3]) == k->dci;
+}
+
+/*
+ * A region the controller can reach, `pages` long and contiguous when it has
+ * to be, mapped here - the three calls a stick's buffer is made with, and
+ * refused whole if any of them is.
+ */
+static bool camera_region(const struct controller *c, unsigned long pages,
+                          bool contiguous, long *cap, uintptr_t *at,
+                          uint64_t *bus)
+{
+    long region = contiguous ? kosmos_mem_create_flags(pages, MEM_CONTIGUOUS)
+                             : kosmos_mem_create(pages);
+    long mapped = region < 0 ? region : kosmos_mem_map(region);
+    long phys = (mapped < 0 || !contiguous) ? 1 : kosmos_mem_phys(region);
+
+    if (region >= 0 && (mapped < 0 || phys <= 0
+                        || (contiguous && !c->ac64
+                            && (uint64_t)phys + (uint64_t)pages * PAGE
+                               > 0x100000000ull))) {
+        if (mapped >= 0) {
+            (void)kosmos_share_unmap((unsigned long)mapped, pages);
+        }
+
+        (void)kosmos_cap_drop(region);
+        return false;
+    }
+
+    if (region < 0) {
+        return false;
+    }
+
+    *cap = region;
+    *at = (uintptr_t)mapped;
+
+    if (bus != NULL) {
+        *bus = (uint64_t)phys;
+    }
+
+    return true;
+}
+
+static void camera_release(struct camera *k)
+{
+    if (k->tds != 0) {
+        (void)kosmos_share_unmap((unsigned long)k->tds, k->tds_pages);
+        (void)kosmos_cap_drop(k->tds_cap);
+        k->tds = 0;
+    }
+
+    if (k->frame != 0) {
+        (void)kosmos_share_unmap((unsigned long)k->frame, k->frame_pages);
+        (void)kosmos_cap_drop(k->frame_cap);
+        k->frame = 0;
+    }
+}
+
+/*
+ * One TD onto the ring: an interval's worth into buffer `which` (4.11.2.5,
+ * 6.4.1.3). Start Isoch ASAP, so each is scheduled after the last rather
+ * than at a frame number; an event for every one, and an interrupt for one
+ * in CAMERA_BELL_EVERY.
+ *
+ * **The bursts, at high speed** (4.14.1): a high-bandwidth endpoint moves up
+ * to three packets an interval, and the context's Max Burst says how many
+ * more than one. So a TD is ceil(bytes / packet) packets, in bursts of
+ * `extra + 1`: TBC is the bursts less one, and TLBPC the packets in the last
+ * less one. For the C920's setting 11, three packets of 1024 in one burst.
+ */
+static void camera_queue(struct camera *k, unsigned which)
+{
+    const struct uvc_alt *a = &k->info.alts[k->alt];
+    unsigned packet = a->packet != 0 ? a->packet : 1u;
+    unsigned packets = (k->td_bytes + packet - 1u) / packet;
+    unsigned burst = a->extra + 1u;
+    unsigned bursts = (packets + burst - 1u) / burst;
+    uint64_t at = k->tds_bus + (uint64_t)which * k->td_bytes;
+    uint32_t w3;
+
+    if (packets == 0) {
+        packets = 1;
+        bursts = 1;
+    }
+
+    w3 = TRB_TYPE(TRB_ISOCH) | TRB_ISP | TRB_IOC | TRB_SIA
+       | TRB_TBC(bursts - 1u) | TRB_TLBPC((packets - 1u) % burst);
+
+    if (k->queued % CAMERA_BELL_EVERY != CAMERA_BELL_EVERY - 1u) {
+        w3 |= TRB_BEI;
+    }
+
+    k->td_of[k->ring.enqueue] = (unsigned char)which;
+    (void)ring_push(&k->ring, (uint32_t)at, (uint32_t)(at >> 32),
+                    k->td_bytes, w3);
+    k->queued++;
+    k->bell = true;
+}
+
+/* The doorbells owed after a pass over the event ring: one each, not one a
+ * TD - an MMIO write is what QEMU pays for most. */
+static void camera_bells(const struct controller *c)
+{
+    unsigned i;
+
+    for (i = 0; i < CAMERAS_MAX; i++) {
+        struct camera *k = &cameras[i];
+
+        if (k->used && k->c == c && k->streaming && k->bell) {
+            k->bell = false;
+            mmio_write32(c->doorbells + 4u * k->slot, k->dci);
+        }
+    }
+}
+
+static void say_camera_size(struct say_line *line, const struct uvc_frame *f)
+{
+    say_text(line, f->pixels == UVC_PIXELS_YUY2 ? "YUY2 "
+                 : f->pixels == UVC_PIXELS_MJPEG ? "MJPEG " : "? ");
+    say_dec(line, f->width);
+    say_text(line, "x");
+    say_dec(line, f->height);
+}
+
+/*
+ * A whole frame. Counted here; handed to whoever opened the camera from 8d.
+ * Every CAMERA_SAY_SECONDS a line: how many frames, how many dropped, and
+ * how many intervals the controller could not serve - which is what a live
+ * test is read by.
+ */
+static void camera_frame(struct camera *k)
+{
+    unsigned long now = kosmos_ticks();
+    unsigned long span = counter_hz * CAMERA_SAY_SECONDS;
+    struct say_line line;
+
+    k->frames++;
+
+    if (now - k->said_at < span) {
+        return;
+    }
+
+    about(&line, k->c);
+    say_text(&line, " camera: ");
+    say_dec(&line, k->frames - k->said_frames);
+    say_text(&line, " frames in ");
+    say_dec(&line, CAMERA_SAY_SECONDS);
+    say_text(&line, " s, ");
+    say_dec(&line, k->as.dropped - k->said_dropped);
+    say_text(&line, " dropped, ");
+    say_dec(&line, k->missed - k->said_missed);
+    say_text(&line, " intervals missed; ");
+    say_dec(&line, k->intervals);
+    say_text(&line, " intervals, ");
+    say_dec(&line, k->errors);
+    say_text(&line, " in error, ");
+    say_dec(&line, k->overruns);
+    say_text(&line, " overruns so far");
+    say_send(console, &line);
+
+    k->said_at = now;
+    k->said_frames = k->frames;
+    k->said_dropped = k->as.dropped;
+    k->said_missed = k->missed;
+}
+
+/*
+ * **A TD back.** Its place on the ring says which buffer it was; its event
+ * says how much of the interval came - the payload, header and all - which
+ * goes to `uvc_payload` to be put into the frame. Then the same buffer goes
+ * straight back on the ring for a later interval.
+ *
+ * A missed interval (the controller could not serve it) carries nothing and
+ * is counted; an error loses a payload, so the frame it was part of is
+ * broken. An overrun has no TD: the ring ran dry, and the queueing below is
+ * what refills it.
+ */
+static void take_video(struct controller *c, const uint32_t *event)
+{
+    struct camera *k;
+    uint64_t at;
+    uint32_t code, left, got;
+    unsigned place, which;
+    const uint8_t *payload;
+
+    if (!is_video(c, event)) {
+        return;
+    }
+
+    k = camera_on(c, TRB_SLOT_OF(event[3]));
+    code = TRB_CODE_OF(event[2]);
+    at = ((uint64_t)event[1] << 32) | event[0];
+
+    if (code == CC_RING_OVERRUN || code == CC_RING_UNDERRUN) {
+        k->overruns++;
+        return;
+    }
+
+    if (at < k->ring.bus || at >= k->ring.bus + (uint64_t)RING_TRBS * 16u
+        || (at - k->ring.bus) % 16u != 0) {
+        k->errors++;
+        return;
+    }
+
+    place = (unsigned)((at - k->ring.bus) / 16u);
+    which = k->td_of[place];
+    k->intervals++;
+
+    if (code == CC_SUCCESS || code == CC_SHORT_PACKET) {
+        left = TRB_LEFT_OF(event[2]);
+        got = left < k->td_bytes ? k->td_bytes - left : 0;
+        payload = (const uint8_t *)(k->tds + (uintptr_t)which * k->td_bytes);
+
+        for (;;) {
+            enum uvc_step step = uvc_payload(&k->as, payload, got);
+
+            if (step == UVC_WHOLE) {
+                camera_frame(k);
+                uvc_next(&k->as);
+                break;
+            }
+
+            if (step == UVC_BEFORE) {
+                camera_frame(k);
+                uvc_next(&k->as);
+                continue;               /* the same payload begins the next */
+            }
+
+            break;
+        }
+    } else if (code == CC_MISSED_SERVICE) {
+        k->missed++;
+    } else {
+        k->errors++;
+
+        if (k->as.length > 0) {
+            k->as.broken = true;
+        }
+    }
+
+    camera_queue(k, which);
+}
+
+/*
+ * **A control transfer that writes** (4.11.2.2): Setup with its Transfer
+ * Type an OUT data stage (Table 6-26), an OUT Data stage from the device's
+ * buffer, and a Status stage that is IN, the other way from the data
+ * (Table 4-7). What the probe and commit are sent with.
+ */
+static bool control_out(struct controller *c, struct device *d,
+                        uint32_t request, uint16_t value, uint16_t index,
+                        const uint8_t *bytes, uint16_t length)
+{
+    uint64_t status;
+
+    memcpy(d->buffer, bytes, length);
+
+    (void)ring_push(&d->ep0, request | ((uint32_t)value << 16),
+                    index | ((uint32_t)length << 16), 8u,
+                    TRB_TYPE(TRB_SETUP) | TRB_IDT | (2u << 16));
+    (void)ring_push(&d->ep0, (uint32_t)d->buffer_bus,
+                    (uint32_t)(d->buffer_bus >> 32), length,
+                    TRB_TYPE(TRB_DATA));
+    status = ring_push(&d->ep0, 0, 0, 0,
+                       TRB_TYPE(TRB_STATUS) | TRB_DIR_IN | TRB_IOC);
+
+    return control_wait(c, d, status);
+}
+
+/*
+ * **The stream, agreed and started** (UVC 1.1 4.3.1.1, 2.4.3; xHCI 4.6.6):
+ *
+ *   1. PROBE: SET_CUR with the size, the format and its interval, and
+ *      GET_CUR for what the camera will actually do - the largest frame, and
+ *      the largest payload an interval, which decides the setting;
+ *   2. COMMIT: SET_CUR with the camera's own answer;
+ *   3. the setting that carries that payload, least of those that do;
+ *   4. the controller first - Configure Endpoint with the isochronous
+ *      endpoint's context - then SET_INTERFACE, the order 4.6.6.1 gives;
+ *   5. somewhere for the TDs and somewhere for a frame, and the ring full.
+ */
+static bool camera_start(struct camera *k, int size, struct say_line *line)
+{
+    struct controller *c = k->c;
+    struct device *d = &k->dev;
+    const struct uvc_frame *f = &k->info.frames[size];
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    struct uvc_probe want = { 0 }, got;
+    uint8_t block[UVC_PROBE_MAX];
+    unsigned length = uvc_probe_length(k->info.uvc);
+    uint32_t done[4], *icc, *slot, *ep, esit, expect, capacity;
+    const struct uvc_alt *a;
+    int alt;
+    unsigned i;
+
+    want.hint = 1;                      /* keep the interval */
+    want.format = f->format;
+    want.frame = f->frame;
+    want.interval = f->interval;
+    uvc_encode_probe(&want, block, length);
+
+    if (!control_out(c, d, UVC_SET_CUR, UVC_PROBE, k->info.streaming,
+                     block, (uint16_t)length)) {
+        say_failure(c, d->port, "the camera's PROBE (SET_CUR)",
+                    "; it streams nothing", line);
+        return false;
+    }
+
+    if (!control_in(c, d, UVC_GET_CUR, UVC_PROBE, k->info.streaming,
+                    (uint16_t)length)
+        || !uvc_decode_probe(d->buffer, length, &got)) {
+        say_failure(c, d->port, "the camera's answer to PROBE (GET_CUR)",
+                    "; it streams nothing", line);
+        return false;
+    }
+
+    uvc_encode_probe(&got, block, length);
+
+    if (!control_out(c, d, UVC_SET_CUR, UVC_COMMIT, k->info.streaming,
+                     block, (uint16_t)length)) {
+        say_failure(c, d->port, "the camera's COMMIT (SET_CUR)",
+                    "; it streams nothing", line);
+        return false;
+    }
+
+    alt = uvc_pick_alternate(&k->info, got.max_payload);
+
+    if (alt < 0) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": camera: no isochronous setting carries its ");
+        say_dec(line, got.max_payload);
+        say_text(line, "-byte payload");
+        say_text(line, k->info.bulk ? " - it streams on bulk, which this "
+                                      "does not read yet" : "");
+        say_send(console, line);
+        return false;
+    }
+
+    k->size = size;
+    k->agreed = got;
+    k->alt = (unsigned)alt;
+    a = &k->info.alts[alt];
+    k->dci = 2u * a->endpoint + 1u;
+    k->td_bytes = a->bytes;
+    esit = a->bytes;
+
+    /* A YUY2 frame is exactly width by height by two; MJPEG is as it comes. */
+    expect = f->pixels == UVC_PIXELS_YUY2
+           ? (uint32_t)f->width * f->height * 2u : 0u;
+    capacity = got.max_frame > f->max_bytes ? got.max_frame : f->max_bytes;
+    capacity = capacity > expect ? capacity : expect;
+
+    k->tds_pages = ((unsigned long)CAMERA_TDS * k->td_bytes + PAGE - 1u)
+                   / PAGE;
+    k->frame_pages = ((unsigned long)capacity + PAGE - 1u) / PAGE;
+
+    if (capacity == 0
+        || !camera_region(c, k->tds_pages, true, &k->tds_cap, &k->tds,
+                          &k->tds_bus)
+        || !camera_region(c, k->frame_pages, false, &k->frame_cap,
+                          &k->frame, NULL)) {
+        camera_release(k);
+        c->last_code = CC_SUCCESS;
+        say_failure(c, d->port, "memory for the camera's stream",
+                    " could not be had; it streams nothing", line);
+        return false;
+    }
+
+    ring_start(&k->ring, (uint32_t *)(c->mem + (page + DEVICE_PAGE_RING) * PAGE),
+               c->bus + (page + DEVICE_PAGE_RING) * PAGE);
+
+    icc = context(c, d->input, 0);
+    slot = context(c, d->input, 1);
+
+    icc[0] = 0;
+    icc[1] = 1u | (1u << k->dci);
+    slot[0] = (slot[0] & ~(0x1Fu << 27)) | ((uint32_t)k->dci << 27);
+
+    /*
+     * The endpoint (6.2.3): its interval, and the high byte of its largest
+     * payload an interval (Max ESIT Payload Hi, xHCI 1.1); its packet, the
+     * extra transactions as Max Burst - which is what they are at high
+     * speed (6.2.3.4) - its type, and no retries, which an isochronous
+     * endpoint may not have; the ring; and the payload's low half and the
+     * average TD, which are the same thing here.
+     */
+    ep = context(c, d->input, k->dci + 1u);
+    memset(ep, 0, c->context);
+    ep[0] = (interval_for(d->speed, a->interval) << 16)
+          | ((esit >> 16) << 24);
+    ep[1] = ((uint32_t)a->packet << 16) | ((uint32_t)a->extra << 8)
+          | (EP_TYPE_ISOCH_IN << 3);
+    ep[2] = (uint32_t)k->ring.bus | 1u;
+    ep[3] = (uint32_t)(k->ring.bus >> 32);
+    ep[4] = ((esit & 0xFFFFu) << 16) | (esit & 0xFFFFu);
+
+    if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                 TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
+        camera_release(k);
+        say_failure(c, d->port, "Configure Endpoint for the camera's stream",
+                    "; it streams nothing", line);
+        return false;
+    }
+
+    if (!control_nodata(c, d, SET_INTERFACE, a->alternate,
+                        k->info.streaming)) {
+        camera_release(k);
+        say_failure(c, d->port, "SET_INTERFACE for the camera's stream",
+                    "; it streams nothing", line);
+        return false;
+    }
+
+    uvc_assembly_init(&k->as, (uint8_t *)k->frame, k->frame_pages * PAGE,
+                      expect);
+    k->queued = 0;
+    k->said_at = kosmos_ticks();
+    k->streaming = true;
+
+    for (i = 0; i < CAMERA_TDS; i++) {
+        camera_queue(k, i);
+    }
+
+    camera_bells(c);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": camera: streaming ");
+    say_camera_size(line, f);
+    say_text(line, ", ");
+    say_dec(line, got.interval != 0 ? 10000000u / got.interval : 0u);
+    say_text(line, " a second; frames up to ");
+    say_dec(line, got.max_frame);
+    say_text(line, " bytes, payloads up to ");
+    say_dec(line, got.max_payload);
+    say_text(line, " - setting ");
+    say_dec(line, a->alternate);
+    say_text(line, ", ");
+    say_dec(line, a->bytes);
+    say_text(line, " bytes an interval");
+    say_send(console, line);
+    return true;
+}
+
+/*
+ * **A camera plugged in.** Said, configured, and - until `/dev/camera`
+ * (8d) lets an application ask for one - streamed at once at 640x480, so a
+ * live test has frames to count.
+ */
+static void use_camera(struct controller *c, struct device *d,
+                       const struct uvc_camera *info, struct say_line *line)
+{
+    struct camera *k = NULL;
+    unsigned i, yuy2 = 0, mjpeg = 0;
+    uint32_t most = 0;
+    int size;
+
+    for (i = 0; i < CAMERAS_MAX; i++) {
+        if (!cameras[i].used) {
+            k = &cameras[i];
+            break;
+        }
+    }
+
+    for (i = 0; i < info->nframes; i++) {
+        yuy2 += info->frames[i].pixels == UVC_PIXELS_YUY2;
+        mjpeg += info->frames[i].pixels == UVC_PIXELS_MJPEG;
+    }
+
+    for (i = 0; i < info->nalts; i++) {
+        most = info->alts[i].bytes > most ? info->alts[i].bytes : most;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": a camera, USB Video Class ");
+    say_dec(line, info->uvc >> 8);
+    say_text(line, ".");
+    say_dec(line, (info->uvc >> 4) & 0xFu);
+    say_text(line, ": ");
+    say_dec(line, yuy2);
+    say_text(line, " sizes in YUY2 and ");
+    say_dec(line, mjpeg);
+    say_text(line, " in MJPEG, streaming on interface ");
+    say_dec(line, info->streaming);
+
+    if (info->bulk) {
+        say_text(line, " on bulk");
+    } else {
+        say_text(line, " in ");
+        say_dec(line, info->nalts);
+        say_text(line, " settings up to ");
+        say_dec(line, most);
+        say_text(line, " bytes an interval");
+    }
+
+    say_send(console, line);
+
+    if (k == NULL) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": camera: two are driven already; this one is not");
+        say_send(console, line);
+        return;
+    }
+
+    memset(k, 0, sizeof(*k));
+    k->used = true;
+    k->c = c;
+    k->slot = d->slot;
+    k->dev = *d;
+    k->info = *info;
+
+    if (!control_nodata(c, &k->dev, SET_CONFIGURATION, info->configuration,
+                        0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION for the camera",
+                    "; it is not driven", line);
+        k->used = false;
+        return;
+    }
+
+    size = uvc_find_frame(info, 0, 640, 480);
+
+    if (size < 0) {
+        size = uvc_find_frame(info, 0, 0xFFFFu, 0xFFFFu);
+    }
+
+    if (size < 0) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": camera: no size in YUY2 or MJPEG; it is not driven");
+        say_send(console, line);
+        return;
+    }
+
+    (void)camera_start(k, size, line);
+}
+
+/* A camera unplugged: forgotten, and its memory given back. */
+static void camera_gone(struct controller *c, unsigned slot)
+{
+    struct camera *k = camera_on(c, slot);
+
+    if (k != NULL) {
+        camera_release(k);
+        memset(k, 0, sizeof(*k));
+    }
+}
+
 /*
  * One configuration descriptor, whole, into the device's buffer: nine bytes
  * for its total length (9.4.3), then all of it, up to a page. `index` is the
@@ -4217,6 +4894,19 @@ static void use_device(struct controller *c, struct device *d,
         if (ecm.ok) {
             use_ethernet(c, d, &ecm, line);
             return;
+        }
+
+        /* A camera (`usb.md` §11): static, because it is two kilobytes of
+         * sizes and settings and the driver's stack is not the place. */
+        {
+            static struct uvc_camera camera;
+
+            uvc_decode_config(d->buffer, total, &camera);
+
+            if (camera.ok) {
+                use_camera(c, d, &camera, line);
+                return;
+            }
         }
     }
 
@@ -4775,6 +5465,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
     }
 
     if (slot != 0 && slot != PORT_FAILED) {
+        camera_gone(c, slot);
         stick_release_buffer(&c->stick[slot]);
         memset(&c->stick[slot], 0, sizeof(c->stick[slot]));
         disable_slot(c, slot);
@@ -4921,7 +5612,10 @@ static void service(struct controller *c, struct say_line *line)
         take_report(c, trb);
         take_note(c, trb);
         take_frame(c, trb);
+        take_video(c, trb);
     }
+
+    camera_bells(c);
 
     for (port = 1; port <= c->ports; port++) {
         uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));

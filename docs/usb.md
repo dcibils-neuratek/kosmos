@@ -14,7 +14,7 @@ else.
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
-| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a built: the C920's descriptors, on the Mac |
+| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a built; 8b and 8c written, found and refused without root, waiting for a run with it |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
@@ -2368,6 +2368,43 @@ A frame is whole at EOF, or when FID changes without one. A stream is joined
 in the middle of a frame, so nothing is kept until a boundary has gone past;
 and a YUY2 frame whose size is not exactly width by height by two lost a
 payload on the way, and is dropped rather than shown with a tear in it.
+
+### 8b and 8c: the stream, in the driver
+
+Written on 24 September; **not yet run with a picture**, which needs QEMU as
+root (below).
+
+- **Found**: a configuration `uvc_decode_config` calls a camera goes to
+  `use_camera`, beside the Ethernet adapter's check - after the mouse, the
+  stick and the pad, because a webcam with a HID button is still a camera.
+- **Agreed**: PROBE with the size, format and interval; the camera's answer
+  read back; COMMIT with that answer. Both SET_CURs are the driver's first
+  control transfers that *send* data, so `control_out` is new: a Setup whose
+  transfer type is an OUT data stage, an OUT Data stage, and an IN Status.
+- **Streamed**: the least setting that carries the camera's largest payload;
+  its isochronous IN endpoint configured (type 5, no retries, the extra
+  transactions as Max Burst, the payload as Max ESIT); SET_INTERFACE; and
+  **64 TDs on the ring**, each one interval into its own slice of a
+  contiguous buffer, each queued again the moment it comes back. Every TD
+  asks for an event, because a payload's length is only in its event; seven
+  in eight block the interrupt, so the driver looks once a millisecond. One
+  doorbell per pass over the event ring, not one per TD.
+- **Put together**: each payload to `uvc_payload`, a whole frame counted,
+  and a line every five seconds - frames, dropped, intervals missed - which
+  is what the live test is read by. Until `/dev/camera` (8d) it streams
+  640x480 from the moment it is plugged in.
+
+**Run without root on 24 September**, the camera through QEMU's `usb-host`:
+
+```
+xhci: 00:02.0 port 5: 046d:08e5, USB 2.1, class 239, "HD Pro Webcam C920"
+xhci: 00:02.0 port 5: a camera, USB Video Class 1.0: 18 sizes in YUY2 and 17 in MJPEG, streaming on interface 1 in 11 settings up to 3072 bytes an interval
+xhci: 00:02.0 port 5: SET_CONFIGURATION for the camera failed: Stall Error (6); it is not driven
+```
+
+The camera found and read right by the driver itself; then refused, because
+macOS holds its interfaces. `sudo sh tools/usbhost.sh 046d:08e5 30` is the
+run with root, and Diego's to start.
 
 ### How it is tested
 
