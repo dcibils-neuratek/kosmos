@@ -1,0 +1,337 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The applications, drawn at the scale the machine draws them - one CSS pixel
+  to one screen pixel - in the language docs/preferences.html and
+  docs/tracker2.html set: a 46-pixel header, cards of rows on a pale page,
+  a white view for a document, one control height, one accent.
+
+  roadmap.md 5zp. Diego, 24 September 2026: "Do both 2 and 3 then the stick.
+  Make sure it's pixel perfect as the html mockups" - and the eleven had no
+  mockup at real scale, only desktop.html, which is a thumbnail of the whole
+  desktop and cannot say how large anything is. This is that mockup.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos Applications</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The Plex look, as preferences.html and tracker2.html draw it. */
+    --w-desk: #3d63b8; --w-side: #f1f2f4; --w-body: #fafafb; --w-card: #ffffff;
+    --w-line: #e0e2e6; --w-ink: #1d1f24; --w-dim: #74787f; --w-sel: #dfe3ea;
+    --w-accent: #2a55c9; --w-head: #ffffff; --w-track: #cdd0d6;
+    --w-console: #1c1c1e; --w-console-ink: #ececec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; --card: #1c2027; }
+  }
+  :root[data-theme="dark"] { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; --card: #1c2027; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  h2 { font-family: var(--display); font-size: 19px; margin: 46px 0 6px;
+       padding-top: 22px; border-top: 1px solid var(--rule); }
+  .sub, .why { color: var(--muted); max-width: 74ch; }
+  .why { margin: 0 0 14px; font-size: 14px; }
+  code { font-family: var(--mono); font-size: .88em; }
+
+  /* ------------------------------------------------------------ a window */
+  .stage { background: var(--w-desk);
+           background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+           padding: 30px 24px; border-radius: 12px; overflow-x: auto;
+           display: flex; gap: 24px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+  .win { background: var(--w-body); border-radius: 12px; overflow: hidden;
+         box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+         font-size: 13.5px; color: var(--w-ink); flex: none; display: flex; flex-direction: column; }
+
+  /* The header: 46 with its rule, the subject at 14 semibold, controls right. */
+  .head { height: 46px; background: var(--w-head); border-bottom: 1px solid var(--w-line);
+          display: flex; align-items: center; gap: 4px; padding: 0 10px 0 18px; flex: none; }
+  .head .t { font-weight: 600; font-size: 14px; }
+  .head .s { color: var(--w-dim); font-size: 12.5px; margin-left: 8px; white-space: nowrap; }
+  .sp { flex: 1; }
+
+  /* One control height, 31: a button is a dropdown with no chevron. */
+  .btn { height: 31px; display: inline-flex; align-items: center; padding: 0 12px;
+         border: 1px solid var(--w-line); border-radius: 7px; background: #fff;
+         font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; }
+  .btn.go { background: var(--w-accent); border-color: var(--w-accent); color: #fff; font-weight: 500; }
+  .btn.off { color: #b0b4bb; }
+  .ico { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
+         color: var(--w-dim); flex: none; }
+  .ico svg { width: 15px; height: 15px; }
+  .drop { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 9px;
+          border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px; flex: none; }
+  .drop svg { width: 11px; height: 11px; color: var(--w-dim); }
+  .field { height: 31px; display: flex; align-items: center; padding: 0 9px; min-width: 0;
+           border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px; }
+  .sw { width: 40px; height: 23px; border-radius: 12px; background: var(--w-track); position: relative; flex: none; }
+  .sw.on { background: var(--w-accent); }
+  .sw::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px;
+               border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
+  .sw.on::after { left: 19px; }
+  .slider { width: 160px; height: 4px; background: var(--w-track); border-radius: 2px; position: relative; flex: none; }
+  .slider i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--w-accent); border-radius: 2px; }
+  .slider b { position: absolute; top: -6px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%;
+              background: #fff; border: 1px solid #c3c6cc; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+
+  /* A page of cards, as Preferences. */
+  .body { padding: 22px 26px 26px; }
+  .gl { font-weight: 600; font-size: 12.5px; margin: 20px 0 7px 3px; }
+  .gl:first-child { margin-top: 0; }
+  .group { background: var(--w-card); border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 14px; padding: 11px 14px; min-height: 48px;
+         border-bottom: 1px solid var(--w-line); }
+  .row:last-child { border-bottom: 0; }
+  .row .l { flex: 1; min-width: 0; }
+  .row .l b { font-weight: 500; display: block; }
+  .row .l span { color: var(--w-dim); font-size: 12px; display: block; line-height: 1.4; }
+  .v { color: var(--w-dim); font-size: 12.5px; flex: none; }
+  .foot { color: var(--w-dim); font-size: 12px; padding: 10px 3px 0; }
+
+  /* A white view: a table, a document, a log. */
+  .view { background: #fff; flex: 1; }
+  .th { display: flex; gap: 12px; padding: 0 14px; height: 32px; align-items: center;
+        border-bottom: 1px solid var(--w-line); color: var(--w-dim); font-size: 12px; }
+  .tr { display: flex; gap: 12px; padding: 0 14px; height: 32px; align-items: center; font-size: 12.5px; }
+  .tr.on { background: var(--w-sel); }
+  .num { font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; background: var(--w-track); border-radius: 4px; flex: 1; position: relative; overflow: hidden; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--w-accent); border-radius: 4px; }
+  .empty { color: var(--w-dim); text-align: center; padding: 38px 20px; font-size: 13.5px; }
+  .empty b { display: block; color: var(--w-ink); font-weight: 500; margin-bottom: 4px; }
+  .console { background: var(--w-console); color: var(--w-console-ink); font-family: var(--mono);
+             font-size: 12.3px; line-height: 1.5; padding: 9px 12px; flex: 1; white-space: pre; overflow: hidden; }
+
+  /* Calculator */
+  .display { background: #fff; border-bottom: 1px solid var(--w-line); padding: 18px 20px 14px; text-align: right; }
+  .display .was { color: var(--w-dim); font-size: 12.5px; height: 18px; }
+  .display .now { font-size: 34px; font-weight: 300; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; padding: 14px; }
+  .key { height: 44px; border: 1px solid var(--w-line); border-radius: 8px; background: #fff;
+         display: grid; place-items: center; font-size: 16px; }
+  .key.op { background: #f1f2f4; }
+  .key.eq { background: var(--w-accent); border-color: var(--w-accent); color: #fff; }
+  .key.wide { grid-column: span 2; }
+
+  .rules { font-size: 14px; }
+  .rules td { padding: 6px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .rules td:first-child { font-weight: 600; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Kosmos Applications</h1>
+<p class="sub">Every window with a header, drawn at the size the machine draws it &mdash; one pixel here is one
+pixel on the screen, in the Plex look, as <code>preferences.html</code> and <code>tracker2.html</code> are.
+<code>roadmap.md</code> 5zp, 24 September 2026. The eleven that still had buttons wherever they were put,
+and the five converted on 23 September against a thumbnail, whose headers move to the same 46 pixels.</p>
+
+<h2>The header, once</h2>
+<p class="why">46 pixels with its rule. The subject on the left in the title's face; beside it, dim, what the window
+is looking at. On the right the one verb the window exists for as a button &mdash; filled with the accent when it
+starts something &mdash; and a <b>&#8942;</b> for everything else. Buttons are the dropdown's height, 31, so a
+header never has two heights of control in it.</p>
+
+<table class="rules">
+<tr><td>Height</td><td>46, the rule inside it &mdash; the drawings' <code>.head</code></td></tr>
+<tr><td>Subject</td><td>14 semibold at 18 in &mdash; the machine's <code>title</code> face, 18</td></tr>
+<tr><td>Beside it</td><td>12.5, dim &mdash; <code>ui</code>, 16</td></tr>
+<tr><td>A button</td><td>31 tall, radius 7, 12 in, a one-pixel rule &mdash; the same box as a dropdown</td></tr>
+<tr><td>&#8942;</td><td>26 square, no border, the line icon at 15 &mdash; <code>tracker2.html</code>'s <code>.ico</code></td></tr>
+<tr><td>Right edge</td><td>10 in; controls 4 apart</td></tr>
+</table>
+
+<div id="all"></div>
+
+</div>
+
+<script>
+const MORE = `<div class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></div>`;
+const CHEV = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg>`;
+const head = (t, s, right) => `<div class="head"><span class="t">${t}</span>${s ? `<span class="s">${s}</span>` : ""}<span class="sp"></span>${right || ""}</div>`;
+const btn = (t, k) => `<span class="btn${k ? " " + k : ""}">${t}</span>`;
+const drop = v => `<span class="drop">${v}${CHEV}</span>`;
+const sw = on => `<span class="sw${on ? " on" : ""}"></span>`;
+const slider = p => `<span class="slider"><i style="width:${p}%"></i><b style="left:${p}%"></b></span>`;
+const row = (l, s, c) => `<div class="row"><div class="l"><b>${l}</b>${s ? `<span>${s}</span>` : ""}</div>${c || ""}</div>`;
+const group = (label, rows) => `<div class="gl">${label}</div><div class="group">${rows.join("")}</div>`;
+const win = (w, h, inner) => `<div class="win" style="width:${w}px;height:${h}px">${inner}</div>`;
+
+const APPS = [
+
+["Processes", "A table: what the machine is doing on the left, the one verb on the right.",
+ win(850, 482,
+   head("Processes", "21 processes &middot; 28 threads &middot; up 0:42", btn("End") + MORE) +
+   `<div style="padding:14px 18px 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px">` +
+   [["Memory","89 of 512 MB",17],["Threads","28 of 2048",2],["Processes","20 of 512",4],["Endpoints","21 of 8232",1]]
+     .map(([a,b,p])=>`<div><div style="display:flex;font-size:12px"><span style="color:var(--w-dim);flex:1">${a}</span><span class="num">${b}</span></div><div class="bar" style="margin-top:6px"><i style="width:${p}%"></i></div></div>`).join("") +
+   `</div><div class="view" style="border-top:1px solid var(--w-line)">` +
+   `<div class="th"><span style="width:36px">id</span><span style="flex:1">name</span><span style="width:70px">kind</span><span style="width:70px">priority</span><span style="width:40px">core</span><span style="width:80px;text-align:right">memory</span><span style="width:120px">processor</span></div>` +
+   [["18","wm","program","display","1","14508 KB",1],["1","init","server","display","1","2668 KB",0],["2","console","server","display","2","2668 KB",0],["3","ramfs","server","normal","3","4836 KB",0],["8","diskfs","server","normal","3","4292 KB",0],["10","e1000","driver","normal","2","2668 KB",0],["11","xhci","driver","normal","0","2668 KB",0]]
+     .map((r,i)=>`<div class="tr${i===1?" on":""}"><span class="num" style="width:36px;color:var(--w-dim)">${r[0]}</span><span style="flex:1">${r[1]}</span><span style="width:70px;color:var(--w-dim)">${r[2]}</span><span style="width:70px">${r[3]}</span><span class="num" style="width:40px">${r[4]}</span><span class="num" style="width:80px;text-align:right">${r[5]}</span><span style="width:120px;display:flex;gap:8px;align-items:center"><span class="bar"><i style="width:${r[6]*8}%"></i></span><span class="num" style="width:26px;text-align:right;color:var(--w-dim)">${r[6]}%</span></span></div>`).join("") +
+   `</div>`)],
+
+["Terminal", "A page of text. The header says where you are; the console is the window.",
+ win(640, 420,
+   head("Terminal", "/home", MORE) +
+   `<div class="console">Kosmos 0.10.148
+---------------
+Host       ThinkCentre M700
+Memory     91 of 8190 MB used
+Display    3440 x 1440, 32-bit
+
+kosmos&gt; ls /home
+Desktop  Deskbar  development  roms  screenshots
+kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#ececec;vertical-align:-3px"></span></div>`)],
+
+["Editor", "A page of text. The file's name is the control that opens another; Save is the verb.",
+ win(560, 420,
+   head("notes.md", "", btn("Save") + MORE) +
+   `<div class="view" style="font-family:var(--mono);font-size:12.3px;line-height:1.6;padding:10px 0;white-space:pre;color:#1d1f24"><span style="color:#b0b4bb;display:inline-block;width:40px;text-align:right;padding-right:12px">1</span># The memory work
+<span style="color:#b0b4bb;display:inline-block;width:40px;text-align:right;padding-right:12px">2</span>
+<span style="color:#b0b4bb;display:inline-block;width:40px;text-align:right;padding-right:12px">3</span>767 MB to 8190, in four steps.</div>`)],
+
+["Log View", "A page of text: whether it is following, and a &#8942; for the size.",
+ win(620, 380,
+   head("Log", "following &middot; 127 lines", MORE) +
+   `<div class="console">[0.772] wm: started /bin/deskbar.lua as 19
+[0.833] wm: started /bin/tracker.lua as 20
+[0.851] deskbar: made /home/Deskbar from what /bin declares
+[1.201] e1000: 00:1f.6 link up at 1000 Mb/s
+[1.214] net: 10.0.2.15, gateway 10.0.2.2</div>`)],
+
+["Photo", "A canvas. The picture's name and size; nothing else is above it.",
+ win(560, 380,
+   head("magicword.jpg", "2048 &times; 1365", MORE) +
+   `<div style="flex:1;background:#241f31;display:grid;place-items:center"><div style="width:72%;height:76%;border-radius:4px;background:linear-gradient(135deg,#f5a45d,#e0556b 45%,#5b4b9a)"></div></div>`)],
+
+["Calculator", "No header at all: the display is the window's top, and the keys are the rest of it. A calculator is a canvas.",
+ win(300, 390,
+   `<div class="display"><div class="was">12 &times; 7</div><div class="now">84</div></div>` +
+   `<div class="keys">` +
+   [["C","op"],["(","op"],[")","op"],["&divide;","op"],["7"],["8"],["9"],["&times;","op"],["4"],["5"],["6"],["&minus;","op"],["1"],["2"],["3"],["+","op"],["0","wide"],["."],["=","eq"]]
+     .map(([k,c])=>`<div class="key${c ? " " + c : ""}">${k}</div>`).join("") + `</div>`)],
+
+["Cores", "A table of processors: the machine on the left, the two verbs on the right.",
+ win(520, 300,
+   head("Cores", "4 &middot; ARM Cortex-A72 r0p3", btn("Add a worker", "go") + btn("Take one off")) +
+   `<div class="body" style="padding-top:18px"><div class="group">` +
+   [["Core 0",0],["Core 1",5],["Core 2",3],["Core 3",0]]
+     .map(([n,p])=>`<div class="row" style="min-height:40px;padding:8px 14px"><div style="width:60px;font-weight:500">${n}</div><span class="bar"><i style="width:${p}%"></i></span><span class="num v" style="width:36px;text-align:right">${p}%</span></div>`).join("") +
+   `</div><div class="foot">No workers. Add some and watch them fill.</div></div>`)],
+
+["Drives", "A list with a verb: what is plugged in, and what is on it.",
+ win(640, 440,
+   head("Drives", "1 drive", btn("Open in Tracker") + MORE) +
+   `<div class="body">` +
+   group("Drives", [row("Kingston DataTraveler 3.0", "USB &middot; 115 GB", `<span class="v">GPT</span>`)]) +
+   group("Partitions", [
+     row("1 &middot; EFI", "FAT32 &middot; 64 MB", `<span class="v">not in Tracker</span>`),
+     row("2 &middot; KOSMOS", "kfs &middot; 512 MB, 509 free", `<span class="v">/home</span>`)]) +
+   `</div>`)],
+
+["Widgets", "The kit's own catalogue: every control, in the look, in a card.",
+ win(460, 440,
+   head("Widgets", "the kit's vocabulary", MORE) +
+   `<div class="body">` +
+   group("Controls", [
+     row("A button", "", btn("Press me")),
+     row("The verb", "", btn("And me", "go")),
+     row("A switch", "", sw(true)),
+     row("A choice", "", drop("threads")),
+     row("A level", "", slider(60))]) +
+   `<div class="foot">Click, or Tab and Enter.</div></div>`)],
+
+["Launcher", "A form: what it starts, with what, under which picture. Revert and Save are the verbs.",
+ win(520, 330,
+   head("Doom", "/home/Deskbar/Games/doom", btn("Revert") + btn("Save", "go")) +
+   `<div class="body">` +
+   group("Starts", [
+     row("Program", "", `<span class="field" style="width:250px">doom</span>`),
+     row("With", "arguments, as typed after its name", `<span class="field" style="width:250px">-warp 1 1</span>`),
+     row("Picture", "", drop("App_Doom"))]) +
+   `</div>`)],
+
+["Mixer", "Settings for one device: a card of levels. With no device, the empty state says so.",
+ win(460, 320,
+   head("Mixer", "Intel HDA &middot; 44100 Hz", btn("Test tone")) +
+   `<div class="body">` +
+   group("Output", [
+     row("Master", "", slider(70)),
+     row("Headphones", "", slider(55)),
+     row("Mute", "", sw(false))]) +
+   `</div>`)],
+
+["Network", "A card for the card, a card for the addresses. Apply is the verb; the rest is behind &#8942;.",
+ win(500, 440,
+   head("Network", "Intel 8086:15b8", btn("Apply", "go") + MORE) +
+   `<div class="body">` +
+   group("Device", [row("Wired", "up at 1000 Mb/s &middot; 52:54:00:12:34:56", sw(true))]) +
+   group("Addresses", [
+     row("Address", "", `<span class="field" style="width:190px">10.0.2.15</span>`),
+     row("Netmask", "", `<span class="field" style="width:190px">255.255.255.0</span>`),
+     row("Gateway", "", `<span class="field" style="width:190px">10.0.2.2</span>`),
+     row("DNS", "no resolver yet &mdash; remembered only", `<span class="field" style="width:190px">10.0.2.3</span>`)]) +
+   `</div>`)],
+
+["Reader", "A document. The page's name is the control that opens another.",
+ win(560, 440,
+   head("Reader", "the built-in page", btn("Open") + MORE) +
+   `<div class="view" style="padding:18px 26px;font-size:13.5px;line-height:1.55">
+     <div style="font-weight:600;font-size:17px;margin-bottom:6px">Reader</div>
+     <p style="margin:0 0 10px">A markdown viewer, written for the manuals this system will carry.</p>
+     <div style="font-weight:600;font-size:14px;margin:14px 0 6px">What it renders</div>
+     <div>&bull; headings, at any level<br>&bull; paragraphs, wrapped to the window<br>&bull; bullet and numbered lists</div>
+     <div style="background:#f4f5f7;border-radius:6px;padding:8px 10px;margin-top:12px;font-family:var(--mono);font-size:12.3px">local ui = use("/lib/ui.lua")</div>
+   </div>`)],
+
+["Scheduler", "Settings for the kernel's scheduler: what it is now, and two choices.",
+ win(560, 420,
+   head("Scheduler", "read from the kernel", btn("Add a busy thread")) +
+   `<div class="body">` +
+   group("Now", [
+     row("Policy", "", `<span class="v">priority</span>`),
+     row("Quantum", "25 ticks", `<span class="v">100 ms</span>`),
+     row("Timer", "", `<span class="v">250 Hz &middot; 4 ms a tick</span>`)]) +
+   group("Choose", [
+     row("Policy", "", drop("priority")),
+     row("Quantum", "", drop("100 ms"))]) +
+   `</div>`)],
+
+["Video", "Nothing open is an empty state with the verb in it; a film open is video.html's window.",
+ win(460, 280,
+   head("Video", "nothing open", btn("Open a film&hellip;", "go")) +
+   `<div class="empty" style="flex:1"><b>Nothing open</b>Open a film, or start this with one:<br><code>video /home/magicword-clip.mp4</code></div>`)],
+
+["Web Server", "A service: its state and the one verb in the header, its settings in a card, its log in a view.",
+ win(560, 460,
+   head("Web server", "stopped", btn("Start", "go") + MORE) +
+   `<div class="body" style="padding-bottom:14px">` +
+   group("Serving", [
+     row("Port", "", `<span class="field" style="width:90px">80</span>`),
+     row("Directory", "", `<span class="field" style="width:220px">/home/www</span>`)]) +
+   `<div class="gl">Requests</div></div>` +
+   `<div class="view" style="margin:0 26px 26px;border:1px solid var(--w-line);border-radius:10px;flex:1"><div class="empty">Nothing yet</div></div>`)],
+];
+
+document.getElementById("all").innerHTML = APPS.map(([name, why, html]) =>
+  `<h2>${name}</h2><p class="why">${why}</p><div class="stage">${html}</div>`).join("");
+</script>
+</body>
+</html>

@@ -52,6 +52,8 @@ theme.palettes.dark = {
 
   line      = 0xff30363d,
   line_soft = 0xff21262d,
+  track     = 0xff3a3f47,
+  swatch    = 0xff1e1e1e,
 
   -- The two edges a bevel is made of. Top-left light, bottom-right dark,
   -- and swapped for a sunken well.
@@ -128,6 +130,8 @@ theme.palettes.light = {
 
   line      = 0xff8c8c8c,
   line_soft = 0xffbfbfbf,
+  track     = 0xffcdd0d6,
+  swatch    = 0xffd8d8d4,
 
   -- Pure white against a mid grey, which is what makes the grey read as
   -- moulded rather than merely shaded.
@@ -215,8 +219,26 @@ theme.palettes.light = {
 -- configuration miserable everywhere it is miserable.
 theme.tokens = {
   "name", "desktop", "window", "raised", "sunken", "line", "line_soft",
+  --
+  -- **`track`: the rail under a control that slides** - a switch that is
+  -- off, and the part of a slider not yet filled. The mockups draw both
+  -- (`docs/preferences.html`: `#cdd0d6` under a switch, `#d6d9df` under a
+  -- slider) and no other token was that colour in every look: `line_soft`
+  -- is too faint to read as a control on a white card in the light looks,
+  -- and `line` is a border's weight, not a surface's.
+  --
+  "track",
   "edge_light", "edge_dark", "text", "text_dim", "text_on",
   "tab", "tab_idle", "tab_text", "desktop_text",
+  --
+  -- **`swatch`: the one colour that stands for the look** where somebody
+  -- chooses between looks - Preferences' Theme row, as `docs/
+  -- preferences.html` draws it, a row of small squares. It is a property of
+  -- the look rather than something Preferences works out, because no rule
+  -- gives five distinguishable colours from five palettes: three of them
+  -- have yellow tabs and three have blue desks.
+  --
+  "swatch",
   "console", "console_text",
   "accent", "good", "bad", "ring", "stamp",
 
@@ -565,6 +587,26 @@ function theme.lift(c, amount)
 end
 
 --
+-- **Part of the way from one colour to another**, `t` in thousandths.
+--
+-- For a surface a mockup draws that no token names, where the surface is
+-- plainly *between* two that do: `docs/preferences.html`'s sidebar is
+-- `#f1f2f4`, and the page it sits beside is `#fafafb` and every rule on it
+-- `#e0e2e6` - so the sidebar is 300 thousandths of the way from `window` to
+-- `line_soft`, to within a unit, in the look it was drawn in. Named that
+-- way it is right in all five looks at once, where a sixth token would be
+-- five more colours somebody has to choose and keep in step.
+--
+function theme.mix(a, b, t)
+  local function ch(shift)
+    local x, y = (a >> shift) & 0xff, (b >> shift) & 0xff
+    return (x + ((y - x) * t + 500) // 1000) << shift
+  end
+
+  return 0xff000000 | ch(16) | ch(8) | ch(0)
+end
+
+--
 -- The two ends of a piece of chrome, from the one colour a theme names.
 --
 -- Derived rather than named, and this is the opposite call from the one
@@ -664,44 +706,75 @@ end
 -- so a fifth role meant finding all three, and the fifth role is exactly
 -- what was being added when this was written.
 --
-theme.roles = { "ui", "title", "text", "mono", "heading" }
+theme.roles = { "ui", "title", "text", "mono", "heading", "label" }
 
+--
+-- **The sizes are the mockups', through the one number that converts
+-- them** (`roadmap.md` 5zp). Diego, 24 September 2026, with the mockups
+-- beside the machine: "I prefer the mockups size", "make the screen match
+-- the mockup sizes", "Not the other way around".
+--
+-- A size here and a size in a browser do not mean the same thing, and that
+-- is the whole of why they drifted. `stbtt_ScaleForPixelHeight(px)` fits
+-- the face's entire ascent-to-descent into `px`; CSS `font-size` fits the
+-- *em*. IBM Plex's `hhea` is 1025 up and 275 down on a 1000 em, so every
+-- size here is **1.30 times the CSS size it matches**:
+--
+--   mockup (CSS)          role       here        as CSS
+--   13.5  window text     text       18          13.85
+--   12.5  controls, lists ui         16          12.31
+--   12.5  group labels    heading    16 semi     12.31
+--   14    titles          title      18 semi     13.85
+--
+-- The machine's "16" was a 12.3 px em all along, where the page drew the
+-- words a person reads most at 13.5 - about a tenth smaller, on every
+-- label in the system. `docs/looks.html` drew the bar at 16 *CSS* pixels
+-- and the number was carried across as though it meant the same here,
+-- which is how the gap arrived on the first day.
+--
+-- **Two sizes for words, because the mockups draw two.** Window text and
+-- labels at 13.5, controls and lists at 12.5. The kit drew both in `ui`,
+-- which is why `ui.label` draws in `text` now.
+--
 theme.fonts = {
-  -- Widgets: the words on a button, a list of files, the Open window.
-  --
-  -- **16, since 22 September**, and the regular text with it: Diego, on
-  -- the ThinkPad, "fonts look smaller than on qemu so the default font
-  -- size for regular and widgets is 16". A 14-inch panel at 1920x1080 is
-  -- about 157 pixels to the inch, and QEMU's window on the Mac is shown
-  -- larger than that, so a size chosen by looking at QEMU reads small on
-  -- the machine it is for.
+  -- Controls: the words on a button, in a dropdown, a list of files, the
+  -- Open window. The mockups' 12.5 - and it was already right, which is
+  -- worth knowing: the 16 Diego asked for on the ThinkPad on 22 September
+  -- ("fonts look smaller than on qemu") landed on exactly the size the
+  -- drawings give a control.
   ui      = { font = "ibmplexsans", px = 16 },
 
-  -- A title is a label on chrome and can carry a face with character in
-  -- it - which is the whole argument for the role being separate. What it
-  -- may not be is *smaller* than the interface around it, and it was:
-  -- Plex Sans Condensed at 14 beside widgets at 16, so the Deskbar drew a
-  -- window's name half again as large as the window's own tab did.
+  -- A window's title, on its tab. The mockups' 14 semibold - the same face
+  -- and weight as the title inside a Preferences or Tracker header, so a
+  -- window names itself once in one voice.
   --
-  -- Two reasons for the old value and neither survives. It was 14 because
-  -- widgets were 14 when it was written, and they went to 16 on 22
-  -- September without it; and it was condensed because the tab used to be
-  -- only as wide as its title, where since 0.10.141 the tab is the
-  -- window's full width. Diego, 23 September: "the window tab font is
-  -- really small if you compare it with the mockups".
-  title   = { font = "ibmplexsans", px = 16 },
+  -- It was Plex Sans Condensed at 14 until 0.10.146, which as CSS was
+  -- 10.8: two sizes and a narrower face below everything around it.
+  -- Condensed because a tab used to be only as wide as its title, which it
+  -- has not been since 0.10.141.
+  title   = { font = "ibmplexsans-semibold", px = 18 },
 
-  -- Running text in the reading face, and the terminal in the one whose
-  -- columns line up - as `docs/looks.html` draws them. **The terminal at
-  -- 16 since 22 September**, where it was 14: Diego, on the ThinkPad, "the
-  -- monospace font in terminal and log view needs to be 16px at least".
-  text    = { font = "ibmplexsans", px = 16 },
+  -- Words a person reads rather than presses: labels, a row's name, the
+  -- sidebar, a header's sentence, running text. The mockups' 13.5.
+  text    = { font = "ibmplexsans", px = 18 },
+
+  -- The terminal and Log View, whose columns have to line up. **16, and
+  -- no mockup draws it at real scale** - `docs/desktop.html` is a
+  -- thumbnail of the whole desktop and cannot say how large anything is.
+  -- Diego, on the ThinkPad, 22 September: "the monospace font in terminal
+  -- and log view needs to be 16px at least"; and each of those windows
+  -- has a size of its own in its `...` menu.
   mono    = { font = "ibmplexmono", px = 16 },
 
-  -- A heading inside a window - "Library", "Palette" - which the guide
-  -- names and the kit had no role for. Applications that want one stop
-  -- choosing a size each.
-  heading = { font = "ibmplexsans-semibold", px = 15 },
+  -- A heading inside a window - "Look", "Size", a group's name above its
+  -- card. The mockups' 12.5 semibold: the same size as a control, set
+  -- apart by weight rather than by size.
+  heading = { font = "ibmplexsans-semibold", px = 16 },
+
+  -- The name of a thing: a settings row's name, the chosen place in a
+  -- sidebar. The mockups' 13.5 at weight 500 - the reading size, set apart
+  -- from a note under it by weight rather than by size.
+  label   = { font = "ibmplexsans-medium", px = 18 },
 }
 
 --

@@ -1668,8 +1668,8 @@ def check_preferences(guest):
     # The content area: right of the sidebar, below the title bar. Numbers
     # from the application's own SIDE and the window's size, kept here so a
     # layout change has to be agreed with rather than silently tracked.
-    x0, y0 = wx + 180, wy + 30
-    x1, y1 = wx + 690, wy + 400
+    x0, y0 = wx + 230, wy + 60
+    x1, y1 = wx + 760, wy + 400
 
     def content(px_):
         """A histogram of the content area, which is enough to say whether
@@ -1736,17 +1736,14 @@ def check_preferences(guest):
     # anything happen" is a question about the whole screen rather than
     # about one control's pixels.
     #
-    # Driven by the keyboard as far as it goes and by the pointer for the
-    # last step, which is the Log View phase's idiom: **the menu is clicked
-    # where the window manager says it went**, not where arithmetic on the
-    # application's padding says it should be.
-    #
+    # Driven by the keyboard alone: the swatches take the arrows, which is
+    # what a person trying looks would reach for.
     #
     # **Back to Appearance first**, because the check above left the sidebar
     # five categories down and the page with it. The first version of this
     # did not, tabbed into whatever control that page happened to start
     # with, and opened a four-item menu 72 pixels wide - the Scale, on
-    # Displays. A menu opening is not evidence that the right one opened.
+    # Displays. A control answering is not evidence that the right one did.
     #
     for _ in range(6):
         guest.sendkey("up")
@@ -1755,99 +1752,65 @@ def check_preferences(guest):
     time.sleep(1.0)
     mark = len(guest.seen)
 
-    # One Tab from the sidebar is the Theme dropdown: the sidebar holds the
-    # focus when the window opens, and Theme is the first control the
-    # Appearance page adds. Space opens a dropdown (`ui.dropdown:key`).
+    # One Tab from the sidebar is the Theme row's swatches: the sidebar holds
+    # the focus when the window opens, and the swatches are the first control
+    # the Appearance page adds. Right chooses the next look along, as the
+    # sidebar's arrows choose a category - `docs/preferences.html` draws the
+    # look as swatches, and it was a dropdown for one version.
+    def whole(px_, w_, h_):
+        """A histogram of the whole screen. A look reaches the desk, every
+        window's tab and every window's inside, so this is the measurement
+        that matches the claim - where one sampled pixel would be asking
+        whether one thing happened to change."""
+        seen = {}
+
+        for y in range(0, h_, 6):
+            base = y * w_ * 3
+
+            for x in range(0, w_, 6):
+                at = base + x * 3
+                c = bytes(px_[at:at + 3])
+                seen[c] = seen.get(c, 0) + 1
+
+        return seen
+
     guest.sendkey("tab")
     time.sleep(0.4)
-    guest.sendkey("spc")
 
-    where = None
-    deadline = time.monotonic() + 15
+    w0, h0, px0 = picture("before the look was changed")
+    looked = whole(px0, w0, h0)
 
-    while time.monotonic() < deadline:
-        guest._read_available()
-        m = re.search(r"wm: menu of Preferences at (\d+),(\d+) (\d+)x(\d+)",
-                      guest.seen[mark:])
+    guest.sendkey("right")
 
-        if m:
-            where = tuple(int(v) for v in m.groups())
-            break
+    def changed(w_, h_, px_):
+        now = whole(px_, w_, h_)
+        same = sum(min(looked.get(c, 0), now.get(c, 0))
+                   for c in set(looked) | set(now))
+        total = max(sum(looked.values()), 1)
 
-        time.sleep(0.3)
+        return True if same < total * 0.90 else None
 
-    if where is None:
-        check.append((False,
-                      "the Theme dropdown did not open: one Tab from the "
-                      "sidebar and Space reached nothing that answers. It is "
-                      "the first control the Appearance page adds, so either "
-                      "the page has grown a control above it or a dropdown "
-                      "no longer takes the keyboard."))
-    else:
-        def whole(px_, w_, h_):
-            """A histogram of the whole screen. A look reaches the desk,
-            every window's tab and every window's inside, so this is the
-            measurement that matches the claim - where one sampled pixel
-            would be asking whether one thing happened to change."""
-            seen = {}
+    try:
+        settle(guest, changed,
+               "the screen is the same after the next look was chosen in "
+               "Preferences, so the choice was stored and never applied. A "
+               "`theme` request reaches the desk, every window's tab and "
+               "every window's inside; the swatches have to send one as well "
+               "as write the file.", seconds=15)
+        check.append((True, ""))
+    except Failure as e:
+        check.append((False, str(e)))
 
-            for y in range(0, h_, 6):
-                base = y * w_ * 3
-
-                for x in range(0, w_, 6):
-                    at = base + x * 3
-                    c = bytes(px_[at:at + 3])
-                    seen[c] = seen.get(c, 0) + 1
-
-            return seen
-
-        w0, h0, px0 = picture("before the look was changed")
-        looked = whole(px0, w0, h0)
-
-        #
-        # The **last** item, which is the look furthest from the one in
-        # force: the menu is the five `themes.order` names and the first is
-        # the default, so choosing the last cannot be a no-op. Clicked where
-        # the window manager says the menu went, and measured off its
-        # reported height rather than off a row constant.
-        #
-        guest.mouse_to(*_to_tablet(where[0] + where[2] // 2,
-                                   where[1] + where[3] - LAYOUT_ROW // 2,
-                                   width, height))
-        time.sleep(0.3)
-        guest.mouse_button(True)
-        time.sleep(0.2)
-        guest.mouse_button(False)
-
-        def changed(w_, h_, px_):
-            now = whole(px_, w_, h_)
-            same = sum(min(looked.get(c, 0), now.get(c, 0))
-                       for c in set(looked) | set(now))
-            total = max(sum(looked.values()), 1)
-
-            return True if same < total * 0.90 else None
-
-        try:
-            settle(guest, changed,
-                   "the screen is the same after another look was chosen in "
-                   "Preferences, so the choice was stored and never "
-                   "applied. A `theme` request reaches the desk, every "
-                   "window's tab and every window's inside; `control_for` "
-                   "has to send one as well as write the file.", seconds=15)
-            check.append((True, ""))
-        except Failure as e:
-            check.append((False, str(e)))
-
-        # And the manager said so, which is what a person reads on a machine
-        # with no harness (`log`).
-        guest._read_available()
-        check.append((
-            "wm: theme applied" in guest.seen[mark:],
-            "the window manager applied a palette and said nothing about "
-            "it. `handlers.theme` answers a person's press, and a look that "
-            "was chosen has to read differently in the log from one that "
-            "was never sent - which is exactly what could not be told apart "
-            "on the M700."))
+    # And the manager said so, which is what a person reads on a machine with
+    # no harness (`log`).
+    guest._read_available()
+    check.append((
+        "wm: theme applied" in guest.seen[mark:],
+        "the window manager applied a palette and said nothing about "
+        "it. `handlers.theme` answers a person's press, and a look that "
+        "was chosen has to read differently in the log from one that "
+        "was never sent - which is exactly what could not be told apart "
+        "on the M700."))
 
     stop_desktop(guest)
 
@@ -2206,19 +2169,20 @@ def check_default_look(guest, ask_wm):
     loaded, thin, wide = parts[6], int(parts[7]), int(parts[8])
 
     # 16 since 22 September: Diego, on the ThinkPad, "the default font size
-    # for regular and widgets is 16".
+    # for regular and widgets is 16" - which, through Plex's 1.30 between
+    # this rasterizer's pixels and a browser's, is exactly the mockups'
+    # 12.5 for a control (`roadmap.md` 5zp).
     if ui != "ibmplexsans" or ui_px != "16":
         raise Failure("the widgets' face is %s %s, not ibmplexsans 16" % (ui, ui_px))
 
     checks += 1
 
-    # The looks' faces since 22 September (`docs/looks.html`), and the
-    # title among them since 0.10.146: it was Plex Sans Condensed at 14
-    # beside widgets at 16, so the Deskbar drew a window's name larger than
-    # the window's own tab did. Diego: "the window tab font is really small
-    # if you compare it with the mockups".
-    if title != "ibmplexsans" or title_px != "16":
-        raise Failure("a title's face is %s %s, not ibmplexsans 16"
+    # The title at the mockups' 14 semibold, which is 18 here (`roadmap.md`
+    # 5zp). It was Plex Sans Condensed at 14 until 0.10.146 - 10.8 as CSS,
+    # below everything around it. Diego: "the window tab font is really
+    # small if you compare it with the mockups".
+    if title != "ibmplexsans-semibold" or title_px != "18":
+        raise Failure("a title's face is %s %s, not ibmplexsans-semibold 18"
                       % (title, title_px))
 
     checks += 1
@@ -2250,8 +2214,8 @@ def check_default_look(guest, ask_wm):
     why = parts[13].split("=", 1)[1]
 
     for role, want in (("ui", "ibmplexsans/16"),
-                       ("title", "ibmplexsans/16"),
-                       ("text", "ibmplexsans/16"),
+                       ("title", "ibmplexsans-semibold/18"),
+                       ("text", "ibmplexsans/18"),
                        ("mono", "ibmplexmono/16")):
         if held.get(role) != want:
             raise Failure(
@@ -3975,37 +3939,34 @@ def check_direct_menu(guest):
 
 
 def check_appearance(guest):
-    """**The Appearance panel: a look and a wallpaper.**
+    """**The look, chosen in Preferences, at the size it was drawn.**
 
-    Rebuilt on 22 September from `docs/looks.html`, which Diego approved -
-    "the panel is right, build it" - after asking for very few options and a
-    fixed layout (`roadmap.md` 5x, 5y). It was two columns of a theme list,
-    colour swatches, five font roles with a face and a size each, and a
-    title's shape; it is the four looks as cards and the wallpapers. The
-    Deskbar's three heights left it the same day, when the bar became part
-    of the fixed layout (5v). Its layout is fixed, so its size is a number
-    that does not depend on the faces - 560 by 430 since the Size row
-    arrived (`roadmap.md` 5z), which the panel says as it opens - and it
-    offers exactly the four looks `themes.lua` ships.
+    This was the Appearance panel's phase, and the panel is gone: on 24
+    September its look, wallpaper and scale folded into Preferences'
+    Appearance page, which `docs/preferences.html` draws and Diego asked to
+    be "pixel perfect as the html mockups" (`roadmap.md` 5zp). So the
+    window is held to the drawing's size - 840 by 920, measured off the page
+    rendered at one pixel to one - which it says as it opens, and it offers
+    exactly the looks `themes.lua` ships.
     """
     mark = len(guest.seen)
 
-    guest.type("wm appearance")
-    line = guest.wait_for_line("appearance: ",
-                               "the Appearance panel to lay itself out", mark)
+    guest.type("wm preferences")
+    line = guest.wait_for_line("preferences: ",
+                               "Preferences to lay itself out", mark)
     said = re.match(r"(\d+)x(\d+), (\d+) looks, (\S+)", line)
 
     if not said:
-        raise Failure("the panel said %r, which is not a layout" % line)
+        raise Failure("Preferences said %r, which is not a layout" % line)
 
     width, height, looks = (int(said.group(1)), int(said.group(2)),
                             int(said.group(3)))
     checks = 1
 
-    if (width, height) != (560, 430):
-        raise Failure("the panel is %dx%d; the drawing Diego approved, on the "
-                      "fixed layout, with the size and without the Deskbar's "
-                      "heights, is 560x430" % (width, height))
+    if (width, height) != (840, 920):
+        raise Failure("Preferences is %dx%d; the drawing Diego approved, "
+                      "measured at one pixel to one, is 840x920"
+                      % (width, height))
 
     checks += 1
 
@@ -4022,8 +3983,8 @@ def check_appearance(guest):
     # nothing.
     #
     if looks != 5:
-        raise Failure("the panel offers %d looks; there are five - Plex, Plex "
-                      "Night, Classic, Studio and Endeavour" % looks)
+        raise Failure("Preferences offers %d looks; there are five - Plex, "
+                      "Plex Night, Classic, Studio and Endeavour" % looks)
 
     checks += 1
 
@@ -4036,11 +3997,11 @@ def check_appearance(guest):
     # the suite the first time it ran beside others.
     #
     # **Waited for from the stop, not from the phase's start.** `mark` was
-    # taken before `wm appearance` was typed, and the prompt that command
+    # taken before `wm preferences` was typed, and the prompt that command
     # was typed at is after it - so this wait was over before it began, and
     # the next command raced the window manager's exit: twice on x86 on 22
-    # September, a stray `q` at the prompt and `wm appearance:--theme plex`
-    # never run (`testing.md` 18.145).
+    # September, a stray `q` at the prompt and the next look never chosen
+    # (`testing.md` 18.145).
     #
     back = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
@@ -4193,9 +4154,9 @@ def check_theme_events(guest):
 
 # Plex's five faces, as `docs/plex.html` has them and Diego chose them on
 # 22 September - the same table `tools/test_theme.lua` holds the file to.
-PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsans/16 "
-             "text=ibmplexsans/16 mono=ibmplexmono/16 "
-             "heading=ibmplexsans-semibold/15")
+PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsans-semibold/18 "
+             "text=ibmplexsans/18 mono=ibmplexmono/16 "
+             "heading=ibmplexsans-semibold/16 label=ibmplexsans-medium/18")
 
 
 def check_theme_plex(guest):
@@ -4205,8 +4166,8 @@ def check_theme_plex(guest):
     selection". The theme file is held on the host by `test_theme.lua`;
     what only a machine can show is the rest of the path - the panel taking
     the theme's five faces, the window manager loading every one of them,
-    and the choice written down. So `wm appearance:--theme plex` chooses it
-    the way a click on its row does, and prints what the window manager
+    and the choice written down. So `wm preferences:--theme plex` chooses it
+    the way a press on its swatch does, and prints what the window manager
     says it *holds*, which is what was loaded rather than what was asked
     for: a face the image lacks would show there as the previous one.
 
@@ -4218,11 +4179,11 @@ def check_theme_plex(guest):
     """
     mark = len(guest.seen)
 
-    guest.type("wm appearance:--theme plex")
+    guest.type("wm preferences:--theme plex")
 
     try:
-        line = guest.wait_for_line("appearance: theme plex",
-                                   "Appearance to choose Plex", mark)
+        line = guest.wait_for_line("preferences: theme plex",
+                                   "Preferences to choose Plex", mark)
 
         if not line.startswith("applied, held "):
             raise Failure("choosing Plex was not applied: %r" % line)
@@ -4315,7 +4276,7 @@ def check_theme_plex(guest):
         raise Failure("/home/.appearance holds %r after choosing Plex - "
                       "wanted the look's name and no faces of its own" % saved)
 
-    if now != "plex ibmplexsans-semibold/15":
+    if now != "plex ibmplexsans-semibold/16":
         raise Failure("a desktop started with Plex saved wears %r - the "
                       "theme was written down and did not come back" % now)
 
@@ -4728,7 +4689,7 @@ def check_scale(guest):
 def check_scale_live(guest):
     """**The scale changed with windows open** (`roadmap.md` 5z).
 
-    Appearance's slider let go at 150 - `wm gallery,appearance:--scale 150`
+    Preferences' scale chosen at 150 - `wm gallery,preferences:--scale 150`
     - has to rebuild the gallery, already open at 460 by 330, at 690 by
     495, say so, and write 150 down; and let go at 100 again, the gallery
     comes back to 460 by 330 exactly, not a point smaller for the trip.
@@ -4736,7 +4697,7 @@ def check_scale_live(guest):
     guest.type(appearance() + ' print("live" .. "-reset")')
     guest.wait_for("live-reset", "start the live scale at 100")
     mark = len(guest.seen)
-    guest.type("wm gallery,appearance:--scale 150")
+    guest.type("wm gallery,preferences:--scale 150")
 
     def said(pattern, since, seconds=30):
         deadline = time.monotonic() + seconds
@@ -4753,8 +4714,8 @@ def check_scale_live(guest):
         return None
 
     try:
-        if not said(r"appearance: scale 150 applied", mark):
-            raise Failure("Appearance never applied a scale of 150:\n"
+        if not said(r"preferences: scale 150 applied", mark):
+            raise Failure("Preferences never applied a scale of 150:\n"
                           + guest.seen[mark:][-800:])
 
         up = said(r"wm: rescaled gallery to (\d+)x(\d+)", mark)
@@ -4775,7 +4736,7 @@ def check_scale_live(guest):
                       % (kept and kept.group(1)))
 
     mark = len(guest.seen)
-    guest.type("wm gallery,appearance:--scale 100")
+    guest.type("wm gallery,preferences:--scale 100")
 
     try:
         back = said(r"wm: rescaled gallery to (\d+)x(\d+)", mark)

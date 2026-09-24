@@ -8720,3 +8720,98 @@ done since it grew a text size. One line at the end, at the prompt.
 first arrow key. **A name the kit already uses for something else is not a
 name**, and the harness found it in one run because the phase drives the
 window with the keyboard.
+
+## 18.162 The screen at the mockups' sizes, and Preferences at one pixel to one
+
+`roadmap.md` 5zp. Diego, 24 September, with the mockups beside the machine:
+*"I prefer the mockups size"*, *"make the screen match the mockup sizes"*,
+*"Not the other way around"*, and then *"pixel perfect as the html mockups"*.
+
+### The finding: two meanings of a font size
+
+`stbtt_ScaleForPixelHeight(px)` fits a face's whole ascent-to-descent into
+`px`; CSS `font-size` fits the em. For IBM Plex, `hhea` is 1025 up and 275
+down on a 1000 em, so **every size here is 1.30 times the CSS size it
+matches**. The machine's "Plex Sans 16" was a 12.3 px em - a tenth smaller
+than the 13.5 the mockups draw window text at - and it had been since the
+day the faces were chosen, because `docs/looks.html` drew the bar at 16 CSS
+pixels and the number was carried across as though it meant the same.
+
+| mockup (CSS) | used for | role | here |
+|---|---|---|---|
+| 13.5 | window text | `text` | 18 |
+| 13.5 at 500 | a row's name, the chosen place | `label` (new) | Medium 18 |
+| 12.5 | controls, lists, notes | `ui` | 16 |
+| 12.5 at 600 | a group's name | `heading` | SemiBold 16 |
+| 14 at 600 | titles | `title` | SemiBold 18 |
+
+`ui.label` draws in `text` now, at its face's own height (it was `GH`, the
+`ui` face's cell, and a view is clipped to its height). IBM Plex Sans Medium
+is vendored from the release the other weights came from - its Bold and
+SemiBold are byte-identical to the ones already in the tree.
+
+### How Preferences was held to the drawing
+
+`docs/preferences.html` rendered by headless Chrome at a device scale of 1,
+so one CSS pixel is one image pixel, beside a QEMU screendump of the window,
+and scanned for edges: the header 46 with its rule, the sidebar 216 with its
+rule, rows on a 35 pitch from 48, cards 26 below their group's name and 42
+apart, rows of 60, 53 and 48 (11 + content + 11, 48 at least), a dropdown 31
+tall and text + 38 wide, a switch 40 by 23. Every number in `preferences.lua`
+is one of those, and the constants block says which.
+
+It found what "looks close" had hidden: a window 720 wide beside a drawing of
+840, a sidebar of 176 beside 216, notes in the label's size, the theme as a
+dropdown where the drawing has swatches, a wallpaper row with no control, a
+flat triangle for a chevron, a square switch, and the drawing's line icons
+missing entirely.
+
+### What the kit gained
+
+- **`ui.switch`, `ui.dropdown`** redrawn to the drawing's measurements.
+- **`ui.sidebar`**: the drawing's navigation list - 35 pitch, 8 inset, 12
+  gaps, a quiet rounded selection in `line_soft`, an icon in the accent for
+  the chosen row, the arrows choosing, and a focus ring only once the
+  keyboard is in use.
+- **Line icons**: `tools/lineicons.py` renders the drawing's own SVG paths at
+  15, 19, 23 and 30 - the sizes 15 points comes to at each scale - as
+  coverage masks, and `gfx.c`'s `tint` paints a look's colour through one.
+  `gc:line_icon` in the kit, a `tint` op in the window manager.
+- **`fill_round` and `frame_round` honour a colour's alpha** (`round_put`),
+  which they ignored at full coverage: a knob's translucent shadow came out
+  solid black.
+- **Tokens**: `track` (a switch that is off, a slider's rail) and `swatch`
+  (the colour that stands for a look); `theme.mix` for a surface the drawing
+  has between two named ones - the sidebar is exactly 330 thousandths of the
+  way from `window` to `line_soft`.
+
+### Plex is flat, and wears the drawings' surfaces
+
+`docs/preferences.html` and `docs/tracker2.html` are drawn in Plex's blue over
+cooler greys than Plex's stone. Plex took them - page `#fafafb`, cards and
+headers white, rules `#e0e2e6`, words `#1d1f24` and `#74787f` - and `flat`,
+which Diego asked for on 23 September ("our theme uses bevels in the deskbar
+and else, lets use flat shading like the mockups") and which had gone to
+Endeavour alone.
+
+### The Appearance panel is gone
+
+Its look, wallpaper and scale are Preferences' Appearance page; the wallpaper
+list and the photographer names moved into `settings.lua`; `wm
+preferences:--theme <look>` and `--scale <pct>` do what the panel's did, for
+the display harness. Two settings rules came with it, both held on the host:
+the look is **written by name even when it is Plex** (`keep_default`), and
+choosing one **forgets faces an older panel wrote beside it** (`clears`) -
+the panel did both by writing a fresh file, and a read-modify-write does
+neither unless the row says so. The display harness's Plex phase is what
+found the first.
+
+### The checks
+
+- `test_theme.lua`, 192: the six roles in every look, Plex's new surfaces.
+- `test_settings.lua`, 126: `keep_default`, `clears`, and a default stored
+  as nothing moved to the Scale row, the look being the one exception.
+- The display harness's `preferences` phase drives the look with the
+  swatches (Tab, Right) and asks that the whole screen changed and the
+  manager said so; `appearance` holds the window to the drawing's 840 by 920
+  and five looks; the Plex and scale phases drive Preferences.

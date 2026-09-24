@@ -143,10 +143,12 @@ end
 do
   local p = theme.read(themes.plex, "dark")
   local colours = {
-    desktop = 0xff3d63b8, window = 0xfff4f4f1, raised = 0xffe7e7e3,
-    sunken = 0xffffffff, line = 0xff777777, line_soft = 0xffcfcfc9,
-    edge_light = 0xffffffff, edge_dark = 0xff9a9a94, text = 0xff1e1e1e,
-    text_dim = 0xff6c6c66, text_on = 0xffffffff, tab = 0xfff2c230,
+    -- The application mockups' surfaces since 24 September (`roadmap.md`
+    -- 5zp): `docs/preferences.html` and `docs/tracker2.html`.
+    desktop = 0xff3d63b8, window = 0xfffafafb, raised = 0xffffffff,
+    sunken = 0xffffffff, line = 0xff777777, line_soft = 0xffe0e2e6,
+    edge_light = 0xffffffff, edge_dark = 0xff9a9a94, text = 0xff1d1f24,
+    text_dim = 0xff74787f, text_on = 0xffffffff, tab = 0xfff2c230,
     tab_idle = 0xffe7e7e3, tab_text = 0xff3a2e00, desktop_text = 0xffffffff,
     console = 0xff1c1c1e, console_text = 0xffececec, accent = 0xff2a55c9,
     good = 0xff2f8a3e, bad = 0xffb3261e, ring = 0xff2a55c9,
@@ -158,11 +160,15 @@ do
   end
 
   local faces = {
+    -- The mockups' sizes through Plex's 1.30 (`roadmap.md` 5zp): 12.5 for
+    -- controls, 13.5 for words, 12.5 semibold for a group's name and 14
+    -- semibold for a title.
     ui      = { "ibmplexsans", 16 },
-    title   = { "ibmplexsans", 16 },
-    heading = { "ibmplexsans-semibold", 15 },
-    text    = { "ibmplexsans", 16 },
+    title   = { "ibmplexsans-semibold", 18 },
+    heading = { "ibmplexsans-semibold", 16 },
+    text    = { "ibmplexsans", 18 },
     mono    = { "ibmplexmono", 16 },
+    label   = { "ibmplexsans-medium", 18 },
   }
 
   for role, f in pairs(faces) do

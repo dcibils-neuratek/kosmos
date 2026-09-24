@@ -1173,6 +1173,29 @@ static int l_shadow(lua_State *L)
  * Every row outside the corner bands is a plain fill, so a control of any
  * size costs the corners and nothing else.
  */
+/*
+ * One pixel of a rounded shape: `cover` is how much of the pixel the shape
+ * takes (0..255), and the colour's own alpha says how opaque the shape is.
+ *
+ * **Both, multiplied.** The round primitives used to take only the
+ * coverage and write the colour's alpha byte straight through where it was
+ * whole, which is right for every opaque colour and wrong for any other: a
+ * shadow under a switch's knob, `0x38000000`, came out solid black. A
+ * translucent round fill is a thing the kit wants - a knob's shadow, a
+ * selection laid over a picture - so the primitive does it rather than each
+ * caller faking it with a grey.
+ */
+static inline void round_put(uint32_t *p, uint32_t colour, long cover)
+{
+    long a = (cover * (long)(colour >> 24) + 127) / 255;
+
+    if (a >= 255) {
+        *p = colour | 0xff000000u;
+    } else if (a > 0) {
+        *p = over((colour & 0x00ffffffu) | ((uint32_t)a << 24), *p, 255);
+    }
+}
+
 static int l_fill_round(lua_State *L)
 {
     struct surface *dst = check_surface(L, 1);
@@ -1215,13 +1238,7 @@ static int l_fill_round(lua_State *L)
             }
 
             p = row_of(dst, (unsigned)py) + px;
-
-            if (cover >= 255) {
-                *p = colour;
-            } else {
-                *p = over((colour & 0x00ffffffu) | ((uint32_t)cover << 24),
-                          *p, 255);
-            }
+            round_put(p, colour, cover);
         }
     }
 
@@ -1292,13 +1309,7 @@ static int l_frame_round(lua_State *L)
             }
 
             p = row_of(dst, (unsigned)py) + px;
-
-            if (ring >= 255) {
-                *p = colour;
-            } else {
-                *p = over((colour & 0x00ffffffu) | ((uint32_t)ring << 24),
-                          *p, 255);
-            }
+            round_put(p, colour, ring);
         }
     }
 
@@ -1334,6 +1345,62 @@ static int l_blend(lua_State *L)
         const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
         uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
         blend_row(dp, sp, w, (uint32_t)global);
+    }
+
+    return 0;
+}
+
+/*
+ * `dst:tint(src, sx, sy, w, h, dx, dy, colour)`
+ *
+ * **A picture used as a mask**: the source's alpha says how much of each
+ * pixel is covered, and the colour comes from the call. The same arithmetic
+ * a glyph is drawn with, for a shape that is not a glyph.
+ *
+ * It exists for line icons (`roadmap.md` 5zp): the sidebar in
+ * `docs/preferences.html` draws each category's icon grey and the chosen
+ * one in the accent, and a look's grey and a look's accent are different
+ * colours in each of five looks. Storing an icon once per colour per look
+ * would be forty-five pictures that drift; storing its coverage once and
+ * painting through it is one picture and a number. The icon buttons of
+ * `roadmap.md` 5zg are the same thing and will use it.
+ *
+ * The colour's own alpha multiplies the mask's, as `round_put` does for the
+ * round shapes, so a faint icon is a colour rather than a second picture.
+ */
+static int l_tint(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    struct surface *src = check_surface(L, 2);
+    long sx = (long)luaL_checkinteger(L, 3);
+    long sy = (long)luaL_checkinteger(L, 4);
+    long w  = (long)luaL_checkinteger(L, 5);
+    long h  = (long)luaL_checkinteger(L, 6);
+    long dx = (long)luaL_checkinteger(L, 7);
+    long dy = (long)luaL_checkinteger(L, 8);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 9);
+    long row;
+
+    if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
+        return 0;
+    }
+
+    if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
+        return 0;
+    }
+
+    for (row = 0; row < h; row++) {
+        const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
+        uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
+        long col;
+
+        for (col = 0; col < w; col++) {
+            long cover = (long)(sp[col] >> 24);
+
+            if (cover > 0) {
+                round_put(dp + col, colour, cover);
+            }
+        }
     }
 
     return 0;
@@ -1473,7 +1540,17 @@ static int font_table_ref = LUA_NOREF;
  * ("3 yes"), and a role a person can set has to be a role the drawing knows.
  */
 #define ROLE_HEADING 4
-#define ROLE_COUNT   5
+/*
+ * **A label, since 24 September**: the name of a thing - a settings row's
+ * name, the chosen place in a sidebar, a header's crumb - which the
+ * application mockups draw in the reading size at medium weight, where
+ * notes and running text are regular. It is a role because it is the same
+ * decision in every window: `docs/preferences.html` and `docs/tracker2.html`
+ * both make it, and a medium face asked for by name in each application
+ * would be the choosing-a-size-each that roles exist to end.
+ */
+#define ROLE_LABEL   5
+#define ROLE_COUNT   6
 
 /*
  * Where a codepoint outside printable ASCII lives.
@@ -1624,6 +1701,7 @@ static int role_of(lua_State *L, int index)
     if (strcmp(name, "mono") == 0)  return ROLE_MONO;
     if (strcmp(name, "title") == 0) return ROLE_TITLE;
     if (strcmp(name, "heading") == 0) return ROLE_HEADING;
+    if (strcmp(name, "label") == 0) return ROLE_LABEL;
 
     return ROLE_UI;
 }
@@ -2628,6 +2706,7 @@ static const luaL_Reg surface_methods[] = {
     { "fill_round",  l_fill_round },
     { "frame_round", l_frame_round },
     { "blend",  l_blend },
+    { "tint",   l_tint },
     { "stretch", l_stretch },
     { "pixels",  l_pixels },
     { "text",   l_text },

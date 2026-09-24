@@ -57,21 +57,39 @@ themes.plex = [[
 # colour goes in every look (`theme.lua`). The mockups drew the Deskbar in
 # stone, and it was until Diego, 22 September: "the deskbar tab color should
 # be yellow or at least the same color of the acccent color of the theme".
+#
+# **Flat, and the surfaces are the application mockups', since 24
+# September** (`roadmap.md` 5zp). Diego: "pixel perfect as the html
+# mockups" - and `docs/preferences.html` and `docs/tracker2.html`, which he
+# approved as "Perfect with kosmos blue and I love the look, we might
+# replicate it all over the system", are drawn in this look's blue over
+# cooler greys than the stone above: a page of `#fafafb`, cards and headers
+# of white, every rule `#e0e2e6`, words `#1d1f24` and `#74787f`.
+#
+# And flat, which he had asked for on 23 September - "our theme uses bevels
+# in the deskbar and else, lets use flat shading like the mockups" - and
+# which went to Endeavour alone, as though "our theme" meant another one.
+# The stone and the bevels are in the history; `docs/plex.html` records
+# where they came from. The desktop's blue, the accent and the yellow tab
+# are unchanged, because no mockup says otherwise.
 
 name       = plex
+flat       = yes
 desktop    = #3d63b8
-window     = #f4f4f1
-raised     = #e7e7e3
+window     = #fafafb
+raised     = #ffffff
 sunken     = #ffffff
 
 line       = #777777
-line_soft  = #cfcfc9
+line_soft  = #e0e2e6
+track      = #cdd0d6
+swatch     = #f2c230
 
 edge_light = #ffffff
 edge_dark  = #9a9a94
 
-text       = #1e1e1e
-text_dim   = #6c6c66
+text       = #1d1f24
+text_dim   = #74787f
 text_on    = #ffffff
 
 tab        = #f2c230
@@ -87,32 +105,26 @@ bad        = #b3261e
 ring       = #2a55c9
 stamp      = #8fa9df
 
-# The mockups' type, as Diego chose it on 22 September: widgets and the
-# running text of the pages in Plex Sans at 16 - widgets were 14, as the
-# style guide has them, until he saw them on the ThinkPad the same
-# morning: "fonts look smaller than on qemu" - the panels' titles in
-# SemiBold, the terminal in Plex Mono at 14 - `docs/looks.html`, where all
-# five looks share these faces.
+# The mockups' type, converted (`roadmap.md` 5zp, `theme.lua`). A size in
+# this file is stb_truetype's, which fits the face's whole ascent and
+# descent into the number; a mockup's is CSS, which fits the em. For IBM
+# Plex the ratio is 1.30, so the drawings' 13.5 for window text is 18 here,
+# their 12.5 for controls is 16, their 12.5 semibold group labels are 16
+# semibold and their 14 semibold titles are 18 semibold. Diego, 24
+# September, with the mockups beside the machine: "I want the screen to
+# match it".
 #
-# **The window's title was Plex Sans Condensed at 14 and is now the same
-# face and size as everything else.** Diego, 23 September, with the
-# mockups beside a screenshot: "the window tab font is really small if you
-# compare it with the mockups" - and it was, by two sizes and a narrower
-# face, while the Deskbar beside it drew the same word at 16.
-#
-# It was 14 because widgets were 14 when it was written, and condensed
-# because the tab used to be only as wide as its title, so a long name had
-# to be squeezed into it. Neither is true any more: widgets went to 16 on
-# the ThinkPad the same morning and the title did not follow, and since
-# 0.10.141 the tab is the window's full width (`tabs.width`), so the
-# condensed face buys nothing at all. `docs/desktop.html` draws the title
-# in the body's own family, a shade *larger* than a button's label rather
-# than smaller.
-font.title   = ibmplexsans 16
+# Until then everything a person reads was 16 here - a 12.3 px em, a tenth
+# smaller than the page - because `docs/looks.html` drew the bar at 16 CSS
+# pixels and the number was carried across as though it meant the same.
+# The window's title was Plex Sans Condensed 14 before that, which as CSS
+# was 10.8.
+font.title   = ibmplexsans-semibold 18
 font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 15
-font.text    = ibmplexsans 16
+font.heading = ibmplexsans-semibold 16
+font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18
 ]]
 
 --------------------------------------------------------------------------
@@ -133,6 +145,8 @@ sunken     = #15171b
 
 line       = #0a0b0d
 line_soft  = #3a3f47
+track      = #3a3f47
+swatch     = #3d63b8
 
 edge_light = #3a3f48
 edge_dark  = #0d0e11
@@ -154,11 +168,12 @@ bad        = #ff6b5e
 ring       = #7aa0ff
 stamp      = #3a4a6e
 
-font.title   = ibmplexsans 16
+font.title   = ibmplexsans-semibold 18
 font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 15
-font.text    = ibmplexsans 16
+font.heading = ibmplexsans-semibold 16
+font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18
 ]]
 
 --------------------------------------------------------------------------
@@ -193,6 +208,8 @@ sunken     = #ffffff
 
 line       = #606060
 line_soft  = #b8b8b8
+track      = #b8b8b8
+swatch     = #d8d8d4
 
 edge_light = #ffffff
 edge_dark  = #989898
@@ -214,11 +231,12 @@ bad        = #cb0000
 ring       = #0000e5
 stamp      = #5d85ad
 # The faces all four looks share (`docs/looks.html`).
-font.title   = ibmplexsans 16
+font.title   = ibmplexsans-semibold 18
 font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 15
-font.text    = ibmplexsans 16
+font.heading = ibmplexsans-semibold 16
+font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18
 ]]
 
 --------------------------------------------------------------------------
@@ -238,6 +256,8 @@ sunken     = #0f1013
 
 line       = #000000
 line_soft  = #2c2f36
+track      = #34373f
+swatch     = #1e1e1e
 
 edge_light = #30333a
 edge_dark  = #08090a
@@ -259,11 +279,12 @@ bad        = #ff6b5e
 ring       = #f0a060
 stamp      = #2a2c31
 
-font.title   = ibmplexsans 16
+font.title   = ibmplexsans-semibold 18
 font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 15
-font.text    = ibmplexsans 16
+font.heading = ibmplexsans-semibold 16
+font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18
 ]]
 
 themes.endeavour = [[
@@ -332,6 +353,8 @@ sunken     = #ffffff
 # are drawn with, and `line_soft` the rules between rows.
 line       = #cdc7c2
 line_soft  = #e3e0dd
+track      = #d3cfcb
+swatch     = #a7c7ee
 
 # Both near the surface, so nothing looks moulded. They cannot be equal to
 # it - `theme.chrome` shades from them - but they are within a step.
@@ -358,11 +381,12 @@ stamp      = #99c1f1
 
 # The same faces as the other four, at the same sizes: a look is colour
 # here, and the fixed layout (`roadmap.md` 5x) holds because of it.
-font.title   = ibmplexsans 16
+font.title   = ibmplexsans-semibold 18
 font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 15
-font.text    = ibmplexsans 16
+font.heading = ibmplexsans-semibold 16
+font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18
 ]]
 
 return themes

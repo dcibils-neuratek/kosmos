@@ -39,16 +39,21 @@ local settings = {}
 -- Appearance: "they are what the machine looks like". `after` marks where a
 -- gap goes, which is how the sidebar groups them without a second list.
 --
+--
+-- `icon` names a line icon the mockup draws beside the category
+-- (`assets/icons/line/`, `tools/lineicons.py`).
+--
 settings.CATEGORIES = {
-  { id = "appearance", name = "Appearance" },
-  { id = "displays",   name = "Displays" },
-  { id = "sound",      name = "Sound" },
-  { id = "power",      name = "Power", gap_after = true },
-  { id = "network",    name = "Network" },
-  { id = "keyboard",   name = "Keyboard" },
-  { id = "startup",    name = "Startup" },
-  { id = "datetime",   name = "Date & Time", gap_after = true },
-  { id = "system",     name = "System" },
+  { id = "appearance", name = "Appearance",  icon = "appearance" },
+  { id = "displays",   name = "Displays",    icon = "display" },
+  { id = "sound",      name = "Sound",       icon = "sound" },
+  { id = "power",      name = "Power",       icon = "power", gap_after = true },
+  { id = "network",    name = "Network",     icon = "network" },
+  { id = "keyboard",   name = "Keyboard",    icon = "keyboard" },
+  { id = "startup",    name = "Startup",     icon = "startup" },
+  { id = "datetime",   name = "Date & Time", icon = "datetime",
+    gap_after = true },
+  { id = "system",     name = "System",      icon = "system" },
 }
 
 --
@@ -69,6 +74,8 @@ settings.STARTUP    = "/home/.startup"
 --   note      one line under the label, or nil for none
 --   kind      "choice" | "switch" | "text" | "action" | "boot"
 --   file/key  where it lives; nil for something read from elsewhere
+--   keep_default  written even when it equals the default
+--   clears    other keys in the same file that this choice makes stale
 --   choices   for a choice: { { value, name }, ... }
 --   default   what it is when the file does not say
 --
@@ -98,7 +105,15 @@ settings.ITEMS = {
         --
         choices = { { "plex", "Plex" }, { "plexnight", "Plex Night" },
                     { "classic", "Classic" }, { "studio", "Studio" },
-                    { "endeavour", "Endeavour" } } },
+                    { "endeavour", "Endeavour" } },
+        --
+        -- **Written by name even when it is the default**, which no other
+        -- row is: the file is what a desktop starting up reads, and a
+        -- machine on Plex should say so rather than be on Plex because
+        -- nothing was said. And choosing a look forgets the faces an older
+        -- panel may have written beside it, because the look brings its own.
+        --
+        keep_default = true, clears = { "fonts" } },
 
   item{ category = "appearance", group = "Look",
         label = "Wallpaper", note = "Carried in the image, or a picture in /home",
@@ -297,9 +312,22 @@ function settings.set(it, value, read, write)
 
   if type(saved) ~= "table" then saved = {} end
 
-  if value == it.default then value = nil end
+  if value == it.default and not it.keep_default then value = nil end
 
-  if saved[it.key] == value then return true end
+  --
+  -- **`clears`: keys this choice makes stale.** A look is a whole - its
+  -- colours and its faces - so choosing one has to forget any faces an
+  -- older panel wrote into the same file, or a restart brings them back
+  -- over the look. The Appearance panel did this by writing a fresh table;
+  -- a read-modify-write keeps everything, so the row says what it replaces.
+  --
+  local stale = false
+
+  for _, k in ipairs(it.clears or {}) do
+    if saved[k] ~= nil then saved[k] = nil stale = true end
+  end
+
+  if saved[it.key] == value and not stale then return true end
 
   saved[it.key] = value
 
@@ -315,6 +343,64 @@ function settings.name_of(it, value)
   end
 
   return tostring(value)
+end
+
+--
+-- **The wallpapers there are to choose from**, as `{ value, name }` pairs
+-- for the Wallpaper row: none, then the pictures in `/home`, then the
+-- photographs the image carries.
+--
+-- The value is what `/home/.appearance` keeps and what the window manager
+-- is sent - a path in `/home`, or `wallpaper/<file>` in the image - and ""
+-- for the look's own desk. The name is what a person reads.
+--
+-- A carried photograph is named after the photographer:
+-- `alexander-slattery-LI748t0BK8w.jpg` is Alexander Slattery, the words
+-- before Unsplash's eleven-character photo id, each capitalised unless it
+-- has a digit in it, which is how a username like `v2osk` is written. This
+-- lived in the Appearance panel until 0.10.148, which is where the list was
+-- drawn; it is here because Preferences draws it now and a rule written
+-- twice is two rules.
+--
+local UNSPLASH_ID = string.rep("[%w_%-]", 11)
+
+function settings.photographer(name)
+  local who = name:match("^wallpaper/(.+)%-" .. UNSPLASH_ID .. "%.jpg$")
+
+  if not who then return nil end
+
+  local words = {}
+
+  for word in who:gmatch("[^%-]+") do
+    words[#words + 1] = word:find("%d") and word
+                        or (word:sub(1, 1):upper() .. word:sub(2))
+  end
+
+  return table.concat(words, " ")
+end
+
+function settings.wallpapers()
+  local out, seen = { { "", "None" } }, {}
+
+  for _, name in ipairs(fs.list("/home") or {}) do
+    local suffix = name:lower():match("%.([%a]+)$")
+
+    if suffix == "png" or suffix == "jpg" or suffix == "jpeg" then
+      out[#out + 1] = { "/home/" .. name, name }
+      seen[name] = true
+    end
+  end
+
+  for _, name in ipairs(sys.asset() or {}) do
+    local who = settings.photographer(name)
+
+    if who and not seen[who] then
+      out[#out + 1] = { name, who }
+      seen[who] = true
+    end
+  end
+
+  return out
 end
 
 return settings

@@ -1809,6 +1809,11 @@ ICON_FILES := $(sort $(wildcard assets/icons/*.png))
 ICON16_FILES := $(sort $(wildcard assets/icons/16x16/*.png))
 ICON64_FILES := $(sort $(wildcard assets/icons/64x64/*.png))
 
+# The line icons the mockups draw, at every size the scale asks for, in the
+# image as `line/<name>-<px>` (`tools/lineicons.py`). Coverage only: the kit
+# paints a look's colour through them (`gfx.c`'s `tint`).
+LINE_FILES := $(sort $(wildcard assets/icons/line/*.png))
+
 # Not a picture, and in the same table anyway.
 #
 # `assets/*.txt` is the project's own artwork rather than something
@@ -1845,7 +1850,8 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # which is the flags stamps' trick for the same kind of question.
 #
 ASSET_LIST := $(GEN)/assets.list
-ASSET_FILES := $(ICON_FILES) $(ICON16_FILES) $(ICON64_FILES) $(ART_FILES)
+ASSET_FILES := $(ICON_FILES) $(ICON16_FILES) $(ICON64_FILES) $(LINE_FILES) \
+               $(ART_FILES)
 $(shell mkdir -p $(GEN); [ "$$(cat $(ASSET_LIST) 2>/dev/null)" = '$(ASSET_FILES)' ] \
         || printf '%s' '$(ASSET_FILES)' > $(ASSET_LIST))
 
@@ -1864,7 +1870,8 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        $(ICON_FILES) $(ART_FILES) LICENSE \
 	        docs/cheatsheet.html \
 	        --prefix=16x16/ $(ICON16_FILES) \
-	        --prefix=64x64/ $(ICON64_FILES)
+	        --prefix=64x64/ $(ICON64_FILES) \
+	        --prefix=line/ $(LINE_FILES)
 
 # The outline fonts, embedded the same way.
 #

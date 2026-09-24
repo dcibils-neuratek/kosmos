@@ -1532,6 +1532,69 @@ processors, and still what follows USB:
    than an application's. Removing either is its own piece of work and is
    not folded into a look (5zn).
 
+5zp. **AGREED on 24 September - the screen at the mockups' sizes, the
+   Appearance panel folded into Preferences, the eleven converted, then a
+   stick.** Diego, on seeing the mockups beside the machine: "I prefer the
+   mockups size", "So make the screen match the mockup sizes then", "Not
+   the other way around", "The mockups look great in size and quality", "I
+   want the screen to match it" - and, of 5zo: "Do both 2 and 3 then the
+   stick. Make sure it's pixel perfect as the html mockups".
+
+   **The finding that decides the numbers**: the machine's font sizes and a
+   browser's do not mean the same thing. `stbtt_ScaleForPixelHeight(px)`
+   fits the face's whole ascent-to-descent into `px`; CSS `font-size` fits
+   the *em*. For IBM Plex that ratio is 1300/1000, so the machine's "Plex
+   Sans 16" is a 12.3 px em in the browser's terms - and the mockups draw
+   window text at 13.5, controls at 12.5, notes at 12, group labels at 12.5
+   semibold and titles at 14 semibold. So the screen's text was *smaller*
+   than the drawing, by about a tenth on the words a person reads most.
+
+   Matched through the ratio: **text 18** (13.85; the mockup's 13.5), **ui
+   16** unchanged (12.31; the mockup's 12.5 for controls and lists),
+   **heading 16 semibold** (the mockup's 12.5/600 group labels), **title 18
+   semibold** (14/600), and `ui.label` drawing in `text` rather than `ui` -
+   because the mockups' window text and their controls are two sizes, and
+   the kit had been drawing both in one.
+
+   **What that costs on the ThinkPad**: its 14-inch panel is why the faces
+   went to 16 on 22 September. Larger words everywhere help it too; where
+   they are still small, the scale (125%) is the answer rather than a
+   bigger base, because the mockups are in points and the scale is what
+   turns points into a particular screen's pixels.
+
+   Then: Preferences to `docs/preferences.html` in full (the theme as
+   swatches, a wallpaper that can be chosen, the sliders it draws) with the
+   Appearance panel retired; the eleven of 5zo drawn at the same scale in
+   one page and built to it; and a stick for the M700.
+
+   **0.10.148 - the sizes, Preferences at 1:1, Appearance folded in**
+   (`testing.md` 18.162). Plex flat with the drawings' surfaces; the kit's
+   switch, dropdown and a new sidebar measured off the drawing; line icons
+   rendered from its vectors and tinted by a look; a `label` role in Plex
+   Sans Medium.
+
+   **What the drawing has that the machine does not do yet**, left out
+   rather than drawn as rows that do nothing - the half-built feeling Diego
+   named: *Text size* ("what a new window starts at"), *Show the Trash*, and
+   the *Deskbar* group (its launchers, whether the clock and the processor
+   meter show). Each needs the Deskbar or Tracker to read a setting and hear
+   when it changes. And the sidebar's search and menu icons, and the page's
+   close box: a window here has a title tab with its own.
+
+   **Diego, 24 September: "The spacing of elements in the ui is key to a
+   nice design. I see some labels in apps that have no margin or spacing
+   and too close to other elements. Make sure all widgets are spaced and
+   have the correct margin as the mockups."** The answer is structural: an
+   application stops placing labels at pixels it picked. The header, the
+   page's padding and the cards of rows become kit widgets that carry the
+   drawing's spacing, every window is built from them, and a harness check
+   measures every window's widgets for overlaps and margins so it cannot
+   drift back.
+
+   **`docs/apps.html`** is the drawing for every window with a header, at
+   real scale: the eleven, and the five converted on 23 September against
+   `desktop.html` - a thumbnail - whose headers move to the same 46 pixels.
+
 5zo. **WANTED on 23 September - the half that is still the old look.**
    Diego, on the M700 running 0.10.146: *"I have the feeling we have a half
    baked UI now with old parts and new parts"*. He is right, and it is

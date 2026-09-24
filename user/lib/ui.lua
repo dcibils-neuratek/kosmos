@@ -422,6 +422,33 @@ function gc:icon(x, y, name, size)
   }
 end
 
+--
+-- **A line icon, in a colour** (`roadmap.md` 5zp, `tools/lineicons.py`).
+--
+-- The mockups' small grey icons - a category in Preferences' sidebar, the
+-- search and the menu in a header - carried as their coverage alone and
+-- painted in whatever colour the caller names, so the same picture is the
+-- grey of a row and the accent of the chosen one in every look.
+--
+-- Whole or not at all, like a shrunk `icon`: a 15-pixel glyph half off the
+-- edge of a list is a smudge, and nothing that draws these scrolls.
+--
+function gc:line_icon(x, y, name, color, size)
+  size = size or 15
+
+  local ax, ay = self.ox + x, self.oy + y
+
+  if ax < self.cx or ay < self.cy or ax + size > self.cx + self.cw
+     or ay + size > self.cy + self.ch then
+    return
+  end
+
+  self.ops[#self.ops + 1] = {
+    op = "tint", asset = ("line/%s-%d.png"):format(name, size),
+    x = ax, y = ay, w = size, h = size, color = shade(color),
+  }
+end
+
 -- A one-pixel frame, which is what this kit uses instead of a bevel.
 --
 -- A filled triangle, in the view's own coordinates.
@@ -1548,7 +1575,25 @@ end
 
 function ui.label(spec)
   local v = ui.view(spec)
-  v.h = v.h > 0 and v.h or GH
+
+  --
+  -- **Words a person reads, in the face for reading** (`roadmap.md` 5zp).
+  -- The mockups draw a window's text at 13.5 and its controls at 12.5, and
+  -- the kit drew both in `ui` - so every label in the system was a control's
+  -- size. A label is `text` unless it names a role; a `heading` still says
+  -- so, and a label that wants to sit in a control's line can ask for `ui`.
+  --
+  v.role = v.role or "text"
+
+  --
+  -- **As tall as its face, unless told.** It was `GH` - the `ui` face's
+  -- cell - and a view is clipped to its own height, so a label in a larger
+  -- face would have lost the bottoms of its g's and y's without anything
+  -- saying so. Measured again with the width, because a look can change the
+  -- face after the label was made.
+  --
+  v.fixed_height = (spec.h or 0) > 0
+  if not v.fixed_height then v.h = gfx.height(v.role) end
 
   --
   -- A label with no width given is as wide as its text - *currently*, not
@@ -1572,6 +1617,10 @@ function ui.label(spec)
   function v:measure()
     if not self.fixed_width then
       self.w = gfx.measure(tostring(self.text or ""), self.role)
+    end
+
+    if not self.fixed_height then
+      self.h = gfx.height(self.role)
     end
   end
 
@@ -1740,11 +1789,25 @@ end
 -- in that application because Diego, seeing the mockup: "we might replicate
 -- it all over the system".
 --
+--
+-- **As `docs/preferences.html` draws it**: a pill 40 by 23, the accent when
+-- on and `track` when off, and a round white knob 18 across that sits 3 in
+-- from whichever end it is at, with a one-pixel shadow under it. It was a
+-- rectangle with a square knob for its first two versions - a switch in
+-- outline rather than a switch.
+--
+-- The knob is white in every look, including the dark ones, because that
+-- is what makes it read as a thing on top of the rail rather than a hole in
+-- it; every system that draws one draws it white.
+--
+local KNOB_WHITE  = 0xffffffff
+local KNOB_SHADOW = 0x38000000
+
 function ui.switch(spec)
   local v = ui.view(spec)
-  local W, H = 34, 18
+  local W, H, KNOB = 40, 23, 18
 
-  v.h = v.h > 0 and v.h or ROW
+  v.h = v.h > 0 and v.h or math.max(ROW, H + 2)
   v.w = v.w > 0 and v.w or W
   v.focusable = true
   v.on = v.on or false
@@ -1756,18 +1819,19 @@ function ui.switch(spec)
 
   function v:draw(g)
     local y = (self.h - H) // 2
-    local knob = H - 6
-    local kx = self.on and (W - knob - 3) or 3
+    local kx = self.on and (W - KNOB - 3) or 3
+    local ky = y + (H - KNOB) // 2
 
-    g:fill(0, y, W, H, self.on and theme.accent or theme.sunken)
-    g:frame(0, y, W, H, theme.line_soft)
+    g:fill_round(0, y, W, H, self.on and theme.accent or theme.track, H // 2)
 
     if self.focused then
-      g:frame(-2, y - 2, W + 4, H + 4, theme.ring)
+      g:frame_round(-2, y - 2, W + 4, H + 4, theme.ring, H // 2 + 2)
     end
 
-    g:fill(kx, y + 3, knob, knob, theme.window)
-    g:frame(kx, y + 3, knob, knob, theme.line_soft)
+    -- The shadow is the same disc one pixel lower, drawn first: `0 1px 2px`
+    -- in the drawing, which at this size is a one-pixel crescent.
+    g:fill_round(kx, ky + 1, KNOB, KNOB, KNOB_SHADOW, KNOB // 2)
+    g:fill_round(kx, ky, KNOB, KNOB, KNOB_WHITE, KNOB // 2)
   end
 
   function v:key(c)
@@ -1807,15 +1871,37 @@ function ui.dropdown(spec)
   v.choices = v.choices or {}
   v.value = v.value
 
-  local widest = 0
+  --
+  -- **Measured off `docs/preferences.html` at 1:1**, not estimated from its
+  -- CSS: 31 tall, a one-pixel border in `line_soft`, a radius of 7, then 9
+  -- of padding, the words, 7 of gap, an 11-pixel box for the chevron and 9
+  -- more - so as wide as its words plus 38. The chevron's ink is a small
+  -- stroked "v" whose middle sits 15 in from the right-hand edge.
+  --
+  -- It was the window's grey with a square border and a filled triangle,
+  -- 24 tall - which is a dropdown in outline, the way the old switch was.
+  --
+  -- **As wide as its widest choice**, so the control does not change width
+  -- as the value changes under a person's pointer.
+  --
+  local PAD, GAP, CHEV = 9, 7, 11
 
-  for _, c in ipairs(v.choices) do
-    local w = gfx.measure(tostring(c[2]))
-    if w > widest then widest = w end
+  function v:fit()
+    local widest = 0
+
+    for _, c in ipairs(self.choices) do
+      local w = gfx.measure(tostring(c[2]))
+      if w > widest then widest = w end
+    end
+
+    if not self.fixed_width then
+      self.w = 1 + PAD + widest + GAP + CHEV + PAD + 1
+    end
   end
 
-  v.h = v.h > 0 and v.h or ROW
-  v.w = v.w > 0 and v.w or (widest + 30)
+  v.fixed_width = (spec.w or 0) > 0
+  v.h = v.h > 0 and v.h or 31
+  v:fit()
 
   function v:name()
     for _, c in ipairs(self.choices) do
@@ -1826,21 +1912,25 @@ function ui.dropdown(spec)
   end
 
   function v:draw(g)
-    g:fill(0, 0, self.w, self.h, theme.window)
-    g:frame(0, 0, self.w, self.h, theme.line_soft)
+    g:fill_round(0, 0, self.w, self.h, theme.sunken, 7)
+    g:frame_round(0, 0, self.w, self.h,
+                  self.focused and theme.ring or theme.line_soft, 7)
 
-    if self.focused then
-      g:frame(1, 1, self.w - 2, self.h - 2, theme.ring)
-    end
+    g:text(1 + PAD, centred(self.h), self:name(), theme.text)
 
-    g:text(8, centred(self.h), self:name(), theme.text)
+    --
+    -- The chevron: a "v" seven across and three down with arms two pixels
+    -- wide, which at this size is what the drawing's 1.8-unit stroke on a
+    -- 16-unit path comes to once it is anti-aliased.
+    --
+    local cx = self.w - 1 - PAD - CHEV // 2 - 1
+    local ay = self.h // 2 - 1
 
-    -- The chevron, three fills: a triangle nobody has to rasterise.
-    local ax, ay = self.w - 14, self.h // 2 - 1
-
-    for i = 0, 2 do
-      g:fill(ax + i, ay + i, 6 - i * 2, 1, theme.text_dim)
-    end
+    g:fill(cx - 3, ay,     2, 1, theme.text_dim)
+    g:fill(cx + 2, ay,     2, 1, theme.text_dim)
+    g:fill(cx - 2, ay + 1, 2, 1, theme.text_dim)
+    g:fill(cx + 1, ay + 1, 2, 1, theme.text_dim)
+    g:fill(cx - 1, ay + 2, 3, 1, theme.text_dim)
   end
 
   --
@@ -2218,6 +2308,142 @@ function ui.trail(spec)
 
   return v
 end
+
+--------------------------------------------------------------------------
+-- A sidebar: a window's navigation, as the mockups draw it.
+--
+--   ui.sidebar{ x, y, w, h,
+--               items = { { id = "appearance", name = "Appearance",
+--                           icon = "appearance" }, { gap = true }, ... },
+--               selected = "appearance",
+--               on_select = function(self, id) ... end }
+--
+-- **Measured off `docs/preferences.html` at 1:1** (`roadmap.md` 5zp): rows
+-- on a 35-pixel pitch inset 8 from each side, a gap of 12 where the list
+-- asks for one, a line icon 15 across at 10 from the row's edge and the
+-- word 10 after it. The chosen row is a rounded fill in `line_soft` with a
+-- radius of 7, its words still dark and its icon in the accent - a quiet
+-- selection, because the accent-filled bar a file list uses shouts in a
+-- list whose job is only to say where you are.
+--
+-- **The arrows choose.** This is navigation, and a page that waits for
+-- Enter is a window whose categories cannot be browsed - the same bargain
+-- `ui.list`'s `arrows_choose` makes, built in here because a sidebar that
+-- did not would be a list.
+--
+-- The background is the window's own, drawn by whoever holds this: a
+-- sidebar is a column of a window rather than a box inside one.
+--
+local SIDE_PITCH, SIDE_INSET, SIDE_GAP, SIDE_R = 35, 8, 12, 7
+local SIDE_ICON, SIDE_WORD = 10, 35
+
+function ui.sidebar(spec)
+  local v = ui.view(spec)
+
+  v.focusable = true
+  v.items = v.items or {}
+
+  -- Where each row is, worked out once from the list.
+  local function rows(self)
+    local out, y = {}, 0
+
+    for _, it in ipairs(self.items) do
+      if it.gap then
+        y = y + SIDE_GAP
+      else
+        out[#out + 1] = { item = it, y = y }
+        y = y + SIDE_PITCH
+      end
+    end
+
+    return out
+  end
+
+  local function index_of(self, list)
+    for i, r in ipairs(list) do
+      if r.item.id == self.selected then return i end
+    end
+
+    return nil
+  end
+
+  local function choose(self, id)
+    if id == self.selected then return end
+
+    self.selected = id
+    if self.on_select then self.on_select(self, id) end
+  end
+
+  function v:draw(g)
+    local w = self.w - 2 * SIDE_INSET
+
+    for _, r in ipairs(rows(self)) do
+      local on = r.item.id == self.selected
+
+      if on then
+        g:fill_round(SIDE_INSET, r.y, w, SIDE_PITCH, theme.line_soft, SIDE_R)
+      end
+
+      --
+      -- **A ring only once the keyboard is in use.** The drawing has none:
+      -- the fill already says which row is chosen, and a ring around it
+      -- whenever the window has the focus - which is always, since this is
+      -- the first thing in it - draws a box the mockup does not. After an
+      -- arrow it is there, because that is when a person is looking for
+      -- where the keys will go; a press with the pointer puts it away.
+      --
+      if self.focused and self.keyed and on then
+        g:frame_round(SIDE_INSET, r.y, w, SIDE_PITCH, theme.ring, SIDE_R)
+      end
+
+      if r.item.icon then
+        g:line_icon(SIDE_INSET + SIDE_ICON, r.y + (SIDE_PITCH - 15) // 2,
+                    r.item.icon, on and theme.accent or theme.text_dim)
+      end
+
+      -- The chosen one's words in `label`, the drawing's weight 500.
+      local face = on and "label" or "text"
+
+      g:text(SIDE_INSET + SIDE_WORD, r.y + (SIDE_PITCH - gfx.height(face)) // 2,
+             r.item.name or "", theme.text, nil, face)
+    end
+  end
+
+  function v:key(c)
+    local list = rows(self)
+    local i = index_of(self, list) or 1
+
+    self.keyed = true
+
+    if c == -1 and i > 1 then choose(self, list[i - 1].item.id) return true end
+    if c == -2 and i < #list then
+      choose(self, list[i + 1].item.id)
+      return true
+    end
+
+    return c == -1 or c == -2
+  end
+
+  function v:mouse(action, x, y)
+    if action ~= "press" then return true end
+
+    self.keyed = false
+
+    for _, r in ipairs(rows(self)) do
+      if y >= r.y and y < r.y + SIDE_PITCH
+         and x >= SIDE_INSET and x < self.w - SIDE_INSET then
+        choose(self, r.item.id)
+        break
+      end
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--------------------------------------------------------------------------
 
 function ui.list(spec)
   local v = ui.view(spec)

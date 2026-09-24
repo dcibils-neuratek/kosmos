@@ -70,7 +70,7 @@ ABS = 32767
 # Calculator, the gears and This Machine join them: each draws something of
 # its own with nothing on a disk, which is what a diskless guest has.
 #
-OPEN = ["tracker", "gallery", "music", "appearance", "terminal", "calc",
+OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "cube3d", "tile"]
 
 TAB_H = 20          # has to agree with wm.lua

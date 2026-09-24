@@ -1553,6 +1553,25 @@ function scale.op(o, pct)
     for _, k in ipairs({ "x1", "y1", "x2", "y2", "x3", "y3" }) do
       o[k] = (tonumber(o[k]) or 0) * pct / 100
     end
+  elseif kind == "tint" then
+    --
+    -- **A line icon at another size is another picture**, not this one
+    -- resampled: `tools/lineicons.py` renders each from its vectors at 15,
+    -- 19, 23 and 30, which is what 15 points comes to at 100, 125, 150 and
+    -- 200 per cent. A one-pixel line averaged into a larger box is a grey
+    -- smear; drawn again at the size, it is a line. A size with no picture
+    -- keeps the 15 at the scaled place, which is small rather than wrong.
+    --
+    local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
+    local want = scale.px(tonumber(o.w) or 0, pct)
+    local base = tostring(o.asset or ""):match("^(.-)%-%d+%.png$")
+
+    o.x, o.y = scale.px(x, pct), scale.px(y, pct)
+
+    if base and picture_named(("%s-%d.png"):format(base, want)) then
+      o.asset = ("%s-%d.png"):format(base, want)
+      o.w, o.h = want, want
+    end
   elseif kind == "image" then
     local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
     local dw, dh = tonumber(o.dw) or 0, tonumber(o.dh) or 0
@@ -1721,6 +1740,21 @@ local ops = {
       s:blit(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
              o.x or 0, o.y or 0)
     end
+  end,
+
+  --
+  -- **A picture used as a mask**, painted in the command's colour: the
+  -- mockups' line icons (`gc:line_icon`, `gfx.c`'s `tint`). The picture
+  -- is white with its coverage as alpha, so the colour is the caller's and
+  -- the look's rather than the file's.
+  --
+  tint = function(s, o)
+    local picture = picture_named(tostring(o.asset))
+
+    if not picture then return end
+
+    s:tint(picture, 0, 0, o.w or 0, o.h or 0, o.x or 0, o.y or 0,
+           o.color or 0xff000000)
   end,
 }
 

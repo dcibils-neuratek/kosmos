@@ -125,16 +125,78 @@ check(wrote and wrote.wallpaper == "nebula",
 
 --
 -- The default is stored as nothing, so a place that never chose follows a
--- default that changes.
+-- default that changes. Held on the Scale row: the look is the one row that
+-- says otherwise, below.
+--
+local scale_item
+
+for _, it in ipairs(settings.ITEMS) do
+  if it.key == "scale" and it.file == settings.APPEARANCE then
+    scale_item = it
+    break
+  end
+end
+
+check(scale_item ~= nil, "there is no Scale setting in /home/.appearance")
+
+wrote = nil
+settings.set(scale_item, scale_item and scale_item.default,
+             function() return { scale = 150 } end,
+             function(_, t) wrote = t; return true end)
+
+check(wrote and wrote.scale == nil,
+      "setting a value back to the default stored it, so this place would "
+      .. "freeze today's default instead of following tomorrow's")
+
+--
+-- **The look is written by name even when it is the default** (0.10.148):
+-- the file is what a desktop starting up reads, and a machine on Plex says
+-- so. It was stored as nothing for a version, and the display harness's
+-- Plex phase is what noticed - the Appearance panel had always written it.
 --
 wrote = nil
 settings.set(look, "plex",
              function() return { palette = "studio" } end,
              function(_, t) wrote = t; return true end)
 
-check(wrote and wrote.palette == nil,
-      "setting a value back to the default stored it, so this place would "
-      .. "freeze today's default instead of following tomorrow's")
+check(wrote and wrote.palette == "plex",
+      "choosing the default look stored nothing, so /home/.appearance no "
+      .. "longer says which look this machine wears")
+
+--
+-- **And choosing a look forgets the faces beside it.** A look is a whole,
+-- and a restart after choosing one must not bring back faces an older panel
+-- wrote into the same file. Everything else in the file stays.
+--
+wrote = nil
+settings.set(look, "endeavour",
+             function()
+               return { palette = "plex", scale = 125,
+                        fonts = { ui = { font = "spleen", px = 16 } } }
+             end,
+             function(_, t) wrote = t; return true end)
+
+check(wrote and wrote.fonts == nil,
+      "choosing a look kept the faces saved beside it, so a restart would "
+      .. "put them back over the look")
+check(wrote and wrote.scale == 125,
+      "choosing a look dropped the scale - `clears` is for stale keys only")
+
+--
+-- Choosing the look already in force still clears stale faces, rather than
+-- deciding nothing changed and leaving them.
+--
+wrote = nil
+settings.set(look, "plex",
+             function()
+               return { palette = "plex",
+                        fonts = { ui = { font = "spleen", px = 16 } } }
+             end,
+             function(_, t) wrote = t; return true end)
+
+check(wrote ~= nil and wrote.fonts == nil,
+      "choosing the look already in force left stale faces in the file, "
+      .. "because the value alone had not changed")
 
 --
 -- Two settings may share a file and a key on purpose - Scale is on two

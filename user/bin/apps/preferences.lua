@@ -5,7 +5,15 @@
 -- One place to configure Kosmos, divided by part.
 --
 --   wm preferences
---   wm preferences:sound        opened on one category
+--   wm preferences:sound                 opened on one category
+--   wm preferences:--theme plexnight     a look, as a press on its swatch
+--   wm preferences:--scale 150           a size, as the dropdown's choice
+--
+-- **And the look, since 24 September**: the Appearance panel's three
+-- settings - the look, the wallpaper and the scale - are this window's
+-- Appearance page now, and the panel is gone (`roadmap.md` 5zp). Two
+-- windows setting the same three things was the sharpest instance of what
+-- Diego called "a half baked UI now with old parts and new parts".
 --
 -- Diego asked for it on 23 September 2026 with GNOME's Settings beside it:
 -- "one place to configure all kosmos". `docs/preferences.html` is the page
@@ -29,8 +37,9 @@ local theme = ui.theme
 -- `themes.lua` ships each look as *text* in the format a `.theme` file on
 -- the disk uses, and `theme.read` is the parser the window manager reads
 -- one with. A look is a table of colours and faces only after that has
--- run - which is why this window could not apply one until it did, and why
--- `appearance.lua` has had these six lines since it was written.
+-- run - which is why this window could not apply one until it did. The
+-- Appearance panel had these six lines from the day it was written, and it
+-- folded into this window on 24 September (`roadmap.md` 5zp).
 --
 local LOOKS = use("/lib/themes.lua")
 
@@ -45,35 +54,43 @@ for _, name in ipairs(LOOKS.order) do
 end
 
 --
--- **The spacing is `docs/preferences.html`'s**, measured off the drawing
--- rather than chosen again here. Diego, 23 September 2026: "i want it to
--- look exactly like the mockup, spacing, button style, borders, titles,
--- rounded buttons and selectors".
+-- **Every number here is `docs/preferences.html`'s, measured off the
+-- drawing rendered at one pixel to one pixel** (`roadmap.md` 5zp) - Diego,
+-- 24 September 2026: "pixel perfect as the html mockups". They were chosen
+-- by eye for the first two versions of this window, which is how it came to
+-- be 720 wide beside a drawing of 840, with a sidebar of 176 beside one of
+-- 216.
 --
--- The numbers that matter and why each is what it is:
+--   W, H        the drawn window: every group of the first page in view
+--   SIDE        the sidebar, its one-pixel rule at SIDE - 1
+--   HEAD        both headers; the page's has its rule at HEAD - 1
+--   BODY_*      the page's padding, and the column it centres in
+--   GROUP_LINE  a group's name: 12.5 at a line height of 1.55
+--   GROUP_CARD  from that line's top to its card's
+--   CARD_NEXT   from a card's bottom to the next group's line
+--   ROW_*       11 above and below, 14 in from each side, and 48 at least
+--   LINE_*      a row's name (13.5 at 1.55) and its note (12 at 1.4)
 --
---   SIDE     the category list, wide enough for "Date & Time" and no wider
---   PAD      from the window's edge to a card, and from a card to the next
---   ROW_H    a row with a note under its label: two lines and air
---   ROW_1    a row with only a label
---   CARD_R   the card's corner, which matches a control's (`ui.lua`)
---   HEAD_Y   from a card to the heading below it, and from that to the next
+-- A row is 11, then whatever is tallest of its words and its control, then
+-- 11 - which is why the drawing's rows are 60, 53 and 48 and never one
+-- height: a name and a note, a name beside a dropdown, a name beside a
+-- switch.
 --
--- **A page is a column of at most `BODY_W`, centred.** The mockup's is 470
--- and the reason is not taste: a row is a label on the left and a control
--- on the right, and past about sixty characters the eye loses which control
--- belongs to which label. A window that is wider gets margins rather than
--- longer rows.
---
-local SIDE   = 176
-local PAD    = 18
-local GAP    = 22           -- between a card and the next heading
-local ROW_H  = 48           -- a row with a label and a note in it
-local ROW_1  = 40           -- a row with only a label
-local CARD_R = 10
-local BODY_W = 470
-local HEAD_Y = 8            -- from a heading to its card
-local W, H   = 720, 520
+local W, H       = 840, 920
+local SIDE       = 216
+local HEAD       = 46
+local BODY_TOP   = 22
+local BODY_SIDE  = 26
+local BODY_W     = 470
+local GROUP_LINE = 19
+local GROUP_CARD = 26
+local CARD_NEXT  = 42
+local CARD_R     = 10
+local ROW_PAD    = 11
+local ROW_IN     = 14
+local ROW_MIN    = 48
+local LINE_LABEL = 21
+local LINE_NOTE  = 17
 
 local win, err = ui.window{ title = "Preferences", w = W, h = H,
                             x = 150, y = 100 }
@@ -112,41 +129,45 @@ local showing = wanted()
 --
 local page = ui.view{ x = SIDE, y = 0, w = W - SIDE, h = H }
 
-local cards = {}            -- { y, h } for each card, in page coordinates
+local cards = {}            -- { y, h, rules } for each card, page coordinates
 
 --
--- Where the column of cards sits: `BODY_W` wide, centred, and never wider
--- than the pane can hold.
+-- The column of cards: `BODY_W` wide, centred in what the padding leaves.
 --
 local function column(w)
-  local width = math.min(BODY_W, w - 2 * PAD)
+  local room = w - 2 * BODY_SIDE
+  local width = math.min(BODY_W, room)
 
-  return (w - width) // 2, width
+  return BODY_SIDE + (room - width) // 2, width
 end
+
+--
+-- **The page's header**: the category's name at the left, in the title's
+-- face, on the white the drawing gives a header, over a one-pixel rule.
+--
+-- The drawing has a close box at the right of it as well, and it is left
+-- out on purpose: this is a window with a title tab, and the tab already
+-- has one. Two close boxes a few pixels apart would be the one place the
+-- mockup and the machine disagree about how a window is built.
+--
+local heading_text = ""
 
 function page:draw(g)
   local x, width = column(self.w)
 
   g:fill(0, 0, self.w, self.h, theme.window)
-  g:fill(0, 0, 1, self.h, theme.line_soft)
+
+  g:fill(0, 0, self.w, HEAD - 1, theme.sunken)
+  g:fill(0, HEAD - 1, self.w, 1, theme.line_soft)
+  g:text(18, (HEAD - 1 - gfx.height("title")) // 2, heading_text,
+         theme.text, nil, "title")
 
   for _, c in ipairs(cards) do
-    --
-    -- **Rounded when the look is flat**, which is the same rule its
-    -- controls follow (`ui.lua`, `gc:raised`): a look that says nothing
-    -- about light says everything with a line, and a square card under
-    -- rounded buttons is the one combination that looks like a mistake.
-    --
-    if theme.flat then
-      g:fill_round(x, c.y, width, c.h, theme.raised, CARD_R)
-      g:frame_round(x, c.y, width, c.h, theme.line_soft, CARD_R)
-    else
-      g:fill(x, c.y, width, c.h, theme.raised)
-      g:frame(x, c.y, width, c.h, theme.line_soft)
-    end
+    g:fill_round(x, c.y, width, c.h, theme.sunken, CARD_R)
+    g:frame_round(x, c.y, width, c.h, theme.line_soft, CARD_R)
 
     -- The lines between rows, not around them: one card, several rows. They
-    -- stop short of the corners so a rule does not run into the arc.
+    -- stop a pixel short so a rule does not run into the arc.
     for _, at in ipairs(c.rules) do
       g:fill(x + 1, at, width - 2, 1, theme.line_soft)
     end
@@ -175,40 +196,60 @@ end
 --
 
 --
--- The sidebar, as a list of names with the gaps `settings.CATEGORIES` asks
--- for. A gap is an empty row rather than a second list: a list knows how to
--- scroll and how to follow the focus, and two of them would have to agree.
+-- The sidebar: the categories, with the icons and the gaps
+-- `settings.CATEGORIES` asks for, under a header with the window's name.
 --
-local names, index_of = {}, {}
-
-for _, c in ipairs(settings.CATEGORIES) do
-  names[#names + 1] = c.name
-  index_of[c.name] = c.id
-
-  if c.gap_after then names[#names + 1] = "" end
-end
-
+-- **The header draws no icons**, and the drawing has two - a search and a
+-- menu. They would be two controls that do nothing, and a control that does
+-- nothing is exactly the half-built feeling Diego named on the M700 ("usable
+-- but does nothing to the system"). The name is drawn where the drawing
+-- puts it, centred.
+--
 local rebuild                      -- forward, so the list can call it
 
-local side = ui.list{
-  x = 0, y = PAD, w = SIDE, h = H - 2 * PAD,
-  items = names,
+local side_head = ui.view{ x = 0, y = 0, w = SIDE, h = HEAD }
 
-  -- The arrows change the page, rather than moving a highlight that does
-  -- nothing until Enter. This list is the window's navigation, and a
-  -- category you cannot reach without pressing Enter on it is a category
-  -- nobody browses (`ui.list`'s `arrows_choose`).
-  arrows_choose = true,
-  on_select = function(_, item)
-    local id = index_of[item]
+function side_head:draw(g)
+  local face = "title"
+  local word = "Preferences"
 
-    if id and id ~= showing then
-      showing = id
-      rebuild()
-    end
+  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
+  g:text((self.w - 1 - gfx.measure(word, face)) // 2,
+         (self.h - 1 - gfx.height(face)) // 2, word, theme.text, nil, face)
+end
+
+local items = {}
+
+for _, c in ipairs(settings.CATEGORIES) do
+  items[#items + 1] = { id = c.id, name = c.name, icon = c.icon }
+  if c.gap_after then items[#items + 1] = { gap = true } end
+end
+
+--
+-- The list starts 2 below the header, and its column is the sidebar's
+-- width less the rule - which is where the drawing's rows sit.
+--
+local side = ui.sidebar{
+  x = 0, y = HEAD + 2, w = SIDE - 1, h = H - HEAD - 2,
+  items = items, selected = showing,
+  on_select = function(_, id)
+    showing = id
+    rebuild()
   end,
 }
 
+-- The sidebar's own ground, under the list and the header both, down to the
+-- bottom of the window.
+local side_ground = ui.view{ x = 0, y = 0, w = SIDE, h = H }
+
+function side_ground:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
+end
+
+win:add(side_ground)
+win:add(side_head)
 win:add(side)
 win:add(page)
 
@@ -236,8 +277,8 @@ win:add(page)
 --   - and the look, the scale and the wallpaper were not marked live
 --     either, because the first version of this could only send *one field*
 --     in a `theme` request. A look is not one field: it is the resolved
---     colour table and the faces together, which is what `appearance.lua`
---     builds before it sends.
+--     colour table and the faces together, which is what the Appearance
+--     panel built before it sent.
 --
 -- So an apply is a **function per setting** rather than a field name, and
 -- the table is keyed by the setting's own `key` - there is no second list
@@ -246,8 +287,8 @@ win:add(page)
 --
 -- The window manager is the only thing that can do any of these: it
 -- composes the desktop, it owns the wallpaper, and the scale is its
--- arithmetic. The requests are the ones it already takes, which is why
--- `appearance.lua` and this window can both send them.
+-- arithmetic. The requests are the ones it already takes - the ones the
+-- Appearance panel sent, until its three settings folded into this window.
 --------------------------------------------------------------------------
 
 local APPLY = {
@@ -288,7 +329,7 @@ local APPLY = {
 }
 
 --
--- **Applied first, written second**, which is `appearance.lua`'s order and
+-- **Applied first, written second**, which was the Appearance panel's order and
 -- the right one: a file that holds an appearance the system refused is a
 -- file that lies about the machine. When the manager says no, the setting
 -- is not stored and the reason reaches the log.
@@ -304,7 +345,7 @@ local function live(it, value)
     print("preferences: " .. tostring(it.key) .. ": " .. tostring(why))
   end
 
-  return ok
+  return ok, why
 end
 
 --
@@ -313,7 +354,100 @@ end
 -- returned, so every choice in this window - the look above all - wrote a
 -- file and changed nothing anybody could see.
 --
+--
+-- **The look, as a row of swatches** - `docs/preferences.html`'s Theme row,
+-- which the first version drew as a dropdown of names. A look is chosen by
+-- how it looks, and a dropdown of words asks a person to remember that.
+--
+-- Each look's own `swatch`, 26 across with a radius of 6 and a faint edge,
+-- 7 apart; the one in force ringed in the accent, two pixels wide and two
+-- pixels out - the drawing's `outline: 2px solid; outline-offset: 2px`,
+-- which follows the square's rounding. The drawing's four are Plex, Plex
+-- Night, Classic and Studio in that order - yellow, blue, grey, near black -
+-- and Endeavour, which came after it, is its own light blue tab.
+--
+-- Left and right move along the row and choose, as the sidebar's arrows do,
+-- because the first thing a person does with a row of looks is try them.
+--
+local SWATCH, SWATCH_GAP, RING = 26, 7, 4
+local EDGE = 0x1f000000                  -- the drawing's rgba(0,0,0,.12)
+
+local function swatches(it)
+  local names = LOOKS.order
+  local v = ui.view{ w = #names * SWATCH + (#names - 1) * SWATCH_GAP + 2 * RING,
+                     h = SWATCH + 2 * RING }
+
+  v.focusable = true
+  v.value = settings.get(it)
+
+  local function pick(self, name)
+    if name == self.value then return end
+
+    if live(it, name) then
+      settings.set(it, name)
+      self.value = name
+    end
+
+    win:paint()
+  end
+
+  local function at(i) return RING + (i - 1) * (SWATCH + SWATCH_GAP) end
+
+  function v:draw(g)
+    for i, name in ipairs(names) do
+      local x = at(i)
+      local look = theme.palettes[name] or {}
+
+      if name == self.value then
+        g:frame_round(x - RING, 0, SWATCH + 2 * RING, SWATCH + 2 * RING,
+                      theme.accent, 6 + RING)
+        g:frame_round(x - RING + 1, 1, SWATCH + 2 * RING - 2,
+                      SWATCH + 2 * RING - 2, theme.accent, 6 + RING - 1)
+      end
+
+      g:fill_round(x, RING, SWATCH, SWATCH, look.swatch or theme.text_dim, 6)
+      g:frame_round(x, RING, SWATCH, SWATCH, EDGE, 6)
+    end
+
+    if self.focused then
+      g:fill(RING, self.h - 1, self.w - 2 * RING, 1, theme.ring)
+    end
+  end
+
+  function v:key(c)
+    local i = 1
+
+    for k, name in ipairs(names) do
+      if name == self.value then i = k end
+    end
+
+    if c == -4 and i > 1 then pick(self, names[i - 1]) return true end
+    if c == -3 and i < #names then pick(self, names[i + 1]) return true end
+
+    return c == -3 or c == -4
+  end
+
+  function v:mouse(action, x)
+    if action ~= "press" then return true end
+
+    for i, name in ipairs(names) do
+      if x >= at(i) and x < at(i) + SWATCH then pick(self, name) end
+    end
+
+    return true
+  end
+
+  return v
+end
+
 local function control_for(it, x, y, changed)
+  if it.key == "palette" then return swatches(it) end
+
+  -- The wallpapers are whatever `/home` and the image hold at the moment the
+  -- page is drawn, so the list is made here rather than in the schema.
+  if it.key == "wallpaper" then
+    it = setmetatable({ choices = settings.wallpapers() }, { __index = it })
+  end
   if it.kind == "switch" then
     return ui.switch{ x = x, y = y, on = settings.get(it) == true,
                       on_change = function(_, on)
@@ -389,95 +523,182 @@ rebuild = function()
   for i = #page.children, 1, -1 do page.children[i] = nil end
   cards = {}
 
+  for _, c in ipairs(settings.CATEGORIES) do
+    if c.id == showing then heading_text = c.name end
+  end
+
   local cx, width = column(page.w)
-  local y = PAD
+  local y = HEAD + BODY_TOP
 
-  for _, group in ipairs(settings.groups(showing)) do
-    -- The heading sits just left of the card's own inset, so a page reads
-    -- as a column of headings with their cards under them rather than as
-    -- two columns.
-    page:add(ui.label{ x = cx + 2, y = y, w = width,
-                       text = group.name, role = "heading" })
+  for gi, group in ipairs(settings.groups(showing)) do
+    if gi > 1 then y = y + CARD_NEXT end
 
-    y = y + gfx.height("heading") + HEAD_Y
+    -- The group's name, 3 in from the card's edge as the drawing sets it,
+    -- centred in its line.
+    page:add(ui.label{ x = cx + 3,
+                       y = y + (GROUP_LINE - gfx.height("heading")) // 2,
+                       w = width, text = group.name, role = "heading" })
+
+    y = y + GROUP_CARD
 
     local card = { y = y, h = 0, rules = {} }
-    local first = true
+    local n = #group.items
 
-    for _, it in ipairs(group.items) do
-      local h = it.note and ROW_H or ROW_1
+    y = y + 1                           -- the card's top edge
 
-      if not first then card.rules[#card.rules + 1] = y end
-      first = false
-
-      --
-      -- **The control first, then the words get what is left.** A fixed
-      -- reserve on the right was the obvious way and it clipped the longest
-      -- note on the first page: a label is clipped to its own width, so a
-      -- sentence that does not fit simply stops, with no sign that it did.
-      -- Asking the control how wide it is costs nothing and cannot be wrong.
-      --
-      local right = cx + width - 14
+    for i, it in ipairs(group.items) do
+      local right = cx + width - 1 - ROW_IN
       local c = control_for(it, 0, 0, nil)
-      local taken = 0
+      local taken, ch = 0, 0
+
+      if c then
+        taken, ch = c.w, c.h
+      else
+        local t = value_text(it)
+
+        if t ~= "" then
+          taken, ch = gfx.measure(t), gfx.height()
+        end
+      end
+
+      --
+      -- **As tall as its tallest part plus 11 each side, and 48 at the
+      -- least** - where the last row's 48 is all its own and every other
+      -- row gives one of its pixels to the rule under it, which is how the
+      -- drawing's border-box rows come out.
+      --
+      local words = LINE_LABEL + (it.note and LINE_NOTE or 0)
+      local least = (i == n) and ROW_MIN or (ROW_MIN - 1)
+      local h = math.max(least, 2 * ROW_PAD + math.max(words, ch))
 
       if c then
         c.x = right - c.w
         c.y = y + (h - c.h) // 2
         page:add(c)
-        taken = c.w
-      else
-        local t = value_text(it)
-
-        if t ~= "" then
-          taken = gfx.measure(t)
-          page:add(ui.label{ x = right - taken, y = y + (h - gfx.height()) // 2,
-                             w = taken + 2, text = t,
-                             color = theme.text_dim })
-        end
+      elseif taken > 0 then
+        page:add(ui.label{ x = right - taken, y = y + (h - ch) // 2,
+                           w = taken + 2, text = value_text(it),
+                           color = theme.text_dim, role = "ui" })
       end
 
-      local words = right - taken - 14 - (cx + 14)
+      local room = right - (taken > 0 and taken + ROW_IN or 0)
+                   - (cx + 1 + ROW_IN)
 
       --
-      -- **Two lines centred in the row as a pair**, not a label at a fixed
-      -- offset with a note under it. A row with a note is two lines of
-      -- text and a row without is one, and a row that put the first line
-      -- in the same place either way leaves the single-line one sitting
-      -- high in its own box.
+      -- The name and its note as one block, centred in the row: each in a
+      -- line of the drawing's height, the face centred in its line.
       --
-      local lines = it.note and 2 or 1
-      local block = lines * gfx.height()
-      local ty = y + (h - block) // 2
+      local top = y + (h - words) // 2
 
+      -- The row's name in `label`: the drawing's 13.5 at weight 500.
       if it.label ~= "" then
-        page:add(ui.label{ x = cx + 14, y = ty, w = words,
-                           text = it.label })
+        page:add(ui.label{
+          x = cx + 1 + ROW_IN,
+          y = top + (LINE_LABEL - gfx.height("label")) // 2,
+          w = room, text = it.label, role = "label" })
       end
 
+      --
+      -- **The note is a control's size, not a label's**: the drawing's 12
+      -- against its 13.5 for the name. It was drawn in `text` for one build
+      -- and read as a second label.
+      --
       if it.note then
-        page:add(ui.label{ x = cx + 14, y = ty + gfx.height(), w = words,
-                           text = it.note, color = theme.text_dim })
+        page:add(ui.label{
+          x = cx + 1 + ROW_IN,
+          y = top + LINE_LABEL + (LINE_NOTE - gfx.height("ui")) // 2,
+          w = room, text = it.note, color = theme.text_dim, role = "ui" })
       end
 
       y = y + h
+
+      if i < n then
+        card.rules[#card.rules + 1] = y
+        y = y + 1
+      end
     end
 
+    y = y + 1                           -- the card's bottom edge
     card.h = y - card.y
     cards[#cards + 1] = card
-    y = y + GAP
   end
 
   win:paint()
 end
 
+rebuild()
+
+--------------------------------------------------------------------------
+-- The command line: a choice made the way a click makes it.
 --
--- The list starts on the category the argument asked for.
+--   wm preferences:--theme plexnight     a look, as a press on its swatch
+--   wm preferences:--scale 150           a size, as the dropdown's choice
 --
-for i, n in ipairs(names) do
-  if index_of[n] == showing then side.selected = i end
+-- **Inherited from the Appearance panel with the panel's job** (`roadmap.md`
+-- 5zp): it had these two for the display harness, which can type and cannot
+-- aim, and the path they exercise is the one a person's press takes - the
+-- same `live` and the same `settings.set`, so what is tested is this window
+-- rather than a side door into the window manager.
+--
+-- Each says what happened, in words the harness waits for: the look with
+-- the faces the manager says it *holds*, which is what it loaded rather
+-- than what it was asked for.
+--
+local function item_for(key)
+  for _, it in ipairs(settings.ITEMS) do
+    if it.key == key and it.file == settings.APPEARANCE then return it end
+  end
 end
 
-rebuild()
+do
+  local a = tostring(args or "")
+  local look = a:match("%-%-theme%s+(%S+)")
+  local pct = tonumber(a:match("%-%-scale%s+(%d+)") or "")
+
+  if look then
+    local it = item_for("palette")
+
+    -- `live` hands back what the manager answered: its reply, which carries
+    -- `held`, or nothing and why.
+    local reply, why = live(it, look)
+
+    if reply then
+      settings.set(it, look)
+
+      local held = {}
+
+      for _, role in ipairs(theme.roles) do
+        local f = type(reply) == "table" and (reply.held or {})[role]
+
+        if f then held[#held + 1] = ("%s=%s/%s"):format(role, f.font, f.px) end
+      end
+
+      print("preferences: theme " .. look .. " applied, held "
+            .. table.concat(held, " "))
+    else
+      print("preferences: theme " .. look .. " refused: " .. tostring(why))
+    end
+  end
+
+  if pct then
+    local it = item_for("scale")
+    local ok, why = live(it, pct)
+
+    if ok then settings.set(it, pct) end
+
+    print(("preferences: scale %d %s"):format(pct,
+          ok and "applied" or ("refused: " .. tostring(why))))
+  end
+
+  -- The page was drawn before the choice, so it is drawn again to show it.
+  if look or pct then rebuild() end
+
+  --
+  -- And what it is, as it opens: its size and how many looks it offers,
+  -- which is what the display harness holds the drawing to.
+  --
+  print(("preferences: %dx%d, %d looks, %s"):format(W, H, #LOOKS.order,
+        tostring(settings.get(item_for("palette")))))
+end
 
 win:run()
