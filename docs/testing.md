@@ -9198,3 +9198,30 @@ A first screenshot found the one bug the check had not: a window that draws
 its own pixels flips between two surfaces on each commit, and the app drew
 only the picture each frame, so its header was in one surface and black in
 the other. It draws the whole window every frame now.
+
+## 18.171 The camera's YUY2, sixteen pixels at a time
+
+`roadmap.md` 5zw. Diego, of the camera: *"are you using simd or vector
+arithmetic when possible on new code?"* The YUY2 conversion compiled to no
+vector instruction at all on either board. It is NEON on AArch64 - `vld4`
+takes a row of pairs apart, the sums are 32-bit lanes because 298 x 239 does
+not fit sixteen bits, two saturating narrowings clip, `vst4` puts the pixels
+back together - and SSE2 on x86-64, where `pmaddwd` does two products and a
+sum at once and `packus` clips. The scalar loop is kept as the specification
+and for the ends of rows.
+
+- `tools/test_yuv.c`, 14, built twice: natively (NEON) and `-arch x86_64`
+  under Rosetta (SSE2). Every Y, U and V through the vector path, straight
+  and mirrored, against the one-pixel function; random frames 2 to 642
+  pixels wide against the scalar path, with sentinels past each row.
+  **Controls**: a swapped zip in the NEON path fails 2; a wrong shuffle in
+  the SSE2 path fails 3.
+- **camera**, both boards, unchanged and passing.
+
+```
+a 640x480 frame: 0.373 ms one pair at a time, 0.093 ms with NEON (4.0x)
+a 640x480 frame: 0.408 ms one pair at a time, 0.215 ms with SSE2 (1.9x, under Rosetta)
+```
+
+The guest objects have 31 NEON instructions in the conversion and 28 SSE2,
+where they had none.

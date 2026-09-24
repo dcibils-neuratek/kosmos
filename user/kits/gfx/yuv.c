@@ -11,9 +11,24 @@
  *   B = (298 C + 516 D + 128) >> 8
  *
  * with C = Y - 16, D = U - 128, E = V - 128, and each clipped to 0..255.
+ *
+ * **Sixteen pixels at a time on AArch64 and eight on x86-64**, the same
+ * sums in 32-bit lanes so the answer is the scalar one to the bit - held
+ * so on the Mac by `tools/test_yuv.c`, NEON natively and SSE2 through
+ * Rosetta - and the scalar loop for what is left of a row. The sums do not
+ * fit sixteen bits (298 x 239 alone is 71,222), which is why the lanes are
+ * thirty-two wide and the products widening multiplies; the clip is two
+ * saturating narrowings, 32 to 16 bits and 16 to 8, which clamp exactly as
+ * the scalar `clip` does.
  */
 
 #include "yuv.h"
+
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 
 static inline uint32_t clip(int x)
 {
@@ -32,41 +47,234 @@ uint32_t gfx_yuv_pixel(int y, int u, int v)
          | clip((c + 516 * d) >> 8);
 }
 
+/* Pairs `from` to `to` of one row, one pair at a time. */
+static void row_scalar(uint32_t *row, const uint8_t *src, unsigned width,
+                       unsigned from, unsigned to, bool mirror)
+{
+    const uint8_t *s = src + from * 4u;
+    unsigned x;
+
+    for (x = from; x < to; x++, s += 4) {
+        int d = s[1] - 128;
+        int e = s[3] - 128;
+        int r = 409 * e + 128;
+        int g = -100 * d - 208 * e + 128;
+        int b = 516 * d + 128;
+        int c0 = 298 * (s[0] - 16);
+        int c1 = 298 * (s[2] - 16);
+        uint32_t p0 = 0xff000000u | clip((c0 + r) >> 8) << 16
+                    | clip((c0 + g) >> 8) << 8 | clip((c0 + b) >> 8);
+        uint32_t p1 = 0xff000000u | clip((c1 + r) >> 8) << 16
+                    | clip((c1 + g) >> 8) << 8 | clip((c1 + b) >> 8);
+
+        if (mirror) {
+            row[width - 1u - 2u * x] = p0;
+            row[width - 2u - 2u * x] = p1;
+        } else {
+            row[2u * x] = p0;
+            row[2u * x + 1u] = p1;
+        }
+    }
+}
+
+void gfx_yuy2_scalar(uint32_t *dst, unsigned long pitch, const uint8_t *src,
+                     unsigned width, unsigned height, bool mirror)
+{
+    unsigned y;
+
+    for (y = 0; y < height; y++) {
+        row_scalar((uint32_t *)((uint8_t *)dst + (unsigned long)y * pitch),
+                   src + (unsigned long)y * width * 2u, width, 0, width / 2u,
+                   mirror);
+    }
+}
+
+#if defined(__ARM_NEON)
+
 /*
- * Two pixels at a time, because two share their colour: the three colour
- * terms are worked out once for the pair and added to each brightness.
- * Mirrored, a row is written from its right end leftwards - the pair's
- * second pixel first - so the loop is the same loop with a step of -1.
+ * One channel for eight pairs' worth of pixels: the pair's shared term
+ * (`off`, in two halves of four) added to each brightness, shifted, and
+ * narrowed with saturation - to 16 bits, which clamps what is below zero,
+ * then to 8, which clamps what is above 255.
  */
+static inline uint8x8_t channel(int32x4_t c_lo, int32x4_t c_hi,
+                                int32x4_t off_lo, int32x4_t off_hi)
+{
+    int32x4_t lo = vshrq_n_s32(vaddq_s32(c_lo, off_lo), 8);
+    int32x4_t hi = vshrq_n_s32(vaddq_s32(c_hi, off_hi), 8);
+
+    return vqmovn_u16(vcombine_u16(vqmovun_s32(lo), vqmovun_s32(hi)));
+}
+
+/*
+ * Eight pairs - sixteen pixels - from 32 bytes: `vld4` takes Y0, U, Y1 and
+ * V apart in one load, and `vst4` puts B, G, R and A back together in one
+ * store, the two brightnesses of a pair zipped into neighbouring pixels.
+ * Mirrored, the pairs are reversed in their lanes and the second pixel of
+ * each goes first, which is the same sixteen pixels right to left.
+ */
+static void row_neon(uint32_t *row, const uint8_t *src, unsigned width,
+                     unsigned pairs, bool mirror)
+{
+    const int16x8_t k16 = vdupq_n_s16(16), k128 = vdupq_n_s16(128);
+    const int32x4_t round = vdupq_n_s32(128);
+    unsigned x;
+
+    for (x = 0; x + 8u <= pairs; x += 8u) {
+        uint8x8x4_t in = vld4_u8(src + x * 4u);
+        int16x8_t y0 = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(in.val[0])), k16);
+        int16x8_t y1 = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(in.val[2])), k16);
+        int16x8_t d = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(in.val[1])), k128);
+        int16x8_t e = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(in.val[3])), k128);
+        int16x4_t d_lo = vget_low_s16(d), d_hi = vget_high_s16(d);
+        int16x4_t e_lo = vget_low_s16(e), e_hi = vget_high_s16(e);
+
+        int32x4_t r_lo = vmlal_n_s16(round, e_lo, 409);
+        int32x4_t r_hi = vmlal_n_s16(round, e_hi, 409);
+        int32x4_t g_lo = vmlal_n_s16(vmlal_n_s16(round, d_lo, -100), e_lo, -208);
+        int32x4_t g_hi = vmlal_n_s16(vmlal_n_s16(round, d_hi, -100), e_hi, -208);
+        int32x4_t b_lo = vmlal_n_s16(round, d_lo, 516);
+        int32x4_t b_hi = vmlal_n_s16(round, d_hi, 516);
+
+        int32x4_t c0_lo = vmull_n_s16(vget_low_s16(y0), 298);
+        int32x4_t c0_hi = vmull_n_s16(vget_high_s16(y0), 298);
+        int32x4_t c1_lo = vmull_n_s16(vget_low_s16(y1), 298);
+        int32x4_t c1_hi = vmull_n_s16(vget_high_s16(y1), 298);
+
+        uint8x8_t r0 = channel(c0_lo, c0_hi, r_lo, r_hi);
+        uint8x8_t g0 = channel(c0_lo, c0_hi, g_lo, g_hi);
+        uint8x8_t b0 = channel(c0_lo, c0_hi, b_lo, b_hi);
+        uint8x8_t r1 = channel(c1_lo, c1_hi, r_lo, r_hi);
+        uint8x8_t g1 = channel(c1_lo, c1_hi, g_lo, g_hi);
+        uint8x8_t b1 = channel(c1_lo, c1_hi, b_lo, b_hi);
+        uint8x16x4_t out;
+        uint8x8x2_t z;
+
+        if (mirror) {
+            z = vzip_u8(vrev64_u8(b1), vrev64_u8(b0));
+            out.val[0] = vcombine_u8(z.val[0], z.val[1]);
+            z = vzip_u8(vrev64_u8(g1), vrev64_u8(g0));
+            out.val[1] = vcombine_u8(z.val[0], z.val[1]);
+            z = vzip_u8(vrev64_u8(r1), vrev64_u8(r0));
+            out.val[2] = vcombine_u8(z.val[0], z.val[1]);
+            out.val[3] = vdupq_n_u8(0xff);
+            vst4q_u8((uint8_t *)(row + width - 16u - 2u * x), out);
+        } else {
+            z = vzip_u8(b0, b1);
+            out.val[0] = vcombine_u8(z.val[0], z.val[1]);
+            z = vzip_u8(g0, g1);
+            out.val[1] = vcombine_u8(z.val[0], z.val[1]);
+            z = vzip_u8(r0, r1);
+            out.val[2] = vcombine_u8(z.val[0], z.val[1]);
+            out.val[3] = vdupq_n_u8(0xff);
+            vst4q_u8((uint8_t *)(row + 2u * x), out);
+        }
+    }
+
+    row_scalar(row, src, width, x, pairs, mirror);
+}
+
+#elif defined(__SSE2__)
+
+/*
+ * A 32-bit sum of two 16-bit products for each of four lanes, which is
+ * exactly what `pmaddwd` computes: interleave the two operands, and the
+ * constants beside them. `a * ka + b * kb`, four pixels at once.
+ */
+static inline __m128i madd2(__m128i a, __m128i b, short ka, short kb,
+                            int high)
+{
+    __m128i ab = high ? _mm_unpackhi_epi16(a, b) : _mm_unpacklo_epi16(a, b);
+
+    return _mm_madd_epi16(ab, _mm_set_epi16(kb, ka, kb, ka, kb, ka, kb, ka));
+}
+
+/* Four lanes and four lanes of a channel, shifted and clamped to 16 bits
+ * signed - they are all within it by then - ready for the byte pack. */
+static inline __m128i half(__m128i lo, __m128i hi, __m128i round)
+{
+    lo = _mm_srai_epi32(_mm_add_epi32(lo, round), 8);
+    hi = _mm_srai_epi32(_mm_add_epi32(hi, round), 8);
+    return _mm_packs_epi32(lo, hi);
+}
+
+/*
+ * Four pairs - eight pixels - from 16 bytes. SSE2 has no byte shuffle, so
+ * the bytes are taken apart with a mask and a shift: the low byte of each
+ * 16-bit lane is a brightness, one per pixel and already in order, and the
+ * high byte is U, V, U, V, which `pshuflw`/`pshufhw` copy to each pixel of
+ * its pair. Then every channel is two `pmaddwd`s, and `packus` clips.
+ */
+static void row_sse2(uint32_t *row, const uint8_t *src, unsigned width,
+                     unsigned pairs, bool mirror)
+{
+    const __m128i low_byte = _mm_set1_epi16(0x00ff);
+    const __m128i k16 = _mm_set1_epi16(16), k128 = _mm_set1_epi16(128);
+    const __m128i round = _mm_set1_epi32(128);
+    const __m128i zero = _mm_setzero_si128();
+    const __m128i alpha = _mm_set1_epi8((char)0xff);
+    unsigned x;
+
+    for (x = 0; x + 4u <= pairs; x += 4u) {
+        __m128i in = _mm_loadu_si128((const __m128i *)(const void *)
+                                     (src + x * 4u));
+        __m128i c = _mm_sub_epi16(_mm_and_si128(in, low_byte), k16);
+        __m128i uv = _mm_sub_epi16(_mm_srli_epi16(in, 8), k128);
+        __m128i d = _mm_shufflehi_epi16(_mm_shufflelo_epi16(uv, 0xA0), 0xA0);
+        __m128i e = _mm_shufflehi_epi16(_mm_shufflelo_epi16(uv, 0xF5), 0xF5);
+
+        /* R = 298 C + 409 E; G = 298 C - 208 E - 100 D; B = 298 C + 516 D */
+        __m128i r = half(madd2(c, e, 298, 409, 0), madd2(c, e, 298, 409, 1),
+                         round);
+        __m128i g = half(_mm_add_epi32(madd2(c, e, 298, -208, 0),
+                                       madd2(d, zero, -100, 0, 0)),
+                         _mm_add_epi32(madd2(c, e, 298, -208, 1),
+                                       madd2(d, zero, -100, 0, 1)), round);
+        __m128i b = half(madd2(c, d, 298, 516, 0), madd2(c, d, 298, 516, 1),
+                         round);
+
+        /* To bytes, clipped, and into B G R A order: eight pixels. */
+        __m128i r8 = _mm_packus_epi16(r, r);
+        __m128i g8 = _mm_packus_epi16(g, g);
+        __m128i b8 = _mm_packus_epi16(b, b);
+        __m128i bg = _mm_unpacklo_epi8(b8, g8);
+        __m128i ra = _mm_unpacklo_epi8(r8, alpha);
+        __m128i p_lo = _mm_unpacklo_epi16(bg, ra);      /* pixels 0-3 */
+        __m128i p_hi = _mm_unpackhi_epi16(bg, ra);      /* pixels 4-7 */
+
+        if (mirror) {
+            uint32_t *at = row + width - 8u - 2u * x;
+
+            _mm_storeu_si128((__m128i *)(void *)at,
+                             _mm_shuffle_epi32(p_hi, 0x1B));
+            _mm_storeu_si128((__m128i *)(void *)(at + 4),
+                             _mm_shuffle_epi32(p_lo, 0x1B));
+        } else {
+            _mm_storeu_si128((__m128i *)(void *)(row + 2u * x), p_lo);
+            _mm_storeu_si128((__m128i *)(void *)(row + 2u * x + 4u), p_hi);
+        }
+    }
+
+    row_scalar(row, src, width, x, pairs, mirror);
+}
+
+#endif
+
 void gfx_yuy2(uint32_t *dst, unsigned long pitch, const uint8_t *src,
               unsigned width, unsigned height, bool mirror)
 {
-    unsigned x, y, pairs = width / 2u;
+    unsigned y, pairs = width / 2u;
 
     for (y = 0; y < height; y++) {
-        const uint8_t *s = src + (unsigned long)y * width * 2u;
         uint32_t *row = (uint32_t *)((uint8_t *)dst + (unsigned long)y * pitch);
+        const uint8_t *s = src + (unsigned long)y * width * 2u;
 
-        for (x = 0; x < pairs; x++, s += 4) {
-            int d = s[1] - 128;
-            int e = s[3] - 128;
-            int r = 409 * e + 128;
-            int g = -100 * d - 208 * e + 128;
-            int b = 516 * d + 128;
-            int c0 = 298 * (s[0] - 16);
-            int c1 = 298 * (s[2] - 16);
-            uint32_t p0 = 0xff000000u | clip((c0 + r) >> 8) << 16
-                        | clip((c0 + g) >> 8) << 8 | clip((c0 + b) >> 8);
-            uint32_t p1 = 0xff000000u | clip((c1 + r) >> 8) << 16
-                        | clip((c1 + g) >> 8) << 8 | clip((c1 + b) >> 8);
-
-            if (mirror) {
-                row[width - 1u - 2u * x] = p0;
-                row[width - 2u - 2u * x] = p1;
-            } else {
-                row[2u * x] = p0;
-                row[2u * x + 1u] = p1;
-            }
-        }
+#if defined(__ARM_NEON)
+        row_neon(row, s, width, pairs, mirror);
+#elif defined(__SSE2__)
+        row_sse2(row, s, width, pairs, mirror);
+#else
+        row_scalar(row, s, width, 0, pairs, mirror);
+#endif
     }
 }

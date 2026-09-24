@@ -1790,6 +1790,18 @@ processors, and still what follows USB:
    decides what is drawn and where; it computes no pixel, so what it costs
    is `frames`' question (a pass's time by stage), asked first.
    `testing.md` gets a row per loop with its speed before and after.
+   - **Diego asked again on 24 September, of the camera**: "are you using
+     simd or vector arithmetic when possible on new code?" It was not: the
+     YUY2 conversion every camera frame goes through compiled to no vector
+     instruction at all. **Done in 0.10.156**: NEON, 16 pixels a pass, and
+     SSE2, 8, bit for bit with the scalar loop - 0.373 to 0.093 ms a
+     640x480 frame on the Mac, 4.0x (`testing.md` 18.171). The payload copy
+     beside it was measured and left: 0.022 ms a frame, faster than the
+     Mac's own `memcpy`, because a payload lands word-aligned.
+   - **The rule from here**: a loop over every pixel of every frame, or
+     every sample of every period, is written with its vector path from
+     the start, the scalar one kept as its specification and its host test
+     built for both architectures (Rosetta runs the x86-64 one on the Mac).
 
 5zv. **DONE on 24 September (0.10.152) - the scroll wheel.** Diego: "add scrollwheel
    mouse suppor to tracker and apps so i can scroll a list of files in

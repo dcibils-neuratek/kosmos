@@ -29,6 +29,14 @@
 void gfx_yuy2(uint32_t *dst, unsigned long pitch, const uint8_t *src,
               unsigned width, unsigned height, bool mirror);
 
+/*
+ * The same, one pair at a time: the specification the vector paths are
+ * held to (`tools/test_yuv.c`), and what `gfx_yuy2` does on a machine that
+ * has neither NEON nor SSE2.
+ */
+void gfx_yuy2_scalar(uint32_t *dst, unsigned long pitch, const uint8_t *src,
+                     unsigned width, unsigned height, bool mirror);
+
 /* One pixel of it, for the reference and anything that wants one. */
 uint32_t gfx_yuv_pixel(int y, int u, int v);
 

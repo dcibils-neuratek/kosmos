@@ -8,6 +8,13 @@
  * each channel; to the colours everybody knows the values of; and to a
  * frame, straight and mirrored, with a pitch wider than the picture so a
  * write past a row's end shows. And it says how long a 640x480 frame takes.
+ *
+ * **And the vector paths to the scalar one, bit for bit** (`roadmap.md`
+ * 5zw): every Y, U and V through `gfx_yuy2` itself, straight and mirrored,
+ * and random frames at widths that leave the scalar tail something to do.
+ * Built twice - natively, which on this Mac is NEON, and with `-arch
+ * x86_64`, which runs under Rosetta and is SSE2 - so both are held here
+ * and not only in the gate.
  */
 
 #include <math.h>
@@ -159,6 +166,96 @@ int main(void)
         check(spared, "and nothing written past a row's end");
     }
 
+    /*
+     * Every Y, U and V through `gfx_yuy2` - the vector path - as 65,536 rows
+     * of 256 pixels, one row for each U and V and every Y along it, straight
+     * and mirrored, each pixel held to the one-pixel function.
+     */
+    {
+        enum { RW = 256 };
+        static uint8_t line[RW * 2];
+        static uint32_t got[RW];
+        long wrong = 0, wrong_mirrored = 0;
+
+        for (u = 0; u < 256; u++) {
+            for (v = 0; v < 256; v++) {
+                for (x = 0; x < RW / 2; x++) {
+                    line[x * 4] = (uint8_t)(2 * x);
+                    line[x * 4 + 1] = (uint8_t)u;
+                    line[x * 4 + 2] = (uint8_t)(2 * x + 1);
+                    line[x * 4 + 3] = (uint8_t)v;
+                }
+
+                gfx_yuy2(got, sizeof(got), line, RW, 1, false);
+
+                for (x = 0; x < RW; x++) {
+                    wrong += got[x] != gfx_yuv_pixel(x, u, v);
+                }
+
+                gfx_yuy2(got, sizeof(got), line, RW, 1, true);
+
+                for (x = 0; x < RW; x++) {
+                    wrong_mirrored += got[RW - 1 - x] != gfx_yuv_pixel(x, u, v);
+                }
+            }
+        }
+
+        check(wrong == 0, "every Y, U and V through gfx_yuy2, the pixel "
+                          "gfx_yuv_pixel gives");
+        check(wrong_mirrored == 0, "and mirrored, the same pixels right to "
+                                   "left");
+    }
+
+    /*
+     * Random frames at widths that leave pairs for the scalar tail - two to
+     * 642 pixels - with four sentinel words past each row, to the scalar
+     * path, straight and mirrored.
+     */
+    {
+        static const unsigned widths[] = { 2, 6, 14, 16, 18, 30, 32, 34, 70,
+                                           126, 640, 642 };
+        unsigned seed = 1234567u, w, k;
+        int same = 1, spared = 1;
+
+        for (k = 0; k < sizeof(widths) / sizeof(widths[0]); k++) {
+            unsigned fw = widths[k], fh = 5, fp = fw + 4, i, m;
+            uint8_t *src = malloc(fw * 2 * fh);
+            uint32_t *a = malloc(fp * fh * 4), *b = malloc(fp * fh * 4);
+
+            for (i = 0; i < fw * 2 * fh; i++) {
+                seed = seed * 1103515245u + 12345u;
+                src[i] = (uint8_t)(seed >> 16);
+            }
+
+            for (m = 0; m < 2; m++) {
+                for (i = 0; i < fp * fh; i++) a[i] = b[i] = 0x12345678u;
+
+                gfx_yuy2(a, fp * 4, src, fw, fh, m != 0);
+                gfx_yuy2_scalar(b, fp * 4, src, fw, fh, m != 0);
+
+                for (row = 0; row < (int)fh; row++) {
+                    for (w = 0; w < fp; w++) {
+                        uint32_t pa = a[row * fp + w], pb = b[row * fp + w];
+
+                        if (w < fw) {
+                            same &= pa == pb;
+                        } else {
+                            spared &= pa == 0x12345678u && pb == 0x12345678u;
+                        }
+                    }
+                }
+            }
+
+            free(src);
+            free(a);
+            free(b);
+        }
+
+        check(same, "random frames 2 to 642 pixels wide, the vector path "
+                    "equal to the scalar one, straight and mirrored");
+        check(spared, "and neither writing past a row's end");
+    }
+
     /* How long a C920 frame takes, 640 by 480. */
     {
         enum { FW = 640, FH = 480, N = 200 };
@@ -169,11 +266,26 @@ int main(void)
 
         for (k = 0; k < FW * FH * 2; k++) src[k] = (uint8_t)(k * 7);
 
+        double t_scalar;
+
+        t0 = now();
+        for (k = 0; k < N; k++) gfx_yuy2_scalar(dst, FW * 4, src, FW, FH, k & 1);
+        t_scalar = (now() - t0) / N;
+
         t0 = now();
         for (k = 0; k < N; k++) gfx_yuy2(dst, FW * 4, src, FW, FH, k & 1);
         t = (now() - t0) / N;
 
-        printf("a 640x480 frame: %.3f ms here\n", t * 1e3);
+        printf("a 640x480 frame: %.3f ms one pair at a time, %.3f ms with %s "
+               "(%.1fx)\n", t_scalar * 1e3, t * 1e3,
+#if defined(__ARM_NEON)
+               "NEON",
+#elif defined(__SSE2__)
+               "SSE2",
+#else
+               "no vectors",
+#endif
+               t_scalar / t);
         free(src);
         free(dst);
     }
@@ -185,6 +297,15 @@ int main(void)
 
     printf("PASS: %d checks on YUY2 into the screen's pixels (every Y, U and "
            "V against BT.601, the known colours, a frame straight and "
-           "mirrored)\n", checks);
+           "mirrored, and the %s path bit for bit with the scalar one)\n",
+           checks,
+#if defined(__ARM_NEON)
+           "NEON"
+#elif defined(__SSE2__)
+           "SSE2"
+#else
+           "scalar"
+#endif
+           );
     return 0;
 }
