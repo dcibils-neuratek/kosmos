@@ -148,7 +148,7 @@ function rows:draw(g)
 
     local top = y + (ROW - words) // 2
 
-    g:text(L.row_in, top + (L.line - lh) // 2, "Core " .. (c - 1),
+    g:text(L.row_in, top + (L.line - lh) // 2, "Core " .. c,
            theme.text, theme.raised, "label")
     g:text(L.row_in, top + L.line + (L.note - nh) // 2,
            ("%d%% user \u{b7} %d%% kernel"):format(u, k),
@@ -203,7 +203,7 @@ function panels:draw(g)
     local px = col * (pw + PANEL_GAP_X)
     local py = row * (PANEL_NAME + PANEL_H + PANEL_GAP_Y)
 
-    g:text(px, py + (PANEL_NAME - 4 - nh) // 2, "Core " .. (c - 1),
+    g:text(px, py + (PANEL_NAME - 4 - nh) // 2, "Core " .. c,
            theme.text_dim, theme.window, "ui")
 
     local top = py + PANEL_NAME

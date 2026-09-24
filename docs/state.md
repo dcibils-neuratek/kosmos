@@ -127,6 +127,9 @@ evening and in the roadmap: Tracker's icon names (6f), Processes' kinds (6g),
 Monitor with many cores (6h), and the drivers' band, his to decide (6i).
 **0.10.159**: Tracker's names (6f) measured in pixels, broken between words,
 shortened in the middle, in a 112 cell (18.175).
+**0.10.160**: drivers in the display band (6i, 18.176); cores counted from
+one in Monitor, Cores and Processes; Monitor for 8, 16 and 32 cores drawn in
+`docs/apps.html` (6h), waiting for Diego's look before it is built.
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

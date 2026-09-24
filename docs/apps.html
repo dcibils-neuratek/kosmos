@@ -137,6 +137,17 @@
           border-radius: 8px; overflow: hidden; }
   .hist i { position: absolute; width: calc(100% / 60 - 1px); }
   .hist i.u { background: #34c759; } .hist i.k { background: #ff453a; }
+  /* Monitor above four cores (roadmap.md 6h): the list in columns, a row a
+     core with its name, its bar and its total; the history four across, or
+     one panel for all of them. */
+  .cgrid { display: grid; }
+  .cgrid .row { min-height: 48px; padding: 6px 14px; gap: 10px; }
+  .cgrid .row b { font-weight: 500; flex: none; }
+  .cgrid .row.tall { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 12px; }
+  .cgrid .row.tall .top { display: flex; }
+  .cgrid .row.tall .top span { margin-left: auto; }
+  .cgrid .row.tall .bar { flex: none; height: 6px; }
+  .hists4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 12px; }
   .empty { color: var(--w-dim); text-align: center; padding: 38px 20px; font-size: 13.5px; }
   .empty b { display: block; color: var(--w-ink); font-weight: 500; margin-bottom: 4px; }
   .console { background: var(--w-console); color: var(--w-console-ink); font-family: var(--mono);
@@ -211,6 +222,42 @@ const row = (l, s, c) => `<div class="row"><div class="l"><b>${l}</b>${s ? `<spa
 const group = (label, rows) => `<div class="gl">${label}</div><div class="group">${rows.join("")}</div>`;
 const win = (w, h, inner) => `<div class="win" style="width:${w}px;height:${h}px">${inner}</div>`;
 
+// Monitor's pieces for the many-core drawings (roadmap.md 6h): one core's
+// minute as columns, and a list of cores `across` to a row.
+const cpuHist = (seed, busy, h) => {
+  let s = seed * 7919, cols = "";
+  const r = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let i = 0; i < 60; i++) {
+    const burst = (i > 39 && i < 48) ? 30 : 0;
+    const u = Math.max(0, Math.min(88, busy + burst + (r() - .5) * busy * .9));
+    const k = Math.max(0, Math.min(100 - u, (busy + burst) / 4 + (r() - .5) * 4));
+    cols += `<i class="k" style="left:${(i*100/60).toFixed(3)}%;bottom:0;height:${k.toFixed(1)}%"></i>` +
+            `<i class="u" style="left:${(i*100/60).toFixed(3)}%;bottom:${k.toFixed(1)}%;height:${u.toFixed(1)}%"></i>`;
+  }
+  return `<div class="hist" style="height:${h || 84}px">${cols}</div>`;
+};
+const cpuLoad = n => Array.from({ length: n }, (_, c) => {
+  const u = [2, 8, 0, 32, 5, 14, 1, 3, 47, 0, 6, 11, 2, 0, 19, 4][c % 16] + (c >> 4);
+  return [c, u, Math.round(u / 4)];
+});
+const cpuRows = (n, across) => {
+  const rows = cpuLoad(n), down = Math.ceil(n / across);
+  return `<div class="group cgrid" style="grid-template-columns:repeat(${across},minmax(0,1fr))">` +
+    rows.map(([c, u, k], i) => {
+      const col = i % across, line = Math.floor(i / across);
+      const edge = `border-bottom:${line < down - 1 ? "1px solid var(--w-line)" : "0"};` +
+                   `border-right:${col < across - 1 ? "1px solid var(--w-line)" : "0"}`;
+      const bar = `<span class="bar"><i class="k" style="width:${k}%"></i><i class="u" style="left:${k}%;width:${u}%"></i></span>`;
+      // Four across has no room for a bar beside the words: under them.
+      if (across > 2) {
+        return `<div class="row tall" style="${edge}"><div class="top"><b>Core ${c + 1}</b>` +
+               `<span class="num v">${u + k}%</span></div>${bar}</div>`;
+      }
+      return `<div class="row" style="${edge}"><b style="width:66px">Core ${c + 1}</b>${bar}` +
+             `<span class="num v" style="width:38px;text-align:right">${u + k}%</span></div>`;
+    }).join("") + `</div>`;
+};
+
 const APPS = [
 
 ["Processes", "A table: what the machine is doing on the left, the one verb on the right.",
@@ -270,7 +317,7 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
  win(520, 300,
    head("Cores", "4 &middot; ARM Cortex-A72 r0p3", btn("Add a worker", "go") + btn("Take one off")) +
    `<div class="body" style="padding-top:18px"><div class="group">` +
-   [["Core 0",0],["Core 1",5],["Core 2",3],["Core 3",0]]
+   [["Core 1",0],["Core 2",5],["Core 3",3],["Core 4",0]]
      .map(([n,p])=>`<div class="row" style="min-height:40px;padding:8px 14px"><div style="width:60px;font-weight:500">${n}</div><span class="bar"><i style="width:${p}%"></i></span><span class="num v" style="width:36px;text-align:right">${p}%</span></div>`).join("") +
    `</div><div class="foot">No workers. Add some and watch them fill.</div></div>`)],
 
@@ -379,10 +426,10 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
  win(560, 590,
    head("Monitor", "4 cores &middot; ARM Cortex-A72 r0p3", `<span class="lg"><i class="u"></i>User<i class="k"></i>Kernel</span>`) +
    `<div class="body" style="padding-top:18px"><div class="group">` +
-   [["Core 0",2,1],["Core 1",8,4],["Core 2",0,0],["Core 3",32,9]]
+   [["Core 1",2,1],["Core 2",8,4],["Core 3",0,0],["Core 4",32,9]]
      .map(([n,u,k])=>`<div class="row" style="min-height:48px;padding:6px 14px"><div class="l" style="flex:none;width:150px"><b>${n}</b><span class="num">${u}% user &middot; ${k}% kernel</span></div><span class="bar"><i class="k" style="width:${k}%"></i><i class="u" style="left:${k}%;width:${u}%"></i></span><span class="num v" style="width:40px;text-align:right">${u+k}%</span></div>`).join("") +
    `</div><div class="gl">The last minute</div><div class="hists">` +
-   [["Core 0",1,3],["Core 1",2,12],["Core 2",3,1],["Core 3",4,38]].map(([n,seed,busy])=>{
+   [["Core 1",1,3],["Core 2",2,12],["Core 3",3,1],["Core 4",4,38]].map(([n,seed,busy])=>{
      let s = seed * 7919, cols = "";
      const r = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
      for (let i = 0; i < 60; i++) {
@@ -395,6 +442,30 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
      return `<div><div class="hname">${n}</div><div class="hist">${cols}</div></div>`;
    }).join("") +
    `</div><div class="foot">A column a second; the newest at the right.</div></div>`)],
+
+["Monitor, 8 cores", "Above four cores (roadmap.md 6h; Diego: \"what happens when i have 8 or 10 cores?\"). The list goes into two columns - a row a core with its name, its bar and its total, the red and green of the bar still saying how much was the kernel's, as Activity Monitor's bars do; the words \"12% user &middot; 3% kernel\" do not fit half a card at the machine's 18. The history is four across. The ThinkPad's eight make the window the height four do: 581.",
+ win(560, 590,
+   head("Monitor", "8 cores", `<span class="lg"><i class="u"></i>User<i class="k"></i>Kernel</span>`) +
+   `<div class="body" style="padding-top:18px">` + cpuRows(8, 2) +
+   `<div class="gl">The last minute</div><div class="hists4">` +
+   cpuLoad(8).map(([c, u]) => `<div><div class="hname">Core ${c + 1}</div>${cpuHist(c + 1, u + 2)}</div>`).join("") +
+   `</div><div class="foot">A column a second; the newest at the right.</div></div>`)],
+
+["Monitor, 16 cores", "Two columns of eight, and a panel a core while the window fits the screen: 997 tall, which a 1080 screen holds and a 720 one does not. Where it would not fit, the history is one panel for every core - the next drawing - and the dots' menu chooses either way: History, a panel a core or all together.",
+ win(560, 1000,
+   head("Monitor", "16 cores", `<span class="lg"><i class="u"></i>User<i class="k"></i>Kernel</span>` + MORE) +
+   `<div class="body" style="padding-top:18px">` + cpuRows(16, 2) +
+   `<div class="gl">The last minute</div><div class="hists4">` +
+   cpuLoad(16).map(([c, u]) => `<div><div class="hname">Core ${c + 1}</div>${cpuHist(c + 1, u + 2)}</div>`).join("") +
+   `</div><div class="foot">A column a second; the newest at the right.</div></div>`)],
+
+["Monitor, 32 cores", "Past sixteen, four columns, each core's name and total over its bar, and the history all together: one panel, every core's user and kernel time averaged, as the header's machine is one thing to watch rather than thirty-two. A panel a core is still in the dots' menu, where the window can hold it. The window is 661 tall, under a 720 screen's 688.",
+ win(560, 670,
+   head("Monitor", "32 cores", `<span class="lg"><i class="u"></i>User<i class="k"></i>Kernel</span>` + MORE) +
+   `<div class="body" style="padding-top:18px">` + cpuRows(32, 4) +
+   `<div class="gl">The last minute</div>` +
+   `<div><div class="hname">All 32 cores</div>${cpuHist(5, 14)}</div>` +
+   `<div class="foot">A column a second; the newest at the right.</div></div>`)],
 
 ["Date &amp; Time", "Now in the header, the time zone as a list to choose from.",
  win(360, 470,

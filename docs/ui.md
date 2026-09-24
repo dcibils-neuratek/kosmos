@@ -1565,6 +1565,16 @@ flat look it is a pill 6 across in a grey between the list's ground and its
 dim words, with no trough and no arrows, as `docs/apps.html` draws a list.
 The column it sits in is still 16 wide, so the hit test did not change.
 
+## 16.23 A person counts from one
+
+Diego, 24 September 2026: "Cores start at 1, not 0". Monitor named its rows
+and panels Core 0 to Core 3, the Cores app its rows the same, and Processes
+showed a thread's core as the kernel numbers it. The kernel counts from zero
+because an index does; a window is read by a person, who counts the first
+core as one. So everything drawn says Core 1 to Core N, and the numbers
+beside a process's threads are the same ones. A log line, the serial port and
+`sysinfo`'s fields keep the kernel's zero: those are read against the code.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

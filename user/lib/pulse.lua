@@ -124,7 +124,7 @@ function pulse.panel(spec)
     g:fill_round(0, 0, self.w, h, "sunken", 10)
     g:frame_round(0, 0, self.w, h, "line_soft", 10)
 
-    local name_w = gfx.measure("Core " .. tostring(n - 1), "label") + 14
+    local name_w = gfx.measure("Core " .. tostring(n), "label") + 14
     local read_w = gfx.measure("no data") + 6
 
     for c = 1, n do
@@ -134,7 +134,9 @@ function pulse.panel(spec)
 
       if c > 1 then g:fill(1, y - 1, self.w - 2, 1, "line_soft") end
 
-      local word = "Core " .. tostring(c - 1)
+      -- From one, as a person counts them - Diego, 24 September: "Cores
+      -- start at 1, not 0". The kernel's zero stays the kernel's.
+      local word = "Core " .. tostring(c)
 
       g:text(15, y + (FLAT_ROW - gfx.height("label")) // 2, word,
              live and "text" or "text_dim", nil, "label")

@@ -6701,7 +6701,24 @@ def check_camera(guest):
     size too big for one to one**, chosen from the dropdown as he chose it,
     draws scaled and keeps coming. And **a camera that sends nothing keeps
     its stream** while the app is looking at it.
+
+    First, **the USB driver runs in the display band**, read at the prompt
+    before anything calls it and lends it one: at NORMAL a busy desktop held
+    it off its core long enough for QEMU to drop the C920's events
+    (`roadmap.md` 6i). 3 is `SCHED_PRIO_DISPLAY`.
     """
+    mark = len(guest.seen)
+    guest.type('for _, p in ipairs(sys.processes() or {}) do '
+               'if p.name == "xhci" then print("BAND" .. "-XHCI", p.priority) '
+               'end end print("BAND" .. "-READ")')
+    guest.wait_for("BAND-READ", "the USB driver's band")
+    bands = re.findall(r"BAND-XHCI\s+(\d+)", guest.seen[mark:])
+
+    if bands != ["3"]:
+        raise Failure("the USB driver is not in the display band: %r - a "
+                      "process holding device authority is given it "
+                      "(`process_grant_devices`)" % bands)
+
     mark = len(guest.seen)
     guest.type("wm camera")
     started(guest)
@@ -6905,7 +6922,7 @@ def check_camera(guest):
     finally:
         stop_desktop(guest)
 
-    return 7
+    return 8
 
 
 def check_cores(guest):

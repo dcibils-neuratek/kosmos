@@ -1005,11 +1005,23 @@ void process_grant_procctl(struct process *p)
  * Hardware. See `SPAWN_DEVICES` for what this is and why a driver does not
  * get it - it is the authority to *mint* a device capability, not the
  * capability itself.
+ *
+ * **And the display band**, as the audio server and the compositor are
+ * given it: a driver is on a deadline the hardware sets. At NORMAL a busy
+ * desktop held the USB driver off its core for tens of milliseconds, and on
+ * 24 September QEMU's xHCI dropped the camera's Transfer Events and the
+ * C920's picture froze (`usb.md` §11); on the ThinkPad the same driver is
+ * the USB mouse, which `sched.h` would put higher still. Diego: "Do 6i yes"
+ * (`roadmap.md` 6i). Not INPUT, for `process_grant_audio`'s reason below:
+ * a band that high is safe only while the thread blocks, and nothing yet
+ * enforces that it does. At DISPLAY a driver that spins shares its core
+ * with the compositor rather than taking it.
  */
 void process_grant_devices(struct process *p)
 {
     if (p != NULL) {
         p->owns_devices = true;
+        thread_set_priority(p->thread, SCHED_PRIO_DISPLAY);
     }
 }
 

@@ -333,7 +333,8 @@ function table_view:draw(g)
     -- is not on core zero, it is nowhere, and printing 0 would say the
     -- first of those.
     --
-    g:text(col.core.x, wy, r.cpu and tostring(r.cpu) or "", fg, bg)
+    -- From one, as Monitor names them; `t->sched.cpu` counts from zero.
+    g:text(col.core.x, wy, r.cpu and tostring(r.cpu + 1) or "", fg, bg)
 
     -- What it holds: the image, the heap, the stacks and any surface it
     -- asked for.

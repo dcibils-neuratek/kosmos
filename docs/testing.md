@@ -9326,3 +9326,18 @@ Large.
 - **desktop** waited for `DESK-TRASH` and read that line before the rest of
   it had arrived: "Drive ... is not in it" of a Trash the guest had just
   listed it in. It waits for a marker on the next line now.
+
+## 18.176 Drivers in the display band, and cores from one
+
+`roadmap.md` 6i: a process holding device authority is given
+`SCHED_PRIO_DISPLAY` by `process_grant_devices`, as the audio server and the
+compositor are given it by theirs. And 6h's first half: a window counts cores
+from one (`ui.md` 16.23).
+
+- **camera** (display harness, both boards), 7 -> 8: the USB driver's band,
+  read at the prompt before anything calls it - a client lends a server its
+  band while it waits, so after the Camera app has asked, the reading would
+  say nothing. 3, `SCHED_PRIO_DISPLAY`. **Control**: the kernel without the
+  line reads 2, NORMAL, and fails.
+- Cores from one has no check of its own: no suite reads Monitor's words, and
+  a check that the string says "Core 1" would test the string.

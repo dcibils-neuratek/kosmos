@@ -1662,17 +1662,22 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
-6i. **AGREED on 24 September - the drivers' band.** Diego: "Do 6i yes". The USB
+6i. **DONE on 24 September (0.10.160) - the drivers' band.** Diego: "Do 6i yes". The USB
    driver runs at NORMAL and the desktop at DISPLAY, so a busy desktop holds
    it off its core: on the camera's first runs that overflowed QEMU's 32 ms
    of camera and dropped Transfer Events. On the ThinkPad the same driver is
    the USB mouse, which `sched.h` puts at INPUT. The proposal is the display
    band for a process holding device authority, as the audio server has;
-   `process.c` says why a band above that is not safe yet.
+   `process.c` says why a band above that is not safe yet. **Built**:
+   `process_grant_devices` sets it, so `xhci`, `e1000`, `powerbutton` and
+   `backlight` run at DISPLAY; the camera check reads the USB driver's band
+   at the prompt (18.176).
 
 6h. **AGREED on 24 September - Monitor with 8, 10 or 16 cores.** "6h yes as
    well". **Drawn** the same evening in `docs/apps.html` - Monitor at 8, 16
-   and 32 cores - for Diego to change before it is built. Diego: "what
+   and 32 cores - for Diego to change before it is built. And Diego the
+   same evening: "Cores start at 1, not 0" - done in 0.10.160 in Monitor,
+   Cores and Processes, and in the drawings (`ui.md` 16.23). Diego: "what
    happens when i have 8 or 10 cores? does the app shows one graph per core
    up to 10? smaller graphs?" It does: two across up to four cores, four
    across above, a row a core in the list - 777 tall at 8, 987 at 10 and
