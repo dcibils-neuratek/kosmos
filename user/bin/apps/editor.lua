@@ -31,27 +31,16 @@ local path = tostring(args or ""):match("^%s*(%S+)") or "/ramfs/untitled.lua"
 local W, H = 560, 420
 
 --
--- The header band, the same numbers Tracker, Preferences, Processes and the
--- Terminal use. `docs/desktop.html` calls this window a *page of text*: the
--- text is the window, and there is one row above it.
+-- **A page of text** (`docs/apps.html`): the kit's header with the file's
+-- name as its subject, Save as the verb and the rest behind the dots, and
+-- the text from the header's rule to the window's edges. It was a row 33
+-- tall with the name as a button and a status line along the bottom; what
+-- the status line said is said beside the name now, where every converted
+-- window says what it is doing.
 --
-local TOOLBAR_Y = 7
-local TOOLBAR_H = 26
-local CONTENT_Y = TOOLBAR_Y + TOOLBAR_H + 8
-local FOOT_H    = 34
+local L = ui.layout
 
 local function base(p) return p:match("([^/]+)$") or p end
-
---
--- **The name's control is as wide as the name**, between a floor and a
--- ceiling. A fixed width puts a short file name in the middle of a lot of
--- nothing, which is what `docs/desktop.html` does not draw; the floor keeps
--- `a.lua` from being a control too small to hit, and the ceiling keeps a
--- long name from reaching the buttons at the other end.
---
-local function name_w(p)
-  return math.max(96, math.min(260, gfx.measure(base(p)) + 28))
-end
 
 local win, err = ui.window{ title = base(path) .. " - Editor",
                             w = W, h = H, x = 100, y = 60 }
@@ -62,14 +51,10 @@ if not win then
 end
 
 local existing = fs.read(path)
-local status = ui.label{ x = 12, y = H - 26, follow = { "left", "bottom" },
-                         text = (type(existing) == "string")
-                                and ("opened " .. path)
-                                or (path .. " is new"),
-                         color = "text_dim" }
 
-local text = ui.editor{ x = 12, y = CONTENT_Y, w = W - 24,
-                        h = H - CONTENT_Y - FOOT_H,
+-- The drawings' page: 10 above the text and 12 before the line numbers.
+local text = ui.editor{ x = 0, y = L.head, w = W, h = H - L.head,
+                        plain = true, inset = { 12, 10 },
                         follow = { "left", "right", "top", "bottom" },
                         text = (type(existing) == "string") and existing or "" }
 
@@ -77,66 +62,52 @@ win:add(text)
 
 -- Declared here and filled below: the header's controls are written after
 -- the actions they run, and two of the actions name each other.
-local where, open_file, save_as, run_file
+local header, open_file, save_as, run_file
 
 local function save()
   local ok, why = fs.write(path, text:content())
 
   if ok then
     text.dirty = false
-    status.text = ("saved %d lines to %s"):format(#text.lines, path)
+    header.sub = ("saved %d lines to %s"):format(#text.lines, path)
   else
-    status.text = "could not save: " .. tostring(why)
+    header.sub = "could not save: " .. tostring(why)
   end
 end
 
 --------------------------------------------------------------------------
 -- The header.
 --
--- **Four buttons became two and a menu.** `docs/desktop.html`: three
--- controls is the rule, and a window that wants a fourth wants a `...`
+-- **Four buttons became one and the dots.** `docs/desktop.html`: three
+-- controls is the rule, and a window that wants a fourth wants a menu
 -- instead. Save stays a button because it is the one thing done over and
--- over; Open, Save as and Run happen once each and go behind the press.
---
--- The file's name is a control rather than a label, and what it does is
--- open another one - which is the question a person is asking when they
--- look at a file name and reach for it.
+-- over; Open, Save as and Run happen once each and go behind the dots.
 --------------------------------------------------------------------------
 
-where = ui.button{
-  x = 12, y = TOOLBAR_Y, w = name_w(path), h = TOOLBAR_H, text = base(path),
-  on_click = function() open_file() end,
+local more = ui.iconbutton{ icon = "more" }
+
+header = ui.header{
+  x = 0, y = 0, w = W, title = base(path),
+  sub = (type(existing) == "string") and "" or "new",
+  right = { ui.button{ text = "Save", on_click = save }, more },
 }
-win:add(where)
 
 -- Both places the path changes go through here, so the name in the header,
 -- the title bar and the path this window saves to cannot drift apart.
 local function opened(p)
   path = p
-  where.text = base(p)
-  where.w = name_w(p)
+  header.title = base(p)
   win:retitle(base(p) .. " - Editor")
 end
 
-win:add(ui.button{ x = W - 100, y = TOOLBAR_Y, w = 48, h = TOOLBAR_H,
-                   text = "Save", follow = { "right", "top" },
-                   on_click = save })
-
-win:add(ui.button{
-  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
-  follow = { "right", "top" },
-  on_click = function()
-    if not win.open_menu then return end
-
-    win:open_menu(win.origin_x + W - 46,
-                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, {
-      { text = "Open...",    on_choose = function() open_file() end },
-      { text = "Save as...", on_choose = function() save_as() end },
-      { separator = true },
-      { text = "Run",        on_choose = function() run_file() end },
-    })
-  end,
-})
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, {
+    { text = "Open...",    on_choose = function() open_file() end },
+    { text = "Save as...", on_choose = function() save_as() end },
+    { separator = true },
+    { text = "Run",        on_choose = function() run_file() end },
+  })
+end
 
 -- Write a program here, run it here.
 --
@@ -150,7 +121,7 @@ win:add(ui.button{
 -- screen, and every confusing minute that follows comes from there.
 function run_file()
   if not path:match("%.lua$") then
-    status.text = "only a .lua file can be run"
+    header.sub = "only a .lua file can be run"
     return
   end
 
@@ -158,7 +129,7 @@ function run_file()
 
   local ok, why = fs.send("/app/wm", { type = "launch", program = path })
 
-  status.text = ok and ("running " .. path)
+  header.sub = ok and ("running " .. path)
                 or ("could not run it: " .. tostring(why))
 end
 
@@ -179,13 +150,13 @@ function open_file()
       local body, why = fs.read(chosen)
 
       if not body then
-        status.text = "could not open " .. chosen .. ": " .. tostring(why)
+        header.sub = "could not open " .. chosen .. ": " .. tostring(why)
         return
       end
 
       opened(chosen)
       text:set(body)
-      status.text = ("opened %s, %d lines"):format(path, #text.lines)
+      header.sub = ("opened %s, %d lines"):format(path, #text.lines)
     end,
   }
 
@@ -206,7 +177,8 @@ function save_as()
   if chooser then chooser:run() end
 end
 
-win:add(status)
+-- After the text, so the focus starts in it.
+win:add(header)
 
 --
 -- Control-S anywhere in the window, not only when the editor has the focus.

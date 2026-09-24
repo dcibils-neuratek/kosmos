@@ -370,7 +370,13 @@ function audio.streams()
                name = (name:gsub("%z.*$", "")) }
   end
 
-  return out
+  --
+  -- **And the master, from the same reply**, as a second value: the Mixer
+  -- wants both every tick, and `stats` is this request again for five of
+  -- the numbers already here.
+  --
+  return out, { starved = r.starved, late = r.late, mixes = r.mixes,
+                master = r.master, master_muted = r.master_muted }
 end
 
 --

@@ -28,7 +28,16 @@
 local themes = {}
 
 -- The order they are offered in, the default first.
-themes.order = { "plex", "plexnight", "classic", "studio", "endeavour" }
+--
+-- **Endeavour first since 24 September.** Diego, once the title bar's three
+-- were coloured circles (`roadmap.md` 5zq): "yellow window bars will make
+-- the yellow window button look lost", and "we might need the endeavor
+-- theme to be the default now as its colors match the current style
+-- better". Plex, Plex Night and Classic have yellow or amber tabs, and the
+-- amber minimise sits on its own colour there; Endeavour's tab is a light
+-- blue the three read cleanly on. Being first is the whole of being the
+-- default: the window manager and Preferences both take `order[1]`.
+themes.order = { "endeavour", "plex", "plexnight", "classic", "studio" }
 
 -- What each is called where a person reads it.
 themes.titles = {
@@ -52,9 +61,10 @@ themes.plex = [[
 # Cooler than BeOS's greys and warmer than white: the panels are a faint
 # stone, the rules between things a little darker, and the one
 # saturated colour is a deep IBM-ish blue for the selection and the ring.
-# The yellow tab is BeOS's idea kept, in a softer yellow - on the windows,
-# on the Deskbar and on a scrollbar's thumb, which is where a look's tab
-# colour goes in every look (`theme.lua`). The mockups drew the Deskbar in
+# The yellow tab is BeOS's idea kept, in a softer yellow - on the windows
+# and on the Deskbar, which is where a look's tab colour goes in every look
+# (`theme.lua`); a scrollbar's thumb wore it too until 24 September, when
+# Diego sent it back to the scrollbar's own grey. The mockups drew the Deskbar in
 # stone, and it was until Diego, 22 September: "the deskbar tab color should
 # be yellow or at least the same color of the acccent color of the theme".
 #
@@ -312,16 +322,15 @@ themes.endeavour = [[
 # **The tab is the thing this look forces a decision about**, and it is the
 # one place the screenshots could not simply be copied.
 #
-# One token has carried the focused title bar, the Deskbar and a scrollbar's
-# thumb since 0.10.112, because Diego asked for one accent rather than two
-# that drift. The screenshots' title bar is nearly white, and three things
-# go wrong if this one is: a nearly-white Deskbar is hard to find, a nearly
-# white thumb on a white track is invisible, and `tab_text` has to read on
-# the *unfocused* tab as well, which is a light grey.
+# One token has carried the focused title bar and the Deskbar since
+# 0.10.112, because Diego asked for one accent rather than two that drift -
+# and a scrollbar's thumb as well, until 24 September. The screenshots'
+# title bar is nearly white, and two things go wrong if this one is: a
+# nearly-white Deskbar is hard to find, and `tab_text` has to read on the
+# *unfocused* tab as well, which is a light grey.
 #
 # So the tab is the accent at low saturation - a pale blue that is plainly
-# visible on the blue desktop, plainly visible as a thumb on a white track,
-# and dark enough for near-black words. It is the same idea the screenshots
+# visible on the blue desktop and dark enough for near-black words. It is the same idea the screenshots
 # have, one colour saying what has your attention, in the one token this
 # system already has. Splitting that token is a decision of its own and not
 # one a new look should take on its way past (`roadmap.md` 5zk).

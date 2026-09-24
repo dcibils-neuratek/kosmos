@@ -86,49 +86,68 @@ end
 --------------------------------------------------------------------------
 
 local function say_instead(lines, title)
-  local W, H = 420, 170
+  local W, H = 540, 280
+  local L = ui.layout
   local win = ui.window{ title = title or "Video", w = W, h = H,
                          x = 220, y = 160 }
 
   if not win then return end
 
-  local y = 18
+  --
+  -- **As `docs/apps.html` draws it** (`roadmap.md` 5zp): the header with
+  -- Open as the one verb, and the sentence centred in what is left - the
+  -- first line as the thing that happened, the rest dim under it. It was a
+  -- column of labels at 18 with Open at the bottom left and a Quit at the
+  -- bottom right, beside a window's own close box.
+  --
+  local function open_one()
+    local chooser = panel.open{
+      start = "/home", title = "Open a film", filter = is_film,
+      on_choose = function(chosen)
+        fs.send("/app/wm", { type = "launch", program = "video",
+                             args = chosen })
+        win:close()
+      end,
+    }
 
-  for _, line in ipairs(lines) do
-    win:add(ui.label{ x = 18, y = y, w = W - 36, text = line })
-    y = y + gfx.height() + 6
+    if chooser then chooser:run() end
   end
 
-  win:add(ui.button{
-    x = 18, y = H - 44, text = "Open a film...",
-    on_click = function()
-      local chooser = panel.open{
-        start = "/home", title = "Open a film", filter = is_film,
-        on_choose = function(chosen)
-          fs.send("/app/wm", { type = "launch", program = "video",
-                               args = chosen })
-          win:close()
-        end,
-      }
-
-      if chooser then chooser:run() end
-    end,
+  win:add(ui.header{
+    x = 0, y = 0, w = W, title = "Video",
+    -- The film's name, when there is one: the tab already says "Video".
+    sub = title and title:gsub("^Video:%s*", "") or "nothing open",
+    right = { ui.button{ text = "Open a film...", go = true,
+                         on_click = open_one } },
   })
 
-  win:add(ui.button{
-    x = W - 90, y = H - 44, text = "Quit",
-    on_click = function() win:close() end,
-  })
+  -- Blank lines were spacing in the old column; the block centres itself.
+  local shown = {}
+
+  for _, line in ipairs(lines) do
+    if line ~= "" then shown[#shown + 1] = line:match("^%s*(.-)%s*$") end
+  end
+
+  local step = gfx.height("text") + 6
+  local y = L.head + (H - L.head - #shown * step) // 2
+
+  for i, line in ipairs(shown) do
+    local face = (i == 1) and "label" or "text"
+    local w = gfx.measure(line, face)
+
+    win:add(ui.label{ x = (W - w) // 2, y = y, w = w + 2, text = line,
+                      role = face, color = (i == 1) and "text" or "text_dim" })
+    y = y + step
+  end
 
   win:run()
 end
 
 if not path then
   say_instead({
-    "Nothing open.",
-    "",
-    "File > Open, or start this with a film:",
-    "   video /home/magicword-mjpeg.mp4",
+    "Nothing open",
+    "Open a film, or start this with one:",
+    "video /home/magicword-clip.mp4",
   })
   return
 end

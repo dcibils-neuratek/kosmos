@@ -22,7 +22,7 @@ local ui = use("/lib/ui.lua")
 local theme = ui.theme
 
 local W, H = 560, 460
-local BAR_H = gfx.font.h + 8
+local L = nil                  -- the kit's layout, once it is loaded
 
 local STATUS = "/ramfs/httpd/status"
 local LOG    = "/ramfs/httpd/log"
@@ -52,99 +52,103 @@ local function running()
   return nil
 end
 
-local said = ui.label{ x = 12, y = H - 30, w = W - 24, text = "",
-                       follow = { "left", "right", "bottom" } }
-
-local port_field = ui.field{ x = 90, y = 14 + BAR_H, w = 70, text = "80" }
-local root_field = ui.field{ x = 250, y = 14 + BAR_H, w = 200,
-                             text = "/home/www" }
-
-win:add(ui.label{ x = 12, y = 18 + BAR_H, w = 80, text = "port",
-                  color = "text_dim" })
-win:add(port_field)
-win:add(ui.label{ x = 172, y = 18 + BAR_H, w = 80, text = "directory",
-                  color = "text_dim" })
-win:add(root_field)
+L = ui.layout
 
 --------------------------------------------------------------------------
--- What it is doing.
+-- The window, as `docs/apps.html` draws it (`roadmap.md` 5zp).
+--
+-- **The state is the header's.** It was a box of its own under the fields,
+-- three lines in a sunken well, and the one thing somebody opens this
+-- window to learn - is it serving - was the third thing down. Now it is
+-- the words beside the title, and the verb that changes it - Start, or Stop
+-- while it runs - is the button at the header's end. Clearing the log is
+-- behind the dots, because nobody needs it twice in a row.
+--
+-- **The fields are a card and the log is under it**, both at the drawings'
+-- margins: the kit's `ui.cards` and `ui.layout`, rather than the labels at
+-- x = 12 and 172 this placed by hand - which is the "no margin or spacing"
+-- Diego saw.
 --------------------------------------------------------------------------
 
--- Seventy-six, which is three lines of text and the padding round them.
--- Fifty-eight was two lines' worth and the third - the process id - was
--- drawn underneath the label of the list below it.
-local state = ui.view{ x = 12, y = 48 + BAR_H, w = W - 24, h = 76,
-                       follow = { "left", "right", "top" } }
+local port_field = ui.field{ w = 90, text = "80" }
+local root_field = ui.field{ w = 220, text = "/home/www" }
 
-function state:draw(g)
-  local now = fs.read(STATUS)
-  local id = running()
+local start, stop                -- the verbs, below
+local said = ""                  -- the last thing a verb said, for a moment
 
-  g:sunken(0, 0, self.w, self.h, "sunken")
+local start_button = ui.button{ text = "Start", go = true,
+                                on_click = function() start() end }
+local stop_button = ui.button{ text = "Stop", hidden = true,
+                               on_click = function() stop() end }
 
-  --
-  -- A dot, because the one thing somebody wants from this window is
-  -- answerable at a glance. Green for serving, grey for stopped - and the
-  -- text says the same thing, because a colour on its own is a statement
-  -- nobody who cannot see it can read.
-  --
-  g:fill(8, 8, 10, 10, id and theme.good or theme.line)
+local more = ui.iconbutton{ icon = "more" }
+
+local header = ui.header{ x = 0, y = 0, w = W, title = "Web server",
+                          sub = "stopped",
+                          right = { start_button, stop_button, more } }
+
+local cards = ui.cards{
+  x = 0, y = L.head, w = W, h = 1,
+  follow = { "left", "right", "top" },
+  groups = {
+    { name = "Serving", rows = {
+        { label = "Port", control = port_field },
+        { label = "Directory", control = root_field } } },
+  },
+}
+
+cards.h = cards.content_h
+
+--
+-- What it is doing, in the header: serving and how much, or stopped and
+-- what the last run did - a server that answered nothing and one that
+-- answered a thousand before it stopped are different situations.
+--
+local function state_text(id, now)
+  now = type(now) == "table" and now or {}
 
   if id then
-    g:text(26, 6, ("serving on port %s"):format(
-             (type(now) == "table" and now.port) or "?"),
-           theme.text, theme.sunken)
-
-    if type(now) == "table" then
-      g:text(26, 6 + gfx.font.h + 4,
-             ("%s   at %s   %d served, %d refused")
-             :format(now.root or "?", now.address or "?",
-                     now.served or 0, now.refused or 0),
-             theme.text_dim, theme.sunken)
-    end
-
-    g:text(26, 6 + (gfx.font.h + 4) * 2, ("process %d"):format(id),
-           theme.line, theme.sunken)
-  else
-    g:text(26, 6, "stopped", theme.text, theme.sunken)
-
-    if type(now) == "table" and (now.served or 0) > 0 then
-      -- What the last run did, which is worth keeping on screen: a server
-      -- that answered nothing and one that answered a thousand requests
-      -- before it stopped are different situations.
-      g:text(26, 6 + gfx.font.h + 4,
-             ("last run served %d, refused %d")
-             :format(now.served or 0, now.refused or 0),
-             theme.text_dim, theme.sunken)
-    end
+    return ("serving on port %s · %d served, %d refused · process %d")
+           :format(now.port or "?", now.served or 0, now.refused or 0, id)
   end
+
+  if (now.served or 0) > 0 then
+    return ("stopped · the last run served %d, refused %d")
+           :format(now.served or 0, now.refused or 0)
+  end
+
+  return "stopped"
 end
 
-win:add(state)
-
 --------------------------------------------------------------------------
--- The log.
+-- The log, under the card at the drawings' spacing: a group's name, then
+-- the list 26 below it, to the page's bottom margin.
 --------------------------------------------------------------------------
 
-local lines = ui.list{ x = 12, y = 134 + BAR_H, w = W - 24,
-                       h = H - 208 - BAR_H, items = { "nothing yet" },
+local log_y = L.head + cards.content_h + L.between
+
+local requests = ui.label{ x = L.page_side + 3,
+                           y = log_y + (L.group - gfx.height("heading")) // 2,
+                           w = 200, text = "Requests", role = "heading" }
+
+local lines = ui.list{ x = L.page_side, y = log_y + L.to_card,
+                       w = W - 2 * L.page_side,
+                       h = H - (log_y + L.to_card) - L.page_foot,
+                       items = { "nothing yet" },
                        follow = { "left", "right", "top", "bottom" } }
 
 -- Nothing selected, because a log is read and not chosen from. A list that
 -- highlights its first row is offering an action there is none of.
 lines.selected = 0
 
-win:add(ui.label{ x = 12, y = 120 + BAR_H, w = 200, text = "Requests",
-                  color = "text_dim" })
+win:add(header)
+win:add(cards)
+win:add(requests)
 win:add(lines)
 
---------------------------------------------------------------------------
--- Starting and stopping.
---------------------------------------------------------------------------
-
-local function start()
+function start()
   if running() then
-    said.text = "it is already running"
+    said = "it is already running"
     return
   end
 
@@ -152,12 +156,12 @@ local function start()
   local root = root_field.text:match("^%s*(.-)%s*$")
 
   if not port or port < 1 or port > 65535 then
-    said.text = "that is not a port"
+    said = "that is not a port"
     return
   end
 
   if root == "" then
-    said.text = "which directory?"
+    said = "which directory?"
     return
   end
 
@@ -171,12 +175,12 @@ local function start()
   local attrs = fs.getattr(root)
 
   if not attrs then
-    said.text = root .. " is not there"
+    said = root .. " is not there"
     return
   end
 
   if attrs.kind ~= "directory" then
-    said.text = root .. " is not a directory"
+    said = root .. " is not a directory"
     return
   end
 
@@ -189,15 +193,15 @@ local function start()
   local ok, why = fs.send("/app/wm", { type = "launch", program = "httpd",
                                        args = port .. " " .. root })
 
-  said.text = ok and ("started on port " .. port)
+  said = ok and ("started on port " .. port)
               or ("could not start it: " .. tostring(why))
 end
 
-local function stop()
+function stop()
   local id = running()
 
   if not id then
-    said.text = "it is not running"
+    said = "it is not running"
     return
   end
 
@@ -205,26 +209,17 @@ local function stop()
   -- that may end it. `procs` does exactly this and for the same reason.
   local ok, why = fs.send("/app/wm", { type = "end_process", pid = id })
 
-  said.text = ok and "stopped" or ("could not stop it: " .. tostring(why))
+  said = ok and "" or ("could not stop it: " .. tostring(why))
 end
 
-local row = H - 60
-
-win:add(ui.button{ x = 12, y = row, w = 70, h = 24, text = "Start",
-                   follow = { "left", "bottom" }, on_click = start })
-win:add(ui.button{ x = 90, y = row, w = 70, h = 24, text = "Stop",
-                   follow = { "left", "bottom" }, on_click = stop })
-
-win:add(ui.button{
-  x = 168, y = row, w = 90, h = 24, text = "Clear log",
-  follow = { "left", "bottom" },
-  on_click = function()
-    fs.write(LOG, {})
-    said.text = "log cleared"
-  end,
-})
-
-win:add(said)
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, {
+    { text = "Clear log", on_choose = function()
+        fs.write(LOG, {})
+        lines.items = { "nothing yet" }
+      end },
+  })
+end
 
 --
 -- Re-read on a tick rather than on a change.
@@ -239,6 +234,7 @@ win:add(said)
 -- to cost nothing.
 --
 local last = 0
+local shown_state = nil
 
 function win:on_frame()
   local now = sys.ticks()
@@ -249,6 +245,22 @@ function win:on_frame()
   if now - last < hz // 2 then return false end
 
   last = now
+
+  --
+  -- The header says what the server is doing, or for a moment what a verb
+  -- just said - until the state itself changes, which is the answer to it.
+  --
+  local id = running()
+  local state = state_text(id, fs.read(STATUS))
+
+  if state ~= shown_state then
+    if shown_state then said = "" end
+    shown_state = state
+  end
+
+  header.sub = (said ~= "") and said or state
+  start_button.hidden = id ~= nil
+  stop_button.hidden = id == nil
 
   local text = fs.read(LOG)
 

@@ -21,9 +21,24 @@
 local ui    = use("/lib/ui.lua")
 local theme = ui.theme
 
-local KEY_W, KEY_H, GAP = 60, 38, 6
-local W = GAP + 4 * (KEY_W + GAP)
-local H = 96 + 5 * (KEY_H + GAP)
+--
+-- **As `docs/apps.html` draws it** (`roadmap.md` 5zp): no header at all -
+-- a calculator is a canvas, and the display is its top - then the keys in
+-- a grid 14 in from the edges and 7 apart, 44 tall with a radius of 8. The
+-- operators on the sidebar's grey, `=` in the accent, 0 two keys wide.
+--
+-- It was 60 by 38 keys 6 apart under a display that was a label of the
+-- interface's size, padded with spaces to push the number right.
+--
+local DISPLAY = 92                 -- 18 + a line of 18 + the number + 14
+local PAD, GAP, KEY_H = 14, 7, 44
+local W = 300
+local KEY_W = (W - 2 * PAD - 3 * GAP) // 4
+local H = DISPLAY + PAD + 5 * KEY_H + 4 * GAP + PAD
+
+-- The number at the drawing's 34, which is 44 in this rasterizer's pixels
+-- (`theme.lua`: sizes here are 1.30 times CSS's). The key faces at its 16.
+local NUMBER_PX, KEY_PX = 44, 21
 
 local win, err = ui.window{ title = "Calculator", w = W, h = H,
                             x = 240, y = 140 }
@@ -48,13 +63,10 @@ local pending  = nil      -- the operator waiting for a right-hand side
 local left     = nil      -- what it is waiting to be applied to
 local typing   = false    -- is `shown` something being entered?
 
-local display = ui.label{ x = GAP, y = 12, w = W - GAP * 2, text = "0" }
+local display                      -- the view, made once `present` exists
 
 local function refresh()
-  -- Right-aligned by padding, because the kit has no alignment and a
-  -- calculator that left-aligns its number is one nobody trusts.
-  local room = (W - GAP * 2) // gfx.font.w
-  display.text = (" "):rep(math.max(0, room - #shown)) .. shown
+  win.dirty = true
 end
 
 local function as_number(s)
@@ -131,33 +143,116 @@ end
 -- The keypad.
 --------------------------------------------------------------------------
 
+--
+-- The display: what is waiting, dim, above the number - "12 ×" while the
+-- right-hand side is typed - and the number right-aligned under it, as
+-- large as the drawing makes it. Measured, where it was padded with spaces
+-- because the kit had no alignment.
+--
+local SIGN = { ["+"] = "+", ["-"] = "−", ["*"] = "×", ["/"] = "÷" }
+
+display = ui.view{ x = 0, y = 0, w = W, h = DISPLAY,
+                   follow = { "left", "right", "top" } }
+
+function display:draw(g)
+  g:fill(0, 0, self.w, self.h - 1, theme.sunken)
+  g:fill(0, self.h - 1, self.w, 1, theme.line_soft)
+
+  if pending and left then
+    local was = present(left) .. " " .. (SIGN[pending] or pending)
+
+    g:text(self.w - 20 - gfx.measure(was), 18, was, theme.text_dim)
+  end
+
+  local face = ui.sized("ui", NUMBER_PX)
+
+  g:text(self.w - 20 - gfx.measure(shown, face), 36, shown, theme.text,
+         nil, "ui", NUMBER_PX)
+end
+
+--
+-- The keys, in the drawing's order. The first row is C, which clears, the
+-- rub-out that takes back the last digit, and divide - three keys that all
+-- do something. The drawing had brackets there, which this calculator does
+-- not have, and a key that does nothing is the half-built feeling in its
+-- smallest form.
+--
 local LAYOUT = {
-  { "7", "8", "9", "/" },
-  { "4", "5", "6", "*" },
-  { "1", "2", "3", "-" },
-  { "0", ".", "=", "+" },
-  { "C" },
+  { { "C", 2 }, { "⌫" }, { "/" } },
+  { { "7" }, { "8" }, { "9" }, { "*" } },
+  { { "4" }, { "5" }, { "6" }, { "-" } },
+  { { "1" }, { "2" }, { "3" }, { "+" } },
+  { { "0", 2 }, { "." }, { "=" } },
 }
 
 local function press(label)
   if label:match("^[0-9.]$") then digit(label)
   elseif label == "C" then clear()
+  elseif label == "⌫" then rub()
   elseif label == "=" then apply()
   else operator(label) end
 
   refresh()
 end
 
+--
+-- One key: the kit's button would be the interface's size and shape, and a
+-- key is neither - it is a square of the grid with its face at the size the
+-- drawing gives a key. Pressed, a shade darker.
+--
+local function key(x, y, w, label)
+  local k = ui.view{ x = x, y = y, w = w, h = KEY_H }
+  local op = SIGN[label] or label == "⌫" or label == "C"
+  local eq = (label == "=")
+
+  function k:draw(g)
+    local fill = eq and theme.accent
+                 or op and theme.mix(theme.window, theme.line_soft, 330)
+                 or theme.sunken
+
+    if self.pressed then fill = theme.lift(fill, -16) end
+
+    g:fill_round(0, 0, self.w, self.h, fill, 8)
+
+    if not eq then
+      g:frame_round(0, 0, self.w, self.h, theme.line_soft, 8)
+    end
+
+    local word = SIGN[label] or label
+    local face = ui.sized("ui", KEY_PX)
+
+    g:text((self.w - gfx.measure(word, face)) // 2,
+           (self.h - gfx.height(face)) // 2, word,
+           eq and theme.text_on or theme.text, nil, "ui", KEY_PX)
+  end
+
+  function k:mouse(action, mx, my)
+    local inside = mx >= 0 and mx < self.w and my >= 0 and my < self.h
+
+    if action == "press" then
+      self.pressed = true
+    elseif action == "move" then
+      self.pressed = inside
+    elseif action == "release" then
+      if self.pressed and inside then press(label) end
+      self.pressed = false
+    end
+
+    return true
+  end
+
+  return k
+end
+
 for row, keys in ipairs(LAYOUT) do
-  for col, label in ipairs(keys) do
-    win:add(ui.button{
-      x = GAP + (col - 1) * (KEY_W + GAP),
-      y = 52 + (row - 1) * (KEY_H + GAP),
-      w = (label == "C") and (KEY_W * 2 + GAP) or KEY_W,
-      h = KEY_H,
-      text = label,
-      on_click = function() press(label) end,
-    })
+  local x = PAD
+
+  for _, entry in ipairs(keys) do
+    local span = entry[2] or 1
+    local w = span * KEY_W + (span - 1) * GAP
+
+    win:add(key(x, DISPLAY + PAD + (row - 1) * (KEY_H + GAP), w, entry[1]))
+    x = x + w + GAP
   end
 end
 

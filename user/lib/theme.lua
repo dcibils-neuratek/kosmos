@@ -64,8 +64,9 @@ theme.palettes.dark = {
   text_dim  = 0xff8b949e,
   text_on   = 0xff0d1117,
 
-  -- **The look's accent**: a focused window's tab, the Deskbar and a
-  -- scrollbar's thumb, all three (`roadmap.md` 5y). The Deskbar had colours
+  -- **The look's accent**: a focused window's tab and the Deskbar - and a
+  -- scrollbar's thumb from 22 to 24 September, when Diego sent the thumb
+  -- back to the scrollbar's own grey (`roadmap.md` 5y). The Deskbar had colours
   -- of its own, `bar` and `bar_text`, until Diego, 22 September: "the
   -- deskbar tab color should be yellow or at least the same color of the
   -- acccent color of the theme" - one token, so no look can let the two
@@ -291,10 +292,22 @@ for _, k in ipairs(theme.tokens) do known[k] = true end
 -- since the tab grew for the ThinkPad - two numbers for one thing, and the
 -- test that held the title face to its box was holding it to the wrong one.
 --
+--
+-- **The drawings' numbers since 24 September** (`roadmap.md` 5zp), measured
+-- off `docs/tracker2.html` and `docs/preferences.html` at one pixel to one:
+-- a list's row 32 (it was 24), a button and a field the dropdown's 31 (they
+-- were 28 and 26), a window's corner 12 (it was 8). Diego: "The spacing of
+-- elements in the ui is key to a nice design... Make sure all widgets are
+-- spaced and have the correct margin as the mockups."
+--
+-- A row of 24 put a 16-pixel face in 24 pixels of height - four above and
+-- four below - which is the "too close to other elements" he saw. The
+-- drawings give a row 7 above and 7 below a 17-pixel line.
+--
 theme.metrics = {
-  row     = 24,   -- a list, a tree or a menu row
-  button  = 28,   -- a button
-  field   = 26,   -- a one-line field
+  row     = 32,   -- a list, a tree or a menu row
+  button  = 31,   -- a button: the dropdown's height, so a header has one
+  field   = 31,   -- a one-line field, the same
   tab     = 26,   -- a window's title tab
   deskbar = 32,   -- the Deskbar
   gap     = 12,   -- between widgets, and from a window's edge
@@ -313,7 +326,7 @@ theme.metrics = {
   -- until 23 September and what a look may still ask for: the metrics are
   -- the same table a theme may set, so a look that wants 1995 can have it.
   --
-  corner  = 8,    -- a window's rounded corner
+  corner  = 12,   -- a window's rounded corner: the drawings' `.win`
   shadow  = 14,   -- how far its shadow reaches
 }
 

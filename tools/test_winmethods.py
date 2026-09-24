@@ -27,6 +27,13 @@ It is a heuristic in one respect and deliberately so: it trusts that a local
 called `win` or `window` is a window. That is the convention every
 application here follows, and a file that breaks it can be named in `SKIP`
 with a reason.
+
+**And a drawing context is left the way it was entered.** `g:push` returns
+what `g:pop` needs to restore, and a `g:pop()` with nothing in it is the same
+shape of bug as the first: it parses, the window opens, and the program ends
+the first time that view paints - which on 24 September was Processes, as
+the whole of its window, black. So a `pop` on a context (`g` or `gc`) has to
+be given something, and a `push` on one has to be kept.
 """
 
 import os
@@ -47,6 +54,12 @@ RECEIVER = re.compile(r"\b(win|window)\s*:\s*([A-Za-z_][A-Za-z_0-9]*)\s*\(")
 # its window a handler of its own, which is how `on_key` and `on_frame` are
 # supplied and is not a call at all.
 DEFINES = re.compile(r"\bfunction\s+(?:win|window)\s*:\s*([A-Za-z_][A-Za-z_0-9]*)")
+
+# A drawing context's `pop` with nothing to restore, and a `push` whose
+# answer is thrown away - the statement starts with it rather than assigning
+# it.
+BARE_POP = re.compile(r"\b(?:g|gc)\s*:\s*pop\s*\(\s*\)")
+LOST_PUSH = re.compile(r"^\s*(?:g|gc)\s*:\s*push\s*\(", re.M)
 
 # `ui.lua`'s own, which is the list of what a window can do.
 KIT_DEFINES = re.compile(r"^function\s+window\s*:\s*([A-Za-z_][A-Za-z_0-9]*)",
@@ -110,6 +123,7 @@ def main():
 
     checks = 0
     bad = []
+    contexts = []
 
     for where in LOOK_IN:
         for folder, _, names in os.walk(where):
@@ -140,6 +154,23 @@ def main():
                     line = 1 + source[:hit.start()].count("\n")
                     bad.append((rel, line, method))
 
+                for pattern, what in ((BARE_POP, "pop"), (LOST_PUSH, "push")):
+                    for hit in pattern.finditer(source):
+                        line = 1 + source[:hit.start()].count("\n")
+                        contexts.append((rel, line, what))
+
+    if contexts:
+        print("test_winmethods: FAIL", file=sys.stderr)
+
+        for rel, line, what in contexts:
+            print("  %s:%d %s" % (rel, line,
+                  "calls g:pop() with nothing to restore - it takes what "
+                  "g:push returned" if what == "pop" else
+                  "calls g:push and throws away what g:pop will need"),
+                  file=sys.stderr)
+
+        return 1
+
     if bad:
         print("test_winmethods: FAIL", file=sys.stderr)
 
@@ -154,7 +185,8 @@ def main():
         return 1
 
     print("PASS: %d calls on a window, every method one the kit defines or "
-          "the file supplies (%d in `ui.lua`)" % (checks, len(known)))
+          "the file supplies (%d in `ui.lua`), and no drawing context left "
+          "without what it was entered with" % (checks, len(known)))
     return 0
 
 

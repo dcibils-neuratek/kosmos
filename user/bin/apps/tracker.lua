@@ -60,9 +60,16 @@ local W, H = 780, 520
 -- row of buttons and a trail of every path segment each took a strip across
 -- the top; the header is the one strip that replaced them, and the files
 -- start immediately under it.
-local TOOLBAR_Y = 7
-local TOOLBAR_H = 26
-local CONTENT_Y = TOOLBAR_Y + TOOLBAR_H + 8
+--
+-- **The kit's header since 0.10.149** (`docs/tracker2.html`): 46 with its
+-- rule, back and forward and the place as a pill on the left, and search,
+-- a new folder, the view and the dots as icons on the right. It was a row
+-- 33 tall of words in boxes - "<", ">", Find, New, View, "..." - which the
+-- comment below it called a decision rather than a shortfall; the kit has
+-- icon buttons now, and the drawing was always icons.
+--
+local L = ui.layout
+local CONTENT_Y = L.head + 12
 local FOOT_H    = 26               -- the status line, when there is one
 
 -- Nothing is offset by a menu bar any more. Kept as a name rather than
@@ -200,7 +207,16 @@ end
 -- top. The window manager decides that and says so in its reply.
 if backdrop then W, H = win.w, win.h end
 
-local GW, GH = gfx.font.w, gfx.font.h
+--
+-- **The face's own height, asked once the window has said what its faces
+-- are** - an icon's label is set in it - and the list's rows at the fixed
+-- layout's height, as every list is (`docs/tracker2.html`'s list: a row of
+-- words with 6 above and below). Both were `gfx.font.h`, the 16-pixel
+-- bitmap the kit loads before a window exists, so under the look's faces
+-- the rows of the list were 16 apart with 21-pixel words in them.
+--
+local GW, GH = gfx.font.w, gfx.height()
+local LROW = ui.metrics.row
 
 --
 -- How big the icons are here, which is a choice and is kept (`roadmap.md`
@@ -257,6 +273,20 @@ end
 -- it opens. Declared here because `visit` retitles the first, the header
 -- defines them, and the menu is written next to the other menus.
 local place_button, search, search_on, trail_menu, more_menu, view_menu
+local header
+
+-- The place button's picture: the drawing's house for Home, the Trash's
+-- bin, a drive for anything under `/drives`, and a folder for the rest.
+local function place_icon(path)
+  if path == "/home" then return "home" end
+  if path == files.TRASH or path:sub(1, #files.TRASH + 1) == files.TRASH .. "/"
+  then
+    return "trash"
+  end
+  if path == "/drives" or path:match("^/drives/") then return "drive" end
+
+  return "folder"
+end
 local place_pending             -- what a place dropped on Places will be,
                                 -- while the same box asks for its name
 
@@ -480,9 +510,7 @@ rename_field = ui.field{ x = 12, y = H - FOOT_H - 30, w = 300, text = "",
 -- thing it has that a file manager usually does not; simplifying a window
 -- is not a reason to lose a feature (`roadmap.md` 5zg).
 --
-search = ui.field{ x = 80, y = TOOLBAR_Y, w = 200,
-                   h = TOOLBAR_H, text = "", hint = "Search",
-                   hidden = true, follow = { "left", "top" } }
+search = ui.field{ w = 220, text = "", hint = "Search", hidden = true }
 
 --------------------------------------------------------------------------
 -- The columns.
@@ -496,9 +524,9 @@ search = ui.field{ x = 80, y = TOOLBAR_Y, w = 200,
 --------------------------------------------------------------------------
 
 local COLUMNS = {
-  { key = "name", title = "Name", x = 4,   w = 210 },
-  { key = "size", title = "Size", x = 220, w = 90  },
-  { key = "kind", title = "Kind", x = 316, w = 90  },
+  { key = "name", title = "Name", x = 10,  w = 210 },
+  { key = "size", title = "Size", x = 226, w = 90  },
+  { key = "kind", title = "Kind", x = 322, w = 90  },
 }
 
 --
@@ -765,7 +793,7 @@ local function box_of(self, n)
 
   local w = self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0)
 
-  return 1, (self.top_row or 0) + i * GH, w, GH
+  return 1, (self.top_row or 0) + i * LROW, w, LROW
 end
 
 --
@@ -805,7 +833,7 @@ local function at_point(self, x, y)
 
   if y < (self.top_row or 0) then return nil end
 
-  return (self.first or 1) + (y - self.top_row) // GH
+  return (self.first or 1) + (y - self.top_row) // LROW
 end
 
 local function draw_icons(self, g, list)
@@ -945,16 +973,25 @@ function rows:draw(g)
     return
   end
 
-  -- The heading, which is also what you click to sort.
-  g:fill(1, 1, self.w - 2, GH + 4, theme.raised)
+  --
+  -- The heading, which is also what you click to sort: a row of the list's
+  -- height with the columns' names dim in it and a hairline under it, on
+  -- the list's own ground in a flat look and the raised face in the others.
+  --
+  local flat = theme.flat
+  local ground = flat and theme.sunken or theme.raised
+  local wy = (LROW - gfx.height()) // 2
+
+  g:fill(1, 1, self.w - 2, LROW - 1, ground)
+  g:fill(1, LROW, self.w - 2, 1, theme.line_soft)
 
   for _, c in ipairs(COLUMNS) do
     local mark = (sort_by == c.key) and (reversed and " v" or " ^") or ""
-    g:text(c.x, 3, c.title .. mark, theme.text_dim, theme.raised)
+    g:text(c.x, wy, c.title .. mark, theme.text_dim, ground)
   end
 
-  local top = GH + 6
-  local per = (self.h - top - 2) // GH
+  local top = LROW + 1
+  local per = math.max(1, (self.h - top - 2) // LROW)
 
   self.per_page = per
   self.top_row  = top
@@ -998,13 +1035,19 @@ function rows:draw(g)
 
     if not e then break end
 
-    local y  = top + i * GH
+    local ry = top + i * LROW
+    local y  = ry + wy
     local on = marked[e.name] or false
-    local bg = on and theme.accent or theme.sunken
-    local fg = on and theme.text_on or theme.text
+
+    -- Chosen: a pale band with the words as they were in a flat look (the
+    -- drawing's `.row.on`), the accent with white words in the others.
+    local bg = on and (flat and theme.line_soft or theme.accent)
+               or theme.sunken
+    local fg = (on and not flat) and theme.text_on or theme.text
 
     if on then
-      g:fill(1, y, self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0), GH, bg)
+      g:fill(1, ry, self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0), LROW,
+             bg)
     end
 
     g:text(COLUMNS[1].x, y, files.label(e), fg, bg)
@@ -1567,6 +1610,12 @@ function show(path)
   -- the whole path: the whole path is what pressing it opens.
   if place_button then
     place_button.text = (path == "/") and "/" or last_part(path)
+    place_button.icon = place_icon(path)
+    place_button:fit()
+
+    -- The header places its controls from their widths, and this one's
+    -- just changed.
+    if header then header:measure() end
   end
 
   recount()
@@ -1635,20 +1684,12 @@ local function chrome(widget)
 end
 
 
-local function button(x, w, text, fn)
-  local b = ui.button{ x = x, y = TOOLBAR_Y, w = w, h = TOOLBAR_H,
-                       text = text, on_click = fn }
-  chrome(b)
-  return b
-end
-
 --
 -- Back and Forward first, where every browser and every file manager has
--- put them since 1995. Arrows rather than words because two words is a
--- third of the header for something that is understood at a glance.
+-- put them since 1995 - as the drawing's arrows, the kit's icon buttons.
 --
-button(12, 28, "<", go_back)
-button(44, 28, ">", go_forward)
+local back_button = ui.iconbutton{ icon = "back", on_click = go_back }
+local forward_button = ui.iconbutton{ icon = "forward", on_click = go_forward }
 
 function go_up()
   if where ~= "/" then visit(files.parent(where)) end
@@ -1661,65 +1702,18 @@ end
 -- are one press from here rather than nought, which is the trade the whole
 -- header is: three bands of chrome for one.
 --
-place_button = button(80, 200, "Home", function()
+-- A pill with the place's picture and a chevron (`ui.button`'s `icon` and
+-- `chevron`), in the label face, as `docs/tracker2.html` draws it.
+--
+place_button = ui.button{ text = "Home", icon = "home", chevron = true,
+                          role = "label" }
+
+place_button.on_click = function()
   -- On the screen: `open_menu` opens a window of its own and the window
-  -- manager places windows on the screen. `ui.menubar` adds the origin the
-  -- same way.
-  if win.open_menu then
-    win:open_menu(win.origin_x + 80, win.origin_y + TOOLBAR_Y + TOOLBAR_H,
-                  trail_menu())
-  end
-end)
-
---
--- The right of the header: what makes something, what changes how it is
--- shown, what searches, and everything else.
---
--- Placed from the right edge and pinned to it, so widening the window
--- widens the gap in the middle rather than stranding these.
---
-local function right_button(from_right, w, text, fn)
-  local b = ui.button{ x = W - from_right, y = TOOLBAR_Y, w = w,
-                       h = TOOLBAR_H, text = text, on_click = fn,
-                       follow = { "right", "top" } }
-  chrome(b)
-  return b
+  -- manager places windows on the screen.
+  win:open_menu(win.origin_x + place_button.x, win.origin_y + L.head,
+                trail_menu())
 end
-
---
--- **Words rather than glyphs**, and that is a decision rather than a
--- shortfall. `docs/tracker2.html` draws these as icons, which is what the
--- screenshot beside it has; `ui.button` takes text, and a magnifier or a
--- folder-with-a-plus would be either a character the face may not have or a
--- new kind of button in the kit. Four short words are legible today and
--- read the same at every scale, and an icon button is a piece of work with
--- its own name (`roadmap.md` 5zg).
---
-right_button(46, 34, "...", function()
-  if win.open_menu then
-    win:open_menu(win.origin_x + W - 46,
-                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, more_menu())
-  end
-end)
-
---
--- **View opens its own menu rather than toggling.** The drawing has an icon
--- for the layout and a chevron beside it for the rest, which is two
--- controls for one idea; one button that opens the six rows - as icons, as
--- list, and the sort and sizes under them - is the same thing with less
--- chrome, and it keeps every mark in one place.
---
-right_button(102, 50, "View", function()
-  -- `view_menu` is the function the menu bar used to hand `ui.menu_items`,
-  -- which resolves a menu's `items` when it is one. Called directly here,
-  -- because what `open_menu` wants is the items and not the menu.
-  if win.open_menu then
-    win:open_menu(win.origin_x + W - 102,
-                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, view_menu())
-  end
-end)
-
-right_button(156, 48, "New", function() new_folder() end)
 
 --
 -- The magnifier, which swaps the place button for the field and back.
@@ -1733,6 +1727,7 @@ local function toggle_search()
   search_on = not search_on
   search.hidden = not search_on
   place_button.hidden = search_on
+  header:measure()
 
   if search_on then
     win:focus_on(search)
@@ -1744,7 +1739,54 @@ local function toggle_search()
   win:paint()
 end
 
-right_button(212, 50, "Find", toggle_search)
+--
+-- The right of the header: what searches, what makes something, what
+-- changes how it is shown, and everything else - four icons, as drawn.
+--
+-- **View opens its own menu rather than toggling.** The drawing has an icon
+-- for the layout; one button that opens the six rows - as icons, as list,
+-- and the sort and sizes under them - is the same thing with every mark in
+-- one place.
+--
+local find_button = ui.iconbutton{ icon = "search", on_click = toggle_search }
+local new_button = ui.iconbutton{ icon = "newfolder",
+                                  on_click = function() new_folder() end }
+local view_button = ui.iconbutton{ icon = "menu" }
+local more_button = ui.iconbutton{ icon = "more" }
+
+view_button.on_click = function()
+  -- `view_menu` is the function the menu bar used to hand `ui.menu_items`,
+  -- which resolves a menu's `items` when it is one. Called directly here,
+  -- because what `open_menu` wants is the items and not the menu.
+  win:open_menu(win.origin_x + view_button.x, win.origin_y + L.head,
+                view_menu())
+end
+
+more_button.on_click = function()
+  win:open_menu(win.origin_x + more_button.x, win.origin_y + L.head,
+                more_menu())
+end
+
+header = ui.header{
+  x = 0, y = 0, w = W, title = "",
+  left = { back_button, forward_button, place_button, search },
+  right = { find_button, new_button, view_button, more_button },
+}
+
+chrome(header)
+
+--
+-- Where the header's controls and the files are, in points inside the
+-- window - for the display harness, which drops on a place row and opens
+-- View by its position, and held a copy of this layout that went stale
+-- every time the header moved.
+--
+if not backdrop then
+  header:measure()
+  print(("tracker: content at %d, view at %d,%d"):format(
+        CONTENT_Y, view_button.x + view_button.w // 2,
+        view_button.y + view_button.h // 2))
+end
 
 --
 -- Named, because the menu and the toolbar do the same things and the same

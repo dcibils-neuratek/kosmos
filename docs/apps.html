@@ -88,6 +88,16 @@
   .slider i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--w-accent); border-radius: 2px; }
   .slider b { position: absolute; top: -6px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%;
               background: #fff; border: 1px solid #c3c6cc; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .slider.fill { flex: 1; width: auto; }
+  .slider s { position: absolute; left: 0; top: 13px; height: 3px; background: #2fa84f; border-radius: 1px; }
+  .tick { width: 18px; height: 18px; border-radius: 5px; border: 1px solid #c3c6cc; background: #fff; flex: none;
+          display: grid; place-items: center; }
+  .tick.on { background: var(--w-accent); border-color: var(--w-accent); }
+  .tick svg { width: 15px; height: 15px; }
+  .list { background: #fff; border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; position: relative; }
+  .list div { height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 12.5px; }
+  .list .on { background: var(--w-sel); }
+  .list i { position: absolute; right: 3px; top: 3px; width: 6px; height: 50px; border-radius: 3px; background: #c3c6cc; }
 
   /* A page of cards, as Preferences. */
   .body { padding: 22px 26px 26px; }
@@ -182,9 +192,9 @@ const APPS = [
    [["Memory","89 of 512 MB",17],["Threads","28 of 2048",2],["Processes","20 of 512",4],["Endpoints","21 of 8232",1]]
      .map(([a,b,p])=>`<div><div style="display:flex;font-size:12px"><span style="color:var(--w-dim);flex:1">${a}</span><span class="num">${b}</span></div><div class="bar" style="margin-top:6px"><i style="width:${p}%"></i></div></div>`).join("") +
    `</div><div class="view" style="border-top:1px solid var(--w-line)">` +
-   `<div class="th"><span style="width:36px">id</span><span style="flex:1">name</span><span style="width:70px">kind</span><span style="width:70px">priority</span><span style="width:40px">core</span><span style="width:80px;text-align:right">memory</span><span style="width:120px">processor</span></div>` +
+   `<div class="th"><span style="width:36px">id</span><span style="flex:1">name</span><span style="width:70px">kind</span><span style="width:76px">draws</span><span style="width:70px">priority</span><span style="width:40px">core</span><span style="width:80px;text-align:right">memory</span><span style="width:120px">processor</span></div>` +
    [["18","wm","program","display","1","14508 KB",1],["1","init","server","display","1","2668 KB",0],["2","console","server","display","2","2668 KB",0],["3","ramfs","server","normal","3","4836 KB",0],["8","diskfs","server","normal","3","4292 KB",0],["10","e1000","driver","normal","2","2668 KB",0],["11","xhci","driver","normal","0","2668 KB",0]]
-     .map((r,i)=>`<div class="tr${i===1?" on":""}"><span class="num" style="width:36px;color:var(--w-dim)">${r[0]}</span><span style="flex:1">${r[1]}</span><span style="width:70px;color:var(--w-dim)">${r[2]}</span><span style="width:70px">${r[3]}</span><span class="num" style="width:40px">${r[4]}</span><span class="num" style="width:80px;text-align:right">${r[5]}</span><span style="width:120px;display:flex;gap:8px;align-items:center"><span class="bar"><i style="width:${r[6]*8}%"></i></span><span class="num" style="width:26px;text-align:right;color:var(--w-dim)">${r[6]}%</span></span></div>`).join("") +
+     .map((r,i)=>`<div class="tr${i===1?" on":""}"><span class="num" style="width:36px;color:var(--w-dim)">${r[0]}</span><span style="flex:1">${r[1]}</span><span style="width:70px;color:var(--w-dim)">${r[2]}</span><span style="width:76px;color:var(--w-dim)">${r[1]==="wm"?"commands":""}</span><span style="width:70px">${r[3]}</span><span class="num" style="width:40px">${r[4]}</span><span class="num" style="width:80px;text-align:right">${r[5]}</span><span style="width:120px;display:flex;gap:8px;align-items:center"><span class="bar"><i style="width:${r[6]*8}%"></i></span><span class="num" style="width:26px;text-align:right;color:var(--w-dim)">${r[6]}%</span></span></div>`).join("") +
    `</div>`)],
 
 ["Terminal", "A page of text. The header says where you are; the console is the window.",
@@ -225,7 +235,7 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
  win(300, 390,
    `<div class="display"><div class="was">12 &times; 7</div><div class="now">84</div></div>` +
    `<div class="keys">` +
-   [["C","op"],["(","op"],[")","op"],["&divide;","op"],["7"],["8"],["9"],["&times;","op"],["4"],["5"],["6"],["&minus;","op"],["1"],["2"],["3"],["+","op"],["0","wide"],["."],["=","eq"]]
+   [["C","op wide"],["&#9003;","op"],["&divide;","op"],["7"],["8"],["9"],["&times;","op"],["4"],["5"],["6"],["&minus;","op"],["1"],["2"],["3"],["+","op"],["0","wide"],["."],["=","eq"]]
      .map(([k,c])=>`<div class="key${c ? " " + c : ""}">${k}</div>`).join("") + `</div>`)],
 
 ["Cores", "A table of processors: the machine on the left, the two verbs on the right.",
@@ -246,17 +256,21 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
      row("2 &middot; KOSMOS", "kfs &middot; 512 MB, 509 free", `<span class="v">/home</span>`)]) +
    `</div>`)],
 
-["Widgets", "The kit's own catalogue: every control, in the look, in a card.",
- win(460, 440,
+["Widgets", "The kit's own catalogue: every control, in the look, in a card, and the list under it. What the last one did is said beside the title.",
+ win(460, 658,
    head("Widgets", "the kit's vocabulary", MORE) +
    `<div class="body">` +
    group("Controls", [
      row("A button", "", btn("Press me")),
      row("The verb", "", btn("And me", "go")),
      row("A switch", "", sw(true)),
+     row("A tick", "", `<span class="tick"></span>`),
      row("A choice", "", drop("threads")),
-     row("A level", "", slider(60))]) +
-   `<div class="foot">Click, or Tab and Enter.</div></div>`)],
+     row("A level", "", slider(60)),
+     row("Some words", "", `<span class="field" style="width:220px">editable text</span>`)]) +
+   `<div class="gl">A list</div><div class="list" style="height:100px">` +
+   ["threads","address spaces","endpoints"].map((t,i)=>`<div class="${i===0?"on":""}">${t}</div>`).join("") +
+   `<i></i></div><div class="foot">Click, or Tab and Enter.</div></div>`)],
 
 ["Launcher", "A form: what it starts, with what, under which picture. Revert and Save are the verbs.",
  win(520, 330,
@@ -268,15 +282,19 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
      row("Picture", "", drop("App_Doom"))]) +
    `</div>`)],
 
-["Mixer", "Settings for one device: a card of levels. With no device, the empty state says so.",
- win(460, 320,
-   head("Mixer", "Intel HDA &middot; 44100 Hz", btn("Test tone")) +
+["Mixer", "The master in a card, and a row for every program making a noise: its fader, the loudest sample it sent as a line under the rail, its level, and a switch that is on while it is heard. With no device, the empty state says so.",
+ win(460, 400,
+   head("Mixer", "44100 Hz &middot; stereo", btn("Test tone")) +
    `<div class="body">` +
    group("Output", [
-     row("Master", "", slider(70)),
-     row("Headphones", "", slider(55)),
-     row("Mute", "", sw(false))]) +
-   `</div>`)],
+     `<div class="row"><div class="l" style="flex:none;width:52px"><b>Master</b></div>` +
+     `<span class="slider fill"><i style="width:80%"></i><b style="left:80%"></b></span>` +
+     `<span class="v num" style="width:40px;text-align:right">80%</span>${sw(true)}</div>`]) +
+   group("Playing", [
+     `<div class="row"><div class="l" style="flex:none;width:52px"><b>beep</b><span>playing</span></div>` +
+     `<span class="slider fill"><i style="width:100%"></i><b style="left:100%"></b><s style="width:46%"></s></span>` +
+     `<span class="v num" style="width:40px;text-align:right">100%</span>${sw(true)}</div>`]) +
+   `<div class="foot">18342 periods mixed</div></div>`)],
 
 ["Network", "A card for the card, a card for the addresses. Apply is the verb; the rest is behind &#8942;.",
  win(500, 440,

@@ -83,14 +83,37 @@ local CORES      = info.cpus_present or ONLINE
 
 local ident = pulse.identity()
 
-local W = 470
-local H = 48 + pulse.height(CORES, #ident) + 62
+--
+-- Sized from what is in it: the header, the page's top margin, the panel,
+-- two lines of note and the page's foot - so a machine with one core and
+-- one with eight both get a window with the drawings' margins all round.
+--
+local L = ui.layout
+local W = 520
+
+local function height()
+  return L.head + L.page_top + pulse.height(CORES, #ident)
+         + 10 + 2 * (gfx.height() + 3) + L.page_foot
+end
+
+local H = height()
 
 local win, err = ui.window{ title = "Cores", w = W, h = H, x = 120, y = 100 }
 
 if not win then
   print("cores: " .. tostring(err))
   return
+end
+
+--
+-- **Measured again once the window exists**, because the look arrives with
+-- it: whether the panel is the flat look's card of rows or the Pulse recess
+-- is the look's to say, and a window sized before it knew was a card
+-- running off its own bottom edge.
+--
+if height() ~= H then
+  H = height()
+  win:resize(W, H)
 end
 
 local pct  = {}
@@ -234,55 +257,49 @@ end
 --------------------------------------------------------------------------
 
 --
--- **The controls go above the panel, and that is a decision the test
--- forced.**
+-- **The controls are the header's** (`docs/apps.html`, `roadmap.md` 5zp):
+-- Add a worker as the verb that starts something, Take one off beside it,
+-- and how many are running where the window's subject goes.
 --
--- Underneath, their y depended on how many processors the machine has -
--- four rows on this board and one on the other - so the display harness,
--- which drives a real pointer at real coordinates, needed a different
--- number per board to click the same button. A control whose position
--- depends on the data above it is a control nothing can reliably aim at,
--- and that is true of a person on a strange machine as much as of a test.
+-- They were a row above the panel, and the reason they were above rather
+-- than under still holds: under the panel, their position depended on how
+-- many processors the machine has, and nothing can aim at a control that
+-- moves with the data. A header is at the window's own top on every
+-- machine - and the display harness now drives them with the keyboard,
+-- which aims at nothing at all.
 --
--- Above, they are at a fixed offset from the window's own corner on every
--- machine, at any core count. A row of controls across the top is Tracker's
--- shape anyway.
---
-win:add(ui.button{
-  x = 14, y = 14, w = 110, h = 24, text = "add a worker",
-  on_click = add_worker,
-})
+-- The part a person is looking for: "Cortex-A72 r0p3", not the vendor alone.
+local processor = table.concat({ ident[2] or "", ident[3] or "" }, " ")
+                  :match("^%s*(.-)%s*$")
 
-win:add(ui.button{
-  x = 134, y = 14, w = 110, h = 24, text = "take one off",
-  on_click = remove_worker,
-})
+local header = ui.header{
+  x = 0, y = 0, w = W, title = "Cores", sub = "no workers",
+  right = { ui.button{ text = "Add a worker", go = true,
+                       on_click = add_worker },
+            ui.button{ text = "Take one off", on_click = remove_worker } },
+}
 
-local count = ui.label{ x = 258, y = 20, text = "no workers",
-                        color = "text_dim" }
-win:add(count)
+win:add(header)
 
 win:add(pulse.panel{
-  x = 14, y = 48, w = W - 28,
+  x = L.page_side, y = L.head + L.page_top, w = W - 2 * L.page_side,
   cores = CORES, online = ONLINE, scheduling = SCHEDULING,
   ident = ident,
   read = function(c) return pct[c] end,
 })
 
-local y = 48 + pulse.height(CORES, #ident)
+local y = L.head + L.page_top + pulse.height(CORES, #ident)
 
 --
--- Said plainly rather than left to be inferred from a dark chip.
+-- Said plainly rather than left to be inferred from a dark chip - as the
+-- page's note, 10 under what it is about, in the dim `ui` face.
 --
 -- Two labels and not one wrapped string: `ui.label` does not wrap, and a
--- line longer than the window is a line with its end cut off. `ui.text`
--- wraps and would be the widget for a paragraph; two lines are not one.
+-- line longer than the window is a line with its end cut off.
 --
 local note
 
 if ONLINE > SCHEDULING then
-  -- Kept inside the window on purpose: `ui.label` does not wrap, and the
-  -- first version of this line ran off the right edge and ended in "kern".
   note = { ("%d processors, all ticking. %d given work;")
            :format(ONLINE, SCHEDULING),
            "run with SMPWORK=4 to place threads on all of them." }
@@ -299,8 +316,9 @@ end
 
 for i = 1, #note do
   win:add(ui.label{
-    x = 14, y = y + 10 + (i - 1) * (gfx.font.h + 3),
-    text = note[i], color = "text_dim",
+    x = L.page_side + 3, y = y + 10 + (i - 1) * (gfx.height() + 3),
+    w = W - 2 * L.page_side - 3,
+    text = note[i], color = "text_dim", role = "ui",
   })
 end
 
@@ -332,10 +350,16 @@ function sampler:tick()
   -- tally, so a worker that ended on its own is noticed.
   workers = #spin_ids()
 
-  count.text = why
-               or ((workers == 0) and "no workers"
-                   or (tostring(workers) .. " worker"
-                       .. ((workers == 1) and "" or "s") .. " running"))
+  --
+  -- What processor this is and how busy it has been told to be, beside the
+  -- title - the drawing's header, and where the flat look's card leaves the
+  -- processor's name, since it draws no identity box.
+  --
+  local busy = why or ((workers == 0) and "no workers"
+                       or (tostring(workers) .. " worker"
+                           .. ((workers == 1) and "" or "s") .. " running"))
+
+  header.sub = (processor ~= "" and (processor .. " · ") or "") .. busy
 end
 
 win:add(sampler)

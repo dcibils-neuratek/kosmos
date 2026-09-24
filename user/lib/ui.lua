@@ -586,12 +586,14 @@ local DOUBLE_MIN = 16
 --
 -- How round a control is in a flat look.
 --
--- Six points: enough that a button reads as rounded at the sizes this
--- system draws them and small enough that a 16-pixel checkbox does not
--- become a circle. The primitive clamps it to half the shorter side, so a
--- control too small to take it comes out square rather than wrong.
+-- Seven points, the drawings' `.btn`, `.drop` and `.field` since 24
+-- September - it was six, and a control's corner a pixel tighter than the
+-- dropdown beside it is the kind of difference that reads as two kits.
+-- Small enough that a 16-pixel checkbox does not become a circle, and the
+-- primitive clamps it to half the shorter side, so a control too small to
+-- take it comes out square rather than wrong.
 --
-local CONTROL_R = 6
+local CONTROL_R = 7
 
 --
 -- **A flat look draws a hairline where a dimensional one draws a bevel.**
@@ -711,8 +713,13 @@ local SCROLL_W = 16
 --
 local ARROW = SCROLL_W
 
+--
+-- **No arrows in a flat look**, which draws the thumb alone - the drawings'
+-- scrollbar - and pages with the trough it does not draw. Asked here, so
+-- the drawing, the hit test and the drag all lose them together.
+--
 local function has_arrows(h)
-  return h >= 4 + 2 * ARROW + 24
+  return not theme.flat and h >= 4 + 2 * ARROW + 24
 end
 
 --
@@ -753,19 +760,22 @@ local function triangle(g, x, y, up)
 end
 
 --
--- **The thumb wears the tab's colour, with a grip across it** - Mac OS 9's
--- Platinum, which filled the thumb with the accent a person chose and
--- ridged its middle. Diego, 22 September: "i want the scrollbar handle to
--- be colored after the tab bar color as an accent color like how macos 9
--- had it". The accent here is the look's tab - Plex's yellow, Studio's
--- orange - so the one part of a list you drag is coloured like the one
--- part of a window you drag it by. The trough and the arrows stay grey.
+-- **The thumb is the scrollbar's own grey, with a grip across it.**
+--
+-- It wore the tab's colour from 22 September - Diego: "i want the
+-- scrollbar handle to be colored after the tab bar color as an accent
+-- color like how macos 9 had it" - and he took that back on 24 September,
+-- looking at a pale blue thumb in a grey trough beside a list's blue
+-- selection: "the scroll bars look bad now with the colors", "We should go
+-- back to scrollbars and handle with the same color". Three colours in a
+-- strip sixteen pixels wide, one of them the title bar's, is chrome
+-- reaching into a window's contents. So the thumb is raised in the
+-- controls' face and the trough sunken in the window's, as they were.
 --
 -- Four ridges, each a lit line over a shaded one - raised, in the same
 -- vocabulary as the bevel around them - eight pixels wide and centred, in
--- the tab's colour lit and shaded (`theme.toward`) when drawn, so a new
--- look repaints them like everything else. The browser draws its own
--- scrollbar into its own pixels, and draws the same thumb.
+-- the look's own edge colours, so a new look repaints them like everything
+-- else.
 --
 local GRIP_W, RIDGES = 8, 4
 
@@ -776,13 +786,25 @@ local function draw_scrollbar(g, w, h, total, shown, top)
 
   local x = w - SCROLL_W - 2
 
+  --
+  -- **In a flat look, a pill and nothing else**: 6 across, 5 in from the
+  -- edge, round-ended, in a grey between the list's ground and its dim
+  -- words - `docs/apps.html`'s list. The column it sits in is the same 16,
+  -- so the trough still pages and the hit test is unchanged.
+  --
+  if theme.flat then
+    g:fill_round(w - 5 - 6, y, 6, size,
+                 theme.mix(theme.sunken, theme.text_dim, 450), 3)
+    return true
+  end
+
   g:sunken(x, 2, SCROLL_W, h - 4, "window")
-  g:raised(x + 1, y, SCROLL_W - 2, size, "tab")
+  g:raised(x + 1, y, SCROLL_W - 2, size, "raised")
 
   if size >= 2 * RIDGES + 6 then
     local gx = x + 1 + (SCROLL_W - 2 - GRIP_W) // 2
     local gy = y + (size - 2 * RIDGES) // 2
-    local lit, dark = theme.toward(theme.tab, 55), theme.toward(theme.tab, -35)
+    local lit, dark = theme.edge_light, theme.edge_dark
 
     for i = 0, RIDGES - 1 do
       g:fill(gx, gy + 2 * i, GRIP_W, 1, lit)
@@ -1144,7 +1166,7 @@ function ui.tree(spec)
   function v:draw(g)
     g:sunken(0, 0, self.w, self.h, "sunken")
 
-    if self.focused then
+    if self.focused and self.keyed then
       g:frame(1, 1, self.w - 2, self.h - 2, "ring")
     end
 
@@ -1357,10 +1379,13 @@ end
 --------------------------------------------------------------------------
 
 function ui.splitter(spec)
+  -- Before the view is made, for the reason `ui.header` gives: this default
+  -- was set afterwards from the day it was written, and was never read.
+  spec.follow = spec.follow or { "left", "top", "bottom" }
+
   local v = ui.view(spec)
 
   v.w = v.w > 0 and v.w or 6
-  v.follow = v.follow or { left = true, top = true, bottom = true }
 
   function v:draw(g)
     g:fill(0, 0, self.w, self.h, theme.window)
@@ -1639,6 +1664,20 @@ end
 -- action that exists but is not offered yet, as the Drives app's Format...
 -- is: shown, so a person can see it will be there, and not pressable.
 --
+--
+-- The drawings' chevron: a "v" seven across and three down with arms two
+-- pixels wide, which at this size is what a 1.8-unit stroke on a 16-unit
+-- path comes to once it is anti-aliased. `cx` is its middle and `cy` its
+-- top. A dropdown's, and a button's that opens a menu.
+--
+local function chevron(g, cx, cy)
+  g:fill(cx - 3, cy,     2, 1, theme.text_dim)
+  g:fill(cx + 2, cy,     2, 1, theme.text_dim)
+  g:fill(cx - 2, cy + 1, 2, 1, theme.text_dim)
+  g:fill(cx + 1, cy + 1, 2, 1, theme.text_dim)
+  g:fill(cx - 1, cy + 2, 3, 1, theme.text_dim)
+end
+
 function ui.button(spec)
   local v = ui.view(spec)
   --
@@ -1646,12 +1685,65 @@ function ui.button(spec)
   -- 12 in every theme but Plex, which is the 10 and 24 this said before
   -- the numbers were the theme's (`roadmap.md` 5s).
   --
+  --
+  -- **The drawings' button** (`docs/apps.html`, `roadmap.md` 5zp): the
+  -- dropdown's height, its words with 12 either side and a one-pixel rule,
+  -- so a button and a dropdown in one header are one box with and without a
+  -- chevron. It was the words plus 32 and 28 tall.
+  --
+  -- `go = true` is the verb that starts something - Start, Add a worker,
+  -- Apply - filled with the accent, as the drawings fill it. One per
+  -- window, at most: two filled buttons are two answers to "what does this
+  -- window do".
+  --
+  --
+  -- **With a picture and a chevron**, it is `docs/tracker2.html`'s place
+  -- button: a line icon 11 in, the words 7 after it in `role` (the label
+  -- face, there), and a chevron 7 after those and 11 from the edge - a
+  -- button that says where you are and opens a menu of where else. `fit`
+  -- sizes it again when its words change, since that is what it is for.
+  --
+  local PAD, GAP, ICON, CHEV = 11, 7, 15, 11
+
+  function v:fit()
+    if self.fixed_width then return end
+
+    local words = gfx.measure(tostring(self.text or ""), self.role)
+
+    if self.icon or self.chevron then
+      self.w = 1 + PAD + (self.icon and ICON + GAP or 0) + words
+               + (self.chevron and GAP + CHEV or 0) + PAD + 1
+    else
+      self.w = words + 26
+    end
+  end
+
   v.h = v.h > 0 and v.h or BUTTON
-  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 32)
+  v.fixed_width = v.w > 0
+  v:fit()
   v.focusable = not v.disabled
 
   function v:draw(g)
     local face = self.pressed and theme.accent or theme.raised
+
+    if self.go and not self.disabled then
+      local fill = self.pressed and theme.lift(theme.accent, -24)
+                   or theme.accent
+
+      g:fill_round(0, 0, self.w, self.h, fill, CONTROL_R)
+
+      if self.focused and self.keyed then
+        g:frame_round(0, 0, self.w, self.h, theme.ring, CONTROL_R)
+        g:frame_round(1, 1, self.w - 2, self.h - 2, theme.text_on,
+                      CONTROL_R - 1)
+      end
+
+      local label = tostring(self.text or "")
+
+      g:text((self.w - gfx.measure(label)) // 2, centred(self.h), label,
+             theme.text_on, fill)
+      return
+    end
 
     --
     -- Raised, and sunken while it is held - which is the oldest trick in
@@ -1666,21 +1758,35 @@ function ui.button(spec)
 
     -- The focus ring goes inside the bevel rather than over it, so a
     -- focused button is still visibly a button.
-    if self.focused then
+    if self.focused and self.keyed then
       g:frame(1, 1, self.w - 2, self.h - 2, "ring")
     end
 
     local label = tostring(self.text or "")
-    local tx = (self.w - gfx.measure(label)) // 2
-    local ty = centred(self.h)
+    local tx = (self.w - gfx.measure(label, self.role)) // 2
+    local ty = (self.h - gfx.height(self.role)) // 2
+    local press = self.pressed and 1 or 0
+
+    if self.icon or self.chevron then
+      tx = 1 + PAD + (self.icon and ICON + GAP or 0)
+
+      if self.icon then
+        g:line_icon(1 + PAD + press, (self.h - ICON) // 2 + press, self.icon,
+                    theme.text_dim)
+      end
+
+      if self.chevron then
+        chevron(g, self.w - 1 - PAD - CHEV // 2 - 1 + press,
+                self.h // 2 - 1 + press)
+      end
+    end
 
     -- And the label moves with it, a pixel down and right, because a
     -- control that goes in takes its label with it.
-    if self.pressed then tx, ty = tx + 1, ty + 1 end
-
-    g:text(tx, ty, label,
+    g:text(tx + press, ty + press, label,
            self.disabled and theme.text_dim
-           or (self.pressed and theme.text_on or theme.text), face)
+           or (self.pressed and theme.text_on or theme.text), face,
+           self.role)
   end
 
   function v:key(c)
@@ -1727,18 +1833,49 @@ end
 function ui.checkbox(spec)
   local v = ui.view(spec)
   v.h = v.h > 0 and v.h or ROW
-  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 16 + 8)
+  v.w = v.w > 0 and v.w
+        or ((v.text or "") == "" and 18
+            or (gfx.measure(tostring(v.text)) + 18 + 8))
   v.focusable = true
   v.checked = v.checked or false
 
+  --
+  -- **In a flat look, the drawings' box**: 18 across with a radius of 5, a
+  -- white well in a one-pixel rule, and ticked, the accent with a white
+  -- check - the switch's colours, since a tick and a switch are the same
+  -- state promised differently. The drawings have no checkbox of their own,
+  -- so it takes its shape from the controls they do have: the dropdown's
+  -- well and rule, the switch's accent.
+  --
+  local function draw_flat(self, g)
+    local box = 18
+    local by = (self.h - box) // 2
+
+    if self.checked then
+      g:fill_round(0, by, box, box, theme.accent, 5)
+      g:line_icon((box - 15) // 2, by + (box - 15) // 2, "check", 0xffffffff)
+    else
+      g:fill_round(0, by, box, box, theme.sunken, 5)
+      g:frame_round(0, by, box, box, theme.line, 5)
+    end
+
+    if self.focused and self.keyed then
+      g:frame_round(-2, by - 2, box + 4, box + 4, theme.ring, 7)
+    end
+
+    g:text(box + 8, centred(self.h), tostring(self.text or ""), theme.text)
+  end
+
   -- A 16-pixel box, as fixed as the row it sits in, and the words beside it.
   function v:draw(g)
+    if theme.flat then return draw_flat(self, g) end
+
     local box = 16
     local by = (self.h - box) // 2
 
     g:sunken(0, by, box, box, "sunken")
 
-    if self.focused then
+    if self.focused and self.keyed then
       g:frame(1, by + 1, box - 2, box - 2, "ring")
     end
 
@@ -1807,7 +1944,12 @@ function ui.switch(spec)
   local v = ui.view(spec)
   local W, H, KNOB = 40, 23, 18
 
-  v.h = v.h > 0 and v.h or math.max(ROW, H + 2)
+  --
+  -- **As tall as the pill and its ring**, not a row: a switch sits in a
+  -- card's row, centred by its own height, and a view seven pixels taller
+  -- than what it draws made that row 55 where the drawings' is 48.
+  --
+  v.h = v.h > 0 and v.h or (H + 2)
   v.w = v.w > 0 and v.w or W
   v.focusable = true
   v.on = v.on or false
@@ -1824,7 +1966,7 @@ function ui.switch(spec)
 
     g:fill_round(0, y, W, H, self.on and theme.accent or theme.track, H // 2)
 
-    if self.focused then
+    if self.focused and self.keyed then
       g:frame_round(-2, y - 2, W + 4, H + 4, theme.ring, H // 2 + 2)
     end
 
@@ -1914,23 +2056,14 @@ function ui.dropdown(spec)
   function v:draw(g)
     g:fill_round(0, 0, self.w, self.h, theme.sunken, 7)
     g:frame_round(0, 0, self.w, self.h,
-                  self.focused and theme.ring or theme.line_soft, 7)
+                  self.focused and self.keyed and theme.ring or theme.line_soft, 7)
 
     g:text(1 + PAD, centred(self.h), self:name(), theme.text)
 
     --
-    -- The chevron: a "v" seven across and three down with arms two pixels
-    -- wide, which at this size is what the drawing's 1.8-unit stroke on a
-    -- 16-unit path comes to once it is anti-aliased.
+    -- The chevron, as the button's (`chevron` above it).
     --
-    local cx = self.w - 1 - PAD - CHEV // 2 - 1
-    local ay = self.h // 2 - 1
-
-    g:fill(cx - 3, ay,     2, 1, theme.text_dim)
-    g:fill(cx + 2, ay,     2, 1, theme.text_dim)
-    g:fill(cx - 2, ay + 1, 2, 1, theme.text_dim)
-    g:fill(cx + 1, ay + 1, 2, 1, theme.text_dim)
-    g:fill(cx - 1, ay + 2, 3, 1, theme.text_dim)
+    chevron(g, self.w - 1 - PAD - CHEV // 2 - 1, self.h // 2 - 1)
   end
 
   --
@@ -2052,11 +2185,21 @@ function ui.field(spec)
     -- still visibly a field.
     g:sunken(0, 0, self.w, self.h, "sunken")
 
+    --
+    -- The ring on the field's own edge, rounded as it is. It was a square
+    -- frame a pixel inside, which in a flat look drew four corners across a
+    -- rounded box.
+    --
     if self.focused then
-      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+      if theme.flat then
+        g:frame_round(0, 0, self.w, self.h, "ring", CONTROL_R)
+      else
+        g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+      end
     end
 
-    local inset = 8
+    -- The drawings' `.field`: a one-pixel rule and 9 of padding inside it.
+    local inset = 10
     local room = (self.w - 2 * inset) // GW
 
     --
@@ -2221,7 +2364,7 @@ function ui.field(spec)
   -- every text field does and what nobody notices until it does not.
   function v:mouse(action, x, y)
     if action == "press" then
-      local col = (x - 8) // GW
+      local col = (x - 10) // GW
 
       if col < 0 then col = 0 end
       self.caret = math.min(col + 1, #self.text + 1)
@@ -2413,8 +2556,6 @@ function ui.sidebar(spec)
     local list = rows(self)
     local i = index_of(self, list) or 1
 
-    self.keyed = true
-
     if c == -1 and i > 1 then choose(self, list[i - 1].item.id) return true end
     if c == -2 and i < #list then
       choose(self, list[i + 1].item.id)
@@ -2427,8 +2568,6 @@ function ui.sidebar(spec)
   function v:mouse(action, x, y)
     if action ~= "press" then return true end
 
-    self.keyed = false
-
     for _, r in ipairs(rows(self)) do
       if y >= r.y and y < r.y + SIDE_PITCH
          and x >= SIDE_INSET and x < self.w - SIDE_INSET then
@@ -2439,6 +2578,450 @@ function ui.sidebar(spec)
 
     return true
   end
+
+  return v
+end
+
+--------------------------------------------------------------------------
+-- The drawings' layout, as widgets (`roadmap.md` 5zp, `docs/apps.html`).
+--
+-- Diego, 24 September 2026: "The spacing of elements in the ui is key to a
+-- nice design. I see some labels in apps that have no margin or spacing and
+-- too close to other elements. Make sure all widgets are spaced and have the
+-- correct margin as the mockups."
+--
+-- **Those labels sat at pixels each application picked**, and there were
+-- as many spacings as applications. So the header, the page and the cards of
+-- rows are widgets here, carrying the drawings' numbers, and an application
+-- says what goes in them rather than where. Every number below was measured
+-- off `docs/preferences.html` or `docs/tracker2.html` rendered at one pixel
+-- to one, beside a screendump.
+--
+ui.layout = {
+  head      = 46,   -- a header, its rule the last pixel
+  head_in   = 18,   -- the subject, in from the left
+  head_edge = 10,   -- controls, in from either edge
+  head_gap  = 4,    -- between two controls
+  page_top  = 22,   -- a page of cards: from the header to the first name
+  page_side = 26,   --   and in from either side
+  page_foot = 26,   --   and below the last card
+  group     = 19,   -- a group's name: 12.5 at 1.55
+  to_card   = 26,   -- from that name's top to its card
+  between   = 20,   -- from a card to the next group's name
+  card_r    = 10,   -- a card's corner
+  row_pad   = 11,   -- a row: above and below what is in it
+  row_in    = 14,   --   in from the card's edges, and between its parts
+  row_min   = 48,   --   and never shorter
+  line      = 21,   -- a row's name: 13.5 at 1.55
+  note      = 17,   -- a note under it: 12 at 1.4
+}
+
+local L = ui.layout
+
+--
+-- **An icon button**: 26 square, no border, a line icon at 15 in the dim
+-- colour - `tracker2.html`'s `.ico`. Pressed, a quiet fill under it.
+--
+function ui.iconbutton(spec)
+  local v = ui.view(spec)
+
+  v.w = v.w > 0 and v.w or 26
+  v.h = v.h > 0 and v.h or 26
+  v.focusable = true
+
+  function v:draw(g)
+    if self.pressed then
+      g:fill_round(0, 0, self.w, self.h, theme.line_soft, 6)
+    end
+
+    if self.focused and self.keyed then
+      g:frame_round(0, 0, self.w, self.h, theme.ring, 6)
+    end
+
+    g:line_icon((self.w - 15) // 2, (self.h - 15) // 2, self.icon or "more",
+                self.pressed and theme.text or theme.text_dim)
+  end
+
+  function v:key(c)
+    if c == 10 or c == 13 or c == 32 then
+      if self.on_click then self.on_click(self) end
+      return true
+    end
+
+    return false
+  end
+
+  function v:mouse(action, x, y)
+    local inside = x >= 0 and x < self.w and y >= 0 and y < self.h
+
+    if action == "press" then
+      self.pressed = true
+    elseif action == "move" then
+      self.pressed = inside
+    elseif action == "release" then
+      local fire = self.pressed and inside
+
+      self.pressed = false
+      if fire and self.on_click then self.on_click(self) end
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--
+-- **A header**: 46 with its rule, the subject in the title's face 18 in,
+-- what the window is looking at beside it in the dim `ui` face, and the
+-- controls - `left` before the subject, `right` against the far edge - 10
+-- in from the edges and 4 apart, each centred in the band.
+--
+--   ui.header{ x = 0, y = 0, w = W, title = "Processes",
+--              sub = "21 processes . 28 threads",
+--              right = { ui.button{ text = "End" }, ui.iconbutton{} } }
+--
+-- `title` and `sub` are fields; set them and the next paint says them.
+-- Placed from its own width every time it is drawn, so a window that is
+-- resized keeps its controls in the corner without a `follow` of their own.
+--
+function ui.header(spec)
+  --
+  -- **The default `follow` goes in before the view is made**, because
+  -- `ui.view` fills in its own and turns the list into flags as it builds -
+  -- so a default set afterwards was never read, and a header stayed the
+  -- width it opened at when its window was tiled narrower, with its last
+  -- button off the edge.
+  --
+  spec.follow = spec.follow or { "left", "right", "top" }
+
+  local v = ui.view(spec)
+
+  v.h = L.head
+  v.left = v.left or {}
+  v.right = v.right or {}
+
+  for _, c in ipairs(v.left) do v:add(c) end
+  for _, c in ipairs(v.right) do v:add(c) end
+
+  local function centre(c) return (L.head - 1 - c.h) // 2 end
+
+  function v:measure()
+    local x = L.head_edge
+
+    -- A hidden control takes no room on either side: Tracker's place
+    -- button and its search field share one slot, one of them hidden.
+    for _, c in ipairs(self.left) do
+      if not c.hidden then
+        c.x, c.y = x, centre(c)
+        x = x + c.w + L.head_gap
+      end
+    end
+
+    self.title_x = (#self.left > 0) and (x + L.head_edge - L.head_gap)
+                   or L.head_in
+
+    local r = self.w - L.head_edge
+
+    for i = #self.right, 1, -1 do
+      local c = self.right[i]
+
+      if not c.hidden then
+        r = r - c.w
+        c.x, c.y = r, centre(c)
+        r = r - L.head_gap
+      end
+    end
+
+    self.room = r - L.head_edge
+  end
+
+  function v:draw(g)
+    g:fill(0, 0, self.w, L.head - 1, theme.sunken)
+    g:fill(0, L.head - 1, self.w, 1, theme.line_soft)
+
+    local x = self.title_x or L.head_in
+    local title = tostring(self.title or "")
+
+    if title ~= "" then
+      g:text(x, (L.head - 1 - gfx.height("title")) // 2, title, theme.text,
+             nil, "title")
+      x = x + gfx.measure(title, "title") + 8
+    end
+
+    local sub = tostring(self.sub or "")
+
+    if sub ~= "" then
+      --
+      -- Cut to what is left before the controls, with an ellipsis, rather
+      -- than run under them - a sentence that disappears behind a button is
+      -- the "too close to other elements" this widget exists to end.
+      --
+      local room = (self.room or self.w) - x
+
+      if gfx.measure(sub) > room then
+        local n = fits(sub, nil, room - gfx.measure("..."))
+        sub = n and (sub:sub(1, n) .. "...") or ""
+      end
+
+      g:text(x, (L.head - 1 - gfx.height()) // 2, sub, theme.text_dim)
+    end
+  end
+
+  return v
+end
+
+--
+-- **A slider**: the drawings' level - a rail 4 high in `track`, the part up
+-- to the value in the accent, and a white knob 16 across with a faint edge.
+-- `value` is 0 to `max` (100 unless said); the arrows step by a twentieth,
+-- a press or a drag puts the knob where the pointer is.
+--
+function ui.slider(spec)
+  local v = ui.view(spec)
+
+  v.w = v.w > 0 and v.w or 160
+  v.h = v.h > 0 and v.h or 20
+  v.max = v.max or 100
+  v.value = v.value or 0
+  v.focusable = true
+
+  local KNOB = 16
+
+  local function span(self) return self.w - KNOB end
+
+  local function set(self, value)
+    value = math.max(0, math.min(self.max, value // 1))
+
+    if value == self.value then return end
+
+    self.value = value
+    if self.on_change then self.on_change(self, value) end
+  end
+
+  function v:draw(g)
+    local y = self.h // 2 - 2
+    local at = KNOB // 2 + span(self) * self.value // self.max
+
+    g:fill_round(KNOB // 2, y, span(self), 4, theme.track, 2)
+    g:fill_round(KNOB // 2, y, at - KNOB // 2, 4, theme.accent, 2)
+
+    local ky = (self.h - KNOB) // 2
+
+    g:fill_round(at - KNOB // 2, ky + 1, KNOB, KNOB, 0x30000000, KNOB // 2)
+    g:fill_round(at - KNOB // 2, ky, KNOB, KNOB, 0xffffffff, KNOB // 2)
+    g:frame_round(at - KNOB // 2, ky, KNOB, KNOB,
+                  self.focused and self.keyed and theme.ring or theme.line_soft,
+                  KNOB // 2)
+  end
+
+  function v:key(c)
+    local step = math.max(1, self.max // 20)
+
+    if c == -3 or c == -1 then set(self, self.value + step) return true end
+    if c == -4 or c == -2 then set(self, self.value - step) return true end
+
+    return false
+  end
+
+  function v:mouse(action, x)
+    if action == "press" or action == "move" then
+      set(self, (x - KNOB // 2) * self.max // math.max(1, span(self)))
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--
+-- **A page of cards**: groups of rows, each a name above a rounded card,
+-- every row the drawings' 11 + what is in it + 11 and 48 at the least, its
+-- name on the left and its control against the right.
+--
+--   ui.cards{ x = 0, y = L.head, w = W, h = H - L.head,
+--             groups = {
+--               { name = "Output", rows = {
+--                   { label = "Master", control = ui.slider{ value = 70 } },
+--                   { label = "Mute", control = ui.switch{} },
+--                   { label = "Rate", note = "what the card runs at",
+--                     value = "44100 Hz" } } } },
+--             foot = "Test tone plays a second of A." }
+--
+-- A row's `control` is placed; with `fill = true` it takes the width left
+-- after the row's name. `value` is words on the right in the dim `ui` face.
+-- `width` caps the column, centred, as Preferences' 470 does.
+--
+-- Call `set(groups, foot)` to show other rows: a page is rebuilt, not
+-- edited, because the rows are what the application knows.
+--
+function ui.cards(spec)
+  -- Before the view is made, for the reason `ui.header` gives.
+  spec.follow = spec.follow or { "left", "right", "top", "bottom" }
+
+  local v = ui.view(spec)
+  v.cards = {}
+
+  function v:column()
+    local room = self.w - 2 * L.page_side
+    local width = self.width and math.min(self.width, room) or room
+
+    return L.page_side + (room - width) // 2, width
+  end
+
+  function v:set(groups, foot)
+    for i = #self.children, 1, -1 do self.children[i] = nil end
+
+    self.groups, self.foot = groups or self.groups or {}, foot or self.foot
+    self.cards = {}
+
+    local cx, width = self:column()
+    local y = L.page_top
+
+    for gi, group in ipairs(self.groups) do
+      if gi > 1 then y = y + L.between end
+
+      if group.name and group.name ~= "" then
+        self:add(ui.label{ x = cx + 3,
+                           y = y + (L.group - gfx.height("heading")) // 2,
+                           w = width - 3, text = group.name,
+                           role = "heading" })
+        y = y + L.to_card
+      end
+
+      local card = { y = y, rules = {} }
+      local rows = group.rows or {}
+      local pad = group.compact and 8 or L.row_pad
+      local least = group.compact and 40 or L.row_min
+
+      y = y + 1
+
+      for i, row in ipairs(rows) do
+        local c = row.control
+        local right = cx + width - 1 - L.row_in
+        local left = cx + 1 + L.row_in
+        local words = (row.label and row.label ~= "" and L.line or 0)
+                      + (row.note and L.note or 0)
+        local name_w = row.label and gfx.measure(row.label, "label") or 0
+        local ch = c and c.h or (row.value and gfx.height() or 0)
+        local h = math.max(least - ((i < #rows) and 1 or 0),
+                           2 * pad + math.max(words, ch))
+        local taken = 0
+
+        if c then
+          if c.fill then
+            local from = left + (name_w > 0 and (row.name_w or name_w)
+                                 + L.row_in or 0)
+            c.x, c.w = from, right - from
+          else
+            c.x = right - c.w
+          end
+
+          c.y = y + (h - c.h) // 2
+          self:add(c)
+          taken = c.fill and (right - c.x) or c.w
+        elseif row.value then
+          taken = gfx.measure(tostring(row.value))
+          self:add(ui.label{ x = right - taken, y = y + (h - ch) // 2,
+                             w = taken + 2, text = tostring(row.value),
+                             color = theme.text_dim, role = "ui" })
+        end
+
+        local room = right - (taken > 0 and taken + L.row_in or 0) - left
+        local top = y + (h - words) // 2
+
+        if row.label and row.label ~= "" then
+          self:add(ui.label{ x = left,
+                             y = top + (L.line - gfx.height("label")) // 2,
+                             w = c and c.fill and (row.name_w or name_w)
+                                 or room,
+                             text = row.label, role = "label" })
+        end
+
+        if row.note then
+          self:add(ui.label{ x = left,
+                             y = top + L.line + (L.note - gfx.height()) // 2,
+                             w = room, text = row.note,
+                             color = theme.text_dim, role = "ui" })
+        end
+
+        y = y + h
+
+        if i < #rows then
+          card.rules[#card.rules + 1] = y
+          y = y + 1
+        end
+      end
+
+      y = y + 1
+      card.h = y - card.y
+      self.cards[#self.cards + 1] = card
+    end
+
+    -- Where the last card ends, for a window that puts something of its own
+    -- under the cards - a list, a log - at the drawings' spacing.
+    self.content_h = y
+
+    --
+    -- The page's note, wrapped at word boundaries to the column: a label is
+    -- clipped at its width, and a sentence that stops mid-word with no sign
+    -- it did is the kind of thing this widget exists to prevent.
+    --
+    if self.foot and self.foot ~= "" then
+      local line, ly = "", y + 10
+      local step = gfx.height() + 3
+
+      local function flush()
+        if line ~= "" then
+          self:add(ui.label{ x = cx + 3, y = ly, w = width - 3, text = line,
+                             color = theme.text_dim, role = "ui" })
+          ly = ly + step
+          line = ""
+        end
+      end
+
+      for word in tostring(self.foot):gmatch("%S+") do
+        local try = (line == "") and word or (line .. " " .. word)
+
+        if line ~= "" and gfx.measure(try) > width - 3 then
+          flush()
+          line = word
+        else
+          line = try
+        end
+      end
+
+      flush()
+    end
+
+    self.built_w = self.w
+  end
+
+  --
+  -- Built again when the width changes, because the column and every
+  -- control against its right edge move with it.
+  --
+  function v:measure()
+    if self.built_w ~= self.w and self.groups then self:set() end
+  end
+
+  function v:draw(g)
+    local cx, width = self:column()
+
+    g:fill(0, 0, self.w, self.h, theme.window)
+
+    for _, c in ipairs(self.cards) do
+      g:fill_round(cx, c.y, width, c.h, theme.sunken, L.card_r)
+      g:frame_round(cx, c.y, width, c.h, theme.line_soft, L.card_r)
+
+      for _, at in ipairs(c.rules) do
+        g:fill(cx + 1, at, width - 2, 1, theme.line_soft)
+      end
+    end
+  end
+
+  if v.groups then v:set(v.groups, v.foot) end
 
   return v
 end
@@ -2469,8 +3052,9 @@ function ui.list(spec)
   -- 5x). A row that is as tall as its face grows when the face does, and
   -- the list's neighbours do not - so on 22 September a theme that padded
   -- rows, and faces at 16, moved and broke windows that place their widgets
-  -- at fixed positions. A row is `theme.metrics.row`, 24 pixels, in every
-  -- look; the words are centred in it by the face in force, which is what
+  -- at fixed positions. A row is `theme.metrics.row` in every look - 24
+  -- then, 32 since the drawings' sizes (0.10.149) - and the words are
+  -- centred in it by the face in force, which is what
   -- keeps Diego's 20 September photograph from coming back - the rows no
   -- longer overlap because the faces the looks carry fit them
   -- (`tools/test_theme.lua`).
@@ -2501,13 +3085,29 @@ function ui.list(spec)
   v.checks = v.checks or nil
 
   function v:draw(g)
-    -- A well: content lives in here, and the bevel says so. The focus
-    -- ring goes inside it rather than over it, so a focused field is
-    -- still visibly a field.
-    g:sunken(0, 0, self.w, self.h, "sunken")
+    local flat = theme.flat
 
-    if self.focused then
-      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+    --
+    -- **In a flat look, the drawings' list** (`docs/apps.html`): a card
+    -- with the cards' corner and rule, the chosen row a rounded fill in
+    -- `line_soft` with the words left as they are - the sidebar's chosen
+    -- row, since both say "this one" - and the ring round the card when
+    -- the keyboard is in it.
+    --
+    if flat then
+      g:fill_round(0, 0, self.w, self.h, theme.sunken, 10)
+      g:frame_round(0, 0, self.w, self.h,
+                    self.focused and self.keyed and theme.ring
+                    or theme.line_soft, 10)
+    else
+      -- A well: content lives in here, and the bevel says so. The focus
+      -- ring goes inside it rather than over it, so a focused field is
+      -- still visibly a field.
+      g:sunken(0, 0, self.w, self.h, "sunken")
+
+      if self.focused and self.keyed then
+        g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+      end
     end
 
     local rows = (self.h - 4) // row_h()
@@ -2556,13 +3156,18 @@ function ui.list(spec)
       if item then
         local y = 2 + i * row_h()
         local on = (n == self.selected)
-        local bg = on and theme.accent or theme.sunken
+        local bg = on and (flat and theme.line_soft or theme.accent)
+                   or theme.sunken
 
-        if on then g:fill(2, y, room, row_h(), bg) end
+        if on and flat then
+          g:fill_round(4, y, room - 4, row_h(), bg, 6)
+        elseif on then
+          g:fill(2, y, room, row_h(), bg)
+        end
 
         -- The row's words centred in it; the selection above fills the
         -- whole row, as a row is one thing.
-        local tx = 8
+        local tx = flat and 12 or 8
 
         if self.checks then
           local box = 16
@@ -2587,7 +3192,8 @@ function ui.list(spec)
         if self.draw_item then
           self:draw_item(g, item, tx, y, room - tx, on)
         else
-          g:text(tx, y, tostring(item), on and theme.text_on or theme.text, bg)
+          g:text(tx, y, tostring(item),
+                 (on and not flat) and theme.text_on or theme.text, bg)
         end
       end
     end
@@ -2798,6 +3404,16 @@ function ui.editor(spec)
   -- caller of it.
   --
   local GUTTER = (spec.gutter == false) and 0 or 5
+
+  --
+  -- **How far in the text starts**, 2 inside a well by default. `plain`
+  -- is the drawings' page of text (`docs/apps.html`'s Editor): no well and
+  -- no ring, just the text on the sunken colour from edge to edge, with
+  -- `inset` of room around it - a window whose whole body is the document
+  -- has no use for a box drawn around the document.
+  --
+  local IN_X = spec.inset and spec.inset[1] or 2
+  local IN_Y = spec.inset and spec.inset[2] or 2
 
   function v:content()
     return table.concat(self.lines, "\n") .. "\n"
@@ -3082,7 +3698,7 @@ function ui.editor(spec)
   local function rows(self)
     local _, ch = cell()
 
-    return (self.h - 4) // ch
+    return (self.h - 2 * IN_Y) // ch
   end
 
   local function scroll_into_view(self)
@@ -3112,24 +3728,29 @@ function ui.editor(spec)
     -- A well: content lives in here, and the bevel says so. The focus
     -- ring goes inside it rather than over it, so a focused field is
     -- still visibly a field.
-    g:sunken(0, 0, self.w, self.h, "sunken")
+    if self.plain then
+      g:fill(0, 0, self.w, self.h, theme.sunken)
+    else
+      g:sunken(0, 0, self.w, self.h, "sunken")
 
-    if self.focused then
-      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+      if self.focused then
+        g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+      end
     end
 
-    local columns = (self.w - 4) // GW - GUTTER
+    local columns = (self.w - 2 * IN_X) // GW - GUTTER
 
     for row = 0, rows(self) - 1 do
       local n = self.top + row
       local line = self.lines[n]
 
       if line then
-        local y = 2 + row * GH
-        local x0 = 2 + GUTTER * GW
+        local y = IN_Y + row * GH
+        local x0 = IN_X + GUTTER * GW
 
         if GUTTER > 0 then
-          g:text(2, y, ("%4d "):format(n), theme.line, theme.sunken, "mono")
+          g:text(IN_X, y, ("%4d "):format(n), theme.line, theme.sunken,
+                 "mono")
         end
 
         local vis = line:sub(1, columns)
@@ -3175,8 +3796,8 @@ function ui.editor(spec)
     -- the column obvious in indented code.
     if self.focused and not selection(self) and self.cy >= self.top
        and self.cy <= self.top + rows(self) - 1 then
-      local px = 2 + (GUTTER + math.min(self.cx, columns + 1) - 1) * GW
-      local py = 2 + (self.cy - self.top) * GH
+      local px = IN_X + (GUTTER + math.min(self.cx, columns + 1) - 1) * GW
+      local py = IN_Y + (self.cy - self.top) * GH
       local under = self.lines[self.cy]:sub(self.cx, self.cx)
 
       g:fill(px, py, GW, GH, theme.ring)
@@ -3314,12 +3935,12 @@ function ui.editor(spec)
     local GW, GH = cell()
 
     if action == "press" or action == "move" then
-      local row = (y - 2) // GH
+      local row = (y - IN_Y) // GH
 
       self.cy = self.top + row
       clamp(self)
 
-      local col = (x - 2) // GW - GUTTER
+      local col = (x - IN_X) // GW - GUTTER
 
       if col < 0 then col = 0 end
       self.cx = math.min(col + 1, #self.lines[self.cy] + 1)
@@ -3414,8 +4035,18 @@ function ui.image(spec)
     if self.oy < 0 then self.oy = 0 end
   end
 
+  --
+  -- `ground` is a colour to fill behind the picture instead of the sunken
+  -- well, and `centre` puts a picture smaller than the widget in its middle
+  -- rather than its top-left corner: `docs/apps.html`'s Photo, a picture on
+  -- a dark canvas, which is how every viewer shows one.
+  --
   function v:draw(g)
-    g:sunken(0, 0, self.w, self.h, "sunken")
+    if self.ground then
+      g:fill(0, 0, self.w, self.h, self.ground)
+    else
+      g:sunken(0, 0, self.w, self.h, "sunken")
+    end
 
     if self.image_w == 0 then
       g:text(6, 6, "no picture called " .. tostring(self.asset), theme.bad)
@@ -3453,6 +4084,34 @@ function ui.image(spec)
     -- fraction would be the same mistake `stretch` refuses to make in C -
     -- an edge cut by a border is not a whole pixel of the source.
     --
+    --
+    -- **`contain` shrinks a picture larger than the widget until the whole
+    -- of it fits, keeping its shape**, and centres it - a photograph viewer's
+    -- first view of a picture, which is the whole picture. Smaller ones are
+    -- left at their own size for `centre` below: enlarging a small picture
+    -- only shows its pixels.
+    --
+    local cw, ch = self.image_w, self.image_h
+
+    if self.contain and cw > 0 and ch > 0 and (cw > self.w or ch > self.h) then
+      local dw, dh
+
+      if cw * self.h > ch * self.w then
+        dw, dh = self.w, math.max(1, ch * self.w // cw)
+      else
+        dw, dh = math.max(1, cw * self.h // ch), self.h
+      end
+
+      g.ops[#g.ops + 1] = {
+        op = "image", asset = self.asset,
+        sx = 0, sy = 0, w = cw, h = ch,
+        x = ax + (self.w - dw) // 2, y = ay + (self.h - dh) // 2,
+        dw = dw, dh = dh, alpha = self.alpha,
+      }
+
+      return
+    end
+
     if self.fit and iw > 0 and ih > 0 then
       g.ops[#g.ops + 1] = {
         op = "image", asset = self.asset,
@@ -3464,11 +4123,30 @@ function ui.image(spec)
       return
     end
 
+    --
+    -- Where the picture's own top-left corner is on the screen, and then
+    -- the part of it that is inside the clip: the source rectangle is that
+    -- part, measured from the corner. Panned, the corner is up and to the
+    -- left of the widget; centred, it is inside it.
+    --
+    local iw_, ih_ = self.image_w, self.image_h
+    local px, py = ax - self.ox, ay - self.oy
+
+    if self.centre then
+      if iw_ < self.w then px = ax + (self.w - iw_) // 2 end
+      if ih_ < self.h then py = ay + (self.h - ih_) // 2 end
+    end
+
+    local vx0, vy0 = math.max(x0, px), math.max(y0, py)
+    local vx1, vy1 = math.min(x1, px + iw_), math.min(y1, py + ih_)
+
+    if vx1 <= vx0 or vy1 <= vy0 then return end
+
     g.ops[#g.ops + 1] = {
       op = "image", asset = self.asset,
-      sx = self.ox + (x0 - ax), sy = self.oy + (y0 - ay),
-      w = x1 - x0, h = y1 - y0,
-      x = x0, y = y0,
+      sx = vx0 - px, sy = vy0 - py,
+      w = vx1 - vx0, h = vy1 - vy0,
+      x = vx0, y = vy0,
     }
   end
 
@@ -4470,11 +5148,23 @@ function window:close()
   end
 end
 
+--
+-- **A ring once the keyboard is in use, and not before** (`roadmap.md` 5zp).
+--
+-- The drawings never show a focus ring, and a window that opened with one
+-- round its first control - which is every window, since something always
+-- holds the focus - drew a box the page does not. So a widget draws its
+-- ring only while `keyed`: set by the window on any key, cleared on a
+-- press with the pointer. Tab still moves the focus the moment it is
+-- pressed, and the ring appears with it; a person using the mouse never
+-- sees one. A field's border and a caret are not rings and do not wait.
+--
 local function apply_focus(self)
   local list = self.root:focusables()
 
   for i, v in ipairs(list) do
     v.focused = (i == self.focus)
+    v.keyed = self.keyed or false
   end
 
   return list
@@ -4705,7 +5395,9 @@ function window:paint_menu(m)
     if it.separator then
       g:groove(MENU_PAD, y + m.row // 2, m.w - MENU_PAD * 2, 2)
     else
-      local hot = (i == m.hot)
+      -- A greyed item is drawn and never lit: it is there to say the thing
+      -- exists and is not ready, which a missing item cannot say.
+      local hot = (i == m.hot) and not it.disabled
       local bg  = hot and theme.accent or theme.raised
 
       if hot then g:fill(2, y, m.w - 4, m.row, "accent") end
@@ -4732,7 +5424,8 @@ function window:paint_menu(m)
       end
 
       g:text(text_x, y + centred(m.row), tostring(it.text or ""),
-             hot and theme.text_on or theme.text, bg)
+             it.disabled and theme.text_dim
+             or (hot and theme.text_on or theme.text), bg)
 
       --
       -- The submenu marker, built out of fills because there is no line and
@@ -4899,6 +5592,9 @@ function window:menu_mouse(ev)
     --
     if item and item.submenu then return false end
 
+    -- `disabled`: drawn, and a press on it does nothing - the menu stays.
+    if item and item.disabled then return true end
+
     self:close_menus()
 
     if item and item.on_choose then
@@ -5012,6 +5708,8 @@ end
 -- focused widget first, and what it does not want falls back to the window.
 --
 local function dispatch(self, c)
+  self.keyed = true
+
   if c == 9 then                                  -- Tab
     local list = self.root:focusables()
 
@@ -5138,6 +5836,9 @@ local function dispatch_mouse(self, ev)
     if target and target.mouse then
       self.grab = { view = target, dx = ev.x - lx, dy = ev.y - ly }
     end
+
+    -- A press puts the rings away: see `apply_focus`.
+    self.keyed = false
 
     if target and target.focusable then
       for i, v in ipairs(self.root:focusables()) do

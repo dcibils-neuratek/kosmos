@@ -40,23 +40,35 @@ local GW, GH = gfx.font.w, gfx.font.h
 
 local blocks, lines, top = {}, {}, 1
 
-local where  = ui.label{ x = 12, y = 10, w = W - 24, text = "" }
-local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
+local L = ui.layout
 
-local page = ui.view{ x = 12, y = 56, w = W - 24, h = H - 122 }
+--
+-- **As `docs/apps.html` draws it** (`roadmap.md` 5zp): the header names the
+-- document and holds Open, and the page is the rest of the window - white,
+-- edge to edge, with the drawings' 26 of margin inside it rather than a
+-- framed box with a label above and a status line below. What the status
+-- line said - how many blocks and lines - is the header's `sub`, beside
+-- the document's name.
+--
+local header                          -- made below, once `open_one` exists
+
+local page = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
+                      follow = { "left", "right", "top", "bottom" } }
 page.focusable = true
 
+local PAGE_IN = L.page_side
+
 local function relayout()
-  local columns = (page.w - 16) // GW
+  local columns = (page.w - 2 * PAGE_IN) // GW
   lines = markdown.wrap(blocks, columns)
   top = 1
 end
 
 function page:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.window)
-  g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+  g:fill(0, 0, self.w, self.h, theme.sunken)
 
-  local rows = (self.h - 8) // GH
+  local top_pad = L.page_top - 4
+  local rows = (self.h - top_pad - L.page_foot) // GH
   self.rows = rows
 
   for i = 0, rows - 1 do
@@ -64,21 +76,22 @@ function page:draw(g)
 
     if not l then break end
 
-    local y = 4 + i * GH
+    local y = top_pad + i * GH
+    local x = PAGE_IN
 
     if l.kind == "rule" then
-      g:fill(8, y + GH // 2, self.w - 16, 1, theme.line)
+      g:fill(x, y + GH // 2, self.w - 2 * x, 1, theme.line_soft)
     elseif l.kind == "blank" then
       -- nothing, and the space is the point
     elseif l.kind == "code" then
-      g:fill(8, y, self.w - 16, GH, theme.sunken)
-      g:text(12, y, l.text, theme.good, theme.sunken)
+      g:fill(x - 6, y, self.w - 2 * x + 12, GH, theme.window)
+      g:text(x, y, l.text, theme.text, theme.window, "mono")
     elseif l.kind == "heading" then
-      g:text(8, y, l.text, theme.ring, theme.window)
+      g:text(x, y, l.text, theme.text, theme.sunken, "heading")
     elseif l.kind == "quote" then
-      g:text(8, y, l.text, theme.text_dim, theme.window)
+      g:text(x, y, l.text, theme.text_dim, theme.sunken)
     else
-      g:text(8, y, l.text, theme.text, theme.window)
+      g:text(x, y, l.text, theme.text, theme.sunken)
     end
   end
 end
@@ -103,38 +116,37 @@ local function load(from)
   local body, why = fs.read(from)
 
   if not body then
-    status.text = "could not read " .. tostring(from) .. ": " .. tostring(why)
+    header.sub = "could not read " .. tostring(from) .. ": " .. tostring(why)
     return
   end
 
   if type(body) ~= "string" then
-    status.text = tostring(from) .. " is not text"
+    header.sub = tostring(from) .. " is not text"
     return
   end
 
   blocks = markdown.parse(body)
   relayout()
 
-  where.text  = from
-  status.text = ("%d blocks, %d lines"):format(#blocks, #lines)
+  header.title = from:match("([^/]+)$") or from
+  header.sub = ("%d blocks, %d lines"):format(#blocks, #lines)
 end
 
-win:add(where)
+local function open_one()
+  local chooser = panel.open{
+    start = path and path:match("^(.*)/") or "/home",
+    on_choose = function(chosen) load(chosen) end,
+  }
 
-win:add(ui.button{
-  x = 12, y = 28, w = 70, h = 24, text = "Open",
-  on_click = function()
-    local chooser = panel.open{
-      start = path and path:match("^(.*)/") or "/home",
-      on_choose = function(chosen) load(chosen) end,
-    }
+  if chooser then chooser:run() end
+end
 
-    if chooser then chooser:run() end
-  end,
-})
+header = ui.header{ x = 0, y = 0, w = W, title = "Reader",
+                    sub = "the built-in page",
+                    right = { ui.button{ text = "Open", on_click = open_one } } }
 
+win:add(header)
 win:add(page)
-win:add(status)
 
 if path then
   load(path)
@@ -171,8 +183,8 @@ print("hello from Kosmos")
 Press Open and choose one. `wm reader:/home/notes.md` opens it directly.
 ]])
   relayout()
-  where.text  = "(the built-in page)"
-  status.text = ("%d blocks, %d lines"):format(#blocks, #lines)
+  header.sub = ("the built-in page · %d blocks, %d lines")
+               :format(#blocks, #lines)
 end
 
 win:run()

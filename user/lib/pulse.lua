@@ -38,7 +38,16 @@ local IDENT_W = 132
 -- proportions hold at any count: with two processors the identity box sets
 -- the height and from four upwards the bars do.
 --
+--
+-- **In a flat look it is the drawings' card instead** (`docs/apps.html`,
+-- `roadmap.md` 5zp): a row per processor 40 tall with a rule between, and
+-- no identity box - the window says what processor this is in its header.
+--
+local FLAT_ROW = 40
+
 function pulse.height(cores, ident_lines)
+  if theme.flat then return cores * FLAT_ROW + (cores - 1) + 2 end
+
   local bars  = cores * ROW + 8
   local ident = (ident_lines or 4) * (gfx.font.h + 3) + 8
 
@@ -84,7 +93,14 @@ end
 --
 function pulse.panel(spec)
   local v = ui.view{ x = spec.x, y = spec.y, w = spec.w,
-                     h = pulse.height(spec.cores, #spec.ident) }
+                     h = pulse.height(spec.cores, #spec.ident),
+                     follow = spec.follow }
+
+  -- Its height is the look's: a flat look draws a card of rows, a bevelled
+  -- one the Pulse recess, and a look can change while the window is open.
+  function v:measure()
+    self.h = pulse.height(self.cores, #self.ident)
+  end
 
   v.cores      = spec.cores
   v.online     = spec.online or spec.scheduling
@@ -92,7 +108,58 @@ function pulse.panel(spec)
   v.read       = spec.read
   v.ident      = spec.ident
 
+  --
+  -- **The drawings' card, in a flat look.** Pulse's LEDs in a bevelled
+  -- recess are a piece of 1998 equipment, and that is exactly what a
+  -- bevelled look is for - Classic keeps them. A flat look is the
+  -- application mockups, where a processor is a row: its name, a rounded
+  -- bar in `track` filled with the accent, and the reading at the right.
+  -- A processor that never reached the kernel is dim and says so, for the
+  -- reason the bevelled branch below gives at length.
+  --
+  local function draw_flat(self, g)
+    local n = self.cores
+    local h = n * FLAT_ROW + (n - 1) + 2
+
+    g:fill_round(0, 0, self.w, h, "sunken", 10)
+    g:frame_round(0, 0, self.w, h, "line_soft", 10)
+
+    local name_w = gfx.measure("Core " .. tostring(n - 1), "label") + 14
+    local read_w = gfx.measure("no data") + 6
+
+    for c = 1, n do
+      local y = 1 + (c - 1) * (FLAT_ROW + 1)
+      local live = (c <= self.online)
+      local value = live and (self.read(c) or 0) or 0
+
+      if c > 1 then g:fill(1, y - 1, self.w - 2, 1, "line_soft") end
+
+      local word = "Core " .. tostring(c - 1)
+
+      g:text(15, y + (FLAT_ROW - gfx.height("label")) // 2, word,
+             live and "text" or "text_dim", nil, "label")
+
+      local bx = 15 + name_w
+      local bw = self.w - 15 - read_w - 14 - bx
+      local by = y + (FLAT_ROW - 8) // 2
+
+      g:fill_round(bx, by, bw, 8, "track", 4)
+
+      if live and value > 0 then
+        g:fill_round(bx, by, math.max(8, bw * value // 100), 8,
+                     value > 80 and "bad" or "accent", 4)
+      end
+
+      local text = live and ("%d%%"):format(value) or "no data"
+
+      g:text(self.w - 15 - gfx.measure(text),
+             y + (FLAT_ROW - gfx.height()) // 2, text, "text_dim")
+    end
+  end
+
   function v:draw(g)
+    if theme.flat then return draw_flat(self, g) end
+
     --
     -- The recess everything sits in, which is the frame Pulse drew and the
     -- reason its panel reads as a piece of equipment rather than as paint.

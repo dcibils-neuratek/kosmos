@@ -130,10 +130,11 @@ GLYPH_W = 8
 GLYPH_H = 16
 
 # **The kit's fixed row** (`theme.metrics.row`, `roadmap.md` 5x): a list, a
-# tree or a menu row is 24 pixels whatever the face. Checks that found a
-# row by the face's height - 16 in the harness's pinned bitmap - measured
-# the layout that followed the face, which is gone.
-LAYOUT_ROW = 24
+# tree or a menu row is 32 pixels whatever the face - the drawings' row
+# since 0.10.149 (`roadmap.md` 5zp); it was 24. Checks that found a row by
+# the face's height - 16 in the harness's pinned bitmap - measured the
+# layout that followed the face, which is gone.
+LAYOUT_ROW = 32
 RESERVED_PX = 2 * GLYPH_H
 
 
@@ -1315,8 +1316,34 @@ def find_colour_anywhere(width, height, px, want):
     return None
 
 
+def find_colour_in(width, px, box, want):
+    """Where the first pixel of this colour is inside `box` (x, y, w, h),
+    scanning rows top to bottom and every pixel.
+
+    **For the gallery's list, which is not the only accent on the screen any
+    more**: its verb is a button filled with the accent, and so is a switch
+    that is on - so a scan of the whole screen for the selection found the
+    button first, and an arrow that moved the list moved nothing it could
+    see."""
+    x0, y0, w, h = box
+
+    for y in range(y0, y0 + h):
+        for x in range(x0, x0 + w):
+            at = (y * width + x) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == want:
+                return x, y
+
+    return None
+
+
 # The list selection in the gallery, 0x1f6feb, which is the accent colour.
 SELECTED = (0x1f, 0x6f, 0xeb)
+
+# A window's frame down its sides and along its bottom, `BORDER` in
+# `wm.lua`: 6 since 24 September, when Diego asked for "some extra chrome to
+# the other borders"; it was 2.
+FRAME = 6
 
 # The Deskbar's height. It is the strip across the top, it is
 # tab-coloured, and it is not a window - so anything counting windows
@@ -1331,8 +1358,10 @@ DESKBAR_ICON = 24
 # A menu row, `theme.metrics.row` - the one fixed layout the faces fit
 # (`roadmap.md` 5x). `menu_metrics` in `ui.lua` puts two pixels of edge above
 # the first row, so row `i` of a menu opened at `y` starts at
-# `y + 2 + (i - 1) * MENU_ROW`.
-MENU_ROW = 24
+# `y + 2 + (i - 1) * MENU_ROW`. The row is `LAYOUT_ROW`, and was a copy of it
+# at 24 that stayed 24 when the row became 32 - which is how the direct
+# menu phase came to press row 2 for row 3.
+MENU_ROW = LAYOUT_ROW
 
 
 def check_registry(guest):
@@ -1838,6 +1867,36 @@ def check_preferences(guest):
     return len(check) - len(failed) if not failed else -len(failed)
 
 
+def gallery_layout(guest, mark, seconds=30):
+    """What `gallery.lua` says about itself: its size, where its list is and
+    the centres of its two buttons and its field, in points inside the
+    window.
+
+    **Read rather than copied.** The phases that drive the gallery each held
+    its layout as numbers - a list at 16,172, rows 16 apart, a status line
+    at 296 - and when the gallery was redrawn to `docs/apps.html` those
+    numbers were four copies of a window that no longer existed.
+    """
+    deadline = time.monotonic() + seconds
+    pattern = (r"gallery: (\d+)x(\d+), list at (\d+),(\d+) (\d+)x(\d+), "
+               r"buttons at (\d+),(\d+) (\d+),(\d+), field at (\d+),(\d+)")
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+        m = re.search(pattern, guest.seen[mark:])
+
+        if m:
+            v = [int(g) for g in m.groups()]
+            return {"size": (v[0], v[1]), "list": tuple(v[2:6]),
+                    "press": (v[6], v[7]), "verb": (v[8], v[9]),
+                    "field": (v[10], v[11])}
+
+        time.sleep(0.3)
+
+    raise Failure("the gallery never said where its controls are:\n"
+                  + guest.seen[mark:][-800:])
+
+
 def check_widgets(guest):
     """The UI kit, driven from the keyboard.
 
@@ -1856,11 +1915,15 @@ def check_widgets(guest):
 
     Before the window-drag phase, which needs the desktop to itself.
     """
+    mark = len(guest.seen)
     guest.type("wm gallery")
     started(guest)
+    laid = gallery_layout(guest, mark)
+    lx, ly, lw, lh = laid["list"]
 
     width, height, px = parse_ppm(guest.screendump())
-    before = find_colour_anywhere(width, height, px, SELECTED)
+    box = (60 + lx, 90 + ly, lw, lh)
+    before = find_colour_in(width, px, box, SELECTED)
 
     if before is None:
         raise Failure(
@@ -1869,33 +1932,40 @@ def check_widgets(guest):
         )
 
     #
-    # **The list's thumb wears the tab's colour, ridged** (`roadmap.md` 5y).
-    # Diego, 22 September: "i want the scrollbar handle to be colored after
-    # the tab bar color as an accent color like how macos 9 had it". The
-    # gallery's list is five items in four rows, so it has a bar; in the
-    # harness's `dark` look the tab is yellow, and the grip's shaded ridges
-    # are that yellow 35 per cent darker (`theme.toward`). Counted in the
-    # strip the bar occupies - the list's last eighteen columns - so the
-    # window's own yellow tab cannot be what was found.
+    # **The list's thumb is the scrollbar's own grey, ridged** - not the
+    # tab's colour. It wore the tab's from 22 September (`roadmap.md` 5y)
+    # until Diego took it back on 24 September: "We should go back to
+    # scrollbars and handle with the same color". The gallery's list is five
+    # items in three rows, so it has a bar; in the harness's `dark` look the
+    # thumb is `raised`, #21262d, with four ridges each an `edge_light` line
+    # directly over an `edge_dark` one. Counted in the strip the bar
+    # occupies - the list's last eighteen columns - where the tab's yellow
+    # has no business at all: the control for a thumb in the tab's colour is
+    # the build before this, which fails the first count.
     #
-    list_x, list_y = 60 + 16, 90 + 172
-    yellow = ridges = 0
+    list_x, list_y = 60 + lx, 90 + ly
+    RAISED, LIT, DARK = (0x21, 0x26, 0x2d), (0x42, 0x4a, 0x55), (0x05, 0x08, 0x0c)
+    yellow = face = ridges = 0
 
-    for y in range(list_y, list_y + 112):
-        for x in range(list_x + 240 - 18, list_x + 240):
+    for y in range(list_y, list_y + lh - 1):
+        for x in range(list_x + lw - 18, list_x + lw):
             at = (y * width + x) * 3
+            below = at + width * 3
             p = (px[at], px[at + 1], px[at + 2])
 
             if p == TAB:
                 yellow += 1
-            elif p == (0xa5, 0x81, 0x00):
+            elif p == RAISED:
+                face += 1
+            elif p == LIT and (px[below], px[below + 1], px[below + 2]) == DARK:
                 ridges += 1
 
-    if yellow < 200 or ridges < 16:
+    if yellow or face < 150 or ridges < 16:
         raise Failure(
-            f"the gallery's scrollbar thumb has {yellow} pixels of the tab's "
-            f"yellow and {ridges} of its shaded ridges - wanted a thumb in "
-            "the tab's colour with a grip across it, as Mac OS 9 drew one."
+            f"the gallery's scrollbar has {yellow} pixels of the tab's yellow, "
+            f"{face} of the controls' face and {ridges} of ridge - wanted a "
+            "thumb in the scrollbar's own grey with a grip across it, and "
+            "none of the title bar's colour."
         )
 
     def send(data, wait=0.4):
@@ -1903,9 +1973,16 @@ def check_widgets(guest):
         guest.proc.stdin.flush()
         time.sleep(wait)
 
-    send(b"\t\t")            # past both buttons, to the checkbox
+    #
+    # The card's order, from the first button: the verb, the switch, the
+    # tick, the choice, the level and the field. A space on the choice
+    # would open its menu, so it is passed over rather than pressed.
+    #
+    send(b"\t\t")            # past both buttons, to the switch
+    send(b" ")                # flip it
+    send(b"\t")               # to the tick
     send(b" ")                # tick it
-    send(b"\t")               # to the field
+    send(b"\t\t\t")          # past the choice and the level, to the field
     send(b" edited")
 
     #
@@ -1920,7 +1997,7 @@ def check_widgets(guest):
     # A click puts the focus where the click is. Tab is still being tested,
     # by everything above this line.
     #
-    guest.mouse_to(*_to_tablet(60 + 16 + 60, 90 + 172 + 8, width, height))
+    guest.mouse_to(*_to_tablet(list_x + 60, list_y + 8, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
@@ -1928,7 +2005,7 @@ def check_widgets(guest):
     time.sleep(0.6)
 
     width, height, px = parse_ppm(guest.screendump())
-    bar_before = find_colour_anywhere(width, height, px, SELECTED)
+    bar_before = find_colour_in(width, px, box, SELECTED)
 
     #
     # One arrow at a time, and *waited for* rather than slept after.
@@ -1965,7 +2042,7 @@ def check_widgets(guest):
 
         while time.monotonic() < deadline:
             width, height, px = parse_ppm(guest.screendump())
-            after = find_colour_anywhere(width, height, px, SELECTED)
+            after = find_colour_in(width, px, box, SELECTED)
 
             if after is not None and after[1] - bar_before[1] >= step * LAYOUT_ROW:
                 break
@@ -3337,12 +3414,13 @@ CONSOLE = (0x0b, 0x0b, 0x0b)
 def _terminal_grid(width, height, px, x, y):
     """The Terminal's grid, measured from its own corner. None if it is not there.
 
-    `x, y` is the window as the window manager logged it. The view sits 8 in,
-    inside a one-pixel frame, and its first row and column never hold text -
-    lines start 3 down and 4 in - so the console colour runs unbroken from the
-    corner along both to the far edges of the grid. Another window's frame
-    stops the walk, so a Log View beside the Terminal, or over it, cannot make
-    the grid look bigger than it is.
+    `x, y` is the window as the window manager logged it. The console runs
+    from under the header to the window's edges (`docs/apps.html`, 0.10.149;
+    it was a framed box 8 in until then), and its first rows and columns
+    never hold text - lines start 9 down and 12 in - so the console colour
+    runs unbroken from nine in along both to the far edges of the grid.
+    Another window's edge stops the walk, so a Log View beside the Terminal,
+    or over it, cannot make the grid look bigger than it is.
 
     **The top is found rather than assumed.** It was `y + 9`, which was the
     grid's first row until the Terminal grew a menu bar (`roadmap.md` 5zc)
@@ -3905,9 +3983,12 @@ def check_direct_menu(guest):
         mx, my = int(where[0]), int(where[1])
         time.sleep(1.0)
 
-        # The kit's rows are a glyph and six (`menu_metrics`), after a
-        # two-row border; `row` counts from one, as `menu_mouse` does.
-        click(mx + 20, my + 2 + (row - 1) * 22 + 11)
+        # The kit's rows are `MENU_ROW`, the fixed layout's (`menu_metrics`),
+        # after a two-row border; `row` counts from one, as `menu_mouse`
+        # does. This said 22 - "a glyph and six" - a size the rows had not
+        # been since the layout was fixed, and it worked while row 3 at 22
+        # still landed inside row 3 at 24.
+        click(mx + 20, my + 2 + (row - 1) * MENU_ROW + MENU_ROW // 2)
 
         deadline = time.monotonic() + 15
 
@@ -4280,9 +4361,11 @@ def check_theme_plex(guest):
         raise Failure("a desktop started with Plex saved wears %r - the "
                       "theme was written down and did not come back" % now)
 
-    if space != "24 32 28":
+    # The drawings' fixed layout since 0.10.149: a row 32, a button its
+    # words and 26 (12 either side and the rule), 31 tall. It was 24, 32, 28.
+    if space != "32 26 31":
         raise Failure("under Plex a list's row is %s, a button its words and "
-                      "%s, and %s tall - the fixed layout is 24, 32 and 28"
+                      "%s, and %s tall - the fixed layout is 32, 26 and 31"
                       % tuple((space.split() + ["?", "?", "?"])[:3]))
 
     return 5
@@ -4373,10 +4456,10 @@ def check_tabs(guest):
         fx, fy, fw, fh, bar = (int(v) for v in front.groups())
         bx, by, bw, bh = (int(v) for v in behind.groups())
 
-        if bar != fw + 4:
+        if bar != fw + 2 * FRAME:
             raise Failure("Front's title bar is %d wide and its frame %d - a "
                           "bar across is the frame's width, whatever "
-                          "/home/.appearance says" % (bar, fw + 4))
+                          "/home/.appearance says" % (bar, fw + 2 * FRAME))
 
         # Where a BeOS tab on "Front" would have ended long before: over
         # Behind's body, in Front's title row, left of the boxes.
@@ -4403,21 +4486,28 @@ def check_tabs(guest):
                           "whole window" % (across, TAB))
 
         #
-        # The maximise box, greyed. `boxes_x` in wm.lua used to put it last,
-        # 20 in from the window's right edge; since 23 September the close
-        # box joined the run at the right (`roadmap.md` 5zl) and maximise is
-        # one slot - `BOX_W`, 22 - further left. 22 above the top, and the
-        # little window's title bar is its glyph's top rows.
+        # The maximise box, greyed. It is the middle of the three at the
+        # right: the run ends `MARGIN` - 10 since 0.10.149, it was 4 - in
+        # from the frame, each box a `BOX_W` slot of 22 and the last one
+        # `BOX`, 18, so maximise starts 50 in from the frame's right edge
+        # (`boxes_x`), which is `FRAME` outside the content's. 22 above the
+        # top.
         #
-        zx, zy = fx + fw - 20 - 22, fy - 22
-        glyph = pixel(zx + 8, zy + 4)
-        dim = (0x8b, 0x94, 0x9e)
+        # **Since 0.10.149 the three are coloured circles** (`roadmap.md`
+        # 5zq), and a maximise that cannot be used is a grey one with no
+        # glyph where a working one is green. So the check is the disc's
+        # middle: grey - its three channels together - and not the green,
+        # which holds in any look without knowing the look's grey.
+        #
+        zx, zy = fx + fw + FRAME - 50, fy - 22
+        glyph = pixel(zx + 9, zy + 9)
+        green = (0x28, 0xc8, 0x40)
 
-        if glyph != dim:
-            raise Failure("Front cannot be maximised and its maximise box's "
-                          "glyph is %r - wanted it greyed, in text_dim %r, "
-                          "rather than drawn as a box that works or not "
-                          "drawn at all" % (glyph, dim))
+        if glyph == green or max(glyph) - min(glyph) > 24:
+            raise Failure("Front cannot be maximised and its maximise "
+                          "circle's middle is %r - wanted it grey, not the "
+                          "green %r of one that works, nor anything else "
+                          % (glyph, green))
 
         # Pressed and dragged, it does nothing: Front's top-left stays green.
         corner = pixel(fx + 6, fy + 6)
@@ -4454,17 +4544,93 @@ def check_tabs(guest):
     return 4
 
 
+def check_corners(guest):
+    """**A rounded window's corners show what is behind them, after a move
+    onto its own old place** (`roadmap.md` 5zr, `ui.md` 16.22).
+
+    Diego, 24 September, with a photograph of Photo's bottom-right corner:
+    "There seems to be an issue with rounded corners in that app". Its own
+    dark page showed outside the curve. The compositor's culling cut each
+    opaque window's whole frame rectangle out of what it painted behind, so
+    under a rounded corner nothing was painted and the corner was put back
+    from whatever the backbuffer last held - which was that window's own
+    page when `tile` had moved it up and to the left onto itself.
+
+    So: a window filled red, moved thirty up and thirty left once it has
+    drawn, and the pixel just inside its frame's new bottom-right corner -
+    outside the curve - has to be the desk, not red. The control is the
+    build before `OUT.uncover`, where that pixel is red.
+    """
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Corner', w = 240, h = 140, "
+        "x = 400, y = 300 } "
+        "if not w then return end "
+        "local v = ui.view{ x = 0, y = 0, w = 240, h = 140 } "
+        "function v:draw(g) g:fill(0, 0, self.w, self.h, 0xffe03030) end "
+        "w:add(v) "
+        "local n = 0 "
+        "function w:on_frame() n = n + 1 "
+        "if n == 20 then w:move(370, 270) print('corner' .. ': moved') end "
+        "return false end "
+        "w:run()"
+    )
+    guest.type("fs.write('/ramfs/corner.lua', %r)" % program)
+    mark = len(guest.seen)
+    guest.type("wm /ramfs/corner.lua")
+
+    deadline = time.monotonic() + 40
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if "corner: moved" in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        stop_desktop(guest)
+        raise Failure("the corner window never moved itself:\n"
+                      + guest.seen[mark:][-800:])
+
+    try:
+        time.sleep(2.0)
+        width, height, px = parse_ppm(guest.screendump())
+
+        def at(x, y):
+            o = (y * width + x) * 3
+            return tuple(px[o:o + 3])
+
+        # The frame's new bottom-right corner, `FRAME` outside the content,
+        # and one pixel in from it: outside any curve a corner has.
+        cx, cy = 370 + 240 + FRAME - 1, 270 + 140 + FRAME - 1
+        desk = at(10, 700)
+        corner = at(cx, cy)
+
+        if corner == (0xe0, 0x30, 0x30) or corner != desk:
+            raise Failure(
+                "outside the moved window's bottom-right curve is %r where "
+                "the desk is %r - what showed there is what the backbuffer "
+                "held before, because nothing behind a rounded corner was "
+                "painted" % (corner, desk))
+    finally:
+        stop_desktop(guest)
+
+    return 1
+
+
 def check_scale(guest):
     """**Everything at 150 per cent** (`roadmap.md` 5z, `ui.md` 16.18).
 
     Diego, 22 September: "a factor multiplier of all the things in the UI".
     With `scale = 150` in `/home/.appearance`, the gallery - a kit window
-    asking for 460 by 330 - and a window drawing its own pixels, 200 by 100
-    of green:
+    asking for the size it says - and a window drawing its own pixels, 200
+    by 100 of green:
 
       the window manager says it is at 150;
-      the gallery is 690 by 495 on the screen, and its title bar 39 tall;
-      its list's selection bar is 36 rows, the fixed layout's 24 at 150;
+      the gallery is half again its size on the screen, and its title bar
+      39 tall;
+      its list's selection bar is 48 rows, the fixed layout's 32 at 150;
       a click on the list's third row selects the third row - the click
       divided back into points lands where the drawing, multiplied, put it;
       dragged by its title bar 120 by 60, it moves 120 by 60, under the
@@ -4518,10 +4684,15 @@ def check_scale(guest):
 
         gx, gy, gw, gh = (int(v) for v in gallery.groups())
         dx, dy, dw, dh = (int(v) for v in direct.groups())
+        laid = gallery_layout(guest, mark)
+        asked = laid["size"]
+        lx, ly, lw, lh = laid["list"]
 
-        if (gw, gh) != (690, 495):
-            raise Failure("the gallery asked for 460x330 and is %dx%d on the "
-                          "screen - at 150 it is 690x495" % (gw, gh))
+        if (gw, gh) != (asked[0] * 3 // 2, asked[1] * 3 // 2):
+            raise Failure("the gallery asked for %dx%d and is %dx%d on the "
+                          "screen - at 150 it is %dx%d"
+                          % (asked + (gw, gh)
+                             + (asked[0] * 3 // 2, asked[1] * 3 // 2)))
 
         if (dw, dh) != (300, 150):
             raise Failure("the own-pixel window asked for 200x100 and is "
@@ -4577,8 +4748,10 @@ def check_scale(guest):
             raise Failure("the own-pixel window's title bar is %d rows tall - "
                           "the tab's 26 at 150 is 39" % rows)
 
-        # The own-pixel window's surface reaches its bottom-right corner.
-        corner = at(dx + dw - 3, dy + dh - 3)
+        # The own-pixel window's surface reaches its bottom-right corner -
+        # sampled twelve in from it, since the page is rounded inside the
+        # frame (0.10.149) and the last few pixels of its corner are frame.
+        corner = at(dx + dw - 12, dy + dh - 12)
 
         if corner != (0x30, 0xa0, 0x40):
             raise Failure("near the own-pixel window's bottom-right corner is "
@@ -4588,7 +4761,7 @@ def check_scale(guest):
         # The list's selection bar: its height, in the list's column.
         def selection():
             _, _, px_ = parse_ppm(guest.screendump())
-            x = gx + 150 * 3 // 2
+            x = gx + (lx + lw // 3) * 3 // 2
             top = run = None
 
             for y in range(gy, gy + gh):
@@ -4606,20 +4779,22 @@ def check_scale(guest):
 
         top, run = selection()
 
-        if top is None or abs(run - 36) > 1:
+        if top is None or abs(run - LAYOUT_ROW * 3 // 2) > 1:
             raise Failure("the gallery's selection bar is %r rows tall at %r "
-                          "- a row of 24 at 150 is 36" % (run, top))
+                          "- a row of %d at 150 is %d"
+                          % (run, top, LAYOUT_ROW, LAYOUT_ROW * 3 // 2))
 
-        # A click on the third row: `gallery.lua`'s list is at 16,172 in
-        # points, its rows 24 from two in; the third row's middle is 234.
-        guest.mouse_to(*_to_tablet(gx + 150 * 3 // 2, gy + 234 * 3 // 2,
-                                   width, height))
+        # A click on the third row: the list's rows start two in, so the
+        # third row's middle is two and a half rows below that.
+        third = ly + 2 + 2 * LAYOUT_ROW + LAYOUT_ROW // 2
+        guest.mouse_to(*_to_tablet(gx + (lx + lw // 3) * 3 // 2,
+                                   gy + third * 3 // 2, width, height))
         time.sleep(0.3)
         guest.mouse_button(True)
         time.sleep(0.2)
         guest.mouse_button(False)
 
-        want = gy + (172 + 2 + 48) * 3 // 2
+        want = gy + (ly + 2 + 2 * LAYOUT_ROW) * 3 // 2
         deadline = time.monotonic() + 15
         now = (top, run)
 
@@ -4690,9 +4865,10 @@ def check_scale_live(guest):
     """**The scale changed with windows open** (`roadmap.md` 5z).
 
     Preferences' scale chosen at 150 - `wm gallery,preferences:--scale 150`
-    - has to rebuild the gallery, already open at 460 by 330, at 690 by
-    495, say so, and write 150 down; and let go at 100 again, the gallery
-    comes back to 460 by 330 exactly, not a point smaller for the trip.
+    - has to rebuild the gallery, already open at the size it says, at half
+    again that, say so, and write 150 down; and let go at 100 again, the
+    gallery comes back to its size exactly, not a point smaller for the
+    trip.
     """
     guest.type(appearance() + ' print("live" .. "-reset")')
     guest.wait_for("live-reset", "start the live scale at 100")
@@ -4718,11 +4894,14 @@ def check_scale_live(guest):
             raise Failure("Preferences never applied a scale of 150:\n"
                           + guest.seen[mark:][-800:])
 
+        asked = gallery_layout(guest, mark)["size"]
         up = said(r"wm: rescaled gallery to (\d+)x(\d+)", mark)
+        grown = (asked[0] * 3 // 2, asked[1] * 3 // 2)
 
-        if not up or (int(up.group(1)), int(up.group(2))) != (690, 495):
-            raise Failure("the open gallery was rescaled to %s - at 150 it is "
-                          "690x495" % (up and up.group(0)))
+        if not up or (int(up.group(1)), int(up.group(2))) != grown:
+            raise Failure("the open gallery was rescaled to %s - it asked for "
+                          "%dx%d, and at 150 it is %dx%d"
+                          % ((up and up.group(0),) + asked + grown))
     finally:
         stop_desktop(guest)
 
@@ -4741,9 +4920,9 @@ def check_scale_live(guest):
     try:
         back = said(r"wm: rescaled gallery to (\d+)x(\d+)", mark)
 
-        if not back or (int(back.group(1)), int(back.group(2))) != (460, 330):
+        if not back or (int(back.group(1)), int(back.group(2))) != asked:
             raise Failure("back at 100 the gallery is %s - it asked for "
-                          "460x330" % (back and back.group(0)))
+                          "%dx%d" % ((back and back.group(0),) + asked))
     finally:
         stop_desktop(guest)
         guest.type(appearance() + ' print("live" .. "-done")')
@@ -5285,9 +5464,10 @@ def check_terminal(guest):
 
     bx0, by0, bx1, by1 = before
 
-    # The window's own bottom-right corner, from the view's insets: the view
-    # sits 8 in from the left and top and leaves 8 and 12 on the other sides.
-    grip_x, grip_y = bx1 + 8 - 3, by1 + 12 - 3
+    # The window's own bottom-right corner, which is the console's: it runs
+    # from the header to the window's edges (`docs/apps.html`), so the grip
+    # is a few pixels in from where the console colour ends.
+    grip_x, grip_y = bx1 - 4, by1 - 4
 
     # Only into the room that exists. This screen is not large and the
     # terminal already fills most of it, so a drag past the edge would be a
@@ -5983,13 +6163,15 @@ def check_log_view(guest):
         #
         # **The button moved with the look** (0.10.145): Log View's menu bar
         # became the header every other window has, so the press is at the
-        # right-hand end of that header rather than at its left. Measured
-        # from the window's own width, which `wm` reports, so a window that
-        # opens at another size is still clicked in the right place.
+        # right-hand end of that header rather than at its left - the kit's
+        # dots, 26 square and 10 in, centred in the header's 46 (0.10.149).
+        # Measured from the window's own width, which `wm` reports, so a
+        # window that opens at another size is still clicked in the right
+        # place.
         #
         if pitch:
             opened = len(guest.seen)
-            click(log[0] + log[2] - 29, log[1] + 20)
+            click(log[0] + log[2] - 23, log[1] + 22)
 
             where = None
             deadline = time.monotonic() + 10
@@ -6160,20 +6342,17 @@ def check_cores(guest):
     width, height, px = parse_ppm(guest.screendump())
     before = _meter_area(width, height, px)
 
-    # "add a worker", at (188, 126) with the window at 120,100.
+    # "Add a worker", by the keyboard: it is the first control in the window,
+    # so it holds the focus when the window opens and Enter presses it.
     #
-    # **The buttons are above the panel, and this test is why.** They used
-    # to sit under it, where their y depended on how many processors the
-    # machine has - four rows on the ARM board, one on x86-64, which cannot
-    # count its own yet. One hardcoded coordinate cannot hit a button that
-    # is in two places, and a control whose position depends on the data
-    # above it is one nothing can reliably aim at: a person on a strange
-    # machine has the same problem as a harness driving a real pointer.
-    guest.mouse_to(*_to_tablet(188, 126, width, height))
-    time.sleep(0.4)
-    guest.mouse_button(True)
-    time.sleep(0.3)
-    guest.mouse_button(False)
+    # **It was a click at (188, 126)**, which worked while the buttons sat
+    # at a fixed offset above the panel - and they were put there because a
+    # test could not aim at them under it, where their y depended on how
+    # many processors the machine has. Since 0.10.149 they are the header's
+    # (`docs/apps.html`), placed from the right edge by the widths of their
+    # words, which depend on the face. The keyboard aims at nothing, which
+    # is the property the first move was after.
+    guest.sendkey("ret")
 
     #
     # Waited *for*, not waited out.
@@ -6233,11 +6412,10 @@ def check_cores(guest):
     # kill reached a process this program started, which is the other half
     # of what the buttons claim.
     #
-    guest.mouse_to(*_to_tablet(308, 126, width, height))
+    # "Take one off": the next control along.
+    guest.sendkey("tab")
     time.sleep(0.4)
-    guest.mouse_button(True)
-    time.sleep(0.3)
-    guest.mouse_button(False)
+    guest.sendkey("ret")
 
     #
     # Waited for, on the way down as well as on the way up.
@@ -6295,15 +6473,19 @@ def check_cores(guest):
     # click one. The count stuck at four and the meter never came down -
     # which is what a person reports as not being able to take workers off.
     #
-    # Three seconds apart, not one. Two clicks in quick succession on the
+    # Three seconds apart, not one. Two presses in quick succession on the
     # same control are a double-click to anything that looks for one, and
     # this needs two separate presses to be seen as two.
+    #
+    # **By the keyboard, as the pair above is**, since the buttons moved into
+    # the header (0.10.149): these were clicks at 188,126 and 308,126, where
+    # the buttons had been a row above the panel, and pressed the panel. The
+    # focus is on Take one off after the pair; Tab wraps to Add a worker.
+    guest.sendkey("tab")
+    time.sleep(0.5)
+
     for _ in range(2):
-        guest.mouse_to(*_to_tablet(188, 126, width, height))
-        time.sleep(0.4)
-        guest.mouse_button(True)
-        time.sleep(0.3)
-        guest.mouse_button(False)
+        guest.sendkey("ret")
         time.sleep(3.0)
 
     two = ended
@@ -6324,12 +6506,12 @@ def check_cores(guest):
             "about the state they left behind rather than about the button."
         )
 
+    # And Take one off, the next along.
+    guest.sendkey("tab")
+    time.sleep(0.5)
+
     for _ in range(2):
-        guest.mouse_to(*_to_tablet(308, 126, width, height))
-        time.sleep(0.4)
-        guest.mouse_button(True)
-        time.sleep(0.3)
-        guest.mouse_button(False)
+        guest.sendkey("ret")
         time.sleep(3.0)
 
     settled = two
@@ -6449,7 +6631,8 @@ def check_clipboard(guest):
     # is more than a tab covers and errs towards "not clear".
     def covers(win, x, y):
         wx, wy, ww, wh = win
-        return wx - 2 <= x < wx + ww + 2 and wy - 20 <= y < wy + wh + 2
+        return (wx - FRAME <= x < wx + ww + FRAME
+                and wy - 26 <= y < wy + wh + FRAME)
 
     def clear_point(win, other, offsets):
         """The first offset into `win` that is clear of `other`'s frame."""
@@ -6540,9 +6723,11 @@ def check_clipboard(guest):
     guest.mouse_button(False)
     time.sleep(1.0)
 
-    # Its text field, which is `ui.field` and takes a paste at the caret.
-    # The gallery is on top now, so nothing covers it.
-    guest.mouse_to(*_to_tablet(gallery[0] + 136, gallery[1] + 141,
+    # Its text field, which is `ui.field` and takes a paste at the caret,
+    # where the gallery says it is. The gallery is on top now, so nothing
+    # covers it.
+    field = gallery_layout(guest, mark)["field"]
+    guest.mouse_to(*_to_tablet(gallery[0] + field[0], gallery[1] + field[1],
                                width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
@@ -6621,6 +6806,36 @@ def check_clipboard(guest):
     # would read as one that did.
     #
     rx, ry, rw, rh = report
+
+    #
+    # **Room to grow, made when the window manager did not leave it.** Where
+    # the report lands depends on what opened beside it: once the gallery
+    # became a page of cards 658 tall, the report's own corner was taken and
+    # it went to a slot at the bottom right, flush with the screen - and a
+    # window with no room below cannot be made taller. So it is lifted by
+    # its title bar first, as a person would, as far as there is room above.
+    #
+    below = (height - 6) - (ry + rh)
+
+    if below < 80:
+        lift = min(160 - below, ry - (STRIP_H + 26 + 10))
+
+        if lift > 0:
+            gx, gy = rx + rw // 2, ry - 13
+            guest.mouse_to(*_to_tablet(gx, gy, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+
+            for step in range(1, 9):
+                guest.mouse_to(*_to_tablet(gx, gy - lift * step // 8,
+                                           width, height))
+                time.sleep(0.1)
+
+            guest.mouse_button(False)
+            time.sleep(1.0)
+            ry -= lift
+
     guest.mouse_to(*_to_tablet(rx + 200, ry + 200, width, height))
     time.sleep(0.3)
     guest.mouse_button(True)
@@ -7023,13 +7238,13 @@ def check_focus_shown(guest):
     time.sleep(2)
     width, height, _ = parse_ppm(guest.screendump())
 
-    # wm.lua: BORDER is 2 and TAB_H is 26, and the minimise box is the first
+    # wm.lua: BORDER is `FRAME` and TAB_H is 26, and the minimise box is the first
     # of the pair `boxes_x` puts 44 pixels in from the *tab's* right edge -
     # the whole frame's with a bar across it, the title's end with a BeOS
     # tab, whose width the window manager says as it places the window.
     def frame(title):
         x, y, w, h = placed[title]
-        return x - 2, y - 26, w + 4, h + 28
+        return x - FRAME, y - 26, w + 2 * FRAME, h + 26 + FRAME
 
     def tab_point(title):
         """A point on the tab that the other window does not cover."""
@@ -7037,7 +7252,8 @@ def check_focus_shown(guest):
         ox, oy, ow, oh = frame([t for t in apps if t != title][0])
         y = fy + 13
 
-        for x in range(fx + 40, fx + fw - 60, 8):
+        # Clear of the three at the right, which take the last 72.
+        for x in range(fx + 40, fx + fw - 80, 8):
             if not (ox <= x < ox + ow and oy <= y < oy + oh):
                 return x, y
 
@@ -7189,13 +7405,12 @@ def check_focus_shown(guest):
     #
     # The minimise box, which is the *first* of the three at the right.
     # `boxes_x` in wm.lua ends the run `MARGIN` from the frame and each box
-    # takes a `BOX_W` slot, so the run's start moved one slot - 22 - further
-    # left when the close box joined it on 23 September (`roadmap.md` 5zl).
-    # 44 was two slots; 66 is three.
+    # takes a `BOX_W` slot: three slots and the margin, 62 and 10 since
+    # 0.10.149 (the margin was 4, and 66 was the sum).
     #
     since = len(guest.seen)
     fx, fy, fw, _ = frame(current)
-    click(fx + (tab_wide.get(current) or fw) - 66 + 9, fy + 13)
+    click(fx + (tab_wide.get(current) or fw) - 72 + 9, fy + 13)
 
     limit = time.monotonic() + 6
 
@@ -7410,14 +7625,27 @@ def check_places(guest):
     # its rows run from `CONTENT_Y`, one ROW each: Places, Home, Desktop,
     # then places.
     #
-    # **`CONTENT_Y` is 41 and was 86** until 23 September, when Tracker's
-    # menu bar, toolbar and trail became one header (`roadmap.md` 5zg). The
-    # three bands above the files became one, so everything under them rose
-    # by forty-five pixels - and a phase that drops on a row by its position
-    # has to be told, which is what this comment is for the next time.
+    # **`CONTENT_Y` is Tracker's to say**, and it says it: `tracker: content
+    # at N`. It was 86 until 23 September, when the menu bar, toolbar and
+    # trail became one band, and 41 until the kit's header (0.10.149) - and
+    # each time this phase held a number that the window had moved away
+    # from.
     #
-    content_y = 41
-    first_row_y = content_y + 29
+    said, deadline = None, time.monotonic() + 15
+
+    while said is None and time.monotonic() < deadline:
+        guest._read_available()
+        said = re.search(r"tracker: content at (\d+)", guest.seen[mark:])
+        time.sleep(0.25)
+
+    if not said:
+        raise Failure("Tracker did not say where its content starts:\n"
+                      + guest.seen[mark:][-900:])
+
+    content_y = int(said.group(1))
+    # The list's heading is a row of the fixed layout with a hairline under
+    # it (0.10.149), so the first file's middle is a row and a half down.
+    first_row_y = content_y + LAYOUT_ROW + 1 + LAYOUT_ROW // 2
     place_row_y = content_y + 2 + 3 * ROW + ROW // 2
 
     to(260, first_row_y)
@@ -8001,19 +8229,32 @@ def check_icon_sizes(guest):
 
     #
     # **The View button in the header**, which is where it went when Tracker
-    # lost its menu bar (`roadmap.md` 5zg, 23 September). A menu bar of
-    # three menus, a toolbar and a trail became one band: back, forward, the
-    # place, and Find / New / View / `...` from the right edge.
+    # lost its menu bar (`roadmap.md` 5zg, 23 September): back, forward and
+    # the place on the left, and search, a new folder, View and the dots on
+    # the right - icons since 0.10.149, in the kit's 46-pixel header.
     #
-    # The numbers are the application's own - `right_button(102, 50)` places
-    # View 102 from the right and 50 wide, at `TOOLBAR_Y` 7 and
-    # `TOOLBAR_H` 26 - and they are written out here rather than derived, so
-    # that moving a button in one file has to be agreed with in the other.
+    # Where View is, Tracker says (`tracker: ... view at x,y`, its middle in
+    # the window), and its menu opens under the header at the button's left.
+    # This phase held the header's numbers written out until the header
+    # moved twice in two days.
     #
-    win_x, win_y, win_w = where[0], where[1], where[2]
-    view_x = win_x + win_w - 102 + 25
-    view_y = win_y + 7 + 13
-    menu_x, menu_y = win_x + win_w - 102, win_y + 7 + 26
+    said = None
+    deadline = time.monotonic() + 15
+
+    while said is None and time.monotonic() < deadline:
+        guest._read_available()
+        said = re.search(r"tracker: content at \d+, view at (\d+),(\d+)",
+                         guest.seen[mark:])
+        time.sleep(0.25)
+
+    if said is None:
+        raise Failure("Tracker did not say where its View button is:\n"
+                      + guest.seen[mark:][-1500:])
+
+    win_x, win_y = where[0], where[1]
+    view_x = win_x + int(said.group(1))
+    view_y = win_y + int(said.group(2))
+    menu_x, menu_y = view_x - 13, win_y + 46
 
     def view_menu(rows, want, skip):
         guest.mouse_to(*_to_tablet(view_x, view_y, width, height))
@@ -8440,16 +8681,25 @@ def check_clicks(guest):
     button is held, and the only part of this that a naive implementation
     gets wrong while looking perfectly correct.
     """
+    mark = len(guest.seen)
     guest.type("wm gallery")
     started(guest)
+    laid = gallery_layout(guest, mark)
 
     width, height, px = parse_ppm(guest.screendump())
 
-    # The window is opened at x=60, y=90 by gallery.lua, and its controls
-    # are placed at fixed offsets inside it.
+    #
+    # The window is opened at x=60, y=90 by gallery.lua, which says where
+    # its controls are. What a control did is said beside the header's
+    # title, so that is the strip that changes: from where the subject's
+    # words start to where the dots are.
+    #
     wx, wy = 60, 90
-    status = (wx + 12, wy + 296, 380, 16)
-    park = (wx + 300, wy + 280)          # somewhere with nothing on it
+    gw, gh = laid["size"]
+    lx, ly, lw, lh = laid["list"]
+    press, verb = laid["press"], laid["verb"]
+    status = (wx + 90, wy + 10, gw - 90 - 50, 26)
+    park = (wx + gw - 40, wy + gh - 12)  # the page's foot, with nothing on it
 
     def click(x, y, release_at=None):
         guest.mouse_to(*_to_tablet(x, y, width, height))
@@ -8473,7 +8723,7 @@ def check_clicks(guest):
     before = _strip(screen_now(), width, *status)
 
     # 1. The second button, which sets a different message.
-    click(wx + 150 + 30, wy + 60 + 13)
+    click(wx + verb[0], wy + verb[1])
 
     settle(guest,
            lambda w, h, px: True if _strip(px, w, *status) != before else None,
@@ -8483,21 +8733,23 @@ def check_clicks(guest):
 
     # 2. A list row, checked by where the selection bar lands.
     _, _, px = parse_ppm(guest.screendump())
-    bar_before = find_colour_anywhere(width, height, px, SELECTED)
+    box = (wx + lx, wy + ly, lw, lh)
+    bar_before = find_colour_in(width, px, box, SELECTED)
 
-    click(wx + 16 + 60, wy + 172 + 2 + 16 * 3 + 8)
+    click(wx + lx + 60, wy + ly + 2 + 2 * LAYOUT_ROW + LAYOUT_ROW // 2)
 
     settle(guest,
            lambda w, h, px: (lambda at: at if at is not None
                              and at[1] > bar_before[1] else None)(
-                                 find_colour_anywhere(w, h, px, SELECTED)),
-           f"clicking the fourth row of the list did not move the selection "
+                                 find_colour_in(w, px, box, SELECTED)),
+           f"clicking the third row of the list did not move the selection "
            f"from {bar_before}.")
 
     # 3. Pressed, slid off, released: nothing may happen.
     settled = _strip(screen_now(), width, *status)
 
-    click(wx + 16 + 50, wy + 60 + 13, release_at=(wx + 380, wy + 60))
+    click(wx + press[0], wy + press[1],
+          release_at=(wx + lx + 60, wy + press[1]))
     escaped = _strip(screen_now(), width, *status)
 
     if escaped != settled:
@@ -8531,7 +8783,7 @@ def check_clicks(guest):
     #
     before_fast = _strip(screen_now(), width, *status)
 
-    guest.mouse_to(*_to_tablet(wx + 150 + 30, wy + 60 + 13, width, height))
+    guest.mouse_to(*_to_tablet(wx + verb[0], wy + verb[1], width, height))
     time.sleep(0.5)
     guest._qmp("input-send-event", {"events": [
         {"type": "btn", "data": {"down": True,  "button": "left"}},
@@ -9239,6 +9491,7 @@ def main():
         wallpaper_checks = phase("wallpapers", check_wallpapers)
         direct_menu_checks = phase("direct menu", check_direct_menu)
         tab_checks = phase("tabs", check_tabs)
+        corner_checks = phase("corners", check_corners)
         scale_checks = phase("scale", check_scale)
         scale_live_checks = phase("scale changed", check_scale_live)
         appearance_checks = phase("appearance", check_appearance)
@@ -9312,7 +9565,7 @@ def main():
              + repaint_checks + power_checks + budget_checks + snes_checks
              + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
              + default_look_checks
-             + tab_checks + drives_app_checks
+             + tab_checks + corner_checks + drives_app_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
 
@@ -9408,6 +9661,8 @@ def main():
           f"{tab_checks} on the title bar - across the whole window over a "
           f"saved BeOS tab, and a maximise box greyed and doing nothing "
           f"where a window cannot be maximised, "
+          f"{corner_checks} on a rounded window's corner showing the desk "
+          f"after it moved onto its own old place, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

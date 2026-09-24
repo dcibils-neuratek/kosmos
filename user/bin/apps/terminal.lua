@@ -84,14 +84,13 @@ local theme = ui.theme
 -- precisely so that it can.
 --
 -- And a header on top, since the View menu arrived (below): the console is
--- the size it was, and the window one band taller. It was a menu bar and is
--- now a row carrying the working directory on the left and a `...` on the
--- right (`docs/desktop.html`) - the chrome a terminal should have, which is
--- as little as will still say where you are.
-local TOOLBAR_Y = 7
-local TOOLBAR_H = 26
-local BAR = TOOLBAR_Y + TOOLBAR_H
-local W, H = 640, 580 + BAR
+-- the size it was, and the window one header taller. It was a menu bar,
+-- then a row of its own 33 tall, and is the kit's header now - `docs/
+-- apps.html`, 46 with the working directory beside the title and the dots
+-- at its end: the chrome a terminal should have, which is as little as will
+-- still say where you are.
+local L = ui.layout
+local W, H = 640, L.head + 572
 local SCROLLBACK = 400          -- lines kept
 
 local win, err = ui.window{ title = "Terminal", w = W, h = H, x = 90, y = 40 }
@@ -186,7 +185,7 @@ end
 -- monospace cell every pass, so the rows and the columns follow from the
 -- view being the right size. The bug was never in the arithmetic.
 --
-local view = ui.view{ x = 8, y = BAR + 8, w = W - 16, h = H - BAR - 20,
+local view = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
                       follow = { left = true, right = true,
                                  top = true, bottom = true } }
 
@@ -201,16 +200,16 @@ local textsize = use("/lib/textsize.lua")
 local size = textsize.new(ui, "/home/.terminal")
 
 --
--- The header: where you are, and everything else behind one button.
+-- The header: where you are, and everything else behind the dots.
 --
--- The path is a label rather than a control. A terminal already has a way
--- to change directory and it is the one a person came here to use; a
--- clickable trail would be a second answer to a question this window
--- answers better than any window in the system.
+-- The path is words rather than a control. A terminal already has a way to
+-- change directory and it is the one a person came here to use; a clickable
+-- trail would be a second answer to a question this window answers better
+-- than any window in the system.
 --
-local where = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 70, text = cwd,
-                        color = "text_dim" }
-win:add(where)
+local more = ui.iconbutton{ icon = "more" }
+local header = ui.header{ x = 0, y = 0, w = W, title = "Terminal", sub = cwd,
+                          right = { more } }
 
 --
 -- Every change of directory goes through here, so the header cannot drift
@@ -220,23 +219,23 @@ win:add(where)
 --
 local function go(path)
   cwd = path
-  where.text = path
+  header.sub = path
 end
 
-win:add(ui.button{
-  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
-  follow = { "right", "top" },
-  on_click = function()
-    if win.open_menu then
-      win:open_menu(win.origin_x + W - 46,
-                    win.origin_y + TOOLBAR_Y + TOOLBAR_H, size:items())
-    end
-  end,
-})
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, size:items())
+end
+
+--
+-- **The console is the window**, from the header's rule to the window's
+-- edges, with the drawings' 9 above the text and 12 either side of it. It
+-- was a framed box 8 in from the window's edges with the window's colour
+-- around it, which made the terminal a picture of a terminal.
+--
+local PAD_X, PAD_Y = 12, 9
 
 function view:draw(g)
   g:fill(0, 0, self.w, self.h, "console")
-  g:frame(0, 0, self.w, self.h, self.focused and theme.ring or "line")
 
   --
   -- Measured in the *monospace* font, which is the one this window draws
@@ -248,8 +247,8 @@ function view:draw(g)
   local MH = gfx.height(face)
   local MW = math.max(1, gfx.measure("0", face))
 
-  local rows = (self.h - 6) // MH
-  local columns = (self.w - 8) // MW
+  local rows = (self.h - 2 * PAD_Y) // MH
+  local columns = (self.w - 2 * PAD_X) // MW
 
   -- The prompt is the last row, so the visible history is one short.
   local shown = {}
@@ -273,8 +272,8 @@ function view:draw(g)
   -- `sub` was for and what the view was already doing underneath it.
   --
   for i, line in ipairs(shown) do
-    local y = 3 + (i - 1) * MH
-    local x = 4
+    local y = PAD_Y + (i - 1) * MH
+    local x = PAD_X
 
     for _, run in ipairs(line) do
       if x >= self.w then break end
@@ -289,18 +288,18 @@ function view:draw(g)
     end
   end
 
-  local y = 3 + #shown * MH
+  local y = PAD_Y + #shown * MH
   local prompt = "> " .. input
 
-  g:text(4, y, prompt:sub(1, columns), "good", "console", "mono", px)
+  g:text(PAD_X, y, prompt:sub(1, columns), "good", "console", "mono", px)
 
   if busy then
-    g:text(self.w - 12 * MW, 3, "running " .. busy,
+    g:text(self.w - PAD_X - 12 * MW, PAD_Y, "running " .. busy,
            "text_dim", "console", "mono", px)
   end
 
   if self.focused then
-    local cx = 4 + math.min(#prompt, columns) * MW
+    local cx = PAD_X + math.min(#prompt, columns) * MW
     g:fill(cx, y, MW, MH, "ring")
   end
 end
@@ -572,6 +571,9 @@ end
 win.poll_wait_ticks = nil
 
 win:add(view)
+-- After the console, so the focus starts in it and Tab reaches the dots
+-- second.
+win:add(header)
 
 --------------------------------------------------------------------------
 -- What was typed into this window before.

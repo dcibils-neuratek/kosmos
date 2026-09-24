@@ -19,10 +19,11 @@
 -- is why opening a photograph off the disk was a File menu here and one
 -- branch there, rather than a picture travelling through messages.
 --
--- Drag it, or use the arrows, if it is bigger than its frame. **The scaler
--- this comment waited for exists** - `s:stretch`, added on 15 September for
--- Music's covers - so fitting a photograph to its frame is now a change to
--- this program rather than something the system cannot do.
+-- **A picture bigger than its frame is fitted to it**, keeping its shape,
+-- through the compositor's scaler (`s:stretch`, added on 15 September for
+-- Music's covers); a smaller one sits in the middle at its own size. This
+-- said to drag a big one around, and waited for the scaler to do better -
+-- it did, in 0.10.149 (`ui.image`'s `contain`).
 
 local ui    = use("/lib/ui.lua")
 local panel = use("/lib/panel.lua")
@@ -53,12 +54,12 @@ end
 
 local W, H = 560, 420
 
--- The header band, the same numbers every other window in the new look
--- uses. `docs/desktop.html` calls this shape a *canvas*: the picture is the
--- window, and above it one row saying what you are looking at.
-local TOOLBAR_Y = 7
-local TOOLBAR_H = 26
-local BAR_H     = TOOLBAR_Y + TOOLBAR_H
+-- **A canvas** (`docs/apps.html`): the kit's header with the picture's name
+-- and size, and under it the picture in the middle of a dark ground that
+-- runs to the window's edges. It was a row 33 tall, a sunken well 10 in
+-- with the picture in its top-left corner, and two lines of status under
+-- it; what they said is said beside the name, or behind the dots.
+local L = ui.layout
 
 local win, err = ui.window{ title = "Photo", w = W, h = H, x = 110, y = 70,
 
@@ -72,17 +73,22 @@ if not win then
   return
 end
 
-local where   = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 70, text = name,
-                          color = "text_dim" }
-local picture = ui.image{ x = 10, y = BAR_H + 8, w = W - 20,
-                          h = H - BAR_H - 44, asset = name,
+local function base(p) return p:match("([^/]+)$") or p end
+
+local more = ui.iconbutton{ icon = "more" }
+local header = ui.header{ x = 0, y = 0, w = W, title = base(name), sub = "",
+                          right = { more } }
+local picture = ui.image{ x = 0, y = L.head, w = W, h = H - L.head,
+                          asset = name, ground = theme.console,
+                          contain = true, centre = true,
                           follow = { "left", "right", "top", "bottom" } }
-local status  = ui.label{ x = 10, y = H - 26, w = W - 20, text = "",
-                          follow = { "left", "bottom" } }
+
+-- What was said last goes beside the name: the header is the status line.
+local function say(text) header.sub = text end
 
 local function describe()
   if picture.image_w > 0 then
-    return ("%d x %d, drag to pan"):format(picture.image_w, picture.image_h)
+    return ("%d × %d"):format(picture.image_w, picture.image_h)
   end
 
   if name:find("/") then
@@ -99,16 +105,12 @@ end
 -- lists windows by title and a row of four saying "Photo" is a row of four
 -- that tells you nothing.
 --
-local list_assets            -- defined with the label it fills
-
 local function show(path)
   name = path
-  where.text = path
+  header.title = base(path)
 
   picture:set(path)
-  status.text = describe()
-
-  if list_assets then list_assets() end
+  say(describe())
 
   -- The Deskbar lists windows by title, and four of them saying "Photo" is
   -- a list that tells you nothing.
@@ -142,79 +144,65 @@ function win:on_drop(kind, payload)
   local rest = select(2, payload:gsub("\n", "\n"))
 
   if rest > 0 then
-    status.text = describe() .. ("  (%d more not opened)"):format(rest)
+    say(describe() .. (" · %d more not opened"):format(rest))
   end
 
   return true
 end
 
 --
--- **A `...` instead of a File menu**, which is the whole of what a window
+-- **The dots instead of a File menu**, which is the whole of what a window
 -- this quiet needs: two items, neither of them something anybody does
 -- twice in a row (`docs/desktop.html`).
 --
-win:add(ui.button{
-  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
-  follow = { "right", "top" },
-  on_click = function()
-    if not win.open_menu then return end
-
-    win:open_menu(win.origin_x + W - 46,
-                  win.origin_y + TOOLBAR_Y + TOOLBAR_H, {
-      { text = "Open...", on_choose = open_one },
-      { separator = true },
-      { text = "Set as wallpaper", on_choose = function()
-          if not name:find("/") then
-            status.text = "only a file can be the wallpaper"
-            return
-          end
-
-          local ok, why = fs.send("/app/wm", { type = "wallpaper",
-                                              path = name })
-
-          status.text = ok and "that is the desktop now"
-                        or ("wallpaper: " .. tostring(why))
-        end },
-    })
-  end,
-})
-
-win:add(where)
-win:add(picture)
-win:add(status)
-
+-- **And the pictures the system carries, under them, while one of those is
+-- what is shown** - so the list is discoverable from inside the system
+-- rather than only from the source tree. It was a line of names along the
+-- window's bottom that ran off its right-hand edge; a menu has room for
+-- them, and choosing one is showing it.
 --
--- What else there is, so the list is discoverable from inside the system
--- rather than only from the source tree.
---
--- **Only while an asset is being shown.** Once a real file is open the list
--- is answering a question nobody asked, and it was answering it in text
--- that ran off the right-hand edge of the window - which is what a label
--- with more in it than room does.
---
-local also = ui.label{ x = 240, y = H - 26, w = W - 250, text = "",
-                       color = "line", follow = { "left", "right", "bottom" } }
+more.on_click = function()
+  local items = {
+    { text = "Open...", on_choose = open_one },
+    { separator = true },
+    { text = "Set as wallpaper", on_choose = function()
+        if not name:find("/") then
+          say("only a file can be the wallpaper")
+          return
+        end
 
-function list_assets()
-  if name:find("/") then also.text = "" return end
+        local ok, why = fs.send("/app/wm", { type = "wallpaper",
+                                            path = name })
 
-  local others = {}
+        say(ok and "that is the desktop now"
+            or ("wallpaper: " .. tostring(why)))
+      end },
+  }
 
-  for _, a in ipairs(sys.asset()) do
-    if a ~= name then others[#others + 1] = a end
+  if not name:find("/") then
+    local first = true
+
+    for _, a in ipairs(sys.asset()) do
+      if a ~= name and not a:find("/") and a:match("%.%a+$")
+         and #items < 16 then
+        if first then items[#items + 1] = { separator = true } end
+        first = false
+        items[#items + 1] = { text = a, on_choose = function() show(a) end }
+      end
+    end
   end
 
-  also.text = (#others > 0) and ("also: " .. table.concat(others, "  ")) or ""
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, items)
 end
 
-win:add(also)
+win:add(picture)
+win:add(header)
 
 -- The state it opens in, whatever was named on the command line. `show`
 -- rather than four assignments, so opening from the command line and
 -- opening from the File menu leave the window in exactly the same state -
 -- which is how the title came to be right in one case and stale in the
 -- other.
-if name:find("/") then show(name) else status.text = describe() end
+if name:find("/") then show(name) else say(describe()) end
 
-list_assets()
 win:run()

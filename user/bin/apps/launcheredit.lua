@@ -68,7 +68,7 @@ do
   table.sort(ICONS)
 end
 
-local W, H = 470, 420
+local W, H = 560, 540
 local win, err = ui.window{ title = "Launcher", w = W, h = H, x = 180, y = 120 }
 
 if not win then
@@ -76,28 +76,27 @@ if not win then
   return
 end
 
-win:add(ui.label{ x = 12, y = 10, w = W - 24, text = name })
+local L = ui.layout
 
-win:add(ui.label{ x = 12, y = 40, w = 80, text = "Starts" })
-local program = ui.field{ x = 96, y = 36, w = W - 108,
-                          text = tostring(attrs.program or "") }
-win:add(program)
+--------------------------------------------------------------------------
+-- The window, as `docs/apps.html` draws it (`roadmap.md` 5zp): the
+-- launcher's name and file in the header with Revert and Save, what it
+-- starts in a card, and the picture in a card of its own above the list to
+-- choose it from. It was labels and fields at x = 12 and 96, and a caption
+-- for the Program field under it in the size of a label.
+--------------------------------------------------------------------------
 
 --
--- What the field holds, said out loud.
+-- **What the field holds, said in the row's note**: the Lua file to run,
+-- and it does not have to be in `/bin` - `/home/mine.lua` is as ordinary as
+-- `/bin/doom.lua`. The window manager would complete a bare name, and this
+-- stores the completed one on save rather than the short one, so what is in
+-- the file is what runs.
 --
--- The whole path of the Lua file to run, and it does not have to be in
--- `/bin` - `/home/mine.lua` is as ordinary as `/bin/doom.lua`. The window
--- manager would complete a bare name, and this stores the completed one on
--- save rather than the short one, so what is in the file is what runs.
---
-win:add(ui.label{ x = 96, y = 58, w = W - 108,
-                  text = "the Lua file to run, anywhere - /bin/doom.lua" })
+local program = ui.field{ w = 260, text = tostring(attrs.program or "") }
+local arguments = ui.field{ w = 260, text = tostring(attrs.args or "") }
 
-win:add(ui.label{ x = 12, y = 96, w = 80, text = "With" })
-local arguments = ui.field{ x = 96, y = 92, w = W - 108,
-                            text = tostring(attrs.args or "") }
-win:add(arguments)
+local chosen = tostring(attrs.icon or "")
 
 --------------------------------------------------------------------------
 -- The picture, chosen from what there is rather than typed.
@@ -105,40 +104,61 @@ win:add(arguments)
 -- A name typed into a box is a name that can be wrong, and the only way to
 -- find out was to save and look at the menu. Forty-eight names is a list
 -- somebody can read, and the one thing a list cannot show is what the
--- picture *looks like* - so the chosen one is drawn beside it at the size
+-- picture *looks like* - so the chosen one is drawn in its row at the size
 -- the Deskbar draws it.
---------------------------------------------------------------------------
-
-win:add(ui.label{ x = 12, y = 132, w = 80, text = "Picture" })
-
-local chosen = tostring(attrs.icon or "")
-
-local LIST_X, LIST_Y, LIST_H = 96, 132, 200
-
---
--- The preview, which is the whole reason this is not just a list of words.
 --
 -- `g:icon` takes the asset's own name, so the `.png` goes back on here: the
 -- launcher's attribute is `App_Generic` and the file is `App_Generic.png`,
 -- and every other reader of a launcher does the same join.
---
-local preview = ui.view{ x = 12, y = LIST_Y + 34, w = 72, h = 72 }
+--------------------------------------------------------------------------
+
+local preview = ui.view{ w = 32, h = 32 }
 
 function preview:draw(g)
-  g:sunken(0, 0, self.w, self.h, "sunken")
-
-  if chosen ~= "" then
-    g:icon((self.w - 32) // 2, (self.h - 32) // 2, chosen .. ".png", 32)
-  end
+  if chosen ~= "" then g:icon(0, 0, chosen .. ".png", 32) end
 end
 
-win:add(preview)
+local save, revert               -- the verbs, below
+
+local header = ui.header{
+  x = 0, y = 0, w = W, title = name, sub = path,
+  right = { ui.button{ text = "Revert", on_click = function() revert() end },
+            ui.button{ text = "Save", go = true,
+                       on_click = function() save() end } },
+}
+
+local function picture_row()
+  return { label = (chosen ~= "") and chosen or "No picture of its own",
+           note = "what the Deskbar and the desktop draw", control = preview }
+end
+
+local cards = ui.cards{
+  x = 0, y = L.head, w = W, h = 1,
+  follow = { "left", "right", "top" },
+  groups = {
+    { name = "Starts", rows = {
+        { label = "Program", note = "a Lua file, anywhere", control = program },
+        { label = "With", note = "what follows its name",
+          control = arguments } } },
+    { name = "Picture", rows = { picture_row() } },
+  },
+}
+
+cards.h = cards.content_h
+
+local list_y = L.head + cards.content_h + L.between
 
 local picture = ui.list{
-  x = LIST_X, y = LIST_Y, w = W - LIST_X - 12, h = LIST_H,
+  x = L.page_side, y = list_y, w = W - 2 * L.page_side,
+  h = H - list_y - L.page_foot,
   items = ICONS,
+  follow = { "left", "right", "top", "bottom" },
   on_select = function(_, item)
     chosen = tostring(item or "")
+
+    -- The row names the picture as well as showing it.
+    cards.groups[2].rows[1] = picture_row()
+    cards:set()
     win.dirty = true
   end,
 }
@@ -149,10 +169,9 @@ for i, one in ipairs(ICONS) do
   if one == chosen then picture.selected = i break end
 end
 
+win:add(header)
+win:add(cards)
 win:add(picture)
-
-local status = ui.label{ x = 12, y = H - 26, w = W - 24, text = path }
-win:add(status)
 
 --
 -- Saved, and the Deskbar told.
@@ -163,7 +182,7 @@ win:add(status)
 -- editing a launcher on the desktop is an ordinary thing to do with no menu
 -- open anywhere.
 --
-local function save()
+function save()
   --
   -- Typed short, stored whole - the same rule `launcher.lua` applies when
   -- it makes one at the prompt.
@@ -193,42 +212,39 @@ local function save()
   })
 
   if not ok then
-    status.text = "could not save: " .. tostring(why)
+    header.sub = "could not save: " .. tostring(why)
     win.dirty = true
     return
   end
 
   fs.write("/app/Deskbar/menu", "reload")
 
-  status.text = "saved - " .. name .. " starts " .. starts
+  header.sub = "saved - " .. name .. " starts " .. starts
   win.dirty = true
 end
 
-win:add(ui.button{ x = W - 190, y = H - 56, w = 80, text = "Revert",
-                   on_click = function()
-                     -- The caret with the text, or it is left pointing past
-                     -- the end of a shorter string and the next key typed
-                     -- lands nowhere.
-                     local function put(field, text)
-                       field.text = text
-                       field.caret = #text + 1
-                       field.all = false
-                     end
+function revert()
+  -- The caret with the text, or it is left pointing past the end of a
+  -- shorter string and the next key typed lands nowhere.
+  local function put(field, text)
+    field.text = text
+    field.caret = #text + 1
+    field.all = false
+  end
 
-                     put(program, tostring(attrs.program or ""))
-                     put(arguments, tostring(attrs.args or ""))
+  put(program, tostring(attrs.program or ""))
+  put(arguments, tostring(attrs.args or ""))
 
-                     chosen = tostring(attrs.icon or "")
+  chosen = tostring(attrs.icon or "")
 
-                     for i, one in ipairs(ICONS) do
-                       if one == chosen then picture.selected = i break end
-                     end
+  for i, one in ipairs(ICONS) do
+    if one == chosen then picture.selected = i break end
+  end
 
-                     status.text = path
-                     win.dirty = true
-                   end })
-
-win:add(ui.button{ x = W - 100, y = H - 56, w = 80, text = "Save",
-                   on_click = save })
+  cards.groups[2].rows[1] = picture_row()
+  cards:set()
+  header.sub = path
+  win.dirty = true
+end
 
 win:run()

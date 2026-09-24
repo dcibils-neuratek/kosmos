@@ -73,9 +73,6 @@ ABS = 32767
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "cube3d", "tile"]
 
-TAB_H = 20          # has to agree with wm.lua
-BORDER = 2
-
 
 def png(width, height, rgb):
     """A PPM's pixels as a PNG, without a library."""

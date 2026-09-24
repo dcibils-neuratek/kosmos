@@ -23,8 +23,7 @@ local ui = use("/lib/ui.lua")
 local hardware = use("/lib/hardware.lua")
 local theme = ui.theme
 
-local W, H = 460, 420
-local BAR_H = gfx.font.h + 8
+local W, H = 500, 490
 
 local SETTINGS = "/home/.network"
 
@@ -79,8 +78,16 @@ local info = fs.net_info("/net")
 -- Which card, from the bus. See `/lib/hardware.lua` for why it is not the
 -- name of the driver.
 local driven, undriven = hardware.network(sys.bus())
-local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "",
-                         follow = { "left", "right", "bottom" } }
+local L = ui.layout
+
+--------------------------------------------------------------------------
+-- The window, as `docs/apps.html` draws it (`roadmap.md` 5zp): the card's
+-- name in the header with Apply as the verb, Save and the gateway test
+-- behind the dots, and two cards - what the machine found, and what a
+-- person chooses. It was a sunken box and four fields at positions picked
+-- one by one, and a caveat under the last field in a colour meant for
+-- borders.
+--------------------------------------------------------------------------
 
 --
 -- The card, as facts rather than as a control.
@@ -89,43 +96,23 @@ local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "",
 -- a person chose, so none of it is editable. A settings window that lets you
 -- type a MAC address is a settings window that lies about what it can do.
 --
--- Below its own label rather than on top of it. The label sits at
--- `BAR_H` and is a line of text tall, so the box starts a line lower;
--- twelve put the two in the same place and the word "Device" was drawn
--- behind the frame.
-local device = ui.view{ x = 12, y = 22 + BAR_H, w = W - 24, h = 74,
-                        follow = { "left", "right", "top" } }
-
-function device:draw(g)
-  g:sunken(0, 0, self.w, self.h, "sunken")
-
-  local y = 6
-
+local function device_row()
   if not info or not info.card then
     -- A controller found and not driven is not "no card", and on a laptop
-    -- with an Ethernet port that is the case this box is most likely to show.
-    g:text(8, y, undriven[1]
-                 and ("no driver for " .. undriven[1].name .. " at "
-                      .. undriven[1].place)
-                 or "no network card found", theme.bad, theme.sunken)
-    g:text(8, y + gfx.font.h + 4,
-           "nothing below will do anything", theme.text_dim, theme.sunken)
-    return
+    -- with an Ethernet port that is the case this row is most likely to say.
+    return { label = undriven[1]
+                     and ("No driver for " .. undriven[1].name)
+                     or "No network card found",
+             note = undriven[1] and ("at " .. undriven[1].place
+                                     .. ", so nothing below will do anything")
+                    or "nothing below will do anything" }
   end
 
-  g:text(8, y, driven[1] and (driven[1].name .. " at " .. driven[1].place)
-               or "a card the bus did not list", theme.text, theme.sunken)
-  y = y + gfx.font.h + 4
-  g:text(8, y, "hardware address  " .. mac_text(info.mac),
-         theme.text_dim, theme.sunken)
-  y = y + gfx.font.h + 4
-  g:text(8, y, ("MTU               %d bytes"):format(info.mtu or 0),
-         theme.text_dim, theme.sunken)
+  return { label = driven[1] and driven[1].name or "A card the bus did not list",
+           note = ("%s · %s · MTU %d")
+                  :format(driven[1] and driven[1].place or "?",
+                          mac_text(info.mac), info.mtu or 0) }
 end
-
-win:add(ui.label{ x = 12, y = BAR_H, w = 200, text = "Device",
-                  color = "text_dim" })
-win:add(device)
 
 --------------------------------------------------------------------------
 -- The settings.
@@ -135,31 +122,16 @@ local saved = fs.read(SETTINGS)
 
 if type(saved) ~= "table" then saved = {} end
 
-local function field_at(y, label, value)
-  win:add(ui.label{ x = 12, y = y + 4, w = 90, text = label,
-                    color = "text_dim" })
-
-  local f = ui.field{ x = 110, y = y, w = 180, text = value or "" }
-
-  win:add(f)
-
-  return f
+local function field(value)
+  return ui.field{ w = 190, text = value or "" }
 end
 
-local top = 120 + BAR_H
-
-win:add(ui.label{ x = 12, y = top - 18, w = 200, text = "Addresses",
-                  color = "text_dim" })
-
-local address = field_at(top, "address",
-                         dotted(info and info.address) ~= ""
-                         and dotted(info.address) or (saved.address or ""))
-local netmask = field_at(top + 30, "netmask",
-                         dotted(info and info.netmask) ~= ""
-                         and dotted(info.netmask) or (saved.netmask or ""))
-local gateway = field_at(top + 60, "gateway",
-                         dotted(info and info.gateway) ~= ""
-                         and dotted(info.gateway) or (saved.gateway or ""))
+local address = field(dotted(info and info.address) ~= ""
+                      and dotted(info.address) or (saved.address or ""))
+local netmask = field(dotted(info and info.netmask) ~= ""
+                      and dotted(info.netmask) or (saved.netmask or ""))
+local gateway = field(dotted(info and info.gateway) ~= ""
+                      and dotted(info.gateway) or (saved.gateway or ""))
 
 --
 -- DNS, and it is worth being straight about it.
@@ -171,16 +143,47 @@ local gateway = field_at(top + 60, "gateway",
 -- because the value is what a resolver will need on the day there is one.
 --
 -- Saying that in the interface rather than only in this comment is the
--- point. A field that quietly does nothing is worse than no field.
+-- point. A field that quietly does nothing is worse than no field - so it
+-- is the row's note, in the words a note is drawn in.
 --
-local dns = field_at(top + 90, "DNS", saved.dns or "10.0.2.3")
+local dns = field(saved.dns or "10.0.2.3")
 
--- Short enough to fit, which the first version was not: it read "nothing
--- resolves names yet; this is remembered only" and the window cut it at
--- "this is remem". A caveat that does not fit is a caveat nobody reads.
-win:add(ui.label{ x = 110, y = top + 114, w = W - 130,
-                  text = "no resolver yet - remembered only",
-                  color = "line" })
+local apply                      -- the verb, below
+
+local more = ui.iconbutton{ icon = "more" }
+
+local header = ui.header{
+  x = 0, y = 0, w = W, title = "Network",
+  sub = driven[1] and driven[1].name or "no card",
+  right = { ui.button{ text = "Apply", go = true,
+                       on_click = function() apply(false) end },
+            more },
+}
+
+local cards = ui.cards{
+  x = 0, y = L.head, w = W, h = H - L.head,
+  groups = {
+    { name = "Device", rows = { device_row() } },
+    { name = "Addresses", rows = {
+        { label = "Address", control = address },
+        { label = "Netmask", control = netmask },
+        { label = "Gateway", control = gateway },
+        { label = "DNS", note = "no resolver yet - remembered only",
+          control = dns } } },
+  },
+}
+
+--
+-- What the last thing done said, under the cards where the drawings put a
+-- page's note: 10 below the last card, in the dim `ui` face.
+--
+local status = ui.label{ x = L.page_side + 3,
+                         y = L.head + cards.content_h + 10,
+                         w = W - 2 * L.page_side - 3, text = "",
+                         color = "text_dim", role = "ui" }
+
+win:add(header)
+win:add(cards)
 
 --------------------------------------------------------------------------
 
@@ -202,7 +205,7 @@ end
 -- not be the one the machine boots with next time. `Appearance` writes its
 -- file the same way round and for the same reason.
 --
-local function apply(and_save)
+function apply(and_save)
   local a, m, g = collect()
 
   if not a then
@@ -235,13 +238,6 @@ local function apply(and_save)
                 or ("applied, but not saved: " .. tostring(werr))
 end
 
-local row = top + 140
-
-win:add(ui.button{ x = 12, y = row, w = 70, h = 24, text = "Apply",
-                   on_click = function() apply(false) end })
-win:add(ui.button{ x = 90, y = row, w = 60, h = 24, text = "Save",
-                   on_click = function() apply(true) end })
-
 --
 -- And a way to find out whether any of it worked.
 --
@@ -249,29 +245,33 @@ win:add(ui.button{ x = 90, y = row, w = 60, h = 24, text = "Save",
 -- the only address the machine is certain to have been told about. A
 -- settings window with no way to test the setting sends people to a prompt.
 --
-win:add(ui.button{
-  x = 160, y = row, w = 110, h = 24, text = "Test gateway",
-  on_click = function()
-    local a = to_bytes(gateway.text)
+local function test_gateway()
+  local a = to_bytes(gateway.text)
 
-    if not a then
-      status.text = "the gateway is not an address"
-      return
-    end
+  if not a then
+    status.text = "the gateway is not an address"
+    return
+  end
 
-    local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
-    local reply, why = fs.ping("/net", a, 1, "kosmos network settings test")
+  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+  local reply, why = fs.ping("/net", a, 1, "kosmos network settings test")
 
-    if reply then
-      local us = reply.ticks * 1000000 // hz
+  if reply then
+    local us = reply.ticks * 1000000 // hz
 
-      status.text = ("the gateway answered in %d.%03d ms")
-                    :format(us // 1000, us % 1000)
-    else
-      status.text = "no answer from the gateway (" .. tostring(why) .. ")"
-    end
-  end,
-})
+    status.text = ("the gateway answered in %d.%03d ms")
+                  :format(us // 1000, us % 1000)
+  else
+    status.text = "no answer from the gateway (" .. tostring(why) .. ")"
+  end
+end
+
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, {
+    { text = "Save", on_choose = function() apply(true) end },
+    { text = "Test gateway", on_choose = test_gateway },
+  })
+end
 
 win:add(status)
 

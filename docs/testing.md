@@ -8815,3 +8815,114 @@ found the first.
   swatches (Tab, Right) and asks that the whole screen changed and the
   manager said so; `appearance` holds the window to the drawing's 840 by 920
   and five looks; the Plex and scale phases drive Preferences.
+
+## 18.163 Every window in the drawings' language, a frame all round, and a grey thumb again
+
+`roadmap.md` 5zp, 5zq, 5zr, 5zs. Diego, 24 September: *"Do both 2 and 3 then
+the stick. Make sure it's pixel perfect as the html mockups"*, *"Make sure
+all widgets are spaced and have the correct margin as the mockups"*, and
+four more the same day with photographs beside them - the title bar's
+buttons as traffic lights, more room before a window's title, a frame on
+the other three sides, and the scrollbar's thumb back in its own grey.
+
+### The windows
+
+Every window that had buttons where they were put is drawn from
+`docs/apps.html` now, with the kit's pieces rather than numbers of its own:
+the widget gallery, Mixer, Cores, Drives, the launcher editor, Network,
+Reader, Scheduler, Video, Web Server and the Calculator; and Processes,
+Terminal, Editor, Log View and Photo, converted against a thumbnail on 23
+September, moved to the same 46-pixel header. Tracker's header is
+`docs/tracker2.html`'s: back and forward, the place as a pill with its
+picture and a chevron, and search, new folder, view and the dots as icons;
+its list has the fixed row with a heading row over a hairline, where its
+rows had been 16 apart under 21-pixel words.
+
+What the drawings found on the way, each a bug and not a style:
+
+- **Mixer had been empty since `/dev/audio` moved to a declared struct.** It
+  asked with a table, the server refused every request, and the window said
+  "nothing is playing" while something was. It reads through
+  `/lib/audio.lua` now, which gained the master in `streams`' second value.
+- **A control made before its window measures the wrong face.** A button's
+  width is its words, and the faces arrive with the window - so the gallery
+  builds its page twice, once for the height (fixed layout only) and once,
+  after the window, for real.
+- **Processes painted black and ended**, from a `g:pop()` with nothing to
+  restore. `test_winmethods.py` now refuses a bare `pop` and a `push` whose
+  answer is thrown away, as it refuses a method a window does not have; its
+  control is the file as it was, which fails on both lines.
+
+### What the kit gained
+
+`ui.header`, `ui.cards`, `ui.iconbutton`, `ui.slider` and `ui.layout` from
+the previous entries, and: a checkbox, a list and a scrollbar drawn the
+drawings' way in a flat look (a rounded card, a pale selection that keeps the
+words' colours, a thin grey pill with no arrows); a switch as tall as its
+pill, so a card's row is the drawing's 48 rather than 55; menu items that
+are `disabled`; `ui.editor{ plain, inset }` for a page of text; `ui.image{
+ground, centre, contain }`, a picture fitted to its window on a dark ground;
+a button with an `icon` and a `chevron`; a header that skips a hidden control
+on its left.
+
+### The window manager
+
+- **The three controls are coloured circles** - minimise amber, maximise
+  green, close red, a glyph on each while the pointer is over them, a
+  maximise that cannot be used grey.
+- **The title starts 18 in**, where it started 10.
+- **A frame of 6 down the sides and along the bottom**, in the title bar's
+  colour, where it was 2 - and the page rounded *inside* it at its bottom
+  corners (`OUT.round_inside`), so the frame is one width round the curve.
+- **Endeavour is the look a machine nobody has told wears** - the first of
+  `themes.order`, which the window manager and Preferences both read.
+
+### The checks, and what they read now
+
+**The phases that drove a window by its coordinates read the window's own
+account of them.** The gallery prints its size, its list and its two
+buttons' middles; Tracker its content's top and its View button. The
+widgets, clicks, scale and scale-changed phases, and the places and Tracker
+View phases, held copies of layouts that moved twice in two days.
+
+- **widgets**: the gallery's order (two buttons, the switch, the tick, the
+  choice, the level, the field) driven by Tab; and **the thumb is the
+  scrollbar's own grey with a grip and none of the tab's yellow** - the
+  opposite of what it held on 22 September. Its control is the build before
+  this one, whose thumb fails the first count.
+- **clicks**: the verb, a list row and a press slid off the first button,
+  found where the gallery says they are; what a click did is read in the
+  header, where the gallery says it now.
+- **scale** and **scale changed**: the gallery half again its own size at
+  150 and exactly its size back at 100; its selection bar 48, a row of 32 at
+  150.
+- **tabs**: the title bar as wide as the frame, `FRAME` a side; the greyed
+  maximise 50 in from the frame's edge.
+- **terminal**, **budget**: the console from the header to the window's
+  edges, so the grip is found from where the console colour ends.
+- **log view**: the dots at the header's end, 23 in and 22 down.
+- **corners** (new): a window filled red moves thirty up and thirty left
+  onto its own old place, and the pixel just inside its frame's new
+  bottom-right corner, outside the curve, has to be the desk. Diego
+  photographed Photo with its own dark page there: the compositor's culling
+  cut a window's whole frame rectangle out of what it painted behind, so
+  nothing was painted under a rounded corner and `put_back` restored stale
+  pixels. `OUT.uncover` hands the four corner squares back. The control is
+  the build before it, which shows red.
+- **direct menu**: `MENU_ROW` is `LAYOUT_ROW`. It was a copy at 24 that
+  stayed 24 when the row became 32, and the phase pressed row 2 for row 3 -
+  and the phase's own click said 22, "a glyph and six", and uses it now.
+- **clipboard**: the paste lands in the gallery's field where the gallery
+  says it is; and This Machine is lifted by its title bar when the window
+  manager put it flush with the screen's bottom, which it does on x86 once
+  the gallery beside it is a page of cards 658 tall - a window with no room
+  below cannot be made taller, and where a window lands is not this
+  phase's subject.
+- **widgets**, **clicks**: the gallery's selection is looked for inside its
+  list (`find_colour_in`). Its verb is filled with the accent now, so a scan
+  of the whole screen found the button and an arrow that moved the list
+  moved nothing the phase could see.
+- `test_winmethods.py`: every window method one the kit has, and every
+  drawing context left as it was entered.
+- `test_settings.lua`, `test_theme.lua`: Endeavour the default in both, the
+  fixed layout's 32, 26 and 31.

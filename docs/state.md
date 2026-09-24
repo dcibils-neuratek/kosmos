@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-23
+Last updated: 2026-09-24
 
 ---
 
@@ -17,6 +17,49 @@ Last updated: 2026-09-23
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 24 September: every window from its drawing, a frame all round, Endeavour first
+
+**Nothing pushed. 0.10.118 to 0.10.149 are local.** 0.10.147 fixed what the
+M700 found (Tracker ending on Find, Preferences changing nothing) and
+0.10.148 put the screen at the mockups' sizes (a font size here is 1.30
+times the CSS one) with Appearance folded into Preferences. **0.10.149** is
+the rest of Diego's "Do both 2 and 3 then the stick. Make sure it's pixel
+perfect as the html mockups", and what he asked for while it was being
+built, each with a photograph:
+
+- **Sixteen windows from `docs/apps.html`** with the kit's header, cards,
+  icon buttons and slider (`roadmap.md` 5zp): the gallery, Mixer, Cores,
+  Drives, the launcher editor, Network, Reader, Scheduler, Video, Web
+  Server, the Calculator; Processes, Terminal, Editor, Log View and Photo
+  moved to the 46-pixel header; Tracker's header as `tracker2.html` draws
+  it, and its list at the 32-pixel row.
+- **Traffic-light buttons** on the title bar, **the title 18 in**, and
+  **Endeavour the default look** (5zq). New looks designed around the
+  buttons are WANTED and are to be drawn first.
+- **A 6-pixel frame** down the sides and along the bottom, the page rounded
+  inside it, and **corners that show what is behind them** - the
+  compositor's culling had painted nothing under a rounded corner (5zr).
+- **The scrollbar thumb back in its own grey** - his 22 September Platinum
+  thumb, taken back (5zr, 5y).
+- **Every window with controls wears the header** (5zs): the title bar is
+  the window manager's and the same everywhere; the header is `ui.header`,
+  and twelve windows still have to move onto it - Monitor, Music, This
+  Machine, About, Date & Time, Startup, Shortcuts, the PDF viewer,
+  Sysbench, Launchpad, Paint, the browser.
+
+Bugs the drawings found on the way: Mixer had shown nothing since
+`/dev/audio` took a declared struct; Processes painted black on a `g:pop()`
+with nothing to restore (`test_winmethods.py` refuses the class now);
+controls made before their window measured the wrong face.
+
+**The gate**: 33 suites in 5:56. One run before it lost `sched: the policy
+is pluggable` on AArch64 under the gate's load - the flake 18.133 recorded
+on x86 - and passed three runs of three alone; recorded, not rerun away.
+
+**Next**: Tracker's body as `tracker2.html` draws it (5zt), then the M700 stick (`make MEGA=1
+x86-usb-image`, `run_uefi.py`, `make stress`, a `boot.md` row), then the
+twelve windows of 5zs.
 
 ## 23 September: the M700, 8 GB, the tree sorted, and a new look
 

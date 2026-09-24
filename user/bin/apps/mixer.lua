@@ -6,8 +6,8 @@
 --
 --   wm mixer
 --
--- One row per open stream, plus a master at the top. Drag a fader, click
--- the box to mute, drag the balance under it.
+-- One row per open stream, plus a master at the top. Drag a fader; the
+-- switch at a stream's end is on while it is heard.
 --
 -- **The meter is the interesting part and it costs nothing.** `sys.mix`
 -- already touches every sample to sum them, so the loudest one it saw is
@@ -26,7 +26,7 @@ local audio = use("/lib/audio.lua")
 
 local theme = ui.theme
 
-local W, H = 460, 340
+local W, H = 460, 400
 
 local win, err = ui.window{ title = "Mixer", w = W, h = H, x = 150, y = 110 }
 
@@ -35,228 +35,299 @@ if not win then
   return
 end
 
+local L = ui.layout
 local fmt = audio.format()
 
 local master = 256
+local master_muted = false
 local rows = {}                 -- what the server last said
 local mixes = 0                 -- periods the server has mixed, ever
 
+--------------------------------------------------------------------------
+-- The window, as `docs/apps.html` draws it (`roadmap.md` 5zp).
 --
--- Row geometry, in one place because the drawing and the hit test both need
--- it and disagreeing is the bug where you drag one fader and another moves.
--- The same reason `boxes_x` exists in the window manager.
+-- **A header and a page of cards**: the rate beside the title and Test
+-- tone as the verb, the master in a card of its own, and a row per stream
+-- in the card under it. It was a list drawn by hand from x = 6 with a
+-- sunken track, a raised knob and a box for mute - BeOS's fader, in a
+-- window whose every neighbour had moved to the drawings' rail and knob.
 --
-local ROW_H   = 44
-local NAME_W  = 110
-local VALUE_W = 44
-local MUTE_W  = 22
+-- **The meter stays, and goes under the rail.** It is the part of this
+-- window worth having (the header of this file says why), and the drawing
+-- has no meter only because a drawing has nothing playing.
+--------------------------------------------------------------------------
 
-local function fader_rect(view)
-  local x = NAME_W + 8
-  local w = view.w - x - VALUE_W - MUTE_W - 16
+local VALUE_W = 40              -- "100%", right-aligned so digits hold still
+local SWITCH_W = 40             -- the kit's switch pill
+local KNOB = 16                 -- the slider's knob, as `ui.slider` draws it
 
-  return x, w
+--
+-- What a strip shows, looked up by its key on every paint: the master's
+-- gain, or a stream's row as the server last described it. So a tick that
+-- brings new numbers repaints the strips without rebuilding them - which a
+-- drag in progress would not survive.
+--
+local function state(key)
+  if key == "master" then
+    return { gain = master, muted = master_muted }
+  end
+
+  for _, r in ipairs(rows) do
+    if r.stream == key then return r end
+  end
+
+  return nil
 end
 
-local function gain_at(view, x)
-  local fx, fw = fader_rect(view)
+local function set_gain(key, g)
+  g = math.min(math.max(g, 0), 256)
 
-  if fw <= 0 then return nil end
+  if key == "master" then
+    audio.set{ master = g }
+    master = g
+  else
+    local r = state(key)
 
-  local g = ((x - fx) * 256) // fw
+    audio.set{ stream = key, gain = g }
+    if r then r.gain = g end
+  end
+end
 
-  return math.min(math.max(g, 0), 256)
+local function set_muted(key, muted)
+  local r = state(key)
+
+  if key == "master" then
+    audio.set{ master_muted = muted }
+    master_muted = muted
+  elseif r then
+    audio.set{ stream = key, muted = muted }
+    r.muted = muted
+  end
 end
 
 --
--- The list, drawn by hand rather than as an `ui.list`.
+-- **A strip**: the fader, the level beside it, and a switch that is on
+-- while it is heard - one control, so a card's row can hold it with its
+-- name on the left. The rail and knob are `ui.slider`'s, drawn here rather
+-- than composed because the meter lives inside the fader's box and a
+-- switch that means "heard" belongs to the same row's state.
 --
--- A list formats one string per item, and a row here is a name, a fader, a
--- number, a button and a meter - five fields that have to line up in
--- columns. `ui.md` 16.2: a view draws itself, and what it draws with comes
--- from the kit.
---
-local view = ui.view{ x = 8, y = 8, w = W - 16, h = H - 76,
-                      follow = { "left", "right", "top", "bottom" } }
+local function strip(key)
+  local v = ui.view{ h = 31 }
 
-view.focusable = true
+  v.fill = true
+  v.focusable = true
 
-local function draw_row(g, y, label, gain, muted, peak, playing, is_master)
-  local fx, fw = fader_rect(view)
-
-  g:text(6, y + 6, label, is_master and theme.text or theme.text,
-         theme.window)
-
-  if playing ~= nil then
-    g:text(6, y + 6 + gfx.font.h, playing and "playing" or "idle",
-           playing and theme.good or theme.text_dim, theme.window)
+  local function fader_w(self)
+    return self.w - L.row_in - VALUE_W - L.row_in - SWITCH_W
   end
 
-  --
-  -- The track, then the fill, then the knob.
-  --
-  -- Sunken track and a raised knob: `ui.md` 16.8b, and here it is doing
-  -- real work rather than decoration - which part of a fader you can drag
-  -- is exactly the question the two edges answer.
-  --
-  g:sunken(fx, y + 8, fw, 10, "sunken")
+  local function gain_at(self, x)
+    local span = math.max(1, fader_w(self) - KNOB)
 
-  local at = (gain * (fw - 12)) // 256
-
-  if gain > 0 then
-    g:fill(fx + 2, y + 10, at + 8, 6,
-           muted and theme.line_soft or theme.accent)
+    return ((x - KNOB // 2) * 256) // span
   end
 
-  g:raised(fx + at, y + 5, 12, 16, "raised")
+  function v:draw(g)
+    local r = state(key)
 
-  -- The number, right-aligned so the digits do not move as they change.
-  local pct = ("%d%%"):format((gain * 100) // 256)
+    if not r then return end
 
+    local fw = fader_w(self)
+    local span = fw - KNOB
+    local ry = self.h // 2 - 2
+    local at = KNOB // 2 + span * (r.gain or 0) // 256
 
-  g:text(fx + fw + 8 + VALUE_W - gfx.measure(pct) - 4, y + 6, pct,
-         theme.text, theme.window)
+    g:fill_round(KNOB // 2, ry, span, 4, theme.track, 2)
+    g:fill_round(KNOB // 2, ry, at - KNOB // 2, 4,
+                 r.muted and theme.text_dim or theme.accent, 2)
 
-  -- Mute, as a box that is filled when it is on.
-  local mx = fx + fw + 8 + VALUE_W + 4
+    --
+    -- The meter: the loudest sample of the last period, before the gain,
+    -- as a line three high under the rail - green, and red in its last
+    -- fifth, the colours every level meter uses. Nothing is drawn at
+    -- silence, so a quiet row is a plain fader.
+    --
+    if r.peak and r.peak > 0 then
+      local lit = math.min(span, (r.peak * span) // 32767)
 
-  g:sunken(mx, y + 6, MUTE_W - 6, MUTE_W - 6, "sunken")
+      g:fill_round(KNOB // 2, self.h - 4, lit, 3,
+                   lit > (span * 4) // 5 and theme.bad or theme.good, 1)
+    end
 
-  if muted then
-    g:fill(mx + 3, y + 9, MUTE_W - 12, MUTE_W - 12, theme.bad)
-  end
+    local ky = (self.h - KNOB) // 2
 
-  --
-  -- The meter, under the fader.
-  --
-  -- Full scale is 32767 and the bar is drawn from the peak directly rather
-  -- than in decibels, which is the honest simplification: a dB scale is
-  -- what you want for mixing and this is for *finding* the program that is
-  -- making the noise, where linear is easier to read at a glance.
-  --
-  if peak then
-    local lit = math.min(fw, (peak * fw) // 32767)
+    g:fill_round(at - KNOB // 2, ky + 1, KNOB, KNOB, 0x30000000, KNOB // 2)
+    g:fill_round(at - KNOB // 2, ky, KNOB, KNOB, 0xffffffff, KNOB // 2)
+    g:frame_round(at - KNOB // 2, ky, KNOB, KNOB,
+                  self.focused and self.keyed and theme.ring
+                  or theme.line_soft, KNOB // 2)
 
-    g:fill(fx, y + 22, fw, 4, theme.sunken)
+    local pct = ("%d%%"):format(((r.gain or 0) * 100) // 256)
 
-    if lit > 0 then
-      g:fill(fx, y + 22, lit, 4,
-             lit > (fw * 4) // 5 and theme.bad or theme.good)
+    g:text(fw + L.row_in + VALUE_W - gfx.measure(pct),
+           (self.h - gfx.height()) // 2, pct, theme.text_dim, nil, "ui")
+
+    do
+      local sx = self.w - SWITCH_W
+      local sy = (self.h - 23) // 2
+      local heard = not r.muted
+      local kx = heard and (SWITCH_W - 18 - 3) or 3
+
+      g:fill_round(sx, sy, SWITCH_W, 23, heard and theme.accent or theme.track,
+                   11)
+      g:fill_round(sx + kx, sy + 3, 18, 18, 0x38000000, 9)
+      g:fill_round(sx + kx, sy + 2, 18, 18, 0xffffffff, 9)
     end
   end
-end
 
-function view:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.window)
+  function v:key(c)
+    local r = state(key)
 
-  if fmt.period == 0 then
-    g:text(6, 6, "this machine has no sound device", theme.text_dim,
-           theme.window)
+    if not r then return false end
 
-    return
+    if c == -3 or c == -1 then set_gain(key, r.gain + 13) return true end
+    if c == -4 or c == -2 then set_gain(key, r.gain - 13) return true end
+
+    if c == 32 or c == 10 or c == 13 then
+      set_muted(key, not r.muted)
+      return true
+    end
+
+    return false
   end
 
-  draw_row(g, 0, "Master", master, false, nil, nil, true)
-  g:groove(0, ROW_H - 6, self.w, 2)
+  function v:mouse(action, x, y)
+    local r = state(key)
 
-  local y = ROW_H
-
-  for _, s in ipairs(rows) do
-    if y + ROW_H > self.h then break end
-
-    draw_row(g, y, s.name, s.gain, s.muted, s.peak, s.playing)
-    y = y + ROW_H
-  end
-
-  if #rows == 0 then
-    g:text(6, ROW_H + 6, "nothing is playing", theme.text_dim, theme.window)
-  end
-
-  --
-  -- What the server has mixed, ever.
-  --
-  -- Kept after it stopped being a debugging aid, because it is the one
-  -- number that distinguishes "nothing is playing" from "the server is not
-  -- running" - and telling those apart took an hour once.
-  --
-  g:text(6, self.h - gfx.font.h - 2, ("%d periods mixed"):format(mixes),
-         theme.text_dim, theme.window)
-end
-
---
--- Which row a point is in, and what part of it.
---
--- Returns the stream (or nil for the master) and what was hit.
---
-local function hit(x, y)
-  local fx, fw = fader_rect(view)
-  local mx = fx + fw + 8 + VALUE_W + 4
-
-  local which, row
-  if y < ROW_H then
-    which = nil                                   -- the master
-    row = 0
-  else
-    row = (y - ROW_H) // ROW_H
-    which = rows[row + 1]
-
-    if not which then return nil end
-  end
-
-  local top = (row == 0 and y < ROW_H) and 0 or (ROW_H + row * ROW_H)
-  local ry = y - ((y < ROW_H) and 0 or (ROW_H + row * ROW_H))
-
-  local _ = top
-
-  if x >= mx and x < mx + MUTE_W and ry >= 4 and ry < 4 + MUTE_W then
-    return which, "mute"
-  end
-
-  if x >= fx and x < fx + fw and ry < 22 then
-    return which, "gain"
-  end
-
-  return which, nil
-end
-
-local dragging = nil
-
-function view:mouse(action, x, y)
-  if action == "press" or (action == "move" and dragging) then
-    local who, what = hit(x, y)
+    if not r then return true end
 
     if action == "press" then
-      if what == "mute" then
-        if who then
-          audio.set{ stream = who.stream, muted = not who.muted }
-        end
+      self.dragging = x < fader_w(self)
 
-        return true
-      end
-
-      dragging = (what == "gain") and { who = who } or nil
-    end
-
-    if dragging then
-      local g = gain_at(view, x)
-
-      if g then
-        if dragging.who then
-          audio.set{ stream = dragging.who.stream, gain = g }
-          dragging.who.gain = g
-        else
-          audio.set{ master = g }
-          master = g
-        end
+      if not self.dragging and x >= self.w - SWITCH_W then
+        set_muted(key, not r.muted)
       end
     end
+
+    if self.dragging and (action == "press" or action == "move") then
+      set_gain(key, gain_at(self, x))
+    end
+
+    if action == "release" then self.dragging = false end
 
     return true
   end
 
-  if action == "release" then dragging = nil end
+  return v
+end
 
-  return true
+--------------------------------------------------------------------------
+
+local header = ui.header{
+  x = 0, y = 0, w = W, title = "Mixer",
+  sub = (fmt.period == 0) and "no sound device"
+        or ("%d Hz · %s"):format(fmt.rate,
+                                 fmt.channels == 2 and "stereo"
+                                 or (tostring(fmt.channels) .. " channels")),
+  right = {
+    --
+    -- A test tone, because a mixer with nothing playing shows nothing.
+    --
+    -- Every hardware mixer has one and the reason is the same here: the
+    -- meters, the faders and the mute are only observable while something
+    -- is making a noise, and arranging for that from outside means starting
+    -- a program at the right moment and hoping the window is up in time. It
+    -- was not - the window manager takes long enough to start that a
+    -- five-second tone was over before this window first drew, which is why
+    -- the rows all said "idle" and looked like a bug.
+    --
+    -- It asks the window manager to run `beep`, rather than playing
+    -- anything itself. This program is a *view* of the audio server and
+    -- giving it a voice of its own would make it a participant in what it
+    -- is meant to be showing.
+    --
+    ui.button{ text = "Test tone", hidden = (fmt.period == 0),
+               on_click = function()
+                 fs.send("/app/wm", { type = "launch", program = "beep",
+                                      args = "440 3000" })
+               end },
+  },
+}
+
+local cards = ui.cards{ x = 0, y = L.head, w = W, h = H - L.head }
+
+--
+-- What the server has mixed, ever, as the page's note.
+--
+-- Kept after it stopped being a debugging aid, because it is the one
+-- number that distinguishes "nothing is playing" from "the server is not
+-- running" - and telling those apart took an hour once. A label of its own
+-- rather than the cards' foot, because it changes every tick and a page is
+-- rebuilt, not edited.
+--
+local mixed = ui.label{ x = L.page_side + 3, y = 0, w = W - 2 * L.page_side,
+                        text = "", color = "text_dim", role = "ui",
+                        follow = { "left", "right", "top" } }
+
+--
+-- The rows, built again only when the streams themselves change - one
+-- starting or ending - and not when their numbers do.
+--
+local shown = nil
+
+local function rebuild()
+  local playing = {}
+  local key = {}
+
+  for _, r in ipairs(rows) do
+    --
+    -- Playing is something in its ring or a sample above silence in the
+    -- last period; the server keeps no flag of its own for it.
+    --
+    local on = (r.queued or 0) > 0 or (r.peak or 0) > 0
+
+    key[#key + 1] = tostring(r.stream) .. "=" .. tostring(r.name)
+                    .. (on and "+" or "-")
+
+    playing[#playing + 1] = { label = tostring(r.name or "?"),
+                              note = on and "playing" or "idle",
+                              control = strip(r.stream) }
+  end
+
+  key = table.concat(key, " ")
+
+  if key == shown then return end
+
+  shown = key
+
+  --
+  -- **One column for every name**, so the faders start at one x down the
+  -- whole page and a level can be read against the one above it. A row's
+  -- fader would otherwise begin wherever its own name ended.
+  --
+  local name_w = gfx.measure("Master", "label")
+
+  for _, row in ipairs(playing) do
+    name_w = math.max(name_w, gfx.measure(row.label, "label"))
+  end
+
+  name_w = math.min(name_w, 140)
+
+  for _, row in ipairs(playing) do row.name_w = name_w end
+
+  if #playing == 0 then
+    playing[1] = { label = "Nothing is playing",
+                   note = "Test tone plays three seconds of A." }
+  end
+
+  cards:set({
+    { name = "Output", rows = { { label = "Master", name_w = name_w,
+                                  control = strip("master") } } },
+    { name = "Playing", rows = playing },
+  })
+
+  mixed.y = L.head + cards.content_h + 10
 end
 
 --
@@ -266,42 +337,56 @@ end
 --
 local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
+--
+-- **Through `/lib/audio.lua`**, which speaks the server's declared struct.
+-- This asked `/dev/audio` with a table, which the server stopped taking
+-- when it moved to `audioproto.h` - so every reply was a refusal, the rows
+-- were always empty, and the window said "nothing is playing" while
+-- something was.
+--
 function ticker:tick()
-  local r = fs.send("/dev/audio", { type = "streams" })
+  local list, st = audio.streams()
 
-  if r then
-    rows = r.streams or {}
-    master = r.master or master
-    mixes = r.mixes or 0
+  rows = list or {}
+
+  if st then
+    master = st.master or master
+    master_muted = st.master_muted == true
+    mixes = st.mixes or 0
   end
+
+  rebuild()
+  mixed.text = ("%d periods mixed"):format(mixes)
 end
 
---
--- A test tone, because a mixer with nothing playing shows nothing.
---
--- Every hardware mixer has one and the reason is the same here: the meters,
--- the faders and the mute are only observable while something is making a
--- noise, and arranging for that from outside means starting a program at
--- the right moment and hoping the window is up in time. It was not - the
--- window manager takes long enough to start that a five-second tone was
--- over before this window first drew, which is why the rows all said
--- "idle" and looked like a bug.
---
--- It asks the window manager to run `beep`, rather than playing anything
--- itself. This program is a *view* of the audio server and giving it a
--- voice of its own would make it a participant in what it is meant to be
--- showing.
---
-win:add(ui.button{
-  x = 8, y = H - 34, w = 90, h = 24, text = "Test tone",
-  on_click = function()
-    fs.send("/app/wm", { type = "launch", program = "beep",
-                         args = "440 3000" })
-  end,
-})
+if fmt.period == 0 then
+  --
+  -- No device is a sentence in the middle of the page, as Video's empty
+  -- state is - not a card with nothing in it.
+  --
+  local lines = { { "No sound device", "label", "text" },
+                  { "This machine has nothing the system can play through.",
+                    "text", "text_dim" } }
+  local step = gfx.height("text") + 6
+  local y = L.head + (H - L.head - #lines * step) // 2
 
-win:add(view)
+  for _, line in ipairs(lines) do
+    local w = gfx.measure(line[1], line[2])
+
+    win:add(ui.label{ x = (W - w) // 2, y = y, w = w + 2, text = line[1],
+                      role = line[2], color = line[3] })
+    y = y + step
+  end
+
+  win:add(header)
+  win:run()
+  return
+end
+
+win:add(cards)
+win:add(mixed)
 win:add(ticker)
+win:add(header)
 
 ticker:tick()
 win:run()

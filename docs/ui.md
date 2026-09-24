@@ -1427,34 +1427,47 @@ start after the desktop.
 
 ## 16.20 One header, and three controls in it
 
-`docs/desktop.html`, `roadmap.md` 5zj. Every window in Kosmos now opens with
-the same row across its top: **what it is doing on the left, and on the
-right the one or two things anybody does to it, plus a `...` for the rest.**
+`docs/desktop.html`, `docs/apps.html`, `roadmap.md` 5zj and 5zs. Every window
+with controls opens with the same row across its top: **what it is doing on
+the left, and on the right the one or two things anybody does to it, plus a
+&#8942; for the rest.**
+
+It is `ui.header` (0.10.149), in `ui.layout`'s numbers - the drawings':
 
 ```
-TOOLBAR_Y = 7          the row's top
-TOOLBAR_H = 26         its height
-CONTENT_Y = 41         where the window's own content starts
-W - 46, w 34           the `...`
-W - 100, w 48          the button beside it
+head      = 46    the row, its rule the last pixel
+head_in   = 18    the subject, in from the left
+head_edge = 10    controls, in from either edge
+head_gap  = 4     between two controls
 ```
 
-with `follow = { "right", "top" }` on the right-hand controls, so a window
-that is resized keeps them at its corner.
+`title` in the title face, `sub` beside it in the dim `ui` face and cut with
+an ellipsis before the controls rather than run under them; `left` controls
+before the subject (Tracker's back, forward and place), `right` against the
+far edge, each centred in the band and a hidden one taking no room. It places
+them from its own width every time it is drawn, so a resized window keeps
+them in its corner without a `follow` of their own.
 
-**Three is the rule.** Tracker has Find, New, View and `...`; Preferences has
-none at all, because a sidebar and rows are the whole of it; Paint has its
-tools in a strip rather than a bar, because a tool is chosen far more often
-than a menu is opened. **A window that wants a fourth button wants a `...`
-instead** - which is what the Editor's Save, Open, Save as and Run became.
+**Three is the rule.** Tracker has search, a new folder, the view and the
+dots; Preferences draws its own header from its drawing and has no controls
+in it; Paint has its tools in a strip rather than a bar, because a tool is
+chosen far more often than a menu is opened. **A window that wants a fourth
+button wants the dots instead** - which is what the Editor's Save, Open,
+Save as and Run became. A button that *starts* something is `go = true`,
+filled with the accent, and a window has one at most.
 
-**Why five numbers repeated in six files and not a widget.** A widget that
-took a list of buttons and arranged them would be `ui.menubar` with a
-different name, and the thing being replaced is exactly the idea that every
-window's top is the same shape. What each header holds is different in each
-one: Tracker's is a place and three verbs, Processes' is a sentence about
-the machine, Log View's is a state, the Terminal's is a path. What they
-share is where the controls sit, and that is five numbers.
+**This used to say "five numbers repeated in six files and not a widget"**,
+on the argument that a widget arranging a list of buttons would be
+`ui.menubar` renamed. It was wrong in the way the rest of 0.10.149 showed:
+the numbers were copied into sixteen windows, each copy a little different,
+and "no margin or spacing" was what Diego saw. What each header *holds* is
+still each window's own; where it holds it is the kit's.
+
+**The title bar above it is not the header.** The name, the three coloured
+controls and the frame are the window manager's and every window has them
+alike; the header is inside the window, built by the application with the
+kit. Diego asked which of the two the new style was; it is both, and the
+answer is where to look when one window does not match.
 
 ### What the left-hand side is for
 
@@ -1508,6 +1521,40 @@ over a boolean ended the window on its first arrow key. A name the kit
 already uses for something else is not a name.
 
 `testing.md` 18.161.
+
+## 16.22 A frame on every side, and a scrollbar in one colour
+
+`roadmap.md` 5zr. Two photographs of corners, the same afternoon.
+
+**The frame.** A window's sides and bottom were a 2-pixel line of the title
+bar's colour, and the rounding was done by putting the desktop back over the
+four corners - so at a bottom corner the arc cut through the page while the
+line ran square past it, which on a dark console is a sliver of console
+outside the frame. Diego: *"We need to add some extra chrome to the other
+borders of the apps as now it looks weird and make better rounded
+borders"*. The frame is 6, and the page is rounded *inside* it by the corner
+less the frame (`OUT.round_inside` in `wm.lua`): the frame's colour painted
+over the page's pixels outside an arc of 6, with the coverage that rounds
+the frame itself - so the frame is one width all the way round. The page's
+top corners meet the title bar and stay square.
+
+**A rounded window does not cover its corners, and the compositor has to
+know it.** Its culling pass cuts every opaque window out of what it paints
+behind, and it cut the frame's whole rectangle - so under a corner neither
+the desktop nor the window behind was painted, and the corners were put
+back from whatever the backbuffer last held. Photo showed its own page
+there after `tile` moved it onto its old place. The four corner squares are
+handed back to be painted behind (`OUT.uncover`); a few hundred pixels a
+window, against a picture that was wrong.
+
+**The thumb.** From 22 September a scrollbar's thumb wore the look's tab
+colour, Mac OS 9's Platinum, at Diego's asking. On 24 September, beside a
+list's blue selection: *"the scroll bars look bad now with the colors"*,
+*"We should go back to scrollbars and handle with the same color"*. The
+thumb is the controls' face with a grip in the look's edge colours; in a
+flat look it is a pill 6 across in a grey between the list's ground and its
+dim words, with no trough and no arrows, as `docs/apps.html` draws a list.
+The column it sits in is still 16 wide, so the hit test did not change.
 
 ## 16.10 What we do not copy from BeOS
 

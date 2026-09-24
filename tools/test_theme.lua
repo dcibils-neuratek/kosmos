@@ -220,14 +220,21 @@ end
 do
   local m = theme.metrics
 
-  check(m.row == 24 and m.button == 28 and m.field == 26 and m.tab == 26
+  --
+  -- The drawings' numbers since 0.10.149 (`roadmap.md` 5zp): a row 32, a
+  -- button and a field the dropdown's 31. They were 24, 28 and 26, and a
+  -- row of 24 put a 16-pixel face in four pixels of air either side - the
+  -- "too close to other elements" Diego saw.
+  --
+  check(m.row == 32 and m.button == 31 and m.field == 31 and m.tab == 26
         and m.deskbar == 32,
-        "the fixed layout is not rows 24, buttons 28, fields 26, tabs 26 "
+        "the fixed layout is not rows 32, buttons 31, fields 31, tabs 26 "
         .. "and a Deskbar of 32")
 
   -- The Deskbar's words are the `ui` face, and its box is the bar.
   local box = { ui = math.min(m.row, m.deskbar), text = m.row,
-                heading = m.row, mono = m.row, title = m.tab }
+                heading = m.row, mono = m.row, title = m.tab,
+                label = m.row }
 
   for _, name in ipairs(themes.order) do
     local p = theme.read(themes[name], "dark")

@@ -38,26 +38,24 @@ local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 
 local W, H = 850, 482
 
--- The header band, the same numbers Tracker and Preferences use: one row
--- of controls across the top, and everything else below `CONTENT_Y`.
+-- **As `docs/apps.html` draws it** (`roadmap.md` 5zp): the kit's header
+-- with what the machine is doing beside the title and End and the dots at
+-- its end; the four pools under it in a band 14 above and 10 below, 18 in;
+-- and the table from there to the window's edges, a heading row and rows
+-- the fixed layout's height. It was a row 33 tall, meters with a framed
+-- well, a sunken box 12 in, and a status line along the bottom.
 --
--- `BAR_H` is what a menu bar used to add to every y in this file. The menu
--- bar is gone, so it is zero, and it is kept rather than deleted because
--- the offsets below still read as "the content, under the header" - and a
--- window that grows a band again has one number to change.
-local TOOLBAR_Y = 7
-local TOOLBAR_H = 26
-local CONTENT_Y = TOOLBAR_Y + TOOLBAR_H + 8
-local BAR_H     = 0
-
--- The meters sit directly under the header, and the list under them.
-local METER_Y   = CONTENT_Y
-local METER_H   = gfx.font.h + 18
-local LIST_Y    = METER_Y + METER_H + 12
-local FOOT_H    = 34
-local ROW = gfx.font.h + 4
+local L = ui.layout
+local BAND_TOP, BAND_SIDE, BAND_FOOT = 14, 18, 10
+local METER_H = 35                       -- a line, 6, and the bar's 8
 
 local win, err = ui.window{ title = "Processes", w = W, h = H, x = 150, y = 90 }
+
+-- After the window, so the faces are the look's: the band holds a line of
+-- words over its bars.
+local LIST_Y = L.head + BAND_TOP + METER_H + BAND_FOOT
+local ROW = ui.metrics.row
+local PAD = 14                           -- the table's cells, in from its edges
 
 if not win then
   print("procs: " .. tostring(err))
@@ -180,20 +178,24 @@ local top = 1            -- the first row drawn, for a list taller than the view
 -- Follows all four edges, so it grows with the window. The first widget in
 -- Kosmos to use a follow mode for real - see `ui.md` 16.4 for why that took
 -- until something could be resized.
-local table_view = ui.view{ x = 12, y = LIST_Y + BAR_H, w = W - 24,
-                            h = H - LIST_Y - BAR_H - FOOT_H,
+local table_view = ui.view{ x = 0, y = LIST_Y, w = W, h = H - LIST_Y,
                             follow = { "left", "right", "top", "bottom" } }
 
 --
--- Where each column starts. One table, read by the heading and by the rows,
--- because two functions agreeing about geometry by coincidence is how a
--- column ends up labelled in one place and drawn in another.
+-- The columns: a name and a width each, and the name's column takes what is
+-- left. One table, read by the heading and by the rows, because two
+-- functions agreeing about geometry by coincidence is how a column ends up
+-- labelled in one place and drawn in another. `right` is a column of
+-- numbers, read down its last digit.
 --
+local GAP = 12
+
 local COLUMNS = {
-  { x = 6,   text = "id  name" },
-  { x = 190, text = "kind" },
-  { x = 266, text = "draws" },
-  { x = 356, text = "priority" },
+  { key = "id",        text = "id",        w = 36 },
+  { key = "name",      text = "name",      w = 0 },
+  { key = "kind",      text = "kind",      w = 70 },
+  { key = "draws",     text = "draws",     w = 76 },
+  { key = "priority",  text = "priority",  w = 70 },
   --
   -- **"core" is a fact, not a sample, and that is why it is worth a
   -- column.**
@@ -205,14 +207,38 @@ local COLUMNS = {
   -- lives for its whole life. `docs/smp.md` has why the kernel is built
   -- that way and what it buys.
   --
-  { x = 440, text = "core" },
-  { x = 500, text = "memory" },
-  { x = 576, text = "processor" },
+  { key = "core",      text = "core",      w = 40 },
+  { key = "memory",    text = "memory",    w = 80, right = true },
+  { key = "processor", text = "processor", w = 120 },
 }
 
+-- Where each column starts for a row `room` wide.
+local function columns(room)
+  local fixed = 0
+
+  for _, c in ipairs(COLUMNS) do fixed = fixed + c.w end
+
+  local x = PAD
+  local name_w = math.max(60, room - 2 * PAD - fixed - GAP * (#COLUMNS - 1))
+
+  for _, c in ipairs(COLUMNS) do
+    c.x = x
+    c.cw = (c.key == "name") and name_w or c.w
+    x = x + c.cw + GAP
+  end
+end
+
+local function fitted(text, w)
+  text = tostring(text or "")
+
+  while #text > 1 and gfx.measure(text) > w do text = text:sub(1, -2) end
+
+  return text
+end
+
 function table_view:draw(g)
-  g:fill(0, 0, self.w, self.h, "sunken")
-  g:frame(0, 0, self.w, self.h, "line")
+  g:fill(0, 0, self.w, self.h, theme.sunken)
+  g:fill(0, 0, self.w, 1, theme.line_soft)
 
   --
   -- The headings, and the reason they are worth a row.
@@ -222,27 +248,15 @@ function table_view:draw(g)
   -- unexplained adjectives is not information, and the scheduler app is the
   -- thing that changes them, so this is where you check that it worked.
   --
-  for _, c in ipairs(COLUMNS) do
-    g:text(c.x, 3, c.text, theme.text_dim, theme.sunken)
-  end
-
-  g:fill(2, 3 + ROW - 2, self.w - 4, 1, theme.line)
-
-  -- One row shorter, because the heading took one.
-  local visible = (self.h - 6) // ROW - 1
+  -- One row shorter, because the heading takes one.
+  local visible = math.max(1, (self.h - 1 - ROW) // ROW)
 
   --
   -- Scrolled to keep the selection in view, *and* draggable by its own
-  -- handle. This said there was no scrollbar, on the grounds that a list
-  -- following the selection never needs one - and that was true when it
-  -- was written and false three lines later, once a pointer arrived and
-  -- `ui.scrollbar` went in below. A list you can drag needs somewhere to
-  -- drag it, and a list of thirty processes is longer than the window.
-  --
-  --
-  -- Follow the selection when it moves, not on every pass. Unconditionally
-  -- it makes the bar useless: select a row near the end, drag the bar up,
-  -- and the next redraw pulls it straight back. Same bug `ui.list` had.
+  -- handle. Follow the selection when it moves, not on every pass:
+  -- unconditionally it makes the bar useless - select a row near the end,
+  -- drag the bar up, and the next redraw pulls it straight back. Same bug
+  -- `ui.list` had.
   --
   if selected ~= followed then
     if selected < top then
@@ -257,91 +271,100 @@ function table_view:draw(g)
   if top > #rows - visible + 1 then top = #rows - visible + 1 end
   if top < 1 then top = 1 end
 
-  -- The bar, and the rows stop where it starts.
-  self.bar = ui.scrollbar(g, self.w, self.h, #rows, visible, top)
+  -- The bar runs beside the rows and not the heading, and the rows stop
+  -- where it starts, or the last column of every row would be drawn
+  -- underneath it.
+  local saved = g:push(0, 1 + ROW, self.w, self.h - 1 - ROW)
+  self.bar = ui.scrollbar(g, self.w, self.h - 1 - ROW, #rows, visible, top)
+  g:pop(saved)
   self.visible = visible
 
-  local room = self.w - 4 - (self.bar and ui.SCROLL_W + 2 or 0)
+  local room = self.w - (self.bar and ui.SCROLL_W + 2 or 0)
 
-  -- Where a row actually ends. Rows start at x = 2 and are `room` wide, so
-  -- this is the last column the scrollbar does not own.
-  --
-  -- Everything at the right-hand end used to be placed against `self.w`
-  -- instead, which is the window - so the load bar ran under the scrollbar
-  -- and the percentage was drawn on top of it. Unreadable, and worse than
-  -- unreadable: the bar could not be clicked, because the thing you were
-  -- aiming at had a number painted over it.
-  local edge = 2 + room
+  columns(room)
+
+  local ty = 1 + (ROW - gfx.height()) // 2
+
+  for _, c in ipairs(COLUMNS) do
+    local x = c.right and (c.x + c.cw - gfx.measure(c.text)) or c.x
+
+    g:text(x, ty, c.text, theme.text_dim, nil, "ui")
+  end
+
+  g:fill(0, ROW, self.w, 1, theme.line_soft)
+
+  local col = {}
+
+  for _, c in ipairs(COLUMNS) do col[c.key] = c end
 
   for i = top, math.min(top + visible - 1, #rows) do
     local r = rows[i]
-    local y = 3 + (i - top + 1) * ROW
+    local y = 1 + ROW + (i - top) * ROW
     local on = (i == selected)
-    local bg = on and theme.accent or theme.sunken
 
-    if on then
-      g:fill(2, y, room, ROW, bg)
-    end
+    --
+    -- The chosen row: a pale band in a flat look, with the words in their
+    -- own colours - the drawings' `.tr.on` - and the accent with white
+    -- words where a look fills a chosen row with it.
+    --
+    local lit = on and not theme.flat
+    local bg = on and (theme.flat and theme.line_soft or theme.accent)
+               or theme.sunken
 
-    -- Name, then a bar, then the share. The bar is the point: BeOS put one
-    -- beside every team for the same reason.
-    local fg = on and theme.text_on or theme.text
-    g:text(6, y + 2, ("%-3d %s"):format(r.id, r.name), r.exited
-                                                       and theme.text_dim
-                                                       or fg, bg)
+    if on then g:fill(0, y, room, ROW, bg) end
 
-    -- Dimmer than the name, because it is what the row *is* rather than
-    -- what it is called, and the name is what you are looking for.
-    g:text(190, y + 2, r.kind or "",
-           on and theme.text_on or "text_dim", bg)
+    local fg = lit and theme.text_on or theme.text
+    local dim = lit and theme.text_on or theme.text_dim
+    local wy = y + (ROW - gfx.height()) // 2
 
-    -- How it draws, dimmer still: it is a property of the row rather than
-    -- something you are looking for.
-    g:text(266, y + 2, r.video or "",
-           on and theme.text_on or "text_dim", bg)
+    g:text(col.id.x, wy, tostring(r.id), dim, bg)
+    g:text(col.name.x, wy, fitted(r.name, col.name.cw),
+           r.exited and theme.text_dim or fg, bg)
 
-    -- And the band it is scheduled in.
-    g:text(356, y + 2, r.band or "",
-           on and theme.text_on or "text_dim", bg)
+    -- What the row *is*, dimmer than what it is called, since the name is
+    -- what you are looking for; how it draws, and its band, the same.
+    g:text(col.kind.x, wy, r.kind or "", dim, bg)
+    g:text(col.draws.x, wy, r.video or "", dim, bg)
+    g:text(col.priority.x, wy, r.band or "", fg, bg)
 
-    -- What it holds: the image, the heap, the stacks and any surface it
-    -- asked for. Right-aligned, because a column of numbers is read down
-    -- its last digit.
     --
     -- Its home processor. Blank rather than a number when the process has
     -- no thread to have one - an exited process that has not been reaped
     -- is not on core zero, it is nowhere, and printing 0 would say the
     -- first of those.
     --
-    g:text(444, y + 2, r.cpu and tostring(r.cpu) or "",
-           on and theme.text_on or "text_dim", bg)
+    g:text(col.core.x, wy, r.cpu and tostring(r.cpu) or "", fg, bg)
 
+    -- What it holds: the image, the heap, the stacks and any surface it
+    -- asked for.
     if not r.synthetic then
       local kb = ("%d KB"):format(r.kb or 0)
 
-      g:text(560 - gfx.measure(kb), y + 2, kb,
-             on and theme.text_on or "text_dim", bg)
+      g:text(col.memory.x + col.memory.cw - gfx.measure(kb), wy, kb, fg, bg)
     end
 
-    local bar_x = 576
-    local bar_w = edge - bar_x - 60
+    --
+    -- Its share of a processor: a bar and the number. The bar is the point
+    -- - BeOS put one beside every team for the same reason - drawn as the
+    -- drawings' level, 8 high and round-ended, in the accent and in the
+    -- warning colour past sixty.
+    --
+    local right = r.exited and "gone" or ("%d%%"):format(r.pct)
+    local num_w = 34
+    local bar_x = col.processor.x
+    local bar_w = col.processor.cw - num_w - 8
+    local by = y + (ROW - 8) // 2
 
-    g:fill(bar_x, y + 3, bar_w, ROW - 6, "window")
+    g:fill_round(bar_x, by, bar_w, 8, theme.track, 4)
 
     local filled = bar_w * r.pct // 100
 
     if filled > 0 then
-      g:fill(bar_x, y + 3, filled, ROW - 6,
-             (r.pct > 60) and theme.bad or "good")
+      g:fill_round(bar_x, by, math.max(8, filled), 8,
+                   (r.pct > 60) and theme.bad or theme.accent, 4)
     end
 
-    -- Right-aligned against the row's end, and measured rather than
-    -- counted: `#right * gfx.font.w` is the width this string would have
-    -- in the terminal face, and the rows are not drawn in it.
-    local right = r.exited and "gone" or ("%d%%"):format(r.pct)
-
-    g:text(edge - gfx.measure(right) - 8, y + 2, right,
-           on and theme.text_on or "text_dim", bg)
+    g:text(bar_x + col.processor.cw - gfx.measure(right), wy, right, dim, bg)
   end
 end
 
@@ -356,8 +379,8 @@ function table_view:mouse(action, x, y)
   --
   local visible = self.visible or 1
 
-  local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
-                                #rows, visible, top)
+  local to = ui.scrollbar_mouse(self, action, x, y - 1 - ROW, self.w,
+                                self.h - 1 - ROW, #rows, visible, top)
 
   if to then
     top = to
@@ -366,10 +389,10 @@ function table_view:mouse(action, x, y)
   end
 
   if action == "press" or action == "move" then
-    -- Less one, for the heading row the list now starts below. Without it
-    -- every click selected the process one place further down than the one
-    -- under the pointer.
-    local row = (y - 3) // ROW + top - 1
+    -- Below the heading row, which is not a process. Without the
+    -- subtraction every click selected the process one place further down
+    -- than the one under the pointer.
+    local row = (y - 1 - ROW) // ROW + top
 
     if row >= 1 and row <= #rows then
       selected = row
@@ -435,16 +458,11 @@ local function more_menu()
   }
 end
 
-win:add(ui.button{
-  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
-  follow = { "right", "top" },
-  on_click = function()
-    if win.open_menu then
-      win:open_menu(win.origin_x + W - 46,
-                    win.origin_y + TOOLBAR_Y + TOOLBAR_H, more_menu())
-    end
-  end,
-})
+local more = ui.iconbutton{ icon = "more" }
+
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, more_menu())
+end
 
 win:add(table_view)
 
@@ -477,7 +495,7 @@ local totals_state = {
 }
 
 local function meter(spec)
-  local v = ui.view{ x = spec.x, y = spec.y, w = spec.w, h = 34 }
+  local v = ui.view{ x = spec.x, y = spec.y, w = spec.w, h = METER_H }
 
   v.label = spec.label
   v.read  = spec.read
@@ -489,7 +507,7 @@ local function meter(spec)
     if frac < 0 then frac = 0 end
     if frac > 1 then frac = 1 end
 
-    g:text(0, 0, self.label, "text_dim")
+    g:text(0, 0, self.label, "text_dim", nil, "ui")
 
     --
     -- **Measured, not counted**, and this one was missed when the row above
@@ -500,17 +518,19 @@ local function meter(spec)
     -- `mem124 of 512 MB`, which is what Diego photographed on 20 September.
     --
     local right = text or (tostring(value) .. " of " .. tostring(of))
-    g:text(self.w - gfx.measure(right), 0, right, "text")
+    g:text(self.w - gfx.measure(right), 0, right, "text", nil, "ui")
 
-    local top = gfx.font.h + 4
+    --
+    -- The drawings' level: 8 high and round-ended, `track` under the
+    -- accent. It was a framed well 10 high, a box around a number.
+    --
+    local top = self.h - 8
+    local filled = self.w * frac // 1
 
-    g:fill(0, top, self.w, 10, "sunken")
-    g:frame(0, top, self.w, 10, "line")
-
-    local filled = (self.w - 2) * frac // 1
+    g:fill_round(0, top, self.w, 8, theme.track, 4)
 
     if filled > 0 then
-      g:fill(1, top + 1, filled, 8, "accent")
+      g:fill_round(0, top, math.max(8, filled), 8, theme.accent, 4)
     end
   end
 
@@ -520,8 +540,8 @@ end
 do
   local n    = 4
   local gap  = 14
-  local each = (W - 24 - gap * (n - 1)) // n
-  local ty   = METER_Y + BAR_H
+  local each = (W - 2 * BAND_SIDE - gap * (n - 1)) // n
+  local ty   = L.head + BAND_TOP
 
   local rows = {
     { "memory", function()
@@ -541,17 +561,22 @@ do
   }
 
   for i = 1, n do
-    win:add(meter{ x = 12 + (i - 1) * (each + gap), y = ty, w = each,
-                   label = rows[i][1], read = rows[i][2] })
+    win:add(meter{ x = BAND_SIDE + (i - 1) * (each + gap), y = ty, w = each,
+                   label = rows[i][1]:gsub("^%l", string.upper),
+                   read = rows[i][2] })
   end
 end
 
--- What the machine is doing, in the header rather than under it.
-local heading = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 160, text = "",
-                          color = "text" }
-win:add(heading)
+--
+-- What the machine is doing, beside the title - and what the last End did,
+-- in its place for a few seconds, since a sentence that is overwritten on
+-- the next sample is a sentence nobody reads.
+--
+local summary, said, said_at = "", nil, 0
 
-local note = ui.label{ x = 12, y = 16, text = "", color = "text_dim" }
+local function say(text)
+  said, said_at = text, sys.ticks()
+end
 
 --------------------------------------------------------------------------
 -- Ending one.
@@ -610,30 +635,29 @@ function end_selected()
     local killed, why_not = sys.kill(r.id)
 
     if killed then
-      note.text = "ended " .. r.name
+      say("ended " .. r.name)
       return
     end
 
     local ok, why = fs.send("/app/wm", { type = "end_process", pid = r.id })
 
     if ok then
-      note.text = "asked the desktop to end " .. r.name
+      say("asked the desktop to end " .. r.name)
     else
-      note.text = r.name .. ": " .. tostring(why_not or why)
+      say(r.name .. ": " .. tostring(why_not or why))
     end
 end
 
--- End, in the header beside the `...` menu: the one action this window is
+-- End, in the header beside the dots: the one action this window is
 -- opened to perform.
-win:add(ui.button{
-  x = W - 100, y = TOOLBAR_Y, w = 48, h = TOOLBAR_H, text = "End",
-  follow = { "right", "top" },
-  on_click = end_selected,
-})
+local header = ui.header{
+  x = 0, y = 0, w = W, title = "Processes", sub = "",
+  right = { ui.button{ text = "End", on_click = function() end_selected() end },
+            more },
+}
 
-note.x = 12
-note.y = H - FOOT_H + 10
-win:add(note)
+-- Last, so the focus starts in the table and Tab reaches End after it.
+win:add(header)
 
 --------------------------------------------------------------------------
 -- Sampling.
@@ -767,13 +791,17 @@ function sampler:tick()
   -- dot rather than a dash surrounded by spaces, which is what the rest of
   -- the new windows use (`docs/desktop.html`).
   --
-  heading.text = ("%d processes . %d threads (%d in the kernel) . "
-                  .. "%d space%s . up %d:%02d")
-                 :format(totals.procs, totals.threads,
-                         math.max(0, totals.threads - totals.procs),
-                         totals_state.spaces,
-                         (totals_state.spaces == 1) and "" or "s",
-                         up // 60, up % 60)
+  summary = ("%d processes · %d threads (%d in the kernel) · "
+             .. "%d space%s · up %d:%02d")
+            :format(totals.procs, totals.threads,
+                    math.max(0, totals.threads - totals.procs),
+                    totals_state.spaces,
+                    (totals_state.spaces == 1) and "" or "s",
+                    up // 60, up % 60)
+
+  if said and sys.ticks() - said_at > 4 * counter_hz then said = nil end
+
+  header.sub = said or summary
 end
 
 win:add(sampler)

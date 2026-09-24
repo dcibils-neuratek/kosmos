@@ -45,6 +45,7 @@ SIZES = (15, 19, 23, 30)
 # joins; the header's icons at 1.6.
 CAT = ('1.4', 'stroke-linejoin="round"')
 HEAD = ('1.6', '')
+PLACE = ('1.5', '')
 
 ICONS = {
     "appearance": CAT + ('<path d="M8 2a6 6 0 100 12c1 0 1.5-.6 1.5-1.3 0-.8'
@@ -65,6 +66,35 @@ ICONS = {
                           '<path d="M10.5 10.5 14 14"/>',),
     "menu":       HEAD + ('<path d="M2 4h12M2 8h12M2 12h12"/>',),
     "close":      HEAD + ('<path d="M4 4l8 8M12 4l-8 8"/>',),
+
+    # `docs/tracker2.html`: the header's arrows at 1.7, the places and the
+    # new folder at 1.5, and the three dots filled rather than stroked.
+    "back":       ('1.7', '') + ('<path d="M10 3L5 8l5 5"/>',),
+    "forward":    ('1.7', '') + ('<path d="M6 3l5 5-5 5"/>',),
+    "more":       ('0', '') + ('<g fill="#000" stroke="none"><circle cx="8" '
+                               'cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/>'
+                               '<circle cx="8" cy="13" r="1.3"/></g>',),
+    "home":       PLACE + ('<path d="M2 7l6-5 6 5v7H2z"/>',),
+    "newfolder":  PLACE + ('<path d="M2 4h4l1.5 2H14v7H2z"/>'
+                           '<path d="M8 8.5v3M6.5 10h3"/>',),
+    # The new folder's folder without its plus: Tracker's place button,
+    # anywhere that is not Home, the Trash or a drive.
+    "folder":     PLACE + ('<path d="M2 4h4l1.5 2H14v7H2z"/>',),
+    "recent":     PLACE + ('<circle cx="8" cy="8" r="6"/>'
+                           '<path d="M8 5v3.2l2 1.2"/>',),
+    "trash":      PLACE + ('<path d="M3 5h10v9H3zM6 5V3h4v2"/>',),
+    "document":   PLACE + ('<path d="M3 2h7l3 3v9H3z"/>',),
+    "music":      PLACE + ('<path d="M6 12V4l7-1v8"/><circle cx="4" cy="12" '
+                           'r="2"/><circle cx="11" cy="11" r="2"/>',),
+    "pictures":   PLACE + ('<path d="M2 3h12v10H2z"/>'
+                           '<path d="M2 11l4-4 3 3 2-2 3 3"/>',),
+    "drive":      PLACE + ('<path d="M2 4h12v8H2z"/><path d="M4 7h3"/>',),
+
+    # The kit's checkbox, ticked: white on the accent, so heavier than the
+    # rest and with round ends - at 15 pixels a 1.5 stroke on a filled box
+    # reads as a scratch rather than a mark.
+    "check":      ('2', 'stroke-linecap="round" stroke-linejoin="round"')
+                  + ('<path d="M4 8.5l2.6 2.6L12 5.2"/>',),
 }
 
 STEP = 40          # one cell per icon on the sheet, wider than the largest

@@ -96,13 +96,13 @@ check(#g >= 3, "Appearance should have Look, Size and Icons at least")
 --
 local look = settings.ITEMS[1]
 
-check(settings.get(look, function() return nil end) == "plex",
+check(settings.get(look, function() return nil end) == "endeavour",
       "a setting with no file on disk did not come back as its default")
 
 check(settings.get(look, function() return { palette = "studio" } end)
       == "studio", "a setting on disk did not come back")
 
-check(settings.get(look, function() return "not a table" end) == "plex",
+check(settings.get(look, function() return "not a table" end) == "endeavour",
       "a settings file holding something that is not a table was not "
       .. "ignored - a damaged file should read as the default")
 
@@ -155,11 +155,11 @@ check(wrote and wrote.scale == nil,
 -- Plex phase is what noticed - the Appearance panel had always written it.
 --
 wrote = nil
-settings.set(look, "plex",
+settings.set(look, look.default,
              function() return { palette = "studio" } end,
              function(_, t) wrote = t; return true end)
 
-check(wrote and wrote.palette == "plex",
+check(wrote and wrote.palette == look.default,
       "choosing the default look stored nothing, so /home/.appearance no "
       .. "longer says which look this machine wears")
 
@@ -252,6 +252,16 @@ if theme_item then
   check(#(theme_item.choices or {}) == #themes.order,
         ("Preferences offers %d looks and %d ship")
         :format(#(theme_item.choices or {}), #themes.order))
+
+  --
+  -- **The default is the first look, in both files.** The window manager
+  -- wears `themes.order[1]` on a machine that chose nothing; Preferences'
+  -- row has a `default` of its own. Two statements of one fact, held
+  -- together here since the default moved from Plex to Endeavour (0.10.149).
+  --
+  check(theme_item.default == themes.order[1],
+        ("Preferences' look defaults to %q and the desktop wears %q")
+        :format(tostring(theme_item.default), tostring(themes.order[1])))
 end
 
 --

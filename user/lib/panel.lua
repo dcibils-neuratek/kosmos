@@ -103,8 +103,11 @@ local function open(spec, mode)
                            h = pane_h - header.h, items = {} }
 
   function listing:draw_item(g, e, x, y, _, on)
-    local fg  = on and theme.text_on or theme.text
-    local dim = on and theme.text_on or theme.text_dim
+    -- White on the accent where a look fills a chosen row with it; a flat
+    -- look marks the row with a pale fill and keeps the words' own colours.
+    local lit = on and not theme.flat
+    local fg  = lit and theme.text_on or theme.text
+    local dim = lit and theme.text_on or theme.text_dim
     local kind = (e.kind == "directory") and "folder"
                  or (types.kind_of(e.name, e.attrs) or "file")
 

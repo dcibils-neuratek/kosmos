@@ -39,7 +39,7 @@
 local ui    = use("/lib/ui.lua")
 local theme = ui.theme
 
-local W, H = 560, 420
+local W, H = 560, 520
 
 local win, err = ui.window{ title = "Scheduler", w = W, h = H, x = 140, y = 80 }
 
@@ -55,133 +55,136 @@ if not info then
   return
 end
 
-local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
+local L = ui.layout
+local refresh
 
 --------------------------------------------------------------------------
--- What it is doing now.
+-- The window, as `docs/apps.html` draws it (`roadmap.md` 5zp): what the
+-- scheduler is doing in one card, the two things a person may change in
+-- another, and the one thing that makes either visible - a thread with
+-- nothing to do but compute - as the header's verb. It was a framed box of
+-- facts, two rows of buttons named after their values, and five lines of
+-- text at positions chosen one at a time.
 --------------------------------------------------------------------------
 
-local facts = ui.view{ x = 12, y = 44, w = W - 24, h = 108 }
+local quanta = { 1, 2, 5, 10, 20, 50 }
 
-function facts:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.window)
-  g:frame(0, 0, self.w, self.h, theme.line)
+local function ms(ticks) return ticks * 1000 // info.tick_hz end
 
-  local rows = {
-    { "policy",  info.policies[info.policy] or "?" },
-    { "quantum", ("%d ticks - %.0f ms"):format(info.quantum, info.quantum_ms) },
-    { "timer",   ("%d Hz, so %.0f ms a tick"):format(info.tick_hz,
-                                                     1000 / info.tick_hz) },
-    { "bands",   ("%d, and the floor is one tick"):format(info.bands) },
+local header, cards              -- built below; `refresh` fills them
+
+local spinners = 0
+local said = "read from the kernel, not remembered"
+
+local function groups()
+  local policies, turns = {}, {}
+
+  for index, name in ipairs(info.policies) do
+    policies[#policies + 1] = { index, name }
+  end
+
+  --
+  -- **The value in force is always one of the choices**, in its place in
+  -- the order. The kernel starts at 25 ticks, which none of the offered six
+  -- was, so the dropdown showed a bare "25" - a number in the units of
+  -- nothing else on the page.
+  --
+  local offered, seen = {}, false
+
+  for _, ticks in ipairs(quanta) do
+    if not seen and ticks > info.quantum then
+      offered[#offered + 1] = info.quantum
+      seen = true
+    end
+
+    if ticks == info.quantum then seen = true end
+    offered[#offered + 1] = ticks
+  end
+
+  if not seen then offered[#offered + 1] = info.quantum end
+
+  for _, ticks in ipairs(offered) do
+    turns[#turns + 1] = { ticks, ("%d ms"):format(ms(ticks)) }
+  end
+
+  local policy = ui.dropdown{
+    choices = policies, value = info.policy,
+    on_change = function(_, index)
+      local ok, why = sys.set_policy(index)
+
+      refresh(ok and ("now scheduling with " .. info.policies[index])
+              or ("could not: " .. tostring(why)))
+    end,
   }
 
-  for i, row in ipairs(rows) do
-    local y = 8 + (i - 1) * (gfx.font.h + 6)
+  local quantum = ui.dropdown{
+    choices = turns, value = info.quantum,
+    on_change = function(_, ticks)
+      local ok, why = sys.set_quantum(ticks)
 
-    g:text(10, y, row[1], theme.text_dim, theme.window)
-    g:text(96, y, row[2], theme.text, theme.window)
-  end
+      refresh(ok and ("a turn is now %d ms"):format(ms(ticks))
+              or ("could not: " .. tostring(why)))
+    end,
+  }
+
+  return {
+    { name = "Now", rows = {
+        { label = "Policy", value = info.policies[info.policy] or "?" },
+        { label = "Quantum", note = ("%d ticks"):format(info.quantum),
+          value = ("%.0f ms"):format(info.quantum_ms) },
+        { label = "Timer", value = ("%d Hz · %.0f ms a tick")
+                                   :format(info.tick_hz, 1000 / info.tick_hz) },
+        { label = "Bands", note = "the floor is one tick",
+          value = tostring(info.bands) } } },
+    { name = "Choose", rows = {
+        { label = "Policy", control = policy },
+        { label = "Quantum", note = "how long a thread may hold a processor",
+          control = quantum } } },
+  }
 end
 
-local function refresh(said)
+--
+-- **Read again, and said again**, after anything changes - the kernel is
+-- the authority, so the card shows what it now reports rather than what
+-- was asked for.
+--
+function refresh(words)
   info = sys.scheduler() or info
-  status.text = said or ""
+  said = words or said
+  header.sub = said
+  cards:set(groups())
   win:paint()
 end
 
---------------------------------------------------------------------------
--- Changing it.
---------------------------------------------------------------------------
-
-win:add(ui.label{ x = 12, y = 12, w = W - 24, text = "How this machine schedules" })
-win:add(facts)
-
-win:add(ui.label{ x = 12, y = 164, w = 90, text = "policy" })
-
-local x = 96
-
-for index, name in ipairs(info.policies) do
-  local this = index
-
-  win:add(ui.button{
-    x = x, y = 160, w = 120, h = 24, text = name,
-    on_click = function ()
-      local ok, why = sys.set_policy(this)
-
-      if ok then
-        refresh("now scheduling with " .. name)
+header = ui.header{
+  x = 0, y = 0, w = W, title = "Scheduler", sub = said,
+  right = { ui.button{
+    text = "Add a busy thread",
+    on_click = function()
+      -- Detached, so this window keeps answering while it spins. `spin`
+      -- exists for exactly this: a program whose whole job is to be busy.
+      if run("/bin/spin.lua", "", true) then
+        spinners = spinners + 1
+        refresh(("%d busy thread%s - now change something")
+                :format(spinners, spinners == 1 and "" or "s"))
       else
-        refresh("could not: " .. tostring(why))
+        refresh("could not start one")
       end
-    end,
-  })
+    end } },
+}
 
-  x = x + 128
-end
+--
+-- An idle machine schedules identically whatever is chosen, which is the
+-- thing to know before choosing - so it is the page's note.
+--
+cards = ui.cards{
+  x = 0, y = L.head, w = W, h = H - L.head,
+  groups = groups(),
+  foot = "An idle machine schedules the same whatever you choose. Add a "
+         .. "busy thread, then drag a window or type.",
+}
 
-win:add(ui.label{ x = 12, y = 204, w = 90, text = "quantum" })
-
-local quanta = { 1, 2, 5, 10, 20, 50 }
-x = 96
-
-for _, ticks in ipairs(quanta) do
-  local this = ticks
-
-  win:add(ui.button{
-    x = x, y = 200, w = 64, h = 24,
-    text = ("%d ms"):format(this * 1000 // info.tick_hz),
-    on_click = function ()
-      local ok, why = sys.set_quantum(this)
-
-      if ok then
-        refresh(("a turn is now %d ms"):format(this * 1000 // info.tick_hz))
-      else
-        refresh("could not: " .. tostring(why))
-      end
-    end,
-  })
-
-  x = x + 72
-end
-
---------------------------------------------------------------------------
--- Something to schedule.
---------------------------------------------------------------------------
-
-win:add(ui.label{
-  x = 12, y = 244, w = W - 24,
-  text = "An idle machine schedules identically whatever you choose:",
-})
-
-local spinners = 0
-
-win:add(ui.button{
-  x = 12, y = 268, w = 150, h = 24, text = "add a busy thread",
-  on_click = function ()
-    -- Detached, so this window keeps answering while it spins. `spin`
-    -- exists for exactly this: a program whose whole job is to be busy.
-    if run("/bin/spin.lua", "", true) then
-      spinners = spinners + 1
-      refresh(("%d busy thread(s) running - now change something")
-              :format(spinners))
-    else
-      refresh("could not start one")
-    end
-  end,
-})
-
-win:add(ui.label{
-  x = 12, y = 300, w = W - 24,
-  text = "Then drag this window, or type. That is the whole measurement.",
-})
-
-win:add(ui.label{
-  x = 12, y = 320, w = W - 24,
-  text = "`htop` shows where the time goes; `procs` shows who is running.",
-})
-
-win:add(status)
-
-refresh("read from the kernel, not remembered")
+win:add(header)
+win:add(cards)
 
 win:run()

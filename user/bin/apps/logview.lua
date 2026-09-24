@@ -58,13 +58,11 @@ local ui = use("/lib/ui.lua")
 local theme = ui.theme
 
 -- A header on top, since the View menu arrived: the rows keep their room
--- and the window is one band taller. It was a menu bar and is now the row
--- every other window in the look has - what this one is doing on the left,
--- and a `...` on the right (`docs/desktop.html`).
-local TOOLBAR_Y = 7
-local TOOLBAR_H = 26
-local BAR = TOOLBAR_Y + TOOLBAR_H
-local W, H = 620, 420 + BAR
+-- and the window is one header taller. It was a menu bar, then a row 33
+-- tall, and is the kit's header now (`docs/apps.html`): what this window is
+-- doing beside its name, and the dots at its end.
+local L = ui.layout
+local W, H = 620, L.head + 420
 
 local win, err = ui.window{ title = "Log", w = W, h = H, x = 130, y = 110 }
 
@@ -195,7 +193,7 @@ local rows, built_from, built_columns = {}, nil, 0
 -- Pinned to all four edges, like the Terminal's, so a bigger window is a
 -- bigger log rather than the same log with a border of window colour.
 --
-local view = ui.view{ x = 8, y = BAR + 8, w = W - 16, h = H - BAR - 20,
+local view = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
                       follow = { left = true, right = true,
                                  top = true, bottom = true } }
 
@@ -216,20 +214,20 @@ local size = textsize.new(ui, "/home/.logview")
 -- console says *new lines below* when there are some; this says what state
 -- the window is in whether or not anything has arrived.
 --
-local state = ui.label{ x = 12, y = TOOLBAR_Y + 5, w = W - 70, text = "",
-                        color = "text_dim" }
-win:add(state)
+local more = ui.iconbutton{ icon = "more" }
+local header = ui.header{ x = 0, y = 0, w = W, title = "Log", sub = "",
+                          right = { more } }
 
-win:add(ui.button{
-  x = W - 46, y = TOOLBAR_Y, w = 34, h = TOOLBAR_H, text = "...",
-  follow = { "right", "top" },
-  on_click = function()
-    if win.open_menu then
-      win:open_menu(win.origin_x + W - 46,
-                    win.origin_y + TOOLBAR_Y + TOOLBAR_H, size:items())
-    end
-  end,
-})
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, size:items())
+end
+
+--
+-- **The rows are the window**, from the header's rule to the window's
+-- edges, 9 above the first and 12 in from the left - the drawings' console.
+-- They were a framed box 8 in from the window's edges.
+--
+local PAD_X, PAD_Y = 12, 9
 
 --
 -- Where everything is, for this size and this face, with `back` held inside
@@ -248,14 +246,14 @@ local function layout(self)
   local face = size:face()
   local MW = math.max(1, gfx.measure("0", face))
   local MH = math.max(1, gfx.height(face))
-  local columns = math.max(1, (self.w - 8 - ui.SCROLL_W - 4) // MW)
+  local columns = math.max(1, (self.w - 2 * PAD_X - ui.SCROLL_W) // MW)
 
   if source ~= built_from or columns ~= built_columns then
     rows = build(source, columns)
     built_from, built_columns = source, columns
   end
 
-  local shown = math.max(1, (self.h - 6) // MH)
+  local shown = math.max(1, (self.h - 2 * PAD_Y) // MH)
   local most = math.max(0, #rows - shown)
 
   if back > most then back = most end
@@ -266,9 +264,9 @@ local function layout(self)
   -- the sentence are known: `back` after it has been held inside what
   -- exists, and how many rows there are for this width and this face.
   --
-  state.text = (back == 0)
-               and ("following . %d lines"):format(#rows)
-               or ("held, %d back . %d lines"):format(back, #rows)
+  header.sub = (back == 0)
+               and ("following · %d lines"):format(#rows)
+               or ("held, %d back · %d lines"):format(back, #rows)
 
   return MH, shown, math.max(1, #rows - shown - back + 1)
 end
@@ -284,7 +282,6 @@ end
 
 function view:draw(g)
   g:fill(0, 0, self.w, self.h, "console")
-  g:frame(0, 0, self.w, self.h, self.focused and theme.ring or "line")
 
   local MH, shown, first = layout(self)
 
@@ -293,7 +290,7 @@ function view:draw(g)
 
     if not row then break end
 
-    g:text(4, 3 + i * MH, row.text, row.colour or "console_text",
+    g:text(PAD_X, PAD_Y + i * MH, row.text, row.colour or "console_text",
            "console", "mono", size:size())
   end
 
@@ -309,8 +306,8 @@ function view:draw(g)
     local right = self.w - ui.SCROLL_W - 2
     local x = right - 8 - gfx.measure(note, size:face())
 
-    g:fill(x - 4, 1, right - (x - 4), MH + 4, "console")
-    g:text(x, 3, note, NOTE, "console", "mono", size:size())
+    g:fill(x - 4, PAD_Y - 2, right - (x - 4), MH + 4, "console")
+    g:text(x, PAD_Y, note, NOTE, "console", "mono", size:size())
   end
 end
 
@@ -444,6 +441,8 @@ end
 win.tick_every = HALF
 
 win:add(view)
+-- After the rows, so the focus starts in them.
+win:add(header)
 
 -- The log is on the first paint, not half a second after it.
 refresh()

@@ -246,7 +246,7 @@ DISPLAY_PARTS = [
      "scripting", "idle", "direct", "3d", "terminal", "programs by file",
      "preferences"],
     ["log view", "text size", "window resize", "triangle", "repaints",
-     "@@BOARD@@", "volume keys", "compositor budget"],
+     "@@BOARD@@", "volume keys", "compositor budget", "corners"],
     ["faces", "wallpapers", "direct menu", "tabs", "appearance",
      "Super Nintendo --scale", "deskbar", "deskbar focus", "desktop",
      "places", "panel"],

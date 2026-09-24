@@ -93,7 +93,8 @@ settings.ITEMS = {
   item{ category = "appearance", group = "Look",
         label = "Theme", note = "The colours and faces every window uses",
         kind = "choice", file = settings.APPEARANCE, key = "palette",
-        default = "plex",
+        -- `themes.order[1]`, which `test_settings.lua` holds this to.
+        default = "endeavour",
         --
         -- **The looks that ship, and it has to be all of them.** Endeavour
         -- arrived in `themes.lua` and not here, so the dropdown showed the
@@ -103,9 +104,9 @@ settings.ITEMS = {
         -- `themes.order` now, because a list of the same thing in two files
         -- is a list that drifts.
         --
-        choices = { { "plex", "Plex" }, { "plexnight", "Plex Night" },
-                    { "classic", "Classic" }, { "studio", "Studio" },
-                    { "endeavour", "Endeavour" } },
+        choices = { { "endeavour", "Endeavour" }, { "plex", "Plex" },
+                    { "plexnight", "Plex Night" }, { "classic", "Classic" },
+                    { "studio", "Studio" } },
         --
         -- **Written by name even when it is the default**, which no other
         -- row is: the file is what a desktop starting up reads, and a

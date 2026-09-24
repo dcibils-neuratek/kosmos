@@ -19,19 +19,25 @@
 local ui = use("/lib/ui.lua")
 local drivelist = use("/lib/drivelist.lua")
 
-local PAD = 12
-local ROW = gfx.height("ui") + 6
+--
+-- **The drawings' page** (`docs/apps.html`, `roadmap.md` 5zp): a header
+-- with Open in Tracker, then a group's name, its card, 20, the next - the
+-- kit's `ui.layout` numbers, where this had its own 12 and 18 and 30. The
+-- tables are the drawings' tables: a card, a column head 32 tall over a
+-- rule, rows of 32, and the chosen row a quiet fill rather than the accent.
+--
+local L = ui.layout
+local ROW = 32
 
--- Laid out from the top, and the window as tall as what is in it.
-local DRIVES_Y = PAD
-local DRIVES_H = ROW * 4 + 4
-local MAP_Y = DRIVES_Y + DRIVES_H + 18
+local W = 640
+local DRIVES_Y = L.head + L.page_top
+local DRIVES_H = ROW * 4 + 2
+local MAP_Y = DRIVES_Y + L.to_card + DRIVES_H + L.between
 local MAP_H = 54
-local PARTS_Y = MAP_Y + MAP_H + 30
-local PARTS_H = ROW * 5 + 4
-local BUTTONS_Y = PARTS_Y + PARTS_H + 12
-local STATUS_Y = BUTTONS_Y + ROW + 16
-local W, H = 640, STATUS_Y + ROW + PAD
+local PARTS_Y = MAP_Y + L.to_card + MAP_H + 14
+local PARTS_H = ROW * 5 + 2
+local STATUS_Y = PARTS_Y + PARTS_H + 10
+local H = STATUS_Y + gfx.height() + L.page_foot
 
 local win, err = ui.window{ title = "Drives", w = W, h = H, x = 180, y = 90 }
 
@@ -44,17 +50,27 @@ local drives = drivelist.drives()
 local chosen, part = 1, 1
 
 -- The columns, as the drawing has them.
-local DRIVE_COLS = { { "Drive", 8 }, { "Type", 300 }, { "Size", 420 } }
-local PART_COLS = { { "#", 8 }, { "Name", 34 }, { "Filesystem", 210 },
+local DRIVE_COLS = { { "Drive", 14 }, { "Type", 330 }, { "Size", 470 } }
+local PART_COLS = { { "#", 14 }, { "Name", 40 }, { "Filesystem", 210 },
                     { "Size", 320 }, { "Used", 400 }, { "In Tracker", 470 } }
 
-local function header(g, cols, w)
-  g:fill(0, 0, w, ROW, "raised")
-  g:fill(0, ROW, w, 1, "line_soft")
+--
+-- A table's card and its column head: the drawings' `.th`, 32 tall, in the
+-- dim `ui` face, over a one-pixel rule.
+--
+local function table_card(g, cols, w, h)
+  g:fill_round(0, 0, w, h, "sunken", L.card_r)
+  g:frame_round(0, 0, w, h, "line_soft", L.card_r)
+  g:fill(1, ROW, w - 2, 1, "line_soft")
 
   for _, c in ipairs(cols) do
-    g:text(c[2], 3, c[1], "text_dim", "raised")
+    g:text(c[2], (ROW - gfx.height()) // 2, c[1], "text_dim", "sunken")
   end
+end
+
+-- A row's words, centred in its 32.
+local function cell(g, x, row_y, text, color)
+  g:text(x, row_y + (ROW - gfx.height()) // 2, text, color or "text")
 end
 
 local function drive_of() return drives[chosen] end
@@ -63,32 +79,31 @@ local function drive_of() return drives[chosen] end
 -- The drives, one row each.
 --
 local drive_rows = ui.view{
-  x = PAD, y = DRIVES_Y, w = W - PAD * 2, h = DRIVES_H,
+  x = L.page_side, y = DRIVES_Y + L.to_card, w = W - 2 * L.page_side,
+  h = DRIVES_H,
 
   draw = function(self, g)
-    g:sunken(0, 0, self.w, self.h, "sunken")
-    header(g, DRIVE_COLS, self.w)
+    table_card(g, DRIVE_COLS, self.w, self.h)
 
     if #drives == 0 then
-      g:text(8, ROW + 4, "No drives: nothing is plugged in, and there is no "
-             .. "disk.", "text_dim", "sunken")
+      cell(g, 14, ROW + 1, "No drives: nothing is plugged in, and there is "
+           .. "no disk.", "text_dim")
       return
     end
 
     for i, d in ipairs(drives) do
-      local y = ROW + 2 + (i - 1) * ROW
-      local bg = (i == chosen) and "accent" or "sunken"
+      local y = ROW + 1 + (i - 1) * ROW
 
-      if i == chosen then g:fill(2, y, self.w - 4, ROW, "accent") end
+      if i == chosen then g:fill(1, y, self.w - 2, ROW, "line_soft") end
 
-      g:text(DRIVE_COLS[1][2], y + 3, d.name, "text", bg)
-      g:text(DRIVE_COLS[2][2], y + 3, d.kind, "text", bg)
-      g:text(DRIVE_COLS[3][2], y + 3, drivelist.size(d.bytes), "text", bg)
+      cell(g, DRIVE_COLS[1][2], y, d.name)
+      cell(g, DRIVE_COLS[2][2], y, d.kind, "text_dim")
+      cell(g, DRIVE_COLS[3][2], y, drivelist.size(d.bytes))
     end
   end,
 
   on_click = function(self, x, y)
-    local i = (y - ROW - 2) // ROW + 1
+    local i = (y - ROW - 1) // ROW + 1
 
     if drives[i] then
       chosen, part = i, 1
@@ -103,19 +118,18 @@ local drive_rows = ui.view{
 -- label's width; the space no volume claims takes what is left.
 --
 local map = ui.view{
-  x = PAD, y = MAP_Y, w = W - PAD * 2, h = MAP_H,
+  x = L.page_side, y = MAP_Y + L.to_card, w = W - 2 * L.page_side,
+  h = MAP_H,
 
   draw = function(self, g)
     local d = drive_of()
-
-    g:sunken(0, 0, self.w, self.h, "window")
 
     if not d then return end
 
     local pieces = {}
 
     for i, v in ipairs(d.volumes) do
-      pieces[#pieces + 1] = { text = v.name, sub = v.filesystem .. ", "
+      pieces[#pieces + 1] = { text = v.name, sub = v.filesystem .. " · "
                               .. drivelist.size(v.bytes), volume = i }
     end
 
@@ -128,23 +142,28 @@ local map = ui.view{
 
     if #pieces == 0 then return end
 
-    local x, each = 2, (self.w - 4) // #pieces
+    --
+    -- Each a rounded block 7 apart, the chosen one in the accent: the
+    -- drawings' controls, where these were bevelled boxes touching.
+    --
+    local gap = 7
+    local x, each = 0, (self.w - gap * (#pieces - 1)) // #pieces
 
     for i, p in ipairs(pieces) do
-      local w = (i == #pieces) and (self.w - 2 - x) or each
-      local face = p.free and "window"
-                   or (p.volume == part and "accent" or "raised")
+      local w = (i == #pieces) and (self.w - x) or each
+      local on = (p.volume == part)
+      local fill = p.free and "window" or (on and "accent" or "sunken")
 
-      if p.free then
-        g:fill(x, 2, w - 2, self.h - 4, "window")
-        g:frame(x, 2, w - 2, self.h - 4, "line_soft")
-      else
-        g:raised(x, 2, w - 2, self.h - 4, face)
-      end
+      g:fill_round(x, 0, w, self.h, fill, 7)
 
-      g:text(x + 8, 10, p.text, "text", face)
-      g:text(x + 8, 10 + ROW, p.sub, "text_dim", face)
-      x = x + w
+      if not on then g:frame_round(x, 0, w, self.h, "line_soft", 7) end
+
+      local ty = (self.h - gfx.height("label") - gfx.height()) // 2
+
+      g:text(x + 12, ty, p.text, on and "text_on" or "text", nil, "label")
+      g:text(x + 12, ty + gfx.height("label"), p.sub,
+             on and "text_on" or "text_dim")
+      x = x + w + gap
     end
   end,
 
@@ -154,7 +173,7 @@ local map = ui.view{
     if not d or #d.volumes == 0 then return end
 
     local count = #d.volumes + (((d.unclaimed or 0) > 1024 * 1024) and 1 or 0)
-    local i = (x - 2) // ((self.w - 4) // count) + 1
+    local i = x // ((self.w + 7) // count) + 1
 
     if d.volumes[i] then
       part = i
@@ -167,50 +186,47 @@ local map = ui.view{
 -- Its partitions, as rows, and where each opens.
 --
 local part_rows = ui.view{
-  x = PAD, y = PARTS_Y, w = W - PAD * 2, h = PARTS_H,
+  x = L.page_side, y = PARTS_Y, w = W - 2 * L.page_side, h = PARTS_H,
 
   draw = function(self, g)
     local d = drive_of()
 
-    g:sunken(0, 0, self.w, self.h, "sunken")
-    header(g, PART_COLS, self.w)
+    table_card(g, PART_COLS, self.w, self.h)
 
     if not d then return end
 
     if d.internal then
-      g:text(8, ROW + 4, "The machine's own disk. Its partitions are not "
-             .. "read yet.", "text_dim", "sunken")
+      cell(g, 14, ROW + 1, "The machine's own disk. Its partitions are not "
+           .. "read yet.", "text_dim")
       return
     end
 
     if #d.volumes == 0 then
-      g:text(8, ROW + 4, "No filesystem Kosmos reads on this drive.",
-             "text_dim", "sunken")
+      cell(g, 14, ROW + 1, "No filesystem Kosmos reads on this drive.",
+           "text_dim")
       return
     end
 
     for i, v in ipairs(d.volumes) do
-      local y = ROW + 2 + (i - 1) * ROW
-      local bg = (i == part) and "accent" or "sunken"
+      local y = ROW + 1 + (i - 1) * ROW
       local used = (v.bytes or 0) - (v.free or 0)
 
-      if i == part then g:fill(2, y, self.w - 4, ROW, "accent") end
+      if i == part then g:fill(1, y, self.w - 2, ROW, "line_soft") end
 
-      g:text(PART_COLS[1][2], y + 3, tostring((v.partition or 0) + 1), "text", bg)
-      g:text(PART_COLS[2][2], y + 3, v.name, "text", bg)
-      g:text(PART_COLS[3][2], y + 3, v.filesystem, "text", bg)
-      g:text(PART_COLS[4][2], y + 3, drivelist.size(v.bytes), "text", bg)
-      g:text(PART_COLS[5][2], y + 3,
-             v.free_exact and drivelist.size(used) or "-", "text", bg)
-      g:text(PART_COLS[6][2], y + 3,
-             v.readable and drivelist.path(v) or "not opened",
-             v.readable and "text" or "text_dim", bg)
+      cell(g, PART_COLS[1][2], y, tostring((v.partition or 0) + 1), "text_dim")
+      cell(g, PART_COLS[2][2], y, v.name)
+      cell(g, PART_COLS[3][2], y, v.filesystem, "text_dim")
+      cell(g, PART_COLS[4][2], y, drivelist.size(v.bytes))
+      cell(g, PART_COLS[5][2], y, v.free_exact and drivelist.size(used) or "-")
+      cell(g, PART_COLS[6][2], y,
+           v.readable and drivelist.path(v) or "not opened",
+           v.readable and "text" or "text_dim")
     end
   end,
 
   on_click = function(self, x, y)
     local d = drive_of()
-    local i = (y - ROW - 2) // ROW + 1
+    local i = (y - ROW - 1) // ROW + 1
 
     if d and d.volumes[i] then
       part = i
@@ -219,7 +235,9 @@ local part_rows = ui.view{
   end,
 }
 
-local status = ui.label{ x = PAD, y = STATUS_Y, w = W - PAD * 2, text = "" }
+local status = ui.label{ x = L.page_side + 3, y = STATUS_Y,
+                         w = W - 2 * L.page_side - 3, text = "",
+                         color = "text_dim", role = "ui" }
 
 local function open_in_tracker()
   local d = drive_of()
@@ -239,16 +257,41 @@ local function open_in_tracker()
   win:paint()
 end
 
-win:add(ui.label{ x = PAD, y = MAP_Y - 18, w = 300, text = "Partitions" })
+--
+-- The header: how many drives, Open in Tracker as the verb, and behind the
+-- dots the two that change a drive - greyed, as `docs/drives.html` has them:
+-- "formatting and partitioning later, each on its own". Shown rather than
+-- left out, because a Drives window that cannot say it will one day format
+-- a stick is one where a person goes looking for how.
+--
+local more = ui.iconbutton{ icon = "more" }
+
+local header = ui.header{
+  x = 0, y = 0, w = W, title = "Drives",
+  sub = (#drives == 1) and "1 drive" or (#drives .. " drives"),
+  right = { ui.button{ text = "Open in Tracker", on_click = open_in_tracker },
+            more },
+}
+
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, {
+    { text = "Format...", disabled = true },
+    { text = "New partition...", disabled = true },
+  })
+end
+
+local function heading(y, text)
+  win:add(ui.label{ x = L.page_side + 3,
+                    y = y + (L.group - gfx.height("heading")) // 2,
+                    w = 300, text = text, role = "heading" })
+end
+
+win:add(header)
+heading(DRIVES_Y, "Drives")
 win:add(drive_rows)
+heading(MAP_Y, "Partitions")
 win:add(map)
 win:add(part_rows)
-win:add(ui.button{ x = PAD, y = BUTTONS_Y, w = 150, text = "Open in Tracker",
-                   on_click = open_in_tracker })
-win:add(ui.button{ x = PAD + 160, y = BUTTONS_Y, w = 120, text = "Format...",
-                   disabled = true })
-win:add(ui.button{ x = PAD + 290, y = BUTTONS_Y, w = 150,
-                   text = "New partition...", disabled = true })
 win:add(status)
 
 --

@@ -150,7 +150,20 @@ local OUT = { want_corner = true,
               -- quarters are gone. A title bar and a little, so the one
               -- underneath is still grabbable.
               cascade = theme.metrics.tab + 8 }
-local BORDER     = 2
+--
+-- **The frame down the sides and along the bottom**, in the title bar's
+-- colour: 6, where it was 2. Diego, 24 September, looking at a Log View
+-- whose console ran to the window's edge: "We need to add some extra
+-- chrome to the other borders of the apps as now it looks weird and make
+-- better rounded borders". Two pixels was a line rather than chrome, so a
+-- window whose page runs edge to edge - a terminal, a log, a photograph -
+-- had a title bar on top and nothing holding the other three sides; and at
+-- the bottom the corner's arc cut straight through the page while the line
+-- ran square past it. Six carries the bar's colour round the window, and
+-- the page is rounded inside it (`OUT.round_inside`), so the frame follows
+-- the curve.
+--
+local BORDER     = 6
 --
 -- The three controls on a tab, and the room they take.
 --
@@ -179,10 +192,23 @@ local BORDER     = 2
 --
 local BOX        = 18
 
--- How far a control sits from the end of the tab. One constant for both
--- ends, because "the same margin on the left and the right" is a fact about
--- the tab rather than a coincidence between two numbers.
-local MARGIN     = 4
+-- How far the controls sit from the end of the tab, and the title from its
+-- start.
+--
+-- **Two numbers now, and both the drawings'** (`roadmap.md` 5zp). It was one,
+-- 4, for both ends, which was fine while a window was square. Diego, 24
+-- September, with a photograph of a tab: "The window title needs more left
+-- margin as it's too close to the edge and looks bad" - four pixels from a
+-- corner rounded at twelve put the first letter inside the curve.
+--
+-- The title is 18 in, which is where the drawings' header puts its own
+-- title (`ui.layout.head_in`) - so a window's name on its tab and the
+-- subject in the header under it start at the same x, and read as one
+-- column rather than two near-misses. The controls are 10 in, the header's
+-- `head_edge`, for the same reason at the other end.
+--
+local MARGIN     = 10
+local TITLE_IN   = 18
 
 -- How far each window steps down and across from the one already in its
 -- corner. A tab's height, so the one underneath always has a strip of its
@@ -253,9 +279,10 @@ function scale.chrome()
   TAB_H   = scale.px(theme.metrics.tab)
   OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
   OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
-  BORDER  = scale.px(2)
+  BORDER  = scale.px(6)
   BOX     = scale.px(18)
-  MARGIN  = scale.px(4)
+  MARGIN  = scale.px(10)
+  TITLE_IN = scale.px(18)
   OUT.cascade = TAB_H + scale.px(8)
   GRIP    = scale.px(16)
   BOX_W   = BOX + scale.px(4)
@@ -444,12 +471,24 @@ end
 -- and on a machine with no disk `/home` does not survive a power cut, so
 -- this is what they see again next time.
 --
+--
+-- What a machine that has chosen nothing wears: the first look `themes.lua`
+-- offers. It named Plex here, which made the default two facts in two files
+-- - this, and the order the looks are offered in - and the day the default
+-- became Endeavour (`roadmap.md` 5zq) one of them would have stayed behind.
+--
 local function default_appearance()
   local ok, shipped = pcall(use, "/lib/themes.lua")
 
-  if not ok or type(shipped) ~= "table" or not shipped.plex then return end
+  if not ok or type(shipped) ~= "table" or type(shipped.order) ~= "table" then
+    return
+  end
 
-  local palette = theme.read(shipped.plex, "dark")
+  local first = shipped[shipped.order[1] or ""]
+
+  if not first then return end
+
+  local palette = theme.read(first, "dark")
 
   if palette then theme.apply(palette) end
 end
@@ -1418,6 +1457,85 @@ function OUT.put_back(list, fx, fy, fw, fh)
   end
 end
 
+--
+-- **The page rounded inside the frame**, at its two bottom corners: the
+-- frame's colour painted over the page's pixels outside an arc of the
+-- corner less the border, anti-aliased by the same coverage that rounds the
+-- frame itself. So the frame is a band of one width all the way round the
+-- curve, where the page used to show through the frame's arc as a dark
+-- sliver with a square line beside it. The top corners of the page meet
+-- the title bar and are square, as a page under a bar is.
+--
+-- Through `blit_round` from a square of the frame's colour, filled again
+-- only when the colour changes - focused and unfocused are the two.
+--
+OUT.frame_fill = gfx.surface{ w = 64, h = 64 }
+
+function OUT.round_inside(win, r, colour)
+  local c = OUT.corner - BORDER
+
+  if c <= 0 or c > 64 or win.kind == "menu" then return end
+
+  if OUT.frame_fill_colour ~= colour then
+    OUT.frame_fill:fill(0, 0, 64, 64, colour)
+    OUT.frame_fill_colour = colour
+  end
+
+  local y = win.y + win.h - c
+
+  for _, x in ipairs({ win.x, win.x + win.w - c }) do
+    local x0, y0 = math.max(x, r.x), math.max(y, r.y)
+    local x1 = math.min(x + c, r.x + r.w)
+    local y1 = math.min(y + c, r.y + r.h)
+
+    if x1 > x0 and y1 > y0 then
+      back:blit_round(OUT.frame_fill, 0, 0, x1 - x0, y1 - y0, x0, y0,
+                      win.x, win.y, win.w, win.h, c, true)
+    end
+  end
+end
+
+--
+-- **A rounded window does not cover its corners**, so they are not cut out
+-- of what is painted behind it. The pass below cut the frame's whole
+-- rectangle away, which was exact while windows were square; with a corner
+-- the desktop - or the window behind - was then never painted under the
+-- arc, and `put_back` restored whatever the backbuffer last held there.
+-- Diego photographed it on 24 September: Photo's own dark page outside its
+-- bottom-right curve, left from where the window was before `tile` moved
+-- it. Only a window that moved onto its own old pixels showed it, which is
+-- why Tracker beside it looked right.
+--
+-- The four squares of `corner` a side, when this window is rounded -
+-- the same condition `OUT.corners` rounds it under.
+--
+function OUT.corner_squares(win)
+  local c = OUT.corner
+
+  if c <= 0 or c > 32 then return nil end
+
+  local fx, fy, fw, fh = frame_of(win)
+
+  return { c, { fx, fy }, { fx + fw - c, fy },
+           { fx, fy + fh - c }, { fx + fw - c, fy + fh - c } }
+end
+
+-- What of those squares lies inside `x0, y0 - x1, y1`, the part of a piece
+-- the window was cut from, handed back to be painted behind it.
+function OUT.uncover(keep, round, x0, y0, x1, y1)
+  local c = round[1]
+
+  for k = 2, 5 do
+    local sx, sy = round[k][1], round[k][2]
+    local ix0, iy0 = math.max(sx, x0), math.max(sy, y0)
+    local ix1, iy1 = math.min(sx + c, x1), math.min(sy + c, y1)
+
+    if ix1 > ix0 and iy1 > iy0 then
+      keep[#keep + 1] = { x = ix0, y = iy0, w = ix1 - ix0, h = iy1 - iy0 }
+    end
+  end
+end
+
 function OUT.shadowed(win)
   local fx, fy, fw, fh = frame_of(win)
 
@@ -1507,6 +1625,90 @@ local function boxes_x(win)
   -- and the last is `BOX` wide, with the far edge `MARGIN` from the frame.
   --
   return fx + tabs.width(win) - MARGIN - (BOX_W * 2 + BOX)
+end
+
+--
+-- **The three as coloured circles** (`roadmap.md` 5zq). Diego, 24
+-- September, with a picture of the three traffic lights: "Can we change our
+-- window title bar buttons to this style of the photo? Rounded and
+-- colored". Each is a disc with a ring a shade darker, and its glyph is
+-- drawn only while the pointer is over the three - which is what makes a
+-- row of bright dots read as controls rather than as decoration.
+--
+-- **The colour follows the job, not the picture's order.** The picture
+-- puts close first; this bar keeps close outermost at the right, where
+-- Diego asked for it on 23 September ("like windows does"). So minimise is
+-- amber, maximise green and close red, wherever each sits.
+--
+-- Fixed colours rather than a look's tokens, because they are a sign and
+-- not a surface: red means this ends the window in every look, the same
+-- way a stop sign is not themed.
+--
+OUT.LIGHTS = {
+  close    = { fill = 0xffff5f57, ring = 0xffe0443e, mark = 0xff8c1a10 },
+  minimise = { fill = 0xfffebc2e, ring = 0xffdea123, mark = 0xff985b00 },
+  maximise = { fill = 0xff28c840, ring = 0xff1aab29, mark = 0xff0b6a1d },
+}
+
+--
+-- The window whose three the pointer is over, or nil - and the rectangle
+-- they take, so a change of which is repainted without the whole tab.
+--
+function OUT.boxes_rect(win)
+  local _, fy = frame_of(win)
+
+  return boxes_x(win), fy + (TAB_H - BOX) // 2, BOX_W * 2 + BOX, BOX
+end
+
+
+function OUT.damage_boxes(win)
+  if win then add_damage(OUT.boxes_rect(win)) end
+end
+
+--
+-- One of them: a disc, its ring, and - while `lit` - its glyph, all centred
+-- in the square its slot gives it. The disc is four pixels smaller than the
+-- slot, so the three sit apart the way the picture spaces them, and the
+-- square around each is still what a press lands in: a target drawn
+-- smaller than it can be clicked is fine, and the reverse is the lie `BOX`
+-- exists to prevent.
+--
+function OUT.light(x, y, kind, lit, off)
+  local c = OUT.LIGHTS[kind]
+  local d = BOX - scale.px(4)
+  local dx, dy = x + (BOX - d) // 2, y + (BOX - d) // 2
+
+  if off then
+    back:fill_round(dx, dy, d, d, theme.track, d // 2)
+    back:frame_round(dx, dy, d, d, theme.line_soft, d // 2)
+    return
+  end
+
+  back:fill_round(dx, dy, d, d, c.fill, d // 2)
+  back:frame_round(dx, dy, d, d, c.ring, d // 2)
+
+  if not lit then return end
+
+  local cx, cy = dx + d // 2, dy + d // 2
+  local k = d // 4
+
+  if kind == "minimise" then
+    back:fill(cx - k - 1, cy - 1, 2 * k + 2, 2, c.mark)
+  elseif kind == "close" then
+    -- A cross as two diagonals of two-pixel steps: there is no line
+    -- primitive, and at this size two pixels wide is what the picture's
+    -- stroke comes to.
+    for i = -k, k do
+      back:fill(cx + i - 1, cy + i - 1, 2, 2, c.mark)
+      back:fill(cx - i - 1, cy + i - 1, 2, 2, c.mark)
+    end
+  else
+    -- Two corners pulling apart, as the picture draws maximise.
+    back:triangle(cx - k - 1, cy - k, cx + k, cy - k, cx + k, cy + k - 1,
+                  c.mark)
+    back:triangle(cx - k, cy - k + 1, cx - k, cy + k, cx + k - 1, cy + k,
+                  c.mark)
+  end
 end
 
 --------------------------------------------------------------------------
@@ -2521,7 +2723,7 @@ local function draw_window(i, r)
         -- `gfx.measure` with the same role, so the vertical centring is of
         -- the font that will actually be drawn.
         --
-        back:text(fx + MARGIN,
+        back:text(fx + TITLE_IN,
                   fy + (TAB_H - gfx.height("title")) // 2,
                   win.title, title_colour(), tab, "title")
 
@@ -2532,10 +2734,10 @@ local function draw_window(i, r)
 
         if win.pinned then goto no_controls end
 
-        -- Minimise: a bar along the bottom, which is what the window is
-        -- about to become.
-        raised_box(mx, by, BOX, BOX, theme.raised)
-        back:fill(mx + 3, by + BOX - 6, BOX - 6, 2, theme.text)
+        local lit = (OUT.hover_boxes == win)
+
+        -- Minimise, amber (`OUT.light`, `roadmap.md` 5zq).
+        OUT.light(mx, by, "minimise", lit)
 
         --
         -- Maximise: a little window - a frame with a title bar on it - and
@@ -2551,17 +2753,10 @@ local function draw_window(i, r)
         -- a thing can be pressed (`ui.md` 16.8b), and its glyph dimmed; a
         -- press on it does nothing.
         --
+        -- Green, or grey and without a glyph when it cannot be used.
         local zx = mx + BOX_W
 
-        if resizable(win) then
-          raised_box(zx, by, BOX, BOX, theme.raised)
-          back:fill(zx + 3, by + 3, BOX - 6, BOX - 6, theme.text)
-          back:fill(zx + 4, by + 6, BOX - 8, BOX - 7, theme.raised)
-        else
-          back:fill(zx, by, BOX, BOX, theme.raised)
-          back:fill(zx + 3, by + 3, BOX - 6, BOX - 6, theme.text_dim)
-          back:fill(zx + 4, by + 6, BOX - 8, BOX - 7, theme.raised)
-        end
+        OUT.light(zx, by, "maximise", lit, not resizable(win))
 
         --
         -- Close, last and furthest right, which is where a hand that has
@@ -2569,11 +2764,10 @@ local function draw_window(i, r)
         -- would need diagonals and there is no line primitive, so it would
         -- be fourteen one-pixel fills to say what a square says in two.
         --
+        -- Red, outermost.
         local cx = mx + BOX_W * 2
 
-        raised_box(cx, by, BOX, BOX, theme.raised)
-        back:fill(cx + 4, by + 4, BOX - 8, BOX - 8, theme.text)
-        back:fill(cx + 5, by + 5, BOX - 10, BOX - 10, theme.raised)
+        OUT.light(cx, by, "close", lit)
 
         ::no_controls::
       end
@@ -2648,12 +2842,16 @@ local function draw_window(i, r)
       end
 
       --
-      -- **And the corners back, last of all.** Everything this window drew
-      -- is on the screen now, square; this copies what was behind over the
-      -- pixels outside the arc and the window is round. One place, after
-      -- every drawing call rather than inside any of them.
+      -- The page rounded inside the frame, then **the corners back, last of
+      -- all.** Everything this window drew is on the screen now, square;
+      -- this copies what was behind over the pixels outside the arc and the
+      -- window is round. One place, after every drawing call rather than
+      -- inside any of them.
       --
-      if kept then OUT.put_back(kept, fx, fy, fw, fh) end
+      if kept then
+        OUT.round_inside(win, r, tab)
+        OUT.put_back(kept, fx, fy, fw, fh)
+      end
     end
 end
 
@@ -2917,13 +3115,14 @@ local function compose_rect(r)
       -- With the tab across the whole frame the two meet exactly, and the
       -- cut is the rectangle it always was.
       --
-      local shape
+      local shape, round
 
       if win.kind == "menu" or win.backdrop or win.strip
          or win.fullscreen then
         shape = { { frame_of(win) } }
       else
         shape = { tabs.shape(win) }
+        round = OUT.corner_squares(win)
       end
 
       local mine = nil
@@ -2963,6 +3162,8 @@ local function compose_rect(r)
               keep[#keep + 1] = piece
             else
               subtract_into(keep, piece, x0, y0, x1, y1)
+
+              if round then OUT.uncover(keep, round, x0, y0, x1, y1) end
             end
           else
             keep[#keep + 1] = piece
@@ -5739,6 +5940,23 @@ local function window_at(x, y)
   return nil
 end
 
+-- The window whose title-bar three the pointer is over (`OUT.light`).
+-- Here rather than beside them because it asks `window_at`, which is here.
+function OUT.boxes_under(x, y)
+  local win = window_at(x, y)
+
+  if not win or win.kind == "menu" or win.backdrop or win.strip
+     or win.fullscreen or win.pinned then
+    return nil
+  end
+
+  local bx, by, bw, bh = OUT.boxes_rect(win)
+
+  if x >= bx and x < bx + bw and y >= by and y < by + bh then return win end
+
+  return nil
+end
+
 --
 -- The pointer's own bookkeeping, and it is one table rather than three
 -- names for a reason the compiler gives: **this chunk is at Lua's limit of
@@ -5791,6 +6009,16 @@ local function pointer_pass(p)
     add_damage(pointer_x, pointer_y, cw, ch)
     pointer_x, pointer_y = nx, ny
     add_damage(pointer_x, pointer_y, cw, ch)
+
+    -- The title bar's three show their glyphs while the pointer is over
+    -- them: repaint the three it left and the three it reached.
+    local over = OUT.boxes_under(nx, ny)
+
+    if over ~= OUT.hover_boxes then
+      OUT.damage_boxes(OUT.hover_boxes)
+      OUT.hover_boxes = over
+      OUT.damage_boxes(over)
+    end
   end
 
   --------------------------------------------------------------------------

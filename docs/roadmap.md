@@ -1301,9 +1301,11 @@ processors, and still what follows USB:
    thumb is filled with `tab` and carries Platinum's grip, four raised
    ridges across its middle; the trough and the arrows stay grey. Every
    list, tree and text view gets it from the kit, and the browser draws the
-   same thumb into its own pixels. **Not done: greying it in a window that
-   is not in front**, which Mac OS 9 also did - a kit window does not know
-   whether it is focused, so that needs the window manager to say.
+   same thumb into its own pixels. **Taken back on 24 September (5zr)**:
+   "We should go back to scrollbars and handle with the same color" - the
+   thumb is the controls' grey again, with the grip in the look's edge
+   colours, and greying it in a window that is not in front no longer
+   arises.
 
    **And three more the same afternoon - done, 0.10.114** (`testing.md`
    18.144), all Diego's on 22 September:
@@ -1316,8 +1318,8 @@ processors, and still what follows USB:
    - **The Deskbar in the look's tab colour**: "the deskbar tab color
      should be yellow or at least the same color of the acccent color of
      the theme". `bar` and `bar_text` are gone from the theme format, so
-     the tab, the Deskbar and a scrollbar's thumb are one colour that no
-     look can let drift apart. Plex's Deskbar is its yellow now, not the
+     the tab and the Deskbar are one colour that no look can let drift
+     apart (and a scrollbar's thumb with them until 5zr). Plex's Deskbar is its yellow now, not the
      stone the mockups drew; Classic's is yellow where R5's was grey.
    - **A maximise box greyed, not removed**, on a window that cannot be
      maximised: "when a window cant be maximixed we shouldnt remove the
@@ -1594,6 +1596,108 @@ processors, and still what follows USB:
    **`docs/apps.html`** is the drawing for every window with a header, at
    real scale: the eleven, and the five converted on 23 September against
    `desktop.html` - a thumbnail - whose headers move to the same 46 pixels.
+
+5zq. **AGREED on 24 September - the title bar's buttons as coloured
+   circles.** Diego, with a picture of the three traffic lights beside him:
+   "Can we change our window title bar buttons to this style of the photo?
+   Rounded and colored" - red, amber and green circles, each with a ring a
+   shade darker, and a glyph on each (a cross, a bar, two corners) when the
+   pointer is over them.
+
+   **Where they stay is his earlier answer**: on the right, close
+   outermost, "like windows does" (0.10.141). So the colour follows the
+   job rather than the position in the picture - minimise amber, maximise
+   green, close red. The picture's order, close first, is a one-line swap
+   if he wants it. A maximise that cannot be used is grey, which is
+   `ui.md` 16.8b's rule for a control that does not apply.
+
+   **And the looks follow the buttons.** Diego, the same morning: "Now that
+   we have the new colored window buttons we should have some new color
+   themes as well that make those buttons look great on window bars
+   because yellow window bars will make the yellow window button look
+   lost", and "we might need the endeavor theme to be the default now as
+   its colors match the current style better".
+
+   - **Endeavour is the default (0.10.149).** It is `themes.order[1]`, and
+     the window manager now wears the first look rather than naming Plex -
+     one fact in one place, held to Preferences' row by
+     `test_settings.lua`.
+   - **WANTED: new looks designed around the coloured buttons**, drawn in a
+     page as `docs/looks.html` drew the first four, before any are built.
+     The constraint the buttons set is plain: a tab that is not red, amber
+     or green, and light or dark enough that all three read on it - which
+     Plex's, Plex Night's and Classic's yellows are not.
+
+5zr. **AGREED on 24 September - a frame on every side, rounded all the way
+   round, and the thumb back in the scrollbar's grey.** Two photographs of
+   0.10.149 in progress, both zoomed into a corner.
+
+   - **The frame.** Log View's console ran to the window's edge with a
+     2-pixel line beside it, and at the bottom corner the arc cut through
+     the page while the line ran square past it. Diego: "We need to add
+     some extra chrome to the other borders of the apps as now it looks
+     weird and make better rounded borders". So `BORDER` is 6 (it was 2),
+     in the title bar's colour down both sides and along the bottom, and
+     the page is rounded *inside* it at its two bottom corners
+     (`OUT.round_inside`), so the frame is one width all the way round the
+     curve. The harness knows the frame as `FRAME`.
+   - **And a corner shows what is behind it.** Diego, the same afternoon,
+     of Photo: "There seems to be an issue with rounded corners in that
+     app" - its own dark page outside its bottom-right curve. The
+     compositor cut each window's whole rectangle out of what it painted
+     behind, so under a rounded corner nothing was painted, and the corner
+     was put back from stale pixels - Photo's own, from before `tile` moved
+     it. The corner squares are handed back to be painted (`OUT.uncover`),
+     and the display harness's `corners` phase moves a window onto itself
+     and looks.
+   - **The thumb.** The gallery's list, a pale blue thumb in a grey trough
+     beside a blue selection: "the scroll bars look bad now with the
+     colors", "We should go back to scrollbars and handle with the same
+     color". The thumb had worn the tab's colour since 22 September (5y),
+     at his asking; it is the controls' face again with a grip in the
+     look's edge colours, in the kit and in the browser, and in a flat
+     look a thin grey pill with no arrows (`docs/apps.html`'s list). The
+     widgets phase now holds the opposite of what it held: no tab colour
+     in the bar's strip at all.
+
+5zt. **AGREED on 24 September - Tracker's body as `docs/tracker2.html`
+   draws it, not only its header.** Diego, with a photograph of 0.10.149's
+   Tracker: "The fonts look small here", "Make sure they are pixel perfect
+   it's the mockups". Measured at one pixel to one, the file names are the
+   drawing's size - 12.5 there, 16 here, the same em - and what is not the
+   drawing is everything round them: its sidebar is "Files" over a list of
+   places at 13.5 with an icon each (Home, Recent, Trash; Documents, Music,
+   Pictures; the drives), the header spans the file pane only, and the list
+   and icons sit on the page with no box round them. Tracker still draws
+   the old tree - Places, System, Drives - at 12.5 in a framed well, and
+   the list in another.
+
+   So: the sidebar is `ui.sidebar`'s, as Preferences' is, with the
+   drawing's side header (search, "Files", menu); the places are the
+   drawing's, and a place made by a drop joins them; the file pane loses
+   its frame; the icon view is the drawing's grid. The display harness's
+   places phase drops on a row and clicks a place by position, so Tracker
+   says where they are, as it already says where View is.
+
+5zs. **AGREED on 24 September - every window with controls wears the
+   header.** Diego: "All window bars should look like the new style", and
+   "Isn't that a window manager thing? Or is a per-app styling?" Both, and
+   the split is the answer: the title bar - the name, the three coloured
+   buttons, and since 5zr the frame - is the window manager's and every
+   window has it the same; the 46-pixel header under it is `ui.header`,
+   one kit widget, which each application has to be moved onto.
+
+   **Wearing it on 24 September (0.10.149)**: Cores, Drives, Editor, the
+   widget gallery, the launcher editor, Log View, Mixer, Network, Photo,
+   Processes, Reader, Scheduler, Terminal, Tracker, Video, Web Server - and
+   Preferences, which draws the same header from its own drawing.
+
+   **Still to move**: Monitor, Music, This Machine, About, Date & Time,
+   Startup, Shortcuts, the PDF viewer, Sysbench, Launchpad, Paint and the
+   browser - each drawn into `docs/apps.html` first where it has no
+   drawing. **Not to move**: the games, the GL demos and the Calculator,
+   which are canvases whose drawings have no header, and the Deskbar and
+   the desktop, which are not windows a person reads.
 
 5zo. **WANTED on 23 September - the half that is still the old look.**
    Diego, on the M700 running 0.10.146: *"I have the feeling we have a half
