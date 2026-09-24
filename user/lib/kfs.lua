@@ -43,13 +43,13 @@ kfs.EXTENTS      = 12                  -- what fits in an inode after its
 kfs.ROOT_INODE   = 1                   -- 0 means "none", so the root is 1
 
 -- The journal: where a transaction's blocks are written before they go
--- where they belong ("The journal", below). Data blocks go through it as
--- well as the filesystem's own, so every block a write changes is written
--- twice. Sized at a megabyte, round rather than derived - and that is also
--- the largest write there is: a transaction of more than JOURNAL_BLOCKS - 2
--- blocks, the file's metadata included, is refused whole. This used to say
--- the space was reserved and unused, which stopped being true when the
--- journal was turned on; Disk Benchmark's first run is what noticed.
+-- where they belong ("The journal", below) - the filesystem's structure,
+-- and since 24 September not a file's contents, which go once to blocks
+-- nothing points at yet (`write_file`, `design.md` 8.3b). Sized at a
+-- megabyte, round rather than derived. A transaction of more than
+-- JOURNAL_BLOCKS - 2 blocks of structure is refused whole; a file's size
+-- no longer counts towards it. It did, when the data went through here
+-- too, and a recording passed a megabyte in four seconds.
 kfs.JOURNAL_BLOCKS = 256
 
 kfs.KIND_FREE = 0
@@ -226,6 +226,12 @@ end
 -- reads back what it just wrote constantly (allocate a block, then read the
 -- bitmap again) and it must see its own changes.
 --
+-- `freed` is every block this transaction gave back, and none of them is
+-- handed out again before it commits. A file's contents are written
+-- straight to new blocks, and a block freed here is still the old file's
+-- on the disk until the commit - so reusing one would put the new bytes
+-- into the old file if the power went first.
+--
 -- Held as whole blocks rather than as a diff. A block is 4 KB and a
 -- transaction here is a handful of them, so the simple thing costs about
 -- sixty kilobytes at worst in a process with two megabytes.
@@ -380,6 +386,12 @@ end
 -- checksum over the whole transaction. A torn commit fails the checksum and
 -- is treated as never having happened, which is the safe direction.
 --
+-- **What goes through it is structure** - inodes, the bitmap, directories,
+-- attributes - and not a file's contents, since 24 September. Those go
+-- once, before the commit, to blocks nothing points at yet, which is
+-- ext4's `data=ordered` and the reason is `write_file`'s. The guarantee
+-- above is the same: an operation happened or did not.
+--
 -- **What this does not do:** batch. ext3 gets much of its speed from
 -- collecting many operations into one journal write, because a disk costs
 -- about the same for a large write as a small one. Here every operation is
@@ -437,7 +449,7 @@ end
 function kfs.begin()
   if txn then return nil, "a transaction is already open" end
 
-  txn = { blocks = {}, order = {}, too_big = false }
+  txn = { blocks = {}, order = {}, freed = {}, too_big = false }
   return true
 end
 
@@ -667,39 +679,65 @@ end
 -- disks is a filesystem that fails the first time it matters.
 --------------------------------------------------------------------------
 
-local function bitmap_position(sb, block)
-  local bit_index  = block
-  local byte_index = bit_index // 8
-  local within     = bit_index % 8
+--
+-- `count` bits from `first`, set or cleared, each bitmap block read and
+-- written once. It was a bit at a time, a whole block rebuilt for each, and
+-- a file of a thousand blocks was a thousand of those - and a scan of the
+-- bitmap from its start for every one to find it.
+--
+local function bitmap_range(sb, first, count, used)
+  local per = kfs.BLOCK * 8
+  local done = 0
 
-  return sb.bitmap_at + byte_index // kfs.BLOCK,
-         byte_index % kfs.BLOCK,
-         within
+  while done < count do
+    local block = first + done
+    local at = sb.bitmap_at + block // per
+    local bytes = kfs.read_block(at)
+
+    if not bytes then return nil, "reading the bitmap" end
+
+    local lo = block % per                   -- first bit, in this block
+    local n = math.min(count - done, per - lo)
+    local hi = lo + n                        -- one past the last
+    local b0, b1 = lo // 8, (hi - 1) // 8    -- the bytes it touches
+    local mid = {}
+
+    for byte = b0, b1 do
+      local from = math.max(lo, byte * 8) - byte * 8
+      local to = math.min(hi, byte * 8 + 8) - byte * 8
+      local mask = ((1 << to) - 1) & ~((1 << from) - 1)
+      local v = bytes:byte(byte + 1)
+
+      v = used and (v | mask) or (v & ~mask)
+      mid[#mid + 1] = string.char(v & 0xff)
+    end
+
+    local ok, err = kfs.write_block(at, bytes:sub(1, b0) .. table.concat(mid)
+                                        .. bytes:sub(b1 + 2))
+
+    if not ok then return nil, err end
+
+    done = done + n
+  end
+
+  return true
 end
 
-local function bitmap_set(sb, block, used)
-  local at, byte, bit = bitmap_position(sb, block)
-  local bytes = kfs.read_block(at)
+--
+-- Up to `want` free blocks one after another, marked used: the first free
+-- block, and as many after it as are free too. Returns where they start and
+-- how many; a file takes them a run at a time until it has what it needs.
+--
+-- A block this transaction freed is not free here (`txn.freed`, above).
+-- Scanned a byte at a time so that a full byte is skipped in one test -
+-- which is the difference between scanning a 64 MB disk in thousands of
+-- steps and in hundreds of thousands.
+--
+function kfs.alloc_run(sb, want)
+  local freed = txn and txn.freed
+  local per = kfs.BLOCK * 8
+  local start, count = nil, 0
 
-  if not bytes then return nil, "reading the bitmap" end
-
-  local v = bytes:byte(byte + 1)
-
-  if used then v = v | (1 << bit) else v = v & ~(1 << bit) end
-
-  -- Rebuilt around the one byte that changed. A whole block for one bit is
-  -- what a journal exists to make cheap; without one, correctness first.
-  local out = bytes:sub(1, byte) .. string.char(v & 0xff)
-              .. bytes:sub(byte + 2)
-
-  return kfs.write_block(at, out)
-end
-
--- The first free block, or nil. A linear scan from the first data block,
--- byte at a time so that a full byte is skipped in one test - which is the
--- difference between scanning a 64 MB disk in thousands of steps and in
--- hundreds of thousands.
-function kfs.alloc_block(sb)
   for at = 0, sb.bitmap_blocks - 1 do
     local bytes = kfs.read_block(sb.bitmap_at + at)
 
@@ -708,30 +746,60 @@ function kfs.alloc_block(sb)
     for byte = 0, kfs.BLOCK - 1 do
       local v = bytes:byte(byte + 1)
 
-      if v ~= 0xff then
+      if start or v ~= 0xff then
         for bit = 0, 7 do
-          if (v & (1 << bit)) == 0 then
-            local block = (at * kfs.BLOCK + byte) * 8 + bit
+          local block = at * per + byte * 8 + bit
 
-            if block >= sb.blocks then
-              return nil, "the disk is full"
-            end
+          if block >= sb.blocks then goto found end
 
-            local ok, err = bitmap_set(sb, block, true)
-            if not ok then return nil, err end
+          local free = (v & (1 << bit)) == 0
+                       and not (freed and freed[block])
 
-            return block
+          if start then
+            if not free then goto found end
+            count = count + 1
+          elseif free then
+            start, count = block, 1
           end
+
+          if start and count >= want then goto found end
         end
       end
     end
   end
 
-  return nil, "the disk is full"
+  ::found::
+
+  if not start then return nil, "the disk is full" end
+
+  local ok, err = bitmap_range(sb, start, count, true)
+
+  if not ok then return nil, err end
+
+  return start, count
+end
+
+-- The first free block, or nil.
+function kfs.alloc_block(sb)
+  local block, err = kfs.alloc_run(sb, 1)
+
+  if not block then return nil, err end
+
+  return block
+end
+
+-- `count` blocks from `first` given back - and, inside a transaction, kept
+-- from being handed out again until it commits.
+local function free_run(sb, first, count)
+  if txn then
+    for b = first, first + count - 1 do txn.freed[b] = true end
+  end
+
+  return bitmap_range(sb, first, count, false)
 end
 
 function kfs.free_block(sb, block)
-  return bitmap_set(sb, block, false)
+  return free_run(sb, block, 1)
 end
 
 --
@@ -951,54 +1019,128 @@ end
 
 local function release(sb, node)
   for _, e in ipairs(node.extents) do
-    for i = 0, e.count - 1 do
-      kfs.free_block(sb, e.start + i)
-    end
+    free_run(sb, e.start, e.count)
   end
 
   node.extents = {}
   node.size = 0
 end
 
+--
+-- **A file's contents are written once, straight to their blocks** -
+-- never through the journal (`design.md` 8.3b). The blocks are new, taken
+-- by this write and never one this transaction freed, so until the commit
+-- nothing on the disk points at them: lose the power before it and the old
+-- file is whole and these are free space; after it, the new file is. Only
+-- the structure - the inode, the bitmap, the directory - is journalled. It
+-- was all of it, the bytes too, so each went to the disk twice and no file
+-- could be larger than the journal: a megabyte, less its metadata.
+--
+-- In as few disk calls as the disk allows, the last block padded.
+--
+local function write_data(first, bytes)
+  local per = blocks_a_call()
+  local blocks = (#bytes + kfs.BLOCK - 1) // kfs.BLOCK
+
+  if #bytes < blocks * kfs.BLOCK then
+    bytes = bytes .. string.rep("\0", blocks * kfs.BLOCK - #bytes)
+  end
+
+  local i = 0
+
+  while i < blocks do
+    local n = math.min(per, blocks - i)
+    local ok, err = sys.disk_write((first + i) * kfs.PER_BLOCK,
+                                   bytes:sub(i * kfs.BLOCK + 1,
+                                             (i + n) * kfs.BLOCK))
+
+    if not ok then return nil, err end
+
+    i = i + n
+  end
+
+  return true
+end
+
+--
+-- **Where a file's bytes come from**: a string, or a reader over somebody
+-- else's buffer - `{ size = n, read = function(offset, length) }` - so a
+-- file larger than this process's heap is written a piece at a time. The
+-- disk server hands one over the caller's region; it used to read the
+-- whole region into one string first, and refused anything over a megabyte.
+--
+local PIECE_BLOCKS = 16                  -- 64 KB of a reader at a time
+
+local function source_of(data)
+  if type(data) == "string" then
+    return #data, function(offset, length)
+      return data:sub(offset + 1, offset + length)
+    end
+  end
+
+  return math.max(0, math.floor(tonumber(data.size) or 0)), data.read
+end
+
 function kfs.write_file(sb, number, node, data)
   -- Rewritten whole rather than in place. Overwriting a file with a shorter
   -- one has to release the blocks it no longer needs, and the version that
   -- kept them was a leak that only showed up as a disk filling with nothing
-  -- on it.
+  -- on it. Released first, and in a transaction not handed out again until
+  -- it commits (`free_run`), so this write never lands on the old file.
   release(sb, node)
 
-  local blocks = (#data + kfs.BLOCK - 1) // kfs.BLOCK
+  local size, read = source_of(data)
+  local left = (size + kfs.BLOCK - 1) // kfs.BLOCK
+  local offset = 0
 
-  for i = 0, blocks - 1 do
-    local block, err = kfs.alloc_block(sb)
+  while left > 0 do
+    local start, got = kfs.alloc_run(sb, left)
 
-    if not block then
+    if not start then
       release(sb, node)
-      return nil, err
-    end
-
-    local chunk = data:sub(i * kfs.BLOCK + 1, (i + 1) * kfs.BLOCK)
-    local ok, werr = kfs.write_block(block, chunk)
-
-    if not ok then
-      release(sb, node)
-      return nil, werr
+      return nil, got
     end
 
     local last = node.extents[#node.extents]
 
-    if last and last.start + last.count == block then
-      last.count = last.count + 1        -- it follows: extend, do not add
+    if last and last.start + last.count == start then
+      last.count = last.count + got      -- it follows: extend, do not add
     elseif #node.extents >= kfs.EXTENTS then
+      free_run(sb, start, got)
       release(sb, node)
       return nil, "the file is too fragmented for " .. kfs.EXTENTS
                   .. " extents"
     else
-      node.extents[#node.extents + 1] = { start = block, count = 1 }
+      node.extents[#node.extents + 1] = { start = start, count = got }
     end
+
+    local b = 0
+
+    while b < got do
+      local n = math.min(got - b, PIECE_BLOCKS)
+      local want = math.min(n * kfs.BLOCK, size - offset)
+      local bytes, why = read(offset, want)
+
+      if type(bytes) ~= "string" or #bytes ~= want then
+        release(sb, node)
+        return nil, why or "the file's bytes came up short"
+      end
+
+      local ok, werr = write_data(start + b, bytes)
+
+      if not ok then
+        release(sb, node)
+        return nil, werr
+      end
+
+      offset = offset + want
+      b = b + n
+    end
+
+    left = left - got
   end
 
-  node.size = #data
+  node.size = size
 
   return kfs.write_inode(sb, number, node)
 end
@@ -1555,9 +1697,7 @@ function kfs.unlink(sb, path)
   -- Now unreachable, so what follows can be interrupted without hurting
   -- anything that is still named.
   for _, e in ipairs(node.extents) do
-    for i = 0, e.count - 1 do
-      kfs.free_block(sb, e.start + i)
-    end
+    free_run(sb, e.start, e.count)
   end
 
   -- Including whatever was said about it. Forgetting this is the leak that

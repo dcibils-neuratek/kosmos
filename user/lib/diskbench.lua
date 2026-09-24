@@ -62,15 +62,14 @@ diskbench.ROWS = {
 local QUEUED = "not yet: one command at a time"
 
 --
--- The most one write stores on kfs today, which the first run of this found
--- rather than the code it was written from: `diskfs` refuses more than a
--- megabyte, and kfs's journal refuses less. Every block a write changes goes
--- through the journal, data included, and one transaction holds at most
--- `JOURNAL_BLOCKS - 2` of them. So the test file is that, less room for the
--- file's own metadata, and the rows say so.
+-- A megabyte, round. It was 768 KB because that was the most one write
+-- could store - `diskfs` refused more than a megabyte and kfs's journal,
+-- which every block of a file went through, less - which the first run of
+-- this found. Since 24 September a file's bytes go once, outside the
+-- journal (`design.md` 8.3b), and a write is bounded by the disk.
 --
 local kfs = use("/lib/kfs.lua")
-local FILE_BYTES = math.min(1024 * 1024, (kfs.JOURNAL_BLOCKS - 64) * kfs.BLOCK)
+local FILE_BYTES = 1024 * 1024
 local FILE_DIR = "/home/.diskbench"
 
 -- Positions that do not repeat in a pattern a cache could learn, and the same
@@ -162,9 +161,9 @@ local function file_ops(ctx)
 
   return {
     probe = device_ticks,
-    note = ("a %d KB file, read and written whole: kfs journals every block "
-            .. "a write changes, and a transaction holds at most %d")
-           :format(FILE_BYTES // 1024, kfs.JOURNAL_BLOCKS - 2),
+    note = ("a %d KB file, read and written whole: its bytes written once, "
+            .. "its structure through the journal")
+           :format(FILE_BYTES // 1024),
 
     seq = {
       read = function()

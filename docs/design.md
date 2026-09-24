@@ -816,7 +816,12 @@ until the commit, because nothing is overwritten in place. What it moves is
 the power-loss window - data landed, commit not - and `tools/test_kfs.lua`
 holds that instant the way it holds the others.
 
-This records the decision; `roadmap.md` 6d says where the building is.
+**Built on 24 September (0.10.162).** `write_file` takes blocks a run at a
+time, never one its transaction freed, and writes a file's bytes to them
+straight away; the disk server hands `kfs` a reader over the caller's region
+instead of a string it assembled, and refused past a megabyte. A 3 MB file
+is written and read back in the gate, the instant between the bytes and the
+commit is held on the host, and `make powertest` still passes (18.178).
 
 ### 8.4 A large file is mapped, not copied
 

@@ -155,7 +155,9 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    `kfs`'s bytes through Lua strings; every block a write changes journaled,
    data included, so written twice; and no write bigger than the journal -
    254 blocks with the file's metadata, so under a megabyte, which Disk
-   Benchmark's first run found; USB reads
+   Benchmark's first run found (**those two gone** on 24 September,
+   0.10.162: a file's bytes go once, outside the journal, `design.md`
+   8.3b); USB reads
    of 124 KB, copied on their way; the kernel's NVMe driver, polled, one
    command at a time, 4 KB a call. What they point at: the byte path in C -
    which Diego allowed, "if you need to take the filesystem from lua to c do
@@ -1416,6 +1418,10 @@ processors, and still what follows USB:
    stack - an IPI on both boards - before it panics, and the bound could
    be measured on the counter rather than in spins, since ten million is
    ten milliseconds on one board and a second and a half on the other.
+   **Again on 24 September**, in the 0.10.162 gate: `arm-display-4` at boot,
+   `spinlock: endpoint held by 3, wanted by 2`; the image, kept, passed
+   three boots alone. Two in three days, the same lock, both at boot under
+   the gate's load and neither again alone.
 
 5q. **AGREED on 21 September - a USB indicator in the bar.** Diego: "i
    also want a usb top bar indicator that upon clicking shows all things
@@ -1763,7 +1769,9 @@ processors, and still what follows USB:
      than lost; and QEMU's xHCI scheduled by Frame ID.
    - **8f needs kfs to take a file over a megabyte.** Every block a write
      changed went through the 1 MB journal; decided the same evening, by
-     Diego - journal only metadata (`design.md` 8.3b). Then the encoder:
+     Diego - journal only metadata (`design.md` 8.3b). **Built** the same
+     night, 0.10.162: a file's bytes written once, outside the journal, and
+     the disk server's megabyte gone (18.178). Then the encoder:
      `minih264e` and `minimp4`, downloaded and pinned (b0baea7 and
      5a212a1, CC0), and a YUY2-to-I420 loop written vectorised.
 

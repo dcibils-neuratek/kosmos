@@ -133,6 +133,10 @@ one in Monitor, Cores and Processes; Monitor for 8, 16 and 32 cores drawn in
 **0.10.161**: Processes' kinds from the kernel's parent and device authority
 (6g, 18.177). **Next: recording (8f)**, starting with kfs journalling only
 metadata (`design.md` 8.3b).
+**0.10.162**: kfs journals only metadata - a file's bytes once, outside the
+journal, the disk server's megabyte gone (18.178). Next in 8f: the encoder.
+The endpoint spinlock panic came back once in its gate (5r), second in three
+days; a report that names what the holder was doing is 5r.
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

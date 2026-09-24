@@ -26,6 +26,29 @@ import run_disk                                        # noqa: E402
 # The rows as `/lib/diskbench.lua` prints them: a name, the queue, then read
 # and write - each a number with its unit, or a sentence.
 QUEUED = "not yet: one command at a time"
+
+#
+# **A file three times the journal**, written from a region and read back
+# into another (`design.md` 8.3b, `roadmap.md` 6d 8f). kfs put every block a
+# write changed through its 1 MB journal, a file's bytes too, and the disk
+# server assembled a write in its own heap and refused past a megabyte - so
+# a camera's recording could not be kept. 48 pieces of 64 KB, each a letter
+# of its own: the last three bytes are the 48th's, `V`, and piece 27's are
+# `B`, which a file cut short or a piece written to the wrong place says.
+# Regions rather than strings, because the shell's heap is 2 MB.
+#
+BIG_WRITE = (
+    'local N = 3 * 1024 * 1024 local r = sys.memory(N // 4096) '
+    'for i = 0, N // 65536 - 1 do sys.region_write(r, i * 65536, '
+    'string.rep(string.char(65 + i % 26), 65536)) end '
+    'local wrote = fs.write_from("/home/big.bin", r, N) '
+    'local a = fs.getattr("/home/big.bin") or {} '
+    'local r2 = sys.memory(N // 4096) '
+    'local got = fs.read_into("/home/big.bin", r2, 0, N) '
+    'print("BIG", wrote, a.size, got, sys.region_read(r2, N - 3, 3), '
+    'sys.region_read(r2, 65536 * 27, 2)) '
+    'fs.send("/home/big.bin", { type = "delete" }) '
+    'sys.release(r) sys.release(r2)')
 RANDOM_WRITE = "not yet: a write replaces the whole file"
 
 
@@ -47,7 +70,8 @@ def main():
                             ["diskbench",
                              "diskbench /home 1 1",
                              "ls /home/benchmarks",
-                             "ls /home/.diskbench"],
+                             "ls /home/.diskbench",
+                             BIG_WRITE],
                             boot_timeout=120, each=180)
     finally:
         os.unlink(disk)
@@ -119,6 +143,14 @@ def main():
           "the test file was left in /home/.diskbench after the run:\n    "
           + shown)
 
+    big = re.search(r"^BIG\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)",
+                    out, re.M)
+
+    check(big is not None and big.groups() == ("3145728", "3145728",
+                                              "3145728", "VVV", "BB"),
+          "a 3 MB file - three times the journal - was not written from a "
+          "region and read back whole: %r" % ((big.groups() if big else out[-600:]),))
+
     if fails:
         print("FAIL: %d of %d checks on Disk Benchmark at the prompt:"
               % (len(fails), len(fails) + checks))
@@ -128,7 +160,8 @@ def main():
 
     print("PASS: %d checks on Disk Benchmark at the prompt (/home found, every "
           "row it can run measured with the device's share of it, every row it cannot run saying why, the "
-          "run kept, and its test file removed)." % checks)
+          "run kept, its test file removed, and a file three times the "
+          "journal written and read back)." % checks)
     return 0
 
 

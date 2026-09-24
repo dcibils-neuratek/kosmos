@@ -33,6 +33,7 @@ local SECTORS = 8192          -- 4 MB, enough for a layout with room over
 
 local disk = {}
 local writes = 0
+local written = {}            -- how many times each block has been written
 
 -- Calls rather than blocks: what batching is about (storage at full speed,
 -- step 3). The most one call moves is the kernel's and a stick's, 124 KB.
@@ -68,6 +69,7 @@ function sys.disk_write(sector, data)
   for i = 0, (#data // 4096) - 1 do
     disk[block + i] = data:sub(i * 4096 + 1, (i + 1) * 4096)
     writes = writes + 1
+    written[block + i] = (written[block + i] or 0) + 1
   end
 
   return true
@@ -224,17 +226,138 @@ check(kfs.read_range(sb, forty_node, 4000, 100000) == big:sub(4001, 104000),
 check(reads == 1,
       ("a window across 26 blocks is one disk call, not %d"):format(reads))
 
+writes, write_calls, written = 0, 0, {}
 assert(kfs.begin())
 assert(kfs.store(sb, "/forty-again", big, 2))
-
-writes, write_calls = 0, 0
 assert(kfs.commit(sb))
 
 check(write_calls * 4 <= writes,
-      ("a commit writes its blocks in runs: %d calls for %d blocks"):format(
+      ("a write goes to the disk in runs: %d calls for %d blocks"):format(
         write_calls, writes))
 check(kfs.read_file(sb, select(2, kfs.find(sb, "/forty-again"))) == big,
       "and what it wrote in runs reads back")
+
+--------------------------------------------------------------------------
+-- A file's bytes are written once, and not through the journal
+-- (`design.md` 8.3b). They went through it with everything else, so each
+-- block went to the disk twice and no file could be bigger than a megabyte.
+--------------------------------------------------------------------------
+
+local _, again = kfs.find(sb, "/forty-again")
+local once, in_journal = true, 0
+
+for _, e in ipairs(again.extents) do
+  for b = e.start, e.start + e.count - 1 do
+    once = once and written[b] == 1
+  end
+end
+
+for b = sb.journal_at, sb.journal_at + kfs.JOURNAL_BLOCKS - 1 do
+  in_journal = in_journal + (written[b] or 0)
+end
+
+check(once, "each of a file's blocks is written once")
+check(in_journal <= 12,
+      ("and the journal holds its structure, not its forty blocks: %d "
+       .. "journal writes"):format(in_journal))
+
+-- Larger than the journal, in one transaction.
+sb = fresh()
+
+local big_one = string.rep("0123456789abcdef", 1536 * 64 // 16 * 16)
+
+check(#big_one // kfs.BLOCK > kfs.JOURNAL_BLOCKS,
+      "the file below is bigger than the journal")
+assert(kfs.begin())
+
+local stored, why = kfs.store(sb, "/recording.mp4", big_one, 1)
+
+check(stored ~= nil, "a file larger than the journal is stored: "
+                     .. tostring(why))
+check(kfs.commit(sb) == true, "and its transaction commits")
+check(kfs.read_file(sb, select(2, kfs.find(sb, "/recording.mp4")))
+      == big_one, "and it reads back whole")
+
+--------------------------------------------------------------------------
+-- The new window: the bytes have landed and the commit has not.
+--
+-- A file is rewritten and the machine stops before the commit. The old file
+-- must be whole - which it is only if the new bytes went somewhere else. The
+-- rewrite frees the old blocks first, and the allocator scans from the
+-- start, so without `txn.freed` the new bytes land exactly on the old ones.
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+local old_bytes = string.rep("o", 5 * kfs.BLOCK)
+local new_bytes = string.rep("n", 5 * kfs.BLOCK)
+
+assert(kfs.store(sb, "/kept", old_bytes, 1))
+
+local free_before_crash = kfs.free_blocks(sb)
+
+assert(kfs.begin())
+assert(kfs.store(sb, "/kept", new_bytes, 2))
+kfs.rollback()                           -- the power, before the commit
+
+local after = assert(kfs.mount())
+
+check(kfs.recover(after) == 0, "nothing was committed, so nothing replays")
+check(kfs.read_file(after, select(2, kfs.find(after, "/kept"))) == old_bytes,
+      "the old file is whole: the new bytes went to other blocks")
+check(kfs.free_blocks(after) == free_before_crash,
+      "and those blocks are still free on the disk")
+
+--------------------------------------------------------------------------
+-- A file read from somebody else's buffer, a piece at a time, as the disk
+-- server reads a caller's region: never all of it at once.
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+local source = string.rep("r", 300 * 1024 + 123)
+local largest, asked = 0, 0
+
+local reader = {
+  size = #source,
+  read = function(offset, length)
+    asked = asked + 1
+    largest = math.max(largest, length)
+    return source:sub(offset + 1, offset + length)
+  end,
+}
+
+assert(kfs.begin())
+check(kfs.store(sb, "/from-a-region", reader, 1) ~= nil,
+      "a file is stored from a reader")
+assert(kfs.commit(sb))
+check(kfs.read_file(sb, select(2, kfs.find(sb, "/from-a-region")))
+      == source, "and reads back whole")
+check(largest <= 64 * 1024 and asked >= 5,
+      ("a piece at a time: %d reads, the largest %d bytes"):format(asked,
+                                                                   largest))
+
+--------------------------------------------------------------------------
+-- Blocks taken a run at a time. A file of 513 blocks took 513 scans of the
+-- bitmap and 513 rewrites of it, each a whole block for one bit.
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+local bitmap_writes = 0
+
+writes, write_calls, written = 0, 0, {}
+assert(kfs.store(sb, "/run", string.rep("w", 2 * 1024 * 1024 + 1), 1))
+
+for b = sb.bitmap_at, sb.bitmap_at + sb.bitmap_blocks - 1 do
+  bitmap_writes = bitmap_writes + (written[b] or 0)
+end
+
+-- Three: the file's run, and the directory it is named in - rewritten, so
+-- its old block freed and a new one taken.
+check(bitmap_writes <= 3,
+      ("a 513-block file writes the bitmap %d times, not a time a block")
+      :format(bitmap_writes))
 
 --------------------------------------------------------------------------
 -- A transaction is invisible until it commits.

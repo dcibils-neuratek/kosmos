@@ -3016,10 +3016,12 @@ local function diskfs_handlers(state)
       -- all - reads could stream and writes had a ceiling nothing could
       -- get past, which is a filesystem that works until you use it.
       --
-      -- The ceiling that remains is this server's own heap: the bytes are
-      -- assembled here and handed to `store`, which takes a whole file.
-      -- Making `store` take a producer is what lifts that, and it is the
-      -- next piece rather than this one.
+      -- **No ceiling but the disk's.** The bytes were assembled here into
+      -- one string and handed to `store`, so a write was this server's heap
+      -- at most and refused past a megabyte - and kfs refused past its
+      -- journal anyway. Now `store` takes a reader over the caller's region
+      -- and pulls 64 KB at a time, and kfs writes a file's bytes outside the
+      -- journal (`design.md` 8.3b): a camera's recording is one write.
       --
       if req.from then
         --
@@ -3044,33 +3046,22 @@ local function diskfs_handlers(state)
           return answer
         end
 
-        local want = tonumber(req.bytes) or 0
-
-        if want > 1024 * 1024 then
-          return done_with({ ok = false,
-                             error = "more than a megabyte in one write, "
-                                     .. "which this server cannot assemble "
-                                     .. "yet" })
-        end
-
-        local parts = {}
+        local want = math.max(0, math.floor(tonumber(req.bytes) or 0))
         local done = 0
 
-        while done < want do
-          local piece, rerr = sys.region_read(cap, done,
-                                              math.min(64 * 1024,
-                                                       want - done))
+        local reader = {
+          size = want,
+          read = function(offset, length)
+            local piece, rerr = sys.region_read(cap, offset, length)
 
-          if not piece then
-            return done_with({ ok = false, error = tostring(rerr) })
-          end
+            if piece then done = done + #piece end
 
-          parts[#parts + 1] = piece
-          done = done + #piece
-        end
+            return piece, rerr and tostring(rerr)
+          end,
+        }
 
-        local number, serr = atomic(sb, kfs.store, req.path,
-                                    table.concat(parts), sys.ticks())
+        local number, serr = atomic(sb, kfs.store, req.path, reader,
+                                    sys.ticks())
 
         if not number then
           return done_with({ ok = false, error = tostring(serr) })

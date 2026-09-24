@@ -9362,3 +9362,38 @@ what they are in `/bin`.
 - **camera** (display, both boards): the USB driver's row reports 16 in
   `owns` and 1 as its parent. On the x86 image at the prompt: `e1000`,
   `xhci` and `backlight` drivers, `drives` a server, the shell a program.
+
+## 18.178 A file's bytes once, outside the journal
+
+`design.md` 8.3b, decided by Diego for the camera's recordings: *journal only
+metadata*. kfs put every block a write changed through its 1 MB journal, a
+file's bytes included, so each went to the disk twice and no file could be
+larger than a megabyte less its metadata; and the disk server read a write
+into its own heap first and refused past a megabyte. Now `write_file` takes
+blocks a run at a time - never one its own transaction freed - and writes a
+file's bytes straight to them; only the inode, bitmap and directory are
+journalled, and the disk server hands `kfs` a reader over the caller's region.
+
+- `tools/test_kfs.lua`, 53 -> 66, on the host: a write goes in runs; each of
+  a file's blocks is written once and the journal holds its structure, not
+  its forty blocks; a file larger than the journal stores, commits and reads
+  back; **the new window** - a rewrite whose bytes landed and whose commit
+  did not leaves the old file whole and the new blocks free; a file stored
+  from a reader 64 KB at a time; a 513-block file writing the bitmap three
+  times, not a time a block. **Controls**, each on a copy: the allocator
+  without `txn.freed` fails the new window (the new bytes land on the old
+  file's blocks); the bytes back through the journal fail "the journal holds
+  its structure" and the large file's commit; a reader asked for the whole
+  file at once fails "a piece at a time".
+- **arm-diskbench**, 8 -> 9: a 3 MB file, three times the journal, written
+  from a region and read back into another - 48 pieces of 64 KB, a letter
+  each, the last and the 28th checked. **Control**: the committed kfs and
+  disk server refuse it ("nil").
+- **`make powertest`**, not in the gate: 10 checks across five power cuts,
+  passing.
+- Disk Benchmark's file is a round megabyte now, the journal no longer its
+  limit.
+- The first gate of this panicked once, at boot, in `arm-display-4`:
+  `spinlock: endpoint held by 3, wanted by 2` - the second time in three
+  days (`roadmap.md` 5r), not this change's code. The image, kept, passed
+  three boots of that part alone.
