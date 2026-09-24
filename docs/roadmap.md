@@ -1662,7 +1662,7 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
-5zz. **AGREED on 24 September - three sizes, from using it in QEMU.**
+5zz. **DONE on 24 September (0.10.152, 0.10.153) - three sizes, from using it in QEMU.**
    - **The Deskbar square.** "i want to remove the rounded borders in the
      top bar in the deskbar, just remove the rounded borders as i dont see
      it a good idea anymore". Both roundings go: the strip's top two
@@ -1676,7 +1676,12 @@ processors, and still what follows USB:
    - **The ui face up a size.** "i thing we still need to push the regular
      font up a point or two as toy see items in menus look small compared
      to the height of the selection". The rows grew to 32 in 0.10.149 and
-     the face stayed at 16, so a menu's highlight is twice its letters.
+     the face stayed at 16, so a menu's highlight was twice its letters.
+     `ui` and `heading` are 18 in every look, the size of `text`. Done in
+     0.10.153 - and looking at a menu at the new size found its corners
+     dark: the compositor had never rounded a menu, and the kit had just
+     stopped filling a flat control's square. Menus are rounded as windows
+     are now, with their line on the same arc.
 
 5zy. **DONE on 24 September (0.10.152) - Tracker's search as a field that is
    always there.** Diego, with Finder beside it: "lets add search textbox as

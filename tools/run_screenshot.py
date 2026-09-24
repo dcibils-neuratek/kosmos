@@ -2246,12 +2246,12 @@ def check_default_look(guest, ask_wm):
     ui, ui_px, title, title_px, mono, mono_px = parts[0:6]
     loaded, thin, wide = parts[6], int(parts[7]), int(parts[8])
 
-    # 16 since 22 September: Diego, on the ThinkPad, "the default font size
-    # for regular and widgets is 16" - which, through Plex's 1.30 between
-    # this rasterizer's pixels and a browser's, is exactly the mockups'
-    # 12.5 for a control (`roadmap.md` 5zp).
-    if ui != "ibmplexsans" or ui_px != "16":
-        raise Failure("the widgets' face is %s %s, not ibmplexsans 16" % (ui, ui_px))
+    # 18 since 24 September: Diego, with a menu open, "push the regular
+    # font up a point or two as toy see items in menus look small compared
+    # to the height of the selection" (`roadmap.md` 5zz). It was 16 from 22
+    # September, "the default font size for regular and widgets is 16".
+    if ui != "ibmplexsans" or ui_px != "18":
+        raise Failure("the widgets' face is %s %s, not ibmplexsans 18" % (ui, ui_px))
 
     checks += 1
 
@@ -2291,7 +2291,7 @@ def check_default_look(guest, ask_wm):
     held = dict(part.split("=", 1) for part in parts[9:13])
     why = parts[13].split("=", 1)[1]
 
-    for role, want in (("ui", "ibmplexsans/16"),
+    for role, want in (("ui", "ibmplexsans/18"),
                        ("title", "ibmplexsans-semibold/18"),
                        ("text", "ibmplexsans/18"),
                        ("mono", "ibmplexmono/16")):
@@ -4242,9 +4242,9 @@ def check_theme_events(guest):
 
 # Plex's five faces, as `docs/plex.html` has them and Diego chose them on
 # 22 September - the same table `tools/test_theme.lua` holds the file to.
-PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsans-semibold/18 "
+PLEX_HELD = ("ui=ibmplexsans/18 title=ibmplexsans-semibold/18 "
              "text=ibmplexsans/18 mono=ibmplexmono/16 "
-             "heading=ibmplexsans-semibold/16 label=ibmplexsans-medium/18")
+             "heading=ibmplexsans-semibold/18 label=ibmplexsans-medium/18")
 
 
 def check_theme_plex(guest):
@@ -4364,7 +4364,7 @@ def check_theme_plex(guest):
         raise Failure("/home/.appearance holds %r after choosing Plex - "
                       "wanted the look's name and no faces of its own" % saved)
 
-    if now != "plex ibmplexsans-semibold/16":
+    if now != "plex ibmplexsans-semibold/18":
         raise Failure("a desktop started with Plex saved wears %r - the "
                       "theme was written down and did not come back" % now)
 
@@ -4567,6 +4567,14 @@ def check_corners(guest):
     drawn, and the pixel just inside its frame's new bottom-right corner -
     outside the curve - has to be the desk, not red. The control is the
     build before `OUT.uncover`, where that pixel is red.
+
+    **And a menu's corners.** A menu is composed in a loop of its own and
+    was never rounded there, while the kit drew a rounded line inside it -
+    so once a flat control stopped filling its square, a menu's corners
+    were its surface's dark ground (seen with the ui face at 18, 24
+    September). The window opens a menu over the desk and its four corner
+    pixels have to be the desk. The control is the build before the menu
+    loop kept and put back its corners, where they are the menu's own.
     """
     program = (
         "local ui = use('/lib/ui.lua') "
@@ -4579,6 +4587,10 @@ def check_corners(guest):
         "local n = 0 "
         "function w:on_frame() n = n + 1 "
         "if n == 20 then w:move(370, 270) print('corner' .. ': moved') end "
+        "if n == 30 then local m = w:open_menu(700, 300, "
+        "{ { text = 'One' }, { text = 'Two' } }) "
+        "if m then print(('corner' .. '-menu: %d %d %d %d')"
+        ":format(m.x, m.y, m.w, m.h)) end end "
         "return false end "
         "w:run()"
     )
@@ -4620,10 +4632,24 @@ def check_corners(guest):
                 "the desk is %r - what showed there is what the backbuffer "
                 "held before, because nothing behind a rounded corner was "
                 "painted" % (corner, desk))
+
+        line = guest.wait_for_line("corner-menu: ", "the window to open a "
+                                   "menu over the desk", mark)
+        mx, my, mw, mh = (int(v) for v in line.split()[:4])
+        time.sleep(1.5)
+        width, height, px = parse_ppm(guest.screendump())
+
+        for x, y in ((mx, my), (mx + mw - 1, my), (mx, my + mh - 1),
+                     (mx + mw - 1, my + mh - 1)):
+            if at(x, y) != desk:
+                raise Failure(
+                    "the corner of a menu at %d,%d %dx%d is %r at %d,%d "
+                    "where the desk behind it is %r - a menu's corners are "
+                    "not rounded" % (mx, my, mw, mh, at(x, y), x, y, desk))
     finally:
         stop_desktop(guest)
 
-    return 1
+    return 2
 
 
 def check_shadow(guest):
@@ -9907,7 +9933,8 @@ def main():
           f"saved BeOS tab, and a maximise box greyed and doing nothing "
           f"where a window cannot be maximised, "
           f"{corner_checks} on a rounded window's corner showing the desk "
-          f"after it moved onto its own old place, "
+          f"after it moved onto its own old place, and a menu's corners "
+          f"showing it too, "
           f"{shadow_checks} on a window casting a shadow and taking it with "
           f"it when it moves, "
           f"{wheel_checks} on the scroll wheel scrolling the list under the "

@@ -9096,3 +9096,30 @@ Tracker's search is a field that is always there, with the magnifier in it.
 The Deskbar is square - its strip's top corners and every button - and a
 window's corner is 10 rather than 12, which the **corners** phase covers at
 any radius: it samples one pixel in from the frame's corner.
+
+## 18.167 The ui face at 18, and a menu rounded as a window is
+
+`roadmap.md` 5zz. Diego, 24 September: *"i thing we still need to push the
+regular font up a point or two as toy see items in menus look small compared
+to the height of the selection"*. `ui` and `heading` are 18 in every look,
+from 16 - a size above the drawings' 12.5, where the 32-pixel row they sit
+in has been since 0.10.149.
+
+- `tools/test_theme.lua`, 197: the defaults and Plex's table at 18.
+- **faces**, **theme plex**: what the window manager holds, `ui` and
+  `heading` at 18.
+
+**A menu's corners.** The first menu opened at the new size had dark
+corners. A menu is composed in a loop of its own, after every window, and
+that loop never rounded it; the kit drew a rounded line inside it, and until
+0.10.152 filled the square outside the line in the menu's own colour. When a
+flat control stopped filling its square, the surface's dark ground showed
+there. The menu loop now keeps and puts back a menu's corners as a window's
+are (`OUT.corners`), and a flat look's menu fills its square and draws its
+line on the compositor's arc, `theme.metrics.corner`.
+
+- **corners** (display harness, both boards): the window it moves opens a
+  menu over the desk, and the menu's four corner pixels have to be the
+  desk. Its control is the build before the menu loop rounded, where the
+  corner is the menu's own face: *"the corner of a menu at 700,300 52x68 is
+  (66, 74, 85) at 700,300 where the desk behind it is (28, 37, 48)"*.

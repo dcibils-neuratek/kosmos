@@ -118,11 +118,12 @@ stamp      = #8fa9df
 # The mockups' type, converted (`roadmap.md` 5zp, `theme.lua`). A size in
 # this file is stb_truetype's, which fits the face's whole ascent and
 # descent into the number; a mockup's is CSS, which fits the em. For IBM
-# Plex the ratio is 1.30, so the drawings' 13.5 for window text is 18 here,
-# their 12.5 for controls is 16, their 12.5 semibold group labels are 16
-# semibold and their 14 semibold titles are 18 semibold. Diego, 24
-# September, with the mockups beside the machine: "I want the screen to
-# match it".
+# Plex the ratio is 1.30, so the drawings' 13.5 for window text is 18 here
+# and their 14 semibold titles are 18 semibold. Diego, 24 September, with
+# the mockups beside the machine: "I want the screen to match it". Their
+# 12.5 for controls and group labels would be 16, and is 18: the same day,
+# with a menu open, "push the regular font up a point or two as toy see
+# items in menus look small compared to the height of the selection".
 #
 # Until then everything a person reads was 16 here - a 12.3 px em, a tenth
 # smaller than the page - because `docs/looks.html` drew the bar at 16 CSS
@@ -130,8 +131,8 @@ stamp      = #8fa9df
 # The window's title was Plex Sans Condensed 14 before that, which as CSS
 # was 10.8.
 font.title   = ibmplexsans-semibold 18
-font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 16
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
 font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
 font.label   = ibmplexsans-medium 18
@@ -179,8 +180,8 @@ ring       = #7aa0ff
 stamp      = #3a4a6e
 
 font.title   = ibmplexsans-semibold 18
-font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 16
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
 font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
 font.label   = ibmplexsans-medium 18
@@ -242,8 +243,8 @@ ring       = #0000e5
 stamp      = #5d85ad
 # The faces all four looks share (`docs/looks.html`).
 font.title   = ibmplexsans-semibold 18
-font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 16
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
 font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
 font.label   = ibmplexsans-medium 18
@@ -290,8 +291,8 @@ ring       = #f0a060
 stamp      = #2a2c31
 
 font.title   = ibmplexsans-semibold 18
-font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 16
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
 font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
 font.label   = ibmplexsans-medium 18
@@ -391,8 +392,8 @@ stamp      = #99c1f1
 # The same faces as the other four, at the same sizes: a look is colour
 # here, and the fixed layout (`roadmap.md` 5x) holds because of it.
 font.title   = ibmplexsans-semibold 18
-font.ui      = ibmplexsans 16
-font.heading = ibmplexsans-semibold 16
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
 font.text    = ibmplexsans 18
 font.mono    = ibmplexmono 16
 font.label   = ibmplexsans-medium 18

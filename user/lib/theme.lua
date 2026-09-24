@@ -735,9 +735,18 @@ theme.roles = { "ui", "title", "text", "mono", "heading", "label" }
 --
 --   mockup (CSS)          role       here        as CSS
 --   13.5  window text     text       18          13.85
---   12.5  controls, lists ui         16          12.31
---   12.5  group labels    heading    16 semi     12.31
+--   12.5  controls, lists ui         18          13.85
+--   12.5  group labels    heading    18 semi     13.85
 --   14    titles          title      18 semi     13.85
+--
+-- **Controls and lists are a size above their drawing, at Diego's
+-- asking.** 24 September, on 0.10.151 in QEMU, with a menu open: "i thing
+-- we still need to push the regular font up a point or two as toy see
+-- items in menus look small compared to the height of the selection". The
+-- row had grown to the drawings' 32 in 0.10.149 and its words had stayed
+-- at 12.3, so a highlight was more than twice the letters it lit. The
+-- drawings are a guide to proportion, and this is the proportion on the
+-- machine (`roadmap.md` 5zz).
 --
 -- The machine's "16" was a 12.3 px em all along, where the page drew the
 -- words a person reads most at 13.5 - about a tenth smaller, on every
@@ -750,12 +759,11 @@ theme.roles = { "ui", "title", "text", "mono", "heading", "label" }
 -- which is why `ui.label` draws in `text` now.
 --
 theme.fonts = {
-  -- Controls: the words on a button, in a dropdown, a list of files, the
-  -- Open window. The mockups' 12.5 - and it was already right, which is
-  -- worth knowing: the 16 Diego asked for on the ThinkPad on 22 September
-  -- ("fonts look smaller than on qemu") landed on exactly the size the
-  -- drawings give a control.
-  ui      = { font = "ibmplexsans", px = 16 },
+  -- Controls: the words on a button, in a dropdown, a list of files, a
+  -- menu, the Open window. 16 from 22 September - Diego on the ThinkPad,
+  -- "fonts look smaller than on qemu", which landed on the mockups' 12.5 -
+  -- and 18 from 24 September, when the rows it sits in grew to 32 (above).
+  ui      = { font = "ibmplexsans", px = 18 },
 
   -- A window's title, on its tab. The mockups' 14 semibold - the same face
   -- and weight as the title inside a Preferences or Tracker header, so a
@@ -780,9 +788,9 @@ theme.fonts = {
   mono    = { font = "ibmplexmono", px = 16 },
 
   -- A heading inside a window - "Look", "Size", a group's name above its
-  -- card. The mockups' 12.5 semibold: the same size as a control, set
-  -- apart by weight rather than by size.
-  heading = { font = "ibmplexsans-semibold", px = 16 },
+  -- card. The same size as a control, set apart by weight rather than by
+  -- size, as the mockups draw it - so it went to 18 with `ui`.
+  heading = { font = "ibmplexsans-semibold", px = 18 },
 
   -- The name of a thing: a settings row's name, the chosen place in a
   -- sidebar. The mockups' 13.5 at weight 500 - the reading size, set apart

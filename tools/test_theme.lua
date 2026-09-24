@@ -160,12 +160,12 @@ do
   end
 
   local faces = {
-    -- The mockups' sizes through Plex's 1.30 (`roadmap.md` 5zp): 12.5 for
-    -- controls, 13.5 for words, 12.5 semibold for a group's name and 14
-    -- semibold for a title.
-    ui      = { "ibmplexsans", 16 },
+    -- The mockups' sizes through Plex's 1.30 (`roadmap.md` 5zp): 13.5 for
+    -- words and 14 semibold for a title - and controls and a group's name
+    -- a size above the drawings' 12.5, at Diego's asking (5zz).
+    ui      = { "ibmplexsans", 18 },
     title   = { "ibmplexsans-semibold", 18 },
-    heading = { "ibmplexsans-semibold", 16 },
+    heading = { "ibmplexsans-semibold", 18 },
     text    = { "ibmplexsans", 18 },
     mono    = { "ibmplexmono", 16 },
     label   = { "ibmplexsans-medium", 18 },
@@ -208,7 +208,7 @@ font.mono = ibmplexmono 400
   local d = theme.default_fonts
   check(p.fonts.text.font == d.text.font and p.fonts.heading.px == d.heading.px,
         "a role the file left out did not come from the defaults")
-  check(d.ui.font == "ibmplexsans" and d.ui.px == 16,
+  check(d.ui.font == "ibmplexsans" and d.ui.px == 18,
         "setting a theme's role changed the defaults to "
         .. d.ui.font .. " " .. d.ui.px)
 end

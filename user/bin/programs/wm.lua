@@ -3236,6 +3236,13 @@ local function compose_rect(r)
   -- being part of it - which is the whole job of the border on a thing
   -- that floats.
   --
+  -- **Rounded as a window is, by keeping its corners and putting them
+  -- back** (`OUT.corners`). Everything behind a menu has been composed by
+  -- now, so what is kept is exactly what should show outside its curve.
+  -- Menus were square here while the kit drew a rounded line inside them,
+  -- and a flat look's menu showed its surface's dark ground outside that
+  -- line once the kit stopped filling a control's square (0.10.152).
+  --
   for i = 1, #menus do
     local m = menus[i]
 
@@ -3247,8 +3254,12 @@ local function compose_rect(r)
       local y1 = math.min(m.y + m.h, r.y + r.h)
 
       if x1 > x0 and y1 > y0 then
+        local kept = OUT.corners(m.x, m.y, m.w, m.h, r)
+
+        OUT.keep(kept)
         back:blit(m.surface, x0 - m.x, y0 - m.y,
                   x1 - x0, y1 - y0, x0, y0)
+        OUT.put_back(kept, m.x, m.y, m.w, m.h)
       end
     end
   end

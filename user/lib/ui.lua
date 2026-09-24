@@ -5624,7 +5624,22 @@ function window:paint_menu(m)
   local g = new_gc()
 
   g.cw, g.ch = m.w, m.h
-  g:raised(0, 0, m.w, m.h, "raised")
+
+  --
+  -- **In a flat look, the whole square and a hairline at the window
+  -- manager's corner.** A menu is a window of its own, so nothing of this
+  -- one's is painted under its corners but what it paints: `gc:raised`
+  -- leaves a flat control's square alone, and a menu's corners came out
+  -- the surface's dark ground. The compositor rounds a menu at
+  -- `theme.metrics.corner`, so the line is drawn on that same arc - and
+  -- with rounding switched off the square is the menu, in its own colour.
+  --
+  if theme.flat then
+    g:fill(0, 0, m.w, m.h, "raised")
+    g:frame_round(0, 0, m.w, m.h, theme.line_soft, theme.metrics.corner or 0)
+  else
+    g:raised(0, 0, m.w, m.h, "raised")
+  end
 
   local marks  = menu_marked(m.items)
   local mark_w = marks and MENU_MARK or 0

@@ -20,7 +20,7 @@ Last updated: 2026-09-24
 
 ## 24 September: every window from its drawing, a frame all round, Endeavour first
 
-**Nothing pushed. 0.10.118 to 0.10.152 are local.** 0.10.147 fixed what the
+**Nothing pushed. 0.10.118 to 0.10.153 are local.** 0.10.147 fixed what the
 M700 found (Tracker ending on Find, Preferences changing nothing) and
 0.10.148 put the screen at the mockups' sizes (a font size here is 1.30
 times the CSS one) with Appearance folded into Preferences. **0.10.149** is
@@ -76,9 +76,19 @@ control has nothing square behind it; the Deskbar has no rounded corners
 anywhere, and a window's corner is 10.
 The gate: 33 suites in 6:04.
 
-**Queued, in order**: the ui face up a size (5zz, "items in menus look
-small compared to the height of the selection"); Monitor with history and
-kernel and user time (5zx); the eleven windows drawn in `docs/apps.html` on
+**0.10.153 - the ui face at 18, and menus rounded** (5zz, 18.167): `ui`
+and `heading` from 16 to 18 in every look, after "items in menus look small
+compared to the height of the selection"; the first menu at the new size
+had dark corners, because the compositor had never rounded a menu - it does
+now, and the `corners` phase holds a menu's corners to the desk.
+The gate: 33 suites in 6:00.
+
+**Monitor's history is drawn** in `docs/apps.html` (5zx): a row a core with
+kernel red under user green, and a minute of history a core on dark panels.
+Waiting for Diego's word before it is built.
+
+**Queued, in order**: Monitor with history and kernel and user time (5zx),
+once the drawing is agreed; the eleven windows drawn in `docs/apps.html` on
 24 September and not yet built (5zs); the pixel loops measured and
 vectorised (5zw).
 
