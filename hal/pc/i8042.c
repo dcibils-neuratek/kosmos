@@ -444,7 +444,7 @@ static void aux_byte(uint8_t b)
                 | (uint32_t)((packet[0] & 0x02) >> 0);  /* right */
 
         /* PS/2 counts up as positive, and the board down (`pointer.c`). */
-        pc_pointer_move(PC_POINTER_AUX, dx, -dy, buttons);
+        pc_pointer_move(PC_POINTER_AUX, dx, -dy, 0, buttons);
 
         if (buttons != was) {
 

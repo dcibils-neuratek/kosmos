@@ -2484,7 +2484,7 @@ static int l_pointer(lua_State *L)
         lua_setfield(L, -2, (name));                \
     } while (0)
 
-    lua_createtable(L, 0, 8);
+    lua_createtable(L, 0, 9);
     PUT("x", info.x);
     PUT("y", info.y);
     PUT("min_x", info.min_x);
@@ -2492,6 +2492,7 @@ static int l_pointer(lua_State *L)
     PUT("min_y", info.min_y);
     PUT("max_y", info.max_y);
     PUT("buttons", info.buttons);
+    PUT("wheel", info.wheel);
 
 #undef PUT
 

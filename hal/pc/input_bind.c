@@ -122,13 +122,13 @@ bool hal_pointer_poll(struct pointer_state *out)
  * A process's device, added to the same position - and refused when that
  * position is a tablet's, which says where it is and has no room for how far.
  */
-bool hal_pointer_move(int dx, int dy, uint32_t buttons)
+bool hal_pointer_move(int dx, int dy, int wheel, uint32_t buttons)
 {
     if (on_virtio_pointer) {
         return false;
     }
 
-    pc_pointer_move(PC_POINTER_DRIVER, dx, dy, buttons);
+    pc_pointer_move(PC_POINTER_DRIVER, dx, dy, wheel, buttons);
     return true;
 }
 

@@ -62,6 +62,7 @@ static uint32_t y = RANGE / 2;
 static uint32_t held[PC_POINTER_SOURCES];
 static bool     present[PC_POINTER_SOURCES];
 static bool     moved;
+static int32_t  wheel;          /* notches since the last read, every source's */
 
 /*
  * Units per count, and the one number here that should be decided on the
@@ -108,7 +109,7 @@ void pc_pointer_arrived(enum pc_pointer_source from)
     spin_unlock(&pointer_lock, flags);
 }
 
-void pc_pointer_move(enum pc_pointer_source from, int dx, int dy,
+void pc_pointer_move(enum pc_pointer_source from, int dx, int dy, int turned,
                      uint32_t buttons)
 {
     unsigned long flags;
@@ -131,6 +132,12 @@ void pc_pointer_move(enum pc_pointer_source from, int dx, int dy,
     if (dx != 0 || dy != 0) {
         x = along((int64_t)x + (int64_t)dx * scale);
         y = along((int64_t)y + (int64_t)dy * scale);
+        moved = true;
+    }
+
+    /* The wheel adds up across sources and reports, as movement does. */
+    if (turned != 0) {
+        wheel += turned;
         moved = true;
     }
 
@@ -185,7 +192,9 @@ bool pc_pointer_read(struct pointer_state *out)
         out->max_y = RANGE;
         out->buttons = buttons;
         out->moved = moved ? 1u : 0u;
+        out->wheel = wheel;
         moved = false;
+        wheel = 0;
     }
 
     spin_unlock(&pointer_lock, flags);

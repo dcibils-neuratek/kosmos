@@ -611,17 +611,23 @@ local CONTROL_R = 7
 -- deep grey a bevelled one needs.
 --
 function gc:raised(x, y, w, h, face)
-  if face then self:fill(x, y, w, h, face) end
-
+  --
+  -- **A flat look's control is its rounded shape and nothing square.** This
+  -- filled the square first and the rounded shape over it, so the square's
+  -- corners stayed behind every control in the control's own colour -
+  -- nearly nothing for a white button on a pale window, and a square of
+  -- accent behind a pressed one. Diego, 24 September, of Reader's Open
+  -- while its Open window was up: "the roiunded buttons ... have some rect
+  -- bacgrkound behind them which maked them look weird".
+  --
   if theme.flat then
-    -- Filled again, rounded this time: the square fill above painted the
-    -- corners, and a frame drawn round them would leave the colour outside
-    -- its own outline.
     if face then self:fill_round(x, y, w, h, face, CONTROL_R) end
 
     self:frame_round(x, y, w, h, theme.line_soft, CONTROL_R)
     return
   end
+
+  if face then self:fill(x, y, w, h, face) end
 
   if w >= DOUBLE_MIN and h >= DOUBLE_MIN then
     bevel(self, x, y, w, h, "edge_light", "line")
@@ -633,14 +639,15 @@ end
 
 -- Something you can put things in.
 function gc:sunken(x, y, w, h, face)
-  if face then self:fill(x, y, w, h, face) end
-
+  -- Rounded and nothing square, in a flat look, as `raised` says.
   if theme.flat then
     if face then self:fill_round(x, y, w, h, face, CONTROL_R) end
 
     self:frame_round(x, y, w, h, theme.line_soft, CONTROL_R)
     return
   end
+
+  if face then self:fill(x, y, w, h, face) end
 
   if w >= DOUBLE_MIN and h >= DOUBLE_MIN then
     bevel(self, x, y, w, h, "edge_dark", "edge_light")
@@ -1146,6 +1153,13 @@ function ui.tree(spec)
   v.focusable = true
   v.roots = v.roots or {}
   v.top = 1
+
+  -- The wheel moves the view, three rows a notch; `draw` holds it inside.
+  function v:wheel(n)
+    self.top = self.top - n * ui.WHEEL_ROWS
+    if self.top < 1 then self.top = 1 end
+    return true
+  end
   v.chosen = nil
 
   --
@@ -2289,9 +2303,15 @@ function ui.field(spec)
       end
     end
 
-    -- The drawings' `.field`: a one-pixel rule and 9 of padding inside it.
-    local inset = 10
-    local room = (self.w - 2 * inset) // GW
+    -- The drawings' `.field`: a one-pixel rule and 9 of padding inside it -
+    -- and with an `icon`, the icon there and the words 7 after it: Finder's
+    -- search field, Tracker's since 24 September (`roadmap.md` 5zy).
+    local inset = self:text_inset()
+    local room = (self.w - inset - 10) // GW
+
+    if self.icon then
+      g:line_icon(9, (self.h - 15) // 2, self.icon, theme.text_dim)
+    end
 
     --
     -- What the field is for, while there is nothing in it.
@@ -2450,12 +2470,17 @@ function ui.field(spec)
     return false
   end
 
+  -- Where the words start: after the icon, when there is one.
+  function v:text_inset()
+    return self.icon and (9 + 15 + 7) or 10
+  end
+
   -- The caret where the click was, clamped to the end of the text: clicking
   -- past the last character puts it after the last character, which is what
   -- every text field does and what nobody notices until it does not.
   function v:mouse(action, x, y)
     if action == "press" then
-      local col = (x - 10) // GW
+      local col = (x - self:text_inset()) // GW
 
       if col < 0 then col = 0 end
       self.caret = math.min(col + 1, #self.text + 1)
@@ -3376,6 +3401,14 @@ function ui.list(spec)
     end
   end
 
+  -- Three rows a notch, and the selection stays where it was: the wheel
+  -- moves the view, as the bar does, and `draw` holds it inside the list.
+  function v:wheel(n)
+    self.top = self.top - n * ui.WHEEL_ROWS
+    if self.top < 1 then self.top = 1 end
+    return true
+  end
+
   function v:key(c)
     --
     --
@@ -3881,14 +3914,33 @@ function ui.editor(spec)
     return (self.h - 2 * IN_Y) // ch
   end
 
+  --
+  -- **The cursor is followed when it moves, not on every paint** - or a
+  -- wheel that scrolled the page would be pulled back to the cursor by the
+  -- next one, which is the same bug `ui.list` had with its bar. A key typed
+  -- follows it again (`key` clears `followed`).
+  --
   local function scroll_into_view(self)
-    if self.cy < self.top then self.top = self.cy end
+    if self.cy ~= self.followed then
+      if self.cy < self.top then self.top = self.cy end
 
-    if self.cy > self.top + rows(self) - 1 then
-      self.top = self.cy - rows(self) + 1
+      if self.cy > self.top + rows(self) - 1 then
+        self.top = self.cy - rows(self) + 1
+      end
+
+      self.followed = self.cy
     end
 
+    local most = math.max(1, #self.lines - rows(self) + 1)
+
+    if self.top > most then self.top = most end
     if self.top < 1 then self.top = 1 end
+  end
+
+  function v:wheel(n)
+    self.top = self.top - n * ui.WHEEL_ROWS
+    if self.top < 1 then self.top = 1 end
+    return true
   end
 
   local function clamp(self)
@@ -3989,6 +4041,9 @@ function ui.editor(spec)
   end
 
   function v:key(c)
+    -- A key brings the cursor back into view, wherever the wheel left it.
+    self.followed = nil
+
     --
     -- A key that moves the caret drops the selection, and a key that
     -- changes text replaces it. Both before anything else looks at the
@@ -4381,6 +4436,13 @@ function ui.text(spec)
 
   v.blocks = v.blocks or {}
   v.scroll = 0
+
+  -- The wheel, three of the face's lines a notch; `draw` holds it inside.
+  function v:wheel(n)
+    self.scroll = self.scroll - n * ui.WHEEL_ROWS * gfx.height("text")
+    if self.scroll < 0 then self.scroll = 0 end
+    return true
+  end
   v.content = 0
   v.focusable = true
 
@@ -6054,6 +6116,52 @@ end
 -- The window's own `on_drop` is the fallback, so a window can take drops
 -- anywhere on it without giving every widget a handler.
 --
+--
+-- **The wheel** (`roadmap.md` 5zv): to the deepest view under the pointer
+-- that scrolls, and outwards from there to the first that takes it - a
+-- label inside a list is under the pointer and has nothing to scroll - and
+-- then to the window's own `on_wheel`, for an application that draws its
+-- own rows. `n` is notches, positive away from the person: up, towards the
+-- start. The window manager sends it to the window under the pointer
+-- whether or not that window has the focus, as every desktop does.
+--
+ui.WHEEL_ROWS = 3               -- rows a notch, everywhere the kit scrolls
+
+local function dispatch_wheel(self, ev)
+  local path = {}
+  local v, x, y = self.root, ev.x or 0, ev.y or 0
+
+  while v do
+    path[#path + 1] = { v, x, y }
+
+    local next_v = nil
+
+    for i = #v.children, 1, -1 do
+      local c = v.children[i]
+
+      if not c.hidden and x >= c.x and x < c.x + c.w
+         and y >= c.y and y < c.y + c.h then
+        next_v, x, y = c, x - c.x, y - c.y
+        break
+      end
+    end
+
+    v = next_v
+  end
+
+  for i = #path, 1, -1 do
+    local view = path[i][1]
+
+    if view.wheel and view:wheel(ev.n or 0, path[i][2], path[i][3]) then
+      return true
+    end
+  end
+
+  if self.on_wheel then return self:on_wheel(ev.n or 0, ev.x, ev.y) end
+
+  return false
+end
+
 local function dispatch_drop(self, ev)
   local target, lx, ly = self.root:hit(ev.x, ev.y)
 
@@ -6293,6 +6401,8 @@ function window:run()
         if self:menu_mouse(ev) then changed = true end
       elseif ev.type == "mouse" then
         if dispatch_mouse(self, ev) then changed = true end
+      elseif ev.type == "wheel" then
+        if dispatch_wheel(self, ev) then changed = true end
       elseif ev.type == "drop" then
         -- Something was let go over this window. The desktop found it; what
         -- was carried is a string this window and whoever sent it agree

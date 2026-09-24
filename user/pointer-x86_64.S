@@ -29,6 +29,7 @@ user_pointer_held_start:
     xorq    %rdi, %rdi              /* not moved across */
     xorq    %rsi, %rsi              /* nor down */
     movq    $1, %rdx                /* the left button, held */
+    xorq    %r10, %r10              /* and no wheel */
     movq    $SYS_POINTER_MOVE, %rax
     syscall
 

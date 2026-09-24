@@ -984,6 +984,7 @@ void usb_decode_notify(const uint8_t *bytes, unsigned length,
 #define PAGE_BUTTON         0x0009u
 #define USAGE_X             0x00010030u
 #define USAGE_Y             0x00010031u
+#define USAGE_WHEEL         0x00010038u
 
 #define STACK_DEPTH         4u
 #define USAGES_KEPT         16u
@@ -1013,6 +1014,9 @@ struct report_seen {
     bool     relative_y;
     bool     x_signed;
     bool     y_signed;
+    uint32_t wheel_at;
+    uint32_t wheel_bits;
+    bool     wheel_signed;
 };
 
 /* A report ID is a byte. Static and cleared on every call, because 256 of
@@ -1054,6 +1058,13 @@ static void found_field(struct report_seen *s, uint32_t usage, uint32_t bit,
         s->y_bits = size;
         s->relative_y = relative;
         s->y_signed = is_signed;
+    } else if (usage == USAGE_WHEEL && s->wheel_bits == 0 && relative
+               && size >= 2u && size <= 32u) {
+        /* The wheel, `roadmap.md` 5zv: relative, as a wheel always is, and
+         * wide enough to carry a sign. */
+        s->wheel_at = bit;
+        s->wheel_bits = size;
+        s->wheel_signed = is_signed;
     } else if ((usage >> 16) == PAGE_BUTTON && size == 1u) {
         if (s->buttons == 0) {
             s->buttons_at = bit;
@@ -1262,6 +1273,9 @@ void usb_decode_mouse_report(const uint8_t *bytes, unsigned length,
     out->x_signed = r->x_signed;
     out->y_signed = r->y_signed;
     out->bits = (uint16_t)r->bits;
+    out->wheel_at = (uint16_t)r->wheel_at;
+    out->wheel_bits = (uint8_t)r->wheel_bits;
+    out->wheel_signed = r->wheel_signed;
 }
 
 int32_t usb_report_field(const uint8_t *report, unsigned length, unsigned at,

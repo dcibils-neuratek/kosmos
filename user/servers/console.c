@@ -429,6 +429,10 @@ static struct con_click clicks[CLICK_STASH];
 static unsigned stashed;
 static unsigned stash_lost;
 
+/* The wheel's notches, kept for the same reason and by the same rule: a
+ * notch is handed out once, and only the `wait` that reports it spends it. */
+static int32_t stash_wheel;
+
 static void keep_clicks(const struct pointer_info *where)
 {
     unsigned i;
@@ -454,6 +458,7 @@ static void keep_clicks(const struct pointer_info *where)
     }
 
     stash_lost += where->dropped;
+    stash_wheel += where->wheel;
 }
 
 static void drain_clicks(struct con_reply *rep)
@@ -473,6 +478,8 @@ static void drain_clicks(struct con_reply *rep)
     rep->nclicks = n;
     rep->clicks_lost = stash_lost;
     stash_lost = 0;
+    rep->wheel = stash_wheel;
+    stash_wheel = 0;
 }
 
 static void fill_pointer(struct con_reply *rep)

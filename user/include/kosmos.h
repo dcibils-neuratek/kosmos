@@ -650,9 +650,9 @@ static inline long kosmos_pointer_speed(unsigned units)
  * `SYS_ERR_NO_DEVICE` on a board whose pointer is absolute.
  */
 static inline long kosmos_pointer_move(long dx, long dy,
-                                       unsigned long buttons)
+                                       unsigned long buttons, long wheel)
 {
-    return sys3(SYS_POINTER_MOVE, dx, dy, (long)buttons);
+    return sys4(SYS_POINTER_MOVE, dx, dy, (long)buttons, wheel);
 }
 
 /*

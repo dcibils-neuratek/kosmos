@@ -9040,3 +9040,59 @@ under a window skipped as covered - are its control.
 
 The frame is 4 pixels, not 6 ("a couple of pixels out"), and the harness's
 `FRAME` with it.
+
+## 18.166 The scroll wheel, a shadow that is cast, and a square Deskbar
+
+`roadmap.md` 5zv, 5zy, 5zz. Diego, 24 September: *"add scrollwheel mouse
+suppor to tracker and apps"*, *"the new drop shadow does not work"*, *"the
+roiunded buttons in the open file dialog have some rect bacgrkound behind
+them"*, *"lets add search textbox as the screenshot"*, and *"remove the
+rounded borders in the top bar in the deskbar"*, *"the rounded borders of
+apps ... a smaller radius, perhaps a couple of px less"*.
+
+### The wheel, through every layer
+
+A notch is a count on the board's pointer - virtio's `REL_WHEEL`, or
+`BTN_GEAR_UP` and `BTN_GEAR_DOWN` as older QEMUs send it; a USB mouse's
+wheel field, from its report descriptor or the boot protocol's fourth byte;
+a USB driver's through `SYS_POINTER_MOVE`'s fourth argument - read once by
+`SYS_POINTER`, carried to the window manager in the console's reply, posted
+by it to the window under the pointer as `{type = "wheel"}`, and handed by
+the kit to the deepest view that scrolls. A list, a tree, a text view and
+the editor move three rows a notch (`ui.WHEEL_ROWS`); Log View, Processes,
+the browser and PDF have their own.
+
+- **wheel** (display harness, both boards): the gallery's list, the pointer
+  over it *without a click*, a notch down, and the selection bar has to
+  leave the list; a notch up, and it has to be back on its row. **Its first
+  run was its control and found the bug**: the console's reply
+  (`conproto.h`) had no field for the wheel, so the notch reached the kernel
+  and stopped there. It carries one now, kept with the clicks so that a
+  program asking where the pointer is cannot spend a notch the window
+  manager has not seen.
+- `tools/test_usbdecode.c`, 143: a wheel found in a report descriptor, and
+  a boot mouse's fourth byte.
+- `test_a_driver_wheel_adds_up` (guest suite): notches from a driver add
+  up and are handed out once.
+
+### A shadow that is cast
+
+The shadow made fast in 18.165 was clipped to the rectangle being composed,
+and the window manager hands each window only its frame's visible part - so
+a shadow, which lies outside the frame, was clipped to nothing. It is cast
+by the compositing pass now (`OUT.cast_shadow`), for every rectangle it
+reaches, before the window is drawn.
+
+- **shadow** (display harness, both boards): shadows on, a window that
+  moves itself 250 across, and just under its frame is darker than the desk
+  in every channel while where its shadow was is the desk again. The
+  control is the build that clipped the shadow to the frame, which shows
+  none.
+
+### And
+
+A flat look's control is its rounded shape and nothing square behind it.
+Tracker's search is a field that is always there, with the magnifier in it.
+The Deskbar is square - its strip's top corners and every button - and a
+window's corner is 10 rather than 12, which the **corners** phase covers at
+any radius: it samples one pixel in from the frame's corner.

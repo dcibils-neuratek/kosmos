@@ -1542,7 +1542,8 @@ borders"*. The frame is 4 - it was 6 for an afternoon, until *"the chrome
 arround the window is too thick, we should take a couple of pixels
 out"* - and the page is rounded *inside* it by the corner
 less the frame (`OUT.round_inside` in `wm.lua`): the frame's colour painted
-over the page's pixels outside an arc of 8, with the coverage that rounds
+over the page's pixels outside an arc of 6 - the corner of 10 less the
+frame - with the coverage that rounds
 the frame itself - so the frame is one width all the way round. The page's
 top corners meet the title bar and stay square.
 

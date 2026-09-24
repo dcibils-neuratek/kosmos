@@ -576,6 +576,15 @@ struct pointer_state {
     uint32_t min_y, max_y;
     uint32_t buttons;               /* bit 0 left, bit 1 right */
     uint32_t moved;                 /* something happened since the last look */
+
+    /*
+     * **The wheel: notches turned since the last look**, positive away
+     * from the person - which is up, and scrolls a list back towards its
+     * start - and negative towards them. Counted rather than held, because
+     * a wheel has no position: two notches between looks are two notches
+     * however quickly they came (`roadmap.md` 5zv). Reading resets it.
+     */
+    int32_t  wheel;
 };
 
 /*
@@ -650,8 +659,9 @@ bool hal_pointer_poll(struct pointer_state *out);
 unsigned hal_pointer_speed(unsigned units_per_count);
 
 /*
- * Movement and buttons from a pointing device the kernel does not drive - a
- * USB mouse, whose driver is a process (`SYS_POINTER_MOVE`).
+ * Movement, the wheel and buttons from a pointing device the kernel does not
+ * drive - a USB mouse, whose driver is a process (`SYS_POINTER_MOVE`).
+ * `wheel` is notches, as `pointer_state` counts them.
  *
  * **Relative, in the device's own counts, right and down positive**, and
  * `buttons` is that device's whole state: bit 0 left, bit 1 right. The board
@@ -666,7 +676,7 @@ unsigned hal_pointer_speed(unsigned units_per_count);
  * that reported buttons ends (`process_exit`): nothing else would ever let
  * go of a button a dead driver held.
  */
-bool hal_pointer_move(int dx, int dy, uint32_t buttons);
+bool hal_pointer_move(int dx, int dy, int wheel, uint32_t buttons);
 
 /*
  * **A key a process presses**, as `hal_pointer_move` is a mouse a process

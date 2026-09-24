@@ -670,6 +670,32 @@ int main(void)
               "sixteen buttons: a report read by its layout is not the left "
               "button, 3 right and 2 up");
 
+        /*
+         * **The wheel** (`roadmap.md` 5zv), Generic Desktop 0x38: QEMU's
+         * mouse has one a byte wide after X and Y, the sixteen-button mouse
+         * one after its two sixteen-bit axes, and E.10's three-button mouse
+         * none at all - and a notch towards the person reads as -1.
+         */
+        r = layout(qemu_report, sizeof(qemu_report));
+        check(r.wheel_at == 24 && r.wheel_bits == 8 && r.wheel_signed,
+              "QEMU's mouse: its wheel is not the signed byte after X and Y");
+        r = layout(sixteen_buttons, sizeof(sixteen_buttons));
+        check(r.wheel_at == 48 && r.wheel_bits == 8 && r.wheel_signed,
+              "sixteen buttons: its wheel is not the byte after the axes");
+        check(usb_report_field(moved, sizeof(moved), r.wheel_at, r.wheel_bits,
+                               r.wheel_signed) == 0,
+              "sixteen buttons: a report with the wheel still read a notch");
+        {
+            static const uint8_t turned[] = { 0x00, 0x00, 0x00, 0x00, 0x00,
+                                              0x00, 0xff };
+
+            check(usb_report_field(turned, sizeof(turned), r.wheel_at,
+                                   r.wheel_bits, r.wheel_signed) == -1,
+                  "sixteen buttons: a notch towards the person is not -1");
+        }
+        check(layout(e10_mouse, sizeof(e10_mouse)).wheel_bits == 0,
+              "HID 1.11 E.10: a mouse with no wheel was given one");
+
         /* 5.8: signed because the Logical Minimum is negative - E.10's -127
          * in one byte - and unsigned when that minimum is made 0. */
         r = layout(e10_mouse, sizeof(e10_mouse));

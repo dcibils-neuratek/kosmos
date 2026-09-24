@@ -50,10 +50,11 @@ bool hal_pointer_poll(struct pointer_state *out)
  * and there is no position of the board's own for a movement to be added to -
  * which is what `hal.h` asks a board with an absolute pointer to answer.
  */
-bool hal_pointer_move(int dx, int dy, uint32_t buttons)
+bool hal_pointer_move(int dx, int dy, int wheel, uint32_t buttons)
 {
     (void)dx;
     (void)dy;
+    (void)wheel;
     (void)buttons;
     return false;
 }

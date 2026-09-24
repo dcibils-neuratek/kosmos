@@ -27,6 +27,7 @@ user_pointer_held_start:
     mov     x0, #0                  /* not moved across */
     mov     x1, #0                  /* nor down */
     mov     x2, #1                  /* the left button, held */
+    mov     x3, #0                  /* and no wheel */
     mov     x8, #SYS_POINTER_MOVE
     svc     #0
 

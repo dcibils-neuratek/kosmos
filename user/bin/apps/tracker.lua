@@ -283,7 +283,7 @@ end
 -- that turns the header into a search field, and the menu of path segments
 -- it opens. Declared here because `visit` retitles the first, the header
 -- defines them, and the menu is written next to the other menus.
-local place_button, search, search_on, trail_menu, more_menu, view_menu
+local place_button, search, trail_menu, more_menu, view_menu
 local header
 
 -- The place button's picture: the drawing's house for Home, the Trash's
@@ -524,7 +524,15 @@ rename_field = ui.field{ x = SIDE_W + 12, y = H - FOOT_H - 34, w = 300,
 -- thing it has that a file manager usually does not; simplifying a window
 -- is not a reason to lose a feature (`roadmap.md` 5zg).
 --
-search = ui.field{ w = 220, text = "", hint = "Search", hidden = true }
+--
+-- **Always there, at the header's right, with the magnifier inside it** -
+-- Finder's (`roadmap.md` 5zy). Diego, 24 September: "lets add search
+-- textbox as the screenshot to make search widely and easy in files". It
+-- was a magnifier that turned the sidebar's head into a field, which is a
+-- press before every search and a field nobody sees until they know to
+-- ask for it.
+--
+search = ui.field{ w = 200, text = "", hint = "Search", icon = "search" }
 
 --------------------------------------------------------------------------
 -- The columns.
@@ -788,6 +796,22 @@ function pane_ground:draw(g)
 end
 
 rows.focusable = true
+
+--
+-- **The wheel** (`roadmap.md` 5zv): a row of icons a notch, or three rows
+-- of the list, the way the kit's list turns; `draw` keeps it inside what
+-- there is, and the selection is left where it is. The desktop, which is
+-- this view and has nothing to scroll, lets it pass.
+--
+function rows:wheel(n)
+  if backdrop then return false end
+
+  scroll = scroll - n * ((mode == "icons") and 1 or ui.WHEEL_ROWS)
+  if scroll < 1 then scroll = 1 end
+  followed = selected
+
+  return true
+end
 
 --
 -- How many columns of icons fit, and where one goes.
@@ -1791,32 +1815,7 @@ place_button.on_click = function()
                 trail_menu())
 end
 
---
--- **The magnifier, in the sidebar's head**, which turns that head into the
--- field and back - `docs/tracker2.html`: "Pressing it turns the header into
--- the field". "Files" and the menu give it their room while it is open.
---
--- **Focus follows it**, because a search box that appears and does not take
--- the keyboard is a box you have to click after asking for it - which is
--- the kind of half-done control that makes a window feel slow without
--- anything being slow.
---
 local side_menu                    -- the sidebar's menu, below
-
-local function toggle_search()
-  search_on = not search_on
-  search.hidden = not search_on
-  side_menu.hidden = search_on
-
-  if search_on then
-    win:focus_on(search)
-  else
-    search.text = ""
-    show(where)
-  end
-
-  win:paint()
-end
 
 --
 -- The right of the header: what makes something, what changes how it is
@@ -1828,8 +1827,6 @@ end
 -- and the sort and sizes under them - is the same thing with every mark in
 -- one place.
 --
-local find_button = ui.iconbutton{ x = SIDE_W - 8 - 26 - 1 - 4 - 26, y = 10,
-                                   icon = "search", on_click = toggle_search }
 local new_button = ui.iconbutton{ icon = "newfolder",
                                   on_click = function() new_folder() end }
 local view_button = ui.iconbutton{ icon = "menu" }
@@ -1851,21 +1848,19 @@ end
 header = ui.header{
   x = SIDE_W, y = 0, w = W - SIDE_W, title = "", edge = { 6, 8 },
   left = { back_button, forward_button, place_button },
-  right = { new_button, view_button, more_button },
+  right = { new_button, view_button, more_button, search },
 }
 
 --
 -- **The sidebar's head**: "Files" in the title face at the left, 18 in as
--- every header's title is, and the magnifier and a menu at the right - the
--- menu of what concerns Tracker and its places rather than the files in
--- front of you, which is the dots'. The drawing centred the word between
+-- every header's title is, and a menu at the right - of what concerns
+-- Tracker and its places rather than the files in front of you, which is
+-- the dots'. The search is the header's field now. The drawing centred the word between
 -- the two icons; Diego, of Preferences' the same: "it should be aligned to
 -- the left to the content as the rest of the apps".
 --
 side_menu = ui.iconbutton{ x = SIDE_W - 8 - 26 - 1, y = 10, icon = "menu" }
 
-search.x, search.y = 10, (L.head - 1 - 31) // 2
-search.w = find_button.x - 4 - 10
 
 local side_ground = ui.view{ x = 0, y = 0, w = SIDE_W, h = H,
                              follow = { "left", "top", "bottom" } }
@@ -1878,8 +1873,6 @@ end
 local side_head = ui.view{ x = 0, y = 0, w = SIDE_W, h = L.head }
 
 function side_head:draw(g)
-  if search_on then return end
-
   local word = "Files"
 
   g:text(L.head_in, (self.h - 1 - gfx.height("title")) // 2, word,
@@ -2671,9 +2664,7 @@ chrome(pane_ground)
 win:add(rows)
 chrome(places)
 chrome(side_head)
-chrome(find_button)
 chrome(side_menu)
-chrome(search)
 chrome(header)
 chrome(rename_field)
 chrome(status)

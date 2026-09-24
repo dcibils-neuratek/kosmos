@@ -1657,7 +1657,7 @@ static bool test_a_driver_that_ends_lets_go_of_the_pointer(void)
     process_reap(p);
 
     if (code == SYS_ERR_NO_DEVICE) {
-        return !hal_pointer_move(0, 0, 0);
+        return !hal_pointer_move(0, 0, 0, 0);
     }
 
     /* Taken, so the button was down when it ended - and is up now. */
@@ -5977,30 +5977,57 @@ static bool test_a_driver_movement_adds_to_the_pointer(void)
     struct pointer_state corner, pressed, again, released;
     unsigned speed;
 
-    if (!hal_pointer_move(0, 0, 0)) {
+    if (!hal_pointer_move(0, 0, 0, 0)) {
         return hal_pointer_speed(0) == 0;
     }
 
     speed = hal_pointer_speed(0);
 
-    if (speed == 0 || !hal_pointer_move(-32767, -32767, 0)
+    if (speed == 0 || !hal_pointer_move(-32767, -32767, 0, 0)
         || !hal_pointer_poll(&corner)) {
         return false;
     }
 
     return corner.x == corner.min_x && corner.y == corner.min_y
-        && hal_pointer_move(10, 20, 0x1u)
+        && hal_pointer_move(10, 20, 0, 0x1u)
         && hal_pointer_poll(&pressed)
         && pressed.x == corner.min_x + 10u * speed    /* right is + */
         && pressed.y == corner.min_y + 20u * speed    /* and down is + */
         && (pressed.buttons & 0x1u) != 0 && pressed.moved == 1
         && hal_pointer_poll(&again) && again.moved == 0   /* the look took it */
-        && hal_pointer_move(0, 0, 0)
+        && hal_pointer_move(0, 0, 0, 0)
         && hal_pointer_poll(&released)
         && (released.buttons & 0x1u) == 0 && released.moved == 1
-        && hal_pointer_move(0, 0, 0x4u)               /* a middle button */
+        && hal_pointer_move(0, 0, 0, 0x4u)               /* a middle button */
         && hal_pointer_poll(&again)
         && again.buttons == 0 && again.moved == 0;    /* is not the pointer's */
+}
+
+/*
+ * **A driver's wheel adds up, and a look takes it** (`roadmap.md` 5zv).
+ *
+ * Two notches away from the person and one towards, in three reports with
+ * no look between them, read as one notch away - the count, not the last -
+ * and the next look finds none. The ARM board's pointer is a tablet or
+ * nothing and refuses a driver's report, as above.
+ */
+static bool test_a_driver_wheel_adds_up(void)
+{
+    struct pointer_state first, second;
+
+    if (!hal_pointer_move(0, 0, 0, 0)) {
+        return hal_pointer_speed(0) == 0;
+    }
+
+    (void)hal_pointer_poll(&first);         /* whatever was waiting */
+
+    return hal_pointer_move(0, 0, 1, 0)
+        && hal_pointer_move(0, 0, 1, 0)
+        && hal_pointer_move(0, 0, -1, 0)
+        && hal_pointer_poll(&first)
+        && first.wheel == 1 && first.moved == 1
+        && hal_pointer_poll(&second)
+        && second.wheel == 0;
 }
 
 /*
@@ -6033,7 +6060,7 @@ static bool test_a_click_between_two_looks_is_not_lost(void)
     struct pointer_state now;
     unsigned n;
 
-    if (!hal_pointer_move(0, 0, 0)) {
+    if (!hal_pointer_move(0, 0, 0, 0)) {
         /* An absolute board refuses a driver's movement; nothing to do. */
         return hal_pointer_speed(0) == 0;
     }
@@ -6045,7 +6072,7 @@ static bool test_a_click_between_two_looks_is_not_lost(void)
 
     /* Down and up, with no look in between: the click a busy desktop
      * used to lose entirely. */
-    if (!hal_pointer_move(0, 0, 0x1u) || !hal_pointer_move(0, 0, 0)) {
+    if (!hal_pointer_move(0, 0, 0, 0x1u) || !hal_pointer_move(0, 0, 0, 0)) {
         return false;
     }
 
@@ -8622,6 +8649,8 @@ static const struct test tests[] = {
                                           test_a_driver_movement_adds_to_the_pointer },
     { "input: a click between two looks is not lost",
                                           test_a_click_between_two_looks_is_not_lost },
+    { "input: a driver's wheel adds up, and a look takes it",
+                                          test_a_driver_wheel_adds_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },
     { "console: a write carries its colour, and UTF-8",

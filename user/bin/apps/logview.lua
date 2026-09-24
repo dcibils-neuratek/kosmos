@@ -329,6 +329,13 @@ function view:key(c)
   return false
 end
 
+-- The wheel: three rows back a notch up, and on arriving at the bottom it
+-- follows again, as the arrows do (`roadmap.md` 5zv).
+function view:wheel(n)
+  scroll_to(self, back + n * ui.WHEEL_ROWS)
+  return true
+end
+
 --
 -- The pointer: the kit's scroll bar, and dragging the text itself, which is
 -- what `ui.text` offered and what a pointer with no wheel has instead.

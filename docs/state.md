@@ -20,7 +20,7 @@ Last updated: 2026-09-24
 
 ## 24 September: every window from its drawing, a frame all round, Endeavour first
 
-**Nothing pushed. 0.10.118 to 0.10.149 are local.** 0.10.147 fixed what the
+**Nothing pushed. 0.10.118 to 0.10.152 are local.** 0.10.147 fixed what the
 M700 found (Tracker ending on Find, Preferences changing nothing) and
 0.10.148 put the screen at the mockups' sizes (a font size here is 1.30
 times the CSS one) with Appearance folded into Preferences. **0.10.149** is
@@ -66,9 +66,21 @@ shadows fast enough to drag** (18.165): every Preferences row acts or
 reports; the Deskbar adds new applications to an old menu; the frame is 4;
 the shadow 27 times faster, held on the Mac by `test_shadow`.
 
-**Queued, in order**: the scroll wheel (5zv); the eleven windows drawn in
-`docs/apps.html` on 24 September and not yet built (5zs); the pixel loops
-measured and vectorised (5zw).
+**0.10.152 - the scroll wheel, a shadow that is cast, and a square
+Deskbar** (5zv, 5zy, 5zz, 18.166): a notch reaches the window under the
+pointer on both boards and from a USB mouse - the console's reply had no
+field for it, which the harness's new `wheel` phase found on its first run;
+the fast shadow is cast by the compositing pass, since clipped to a frame it
+was nothing; Tracker's search is a field that is always there; a flat
+control has nothing square behind it; the Deskbar has no rounded corners
+anywhere, and a window's corner is 10.
+The gate: 33 suites in 6:04.
+
+**Queued, in order**: the ui face up a size (5zz, "items in menus look
+small compared to the height of the selection"); Monitor with history and
+kernel and user time (5zx); the eleven windows drawn in `docs/apps.html` on
+24 September and not yet built (5zs); the pixel loops measured and
+vectorised (5zw).
 
 **The M700**: 0.10.150's stick was built and handed over (`make MEGA=1
 x86-usb-image`, `run_uefi.py`, `make stress`, a `boot.md` row), then the

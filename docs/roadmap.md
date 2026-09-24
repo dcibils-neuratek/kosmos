@@ -1662,6 +1662,49 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+5zz. **AGREED on 24 September - three sizes, from using it in QEMU.**
+   - **The Deskbar square.** "i want to remove the rounded borders in the
+     top bar in the deskbar, just remove the rounded borders as i dont see
+     it a good idea anymore". Both roundings go: the strip's top two
+     corners, cut in black to follow a Mac display's curve, and the four
+     pixels off each task button and the Kosmos end. The windows carry the
+     curve now, and the bar is the edge of the screen. Done in 0.10.152.
+   - **A window's corner two pixels tighter.** "the rounded borders of apps
+     the can be have a smaller radius, perhaps a couple of px less":
+     `theme.metrics.corner` 12 to 10, and the drawings' `.win` with it.
+     Done in 0.10.152.
+   - **The ui face up a size.** "i thing we still need to push the regular
+     font up a point or two as toy see items in menus look small compared
+     to the height of the selection". The rows grew to 32 in 0.10.149 and
+     the face stayed at 16, so a menu's highlight is twice its letters.
+
+5zy. **DONE on 24 September (0.10.152) - Tracker's search as a field that is
+   always there.** Diego, with Finder beside it: "lets add search textbox as
+   the screenshot to make search widely and easy in files". A rounded field
+   at the header's right with the magnifier inside it and "Search" in it
+   until something is typed - Tracker's queries unchanged, `kind:note` and
+   all - where 0.10.150 had a magnifier that turned the sidebar's head into
+   a field. The field is the kit's (`ui.field` with an icon), so any window
+   can have one.
+
+5zx. **AGREED on 24 September - Monitor with history, kernel time and
+   user time.** Diego, with macOS's CPU History beside Monitor: "the
+   monitor app needds some historical graph data like we have on mac os",
+   "its good to have the current usage but historical graph data is also
+   required and also havint the kernel and user space times is great in red
+   and green".
+   - **The kernel counts the two apart.** `sys.cpuload` says idle and busy
+     per core; busy becomes kernel and user, charged on each tick by what
+     the tick interrupted - EL1 or EL0 here, ring 0 or 3 on the PC - which
+     the trap already knows. Held by a guest test: a spinning process's
+     core is mostly user, and one looping on a system call is mostly kernel.
+   - **Monitor draws a panel a core**, a column a sample, the user part
+     green and the kernel part red under it, as macOS draws it, with the
+     numbers now above - drawn in `docs/apps.html` on 24 September: a
+     row a core with its two parts in the bar, and under the card a minute
+     of history a core, a column a second, on a dark panel. For Diego to
+     agree before it is built.
+
 5zw. **AGREED on 24 September - the pixel loops, measured and vectorised
    where it pays.** Diego, after the shadow went 27 times faster: "wouldnt
    it be good to go through our code that does things repeatedly in lua or
@@ -1682,7 +1725,7 @@ processors, and still what follows USB:
    is `frames`' question (a pass's time by stage), asked first.
    `testing.md` gets a row per loop with its speed before and after.
 
-5zv. **AGREED on 24 September - the scroll wheel.** Diego: "add scrollwheel
+5zv. **DONE on 24 September (0.10.152) - the scroll wheel.** Diego: "add scrollwheel
    mouse suppor to tracker and apps so i can scroll a list of files in
    tracker without going to the scrollbars all the time". Nothing in the
    system reads a wheel today, from the drivers up. So, in order:

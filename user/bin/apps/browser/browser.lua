@@ -1089,6 +1089,15 @@ local function url_key(c)
   return true
 end
 
+--
+-- The wheel: three lines of the page a notch - forty pixels each, as an
+-- arrow moves it - away from the person up (`roadmap.md` 5zv).
+--
+function sink:wheel(n)
+  if scroll_by(-n * 3 * 40) then frame() end
+  return true
+end
+
 function sink:key(c)
   if address.focus then return url_key(c) end
 

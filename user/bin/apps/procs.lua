@@ -405,6 +405,15 @@ end
 
 table_view.focusable = true
 
+-- The wheel moves the rows, three a notch; the selection stays with its
+-- process, and `draw` keeps the view inside the list.
+function table_view:wheel(n)
+  top = top - n * ui.WHEEL_ROWS
+  if top < 1 then top = 1 end
+  followed = selected
+  return true
+end
+
 function table_view:key(c)
   if c == -1 then
     selected = math.max(1, selected - 1)

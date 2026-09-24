@@ -95,11 +95,15 @@ struct virtio_input_event {
 /* input-event-codes.h */
 #define EV_SYN          0x00
 #define EV_KEY          0x01
+#define EV_REL          0x02
 #define EV_ABS          0x03
+#define REL_WHEEL       0x08
 #define ABS_X           0x00
 #define ABS_Y           0x01
 #define BTN_LEFT        0x110
 #define BTN_RIGHT       0x111
+#define BTN_GEAR_DOWN   0x150
+#define BTN_GEAR_UP     0x151
 
 /*
  * The split virtqueue.
@@ -216,6 +220,7 @@ static struct {
     uint32_t min_y, max_y;
     uint32_t buttons;
     bool     moved;
+    int32_t  wheel;             /* notches since the last look */
 } cursor;
 
 /*
@@ -622,6 +627,26 @@ static bool hal_pointer_poll_locked(struct pointer_state *out)
             } else if (event.code == ABS_Y) {
                 cursor.y = event.value;
             }
+        } else if (event.type == EV_REL && event.code == REL_WHEEL) {
+            /*
+             * **The wheel**, a notch at a time, positive away from the
+             * person as Linux counts it and as `pointer_state` does
+             * (`roadmap.md` 5zv).
+             */
+            cursor.wheel += (int32_t)event.value;
+            cursor.moved = true;
+        } else if (event.type == EV_KEY
+                   && (event.code == BTN_GEAR_UP
+                       || event.code == BTN_GEAR_DOWN)) {
+            /*
+             * And the wheel as older QEMUs report it on a virtio tablet: a
+             * press of a gear button per notch, and its release, which is
+             * nothing.
+             */
+            if (event.value != 0) {
+                cursor.wheel += (event.code == BTN_GEAR_UP) ? 1 : -1;
+                cursor.moved = true;
+            }
         } else if (event.type == EV_KEY) {
             uint32_t bit = 0;
 
@@ -670,8 +695,10 @@ static bool hal_pointer_poll_locked(struct pointer_state *out)
     out->max_y   = cursor.max_y;
     out->buttons = cursor.buttons;
     out->moved   = cursor.moved ? 1u : 0u;
+    out->wheel   = cursor.wheel;
 
     cursor.moved = false;
+    cursor.wheel = 0;
     return true;
 }
 

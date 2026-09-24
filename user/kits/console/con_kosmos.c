@@ -528,6 +528,7 @@ static int l_wait(lua_State *L)
     lua_pushinteger(L, (lua_Integer)r->max_y);   lua_setfield(L, -2, "max_y");
     lua_pushinteger(L, (lua_Integer)r->buttons); lua_setfield(L, -2, "buttons");
     lua_pushboolean(L, r->moved != 0);           lua_setfield(L, -2, "moved");
+    lua_pushinteger(L, (lua_Integer)r->wheel);   lua_setfield(L, -2, "wheel");
     lua_pop(L, 1);
 
     lua_pushvalue(L, out);

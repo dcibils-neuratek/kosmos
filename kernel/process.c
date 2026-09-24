@@ -1710,7 +1710,7 @@ void process_exit(struct process *p, int code)
      * driver.
      */
     if (p->moved_pointer) {
-        (void)hal_pointer_move(0, 0, 0);
+        (void)hal_pointer_move(0, 0, 0, 0);
         thread_wake_sleepers_now();
     }
 

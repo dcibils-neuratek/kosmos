@@ -1197,6 +1197,7 @@ void syscall_dispatch(struct syscall_frame *sc)
             out->max_y   = state.max_y;
             out->buttons = state.buttons;
             out->moved   = state.moved;
+            out->wheel   = state.wheel;
 
             /*
              * And what the buttons *did*, which the state above cannot
@@ -1244,16 +1245,21 @@ void syscall_dispatch(struct syscall_frame *sc)
          * window manager would see where the pointer went only when its own
          * deadline came round.
          */
-        enum { COUNT_MAX = 32767 };
+        enum { COUNT_MAX = 32767, NOTCHES_MAX = 127 };
         long dx = (long)sc->arg[0];
         long dy = (long)sc->arg[1];
+        long wheel = (long)sc->arg[3];
 
         dx = dx > COUNT_MAX ? COUNT_MAX : dx < -COUNT_MAX ? -COUNT_MAX : dx;
         dy = dy > COUNT_MAX ? COUNT_MAX : dy < -COUNT_MAX ? -COUNT_MAX : dy;
 
+        /* A report's wheel is a byte: a notch or two, never more. */
+        wheel = wheel > NOTCHES_MAX ? NOTCHES_MAX
+                : wheel < -NOTCHES_MAX ? -NOTCHES_MAX : wheel;
+
         if (!p->owns_devices) {
             result = SYS_ERR_DENIED;
-        } else if (!hal_pointer_move((int)dx, (int)dy,
+        } else if (!hal_pointer_move((int)dx, (int)dy, (int)wheel,
                                      (uint32_t)sc->arg[2])) {
             result = SYS_ERR_NO_DEVICE;
         } else {

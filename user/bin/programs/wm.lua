@@ -2636,23 +2636,8 @@ local function draw_window(i, r)
       --
       local bare = win.backdrop or win.strip
 
-      --
-      -- **The shadow first, because everything else is drawn over it.**
-      --
-      -- Outside the frame and nowhere else - the gfx kit's `shadow` skips
-      -- the rounded rectangle itself, so this is not work thrown away under
-      -- the window.
-      --
-      -- A bare window casts none: the backdrop is the thing everything sits
-      -- on and the strip is chrome, and a shadow under either would be a
-      -- dark band across a desktop that has nothing above it.
-      --
-      if not bare and OUT.shadow > 0 and not win.fullscreen then
-        -- Clipped to `r`, the rectangle being composed: the primitive
-        -- walks only the band inside it (`gfx.c`'s `shadow`).
-        back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow, nil,
-                    r.x, r.y, r.w, r.h)
-      end
+      -- The shadow is drawn before this, by `compose_rect`: it lies
+      -- outside the frame, and `r` here is only the frame's visible part.
 
       --
       -- The corners, kept before anything is painted over them. Put back at
@@ -3227,9 +3212,12 @@ local function compose_rect(r)
     draw_desktop(piece)
   end
 
-  -- And the windows, bottom to top, each clipped to what it shows.
+  -- And the windows, bottom to top, each clipped to what it shows - each
+  -- with its shadow first, which lies outside what it shows.
   for i = 1, #windows do
     local v = visible[i]
+
+    OUT.cast_shadow(windows[i], r)
 
     if v then
       if measuring then
@@ -6011,6 +5999,51 @@ end
 
 -- The window whose title-bar three the pointer is over (`OUT.light`).
 -- Here rather than beside them because it asks `window_at`, which is here.
+--
+-- **A window's shadow, in the rectangle being composed**, drawn just before
+-- the window itself so everything above it paints over it.
+--
+-- Here and not in `draw_window`, because the shadow lies *outside* the
+-- frame and `draw_window` is handed only the frame's visible part - which
+-- held a shadow clipped to it to nothing at all (Diego, 24 September: "the
+-- new drop shadow does not work"). Clipped to all of `r` instead, and cast
+-- by a window whose frame is hidden too, since its shadow can still show
+-- beside whatever hides it.
+--
+-- A bare window casts none: the backdrop is the thing everything sits on
+-- and the strip is chrome, and a shadow under either would be a dark band
+-- across a desktop that has nothing above it. Nor does a menu or a window
+-- that fills the screen.
+--
+function OUT.cast_shadow(win, r)
+  if OUT.shadow <= 0 or win.hidden or win.backdrop or win.strip
+     or win.fullscreen or win.kind == "menu" then
+    return
+  end
+
+  local sx, sy, sw, sh = OUT.shadowed(win)
+
+  if sx >= r.x + r.w or sx + sw <= r.x or sy >= r.y + r.h
+     or sy + sh <= r.y then
+    return
+  end
+
+  local fx, fy, fw, fh = frame_of(win)
+
+  back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow, nil,
+              r.x, r.y, r.w, r.h)
+end
+
+-- The window whose contents are under a point, for the wheel: none over a
+-- title bar or a menu.
+function OUT.wheel_target(x, y)
+  local win = window_at(x, y)
+
+  if not win or win.kind == "menu" or y < win.y then return nil end
+
+  return win
+end
+
 function OUT.boxes_under(x, y)
   local win = window_at(x, y)
 
@@ -6087,6 +6120,24 @@ local function pointer_pass(p)
       OUT.damage_boxes(OUT.hover_boxes)
       OUT.hover_boxes = over
       OUT.damage_boxes(over)
+    end
+  end
+
+  --
+  -- **The wheel, to the window under the pointer** (`roadmap.md` 5zv) - not
+  -- the one with the focus, as every desktop has it: a list is scrolled by
+  -- pointing at it, and pointing is all the wheel asks. In the window's own
+  -- coordinates, as a press is, so the kit can find the view beneath; and
+  -- posted, never sent, like everything this pass hands on. Nothing while
+  -- a menu is open, which has no wheel to turn, and nothing over a title
+  -- bar, which has nothing to scroll.
+  --
+  if (p.wheel or 0) ~= 0 and #menus == 0 then
+    local win = OUT.wheel_target(nx, ny)
+
+    if win then
+      post(win, { type = "wheel", n = p.wheel,
+                  x = nx - win.x, y = ny - win.y - strips.below(win) })
     end
   end
 

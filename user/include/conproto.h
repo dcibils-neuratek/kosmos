@@ -157,6 +157,14 @@ struct con_reply {
     uint32_t min_y, max_y;
     uint32_t buttons, moved;
 
+    /*
+     * The wheel's notches since the last `wait`, positive away from you.
+     * An event rather than a state, like the clicks below it: the kernel
+     * hands each notch out once, so a reply that left this out lost them -
+     * which is how the wheel reached the kernel and never a window.
+     */
+    int32_t  wheel;
+
     /* What the buttons did since the last `wait`, in order, and how many
      * did not fit anywhere along the way. */
     uint32_t nclicks, clicks_lost;

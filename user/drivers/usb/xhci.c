@@ -1937,10 +1937,10 @@ static uint32_t all_buttons(void)
  * pointer will not take them - on a board whose pointer is a tablet - and
  * after that only tried.
  */
-static void to_pointer(int dx, int dy)
+static void to_pointer(int dx, int dy, int wheel)
 {
     static bool said;
-    long refused = kosmos_pointer_move(dx, dy, all_buttons());
+    long refused = kosmos_pointer_move(dx, dy, all_buttons(), wheel);
     struct say_line line;
 
     if (refused == 0 || said) {
@@ -1998,10 +1998,12 @@ static void say_count(struct say_line *line, int n)
  * primary, secondary, tertiary. A field past what arrived reads as 0.
  */
 static bool read_report(const struct mouse *m, unsigned got,
-                        uint32_t *buttons, int *dx, int *dy)
+                        uint32_t *buttons, int *dx, int *dy, int *wheel)
 {
     const struct usb_mouse_report *l = &m->layout;
     const uint8_t *r = m->report;
+
+    *wheel = 0;
 
     if (!l->ok) {
         if (got < 3u) {
@@ -2011,6 +2013,16 @@ static bool read_report(const struct mouse *m, unsigned got,
         *buttons = r[0] & 0x07u;
         *dx = count_of(r[1]);
         *dy = count_of(r[2]);
+
+        /*
+         * **A fourth byte is the wheel**, on the mice that send one in a
+         * boot report - most wheel mice do, though B.2 describes three.
+         * One that sends three leaves this at nothing.
+         */
+        if (got >= 4u) {
+            *wheel = count_of(r[3]);
+        }
+
         return true;
     }
 
@@ -2028,6 +2040,11 @@ static bool read_report(const struct mouse *m, unsigned got,
                                           false) & 0x07u;
     *dx = usb_report_field(r, got, l->x_at, l->x_bits, l->x_signed);
     *dy = usb_report_field(r, got, l->y_at, l->y_bits, l->y_signed);
+
+    if (l->wheel_bits != 0) {
+        *wheel = usb_report_field(r, got, l->wheel_at, l->wheel_bits,
+                                  l->wheel_signed);
+    }
     return true;
 }
 
@@ -2259,7 +2276,7 @@ static void take_report(struct controller *c, const uint32_t *event)
     struct say_line line;
     struct mouse *m;
     uint32_t code, left, buttons;
-    int dx, dy;
+    int dx, dy, wheel;
 
     if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER || slot == 0
         || slot > DEVICES_MAX) {
@@ -2282,7 +2299,7 @@ static void take_report(struct controller *c, const uint32_t *event)
         m->buttons = 0;
 
         if (held) {
-            to_pointer(0, 0);
+            to_pointer(0, 0, 0);
         }
 
         if (m->pad) {
@@ -2325,7 +2342,7 @@ static void take_report(struct controller *c, const uint32_t *event)
     }
 
     if (left < m->length
-        && read_report(m, m->length - left, &buttons, &dx, &dy)) {
+        && read_report(m, m->length - left, &buttons, &dx, &dy, &wheel)) {
         if (++m->reports == 1u) {
             about(&line, c);
             say_text(&line, " port ");
@@ -2343,9 +2360,9 @@ static void take_report(struct controller *c, const uint32_t *event)
             m->looked++;
         }
 
-        if (dx != 0 || dy != 0 || buttons != m->buttons) {
+        if (dx != 0 || dy != 0 || wheel != 0 || buttons != m->buttons) {
             m->buttons = buttons;
-            to_pointer(dx, dy);
+            to_pointer(dx, dy, wheel);
         }
     }
 
@@ -4753,7 +4770,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
         memset(m, 0, sizeof(*m));
 
         if (held) {
-            to_pointer(0, 0);
+            to_pointer(0, 0, 0);
         }
     }
 

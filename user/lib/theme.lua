@@ -326,7 +326,7 @@ theme.metrics = {
   -- until 23 September and what a look may still ask for: the metrics are
   -- the same table a theme may set, so a look that wants 1995 can have it.
   --
-  corner  = 12,   -- a window's rounded corner: the drawings' `.win`
+  corner  = 10,   -- a window's rounded corner: the drawings' `.win`
   shadow  = 14,   -- how far its shadow reaches
 }
 

@@ -225,6 +225,12 @@ struct usb_mouse_report {
     bool     x_signed;          /* HID 1.11 5.8: a negative Logical Minimum */
     bool     y_signed;
     uint16_t bits;              /* the whole report's, after the ID */
+
+    /* The wheel, Generic Desktop 0x38, when the mouse has one: notches,
+     * positive away from the person. `wheel_bits` is 0 without one. */
+    uint16_t wheel_at;
+    uint8_t  wheel_bits;
+    bool     wheel_signed;
 };
 
 /*

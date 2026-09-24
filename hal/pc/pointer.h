@@ -26,7 +26,7 @@ enum pc_pointer_source {
 void     pc_pointer_arrived(enum pc_pointer_source from);
 
 /* Counts moved, right and down positive, and this source's buttons. */
-void     pc_pointer_move(enum pc_pointer_source from, int dx, int dy,
+void     pc_pointer_move(enum pc_pointer_source from, int dx, int dy, int wheel,
                          uint32_t buttons);
 
 /* Where it is, if any source has arrived. The look clears `moved`. */

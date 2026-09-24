@@ -365,7 +365,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * `SYS_ERR_NO_DEVICE` when the board's pointer is absolute - a tablet, which
  * says where it is and has no position for a movement to be added to.
  */
-#define SYS_POINTER_MOVE 51 /* (dx, dy, buttons)      -> 0 or error         */
+#define SYS_POINTER_MOVE 51 /* (dx, dy, buttons, wheel) -> 0 or error       */
 
 /*
  * **`SYS_IRQ_WAIT` on several lines at once**, for a driver with more than
@@ -772,6 +772,10 @@ struct pointer_info {
     uint32_t min_y, max_y;
     uint32_t buttons;
     uint32_t moved;
+
+    /* Wheel notches since the last call, positive away from the person -
+     * `pointer_state`'s count, taken by reading. */
+    int32_t  wheel;
 
     /* What the buttons did since the last call, in order. Reading takes
      * them, as reading a key does. */

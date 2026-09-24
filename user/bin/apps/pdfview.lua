@@ -324,6 +324,15 @@ local function chooser()
   frame()
 end
 
+-- The wheel: three of an arrow's forty pixels a notch (`roadmap.md` 5zv).
+function sink:wheel(n)
+  local last = math.max(0, paper_h - (H - BAR))
+
+  top = math.max(0, math.min(top - n * 3 * 40, last))
+  frame()
+  return true
+end
+
 function sink:key(c)
   local last = math.max(0, paper_h - (H - BAR))
   local page_step = H - BAR - 24

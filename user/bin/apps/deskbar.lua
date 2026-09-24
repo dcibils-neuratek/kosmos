@@ -964,8 +964,8 @@ local GAP = 4
 -- **The face has to differ from the strip enough to have an edge.**
 --
 -- This was 14 per cent toward white, and on a saturated yellow that is
--- nearly the same colour: the button had no visible outline, so its rounded
--- corners were invisible too and the whole row read as words printed on the
+-- nearly the same colour: the button had no visible outline, so its corners -
+-- rounded, then - were invisible too, and the whole row read as words printed on the
 -- bar rather than as things you press. The corner was blamed first and the
 -- corner was correct.
 --
@@ -973,67 +973,19 @@ local FACE = 24
 local PRESSED = -20
 
 --
--- Rounded corners, which is what Mac OS X put on a menu-bar highlight and
--- what a button on a coloured strip wants: a hard rectangle reads as a
--- panel bolted on, and the same shape with four pixels off each corner
--- reads as a highlight *of* the bar.
+-- **A button on the bar is a plain rectangle.**
 --
--- There is no rounded-rectangle primitive and there should not be one. A
--- fill is a C loop over a rectangle, which is the right shape for almost
--- everything here; a button is thirty-two rows, so thirty-two fills is the
--- rounding, and the bar redraws only when something changes rather than
--- every frame.
+-- It was rounded - four pixels off each corner, "what Mac OS X put on a
+-- menu-bar highlight" - and the strip's own top two corners were cut to
+-- follow a Mac display's curve. Diego, 24 September, with every window now
+-- rounded and framed: "i want to remove the rounded borders in the top bar
+-- in the deskbar, just remove the rounded borders as i dont see it a good
+-- idea anymore". The windows carry the curve now; the bar is the edge of
+-- the screen, and a straight edge is what says so.
 --
--- The corner is a table rather than arithmetic. Two numbers are exact, and
--- a circle worked out per row would be `math.sqrt` in a drawing path to
--- produce the same four numbers - with the difference that nobody could
--- see, from the code, what shape it draws.
+-- One `fill` a button, which is also the cheapest a button has ever been:
+-- the rounded one was five (`roadmap.md` 5zz).
 --
---
--- The insets, row by row from each end, which is a circle worked out once
--- rather than a square root in a drawing path.
---
--- `{ 2, 1 }` is exactly radius 4, `{ 3, 1, 1 }` is radius 5, and this is
--- radius 6: the inset for each row is `r - sqrt(r^2 - (r - j - 0.5)^2)`,
--- rounded, which is a quarter circle evaluated once here instead of a square
--- root in a drawing path.
---
--- **Radius 6 was tried before and read as too much, at a bar 20 pixels
--- tall.** The bar is 26 now - the title bars grew so their controls could be
--- hit - and the same corner on a taller button reads as less, not more,
--- because what the eye judges is the corner against the height beside it.
--- So this is not a reversed decision; it is the same proportion at the new
--- size.
---
-local CORNER = { 4, 2, 1, 1 }
-
---
--- **The middle in one fill, and a row each for the corners.**
---
--- This drew a fill per row - thirty-two for one button - so a bar with nine
--- windows on it was about three hundred drawing commands, batched into a
--- dozen messages, **on every focus change**. On a 2.6 GHz ThinkPad that is
--- visible as a flicker every time you click a button; under QEMU everything
--- is slow enough that it hides, which is why it took real hardware to see.
---
--- Only the rows named in `CORNER` are inset. Everything between them is a
--- rectangle, and a rectangle is one `fill` however tall it is - so a button
--- costs five commands instead of thirty-two and the picture is identical.
---
-local function rounded(g, x, y, w, h, colour)
-  local rows = #CORNER
-
-  for i, inset in ipairs(CORNER) do
-    if w > inset * 2 then
-      g:fill(x + inset, y + i - 1, w - inset * 2, 1, colour)
-      g:fill(x + inset, y + h - i, w - inset * 2, 1, colour)
-    end
-  end
-
-  if h > rows * 2 then
-    g:fill(x, y + rows, w, h - rows * 2, colour)
-  end
-end
 
 local bar = ui.view{ x = 0, y = 0, w = win.w, h = win.h }
 
@@ -1097,42 +1049,11 @@ local function task_spans()
   return out
 end
 
---
--- **The strip's own two top corners, which is what "rounded corners like a
--- Mac" meant all along.**
---
--- This was asked for three times and answered wrong twice, because the
--- buttons *were* being rounded and the bar was not: on a Mac the curve is
--- the display's, at the top two corners of the screen, and the menu bar
--- simply follows it. Its bottom edge is a straight line and always was.
---
--- So the first rows are inset and the cut is painted black - the colour of
--- a screen that stops there. Only the top two: rounding the bottom would
--- put two notches in the middle of the desktop, which is not a shape any
--- machine has.
---
--- A real quarter circle rather than a guess, worked out once:
--- `inset(y) = r - floor(sqrt(r^2 - (r - y - 0.5)^2))` at r = 8. It is a
--- table for the reason `CORNER` above is one - a square root in a drawing
--- path would produce these same eight numbers, and nobody reading the code
--- could see what shape it draws.
---
-local BAR_CORNER = { 6, 4, 3, 2, 1, 1, 1, 1 }
-
-local CUT = 0xff000000
-
 function bar:draw(g)
   for row = 0, self.h - 1 do
     local k = (38 * (self.h - 1 - row)) // (self.h - 1)
-    local inset = BAR_CORNER[row + 1]
 
-    if inset and self.w > inset * 2 then
-      g:fill(0, row, inset, 1, CUT)
-      g:fill(self.w - inset, row, inset, 1, CUT)
-      g:fill(inset, row, self.w - inset * 2, 1, lit(theme.tab, k))
-    else
-      g:fill(0, row, self.w, 1, lit(theme.tab, k))
-    end
+    g:fill(0, row, self.w, 1, lit(theme.tab, k))
   end
 
   local ty = (self.h - gfx.font.h) // 2
@@ -1155,8 +1076,8 @@ function bar:draw(g)
   local menu_up = #win.menus > 0
 
   if menu_up then
-    rounded(g, 2, 2, kosmos_w() - 4, self.h - 4,
-            lit(lit(theme.tab, FACE), PRESSED))
+    g:fill(2, 2, kosmos_w() - 4, self.h - 4,
+           lit(lit(theme.tab, FACE), PRESSED))
   end
 
   g:icon(12, iy, "App_Deskbar.png", ICON)
@@ -1325,15 +1246,14 @@ function bar:draw(g)
     local face = lit(theme.tab, FACE)
 
     --
-    -- No bevel. The shade says which one you are in and the rounding says
-    -- it is part of the bar; a one-pixel sunken edge around a rounded shape
-    -- is a rectangle drawn around a rounded rectangle, which is the two
-    -- vocabularies at once.
+    -- No bevel, and no rounding (above `bar`). The shade says which one
+    -- you are in; the bar's own colour, lighter or darker, says it is part
+    -- of the bar.
     --
     if selected(w_) then
-      rounded(g, s.x, 2, s.w, self.h - 4, lit(face, PRESSED))
+      g:fill(s.x, 2, s.w, self.h - 4, lit(face, PRESSED))
     elseif not w_.hidden then
-      rounded(g, s.x, 2, s.w, self.h - 4, face)
+      g:fill(s.x, 2, s.w, self.h - 4, face)
     end
 
     --

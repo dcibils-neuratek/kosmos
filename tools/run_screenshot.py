@@ -4626,6 +4626,155 @@ def check_corners(guest):
     return 1
 
 
+def check_shadow(guest):
+    """**A window casts a shadow, and takes it with it when it moves.**
+
+    Shadows were made fast on 24 September by clipping them to the rectangle
+    being composed (`testing.md` 18.165) - and the window manager hands each
+    window only its frame's visible part, so the shadow, which lies outside
+    the frame, was clipped to nothing. Diego: "the new drop shadow does not
+    work". Nothing here had ever looked for one.
+
+    So: shadows on, a window that moves itself 250 right and 30 down once
+    it has drawn - far enough that its new shadow cannot reach where the old
+    one was - and then the pixels just under its frame where it is now have
+    to be darker than the desk in every channel, and where its shadow was
+    before the move have to be the desk again. The control
+    is the build that clipped the shadow to the frame, which shows none.
+    """
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Shade', w = 240, h = 140, "
+        "x = 400, y = 300 } "
+        "if not w then return end "
+        "local n = 0 "
+        "function w:on_frame() n = n + 1 "
+        "if n == 20 then w:move(650, 330) print('shade' .. ': moved') end "
+        "return false end "
+        "w:run()"
+    )
+    guest.type("fs.write('/ramfs/shade.lua', %r)" % program)
+    guest.type(appearance("shadow = true") + ' print("shadow" .. "-on")')
+    guest.wait_for("shadow-on", "switch shadows on")
+    mark = len(guest.seen)
+    guest.type("wm /ramfs/shade.lua")
+
+    deadline = time.monotonic() + 40
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if "shade: moved" in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        stop_desktop(guest)
+        raise Failure("the shadowed window never moved itself:\n"
+                      + guest.seen[mark:][-800:])
+
+    try:
+        time.sleep(2.0)
+        width, height, px = parse_ppm(guest.screendump())
+
+        def at(x, y):
+            o = (y * width + x) * 3
+            return tuple(px[o:o + 3])
+
+        desk = at(10, 700)
+
+        # Six under the frame's bottom edge, in the middle of it: inside a
+        # shadow's band whatever its spread, and clear of the rounding.
+        now = at(650 + 120, 330 + 140 + FRAME + 6)
+        was = at(400 + 20, 300 + 140 + FRAME + 6)
+
+        if not all(now[i] < desk[i] for i in range(3)):
+            raise Failure("under the window's frame is %r where the desk is "
+                          "%r - no shadow is being cast" % (now, desk))
+
+        if was != desk:
+            raise Failure("where the window's shadow was before it moved is "
+                          "%r, not the desk's %r - the shadow was left "
+                          "behind" % (was, desk))
+    finally:
+        stop_desktop(guest)
+        guest.type(appearance() + ' print("shadow" .. "-off")')
+        guest.wait_for("shadow-off", "put the harness's appearance back")
+
+    return 2
+
+
+def check_wheel(guest):
+    """**The scroll wheel scrolls what is under the pointer.**
+
+    Diego, 24 September: "add scrollwheel mouse suppor to tracker and apps
+    so i can scroll a list of files in tracker without going to the
+    scrollbars all the time" (`roadmap.md` 5zv). A notch crosses every
+    layer - the virtio tablet's wheel, the pointer the kernel reports, the
+    window manager posting it to the window under the pointer, and the kit
+    handing it to the deepest view that scrolls - and a break in any of them
+    is a wheel that does nothing, with nothing to say why.
+
+    The gallery's list shows three of its five rows with the first one
+    selected. The pointer goes over the list *without a click*, because the
+    wheel follows the pointer and not the focus, and one notch down scrolls
+    it by `ui.WHEEL_ROWS`: the selection bar has to leave the list. A notch
+    up has to bring it back to the row it was on.
+
+    **Its first run was its control, and found the bug it exists for.** The
+    wheel reached the kernel's pointer and stopped at the console: its reply
+    to the window manager's `wait` (`conproto.h`) had no field for it, so
+    every layer below and above was right and the bar did not move.
+    """
+    mark = len(guest.seen)
+    guest.type("wm gallery")
+    started(guest)
+    laid = gallery_layout(guest, mark)
+    lx, ly, lw, lh = laid["list"]
+    box = (60 + lx, 90 + ly, lw, lh)
+
+    try:
+        width, height, px = parse_ppm(guest.screendump())
+        before = find_colour_in(width, px, box, SELECTED)
+
+        if before is None:
+            raise Failure("the gallery's list has no selection bar to scroll "
+                          "out of sight")
+
+        guest.mouse_to(*_to_tablet(box[0] + lw // 2, box[1] + lh // 2,
+                                   width, height))
+        time.sleep(0.4)
+
+        def notch(button, gone):
+            guest.mouse_button(True, button)
+            time.sleep(0.05)
+            guest.mouse_button(False, button)
+            deadline = time.monotonic() + 20
+
+            while time.monotonic() < deadline:
+                _, _, px_ = parse_ppm(guest.screendump())
+                bar = find_colour_in(width, px_, box, SELECTED)
+
+                if (bar is None) == gone and (gone or bar == before):
+                    return bar
+
+                time.sleep(0.3)
+
+            raise Failure(
+                "a notch of the wheel (%s) over the gallery's list left its "
+                "selection bar at %r - it was at %r and should %s"
+                % (button, bar, before,
+                   "have scrolled out of the list" if gone
+                   else "be back where it was"))
+
+        notch("wheel-down", True)
+        notch("wheel-up", False)
+    finally:
+        stop_desktop(guest)
+
+    return 2
+
+
 def check_scale(guest):
     """**Everything at 150 per cent** (`roadmap.md` 5z, `ui.md` 16.18).
 
@@ -9583,6 +9732,8 @@ def main():
         direct_menu_checks = phase("direct menu", check_direct_menu)
         tab_checks = phase("tabs", check_tabs)
         corner_checks = phase("corners", check_corners)
+        shadow_checks = phase("shadow", check_shadow)
+        wheel_checks = phase("wheel", check_wheel)
         scale_checks = phase("scale", check_scale)
         scale_live_checks = phase("scale changed", check_scale_live)
         appearance_checks = phase("appearance", check_appearance)
@@ -9656,7 +9807,8 @@ def main():
              + repaint_checks + power_checks + budget_checks + snes_checks
              + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
              + default_look_checks
-             + tab_checks + corner_checks + drives_app_checks
+             + tab_checks + corner_checks + shadow_checks + wheel_checks
+             + drives_app_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
 
@@ -9756,6 +9908,10 @@ def main():
           f"where a window cannot be maximised, "
           f"{corner_checks} on a rounded window's corner showing the desk "
           f"after it moved onto its own old place, "
+          f"{shadow_checks} on a window casting a shadow and taking it with "
+          f"it when it moves, "
+          f"{wheel_checks} on the scroll wheel scrolling the list under the "
+          f"pointer, both ways, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "
