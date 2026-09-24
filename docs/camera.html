@@ -58,6 +58,16 @@
           border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px;
           font-variant-numeric: tabular-nums; flex: none; }
   .drop svg { width: 10px; height: 10px; color: var(--w-dim); }
+  .btn { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px;
+         border: 1px solid var(--w-line); border-radius: 7px; background: #fff;
+         font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; }
+  .btn .dot { width: 9px; height: 9px; border-radius: 50%; background: #e5484d; }
+  .btn.rec { background: #e5484d; border-color: #e5484d; color: #fff; font-weight: 500; }
+  .btn.rec .dot { background: #fff; border-radius: 2px; }
+  .recbadge { position: absolute; left: 14px; top: 12px; display: flex; align-items: center; gap: 6px;
+              background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 3px 9px; border-radius: 12px;
+              font-variant-numeric: tabular-nums; }
+  .recbadge i { width: 8px; height: 8px; border-radius: 50%; background: #ff453a; }
   .ico { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
          color: var(--w-dim); flex: none; }
   .ico svg { width: 15px; height: 15px; }
@@ -114,6 +124,7 @@ Under it, how fast frames are really arriving: a camera that promised 30 and del
     <div class="head">
       <span class="t">Camera</span><span class="s">HD Pro Webcam C920 &middot; 640 &times; 480</span>
       <span class="sp"></span>
+      <span class="btn"><i class="dot"></i>Record</span>
       <span class="drop">640 &times; 480 <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5l3 3 3-3"/></svg></span>
       <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
     </div>
@@ -125,6 +136,32 @@ Under it, how fast frames are really arriving: a camera that promised 30 and del
     <div class="foot"><span>30 frames a second</span><span>YUY2, 18.4 MB a second over USB</span><span class="sp"></span><span>Mirrored</span></div>
   </div>
 </div>
+
+<h2>Recording</h2>
+<p class="why">Diego: "expect a record option as well to save the video stream into a mp4 file". <b>Record</b>
+starts it and becomes <b>Stop</b>, filled red while it runs; the picture carries how long, and the foot where the
+file is going. It goes into <code>/home/videos</code>, named by the date and time, and opens in the video player.</p>
+
+<div class="stage">
+  <div class="win" style="width:680px;height:596px">
+    <div class="head">
+      <span class="t">Camera</span><span class="s">HD Pro Webcam C920 &middot; 640 &times; 480</span>
+      <span class="sp"></span>
+      <span class="btn rec"><i class="dot"></i>Stop</span>
+      <span class="drop" style="color:#b0b4bb">640 &times; 480 <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5l3 3 3-3"/></svg></span>
+      <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
+    </div>
+    <div class="picture">
+      <div class="scene"><div class="shelf"></div>
+        <div class="book" style="left:44px;height:40px"></div><div class="book" style="left:60px;height:34px;background:#c0392b"></div>
+        <div class="book" style="left:76px;height:44px;background:#2f8a3e"></div><div class="lamp"></div>
+        <div class="recbadge"><i></i>0:42</div></div>
+    </div>
+    <div class="foot"><span>30 frames a second</span><span>Recording to /home/videos/2026-09-24 16.05.mp4 &middot; 11.2 MB</span><span class="sp"></span><span>Mirrored</span></div>
+  </div>
+</div>
+<p class="why">The size is greyed while recording: a file is one size from start to end. What is written is the picture
+as the camera sends it, not mirrored &mdash; the mirror is for looking at yourself, and a recording is for somebody else.</p>
 
 <h2>&#8942;, and the size</h2>
 <p class="why">Two things, because it is a simple app. <b>Mirror</b>, on by default, as a Mac's own camera
@@ -179,13 +216,16 @@ window says which one has it rather than showing black.</p>
 <tr><td>Header</td><td>The kit's <code>ui.header</code>: <i>Camera</i>, the camera's name and size beside it, the size as a dropdown, and &#8942;</td></tr>
 <tr><td>Picture</td><td>A surface the app draws each frame into, converted from the camera's bytes in C &mdash; YUY2 by arithmetic, MJPEG by the JPEG decoder the video player uses</td></tr>
 <tr><td>Frames</td><td>In a region the driver writes and the app reads, one ring, no copy through a message (<code>CLAUDE.md</code>: control by message, data by shared memory)</td></tr>
+<tr><td>Record</td><td>A button, then Stop, filled red; into <code>/home/videos</code> as MP4. Whether the camera's own MJPEG goes into the file as it comes or is encoded to H.264 is measured first (<code>roadmap.md</code> 6d)</td></tr>
 <tr><td>Foot</td><td>30 tall: frames a second as they arrive, the format and its rate over USB, and <i>Mirrored</i> when it is</td></tr>
 <tr><td>Window</td><td>680 by 596 for 640 by 480 &mdash; the picture, the header, the foot and the frame</td></tr>
 </table>
 
 <h2>For Diego to decide</h2>
 <ul class="ask">
-  <li><b>Mirrored by default?</b> Drawn on, as macOS's own preview is.</li>
+  <li><b>Mirrored by default?</b> Drawn on, as macOS's own preview is &mdash; and a recording is never mirrored.</li>
+  <li><b>The file's format inside the MP4</b>: the camera's MJPEG as it comes (free, but QuickTime will not play it)
+      or H.264 (plays everywhere, costs a processor while recording).</li>
   <li><b>The size dropdown</b>, or always 640 &times; 480 and nothing to choose.</li>
   <li><b>A picture button</b> &mdash; take a still into <code>/home/pictures</code> &mdash; is left out: it needs a PNG writer,
       which the screenshot shortcut is waiting for too (<code>roadmap.md</code>).</li>

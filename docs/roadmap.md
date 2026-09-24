@@ -1681,10 +1681,19 @@ processors, and still what follows USB:
      started with `sudo`, by Diego; everything that can be held without
      the camera is held on the Mac and in the gate.
    - **Drawn first**, as every app is: `docs/camera.html`.
+   - **And a Record button**, Diego the same afternoon: "for the camera
+     app, expect a record option as well to save the video stream into a
+     mp4 file". Into `/home`, as an MP4 the video player opens. How the
+     picture goes into the file is open, and measured before it is chosen:
+     the camera's own MJPEG frames put into the file as they come, which
+     costs nothing and plays in Kosmos and VLC but not in QuickTime; or
+     H.264 through a small encoder (lieff's `minih264e`, beside the
+     `minimp3` already vendored, with `minimp4` to write the file), which
+     plays everywhere and costs a processor.
    - The steps, in `usb.md` §11 as they land: 8a the camera's descriptors
      read and its formats known (on the Mac, from the C920's own bytes);
      8b isochronous IN in the xHCI driver; 8c the stream negotiated and
-     frames put together; 8d `/dev/camera` and its region; 8e the app.
+     frames put together; 8d `/dev/camera` and its region; 8e the app; 8f recording.
 
 6c. **WANTED on 24 September - Preferences on a 1280x720 screen.** Seen
    while checking the `v0.10.153` release image at that size: the window is
