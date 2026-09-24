@@ -60,6 +60,11 @@ end
 
 local cameras, why_none = camera.all()
 local chosen = 1                        -- in `cameras`
+
+-- Where a camera's frames come from (`CAMERA_SOURCE_*`): in the log line,
+-- and in the foot after the rate - "over USB" only when they are.
+local FROM = { usb = "over USB", pattern = "drawn by the driver" }
+local FOOT_FROM = { usb = " over USB", pattern = ", drawn by the driver" }
 local stream, size, picture = nil, nil, nil
 local mirror = true                     -- as a Mac's own preview is
 local trouble = nil                     -- a sentence when there is no picture
@@ -111,8 +116,9 @@ local function open_at(new_size)
   picture:fill(0, 0, new_size.width, new_size.height, 0xff000000)
   counted, counted_at, fps = 0, sys.ticks(), 0
 
-  print(("camera: %s at %dx%d, picture at %d,%d, %s"):format(
-    cam.name, size.width, size.height, 0, PICTURE_Y,
+  print(("camera: %s at %dx%d, %s, picture at %d,%d, %s"):format(
+    cam.name, size.width, size.height, FROM[cam.source] or "from somewhere",
+    0, PICTURE_Y,
     mirror and "mirrored" or "as the camera sees it"))
   return true
 end
@@ -186,7 +192,8 @@ local function draw_foot(s)
   if stream and size then
     local a = ("%d frames a second"):format(fps)
     local rate = size.width * size.height * 2 * math.max(fps, 0)
-    local b = ("YUY2, %.1f MB a second over USB"):format(rate / 1e6)
+    local from = cameras[chosen] and FOOT_FROM[cameras[chosen].source]
+    local b = ("YUY2, %.1f MB a second%s"):format(rate / 1e6, from or "")
 
     s:text(x, ty, a, theme.text_dim, nil, "ui")
     x = x + gfx.measure(a) + 18
@@ -231,7 +238,7 @@ local function draw_picture(s)
   if pw == size.width and ph == size.height then
     s:blit(picture, 0, 0, pw, ph, x, y)
   else
-    s:stretch(picture, 0, 0, size.width, size.height, x, y, pw, ph, -1, true)
+    s:stretch(picture, 0, 0, size.width, size.height, x, y, pw, ph, nil, true)
   end
 end
 

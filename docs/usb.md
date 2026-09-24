@@ -2439,7 +2439,10 @@ manager has five.
 the driver offers a camera of its own - eight colour bars and a square that
 moves, 30 a second, at three sizes - on both boards; on AArch64, which has
 no USB controller, from the loop that serves `/dev/blocks` there. That is
-what the gate holds the Camera app to, since QEMU has no camera.
+what the gate holds the Camera app to, since QEMU has no camera. LIST says
+which it is - `source`, `CAMERA_SOURCE_USB` or `CAMERA_SOURCE_PATTERN` -
+because the foot said "over USB" of the pattern until Diego saw it on his
+MacBook, and a window should say where its pixels came from.
 
 **The app** (`camera.lua`, `docs/camera.html`) draws its own pixels, as the
 video player does: `pixelkit`'s header, Record greyed until 8f, the size as

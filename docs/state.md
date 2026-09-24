@@ -111,6 +111,11 @@ code uses vector arithmetic - it did not.
 Released as v0.10.156 for QEMU on a Mac, with `run-kosmos.sh -camera pattern`
 (18.172): the AArch64 image has no USB controller, so on a Mac the pattern is
 the only camera it has; a real one is the x86-64 image as root.
+Diego ran it on his MacBook the same afternoon: the pattern at 29 a second,
+and **1280 x 720 from the dropdown closed the app** - `stretch` handed an alpha
+of -1, a path the check had never taken. **0.10.157** fixes it, holds the
+check to a size chosen from the dropdown, and stops the foot calling the
+pattern "over USB" (18.173).
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

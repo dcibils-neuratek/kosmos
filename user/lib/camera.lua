@@ -35,6 +35,10 @@ local SIZE_BYTES = 12
 -- struct camera_reply's handle, after the header and 48 sizes: 1-based.
 local HANDLE_AT = HEAD_SIZE + 48 * SIZE_BYTES + 1
 
+-- And where the frames come from, after the handle (`CAMERA_SOURCE_*`).
+local SOURCE_AT = HANDLE_AT + 4
+local SOURCES   = { [1] = "usb", [2] = "pattern" }
+
 -- The region: a page of header, then three frames (`cameraproto.h`).
 local RING_DATA = 4096
 local SLOTS     = 3
@@ -107,7 +111,14 @@ function camera.list(which)
                           slot_bytes = slot }
   end
 
-  return { index = which, cameras = cameras, name = name, sizes = sizes }
+  local source = nil
+
+  if #reply >= SOURCE_AT + 3 then
+    source = SOURCES[string.unpack("<I4", reply, SOURCE_AT)]
+  end
+
+  return { index = which, cameras = cameras, name = name, sizes = sizes,
+           source = source }
 end
 
 -- Every camera there is; an empty list and why when there are none.

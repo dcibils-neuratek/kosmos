@@ -6517,6 +6517,8 @@ static void camera_list(uint32_t which, struct camera_reply *rep)
             memcpy(rep->name, "USB camera", 11);
         }
 
+        rep->source = CAMERA_SOURCE_USB;
+
         for (i = 0; n < CAMERA_SIZES_MAX; i++) {
             int f = camera_size_frame(k, i);
             const struct uvc_frame *fr;
@@ -6536,6 +6538,7 @@ static void camera_list(uint32_t which, struct camera_reply *rep)
         }
     } else if (which == usb && pattern_offered) {
         memcpy(rep->name, "Test pattern", 13);
+        rep->source = CAMERA_SOURCE_PATTERN;
 
         for (i = 0; i < PATTERN_SIZE_COUNT; i++) {
             rep->size[n].width = PATTERN_SIZES[i][0];

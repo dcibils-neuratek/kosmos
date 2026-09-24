@@ -9250,3 +9250,28 @@ months.
   refusal dropped fails 2.
 - Both release images booted with the pattern on: the Camera app at 29 and
   30 frames a second, the bars right way round once mirrored back.
+
+## 18.173 A size that does not fit, and where the pixels come from
+
+Diego, on his MacBook with v0.10.156: *"i changed resolution on the camera
+app and it closed"*. 1280 x 720 does not fit the 640 by 480 of room, so the
+picture is drawn scaled - `stretch`, where 640 x 480 is a `blit` - and the
+app passed `stretch` an alpha of -1 for "none", which it refuses: absent is
+`nil`. `camera.lua:234: alpha is 0 to 255, not -1`, and the window was gone.
+The display check had only ever opened 640 x 480, so the scaled path had
+never run once.
+
+And in the same screenshot, the foot said the test pattern arrives at 17.8 MB
+a second **over USB**. It does not; LIST now says where a camera's frames come
+from (`source` in `cameraproto.h`), and the app says "over USB" only of a USB
+camera, and "drawn by the driver" of the pattern.
+
+- **camera**, both boards, 4 -> 6: the log line says *drawn by the driver*;
+  and 1280 x 720 chosen **from the dropdown**, as Diego chose it - a click
+  inside the size box, which ends at 680 - 10 - 26 - 4 = 640 whatever its
+  label, then the menu's third row where the window manager says it opened
+  - drawn at half, 640 by 360 with black above it, the app still running and
+  the new stream's frames counting up. **Controls**: -1 back in the call
+  fails with Diego's own error, `alpha is 0 to 255, not -1`, and the app
+  ended; the driver calling its pattern a USB camera fails with `over USB`
+  in the line.

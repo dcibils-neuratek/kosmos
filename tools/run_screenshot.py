@@ -6690,11 +6690,15 @@ def check_camera(guest):
     whole frames published by the driver, and `surface:camera` taking the
     newest in C - with the pattern where a camera would be.
 
-    Four things. **The colours arrive right and the picture is mirrored**, as
+    Six things. **The colours arrive right and the picture is mirrored**, as
     it is by default: the left bar is the pattern's last, black, and the
     right its first, white. **M turns the mirror off**, and they swap.
     **Frames keep coming**: the square is somewhere else a second later.
-    **The app counts them**, and says more than none a second.
+    **The app counts them**, and says more than none a second. **It says
+    where they come from** - "drawn by the driver", never "over USB", which
+    the foot said of the pattern until Diego saw it on his MacBook. And **a
+    size too big for one to one**, chosen from the dropdown as he chose it,
+    draws scaled and keeps coming.
     """
     mark = len(guest.seen)
     guest.type("wm camera")
@@ -6708,6 +6712,11 @@ def check_camera(guest):
         if "640x480" not in line or "mirrored" not in line:
             raise Failure("Camera opened the pattern as %r - wanted 640x480, "
                           "mirrored" % line)
+
+        if "drawn by the driver" not in line:
+            raise Failure("Camera did not say the pattern is drawn by the "
+                          "driver - the reply's source did not arrive: %r"
+                          % line)
 
         found = re.findall(r"wm: window Camera at (\d+),(\d+) (\d+)x(\d+)",
                            guest.seen[mark:])
@@ -6783,10 +6792,85 @@ def check_camera(guest):
         if len(totals) < 2 or totals[-1] <= totals[0] or totals[-1] < 2:
             raise Failure("the Camera app's count of frames did not grow: %r"
                           % totals)
+
+        #
+        # **A size that does not fit, from the dropdown.** 1280 by 720 in
+        # 640 by 480 of room is drawn at half, 640 by 360, centred in the
+        # 520 rows: `stretch` rather than `blit`. That path never ran while
+        # this opened 640 by 480 only, and it passed an alpha of -1, which
+        # `stretch` refuses - so on 24 September, on Diego's MacBook with
+        # v0.10.156, choosing 1280 x 720 closed the app on its first frame.
+        #
+        # The size box ends at 680 - 10 - 26 - 4 = 640 whatever its label
+        # says, so 20 in from there is inside it; the menu says where it
+        # opened, and its third row is 1280 x 720 (`PATTERN_SIZES`).
+        #
+        width, height, _ = parse_ppm(guest.screendump())
+
+        def click(cx, cy):
+            guest.mouse_to(*_to_tablet(cx, cy, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            time.sleep(0.6)
+
+        before = len(guest.seen)
+        click(wx + 620, wy + 22)
+        menu = guest.wait_for_line("wm: menu of Camera at ",
+                                   "the size dropdown to open", before)
+        mx, my = (int(v) for v in
+                  re.match(r"(\d+),(\d+)", menu).groups())
+        time.sleep(1.0)
+        click(mx + 20, my + 2 + 2 * MENU_ROW + MENU_ROW // 2)
+        guest.wait_for_line("camera: Test pattern at 1280x720",
+                            "1280 x 720 chosen from the dropdown", before)
+
+        sx, sy = wx + 20, wy + 46 + 80
+        deadline = time.monotonic() + 20
+
+        while True:
+            width, height, pixels = parse_ppm(guest.screendump())
+
+            def at(x, y):
+                o = (y * width + x) * 3
+                return tuple(pixels[o:o + 3])
+
+            left, right = at(sx + 40, sy + 100), at(sx + 600, sy + 100)
+            above = at(sx + 320, sy - 10)
+
+            if left == (255, 255, 255) and right == (0, 0, 0) \
+                    and above == (0, 0, 0):
+                break
+
+            if "(camera) ended" in guest.seen[before:]:
+                raise Failure("choosing 1280 x 720 ended the Camera app:\n"
+                              + guest.seen[before:][-600:])
+
+            if time.monotonic() > deadline:
+                raise Failure("at 1280 x 720 the picture is not drawn at half "
+                              "in 640 by 360: left %r, right %r, above it %r "
+                              "- wanted white, black, black" %
+                              (left, right, above))
+
+            time.sleep(0.5)
+
+        # The new stream's frames only: its count starts again from none.
+        time.sleep(2.5)
+        guest._read_available()
+        switched = guest.seen.find("camera: Test pattern at 1280x720", before)
+        totals = [int(n) for n in
+                  re.findall(r"camera: \d+ frames a second, (\d+) in all",
+                             guest.seen[switched:])]
+
+        if "(camera) ended" in guest.seen[before:] or len(totals) < 2 \
+                or totals[-1] <= totals[0]:
+            raise Failure("at 1280 x 720 the frames stopped: %r\n%s"
+                          % (totals, guest.seen[before:][-600:]))
     finally:
         stop_desktop(guest)
 
-    return 4
+    return 6
 
 
 def check_cores(guest):

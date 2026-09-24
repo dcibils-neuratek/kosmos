@@ -51,6 +51,13 @@
 #define CAMERA_PIXELS_YUY2  1u
 #define CAMERA_PIXELS_MJPEG 2u
 
+/*
+ * Where a camera's frames come from, so a window says "over USB" only when
+ * they come over USB. Zero is a driver that did not say.
+ */
+#define CAMERA_SOURCE_USB       1u  /* a camera on a USB port */
+#define CAMERA_SOURCE_PATTERN   2u  /* the driver's own test pattern */
+
 #define CAMERA_NAME_MAX     40u
 #define CAMERA_SIZES_MAX    48u
 
@@ -84,12 +91,17 @@ struct camera_reply {
      * was pulled) cannot close another window's that opened since.
      */
     uint32_t handle;
+
+    /* LIST: CAMERA_SOURCE_USB or CAMERA_SOURCE_PATTERN. */
+    uint32_t source;
 };
 
 _Static_assert(sizeof(struct camera_request) == 16,
                "the camera's request is sixteen bytes on both sides");
 _Static_assert(sizeof(struct camera_size) == 12,
                "a camera size is twelve bytes on both sides");
+_Static_assert(__builtin_offsetof(struct camera_reply, source) == 632,
+               "camera.lua reads the source at 632, after the handle");
 _Static_assert(sizeof(struct camera_reply) <= 2048,
                "a camera reply must fit in one message");
 
