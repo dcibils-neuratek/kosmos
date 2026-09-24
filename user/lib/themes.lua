@@ -92,8 +92,23 @@ stamp      = #8fa9df
 # style guide has them, until he saw them on the ThinkPad the same
 # morning: "fonts look smaller than on qemu" - the panels' titles in
 # SemiBold, the terminal in Plex Mono at 14 - `docs/looks.html`, where all
-# four looks share these faces.
-font.title   = ibmplexsanscondensed 14
+# five looks share these faces.
+#
+# **The window's title was Plex Sans Condensed at 14 and is now the same
+# face and size as everything else.** Diego, 23 September, with the
+# mockups beside a screenshot: "the window tab font is really small if you
+# compare it with the mockups" - and it was, by two sizes and a narrower
+# face, while the Deskbar beside it drew the same word at 16.
+#
+# It was 14 because widgets were 14 when it was written, and condensed
+# because the tab used to be only as wide as its title, so a long name had
+# to be squeezed into it. Neither is true any more: widgets went to 16 on
+# the ThinkPad the same morning and the title did not follow, and since
+# 0.10.141 the tab is the window's full width (`tabs.width`), so the
+# condensed face buys nothing at all. `docs/desktop.html` draws the title
+# in the body's own family, a shade *larger* than a button's label rather
+# than smaller.
+font.title   = ibmplexsans 16
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
@@ -139,7 +154,7 @@ bad        = #ff6b5e
 ring       = #7aa0ff
 stamp      = #3a4a6e
 
-font.title   = ibmplexsanscondensed 14
+font.title   = ibmplexsans 16
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
@@ -199,7 +214,7 @@ bad        = #cb0000
 ring       = #0000e5
 stamp      = #5d85ad
 # The faces all four looks share (`docs/looks.html`).
-font.title   = ibmplexsanscondensed 14
+font.title   = ibmplexsans 16
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
@@ -244,7 +259,7 @@ bad        = #ff6b5e
 ring       = #f0a060
 stamp      = #2a2c31
 
-font.title   = ibmplexsanscondensed 14
+font.title   = ibmplexsans 16
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16
@@ -343,7 +358,7 @@ stamp      = #99c1f1
 
 # The same faces as the other four, at the same sizes: a look is colour
 # here, and the fixed layout (`roadmap.md` 5x) holds because of it.
-font.title   = ibmplexsanscondensed 14
+font.title   = ibmplexsans 16
 font.ui      = ibmplexsans 16
 font.heading = ibmplexsans-semibold 15
 font.text    = ibmplexsans 16

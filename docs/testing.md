@@ -8568,3 +8568,47 @@ a second look for the whole system - dark, flat, an orange accent - and the
 window is built to it. Converting it would be answering a question he has
 already answered the other way. Which look the system ends up wearing is his
 call; it is not something to settle by tidying.
+
+## 18.160 A window's title, the size of everything else
+
+Diego, 23 September, with `docs/desktop.html` beside a screenshot of the
+build: *"the window tab font is really small if you compare it with the
+mockups"*. He is right, and by more than it sounds: `font.title` was **IBM
+Plex Sans Condensed at 14** while every other role was Plex Sans at 16 - a
+narrower face, two sizes down - so the Deskbar drew a window's name visibly
+larger than the window's own tab did, six pixels above it.
+
+### Two reasons for the old value, and both had expired
+
+- **14 because widgets were 14.** The faces were set together on 22
+  September; widgets went to 16 that same morning, on the ThinkPad, because
+  "fonts look smaller than on qemu" (18.147). The title did not go with
+  them, and nothing noticed, because a title is the one piece of text in the
+  system that no window lays out around.
+- **Condensed because a tab used to be as wide as its title.** A long name
+  had to be squeezed into a tab sized to it. Since 0.10.141 the controls sit
+  at the right and `tabs.width(win)` is `win.w + BORDER * 2` - the window's
+  full width, whatever the title says - so the condensed face was buying
+  nothing at all.
+
+Now `ibmplexsans 16`, in the five looks and in the kit's own defaults, so a
+window's title, the Deskbar button naming it, and the controls inside it are
+one face at one size. It is the relationship `docs/desktop.html` draws,
+where the title is a shade *larger* than a button's label rather than
+smaller.
+
+### What made it five lines instead of one
+
+`tools/test_theme.lua` holds Plex's five faces to the file, and the display
+harness checks the same pair twice - once for the *kit's* defaults and once
+for what the **window manager** holds, which is what its windows are
+actually drawn in (`PLEX_HELD`). All three had `ibmplexsanscondensed/14`
+written into them and all three had to move.
+
+That is the point of holding faces in a test rather than trusting them: the
+old value could not be changed quietly, and the check that says what the
+window manager holds is the one that would have caught the original drift -
+widgets moving to 16 while the title stayed - if it had compared the roles
+to each other instead of to a table. It does not, and that is the follow-up
+this leaves: **a check that no chrome role is smaller than `ui`**, which is
+a rule rather than a list of numbers (`roadmap.md` 5zl).

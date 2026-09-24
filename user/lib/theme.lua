@@ -678,8 +678,18 @@ theme.fonts = {
   ui      = { font = "ibmplexsans", px = 16 },
 
   -- A title is a label on chrome and can carry a face with character in
-  -- it - which is the whole argument for the role being separate.
-  title   = { font = "ibmplexsanscondensed", px = 14 },
+  -- it - which is the whole argument for the role being separate. What it
+  -- may not be is *smaller* than the interface around it, and it was:
+  -- Plex Sans Condensed at 14 beside widgets at 16, so the Deskbar drew a
+  -- window's name half again as large as the window's own tab did.
+  --
+  -- Two reasons for the old value and neither survives. It was 14 because
+  -- widgets were 14 when it was written, and they went to 16 on 22
+  -- September without it; and it was condensed because the tab used to be
+  -- only as wide as its title, where since 0.10.141 the tab is the
+  -- window's full width. Diego, 23 September: "the window tab font is
+  -- really small if you compare it with the mockups".
+  title   = { font = "ibmplexsans", px = 16 },
 
   -- Running text in the reading face, and the terminal in the one whose
   -- columns line up - as `docs/looks.html` draws them. **The terminal at

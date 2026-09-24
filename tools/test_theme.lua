@@ -159,7 +159,7 @@ do
 
   local faces = {
     ui      = { "ibmplexsans", 16 },
-    title   = { "ibmplexsanscondensed", 14 },
+    title   = { "ibmplexsans", 16 },
     heading = { "ibmplexsans-semibold", 15 },
     text    = { "ibmplexsans", 16 },
     mono    = { "ibmplexmono", 16 },

@@ -2066,9 +2066,13 @@ def check_default_look(guest, ask_wm):
 
     checks += 1
 
-    # The four looks' faces since 22 September (`docs/looks.html`).
-    if title != "ibmplexsanscondensed" or title_px != "14":
-        raise Failure("a title's face is %s %s, not ibmplexsanscondensed 14"
+    # The looks' faces since 22 September (`docs/looks.html`), and the
+    # title among them since 0.10.146: it was Plex Sans Condensed at 14
+    # beside widgets at 16, so the Deskbar drew a window's name larger than
+    # the window's own tab did. Diego: "the window tab font is really small
+    # if you compare it with the mockups".
+    if title != "ibmplexsans" or title_px != "16":
+        raise Failure("a title's face is %s %s, not ibmplexsans 16"
                       % (title, title_px))
 
     checks += 1
@@ -2100,7 +2104,7 @@ def check_default_look(guest, ask_wm):
     why = parts[13].split("=", 1)[1]
 
     for role, want in (("ui", "ibmplexsans/16"),
-                       ("title", "ibmplexsanscondensed/14"),
+                       ("title", "ibmplexsans/16"),
                        ("text", "ibmplexsans/16"),
                        ("mono", "ibmplexmono/16")):
         if held.get(role) != want:
@@ -4043,7 +4047,7 @@ def check_theme_events(guest):
 
 # Plex's five faces, as `docs/plex.html` has them and Diego chose them on
 # 22 September - the same table `tools/test_theme.lua` holds the file to.
-PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsanscondensed/14 "
+PLEX_HELD = ("ui=ibmplexsans/16 title=ibmplexsans/16 "
              "text=ibmplexsans/16 mono=ibmplexmono/16 "
              "heading=ibmplexsans-semibold/15")
 

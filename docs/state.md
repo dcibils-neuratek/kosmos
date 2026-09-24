@@ -20,7 +20,7 @@ Last updated: 2026-09-23
 
 ## 23 September: the M700, 8 GB, the tree sorted, and a new look
 
-**Nothing pushed. 0.10.118 to 0.10.145 are local**, on `main`, each one
+**Nothing pushed. 0.10.118 to 0.10.146 are local**, on `main`, each one
 committed and none of them out.
 
 Diego bought a **Lenovo ThinkCentre M700** - an i7 6th gen with HD 530 - and
@@ -98,6 +98,15 @@ and not rebuilt, so the broken control was still in the binary.
   items that had never been connected to anything and a window that never
   said whether it was following its log or holding.
 
+- **0.10.146 - the window's title, the size of everything else** (18.160).
+  Diego, with the mockups beside a screenshot: "the window tab font is
+  really small if you compare it with the mockups". `font.title` was Plex
+  Sans Condensed at 14 while every other role was Plex Sans at 16, so the
+  Deskbar drew a window's name larger than the window's own tab. Both
+  reasons for the old value had expired - widgets went to 16 without it, and
+  a tab is the window's full width since 0.10.141, so condensed bought
+  nothing. **The stick below carries it.**
+
 **Music was left as it is**, because `docs/music.html` is a design Diego
 approved on 14 September as the pilot of a *second* look, and changing it
 would be answering a question he has already answered.
@@ -118,7 +127,7 @@ would be answering a question he has already answered.
 ### And the question that is still his
 
 **Nothing since 0.10.117 is pushed**, and the sticks on GitHub are 0.10.115
-and 0.10.117. Whether 0.10.118-0.10.145 go out, and whether the M700 gets a
+and 0.10.117. Whether 0.10.118-0.10.146 go out, and whether the M700 gets a
 stick with the Ethernet driver on it, is his call.
 
 ---

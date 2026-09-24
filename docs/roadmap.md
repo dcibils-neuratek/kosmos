@@ -1594,6 +1594,35 @@ processors, and still what follows USB:
      from the right edge is 42 in now, and a minimise click two slots from
      the edge is three.
 
+   - **"the window tab font is really small if you compare it with the
+     mockups"** (0.10.146) - and it was, by two sizes and a narrower face.
+     `font.title` was Plex Sans **Condensed at 14** in all five looks while
+     everything else was Plex Sans at 16, so the Deskbar drew a window's
+     name noticeably larger than the window's own tab did.
+
+     **Both reasons for the old value had expired.** It was 14 because
+     widgets were 14 when it was written, and they went to 16 on the
+     ThinkPad on 22 September - "fonts look smaller than on qemu" - without
+     it following; and it was *condensed* because a tab used to be only as
+     wide as its title, so a long name had to be squeezed. Since 0.10.141
+     `tabs.width` is the window's full width, so the condensed face was
+     buying nothing at all. `docs/desktop.html` draws the title in the
+     body's own family at a shade *larger* than a button's label.
+
+     Now `ibmplexsans 16`, in the five looks and in the kit's defaults, so
+     a title, a Deskbar button and a window's own controls are one size.
+     `test_theme.lua` and two places in the display harness held the old
+     pair and were moved with it - which is what made this a five-line
+     change rather than a one-line one, and is the point of holding faces
+     in a test at all.
+
+     **The follow-up it leaves** (`testing.md` 18.160): every one of those
+     checks compares a role to a *number*, so a table with the wrong number
+     in it passes. What would have caught the original drift - widgets
+     moving to 16 while the title stayed at 14 - is a check comparing the
+     roles to each other: **no chrome role is smaller than `ui`**. Small,
+     and worth writing the next time a face moves.
+
 5zm. **A spawn refused after the desktop has been up a while.** Diego, 23
    September, with a desktop five minutes old and several windows: `wm
    preferences` answered `wm: no process`, which is `init.lua`'s message for
