@@ -93,6 +93,9 @@ size. Only the tag was pushed; `main` on GitHub is still at 0.10.117.
 (5zx, 6e, 18.168): a row a core, kernel red under user green, and a minute
 of history a core; the kernel measures the split at each crossing, because
 a tick cannot see a system call here. Title bar: green, amber, red.
+Pushed with 0.10.118 onwards after `make prepush` (6:12), and released as
+`v0.10.154` for the MacBook after `make stress`, both images booted and
+drawing Monitor's history.
 
 **The camera** is drawn (`docs/camera.html`, with Record) and agreed as a
 USB Video Class driver (6d). macOS keeps the C920 unless QEMU runs as root,
