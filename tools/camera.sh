@@ -31,6 +31,11 @@
 #  **`isobufs=8`**: QEMU's USB host keeps four transfers of 32 microframes
 #  of the camera, 16 ms, and drops what the guest has not taken by then.
 #  Eight is 32 ms, room for an emulated machine's slower moments.
+#
+#  **And a disk, kept between runs**, build/camera-home.img, so a recording
+#  - Record, or R - is kept in /home/videos (`roadmap.md` 6d 8f). A blank
+#  one is formatted by the machine itself. When QEMU ends, every recording on
+#  it is copied out to build/camera-videos/, which QuickTime opens.
 
 set -eu
 
@@ -38,10 +43,16 @@ DEVICE=${1:-046d:08e5}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 LOG="$HERE/build/camera.log"
 QLOG="$HERE/build/camera-qemu.log"
+DISK="$HERE/build/camera-home.img"
+OUT="$HERE/build/camera-videos"
 VENDOR=${DEVICE%%:*}
 PRODUCT=${DEVICE##*:}
 
-trap 'chmod a+r "$LOG" "$QLOG" 2>/dev/null || true' EXIT
+trap 'chmod a+rw "$LOG" "$QLOG" "$DISK" 2>/dev/null || true' EXIT
+
+if [ ! -f "$DISK" ]; then
+    dd if=/dev/zero of="$DISK" bs=1m count=256 2>/dev/null
+fi
 
 qemu-system-x86_64 -M q35,vmport=off -m 1G -smp 4 -no-reboot \
     -vga none -device ramfb -display cocoa \
@@ -50,6 +61,8 @@ qemu-system-x86_64 -M q35,vmport=off -m 1G -smp 4 -no-reboot \
     -device qemu-xhci,id=xhci \
     -device "usb-host,bus=xhci.0,vendorid=0x$VENDOR,productid=0x$PRODUCT,isobufs=8" \
     -fw_cfg "name=opt/kosmos/boot,string=wm deskbar,,camera" \
+    -drive "file=$DISK,format=raw,if=none,id=disk" \
+    -device virtio-blk-pci,drive=disk \
     -D "$QLOG" \
     -trace 'usb_host_open*' -trace 'usb_host_*_interface' \
     -trace 'usb_host_iso*' -trace 'usb_host_*kernel' \
@@ -62,3 +75,16 @@ grep -a "camera" "$LOG" | head -40 || echo "(nothing about a camera)"
 echo
 echo "What QEMU said about the camera ($QLOG):"
 head -30 "$QLOG" 2>/dev/null || echo "(nothing)"
+
+# The recordings, out of the disk and onto the Mac.
+if [ -x "$HERE/build/host/lua" ]; then
+    mkdir -p "$OUT"
+    ( cd "$HERE" && build/host/lua tools/kfs.lua ls "$DISK" /home/videos 2>/dev/null ) \
+        | sed -n 's/^  \(.*\.mp4\)  *[0-9][0-9]*$/\1/p' \
+        | while IFS= read -r name; do
+            ( cd "$HERE" && build/host/lua tools/kfs.lua get "$DISK" \
+                  "/home/videos/$name" "$OUT/$name" ) >/dev/null 2>&1 \
+                && echo "Recorded: $OUT/$name"
+          done
+    chmod -R a+rw "$OUT" 2>/dev/null || true
+fi
