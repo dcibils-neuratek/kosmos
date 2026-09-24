@@ -23,6 +23,7 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
         out->intid = PL061_INTID;
         out->line  = PL061_POWER_KEY_LINE;
         out->where = 0;
+        out->id    = 0;
         return true;
     }
 

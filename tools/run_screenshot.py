@@ -221,7 +221,7 @@ def extra_args(image, more):
 X86_ARGS = [
     "-M", "q35",
     "-m", "512M",
-    "-fw_cfg", "name=opt/kosmos/camera,string=pattern",   # `QEMU_ARGS` says
+    "-fw_cfg", "name=opt/kosmos/camera,string=pattern+silent",   # `QEMU_ARGS` says
     "-display", "none",
     "-vga", "none",
     "-device", "ramfb",
@@ -274,9 +274,10 @@ QEMU_ARGS = [
     #
     # The USB driver's test pattern, offered at `/dev/camera` (`usb.md` §11
     # 8d): QEMU has no camera, and the real one needs root on the Mac, so
-    # this is what the Camera app is held to.
+    # this is what the Camera app is held to. `+silent` offers a second one
+    # that never sends a frame, which is what holds the lease (`check_camera`).
     #
-    "-fw_cfg", "name=opt/kosmos/camera,string=pattern",
+    "-fw_cfg", "name=opt/kosmos/camera,string=pattern+silent",
     "-display", "none",
     "-device", "ramfb",
     # force-legacy=false is not optional: QEMU's virtio-mmio transports
@@ -6698,7 +6699,8 @@ def check_camera(guest):
     where they come from** - "drawn by the driver", never "over USB", which
     the foot said of the pattern until Diego saw it on his MacBook. And **a
     size too big for one to one**, chosen from the dropdown as he chose it,
-    draws scaled and keeps coming.
+    draws scaled and keeps coming. And **a camera that sends nothing keeps
+    its stream** while the app is looking at it.
     """
     mark = len(guest.seen)
     guest.type("wm camera")
@@ -6867,10 +6869,43 @@ def check_camera(guest):
                 or totals[-1] <= totals[0]:
             raise Failure("at 1280 x 720 the frames stopped: %r\n%s"
                           % (totals, guest.seen[before:][-600:]))
+
+        #
+        # **A camera that sends nothing keeps its stream while it is looked
+        # at.** The lease ran on frames *taken*, and a camera with none to
+        # take had its stream closed three seconds after it opened - the
+        # C920's first run with root, on 24 September, reopened every three
+        # seconds and never showed a picture. The lease runs on looking now.
+        # The harness offers a second pattern that never sends
+        # (`pattern+silent`); the dots' menu is Mirror, a separator, then the
+        # cameras, so it is the fourth row.
+        #
+        before = len(guest.seen)
+        click(wx + 657, wy + 22)            # the dots: 680 - 10 - 26 + 13
+        menu = guest.wait_for_line("wm: menu of Camera at ",
+                                   "the dots' menu to open", before)
+        mx, my = (int(v) for v in
+                  re.match(r"(\d+),(\d+)", menu).groups())
+        time.sleep(1.0)
+        click(mx + 20, my + 2 + 3 * MENU_ROW + MENU_ROW // 2)
+        guest.wait_for_line("camera: Silent pattern at ",
+                            "the silent pattern chosen from the menu", before)
+
+        time.sleep(3 + 2.5)                 # the lease, and more
+        guest._read_available()
+        after = guest.seen[before:]
+        looks = re.findall(r"camera: 0 frames a second", after)
+
+        if "nobody has looked at it" in after \
+                or after.count("the silent pattern opened") != 1 \
+                or "(camera) ended" in after or len(looks) < 3:
+            raise Failure("a camera that sends nothing did not keep its "
+                          "stream while the app looked at it:\n"
+                          + after[-900:])
     finally:
         stop_desktop(guest)
 
-    return 6
+    return 7
 
 
 def check_cores(guest):

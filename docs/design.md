@@ -793,6 +793,31 @@ including the window manager, and the Tracker the window manager starts.
 When there is an NVMe driver, `/home` becomes persistent and nothing else in
 the system changes.
 
+### 8.3b The journal holds the structure, and a file's bytes are written once
+
+Decided on 24 September 2026, for the camera's recordings (`roadmap.md` 6d),
+by Diego: *journal only metadata*.
+
+kfs journalled every block a write changed, the file's own bytes included.
+So every data block went to the disk twice, and no write could be larger
+than the journal: 254 blocks with the file's metadata, just under a
+megabyte. A recording at 640 by 480 passes that in about four seconds.
+
+So a file's contents go straight to blocks that nothing points at yet -
+newly allocated, and never one the same transaction freed - and only the
+structure goes through the journal: the inode, the bitmap, the directory
+entry. Before the commit the old file is whole and the new blocks are free
+space; after it the new file is whole. It is ext4's default, `data=ordered`,
+for the same reason.
+
+What it keeps is the whole point of the journal: an operation happened or
+did not. What it adds: a rewrite needs room for the old file and the new one
+until the commit, because nothing is overwritten in place. What it moves is
+the power-loss window - data landed, commit not - and `tools/test_kfs.lua`
+holds that instant the way it holds the others.
+
+This records the decision; `roadmap.md` 6d says where the building is.
+
 ### 8.4 A large file is mapped, not copied
 
 `read` returning a string is right for a configuration file and wrong for a picture. A 936 KB PNG through `fs.read` gives `not enough memory`, because the string is accumulated on a 2 MB process heap.

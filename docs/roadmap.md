@@ -1662,6 +1662,39 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6i. **OPEN on 24 September, for Diego - the drivers' band.** The USB
+   driver runs at NORMAL and the desktop at DISPLAY, so a busy desktop holds
+   it off its core: on the camera's first runs that overflowed QEMU's 32 ms
+   of camera and dropped Transfer Events. On the ThinkPad the same driver is
+   the USB mouse, which `sched.h` puts at INPUT. The proposal is the display
+   band for a process holding device authority, as the audio server has;
+   `process.c` says why a band above that is not safe yet.
+
+6h. **ASKED on 24 September - Monitor with 8, 10 or 16 cores.** Diego: "what
+   happens when i have 8 or 10 cores? does the app shows one graph per core
+   up to 10? smaller graphs?" It does: two across up to four cores, four
+   across above, a row a core in the list - 777 tall at 8, 987 at 10 and
+   1393 at 16, so the ThinkPad's 8 do not fit 1280x720 and 16 fit nothing.
+   The proposal, to be drawn in `docs/apps.html` first: the list in two
+   columns above four cores, the window never taller than the screen, and
+   past about sixteen a choice of one graph a core or one for all.
+
+6g. **WANTED on 24 September - Processes says what a process is.** Diego:
+   "isnt the e1000 a driver, not a server? i see it as a server in the
+   process viewer". `procs.lua` takes a kind from a program in `/bin` of the
+   same name and calls everything else a server, under a comment saying
+   every driver is in the kernel - untrue since the power button's. So
+   `xhci`, `e1000` and `backlight` read "server", and the drives *server*
+   reads "app", after the Drives app. The kind should come from what init
+   started, not from a name.
+
+6f. **WANTED on 24 September - Tracker's icon view names like the Finder's.**
+   Diego: "the name of files is being broken into 2 lines where it could it
+   in 1 line", "make the space for the file name wider like macos does".
+   `Deskbar` wraps as `Deskb` / `ar` in a column no wider than its tile. A
+   name gets a column wider than its icon, breaks only between words, and a
+   long one is shortened in the middle, as the Finder's two lines are.
+
 6e. **DONE on 24 September (0.10.154) - the three title bar buttons in
    macOS's order.** Diego: "the windows bar close, maximize and minimize
    buttons are incorect oder", "from left to right: green - maximixze,
@@ -1705,6 +1738,17 @@ processors, and still what follows USB:
      tools/camera.sh`;
      8b isochronous IN in the xHCI driver; 8c the stream negotiated and
      frames put together; 8d `/dev/camera` and its region; 8e the app; 8f recording.
+   - **8e live on 24 September** (0.10.158): the C920 through `tools/camera.sh`
+     as root, on QEMU's x86 machine - 640 x 480 at 30 frames a second for
+     minutes on end, and every other size Diego chose. It took three fixes
+     it found (`usb.md` §11): the lease counted on looking rather than on
+     frames taken; a TD whose Transfer Event QEMU dropped put back rather
+     than lost; and QEMU's xHCI scheduled by Frame ID.
+   - **8f needs kfs to take a file over a megabyte.** Every block a write
+     changed went through the 1 MB journal; decided the same evening, by
+     Diego - journal only metadata (`design.md` 8.3b). Then the encoder:
+     `minih264e` and `minimp4`, downloaded and pinned (b0baea7 and
+     5a212a1, CC0), and a YUY2-to-I420 loop written vectorised.
 
 6c. **WANTED on 24 September - Preferences on a 1280x720 screen.** Seen
    while checking the `v0.10.153` release image at that size: the window is

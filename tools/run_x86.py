@@ -531,6 +531,20 @@ def usb(image, check):
           "the driver did not start both controllers with an interrupt "
           "claimed:\n    " + shown)
 
+    #
+    # **Which controller it is, from the board.** `hal_device.id`, the PCI
+    # vendor and device, carried by the kernel's `dev_info` to the driver -
+    # which schedules a camera's intervals by Frame ID on QEMU's xHCI
+    # alone, because QEMU paces Start ASAP TDs at a timer tick (`usb.md`
+    # §11, 24 September). Both of these are QEMU's, 1b36:000d.
+    #
+    theirs = re.findall(r"xhci: " + at + r" is QEMU's \(1b36:000d\): a "
+                        r"camera's intervals go by Frame ID", out)
+
+    check(len(theirs) == 2,
+          "the driver was not told both controllers are QEMU's (1b36:000d) "
+          "- the board's PCI identity did not reach it:\n    " + shown)
+
     answered = re.findall(r"xhci: " + at + r" answered a No-Op command on "
                           r"its event ring, by interrupt", out)
 

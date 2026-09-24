@@ -1772,7 +1772,7 @@ void syscall_dispatch(struct syscall_frame *sc)
          * power button on a PC - and it should be able to tell that apart
          * from having been refused.
          */
-        struct hal_device found;
+        struct hal_device found = { 0 };
         struct dev_info info = { 0 };
         uintptr_t out_ptr = (uintptr_t)sc->arg[2];
 
@@ -1798,6 +1798,7 @@ void syscall_dispatch(struct syscall_frame *sc)
         info.base  = (uint64_t)found.base;
         info.size  = (uint64_t)found.size;
         info.where = (uint32_t)found.where;
+        info.id    = (uint32_t)found.id;
 
         *(struct dev_info *)out_ptr = info;
         result = 0;

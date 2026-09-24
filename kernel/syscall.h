@@ -1261,6 +1261,8 @@ struct dev_info {
     uint32_t where;         /* PCI bus << 8 | slot << 3 | function, or 0 */
     uint64_t base;          /* for SYS_DEV_MAP */
     uint64_t size;
+    uint32_t id;            /* PCI vendor << 16 | device, or 0 off PCI */
+    uint32_t reserved;
 };
 
 #endif /* !__ASSEMBLER__ */

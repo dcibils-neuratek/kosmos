@@ -42,7 +42,7 @@ PRODUCT=${DEVICE##*:}
 qemu-system-x86_64 -M q35,vmport=off -m 512M -no-reboot \
     -display none -vga none -device ramfb -serial "file:$LOG" \
     -device qemu-xhci,id=xhci \
-    -device "usb-host,bus=xhci.0,vendorid=0x$VENDOR,productid=0x$PRODUCT" \
+    -device "usb-host,bus=xhci.0,vendorid=0x$VENDOR,productid=0x$PRODUCT,isobufs=8" \
     -fw_cfg name=opt/kosmos/camera,string=count \
     -kernel "$HERE/build/x86_64/kosmos.bin" < /dev/null &
 QEMU=$!

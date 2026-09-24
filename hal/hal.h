@@ -322,6 +322,15 @@ struct hal_device {
     unsigned      intid;
     unsigned      line;         /* which input on it, where that matters */
     unsigned      where;        /* PCI bus << 8 | slot << 3 | function */
+
+    /*
+     * PCI vendor << 16 | device, or 0 off PCI. Arrived with the USB driver's
+     * one quirk: QEMU's xHCI (1b36:000d) paces isochronous transfers started
+     * "as soon as possible" at one a timer tick, so a camera on it is
+     * scheduled by Frame ID instead (`usb.md` §11) - and "which controller
+     * is this" is the board's to answer, since it is the one that found it.
+     */
+    unsigned      id;
 };
 
 bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out);

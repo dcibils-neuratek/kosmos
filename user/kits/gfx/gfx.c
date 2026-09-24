@@ -2588,6 +2588,8 @@ static int l_camera(lua_State *L)
         return luaL_error(L, "that is not a camera's region");
     }
 
+    r->looked = r->looked + 1u;         /* the lease: still here */
+
     if (r->stopped) {
         lua_pushboolean(L, 0);
         lua_pushstring(L, "stopped");

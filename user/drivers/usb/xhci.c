@@ -557,6 +557,9 @@ struct controller {
     bool          running;              /* started, and watched */
     bool          woken;                /* this look is its own interrupt's */
 
+    /* QEMU's xHCI: a camera's intervals go by Frame ID (`camera_queue`). */
+    bool          frame_ids;
+
     /* Each port's device: 0 none, its slot, or PORT_FAILED - there, not named. */
     unsigned char port_slot[PORTS_MAX + 1];
 
@@ -1319,6 +1322,14 @@ static bool start(struct controller *c, const struct dev_info *dev,
     }
 
     say_send(console, line);
+
+    if (c->frame_ids) {
+        about(line, c);
+        say_text(line, " is QEMU's (1b36:000d): a camera's intervals go by "
+                       "Frame ID, not Start ASAP");
+        say_send(console, line);
+    }
+
     return true;
 }
 
@@ -4128,6 +4139,48 @@ static void use_ethernet(struct controller *c, struct device *d,
  * so seven in eight are blocked and the events wait on the ring for the
  * eighth. A millisecond between looks; the event ring's 256 are 32 of them.
  */
+/*
+ * **QEMU's xHCI, and the one quirk in this driver.** A TD with Start Isoch
+ * ASAP (6.4.1.3) is what a real controller is given, and what Linux gives
+ * one unless it has CFC. QEMU schedules each such TD one interval after the
+ * last, and when it has fallen behind - its timer fires about once a
+ * millisecond on the Mac - it jumps to the present and serves one
+ * (`xhci_calc_iso_kick`, hcd-xhci.c, 11.1.1). So a high-speed camera got
+ * about 2,000 of its 8,000 intervals a second, and on 24 September the
+ * C920 made no whole frame: QEMU's USB host holds 16 ms of the camera and
+ * drops what the guest does not take in time.
+ *
+ * A TD with a Frame ID it serves the moment that frame has come, as many as
+ * are due in one pass. So on QEMU's controller (1b36:000d - its PCI vendor
+ * is QEMU's, and nothing real has it) each TD is given a microframe: seven
+ * eighths of an interval after the last, so that the schedule runs an
+ * eighth faster than the camera and a backlog drains. Every other
+ * controller is given SIA.
+ *
+ * **And QEMU reads a Frame ID in the window it is in when it first looks.**
+ * Eleven bits of frame wrap every 2.048 s, and QEMU puts the TD in the
+ * current window (`mfindex & ~0x3fff`) - so a frame just before the wrap,
+ * first looked at just after it, reads as almost two seconds ahead, and
+ * the endpoint waits for it. So did everything behind it: on 24 September
+ * the C920 streamed for half a minute and then stopped at 30 intervals a
+ * second, every TD still coming back with bytes. Two rules keep QEMU away
+ * from it:
+ *
+ *   - the schedule may lag the present by up to `CAMERA_BEHIND` - which is
+ *     how a backlog is caught up, a burst of TDs all due at once - but the
+ *     frame QEMU is handed is never one that has passed;
+ *   - none is handed a frame in the last `CAMERA_WRAP_GUARD` before the
+ *     wrap: those wait for the first frame after it, which QEMU reads the
+ *     same on either side. A TD QEMU looks at later than that - its timer
+ *     that late - would still be misread, and `camera_report` says so.
+ */
+#define XHCI_QEMU_ID        0x1b36000du
+#define CAMERA_BEHIND       256u        /* microframes: QEMU's USB host holds 32 ms */
+#define CAMERA_WRAP_GUARD   128u        /* microframes: 16 ms */
+#define CAMERA_LATE         0x100u      /* past this QEMU reads a frame as ahead */
+#define TRB_FRAME_ID(f)     (((uint32_t)(f) & 0x7FFu) << 20)
+#define RT_MFINDEX          0x00u       /* 5.5.1: microframes, 14 bits */
+
 #define CAMERAS_MAX         2u
 #define CAMERA_TDS          64u         /* 8 ms of intervals in flight */
 #define CAMERA_BELL_EVERY   8u          /* an interrupt a millisecond */
@@ -4172,9 +4225,17 @@ struct camera {
     unsigned      alt;                  /* index in `info.alts` */
     unsigned      dci;
     uint32_t      td_bytes;             /* one TD: the setting's bytes */
+    unsigned      uframes;              /* microframes an interval */
+
+    /* By Frame ID (QEMU): the controller's microframe, counted on past its
+     * 14 bits, and where the next TD goes - in eighths of a microframe. */
+    uint32_t      mfindex;
+    uint32_t      sched8;
 
     struct ring   ring;
     unsigned char td_of[RING_TRBS];     /* which buffer each place points at */
+    uint32_t      at_of[RING_TRBS];     /* and the microframe it was given */
+    unsigned      oldest;               /* the place of the oldest TD out */
     unsigned      queued;               /* TDs put on the ring, ever */
     bool          bell;                 /* queued since the doorbell */
 
@@ -4192,6 +4253,26 @@ struct camera {
     unsigned long intervals, missed, errors, overruns;
     unsigned long frames, said_frames, said_dropped, said_missed;
     unsigned long said_at;
+
+    /*
+     * **What the intervals carried**, frames or not. The C920's first run
+     * with root streamed for three seconds at a time and made no frames,
+     * and the driver said only that - its line came with a frame, and there
+     * were none. So these are counted from the first interval and said
+     * every CAMERA_SAY_SECONDS and when it stops, whatever arrived.
+     */
+    unsigned long carried;              /* intervals with any bytes */
+    unsigned long bytes;
+    unsigned long header_only;          /* a payload header and nothing */
+    unsigned long eofs, fid_changes, flagged, not_payloads;
+    int           last_fid;
+
+    /* TDs whose Transfer Event never came, and were put back (take_video). */
+    unsigned long lost;
+
+    /* By Frame ID: how late the latest TD back was, in microframes, since
+     * the last report - past CAMERA_LATE, QEMU misread its frame. */
+    uint32_t      latest;
 };
 
 static struct camera cameras[CAMERAS_MAX];
@@ -4291,6 +4372,21 @@ static void camera_release(struct camera *k)
  * `extra + 1`: TBC is the bursts less one, and TLBPC the packets in the last
  * less one. For the C920's setting 11, three packets of 1024 in one burst.
  */
+/* The controller's microframe now, unwrapped: MFINDEX is 14 bits, 2 s. */
+static uint32_t camera_now(struct camera *k)
+{
+    uint32_t m = mmio_read32(k->c->rt + RT_MFINDEX) & 0x3FFFu;
+
+    k->mfindex += (m - k->mfindex) & 0x3FFFu;
+    return k->mfindex;
+}
+
+/* The place after `place` on a transfer ring: the last is the Link. */
+static unsigned ring_next(unsigned place)
+{
+    return place + 1u == RING_TRBS - 1u ? 0u : place + 1u;
+}
+
 static void camera_queue(struct camera *k, unsigned which)
 {
     const struct uvc_alt *a = &k->info.alts[k->alt];
@@ -4306,8 +4402,35 @@ static void camera_queue(struct camera *k, unsigned which)
         bursts = 1;
     }
 
-    w3 = TRB_TYPE(TRB_ISOCH) | TRB_ISP | TRB_IOC | TRB_SIA
+    w3 = TRB_TYPE(TRB_ISOCH) | TRB_ISP | TRB_IOC
        | TRB_TBC(bursts - 1u) | TRB_TLBPC((packets - 1u) % burst);
+
+    if (k->c->frame_ids) {
+        uint32_t now = camera_now(k), at;
+
+        k->sched8 += k->uframes * 7u;
+        at = k->sched8 >> 3;
+
+        if ((int32_t)(now - at) > (int32_t)CAMERA_BEHIND) {
+            at = now - CAMERA_BEHIND;
+            k->sched8 = at << 3;
+        }
+
+        /* Handed to QEMU: never a frame that has passed, never one just
+         * before the wrap (above). The schedule itself may lag. */
+        if ((int32_t)(at - now) < 0) {
+            at = now;
+        }
+
+        if ((at & 0x3FFFu) >= 0x4000u - CAMERA_WRAP_GUARD) {
+            at = (at | 0x3FFFu) + 1u;
+        }
+
+        k->at_of[k->ring.enqueue] = at;
+        w3 |= TRB_FRAME_ID(at >> 3);
+    } else {
+        w3 |= TRB_SIA;
+    }
 
     if (k->queued % CAMERA_BELL_EVERY != CAMERA_BELL_EVERY - 1u) {
         w3 |= TRB_BEI;
@@ -4348,19 +4471,47 @@ static void say_camera_size(struct say_line *line, const struct uvc_frame *f)
 }
 
 /*
- * A whole frame. Counted here; handed to whoever opened the camera from 8d.
- * Every CAMERA_SAY_SECONDS a line: how many frames, how many dropped, and
- * how many intervals the controller could not serve - which is what a live
- * test is read by.
+ * A whole frame: counted, and handed to whoever opened the camera.
  */
 static void camera_frame(struct camera *k)
+{
+    k->frames++;
+    stream_frame(k, k->as.length);
+}
+
+/* What the intervals carried, a line of its own - with the periodic line
+ * and the last one, which together would not fit in SAY_LINE_MAX. */
+static void say_carried(struct say_line *line, const struct camera *k)
+{
+    about(line, k->c);
+    say_text(line, " camera: ");
+    say_dec(line, k->carried);
+    say_text(line, " carried bytes (");
+    say_dec(line, k->bytes / 1024u);
+    say_text(line, " KB), ");
+    say_dec(line, k->header_only);
+    say_text(line, " only a header, ");
+    say_dec(line, k->not_payloads);
+    say_text(line, " not a payload; ");
+    say_dec(line, k->eofs);
+    say_text(line, " EOF, ");
+    say_dec(line, k->fid_changes);
+    say_text(line, " FID changes, ");
+    say_dec(line, k->flagged);
+    say_text(line, " flagged ERR");
+    say_send(console, line);
+}
+
+/*
+ * Every CAMERA_SAY_SECONDS, from every interval and not only from a frame:
+ * how many frames, how many dropped, how many intervals the controller could
+ * not serve, and what they carried - which is what a live test is read by.
+ */
+static void camera_report(struct camera *k)
 {
     unsigned long now = kosmos_ticks();
     unsigned long span = counter_hz * CAMERA_SAY_SECONDS;
     struct say_line line;
-
-    k->frames++;
-    stream_frame(k, k->as.length);
 
     if (now - k->said_at < span) {
         return;
@@ -4381,8 +4532,21 @@ static void camera_frame(struct camera *k)
     say_dec(&line, k->errors);
     say_text(&line, " in error, ");
     say_dec(&line, k->overruns);
-    say_text(&line, " overruns so far");
+    say_text(&line, " overruns, ");
+    say_dec(&line, k->lost);
+    say_text(&line, " events lost so far");
     say_send(console, &line);
+    say_carried(&line, k);
+
+    if (k->latest > CAMERA_LATE) {
+        about(&line, k->c);
+        say_text(&line, " camera: a TD came back ");
+        say_dec(&line, k->latest);
+        say_text(&line, " microframes after its frame - QEMU read it as ahead");
+        say_send(console, &line);
+    }
+
+    k->latest = 0;
 
     k->said_at = now;
     k->said_frames = k->frames;
@@ -4435,13 +4599,75 @@ static void take_video(struct controller *c, const uint32_t *event)
     }
 
     place = (unsigned)((at - k->ring.bus) / 16u);
+
+    /*
+     * **Every TD before this one is done too, event or no event.** An
+     * isochronous endpoint completes its TDs in order, and a controller
+     * whose event ring is full drops the events it cannot write - QEMU
+     * does exactly that (`xhci_event`, "drop event"). A TD whose event was
+     * dropped was never put back on the ring, so each such loss took one
+     * away for good: on 24 September the C920 froze for a few seconds at a
+     * time and then for good, at the 50 ms watch's 21 intervals a second,
+     * with one or two TDs left of 64. So they are put back here, as the
+     * next event passes them, and their payloads - unknown - break the
+     * frame they were part of.
+     *
+     * A place further on than there are TDs out is not one of ours - taken
+     * already, or never queued - and is counted rather than walked to.
+     */
+    if ((place + (RING_TRBS - 1u) - k->oldest) % (RING_TRBS - 1u)
+        >= CAMERA_TDS) {
+        k->errors++;
+        return;
+    }
+
+    while (k->oldest != place) {
+        k->lost++;
+
+        if (k->as.length > 0) {
+            k->as.broken = true;
+        }
+
+        if (!k->stopping) {
+            camera_queue(k, k->td_of[k->oldest]);
+        }
+
+        k->oldest = ring_next(k->oldest);
+    }
+
+    k->oldest = ring_next(place);
     which = k->td_of[place];
     k->intervals++;
+
+    if (k->c->frame_ids) {
+        uint32_t late = camera_now(k) - k->at_of[place];
+
+        if ((int32_t)late > (int32_t)k->latest) {
+            k->latest = late;
+        }
+    }
 
     if (code == CC_SUCCESS || code == CC_SHORT_PACKET) {
         left = TRB_LEFT_OF(event[2]);
         got = left < k->td_bytes ? k->td_bytes - left : 0;
         payload = (const uint8_t *)(k->tds + (uintptr_t)which * k->td_bytes);
+
+        k->bytes += got;
+        k->carried += got > 0 ? 1u : 0u;
+
+        if (got >= 2 && payload[0] >= 2 && payload[0] <= got) {
+            k->header_only += got == payload[0] ? 1u : 0u;
+            k->eofs += (payload[1] & 2u) ? 1u : 0u;
+            k->flagged += (payload[1] & 0x40u) ? 1u : 0u;
+
+            if (k->last_fid >= 0 && (int)(payload[1] & 1u) != k->last_fid) {
+                k->fid_changes++;
+            }
+
+            k->last_fid = payload[1] & 1;
+        } else if (got > 0) {
+            k->not_payloads++;
+        }
 
         for (;;) {
             enum uvc_step step = uvc_payload(&k->as, payload, got);
@@ -4473,6 +4699,8 @@ static void take_video(struct controller *c, const uint32_t *event)
     if (!k->stopping) {
         camera_queue(k, which);
     }
+
+    camera_report(k);
 }
 
 /*
@@ -4660,7 +4888,17 @@ static bool camera_start(struct camera *k, int size, uint8_t *target,
 
     k->queued = 0;
     k->stopping = false;
+    k->uframes = 1u << interval_for(d->speed, a->interval);
+    k->mfindex = mmio_read32(c->rt + RT_MFINDEX) & 0x3FFFu;
+    k->sched8 = k->mfindex << 3;
     k->said_at = kosmos_ticks();
+    k->frames = k->said_frames = k->said_dropped = k->said_missed = 0;
+    k->intervals = k->missed = k->errors = k->overruns = 0;
+    k->carried = k->bytes = k->header_only = 0;
+    k->eofs = k->fid_changes = k->flagged = k->not_payloads = 0;
+    k->last_fid = -1;
+    k->lost = 0;
+    k->oldest = k->ring.enqueue;
     k->streaming = true;
 
     for (i = 0; i < CAMERA_TDS; i++) {
@@ -4835,7 +5073,17 @@ static void camera_stop(struct camera *k, struct say_line *line)
     say_text(line, ": camera: stopped after ");
     say_dec(line, k->frames);
     say_text(line, k->frames == 1 ? " frame" : " frames");
+    say_text(line, ": ");
+    say_dec(line, k->intervals);
+    say_text(line, " intervals, ");
+    say_dec(line, k->missed);
+    say_text(line, " missed, ");
+    say_dec(line, k->errors);
+    say_text(line, " in error, ");
+    say_dec(line, k->overruns);
+    say_text(line, " overruns");
     say_send(console, line);
+    say_carried(line, k);
 }
 
 /* A camera unplugged: forgotten, and its memory given back. */
@@ -5568,6 +5816,7 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
     c->where = dev->where;
     c->size = (unsigned long)dev->size;
     c->irq = -1;
+    c->frame_ids = dev->id == XHCI_QEMU_ID;
 
     mapped = kosmos_dev_map((unsigned long)dev->base,
                             (c->size + 4095u) / 4096u);
@@ -6429,9 +6678,19 @@ static void serve_frames(struct say_line *line)
 static long camera_endpoint = -1;
 static bool pattern_offered;
 
+/*
+ * **And a camera that sends nothing**, with `pattern+silent`: the pattern's
+ * name and sizes, and never a frame - the C920 under QEMU before its
+ * intervals went by Frame ID, which is what found that the lease ran on
+ * frames *taken* and closed a stream whose program was looking for frames
+ * that never came. The display harness offers it; `run-kosmos.sh` does not.
+ */
+static bool silent_offered;
+
 static struct {
     bool          open;
     bool          pattern;
+    bool          silent;               /* the pattern that never sends */
     struct camera *k;                   /* the USB camera, when not the pattern */
     long          cap;
     uintptr_t     at;
@@ -6439,8 +6698,8 @@ static struct {
     volatile struct camera_ring *ring;
     unsigned      writing;              /* the slot being filled */
     uint32_t      sequence;
-    uint32_t      taken_seen;           /* the program's lease */
-    unsigned long taken_at;
+    uint32_t      looked_seen;          /* the program's lease */
+    unsigned long looked_at;
     unsigned long next_at;              /* the pattern's next frame, counter */
     unsigned long every;                /* and the counter between two */
     unsigned      phase;
@@ -6504,7 +6763,8 @@ static void camera_list(uint32_t which, struct camera_reply *rep)
     struct camera *list[CAMERAS_MAX];
     unsigned usb = cameras_listed(list, CAMERAS_MAX), i, n = 0;
 
-    rep->cameras = usb + (pattern_offered ? 1u : 0u);
+    rep->cameras = usb + (pattern_offered ? 1u : 0u)
+                 + (silent_offered ? 1u : 0u);
 
     if (which < usb) {
         const struct camera *k = list[which];
@@ -6536,8 +6796,14 @@ static void camera_list(uint32_t which, struct camera_reply *rep)
             rep->size[n].slot_bytes = frame_slot_bytes(fr);
             n++;
         }
-    } else if (which == usb && pattern_offered) {
-        memcpy(rep->name, "Test pattern", 13);
+    } else if ((which == usb && pattern_offered)
+               || (which == usb + 1u && silent_offered)) {
+        if (which == usb) {
+            memcpy(rep->name, "Test pattern", 13);
+        } else {
+            memcpy(rep->name, "Silent pattern", 15);
+        }
+
         rep->source = CAMERA_SOURCE_PATTERN;
 
         for (i = 0; i < PATTERN_SIZE_COUNT; i++) {
@@ -6690,27 +6956,28 @@ static void pattern_draw(uint8_t *to, unsigned width, unsigned height,
 
 /*
  * **Every look the driver takes**: the pattern's next frame when it is due,
- * and the lease - a program that has not taken a frame for
- * `CAMERA_LEASE_SECONDS` has gone, and its stream is closed.
+ * and the lease - a program that has not looked for a frame for
+ * `CAMERA_LEASE_SECONDS` has gone, and its stream is closed. Looked, not
+ * taken: a camera that sends nothing leaves nothing to take.
  */
 static void stream_tick(struct say_line *line)
 {
     unsigned long now = kosmos_ticks();
-    uint32_t taken;
+    uint32_t looked;
 
     if (!stream.open) {
         return;
     }
 
-    taken = stream.ring->taken;
+    looked = stream.ring->looked;
 
-    if (taken != stream.taken_seen) {
-        stream.taken_seen = taken;
-        stream.taken_at = now;
-    } else if (now - stream.taken_at
+    if (looked != stream.looked_seen) {
+        stream.looked_seen = looked;
+        stream.looked_at = now;
+    } else if (now - stream.looked_at
                > counter_hz * (unsigned long)CAMERA_LEASE_SECONDS) {
         say_begin(line);
-        say_text(line, "xhci: camera: nobody has taken a frame for ");
+        say_text(line, "xhci: camera: nobody has looked at it for ");
         say_dec(line, CAMERA_LEASE_SECONDS);
         say_text(line, " s; the stream is closed");
         say_send(console, line);
@@ -6718,7 +6985,8 @@ static void stream_tick(struct say_line *line)
         return;
     }
 
-    if (stream.pattern && (long)(now - stream.next_at) >= 0) {
+    if (stream.pattern && !stream.silent
+        && (long)(now - stream.next_at) >= 0) {
         unsigned width = stream.ring->width, height = stream.ring->height;
 
         pattern_draw(stream_slot(stream.writing), width, height,
@@ -6739,7 +7007,8 @@ static void camera_open(const struct camera_request *req, long cap,
 {
     struct camera *list[CAMERAS_MAX];
     unsigned usb = cameras_listed(list, CAMERAS_MAX);
-    bool pattern = pattern_offered && req->camera == usb;
+    bool silent = silent_offered && req->camera == usb + 1u;
+    bool pattern = (pattern_offered && req->camera == usb) || silent;
     uint32_t width, height, pixels, slot_bytes, interval;
     long pages, at;
     int f = -1;
@@ -6803,13 +7072,14 @@ static void camera_open(const struct camera_request *req, long cap,
     stream.handle = ++stream_handles != 0 ? stream_handles : ++stream_handles;
     rep->handle = stream.handle;
     stream.pattern = pattern;
+    stream.silent = silent;
     stream.cap = cap;
     stream.at = (uintptr_t)at;
     stream.pages = (unsigned long)pages;
     stream.ring = (volatile struct camera_ring *)(uintptr_t)at;
-    stream.taken_at = kosmos_ticks();
+    stream.looked_at = kosmos_ticks();
     stream.every = counter_hz / 30u;
-    stream.next_at = stream.taken_at;
+    stream.next_at = stream.looked_at;
 
     stream.ring->width = width;
     stream.ring->height = height;
@@ -6838,7 +7108,8 @@ static void camera_open(const struct camera_request *req, long cap,
 
     say_begin(line);
     say_text(line, "xhci: camera: ");
-    say_text(line, pattern ? "the test pattern" : "a camera");
+    say_text(line, silent ? "the silent pattern"
+                   : pattern ? "the test pattern" : "a camera");
     say_text(line, " opened at ");
     say_dec(line, width);
     say_text(line, "x");
@@ -6911,9 +7182,11 @@ static void camera_options(void)
 {
     char option[16] = { 0 };
 
-    pattern_offered = kosmos_boot_option("opt/kosmos/camera", option,
-                                         sizeof(option)) == 7
-                      && memcmp(option, "pattern", 7) == 0;
+    long n = kosmos_boot_option("opt/kosmos/camera", option, sizeof(option));
+
+    silent_offered = n == 14 && memcmp(option, "pattern+silent", 14) == 0;
+    pattern_offered = silent_offered
+                      || (n == 7 && memcmp(option, "pattern", 7) == 0);
 }
 
 /* How long a wait may be while a stream wants looking at: a pattern frame

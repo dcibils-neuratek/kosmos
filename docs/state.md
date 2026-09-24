@@ -116,6 +116,15 @@ and **1280 x 720 from the dropdown closed the app** - `stretch` handed an alpha
 of -1, a path the check had never taken. **0.10.157** fixes it, holds the
 check to a size chosen from the dropdown, and stops the foot calling the
 pattern "over USB" (18.173).
+**0.10.158: the C920 live.** Diego ran `sudo sh tools/camera.sh` four times on
+24 September and it now shows him at 30 frames a second (18.174, `usb.md`
+§11 *8e, live*): the lease runs on looking, a dropped event's TD is put back,
+and on QEMU's xHCI (1b36:000d, now passed by the board) a camera's TDs go by
+Frame ID, never a passed frame or one just before the wrap. **Recording (8f)
+next**, after kfs journals only metadata (decided that evening, `design.md`
+8.3b); `minih264e` and `minimp4` are downloaded. Raised by Diego the same
+evening and in the roadmap: Tracker's icon names (6f), Processes' kinds (6g),
+Monitor with many cores (6h), and the drivers' band, his to decide (6i).
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

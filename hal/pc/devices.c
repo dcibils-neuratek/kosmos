@@ -162,6 +162,7 @@ static bool intel_backlight(struct hal_device *out)
     out->intid = 0;
     out->line  = 0;
     out->where = IGD_SLOT << 3;
+    out->id    = 0;
 
     return true;
 }
@@ -202,6 +203,8 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
                 ether_kept[index].where = ((unsigned)pci.bus << 8)
                                         | ((unsigned)pci.slot << 3)
                                         | (unsigned)pci.function;
+                ether_kept[index].id    = ((unsigned)pci.vendor << 16)
+                                        | pci.device;
                 ether_known[index] = true;
             }
         }
@@ -236,6 +239,8 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
             xhci_kept[index].where = ((unsigned)pci.bus << 8)
                                    | ((unsigned)pci.slot << 3)
                                    | (unsigned)pci.function;
+            xhci_kept[index].id    = ((unsigned)pci.vendor << 16)
+                                   | pci.device;
             xhci_known[index] = true;
         }
     }

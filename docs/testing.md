@@ -9275,3 +9275,26 @@ camera, and "drawn by the driver" of the pattern.
   fails with Diego's own error, `alpha is 0 to 255, not -1`, and the app
   ended; the driver calling its pattern a USB camera fails with `over USB`
   in the line.
+
+## 18.174 The C920, live
+
+`roadmap.md` 6d, `usb.md` §11 *8e, live*. The first picture from Diego's
+Logitech C920 in Kosmos, on QEMU's x86 machine with `sudo sh
+tools/camera.sh`: 640 x 480 at 29 to 30 frames a second for minutes, after
+four runs that each found something the one before hid - a lease on frames
+taken, QEMU's pacing of Start ASAP TDs, dropped Transfer Events losing TDs,
+and QEMU reading a Frame ID in the wrong window near MFINDEX's wrap.
+
+- **camera** (display harness, both boards), 6 -> 7: the harness offers
+  `pattern+silent`, a second pattern that never sends a frame, and the app
+  chosen onto it from the dots' menu keeps its stream past the three-second
+  lease while it goes on looking. **Control**: the lease on `taken` again
+  closes it twice in the check's five seconds.
+- **x86-usb** (`run_x86.py` *usb*), 19 -> 20: both of QEMU's controllers are
+  known to the driver as 1b36:000d - the board's PCI identity through the
+  kernel's `dev_info`. **Control**: the board sending 0 fails it.
+- **Not held by the gate**, because it needs a camera: the Frame ID schedule,
+  whose evidence is these runs - 144 to 150 frames in every five seconds,
+  sizes changed from the dropdown, no TD back late. And the TDs put back
+  after a dropped event, which no run has needed since the fix: "0 events
+  lost" in every report.

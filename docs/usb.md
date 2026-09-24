@@ -14,7 +14,7 @@ else.
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
-| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a-8e built: the app on the test pattern, both boards; the real C920 found and refused without root, waiting for `sudo sh tools/camera.sh`; 8f, recording, next |
+| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a-8e built, and live on the C920 as root on 24 September at 30 frames a second; 8f, recording, next. Before that: the app on the test pattern, both boards; the real C920 found and refused without root, waiting for `sudo sh tools/camera.sh`; 8f, recording, next |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
@@ -2486,6 +2486,61 @@ machine in a window, with root.
   pattern - the bars in the right colours, mirrored by default; M turning the
   mirror off; the square moving; the app counting frames (29 a second under
   TCG on AArch64). Control: the kit with its mirror inverted fails the first.
+
+### 8e, live: the C920 with root, and what it found
+
+Run by Diego on 24 September, `sudo sh tools/camera.sh`, on QEMU's x86
+machine on the Mac mini. Four runs, each ending on a fault the one before
+could not have shown:
+
+1. **Streaming, and no picture.** The camera was configured and streamed,
+   and the driver made no frame; three seconds later **the lease** closed
+   the stream, and the app opened it again, for ever. The lease ran on
+   frames *taken*, and a camera sending nothing leaves nothing to take - so
+   it runs on the program *looking* (`looked` in the ring). And the driver
+   said only "0 frames": its numbers came with a frame. They come with every
+   interval now, and with the stop: intervals, the bytes they carried, EOF,
+   FID and ERR.
+2. **A quarter of the intervals.** 10,478 in five seconds where a high-speed
+   camera has 40,000: 26 frames' ends, 41 frames dropped, none whole. QEMU's
+   USB host passes the camera on only as the guest takes it, a microframe a
+   TD, and holds 16 ms; and QEMU's xHCI paces a TD started *as soon as
+   possible* one interval after the last, and when it falls behind jumps to
+   the present and serves one (`xhci_calc_iso_kick`, hcd-xhci.c 11.1.1) -
+   about a timer tick's worth, 2,000 a second. A TD with a Frame ID it serves
+   the moment its frame has come, every one that is due. So on QEMU's
+   controller - known by its PCI identity, 1b36:000d, which the board now
+   passes through the kernel (`dev_info.id`) - each TD is given one, seven
+   eighths of an interval after the last so a backlog drains. Every other
+   controller is still given SIA, which is what Linux gives one without CFC.
+   `camera.sh` asks QEMU for 32 ms of the camera (`isobufs=8`) and keeps
+   its USB trace in `build/camera-qemu.log`.
+3. **Thirty frames a second, freezing, then stopping.** A busy desktop held
+   the driver off its core (6i), the 256-entry event ring filled, and QEMU
+   dropped the Transfer Events it could not write. A TD whose event never
+   came was never put back: each freeze lost some, and the second lost the
+   rest, down to the 50 ms watch's 21 intervals a second. Isochronous TDs
+   complete in order, so an event for one place means every place before it
+   is done - and those are put back now, their payloads counted lost.
+4. **Half a minute, then 30 intervals a second, every TD still carrying
+   bytes.** QEMU reads a Frame ID in the window it is in when it first looks
+   (`mfindex & ~0x3fff`), so a frame just before MFINDEX wraps, first looked
+   at just after, reads as two seconds ahead, and the endpoint waited. So no
+   TD is handed a frame that has passed, nor one in the last 16 ms before
+   the wrap; a TD back more than 32 ms after its frame is said.
+
+Then: **640 x 480 at 29 to 30 frames a second for minutes**, 144 to 150
+frames in every five seconds, the sizes Diego chose from the dropdown
+(320 x 240, 432 x 240, 160 x 90) each opening at once, and no TD late.
+
+**What the gate holds of it**: the silent pattern - `pattern+silent`, a
+second camera that never sends - keeping its stream while the app looks
+(the old lease closes it: the control), and the PCI identity reaching the
+driver on both of `run_x86.py`'s controllers (the board sending 0: the
+control). The Frame ID schedule needs a camera, and these runs are its
+evidence. The events put back were never needed after the fix went in -
+"0 events lost" in every report since - so that path has run on no camera
+yet, and says so when it does.
 
 ## Sources
 

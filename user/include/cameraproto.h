@@ -25,11 +25,11 @@
  * driver never writes into the slot that is `latest` or `reading`. Three
  * slots is the least that always leaves the driver one to write.
  *
- * **A program that stops reading is gone.** It advances `taken` whenever it
- * takes a frame; a stream whose `taken` has not moved for
- * `CAMERA_LEASE_SECONDS` is closed by the driver, so a Camera window that
- * died without closing does not keep the camera "in use" for ever. A program
- * that wants the camera back opens it again.
+ * **A program that stops looking is gone.** It advances `looked` every time
+ * it looks for a frame, whether or not there is one; a stream whose `looked`
+ * has not moved for `CAMERA_LEASE_SECONDS` is closed by the driver, so a
+ * Camera window that died without closing does not keep the camera "in use"
+ * for ever. A program that wants the camera back opens it again.
  */
 
 #include <stdint.h>
@@ -154,7 +154,16 @@ struct camera_ring {
 
     /* Written by the program. */
     volatile uint32_t reading;      /* a slot, or CAMERA_NOT_READING */
-    volatile uint32_t taken;        /* the sequence last taken: the lease */
+    volatile uint32_t taken;        /* the sequence last taken */
+
+    /*
+     * One more every time the program looks, whether or not there was a
+     * frame: **the lease**. It was `taken`, and a camera that sent nothing
+     * could not have a frame taken from it - so on 24 September, the C920's
+     * first run with root, the driver closed every stream after three
+     * seconds of a program looking for frames that never came.
+     */
+    volatile uint32_t looked;
 };
 
 #endif /* KOSMOS_CAMERAPROTO_H */

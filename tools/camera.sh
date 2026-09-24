@@ -19,25 +19,46 @@
 #  first. Everything the machine says is kept in build/camera.log, which
 #  is made readable when QEMU ends. Close the window, or Control-C here, to
 #  end it; macOS takes the camera back.
+#
+#  **And what QEMU says about the camera**, in build/camera-qemu.log: its
+#  USB host's trace events - the device opened and claimed, the setting
+#  chosen, the isochronous stream started and stopped or short of buffers -
+#  and the xHCI's transfer errors. The first run with root, on 24 September,
+#  streamed and made no frames, and Kosmos's side of it could not say
+#  whether the camera sent nothing or QEMU passed nothing on. Per-transfer
+#  events are left out: thirty thousand lines a second tell nobody anything.
+#
+#  **`isobufs=8`**: QEMU's USB host keeps four transfers of 32 microframes
+#  of the camera, 16 ms, and drops what the guest has not taken by then.
+#  Eight is 32 ms, room for an emulated machine's slower moments.
 
 set -eu
 
 DEVICE=${1:-046d:08e5}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 LOG="$HERE/build/camera.log"
+QLOG="$HERE/build/camera-qemu.log"
 VENDOR=${DEVICE%%:*}
 PRODUCT=${DEVICE##*:}
 
-trap 'chmod a+r "$LOG" 2>/dev/null || true' EXIT
+trap 'chmod a+r "$LOG" "$QLOG" 2>/dev/null || true' EXIT
 
 qemu-system-x86_64 -M q35,vmport=off -m 1G -smp 4 -no-reboot \
     -vga none -device ramfb -display cocoa \
     -device virtio-tablet-pci \
     -serial "file:$LOG" \
     -device qemu-xhci,id=xhci \
-    -device "usb-host,bus=xhci.0,vendorid=0x$VENDOR,productid=0x$PRODUCT" \
+    -device "usb-host,bus=xhci.0,vendorid=0x$VENDOR,productid=0x$PRODUCT,isobufs=8" \
     -fw_cfg "name=opt/kosmos/boot,string=wm deskbar,,camera" \
+    -D "$QLOG" \
+    -trace 'usb_host_open*' -trace 'usb_host_*_interface' \
+    -trace 'usb_host_iso*' -trace 'usb_host_*kernel' \
+    -trace usb_host_parse_endpoint -trace usb_host_parse_error \
+    -trace usb_xhci_xfer_error -trace usb_xhci_ep_enable \
     -kernel "$HERE/build/x86_64/kosmos.bin"
 
 echo "Done. What the camera's driver and the app said:"
 grep -a "camera" "$LOG" | head -40 || echo "(nothing about a camera)"
+echo
+echo "What QEMU said about the camera ($QLOG):"
+head -30 "$QLOG" 2>/dev/null || echo "(nothing)"
