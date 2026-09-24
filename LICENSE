@@ -62,6 +62,14 @@ Vendored third-party code keeps its own licence, which travels beside it:
       runtime/upstream/minimp3/LICENSE, and the notice at the top of
       minimp3.h
 
+  minih264, by lieff, CC0 1.0 (public domain)
+      runtime/upstream/minih264/LICENSE, and the notice at the top of
+      minih264e.h
+
+  minimp4, by lieff, CC0 1.0 (public domain)
+      runtime/upstream/minimp4/LICENSE, and the notice at the top of
+      minimp4.h
+
   LakeSnes, by angelo_wf and contributors, the CX4 by dink, MIT
       runtime/upstream/lakesnes/LICENSE.txt, with the vendoring recorded
       in README.kosmos.md beside it. Built by default, in `FULL=1`

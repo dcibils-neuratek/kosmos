@@ -9397,3 +9397,42 @@ journalled, and the disk server hands `kfs` a reader over the caller's region.
   `spinlock: endpoint held by 3, wanted by 2` - the second time in three
   days (`roadmap.md` 5r), not this change's code. The image, kept, passed
   three boots of that part alone.
+
+## 18.179 The camera recorded, H.264 in an MP4
+
+`roadmap.md` 6d 8f. The Record Kit (`user/kits/record`): a camera's YUY2 into
+planar 4:2:0, encoded by `minih264e`, written by `minimp4`, all of its memory
+in the caller's regions, the file written with one `write_from` when it
+stops. The Camera app: Record and Stop, and R.
+
+- `tools/test_yuv.c`, 14 -> 19, NEON and SSE2: into planes - a small frame
+  by hand, and the vector path to the scalar one over widths 2 to 642 and
+  heights 1 to 8 with sentinels in every plane. 7.1x with NEON, 4.8x with
+  SSE2 under Rosetta. **Controls**: NEON's rounding average made a truncating
+  one fails 1; SSE2's U taken from V's bytes fails 1.
+- `tools/test_record.c`, 19, on the Mac with the kit's own core: 60 frames of
+  the camera's pattern at 640 x 480, decoded by FFmpeg - 60 frames, each
+  within 30 dB of the one recorded (through JPEG, the only way this FFmpeg
+  gives a frame back), two seconds long; 320 x 180, which the encoder crops;
+  ten frames a tenth of a second apart making a second of film, not a third;
+  900 frames of noise recorded without the writer running out of memory; and
+  a recording that fills its memory stopping and saying so. **Controls**, on
+  copies: frames timed by count fail the second (0.33 s); an arena that never
+  takes back fails the noise at frame 112; the header's own endianness test
+  - which took the Mac for big-endian and wrote `16 00 42 67` for `67 42 00
+  16` - fails every decoding check.
+- `tools/test_record_mp4.lua`, 8: the same file read by `/lib/mp4.lua`, the
+  video player's reader - one avc1 track, 640 x 480, Baseline, 60 samples,
+  the first a sync sample, two seconds.
+- **arm-record** and **x86-record**, `tools/run_record.py`, 7 each: a machine
+  with a disk and the pattern for a camera; the Camera app, R, four seconds,
+  R; the app says it kept N frames and B bytes in `/home/videos`, and at the
+  prompt that file is B bytes and reads as one H.264 track of 640 x 480 with
+  N samples, the first a key frame. 128 frames in 22.6 KB on AArch64.
+  **Control**: the app keeping nothing fails 3, with sentences.
+- The first gate of this failed once in **x86-kernel**: `sched: the higher
+  priority runs first`. The test woke its NORMAL thread and then its DISPLAY
+  one, and a tick between the two gave the NORMAL one the processor by round
+  robin before the other was ready - the test's race, not the scheduler's.
+  Both are woken with interrupts masked now; the image that failed is kept,
+  and the fixed test passed three runs of the x86 suite and one of the ARM.

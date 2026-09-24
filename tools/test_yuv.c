@@ -256,6 +256,86 @@ int main(void)
         check(spared, "and neither writing past a row's end");
     }
 
+    /*
+     * **Into planes, 4:2:0, for the encoder** (`roadmap.md` 6d 8f). A small
+     * frame worked out by hand: every Y as it came, a U and a V for each two
+     * by two, the rounded mean of the two rows'.
+     */
+    {
+        /* 4 by 3, so the last row pairs with itself. */
+        static const uint8_t f[3][8] = {
+            { 10, 100, 11, 200,  12, 101, 13, 201 },
+            { 20,  51, 21, 150,  22,  60, 23, 160 },
+            { 30,  90, 31, 190,  32,  92, 33, 192 },
+        };
+        uint8_t y[4 * 3], u[2 * 2], v[2 * 2];
+
+        memset(y, 0xEE, sizeof y);
+        memset(u, 0xEE, sizeof u);
+        memset(v, 0xEE, sizeof v);
+        gfx_yuy2_i420(y, u, v, 4, 2, &f[0][0], 4, 3);
+
+        check(y[0] == 10 && y[1] == 11 && y[2] == 12 && y[3] == 13
+              && y[4] == 20 && y[7] == 23 && y[8] == 30 && y[11] == 33,
+              "every Y into the Y plane, as it came");
+        check(u[0] == 76 && u[1] == 81 && v[0] == 175 && v[1] == 181,
+              "U and V the rounded mean of two rows: (100 + 51 + 1) / 2 = 76");
+        check(u[2] == 90 && u[3] == 92 && v[2] == 190 && v[3] == 192,
+              "and an odd last row its own pair");
+    }
+
+    /*
+     * The vector path to the scalar one, bit for bit: random frames, widths
+     * that leave pairs for the scalar tail, odd and even heights, strides
+     * wider than the rows with sentinels in the gap.
+     */
+    {
+        static const unsigned widths[] = { 2, 6, 14, 16, 30, 32, 34, 64, 66,
+                                           126, 640, 642 };
+        static const unsigned heights[] = { 1, 2, 3, 5, 8 };
+        unsigned seed = 7654321u, k, h;
+        int same = 1, spared = 1;
+
+        for (k = 0; k < sizeof(widths) / sizeof(widths[0]); k++) {
+            for (h = 0; h < sizeof(heights) / sizeof(heights[0]); h++) {
+                unsigned fw = widths[k], fh = heights[h], i;
+                unsigned ys = fw + 8, cs = fw / 2 + 8, ch = (fh + 1) / 2;
+                size_t yb = (size_t)ys * fh, cb = (size_t)cs * ch;
+                uint8_t *src = malloc(fw * 2 * fh);
+                uint8_t *a = malloc(yb + 2 * cb), *b = malloc(yb + 2 * cb);
+
+                for (i = 0; i < fw * 2 * fh; i++) {
+                    seed = seed * 1103515245u + 12345u;
+                    src[i] = (uint8_t)(seed >> 16);
+                }
+
+                memset(a, 0xA5, yb + 2 * cb);
+                memset(b, 0xA5, yb + 2 * cb);
+                gfx_yuy2_i420(a, a + yb, a + yb + cb, ys, cs, src, fw, fh);
+                gfx_yuy2_i420_scalar(b, b + yb, b + yb + cb, ys, cs, src, fw,
+                                     fh);
+                same &= memcmp(a, b, yb + 2 * cb) == 0;
+
+                for (i = 0; i < fh; i++) {
+                    spared &= a[i * ys + fw] == 0xA5 && a[i * ys + ys - 1] == 0xA5;
+                }
+
+                for (i = 0; i < ch; i++) {
+                    spared &= a[yb + i * cs + fw / 2] == 0xA5
+                              && a[yb + cb + i * cs + fw / 2] == 0xA5;
+                }
+
+                free(src);
+                free(a);
+                free(b);
+            }
+        }
+
+        check(same, "into planes: the vector path equal to the scalar one, "
+                    "widths 2 to 642, heights 1 to 8");
+        check(spared, "and nothing written past a row's end in any plane");
+    }
+
     /* How long a C920 frame takes, 640 by 480. */
     {
         enum { FW = 640, FH = 480, N = 200 };
@@ -275,6 +355,29 @@ int main(void)
         t0 = now();
         for (k = 0; k < N; k++) gfx_yuy2(dst, FW * 4, src, FW, FH, k & 1);
         t = (now() - t0) / N;
+
+        {
+            uint8_t *planes = malloc(FW * FH * 3 / 2);
+            double p_scalar, p_vec;
+
+            t0 = now();
+            for (k = 0; k < N; k++)
+                gfx_yuy2_i420_scalar(planes, planes + FW * FH,
+                                     planes + FW * FH * 5 / 4, FW, FW / 2,
+                                     src, FW, FH);
+            p_scalar = (now() - t0) / N;
+
+            t0 = now();
+            for (k = 0; k < N; k++)
+                gfx_yuy2_i420(planes, planes + FW * FH,
+                              planes + FW * FH * 5 / 4, FW, FW / 2, src, FW,
+                              FH);
+            p_vec = (now() - t0) / N;
+
+            printf("into planes: %.3f ms scalar, %.3f ms vector (%.1fx)\n",
+                   p_scalar * 1e3, p_vec * 1e3, p_scalar / p_vec);
+            free(planes);
+        }
 
         printf("a 640x480 frame: %.3f ms one pair at a time, %.3f ms with %s "
                "(%.1fx)\n", t_scalar * 1e3, t * 1e3,

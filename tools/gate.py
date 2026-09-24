@@ -105,6 +105,14 @@ SUITES = [
     # speed, since under QEMU the speed is QEMU's.
     Suite("arm-diskbench", ["python3", "tools/run_diskbench.py", ARM]),
 
+    # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
+    # with a disk, since the display harness's have none and a recording is
+    # written to kfs: R, four seconds, R, and the file read back by the video
+    # player's own MP4 reader. Both boards, because the encoder is NEON on
+    # one and SSE2 on the other.
+    Suite("arm-record", ["python3", "tools/run_record.py", ARM]),
+    Suite("x86-record", ["python3", "tools/run_record.py", X86], x86=True),
+
     # A frame off the card and onto the wire, read back out of QEMU's own
     # capture - because nothing inside the guest can establish that one
     # left. And a second boot with no card, which is the branch every device

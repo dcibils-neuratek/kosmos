@@ -166,4 +166,88 @@ struct camera_ring {
     volatile uint32_t looked;
 };
 
+/*
+ * **Taking a frame, as a program does it** - the half of the handshake above
+ * that is the program's, written once for everything that reads a camera's
+ * ring: the kit's `surface:camera`, which draws it, and the Record Kit,
+ * which encodes it. Two copies of a store-then-load handshake would be two
+ * places to get the fence wrong.
+ *
+ * `camera_take` bumps `looked` - the lease - and, when there is a frame
+ * newer than `last`, marks its slot as being read, checks it is still the
+ * newest, and says which slot and which frame. `camera_done` gives the slot
+ * back and says it was taken. Between the two the driver writes elsewhere.
+ */
+enum camera_taking {
+    CAMERA_TAKEN,           /* `*slot` and `*sequence` say which */
+    CAMERA_SAME,            /* nothing newer than `last` */
+    CAMERA_WAITING,         /* no frame yet */
+    CAMERA_STOPPED,         /* the driver closed the stream */
+};
+
+static inline enum camera_taking camera_take(volatile struct camera_ring *r,
+                                             uint32_t last, uint32_t *slot,
+                                             uint32_t *sequence)
+{
+    uint32_t seq, s = CAMERA_NOT_READING;
+    unsigned tries;
+
+    r->looked = r->looked + 1u;         /* the lease: still here */
+
+    if (r->stopped) {
+        return CAMERA_STOPPED;
+    }
+
+    seq = r->sequence;
+    CAMERA_FENCE();
+
+    if (seq == 0) {
+        return CAMERA_WAITING;
+    }
+
+    if (seq == last) {
+        return CAMERA_SAME;
+    }
+
+    /* Mark a slot, then make sure it is still the newest: the driver never
+     * writes into the one marked, but it may have moved on first. */
+    for (tries = 0; tries < 8; tries++) {
+        s = r->latest;
+        r->reading = s;
+        CAMERA_FENCE();
+
+        if (r->latest == s) {
+            break;
+        }
+    }
+
+    seq = r->sequence;
+
+    if (s >= CAMERA_SLOTS || s >= r->slots) {
+        r->reading = CAMERA_NOT_READING;
+        return CAMERA_WAITING;
+    }
+
+    *slot = s;
+    *sequence = seq;
+    return CAMERA_TAKEN;
+}
+
+/* The frame `camera_take` marked, as bytes. */
+static inline const uint8_t *camera_slot(volatile struct camera_ring *r,
+                                         uint32_t slot)
+{
+    return (const uint8_t *)(uintptr_t)r + CAMERA_RING_DATA
+           + (uintptr_t)slot * r->slot_bytes;
+}
+
+/* Done with it: the slot back to the driver, and the frame taken. */
+static inline void camera_done(volatile struct camera_ring *r,
+                               uint32_t sequence)
+{
+    CAMERA_FENCE();
+    r->reading = CAMERA_NOT_READING;
+    r->taken = sequence;
+}
+
 #endif /* KOSMOS_CAMERAPROTO_H */

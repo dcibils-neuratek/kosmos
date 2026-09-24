@@ -137,6 +137,10 @@ metadata (`design.md` 8.3b).
 journal, the disk server's megabyte gone (18.178). Next in 8f: the encoder.
 The endpoint spinlock panic came back once in its gate (5r), second in three
 days; a report that names what the holder was doing is 5r.
+**0.10.163: the camera records.** Record and Stop, and R, into `/home/videos`
+as H.264 in an MP4 - `minih264e` and `minimp4` vendored, the Record Kit, and
+the app as drawn (`usb.md` §11 8f, 18.179). Video plays it once it decodes
+H.264 (4e, libavcodec).
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

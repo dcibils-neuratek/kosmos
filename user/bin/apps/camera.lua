@@ -19,7 +19,8 @@
 -- picture comes from `surface:camera`, in C, straight out of the region the
 -- driver writes (`/lib/camera.lua`). No pixel passes through this file.
 --
--- **Record** is drawn and not yet pressable: recording to H.264 is step 8f.
+-- **Record** records to H.264 in an MP4 in `/home/videos` (step 8f), and
+-- R does it from the keyboard, as M mirrors.
 --
 --   camera                 the first camera, at 640x480
 --   camera 320x240         at that size, or the largest inside it
@@ -67,6 +68,8 @@ local FROM = { usb = "over USB", pattern = "drawn by the driver" }
 local FOOT_FROM = { usb = " over USB", pattern = ", drawn by the driver" }
 local stream, size, picture = nil, nil, nil
 local mirror = true                     -- as a Mac's own preview is
+local recording = nil                   -- { path, name, started } while it is
+local notice = nil                      -- { text, until } after one stops
 local trouble = nil                     -- a sentence when there is no picture
 local fps, counted, counted_at = 0, 0, sys.ticks()
 local counter_hz = (sys.info() or {}).counter_hz or 62500000
@@ -82,7 +85,81 @@ local function sub_line()
   return ("%s \u{b7} %d \u{d7} %d"):format(cam.name, size.width, size.height)
 end
 
+--------------------------------------------------------------------------
+-- **Recording** (`roadmap.md` 6d 8f), as `docs/camera.html` draws it:
+-- Record becomes Stop, filled red; the picture carries how long; the foot
+-- where the file is going. Into `/home/videos`, named by the date and the
+-- time, H.264 in an MP4 by the Record Kit - and never mirrored, since the
+-- kit takes the camera's bytes and the mirror is only this window's.
+--------------------------------------------------------------------------
+
+local clock = use("/lib/clock.lua")
+local VIDEOS = "/home/videos"
+
+local function recording_name()
+  local now = clock.now()
+  local base = now and ("%04d-%02d-%02d %02d.%02d"):format(now.year,
+                 now.month, now.day, now.hour, now.min) or "recording"
+  local name, n = base .. ".mp4", 1
+
+  -- A second recording in the same minute is " 2", not the first one gone.
+  while fs.getattr(VIDEOS .. "/" .. name) do
+    n = n + 1
+    name = ("%s %d.mp4"):format(base, n)
+  end
+
+  return name
+end
+
+local function stop_recording()
+  if not recording or not stream then
+    recording = nil
+    return
+  end
+
+  local rec = recording
+  local frames = select(2, stream:record_progress()) or 0
+  local bytes, why = stream:record_stop(rec.path)
+
+  recording = nil
+
+  if bytes then
+    notice = { text = ("Saved %s \u{b7} %.1f MB"):format(rec.name, bytes / 1e6),
+               until_ = sys.ticks() + 6 * counter_hz }
+    print(("camera: recorded %d frames, %d bytes to %s"):format(frames, bytes,
+                                                                rec.path))
+  else
+    notice = { text = "Not saved: " .. tostring(why),
+               until_ = sys.ticks() + 8 * counter_hz }
+    print("camera: the recording was not saved: " .. tostring(why))
+  end
+end
+
+local function start_recording()
+  if recording or not stream or not size then return end
+
+  fs.send(VIDEOS, { type = "mkdir" })
+
+  local ok, why = stream:record_start()
+
+  if not ok then
+    notice = { text = "Cannot record: " .. tostring(why),
+               until_ = sys.ticks() + 6 * counter_hz }
+    print("camera: cannot record: " .. tostring(why))
+    return
+  end
+
+  local name = recording_name()
+
+  recording = { path = VIDEOS .. "/" .. name, name = name,
+                started = sys.ticks() }
+  notice = nil
+  print("camera: recording to " .. recording.path)
+end
+
 local function close_stream()
+  -- A recording in progress is kept, whatever closes the stream under it.
+  if recording then stop_recording() end
   if stream then stream:close() end
   stream, picture = nil, nil
 end
@@ -145,6 +222,8 @@ local function place_controls()
   size_box.x, size_box.y = right - size_box.w, (L.head - 1 - 31) // 2
   right = size_box.x - L.head_gap
 
+  record.text = recording and "Stop" or "Record"
+  record.disabled = not (stream and size and size.pixels == "yuy2")
   record.w = pk.button_width(record.text) + 16
   record.x, record.y = right - record.w, (L.head - 1 - 31) // 2
 end
@@ -162,19 +241,32 @@ local function draw_header(s)
   place_controls()
   pk.header(s, 0, 0, W, "Camera", sub_line(), record.x - 8)
 
-  -- Record: a red dot and the word, greyed until recording lands (8f).
-  pk.button(s, { x = record.x, y = record.y, w = record.w, text = "",
-                 disabled = true })
-  s:fill_round(record.x + 12, record.y + (31 - 9) // 2, 9, 9,
-               theme.mix(theme.sunken, 0xffe5484d, 450), 4)
-  s:text(record.x + 12 + 9 + 7, record.y + (31 - gfx.height()) // 2,
-         record.text, theme.mix(theme.sunken, theme.text_dim, 500), nil, "ui")
+  -- Record: a red dot and the word; Stop, filled red, while it records.
+  local ty = record.y + (31 - gfx.height()) // 2
 
-  -- The size, as a dropdown.
+  if recording then
+    s:fill_round(record.x, record.y, record.w, 31, 0xffe5484d, 7)
+    s:fill_round(record.x + 12, record.y + (31 - 9) // 2, 9, 9, 0xffffffff, 2)
+    s:text(record.x + 12 + 9 + 7, ty, record.text, 0xffffffff, 0xffe5484d, "ui")
+  else
+    local dim = record.disabled
+
+    pk.button(s, { x = record.x, y = record.y, w = record.w, text = "",
+                   disabled = dim })
+    s:fill_round(record.x + 12, record.y + (31 - 9) // 2, 9, 9,
+                 dim and theme.mix(theme.sunken, 0xffe5484d, 450)
+                     or 0xffe5484d, 4)
+    s:text(record.x + 12 + 9 + 7, ty, record.text,
+           dim and theme.mix(theme.sunken, theme.text_dim, 500) or theme.text,
+           nil, "ui")
+  end
+
+  -- The size, as a dropdown - greyed while recording: a file is one size
+  -- from its start to its end.
   s:fill_round(size_box.x, size_box.y, size_box.w, 31, theme.sunken, 7)
   s:frame_round(size_box.x, size_box.y, size_box.w, 31, theme.line_soft, 7)
   s:text(size_box.x + 12, size_box.y + (31 - gfx.height()) // 2,
-         size_box.label, theme.text, nil, "ui")
+         size_box.label, recording and theme.text_dim or theme.text, nil, "ui")
   chevron(s, size_box.x + size_box.w - 11 - 3, size_box.y + 14)
 
   pk.iconbutton(s, more)
@@ -194,6 +286,16 @@ local function draw_foot(s)
     local rate = size.width * size.height * 2 * math.max(fps, 0)
     local from = cameras[chosen] and FOOT_FROM[cameras[chosen].source]
     local b = ("YUY2, %.1f MB a second%s"):format(rate / 1e6, from or "")
+
+    -- Where it is going, and how big it is so far; the folder is always
+    -- /home/videos, so the name is what is said.
+    if recording then
+      local bytes = stream:record_progress() or 0
+
+      b = ("Recording %s \u{b7} %.1f MB"):format(recording.name, bytes / 1e6)
+    elseif notice and sys.ticks() < notice.until_ then
+      b = notice.text
+    end
 
     s:text(x, ty, a, theme.text_dim, nil, "ui")
     x = x + gfx.measure(a) + 18
@@ -239,6 +341,19 @@ local function draw_picture(s)
     s:blit(picture, 0, 0, pw, ph, x, y)
   else
     s:stretch(picture, 0, 0, size.width, size.height, x, y, pw, ph, nil, true)
+  end
+
+  -- How long it has been recording: a red dot and minutes and seconds, on a
+  -- dark pill in the picture's corner.
+  if recording then
+    local secs = (sys.ticks() - recording.started) // counter_hz
+    local t = ("%d:%02d"):format(secs // 60, secs % 60)
+    local bw = 10 + 8 + gfx.measure(t) + 20
+
+    s:fill_round(x + 12, y + 12, bw, 28, 0xff1b1c20, 14)
+    s:fill_round(x + 22, y + 12 + 9, 10, 10, 0xffff453a, 5)
+    s:text(x + 22 + 10 + 8, y + 12 + (28 - gfx.height()) // 2, t, 0xffffffff,
+           0xff1b1c20, "ui")
   end
 end
 
@@ -325,6 +440,16 @@ while win.running do
   if stream then
     local got, why = stream:draw(picture, mirror)
 
+    if recording then
+      local took, rwhy = stream:record_take()
+
+      if not took and rwhy ~= "same" and rwhy ~= "waiting" then
+        -- Full, or refused: stopped, and what there is kept.
+        print("camera: recording stopped: " .. tostring(rwhy))
+        stop_recording()
+      end
+    end
+
     if got then
       --
       -- **The whole window, every frame.** A window that draws its own
@@ -381,14 +506,22 @@ while win.running do
       win:close()
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press" then
       if pk.inside(size_box, ev.x, ev.y) then
-        size_menu()
+        if not recording then size_menu() end
       elseif pk.inside(more, ev.x, ev.y) then
         more_menu()
+      elseif pk.inside(record, ev.x, ev.y) and not record.disabled then
+        if recording then stop_recording() else start_recording() end
+        draw_all()
       end
     elseif ev.type == "rawkey" and ev.down and ev.code == 50 then
       -- M: the mirror, without the menu.
       mirror = not mirror
       print("camera: " .. (mirror and "mirrored" or "as the camera sees it"))
+      draw_all()
+    elseif ev.type == "rawkey" and ev.down and ev.code == 19
+           and not record.disabled then
+      -- R: Record and Stop, without the pointer.
+      if recording then stop_recording() else start_recording() end
       draw_all()
     end
   end

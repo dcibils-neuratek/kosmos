@@ -734,6 +734,14 @@ QUAKE_ENGINE := $(addprefix $(QUAKE_DIR)/, \
 
 QUAKE_SRCS := $(QUAKE_ENGINE) user/bin/apps/quake/quake_kosmos.c
 
+#
+# The Record Kit's two vendored halves, `minih264e` and `minimp4`, on their
+# own terms - `-w -Wno-error`, for the reason every vendored thing gets it -
+# each in a file of its own (`user/kits/record/record_config.h` says how and
+# why). The kit's own two files keep every warning.
+#
+RECORD_CFLAGS := -w -Wno-error
+
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
                  -Iruntime/upstream/tinygl/source
@@ -797,6 +805,10 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gl/gl_kosmos.c \
              user/kits/console/con_kosmos.c \
              user/kits/mp3/mp3_kosmos.c \
+             user/kits/record/record_kosmos.c \
+             user/kits/record/record_core.c \
+             user/kits/record/record_h264.c \
+             user/kits/record/record_mp4.c \
              $(MUSL_SRCS) \
              runtime/upstream/puff/puff.c \
              $(TINYGL_SRCS) \
@@ -1054,6 +1066,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
+           -Iruntime/upstream/minih264 -Iruntime/upstream/minimp4 \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector
@@ -1109,7 +1122,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1193,6 +1206,14 @@ $(UBUILD)/runtime/upstream/tinygl/examples/teapot.c.o: runtime/upstream/tinygl/e
 $(UBUILD)/runtime/upstream/tinygl/examples/texobj.c.o: runtime/upstream/tinygl/examples/texobj.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,texobj) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/kits/record/record_h264.c.o: user/kits/record/record_h264.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(RECORD_CFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/kits/record/record_mp4.c.o: user/kits/record/record_mp4.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(RECORD_CFLAGS) -MMD -MP -c $< -o $@
 
 $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
@@ -1706,6 +1727,38 @@ $(HOSTDIR)/test_yuv_x86: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -arch x86_64 -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
 	        tools/test_yuv.c user/kits/gfx/yuv.c -lm
+
+#
+# The Record Kit's core on this Mac (`tools/test_record.c`), with the two
+# vendored halves beside it: `minih264e` and `minimp4` compiled on their own
+# terms, `-w`, as they are in the guest, and the core and the test with every
+# warning. `test_record_mp4.lua` then reads the file it wrote.
+#
+RECORD_HOST := -Iruntime/upstream/minih264 -Iruntime/upstream/minimp4
+
+$(HOSTDIR)/record_h264.o: user/kits/record/record_h264.c \
+                          user/kits/record/record_config.h \
+                          runtime/upstream/minih264/minih264e.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -w -O2 $(RECORD_HOST) -c $< -o $@
+
+$(HOSTDIR)/record_mp4.o: user/kits/record/record_mp4.c \
+                         user/kits/record/record_config.h \
+                         runtime/upstream/minimp4/minimp4.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -w -O2 $(RECORD_HOST) -c $< -o $@
+
+$(HOSTDIR)/test_record: tools/test_record.c user/kits/record/record_core.c \
+                        user/kits/record/record_core.h \
+                        user/kits/record/record_config.h \
+                        user/kits/gfx/yuv.c user/kits/gfx/yuv.h \
+                        $(HOSTDIR)/record_h264.o $(HOSTDIR)/record_mp4.o
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -fno-common \
+	        -fno-strict-aliasing -O2 $(RECORD_HOST) -Iruntime/upstream/stb \
+	        -o $@ tools/test_record.c user/kits/record/record_core.c \
+	        user/kits/gfx/yuv.c $(HOSTDIR)/record_h264.o \
+	        $(HOSTDIR)/record_mp4.o -lm
 
 $(HOSTDIR)/test_shadow: tools/test_shadow.c user/kits/gfx/shadow.c user/kits/gfx/shadow.h
 	@mkdir -p $(dir $@)
@@ -2993,7 +3046,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_record
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3059,6 +3112,10 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv
 	$(HOSTDIR)/test_yuv_x86
+	@# The camera's recording: H.264 in an MP4, decoded by FFmpeg, and read
+	@# by the video player's own MP4 reader (`roadmap.md` 6d 8f).
+	$(HOSTDIR)/test_record
+	$(HOSTDIR)/lua tools/test_record_mp4.lua
 	@# And the script that travels beside a released image, held to the
 	@# command line it gives QEMU (a stand-in QEMU prints it).
 	sh tools/test_runscript.sh

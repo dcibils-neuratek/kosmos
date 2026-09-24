@@ -40,4 +40,19 @@ void gfx_yuy2_scalar(uint32_t *dst, unsigned long pitch, const uint8_t *src,
 /* One pixel of it, for the reference and anything that wants one. */
 uint32_t gfx_yuv_pixel(int y, int u, int v);
 
+/*
+ * The same YUY2 into three planes, 4:2:0, as an H.264 encoder takes it: Y
+ * `y_stride` bytes a row, U and V `uv_stride` bytes a row and half as many
+ * rows, each the rounded average of two rows' (the Record Kit, `roadmap.md`
+ * 6d 8f). `width` is even. NEON or SSE2 where there is one, and the scalar
+ * path - the specification - for the ends of rows and everywhere else.
+ */
+void gfx_yuy2_i420(uint8_t *y, uint8_t *u, uint8_t *v, unsigned y_stride,
+                   unsigned uv_stride, const uint8_t *src, unsigned width,
+                   unsigned height);
+
+void gfx_yuy2_i420_scalar(uint8_t *y, uint8_t *u, uint8_t *v,
+                          unsigned y_stride, unsigned uv_stride,
+                          const uint8_t *src, unsigned width, unsigned height);
+
 #endif /* KOSMOS_GFX_YUV_H */

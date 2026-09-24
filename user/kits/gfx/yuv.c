@@ -22,6 +22,8 @@
  * the scalar `clip` does.
  */
 
+#include <stddef.h>
+
 #include "yuv.h"
 
 #if defined(__ARM_NEON)
@@ -277,4 +279,129 @@ void gfx_yuy2(uint32_t *dst, unsigned long pitch, const uint8_t *src,
         row_scalar(row, s, width, 0, pairs, mirror);
 #endif
     }
+}
+
+/*
+ * **YUY2 into three planes, 4:2:0** - what an H.264 encoder takes (the Record
+ * Kit, `roadmap.md` 6d 8f). Every Y as it came; a U and a V for each two by
+ * two pixels, the rounded average of the two rows': `(a + b + 1) >> 1`, which
+ * is `vrhaddq_u8` on NEON and `_mm_avg_epu8` on SSE2 exactly - so the vector
+ * paths below are the scalar one bit for bit, and `tools/test_yuv.c` holds
+ * them to it. An odd last row is its own pair.
+ */
+static void pair_scalar(uint8_t *y0, uint8_t *y1, uint8_t *u, uint8_t *v,
+                        const uint8_t *s0, const uint8_t *s1, unsigned from,
+                        unsigned pairs)
+{
+    unsigned x;
+
+    for (x = from; x < pairs; x++) {
+        y0[2 * x] = s0[4 * x];
+        y0[2 * x + 1] = s0[4 * x + 2];
+        y1[2 * x] = s1[4 * x];
+        y1[2 * x + 1] = s1[4 * x + 2];
+        u[x] = (uint8_t)((s0[4 * x + 1] + s1[4 * x + 1] + 1) >> 1);
+        v[x] = (uint8_t)((s0[4 * x + 3] + s1[4 * x + 3] + 1) >> 1);
+    }
+}
+
+#if defined(__ARM_NEON)
+/* Sixteen pairs - 32 pixels, two rows - at a time. */
+static unsigned pair_neon(uint8_t *y0, uint8_t *y1, uint8_t *u, uint8_t *v,
+                          const uint8_t *s0, const uint8_t *s1,
+                          unsigned pairs)
+{
+    unsigned x;
+
+    for (x = 0; x + 16u <= pairs; x += 16u) {
+        uint8x16x4_t a = vld4q_u8(s0 + 4u * x);      /* Y0 U Y1 V */
+        uint8x16x4_t b = vld4q_u8(s1 + 4u * x);
+        uint8x16x2_t ya = { { a.val[0], a.val[2] } };
+        uint8x16x2_t yb = { { b.val[0], b.val[2] } };
+
+        vst2q_u8(y0 + 2u * x, ya);
+        vst2q_u8(y1 + 2u * x, yb);
+        vst1q_u8(u + x, vrhaddq_u8(a.val[1], b.val[1]));
+        vst1q_u8(v + x, vrhaddq_u8(a.val[3], b.val[3]));
+    }
+
+    return x;
+}
+#elif defined(__SSE2__)
+/* Eight pairs - 16 pixels, two rows - at a time. */
+static unsigned pair_sse2(uint8_t *y0, uint8_t *y1, uint8_t *u, uint8_t *v,
+                          const uint8_t *s0, const uint8_t *s1,
+                          unsigned pairs)
+{
+    const __m128i low = _mm_set1_epi16(0x00FF);
+    unsigned x;
+
+    for (x = 0; x + 8u <= pairs; x += 8u) {
+        __m128i a0 = _mm_loadu_si128((const __m128i *)(const void *)(s0 + 4u * x));
+        __m128i a1 = _mm_loadu_si128((const __m128i *)(const void *)(s0 + 4u * x + 16u));
+        __m128i b0 = _mm_loadu_si128((const __m128i *)(const void *)(s1 + 4u * x));
+        __m128i b1 = _mm_loadu_si128((const __m128i *)(const void *)(s1 + 4u * x + 16u));
+
+        /* Y is every even byte; U and V the odd ones, U V U V. */
+        __m128i ya = _mm_packus_epi16(_mm_and_si128(a0, low),
+                                      _mm_and_si128(a1, low));
+        __m128i yb = _mm_packus_epi16(_mm_and_si128(b0, low),
+                                      _mm_and_si128(b1, low));
+        __m128i ca = _mm_packus_epi16(_mm_srli_epi16(a0, 8),
+                                      _mm_srli_epi16(a1, 8));
+        __m128i cb = _mm_packus_epi16(_mm_srli_epi16(b0, 8),
+                                      _mm_srli_epi16(b1, 8));
+        __m128i c = _mm_avg_epu8(ca, cb);            /* U V U V ... */
+        __m128i uu = _mm_packus_epi16(_mm_and_si128(c, low), _mm_setzero_si128());
+        __m128i vv = _mm_packus_epi16(_mm_srli_epi16(c, 8), _mm_setzero_si128());
+
+        _mm_storeu_si128((__m128i *)(void *)(y0 + 2u * x), ya);
+        _mm_storeu_si128((__m128i *)(void *)(y1 + 2u * x), yb);
+        _mm_storel_epi64((__m128i *)(void *)(u + x), uu);
+        _mm_storel_epi64((__m128i *)(void *)(v + x), vv);
+    }
+
+    return x;
+}
+#endif
+
+static void i420(uint8_t *y, uint8_t *u, uint8_t *v, unsigned y_stride,
+                 unsigned uv_stride, const uint8_t *src, unsigned width,
+                 unsigned height, bool vectors)
+{
+    unsigned pairs = width / 2u, row;
+
+    for (row = 0; row < height; row += 2u) {
+        const uint8_t *s0 = src + (size_t)row * width * 2u;
+        const uint8_t *s1 = (row + 1u < height) ? s0 + (size_t)width * 2u : s0;
+        uint8_t *y0 = y + (size_t)row * y_stride;
+        uint8_t *y1 = (row + 1u < height) ? y0 + y_stride : y0;
+        uint8_t *uo = u + (size_t)(row / 2u) * uv_stride;
+        uint8_t *vo = v + (size_t)(row / 2u) * uv_stride;
+        unsigned done = 0;
+
+        if (vectors) {
+#if defined(__ARM_NEON)
+            done = pair_neon(y0, y1, uo, vo, s0, s1, pairs);
+#elif defined(__SSE2__)
+            done = pair_sse2(y0, y1, uo, vo, s0, s1, pairs);
+#endif
+        }
+
+        pair_scalar(y0, y1, uo, vo, s0, s1, done, pairs);
+    }
+}
+
+void gfx_yuy2_i420(uint8_t *y, uint8_t *u, uint8_t *v, unsigned y_stride,
+                   unsigned uv_stride, const uint8_t *src, unsigned width,
+                   unsigned height)
+{
+    i420(y, u, v, y_stride, uv_stride, src, width, height, true);
+}
+
+void gfx_yuy2_i420_scalar(uint8_t *y, uint8_t *u, uint8_t *v,
+                          unsigned y_stride, unsigned uv_stride,
+                          const uint8_t *src, unsigned width, unsigned height)
+{
+    i420(y, u, v, y_stride, uv_stride, src, width, height, false);
 }

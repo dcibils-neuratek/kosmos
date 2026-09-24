@@ -2581,59 +2581,35 @@ static int l_camera(lua_State *L)
     int mirror = lua_toboolean(L, 3);
     uint32_t last = (uint32_t)luaL_optinteger(L, 4, 0);
     volatile struct camera_ring *r = (volatile struct camera_ring *)(uintptr_t)at;
-    uint32_t sequence, slot = CAMERA_NOT_READING, width, height, length;
-    unsigned tries;
+    uint32_t slot = 0, sequence = 0, width, height, length;
 
     if (at == 0 || r->magic != CAMERA_RING_MAGIC) {
         return luaL_error(L, "that is not a camera's region");
     }
 
-    r->looked = r->looked + 1u;         /* the lease: still here */
-
-    if (r->stopped) {
+    switch (camera_take(r, last, &slot, &sequence)) {
+    case CAMERA_TAKEN:
+        break;
+    case CAMERA_SAME:
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "same");
+        return 2;
+    case CAMERA_STOPPED:
         lua_pushboolean(L, 0);
         lua_pushstring(L, "stopped");
         return 2;
-    }
-
-    sequence = r->sequence;
-    CAMERA_FENCE();
-
-    if (sequence == 0 || sequence == last) {
-        lua_pushboolean(L, 0);
-        lua_pushstring(L, sequence == 0 ? "waiting" : "same");
-        return 2;
-    }
-
-    /* Mark a slot, then make sure it is still the newest: the driver
-     * never writes into the one marked, but it may have moved on first. */
-    for (tries = 0; tries < 8; tries++) {
-        slot = r->latest;
-        r->reading = slot;
-        CAMERA_FENCE();
-
-        if (r->latest == slot) {
-            break;
-        }
-    }
-
-    sequence = r->sequence;
-    width = r->width;
-    height = r->height;
-
-    if (slot >= CAMERA_SLOTS || slot >= r->slots) {
-        r->reading = CAMERA_NOT_READING;
+    default:
         lua_pushboolean(L, 0);
         lua_pushstring(L, "waiting");
         return 2;
     }
 
+    width = r->width;
+    height = r->height;
     length = r->length[slot];
 
     if (r->pixels != CAMERA_PIXELS_YUY2) {
-        CAMERA_FENCE();
-        r->reading = CAMERA_NOT_READING;
-        r->taken = sequence;
+        camera_done(r, sequence);
         lua_pushboolean(L, 0);
         lua_pushstring(L, "mjpeg");
         return 2;
@@ -2641,16 +2617,12 @@ static int l_camera(lua_State *L)
 
     if (length == width * height * 2u && dst->width >= width
         && dst->height >= height && r->slot_bytes >= length) {
-        const uint8_t *src = (const uint8_t *)(uintptr_t)at + CAMERA_RING_DATA
-                             + (uintptr_t)slot * r->slot_bytes;
-
-        gfx_yuy2(dst->pixels, dst->pitch, src, width, height, mirror != 0);
+        gfx_yuy2(dst->pixels, dst->pitch, camera_slot(r, slot), width, height,
+                 mirror != 0);
     }
 
     /* Done with it: let the driver have the slot back, and renew the lease. */
-    CAMERA_FENCE();
-    r->reading = CAMERA_NOT_READING;
-    r->taken = sequence;
+    camera_done(r, sequence);
 
     lua_pushinteger(L, (lua_Integer)sequence);
     return 1;

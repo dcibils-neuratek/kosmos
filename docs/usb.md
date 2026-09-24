@@ -14,7 +14,7 @@ else.
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
-| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a-8e built, and live on the C920 as root on 24 September at 30 frames a second; 8f, recording, next. Before that: the app on the test pattern, both boards; the real C920 found and refused without root, waiting for `sudo sh tools/camera.sh`; 8f, recording, next |
+| 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a-8f built: live on the C920 as root on 24 September at 30 frames a second, and recording to H.264 in an MP4 (8f, 0.10.163). Before that: the app on the test pattern, both boards; the real C920 found and refused without root, waiting for `sudo sh tools/camera.sh`; 8f, recording, next |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
@@ -2541,6 +2541,40 @@ control). The Frame ID schedule needs a camera, and these runs are its
 evidence. The events put back were never needed after the fix went in -
 "0 events lost" in every report since - so that path has run on no camera
 yet, and says so when it does.
+
+### 8f: recording, H.264 in an MP4
+
+**The Record Kit** (`user/kits/record`), `use("/kits/record")`: lieff's
+`minih264e` encodes and his `minimp4` writes the file, both CC0 and vendored
+unchanged (`runtime/upstream/minih264`, `minimp4`, each with a README of how
+it is built). Diego chose H.264, "as all modern video players are h264".
+
+- **Taken from the ring as the window takes it**: `camera_take` and
+  `camera_done` in `cameraproto.h` are the program's half of the handshake,
+  written once for `surface:camera` and the kit. A frame is converted to
+  planar 4:2:0 (`gfx_yuy2_i420`, NEON and SSE2 bit for bit with the scalar
+  path), encoded, and its NAL units written with how long it is shown, in
+  90 kHz ticks from the counter at the moment it was taken - so a machine
+  too slow for every frame makes a recording with fewer that plays at the
+  speed things happened.
+- **Never mirrored**: the kit reads the camera's bytes; the mirror is the
+  window's.
+- **All of its memory in regions**: the encoder's frames, and the file whole,
+  written with one `write_from` into `/home/videos` when it stops - which
+  kfs takes at any size since 0.10.162 (`design.md` 8.3b). `minimp4`'s own
+  allocations come from an arena at the end of the encoder's region, a stack
+  that takes back the two copies of every NAL unit it makes and gives up.
+- **The file's region** is a quarter of free memory, 16 to 256 MB; a
+  recording that fills it stops and is kept.
+- **The app**, as drawn: Record becomes Stop, filled red; a red dot and the
+  minutes and seconds on the picture; the file's name and size in the foot;
+  the size greyed while it records. R does it from the keyboard, as M
+  mirrors. The foot says the file's name rather than its path - the folder
+  is always `/home/videos`, and at the machine's 18 the path ran into
+  "Mirrored".
+
+Recorded under QEMU on the test pattern, 640 x 480: 128 frames in four
+seconds, 22.6 KB. How it is tested is `testing.md` 18.179.
 
 ## Sources
 

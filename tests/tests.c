@@ -6474,6 +6474,7 @@ static void prio_marker(void *arg)
 static bool test_higher_priority_runs_first(void)
 {
     struct thread *low, *high;
+    uint64_t saved;
     unsigned i;
 
     prio_count = 0;
@@ -6509,8 +6510,19 @@ static bool test_higher_priority_runs_first(void)
     thread_set_priority(low, SCHED_PRIO_NORMAL);
     thread_set_priority(high, SCHED_PRIO_DISPLAY);
 
+    /*
+     * **Both woken with interrupts masked**, so no tick lands between the
+     * two. The lower one is this thread's band, and a quantum that ran out
+     * after it was woken and before the higher one was gave it the processor
+     * by round robin - first, with the higher one not yet ready to outrank
+     * it. Once in the 0.10.163 gate, on x86-64 with seven machines emulated
+     * at once. The higher one's preemption waits for the first exception
+     * after both are queued, which is the order being tested.
+     */
+    saved = cpu_interrupts_save();
     thread_wake(low);
     thread_wake(high);
+    cpu_interrupts_restore(saved);
 
     for (i = 0; i < 100000u && prio_count < 2; i++) {
         thread_yield();

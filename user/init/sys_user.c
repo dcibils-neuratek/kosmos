@@ -2647,6 +2647,7 @@ void kosmos_pdf_kit(lua_State *L);
 void kosmos_gl_kit(lua_State *L);
 void kosmos_console_kit(lua_State *L);
 void kosmos_mp3_kit(lua_State *L);
+void kosmos_record_kit(lua_State *L);
 void kosmos_game_kit(lua_State *L);
 void kosmos_net_kit(lua_State *L);
 #ifdef KOSMOS_WEB
@@ -2674,6 +2675,7 @@ static const struct {
     { "gl",       kosmos_gl_kit },
     { "console",  kosmos_console_kit },
     { "mp3",      kosmos_mp3_kit },
+    { "record",   kosmos_record_kit },
     { "game",     kosmos_game_kit },
     { "network",  kosmos_net_kit },
 #ifdef KOSMOS_WEB

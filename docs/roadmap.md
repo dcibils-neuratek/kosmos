@@ -1761,6 +1761,11 @@ processors, and still what follows USB:
      tools/camera.sh`;
      8b isochronous IN in the xHCI driver; 8c the stream negotiated and
      frames put together; 8d `/dev/camera` and its region; 8e the app; 8f recording.
+   - **8f built on 24 September** (0.10.163): Record and Stop, and R, into
+     `/home/videos` as H.264 in an MP4 - the Record Kit, `minih264e` and
+     `minimp4` vendored, the conversion vectorised (`usb.md` §11 8f,
+     `testing.md` 18.179). The video player opens it once it decodes H.264
+     (4e); its reader already reads it.
    - **8e live on 24 September** (0.10.158): the C920 through `tools/camera.sh`
      as root, on QEMU's x86 machine - 640 x 480 at 30 frames a second for
      minutes on end, and every other size Diego chose. It took three fixes

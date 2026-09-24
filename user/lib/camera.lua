@@ -223,9 +223,151 @@ end
 function stream:close()
   if self.closed then return end
 
+  if self.recording then self:record_stop() end
+
   self.closed = true
   ask(OP.close, 0, 0, nil, self.handle)
   sys.release(self.cap)
+end
+
+--------------------------------------------------------------------------
+-- **Recording** (`roadmap.md` 6d 8f): this stream's frames into an MP4 of
+-- H.264, by the Record Kit.
+--
+--   stream:record_start()        true, or nil and why
+--   stream:record_take()         the newest frame recorded; true when one was
+--   stream:record_stop(path)     the file written: its bytes, or nil and why
+--
+-- Two regions of this process's own: the encoder's memory, and the file,
+-- put together whole and written with one `write_from` when it stops - which
+-- kfs takes at any size since 24 September (`design.md` 8.3b). The file's
+-- region is a quarter of the free memory, between 16 and 256 MB; at 1.8
+-- Mbit/s 64 MB is about four and a half minutes, and a recording that fills
+-- it stops and is kept.
+--------------------------------------------------------------------------
+
+local function region(bytes)
+  local cap, why = sys.memory((bytes + PAGE - 1) // PAGE)
+
+  if not cap then return nil, why end
+
+  local at = sys.memory_map(cap)
+
+  if not at then
+    sys.release(cap)
+    return nil, "a region that could not be mapped"
+  end
+
+  return cap, at
+end
+
+-- As much of `want` as the machine will give, halving down to `least`.
+local function largest(want, least)
+  while want >= least do
+    local cap, at = region(want)
+
+    if cap then return cap, at, want end
+
+    want = want // 2
+  end
+
+  return nil
+end
+
+function stream:record_start()
+  local kit = use("/kits/record")
+
+  if self.recording then return true end
+
+  if self.size.pixels ~= "yuy2" then
+    return nil, "a recording is made from YUY2 sizes"
+  end
+
+  local work_bytes, why = kit.work_bytes(self.width, self.height)
+
+  if not work_bytes then return nil, why end
+
+  local wcap, wat = region(work_bytes)
+
+  if not wcap then
+    return nil, "no memory for the encoder: " .. tostring(wat)
+  end
+
+  local mem = fs.read("/dev/memory")
+  local free_mb = type(mem) == "table" and tonumber(mem.free_mb) or 64
+  local want = math.max(16, math.min(256, free_mb // 4)) * 1024 * 1024
+  local ocap, oat, out_bytes = largest(want, 8 * 1024 * 1024)
+
+  if not ocap then
+    sys.release(wcap)
+    return nil, "no memory for the recording"
+  end
+
+  local r, rwhy = kit.open{ work = wat, work_bytes = work_bytes,
+                            out = oat, out_bytes = out_bytes,
+                            width = self.width, height = self.height,
+                            fps = self.size.fps or 30 }
+
+  if not r then
+    sys.release(wcap)
+    sys.release(ocap)
+    return nil, rwhy
+  end
+
+  self.recording = { r = r, wcap = wcap, ocap = ocap, out_bytes = out_bytes,
+                     last = 0, started = sys.ticks() }
+  return true
+end
+
+-- The newest frame, recorded once. False and why when there was none new, or
+-- when the recording could not take it - "the recording is full" among them,
+-- which is the caller's cue to stop and keep what there is.
+function stream:record_take()
+  local rec = self.recording
+
+  if not rec then return false, "not recording" end
+
+  local sequence, why = rec.r:camera(self.at, rec.last)
+
+  if sequence then
+    rec.last = sequence
+    return true
+  end
+
+  return false, why
+end
+
+-- How far it has got: bytes, frames, and the room it has.
+function stream:record_progress()
+  local rec = self.recording
+
+  if not rec then return nil end
+
+  return rec.r:bytes(), rec.r:frames(), rec.out_bytes
+end
+
+function stream:record_stop(path)
+  local rec = self.recording
+
+  if not rec then return nil, "not recording" end
+
+  self.recording = nil
+
+  local bytes, why = rec.r:close()
+  local wrote, werr = nil, nil
+
+  if bytes and path then
+    wrote, werr = fs.write_from(path, rec.ocap, bytes)
+  end
+
+  sys.release(rec.wcap)
+  sys.release(rec.ocap)
+
+  if not bytes then return nil, why end
+  if not path then return bytes end
+  if wrote ~= bytes then return nil, "the file could not be written: " .. tostring(werr) end
+
+  return bytes
 end
 
 return camera
