@@ -9341,3 +9341,24 @@ from one (`ui.md` 16.23).
   line reads 2, NORMAL, and fails.
 - Cores from one has no check of its own: no suite reads Monitor's words, and
   a check that the string says "Core 1" would test the string.
+
+## 18.177 Processes says what a process is
+
+`roadmap.md` 6g. Diego: "isnt the e1000 a driver, not a server? i see it as
+a server in the process viewer". Processes took a kind from a `/bin` file of
+the same name and called the rest servers; so the drivers read "server" and
+the drives server read "app", after the Drives app. The kernel now reports
+each process's parent's id - kept at the spawn, since a parent's slot can be
+another process's later - and device authority as 16 in `owns`, and
+`/lib/prockind.lua` decides: a driver holds device authority (init excepted,
+which holds it to hand on), a server is what init started, and the rest say
+what they are in `/bin`.
+
+- `tools/test_prockind.lua`, 9, in `make host-check`: the USB and Ethernet
+  drivers, init, the drives server and the Drives app side by side, the
+  shell, a launched program and one from outside `/bin`. **Controls**, each
+  on a copy: no device rule fails the two drivers; no parent rule fails the
+  drives server and the audio server.
+- **camera** (display, both boards): the USB driver's row reports 16 in
+  `owns` and 1 as its parent. On the x86 image at the prompt: `e1000`,
+  `xhci` and `backlight` drivers, `drives` a server, the shell a program.

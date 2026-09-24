@@ -6709,15 +6709,25 @@ def check_camera(guest):
     """
     mark = len(guest.seen)
     guest.type('for _, p in ipairs(sys.processes() or {}) do '
-               'if p.name == "xhci" then print("BAND" .. "-XHCI", p.priority) '
-               'end end print("BAND" .. "-READ")')
+               'if p.name == "xhci" then print("BAND" .. "-XHCI", p.priority, '
+               'p.owns & 16, p.parent) end end print("BAND" .. "-READ")')
     guest.wait_for("BAND-READ", "the USB driver's band")
-    bands = re.findall(r"BAND-XHCI\s+(\d+)", guest.seen[mark:])
+    bands = re.findall(r"BAND-XHCI\s+(\d+)\s+(\d+)\s+(\d+)",
+                       guest.seen[mark:])
 
-    if bands != ["3"]:
+    if [b[0] for b in bands] != ["3"]:
         raise Failure("the USB driver is not in the display band: %r - a "
                       "process holding device authority is given it "
                       "(`process_grant_devices`)" % bands)
+
+    #
+    # And what Processes calls it by (`roadmap.md` 6g): the kernel reports
+    # its device authority, 16 in `owns`, and init as its parent, which is
+    # what `prockind.lua` reads a driver and a server from.
+    #
+    if bands[0][1:] != ("16", "1"):
+        raise Failure("the USB driver's row says owns & 16 = %s and parent "
+                      "%s - wanted 16 and 1, init" % bands[0][1:])
 
     mark = len(guest.seen)
     guest.type("wm camera")

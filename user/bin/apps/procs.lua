@@ -63,36 +63,12 @@ if not win then
 end
 
 --------------------------------------------------------------------------
--- What kind of thing each process is.
---
--- The glossary says a server is a process that owns something and a kit is
--- code you run; the question a monitor can actually answer is the first
--- one, because owning is a fact the system reports and everything else is
--- a label somebody wrote down.
---
--- **The file says what it is, in its own header.** `kosmos: application`
--- already meant a window, and `kosmos: server` now means one that owns
--- something; a file that says neither is a console program. The program
--- store parses the header and hands it over as a `kind` attribute, which
--- is how the Deskbar has always decided what to list. A runner names
--- itself after the program it runs, so the name in the process table is
--- the file name in `/bin`.
---
--- What is left over - anything with no file in `/bin` - is one of the
--- servers init starts and keeps, because nothing else survives without
--- being a program somebody launched.
---
--- **What this deliberately does not do is guess from what a process
--- holds.** That was the first version and it was wrong twice over: the
--- shell is handed the screen so it can pass it to the desktop, and until
--- the change that went with this, *every* launched program was handed it
--- too. A grant says what something may do, not what it is.
---
--- **Drivers are missing from this list, and that is the true answer.**
--- Every driver in Kosmos is inside the kernel, in `hal/`, so no process is
--- one. The day virtio-gpu arrives in userland is the day this needs a
--- fourth kind, and until then saying "driver" would be inventing a row.
+-- What kind of thing each process is: `/lib/prockind.lua` decides, from
+-- device authority, who started it, and what its file in `/bin` declares -
+-- and says why it is those three and not a name.
 --------------------------------------------------------------------------
+
+local prockind = use("/lib/prockind.lua")
 
 -- Asked once. `/bin` does not change while this runs, and a round trip
 -- per row per second for an answer that never moves would be a lot of
@@ -110,16 +86,7 @@ do
 end
 
 local function kind_of(p)
-  --
-  -- The shell is the one thing a name has to answer for, and it is the one
-  -- thing that cannot be asked: it is the only program that lives inside
-  -- init rather than in `/bin`, so there is no file to have declared it.
-  --
-  if p.name == "shell" then
-    return "program"
-  end
-
-  return from_bin[p.name] or "server"
+  return prockind.of(p, from_bin)
 end
 
 local rows = {}          -- { name, kind, id, pct, pages, caps, owns, exited }

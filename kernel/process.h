@@ -392,6 +392,10 @@ struct process {
     struct process   *parent;
     struct thread    *waiter;
 
+    /* And the parent's id, kept at the spawn for `process_table`: the
+     * pointer's slot may be somebody else's once the parent has ended. */
+    uint32_t          parent_id;
+
     /*
      * Whether this process may touch the serial port.
      *

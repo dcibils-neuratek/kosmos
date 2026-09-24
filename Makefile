@@ -3035,6 +3035,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	@# lives in `/lib` and not inside the Deskbar.
 	$(HOSTDIR)/lua tools/test_deskbarmenu.lua
 	$(HOSTDIR)/lua tools/test_places.lua
+	@# What kind of thing a process is, for Processes: a driver by its
+	@# device authority, a server by init starting it, the rest by /bin.
+	$(HOSTDIR)/lua tools/test_prockind.lua
 	@# And what a file *is*: the attribute first, the extension second.
 	$(HOSTDIR)/lua tools/test_filetypes.lua
 	@# And the audio ring's position arithmetic. It models the client, the

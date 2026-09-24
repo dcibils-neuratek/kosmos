@@ -162,7 +162,9 @@ unsigned process_table(struct proc_info *out, unsigned max)
         out[n].owns      = (p->owns_console ? 1u : 0u)
                          | (p->owns_screen ? 2u : 0u)
                          | (p->owns_disk ? 4u : 0u)
-                         | (p->owns_procctl ? 8u : 0u);
+                         | (p->owns_procctl ? 8u : 0u)
+                         | (p->owns_devices ? 16u : 0u);
+        out[n].parent    = p->parent_id;
 
         memcpy(out[n].name, p->name, sizeof(out[n].name) - 1);
         out[n].name[sizeof(out[n].name) - 1] = '\0';
@@ -864,6 +866,7 @@ struct process *process_spawn(struct process *parent, unsigned long arg)
 
     if (child != NULL) {
         child->parent = parent;
+        child->parent_id = parent->id;
     }
 
     return child;

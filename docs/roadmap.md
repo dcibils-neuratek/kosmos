@@ -1686,14 +1686,17 @@ processors, and still what follows USB:
    columns above four cores, the window never taller than the screen, and
    past about sixteen a choice of one graph a core or one for all.
 
-6g. **WANTED on 24 September - Processes says what a process is.** Diego:
+6g. **DONE on 24 September (0.10.161) - Processes says what a process is.** Diego:
    "isnt the e1000 a driver, not a server? i see it as a server in the
    process viewer". `procs.lua` takes a kind from a program in `/bin` of the
    same name and calls everything else a server, under a comment saying
    every driver is in the kernel - untrue since the power button's. So
    `xhci`, `e1000` and `backlight` read "server", and the drives *server*
    reads "app", after the Drives app. The kind should come from what init
-   started, not from a name.
+   started, not from a name. **Built**: the kernel reports a process's
+   parent and its device authority (`proc_info.parent`, `owns` 16), and
+   `/lib/prockind.lua` reads a driver from the one and a server from init
+   being the other; the rest from `/bin` (18.177).
 
 6f. **DONE on 24 September (0.10.159) - Tracker's icon view names like the Finder's.**
    Diego: "the name of files is being broken into 2 lines where it could it

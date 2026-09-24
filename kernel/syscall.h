@@ -687,7 +687,8 @@ struct proc_info {
     uint32_t pages;             /* pages it holds through SYS_MAP */
     uint32_t held;              /* and everything else: image, heap, stacks */
     uint32_t caps;              /* capabilities in its table */
-    uint32_t owns;              /* bit 0 the console, bit 1 the screen */
+    uint32_t owns;              /* 1 the console, 2 the screen, 4 the disk,
+                                   8 process control, 16 device authority */
 
     /*
      * The band it is scheduled in - the *effective* one, so a server
@@ -724,6 +725,14 @@ struct proc_info {
      * order to recognise the answer "none".
      */
     uint32_t cpu;
+
+    /*
+     * The id of the process that spawned it, 0 for init. Reported so that a
+     * process can be told apart from another of the same name by who
+     * started it: the drives *server* is init's and the Drives *app* is a
+     * runner's, and Processes called the server an app (`roadmap.md` 6g).
+     */
+    uint32_t parent;
 
     char     name[16];
 };

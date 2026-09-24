@@ -1666,6 +1666,7 @@ static int l_processes(lua_State *L)
         SETI("caps",      table[i].caps);
         SETI("owns",      table[i].owns);
         SETI("priority",  table[i].priority);
+        SETI("parent",    table[i].parent);
 
         /*
          * Which processor, counted from zero, and absent rather than wrong

@@ -130,6 +130,9 @@ shortened in the middle, in a 112 cell (18.175).
 **0.10.160**: drivers in the display band (6i, 18.176); cores counted from
 one in Monitor, Cores and Processes; Monitor for 8, 16 and 32 cores drawn in
 `docs/apps.html` (6h), waiting for Diego's look before it is built.
+**0.10.161**: Processes' kinds from the kernel's parent and device authority
+(6g, 18.177). **Next: recording (8f)**, starting with kfs journalling only
+metadata (`design.md` 8.3b).
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler
