@@ -1,0 +1,1356 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The 3D modelling tool, drawn before it is written (roadmap.md 4l). One CSS
+  pixel to one screen pixel, in the Plex look, as docs/apps.html and
+  docs/mathlab.html draw the others. "Modeler" is a working name.
+
+  Diego, 25 September 2026: "I want to prioritize other app first", "A simple
+  3d modeling and animation tool like blender3d", "A tool I can design a 3d
+  scene with primitives and objects like meshes, 3d spheres, cubes, etc",
+  "Search for blender and how it approaches modeling", "I wan to be able to
+  design and render 3d scenes with 3d rendering algorithms like ray tracing",
+  "Hold animation for now as that is a second version of the app", and the
+  guide he recommends: kitbash3d.com/a/blog/how-to-use-blender-the-free-3d-software
+
+  The window below is live. Its Solid view is drawn polygon by polygon, as
+  the app's will be; its Rendered view and the Render window are a real path
+  tracer over the same analytic spheres, boxes and cylinders the ray-tracing
+  kit will trace - in JavaScript here, and in C with the vector units there.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modeler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The window, in the Plex look: always light, as the desktop draws it. */
+    --w-desk: #3d63b8; --w-body: #fafafb; --w-line: #e0e2e6; --w-ink: #1d1f24;
+    --w-dim: #74787f; --w-accent: #2a55c9; --w-head: #ffffff; --w-sel: #e9eefb;
+    /* The 3D view is dark, as Blender's is: a model reads against it. */
+    --vp-ink: #d9dde4; --vp-dim: #9aa1ad; --vp-sel: #ffa53d;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1480px; margin: 0 auto; padding-block: 40px 80px; padding-inline: 20px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  h2 { font-family: var(--display); font-size: 19px; margin: 46px 0 6px;
+       padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  .sub, .why { color: var(--muted); max-width: 78ch; }
+  .why { margin: 0 0 14px; font-size: 14px; }
+  code, kbd { font-family: var(--mono); font-size: .88em; }
+  kbd { border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+
+  .stage { background: var(--w-desk);
+           background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+           padding: 30px 24px; border-radius: 12px; overflow: hidden; }
+  .fit { transform-origin: top left; }
+  .row { display: flex; gap: 24px; justify-content: center; align-items: flex-start; }
+
+  .win { background: var(--w-body); border-radius: 10px; overflow: hidden;
+         box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+         font-size: 13.5px; color: var(--w-ink); flex: none; display: flex; flex-direction: column; position: relative; }
+  .head { height: 46px; background: var(--w-head); border-bottom: 1px solid var(--w-line);
+          display: flex; align-items: center; gap: 6px; padding: 0 10px 0 18px; flex: none; }
+  .head .t { font-weight: 600; font-size: 14px; }
+  .head .s { color: var(--w-dim); font-size: 12.5px; margin: 0 14px 0 8px; white-space: nowrap; }
+  .sp { flex: 1; }
+  .btn { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px;
+         border: 1px solid var(--w-line); border-radius: 7px; background: #fff; cursor: pointer;
+         font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; font-family: inherit; }
+  .btn.primary { background: var(--w-accent); border-color: var(--w-accent); color: #fff; font-weight: 500; }
+  .btn:focus-visible, .seg button:focus-visible, .tool:focus-visible, .tab:focus-visible, .chipb:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+  .btn svg { width: 12px; height: 12px; }
+  .btn kbd, .menu kbd { border: 0; padding: 0; color: var(--w-dim); font-size: 11px; }
+  .btn.primary kbd { color: #cfdaf7; }
+  .ico { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--w-dim); flex: none; }
+  .ico svg { width: 15px; height: 15px; }
+  .seg { display: inline-flex; border: 1px solid var(--w-line); border-radius: 7px; overflow: hidden; flex: none; background: #fff; }
+  .seg button { height: 29px; border: 0; background: transparent; padding: 0 11px; font: inherit; font-size: 12.5px;
+                color: var(--w-ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .seg button + button { border-left: 1px solid var(--w-line); }
+  .seg button.on { background: var(--w-sel); color: var(--w-accent); font-weight: 500; }
+  .seg button[disabled] { color: #b3b7be; cursor: default; }
+  .seg svg { width: 13px; height: 13px; }
+  .foot { height: 30px; display: flex; align-items: center; padding: 0 14px; gap: 16px;
+          color: var(--w-dim); font-size: 12px; border-top: 1px solid var(--w-line); background: var(--w-body);
+          font-variant-numeric: tabular-nums; flex: none; white-space: nowrap; overflow: hidden; }
+  .foot b { color: var(--w-ink); font-weight: 500; }
+  .foot kbd { border: 1px solid var(--w-line); border-bottom-width: 2px; background: #fff; color: var(--w-ink); font-size: 10.5px; padding: 0 4px; }
+
+  /* The layout: tools, the 3D view, and the Outliner over Properties. */
+  .layout { display: grid; grid-template-columns: 46px 1fr 340px; flex: 1; min-height: 0; }
+  .tools { background: #f4f5f7; border-right: 1px solid var(--w-line); display: flex; flex-direction: column;
+           align-items: center; gap: 4px; padding: 10px 0; }
+  .tool { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: #4d535c;
+          border: 0; background: transparent; cursor: pointer; }
+  .tool.on { background: var(--w-accent); color: #fff; }
+  .tool svg { width: 17px; height: 17px; }
+  .tools hr { width: 24px; border: 0; border-top: 1px solid var(--w-line); margin: 4px 0; }
+  .vp { position: relative; overflow: hidden; background: #33363c; cursor: default; touch-action: none; }
+  .vp canvas { display: block; }
+  .vp .ov { position: absolute; left: 14px; top: 10px; color: var(--vp-ink); font-size: 12.5px; line-height: 1.45;
+            pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .vp .ov span { color: var(--vp-dim); }
+  .vp .hint { position: absolute; left: 14px; bottom: 12px; color: var(--vp-dim); font-size: 12px; pointer-events: none; }
+  .side { border-left: 1px solid var(--w-line); display: flex; flex-direction: column; min-height: 0; background: #fff; }
+  .panel-t { height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 12px; font-weight: 600;
+             color: var(--w-dim); letter-spacing: .04em; text-transform: uppercase; border-bottom: 1px solid var(--w-line);
+             background: #fbfbfc; flex: none; }
+  .outliner { height: 236px; overflow-y: auto; border-bottom: 1px solid var(--w-line); flex: none; padding: 4px 0; }
+  .ol { display: grid; grid-template-columns: 18px 18px 1fr 22px; align-items: center; gap: 6px; height: 27px;
+        padding: 0 10px 0 12px; font-size: 13px; cursor: pointer; }
+  .ol.coll { cursor: default; color: var(--w-dim); }
+  .ol.sel { background: var(--w-sel); }
+  .ol.sel .nm { color: var(--w-accent); font-weight: 500; }
+  .ol svg { width: 14px; height: 14px; }
+  .ol .ty { color: #6a7482; display: grid; place-items: center; }
+  .ol .eye { color: #9aa1ad; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; padding: 0; }
+  .ol.hid .nm { color: #b3b7be; }
+  .props { flex: 1; display: grid; grid-template-columns: 38px 1fr; min-height: 0; }
+  .tabs { background: #f4f5f7; border-right: 1px solid var(--w-line); display: flex; flex-direction: column; align-items: center;
+          gap: 3px; padding: 8px 0; }
+  .tab { width: 30px; height: 30px; border-radius: 7px; border: 0; background: transparent; color: #5b626c; display: grid;
+         place-items: center; cursor: pointer; }
+  .tab.on { background: #fff; color: var(--w-accent); box-shadow: 0 0 0 1px var(--w-line); }
+  .tab svg { width: 16px; height: 16px; }
+  .pane { overflow-y: auto; padding: 12px 14px 18px; font-size: 12.5px; }
+  .pane h4 { margin: 0 0 10px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .pane h4 svg { width: 16px; height: 16px; flex: none; color: #5b626c; }
+  .pane h5 { margin: 14px 0 6px; font-size: 11.5px; font-weight: 600; color: var(--w-dim); letter-spacing: .04em; text-transform: uppercase; }
+  .pane p { margin: 0 0 8px; color: var(--w-dim); line-height: 1.5; }
+  .f { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .f > label { color: #4d535c; text-align: right; }
+  .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+  .n { width: 100%; height: 26px; border: 1px solid #d6dae1; border-radius: 6px; background: #f7f8fa; font: inherit;
+       font-size: 12px; text-align: center; color: var(--w-ink); font-variant-numeric: tabular-nums; padding: 0 4px; }
+  .n:focus { outline: none; border-color: var(--w-accent); background: #fff; box-shadow: 0 0 0 3px rgba(42,85,201,.14); }
+  .n[readonly] { color: #8c929b; }
+  .ax { font-size: 10px; font-weight: 600; margin-bottom: 1px; text-align: center; }
+  .ax.x { color: #d4453b; } .ax.y { color: #4f9a2c; } .ax.z { color: #2f68c8; }
+  input[type=range] { width: 100%; accent-color: var(--w-accent); margin: 0; }
+  .rng { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; }
+  .rng output { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--w-ink); text-align: right; }
+  .swatch { display: flex; gap: 8px; align-items: center; }
+  .swatch input[type=color] { width: 44px; height: 26px; border: 1px solid #d6dae1; border-radius: 6px; padding: 1px; background: #fff; cursor: pointer; }
+  .swatch code { font-size: 11.5px; color: var(--w-dim); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+  .chipb { height: 26px; border: 1px solid var(--w-line); background: #fff; border-radius: 13px; padding: 0 10px; font: inherit;
+           font-size: 12px; cursor: pointer; color: var(--w-ink); display: inline-flex; align-items: center; gap: 6px; }
+  .chipb i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .chipb.on { border-color: var(--w-accent); background: var(--w-sel); color: var(--w-accent); font-weight: 500; }
+  .note { font-size: 12px; color: var(--w-dim); margin-top: 10px; line-height: 1.5; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+         color: #8a5a00; background: #fff3d6; border-radius: 5px; padding: 1px 6px; }
+
+  /* The Add menu, drawn open. */
+  .menu { position: absolute; background: #fff; border: 1px solid var(--w-line); border-radius: 9px;
+          box-shadow: 0 12px 30px rgba(0,0,0,.22); padding: 5px; min-width: 190px; font-size: 13px; z-index: 5; }
+  .menu .mt { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--w-dim); padding: 5px 10px 4px; }
+  .menu .mi { height: 29px; display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 8px; padding: 0 10px;
+              border-radius: 6px; cursor: pointer; border: 0; background: transparent; width: 100%; font: inherit; color: var(--w-ink); text-align: left; }
+  .menu .mi:hover, .menu .mi.hl { background: var(--w-sel); }
+  .menu .mi svg { width: 15px; height: 15px; color: #5b626c; }
+  .menu .mi .ar { color: var(--w-dim); font-size: 11px; }
+  .menu hr { border: 0; border-top: 1px solid var(--w-line); margin: 4px 6px; }
+  .menu .mi[disabled] { color: #b3b7be; cursor: default; }
+  .menu .mi[disabled]:hover { background: transparent; }
+
+  /* The Render window. */
+  .rwin-body { display: grid; grid-template-columns: 640px 1fr; }
+  .rimg { background: #1d1f24; position: relative; }
+  .rimg canvas { display: block; width: 640px; height: 360px; }
+  .rside { padding: 14px 16px; font-size: 12.5px; border-left: 1px solid var(--w-line); background: #fff; }
+  .meter { height: 6px; border-radius: 3px; background: #e6e9ef; overflow: hidden; margin: 6px 0 4px; }
+  .meter i { display: block; height: 100%; background: var(--w-accent); width: 0; }
+  .big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  table.rules { border-collapse: collapse; font-size: 14px; margin: 10px 0 18px; }
+  table.rules td, table.rules th { padding: 6px 16px 6px 0; vertical-align: top; border-bottom: 1px solid var(--rule); text-align: left; }
+  table.rules th { font-weight: 600; font-size: 13px; color: var(--muted); }
+  table.rules td:first-child { white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
+  ul.ask { max-width: 80ch; }
+  ul.ask li { margin-bottom: 6px; }
+  .k-copy { color: #1f6b2c; font-weight: 600; } .k-simp { color: #8a5a00; font-weight: 600; } .k-later { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Modeler</h1>
+<p class="sub">A scene made of spheres, cubes, cylinders and meshes, placed and turned and sized in a 3D view, given
+materials and lights, and then rendered by ray tracing. After Blender, which Diego asked to study first, and smaller
+than it on purpose: one window, the things a scene is made of, and a renderer that does the light properly. Animation is
+the second version. Drawn before any of it is written (<code>roadmap.md</code> 4l); <b>Modeler is a working name</b>.</p>
+
+<h2>The window</h2>
+<p class="why">Blender's default layout, which the KitBash3D guide Diego sent starts from: the <b>3D view</b> in the middle,
+the <b>Outliner</b> &mdash; every object in the scene &mdash; above <b>Properties</b> on the right, the tools down the left, and a
+foot that says which keys do what right now. It opens on a scene rather than an empty grid, as Blender opens on its
+cube. <b>It works here</b>: click an object in the view or the list, drag the view to turn it, <kbd>Shift</kbd>-drag to
+move it, scroll to come closer; <b>Rendered</b> ray-traces the view as you look, and the tabs on the right change what
+is selected &mdash; its place, its size, its material.</p>
+
+<div class="stage"><div class="fit" data-w="1400">
+  <div class="row">
+  <div class="win" style="width:1400px;height:820px" id="main">
+    <div class="head">
+      <span class="t">Modeler</span><span class="s">still-life.scene</span>
+      <div class="seg" role="group" aria-label="Mode">
+        <button type="button" class="on">Object</button><button type="button" disabled title="Edit mode: version 1.5">Edit</button>
+      </div>
+      <button type="button" class="btn" id="addbtn" aria-haspopup="menu" aria-expanded="false">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 1.5v9M1.5 6h9"/></svg>Add <kbd>&#8679;A</kbd></button>
+      <span class="sp"></span>
+      <div class="seg" role="group" aria-label="Shading" id="shading">
+        <button type="button" data-shade="wire" title="Wireframe">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="7" cy="7" r="5.5"/><ellipse cx="7" cy="7" rx="2.3" ry="5.5"/><path d="M1.5 7h11"/></svg>Wireframe</button>
+        <button type="button" data-shade="solid" class="on" title="Solid">
+          <svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="currentColor" opacity=".55"/><circle cx="5.3" cy="5.2" r="2" fill="#fff" opacity=".7"/></svg>Solid</button>
+        <button type="button" data-shade="render" title="Rendered">
+          <svg viewBox="0 0 14 14"><defs><radialGradient id="rg" cx=".35" cy=".3"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#e0a84a"/><stop offset="1" stop-color="#6b4712"/></radialGradient></defs><circle cx="7" cy="7" r="5.5" fill="url(#rg)"/></svg>Rendered</button>
+      </div>
+      <button type="button" class="btn primary" id="f12btn">Render <kbd>F12</kbd></button>
+      <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
+    </div>
+    <div class="layout">
+      <div class="tools" role="toolbar" aria-label="Tools">
+        <button type="button" class="tool on" title="Select (click, or drag a box)"><svg viewBox="0 0 18 18" fill="currentColor"><path d="M4 2.5l10 6.2-4.3.9 2.6 4.8-1.8 1-2.6-4.8L4.8 13z"/></svg></button>
+        <button type="button" class="tool" title="3D cursor: where new things appear"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="9" r="5" stroke-dasharray="2.2 1.8"/><path d="M9 1.5v4M9 12.5v4M1.5 9h4M12.5 9h4"/></svg></button>
+        <hr>
+        <button type="button" class="tool" title="Move (G)"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v14M2 9h14M9 2l-2.2 2.2M9 2l2.2 2.2M9 16l-2.2-2.2M9 16l2.2-2.2M2 9l2.2-2.2M2 9l2.2 2.2M16 9l-2.2-2.2M16 9l-2.2 2.2"/></svg></button>
+        <button type="button" class="tool" title="Rotate (R)"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.4 2.6v3h-3" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="tool" title="Scale (S)"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2.5" y="7.5" width="8" height="8" rx="1"/><path d="M9 9l6.5-6.5M11 2.5h4.5V7"/></svg></button>
+        <hr>
+        <button type="button" class="tool" title="Measure"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 12.5l10-10 3 3-10 10z"/><path d="M6 9l1.5 1.5M8.5 6.5L10 8M11 4l1.5 1.5"/></svg></button>
+      </div>
+      <div class="vp" id="vp">
+        <canvas id="vpc" aria-label="The 3D view of the scene"></canvas>
+        <div class="ov" id="vpov"></div>
+        <div class="hint" id="vphint">Drag to turn &middot; Shift-drag to move &middot; scroll to come closer</div>
+      </div>
+      <div class="side">
+        <div class="panel-t">Outliner</div>
+        <div class="outliner" id="outliner"></div>
+        <div class="props">
+          <div class="tabs" role="tablist" aria-label="Properties" id="tabs">
+            <button type="button" class="tab" role="tab" data-tab="render" title="Render"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M5 14.5h6"/><circle cx="8" cy="8" r="2"/></svg></button>
+            <button type="button" class="tab" role="tab" data-tab="world" title="World"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></svg></button>
+            <button type="button" class="tab on" role="tab" data-tab="object" title="Object"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l5.8 3.2v6.6L8 14.5l-5.8-3.2V4.7z" opacity=".25"/><path d="M8 1.5l5.8 3.2L8 7.9 2.2 4.7z" opacity=".8"/></svg></button>
+            <button type="button" class="tab" role="tab" data-tab="data" title="Object data: the shape itself"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2l6 10H2z"/><circle cx="8" cy="2" r="1.3" fill="currentColor"/><circle cx="14" cy="12" r="1.3" fill="currentColor"/><circle cx="2" cy="12" r="1.3" fill="currentColor"/></svg></button>
+            <button type="button" class="tab" role="tab" data-tab="material" title="Material"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#c33b2c"/><circle cx="6" cy="6" r="2.2" fill="#fff" opacity=".6"/></svg></button>
+          </div>
+          <div class="pane" id="pane"></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot" id="foot"></div>
+    <div class="menu" id="addmenu" role="menu" hidden style="left:250px;top:44px"></div>
+  </div>
+  </div>
+</div></div>
+<p class="why">The scene is Blender's idea of a first scene grown a little: a ground, a red cube, a glass ball, a gold
+one, a blue cylinder, one light and a camera. The numbers in the foot are this scene's.</p>
+
+<h2>Adding things</h2>
+<p class="why">KitBash3D's second step, and Blender's <kbd>Shift</kbd>+<kbd>A</kbd>: the <b>Add</b> menu, in the
+window's header and on the key. New things appear at the <b>3D cursor</b> &mdash; the red and white ring, which a click
+with the cursor tool puts anywhere &mdash; so where a thing lands is decided before it is added. <b>The Add menu in the
+window above works</b>: add a cube or a sphere and it appears at the cursor, selected, in the view, the Outliner and
+the render.</p>
+
+<div class="stage"><div class="fit" data-w="1000">
+  <div class="row">
+  <div class="win" style="width:560px;height:452px">
+    <div class="head"><span class="t">Modeler</span><span class="s">Add</span></div>
+    <div style="position:relative;flex:1;background:#33363c">
+      <div class="menu" style="left:14px;top:12px;width:200px" aria-hidden="true">
+        <div class="mt">Add</div>
+        <div class="mi hl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2l6 10H2z"/></svg>Mesh<span class="ar">&#9656;</span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="7" r="3.5"/><path d="M6.5 11.5h3M7 13.5h2"/></svg>Light<span class="ar">&#9656;</span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="5" width="8" height="7" rx="1"/><path d="M10 7.5l4-2v6l-4-2"/></svg>Camera<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2v12M2 8h12M3.8 3.8l8.4 8.4M12.2 3.8l-8.4 8.4"/></svg>Empty<span class="ar"></span></div>
+        <hr>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 2.5h7l3 3v8H3z"/><path d="M10 2.5v3h3"/></svg>Import OBJ&hellip;<span class="ar"></span></div>
+      </div>
+      <div class="menu" style="left:222px;top:40px;width:218px" aria-hidden="true">
+        <div class="mt">Mesh</div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 10l5-4h8l-5 4z"/></svg>Plane<span class="ar"></span></div>
+        <div class="mi hl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.8l5.5 3v6.4L8 14.2l-5.5-3V4.8zM2.5 4.8L8 8l5.5-3.2M8 8v6.2"/></svg>Cube<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="8" rx="6" ry="3"/></svg>Circle<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="6"/><ellipse cx="8" cy="8" rx="6" ry="2.4"/><ellipse cx="8" cy="8" rx="2.4" ry="6"/></svg>UV Sphere<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 2l5.2 3v6L8 14l-5.2-3V5z"/><path d="M8 2l-2.2 6L8 14M8 2l2.2 6L8 14M2.8 5l3 3h4.4l3-3M2.8 11l3-3M13.2 11l-3-3"/></svg>Ico Sphere<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="3.8" rx="4.5" ry="1.8"/><path d="M3.5 3.8v8.4M12.5 3.8v8.4"/><path d="M3.5 12.2c0 2.4 9 2.4 9 0"/></svg>Cylinder<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.8l4.8 10.4M8 1.8L3.2 12.2"/><path d="M3.2 12.2c0 2.4 9.6 2.4 9.6 0"/></svg>Cone<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="8" rx="6.2" ry="3.6"/><ellipse cx="8" cy="8" rx="2.4" ry="1.1"/></svg>Torus<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1.5 10l5-4h8l-5 4zM4 8l8 0M5.5 6.8l-2.4 2.2M9.5 6.8l-2.4 2.2"/></svg>Grid<span class="ar"></span></div>
+        <div class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8.5" r="4.5"/><circle cx="3" cy="6" r="1.6"/><circle cx="13" cy="6" r="1.6"/><circle cx="6.4" cy="8" r=".6" fill="currentColor"/><circle cx="9.6" cy="8" r=".6" fill="currentColor"/></svg>Monkey<span class="ar"></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="win" style="width:340px;height:452px">
+    <div class="head"><span class="t">Properties</span><span class="s">Sphere &middot; data</span></div>
+    <div class="pane" style="background:#fff;flex:1">
+      <h4>UV Sphere <span class="tag">live</span></h4>
+      <div class="f"><label>Segments</label><input class="n" value="32" readonly aria-label="Segments"></div>
+      <div class="f"><label>Rings</label><input class="n" value="16" readonly aria-label="Rings"></div>
+      <div class="f"><label>Radius</label><input class="n" value="1.000 m" readonly aria-label="Radius"></div>
+      <div class="f"><label>Shading</label><div class="seg"><button type="button">Flat</button><button type="button" class="on">Smooth</button></div></div>
+      <div class="f"><label>Rendered as</label><div class="seg"><button type="button" class="on">A true sphere</button><button type="button">Its triangles</button></div></div>
+      <p class="note">What the sphere was made with <b>stays editable</b>, here, until it is edited as a mesh. Blender shows
+      these once, in a panel that closes on the next thing done; keeping them is the one place this departs from it on
+      purpose.</p>
+      <p class="note">And a sphere renders as <b>a true sphere</b> &mdash; one equation, a perfect outline &mdash; while
+      the view draws its 960 triangles. The same holds for cubes, planes and cylinders.</p>
+    </div>
+  </div>
+  </div>
+</div></div>
+
+<h2>Rendering</h2>
+<p class="why">KitBash3D's last step, Blender's <kbd>F12</kbd>: the scene through its <b>camera</b>, rendered in a window
+of its own, getting clearer the longer it runs. <b>This one is rendering now</b>, in this page, with the same method the
+app will use: every pixel a ray from the camera, bounced from surface to surface until it finds the light or the sky,
+thousands of times, and averaged. Glass bends what is behind it, the gold ball reflects the others, shadows are soft
+because the light has a size, and light bounces off the red cube onto the ground.</p>
+
+<div class="stage"><div class="fit" data-w="1040">
+  <div class="row">
+  <div class="win" style="width:1040px" id="rwin">
+    <div class="head"><span class="t">Render</span><span class="s">still-life.scene &middot; Camera &middot; 640 &times; 360</span><span class="sp"></span>
+      <button type="button" class="btn" id="rerender">Render again</button>
+      <button type="button" class="btn" disabled style="color:#9aa0a8">Save as PNG&hellip;</button></div>
+    <div class="rwin-body">
+      <div class="rimg"><canvas id="rc" width="640" height="360" aria-label="The scene, ray traced through its camera"></canvas></div>
+      <div class="rside">
+        <div style="color:var(--w-dim)">Samples</div>
+        <div class="big" id="rsamples">0 / 256</div>
+        <div class="meter"><i id="rmeter"></i></div>
+        <div style="color:var(--w-dim);font-variant-numeric:tabular-nums" id="rtime">&nbsp;</div>
+        <h5 style="margin:16px 0 6px;font-size:11.5px;color:var(--w-dim);letter-spacing:.04em;text-transform:uppercase">Light paths</h5>
+        <div class="f" style="grid-template-columns:110px 1fr"><label style="text-align:left">Integrator</label><span id="rint">Final &middot; path tracing</span></div>
+        <div class="f" style="grid-template-columns:110px 1fr"><label style="text-align:left">Bounces</label><span>up to 6</span></div>
+        <div class="f" style="grid-template-columns:110px 1fr"><label style="text-align:left">Denoise</label><span>when it stops</span></div>
+        <div class="f" style="grid-template-columns:110px 1fr"><label style="text-align:left">Cores</label><span>all of them, a tile each</span></div>
+        <p class="note" style="margin-top:14px">The times here are this browser's, in JavaScript. The app's are the ray-tracing
+        kit's, in C with the vector units, and will be measured on the machine rather than promised.</p>
+      </div>
+    </div>
+  </div>
+  </div>
+</div></div>
+<p class="why"><b>Two ways to trace, one tracer.</b> <b>Preview</b> is Whitted's 1980 ray tracing: a ray from the camera,
+a shadow ray to each light, and mirrors and glass followed exactly &mdash; no noise, hard shadows, nothing bounced; fast
+enough to turn the view in. <b>Final</b> is path tracing, as Blender's Cycles does: every bounce followed at random,
+so it starts noisy and settles, and gets soft shadows, light carried from surface to surface and glowing objects for
+nothing. Both share the scene, the materials and the hardest part &mdash; finding what a ray hits first &mdash; so
+the <b>Render</b> tab above switches between them, and the Rendered view follows.</p>
+
+<h2>How Blender does it, and what is taken</h2>
+<p class="why">From Blender's manual and the KitBash3D guide. <span class="k-copy">Taken</span> means as Blender does it,
+so that knowing one is knowing the other; <span class="k-simp">smaller</span> means the idea kept and the size cut;
+<span class="k-later">later</span> means after version one.</p>
+<div class="tablewrap">
+<table class="rules">
+<tr><th>Blender</th><th></th><th>Here</th></tr>
+<tr><td>An object and its data</td><td class="k-copy">Taken</td><td>An object is where a thing is &mdash; place, turn, size &mdash;
+  and points at what it is: a mesh, a light, a camera. Moving an object never touches its shape, and two objects can share
+  one shape (<kbd>Alt</kbd>+<kbd>D</kbd>), which is also what makes a thousand copies cheap to ray-trace.</td></tr>
+<tr><td>The 3D cursor</td><td class="k-copy">Taken</td><td>Where new things appear, and what things can turn about.</td></tr>
+<tr><td><kbd>G</kbd> <kbd>R</kbd> <kbd>S</kbd></td><td class="k-copy">Taken</td><td>Move, rotate, scale by moving the pointer;
+  <kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd> to hold it to an axis, a number typed for an exact amount, <kbd>Esc</kbd> to take it
+  back. And the same three as tools with handles, for the pointer alone &mdash; KitBash3D teaches the tools, not the keys.</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>A</kbd>, <kbd>Tab</kbd>, <kbd>F12</kbd>, <kbd>Z</kbd></td><td class="k-copy">Taken</td><td>Add, edit mode, render, shading.</td></tr>
+<tr><td>Principled BSDF</td><td class="k-copy">Taken, smaller</td><td>Its names and ranges &mdash; base colour, metallic, roughness,
+  IOR, transmission, emission &mdash; as a form with five starting points: plastic, metal, mirror, glass, light. No node
+  editor: in Blender the Material tab and the nodes are two views of one thing, and the tab is enough.</td></tr>
+<tr><td>Cycles, EEVEE, Workbench</td><td class="k-simp">Smaller</td><td>One ray tracer with two ways to trace; the Solid view is
+  drawn as Workbench draws it.</td></tr>
+<tr><td>Fifteen Properties tabs</td><td class="k-simp">Smaller</td><td>Five: Render, World, Object, Data, Material.</td></tr>
+<tr><td>Workspaces</td><td class="k-simp">Smaller</td><td>One layout.</td></tr>
+<tr><td>Adjust Last Operation</td><td class="k-simp">Changed</td><td>A primitive's own numbers stay in the Data tab until it is
+  edited as a mesh, rather than in a panel that closes.</td></tr>
+<tr><td>Middle button to orbit</td><td class="k-simp">For Diego</td><td>Blender turns the view with the middle button, which the
+  ThinkPad's TrackPoint has; drawn here as a drag on empty space. Both could be offered.</td></tr>
+<tr><td>Numpad views</td><td class="k-simp">Changed</td><td>The T14 has no numpad, so the axis ball in the view's corner is
+  clickable &mdash; front, side, top &mdash; and the number row does it too.</td></tr>
+<tr><td>Edit mode, modifiers</td><td class="k-later">Later</td><td>Vertices, edges and faces; extrude, inset, bevel; mirror,
+  array, subdivision. Version one and a half.</td></tr>
+<tr><td>Keyframes, the timeline</td><td class="k-later">Version two</td><td>"Hold animation for now as that is a second version
+  of the app." Every property is given a name a keyframe can point at from the start, so animation is added rather than
+  retrofitted.</td></tr>
+</table>
+</div>
+
+<h2>What it is made of</h2>
+<div class="tablewrap">
+<table class="rules">
+<tr><th>Part</th><th>In Kosmos</th></tr>
+<tr><td>The app</td><td>Lua, <code>/bin/modeler.lua</code>: the window, the Outliner, Properties, selection, the tools,
+  undo. It decides what is drawn and where; it computes no pixel.</td></tr>
+<tr><td>The Solid view</td><td>Drawn by the GL kit (<code>/kits/gl</code>) as triangles with a depth buffer, which Doom's
+  and the cube's frames already come through &mdash; not polygons sorted by distance, as this page does it.</td></tr>
+<tr><td>The ray tracer</td><td>A new kit, <code>/kits/ray</code>, in C: the scene as spheres, boxes, cylinders, planes and
+  triangles; a <b>bounding volume hierarchy</b> so a ray tests a few of them rather than all; the two ways to trace;
+  tiles handed to every core; the vector units testing four boxes or four triangles at once (<code>roadmap.md</code> 6l).</td></tr>
+<tr><td>A render</td><td>Into a surface, a pass at a time, shown as it improves; <b>Save as PNG</b> writes it to
+  <code>/home/renders</code> with the PNG writer the screenshot key needs as well.</td></tr>
+<tr><td>A scene on disk</td><td><b>glTF</b>, the open format Blender exports: meshes, materials, lights, cameras and shared
+  shapes, with what glTF has no word for &mdash; a true sphere, the 3D cursor, the render settings &mdash; in its
+  <code>extras</code>. Read as data, never run. And <b>OBJ</b> to bring meshes in: the teapot, Blender's monkey.</td></tr>
+</table>
+</div>
+
+<h2>Decided, 25 September</h2>
+<ul class="ask">
+  <li><b>Before MathLab</b> &mdash; "I want to prioritize other app first"; MathLab is on hold.</li>
+  <li><b>After Blender</b> &mdash; "A simple 3d modeling and animation tool like blender3d", "Search for blender and how it
+      approaches modeling"; studied from Blender's manual and the guide Diego sent.</li>
+  <li><b>Scenes of primitives and meshes</b> &mdash; "A tool I can design a 3d scene with primitives and objects like meshes,
+      3d spheres, cubes, etc".</li>
+  <li><b>Rendered by ray tracing</b> &mdash; "I want to be able to design and render 3d scenes with 3d rendering algorithms
+      like ray tracing".</li>
+  <li><b>Animation is version two</b> &mdash; "Hold animation for now as that is a second version of the app".</li>
+</ul>
+
+<h2>For Diego to decide</h2>
+<ul class="ask">
+  <li><b>Its name.</b> Drawn as <i>Modeler</i>, which says what it is. Or something with more of Kosmos in it &mdash;
+      <i>Atelier</i>, a workshop; <i>Orrery</i>, the brass model of the heavens.</li>
+  <li><b>Turning the view</b>: a drag on empty space, as drawn, or Blender's middle button &mdash; or both.</li>
+  <li><b>The scene it opens on</b>: this one, or Blender's lone cube, light and camera.</li>
+  <li><b>The order to build it in</b>, proposed: the window, the Solid view and selection; adding things and moving them;
+      the ray-tracing kit and the Rendered view; materials, lights, the camera and <kbd>F12</kbd>; saving and opening
+      glTF; then the vector units in the kit, measured. Edit mode after that, and animation last.</li>
+</ul>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------ *
+   * Vectors, as arrays of three.
+   * ------------------------------------------------------------------ */
+  function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+  function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+  function mul(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+  function norm(a) { var l = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+  function rotZ(p, deg) {
+    var a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    return [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]];
+  }
+  function hex(h) { return [1, 3, 5].map(function (i) { return parseInt(h.substr(i, 2), 16) / 255; }); }
+  function toHex(c) {
+    return "#" + c.map(function (v) { var s = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16); return s.length < 2 ? "0" + s : s; }).join("");
+  }
+  function lin(c) { return [Math.pow(c[0], 2.2), Math.pow(c[1], 2.2), Math.pow(c[2], 2.2)]; }
+  function fmt(v, d) { return (Math.abs(v) < 5e-4 ? 0 : v).toFixed(d === undefined ? 3 : d); }
+
+  /* ------------------------------------------------------------------ *
+   * The scene. Z is up, as in Blender; a unit is a metre.
+   * ------------------------------------------------------------------ */
+  var PRESETS = {
+    Plastic: { metallic: 0, rough: 0.35, trans: 0, ior: 1.5, emit: 0, dot: "#c33b2c" },
+    Metal: { metallic: 1, rough: 0.22, trans: 0, ior: 1.5, emit: 0, dot: "#e0a84a" },
+    Mirror: { metallic: 1, rough: 0, trans: 0, ior: 1.5, emit: 0, dot: "#c9ced6" },
+    Glass: { metallic: 0, rough: 0, trans: 1, ior: 1.5, emit: 0, dot: "#bfe0f0" },
+    Light: { metallic: 0, rough: 1, trans: 0, ior: 1.5, emit: 5, dot: "#ffe28a" }
+  };
+  function material(base, preset) {
+    var m = { base: hex(base), preset: preset }, p = PRESETS[preset];
+    ["metallic", "rough", "trans", "ior", "emit"].forEach(function (k) { m[k] = p[k]; });
+    return m;
+  }
+  var scene = [
+    { name: "Ground", kind: "plane", pos: [0, 0, 0], size: 100, mat: material("#c9c6bf", "Plastic") },
+    { name: "Cube", kind: "box", pos: [-1.75, 0.45, 0.75], half: [0.75, 0.75, 0.75], rot: 24, mat: material("#c33b2c", "Plastic") },
+    { name: "Glass", kind: "sphere", pos: [0.75, -0.8, 0.9], r: 0.9, seg: 32, rings: 16, mat: material("#ffffff", "Glass") },
+    { name: "Gold", kind: "sphere", pos: [2.3, 1.05, 0.6], r: 0.6, seg: 32, rings: 16, mat: material("#e0a84a", "Metal") },
+    { name: "Cylinder", kind: "cylinder", pos: [0.05, 2.15, 0.8], r: 0.55, depth: 1.6, verts: 32, mat: material("#3d6fc4", "Plastic") },
+    { name: "Light", kind: "light", pos: [-2.4, -3.1, 5.4], r: 0.5, power: 1000, colour: hex("#fff2e2") },
+    { name: "Camera", kind: "camera", pos: [7.3, -6.7, 3.9], target: [0.15, 0.25, 0.7], focal: 50 }
+  ];
+  scene[0].mat.rough = 1;
+  var world = { zenith: hex("#6d90c6"), horizon: hex("#dfe6ef"), strength: 0.9 };
+  var render = { mode: "final" };
+  var cursor3d = [0, 0, 0];
+  var selected = scene[1];
+  var added = 0;
+
+  function light() { for (var i = 0; i < scene.length; i++) { if (scene[i].kind === "light") { return scene[i]; } } return null; }
+  function camObj() { for (var i = 0; i < scene.length; i++) { if (scene[i].kind === "camera") { return scene[i]; } } return null; }
+
+  /* ------------------------------------------------------------------ *
+   * The shapes as polygons, for the Solid and Wireframe views.
+   * ------------------------------------------------------------------ */
+  function polys(s) {
+    var out = [], i, j;
+    if (s.kind === "plane") {
+      var h = s.size / 2;
+      out.push({ p: [[-h, -h, s.pos[2]], [h, -h, s.pos[2]], [h, h, s.pos[2]], [-h, h, s.pos[2]]], n: [0, 0, 1] });
+    } else if (s.kind === "box") {
+      var c = function (x, y, z) { return add(s.pos, rotZ([x * s.half[0], y * s.half[1], z * s.half[2]], s.rot)); };
+      [[[1, 0, 0], [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]]],
+       [[-1, 0, 0], [[-1, 1, -1], [-1, -1, -1], [-1, -1, 1], [-1, 1, 1]]],
+       [[0, 1, 0], [[1, 1, -1], [-1, 1, -1], [-1, 1, 1], [1, 1, 1]]],
+       [[0, -1, 0], [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]]],
+       [[0, 0, 1], [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]]],
+       [[0, 0, -1], [[-1, 1, -1], [1, 1, -1], [1, -1, -1], [-1, -1, -1]]]].forEach(function (f) {
+        out.push({ p: f[1].map(function (v) { return c(v[0], v[1], v[2]); }), n: rotZ(f[0], s.rot) });
+      });
+    } else if (s.kind === "sphere") {
+      var seg = Math.min(s.seg, 32), rings = Math.min(s.rings, 16);
+      var pt = function (a, b) {
+        var th = Math.PI * b / rings, ph = 2 * Math.PI * a / seg;
+        return add(s.pos, [s.r * Math.sin(th) * Math.cos(ph), s.r * Math.sin(th) * Math.sin(ph), s.r * Math.cos(th)]);
+      };
+      for (j = 0; j < rings; j++) {
+        for (i = 0; i < seg; i++) {
+          var q = [pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1)];
+          if (j === 0) { q.splice(1, 1); } else if (j === rings - 1) { q.splice(3, 1); }
+          var m = [0, 0, 0]; q.forEach(function (v) { m = add(m, v); });
+          out.push({ p: q, n: norm(sub(mul(m, 1 / q.length), s.pos)) });
+        }
+      }
+    } else if (s.kind === "cylinder") {
+      var n = Math.min(s.verts, 32), lo = s.pos[2] - s.depth / 2, hi = s.pos[2] + s.depth / 2, top = [], bot = [];
+      var at = function (k, z) { var a = 2 * Math.PI * k / n; return [s.pos[0] + s.r * Math.cos(a), s.pos[1] + s.r * Math.sin(a), z]; };
+      for (i = 0; i < n; i++) {
+        var mid = 2 * Math.PI * (i + 0.5) / n;
+        out.push({ p: [at(i, lo), at(i + 1, lo), at(i + 1, hi), at(i, hi)], n: [Math.cos(mid), Math.sin(mid), 0] });
+        top.push(at(i, hi)); bot.unshift(at(i, lo));
+      }
+      out.push({ p: top, n: [0, 0, 1] });
+      out.push({ p: bot, n: [0, 0, -1] });
+    }
+    out.forEach(function (f) { f.obj = s; });
+    return out;
+  }
+  function triangles(s) {
+    if (s.kind === "plane") { return 2; }
+    if (s.kind === "box") { return 12; }
+    if (s.kind === "sphere") { return s.seg * (s.rings - 2) * 2 + s.seg * 2; }
+    if (s.kind === "cylinder") { return s.verts * 2 + (s.verts - 2) * 2; }
+    return 0;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * A camera: where it is, which way it looks, and how wide.
+   * ------------------------------------------------------------------ */
+  function lookAt(eye, target, W, H, fovH) {
+    var f = norm(sub(target, eye)), r = norm(cross(f, [0, 0, 1])), u = cross(r, f);
+    return { eye: eye, f: f, r: r, u: u, F: (W / 2) / Math.tan(fovH / 2), W: W, H: H };
+  }
+  var FOV50 = 2 * Math.atan(18 / 50);   /* 50 mm on a 36 mm sensor, across */
+
+  /* ------------------------------------------------------------------ *
+   * The ray tracer: analytic shapes, a light with a size, a sky. The same
+   * work the ray-tracing kit will do, one ray at a time.
+   * ------------------------------------------------------------------ */
+  var EPS = 1e-4;
+  function intersect(o, d, withLight, maxT) {
+    var best = maxT || Infinity, hit = null, hn = null, i, k, t;
+    for (i = 0; i < scene.length; i++) {
+      var s = scene[i];
+      if (s.hidden) { continue; }
+      if (s.kind === "sphere" || (s.kind === "light" && withLight)) {
+        var ox = o[0] - s.pos[0], oy = o[1] - s.pos[1], oz = o[2] - s.pos[2];
+        var b = ox * d[0] + oy * d[1] + oz * d[2], c = ox * ox + oy * oy + oz * oz - s.r * s.r, disc = b * b - c;
+        if (disc < 0) { continue; }
+        var sq = Math.sqrt(disc);
+        t = -b - sq; if (t < EPS) { t = -b + sq; }
+        if (t < EPS || t >= best) { continue; }
+        best = t; hit = s; hn = null;
+      } else if (s.kind === "plane") {
+        if (Math.abs(d[2]) < 1e-9) { continue; }
+        t = (s.pos[2] - o[2]) / d[2];
+        if (t < EPS || t >= best) { continue; }
+        var px = o[0] + t * d[0], py = o[1] + t * d[1];
+        if (Math.abs(px) > s.size / 2 || Math.abs(py) > s.size / 2) { continue; }
+        best = t; hit = s; hn = [0, 0, 1];
+      } else if (s.kind === "box") {
+        var lo = rotZ(sub(o, s.pos), -s.rot), ld = rotZ(d, -s.rot), t0 = -Infinity, t1 = Infinity, a0 = 0, a1 = 0, miss = false;
+        for (k = 0; k < 3; k++) {
+          if (Math.abs(ld[k]) < 1e-12) { if (Math.abs(lo[k]) > s.half[k]) { miss = true; break; } continue; }
+          var ta = (-s.half[k] - lo[k]) / ld[k], tb = (s.half[k] - lo[k]) / ld[k];
+          if (ta > tb) { var sw = ta; ta = tb; tb = sw; }
+          if (ta > t0) { t0 = ta; a0 = k; }
+          if (tb < t1) { t1 = tb; a1 = k; }
+        }
+        if (miss || t0 > t1 || t1 < EPS) { continue; }
+        var entering = t0 > EPS, tt = entering ? t0 : t1, axis = entering ? a0 : a1;
+        if (tt >= best) { continue; }
+        var nl = [0, 0, 0];
+        nl[axis] = entering ? (ld[axis] > 0 ? -1 : 1) : (ld[axis] > 0 ? 1 : -1);
+        best = tt; hit = s; hn = rotZ(nl, s.rot);
+      } else if (s.kind === "cylinder") {
+        var cx = o[0] - s.pos[0], cy = o[1] - s.pos[1], zlo = s.pos[2] - s.depth / 2, zhi = s.pos[2] + s.depth / 2;
+        var A = d[0] * d[0] + d[1] * d[1], B = cx * d[0] + cy * d[1], C = cx * cx + cy * cy - s.r * s.r;
+        if (A > 1e-12) {
+          var D = B * B - A * C;
+          if (D >= 0) {
+            var sd = Math.sqrt(D), cand = [(-B - sd) / A, (-B + sd) / A];
+            for (k = 0; k < 2; k++) {
+              t = cand[k];
+              if (t > EPS && t < best) {
+                var z = o[2] + t * d[2];
+                if (z >= zlo && z <= zhi) { best = t; hit = s; hn = norm([cx + t * d[0], cy + t * d[1], 0]); break; }
+              }
+            }
+          }
+        }
+        if (Math.abs(d[2]) > 1e-12) {
+          [zlo, zhi].forEach(function (zc) {
+            var tc = (zc - o[2]) / d[2];
+            if (tc > EPS && tc < best) {
+              var x = cx + tc * d[0], y = cy + tc * d[1];
+              if (x * x + y * y <= s.r * s.r) { best = tc; hit = s; hn = [0, 0, zc === zhi ? 1 : -1]; }
+            }
+          });
+        }
+      }
+    }
+    if (!hit) { return null; }
+    var p = add(o, mul(d, best));
+    if (!hn) { hn = norm(sub(p, hit.pos)); }
+    return { t: best, s: hit, p: p, n: hn };
+  }
+
+  function sky(d) {
+    var z = Math.max(0, d[2]), k = Math.pow(z, 0.55), zen = lin(world.zenith), hor = lin(world.horizon);
+    if (d[2] < 0) { return mul(hor, world.strength * 0.6); }
+    return mul([hor[0] + (zen[0] - hor[0]) * k, hor[1] + (zen[1] - hor[1]) * k, hor[2] + (zen[2] - hor[2]) * k], world.strength);
+  }
+  function onb(n) {
+    var s = n[2] >= 0 ? 1 : -1, a = -1 / (s + n[2]), b = n[0] * n[1] * a;
+    return [[1 + s * n[0] * n[0] * a, s * b, -s * n[0]], [b, s + n[1] * n[1] * a, -n[1]]];
+  }
+  function reflect(d, n) { return sub(d, mul(n, 2 * dot(d, n))); }
+  function fuzz(dir, amount) {
+    if (amount <= 0) { return dir; }
+    var v;
+    do { v = [Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1]; } while (dot(v, v) > 1);
+    return norm(add(dir, mul(v, amount)));
+  }
+
+  /* Light from the lamp reaching p, facing n: a direction toward the lamp's
+     sphere chosen at random within the cone it fills, or its centre when
+     tracing as Whitted did. */
+  function direct(p, n, L, preview) {
+    var toL = sub(L.pos, p), dist2 = dot(toL, toL), dist = Math.sqrt(dist2), w = mul(toL, 1 / dist), ldir, pdfInv;
+    var Le = mul(lin(L.colour), L.power * 0.11);
+    if (preview) {
+      ldir = w;
+      var cosP = dot(ldir, n);
+      if (cosP <= 0 || intersect(add(p, mul(n, 1e-3)), ldir, false, dist - L.r)) { return [0, 0, 0]; }
+      /* A point light of the same power: the sphere's solid angle, as a point. */
+      return mul(Le, cosP * Math.PI * L.r * L.r / dist2 / Math.PI);
+    }
+    var cosMax = Math.sqrt(Math.max(0, 1 - L.r * L.r / dist2));
+    var cosT = 1 - Math.random() * (1 - cosMax), sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT)), ph = 2 * Math.PI * Math.random();
+    var B = onb(w);
+    ldir = add(add(mul(B[0], Math.cos(ph) * sinT), mul(B[1], Math.sin(ph) * sinT)), mul(w, cosT));
+    var cosS = dot(ldir, n);
+    if (cosS <= 0 || intersect(add(p, mul(n, 1e-3)), ldir, false, dist - L.r)) { return [0, 0, 0]; }
+    pdfInv = 2 * Math.PI * (1 - cosMax);
+    return mul(Le, cosS * pdfInv / Math.PI);
+  }
+
+  function radiance(o, d, preview, maxBounce) {
+    var col = [0, 0, 0], thr = [1, 1, 1], specular = true, L = light(), bounce;
+    for (bounce = 0; bounce <= maxBounce; bounce++) {
+      var h = intersect(o, d, bounce > 0 && L && !L.hidden, Infinity);
+      if (!h) { var sk = sky(d); col = add(col, [thr[0] * sk[0], thr[1] * sk[1], thr[2] * sk[2]]); break; }
+      if (h.s.kind === "light") {
+        if (specular) { var le = mul(lin(h.s.colour), h.s.power * 0.11); col = add(col, [thr[0] * le[0], thr[1] * le[1], thr[2] * le[2]]); }
+        break;
+      }
+      var m = h.s.mat, base = lin(m.base), n = h.n, p = h.p;
+      if (m.emit > 0) {
+        col = add(col, [thr[0] * base[0] * m.emit, thr[1] * base[1] * m.emit, thr[2] * base[2] * m.emit]);
+        break;
+      }
+      if (m.trans > 0.5) {
+        var into = dot(d, n) < 0, nn = into ? n : mul(n, -1), eta = into ? 1 / m.ior : m.ior;
+        var cosi = -dot(d, nn), k = 1 - eta * eta * (1 - cosi * cosi);
+        var r0 = (1 - m.ior) / (1 + m.ior); r0 *= r0;
+        var R = k < 0 ? 1 : r0 + (1 - r0) * Math.pow(1 - cosi, 5);
+        if (Math.random() < R) { d = reflect(d, nn); o = add(p, mul(nn, 1e-3)); }
+        else { d = norm(add(mul(d, eta), mul(nn, eta * cosi - Math.sqrt(k)))); o = add(p, mul(nn, -1e-3)); }
+        d = fuzz(d, m.rough * m.rough * 2);
+        specular = true;
+        continue;
+      }
+      if (dot(n, d) > 0) { n = mul(n, -1); }
+      if (m.metallic > 0.5) {
+        d = fuzz(reflect(d, n), m.rough * m.rough * 2);
+        if (dot(d, n) <= 0) { break; }
+        thr = [thr[0] * base[0], thr[1] * base[1], thr[2] * base[2]];
+        o = add(p, mul(n, 1e-3));
+        specular = true;
+        continue;
+      }
+      /* Plastic: a clear coat that reflects by Fresnel over a coloured body. */
+      var c0 = -dot(d, n), F = 0.04 + 0.96 * Math.pow(1 - c0, 5);
+      if (m.rough < 0.9 && Math.random() < F) {
+        d = fuzz(reflect(d, n), m.rough * m.rough * 2);
+        if (dot(d, n) <= 0) { break; }
+        o = add(p, mul(n, 1e-3));
+        specular = true;
+        continue;
+      }
+      if (L && !L.hidden) {
+        var dl = direct(p, n, L, preview);
+        col = add(col, [thr[0] * base[0] * dl[0], thr[1] * base[1] * dl[1], thr[2] * base[2] * dl[2]]);
+      }
+      if (preview) {
+        /* Whitted has no bounced light: a little of the sky stands in for it. */
+        var amb = sky([0, 0, 1]);
+        col = add(col, [thr[0] * base[0] * amb[0] * 0.35, thr[1] * base[1] * amb[1] * 0.35, thr[2] * base[2] * amb[2] * 0.35]);
+        break;
+      }
+      var Bn = onb(n), r1 = Math.random(), r2 = Math.random(), ph2 = 2 * Math.PI * r1, sr = Math.sqrt(r2);
+      d = add(add(mul(Bn[0], Math.cos(ph2) * sr), mul(Bn[1], Math.sin(ph2) * sr)), mul(n, Math.sqrt(1 - r2)));
+      o = add(p, mul(n, 1e-3));
+      thr = [thr[0] * base[0], thr[1] * base[1], thr[2] * base[2]];
+      specular = false;
+      if (bounce >= 2) {
+        var q = Math.max(0.08, Math.min(0.95, Math.max(thr[0], thr[1], thr[2])));
+        if (Math.random() > q) { break; }
+        thr = mul(thr, 1 / q);
+      }
+    }
+    return col;
+  }
+
+  function tone(v) {
+    v *= 0.9;
+    var x = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
+    return Math.round(255 * Math.pow(Math.max(0, Math.min(1, x)), 1 / 2.2));
+  }
+
+  /* A render that improves a pass at a time: every pixel once per pass,
+     rows handed out as time allows, the running average shown. */
+  function Tracer(w, h, camera) {
+    this.w = w; this.h = h; this.camera = camera;
+    this.acc = new Float32Array(w * h * 3);
+    this.canvas = document.createElement("canvas");
+    this.canvas.width = w; this.canvas.height = h;
+    this.ctx = this.canvas.getContext("2d");
+    this.img = this.ctx.createImageData(w, h);
+    this.reset();
+  }
+  Tracer.prototype.reset = function () {
+    this.acc.fill(0); this.pass = 0; this.row = 0; this.started = performance.now(); this.spent = 0;
+    this.cam = this.camera(this.w, this.h);
+  };
+  Tracer.prototype.work = function (ms, maxPasses) {
+    var t0 = performance.now(), c = this.cam, preview = render.mode === "preview", bounces = preview ? 4 : 6;
+    while (performance.now() - t0 < ms && this.pass < maxPasses) {
+      var y = this.row;
+      for (var x = 0; x < this.w; x++) {
+        var sx = x + Math.random() - this.w / 2, sy = y + Math.random() - this.h / 2;
+        var d = norm(add(add(mul(c.f, c.F), mul(c.r, sx)), mul(c.u, -sy)));
+        var v = radiance(c.eye, d, preview, bounces), k = (y * this.w + x) * 3;
+        this.acc[k] += Math.min(v[0], 40); this.acc[k + 1] += Math.min(v[1], 40); this.acc[k + 2] += Math.min(v[2], 40);
+      }
+      this.row++;
+      if (this.row >= this.h) { this.row = 0; this.pass++; }
+    }
+    this.spent += performance.now() - t0;
+  };
+  Tracer.prototype.paint = function () {
+    var px = this.img.data, w = this.w, n;
+    for (var y = 0; y < this.h; y++) {
+      n = y < this.row ? this.pass + 1 : this.pass;
+      for (var x = 0; x < w; x++) {
+        var k = (y * w + x) * 3, j = (y * w + x) * 4;
+        if (n === 0) { px[j] = 30; px[j + 1] = 32; px[j + 2] = 36; px[j + 3] = 255; continue; }
+        px[j] = tone(this.acc[k] / n); px[j + 1] = tone(this.acc[k + 1] / n); px[j + 2] = tone(this.acc[k + 2] / n); px[j + 3] = 255;
+      }
+    }
+    this.ctx.putImageData(this.img, 0, 0);
+  };
+
+  /* ------------------------------------------------------------------ *
+   * The 3D view.
+   * ------------------------------------------------------------------ */
+  var vp = document.getElementById("vp"), vpc = document.getElementById("vpc"), vctx = vpc.getContext("2d");
+  var dpr = window.devicePixelRatio || 1, VW = 0, VH = 0;
+  var view = { az: -0.74, el: 0.40, dist: 12.5, target: [0.15, 0.35, 0.6] };
+  var shade = "solid", drawn = [], vpTracer = null;
+  var ring = document.createElement("canvas"), rctx = ring.getContext("2d");
+
+  function viewCam(W, H) {
+    var ce = Math.cos(view.el);
+    var eye = add(view.target, mul([ce * Math.cos(view.az), ce * Math.sin(view.az), Math.sin(view.el)], view.dist));
+    return lookAt(eye, view.target, W, H, FOV50 * 1.25);
+  }
+  function sizeView() {
+    VW = vp.clientWidth; VH = vp.clientHeight;
+    vpc.width = Math.round(VW * dpr); vpc.height = Math.round(VH * dpr);
+    vpc.style.width = VW + "px"; vpc.style.height = VH + "px";
+    ring.width = vpc.width; ring.height = vpc.height;
+    vpTracer = null;
+  }
+
+  var NEAR = 0.1;
+  function camSpace(c, p) { var d = sub(p, c.eye); return [dot(d, c.r), dot(d, c.u), dot(d, c.f)]; }
+  function clip(pts) {
+    var out = [];
+    for (var i = 0; i < pts.length; i++) {
+      var a = pts[i], b = pts[(i + 1) % pts.length], ina = a[2] >= NEAR, inb = b[2] >= NEAR;
+      if (ina) { out.push(a); }
+      if (ina !== inb) { var t = (NEAR - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]); }
+    }
+    return out;
+  }
+  function scr(c, q) { return [c.W / 2 + q[0] / q[2] * c.F, c.H / 2 - q[1] / q[2] * c.F]; }
+  function project(c, p) { var q = camSpace(c, p); return q[2] < NEAR ? null : scr(c, q); }
+  function path(ctx, pts) {
+    ctx.beginPath();
+    pts.forEach(function (p, i) { if (i) { ctx.lineTo(p[0], p[1]); } else { ctx.moveTo(p[0], p[1]); } });
+    ctx.closePath();
+  }
+  function line3(ctx, c, a, b) {
+    var q = clip([camSpace(c, a), camSpace(c, b)]);
+    if (q.length < 2) { return; }
+    var p0 = scr(c, q[0]), p1 = scr(c, q[1]);
+    ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+  }
+  function rgb(c, k, a) {
+    return "rgba(" + Math.round(Math.min(1, c[0] * k) * 255) + "," + Math.round(Math.min(1, c[1] * k) * 255) + "," +
+           Math.round(Math.min(1, c[2] * k) * 255) + "," + (a === undefined ? 1 : a) + ")";
+  }
+
+  function drawView() {
+    if (!VW) { return; }
+    var c = viewCam(VW, VH), ctx = vctx, key = norm(add(add(mul(c.u, 0.8), mul(c.r, -0.5)), mul(c.f, -0.6)));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (shade === "render") {
+      if (!vpTracer) {
+        vpTracer = new Tracer(Math.round(VW / 2.5), Math.round(VH / 2.5), function (w, h) { return viewCam(w, h); });
+      }
+      vpTracer.paint();
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(vpTracer.canvas, 0, 0, VW, VH);
+    } else {
+      var g = ctx.createLinearGradient(0, 0, 0, VH);
+      g.addColorStop(0, "#40444b"); g.addColorStop(1, "#2d3035");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    }
+
+    /* Everything as polygons in the camera's space, the far ones first. */
+    drawn = [];
+    var faces = [];
+    scene.forEach(function (s) {
+      if (s.hidden || s.kind === "light" || s.kind === "camera") { return; }
+      polys(s).forEach(function (f) {
+        var cs = f.p.map(function (p) { return camSpace(c, p); }), q = clip(cs);
+        if (q.length < 3) { return; }
+        var mid = [0, 0, 0]; f.p.forEach(function (p) { mid = add(mid, p); }); mid = mul(mid, 1 / f.p.length);
+        var front = dot(f.n, sub(c.eye, mid)) > 0;
+        var depth = 0; cs.forEach(function (v) { depth += v[2]; }); depth /= cs.length;
+        faces.push({ s: s, n: f.n, front: front, depth: s.kind === "plane" ? 1e9 : depth, scr: q.map(function (v) { return scr(c, v); }) });
+      });
+    });
+    faces.sort(function (a, b) { return b.depth - a.depth; });
+
+    if (shade !== "render") {
+      faces.forEach(function (f) {
+        if (shade === "wire") {
+          ctx.strokeStyle = f.s === selected ? "#ffa53d" : "rgba(210,215,224,.55)"; ctx.lineWidth = f.s === selected ? 1.2 : 0.7;
+          path(ctx, f.scr); ctx.stroke();
+          if (f.front) { drawn.push(f); }
+          return;
+        }
+        if (!f.front) { return; }
+        var m = f.s.mat, lit = 0.3 + 0.62 * Math.max(0, dot(f.n, key)) + 0.1 * Math.max(0, f.n[2]);
+        var base = m.trans > 0.5 ? [0.82, 0.88, 0.93] : m.base, alpha = m.trans > 0.5 ? 0.45 : 1;
+        if (f.s.kind === "plane") { lit = 0.62; base = [0.36, 0.37, 0.39]; }
+        ctx.fillStyle = rgb(base, lit, alpha);
+        path(ctx, f.scr); ctx.fill();
+        if (alpha === 1) { ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 0.6; ctx.stroke(); }
+        drawn.push(f);
+        if (f.s.kind === "plane") { drawGrid(ctx, c); }
+      });
+    } else {
+      faces.forEach(function (f) { if (f.front) { drawn.push(f); } });
+    }
+
+    if (shade === "wire") { drawGrid(ctx, c); }
+
+    /* The selection's outline: its silhouette, grown by two pixels, less itself. */
+    if (selected && selected.kind !== "light" && selected.kind !== "camera" && shade !== "wire" && !selected.hidden) {
+      rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      rctx.clearRect(0, 0, VW, VH);
+      rctx.fillStyle = "#ffa53d";
+      var mine = faces.filter(function (f) { return f.s === selected; });
+      [[-2, 0], [2, 0], [0, -2], [0, 2], [-1.5, -1.5], [1.5, 1.5], [-1.5, 1.5], [1.5, -1.5]].forEach(function (o) {
+        mine.forEach(function (f) { path(rctx, f.scr.map(function (p) { return [p[0] + o[0], p[1] + o[1]]; })); rctx.fill(); });
+      });
+      rctx.globalCompositeOperation = "destination-out";
+      mine.forEach(function (f) { path(rctx, f.scr); rctx.fill(); rctx.lineWidth = 0.8; rctx.stroke(); });
+      rctx.globalCompositeOperation = "source-over";
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(ring, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    drawLamp(ctx, c);
+    drawCamera(ctx, c);
+    drawCursor(ctx, c);
+    drawGizmo(ctx, c);
+    overlay();
+  }
+
+  function drawGrid(ctx, c) {
+    ctx.lineWidth = 1;
+    for (var i = -10; i <= 10; i++) {
+      ctx.strokeStyle = i === 0 ? "rgba(224,82,75,.8)" : "rgba(255,255,255,.07)";
+      line3(ctx, c, [-12, i, 0.001], [12, i, 0.001]);
+      ctx.strokeStyle = i === 0 ? "rgba(124,187,58,.8)" : "rgba(255,255,255,.07)";
+      line3(ctx, c, [i, -12, 0.001], [i, 12, 0.001]);
+    }
+  }
+  function drawLamp(ctx, c) {
+    var L = light();
+    if (!L || L.hidden) { return; }
+    var p = project(c, L.pos), g = project(c, [L.pos[0], L.pos[1], 0]);
+    if (!p) { return; }
+    var on = selected === L;
+    ctx.setLineDash([3, 4]); ctx.strokeStyle = "rgba(0,0,0,.55)"; ctx.lineWidth = 1;
+    if (g) { ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(g[0], g[1]); ctx.stroke(); }
+    ctx.setLineDash([]);
+    ctx.fillStyle = on ? "#ffa53d" : "#f3d36b"; ctx.strokeStyle = on ? "#fff" : "#1f2126"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(p[0], p[1], 6, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = on ? "#ffa53d" : "#1f2126"; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(p[0], p[1], 11, 0, 2 * Math.PI); ctx.stroke();
+    drawn.push({ s: L, at: p });
+  }
+  function drawCamera(ctx, c) {
+    var K = camObj();
+    if (!K || K.hidden) { return; }
+    var k = lookAt(K.pos, K.target, 16, 9, FOV50), s = 0.9, fw = s * Math.tan(FOV50 / 2), fh = fw * 9 / 16;
+    var ctr = add(K.pos, mul(k.f, s)), corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(function (q) {
+      return add(add(ctr, mul(k.r, q[0] * fw)), mul(k.u, q[1] * fh));
+    });
+    var on = selected === K;
+    ctx.strokeStyle = on ? "#ffa53d" : "#1f2126"; ctx.lineWidth = on ? 1.6 : 1.2;
+    corners.forEach(function (q, i) { line3(ctx, c, K.pos, q); line3(ctx, c, q, corners[(i + 1) % 4]); });
+    var tip = add(add(ctr, mul(k.u, fh * 1.7)), [0, 0, 0]);
+    line3(ctx, c, add(ctr, mul(k.u, fh * 1.15)), tip);
+    var p = project(c, K.pos);
+    if (p) { drawn.push({ s: K, at: p }); }
+  }
+  function drawCursor(ctx, c) {
+    var p = project(c, cursor3d);
+    if (!p) { return; }
+    ctx.lineWidth = 1.5;
+    for (var i = 0; i < 8; i++) {
+      ctx.strokeStyle = i % 2 ? "#fff" : "#e0524b";
+      ctx.beginPath(); ctx.arc(p[0], p[1], 9, i * Math.PI / 4, (i + 1) * Math.PI / 4); ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(0,0,0,.7)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(p[0] - 15, p[1]); ctx.lineTo(p[0] - 5, p[1]); ctx.moveTo(p[0] + 5, p[1]); ctx.lineTo(p[0] + 15, p[1]);
+    ctx.moveTo(p[0], p[1] - 15); ctx.lineTo(p[0], p[1] - 5); ctx.moveTo(p[0], p[1] + 5); ctx.lineTo(p[0], p[1] + 15); ctx.stroke();
+  }
+  function drawGizmo(ctx, c) {
+    var cx = VW - 58, cy = 62, R = 38;
+    ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.beginPath(); ctx.arc(cx, cy, R + 12, 0, 2 * Math.PI); ctx.fill();
+    var axes = [
+      { v: [1, 0, 0], col: "#e0524b", t: "X" }, { v: [0, 1, 0], col: "#7cbb3a", t: "Y" }, { v: [0, 0, 1], col: "#4a86e0", t: "Z" },
+      { v: [-1, 0, 0], col: "#e0524b" }, { v: [0, -1, 0], col: "#7cbb3a" }, { v: [0, 0, -1], col: "#4a86e0" }
+    ].map(function (a) { a.x = cx + dot(a.v, c.r) * R; a.y = cy - dot(a.v, c.u) * R; a.z = dot(a.v, c.f); return a; });
+    axes.sort(function (a, b) { return b.z - a.z; });
+    axes.forEach(function (a) {
+      if (a.t) { ctx.strokeStyle = a.col; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(a.x, a.y); ctx.stroke(); }
+      ctx.fillStyle = a.t ? a.col : "rgba(0,0,0,0)"; ctx.strokeStyle = a.col; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(a.x, a.y, a.t ? 9 : 7, 0, 2 * Math.PI); ctx.fill(); if (!a.t) { ctx.stroke(); }
+      if (a.t) { ctx.fillStyle = "#16181c"; ctx.font = "600 11px IBM Plex Sans, sans-serif"; ctx.textAlign = "center"; ctx.fillText(a.t, a.x, a.y + 4); }
+    });
+  }
+  function overlay() {
+    var what = selected ? selected.name : "nothing selected", extra = "";
+    if (shade === "render" && vpTracer) {
+      extra = "<br><span>" + (render.mode === "preview" ? "Preview, Whitted" : "Final, path tracing") + " &middot; " +
+              vpTracer.pass + (vpTracer.pass === 1 ? " pass" : " passes") + "</span>";
+    }
+    document.getElementById("vpov").innerHTML = "User Perspective<br><span>Collection | " + what + "</span>" + extra;
+  }
+
+  /* Picking: the front-most polygon under the pointer, or a lamp or camera. */
+  function inside(pts, x, y) {
+    var c = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      if (((pts[i][1] > y) !== (pts[j][1] > y)) && (x < (pts[j][0] - pts[i][0]) * (y - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0])) { c = !c; }
+    }
+    return c;
+  }
+  function pick(x, y) {
+    for (var i = drawn.length - 1; i >= 0; i--) {
+      var d = drawn[i];
+      if (d.at) { if (Math.hypot(d.at[0] - x, d.at[1] - y) < 13) { return d.s; } continue; }
+    }
+    for (i = drawn.length - 1; i >= 0; i--) {
+      if (drawn[i].scr && inside(drawn[i].scr, x, y)) { return drawn[i].s; }
+    }
+    return null;
+  }
+
+  var drag = null;
+  vp.addEventListener("pointerdown", function (e) {
+    closeMenu();
+    var b = vp.getBoundingClientRect(), s = b.width / VW;
+    drag = { x: e.clientX, y: e.clientY, bx: b.left, by: b.top, s: s, az: view.az, el: view.el, t: view.target.slice(), moved: false, pan: e.shiftKey };
+    vp.setPointerCapture(e.pointerId);
+  });
+  vp.addEventListener("pointermove", function (e) {
+    if (!drag) { return; }
+    var dx = (e.clientX - drag.x) / drag.s, dy = (e.clientY - drag.y) / drag.s;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) { return; }
+    drag.moved = true;
+    if (drag.pan) {
+      var c = viewCam(VW, VH), k = view.dist / c.F;
+      view.target = add(add(drag.t, mul(c.r, -dx * k)), mul(c.u, dy * k));
+    } else {
+      view.az = drag.az - dx * 0.008;
+      view.el = Math.max(-0.2, Math.min(1.5, drag.el + dy * 0.008));
+    }
+    changed(true);
+  });
+  vp.addEventListener("pointerup", function (e) {
+    if (drag && !drag.moved) {
+      select(pick((e.clientX - drag.bx) / drag.s, (e.clientY - drag.by) / drag.s));
+    }
+    drag = null;
+  });
+  vp.addEventListener("pointercancel", function () { drag = null; });
+  vp.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    view.dist = Math.max(3, Math.min(40, view.dist * Math.exp(e.deltaY * 0.0012)));
+    changed(true);
+  }, { passive: false });
+
+  /* ------------------------------------------------------------------ *
+   * The Outliner and Properties.
+   * ------------------------------------------------------------------ */
+  var ICON = {
+    mesh: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2l6 10H2z"/></svg>',
+    light: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="7" r="3.5"/><path d="M6.5 11.5h3M7 13.5h2"/></svg>',
+    camera: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="7" rx="1"/><path d="M10 7.5l4-2v6l-4-2"/></svg>',
+    coll: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 6.5h12"/></svg>',
+    eye: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>',
+    shut: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 8s2.5 3.5 6.5 3.5S14.5 8 14.5 8M4 10.5l-1.2 1.6M8 11.5v2M12 10.5l1.2 1.6"/></svg>'
+  };
+  function kindIcon(s) { return s.kind === "light" ? ICON.light : s.kind === "camera" ? ICON.camera : ICON.mesh; }
+
+  function outliner() {
+    var el = document.getElementById("outliner"), html = '<div class="ol coll"><span></span><span class="ty">' + ICON.coll + '</span><span>Collection</span><span></span></div>';
+    scene.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; }).forEach(function (s) {
+      var i = scene.indexOf(s);
+      html += '<div class="ol' + (s === selected ? " sel" : "") + (s.hidden ? " hid" : "") + '" data-i="' + i + '" style="padding-left:30px">' +
+              '<span></span><span class="ty">' + kindIcon(s) + '</span><span class="nm">' + s.name + '</span>' +
+              '<button type="button" class="eye" data-eye="' + i + '" aria-label="' + (s.hidden ? "Show " : "Hide ") + s.name + '">' + (s.hidden ? ICON.shut : ICON.eye) + "</button></div>";
+    });
+    el.innerHTML = html;
+  }
+  document.getElementById("outliner").addEventListener("click", function (e) {
+    var eye = e.target.closest("[data-eye]");
+    if (eye) { var s = scene[+eye.dataset.eye]; s.hidden = !s.hidden; changed(false); return; }
+    var row = e.target.closest("[data-i]");
+    if (row) { select(scene[+row.dataset.i]); }
+  });
+
+  var tab = "object";
+  function num(label, value, key, opts) {
+    opts = opts || {};
+    return '<div class="f"><label>' + label + '</label><input class="n" ' + (opts.ro ? "readonly " : "") + 'data-k="' + key + '" value="' + value + '" aria-label="' + label + '"></div>';
+  }
+  function trio(label, vals, key, unit, ro) {
+    var h = '<div class="f"><label>' + label + '</label><div class="trio">';
+    ["x", "y", "z"].forEach(function (a, i) {
+      h += '<div><div class="ax ' + a + '">' + a.toUpperCase() + '</div><input class="n" ' + (ro && ro[i] ? "readonly " : "") +
+           'data-k="' + key + i + '" value="' + vals[i] + unit + '" aria-label="' + label + " " + a.toUpperCase() + '"></div>';
+    });
+    return h + "</div></div>";
+  }
+  function range(label, value, key, min, max, step) {
+    return '<div class="f"><label>' + label + '</label><div class="rng"><input type="range" data-k="' + key + '" min="' + min + '" max="' + max +
+           '" step="' + step + '" value="' + value + '" aria-label="' + label + '"><output>' + value + "</output></div></div>";
+  }
+  function colour(label, c, key) {
+    return '<div class="f"><label>' + label + '</label><div class="swatch"><input type="color" data-k="' + key + '" value="' + toHex(c) + '" aria-label="' + label + '"><code>' + toHex(c) + "</code></div></div>";
+  }
+
+  function pane() {
+    var el = document.getElementById("pane"), s = selected, h = "";
+    if (tab === "render") {
+      h = "<h4>Render</h4>" +
+          '<div class="f"><label>Integrator</label><div class="seg" id="intg"><button type="button" data-m="preview"' + (render.mode === "preview" ? ' class="on"' : "") +
+          '>Preview</button><button type="button" data-m="final"' + (render.mode === "final" ? ' class="on"' : "") + ">Final</button></div></div>" +
+          num("Samples", "256", "rs", { ro: true }) + num("View samples", "64", "vs", { ro: true }) + num("Bounces", render.mode === "preview" ? "4, mirrors and glass" : "6", "b", { ro: true }) +
+          '<div class="f"><label>Denoise</label><div class="seg"><button type="button" class="on">On</button><button type="button">Off</button></div></div>' +
+          "<h5>Output</h5>" + num("Resolution", "1920 &times; 1080", "res", { ro: true }) + num("Scale", "50 %", "pct", { ro: true }) + num("Saved to", "/home/renders", "out", { ro: true }) +
+          '<p class="note"><b>Preview</b> is Whitted ray tracing: exact mirrors and glass, hard shadows, no noise. <b>Final</b> is path tracing, as Cycles: soft shadows and light carried from surface to surface, noisy until it settles.</p>';
+    } else if (tab === "world") {
+      h = "<h4>World</h4><p>The light from everywhere that is not a lamp: a sky.</p>" +
+          colour("Zenith", world.zenith, "wz") + colour("Horizon", world.horizon, "wh") + range("Strength", world.strength, "ws", 0, 2, 0.05) +
+          '<p class="note">An HDRI photograph of a real sky comes after version one.</p>';
+    } else if (!s) {
+      h = "<p>Nothing is selected. Click an object in the view, or its name above.</p>";
+    } else if (tab === "object") {
+      var ro = s.kind === "box" ? [true, true, false] : [true, true, true];
+      h = "<h4>" + kindIcon(s) + s.name + "</h4>" +
+          trio("Location", s.pos.map(function (v) { return fmt(v, 2); }), "pos", " m") +
+          trio("Rotation", [0, 0, s.kind === "box" ? fmt(s.rot, 1) : 0], "rot", "&deg;", ro) +
+          trio("Scale", ["1.000", "1.000", "1.000"], "scl", "", [true, true, true]) +
+          "<h5>Relations</h5>" + num("Parent", "none", "par", { ro: true }) + num("Collection", "Collection", "col", { ro: true }) +
+          '<p class="note">Where the object is, how it is turned and how large, and nothing about its shape: that is in the Data tab, and two objects can share one.</p>';
+    } else if (tab === "data") {
+      h = "<h4>" + kindIcon(s) + ({ box: "Cube", sphere: "UV Sphere", cylinder: "Cylinder", plane: "Plane", light: "Point light", camera: "Camera" })[s.kind] + ' <span class="tag">live</span></h4>';
+      if (s.kind === "box") { h += trio("Size", s.half.map(function (v) { return fmt(v * 2, 2); }), "size", " m"); }
+      if (s.kind === "sphere") { h += num("Segments", s.seg, "seg") + num("Rings", s.rings, "rings") + num("Radius", fmt(s.r, 3) + " m", "r"); }
+      if (s.kind === "cylinder") { h += num("Vertices", s.verts, "verts") + num("Radius", fmt(s.r, 3) + " m", "r") + num("Depth", fmt(s.depth, 3) + " m", "depth"); }
+      if (s.kind === "plane") { h += num("Size", fmt(s.size, 1) + " m", "psize", { ro: true }); }
+      if (s.kind === "light") {
+        h = "<h4>" + ICON.light + "Light</h4>" +
+            '<div class="f"><label>Type</label><div class="seg"><button type="button" class="on">Point</button><button type="button">Sun</button><button type="button">Spot</button><button type="button">Area</button></div></div>' +
+            colour("Colour", s.colour, "lc") + num("Power", s.power + " W", "pw") + num("Radius", fmt(s.r, 2) + " m", "lr") +
+            '<p class="note">A light with a size casts soft shadows; at a radius of nought they are sharp.</p>';
+      }
+      if (s.kind === "camera") {
+        h = "<h4>" + ICON.camera + "Camera</h4>" + num("Focal length", s.focal + " mm", "fl", { ro: true }) + num("Sensor", "36 mm", "sen", { ro: true }) +
+            "<h5>Depth of field</h5>" + num("Focus on", "Glass", "foc", { ro: true }) + num("F-stop", "f/2.8", "fs", { ro: true }) +
+            '<p class="note">What <kbd>F12</kbd> renders: the Render window below looks through this camera.</p>';
+      }
+      if (s.kind === "sphere" || s.kind === "cylinder" || s.kind === "box") {
+        h += '<p class="note">What the shape was made with stays editable here until it is edited as a mesh. It renders as the true shape; the view draws its ' + triangles(s).toLocaleString("en-US") + " triangles.</p>";
+      }
+    } else if (tab === "material") {
+      if (!s.mat) {
+        h = "<h4>" + kindIcon(s) + s.name + "</h4><p>A " + s.kind + " has no material" + (s.kind === "light" ? ": its colour and power are in the Data tab." : ".") + "</p>";
+      } else {
+        var m = s.mat;
+        h = "<h4>" + '<svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="6" fill="' + toHex(m.base) + '"/><circle cx="6" cy="6" r="2.2" fill="#fff" opacity=".55"/></svg>' + s.name + "</h4>" +
+            '<div class="chips" id="presets">' + Object.keys(PRESETS).map(function (p) {
+              return '<button type="button" class="chipb' + (m.preset === p ? " on" : "") + '" data-p="' + p + '"><i style="background:' + PRESETS[p].dot + '"></i>' + p + "</button>";
+            }).join("") + "</div>" +
+            colour("Base colour", m.base, "mb") + range("Metallic", m.metallic, "mm", 0, 1, 1) + range("Roughness", m.rough, "mr", 0, 1, 0.01) +
+            num("IOR", fmt(m.ior, 2), "mi") + range("Transmission", m.trans, "mt", 0, 1, 1) + num("Emission", fmt(m.emit, 1), "me") +
+            '<p class="note">Blender\'s Principled names and ranges, so what is known there is known here. Turn on <b>Rendered</b> to see it.</p>';
+      }
+    }
+    el.innerHTML = h;
+    document.querySelectorAll("#tabs .tab").forEach(function (t) { t.classList.toggle("on", t.dataset.tab === tab); t.setAttribute("aria-selected", t.dataset.tab === tab); });
+  }
+  document.getElementById("tabs").addEventListener("click", function (e) {
+    var t = e.target.closest("[data-tab]");
+    if (t) { tab = t.dataset.tab; pane(); }
+  });
+
+  function value(v) { var n = parseFloat(String(v).replace(/[^0-9.\-]/g, "")); return isFinite(n) ? n : null; }
+  function edit(e) {
+    var t = e.target, k = t.dataset && t.dataset.k, s = selected, v;
+    if (!k) { return; }
+    if (t.type === "range" && t.nextElementSibling) { t.nextElementSibling.textContent = t.value; }
+    if (k === "wz" || k === "wh") { world[k === "wz" ? "zenith" : "horizon"] = hex(t.value); t.nextElementSibling.textContent = t.value; changed(false); return; }
+    if (k === "ws") { world.strength = +t.value; changed(false); return; }
+    if (!s) { return; }
+    if (k === "mb") { s.mat.base = hex(t.value); t.nextElementSibling.textContent = t.value; }
+    else if (k === "lc") { s.colour = hex(t.value); t.nextElementSibling.textContent = t.value; }
+    else if (k === "mm") { s.mat.metallic = +t.value; }
+    else if (k === "mr") { s.mat.rough = +t.value; }
+    else if (k === "mt") { s.mat.trans = +t.value; }
+    else if (e.type === "change") {
+      v = value(t.value);
+      if (v === null) { pane(); return; }
+      if (k.indexOf("pos") === 0) { s.pos[+k[3]] = v; if (s.kind === "camera") { /* keeps looking where it looked */ } }
+      else if (k === "rot2" && s.kind === "box") { s.rot = v; }
+      else if (k.indexOf("size") === 0) { s.half[+k[4]] = Math.max(0.01, v / 2); }
+      else if (k === "seg") { s.seg = Math.max(3, Math.min(128, Math.round(v))); }
+      else if (k === "rings") { s.rings = Math.max(3, Math.min(64, Math.round(v))); }
+      else if (k === "verts") { s.verts = Math.max(3, Math.min(128, Math.round(v))); }
+      else if (k === "r") { s.r = Math.max(0.01, v); }
+      else if (k === "depth") { s.depth = Math.max(0.01, v); }
+      else if (k === "mi") { s.mat.ior = Math.max(1, Math.min(3, v)); }
+      else if (k === "me") { s.mat.emit = Math.max(0, v); }
+      else if (k === "pw") { s.power = Math.max(0, v); }
+      else if (k === "lr") { s.r = Math.max(0.01, v); }
+      else { return; }
+      pane();
+    } else { return; }
+    if (s.mat) { s.mat.preset = null; }
+    changed(false);
+  }
+  document.getElementById("pane").addEventListener("input", edit);
+  document.getElementById("pane").addEventListener("change", edit);
+  document.getElementById("pane").addEventListener("click", function (e) {
+    var p = e.target.closest("[data-p]"), m = e.target.closest("[data-m]");
+    if (p && selected && selected.mat) {
+      var mt = selected.mat, pr = PRESETS[p.dataset.p];
+      ["metallic", "rough", "trans", "ior", "emit"].forEach(function (k) { mt[k] = pr[k]; });
+      mt.preset = p.dataset.p;
+      if (p.dataset.p === "Glass" || p.dataset.p === "Mirror") { mt.base = hex(p.dataset.p === "Glass" ? "#ffffff" : "#d6dae0"); }
+      if (p.dataset.p === "Light") { mt.base = hex("#ffe7b0"); }
+      pane(); changed(false);
+    }
+    if (m) { render.mode = m.dataset.m; pane(); changed(false); document.getElementById("rint").textContent = render.mode === "preview" ? "Preview · Whitted" : "Final · path tracing"; }
+  });
+
+  /* ------------------------------------------------------------------ *
+   * Selection, shading, the Add menu, the foot.
+   * ------------------------------------------------------------------ */
+  function select(s) {
+    selected = s;
+    if (s && !s.mat && tab === "material") { tab = "data"; }
+    outliner(); pane(); drawView(); foot();
+  }
+  function foot() {
+    var tris = scene.reduce(function (n, s) { return n + (s.hidden ? 0 : triangles(s)); }, 0);
+    document.getElementById("foot").innerHTML =
+      "<span><kbd>G</kbd> move &nbsp;<kbd>R</kbd> rotate &nbsp;<kbd>S</kbd> scale &nbsp;<kbd>&#8679;A</kbd> add &nbsp;<kbd>X</kbd> delete &nbsp;<kbd>Z</kbd> shading &nbsp;<kbd>F12</kbd> render</span>" +
+      '<span class="sp"></span><span>' + scene.length + " objects</span><span>" + tris.toLocaleString("en-US") + " triangles</span><span>Selected <b>" + (selected ? selected.name : "none") + "</b></span>";
+  }
+  document.getElementById("shading").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-shade]");
+    if (!b) { return; }
+    shade = b.dataset.shade;
+    document.querySelectorAll("#shading button").forEach(function (x) { x.classList.toggle("on", x === b); });
+    document.getElementById("vphint").style.display = shade === "render" ? "none" : "";
+    if (shade === "render" && vpTracer) { vpTracer.reset(); }
+    drawView();
+  });
+
+  var menu = document.getElementById("addmenu"), addbtn = document.getElementById("addbtn");
+  var ADD = [
+    ["Plane", '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 10l5-4h8l-5 4z"/></svg>'],
+    ["Cube", '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.8l5.5 3v6.4L8 14.2l-5.5-3V4.8zM2.5 4.8L8 8l5.5-3.2M8 8v6.2"/></svg>'],
+    ["UV Sphere", '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="6"/><ellipse cx="8" cy="8" rx="6" ry="2.4"/><ellipse cx="8" cy="8" rx="2.4" ry="6"/></svg>'],
+    ["Cylinder", '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="3.8" rx="4.5" ry="1.8"/><path d="M3.5 3.8v8.4M12.5 3.8v8.4"/><path d="M3.5 12.2c0 2.4 9 2.4 9 0"/></svg>']
+  ];
+  function openMenu() {
+    menu.innerHTML = '<div class="mt">Add a mesh, at the 3D cursor</div>' + ADD.map(function (a) {
+      return '<button type="button" class="mi" role="menuitem" data-add="' + a[0] + '">' + a[1] + a[0] + '<span class="ar"></span></button>';
+    }).join("") + '<hr><button type="button" class="mi" disabled>' + ICON.light + 'Light<span class="ar">&#9656;</span></button>' +
+      '<button type="button" class="mi" disabled>' + ICON.camera + "Camera<span class=\"ar\"></span></button>";
+    menu.hidden = false; addbtn.setAttribute("aria-expanded", "true");
+    var first = menu.querySelector("[data-add]"); if (first) { first.focus(); }
+  }
+  function closeMenu() { if (!menu.hidden) { menu.hidden = true; addbtn.setAttribute("aria-expanded", "false"); } }
+  addbtn.addEventListener("click", function (e) { e.stopPropagation(); if (menu.hidden) { openMenu(); } else { closeMenu(); } });
+  document.addEventListener("click", function (e) { if (!menu.contains(e.target) && e.target !== addbtn) { closeMenu(); } });
+  menu.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-add]");
+    if (!b) { return; }
+    var kind = b.dataset.add, s, base = ["#8a5cc7", "#2f9e8f", "#d9822b", "#5b7fd6"][added % 4];
+    added++;
+    var at = cursor3d;
+    if (kind === "Plane") { s = { kind: "box", pos: [at[0], at[1], 0.01], half: [1, 1, 0.01], rot: 0 }; }
+    if (kind === "Cube") { s = { kind: "box", pos: [at[0], at[1], 1], half: [1, 1, 1], rot: 0 }; }
+    if (kind === "UV Sphere") { s = { kind: "sphere", pos: [at[0], at[1], 1], r: 1, seg: 32, rings: 16 }; }
+    if (kind === "Cylinder") { s = { kind: "cylinder", pos: [at[0], at[1], 1], r: 1, depth: 2, verts: 32 }; }
+    var names = scene.map(function (o) { return o.name; }), name = kind === "UV Sphere" ? "Sphere" : kind, n = 1;
+    while (names.indexOf(n === 1 ? name : name + "." + String(n - 1).padStart(3, "0")) >= 0) { n++; }
+    s.name = n === 1 ? name : name + "." + String(n - 1).padStart(3, "0");
+    s.mat = material(base, "Plastic");
+    scene.push(s);
+    closeMenu();
+    tab = "data";
+    changed(false);
+    select(s);
+  });
+  vp.tabIndex = 0;
+  vp.setAttribute("aria-label", "The 3D view: drag to turn, Shift-drag to move, scroll to zoom; Shift+A adds, X deletes");
+  vp.addEventListener("keydown", function (e) {
+    if (e.key === "A" && e.shiftKey) { e.preventDefault(); openMenu(); }
+    if ((e.key === "x" || e.key === "Delete") && selected && selected.kind !== "camera" && selected.kind !== "light" && selected.kind !== "plane") {
+      scene.splice(scene.indexOf(selected), 1); selected = null; changed(false); select(null);
+    }
+  });
+
+  /* ------------------------------------------------------------------ *
+   * The Render window, through the scene's camera.
+   * ------------------------------------------------------------------ */
+  var rc = document.getElementById("rc"), rctx2 = rc.getContext("2d"), MAXP = 256;
+  var rTracer = new Tracer(640, 360, function (w, h) { var K = camObj(); return lookAt(K.pos, K.target, w, h, FOV50); });
+  var rVisible = false;
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(function (es) { rVisible = es[0].isIntersecting; }).observe(rc);
+  } else { rVisible = true; }
+  document.getElementById("rerender").addEventListener("click", function () { rTracer.reset(); });
+  document.getElementById("f12btn").addEventListener("click", function () { rTracer.reset(); document.getElementById("rwin").scrollIntoView({ behavior: "smooth", block: "center" }); });
+  function rStatus() {
+    var p = rTracer.pass, secs = rTracer.spent / 1000;
+    document.getElementById("rsamples").textContent = p + " / " + MAXP;
+    document.getElementById("rmeter").style.width = (100 * p / MAXP) + "%";
+    document.getElementById("rtime").textContent = secs < 0.05 ? " " :
+      secs.toFixed(1) + " s of tracing · " + (p / Math.max(secs, 1e-3)).toFixed(1) + " passes a second" + (p >= MAXP ? " · done" : "");
+  }
+
+  var dirtyTimer = 0;
+  function changed(viewOnly) {
+    if (vpTracer) { vpTracer.reset(); }
+    if (!viewOnly) {
+      clearTimeout(dirtyTimer);
+      dirtyTimer = setTimeout(function () { rTracer.reset(); }, 250);
+      outliner(); foot();
+    }
+    drawView();
+  }
+
+  var lastR = 0;
+  function frame(now) {
+    if (shade === "render" && vpTracer && vpTracer.pass < 64) { vpTracer.work(11, 64); drawView(); }
+    if (rVisible && rTracer.pass < MAXP) {
+      rTracer.work(9, MAXP);
+      if (now - lastR > 120 || rTracer.pass >= MAXP) { rTracer.paint(); rctx2.drawImage(rTracer.canvas, 0, 0); rStatus(); lastR = now; }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* Each stage keeps its windows at one pixel to one, scaled down to fit a
+     screen narrower than they are. */
+  function fitStages() {
+    document.querySelectorAll(".stage").forEach(function (stage) {
+      var fit = stage.querySelector(".fit"), want = +fit.dataset.w, room = stage.clientWidth - 48;
+      var s = Math.min(1, room / want);
+      fit.style.width = want + "px";
+      fit.style.transform = s < 1 ? "scale(" + s + ")" : "";
+      stage.style.height = s < 1 ? (fit.scrollHeight * s + 60) + "px" : "";
+      if (s >= 1) { fit.style.width = ""; }
+    });
+  }
+
+  fitStages();
+  sizeView();
+  outliner(); pane(); foot(); drawView();
+  rTracer.paint(); rctx2.drawImage(rTracer.canvas, 0, 0);
+  window.addEventListener("resize", function () { fitStages(); });
+  requestAnimationFrame(frame);
+}());
+</script>
+</body>
+</html>

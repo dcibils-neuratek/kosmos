@@ -1146,7 +1146,17 @@ processors, and still what follows USB:
      mockup in `docs/`, changed with Diego until he agrees.
    - The pixel loops are C, as always: the ray tracer is a kit, and the
      vector units (6l) are what it is for.
-   Not started. The name is Diego's to give.
+   **Drawn** the same day, `docs/modeler.html` (published for his phone,
+   https://claude.ai/artifact/UdBLmz1CY3XU5TjZUFmmPx), from Blender's manual
+   and the KitBash3D guide: Blender's layout - the 3D view, the Outliner over
+   Properties with five tabs, tools down the side, a foot of live keys -
+   opening on a still life; the Add menu at the 3D cursor, a primitive's
+   numbers kept live in its Data tab; Solid, Wireframe and Rendered; and
+   `F12`'s window. Its Rendered view and Render window are a real path
+   tracer over analytic shapes, in JavaScript, with Whitted's ray tracing as
+   the Preview. Waiting for Diego's look: its name (drawn as *Modeler*), how
+   the view turns, the scene it opens on, and the order to build it in.
+   Nothing coded.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
