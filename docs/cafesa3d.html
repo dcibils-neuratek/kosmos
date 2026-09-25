@@ -3,7 +3,9 @@
 <!--
   The 3D modelling tool, drawn before it is written (roadmap.md 4l). One CSS
   pixel to one screen pixel, in the Plex look, as docs/apps.html and
-  docs/mathlab.html draw the others. "Modeler" is a working name.
+  docs/mathlab.html draw the others. Diego named it Cafesa3D and approved
+  the drawing the same day: "3d tool is perfect", "Let's call it Cafesa3D",
+  "Let's build it".
 
   Diego, 25 September 2026: "I want to prioritize other app first", "A simple
   3d modeling and animation tool like blender3d", "A tool I can design a 3d
@@ -22,7 +24,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Modeler</title>
+<title>Cafesa3D</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
@@ -194,11 +196,12 @@
 <body>
 <div class="wrap">
 
-<h1>Modeler</h1>
+<h1>Cafesa3D</h1>
 <p class="sub">A scene made of spheres, cubes, cylinders and meshes, placed and turned and sized in a 3D view, given
 materials and lights, and then rendered by ray tracing. After Blender, which Diego asked to study first, and smaller
 than it on purpose: one window, the things a scene is made of, and a renderer that does the light properly. Animation is
-the second version. Drawn before any of it is written (<code>roadmap.md</code> 4l); <b>Modeler is a working name</b>.</p>
+the second version. Drawn before any of it was written (<code>roadmap.md</code> 4l), and <b>approved as drawn</b>:
+"3d tool is perfect".</p>
 
 <h2>The window</h2>
 <p class="why">Blender's default layout, which the KitBash3D guide Diego sent starts from: the <b>3D view</b> in the middle,
@@ -212,7 +215,7 @@ is selected &mdash; its place, its size, its material.</p>
   <div class="row">
   <div class="win" style="width:1400px;height:820px" id="main">
     <div class="head">
-      <span class="t">Modeler</span><span class="s">still-life.scene</span>
+      <span class="t">Cafesa3D</span><span class="s">still-life.scene</span>
       <div class="seg" role="group" aria-label="Mode">
         <button type="button" class="on">Object</button><button type="button" disabled title="Edit mode: version 1.5">Edit</button>
       </div>
@@ -279,7 +282,7 @@ the render.</p>
 <div class="stage"><div class="fit" data-w="1000">
   <div class="row">
   <div class="win" style="width:560px;height:452px">
-    <div class="head"><span class="t">Modeler</span><span class="s">Add</span></div>
+    <div class="head"><span class="t">Cafesa3D</span><span class="s">Add</span></div>
     <div style="position:relative;flex:1;background:#33363c">
       <div class="menu" style="left:14px;top:12px;width:200px" aria-hidden="true">
         <div class="mt">Add</div>
@@ -403,7 +406,7 @@ so that knowing one is knowing the other; <span class="k-simp">smaller</span> me
 <div class="tablewrap">
 <table class="rules">
 <tr><th>Part</th><th>In Kosmos</th></tr>
-<tr><td>The app</td><td>Lua, <code>/bin/modeler.lua</code>: the window, the Outliner, Properties, selection, the tools,
+<tr><td>The app</td><td>Lua, <code>/bin/cafesa3d.lua</code>: the window, the Outliner, Properties, selection, the tools,
   undo. It decides what is drawn and where; it computes no pixel.</td></tr>
 <tr><td>The Solid view</td><td>Drawn by the GL kit (<code>/kits/gl</code>) as triangles with a depth buffer, which Doom's
   and the cube's frames already come through &mdash; not polygons sorted by distance, as this page does it.</td></tr>
@@ -430,15 +433,14 @@ so that knowing one is knowing the other; <span class="k-simp">smaller</span> me
   <li><b>Animation is version two</b> &mdash; "Hold animation for now as that is a second version of the app".</li>
 </ul>
 
-<h2>For Diego to decide</h2>
+<h2>Decided by Diego, 25 September, on this drawing</h2>
 <ul class="ask">
-  <li><b>Its name.</b> Drawn as <i>Modeler</i>, which says what it is. Or something with more of Kosmos in it &mdash;
-      <i>Atelier</i>, a workshop; <i>Orrery</i>, the brass model of the heavens.</li>
-  <li><b>Turning the view</b>: a drag on empty space, as drawn, or Blender's middle button &mdash; or both.</li>
-  <li><b>The scene it opens on</b>: this one, or Blender's lone cube, light and camera.</li>
-  <li><b>The order to build it in</b>, proposed: the window, the Solid view and selection; adding things and moving them;
-      the ray-tracing kit and the Rendered view; materials, lights, the camera and <kbd>F12</kbd>; saving and opening
-      glTF; then the vector units in the kit, measured. Edit mode after that, and animation last.</li>
+  <li><b>The drawing, as it is</b> &mdash; "3d tool is perfect". So the view turns with a drag on empty space, it opens on
+      this still life, and it is built in the order proposed: the window, the Solid view and selection; adding things and
+      moving them; the ray-tracing kit and the Rendered view; materials, lights, the camera and <kbd>F12</kbd>; saving and
+      opening glTF; then the vector units in the kit, measured. Edit mode after that, and animation last.</li>
+  <li><b>Its name is Cafesa3D</b> &mdash; "Let's call it Cafesa3D".</li>
+  <li><b>Built now</b> &mdash; "Let's build it".</li>
 </ul>
 
 </div>

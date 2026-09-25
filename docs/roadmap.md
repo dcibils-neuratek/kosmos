@@ -1126,8 +1126,8 @@ processors, and still what follows USB:
    **ON HOLD since 25 September** - "Hold on the math lab app for now", the
    same afternoon as the 3D scenes. Drawn and decided as above, nothing
    built; the 3D scenes are decided and not yet drawn.
-4l. **AGREED on 25 September, ahead of MathLab - a 3D modelling tool, after
-   Blender, that renders by ray tracing.** Diego: "I want to prioritize
+4l. **IN PROGRESS since 25 September, ahead of MathLab - Cafesa3D, a 3D
+   modelling tool after Blender that renders by ray tracing.** Diego: "I want to prioritize
    other app first", "A simple 3d modeling and animation tool like
    blender3d", "A tool I can design a 3d scene with primitives and objects
    like meshes, 3d spheres, cubes, etc", "Search for blender and how it
@@ -1146,7 +1146,7 @@ processors, and still what follows USB:
      mockup in `docs/`, changed with Diego until he agrees.
    - The pixel loops are C, as always: the ray tracer is a kit, and the
      vector units (6l) are what it is for.
-   **Drawn** the same day, `docs/modeler.html` (published for his phone,
+   **Drawn** the same day, `docs/cafesa3d.html` (published for his phone,
    https://claude.ai/artifact/UdBLmz1CY3XU5TjZUFmmPx), from Blender's manual
    and the KitBash3D guide: Blender's layout - the 3D view, the Outliner over
    Properties with five tabs, tools down the side, a foot of live keys -
@@ -1154,9 +1154,18 @@ processors, and still what follows USB:
    numbers kept live in its Data tab; Solid, Wireframe and Rendered; and
    `F12`'s window. Its Rendered view and Render window are a real path
    tracer over analytic shapes, in JavaScript, with Whitted's ray tracing as
-   the Preview. Waiting for Diego's look: its name (drawn as *Modeler*), how
-   the view turns, the scene it opens on, and the order to build it in.
-   Nothing coded.
+   the Preview.
+   **APPROVED as drawn, and named** - Diego: "3d tool is perfect", "Let's
+   call it Cafesa3D", "Let's build it". So the view turns with a drag on
+   empty space, it opens on the still life, and it is built in this order,
+   each step used and tested before the next:
+   1. The window, the Solid view and selection (`/bin/cafesa3d.lua`).
+   2. Adding things and moving them.
+   3. The ray-tracing kit (`/kits/ray`) and the Rendered view.
+   4. Materials, lights, the camera and `F12`.
+   5. Saving and opening glTF.
+   6. The vector units in the kit, measured.
+   Then Edit mode, and animation last.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab

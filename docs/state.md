@@ -216,10 +216,12 @@ simulations as 3D scenes turned while they run - and then **on hold**:
 app first", "A simple 3d modeling and animation tool like blender3d", scenes
 of primitives and meshes rendered by ray tracing, animation for a second
 version. Blender studied first, from its manual and the KitBash3D guide
-Diego sent, and **drawn**: `docs/modeler.html`, published for his phone at
+Diego sent, and **drawn**: `docs/cafesa3d.html`, published for his phone at
 https://claude.ai/artifact/UdBLmz1CY3XU5TjZUFmmPx - a live 3D view, the
 Outliner and Properties, an Add menu, and a real path-traced render in the
-page. Waiting for his look and four choices (4l); nothing coded.
+page. **Approved as drawn and named Cafesa3D** - "3d tool is perfect",
+"Let's call it Cafesa3D", "Let's build it" - and being built in 4l's six
+steps, the window and the Solid view first.
 
 **Stashed** (`git stash list`, "6l in progress"): 6l's first step -
 `posix_memalign` and `aligned_alloc` in `malloc.c` with `tools/test_alloc.c`
