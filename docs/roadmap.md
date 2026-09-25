@@ -1056,6 +1056,31 @@ processors, and still what follows USB:
      work goes to workers, and a worker's answer arrives in the window's
      event loop as an event, like a click. Coroutines stay for waiting on
      many things at once.
+4k. **AGREED on 25 September - MathLab: equations, graphs, and the vector
+   units shown working.** Diego, asked while the H.264 work was being
+   finished, for after it is pushed: "I want to do a simple Lua app that
+   showcases avx sims usage like matrix multiplication and else", "I want
+   to show a 2d and 3d graphihg app that shows theae capacity", "Like
+   graphical ahowcase of complex mathematical funciones starting with
+   f=x*x which is the basic parable", "A mathcad oriented app that we can
+   do math equations and graphics using all the available simd features" -
+   and "The app is called MathLab".
+   - **Drawn first** (`docs/mathlab.html`), as every app is: a worksheet of
+     equations, starting with `f(x) = x*x`; 2D plots and 3D surfaces of
+     them; and the showcase - the same work timed as plain C and as vector
+     code, side by side.
+   - **A maths kit in C underneath**, reached as `use("/kits/...")`:
+     evaluating a function over thousands of points at once, matrix
+     multiplication, the transforms a 3D view needs - NEON on AArch64,
+     SSE and AVX on x86-64, each held bit for bit or within a stated
+     tolerance to its scalar version, as `yuv.c` is (18.180).
+   - **AVX needs the kernel first**: x86-64's context switch saves the FPU
+     with `fxsave`, which keeps the 128-bit registers and not the upper
+     halves of AVX's 256-bit ones, so a program using AVX today would have
+     them overwritten whenever another process ran. `xsave`/`xrstor`, and
+     AVX state enabled in CR4 and XCR0, is `arch/x86_64/` work and comes
+     before any AVX code (6l says the same for FFmpeg).
+   Not started; queued after the H.264 and sound work is pushed.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
@@ -1719,9 +1744,16 @@ processors, and still what follows USB:
    `.S` files assemble with this toolchain, `tools/ffmpeg_vendor.py`
    configures with `--enable-neon` and takes them into the closure, and
    `test_h264` and `test_aac` say whether a single sample moved - measured
-   in the Video app's overlay before and after. **x86-64 is Diego's call**:
-   FFmpeg's x86 SIMD is written for `nasm`, an assembler this project does
-   not have, so it means adding one to the toolchain or leaving x86 on C.
+   in the Video app's overlay before and after. **x86-64 next**, Diego
+   asking the same day "Generic c for x86 why? Avx is not possible?" - it
+   is, in three steps: `nasm`, the assembler FFmpeg's x86 SIMD is written
+   for, into the toolchain, and FFmpeg's SSE2 to SSE4 paths, which the
+   kernel's `fxsave` already preserves; then **the kernel saving AVX
+   state** - `xsave`/`xrstor` on the lazy FP path, CR4.OSXSAVE and XCR0 -
+   without which a program's 256-bit registers are overwritten whenever
+   another process runs; then AVX and AVX2. MathLab (4k) needs the second
+   step too. An aligned allocator was the first thing either needed:
+   `posix_memalign` and `aligned_alloc` in `malloc.c` (18.186).
 
 6k. **FOUND on 24 September - a film reads each sample with a round trip
    of its own.** The Video app's overlay on Diego's clip under QEMU: 5.3 ms

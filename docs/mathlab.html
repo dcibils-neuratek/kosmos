@@ -1,0 +1,559 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  MathLab, drawn before it is written (roadmap.md 4k). One CSS pixel to one
+  screen pixel, in the Plex look, as docs/apps.html and docs/camera.html
+  draw the others.
+
+  Diego, 25 September 2026: "I want to do a simple Lua app that showcases avx
+  sims usage like matrix multiplication and else", "a 2d and 3d graphihg app",
+  "starting with f=x*x which is the basic parable", "A mathcad oriented app
+  that we can do math equations and graphics using all the available simd
+  features", "The app is called MathLab", and for its 3D plots, a picture of
+  MATLAB's surf(peaks): "I like these 3d plots".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MathLab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=STIX+Two+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --math: "STIX Two Text", "Cambria Math", "Times New Roman", serif;
+
+    /* The window, in the Plex look: always light, as the desktop draws it. */
+    --w-desk: #3d63b8; --w-body: #fafafb; --w-line: #e0e2e6; --w-ink: #1d1f24;
+    --w-dim: #74787f; --w-accent: #2a55c9; --w-head: #ffffff; --w-sel: #e9eefb;
+    --f-blue: #2a55c9; --f-orange: #e07b28; --f-green: #2f8a3e;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1260px; margin: 0 auto; padding-block: 40px 80px; padding-inline: 20px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  h2 { font-family: var(--display); font-size: 19px; margin: 46px 0 6px;
+       padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  .sub, .why { color: var(--muted); max-width: 74ch; }
+  .why { margin: 0 0 14px; font-size: 14px; }
+  code { font-family: var(--mono); font-size: .88em; }
+
+  /* The desktop behind the windows, scaled down to fit a narrow screen. */
+  .stage { background: var(--w-desk);
+           background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+           padding: 30px 24px; border-radius: 12px; overflow: hidden; }
+  .fit { transform-origin: top left; }
+  .row { display: flex; gap: 24px; justify-content: center; align-items: flex-start; }
+
+  .win { background: var(--w-body); border-radius: 10px; overflow: hidden;
+         box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+         font-size: 13.5px; color: var(--w-ink); flex: none; display: flex; flex-direction: column; }
+  .head { height: 46px; background: var(--w-head); border-bottom: 1px solid var(--w-line);
+          display: flex; align-items: center; gap: 6px; padding: 0 10px 0 18px; flex: none; }
+  .head .t { font-weight: 600; font-size: 14px; }
+  .head .s { color: var(--w-dim); font-size: 12.5px; margin-left: 8px; white-space: nowrap; }
+  .sp { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--w-line); border-radius: 7px; overflow: hidden; height: 31px; }
+  .seg span { padding: 0 13px; display: inline-flex; align-items: center; font-size: 12.5px; background: #fff; }
+  .seg span + span { border-left: 1px solid var(--w-line); }
+  .seg span.on { background: var(--w-sel); color: var(--w-accent); font-weight: 500; }
+  .btn { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px;
+         border: 1px solid var(--w-line); border-radius: 7px; background: #fff;
+         font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; }
+  .chip { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px;
+          border-radius: 12px; background: #eef7ef; color: #1f6b2c; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .chip i { width: 7px; height: 7px; border-radius: 50%; background: #2f8a3e; }
+  .ico { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--w-dim); flex: none; }
+  .ico svg { width: 15px; height: 15px; }
+  .foot { height: 30px; display: flex; align-items: center; padding: 0 18px; gap: 18px;
+          color: var(--w-dim); font-size: 12px; border-top: 1px solid var(--w-line); background: var(--w-body);
+          font-variant-numeric: tabular-nums; flex: none; white-space: nowrap; }
+  .foot b { color: var(--w-ink); font-weight: 500; }
+
+  /* The worksheet: one line an equation, typed in and shown set. */
+  .body { flex: 1; display: flex; min-height: 0; }
+  .sheet { width: 380px; flex: none; border-right: 1px solid var(--w-line); background: #fff;
+           padding: 10px 0; overflow: hidden; }
+  .line { padding: 9px 18px 9px 16px; border-left: 3px solid transparent; }
+  .line.on { background: var(--w-sel); border-left-color: var(--w-accent); }
+  .line .m { font-family: var(--math); font-size: 19px; line-height: 1.35; display: flex; align-items: baseline; gap: 10px; }
+  .line .m i { font-style: italic; }
+  .line .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; align-self: center; }
+  .line .typed { font-family: var(--mono); font-size: 11.5px; color: var(--w-dim); margin-top: 2px; }
+  .line.res .m { color: #3a3f48; }
+  .line .val { color: var(--w-accent); }
+  .sheet .rule { border-top: 1px solid var(--w-line); margin: 8px 16px; }
+  .sheet .new { margin: 6px 16px; padding: 8px 10px; border: 1px dashed #c9ced6; border-radius: 7px;
+                color: #9aa0a8; font-family: var(--mono); font-size: 12px; }
+  sup { font-size: .66em; line-height: 0; }
+  .plot { flex: 1; position: relative; background: #fff; min-width: 0; }
+  .plot svg, .plot canvas { display: block; }
+
+  .bench { padding: 16px 18px; display: grid; gap: 10px; }
+  .units { display: flex; gap: 10px; flex-wrap: wrap; }
+  .unit { border: 1px solid var(--w-line); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; background: #fff; }
+  .unit b { display: block; font-weight: 600; font-size: 13px; }
+  .unit.off { color: #9aa0a8; background: #f6f7f9; }
+  table.b { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; width: 100%; }
+  table.b th { text-align: left; font-weight: 500; color: var(--w-dim); padding: 6px 10px 6px 0; border-bottom: 1px solid var(--w-line); }
+  table.b td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--w-line); white-space: nowrap; }
+  table.b td.n { text-align: right; }
+  .bar { height: 10px; border-radius: 5px; background: #e6e9ef; position: relative; width: 190px; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--w-accent); }
+  .note { font-size: 12px; color: var(--w-dim); }
+
+  table.rules { border-collapse: collapse; font-size: 14px; margin: 10px 0 18px; }
+  table.rules td { padding: 5px 16px 5px 0; vertical-align: top; border-bottom: 1px solid var(--rule); }
+  table.rules td:first-child { color: var(--muted); white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
+  ul.ask { max-width: 74ch; }
+  ul.ask li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MathLab</h1>
+<p class="sub">Equations, and their graphs in two and three dimensions, with the processor's vector units doing the
+arithmetic &mdash; and saying how much faster that was. Drawn at the size the machine draws it before any of it is
+written (<code>roadmap.md</code> 4k). Diego: "a mathcad oriented app that we can do math equations and graphics using
+all the available simd features", starting with <i>f</i>(<i>x</i>)&nbsp;=&nbsp;<i>x</i><sup>2</sup>.</p>
+
+<h2>The worksheet, in 2D</h2>
+<p class="why">On the left, one line an equation: typed as plain text (the grey line under each), shown set like
+mathematics. A line that names a function is drawn, in its colour; a line that asks a question is answered in blue.
+On the right, the graph, with the point under the pointer read out. The foot says what the last evaluation cost and
+what the vector units saved.</p>
+
+<div class="stage"><div class="fit" data-w="1180">
+  <div class="row">
+  <div class="win" style="width:1180px;height:700px">
+    <div class="head">
+      <span class="t">MathLab</span><span class="s">parabola.math</span>
+      <span class="sp"></span>
+      <span class="chip"><i></i>NEON &middot; 4 lanes</span>
+      <span class="seg"><span class="on">2D</span><span>3D</span></span>
+      <span class="btn">Benchmark</span>
+      <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
+    </div>
+    <div class="body">
+      <div class="sheet">
+        <div class="line on"><div class="m"><span class="sw" style="background:var(--f-blue)"></span><span><i>f</i>(<i>x</i>) = <i>x</i><sup>2</sup></span></div><div class="typed">f(x) = x^2</div></div>
+        <div class="line"><div class="m"><span class="sw" style="background:var(--f-orange)"></span><span><i>g</i>(<i>x</i>) = 2 sin(3<i>x</i>) &middot; <i>e</i><sup>&minus;<i>x</i><sup>2</sup>/4</sup></span></div><div class="typed">g(x) = 2 sin(3x) * e^(-x^2/4)</div></div>
+        <div class="line"><div class="m"><span class="sw" style="background:transparent"></span><span><i>x</i> from &minus;3 to 3</span></div><div class="typed">x from -3 to 3, 4096 points</div></div>
+        <div class="rule"></div>
+        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span><i>f</i>(1.5) = <span class="val">2.25</span></span></div><div class="typed">f(1.5)</div></div>
+        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span>&int;<sub>&minus;2</sub><sup>2</sup> <i>f</i>(<i>x</i>) d<i>x</i> = <span class="val">5.3333</span></span></div><div class="typed">integral f(x) from -2 to 2</div></div>
+        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span><i>f</i>(<i>x</i>) = 2 at <i>x</i> = <span class="val">&plusmn;1.4142</span></span></div><div class="typed">solve f(x) = 2</div></div>
+        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span>max <i>g</i> = <span class="val">1.8412</span> at <i>x</i> = <span class="val">0.5112</span></span></div><div class="typed">max g</div></div>
+        <div class="new">Type an equation&hellip;</div>
+      </div>
+      <div class="plot" id="plot2d" style="width:800px;height:624px"></div>
+    </div>
+    <div class="foot"><span>4096 points, two functions</span><span><b>0.021 ms</b> with NEON</span><span>0.083 ms one at a time</span><span><b>3.9&times;</b></span><span class="sp"></span><span>x 1.50 &middot; f 2.25 &middot; g &minus;1.43</span></div>
+  </div>
+  </div>
+</div></div>
+<p class="why">The figures in the foot are the kind it will show, not measurements: the app measures them every time
+it evaluates.</p>
+
+<h2>The same worksheet, in 3D</h2>
+<p class="why">Diego's picture, MATLAB's <code>surf(peaks)</code>, drawn the way he liked it: the surface in faces coloured
+by height from deep blue to yellow, a thin dark mesh over them, a box with its back walls ruled and numbered, and the
+colour scale beside it. <b>Drag the surface to turn it</b> &mdash; in the app as here.</p>
+
+<div class="stage"><div class="fit" data-w="1180">
+  <div class="row">
+  <div class="win" style="width:1180px;height:700px">
+    <div class="head">
+      <span class="t">MathLab</span><span class="s">peaks.math</span>
+      <span class="sp"></span>
+      <span class="chip"><i></i>NEON &middot; 4 lanes</span>
+      <span class="seg"><span>2D</span><span class="on">3D</span></span>
+      <span class="btn">Benchmark</span>
+      <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
+    </div>
+    <div class="body">
+      <div class="sheet">
+        <div class="line on"><div class="m" style="font-size:17px;flex-wrap:wrap"><span><i>z</i>(<i>x</i>, <i>y</i>) = 3(1&minus;<i>x</i>)<sup>2</sup> <i>e</i><sup>&minus;<i>x</i><sup>2</sup>&minus;(<i>y</i>+1)<sup>2</sup></sup></span>
+          <span>&minus; 10(<i>x</i>/5 &minus; <i>x</i><sup>3</sup> &minus; <i>y</i><sup>5</sup>) <i>e</i><sup>&minus;<i>x</i><sup>2</sup>&minus;<i>y</i><sup>2</sup></sup></span>
+          <span>&minus; &frac13; <i>e</i><sup>&minus;(<i>x</i>+1)<sup>2</sup>&minus;<i>y</i><sup>2</sup></sup></span></div>
+          <div class="typed">z(x,y) = 3(1-x)^2 e^(-x^2-(y+1)^2) - 10(x/5-x^3-y^5) e^(-x^2-y^2) - 1/3 e^(-(x+1)^2-y^2)</div></div>
+        <div class="line"><div class="m"><span><i>x</i>, <i>y</i> from &minus;3 to 3</span></div><div class="typed">x, y from -3 to 3, 25 by 25</div></div>
+        <div class="rule"></div>
+        <div class="line res"><div class="m"><span>max <i>z</i> = <span class="val">8.106</span> at (<span class="val">&minus;0.009</span>, <span class="val">1.581</span>)</span></div><div class="typed">max z</div></div>
+        <div class="line res"><div class="m"><span>min <i>z</i> = <span class="val">&minus;6.551</span> at (<span class="val">0.228</span>, <span class="val">&minus;1.626</span>)</span></div><div class="typed">min z</div></div>
+        <div class="new">Type an equation&hellip;</div>
+      </div>
+      <div class="plot" style="width:800px;height:624px;cursor:grab"><canvas id="plot3d" width="800" height="624" aria-label="The surface z = peaks(x, y), which can be turned by dragging"></canvas></div>
+    </div>
+    <div class="foot"><span>625 points, 576 faces</span><span><b>0.009 ms</b> to evaluate and turn with NEON</span><span>0.034 ms one at a time</span><span><b>3.8&times;</b></span><span class="sp"></span><span id="view3d">azimuth &minus;37.5&deg; &middot; elevation 30&deg;</span></div>
+  </div>
+  </div>
+</div></div>
+
+<h2>Benchmark: what the vector units buy</h2>
+<p class="why">The showcase Diego asked for, "matrix multiplication and else". Which vector units this processor
+has, and each piece of MathLab's own work timed both ways on it: one number at a time, and four or eight at once.
+The same C, held to the same answers &mdash; only the instructions differ. On the ThinkPad the x86-64 units are listed
+with AVX2 marked as waiting on the kernel (<code>roadmap.md</code> 6l).</p>
+
+<div class="stage"><div class="fit" data-w="1204">
+  <div class="row">
+  <div class="win" style="width:590px;height:452px">
+    <div class="head"><span class="t">Benchmark</span><span class="s">QEMU virt &middot; Cortex-A72</span><span class="sp"></span><span class="btn">Run again</span></div>
+    <div class="bench">
+      <div class="units">
+        <div class="unit"><b>NEON</b>128 bits &middot; 4 floats a step</div>
+        <div class="unit off"><b>SVE</b>not on this processor</div>
+      </div>
+      <table class="b">
+        <tr><th>Work</th><th class="n">One at a time</th><th class="n">NEON</th><th></th><th class="n">Faster</th></tr>
+        <tr><td>Matrix multiply, 256 &times; 256</td><td class="n">41.8 ms</td><td class="n">11.2 ms</td><td><div class="bar"><i style="width:74%"></i></div></td><td class="n">3.7&times;</td></tr>
+        <tr><td><i>f</i>(<i>x</i>) at a million points</td><td class="n">20.4 ms</td><td class="n">5.3 ms</td><td><div class="bar"><i style="width:77%"></i></div></td><td class="n">3.8&times;</td></tr>
+        <tr><td>Turn 100,000 points (4 &times; 4)</td><td class="n">3.10 ms</td><td class="n">0.86 ms</td><td><div class="bar"><i style="width:72%"></i></div></td><td class="n">3.6&times;</td></tr>
+        <tr><td>Dot product, a million</td><td class="n">1.92 ms</td><td class="n">0.51 ms</td><td><div class="bar"><i style="width:75%"></i></div></td><td class="n">3.8&times;</td></tr>
+      </table>
+      <div class="note">Every result checked against the one-at-a-time answer before it is timed.</div>
+    </div>
+  </div>
+  <div class="win" style="width:590px;height:452px">
+    <div class="head"><span class="t">Benchmark</span><span class="s">ThinkPad T14</span><span class="sp"></span><span class="btn">Run again</span></div>
+    <div class="bench">
+      <div class="units">
+        <div class="unit"><b>SSE4.2</b>128 bits &middot; 4 floats a step</div>
+        <div class="unit off"><b>AVX2</b>256 bits &middot; 8 floats &middot; needs the kernel</div>
+      </div>
+      <table class="b">
+        <tr><th>Work</th><th class="n">One at a time</th><th class="n">SSE</th><th></th><th class="n">Faster</th></tr>
+        <tr><td>Matrix multiply, 256 &times; 256</td><td class="n">14.6 ms</td><td class="n">4.1 ms</td><td><div class="bar"><i style="width:72%"></i></div></td><td class="n">3.6&times;</td></tr>
+        <tr><td><i>f</i>(<i>x</i>) at a million points</td><td class="n">7.9 ms</td><td class="n">2.2 ms</td><td><div class="bar"><i style="width:72%"></i></div></td><td class="n">3.6&times;</td></tr>
+        <tr><td>Turn 100,000 points (4 &times; 4)</td><td class="n">1.05 ms</td><td class="n">0.31 ms</td><td><div class="bar"><i style="width:70%"></i></div></td><td class="n">3.4&times;</td></tr>
+        <tr><td>Dot product, a million</td><td class="n">0.66 ms</td><td class="n">0.18 ms</td><td><div class="bar"><i style="width:73%"></i></div></td><td class="n">3.7&times;</td></tr>
+      </table>
+      <div class="note">With AVX2 each row gains a column, eight floats a step.</div>
+    </div>
+  </div>
+  </div>
+</div></div>
+<p class="why">Example figures, to show the layout; the window measures them when it opens and when asked.</p>
+
+<h2>What it is made of</h2>
+<div class="tablewrap">
+<table class="rules">
+<tr><td>Worksheet</td><td>Lua: each line parsed into an expression, and a function compiled into a short program of vector steps &mdash; load <i>x</i>, square, multiply, add &mdash; that the kit runs over every point at once</td></tr>
+<tr><td>Maths Kit</td><td>C, <code>use("/kits/math")</code>: those programs over arrays, matrix multiply, 4 &times; 4 transforms, dot products; NEON on AArch64, SSE on x86-64, AVX2 when the kernel keeps its registers &mdash; each held to its one-at-a-time version on the Mac, as <code>yuv.c</code> is</td></tr>
+<tr><td>2D graph</td><td>Axes, grid and curves drawn into a surface in C; the readout under the pointer from the same numbers</td></tr>
+<tr><td>3D graph</td><td>The surface's points turned by one 4 &times; 4 matrix, its faces coloured by height and painted back to front with their mesh, in C; drag to turn, wheel to zoom</td></tr>
+<tr><td>Benchmark</td><td>A window of its own: the units this processor has, and each kind of work timed both ways, every answer checked first</td></tr>
+<tr><td>File</td><td><code>.math</code>, plain text, one line an equation, in <code>/home</code> &mdash; the grey lines above are exactly what it holds</td></tr>
+<tr><td>Window</td><td>1180 by 700: the kit's header, the worksheet 380 wide, the graph, and the foot</td></tr>
+</table>
+</div>
+
+<h2>For Diego to decide</h2>
+<ul class="ask">
+  <li><b>A list of lines, as drawn, or a page</b> where equations sit anywhere, as Mathcad places them. A list is
+      simpler to type into and to keep in a file; a page is closer to Mathcad.</li>
+  <li><b>How equations are typed</b>: <code>x^2</code> and <code>x*x</code> both; <code>3x</code> meaning three times
+      <i>x</i>; <code>pi</code> and <code>e</code> by name.</li>
+  <li><b>Shown set, as drawn</b>, with the typed text under each line &mdash; or set only, the typed text appearing when
+      the line is being edited.</li>
+  <li><b>The 3D look</b>: faces and mesh as in the MATLAB picture, drawn above; or without the mesh; or a wire mesh only.</li>
+  <li><b>What comes first after <i>f</i>(<i>x</i>) = <i>x</i><sup>2</sup></b>: questions about a function (values, roots,
+      maxima, integrals, as drawn), or more kinds of graph (parametric curves, contour maps, several surfaces).</li>
+</ul>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* Each stage keeps its windows at one pixel to one, and scales them down
+     to fit a screen narrower than they are. */
+  function fitStages() {
+    document.querySelectorAll(".stage").forEach(function (stage) {
+      var fit = stage.querySelector(".fit");
+      var want = +fit.dataset.w;
+      var room = stage.clientWidth - 48;
+      var s = Math.min(1, room / want);
+
+      fit.style.transform = s < 1 ? "scale(" + s + ")" : "";
+      fit.style.width = want + "px";
+      fit.style.height = "";
+      stage.style.height = s < 1 ? (fit.scrollHeight * s + 60) + "px" : "";
+      if (s >= 1) { fit.style.width = ""; }
+    });
+  }
+
+  /* ---- 2D: f(x) = x^2 and g(x) = 2 sin(3x) e^(-x^2/4) ---- */
+  function plot2d() {
+    var box = document.getElementById("plot2d");
+    var W = 800, H = 624, L = 64, R = 24, T = 24, B = 48;
+    var x0 = -3, x1 = 3, y0 = -2.5, y1 = 9.5;
+    var sx = function (x) { return L + (x - x0) / (x1 - x0) * (W - L - R); };
+    var sy = function (y) { return T + (y1 - y) / (y1 - y0) * (H - T - B); };
+    var f = function (x) { return x * x; };
+    var g = function (x) { return 2 * Math.sin(3 * x) * Math.exp(-x * x / 4); };
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    var out = [];
+    var x, y, i;
+
+    svg.setAttribute("width", W);
+    svg.setAttribute("height", H);
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+    for (x = -3; x <= 3; x += 0.5) {
+      out.push('<line x1="' + sx(x) + '" y1="' + T + '" x2="' + sx(x) + '" y2="' + (H - B) + '" stroke="' + (x === 0 ? "#9aa0a8" : "#eceef2") + '"/>');
+      if (x === Math.round(x)) {
+        out.push('<text x="' + sx(x) + '" y="' + (H - B + 20) + '" font-size="12" fill="#74787f" text-anchor="middle" font-family="IBM Plex Sans, sans-serif">' + String(x).replace("-", "−") + '</text>');
+      }
+    }
+    for (y = -2; y <= 9; y += 1) {
+      out.push('<line x1="' + L + '" y1="' + sy(y) + '" x2="' + (W - R) + '" y2="' + sy(y) + '" stroke="' + (y === 0 ? "#9aa0a8" : "#eceef2") + '"/>');
+      if (y % 2 === 0) {
+        out.push('<text x="' + (L - 10) + '" y="' + (sy(y) + 4) + '" font-size="12" fill="#74787f" text-anchor="end" font-family="IBM Plex Sans, sans-serif">' + String(y).replace("-", "−") + '</text>');
+      }
+    }
+    out.push('<text x="' + (W - R) + '" y="' + (H - B + 36) + '" font-size="13" fill="#74787f" text-anchor="end" font-style="italic" font-family="STIX Two Text, serif">x</text>');
+
+    function curve(fn, colour) {
+      var pts = [];
+      for (i = 0; i <= 600; i++) {
+        var xx = x0 + (x1 - x0) * i / 600;
+        pts.push(sx(xx).toFixed(1) + "," + sy(fn(xx)).toFixed(1));
+      }
+      return '<polyline fill="none" stroke="' + colour + '" stroke-width="2.4" stroke-linejoin="round" points="' + pts.join(" ") + '"/>';
+    }
+    out.push('<clipPath id="clip2d"><rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '"/></clipPath>');
+    out.push('<g clip-path="url(#clip2d)">' + curve(f, "#2a55c9") + curve(g, "#e07b28") + '</g>');
+
+    /* The readout, as the pointer would leave it at x = 1.5. */
+    var px = sx(1.5), pf = sy(f(1.5)), pg = sy(g(1.5));
+    out.push('<line x1="' + px + '" y1="' + T + '" x2="' + px + '" y2="' + (H - B) + '" stroke="#2a55c9" stroke-dasharray="3 4" stroke-opacity=".55"/>');
+    out.push('<circle cx="' + px + '" cy="' + pf + '" r="5" fill="#fff" stroke="#2a55c9" stroke-width="2.4"/>');
+    out.push('<circle cx="' + px + '" cy="' + pg + '" r="5" fill="#fff" stroke="#e07b28" stroke-width="2.4"/>');
+    out.push('<rect x="' + (px + 12) + '" y="' + (pf - 44) + '" width="118" height="38" rx="6" fill="#1d1f24" fill-opacity=".86"/>');
+    out.push('<text x="' + (px + 22) + '" y="' + (pf - 29) + '" font-size="12" fill="#fff" font-family="IBM Plex Mono, monospace">x = 1.50</text>');
+    out.push('<text x="' + (px + 22) + '" y="' + (pf - 14) + '" font-size="12" fill="#fff" font-family="IBM Plex Mono, monospace">f = 2.25</text>');
+    svg.innerHTML = out.join("");
+    box.appendChild(svg);
+  }
+
+  /* ---- 3D: MATLAB's peaks, as surf draws it ---- */
+  function peaks(x, y) {
+    return 3 * (1 - x) * (1 - x) * Math.exp(-x * x - (y + 1) * (y + 1))
+         - 10 * (x / 5 - x * x * x - Math.pow(y, 5)) * Math.exp(-x * x - y * y)
+         - Math.exp(-(x + 1) * (x + 1) - y * y) / 3;
+  }
+
+  /* Blue through teal and green to yellow, in the manner of the picture. */
+  var STOPS = [
+    [0.00, 53, 42, 135], [0.13, 15, 92, 221], [0.25, 18, 125, 216],
+    [0.38, 7, 156, 207], [0.50, 21, 177, 180], [0.63, 89, 189, 140],
+    [0.75, 165, 190, 107], [0.88, 225, 185, 82], [1.00, 249, 251, 14]
+  ];
+  function colour(t) {
+    t = Math.max(0, Math.min(1, t));
+    for (var i = 1; i < STOPS.length; i++) {
+      if (t <= STOPS[i][0]) {
+        var a = STOPS[i - 1], b = STOPS[i], u = (t - a[0]) / (b[0] - a[0]);
+        return "rgb(" + Math.round(a[1] + (b[1] - a[1]) * u) + "," +
+               Math.round(a[2] + (b[2] - a[2]) * u) + "," +
+               Math.round(a[3] + (b[3] - a[3]) * u) + ")";
+      }
+    }
+    return "rgb(249,251,14)";
+  }
+
+  function plot3d() {
+    var canvas = document.getElementById("plot3d");
+    var ctx = canvas.getContext("2d");
+    var W = 800, H = 624, N = 25;
+    var dpr = window.devicePixelRatio || 1;
+    var az = -37.5, el = 30;
+    var Z0 = -8, Z1 = 10;
+    var pts = [], i, j;
+
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+
+    for (j = 0; j < N; j++) {
+      for (i = 0; i < N; i++) {
+        var x = -3 + 6 * i / (N - 1), y = -3 + 6 * j / (N - 1);
+        pts.push([x, y, peaks(x, y)]);
+      }
+    }
+
+    /* Into the box's own space, a cube from -1 to 1 with z a little flatter. */
+    function norm(p) { return [p[0] / 3, p[1] / 3, (p[2] - (Z0 + Z1) / 2) / (Z1 - Z0) * 1.5]; }
+
+    function project(p) {
+      var a = az * Math.PI / 180, e = el * Math.PI / 180;
+      var x = p[0] * Math.cos(a) + p[1] * Math.sin(a);
+      var y = -p[0] * Math.sin(a) + p[1] * Math.cos(a);
+      var sx = x;
+      var sy = -(p[2] * Math.cos(e) + y * Math.sin(e));
+      var depth = y * Math.cos(e) - p[2] * Math.sin(e);
+      return [W / 2 - 40 + sx * 205, H / 2 - 8 + sy * 205, depth];
+    }
+
+    function draw() {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, W, H);
+
+      var zs = [-0.75, 0.75];
+
+      /* The box's back walls: the three faces turned away from the eye. */
+      var faces = [
+        { n: [-1, 0, 0], at: function (u, v) { return [-1, u, v]; } },
+        { n: [1, 0, 0],  at: function (u, v) { return [1, u, v]; } },
+        { n: [0, -1, 0], at: function (u, v) { return [u, -1, v]; } },
+        { n: [0, 1, 0],  at: function (u, v) { return [u, 1, v]; } },
+        { n: [0, 0, -1], at: function (u, v) { return [u, v, zs[0]]; } }
+      ];
+      ctx.lineWidth = 1;
+      faces.forEach(function (f) {
+        /* A wall is behind the surface when its middle is farther from the
+           eye than the box's; the floor always is, seen from above. */
+        if (f.n[2] === 0 && project([f.n[0], f.n[1], 0])[2] <= 0) { return; }
+        var quad = f.n[2] === 0
+          ? [f.at(-1, zs[0]), f.at(1, zs[0]), f.at(1, zs[1]), f.at(-1, zs[1])]
+          : [f.at(-1, -1), f.at(1, -1), f.at(1, 1), f.at(-1, 1)];
+        var q = quad.map(project);
+        ctx.fillStyle = "#f7f8fa";
+        ctx.strokeStyle = "#d3d7de";
+        ctx.beginPath();
+        q.forEach(function (p, k) { if (k) { ctx.lineTo(p[0], p[1]); } else { ctx.moveTo(p[0], p[1]); } });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = "#e3e6eb";
+        for (var s = 1; s < 6; s++) {
+          var u = -1 + 2 * s / 6, a, b;
+          if (f.n[2] === 0) {
+            a = project(f.at(u, zs[0])); b = project(f.at(u, zs[1]));
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+            var vz = zs[0] + (zs[1] - zs[0]) * s / 6;
+            a = project(f.at(-1, vz)); b = project(f.at(1, vz));
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+          } else {
+            a = project(f.at(u, -1)); b = project(f.at(u, 1));
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+            a = project(f.at(-1, u)); b = project(f.at(1, u));
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+          }
+        }
+      });
+
+      /* The surface: faces coloured by height, painted back to front. */
+      var quads = [];
+      for (j = 0; j < N - 1; j++) {
+        for (i = 0; i < N - 1; i++) {
+          var k = j * N + i;
+          var four = [pts[k], pts[k + 1], pts[k + N + 1], pts[k + N]];
+          var pr = four.map(function (p) { return project(norm(p)); });
+          var zmean = (four[0][2] + four[1][2] + four[2][2] + four[3][2]) / 4;
+          var depth = (pr[0][2] + pr[1][2] + pr[2][2] + pr[3][2]) / 4;
+          quads.push({ p: pr, z: zmean, d: depth });
+        }
+      }
+      quads.sort(function (a, b) { return b.d - a.d; });
+      ctx.lineWidth = 0.7;
+      ctx.strokeStyle = "rgba(20,24,32,.72)";
+      quads.forEach(function (q) {
+        ctx.fillStyle = colour((q.z + 6.6) / (8.2 + 6.6));
+        ctx.beginPath();
+        ctx.moveTo(q.p[0][0], q.p[0][1]);
+        ctx.lineTo(q.p[1][0], q.p[1][1]);
+        ctx.lineTo(q.p[2][0], q.p[2][1]);
+        ctx.lineTo(q.p[3][0], q.p[3][1]);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      });
+
+      /* Numbers on the floor's near edges and the upright one. */
+      ctx.fillStyle = "#5f646c";
+      ctx.font = "12px IBM Plex Sans, sans-serif";
+      ctx.textAlign = "center";
+      [-3, -2, -1, 0, 1, 2, 3].forEach(function (v) {
+        var near = project([v / 3, -1.12, zs[0]]);
+        ctx.fillText(String(v).replace("-", "−"), near[0], near[1] + 14);
+        var side = project([1.12, v / 3, zs[0]]);
+        ctx.fillText(String(v).replace("-", "−"), side[0] + 8, side[1] + 12);
+      });
+      ctx.textAlign = "right";
+      [-5, 0, 5].forEach(function (v) {
+        var pz = (v - (Z0 + Z1) / 2) / (Z1 - Z0) * 1.5;
+        var p = project([-1, 1, pz]);
+        ctx.fillText(String(v).replace("-", "−"), p[0] - 8, p[1] + 4);
+      });
+
+      /* The colour scale. */
+      var bx = W - 58, by = 110, bh = 380;
+      for (var s2 = 0; s2 < bh; s2++) {
+        ctx.fillStyle = colour(1 - s2 / bh);
+        ctx.fillRect(bx, by + s2, 16, 1);
+      }
+      ctx.strokeStyle = "#b8bdc6";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx + 0.5, by + 0.5, 16, bh);
+      ctx.fillStyle = "#5f646c";
+      ctx.textAlign = "left";
+      [-6, -4, -2, 0, 2, 4, 6, 8].forEach(function (v) {
+        var t = (v + 6.6) / (8.2 + 6.6);
+        ctx.fillText(String(v).replace("-", "−"), bx + 22, by + bh - t * bh + 4);
+      });
+
+      document.getElementById("view3d").textContent =
+        "azimuth " + String(az.toFixed(1)).replace("-", "−") + "° · elevation " +
+        String(el.toFixed(1)).replace("-", "−") + "°";
+    }
+
+    /* Drag to turn it, with a mouse or a finger. */
+    var dragging = null;
+    canvas.addEventListener("pointerdown", function (e) {
+      dragging = { x: e.clientX, y: e.clientY, az: az, el: el };
+      canvas.setPointerCapture(e.pointerId);
+      canvas.parentNode.style.cursor = "grabbing";
+    });
+    canvas.addEventListener("pointermove", function (e) {
+      if (!dragging) { return; }
+      az = dragging.az - (e.clientX - dragging.x) * 0.5;
+      el = Math.max(-5, Math.min(89, dragging.el + (e.clientY - dragging.y) * 0.4));
+      draw();
+    });
+    function stop() { dragging = null; canvas.parentNode.style.cursor = "grab"; }
+    canvas.addEventListener("pointerup", stop);
+    canvas.addEventListener("pointercancel", stop);
+    canvas.style.touchAction = "none";
+
+    draw();
+  }
+
+  plot2d();
+  plot3d();
+  fitStages();
+  window.addEventListener("resize", fitStages);
+}());
+</script>
+</body>
+</html>

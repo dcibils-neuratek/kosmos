@@ -190,6 +190,17 @@ cost in the image.
 
 **Next**: 6l, FFmpeg's NEON on AArch64, measured in the overlay; 6j, `.bss`
 as zero pages on demand; then 6k, reading a film ahead.
+
+**MathLab (4k), agreed the same afternoon** - Diego: a Mathcad-like app of
+equations and 2D and 3D graphs that shows the vector units working, "The app
+is called MathLab", and a picture of MATLAB's `surf(peaks)`: "I like these 3d
+plots". **Drawn** as `docs/mathlab.html` (published for him to see on his
+phone), waiting for his changes and the five choices at its end; queued
+after the H.264 and sound work is pushed. **In progress, uncommitted**: 6l's
+first step - `posix_memalign` and `aligned_alloc` in `malloc.c` with
+`tools/test_alloc.c` (FFmpeg's `configure` refuses NEON without an aligned
+allocator), and `tools/ffmpeg_vendor.py` reshaped for three targets
+(aarch64 with NEON, generic C, the Mac's arm64), not yet run through.
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler
