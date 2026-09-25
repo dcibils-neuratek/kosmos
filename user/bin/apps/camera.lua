@@ -96,6 +96,16 @@ end
 local clock = use("/lib/clock.lua")
 local VIDEOS = "/home/videos"
 
+-- A size as a person reads it: KB under a megabyte, where "0.0 MB" read as
+-- nothing kept - the test pattern is five kilobytes a second.
+local function amount(bytes)
+  if bytes < 1000 * 1000 then
+    return ("%d KB"):format((bytes + 999) // 1000)
+  end
+
+  return ("%.1f MB"):format(bytes / 1e6)
+end
+
 local function recording_name()
   local now = clock.now()
   local base = now and ("%04d-%02d-%02d %02d.%02d"):format(now.year,
@@ -124,7 +134,7 @@ local function stop_recording()
   recording = nil
 
   if bytes then
-    notice = { text = ("Saved %s \u{b7} %.1f MB"):format(rec.name, bytes / 1e6),
+    notice = { text = ("Saved %s \u{b7} %s"):format(rec.name, amount(bytes)),
                until_ = sys.ticks() + 6 * counter_hz }
     print(("camera: recorded %d frames, %d bytes to %s"):format(frames, bytes,
                                                                 rec.path))
@@ -292,7 +302,7 @@ local function draw_foot(s)
     if recording then
       local bytes = stream:record_progress() or 0
 
-      b = ("Recording %s \u{b7} %.1f MB"):format(recording.name, bytes / 1e6)
+      b = ("Recording %s \u{b7} %s"):format(recording.name, amount(bytes))
     elseif notice and sys.ticks() < notice.until_ then
       b = notice.text
     end
