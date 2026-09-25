@@ -560,6 +560,26 @@ a file before playing it, and the conformance test found both
 (`testing.md` 18.181): the reorder depth is taken from the standard rather
 than guessed, and cropping is to the pixel rather than to an aligned column.
 
+**The sound came through the same door**, with one decoder named in the
+script and a kit beside the first: `/kits/aac`, one frame in and sixteen-bit
+PCM out, shaped like `/kits/mp3`'s so the film's sound treats them alike.
+More than two channels are mixed to two inside the decoder rather than
+after, because only the decoder knows which channel is which: FFmpeg hands
+them back in its own order, and a stream with a program config element
+names an order of its own.
+
+**And the film kit took the clock, not the loop.** It had said it owned
+neither, and that stopped being true the day a film had sound: time is the
+sound's - frames that came out of the speaker - and a picture timed by
+anything else drifts from it, and only the kit hears the sound. So a film
+has `play`, `pause`, `seek`, `position` and `tick`; the application still
+runs its own loop, calls `tick` on each pass so the sound's ring stays
+full, and asks `position` what moment to draw. A film without sound, or a
+machine without a device, keeps time by the counter behind the same
+methods. A film's ring is 32 periods, 186 ms, where Music's is 8 - the
+choice `audio.lua` already describes for a video player, which would far
+rather be late than skip.
+
 ### Where the line really falls: structure or a loop over bytes
 
 The rule at the top of this section answers "may this be C". It does not

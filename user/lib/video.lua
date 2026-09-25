@@ -20,14 +20,23 @@
 -- against this file changed - not one call site. That is the same promise
 -- `use("/kits/pdf")` makes about a scanner that moved from Lua to C.
 --
--- What it does *not* do, deliberately, is own the clock. An application
--- has a loop already - it is answering the pointer and the keyboard in it -
--- and a kit that took the loop away would have to give back a way to do
--- everything the application was doing in it. So the caller says what
--- moment it wants and this answers with the frame for that moment, which
--- is also exactly what a seek is.
+-- **It owns the clock and not the loop.** An application has a loop
+-- already - it is answering the pointer and the keyboard in it - and a kit
+-- that took the loop away would have to give back a way to do everything
+-- the application was doing in it. So the application calls `film:tick()`
+-- on each pass, asks `film:position()` what moment it is, and draws the
+-- frame for that moment, which is also exactly what a seek is.
+--
+-- This paragraph said it did not own the clock either, and that stopped
+-- being true the day a film had sound: **time is the sound's** - frames
+-- that came out of the speaker, as `media.lua` has it for Music - and a
+-- picture timed by anything else drifts away from it. Only the kit hears
+-- the sound, so only the kit can keep the time. A film without sound, or
+-- on a machine without a device, keeps it by the counter instead, and the
+-- caller cannot tell which.
 --
 local mp4 = use("/lib/mp4.lua")
+local audio = use("/lib/audio.lua")
 
 local video = {}
 
@@ -176,6 +185,318 @@ local function no_decoder(codec, named)
   end
 
   return "this film is " .. tostring(codec) .. ", which this system cannot decode"
+end
+
+--------------------------------------------------------------------------
+-- **The sound**: a film's audio track, decoded and fed to the audio
+-- server - AAC through `/kits/aac`, MP3 through `/kits/mp3` - and the
+-- clock the picture follows.
+--------------------------------------------------------------------------
+
+--
+-- How much of the file to read at a time for the sound: a run of samples
+-- that sit next to each other, up to this. An MP4 keeps a film's sound in
+-- chunks between the picture's, a second or so each, so one read is a
+-- second of sound rather than one frame of it - a round trip to the disk
+-- server costs more than decoding the frame (`roadmap.md` 6k).
+--
+local SOUND_READ = 256 * 1024
+
+--
+-- **How deep a film's ring is: 32 periods, 186 ms** - where Music's is the
+-- default 8. `audio.lua` says why a video player is the other end of that
+-- choice: a film would far rather be 200 ms behind than skip, because a gap
+-- desynchronises everything after it, and the picture follows what is
+-- heard whatever the delay. And a film's window goes away for as long as a
+-- picture takes to decode - up to 40 ms of H.264 - which a 46 ms ring does
+-- not survive with the device's own queue on top.
+--
+local SOUND_PERIODS = 32
+
+--
+-- How many periods one tick may hand over: the whole ring, so that a pass
+-- after a long decode fills it again at once; and a ceiling, so that a
+-- server that wrongly always took would make the sound run ahead rather
+-- than taking the window with it (`media.lua`'s reasoning).
+--
+local FEED_MAX = SOUND_PERIODS
+
+local voice = {}
+voice.__index = voice
+
+--
+-- The kit for a track, and a decoder from it: `decode` is AAC's from an
+-- address, and MP3's from a string, and this is the one place that knows.
+--
+local function sound_decoder(track)
+  local object = track.object or 0
+
+  if track.codec == "mp4a" and object == 0x40 then
+    local ok, kit = pcall(use, "/kits/aac")
+
+    if not ok or type(kit) ~= "table" then
+      return nil, "this film's sound is AAC, and this system was built "
+                  .. "without its AAC decoder (FULL=0)"
+    end
+
+    if not track.config then
+      return nil, "this film's sound does not describe itself (no config)"
+    end
+
+    local d, why = kit.decoder(track.config, track.rate or 0,
+                               track.channels or 0)
+
+    if not d then return nil, tostring(why) end
+
+    return function(at, n)
+      return d:decode(at, n)
+    end, function() d:reset() end, function() d:close() end
+  end
+
+  if track.codec == "mp4a" and (object == 0x6b or object == 0x69) then
+    local mp3 = use("/kits/mp3")
+    local d = mp3.decoder()
+
+    return function(_, n, bytes)
+      local pcm, _, rate, channels = d:decode(bytes, 1 << 20)
+
+      return pcm, rate, channels
+    end, function() d:reset() end, function() end
+  end
+
+  return nil, "this film's sound is " .. tostring(track.codec)
+              .. (object ~= 0 and (" (object 0x%02x)"):format(object) or "")
+              .. ", which this system cannot play"
+end
+
+--
+-- A film's sound, ready to start: its decoder, a read buffer of its own,
+-- and nothing playing yet. Nil and why when it cannot be heard.
+--
+local function open_voice(path, track, name)
+  local fmt = audio.format()
+
+  if not fmt or (fmt.period or 0) == 0 then
+    return nil, "this machine has no sound device"
+  end
+
+  local decode, reset, close = sound_decoder(track)
+
+  if not decode then return nil, reset end
+
+  local page = sys.memory(SOUND_READ // 4096)
+
+  if not page then
+    close()
+    return nil, "no memory for the sound's read buffer"
+  end
+
+  return setmetatable({
+    path = path, track = track, name = name, fmt = fmt, page = page,
+    mapped = sys.memory_map(page),
+    decode = decode, reset_decoder = reset, close_decoder = close,
+    samples = track.samples or {}, scale = track.timescale or 1,
+    next = 1, run_first = 0, run_last = -1, run_at = 0,
+    decoded = "", pending = "", phase = 0.0, rate = 0, channels = 0,
+    base = 0, gain = nil, frames_out = 0, frames_in = 0,
+  }, voice)
+end
+
+--
+-- Start hearing it at `at` seconds: a stream of its own, and the sample
+-- that holds that moment. **A new stream for every start**, as Music
+-- seeks: nothing can drop what a stream has queued - `audioproto.h` has no
+-- flush - and the ring and the device hold about 70 ms of the old place.
+--
+function voice:start(at)
+  local samples, ticks = self.samples, at * self.scale
+  local lo, hi = 1, #samples
+
+  -- The last sample that starts at or before `at`: the frames' times only
+  -- rise, so halving finds it.
+  while lo < hi do
+    local mid = (lo + hi + 1) // 2
+
+    if (samples[mid].pts or 0) <= ticks then lo = mid else hi = mid - 1 end
+  end
+
+  if self.stream then self.stream:close() end
+
+  local stream, why = audio.open(self.name, SOUND_PERIODS)
+
+  self.stream = stream
+
+  if not stream then return false, tostring(why) end
+
+  if self.gain then audio.set{ stream = stream.id, gain = self.gain } end
+
+  self.reset_decoder()
+  self.next = (#samples > 0) and lo or 1
+  self.base = (#samples > 0) and ((samples[lo].pts or 0) / self.scale) or 0
+  self.run_first, self.run_last = 0, -1
+  self.decoded, self.pending, self.phase = "", "", 0.0
+  self.fed_all, self.frames_out, self.frames_in = false, 0, 0
+  return true
+end
+
+--
+-- Sample `i` of the track, where the decoder can reach it: the address
+-- inside the read buffer and its length, reading the run of samples that
+-- sit next to it in the file when it is not there already.
+--
+function voice:sample_at(i)
+  local samples = self.samples
+
+  if i < self.run_first or i > self.run_last then
+    local first = samples[i]
+    local last, bytes = i, first.size
+
+    while samples[last + 1]
+          and samples[last + 1].at == samples[last].at + samples[last].size
+          and bytes + samples[last + 1].size <= SOUND_READ do
+      last = last + 1
+      bytes = bytes + samples[last].size
+    end
+
+    if bytes > SOUND_READ then return nil, "a sound frame larger than the read buffer" end
+
+    local got = fs.read_into(self.path, self.page, first.at, bytes)
+
+    if not got or got < bytes then return nil, "the film stopped being readable" end
+
+    self.run_first, self.run_last, self.run_at = i, last, first.at
+  end
+
+  local s = samples[i]
+
+  return self.mapped + (s.at - self.run_at), s.size, s.at - self.run_at
+end
+
+--
+-- Hand over what the server will take, and not a period more - `media.lua`'s
+-- `tick`, over a film's frames instead of a file's bytes.
+--
+function voice:feed()
+  local stream, fmt = self.stream, self.fmt
+
+  if not stream then return 0 end
+
+  local fed = 0
+
+  for _ = 1, FEED_MAX do
+    if #self.pending == 0 then
+      -- Enough decoded to make a few periods of, or the end.
+      while #self.decoded < fmt.period * 4 and self.next <= #self.samples do
+        local at, n, offset = self:sample_at(self.next)
+
+        if not at then
+          self.error = tostring(n)
+          self.next = #self.samples + 1
+          break
+        end
+
+        local bytes = nil
+
+        if self.track.object ~= 0x40 then
+          bytes = sys.region_read(self.page, offset, n)
+        end
+
+        local pcm, rate, channels = self.decode(at, n, bytes)
+
+        self.next = self.next + 1
+
+        --
+        -- A frame that will not decode is passed over, as a damaged
+        -- picture is: a click in the sound, not the end of it.
+        --
+        if pcm and #pcm > 0 then
+          self.decoded = self.decoded .. pcm
+          self.rate, self.channels = rate, channels
+          self.frames_in = self.frames_in + #pcm // (2 * channels)
+        elseif not pcm then
+          self.error = tostring(rate)
+        end
+      end
+
+      if self.next > #self.samples and #self.decoded < 4 then
+        self.fed_all = true
+        break
+      end
+
+      --
+      -- The end of the track is the end of the input, so its final frame
+      -- comes out rather than waiting for a neighbour (`sys.pcm`'s `last`)
+      -- - and one frame is then enough to convert, where two are needed
+      -- while there is more to come. Both halves were missing: the last
+      -- sample of a film never played (`testing.md` 18.185).
+      --
+      local last = self.next > #self.samples
+
+      if self.rate == 0
+         or #self.decoded < self.channels * 2 * (last and 1 or 2) then
+        break
+      end
+
+      local pcm, used
+      pcm, used, self.phase = sys.pcm(self.decoded, self.rate, self.channels,
+                                      16, self.phase, fmt.period * 4, last)
+
+      if used == 0 or #pcm == 0 then
+        if self.next > #self.samples then
+          self.fed_all = true
+          self.decoded = ""
+        end
+        break
+      end
+
+      self.decoded = self.decoded:sub(used + 1)
+      self.pending = pcm
+      self.frames_out = self.frames_out + #pcm // 4
+    end
+
+    local took, why = stream:play(self.pending:sub(1, fmt.period))
+
+    if not took then
+      if why ~= "full" then self.error = tostring(why) end
+      break
+    end
+
+    self.pending = self.pending:sub(fmt.period + 1)
+    fed = fed + 1
+  end
+
+  return fed
+end
+
+-- Seconds heard: where this start began, and the frames out of the speaker
+-- since, at the device's rate - which `sys.pcm` has converted to.
+function voice:position()
+  if not self.stream then return self.base end
+
+  return self.base + self.stream:position() / self.fmt.rate
+end
+
+-- All of it handed over, and all of it played.
+function voice:done()
+  return self.fed_all and #self.pending == 0
+         and (not self.stream or self.stream:queued() == 0)
+end
+
+function voice:volume(level)
+  self.gain = math.floor(math.max(0, math.min(1, level)) * 256 + 0.5)
+
+  if self.stream then
+    return audio.set{ stream = self.stream.id, gain = self.gain }
+  end
+
+  return true
+end
+
+function voice:close()
+  if self.stream then self.stream:close() self.stream = nil end
+  if self.page then sys.release(self.page) self.page = nil end
+
+  self.close_decoder()
 end
 
 --
@@ -395,6 +716,13 @@ function video.open(path, options)
       track = sound,
     }
   end
+
+  --
+  -- **The clock**: stopped at the start, until `play`. `at` is where it
+  -- was when it last started or stopped, and `since` the counter then.
+  --
+  f.clock = { playing = false, at = 0, since = sys.ticks() }
+  f.name = path:match("([^/]+)$") or path
 
   return f
 end
@@ -826,7 +1154,150 @@ function film:fit(w, h)
   return (w - dw) // 2, (h - dh) // 2, dw, dh
 end
 
+--------------------------------------------------------------------------
+-- **Playing, and the time.**
+--------------------------------------------------------------------------
+
+--
+-- The sound, on first need: opened when the film first plays rather than
+-- when it is opened, so a program that only wants frames - a thumbnail, a
+-- test - never holds a stream. Why it cannot be heard is kept, for
+-- `stats` and the overlay, and the film plays by the counter instead.
+--
+function film:voice()
+  if self.voice_state == nil then
+    if not self.sound then
+      self.voice_state = false
+      self.silent = "this film has no sound"
+    else
+      local v, why = open_voice(self.path, self.sound.track, self.name)
+
+      self.voice_state = v or false
+      self.silent = not v and tostring(why) or nil
+      if v and self.gain_level then v:volume(self.gain_level) end
+    end
+  end
+
+  return self.voice_state or nil
+end
+
+--
+-- Seconds into the film, as it is heard: the sound's clock while there is
+-- sound to hear, and the counter's otherwise - before a film has sound,
+-- after its sound has run out, and on a machine with none.
+--
+function film:position()
+  local c = self.clock
+
+  if not c.playing then return c.at end
+
+  local v = self.voice_state
+
+  if v and v.stream and not c.by_counter then
+    if v:done() then
+      -- The sound has finished and the picture has not: carry on by the
+      -- counter from where the sound left off.
+      c.at, c.since, c.by_counter = v:position(), sys.ticks(), true
+    else
+      return v:position()
+    end
+  end
+
+  return c.at + (sys.ticks() - c.since) / self.hz
+end
+
+function film:playing()
+  return self.clock.playing
+end
+
+--
+-- From `at` seconds, or from where it stopped. Resuming does not start the
+-- sound again: it goes on from what it had queued, which the device has
+-- played out while it was paused, and the clock goes on from what it heard.
+--
+function film:play(at)
+  local c = self.clock
+
+  if at then
+    self:seek(at)
+  elseif not c.playing and not self.started then
+    self:seek(c.at)
+  end
+
+  c.since = sys.ticks()
+  c.playing = true
+  return true
+end
+
+-- Stopped where it is. What the device holds, about 70 ms, plays out.
+function film:pause()
+  local c = self.clock
+
+  c.at = self:position()
+  c.playing = false
+end
+
+--
+-- Somewhere else in the film. The sound starts again from the frame that
+-- holds that moment, and the picture follows it.
+--
+function film:seek(at)
+  local c = self.clock
+
+  at = math.max(0, math.min(at or 0, self.duration))
+  c.at, c.since, c.by_counter = at, sys.ticks(), false
+  self.started = true
+
+  local v = self:voice()
+
+  if v then
+    local ok, why = v:start(at)
+
+    if not ok then
+      v:close()
+      self.voice_state, self.silent = false, why
+    else
+      -- What is heard starts at the frame that holds `at`, a few
+      -- milliseconds before it: the picture waits for the sound.
+      c.at = v.base
+    end
+  end
+end
+
+--
+-- The sound fed, on every pass of the caller's loop. A film that is not
+-- playing, or has no sound, costs nothing here.
+--
+function film:tick()
+  local v = self.voice_state
+
+  if not v or not self.clock.playing then return 0 end
+
+  return v:feed()
+end
+
+-- Loudness, 0 to 1, kept across a seek and applied once there is sound.
+function film:volume(level)
+  self.gain_level = math.max(0, math.min(1, level))
+
+  local v = self.voice_state
+
+  if v then return v:volume(self.gain_level) end
+
+  return true
+end
+
+-- Whether it can be heard, and why not when it cannot.
+function film:audible()
+  self:voice()
+
+  return self.voice_state and true or false, self.silent
+end
+
 function film:close()
+  if self.voice_state then self.voice_state:close() end
+  self.voice_state = false
+
   if self.picture then self.picture:free() self.picture = nil end
   if self.spare then self.spare:free() self.spare = nil end
   if self.stream then self.stream:close() self.stream = nil end

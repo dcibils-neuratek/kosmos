@@ -1,6 +1,6 @@
 # musl's maths, vendored
 
-Forty-one files from **musl 1.2.5**, unmodified, under musl's own MIT
+Forty-five files from **musl 1.2.5**, unmodified, under musl's own MIT
 licence — the text is in `COPYRIGHT` beside them, exactly as shipped.
 
     source   https://musl.libc.org/releases/musl-1.2.5.tar.gz
@@ -67,7 +67,7 @@ build puts the architecture's directory before the generic one — so AArch64
 gets its own and x86-64 falls through to the empty generic one, which is
 what musl does.
 
-## And nine more, for FFmpeg (24 September 2026)
+## And thirteen more, for FFmpeg (24 and 25 September 2026)
 
 FFmpeg's H.264 decoder links its option system, and its option system an
 expression evaluator that calls `hypot`, `sinh`, `cosh`, `tanh`, `round`,
@@ -76,9 +76,12 @@ nothing had ever defined. So from the same tarball, checked against the
 same sum, `hypot.c`, `sinh.c`, `cosh.c`, `tanh.c`, `round.c`, `rint.c`,
 `copysign.c`, and the two they call, `expm1.c` and `__expo2.c` - the
 closure again, by undefined symbols: the nine need only `exp` and `sqrt`,
-which were here. Forty-one files.
+which were here.
 
-`math.h` still declares a few functions no file defines - `sqrtf`,
-`floorf`, `fabsf`, `scalbnf`, `copysignf`, `fmin`, `fmax`, `log1p` - and a
-call to one fails at the link with its name, which is where the next of
-these will come from.
+Its AAC decoder the next day asked for three more of the same kind -
+declared, never defined - `cbrt.c`, `fabsf.c` and `sqrtf.c`, and
+`__math_invalidf.c`, which `sqrtf` calls. Forty-five files.
+
+`math.h` still declares a few functions no file defines - `floorf`,
+`scalbnf`, `copysignf`, `fmin`, `fmax`, `log1p` - and a call to one fails at
+the link with its name, which is where the next of these will come from.

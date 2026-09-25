@@ -157,7 +157,39 @@ and in the roadmap: every process now carries FFmpeg's 812 KB of `.bss`
 (6j), and a film reads each sample with its own round trip (6k).
 The gate: 35 suites in 6:32, after one that failed only on `LICENSE` not
 yet naming the new tree - which is the licence test doing its job.
-**Next in 4e**: AAC, so a film has sound; then speed.
+
+## 25 September: films have sound
+
+Diego: "Go ahead with audio", then from away from the computer, "So go
+ahead and continue building", and a question - "are you using simd and
+vector instructions where possible?" (not yet in FFmpeg; `roadmap.md` 6l,
+the next speed step, AArch64 first, x86 needs `nasm` and is his call).
+
+Committed, not pushed: FFmpeg's AAC decoder in the
+same closure (123 objects) as `/kits/aac`; the film kit owns the clock -
+`play`, `pause`, `seek`, `position`, `tick`, `volume` - with the sound's
+time the picture's; the Video app and `play.lua` on it, and the app's volume
+items live. Held on the Mac against FFmpeg's PCM for twelve AAC streams and
+the ITU mix for four (18.184), and in the guest on both boards with the
+film's sound recorded by QEMU - within one step of the reference, the clock
+the sound's, paused and sought (18.185, new suites `arm-film`, `x86-film`).
+Found on the way: every song and film ended one sample short (`sys.pcm`'s
+`last`); the Video app's pause showed the frame of the last seek; ER AAC-LD
+needs the sample entry's rate. Diego's two clips play with sound under QEMU.
+
+The gate: 35 suites passed; the host suite passed every step but its one
+Rosetta binary (`test_yuv_x86`), because **Rosetta hung on this Mac** -
+even `arch -x86_64 /usr/bin/true` sat in an uninterruptible wait - which a
+restart clears and which needs nothing of ours; `x86-sound`, which runs
+after the host suite, passed alone. A `make qemu` started the day before
+was still running, 17 hours in, and was left alone as Diego's.
+
+The image's writable half is 2.79 MB now, every process's copy of FFmpeg's
+empty tables (6j, about 50 MB across the desktop) - now the largest memory
+cost in the image.
+
+**Next**: 6l, FFmpeg's NEON on AArch64, measured in the overlay; 6j, `.bss`
+as zero pages on demand; then 6k, reading a film ahead.
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

@@ -321,7 +321,7 @@ static void one_stream(const char *name, const char *file, const char *about)
 
     if (data == NULL) {
         snprintf(what, sizeof what, "%s: %s is not there - "
-                 "tools/fetch_h264_conformance.py fetches it", name, path);
+                 "tools/fetch_conformance.py h264 fetches it", name, path);
         check(0, what);
         return;
     }

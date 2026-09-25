@@ -857,6 +857,25 @@ processors, and still what follows USB:
    same script and one more decoder named in it - **and speed**: FFmpeg's
    NEON assembly for AArch64, threads when `docs/threads.md` allows them,
    and 6k.
+
+   **THE SOUND PLAYS - 25 September.** Diego: "Go ahead with audio", then,
+   away from the computer, "So go ahead and continue building". FFmpeg's
+   AAC decoder joined the same vendored closure (123 objects), as the AAC
+   Kit (`use("/kits/aac")`); a film with MP3 sound plays through
+   `/kits/mp3`. **The film keeps the time and it is the sound's**: `play`,
+   `pause`, `seek`, `position`, `tick` and `volume` on the film, the Video
+   app and `play.lua` moved onto them, and the app's volume items work. On
+   the way the app's pause was found showing the frame of the last seek
+   rather than the one on screen, and every song and film was found never
+   to play its last sample (`sys.pcm`'s `last`, 18.185). **Held**: twelve AAC
+   conformance streams on the Mac against FFmpeg's PCM, and four made
+   stereo against the ITU mix (18.184); in the guest on both boards, a
+   film's sound heard within one step of FFmpeg's reference, its clock the
+   sound's, paused and sought (18.185). Diego's two clips play with sound
+   under QEMU: H.264 and AAC at 29.9 frames a second with 2 of 727 dropped,
+   Motion JPEG and MP3 with 20 of 300.
+   **What is left of 4e is speed**: 6l, 6k, and threads when
+   `docs/threads.md` allows them.
 4f. **AGREED on 19 September - the Game Kit: our own, for games and
    everything else that draws its own window.** It began as "vendor in
    love2d ... as we will be doing some apps that require love2d lua framework
@@ -1690,6 +1709,20 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6l. **ASKED on 25 September - SIMD wherever it pays.** Diego: "are you
+   using simd and vector instructions where possible?" Not yet where it
+   matters most: Kosmos's own pixel loops are NEON and SSE2 (`yuv.c`,
+   18.180), but FFmpeg is built with `--disable-asm`, so H.264's motion
+   compensation, transforms, deblocking and prediction and AAC's filterbanks
+   and SBR run as C, vectorised only as far as GCC manages alone at `-O3`.
+   FFmpeg ships hand-written NEON for exactly those. **AArch64 first**: its
+   `.S` files assemble with this toolchain, `tools/ffmpeg_vendor.py`
+   configures with `--enable-neon` and takes them into the closure, and
+   `test_h264` and `test_aac` say whether a single sample moved - measured
+   in the Video app's overlay before and after. **x86-64 is Diego's call**:
+   FFmpeg's x86 SIMD is written for `nasm`, an assembler this project does
+   not have, so it means adding one to the toolchain or leaving x86 on C.
+
 6k. **FOUND on 24 September - a film reads each sample with a round trip
    of its own.** The Video app's overlay on Diego's clip under QEMU: 5.3 ms
    to read a frame and 5.0 ms to decode it. `video.lua` asks the disk
@@ -1700,14 +1733,16 @@ processors, and still what follows USB:
 
 6j. **FOUND on 24 September - every process pays for FFmpeg's empty
    tables.** The userland image's writable half went from 0.80 to 1.57 MB
-   with the H.264 Kit: `.bss` is inside the image here, and a process's
-   writable half is a copy of it (`process_create`), so every process on
-   the desktop - about twenty-five - carries 812 KB of zeros, 693 KB of
-   them one table (`film_grain_db`, `h274.c`) that is filled only for a
-   film with film grain. About 20 MB. **The fix is the kernel's, not
-   FFmpeg's**: `.bss` as zero pages on demand, which would make every
-   port's tables - Doom's too - free until touched. Not built; wanted
-   before the next port that brings tables.
+   with the H.264 Kit, and to **2.79 MB with AAC** (25 September): `.bss`
+   is inside the image here, and a process's writable half is a copy of it
+   (`process_create`), so every process on the desktop - about twenty-five
+   - carries 2 MB of zeros, tables the two decoders fill on first use, 693
+   KB of them one table (`film_grain_db`, `h274.c`) that is filled only for
+   a film with film grain. **About 50 MB**, nearly all of it in processes
+   that will never play a film. **The fix is the kernel's, not FFmpeg's**:
+   `.bss` as zero pages on demand, which would make every port's tables -
+   Doom's too - free until touched. Not built; **now the largest memory
+   cost in the image**, and worth doing before the next port.
 
 6i. **DONE on 24 September (0.10.160) - the drivers' band.** Diego: "Do 6i yes". The USB
    driver runs at NORMAL and the desktop at DISPLAY, so a busy desktop holds

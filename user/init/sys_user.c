@@ -815,11 +815,19 @@ static int l_pcm_into(lua_State *L)
 }
 
 /*
- * `sys.pcm(bytes, rate, channels, bits, phase, max_out)` - somebody else's
- * samples, in this machine's format.
+ * `sys.pcm(bytes, rate, channels, bits, phase, max_out, last)` - somebody
+ * else's samples, in this machine's format.
  *
  * Returns the converted bytes, how many input bytes were used, and the
  * fractional phase to hand back on the next call.
+ *
+ * `last` says these bytes are the end of the input. Every frame but the
+ * final one is interpolated towards the frame after it, so without this the
+ * final frame is held back for a next piece that never comes - and the last
+ * sample of every song and every film was never played. `run_film.py`
+ * found it: x86's recording carried on past the end of a film's sound, and
+ * the film's final sample was a zero there. With `last`, the final frame is
+ * its own neighbour, comes out as it is, and is counted as used.
  *
  *--------------------------------------------------------------------------
  * Why it takes a phase, and why that is not an implementation detail.
@@ -856,6 +864,7 @@ static int l_pcm(lua_State *L)
     long bits = (long)luaL_checkinteger(L, 4);
     double phase = (double)luaL_optnumber(L, 5, 0.0);
     long max_out = (long)luaL_optinteger(L, 6, HAL_SND_PERIOD_BYTES_MAX);
+    int last = lua_toboolean(L, 7);
 
     static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
 
@@ -876,7 +885,7 @@ static int l_pcm(lua_State *L)
 
     in_frames = (long)(len / (size_t)in_frame_bytes);
 
-    if (in_frames < 2) {
+    if (in_frames < (last ? 1 : 2)) {
         lua_pushlstring(L, "", 0);
         lua_pushinteger(L, 0);
         lua_pushnumber(L, (lua_Number)phase);
@@ -893,15 +902,17 @@ static int l_pcm(lua_State *L)
 
         /* The last frame has no neighbour to interpolate towards, so it is
          * where this piece stops - and the caller sends the rest next time
-         * with the phase that got us here. */
-        if (at + 1 >= in_frames) {
+         * with the phase that got us here. Unless there is no next time:
+         * then the final frame is its own neighbour (`last`, above). */
+        if (at + 1 >= in_frames && !(last && at + 1 == in_frames)) {
             break;
         }
 
         if (bits == 8) {
             /* Unsigned, centred on 128, which is what an 8-bit WAV is. */
             const unsigned char *a = in + at * in_frame_bytes;
-            const unsigned char *b = a + in_frame_bytes;
+            const unsigned char *b = (at + 1 < in_frames)
+                                     ? a + in_frame_bytes : a;
 
             l0 = ((int32_t)a[0] - 128) << 8;
             r0 = (channels == 2) ? (((int32_t)a[1] - 128) << 8) : l0;
@@ -909,7 +920,8 @@ static int l_pcm(lua_State *L)
             r1 = (channels == 2) ? (((int32_t)b[1] - 128) << 8) : l1;
         } else {
             const unsigned char *a = in + at * in_frame_bytes;
-            const unsigned char *b = a + in_frame_bytes;
+            const unsigned char *b = (at + 1 < in_frames)
+                                     ? a + in_frame_bytes : a;
 
             /* Little endian, read a byte at a time: the input is a Lua
              * string and nothing promises it is two-byte aligned. */
@@ -937,8 +949,10 @@ static int l_pcm(lua_State *L)
     {
         long consumed = (long)phase;
 
-        if (consumed > in_frames - 1) {
-            consumed = in_frames - 1;
+        /* All of it at the end; otherwise the frame the phase sits in stays
+         * for the next piece to interpolate from. */
+        if (consumed > in_frames - (last ? 0 : 1)) {
+            consumed = in_frames - (last ? 0 : 1);
         }
 
         if (consumed < 0) {
@@ -2667,6 +2681,7 @@ void kosmos_snes_kit(lua_State *L);
 #endif
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
+void kosmos_aac_kit(lua_State *L);
 #endif
 
 static const struct {
@@ -2701,8 +2716,9 @@ static const struct {
     { "snes",     kosmos_snes_kit },
 #endif
 #ifdef KOSMOS_FFMPEG
-    /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoder. */
+    /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
     { "h264",     kosmos_h264_kit },
+    { "aac",      kosmos_aac_kit },
 #endif
     { NULL, NULL }
 };

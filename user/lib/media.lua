@@ -244,11 +244,24 @@ function player:tick()
         self.samples, self.carry = self.carry, ""
       end
 
-      if #self.samples < info.channels * 2 * 2 then break end
+      --
+      -- The end of the file is the end of the input: everything read, and
+      -- nothing left to decode. Said to `sys.pcm`, so the final frame is
+      -- played rather than held for a neighbour that never comes - and one
+      -- frame is then enough to convert, where two are needed while there
+      -- is more to come. The last sample of every song went unplayed until
+      -- `run_film.py` heard a film's go missing.
+      --
+      local last = self.at >= self.last
+                   and (not self.decoder or #self.carry < self.info.frame * 2)
+      local frame_bytes = info.channels * (info.bits // 8)
+
+      if #self.samples < frame_bytes * (last and 1 or 2) then break end
 
       local pcm, used
       pcm, used, self.phase = sys.pcm(self.samples, info.rate, info.channels,
-                                      info.bits, self.phase, fmt.period * 4)
+                                      info.bits, self.phase, fmt.period * 4,
+                                      last)
 
       if used == 0 or #pcm == 0 then break end
 

@@ -69,16 +69,21 @@ local win = ui.window { title = "play", w = film.width, h = film.height,
 
 if not win or not win:surface() then print("play: no window") return end
 
--- The counter, and its rate read three lines from the sum that uses it,
--- which is the rule this system has about clocks (`CLAUDE.md`).
-local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
-local began = sys.ticks()
+--
+-- **The film keeps the time.** It is the sound's when there is sound - so
+-- the picture and what is heard cannot drift apart - and the counter's when
+-- there is not; this program asks, and feeds the sound on every pass.
+--
+film:play(0)
+
 local showing = nil
 
 while win.running do
-  local when = (sys.ticks() - began) / hz
+  film:tick()
 
-  if when >= film.duration then began, when = sys.ticks(), 0 end
+  local when = film:position()
+
+  if when >= film.duration then film:seek(0) when = 0 end
 
   local frame = film:index_at(when)
   local drew = false
@@ -110,6 +115,9 @@ while win.running do
       -- The window manager's own chrome answered it.
     elseif ev.type == "close" then
       win:close()
+    elseif ev.type == "rawkey" and ev.down and ev.code == 57 then
+      -- Space, as every player has it.
+      if film:playing() then film:pause() else film:play() end
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press" then
       -- The kit's badge, if the click was on it; otherwise this film has
       -- nothing to say about where it was pressed.

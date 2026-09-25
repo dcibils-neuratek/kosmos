@@ -8,7 +8,7 @@
 #
 # They are the ITU-T/JVT conformance bitstreams (H.264.1), which FFmpeg
 # serves for its FATE suite, and 11 MB between them - too much to carry in
-# the tree, so `tools/fetch_h264_conformance.py` puts them in
+# the tree, so `tools/fetch_conformance.py h264` puts them in
 # `build/downloads/h264-conformance/` and holds each to its sum. The sums
 # are of the files as fetched on 24 September 2026; the server publishes no
 # signature to check them against.

@@ -19,11 +19,11 @@
 -- behind that is the kit's business and not this program's (`CLAUDE.md`,
 -- on kits). When H.264 arrives, this file does not change.
 --
--- **What is not here yet, and is not pretended at**: sound. The kit reads
--- a film's audio track and can say what it is, and cannot yet play it - so
--- the volume items are in the Play menu, greyed, the way the Drives app
--- shows `Format...`. An item that is missing teaches nothing; an item that
--- is there and refuses says "this is coming, and it is not ready".
+-- **The sound plays** (`roadmap.md` 4e): AAC and MP3, and the picture
+-- follows what is heard - the kit keeps the time. The volume items in the
+-- Play menu work; where a film cannot be heard they stay, greyed, saying
+-- why, the way the Drives app shows `Format...`: an item that is missing
+-- teaches nothing, and one that refuses says what it would do.
 --
 local ui = use("/lib/ui.lua")
 local media = use("/lib/media.lua")
@@ -217,18 +217,21 @@ local W, H = scale_w, scale_h + BAR_H
 
 if full then W, H = screen_w, screen_h end
 
-local playing = true
-local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
-local began = sys.ticks() - math.floor(start_at * hz)
-local paused_at = start_at
+--
+-- **The film keeps the time**, and it is the sound's: frames heard, or the
+-- counter when there is no sound to hear (`/lib/video.lua`). This file
+-- kept its own clock once, from the counter, and it had a fault the kit's
+-- does not: pausing showed the frame of the last seek rather than the one
+-- on screen, because the moment it paused at was never written down.
+--
+film:play(start_at)
 
 local function now_at()
-  if not playing then return paused_at end
+  local when = film:position()
 
-  local when = (sys.ticks() - began) / hz
-
+  -- At the end it goes round again, as it always has.
   if when >= film.duration then
-    began = sys.ticks()
+    film:seek(0)
     return 0
   end
 
@@ -236,11 +239,11 @@ local function now_at()
 end
 
 local function seek_to(when)
-  if when < 0 then when = 0 end
-  if when > film.duration then when = film.duration end
+  film:seek(when)
+end
 
-  paused_at = when
-  began = sys.ticks() - math.floor(when * hz)
+local function play_or_pause()
+  if film:playing() then film:pause() else film:play() end
 end
 
 local function clock(seconds)
@@ -288,11 +291,26 @@ local function open_another()
 end
 
 --
--- **The volume items are here and refuse.** The kit describes a film's
--- sound - `film.sound` says MP3, 44100, stereo - and does not play it yet,
--- so these say what is coming without pretending it has come.
+-- **The volume**, a tenth at a time, and mute - which remembers the level
+-- it came from. Refused, and saying why, when the film cannot be heard:
+-- it has no sound, the machine has no device, or its sound is a codec
+-- this system does not play.
 --
-local quiet = { disabled = true }
+local audible, silent = film:audible()
+local level, muted = 1.0, false
+
+local function set_volume(to)
+  level = math.max(0, math.min(1, to))
+  muted = false
+  film:volume(level)
+end
+
+local function toggle_mute()
+  muted = not muted
+  film:volume(muted and 0 or level)
+end
+
+local quiet_why = silent and (" (" .. silent .. ")") or ""
 
 --
 -- **Not `full and nil or {...}`.** In Lua that is always the table: `and`
@@ -318,15 +336,19 @@ if not full then
       { text = "Full Screen", on_choose = function() again("full") end },
     } },
     { title = "Play", items = {
-      { text = "Play or Pause",
-        on_choose = function() playing = not playing
-                                if playing then seek_to(paused_at) end end },
+      { text = "Play or Pause", on_choose = function() play_or_pause() end },
       { text = "Back 10 s", on_choose = function() seek_to(now_at() - 10) end },
       { text = "On 10 s",   on_choose = function() seek_to(now_at() + 10) end },
       { separator = true },
-      { text = "Louder (no sound yet)", disabled = true },
-      { text = "Quieter (no sound yet)", disabled = true },
-      { text = "Mute (no sound yet)", disabled = true },
+      { text = "Louder" .. (audible and "" or quiet_why),
+        disabled = not audible or nil,
+        on_choose = function() set_volume(level + 0.1) end },
+      { text = "Quieter" .. (audible and "" or quiet_why),
+        disabled = not audible or nil,
+        on_choose = function() set_volume(level - 0.1) end },
+      { text = "Mute" .. (audible and "" or quiet_why),
+        disabled = not audible or nil,
+        on_choose = function() toggle_mute() end },
     } },
   }
 end
@@ -342,9 +364,12 @@ if not win or not win:surface() then
   return
 end
 
-print(("video: %s, %s, %dx%d at %dx%d, %.1f a second, sound %s")
+print(("video: %s, %s, %dx%d at %dx%d, %.1f a second, sound %s%s")
       :format(name, film.codec, film.width, film.height, scale_w, scale_h,
-              film.fps, film.sound and film.sound.codec or "none"))
+              film.fps, film.sound and film.sound.codec or "none",
+              audible and ", heard" or (film.sound and (", not heard: "
+                                                         .. tostring(silent))
+                                                    or "")))
 
 --------------------------------------------------------------------------
 -- The controls, under the picture.
@@ -385,7 +410,7 @@ local function draw_controls(s)
   s:fill(bx, by, MARK - 4, bh, theme.raised)
   frame(s, bx, by, MARK - 4, bh, theme.line)
 
-  if playing then
+  if film:playing() then
     s:fill(bx + 10, by + 4, 4, bh - 8, theme.text)
     s:fill(bx + 18, by + 4, 4, bh - 8, theme.text)
   else
@@ -453,6 +478,10 @@ end
 local showing, controls_at = nil, -1
 
 while win.running do
+  -- The sound first: it has a ring to keep full, and the picture waits
+  -- for it rather than the other way round.
+  film:tick()
+
   local when = now_at()
   local frame = film:index_at(when)
   local drew = false
@@ -481,7 +510,14 @@ while win.running do
 
   if drew and not win:commit{ x = 0, y = 0, w = W, h = H } then break end
 
-  local reply = wmproto.poll(win.handle, playing and 0 or 4)
+  --
+  -- A tick's wait when nothing was drawn, and none when something was: the
+  -- sound's ring holds 186 ms, so a 4 ms wait costs it nothing, and a loop
+  -- that never waits is a process at a hundred per cent between frames.
+  --
+  local reply = wmproto.poll(win.handle,
+                             (film:playing() and not drew) and 1
+                             or (film:playing() and 0 or 4))
 
   if not reply then break end
 
@@ -498,14 +534,12 @@ while win.running do
         seek_to(film.duration * (ev.x - rx) / rw)
         showing = nil
       elseif not full and ev.y >= scale_h and ev.x < MARK + 8 then
-        playing = not playing
-        if playing then seek_to(paused_at) end
+        play_or_pause()
       elseif full or ev.y < scale_h then
         -- A click on the picture pauses, as the drawing says.
         if not film:pointer(ev.x, ev.y, picture_x, picture_y,
                             scale_w, scale_h) then
-          playing = not playing
-          if playing then seek_to(paused_at) end
+          play_or_pause()
         end
       end
 
@@ -514,8 +548,7 @@ while win.running do
       local c = ev.code
 
       if c == 57 then                             -- space
-        playing = not playing
-        if playing then seek_to(paused_at) end
+        play_or_pause()
       elseif c == 105 then seek_to(now_at() - 10) -- left
       elseif c == 106 then seek_to(now_at() + 10) -- right
       elseif c == 2 then again("1")               -- 1
@@ -530,7 +563,6 @@ while win.running do
     end
   end
 
-  if not playing then paused_at = paused_at end
 end
 
 film:close()

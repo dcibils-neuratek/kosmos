@@ -68,10 +68,11 @@ MK_OUT = os.path.join(KIT, "ffmpeg.mk")
 
 CROSS = "aarch64-none-elf-"
 
-# The decoders, and nothing else: no demuxers (`mp4.lua` is the demuxer),
+# The decoders, and nothing else - H.264 for a film's picture and AAC for
+# its sound: no demuxers (`mp4.lua` is the demuxer),
 # no parsers (a packet from an MP4 is a whole access unit already), no
 # encoders (the Record Kit has its own), no filters, no scaler.
-DECODERS = ["h264"]
+DECODERS = ["h264", "aac"]
 
 # What the kit calls. The closure is taken from these, so a function the
 # kit starts calling that is not reached from here fails at the link and
@@ -92,6 +93,11 @@ ROOTS = [
     "av_new_packet",
     "av_packet_unref",
     "av_get_pix_fmt_name",
+    "av_channel_layout_channel_from_index",
+    "av_channel_layout_copy",
+    "av_channel_layout_uninit",
+    "av_channel_name",
+    "av_channel_layout_default",
     "av_malloc",
     "av_mallocz",
     "av_free",

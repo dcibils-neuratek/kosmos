@@ -1,0 +1,29 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+#
+# The AAC conformance streams `tools/test_aac.c` decodes, one a line: the
+# name FFmpeg's test suite gives it (`fate-aac-<name>`), the MP4 under
+# https://fate-suite.ffmpeg.org/aac/ and its sha256, the PCM FFmpeg's
+# decoder is held to - sixteen-bit, every channel, in FFmpeg's order - and
+# its sha256, and what the stream exercises.
+#
+# FFmpeg compares with `oneoff`: no sample more than one step from the
+# reference, and the same length. So does the test.
+#
+# 65 MB between them, nearly all of it the references, so
+# `tools/fetch_conformance.py aac` puts them in
+# `build/downloads/aac-conformance/` and holds each to its sum. The sums are
+# of the files as fetched on 25 September 2026; the server publishes no
+# signature.
+#
+al04_44              al04_44.mp4            e98388671459a44e499e3ddbfb93ffb9bc027bb4a434dbba9ee9a918600dfebf al04_44.s16                      1c4a9035d5863e0be61aea7fdb3171d2820274e21aac37225cb5dfc5555f3758  LC, 44.1 kHz stereo
+al05_44              al05_44.mp4            cb322e5b75b3ef3a5e421f030521ed81028dc73d565f5250df3928b86c389de4 al05_44.s16                      75810beda6069fa7fdef1c23887d580f570bb3e5d79cbae05b2b4edd47640b3c  LC, 44.1 kHz
+al06_44              al06_44.mp4            c7c36aa972bea86c09bde15360866a60f014523291346857236b8ed7e0f932d1 al06_44_reorder.s16              d34ce905bf224e509f23c8034ff29288fd474fc2ff62b3986b973e617bea03f4  LC, several channels
+al07_96              al07_96.mp4            90c75d790c78c2eed70bf76d5ffa7ec1d1a04613f8e9ded6daf9f2ca30c7cc0a al07_96_reorder.s16              e3e1d8e38a510acd89c7a81e71b19815f68184c26d46f8691ca5bdaf9a4e1738  LC, 96 kHz, several channels
+al17_44              al17_44.mp4            9d26cd8f1066385b06f6e53f6cf2c85e2d3eb72c970e1ae50f0d46d1c1a3bc18 al17_44.s16                      f8905842c7b5b6064881d127bb0b4198c7cba1a03863c91818b96f5f854658f2  LC, 44.1 kHz
+al18_44              al18_44.mp4            4730cf09e9b599f5376fa398e9901876b527114e08b4b857d80270375de85e21 al18_44.s16                      12fe444859ba35f925aba4edd54ce2ab158e16e66f491b51b732f0fe6e13b731  LC, 44.1 kHz
+am00_88              am00_88.mp4            83e83c47115f443a8707412c1deb2c04ddd7258c52f38595b934ba1290767d09 am00_88.s16                      61862236792b5d4206a9ec6a23a6d115ebd556038892be77e0af13b4b683c774  Main profile, 88.2 kHz
+ap05_48              ap05_48.mp4            8dc2c9a9f65c1fb7a6a797a4a9fd3574f4bffc1fa9d0b6e4550e9c530e4e2a76 ap05_48.s16                      cd3e84ba521a5dcd83195eef5876df06e40188e6cf4432e708664f07b9835961  LC, 48 kHz
+al_sbr_hq_cm_48_2    al_sbr_cm_48_2.mp4     7e7c0390c950eda21775d1a193e05ee703257bed85602884e7d30a8b3c65be90 al_sbr_hq_cm_48_2.s16            30e39d88a75e0193d1f3a2cf1c4f15e151f96a86d27dd975ac0508a9871af264  HE-AAC (SBR), stereo
+al_sbr_hq_cm_48_5.1  al_sbr_cm_48_5.1.mp4   c49bf6c206e015b26f34d109693ac11e2434edebc321462c75b254d27a49ccf5 al_sbr_hq_cm_48_5.1_reorder.s16  f85953ca3126ba96ca5c7b86848bbcf1bc5cfbbf22f11e9d8098937bc0424516  HE-AAC (SBR), 5.1
+al_sbr_ps_06_ur      al_sbr_ps_06_new.mp4   19d241d01cc3490a133ade50f3dec58d2872ada855cf0d0f954102e774cd9841 al_sbr_ps_06_ur.s16              740ea4371031c220c6df7d86c7cf3a412d20e032da420f918c601a438c57bdb7  HE-AAC v2 (SBR and parametric stereo)
+er_ad6000np_44_ep0   er_ad6000np_44_ep0.mp4 dcc229f067ed9c8c63617d4024f18d6259b8aeabf9ebcfd7a55e8c1f27da2f50 er_ad6000np_44.s16               55d3a3966342fd82347d438e378475d37685b4c7a323ff827b408752fc5197f0  ER AAC-LD

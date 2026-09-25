@@ -4,6 +4,19 @@
 # The objects the kit's entry points reach, and not one more.
 #
 FFMPEG_NAMES := \
+    libavcodec/aac/aacdec \
+    libavcodec/aac/aacdec_ac \
+    libavcodec/aac/aacdec_float \
+    libavcodec/aac/aacdec_lpd \
+    libavcodec/aac/aacdec_tab \
+    libavcodec/aac/aacdec_usac \
+    libavcodec/aac/aacdec_usac_mps212 \
+    libavcodec/aacps_common \
+    libavcodec/aacps_float \
+    libavcodec/aacpsdsp_float \
+    libavcodec/aacsbr \
+    libavcodec/aactab \
+    libavcodec/adts_header \
     libavcodec/allcodecs \
     libavcodec/aom_film_grain \
     libavcodec/atsc_a53 \
@@ -11,6 +24,8 @@ FFMPEG_NAMES := \
     libavcodec/bitstream_filters \
     libavcodec/bsf \
     libavcodec/cabac \
+    libavcodec/cbrt_data \
+    libavcodec/cbrt_tablegen_common \
     libavcodec/codec_desc \
     libavcodec/codec_par \
     libavcodec/decode \
@@ -46,12 +61,17 @@ FFMPEG_NAMES := \
     libavcodec/h264qpel \
     libavcodec/h274 \
     libavcodec/itut35 \
+    libavcodec/kbdwin \
     libavcodec/mathtables \
     libavcodec/me_cmp \
+    libavcodec/mpeg4audio \
+    libavcodec/mpeg4audio_sample_rates \
     libavcodec/options \
     libavcodec/packet \
     libavcodec/profiles \
+    libavcodec/sbrdsp \
     libavcodec/simple_idct \
+    libavcodec/sinewin \
     libavcodec/startcode \
     libavcodec/threadprogress \
     libavcodec/tiff_common \
@@ -65,6 +85,7 @@ FFMPEG_NAMES := \
     libavutil/buffer \
     libavutil/channel_layout \
     libavutil/container_fifo \
+    libavutil/cpu \
     libavutil/crc \
     libavutil/dict \
     libavutil/display \
@@ -73,12 +94,15 @@ FFMPEG_NAMES := \
     libavutil/eval \
     libavutil/fifo \
     libavutil/film_grain_params \
+    libavutil/float_dsp \
+    libavutil/float_scalarproduct \
     libavutil/frame \
     libavutil/hdr_dynamic_metadata \
     libavutil/hdr_dynamic_vivid_metadata \
     libavutil/hwcontext \
     libavutil/imgutils \
     libavutil/log \
+    libavutil/log2_tab \
     libavutil/mastering_display_metadata \
     libavutil/mathematics \
     libavutil/md5 \
@@ -97,6 +121,10 @@ FFMPEG_NAMES := \
     libavutil/time \
     libavutil/timecode \
     libavutil/timecode_internal \
+    libavutil/tx \
+    libavutil/tx_double \
+    libavutil/tx_float \
+    libavutil/tx_int32 \
     libavutil/utils \
     libavutil/video_enc_params \
 

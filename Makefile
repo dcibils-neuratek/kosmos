@@ -900,8 +900,11 @@ endif
 include user/kits/ffmpeg/ffmpeg.mk
 
 FFMPEG_DIR    := runtime/upstream/ffmpeg
+FFMPEG_KOSMOS := user/kits/ffmpeg/ffmpeg_log.c user/kits/ffmpeg/h264_core.c \
+                 user/kits/ffmpeg/aac_core.c
 FFMPEG_SRCS   := $(addprefix $(FFMPEG_DIR)/,$(addsuffix .c,$(FFMPEG_NAMES))) \
-                 user/kits/ffmpeg/h264_core.c user/kits/ffmpeg/h264_kosmos.c
+                 $(FFMPEG_KOSMOS) user/kits/ffmpeg/h264_kosmos.c \
+                 user/kits/ffmpeg/aac_kosmos.c
 FFMPEG_IFLAGS := -Iuser/kits/ffmpeg/config -I$(FFMPEG_DIR)
 FFMPEG_CFLAGS := -std=c17 -U__STRICT_ANSI__ -O3 -fno-math-errno \
                  -fno-signed-zeros -w -Wno-error -DHAVE_AV_CONFIG_H \
@@ -1268,9 +1271,9 @@ $(UBUILD)/runtime/upstream/ffmpeg/%.c.o: runtime/upstream/ffmpeg/%.c $(UFLAGS_FI
 	@mkdir -p $(dir $@)
 	$(CC) $(FFMPEG_IFLAGS) $(UCFLAGS) $(FFMPEG_CFLAGS) -MMD -MP -c $< -o $@
 
-# And the one Kosmos file that includes FFmpeg's headers: FFmpeg's include
+# And the Kosmos files that include FFmpeg's headers: FFmpeg's include
 # path, and every warning this project's own code is held to.
-$(UBUILD)/user/kits/ffmpeg/h264_core.c.o: user/kits/ffmpeg/h264_core.c $(UFLAGS_FILE)
+$(addprefix $(UBUILD)/,$(addsuffix .o,$(FFMPEG_KOSMOS))): $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(FFMPEG_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 
@@ -1785,7 +1788,7 @@ $(HOSTDIR)/test_yuv: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.h
 # guest, and linked over the Mac's C library; `test_h264_libc.c` is the
 # three names the two libraries spell differently. The streams are fetched
 # once into `build/downloads/` and held to their sums
-# (`tools/fetch_h264_conformance.py`).
+# (`tools/fetch_conformance.py h264`).
 #
 FFMPEG_HOST_FLAGS := -std=c17 -O2 -w -ffreestanding -DHAVE_AV_CONFIG_H \
                      $(FFMPEG_CPPFLAGS) $(FFMPEG_IFLAGS) -Iruntime/include \
@@ -1796,17 +1799,31 @@ $(HOSTDIR)/ffmpeg/%.o: $(FFMPEG_DIR)/%.c user/kits/ffmpeg/ffmpeg.mk
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(FFMPEG_HOST_FLAGS) -c $< -o $@
 
-$(HOSTDIR)/h264_core.o: user/kits/ffmpeg/h264_core.c user/kits/ffmpeg/h264_core.h
+$(HOSTDIR)/kits/%.o: user/kits/ffmpeg/%.c user/kits/ffmpeg/%.h \
+                    user/kits/ffmpeg/ffmpeg_log.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -ffreestanding \
 	        $(FFMPEG_IFLAGS) -Iruntime/include -Ikernel -c $< -o $@
 
+FFMPEG_HOST_KITS := $(HOSTDIR)/kits/ffmpeg_log.o $(HOSTDIR)/kits/h264_core.o \
+                    $(HOSTDIR)/kits/aac_core.o
+
 $(HOSTDIR)/test_h264: tools/test_h264.c tools/test_h264_libc.c \
-                      user/kits/ffmpeg/h264_core.h $(HOSTDIR)/h264_core.o \
+                      user/kits/ffmpeg/h264_core.h $(FFMPEG_HOST_KITS) \
                       $(FFMPEG_HOST_OBJS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ tools/test_h264.c \
-	        tools/test_h264_libc.c $(HOSTDIR)/h264_core.o $(FFMPEG_HOST_OBJS)
+	        tools/test_h264_libc.c $(FFMPEG_HOST_KITS) $(FFMPEG_HOST_OBJS)
+
+# The AAC Kit's decoder, the same way, held to FFmpeg's PCM references for
+# twelve conformance streams, which `/lib/mp4.lua` reads on this Mac's Lua
+# through `tools/mp4index.lua` (`tools/test_aac.c`).
+$(HOSTDIR)/test_aac: tools/test_aac.c tools/test_h264_libc.c \
+                     user/kits/ffmpeg/aac_core.h $(FFMPEG_HOST_KITS) \
+                     $(FFMPEG_HOST_OBJS) $(HOSTDIR)/lua
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ tools/test_aac.c \
+	        tools/test_h264_libc.c $(FFMPEG_HOST_KITS) $(FFMPEG_HOST_OBJS)
 
 #
 # Broken-down time, `runtime/libc/time.c`, against the Mac's own libc
@@ -3148,7 +3165,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3218,8 +3235,12 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_time
 	@# And the H.264 Kit's decoder: eighteen conformance streams, every
 	@# picture's checksum against FFmpeg's own (`roadmap.md` 4e).
-	python3 tools/fetch_h264_conformance.py
+	python3 tools/fetch_conformance.py h264
 	$(HOSTDIR)/test_h264
+	@# And the AAC Kit's: twelve streams against FFmpeg's PCM, every
+	@# channel within a step, and six channels mixed to two.
+	python3 tools/fetch_conformance.py aac
+	$(HOSTDIR)/test_aac
 	@# The camera's recording: H.264 in an MP4, decoded by FFmpeg, and read
 	@# by the video player's own MP4 reader (`roadmap.md` 6d 8f).
 	$(HOSTDIR)/test_record

@@ -24,6 +24,7 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/pixfmt.h"
 
+#include "ffmpeg_log.h"
 #include "h264_core.h"
 
 struct h264 {
@@ -34,42 +35,12 @@ struct h264 {
     char            said[160];
 };
 
-/*
- * What FFmpeg says, kept rather than printed.
- *
- * Its default is `fprintf(stderr, ...)`, which here would be the console of
- * whatever process decodes - and a damaged film says something about every
- * damaged slice, which is dozens of lines a second. So the last complaint
- * at error level is kept, and `h264_why` answers with it when a caller
- * asks why a sample did not decode. One buffer for the process: FFmpeg's
- * log is process-wide, and so is this.
- */
-static char last_said[160];
-
-static void keep(void *avcl, int level, const char *format, va_list vl)
-{
-    size_t n;
-
-    (void)avcl;
-
-    if (level > AV_LOG_ERROR) {
-        return;
-    }
-
-    vsnprintf(last_said, sizeof last_said, format, vl);
-    n = strlen(last_said);
-
-    while (n > 0 && (last_said[n - 1] == '\n' || last_said[n - 1] == ' ')) {
-        last_said[--n] = '\0';
-    }
-}
-
 static enum h264_status failed(struct h264 *d, int code, const char *what)
 {
     char because[64];
 
-    if (last_said[0] != '\0') {
-        snprintf(d->said, sizeof d->said, "%s: %s", what, last_said);
+    if (ffmpeg_log_said()[0] != '\0') {
+        snprintf(d->said, sizeof d->said, "%s: %s", what, ffmpeg_log_said());
     } else {
         av_strerror(code, because, sizeof because);
         snprintf(d->said, sizeof d->said, "%s: %s", what, because);
@@ -83,8 +54,8 @@ struct h264 *h264_open(const uint8_t *avcc, size_t n, const char **why)
     const AVCodec *codec;
     struct h264 *d;
 
-    av_log_set_callback(keep);
-    last_said[0] = '\0';
+    ffmpeg_log_keep();
+    ffmpeg_log_clear();
 
     /* `avcC` begins with its version, 1; anything else is not one. */
     if (avcc == NULL || n < 7 || avcc[0] != 1) {
@@ -161,10 +132,12 @@ struct h264 *h264_open(const uint8_t *avcc, size_t n, const char **why)
     d->ctx->flags |= AV_CODEC_FLAG_UNALIGNED;
 
     if (avcodec_open2(d->ctx, codec, NULL) < 0) {
+        static char because[160];
+
         failed(d, AVERROR_INVALIDDATA, "the H.264 stream would not open");
-        snprintf(last_said, sizeof last_said, "%s", d->said);
+        snprintf(because, sizeof because, "%s", d->said);
         h264_close(d);
-        *why = last_said;
+        *why = because;
         return NULL;
     }
 
@@ -177,7 +150,7 @@ enum h264_status h264_send(struct h264 *d, const uint8_t *data, size_t n,
     int r;
 
     d->why = NULL;
-    last_said[0] = '\0';
+    ffmpeg_log_clear();
 
     /*
      * Into a packet of FFmpeg's own, because it reads up to
@@ -306,7 +279,8 @@ const char *h264_why(const struct h264 *d)
         return d->why;
     }
 
-    return last_said[0] != '\0' ? last_said : "no reason was given";
+    return ffmpeg_log_said()[0] != '\0' ? ffmpeg_log_said()
+                                          : "no reason was given";
 }
 
 void h264_close(struct h264 *d)

@@ -9464,7 +9464,7 @@ the two spell differently).
 - Eighteen conformance streams (`tools/h264_conformance.txt`: CAVLC and
   CABAC, B slices, weighted prediction, cropping, PAFF and MBAFF, many
   references, High's 8x8 transform), fetched once into `build/downloads/`
-  and held to their sums by `tools/fetch_h264_conformance.py`. Each is split
+  and held to their sums by `tools/fetch_conformance.py h264`. Each is split
   into access units and handed to the kit as an MP4 would hand it - `avcC`,
   length-prefixed samples - and every picture's Adler-32, as `-f framecrc`
   computes it, is compared with FFmpeg's reference for that stream: **1,682
@@ -9506,3 +9506,56 @@ thousand instants from 1653 to 2286 and the calendar's awkward days; `mktime`
 against `timegm`, fields out of range included; every conversion `strftime`
 implements, and zero when the result does not fit - 200,138 checks.
 **Control**: the epoch's weekday a day early fails 200,050 of them.
+
+## 18.184 AAC, held to FFmpeg's PCM
+
+`roadmap.md` 4e. `tools/test_aac.c` on the Mac: the AAC Kit's core
+(`user/kits/ffmpeg/aac_core.c`) over the vendored FFmpeg, compiled as for the
+guest. Twelve conformance MP4s (`tools/aac_conformance.txt`: LC at 44.1,
+48, 88.2 and 96 kHz, Main profile, HE-AAC with SBR, HE-AAC v2 with
+parametric stereo, ER AAC-LD; mono, stereo, three channels, 5.1 and a
+layout from a program config element), each read by `/lib/mp4.lua` on this
+Mac's Lua (`tools/mp4index.lua`) and decoded frame by frame into sixteen
+bits, every channel, and compared as FFmpeg compares it - the same length,
+no sample more than two steps away (`oneoff`, `FUZZ = 2`): all twelve, the
+worst sample 2. Then every stream with more than two channels decoded again
+as stereo and held to the ITU mix of the reference, weighted by the names
+the kit reports for its channels - within 2, pairs where the reference was
+clipped set aside and counted. 0.8 s for all of it.
+
+**The first runs found three things**, each failing until fixed: the mix
+assumed FFmpeg's order for 5.1 and a program config element's stream is
+`FL FR FC LFE FLC FRC`, so the kit mixes by the names FFmpeg gives and the
+test does too; ER AAC-LD decodes nothing without the rate and channel count
+an MP4's sample entry states, which FFmpeg's own reader passes on and the
+kit now does; and the references clip at -32767 as well as 32767.
+
+## 18.185 A film's sound, heard
+
+`roadmap.md` 4e. **arm-film** and **x86-film**, `tools/run_film.py`, 13
+each: a film made here from bytes that exist already - thirty Motion JPEG
+greys and the first 130 frames of `al05_44`, copied - played through
+`/lib/video.lua` with QEMU writing what the machine played to a WAV
+(virtio-sound on ARM, HDA on x86-64). Every one of the 133,120 frames handed
+to the audio server; 3.02 s of sound found in the recording and every
+sample within one step of FFmpeg's reference; the 3.00 s film in 3.00 s by
+its own clock (3.04 on x86); paused a second in, the clock standing still
+while paused, at 2.0 after a seek, and about two seconds of sound out, not
+three; and the Video app reporting the sound heard. **Controls**: the
+kit's samples scaled by 32000 rather than 32768 - the reference is not
+found in the recording; `film:pause` not writing down where it stopped -
+the clock reads 0.000 a second in.
+
+**It found a fault in the sound path everything shares**: the last sample
+of every song and every film was never played. `sys.pcm` interpolates each
+frame towards the next and so held the final one back for a next piece that
+never came, and both its callers refused to hand it a single frame anyway.
+ARM's recording stopped before the end and hid it; x86's carried on, and
+the film's last sample read 0 against the reference's -187. `sys.pcm` takes
+`last` now, and Music's player and the film's pass it at their end.
+
+Seen by hand rather than held: Diego's two clips in the Video app under
+QEMU with their sound recorded - H.264 and AAC at 29.9 frames a second of
+29.9, 2 of 727 dropped, 18.5 s of sound; Motion JPEG and MP3 at 29.9 with
+20 of 300 dropped on its second time round, a 2.1 Mbit/s film whose JPEGs
+take 10.7 ms each.

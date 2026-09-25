@@ -1,4 +1,4 @@
-# FFmpeg, vendored: the H.264 decoder
+# FFmpeg, vendored: the H.264 and AAC decoders
 
 Upstream: <https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz>, downloaded on
 19 September 2026, sha256
@@ -11,8 +11,8 @@ See `COPYING.LGPLv2.1` and `LICENSE.md`, and the notice at the top of every
 file.
 
 **Unmodified**, as every vendored thing here is. What is here is not all of
-FFmpeg: it is the files one decoder needs, and every one of them is byte
-for byte as released.
+FFmpeg: it is the files two decoders need - H.264 for a film's picture and
+AAC for its sound - and every one of them is byte for byte as released.
 
 ## How the files were chosen: by the linker
 
@@ -22,21 +22,24 @@ FFmpeg arrives, or a second decoder:
 1. The tarball is checked against the sum above and unpacked in
    `build/ffmpeg/`.
 2. `configure` is run for a freestanding AArch64 target with everything
-   disabled but `--enable-decoder=h264`: no demuxers (`/lib/mp4.lua` is the
-   demuxer), no parsers (a sample from an MP4 is a whole access unit), no
-   threads, no assembly.
+   disabled but `--enable-decoder=h264` and `--enable-decoder=aac`: no
+   demuxers (`/lib/mp4.lua` is the demuxer), no parsers (a sample from an
+   MP4 is a whole access unit), no threads, no assembly.
 3. Every object FFmpeg's own build would compile for `libavcodec` and
-   `libavutil` is compiled - 173 of them - and the kit's entry points are
+   `libavutil` is compiled - 193 of them - and the kits' entry points are
    linked against them with the map switched on. The archive members the
-   linker pulled in are the closure: **95 objects**. Their sources and
-   every header they include are copied here.
+   linker pulled in are the closure: **123 objects**, 95 for H.264 and 28
+   more for AAC with its SBR and parametric stereo. Their sources and every
+   header they include are copied here.
 4. It writes `user/kits/ffmpeg/ffmpeg.mk`, the object list the Makefile
    compiles and FFmpeg's own preprocessor flags, so the list cannot drift
    from what is here.
 
 `tests/ref/fate/` holds FFmpeg's checksums for the eighteen conformance
 streams `tools/test_h264.c` decodes (`testing.md` 18.181) - FFmpeg's word on
-its own decoder, which is what the Mac holds the port to.
+its own decoder, which is what the Mac holds the port to. AAC's references
+are PCM, 65 MB of it, and are fetched with their streams rather than
+carried (`tools/aac_conformance.txt`, `testing.md` 18.184).
 
 ## How it is built, as build steps rather than edits
 
@@ -68,7 +71,8 @@ Standard C, and nothing on the wrong side of `design.md` §17: the rest of
 `strtoull`, `logf`, the errno names its error table knows, and nine more of
 musl's maths functions for its expression evaluator. And libgcc on the
 userland's link, for `av_sscanf`'s `long double`, which on AArch64 is
-arithmetic in calls.
+arithmetic in calls. AAC added `cbrt`, `fabsf` and `sqrtf`, which
+`math.h` had declared and nothing defined, from the same musl.
 
 `libavutil/file.c` and `file_open.c` did not compile - they are `open`,
 `read` and `fstat` - and nothing in the closure calls them.
@@ -85,6 +89,9 @@ return. Nothing reaches it.
 
 ## What it costs
 
-1.4 MB of code and 220 KB of tables, shared by every process like the rest
-of the image's read-only half; and 812 KB of `.bss`, which is not shared
-yet - every process carries a copy (`roadmap.md` 6j).
+Measured on 25 September, the ARM image with and without it: 1.75 MB of
+code and 0.37 MB of constant tables, shared by every process like the rest
+of the image's read-only half; and 2.0 MB of `.bss` - tables both decoders
+fill on first use, 693 KB of them H.264's film grain - which is not shared
+yet: every process carries a copy, and the image's writable half went from
+0.80 MB to 2.79 MB (`roadmap.md` 6j).
