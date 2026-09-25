@@ -1166,6 +1166,15 @@ processors, and still what follows USB:
    5. Saving and opening glTF.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
+   - **Sample scenes: a house, a car, a plane** - Diego, 25 September:
+     "When done let's create a couple of sample scenes with 3d designs", "A
+     house", "A car", "A plane". Made of the kit's primitives, turned and
+     sized: a roof is a three-sided cylinder on its side, wheels are
+     cylinders turned a quarter, a fuselage a cylinder with a cone for a
+     nose, wings and a tail flattened boxes. They are files Cafesa3D opens,
+     so **the reading half of step 5 comes forward to just after step 2**,
+     and the three are the first scenes it opens; step 3's renderer gives
+     them their look.
    - **Every acceleration the machine has** - Diego, the same evening:
      "Make sure we used all available acceleration modes from simd and avx
      and in the future gpu acceleration when available". So the 3D Kit's

@@ -61,8 +61,10 @@ void k3d_object_defaults(struct k3d_object *o, enum k3d_kind kind)
     o->size[0] = o->size[1] = o->size[2] = 2.0f;
     o->radius = 1.0f;
     o->depth = 2.0f;
-    o->segments = 32;
-    o->rings = 16;
+    o->radius2 = kind == K3D_TORUS ? 0.25f : 0.0f;
+    o->segments = kind == K3D_TORUS ? 48 : kind == K3D_GRID ? 10 : 32;
+    o->rings = kind == K3D_TORUS ? 12 : kind == K3D_GRID ? 10 : 16;
+    o->subdivisions = 2;
     o->scale[0] = o->scale[1] = o->scale[2] = 1.0f;
     o->colour = 0xcccccc;
     o->alpha = 1.0f;
@@ -411,6 +413,332 @@ static bool build_cylinder(const struct k3d_object *o, struct k3d_mesh *m)
     return true;
 }
 
+/*
+ * An ico sphere: the icosahedron, each triangle cut into four and pushed
+ * out to the radius, `subdivisions - 1` times - Blender's count, where one
+ * is the icosahedron itself. The midpoint of an edge is made once and
+ * shared by both its triangles, found again through a small table keyed by
+ * the edge's two ends.
+ */
+struct midpoints {
+    uint64_t *key;
+    uint32_t *at;
+    uint32_t  cap;
+};
+
+static uint32_t midpoint(struct build *b, struct midpoints *mp, uint32_t a,
+                         uint32_t c, float r)
+{
+    uint64_t key = a < c ? ((uint64_t)a << 32) | c : ((uint64_t)c << 32) | a;
+    uint32_t h = (uint32_t)((key * 0x9e3779b97f4a7c15ull) >> 40) & (mp->cap - 1);
+    const float *p, *q;
+    float m[3], l;
+
+    while (mp->key[h] != 0) {
+        if (mp->key[h] == key + 1) {
+            return mp->at[h];
+        }
+
+        h = (h + 1) & (mp->cap - 1);
+    }
+
+    p = &b->m->pos[a * 3];
+    q = &b->m->pos[c * 3];
+    m[0] = (p[0] + q[0]) / 2;
+    m[1] = (p[1] + q[1]) / 2;
+    m[2] = (p[2] + q[2]) / 2;
+    l = sqrtf(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+    mp->key[h] = key + 1;       /* nought is "empty" */
+    mp->at[h] = vert(b, m[0] / l * r, m[1] / l * r, m[2] / l * r,
+                     m[0] / l, m[1] / l, m[2] / l);
+    return mp->at[h];
+}
+
+static bool build_ico(const struct k3d_object *o, struct k3d_mesh *m)
+{
+    static const signed char face[20][3] = {
+        { 0, 11, 5 }, { 0, 5, 1 }, { 0, 1, 7 }, { 0, 7, 10 }, { 0, 10, 11 },
+        { 1, 5, 9 }, { 5, 11, 4 }, { 11, 10, 2 }, { 10, 7, 6 }, { 7, 1, 8 },
+        { 3, 9, 4 }, { 3, 4, 2 }, { 3, 2, 6 }, { 3, 6, 8 }, { 3, 8, 9 },
+        { 4, 9, 5 }, { 2, 4, 11 }, { 6, 2, 10 }, { 8, 6, 7 }, { 9, 8, 1 },
+    };
+    const float t = 1.6180339887f;
+    const float corner[12][3] = {
+        { -1, t, 0 }, { 1, t, 0 }, { -1, -t, 0 }, { 1, -t, 0 },
+        { 0, -1, t }, { 0, 1, t }, { 0, -1, -t }, { 0, 1, -t },
+        { t, 0, -1 }, { t, 0, 1 }, { -t, 0, -1 }, { -t, 0, 1 },
+    };
+    struct build b = { m, 0, 0, 0 };
+    struct midpoints mp = { NULL, NULL, 0 };
+    uint32_t *faces, *next, nfaces = 20, level, i, k;
+    uint32_t tris, verts, edges;
+    float r = o->radius;
+    int s = o->subdivisions;
+    bool ok = false;
+
+    if (s < 1 || s > 7) {
+        return false;
+    }
+
+    tris = 20u << (2 * (s - 1));
+    edges = 30u << (2 * (s - 1));
+    verts = 10u * (1u << (2 * (s - 1))) + 2;
+
+    if (!reserve(m, verts, tris, edges)) {
+        return false;
+    }
+
+    faces = malloc((size_t)tris * 3 * sizeof(uint32_t));
+    next = malloc((size_t)tris * 3 * sizeof(uint32_t));
+    mp.cap = 1;
+
+    while (mp.cap < edges * 2) {
+        mp.cap <<= 1;
+    }
+
+    mp.key = calloc(mp.cap, sizeof(uint64_t));
+    mp.at = malloc(mp.cap * sizeof(uint32_t));
+
+    if (faces == NULL || next == NULL || mp.key == NULL || mp.at == NULL) {
+        goto out;
+    }
+
+    for (i = 0; i < 12; i++) {
+        float l = sqrtf(corner[i][0] * corner[i][0] + corner[i][1] * corner[i][1]
+                        + corner[i][2] * corner[i][2]);
+
+        vert(&b, corner[i][0] / l * r, corner[i][1] / l * r, corner[i][2] / l * r,
+             corner[i][0] / l, corner[i][1] / l, corner[i][2] / l);
+    }
+
+    for (i = 0; i < 20; i++) {
+        faces[i * 3] = (uint32_t)face[i][0];
+        faces[i * 3 + 1] = (uint32_t)face[i][1];
+        faces[i * 3 + 2] = (uint32_t)face[i][2];
+    }
+
+    for (level = 1; level < (uint32_t)s; level++) {
+        memset(mp.key, 0, mp.cap * sizeof(uint64_t));
+
+        for (i = 0; i < nfaces; i++) {
+            uint32_t a = faces[i * 3], c = faces[i * 3 + 1], d = faces[i * 3 + 2];
+            uint32_t ac = midpoint(&b, &mp, a, c, r);
+            uint32_t cd = midpoint(&b, &mp, c, d, r);
+            uint32_t da = midpoint(&b, &mp, d, a, r);
+            uint32_t *f = &next[i * 12];
+
+            f[0] = a;  f[1] = ac; f[2] = da;
+            f[3] = c;  f[4] = cd; f[5] = ac;
+            f[6] = d;  f[7] = da; f[8] = cd;
+            f[9] = ac; f[10] = cd; f[11] = da;
+        }
+
+        nfaces *= 4;
+        memcpy(faces, next, (size_t)nfaces * 3 * sizeof(uint32_t));
+    }
+
+    /* The triangles, and each edge once: from the triangle on whose
+     * anticlockwise walk it runs from the lower vertex to the higher. */
+    for (i = 0; i < nfaces; i++) {
+        tri(&b, faces[i * 3], faces[i * 3 + 1], faces[i * 3 + 2]);
+
+        for (k = 0; k < 3; k++) {
+            uint32_t a = faces[i * 3 + k], c = faces[i * 3 + (k + 1) % 3];
+
+            if (a < c) {
+                edge(&b, a, c);
+            }
+        }
+    }
+
+    ok = b.v == verts && b.t == tris && b.e == edges;
+
+    if (!ok) {
+        k3d_mesh_free(m);
+    }
+
+out:
+    free(faces);
+    free(next);
+    free(mp.key);
+    free(mp.at);
+
+    if (!ok && m->pos != NULL) {
+        k3d_mesh_free(m);
+    }
+
+    return ok;
+}
+
+/*
+ * A cone along Z about its origin: `radius` at the bottom, `radius2` at the
+ * top, and a point there when it is nought - one triangle a side then, not
+ * a quad folded flat. The sides' normals lean with the slope, so a smooth
+ * cone is round and not a cylinder's shading on a slanted shape.
+ */
+static bool build_cone(const struct k3d_object *o, struct k3d_mesh *m)
+{
+    struct build b = { m, 0, 0, 0 };
+    int n = o->segments, i;
+    float r1 = o->radius, r2 = o->radius2, h = o->depth / 2;
+    bool point = r2 <= 0;
+    uint32_t side, capb, capt = 0, cbot, ctop = 0;
+    uint32_t verts = (uint32_t)(2 * n + n + 1 + (point ? 0 : n + 1));
+    uint32_t tris = (uint32_t)((point ? n : 2 * n) + n + (point ? 0 : n));
+    uint32_t edges = (uint32_t)(n + n + (point ? 0 : n));
+
+    if (n < 3 || r1 <= 0) {
+        return false;
+    }
+
+    if (!reserve(m, verts, tris, edges)) {
+        return false;
+    }
+
+    side = b.v;
+
+    for (i = 0; i < n; i++) {
+        float ph = 2 * PI * (float)i / (float)n, x = cs(ph), y = sn(ph);
+        float nx = x * o->depth, ny = y * o->depth, nz = r1 - r2;
+        float l = sqrtf(nx * nx + ny * ny + nz * nz);
+
+        vert(&b, r1 * x, r1 * y, -h, nx / l, ny / l, nz / l);
+        vert(&b, r2 * x, r2 * y,  h, nx / l, ny / l, nz / l);
+    }
+
+    capb = b.v;
+
+    for (i = 0; i < n; i++) {
+        float ph = 2 * PI * (float)i / (float)n;
+
+        vert(&b, r1 * cs(ph), r1 * sn(ph), -h, 0, 0, -1);
+    }
+
+    cbot = vert(&b, 0, 0, -h, 0, 0, -1);
+
+    if (!point) {
+        capt = b.v;
+
+        for (i = 0; i < n; i++) {
+            float ph = 2 * PI * (float)i / (float)n;
+
+            vert(&b, r2 * cs(ph), r2 * sn(ph), h, 0, 0, 1);
+        }
+
+        ctop = vert(&b, 0, 0, h, 0, 0, 1);
+    }
+
+    for (i = 0; i < n; i++) {
+        uint32_t lo = side + (uint32_t)(2 * i), hi = lo + 1;
+        uint32_t lo2 = side + (uint32_t)(2 * ((i + 1) % n)), hi2 = lo2 + 1;
+
+        if (point) {
+            tri(&b, lo, lo2, hi);
+        } else {
+            quad(&b, lo, lo2, hi2, hi);
+            tri(&b, ctop, capt + (uint32_t)i, capt + (uint32_t)((i + 1) % n));
+            edge(&b, hi, hi2);
+        }
+
+        tri(&b, cbot, capb + (uint32_t)((i + 1) % n), capb + (uint32_t)i);
+        edge(&b, lo, hi);
+        edge(&b, lo, lo2);
+    }
+
+    return true;
+}
+
+/*
+ * A torus in the XY plane: `segments` round the ring at `radius`, `rings`
+ * round the tube at `radius2`. Each vertex's smooth normal points away from
+ * the middle of the tube, which is also what "outside" means for a shape
+ * with a hole in it.
+ */
+static bool build_torus(const struct k3d_object *o, struct k3d_mesh *m)
+{
+    struct build b = { m, 0, 0, 0 };
+    int M = o->segments, n = o->rings, i, j;
+    float R = o->radius, r = o->radius2;
+
+    if (M < 3 || n < 3 || r <= 0 || R <= 0) {
+        return false;
+    }
+
+    if (!reserve(m, (uint32_t)(M * n), (uint32_t)(2 * M * n), (uint32_t)(2 * M * n))) {
+        return false;
+    }
+
+    for (i = 0; i < M; i++) {
+        float u = 2 * PI * (float)i / (float)M;
+
+        for (j = 0; j < n; j++) {
+            float w = 2 * PI * (float)j / (float)n;
+            float nx = cs(w) * cs(u), ny = cs(w) * sn(u), nz = sn(w);
+
+            vert(&b, (R + r * cs(w)) * cs(u), (R + r * cs(w)) * sn(u), r * sn(w),
+                 nx, ny, nz);
+        }
+    }
+
+#define AT(i, j) ((uint32_t)((((i) % M) * n) + ((j) % n)))
+
+    for (i = 0; i < M; i++) {
+        for (j = 0; j < n; j++) {
+            quad(&b, AT(i, j), AT(i + 1, j), AT(i + 1, j + 1), AT(i, j + 1));
+            edge(&b, AT(i, j), AT(i + 1, j));
+            edge(&b, AT(i, j), AT(i, j + 1));
+        }
+    }
+
+#undef AT
+    return true;
+}
+
+/* A grid of `segments` by `rings` squares, `size` across, facing up. */
+static bool build_grid(const struct k3d_object *o, struct k3d_mesh *m)
+{
+    struct build b = { m, 0, 0, 0 };
+    int nx = o->segments, ny = o->rings, i, j;
+    float h = o->size[0] / 2;
+
+    if (nx < 1 || ny < 1) {
+        return false;
+    }
+
+    if (!reserve(m, (uint32_t)((nx + 1) * (ny + 1)), (uint32_t)(2 * nx * ny),
+                 (uint32_t)(nx * (ny + 1) + ny * (nx + 1)))) {
+        return false;
+    }
+
+    for (j = 0; j <= ny; j++) {
+        for (i = 0; i <= nx; i++) {
+            vert(&b, -h + 2 * h * (float)i / (float)nx, -h + 2 * h * (float)j / (float)ny,
+                 0, 0, 0, 1);
+        }
+    }
+
+#define AT(i, j) ((uint32_t)((j) * (nx + 1) + (i)))
+
+    for (j = 0; j <= ny; j++) {
+        for (i = 0; i <= nx; i++) {
+            if (i < nx && j < ny) {
+                quad(&b, AT(i, j), AT(i + 1, j), AT(i + 1, j + 1), AT(i, j + 1));
+            }
+
+            if (i < nx) {
+                edge(&b, AT(i, j), AT(i + 1, j));
+            }
+
+            if (j < ny) {
+                edge(&b, AT(i, j), AT(i, j + 1));
+            }
+        }
+    }
+
+#undef AT
+    return true;
+}
+
 bool k3d_mesh_build(struct k3d_object *o)
 {
     struct k3d_mesh fresh;
@@ -423,6 +751,10 @@ bool k3d_mesh_build(struct k3d_object *o)
     case K3D_BOX:      ok = build_box(o, &fresh);      break;
     case K3D_SPHERE:   ok = build_sphere(o, &fresh);   break;
     case K3D_CYLINDER: ok = build_cylinder(o, &fresh); break;
+    case K3D_ICO:      ok = build_ico(o, &fresh);      break;
+    case K3D_CONE:     ok = build_cone(o, &fresh);     break;
+    case K3D_TORUS:    ok = build_torus(o, &fresh);    break;
+    case K3D_GRID:     ok = build_grid(o, &fresh);     break;
     }
 
     if (!ok) {
@@ -444,6 +776,11 @@ uint32_t k3d_triangles(const struct k3d_object *o)
     case K3D_SPHERE:   return (uint32_t)(2 * o->segments
                                          + (o->rings - 2) * o->segments * 2);
     case K3D_CYLINDER: return (uint32_t)(4 * o->segments);
+    case K3D_ICO:      return (o->subdivisions >= 1 && o->subdivisions <= 7)
+                              ? 20u << (2 * (o->subdivisions - 1)) : 0;
+    case K3D_CONE:     return (uint32_t)((o->radius2 > 0 ? 4 : 2) * o->segments);
+    case K3D_TORUS:    return (uint32_t)(2 * o->segments * o->rings);
+    case K3D_GRID:     return (uint32_t)(2 * o->segments * o->rings);
     }
 
     return 0;

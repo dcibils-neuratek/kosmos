@@ -98,7 +98,8 @@ local function material(base, preset, extra)
 end
 
 local things = {}                           -- in the order they were added
-local SHAPES = { plane = true, box = true, sphere = true, cylinder = true }
+local SHAPES = { plane = true, box = true, sphere = true, cylinder = true,
+                 ico = true, cone = true, torus = true, grid = true }
 
 -- What the kit is told about a shape: where it is, and how the Solid view
 -- shows it. Glass is drawn through, as the drawing has it.
@@ -107,8 +108,8 @@ local function shown(t)
   local glass = m and m.trans >= 0.5
 
   return {
-    size = t.size, radius = t.radius, depth = t.depth,
-    segments = t.segments, rings = t.rings,
+    size = t.size, radius = t.radius, radius2 = t.radius2, depth = t.depth,
+    segments = t.segments, rings = t.rings, subdivisions = t.subdivisions,
     loc = t.loc, rot = t.rot or { 0, 0, 0 }, scale = t.scale or { 1, 1, 1 },
     colour = t.display or (glass and 0xd1e0ed) or (m and m.base) or 0xcccccc,
     alpha = glass and 0.45 or 1,
@@ -136,6 +137,43 @@ end
 local function by_id(id)
   for _, t in ipairs(things) do
     if t.id == id then return t end
+  end
+end
+
+-- A deep copy, for undo and for Shift D: an object is tables of numbers.
+local function copy(v)
+  if type(v) ~= "table" then return v end
+
+  local out = {}
+
+  for k, x in pairs(v) do out[k] = copy(x) end
+
+  return out
+end
+
+-- A name nothing else has, as Blender makes them: Cube, then Cube.001.
+local function unique(name)
+  local base = name:gsub("%.%d%d%d$", "")
+  local taken = {}
+
+  for _, t in ipairs(things) do taken[t.name] = true end
+
+  if not taken[base] then return base end
+
+  for n = 1, 999 do
+    local try = ("%s.%03d"):format(base, n)
+
+    if not taken[try] then return try end
+  end
+
+  return base
+end
+
+local function forget(t)
+  if t.id then scene:remove(t.id) end
+
+  for i, x in ipairs(things) do
+    if x == t then table.remove(things, i) break end
   end
 end
 
@@ -483,16 +521,16 @@ local function draw_header(s)
                     { { name = "object", text = "Object", on = true },
                       { name = "edit", text = "Edit", disabled = true } }) + 6
 
-  -- Add, with its key: step two.
+  -- Add, with its key.
   local add_w = pk.button_width("Add") + 22 + gfx.measure("Shift A", small) + 8
   local addb = control("add", x, cy, add_w, 31)
 
-  pk.button(s, { x = addb.x, y = addb.y, w = addb.w, text = "", disabled = true })
-  line(s, addb.x + 13, addb.y + 15.5, addb.x + 22, addb.y + 15.5, DIM)
-  line(s, addb.x + 17.5, addb.y + 11, addb.x + 17.5, addb.y + 20, DIM)
-  s:text(addb.x + 29, addb.y + (31 - gfx.height()) // 2, "Add", DIM, nil, "ui")
+  pk.button(s, { x = addb.x, y = addb.y, w = addb.w, text = "" })
+  line(s, addb.x + 13, addb.y + 15.5, addb.x + 22, addb.y + 15.5, theme.text)
+  line(s, addb.x + 17.5, addb.y + 11, addb.x + 17.5, addb.y + 20, theme.text)
+  s:text(addb.x + 29, addb.y + (31 - gfx.height()) // 2, "Add", theme.text, nil, "ui")
   s:text(addb.x + 29 + gfx.measure("Add") + 8, addb.y + (31 - gfx.height(small)) // 2,
-         "Shift A", DIM, nil, small)
+         "Shift A", theme.text_dim, nil, small)
 
   segmented(s, shade_x, (HEAD - 1 - 31) // 2, shade_parts)
 
@@ -843,7 +881,8 @@ local function note(s, x, y, w, text)
 end
 
 local KIND_NAME = { box = "Cube", sphere = "UV Sphere", cylinder = "Cylinder",
-                    plane = "Plane", light = "Point light", camera = "Camera" }
+                    plane = "Plane", light = "Point light", camera = "Camera",
+                    ico = "Ico Sphere", cone = "Cone", torus = "Torus", grid = "Grid" }
 
 local function hexcolour(c) return ("#%06x"):format(c & 0xffffff) end
 
@@ -921,6 +960,23 @@ local function draw_props(s)
       y = field_row(s, x, y, w, "Depth", { fmt(t.depth) .. " m" })
     elseif t.kind == "plane" then
       y = field_row(s, x, y, w, "Size", { fmt(t.size, 1) .. " m" })
+    elseif t.kind == "ico" then
+      y = field_row(s, x, y, w, "Subdivisions", { tostring(t.subdivisions) })
+      y = field_row(s, x, y, w, "Radius", { fmt(t.radius) .. " m" })
+    elseif t.kind == "cone" then
+      y = field_row(s, x, y, w, "Vertices", { tostring(t.segments) })
+      y = field_row(s, x, y, w, "Radius 1", { fmt(t.radius) .. " m" })
+      y = field_row(s, x, y, w, "Radius 2", { fmt(t.radius2) .. " m" })
+      y = field_row(s, x, y, w, "Depth", { fmt(t.depth) .. " m" })
+    elseif t.kind == "torus" then
+      y = field_row(s, x, y, w, "Major segments", { tostring(t.segments) })
+      y = field_row(s, x, y, w, "Minor segments", { tostring(t.rings) })
+      y = field_row(s, x, y, w, "Major radius", { fmt(t.radius) .. " m" })
+      y = field_row(s, x, y, w, "Minor radius", { fmt(t.radius2) .. " m" })
+    elseif t.kind == "grid" then
+      y = field_row(s, x, y, w, "X subdivisions", { tostring(t.segments) })
+      y = field_row(s, x, y, w, "Y subdivisions", { tostring(t.rings) })
+      y = field_row(s, x, y, w, "Size", { fmt(t.size, 1) .. " m" })
     elseif t.kind == "light" then
       y = field_row(s, x, y, w, "Type", { "Point" })
       y = field_row(s, x, y, w, "Colour", { hexcolour(t.colour) })
@@ -989,7 +1045,8 @@ local function draw_foot(s)
   local ty = y + (FOOT - gfx.height(small)) // 2
 
   for _, k in ipairs({ { "Drag", "turn" }, { "Shift Drag", "move" }, { "Wheel", "closer" },
-                       { "1 3 7", "views" }, { "Z", "shading" }, { "Home", "all" } }) do
+                       { "Shift A", "add" }, { "X", "delete" }, { "Ctrl Z", "undo" },
+                       { "Z", "shading" }, { "Home", "all" } }) do
     local kw = gfx.measure(k[1], tiny) + 10
 
     s:fill_round(x, y + 6, kw, FOOT - 12, theme.sunken, 4)
@@ -1107,7 +1164,9 @@ local function frame_all()
 
   for _, t in ipairs(things) do
     if not t.hidden and t.kind ~= "plane" and t.kind ~= "camera" and t.kind ~= "light" then
-      local r = t.radius or (t.size and type(t.size) == "table" and math.max(t.size[1], t.size[2], t.size[3]) / 2) or 1
+      local r = t.radius and (t.radius + (t.kind == "torus" and t.radius2 or 0))
+                or (type(t.size) == "table" and math.max(t.size[1], t.size[2], t.size[3]) / 2)
+                or (type(t.size) == "number" and t.size / 2) or 1
 
       for k = 1, 3 do
         lo[k] = math.min(lo[k], t.loc[k] - r)
@@ -1134,11 +1193,203 @@ local function set_shading(which)
 end
 
 --------------------------------------------------------------------------
+-- Undo: the whole scene as it was, before each change - a handful of
+-- tables of numbers, so a snapshot is cheaper than knowing how to reverse
+-- every kind of change. Ctrl Z and Ctrl Shift Z, as Blender's.
+--------------------------------------------------------------------------
+
+local undo, redo = {}, {}
+
+local function snapshot(label)
+  local list = {}
+
+  for _, t in ipairs(things) do
+    local c = copy(t)
+
+    c.id = nil
+    list[#list + 1] = c
+  end
+
+  return { label = label, things = list, cursor = copy(cursor3d),
+           selected = selected and selected.name }
+end
+
+local function rebuild(snap)
+  for _, t in ipairs(things) do
+    if t.id then scene:remove(t.id) end
+  end
+
+  things = {}
+
+  for _, t in ipairs(snap.things) do add(copy(t)) end
+
+  cursor3d = copy(snap.cursor)
+  selected = nil
+
+  for _, t in ipairs(things) do
+    if t.name == snap.selected then selected = t end
+  end
+end
+
+-- Called before a change, with what it is called.
+local function will(label)
+  undo[#undo + 1] = snapshot(label)
+
+  if #undo > 64 then table.remove(undo, 1) end
+
+  redo = {}
+end
+
+local function undo_last()
+  local s = table.remove(undo)
+
+  if not s then return false end
+
+  redo[#redo + 1] = snapshot(s.label)
+  rebuild(s)
+  print("cafesa3d: undid " .. s.label)
+  return true
+end
+
+local function redo_last()
+  local s = table.remove(redo)
+
+  if not s then return false end
+
+  undo[#undo + 1] = snapshot(s.label)
+  rebuild(s)
+  print("cafesa3d: redid " .. s.label)
+  return true
+end
+
+--------------------------------------------------------------------------
+-- Adding, at the 3D cursor, with Blender's defaults and names; deleting;
+-- and Shift D.
+--------------------------------------------------------------------------
+
+local ADDABLE = {
+  { kind = "plane", text = "Plane", name = "Plane", fields = { size = 2 } },
+  { kind = "box", text = "Cube", name = "Cube", fields = { size = { 2, 2, 2 } } },
+  { text = "Circle" },
+  { kind = "sphere", text = "UV Sphere", name = "Sphere",
+    fields = { radius = 1, segments = 32, rings = 16 } },
+  { kind = "ico", text = "Ico Sphere", name = "Icosphere",
+    fields = { radius = 1, subdivisions = 2 } },
+  { kind = "cylinder", text = "Cylinder", name = "Cylinder",
+    fields = { radius = 1, depth = 2, segments = 32 } },
+  { kind = "cone", text = "Cone", name = "Cone",
+    fields = { radius = 1, radius2 = 0, depth = 2, segments = 32 } },
+  { kind = "torus", text = "Torus", name = "Torus",
+    fields = { radius = 1, radius2 = 0.25, segments = 48, rings = 12 } },
+  { kind = "grid", text = "Grid", name = "Grid",
+    fields = { size = 2, segments = 10, rings = 10 } },
+  { text = "Monkey" },
+}
+
+local function add_primitive(a)
+  local name = unique(a.name)
+
+  will("added " .. name)
+
+  local t = { name = name, kind = a.kind, loc = copy(cursor3d),
+              rot = { 0, 0, 0 }, scale = { 1, 1, 1 },
+              mat = material(0xcccccc, "Plastic") }
+
+  for k, v in pairs(a.fields) do t[k] = copy(v) end
+
+  add(t)
+  selected = t
+  tab = "data"
+  print(("cafesa3d: added %s, a %s, at %.2f %.2f %.2f"):format(name, a.kind,
+        t.loc[1], t.loc[2], t.loc[3]))
+end
+
+local function add_light()
+  local name = unique("Point")
+
+  will("added " .. name)
+  selected = add{ name = name, kind = "light", loc = copy(cursor3d), radius = 0.1,
+                  power = 1000, colour = 0xffffff }
+  tab = "data"
+  print(("cafesa3d: added %s, a light"):format(name))
+end
+
+local function delete_selected()
+  local t = selected
+
+  if not t then return false end
+
+  will("deleted " .. t.name)
+  forget(t)
+  selected = nil
+  print("cafesa3d: deleted " .. t.name)
+  return true
+end
+
+local function duplicate_selected()
+  local t = selected
+
+  if not t then return false end
+
+  local c = copy(t)
+
+  c.id = nil
+  c.name = unique(t.name)
+  will("duplicated " .. t.name)
+  add(c)
+  selected = c
+  print(("cafesa3d: duplicated %s as %s"):format(t.name, c.name))
+  return true
+end
+
+-- The Add menu, Blender's: what the kit can make, and the rest greyed until
+-- their step. `x, y` are the window's; the menu opens there on the screen.
+local function add_menu(x, y)
+  local mesh = {}
+
+  for _, a in ipairs(ADDABLE) do
+    mesh[#mesh + 1] = { text = a.text, disabled = not a.kind or nil,
+                        on_choose = a.kind and function() add_primitive(a) end or nil }
+  end
+
+  local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y, {
+    { text = "Mesh", submenu = mesh },
+    { text = "Light", submenu = {
+        { text = "Point", on_choose = add_light },
+        { text = "Sun", disabled = true },
+        { text = "Spot", disabled = true },
+        { text = "Area", disabled = true } } },
+    { text = "Camera", disabled = true },
+    { text = "Empty", disabled = true },
+    { separator = true },
+    { text = "Import OBJ...", disabled = true },
+  })
+
+  if m then
+    print(("cafesa3d: add menu at %d,%d, %d wide, rows of %d"):format(m.x, m.y, m.w, m.row))
+  end
+end
+
+-- X asks first, as Blender does; Delete does not.
+local function delete_menu(x, y)
+  if not selected then return end
+
+  local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y, {
+    { text = "Delete " .. selected.name, on_choose = delete_selected },
+  })
+
+  if m then
+    print(("cafesa3d: delete menu at %d,%d, rows of %d"):format(m.x, m.y, m.row))
+  end
+end
+
+--------------------------------------------------------------------------
 -- The loop.
 --------------------------------------------------------------------------
 
-local shift = false
+local shift, ctrl = false, false
 local drag = nil
+local pointer = { VX + VW // 2, VY + VH // 2 }  -- where it was last seen
 
 local function inside(c, x, y)
   return c and x >= c.x and x < c.x + c.w and y >= c.y and y < c.y + c.h
@@ -1149,6 +1400,8 @@ local function in_view(x, y)
 end
 
 local function press(x, y)
+  pointer = { x, y }
+
   for _, name in ipairs(TABS) do
     if inside(controls["tab:" .. name], x, y) then
       tab = name
@@ -1157,6 +1410,7 @@ local function press(x, y)
     end
   end
 
+  if inside(controls.add, x, y) then add_menu(controls.add.x, HEAD) return true end
   if inside(controls.wire, x, y) then set_shading("wire") return true end
   if inside(controls.solid, x, y) then set_shading("solid") return true end
 
@@ -1173,6 +1427,7 @@ local function press(x, y)
     for _, r in ipairs(rows) do
       if y >= r.y and y < r.y + ROW then
         if x >= SX + SIDE - 36 then
+          will((r.thing.hidden and "showed " or "hid ") .. r.thing.name)
           r.thing.hidden = not r.thing.hidden
           sync(r.thing)
           print(("cafesa3d: %s %s"):format(r.thing.hidden and "hid" or "showed", r.thing.name))
@@ -1199,6 +1454,8 @@ local function press(x, y)
 end
 
 local function move(x, y)
+  pointer = { x, y }
+
   if not drag then return false end
 
   local dx, dy = x - drag.x, y - drag.y
@@ -1259,19 +1516,38 @@ local function release(x, y)
   return true
 end
 
--- Raw keys: 42 and 54 are the shifts, 2..11 the number row, 44 Z, 102 Home.
+-- Raw keys: 42 and 54 are the shifts, 29 and 97 the controls, 2..11 the
+-- number row, 30 A, 32 D, 44 Z, 45 X, 102 Home, 111 Delete.
 local function rawkey(ev)
   if ev.code == 42 or ev.code == 54 then
     shift = ev.down
     return false
   end
 
+  if ev.code == 29 or ev.code == 97 then
+    ctrl = ev.down
+    return false
+  end
+
   if not ev.down then return false end
+
+  if ctrl and ev.code == 44 then
+    if shift then return redo_last() end
+    return undo_last()
+  end
+
+  if shift and ev.code == 30 then add_menu(pointer[1], pointer[2]) return true end
+  if shift and ev.code == 32 then return duplicate_selected() end
+  if ev.code == 45 then delete_menu(pointer[1], pointer[2]) return true end
+  if ev.code == 111 then return delete_selected() end
 
   if ev.code == 2 then set_view(shift and "back" or "front") return true end
   if ev.code == 4 then set_view(shift and "left" or "right") return true end
   if ev.code == 8 then set_view(shift and "bottom" or "top") return true end
-  if ev.code == 44 then set_shading(shading == "solid" and "wire" or "solid") return true end
+  if ev.code == 44 and not ctrl then
+    set_shading(shading == "solid" and "wire" or "solid")
+    return true
+  end
   if ev.code == 102 then frame_all() return true end
 
   return false
@@ -1303,6 +1579,16 @@ do
 
   print("cafesa3d: rows " .. table.concat(out, "; "))
   print("cafesa3d: tabs " .. table.concat(tabs, "; "))
+
+  local header = {}
+
+  for _, name in ipairs({ "add", "wire", "solid" }) do
+    local c = controls[name]
+
+    header[#header + 1] = ("%s %d,%d"):format(name, c.x + c.w // 2, c.y + c.h // 2)
+  end
+
+  print("cafesa3d: controls " .. table.concat(header, "; "))
 end
 
 say_where()
@@ -1321,9 +1607,12 @@ while win.running do
 
   if not reply then break end
 
+  local said_where = false
+
   for _, ev in ipairs(reply.events or {}) do
     if win:direct_event(ev) then
       dirty = true
+      said_where = true
     elseif ev.type == "close" then
       win:close()
     elseif ev.type == "mouse" and not ev.menu and ev.button ~= "right" then
@@ -1336,13 +1625,20 @@ while win.running do
         if dirty then say_where() end
       end
     elseif ev.type == "wheel" and in_view(ev.x, ev.y) then
+      pointer = { ev.x, ev.y }
       orbit.dist = math.max(2, math.min(60, orbit.dist * (0.9 ^ (ev.n or 0))))
       view_name = VIEW_NAME
       print(("cafesa3d: %s, at %.1f"):format((ev.n or 0) > 0 and "closer" or "further",
                                              orbit.dist))
       dirty = true
     elseif ev.type == "rawkey" then
-      if rawkey(ev) then dirty = true end
+      if rawkey(ev) then
+        dirty = true
+        said_where = true
+      end
     end
   end
+
+  -- Where things are after a key or a menu changed them, as a release does.
+  if said_where then say_where() end
 end

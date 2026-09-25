@@ -150,18 +150,29 @@ static void apply(lua_State *L, struct k3d_object *o, int t)
         o->stale = true;
     }
 
+    if (has(L, t, "radius2")) {
+        o->radius2 = number(L, t, "radius2", 0, 1e5f);   /* a cone's point is 0 */
+        o->stale = true;
+    }
+
+    if (has(L, t, "subdivisions")) {
+        o->subdivisions = (int)number(L, t, "subdivisions", 1, 7);
+        o->stale = true;
+    }
+
     if (has(L, t, "depth")) {
         o->depth = number(L, t, "depth", 1e-4f, 1e5f);
         o->stale = true;
     }
 
+    /* A grid's squares may be one across; every round thing needs three. */
     if (has(L, t, "segments")) {
-        o->segments = (int)number(L, t, "segments", 3, 256);
+        o->segments = (int)number(L, t, "segments", o->kind == K3D_GRID ? 1 : 3, 256);
         o->stale = true;
     }
 
     if (has(L, t, "rings")) {
-        o->rings = (int)number(L, t, "rings", 2, 128);
+        o->rings = (int)number(L, t, "rings", o->kind == K3D_GRID ? 1 : 2, 256);
         o->stale = true;
     }
 
@@ -194,7 +205,9 @@ static void apply(lua_State *L, struct k3d_object *o, int t)
 
 static int l_add(lua_State *L)
 {
-    static const char *const kinds[] = { "plane", "box", "sphere", "cylinder", NULL };
+    /* In `enum k3d_kind`'s order, which is what makes the index the kind. */
+    static const char *const kinds[] = { "plane", "box", "sphere", "cylinder",
+                                         "ico", "cone", "torus", "grid", NULL };
     struct k3d_scene *s = check_scene(L, 1);
     struct k3d_object made, *o;
     uint32_t id;

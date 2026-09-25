@@ -60,8 +60,19 @@ static int wound_outwards(const struct k3d_object *o)
                        e1[0] * e2[1] - e1[1] * e2[0] };
         float mid[3] = { (a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3,
                          (a[2] + b[2] + c[2]) / 3 };
-        float out = o->kind == K3D_PLANE ? n[2]
-                    : n[0] * mid[0] + n[1] * mid[1] + n[2] * mid[2];
+        float out;
+
+        if (o->kind == K3D_PLANE || o->kind == K3D_GRID) {
+            out = n[2];
+        } else if (o->kind == K3D_TORUS) {
+            /* Outside a ring is away from the middle of its tube. */
+            float l = sqrtf(mid[0] * mid[0] + mid[1] * mid[1]);
+            float c[3] = { mid[0] / l * o->radius, mid[1] / l * o->radius, 0 };
+
+            out = n[0] * (mid[0] - c[0]) + n[1] * (mid[1] - c[1]) + n[2] * mid[2];
+        } else {
+            out = n[0] * mid[0] + n[1] * mid[1] + n[2] * mid[2];
+        }
 
         if (out <= 0) {
             return 0;
@@ -152,6 +163,52 @@ static void shapes(void)
         check(o->mesh.ntris == k3d_triangles(o) && o->mesh.nedges == (uint32_t)(3 * seg),
               "a cylinder is the triangles it says, and its caps have no spokes");
     }
+
+    for (seg = 1; seg <= 5; seg++) {
+        int at = 1;
+
+        o = k3d_scene_add(&s, K3D_ICO);
+        o->subdivisions = seg;
+        o->radius = 1.3f;
+        snprintf(what, sizeof(what), "an ico sphere of %d subdivisions builds, wound outwards", seg);
+        check(k3d_mesh_build(o) && wound_outwards(o), what);
+        check(o->mesh.ntris == k3d_triangles(o)
+              && o->mesh.nedges == 30u << (2 * (seg - 1))
+              && o->mesh.nverts == 10u * (1u << (2 * (seg - 1))) + 2,
+              "an ico sphere's triangles, edges and vertices are 20, 30 and 12 times four a level");
+
+        for (i = 0; i < o->mesh.nverts; i++) {
+            const float *p = &o->mesh.pos[i * 3];
+
+            at &= fabsf(sqrtf(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]) - 1.3f) < 1e-4f;
+        }
+
+        check(at, "every vertex of an ico sphere is at its radius, midpoints included");
+    }
+
+    o = k3d_scene_add(&s, K3D_ICO);
+    check(o->subdivisions == 2 && k3d_triangles(o) == 80,
+          "a new ico sphere is Blender's: two subdivisions, 80 triangles");
+
+    o = k3d_scene_add(&s, K3D_CONE);
+    check(k3d_mesh_build(o) && wound_outwards(o), "a cone to a point builds, wound outwards");
+    check(o->mesh.ntris == k3d_triangles(o) && o->mesh.ntris == 64 && o->mesh.nedges == 64,
+          "a cone to a point is a triangle a side and its base: 64, and 64 edges");
+    o = k3d_scene_add(&s, K3D_CONE);
+    o->radius2 = 0.4f;
+    check(k3d_mesh_build(o) && wound_outwards(o) && o->mesh.ntris == k3d_triangles(o)
+          && o->mesh.ntris == 128, "a cone cut short has a top as well: 128 triangles");
+
+    o = k3d_scene_add(&s, K3D_TORUS);
+    check(o->segments == 48 && o->rings == 12 && o->radius2 == 0.25f,
+          "a new torus is Blender's: 48 by 12, a quarter thick");
+    check(k3d_mesh_build(o) && wound_outwards(o), "a torus builds, wound away from its tube");
+    check(o->mesh.ntris == k3d_triangles(o) && o->mesh.ntris == 1152
+          && o->mesh.nedges == 1152, "a torus is 1152 triangles and 1152 edges");
+
+    o = k3d_scene_add(&s, K3D_GRID);
+    check(k3d_mesh_build(o) && wound_outwards(o) && o->mesh.ntris == 200
+          && o->mesh.nedges == 220, "a grid of ten by ten faces up: 200 triangles, 220 edges");
 
     o = k3d_scene_add(&s, K3D_SPHERE);
     o->segments = 2;

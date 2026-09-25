@@ -35,6 +35,10 @@ enum k3d_kind {
     K3D_BOX,
     K3D_SPHERE,          /* a UV sphere */
     K3D_CYLINDER,
+    K3D_ICO,             /* an ico sphere */
+    K3D_CONE,
+    K3D_TORUS,
+    K3D_GRID,
 };
 
 /*
@@ -64,11 +68,26 @@ struct k3d_object {
     uint32_t id;            /* stable, from 1; 0 is "nothing" */
     enum k3d_kind kind;
 
-    float size[3];          /* box: its three sides; plane: size[0] */
-    float radius;           /* sphere, cylinder */
-    float depth;            /* cylinder */
-    int   segments;         /* sphere: round the equator; cylinder: sides */
-    int   rings;            /* sphere: pole to pole */
+    /*
+     * A shape's own numbers, by Blender's names where one of these fields
+     * serves two shapes:
+     *
+     *   box       size[0..2], its sides
+     *   plane     size[0]
+     *   grid      size[0], and `segments` by `rings` squares
+     *   sphere    radius, `segments` round the equator, `rings` pole to pole
+     *   ico       radius, `subdivisions` (1 is the icosahedron's 20 faces)
+     *   cylinder  radius, depth, `segments` sides
+     *   cone      radius at the base, `radius2` at the top, depth, `segments`
+     *   torus     `radius` the major, `radius2` the minor; `segments` round
+     *             the ring, `rings` round the tube
+     */
+    float size[3];
+    float radius, radius2;
+    float depth;
+    int   segments;
+    int   rings;
+    int   subdivisions;
 
     float loc[3], rot[3], scale[3];
 

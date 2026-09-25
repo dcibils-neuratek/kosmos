@@ -9667,3 +9667,27 @@ interrupts off - and give a loaded host forty chances in four seconds; and
 **a failure says which it was**: a clean window's counts against the rate's,
 or every window having missed a deadline. The drift it exists for, 27%,
 fails it as before.
+
+## 18.190 Cafesa3D, step two begun: the Add menu, deleting, undo
+
+**The 3D Kit's shapes, all of Blender's that are made of faces** - the host
+test is 98 checks now: an ico sphere at one to five subdivisions (20, 80,
+320... triangles; its midpoints made once, shared by both triangles of an
+edge, and all at the radius), a cone to a point and one cut short, a torus
+wound away from its tube rather than from its centre, and a grid - each
+wound outwards, counted as Blender counts it, and new ones made with
+Blender's defaults. **Control**: the torus wound backwards.
+
+**Cafesa3D**, 32 checks on each board now. **Add, Mesh, Cube through the
+menus a person uses**: the app says where its menu opened and how tall a
+row is, and the Mesh submenu is found where `ui.push_menu` puts it, two
+pixels in from the menu's edge beside its row - so Cube.001 is added at the
+3D cursor, selected and outlined. **Ctrl Z** takes it away and **Ctrl
+Shift Z** puts it back (the whole scene is a snapshot before each change,
+cheaper than knowing how to reverse each); **Shift D** makes Cube.002,
+**Delete** removes it, and **X** asks first, as Blender's does. Found on
+the way, all in the test: the positions it looked at were the view's from
+before a drag and a turn to the top, so the app now says where things are
+after every key and menu as well as every release; a name with a dot in it
+was read as its number; and a square round the old cube reached a pixel of
+the next selection's outline, so it is a circle.

@@ -65,6 +65,18 @@ def around(p, r):
     return (p[0] - r, p[1] - r, p[0] + r, p[1] + r)
 
 
+def within(at, p, r, test):
+    """Pixels within `r` of `p`, every other one, passing `test`."""
+    n = 0
+
+    for y in range(p[1] - r, p[1] + r, 2):
+        for x in range(p[0] - r, p[0] + r, 2):
+            if (x - p[0]) ** 2 + (y - p[1]) ** 2 <= r * r and test(at(x, y)):
+                n += 1
+
+    return n
+
+
 def orange(c):
     return c == ORANGE
 
@@ -119,16 +131,19 @@ def main():
 
         ox, oy = (int(v) for v in opened.split(","))
         rows = dict((m.group(1), (int(m.group(2)), int(m.group(3)), int(m.group(4))))
-                    for m in re.finditer(r"(\w+) (\d+),(\d+) eye (\d+)",
+                    for m in re.finditer(r"([\w.]+) (\d+),(\d+) eye (\d+)",
                                          said("cafesa3d: rows ", mark)))
         tabs = dict((m.group(1), (int(m.group(2)), int(m.group(3))))
                     for m in re.finditer(r"(\w+) (\d+),(\d+)",
                                          said("cafesa3d: tabs ", mark)))
+        header = dict((m.group(1), (int(m.group(2)), int(m.group(3))))
+                      for m in re.finditer(r"(\w+) (\d+),(\d+)",
+                                           said("cafesa3d: controls ", mark)))
 
         def where(since):
             line = said("cafesa3d: at ", since)
             return dict((m.group(1), (ox + int(m.group(2)), oy + int(m.group(3))))
-                        for m in re.finditer(r"(\w+) (-?\d+),(-?\d+)", line or ""))
+                        for m in re.finditer(r"([\w.]+) (-?\d+),(-?\d+)", line or ""))
 
         at_start = where(mark)
         summary = said("cafesa3d: 7 objects, ", mark) or ""
@@ -247,6 +262,83 @@ def main():
         guest.sendkey("7")
         check(said("cafesa3d: view ", mark) == "top", "7 did not look from the top")
 
+        # **Adding, through the menus as a person does**: Add, then Mesh,
+        # then Cube in the submenu that opens beside Mesh - where
+        # `ui.push_menu` puts it, two pixels in from the menu's right edge
+        # and level with the row.
+        # In Solid again, where the selection is an outline and not every
+        # edge in orange - so undoing the cube can be seen to take it away.
+        mark = len(guest.seen)
+        guest.sendkey("z")
+        check(said("cafesa3d: shading ", mark) == "solid", "Z did not come back to Solid")
+
+        mark = len(guest.seen)
+        click(ox + header["add"][0], oy + header["add"][1])
+        opened = said("cafesa3d: add menu at ", mark)
+        m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", opened or "")
+        check(m is not None, "Add did not open its menu")
+
+        if m:
+            mx, my, mw, row = (int(v) for v in m.groups())
+
+            # Mesh opens its submenu on the way past; a press does it too.
+            click(mx + 24, my + 2 + row // 2)
+            sub_x, sub_y = mx + mw - 2, my + 2
+            click(sub_x + 30, sub_y + 2 + row + row // 2)      # the second: Cube
+            added = said("cafesa3d: added ", mark)
+            check(added is not None and added.startswith("Cube.001, a box, at 0.00 0.00 0.00"),
+                  "Add, Mesh, Cube did not add Cube.001 at the 3D cursor: %r" % added)
+
+            # And it is in the picture, outlined, at the cursor - wherever
+            # the view has taken the cursor by now, which the app says.
+            at = screen()
+            origin = where(max(mark, guest.seen.find("cafesa3d: added ", mark))).get("Cube.001")
+            check(origin and count(at, around(origin, 130), orange) > 40,
+                  "the new cube at the 3D cursor has no outline round it")
+
+            # Undo and redo it.
+            mark = len(guest.seen)
+            guest.sendkey("ctrl-z")
+            check(said("cafesa3d: undid ", mark) == "added Cube.001",
+                  "Ctrl Z did not undo adding Cube.001")
+            at = screen()
+            # A circle inside where the cube was: the Cylinder, selected
+            # again by the undo, has its own outline a little further out.
+            check(origin and within(at, origin, 90, orange) == 0,
+                  "after Ctrl Z the new cube's outline is still there")
+            mark = len(guest.seen)
+            guest.sendkey("ctrl-shift-z")
+            check(said("cafesa3d: redid ", mark) == "added Cube.001",
+                  "Ctrl Shift Z did not redo it")
+
+            # Shift D, then Delete; then X, which asks.
+            mark = len(guest.seen)
+            guest.sendkey("shift-d")
+            check(said("cafesa3d: duplicated ", mark) == "Cube.001 as Cube.002",
+                  "Shift D did not duplicate Cube.001 as Cube.002")
+            mark = len(guest.seen)
+            guest.sendkey("delete")
+            check(said("cafesa3d: deleted ", mark) == "Cube.002", "Delete did not delete it")
+
+            mark = len(guest.seen)
+
+            if origin:
+                click(*origin)
+
+            check(said("cafesa3d: selected ", mark) == "Cube.001",
+                  "a click at the 3D cursor did not select the new cube")
+            mark = len(guest.seen)
+            guest.sendkey("x")
+            asked = said("cafesa3d: delete menu at ", mark)
+            d = re.match(r"(\d+),(\d+), rows of (\d+)", asked or "")
+            check(d is not None, "X did not ask before deleting")
+
+            if d:
+                dx, dy, drow = (int(v) for v in d.groups())
+                click(dx + 30, dy + 2 + drow // 2)
+                check(said("cafesa3d: deleted ", mark) == "Cube.001",
+                      "choosing Delete in X's menu did not delete Cube.001")
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
@@ -262,7 +354,8 @@ def main():
     print("PASS: %d checks on Cafesa3D (the still life, the Cube outlined; the gold ball "
           "selected by a click and the outline moved to it; a row of the Outliner; an "
           "eye hiding and showing; the Material tab; a drag turning the view; the wheel; "
-          "Z to Wireframe with the faces gone; 7 from the top)" % checks)
+          "Z to Wireframe with the faces gone; 7 from the top; Add, Mesh, Cube at the "
+          "3D cursor, undone and redone; Shift D, Delete, and X asking first)" % checks)
     return 0
 
 
