@@ -1,6 +1,7 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * A camera's YUY2 into the screen's pixels, held on the host.
+ * A camera's YUY2, and a film's planes, into the screen's pixels, held on
+ * the host.
  *
  * `user/kits/gfx/yuv.c` converts every pixel of every frame, so it is held
  * to the obvious way of doing it - BT.601 studio range in floating point,
@@ -15,6 +16,10 @@
  * Built twice - natively, which on this Mac is NEON, and with `-arch
  * x86_64`, which runs under Rosetta and is SSE2 - so both are held here
  * and not only in the gate.
+ *
+ * **And a film's three planes, 4:2:0** (`roadmap.md` 4e): each of the four
+ * matrices an H.264 film is made with held to its floating-point
+ * definition, and the vector path to the scalar one on random planes.
  */
 
 #include <math.h>
@@ -336,6 +341,175 @@ int main(void)
         check(spared, "and nothing written past a row's end in any plane");
     }
 
+    /*
+     * **A film's planes, 4:2:0, for the H.264 kit** (`roadmap.md` 4e).
+     *
+     * Each of the four matrices held to the floating-point specification it
+     * is scaled from - Kr and Kb, studio or full range - within a step, over
+     * every Y and a lattice of U and V; then the colours everybody knows;
+     * then the vector path to the scalar one, bit for bit, on random planes
+     * at widths that leave a scalar tail, odd heights, and strides wider
+     * than the rows with sentinels past the last pixel.
+     */
+    {
+        static const struct {
+            const struct gfx_yuv_matrix *m;
+            double kr, kb;
+            int full;
+            const char *name;
+        } mats[] = {
+            { &gfx_yuv_bt601,      0.299,  0.114,  0, "BT.601" },
+            { &gfx_yuv_bt709,      0.2126, 0.0722, 0, "BT.709" },
+            { &gfx_yuv_bt601_full, 0.299,  0.114,  1, "BT.601 full range" },
+            { &gfx_yuv_bt709_full, 0.2126, 0.0722, 1, "BT.709 full range" },
+        };
+        unsigned k;
+
+        for (k = 0; k < sizeof mats / sizeof mats[0]; k++) {
+            double kr = mats[k].kr, kb = mats[k].kb, kg = 1 - kr - kb;
+            double ys = mats[k].full ? 1.0 : 255.0 / 219.0;
+            double cs = mats[k].full ? 1.0 : 255.0 / 224.0;
+            double yo = mats[k].full ? 0 : 16;
+            long wrong = 0;
+            char what[128];
+
+            for (y = 0; y < 256; y++) {
+                for (u = 0; u < 256; u += 3) {
+                    for (v = 0; v < 256; v += 5) {
+                        uint8_t yy = (uint8_t)y, uu = (uint8_t)u, vv = (uint8_t)v;
+                        uint32_t got;
+                        double c = ys * (y - yo), d = cs * (u - 128);
+                        double e = cs * (v - 128);
+                        double r = c + 2 * (1 - kr) * e;
+                        double b = c + 2 * (1 - kb) * d;
+                        double g = c - (2 * kb * (1 - kb) / kg) * d
+                                     - (2 * kr * (1 - kr) / kg) * e;
+                        long rr = lround(r), gg = lround(g), bb = lround(b);
+
+                        rr = rr < 0 ? 0 : rr > 255 ? 255 : rr;
+                        gg = gg < 0 ? 0 : gg > 255 ? 255 : gg;
+                        bb = bb < 0 ? 0 : bb > 255 ? 255 : bb;
+                        gfx_i420_scalar(&got, 4, &yy, &uu, &vv, 1, 1, 1, 1, 1,
+                                        mats[k].m);
+                        wrong += !near(got, 0xff000000u | (uint32_t)rr << 16
+                                            | (uint32_t)gg << 8
+                                            | (uint32_t)bb);
+                    }
+                }
+            }
+
+            snprintf(what, sizeof what, "planes, %s: every Y and a lattice "
+                     "of U and V within a step (%ld were not)",
+                     mats[k].name, wrong);
+            check(wrong == 0, what);
+        }
+
+        {
+            uint8_t yy = 16, mid = 128, full_white = 255, studio_white = 235;
+            uint32_t got;
+
+            gfx_i420(&got, 4, &yy, &mid, &mid, 1, 1, 1, 1, 1, &gfx_yuv_bt709);
+            check(got == 0xff000000u, "planes, BT.709: 16,128,128 is black");
+            gfx_i420(&got, 4, &studio_white, &mid, &mid, 1, 1, 1, 1, 1,
+                     &gfx_yuv_bt709);
+            check(got == 0xffffffffu, "planes, BT.709: 235,128,128 is white");
+            gfx_i420(&got, 4, &full_white, &mid, &mid, 1, 1, 1, 1, 1,
+                     &gfx_yuv_bt601_full);
+            check(got == 0xffffffffu, "planes, full range: 255,128,128 is "
+                                      "white");
+        }
+
+        {
+            static const unsigned widths[] = { 1, 2, 7, 8, 15, 16, 17, 31, 32,
+                                               33, 100, 639, 640, 1920 };
+            static const unsigned heights[] = { 1, 2, 3, 7 };
+            unsigned seed = 424242u, w, h, i;
+            int same = 1, spared = 1;
+
+            for (w = 0; w < sizeof widths / sizeof widths[0]; w++) {
+                for (h = 0; h < sizeof heights / sizeof heights[0]; h++) {
+                    unsigned fw = widths[w], fh = heights[h];
+                    unsigned ys_ = fw + 32, cs_ = (fw + 1) / 2 + 16;
+                    unsigned ch = (fh + 1) / 2, pitch = fw + 4;
+                    uint8_t *yp = malloc((size_t)ys_ * fh);
+                    uint8_t *up = malloc((size_t)cs_ * ch);
+                    uint8_t *vp = malloc((size_t)cs_ * ch);
+                    uint32_t *a = malloc((size_t)pitch * fh * 4);
+                    uint32_t *b = malloc((size_t)pitch * fh * 4);
+
+                    for (i = 0; i < ys_ * fh; i++) {
+                        seed = seed * 1103515245u + 12345u;
+                        yp[i] = (uint8_t)(seed >> 16);
+                    }
+                    for (i = 0; i < cs_ * ch; i++) {
+                        seed = seed * 1103515245u + 12345u;
+                        up[i] = (uint8_t)(seed >> 16);
+                        vp[i] = (uint8_t)(seed >> 8);
+                    }
+
+                    for (k = 0; k < sizeof mats / sizeof mats[0]; k++) {
+                        for (i = 0; i < pitch * fh; i++) a[i] = b[i] = 0x12345678u;
+
+                        gfx_i420(a, pitch * 4, yp, up, vp, ys_, cs_, cs_, fw,
+                                 fh, mats[k].m);
+                        gfx_i420_scalar(b, pitch * 4, yp, up, vp, ys_, cs_,
+                                        cs_, fw, fh, mats[k].m);
+                        same &= memcmp(a, b, (size_t)pitch * fh * 4) == 0;
+
+                        for (row = 0; row < (int)fh; row++) {
+                            for (x = (int)fw; x < (int)pitch; x++) {
+                                spared &= a[row * pitch + x] == 0x12345678u;
+                            }
+                        }
+                    }
+
+                    free(yp);
+                    free(up);
+                    free(vp);
+                    free(a);
+                    free(b);
+                }
+            }
+
+            check(same, "planes: the vector path equal to the scalar one, "
+                        "widths 1 to 1920, every matrix");
+            check(spared, "planes: nothing written past a row's end");
+        }
+
+        {
+            enum { FW = 1920, FH = 1080, N = 20 };
+            uint8_t *yp = malloc(FW * FH), *up = malloc(FW * FH / 4);
+            uint8_t *vp = malloc(FW * FH / 4);
+            uint32_t *dst = malloc((size_t)FW * FH * 4);
+            double t0, t_scalar, t_vec;
+            int n;
+
+            memset(yp, 100, FW * FH);
+            memset(up, 90, FW * FH / 4);
+            memset(vp, 200, FW * FH / 4);
+
+            t0 = now();
+            for (n = 0; n < N; n++)
+                gfx_i420_scalar(dst, FW * 4, yp, up, vp, FW, FW / 2, FW / 2,
+                                FW, FH, &gfx_yuv_bt709);
+            t_scalar = (now() - t0) / N;
+
+            t0 = now();
+            for (n = 0; n < N; n++)
+                gfx_i420(dst, FW * 4, yp, up, vp, FW, FW / 2, FW / 2, FW, FH,
+                         &gfx_yuv_bt709);
+            t_vec = (now() - t0) / N;
+
+            printf("a 1920x1080 film frame from planes: %.3f ms scalar, "
+                   "%.3f ms vector (%.1fx)\n", t_scalar * 1e3, t_vec * 1e3,
+                   t_scalar / t_vec);
+            free(yp);
+            free(up);
+            free(vp);
+            free(dst);
+        }
+    }
+
     /* How long a C920 frame takes, 640 by 480. */
     {
         enum { FW = 640, FH = 480, N = 200 };
@@ -398,9 +572,10 @@ int main(void)
         return 1;
     }
 
-    printf("PASS: %d checks on YUY2 into the screen's pixels (every Y, U and "
-           "V against BT.601, the known colours, a frame straight and "
-           "mirrored, and the %s path bit for bit with the scalar one)\n",
+    printf("PASS: %d checks on YUY2 and 4:2:0 planes into the screen's "
+           "pixels (every Y, U and V against BT.601, the four matrices a "
+           "film uses, the known colours, a frame straight and mirrored, and "
+           "the %s path bit for bit with the scalar one)\n",
            checks,
 #if defined(__ARM_NEON)
            "NEON"

@@ -2820,6 +2820,28 @@ void gfx_draw_fill(struct surface *s, long x, long y, long w, long h,
     }
 }
 
+/*
+ * A film's picture, planes of 4:2:0, onto a surface from its top left
+ * corner - clipped to the surface, so a picture larger than it shows its
+ * top left rather than writing past it. The H.264 kit's (`gfx_draw.h`).
+ */
+void gfx_draw_i420(struct surface *s, const uint8_t *const plane[3],
+                   const int stride[3], unsigned width, unsigned height,
+                   bool bt709, bool full_range)
+{
+    const struct gfx_yuv_matrix *m =
+        bt709 ? (full_range ? &gfx_yuv_bt709_full : &gfx_yuv_bt709)
+              : (full_range ? &gfx_yuv_bt601_full : &gfx_yuv_bt601);
+
+    if (s == NULL || s->pixels == NULL) {
+        return;
+    }
+
+    gfx_i420(s->pixels, s->pitch, plane[0], plane[1], plane[2], stride[0],
+             stride[1], stride[2], width < s->width ? width : s->width,
+             height < s->height ? height : s->height, m);
+}
+
 /* The face a number names, or the interface font when it names nothing
  * this process has open. */
 static const struct outline_font *face_at(int face)

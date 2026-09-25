@@ -140,7 +140,24 @@ days; a report that names what the holder was doing is 5r.
 **0.10.163: the camera records.** Record and Stop, and R, into `/home/videos`
 as H.264 in an MP4 - `minih264e` and `minimp4` vendored, the Record Kit, and
 the app as drawn (`usb.md` §11 8f, 18.179). Video plays it once it decodes
-H.264 (4e, libavcodec).
+H.264 (4e, libavcodec). Released as v0.10.163 for Diego's MacBook.
+
+**The H.264 decoder (4e), the same night, committed and not pushed.**
+Diego: "yes do the h264 decoder next". FFmpeg 9.0.2's decoder, 95 objects
+chosen by the linker (`tools/ffmpeg_vendor.py`), in `FULL=1` images as
+`/kits/h264`; `/lib/video.lua` plays `avc1` through it, and Diego's clip
+plays in Video under QEMU at 29.9 fps, none dropped. On the Mac, eighteen
+conformance streams match FFmpeg's checksums on all 1,682 pictures (18.181);
+in the guest, the camera's recording decodes frame for frame with its bars
+their colours on both boards (18.182); the planes-to-pixels conversion has
+NEON and SSE2 held to the scalar path (18.180). The C library gained
+broken-down time (18.183), `strtoll`, `logf` and the errno names; libgcc is
+on the userland link; `musl-math` took nine more files. Found on the way
+and in the roadmap: every process now carries FFmpeg's 812 KB of `.bss`
+(6j), and a film reads each sample with its own round trip (6k).
+The gate: 35 suites in 6:32, after one that failed only on `LICENSE` not
+yet naming the new tree - which is the licence test doing its job.
+**Next in 4e**: AAC, so a film has sound; then speed.
 The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
 something - a layout-sensitive x86 kernel fault (recorded, Known and
 unexplained), a frame-rate check that was a QEMU number, and a scheduler

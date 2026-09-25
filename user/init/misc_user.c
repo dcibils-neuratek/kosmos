@@ -11,6 +11,7 @@
 
 #include <errno.h>
 #include <locale.h>
+#include <math.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -206,6 +207,37 @@ unsigned long strtoul(const char *s, char **end, int base)
 }
 
 /*
+ * The `long long` pair, which FFmpeg asked for: its channel-layout parser
+ * reads a mask with `strtoull`. Both targets are LP64, where a `long` is
+ * already sixty-four bits - the fact `<inttypes.h>` leans on - so these are
+ * the two above under the names C99 gave the wider type, overflow and all.
+ * The assertion is what would stop a target where that stopped being true.
+ */
+_Static_assert(sizeof(long long) == sizeof(long), "LP64: long long is long");
+
+long long strtoll(const char *s, char **end, int base)
+{
+    return strtol(s, end, base);
+}
+
+unsigned long long strtoull(const char *s, char **end, int base)
+{
+    return strtoul(s, end, base);
+}
+
+/*
+ * `logf`, which FFmpeg's `ffmath.h` calls from a helper that every file
+ * including it compiles. Through the double `log` musl provides: its error
+ * is a fraction of a double's last place, so rounding the answer to a float
+ * gives the correctly rounded float in all but the rarest ties - and the
+ * one caller is computing a power, not asking for the last bit.
+ */
+float logf(float x)
+{
+    return (float)log((double)x);
+}
+
+/*
  * What time it is, for a process.
  *
  * `runtime/libc/misc.c` has a `time` too and the user image does not compile
@@ -243,6 +275,26 @@ time_t time(time_t *t)
     }
 
     return now;
+}
+
+/*
+ * Processor time, which a process here is not told.
+ *
+ * The kernel charges scheduler ticks to each process (`proc_info.ticks`),
+ * but a process has no way to find its own row, and wall time since boot
+ * would be a plausible wrong answer - the thing `runtime/libc/misc.c`'s
+ * version refuses to give. So this is the standard's own word for "not
+ * available" (C11 7.27.2.1), and a caller that checks for it is right.
+ *
+ * Linked because FFmpeg's `av_get_random_seed` mixes it into a seed, and
+ * that function waits for the value to move: it is reached only from the
+ * colour parser's "random", which nothing here calls, and it would never
+ * return. `runtime/upstream/ffmpeg/README.kosmos.md` lists it with the other
+ * things the decoder links and does not run.
+ */
+clock_t clock(void)
+{
+    return (clock_t)-1;
 }
 
 int atoi(const char *s)

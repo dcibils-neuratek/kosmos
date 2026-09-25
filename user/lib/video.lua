@@ -14,11 +14,11 @@
 -- film is fifteen lines (`user/bin/play.lua`).
 --
 -- **Which decoder is behind it is not a fact its user should have to
--- know** (`CLAUDE.md`, on kits). Today this decodes Motion JPEG, because
--- `gfx.jpeg` is already in the image; when libavcodec is ported it will
--- decode H.264, and nothing written against this file changes - not one
--- call site. That is the same promise `use("/kits/pdf")` makes about a
--- scanner that moved from Lua to C.
+-- know** (`CLAUDE.md`, on kits). It decoded Motion JPEG first, because
+-- `gfx.jpeg` was already in the image; it decodes H.264 now, through
+-- FFmpeg's decoder in `/kits/h264` (`roadmap.md` 4e), and nothing written
+-- against this file changed - not one call site. That is the same promise
+-- `use("/kits/pdf")` makes about a scanner that moved from Lua to C.
 --
 -- What it does *not* do, deliberately, is own the clock. An application
 -- has a loop already - it is answering the pointer and the keyboard in it -
@@ -73,11 +73,41 @@ local function jpeg_frame(at, length) return gfx.jpeg(at, length) end
 
 local MOTION_JPEG = { name = "Motion JPEG", frame = jpeg_frame }
 
+--
+-- **H.264 is a conversation rather than a function**, which is why it has
+-- no `frame` here and a path of its own below (`film:h264_to`). A picture
+-- may be built from pictures before *and after* it, so samples go into the
+-- decoder in the order they are decoded and pictures come out in the order
+-- they are shown, a few behind; only the kit's decoder object can hold
+-- that. `avc3` is the same stream with its parameter sets allowed in the
+-- samples as well as in `avcC`.
+--
+local H264 = { name = "H.264", stateful = true }
+
 local decoders = {
   -- QuickTime's two names for a track of JPEGs, which say so themselves.
   jpeg = MOTION_JPEG,
   mjpa = MOTION_JPEG,
+  avc1 = H264,
+  avc3 = H264,
 }
+
+--
+-- The kit, on first use and only where the image has it: `FULL=0` builds
+-- without FFmpeg, and there a film of H.264 is one this system cannot
+-- decode rather than an error in this file.
+--
+local h264_kit
+
+local function h264()
+  if h264_kit == nil then
+    local ok, kit = pcall(use, "/kits/h264")
+
+    h264_kit = (ok and type(kit) == "table") and kit or false
+  end
+
+  return h264_kit or nil
+end
 
 --
 -- **`mp4v` is not a codec**, and reading it as one was a guess that
@@ -136,8 +166,9 @@ end
 
 -- What a film says when it cannot be played, in the words a person reads.
 local function no_decoder(codec, named)
-  if codec == "avc1" or named == "H.264" then
-    return "this film is H.264, and this system has no H.264 decoder yet"
+  if named == "H.264" then
+    return "this film is H.264 in an MPEG-4 systems track, which this "
+           .. "system cannot read yet"
   end
 
   if named then
@@ -172,10 +203,20 @@ function video.open(path, options)
 
   if not page then return nil, "no memory for a read buffer" end
 
+  --
+  -- Every refusal from here gives the buffer back: four megabytes held
+  -- for a film that was never opened is four megabytes an application
+  -- that tries a folder of files never sees again.
+  --
+  local function refuse(why)
+    sys.release(page)
+    return nil, why
+  end
+
   local size = (fs.getattr(path) or {}).size
 
   if not size or size == 0 then
-    return nil, "there is no film at " .. tostring(path)
+    return refuse("there is no film at " .. tostring(path))
   end
 
   --
@@ -207,7 +248,7 @@ function video.open(path, options)
 
   local movie, why = mp4.open(read_at, size)
 
-  if not movie then return nil, tostring(why) end
+  if not movie then return refuse(tostring(why)) end
 
   local track, sound
 
@@ -216,11 +257,11 @@ function video.open(path, options)
     if t.kind == "audio" and not sound then sound = t end
   end
 
-  if not track then return nil, "this film has no picture in it" end
+  if not track then return refuse("this film has no picture in it") end
 
   local decoder, named = decoder_for(track)
 
-  if not decoder then return nil, no_decoder(track.codec, named) end
+  if not decoder then return refuse(no_decoder(track.codec, named)) end
 
   local f = setmetatable({
     path = path, page = page, read_at = read_at, frame_at = frame_at,
@@ -261,6 +302,67 @@ function video.open(path, options)
   }, film)
 
   f.fps = (f.frames > 0 and f.duration > 0) and (f.frames / f.duration) or 0
+
+  --
+  -- **The frames in the order they are shown**, which is not the order
+  -- they are stored in once a film has B-frames: a picture that depends on
+  -- one after it is stored after it. Positions from `index_at`, and the
+  -- frame numbers a caller sees, count in this order; `order[n]` is where
+  -- the n-th shown frame sits among the samples. A film without B-frames -
+  -- every Motion JPEG, every camera recording - is already in order, and
+  -- is only checked.
+  --
+  local samples = track.samples or {}
+  local order, sorted = {}, true
+
+  for i = 1, #samples do
+    order[i] = i
+
+    if i > 1 and (samples[i].pts or 0) < (samples[i - 1].pts or 0) then
+      sorted = false
+    end
+  end
+
+  if not sorted then
+    table.sort(order, function(a, b)
+      local pa, pb = samples[a].pts or 0, samples[b].pts or 0
+
+      if pa ~= pb then return pa < pb end
+
+      return a < b
+    end)
+  end
+
+  f.order = order
+
+  --
+  -- **When the first frame is shown**, which is the film's zero. An MP4
+  -- with B-frames usually shows its first picture a frame or two after its
+  -- clock starts - the encoder had to decode ahead - and an edit list says
+  -- to skip that. `mp4.lua` does not read edit lists, so this does the one
+  -- thing they are almost always used for: it starts the film at its first
+  -- picture rather than at a moment of black.
+  --
+  f.base = (#order > 0) and (samples[order[1]].pts or 0) or 0
+
+  if decoder.stateful then
+    local kit = h264()
+
+    if not kit then
+      return refuse("this film is H.264, and this system was built without "
+                    .. "its H.264 decoder (FULL=0)")
+    end
+
+    if not track.avcc then
+      return refuse("this film does not describe its H.264 stream (no avcC)")
+    end
+
+    local stream, serr = kit.decoder(track.avcc)
+
+    if not stream then return refuse(tostring(serr)) end
+
+    f.stream, f.next = stream, 1
+  end
 
   --
   -- **Bits a second, from the samples themselves** rather than from
@@ -308,20 +410,20 @@ end
 -- something asks for it rather than now.
 --
 function film:index_at(when)
-  local samples = self.track.samples
+  local samples, order = self.track.samples, self.order
   local scale = self.track.timescale or 1
-  local ticks = when * scale
+  local ticks = when * scale + self.base
 
-  if #samples == 0 then return nil end
+  if #order == 0 then return nil end
 
   local at = self.shown or 1
 
   -- Backwards first: a seek to the beginning is common and cheap.
-  while at > 1 and (samples[at].pts or 0) > ticks do
+  while at > 1 and (samples[order[at]].pts or 0) > ticks do
     at = at - 1
   end
 
-  while at < #samples and (samples[at + 1].pts or 0) <= ticks do
+  while at < #order and (samples[order[at + 1]].pts or 0) <= ticks do
     at = at + 1
   end
 
@@ -337,9 +439,11 @@ end
 --
 function film:frame(n)
   local samples = self.track.samples
-  local s = samples and samples[n]
+  local s = samples and self.order[n] and samples[self.order[n]]
 
   if not s then return nil, "there is no frame " .. tostring(n) end
+
+  if self.stream then return self:h264_to(n) end
 
   local before = sys.ticks()
   local where, got = self.frame_at(s.at, s.size)
@@ -362,6 +466,135 @@ function film:frame(n)
   self.picture, self.shown = picture, n
 
   return picture
+end
+
+--
+-- **How long one call may spend decoding**, in seconds. A seek lands on the
+-- frame before the one asked for that can be decoded alone - a key frame -
+-- and decodes forward from there, which can be a second of film; and a
+-- machine that decodes slower than the film plays falls behind. Neither is
+-- allowed to take the window with it: a call decodes for this long and
+-- shows the latest picture it has, and the next call goes on from there.
+-- A machine that cannot keep up shows fewer frames, counted as dropped,
+-- rather than stopping to answer the pointer.
+--
+local DECODE_BUDGET = 0.040
+
+--
+-- The last key frame at or before sample `i`, in storage order.
+--
+local function key_before(samples, i)
+  while i > 1 and not samples[i].key do i = i - 1 end
+
+  return i
+end
+
+--
+-- **Shown frame `n` of an H.264 film, as a surface.**
+--
+-- Two surfaces: the one on screen, and the one the next picture is
+-- converted into as it comes out of the decoder - which is often a picture
+-- for later, since pictures come out in the order they are shown and a
+-- sample may be sent well before its picture is due. It waits in the
+-- second surface until its moment and the two are swapped; no picture is
+-- converted twice.
+--
+function film:h264_to(n)
+  local samples, stream = self.track.samples, self.stream
+  local target = self.order[n]
+  local want = samples[target].pts or 0
+
+  if not self.picture then
+    self.picture = gfx.surface{ w = self.width, h = self.height }
+    self.spare = gfx.surface{ w = self.width, h = self.height }
+
+    if not self.picture or not self.spare then
+      return nil, "no memory for a " .. self.width .. " by " .. self.height
+                  .. " picture"
+    end
+  end
+
+  --
+  -- Start again from a key frame when going backwards, or when the key
+  -- frame this picture needs has not been reached yet - decoding up to it
+  -- would be decoding pictures nobody will see.
+  --
+  local key = key_before(samples, target)
+
+  if (self.shown_pts and want < self.shown_pts) or key > self.next then
+    stream:flush()
+    self.next, self.pending_pts, self.shown_pts = key, nil, nil
+    self.finished = false
+  end
+
+  local limit = sys.ticks() + DECODE_BUDGET * self.hz
+
+  while true do
+    --
+    -- A picture that has come out is shown once it is due - or at once
+    -- when nothing is shown yet, since the first picture after a start or a
+    -- seek is better than black.
+    --
+    if self.pending_pts then
+      if self.pending_pts <= want or not self.shown_pts then
+        self.picture, self.spare = self.spare, self.picture
+        self.shown_pts, self.pending_pts = self.pending_pts, nil
+      else
+        break
+      end
+    end
+
+    if (self.shown_pts and self.shown_pts >= want) or sys.ticks() > limit then
+      break
+    end
+
+    local before = sys.ticks()
+    local pts, said = stream:picture(self.spare)
+
+    if pts then
+      self.pending_pts = pts
+      self.decoded = self.decoded + 1
+      self.decode_ticks = self.decode_ticks + (sys.ticks() - before)
+    elseif said == "none" then
+      if self.next <= #samples then
+        local s = samples[self.next]
+        local where, got = self.frame_at(s.at, s.size)
+
+        if not where then return nil, tostring(got) end
+
+        local read_done = sys.ticks()
+        local ok, why = stream:send(where, got, s.pts or 0)
+
+        self.read_ticks = self.read_ticks + (read_done - before)
+        self.decode_ticks = self.decode_ticks + (sys.ticks() - read_done)
+
+        --
+        -- A sample that will not decode is passed over rather than
+        -- stopping the film: the decoder conceals what it can, and a
+        -- damaged frame in the middle of a film is a blemish, not an end.
+        -- What it said is kept for whoever asks (`film.error`).
+        --
+        if ok or why ~= "full" then self.next = self.next + 1 end
+        if not ok and why ~= "full" then self.error = tostring(why) end
+      elseif not self.finished then
+        stream:finish()
+        self.finished = true
+      else
+        break
+      end
+    elseif said == "end" then
+      break
+    else
+      self.error = tostring(said)
+      break
+    end
+  end
+
+  if not self.shown_pts then
+    return nil, self.error or "no picture has come out yet"
+  end
+
+  return self.picture
 end
 
 --
@@ -392,7 +625,14 @@ function film:draw(dest, when, x, y, w, h)
     self.dropped = self.dropped + (n - self.drew_frame - 1)
   end
 
-  local picture = (n == self.shown) and self.picture or self:frame(n)
+  local picture
+
+  if self.stream then
+    picture = self:h264_to(n)
+    self.shown = n
+  else
+    picture = (n == self.shown) and self.picture or self:frame(n)
+  end
 
   if not picture then return false end
 
@@ -588,6 +828,9 @@ end
 
 function film:close()
   if self.picture then self.picture:free() self.picture = nil end
+  if self.spare then self.spare:free() self.spare = nil end
+  if self.stream then self.stream:close() self.stream = nil end
+  if self.page then sys.release(self.page) self.page = nil end
 
   self.track, self.movie, self.shown = nil, nil, nil
 end

@@ -19,7 +19,7 @@
  * which is the exact dependency `runtime/include/` exists to remove, and it
  * had a hole in it that nobody could see while there was one compiler.
  *
- * Three macros, because three are used: `PRIu32`, `PRIuMAX` and `PRIuPTR`,
+ * Three macros, because three were used: `PRIu32`, `PRIuMAX` and `PRIuPTR`,
  * across libdom and libcss. The rest of C99's set is not here for the
  * reason nothing else in this directory is complete either - a libc grown
  * to fit what a port asked for is a libc somebody can read.
@@ -31,6 +31,25 @@
  */
 
 #include <stdint.h>
+
+/*
+ * The eight- and sixteen-bit rows arrived with FFmpeg, whose decoders print
+ * a header field at the width it was read. Both are promoted to `int` on
+ * the way through `...`, so they print exactly as the thirty-two-bit row
+ * does; `hh` and `h` would only narrow the value back, and the standard
+ * leaves the choice to the implementation.
+ */
+#define PRId8       "d"
+#define PRIi8       "i"
+#define PRIu8       "u"
+#define PRIx8       "x"
+#define PRIX8       "X"
+
+#define PRId16      "d"
+#define PRIi16      "i"
+#define PRIu16      "u"
+#define PRIx16      "x"
+#define PRIX16      "X"
 
 #define PRId32      "d"
 #define PRIi32      "i"

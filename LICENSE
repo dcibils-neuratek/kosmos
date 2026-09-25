@@ -91,9 +91,19 @@ Vendored third-party code keeps its own licence, which travels beside it:
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 
-Two more are GPL. Nothing here is linked dynamically - whatever is compiled
-into an image is linked into it - so an image carrying either is a combined
+Three more are copyleft: two under the GPL, and FFmpeg's decoder under the
+LGPL. Nothing here is linked dynamically - whatever is compiled into an
+image is linked into it - so an image carrying either GPL one is a combined
 work under the GPL as a whole. Kosmos's own sources stay MIT either way.
+
+  FFmpeg's H.264 decoder, by the FFmpeg developers, LGPL 2.1 or later
+      runtime/upstream/ffmpeg/, in COPYING.LGPLv2.1 and LICENSE.md, with
+      the vendoring recorded in README.kosmos.md beside it: the 95 files
+      the H.264 Kit's entry points reach, unmodified. Built by default
+      (`FULL=1`) and left out of `make FULL=0`, `make test` and
+      `make bench`. Every source in this tree is public, so the image can
+      be relinked against a changed FFmpeg, which is what the LGPL asks
+      of a static link.
 
   doomgeneric, id Software's Doom by way of Chocolate Doom, GPLv2
       runtime/upstream/doom/, in LICENSE.doomgeneric. Built by default:

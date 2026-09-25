@@ -51,4 +51,48 @@ int *__errno(void);
 #define EINVAL   22
 #endif
 
+/*
+ * And the rest of the set FFmpeg names, all at once, because it names them
+ * all at once: `libavutil/error.c` keeps a table of every errno it knows a
+ * sentence for, and a decoder answers `AVERROR(ENOMEM)` or
+ * `AVERROR(EAGAIN)` - which is `-ENOMEM` - on the way out of nearly every
+ * function. The numbers are only compared, never shown to a person as
+ * numbers, and they are Linux's so that one read against FFmpeg's own
+ * documentation says the same thing.
+ *
+ * Nothing in Kosmos sets any of these. They are names a vendored library
+ * returns to its own caller, inside one process.
+ */
+#define EPERM         1
+#define ENOENT        2
+#define ESRCH         3
+#define EINTR         4
+#define EIO           5
+#define ENXIO         6
+#define E2BIG         7
+#define ENOEXEC       8
+#define ECHILD       10
+#define EAGAIN       11
+#define ENOMEM       12
+#define EACCES       13
+#define EBUSY        16
+#define EEXIST       17
+#define EXDEV        18
+#define ENODEV       19
+#define ENFILE       23
+#define EMFILE       24
+#define ENOTTY       25
+#define EFBIG        27
+#define ENOSPC       28
+#define ESPIPE       29
+#define EROFS        30
+#define EMLINK       31
+#define EPIPE        32
+#define EDEADLK      35
+#define ENAMETOOLONG 36
+#define ENOLCK       37
+#define ENOSYS       38
+#define ENOTEMPTY    39
+#define EILSEQ       84
+
 #endif /* ERRNO_H */

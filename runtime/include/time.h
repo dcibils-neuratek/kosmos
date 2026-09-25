@@ -22,4 +22,28 @@ typedef long clock_t;
 time_t time(time_t *t);
 clock_t clock(void);
 
+/*
+ * Broken-down time, which is arithmetic and not a clock: which date and
+ * hour a count of seconds names, and back. `runtime/libc/time.c` has it and
+ * says why it arrived - FFmpeg - and what "local" means on a machine that
+ * does not know where it is.
+ */
+struct tm {
+    int tm_sec;     /* 0-60, the 60 a leap second */
+    int tm_min;     /* 0-59 */
+    int tm_hour;    /* 0-23 */
+    int tm_mday;    /* 1-31 */
+    int tm_mon;     /* 0-11 */
+    int tm_year;    /* years since 1900 */
+    int tm_wday;    /* 0-6, Sunday first */
+    int tm_yday;    /* 0-365 */
+    int tm_isdst;   /* always 0 here */
+};
+
+struct tm *gmtime(const time_t *t);
+struct tm *localtime(const time_t *t);
+time_t     mktime(struct tm *tm);
+size_t     strftime(char *out, size_t size, const char *format,
+                    const struct tm *tm);
+
 #endif /* TIME_H */

@@ -28,7 +28,8 @@
 --   timescale  ticks a second, which every time below is in
 --   duration   in those ticks
 --   video      width, height; and from `avcC` (14496-15 5.3.3.1): profile,
---              level, nal_length (bytes before each NAL unit), sps, pps
+--              level, nal_length (bytes before each NAL unit), sps, pps,
+--              and `avcc`, the record's bytes whole, for a decoder
 --   audio      channels, rate; and from `esds` (14496-1 7.2.6): object
 --              (0x40 is MPEG-4 audio), aot (2 is AAC-LC), config - the
 --              AudioSpecificConfig's bytes, as an AAC decoder wants them
@@ -102,6 +103,11 @@ local function avcc(s, box, track)
   local at = box.body
 
   if box.size < 15 then return end
+
+  -- The record whole as well, as it stands in the file: it is what an
+  -- H.264 decoder is opened with (FFmpeg's `extradata`), and handing it
+  -- over as read is safer than putting it back together from the pieces.
+  track.avcc = s:sub(box.body, box.at + box.size - 1)
 
   track.profile = s:byte(at + 1)
   track.compat = s:byte(at + 2)

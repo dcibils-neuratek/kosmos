@@ -835,6 +835,28 @@ processors, and still what follows USB:
    kits): MJPEG today, H.264 when libavcodec lands, and not one call site
    changes. That is BeOS's Media Kit argument and the reason `use("/kits/x")`
    and `use("/lib/x.lua")` read the same at the call site.
+
+   **H.264 PLAYS - 24 September.** Diego: "yes do the h264 decoder next".
+   FFmpeg 9.0.2's decoder, checked against FFmpeg's release signature, is
+   in `runtime/upstream/ffmpeg/` - **95 objects, taken by the linker** from
+   the kit's entry points by `tools/ffmpeg_vendor.py`, which also writes the
+   configuration for this system and the object list the Makefile compiles
+   (`runtime/upstream/ffmpeg/README.kosmos.md`). The H.264 Kit
+   (`user/kits/ffmpeg/`, `use("/kits/h264")`) is a decoder object - samples
+   in by address in decoding order, pictures out in showing order straight
+   onto a surface - and `/lib/video.lua` plays `avc1` through it with no call
+   site changed. Diego's clip plays in Video under QEMU at its full 29.9
+   frames a second, none dropped, 5.0 ms to decode a frame.
+   **Held three ways**: eighteen H.264 conformance streams on the Mac,
+   every one of 1,682 pictures against FFmpeg's own checksum
+   (`testing.md` 18.181); the camera's recording decoded in the guest on
+   both boards, every frame the one asked for and the pattern's bars their
+   colours (18.182); and the conversion to pixels, four matrices, NEON and
+   SSE2 against the scalar path (18.180).
+   **What is left of 4e: the sound** - AAC, from the same FFmpeg, with the
+   same script and one more decoder named in it - **and speed**: FFmpeg's
+   NEON assembly for AArch64, threads when `docs/threads.md` allows them,
+   and 6k.
 4f. **AGREED on 19 September - the Game Kit: our own, for games and
    everything else that draws its own window.** It began as "vendor in
    love2d ... as we will be doing some apps that require love2d lua framework
@@ -1667,6 +1689,25 @@ processors, and still what follows USB:
      look a thin grey pill with no arrows (`docs/apps.html`'s list). The
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
+
+6k. **FOUND on 24 September - a film reads each sample with a round trip
+   of its own.** The Video app's overlay on Diego's clip under QEMU: 5.3 ms
+   to read a frame and 5.0 ms to decode it. `video.lua` asks the disk
+   server for one sample at a time, a few kilobytes, through `fs.read_into`;
+   reading ahead a second of film into a ring would make most frames cost
+   no round trip at all. QEMU's numbers, so the ThinkPad decides whether it
+   matters - but it is the larger half of a frame here.
+
+6j. **FOUND on 24 September - every process pays for FFmpeg's empty
+   tables.** The userland image's writable half went from 0.80 to 1.57 MB
+   with the H.264 Kit: `.bss` is inside the image here, and a process's
+   writable half is a copy of it (`process_create`), so every process on
+   the desktop - about twenty-five - carries 812 KB of zeros, 693 KB of
+   them one table (`film_grain_db`, `h274.c`) that is filled only for a
+   film with film grain. About 20 MB. **The fix is the kernel's, not
+   FFmpeg's**: `.bss` as zero pages on demand, which would make every
+   port's tables - Doom's too - free until touched. Not built; wanted
+   before the next port that brings tables.
 
 6i. **DONE on 24 September (0.10.160) - the drivers' band.** Diego: "Do 6i yes". The USB
    driver runs at NORMAL and the desktop at DISPLAY, so a busy desktop holds
@@ -3012,11 +3053,10 @@ processors, and still what follows USB:
    any code is written. If it reports bytes written, this is a data-loss
    bug and goes to the top of the list.
 
-5j. **The video player decodes Motion JPEG only** (`roadmap.md` 4e). Not a
-   bug and worth stating because it was mistaken for one on 21 September:
-   `magicword-clip.mp4` is H.264 and the app refused it correctly. The
-   MJPEG file it can play was never copied into `~/Kosmos/home`, so no
-   stick has ever carried one.
+5j. **DONE on 24 September - the video player decodes H.264 as well as
+   Motion JPEG** (4e). It was not a bug and was mistaken for one on 21
+   September: `magicword-clip.mp4` is H.264 and the app refused it
+   correctly, until the H.264 Kit landed.
 
 5f. **The sound suite measures the Mac, not the machine** (`testing.md`
    18.127). It failed twice inside `make test` on 20 September and passed

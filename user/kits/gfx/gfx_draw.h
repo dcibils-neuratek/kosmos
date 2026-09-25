@@ -2,6 +2,7 @@
 #ifndef KOSMOS_GFX_DRAW_H
 #define KOSMOS_GFX_DRAW_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -43,5 +44,15 @@ int  gfx_draw_height(int face);
  * from the height: two faces on one line share a baseline, not a top edge,
  * and `gfx_draw_text` takes the top. */
 int  gfx_draw_ascent(int face);
+
+/*
+ * A film's picture - three planes, 4:2:0, as a decoder hands them back -
+ * onto the surface from its top left, clipped to it (the H.264 kit,
+ * `roadmap.md` 4e). `bt709` and `full_range` say which of the four
+ * conversions in `yuv.h` the film was made with.
+ */
+void gfx_draw_i420(struct surface *s, const uint8_t *const plane[3],
+                   const int stride[3], unsigned width, unsigned height,
+                   bool bt709, bool full_range);
 
 #endif /* KOSMOS_GFX_DRAW_H */

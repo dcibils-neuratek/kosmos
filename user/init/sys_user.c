@@ -2665,6 +2665,9 @@ void kosmos_quake_kit(lua_State *L);
 #ifdef KOSMOS_SNES
 void kosmos_snes_kit(lua_State *L);
 #endif
+#ifdef KOSMOS_FFMPEG
+void kosmos_h264_kit(lua_State *L);
+#endif
 
 static const struct {
     const char *name;
@@ -2696,6 +2699,10 @@ static const struct {
 #ifdef KOSMOS_SNES
     /* `FULL=1`, the default, or `SNES=1`. */
     { "snes",     kosmos_snes_kit },
+#endif
+#ifdef KOSMOS_FFMPEG
+    /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoder. */
+    { "h264",     kosmos_h264_kit },
 #endif
     { NULL, NULL }
 };

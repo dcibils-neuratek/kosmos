@@ -9436,3 +9436,73 @@ stops. The Camera app: Record and Stop, and R.
   robin before the other was ready - the test's race, not the scheduler's.
   Both are woken with interrupts masked now; the image that failed is kept,
   and the fixed test passed three runs of the x86 suite and one of the ARM.
+
+## 18.180 A film's planes into pixels, four matrices
+
+`roadmap.md` 4e. An H.264 picture is three planes, 4:2:0, and says which
+matrix it was made with: `gfx_i420` in `user/kits/gfx/yuv.c` takes the matrix
+as an argument - BT.601 and BT.709, studio and full range - and is lent to
+the H.264 Kit as `gfx_draw_i420` (`gfx_draw.h`).
+
+- `tools/test_yuv.c`, 19 -> 28, NEON and SSE2: each of the four matrices
+  against its floating-point definition from Kr and Kb, every Y and a
+  lattice of U and V, within a step; black and white where they belong in
+  studio and full range; the vector path to the scalar one, bit for bit,
+  widths 1 to 1920, heights 1 to 7, strides wider than a row with sentinels
+  past it, every matrix. A 1920 x 1080 frame: 0.60 ms with NEON on this Mac,
+  1.32 ms with SSE2 under Rosetta. **Control**: one coefficient off by one
+  in the NEON path fails the bit-for-bit check.
+
+## 18.181 H.264, held to FFmpeg's own checksums
+
+`roadmap.md` 4e. `tools/test_h264.c` on the Mac: the H.264 Kit's core
+(`user/kits/ffmpeg/h264_core.c`) over the 95 vendored FFmpeg objects, all
+compiled against Kosmos's headers and configuration as for the guest, with
+the Mac's C library under them (`tools/test_h264_libc.c` is the three names
+the two spell differently).
+
+- Eighteen conformance streams (`tools/h264_conformance.txt`: CAVLC and
+  CABAC, B slices, weighted prediction, cropping, PAFF and MBAFF, many
+  references, High's 8x8 transform), fetched once into `build/downloads/`
+  and held to their sums by `tools/fetch_h264_conformance.py`. Each is split
+  into access units and handed to the kit as an MP4 would hand it - `avcC`,
+  length-prefixed samples - and every picture's Adler-32, as `-f framecrc`
+  computes it, is compared with FFmpeg's reference for that stream: **1,682
+  pictures, every one exact**, 1.8 s. And a record that is not `avcC` is
+  refused with a reason.
+- **The control was the first run**, and it found two things in the kit:
+  `CVPA1_TOSHIBA_B` and `CAMA1_TOSHIBA_B` came out two pictures short,
+  because a stream that does not say how far it reorders is assumed by
+  FFmpeg not to, and its first pictures are discarded - FFmpeg's own player
+  probes first, and the kit now asks for the standard's depth
+  (`FF_COMPLIANCE_STRICT`); `CVFC1_Sony_C` came out 326 wide rather than
+  300, because FFmpeg crops the left edge only to an aligned column unless
+  told otherwise (`AV_CODEC_FLAG_UNALIGNED`). Each failed on every picture
+  until fixed, with the first wrong one described.
+
+## 18.182 The recording, played
+
+`roadmap.md` 4e. **arm-record** and **x86-record**, 7 -> 11: after the
+recording is read back, a program in `/ramfs` opens it with `/lib/video.lua`
+- as the Video app does: the MP4 reader, the H.264 Kit, FFmpeg, the
+conversion onto a surface - and asks for every frame. 128 of 128 came out as
+the frame asked for on AArch64, 131 of 131 on x86-64, at 11.4 and 9.5 ms a
+frame under QEMU; and the pattern's eight bars, read off the last picture,
+came back within one step of 100% white, yellow, cyan, green, magenta, red,
+blue and black, held within eight. **Control**: the kit forced to BT.709
+brings yellow back as `fff000` and cyan as `00e7ff`, and fails.
+
+Seen once by hand rather than held: Diego's `magicword-clip.mp4` (H.264 Main,
+B-frames, 640 x 360) in the Video app under QEMU, 29.9 frames a second of
+29.9, none of 727 dropped, 5.0 ms to decode a frame and 5.3 to read it
+(`roadmap.md` 6k).
+
+## 18.183 Broken-down time
+
+`runtime/libc/time.c`: `gmtime`, `localtime`, `mktime` and `strftime`,
+which FFmpeg's option parser and logger link. `tools/test_time.c` compiles
+it renamed beside the Mac's libc and compares: `gmtime` over two hundred
+thousand instants from 1653 to 2286 and the calendar's awkward days; `mktime`
+against `timegm`, fields out of range included; every conversion `strftime`
+implements, and zero when the result does not fit - 200,138 checks.
+**Control**: the epoch's weekday a day early fails 200,050 of them.

@@ -23,6 +23,7 @@
  */
 
 #include <stddef.h>
+#include <string.h>
 
 #include "yuv.h"
 
@@ -404,4 +405,192 @@ void gfx_yuy2_i420_scalar(uint8_t *y, uint8_t *u, uint8_t *v,
                           const uint8_t *src, unsigned width, unsigned height)
 {
     i420(y, u, v, y_stride, uv_stride, src, width, height, false);
+}
+
+/*
+ * **Planar 4:2:0 into 0xffRRGGBB**, for a film (`yuv.h`). The same sums as
+ * `gfx_yuy2`'s, with the matrix an argument rather than BT.601's constants,
+ * and the same promise: the vector paths are the scalar one to the bit.
+ *
+ * Sixteen pixels a step on NEON and eight on SSE2. The brightness of a
+ * pair's two pixels is taken apart into even and odd - `vld2` on NEON, a
+ * mask and a shift on SSE2 - so each lane of chroma meets its two pixels
+ * exactly as a YUY2 pair does, and the arithmetic below is the YUY2 path's
+ * with the numbers read from `m`.
+ *
+ * The coefficients are BT.601 and BT.709's (Rec. ITU-R BT.601-7 and
+ * BT.709-6), in studio range - Y stretched from 16..235 by 255/219, U and V
+ * from 16..240 by 255/224 - and in full range, times 256 and rounded.
+ */
+const struct gfx_yuv_matrix gfx_yuv_bt601      = { 298, 409, 100, 208, 516, 16 };
+const struct gfx_yuv_matrix gfx_yuv_bt709      = { 298, 459,  55, 136, 541, 16 };
+const struct gfx_yuv_matrix gfx_yuv_bt601_full = { 256, 359,  88, 183, 454,  0 };
+const struct gfx_yuv_matrix gfx_yuv_bt709_full = { 256, 403,  48, 120, 475,  0 };
+
+static void planar_scalar(uint32_t *row, const uint8_t *y, const uint8_t *u,
+                          const uint8_t *v, unsigned from, unsigned width,
+                          const struct gfx_yuv_matrix *m)
+{
+    unsigned x;
+
+    for (x = from; x < width; x++) {
+        int d = u[x / 2u] - 128;
+        int e = v[x / 2u] - 128;
+        int c = m->y * (y[x] - m->y_offset);
+
+        row[x] = 0xff000000u
+               | clip((c + m->rv * e + 128) >> 8) << 16
+               | clip((c - m->gu * d - m->gv * e + 128) >> 8) << 8
+               | clip((c + m->bu * d + 128) >> 8);
+    }
+}
+
+#if defined(__ARM_NEON)
+/* Eight pairs - sixteen pixels - of one row, and how far it got. */
+static unsigned planar_neon(uint32_t *row, const uint8_t *y, const uint8_t *u,
+                            const uint8_t *v, unsigned width,
+                            const struct gfx_yuv_matrix *m)
+{
+    const int16x8_t off = vdupq_n_s16(m->y_offset), k128 = vdupq_n_s16(128);
+    const int32x4_t round = vdupq_n_s32(128);
+    unsigned x;
+
+    for (x = 0; x + 16u <= width; x += 16u) {
+        uint8x8x2_t yy = vld2_u8(y + x);                /* even, odd */
+        int16x8_t y0 = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(yy.val[0])), off);
+        int16x8_t y1 = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(yy.val[1])), off);
+        int16x8_t d = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vld1_u8(u + x / 2u))), k128);
+        int16x8_t e = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vld1_u8(v + x / 2u))), k128);
+        int16x4_t d_lo = vget_low_s16(d), d_hi = vget_high_s16(d);
+        int16x4_t e_lo = vget_low_s16(e), e_hi = vget_high_s16(e);
+
+        int32x4_t r_lo = vmlal_n_s16(round, e_lo, m->rv);
+        int32x4_t r_hi = vmlal_n_s16(round, e_hi, m->rv);
+        int32x4_t g_lo = vmlal_n_s16(vmlal_n_s16(round, d_lo, (int16_t)-m->gu),
+                                     e_lo, (int16_t)-m->gv);
+        int32x4_t g_hi = vmlal_n_s16(vmlal_n_s16(round, d_hi, (int16_t)-m->gu),
+                                     e_hi, (int16_t)-m->gv);
+        int32x4_t b_lo = vmlal_n_s16(round, d_lo, m->bu);
+        int32x4_t b_hi = vmlal_n_s16(round, d_hi, m->bu);
+
+        int32x4_t c0_lo = vmull_n_s16(vget_low_s16(y0), m->y);
+        int32x4_t c0_hi = vmull_n_s16(vget_high_s16(y0), m->y);
+        int32x4_t c1_lo = vmull_n_s16(vget_low_s16(y1), m->y);
+        int32x4_t c1_hi = vmull_n_s16(vget_high_s16(y1), m->y);
+
+        uint8x8x2_t zb = vzip_u8(channel(c0_lo, c0_hi, b_lo, b_hi),
+                                 channel(c1_lo, c1_hi, b_lo, b_hi));
+        uint8x8x2_t zg = vzip_u8(channel(c0_lo, c0_hi, g_lo, g_hi),
+                                 channel(c1_lo, c1_hi, g_lo, g_hi));
+        uint8x8x2_t zr = vzip_u8(channel(c0_lo, c0_hi, r_lo, r_hi),
+                                 channel(c1_lo, c1_hi, r_lo, r_hi));
+        uint8x16x4_t out;
+
+        out.val[0] = vcombine_u8(zb.val[0], zb.val[1]);
+        out.val[1] = vcombine_u8(zg.val[0], zg.val[1]);
+        out.val[2] = vcombine_u8(zr.val[0], zr.val[1]);
+        out.val[3] = vdupq_n_u8(0xff);
+        vst4q_u8((uint8_t *)(row + x), out);
+    }
+
+    return x;
+}
+#elif defined(__SSE2__)
+/* Four pairs - eight pixels - of one row, and how far it got. */
+static unsigned planar_sse2(uint32_t *row, const uint8_t *y, const uint8_t *u,
+                            const uint8_t *v, unsigned width,
+                            const struct gfx_yuv_matrix *m)
+{
+    const __m128i zero = _mm_setzero_si128();
+    const __m128i off = _mm_set1_epi16(m->y_offset), k128 = _mm_set1_epi16(128);
+    const __m128i round = _mm_set1_epi32(128);
+    const __m128i alpha = _mm_set1_epi8((char)0xff);
+    unsigned x;
+
+    for (x = 0; x + 8u <= width; x += 8u) {
+        int32_t uu, vv;
+        __m128i c, d, e, r, g, b;
+
+        memcpy(&uu, u + x / 2u, 4);
+        memcpy(&vv, v + x / 2u, 4);
+
+        /* Eight brightnesses in order, and each chroma sample doubled so
+         * it sits beside both of its pixels. */
+        c = _mm_sub_epi16(_mm_unpacklo_epi8(_mm_loadl_epi64(
+                (const __m128i *)(const void *)(y + x)), zero), off);
+        d = _mm_sub_epi16(_mm_unpacklo_epi8(_mm_cvtsi32_si128(uu), zero), k128);
+        e = _mm_sub_epi16(_mm_unpacklo_epi8(_mm_cvtsi32_si128(vv), zero), k128);
+        d = _mm_unpacklo_epi16(d, d);
+        e = _mm_unpacklo_epi16(e, e);
+
+        r = half(madd2(c, e, m->y, m->rv, 0), madd2(c, e, m->y, m->rv, 1),
+                 round);
+        g = half(_mm_add_epi32(madd2(c, e, m->y, (short)-m->gv, 0),
+                               madd2(d, zero, (short)-m->gu, 0, 0)),
+                 _mm_add_epi32(madd2(c, e, m->y, (short)-m->gv, 1),
+                               madd2(d, zero, (short)-m->gu, 0, 1)), round);
+        b = half(madd2(c, d, m->y, m->bu, 0), madd2(c, d, m->y, m->bu, 1),
+                 round);
+
+        {
+            __m128i r8 = _mm_packus_epi16(r, r);
+            __m128i g8 = _mm_packus_epi16(g, g);
+            __m128i b8 = _mm_packus_epi16(b, b);
+            __m128i bg = _mm_unpacklo_epi8(b8, g8);
+            __m128i ra = _mm_unpacklo_epi8(r8, alpha);
+
+            _mm_storeu_si128((__m128i *)(void *)(row + x),
+                             _mm_unpacklo_epi16(bg, ra));
+            _mm_storeu_si128((__m128i *)(void *)(row + x + 4u),
+                             _mm_unpackhi_epi16(bg, ra));
+        }
+    }
+
+    return x;
+}
+#endif
+
+static void planar(uint32_t *dst, unsigned long pitch, const uint8_t *y,
+                   const uint8_t *u, const uint8_t *v, long y_stride,
+                   long u_stride, long v_stride, unsigned width,
+                   unsigned height, const struct gfx_yuv_matrix *m,
+                   bool vectors)
+{
+    unsigned r;
+
+    for (r = 0; r < height; r++) {
+        uint32_t *row = (uint32_t *)((uint8_t *)dst + (unsigned long)r * pitch);
+        const uint8_t *ys = y + (long)r * y_stride;
+        const uint8_t *us = u + (long)(r / 2u) * u_stride;
+        const uint8_t *vs = v + (long)(r / 2u) * v_stride;
+        unsigned done = 0;
+
+        if (vectors) {
+#if defined(__ARM_NEON)
+            done = planar_neon(row, ys, us, vs, width, m);
+#elif defined(__SSE2__)
+            done = planar_sse2(row, ys, us, vs, width, m);
+#endif
+        }
+
+        planar_scalar(row, ys, us, vs, done, width, m);
+    }
+}
+
+void gfx_i420(uint32_t *dst, unsigned long pitch, const uint8_t *y,
+              const uint8_t *u, const uint8_t *v, long y_stride,
+              long u_stride, long v_stride, unsigned width, unsigned height,
+              const struct gfx_yuv_matrix *m)
+{
+    planar(dst, pitch, y, u, v, y_stride, u_stride, v_stride, width, height,
+           m, true);
+}
+
+void gfx_i420_scalar(uint32_t *dst, unsigned long pitch, const uint8_t *y,
+                     const uint8_t *u, const uint8_t *v, long y_stride,
+                     long u_stride, long v_stride, unsigned width,
+                     unsigned height, const struct gfx_yuv_matrix *m)
+{
+    planar(dst, pitch, y, u, v, y_stride, u_stride, v_stride, width, height,
+           m, false);
 }

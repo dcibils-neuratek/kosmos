@@ -24,6 +24,8 @@ size_t heap_size(void);
 
 long   strtol(const char *s, char **end, int base);
 unsigned long strtoul(const char *s, char **end, int base);
+long long strtoll(const char *s, char **end, int base);
+unsigned long long strtoull(const char *s, char **end, int base);
 int    atoi(const char *s);
 double atof(const char *s);
 char  *getenv(const char *name);

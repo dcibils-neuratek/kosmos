@@ -85,6 +85,7 @@ ifndef BENCH
 DOOM := 1
 WEB  := 1
 SNES := 1
+FFMPEG := 1
 WALLPAPERS := 1
 FB   ?= 1920x1080
 endif
@@ -113,7 +114,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)$(if $(QUAKE),-quake)$(if $(SNES),-snes)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)$(if $(QUAKE),-quake)$(if $(SNES),-snes)$(if $(FFMPEG),-ffmpeg)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -489,7 +490,17 @@ MUSL_CFLAGS := -std=c99 -w -Dhidden= -Dweak= \
                -I$(MUSL)/src/internal -I$(MUSL)/arch/$(ARCH) \
                -I$(MUSL)/arch/generic -I$(MUSL)/include
 
-LIBS :=
+#
+# **libgcc, on the userland's link and nowhere else**: the compiler's own
+# support routines, which `-nostdlib` leaves out along with the C library it
+# was aimed at. FFmpeg's `av_sscanf` reads a number into a `long double`,
+# which on AArch64 is a 128-bit float with no instructions behind it, so
+# the compiler turns its arithmetic into calls - `__addtf3`, `__multf3` -
+# that only libgcc defines. It is not a C library and brings none in; a
+# function comes out of the archive only when a call names it. On x86-64 a
+# `long double` is the x87's, in hardware, and nothing is taken.
+#
+LIBS := -lgcc
 
 # The kernel links none of it. It has no floats by construction, and the one
 # caller it ever had was Lua.
@@ -543,6 +554,7 @@ USER_LIBC := runtime/libc/string.c \
              runtime/libc/strtod.c \
              runtime/libc/stdio.c \
              runtime/libc/scan.c \
+             runtime/libc/time.c \
              runtime/libc/setjmp-$(ARCH).S \
              runtime/libc/callstack-$(ARCH).S \
              user/init/misc_user.c \
@@ -864,6 +876,42 @@ USER_SRCS += $(QUAKE_SRCS)
 endif
 
 #
+# `FFMPEG=1` - FFmpeg's H.264 decoder, which is the H.264 Kit
+# (`user/kits/ffmpeg/`, `roadmap.md` 4e), on in `FULL=1`.
+#
+# **The files are the closure, not a choice.** `tools/ffmpeg_vendor.py`
+# configures FFmpeg 9.0.2 for this system, compiles everything its build
+# would, and keeps what the linker pulls in from the kit's entry points -
+# 95 objects of about 170, and their headers, into `runtime/upstream/ffmpeg/`
+# unmodified. It writes the list below it too, in `ffmpeg.mk`, so the two
+# cannot disagree; `runtime/upstream/ffmpeg/README.kosmos.md` is the account.
+#
+# FFmpeg's headers and the configuration for this system go *first* on the
+# include path, ahead of everything UCFLAGS names: its sources include
+# `"config.h"` and `<stdatomic.h>` by names nothing else here may answer.
+# `-DHAVE_AV_CONFIG_H` is what FFmpeg's own build adds to every library
+# object, and without it its headers never include the configuration at all.
+# `-std=c17 -O3` and the rest are what its `configure` chose; `-w -Wno-error`
+# because its warnings are not ours to fix, for the reason Doom's are not.
+#
+# LGPL 2.1 or later, linked statically like everything here; `LICENSE`
+# lists it and the About window reads that out.
+#
+include user/kits/ffmpeg/ffmpeg.mk
+
+FFMPEG_DIR    := runtime/upstream/ffmpeg
+FFMPEG_SRCS   := $(addprefix $(FFMPEG_DIR)/,$(addsuffix .c,$(FFMPEG_NAMES))) \
+                 user/kits/ffmpeg/h264_core.c user/kits/ffmpeg/h264_kosmos.c
+FFMPEG_IFLAGS := -Iuser/kits/ffmpeg/config -I$(FFMPEG_DIR)
+FFMPEG_CFLAGS := -std=c17 -U__STRICT_ANSI__ -O3 -fno-math-errno \
+                 -fno-signed-zeros -w -Wno-error -DHAVE_AV_CONFIG_H \
+                 $(FFMPEG_CPPFLAGS)
+
+ifdef FFMPEG
+USER_SRCS += $(FFMPEG_SRCS)
+endif
+
+#
 # `SNES=1` - LakeSnes, a Super Nintendo, on in `FULL=1`.
 #
 # **A build option for Doom's second reason and not its first.** LakeSnes is
@@ -1063,7 +1111,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
            -Iruntime/upstream/minih264 -Iruntime/upstream/minimp4 \
@@ -1122,7 +1170,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1214,6 +1262,17 @@ $(UBUILD)/user/kits/record/record_h264.c.o: user/kits/record/record_h264.c $(UFL
 $(UBUILD)/user/kits/record/record_mp4.c.o: user/kits/record/record_mp4.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(RECORD_CFLAGS) -MMD -MP -c $< -o $@
+
+# FFmpeg, on its own terms (the `FFMPEG=1` note above).
+$(UBUILD)/runtime/upstream/ffmpeg/%.c.o: runtime/upstream/ffmpeg/%.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(FFMPEG_IFLAGS) $(UCFLAGS) $(FFMPEG_CFLAGS) -MMD -MP -c $< -o $@
+
+# And the one Kosmos file that includes FFmpeg's headers: FFmpeg's include
+# path, and every warning this project's own code is held to.
+$(UBUILD)/user/kits/ffmpeg/h264_core.c.o: user/kits/ffmpeg/h264_core.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(FFMPEG_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 
 $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
@@ -1718,6 +1777,49 @@ $(HOSTDIR)/test_yuv: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
 	        tools/test_yuv.c user/kits/gfx/yuv.c -lm
+
+#
+# FFmpeg's H.264 decoder and the kit's core on this Mac, held to FFmpeg's
+# own conformance checksums (`tools/test_h264.c`). The 95 objects are
+# compiled against Kosmos's headers and Kosmos's configuration, as for the
+# guest, and linked over the Mac's C library; `test_h264_libc.c` is the
+# three names the two libraries spell differently. The streams are fetched
+# once into `build/downloads/` and held to their sums
+# (`tools/fetch_h264_conformance.py`).
+#
+FFMPEG_HOST_FLAGS := -std=c17 -O2 -w -ffreestanding -DHAVE_AV_CONFIG_H \
+                     $(FFMPEG_CPPFLAGS) $(FFMPEG_IFLAGS) -Iruntime/include \
+                     -Ikernel -Iuser/include
+FFMPEG_HOST_OBJS  := $(addprefix $(HOSTDIR)/ffmpeg/,$(addsuffix .o,$(FFMPEG_NAMES)))
+
+$(HOSTDIR)/ffmpeg/%.o: $(FFMPEG_DIR)/%.c user/kits/ffmpeg/ffmpeg.mk
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(FFMPEG_HOST_FLAGS) -c $< -o $@
+
+$(HOSTDIR)/h264_core.o: user/kits/ffmpeg/h264_core.c user/kits/ffmpeg/h264_core.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -ffreestanding \
+	        $(FFMPEG_IFLAGS) -Iruntime/include -Ikernel -c $< -o $@
+
+$(HOSTDIR)/test_h264: tools/test_h264.c tools/test_h264_libc.c \
+                      user/kits/ffmpeg/h264_core.h $(HOSTDIR)/h264_core.o \
+                      $(FFMPEG_HOST_OBJS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ tools/test_h264.c \
+	        tools/test_h264_libc.c $(HOSTDIR)/h264_core.o $(FFMPEG_HOST_OBJS)
+
+#
+# Broken-down time, `runtime/libc/time.c`, against the Mac's own libc
+# (`tools/test_time.c`). Compiled with its functions renamed, so the two
+# are in one program and every answer is compared with the host's.
+#
+$(HOSTDIR)/test_time: tools/test_time.c runtime/libc/time.c runtime/include/time.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -c -o $@-libc.o \
+	        -Dgmtime=k_gmtime -Dlocaltime=k_localtime -Dmktime=k_mktime \
+	        -Dstrftime=k_strftime runtime/libc/time.c
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
+	        tools/test_time.c $@-libc.o
 
 #
 # The same test built for x86-64, so the SSE2 path is held on this Mac as
@@ -3046,7 +3148,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_record
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3112,6 +3214,12 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv
 	$(HOSTDIR)/test_yuv_x86
+	@# Broken-down time, which FFmpeg's option parser and logger reach.
+	$(HOSTDIR)/test_time
+	@# And the H.264 Kit's decoder: eighteen conformance streams, every
+	@# picture's checksum against FFmpeg's own (`roadmap.md` 4e).
+	python3 tools/fetch_h264_conformance.py
+	$(HOSTDIR)/test_h264
 	@# The camera's recording: H.264 in an MP4, decoded by FFmpeg, and read
 	@# by the video player's own MP4 reader (`roadmap.md` 6d 8f).
 	$(HOSTDIR)/test_record

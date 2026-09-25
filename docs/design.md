@@ -526,6 +526,40 @@ So four checks hold it, and each sees something the others cannot:
   refuses "not built with" from a program whose kit is listed
   (`testing.md` §18.40).
 
+### A vendored library by its closure: the H.264 Kit
+
+FFmpeg is a million lines and its H.264 decoder is about a hundred files of
+them. **Which hundred is decided by the linker, not by reading**:
+`tools/ffmpeg_vendor.py` runs FFmpeg's `configure` for this system with only
+the decoder enabled, compiles everything its build would, links the kit's
+entry points against the lot with the map switched on, and keeps the
+archive members that were pulled in - 95 of 173 - and every header they
+include, byte for byte, in `runtime/upstream/ffmpeg/`. It writes the object
+list the Makefile compiles as well, so the two cannot drift. That is how
+`musl-math` was chosen, and it answers "why is this file here" with a
+symbol rather than an opinion.
+
+**`configure` cannot see a Kosmos process** - its tests link a program and
+there is nothing to link against - so what it concluded is corrected by
+rules the script applies and prints: a maths or system function is present
+exactly when `runtime/include/` declares it (FFmpeg defines a static
+fallback for any it believes absent, and a static definition after a
+declaration is an error, so this has to be true both ways); no system
+header counts, `unistd.h` least of all; and `--disable-asm`'s "a machine of
+no known shape" is told that both targets are 64-bit, little-endian and
+load from any address. Nothing vendored is edited, and a new FFmpeg, or AAC
+beside H.264, is the script run again.
+
+**The kit is a conversation, not a function**, which is what separates it
+from `gfx.jpeg`: a picture is built from pictures before and after it, so
+samples go in in decoding order and pictures come out in showing order, a
+few behind. Samples go in by address and pictures come out onto a surface,
+through `gfx_draw_i420` - never a Lua string either way, the audio server's
+lesson. Two of FFmpeg's defaults are wrong for a caller that does not probe
+a file before playing it, and the conformance test found both
+(`testing.md` 18.181): the reorder depth is taken from the standard rather
+than guessed, and cropping is to the pixel rather than to an aligned column.
+
 ### Where the line really falls: structure or a loop over bytes
 
 The rule at the top of this section answers "may this be C". It does not
@@ -1195,6 +1229,28 @@ and `make MEGA=1` links both into one image, with nothing to keep two
 definitions of a name apart. Quake's twenty-four are renamed there with
 `#define`, which reaches every place Quake defines or uses them and leaves
 strings, cvar names and the layout of every structure as they were.
+
+**Standard C that is not I/O grows as ports ask, whole and tested.**
+FFmpeg (`roadmap.md` 4e) asked for the rest of `<time.h>` - `struct tm`,
+`gmtime`, `localtime`, `mktime`, `strftime` - for an option parser and a
+logger its decoder links and never calls, along with `strtoll`, `strtoull`,
+`logf`, the eight- and sixteen-bit `PRI` macros and the errno names its
+error table knows. None of it touches a namespace, so none of it is on the
+wrong side of the line, and none of it is a stub: a stub that answers
+something plausible is found the day it is called, by whoever is looking at
+the wrong date. `runtime/libc/time.c` is held to the Mac's libc
+(`testing.md` 18.183). Two answers are honest rather than complete, and say
+so where they are defined: **local time is UTC**, since nothing says where
+the machine is, and `clock()` answers the standard's "not available",
+since a process cannot find its own processor time.
+
+**And the compiler's own support library, on the userland's link.**
+`-nostdlib` leaves out libgcc with the C library it was aimed at, and until
+FFmpeg nothing needed it. On AArch64 a `long double` is a 128-bit float with
+no instructions behind it, and FFmpeg's `av_sscanf` reads into one, so the
+compiler emits `__addtf3` and friends, which only libgcc defines. It is
+linked last, so a routine comes out of it only when a call names one; it
+brings no C library with it, and the kernel's link does not have it.
 
 **A detail that causes bugs months later:** `errno` is a global variable and with coroutines it does not work. It goes per process, in the state struct. Solve it at the start.
 

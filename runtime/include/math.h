@@ -145,6 +145,7 @@ double pow(double x, double y);
 double sqrt(double x);
 double exp(double x);
 double log(double x);
+float  logf(float x);
 double log2(double x);
 double log10(double x);
 double sin(double x);

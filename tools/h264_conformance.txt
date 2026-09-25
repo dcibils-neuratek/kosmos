@@ -1,0 +1,39 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+#
+# The H.264 conformance streams `tools/test_h264.c` decodes, one a line:
+# the name FFmpeg's own test suite gives it (its reference checksums are
+# `runtime/upstream/ffmpeg/tests/ref/fate/h264-conformance-<name>`), the
+# file under https://fate-suite.ffmpeg.org/h264-conformance/, its sha256,
+# and what it exercises.
+#
+# They are the ITU-T/JVT conformance bitstreams (H.264.1), which FFmpeg
+# serves for its FATE suite, and 11 MB between them - too much to carry in
+# the tree, so `tools/fetch_h264_conformance.py` puts them in
+# `build/downloads/h264-conformance/` and holds each to its sum. The sums
+# are of the files as fetched on 24 September 2026; the server publishes no
+# signature to check them against.
+#
+# Chosen to reach every part of the decoder a film from a camera, a phone or
+# the web uses: CAVLC and CABAC, B slices, weighted prediction, cropping,
+# field pictures and MBAFF, many reference frames, and High profile's 8x8
+# transform. Not the 10-bit and 4:2:2 High profiles, which decode and then
+# have nothing to convert them (`user/kits/ffmpeg/h264_core.c`).
+#
+ba1_sony_d                 BA1_Sony_D.jsv               90c84dee7e57151b80918e4b81910d33885fba2ce131fa119e1753c1892086fc  Baseline, CAVLC
+ba3_sva_c                  BA3_SVA_C.264                f21e84fb480d24d1d912cc61d6487afd4f05b9a4956536313715a5741e3b695b  Baseline, several slices a picture
+bamq1_jvc_c                BAMQ1_JVC_C.264              3cb7ccaf39846b1e6a5de48580461427f7e96ad563918d4f9c85c8133da5d1f9  Baseline, the quantiser changing within a picture
+sl1_sva_b                  SL1_SVA_B.264                47cdb0ded4dab7f41d8fdda4e76d7d01d38a5b58d8ac57e44e93b389bf107158  Baseline, a large picture in slices
+caba1_sva_b                CABA1_SVA_B.264              2c1319be664863d68bf22c26ccfff417b7eeca1d8d6360f1862b5b3aa4c24c0a  Main, CABAC
+caba3_toshiba_e            CABA3_TOSHIBA_E.264          5051192d0fa49c938048791a31b8de7110b5f0d2b1ceb791b57bcc172572e813  Main, CABAC with B slices
+cabref3_sand_d             CABREF3_Sand_D.264           93ff63a7f042abd81c7d1895d7e33ee7cd7264e493891752087c0f126e412cc9  Main, reference list reordering over fields
+cvwp1_toshiba_e            CVWP1_TOSHIBA_E.264          a2cbf860dd8e15fd66cdda72ba37cb81c378b49fe7439200f9c2c9c1ec9f2dbb  Main, weighted prediction
+cvfc1_sony_c               CVFC1_Sony_C.jsv             c8a1bc3e646d31cab9abaac3474769cf0fe134767ca53f9f88d9a3c272bb2ab3  Main, frame cropping
+cvpa1_toshiba_b            CVPA1_TOSHIBA_B.264          23c2b3299efed3475956b0f7e6a098387ceba1cf3f0b17aff8906daadaf09dc3  Main, field pictures (PAFF)
+cama1_toshiba_b            CAMA1_TOSHIBA_B.264          554a13ca140965b1e3401a90a4726dad5dcd374f8978f8b24a96f2430c9365cc  Main, MBAFF
+capama3_sand_f             CAPAMA3_Sand_F.264           a6490cfa63b5a3a8ce7e0a9d64af5dc2b32a1e66d2f0630bbcb182dceeef336c  Main, PAFF and MBAFF in one stream
+camp_mot_mbaff_l30         CAMP_MOT_MBAFF_L30.26l       8b53b14b28c52dc0b9c5a61ad3bf9e38a857750233873868ea336cfe48cc7161  Main, MBAFF with weighted prediction
+mr9_bt_b                   MR9_BT_B.h264                dd2712e64c602bfd5b79b1eff6ac9ed5826bd3619b0d70653850768ab95c4817  Main, many reference frames, interlaced
+frext-frext1_panasonic_c   FRext/FRExt1_Panasonic.avc   13a40fa31692f5c2a96a7dfcd5786df1a1c41e3234268a017e9d53364e21c5fc  High, the 8x8 transform
+frext-hpcv_brcm_a          FRext/HPCV_BRCM_A.264        87858e53b1d9b121efaf3e6f8adec967e7b74c0c9e2223e3b7e8b81c448d4176  High, CAVLC
+frext-hpca_brcm_c          FRext/HPCA_BRCM_C.264        0e0b8fedcd50c3659f35de4a462c43fe3625b2d0d4165759fd9836cbb87e914d  High, CABAC
+frext-freh7_b              FRext/Freh7_B.264            75495d41eba792d752e54dbf2273a1adeac71ef6fc70d1d6f3332a3b47ffca46  High, interlaced

@@ -18,8 +18,6 @@ FILE *stdin  = NULL;
 FILE *stdout = NULL;
 FILE *stderr = NULL;
 
-#define ENOENT  2
-
 /*
  *--------------------------------------------------------------------------
  * Files a process already has.

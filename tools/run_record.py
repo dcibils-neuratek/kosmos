@@ -11,7 +11,10 @@ The Camera app opens on the pattern; R starts a recording and R stops it,
 four seconds later; the app says how many frames and bytes it kept and where.
 Then, at the prompt, the file is asked for: that size, in `/home/videos`, and
 read by the video player's own MP4 reader - one H.264 track, the pattern's
-size, as many samples as frames, the first a key frame.
+size, as many samples as frames, the first a key frame. And played
+(`roadmap.md` 4e): every frame decoded by FFmpeg through `/lib/video.lua`,
+each coming out as the frame asked for, and the pattern's eight bars read
+back off the picture in their colours.
 
 Usage: run_record.py IMAGE
 """
@@ -42,6 +45,47 @@ READ_BACK = (
     't.height, #(t.samples or {}), t.samples and t.samples[1] '
     'and t.samples[1].key) print("MP4" .. "-READ")')
 
+# And the recording played: every frame decoded through `/lib/video.lua`, as
+# the Video app decodes it - the MP4 reader, the H.264 Kit, FFmpeg and the
+# conversion onto a surface - counting the frames that came out as the one
+# asked for, and the eight bars' colours read off the last, a quarter of the
+# way down and in the middle of each bar. A program in /ramfs rather than a
+# line at the prompt, because a program has `use`; in a `[=[` string,
+# because the program says `samples[order[i]]` and `]]` would end a `[[`.
+DECODE = (
+    'fs.write("/ramfs/decode.lua", [=[local video = use("/lib/video.lua") '
+    'local f, why = video.open(args) '
+    'if not f then print("DECODE-ERR " .. tostring(why)) '
+    'print("DECODE" .. "-DONE") return end '
+    'local samples, order = f.track.samples, f.order '
+    'local exact, began = 0, sys.ticks() '
+    'for i = 1, f.frames do local want = samples[order[i]].pts '
+    'for _ = 1, 50 do f:frame(i) '
+    'if f.shown_pts == want then exact = exact + 1 break end end end '
+    'local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1 '
+    'local bars = {} for b = 0, 7 do bars[#bars + 1] = ("%06x"):format('
+    'f.picture:get(((2 * b + 1) * f.width) // 16, f.height // 4) & 0xffffff) '
+    'end print(("DECODE %s %d %d %.1f %s"):format(f.codec:gsub(" ", ""), '
+    'exact, f.frames, (sys.ticks() - began) * 1000 / hz / '
+    'math.max(1, f.frames), table.concat(bars, ","))) '
+    'print("DECODE" .. "-DONE") f:close()]=])')
+
+# The pattern's bars (`pattern_draw` in xhci.c) are 100% colours: white,
+# yellow, cyan, green, magenta, red, blue, black. What comes back has been
+# through 4:2:0 and a lossy encoder, so each channel is held within a margin
+# rather than exactly. They came back within one step on both boards the
+# first time; eight is room for an encoder's change of mind, and tight
+# enough that the wrong matrix fails - BT.709 puts yellow's green fifteen
+# steps off - and so does the wrong range, which leaves white at 235.
+BARS = [0xffffff, 0xffff00, 0x00ffff, 0x00ff00, 0xff00ff, 0xff0000,
+        0x0000ff, 0x000000]
+MARGIN = 8
+
+
+def near(got, want):
+    return all(abs(((got >> s) & 0xff) - ((want >> s) & 0xff)) <= MARGIN
+               for s in (0, 8, 16))
+
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
@@ -56,6 +100,8 @@ def main():
 
     guest = R.Guest(image, 180)
     frames = size = 0
+    decode_ms = 0.0
+    bars_seen = []
 
     try:
         guest.wait_for("kosmos>", "a shell prompt")
@@ -109,6 +155,33 @@ def main():
         check(got is not None and got[6] == str(frames) and got[7] == "true",
               "it did not find %d samples with the first a key frame: %r"
               % (frames, got))
+
+        mark = len(guest.seen)
+        guest.type(DECODE)
+        guest.type("/ramfs/decode.lua " + path)
+        guest.wait_for("DECODE-DONE", "the recording decoded")
+        said = guest.seen[mark:]
+        row = re.search(r"^DECODE (\S+) (\d+) (\d+) ([\d.]+) (\S+)", said,
+                        re.M)
+        check(row is not None,
+              "the recording did not decode: %r" % said[-400:])
+
+        if row:
+            codec, exact, total = row.group(1), int(row.group(2)), \
+                int(row.group(3))
+            decode_ms = float(row.group(4))
+            bars = [int(b, 16) for b in row.group(5).split(",")]
+            bars_seen = bars
+
+            check(codec == "H.264", "Video decoded it as %r" % codec)
+            check(total == frames and exact == frames,
+                  "%d of %d frames came out as the frame asked for"
+                  % (exact, total))
+            check(len(bars) == 8 and all(near(g, w)
+                                         for g, w in zip(bars, BARS)),
+                  "the bars came back %s, and the pattern's are %s"
+                  % (",".join("%06x" % b for b in bars),
+                     ",".join("%06x" % b for b in BARS)))
     except R.Failure as e:
         fails.append(str(e))
     finally:
@@ -123,9 +196,12 @@ def main():
         return 1
 
     print("PASS: %d checks on recording the camera (R, four seconds, R: %d "
-          "frames in %d bytes kept in /home/videos, and read back as one "
-          "H.264 track of the pattern's size and frames)"
-          % (checks, frames, size))
+          "frames in %d bytes kept in /home/videos, read back as one H.264 "
+          "track of the pattern's size and frames, and played: every frame "
+          "decoded by FFmpeg through /lib/video.lua, %.1f ms each under "
+          "QEMU, and the eight bars their colours: %s)"
+          % (checks, frames, size, decode_ms,
+             ",".join("%06x" % b for b in bars_seen)))
     return 0
 
 

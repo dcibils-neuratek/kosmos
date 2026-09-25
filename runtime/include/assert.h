@@ -14,4 +14,13 @@
 #define assert(e)   ((e) ? (void)0 : panic("assertion failed: " #e))
 #endif
 
+/*
+ * C11's name for `_Static_assert` (7.2 3), which a program may use without
+ * knowing the keyword - FFmpeg does, and its `configure` refused a compiler
+ * whose `<assert.h>` did not say it.
+ */
+#ifndef __cplusplus
+#define static_assert _Static_assert
+#endif
+
 #endif /* ASSERT_H */
