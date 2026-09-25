@@ -379,7 +379,47 @@ static void format_double_digits(struct out *o, const struct spec *sp,
         precision = 1;
     }
 
-    decompose(v, (lower == 'f') ? MAX_DIGITS : precision, &d);
+    /*
+     * **As many significant digits as will be shown, and rounded there.**
+     * %f used to take eighteen and cut the rest off at the precision, and
+     * %e one too few: the digits come from dividing by ten, so 24 arrives
+     * as 0.2399999..., and `%.1f` printed 23.9 - Cafesa3D's first
+     * Properties showed a cube turned 23.9 degrees that had been turned 24.
+     * Values that are exact in binary, which the suite used, never showed
+     * it. So %f asks first how many digits sit before the point, then
+     * decomposes again to exactly those and the fraction, which rounds on
+     * the first one dropped; %e keeps the one before the point and
+     * `precision` after it; %g's precision already counts them all.
+     */
+    if (lower == 'f') {
+        struct decimal probe;
+        int significant;
+
+        decompose(v, MAX_DIGITS, &probe);
+        significant = probe.exponent + precision;
+
+        if (significant > MAX_DIGITS) {
+            significant = MAX_DIGITS;
+        }
+
+        if (significant >= 1) {
+            decompose(v, significant, &d);
+        } else {
+            /* Everything shown is below the first digit: nought, or one in
+             * the last place when that digit rounds up into it. */
+            d.negative = probe.negative;
+            d.ndigits = 0;
+            d.exponent = 0;
+
+            if (significant == 0 && probe.digits[0] >= '5') {
+                d.digits[0] = '1';
+                d.ndigits = 1;
+                d.exponent = probe.exponent + 1;
+            }
+        }
+    } else {
+        decompose(v, (lower == 'e') ? precision + 1 : precision, &d);
+    }
 
     if (d.negative) {
         sign = "-";

@@ -3712,6 +3712,50 @@ static bool test_snprintf_truncates_and_reports_the_full_length(void)
  * found by looking at a benchmark's output and wondering why the columns
  * were not columns.
  */
+/*
+ * Rounded at the precision asked for, not cut there. Every value here is
+ * one that binary cannot hold exactly - which is the case the test above,
+ * all halves and quarters, could not see - and 24 is the one Cafesa3D
+ * found: `%.1f` printed 23.9 (`testing.md` 18.187).
+ */
+static bool test_snprintf_rounds(void)
+{
+    static const struct { const char *fmt; double v; const char *want; } cases[] = {
+        { "%.1f", 24.0,    "24.0" },
+        { "%.2f", 0.45,    "0.45" },
+        { "%.2f", 123.456, "123.46" },
+        { "%.1f", 9.96,    "10.0" },
+        { "%.0f", 0.7,     "1" },
+        { "%.2f", 0.006,   "0.01" },
+        { "%.2f", 0.004,   "0.00" },
+        { "%.1f", 0.05,    "0.1" },
+        { "%.3f", -2.4,    "-2.400" },
+        { "%.2e", 1.234,   "1.23e+00" },
+        { "%.1e", 96.0,    "9.6e+01" },
+        { "%.0e", 7.0,     "7e+00" },
+        { "%.4g", 3.14159, "3.142" },
+    };
+    char b[64];
+    unsigned i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        snprintf(b, sizeof(b), cases[i].fmt, cases[i].v);
+
+        if (!str_is(b, cases[i].want)) {
+            kputs("\n   (");
+            kputs(cases[i].fmt);
+            kputs(" wanted ");
+            kputs(cases[i].want);
+            kputs(" and gave ");
+            kputs(b);
+            kputs(")");
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool test_snprintf_float_width(void)
 {
     char b[64];
@@ -6288,7 +6332,17 @@ static bool test_timer_period_matches_the_rate(void)
      * percent long, which is far outside anything the timer itself does and
      * exactly what dropping one tick in a hundred looks like.
      */
-    for (attempt = 0; attempt < 8; attempt++) {
+    /*
+     * **Forty windows of 25 ticks, not eight of a hundred.** A window is
+     * thrown away for one missed deadline, and a deadline is 4 ms; on 25
+     * September the gate ran thirty-nine suites at once, eight windows of
+     * 400 ms in a row each caught a stall, and this failed alone of 180 on
+     * a timer nobody had touched - then passed three times out of three
+     * on its own. A clean window of a tenth of a second measures the rate
+     * as well as a long one, since both ends are read with interrupts off,
+     * and forty of them give a loaded host forty chances in four seconds.
+     */
+    for (attempt = 0; attempt < 40; attempt++) {
         unsigned long k0, k1, m0, m1;
         uint64_t t0, t1, elapsed, expected, tolerance;
 
@@ -6298,7 +6352,7 @@ static bool test_timer_period_matches_the_rate(void)
 
         sample_clock(&k0, &t0, &m0);
 
-        while (hal_ticks() - k0 < 100) { }
+        while (hal_ticks() - k0 < 25) { }
 
         sample_clock(&k1, &t1, &m1);
 
@@ -6322,12 +6376,25 @@ static bool test_timer_period_matches_the_rate(void)
         expected  = (cntfrq() / TICK_HZ) * (k1 - k0);
         tolerance = expected / 10;
 
-        return elapsed > expected - tolerance
-            && elapsed < expected + tolerance;
+        if (elapsed > expected - tolerance && elapsed < expected + tolerance) {
+            return true;
+        }
+
+        /* Which way it failed is the whole of what a failure has to say. */
+        kputs("\n   (a clean window of ");
+        kputu(k1 - k0);
+        kputs(" ticks took ");
+        kputu((unsigned long)elapsed);
+        kputs(" counts; the rate says ");
+        kputu((unsigned long)expected);
+        kputs(")");
+        return false;
     }
 
-    /* Eight windows in a row with a missed deadline is not a measurement
-     * problem, it is the system failing to keep up with a 100 Hz timer. */
+    /* Every window missed a deadline: not the timer's rate at all, but the
+     * machine not keeping up with it - said so, because the two call for
+     * different things. */
+    kputs("\n   (every one of 40 windows missed a deadline)");
     return false;
 }
 
@@ -8608,6 +8675,7 @@ static const struct test tests[] = {
     { "snprintf: integers and strings",        test_snprintf_integers_and_strings },
     { "snprintf: truncates, reports full len", test_snprintf_truncates_and_reports_the_full_length },
     { "snprintf: floats",                      test_snprintf_floats },
+    { "snprintf: rounded at the precision",    test_snprintf_rounds },
     { "snprintf: a float padded to a width",   test_snprintf_float_width },
     { "math: ours and newlib's agree",         test_our_math_matches_its_definition },
     { "lua: arithmetic, 2+2 is 4",             test_lua_arithmetic },
