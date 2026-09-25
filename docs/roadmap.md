@@ -1166,6 +1166,33 @@ processors, and still what follows USB:
    5. Saving and opening glTF.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
+   - **Every acceleration the machine has** - Diego, the same evening:
+     "Make sure we used all available acceleration modes from simd and avx
+     and in the future gpu acceleration when available". So the 3D Kit's
+     loops - the rasteriser's pixels, a ray against boxes and triangles -
+     are written with a scalar version that is the reference and vector
+     versions held to it, as `yuv.c` is (18.180): **NEON** on AArch64,
+     **SSE** on x86-64 now, and **AVX and AVX2** once the kernel saves
+     their registers (6l's first step: `xsave`, CR4.OSXSAVE and XCR0 -
+     before that an AVX register would be overwritten by any other
+     process). **Every core, from the start** - Diego: "We can't use all
+     cores for ray tracing now?", "We currently support multi core and
+     multi threading", "So I expect cafesa3d uses all available cores".
+     He is right, and the first answer here was read from `threads.md`
+     rather than the kernel: C threads exist (`kosmos_thread_start`,
+     `threads.md` step 3) and every new thread is placed on the least busy
+     core (`place_new_thread`). So the 3D Kit, which is C, renders with a
+     worker thread a core inside Cafesa3D's own process. What the
+     unfinished steps mean for it: `malloc` is not under a lock yet (step
+     7), so the workers allocate nothing and the main thread makes every
+     buffer before they start; there is no futex (step 5), so they share
+     out tiles through an atomic counter. The Solid view's rasteriser is
+     measured for the same in step 6. Lua threads (step 8) are not needed:
+     the loops are the kit's.
+     **The GPU when Kosmos has one** (4h): the kit's interface is a scene
+     and "draw it", never how, so a GPU renderer can stand behind the same
+     calls - the application does not change when the hardware does.
+     Step 6 is where each is measured; none is taken on faith.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab

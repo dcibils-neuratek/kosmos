@@ -122,6 +122,12 @@ SUITES = [
     Suite("arm-film", ["python3", "tools/run_film.py", ARM]),
     Suite("x86-film", ["python3", "tools/run_film.py", X86], x86=True),
 
+    # Cafesa3D, used as a person uses it (`roadmap.md` 4l): the still life,
+    # a click in the view and in the Outliner, an eye, a drag, the wheel,
+    # Wireframe and a view from the top - by the log and by the picture.
+    Suite("arm-cafesa3d", ["python3", "tools/run_cafesa3d.py", ARM]),
+    Suite("x86-cafesa3d", ["python3", "tools/run_cafesa3d.py", X86], x86=True),
+
     # A frame off the card and onto the wire, read back out of QEMU's own
     # capture - because nothing inside the guest can establish that one
     # left. And a second boot with no card, which is the branch every device

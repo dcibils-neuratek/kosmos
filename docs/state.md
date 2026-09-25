@@ -221,7 +221,28 @@ https://claude.ai/artifact/UdBLmz1CY3XU5TjZUFmmPx - a live 3D view, the
 Outliner and Properties, an Add menu, and a real path-traced render in the
 page. **Approved as drawn and named Cafesa3D** - "3d tool is perfect",
 "Let's call it Cafesa3D", "Let's build it" - and being built in 4l's six
-steps, the window and the Solid view first.
+steps.
+
+**Step one is built**: the 3D Kit (`/kits/3d`: one scene in C, rasterised
+with a depth buffer and an object buffer, 75 host checks) and
+`/bin/cafesa3d.lua` - the drawing's window, the still life in Solid and
+Wireframe, turned by a drag, moved with Shift, the wheel, 1 3 7 and the ball
+of axes, picking in the view and the Outliner, eyes, Properties' five tabs
+showing values (editing is step two), and `arm-cafesa3d` / `x86-cafesa3d`
+driving it (18.188). **Its first screen found a libc bug**: `%f` cut
+instead of rounding, so 24 printed 23.9, and `%e` rounded a place early
+(18.187), fixed and held to the Mac's C library. Diego, while it was built:
+every acceleration the machine has - SIMD, AVX when the kernel saves it, a
+GPU when there is one (design.md 7.1 corrected: no GPU is the desktop's
+position, not the system's) - and "I expect cafesa3d uses all available
+cores": C threads exist and spread, so the ray tracer gets a worker thread a
+core, allocating nothing and sharing tiles by an atomic counter since
+`malloc` has no lock and there is no futex yet (`threads.md` steps 7, 5).
+He asked what a futex is and why it is not built: step 5, agreed and not
+reached; whether threads 4-7 come before the ray tracer is his to say.
+
+**Next**: step two - adding things at the 3D cursor and moving them (G R S,
+the tools, editable Properties).
 
 **Stashed** (`git stash list`, "6l in progress"): 6l's first step -
 `posix_memalign` and `aligned_alloc` in `malloc.c` with `tools/test_alloc.c`

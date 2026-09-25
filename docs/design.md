@@ -580,6 +580,45 @@ methods. A film's ring is 32 periods, 186 ms, where Music's is 8 - the
 choice `audio.lua` already describes for a video player, which would far
 rather be late than skip.
 
+### One scene, drawn two ways: the 3D Kit
+
+Cafesa3D (`roadmap.md` 4l) arranges a scene in a rasterised view and judges
+it in a ray-traced one, and both read the same objects - so the objects live
+in C, in `/kits/3d`, and the application holds their names and its own
+state. **An object is its id** on the Lua side: nothing that points into the
+scene crosses the boundary, because removing an object moves the ones after
+it, which the kit's own test found the first time it kept a pointer.
+
+**The Solid view is the kit's own rasteriser, not TinyGL.** The GL kit was
+the first answer and was set aside for three reasons, each a fact about
+this use rather than about TinyGL: picking and Blender's outline both want
+the *object* on every pixel, and TinyGL has no buffer for it; TinyGL is fed
+a vertex at a time, so every change to a sphere would be a thousand calls
+through Lua; and the ray tracer needs the scene in C whatever draws the
+Solid view. So the kit keeps a depth buffer of 1/z - linear across the
+screen, cleared with a memset - and an object buffer beside the pixels, and
+the outline is read from the object buffer, so it follows what can be seen
+of the selection as Blender's does.
+
+**A shape keeps its numbers.** A sphere is a radius, segments and rings, and
+its triangles are a cache of them, rebuilt when they change - which is what
+lets Cafesa3D keep a primitive's numbers editable where Blender shows them
+once. Every triangle is anticlockwise from outside, so the back of a shape
+is skipped by its winding, and the host test holds every shape to that at
+several sizes.
+
+**Every acceleration the machine has** - Diego: "Make sure we used all
+available acceleration modes from simd and avx and in the future gpu
+acceleration when available", and "So I expect cafesa3d uses all available
+cores". The hot loops are written with a scalar reference and vector
+versions held to it, as `yuv.c` is; NEON and SSE now, AVX once the kernel
+saves its registers (6l). Renders use a worker thread a core: C threads
+exist and every new one is placed on the least busy core, and since
+`malloc` is not yet under a lock and there is no futex (`threads.md` steps 7
+and 5), the workers allocate nothing and share out tiles through an atomic
+counter. And the kit's interface is a scene and "draw it", never how, so a
+GPU renderer can stand behind the same calls when Kosmos has one (7.1).
+
 ### Where the line really falls: structure or a loop over bytes
 
 The rule at the top of this section answers "may this be C". It does not
@@ -730,6 +769,16 @@ The framebuffer is enough, and the numbers confirm it. 1920×1080 at 32bpp is 8.
 And in practice the whole screen is never redrawn. With damage tracking, moving a window is a couple of hundred KB.
 
 GPU acceleration is for effects, transparency and scaling. Kosmos wants to drag windows with one frame of latency, which is a problem solved in 1997.
+
+**That is the desktop, and it is not the whole of what Kosmos draws.** A
+scene of a million triangles, a ray-traced render, a game at 4K are not
+problems solved in 1997, and Diego wants them faster than a CPU makes them:
+"in the future gpu acceleration when available" (25 September, for
+Cafesa3D), and 4h's "real GPU rendering". So the compositor stays on the
+CPU, where the argument above still holds, and the heavy renderers - the 3D
+Kit first - keep interfaces that say *what* to draw and never *how*, so that
+a GPU can stand behind them when there is a driver for one. What has no GPU
+is the desktop, not the system.
 
 ### 7.2 The trap that does matter
 

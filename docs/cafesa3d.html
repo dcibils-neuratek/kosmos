@@ -408,11 +408,13 @@ so that knowing one is knowing the other; <span class="k-simp">smaller</span> me
 <tr><th>Part</th><th>In Kosmos</th></tr>
 <tr><td>The app</td><td>Lua, <code>/bin/cafesa3d.lua</code>: the window, the Outliner, Properties, selection, the tools,
   undo. It decides what is drawn and where; it computes no pixel.</td></tr>
-<tr><td>The Solid view</td><td>Drawn by the GL kit (<code>/kits/gl</code>) as triangles with a depth buffer, which Doom's
-  and the cube's frames already come through &mdash; not polygons sorted by distance, as this page does it.</td></tr>
-<tr><td>The ray tracer</td><td>A new kit, <code>/kits/ray</code>, in C: the scene as spheres, boxes, cylinders, planes and
-  triangles; a <b>bounding volume hierarchy</b> so a ray tests a few of them rather than all; the two ways to trace;
-  tiles handed to every core; the vector units testing four boxes or four triangles at once (<code>roadmap.md</code> 6l).</td></tr>
+<tr><td>The Solid view</td><td>The 3D Kit (<code>/kits/3d</code>), in C: triangles with a depth buffer and an
+  <b>object buffer</b> beside the pixels, which is what a click and the orange outline read &mdash; not polygons sorted by
+  distance, as this page does it, and not TinyGL, which has no such buffer and is fed a vertex at a time.</td></tr>
+<tr><td>The ray tracer</td><td>The same kit and the same scene: spheres, boxes, cylinders, planes and triangles; a
+  <b>bounding volume hierarchy</b> so a ray tests a few of them rather than all; the two ways to trace; <b>a worker
+  thread on every core</b>, each taking tiles; the vector units &mdash; NEON, SSE, and AVX once the kernel saves it
+  &mdash; testing four boxes or four triangles at once; and a GPU behind the same calls when Kosmos has one.</td></tr>
 <tr><td>A render</td><td>Into a surface, a pass at a time, shown as it improves; <b>Save as PNG</b> writes it to
   <code>/home/renders</code> with the PNG writer the screenshot key needs as well.</td></tr>
 <tr><td>A scene on disk</td><td><b>glTF</b>, the open format Blender exports: meshes, materials, lights, cameras and shared

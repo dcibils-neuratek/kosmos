@@ -9604,3 +9604,66 @@ landing is a failure, not a pass. **Controls**: the TSC keeping its first
 measurement - 5,807,899 kHz against 1,000,068, and the local APIC's wrong
 with it; the local APIC's old sum, its wait taken as ten milliseconds -
 706,618 kHz against 62,556.
+
+## 18.187 A decimal rounded where it is cut
+
+**`snprintf: rounded at the precision`**, in the kernel's own suite
+(`tests/tests.c`, run by **arm-kernel** and **x86-kernel**): thirteen values
+binary cannot hold exactly through `%f`, `%e` and `%g`. **Cafesa3D's first
+screen found it**: Properties showed a cube turned 23.9 degrees that had been
+turned 24. `%f` broke a number into eighteen digits and cut them at the
+precision instead of rounding there - and the digits come from dividing by
+ten, so 24 is 0.2399999... by the time they are read. `%e` kept one digit too
+few and rounded a place early: `%.0e` of 7 printed `1e+01`. Every program
+printing a decimal had it, and the suite's cases were all halves and
+quarters, which are exact in binary and could not see it. Now `%f` decomposes
+twice, the second time to exactly the digits shown, and `%e` keeps the one
+before the point and the precision after it. **Held to the Mac's C library**
+on eighteen values, the same everywhere; the old code differed on eleven
+(watched: `23.9`, `123.45`, `9.9`, `0`, `0.00`, `-2.399`, `1.20e+00`,
+`1.0e+02`, `1e+01`, `0.666666`).
+
+## 18.188 Cafesa3D's first step: the 3D Kit and the window
+
+**The 3D Kit on the host**, `tools/test_k3d.c` in the host suite, 75 checks:
+every triangle of a box, a plane, spheres from 3 to 61 segments and 2 to 32
+rings and cylinders of 3 and 64 sides wound anticlockwise from outside;
+their triangles and edges counted (a cube 12 and 12, no diagonals; a new
+sphere Blender's 32 by 16, 960 triangles); every vertex where the shape says.
+Then the rasteriser on scenes small enough to reason about: the pinhole
+(a metre at ten metres is F/10); the nearer of two cubes in front whichever
+was added first; a cube face on drawing two triangles, none of its back;
+the outline two pixels outside the selection and none on it; a hidden
+cube gone; glass seen through, still what a click finds, and the depth
+behind it still the cube's; Wireframe still picking; a line held behind a
+cube and drawn in front of it; a floor through the eye cut at the near plane
+and its green axis still drawn up it. **Controls**: a box face wound
+backwards; no depth test; no outline; and the line slack at 0.2%, which lost
+the whole grid near the eye (the surface's depth is taken at a pixel's
+middle and the line's up to half a pixel away) - so it is 2%.
+
+**Cafesa3D in the guest**, **arm-cafesa3d** and **x86-cafesa3d**,
+`tools/run_cafesa3d.py`, 20 checks each in about 26 s: the still life of 7
+objects and 2062 triangles with the Cube selected and outlined; a click on
+the gold ball selects it and the outline leaves the cube for it; a click on
+the Cylinder's row; the Gold row's eye hiding the ball - its gold leaves the
+picture - and showing it; the Material tab; a drag turning the view, the
+objects moving on the screen; the wheel; Z to Wireframe with the red cube's
+faces gone; 7 looking from the top; and nothing raised. Positions come from
+the application's own lines, so the test follows the layout. **Control**:
+picking in the view switched off - the two checks on the gold ball fail.
+
+## 18.189 The timer's rate, measured on a loaded host
+
+**`timer: the period matches the rate`** (arm-kernel) failed once, alone of
+180, in the gate that first ran thirty-nine suites at once - on a timer
+nobody had touched - and passed three times of three on its own. It throws
+away any window in which a deadline was missed, since a missed tick is the
+host falling behind rather than the timer being wrong, and it looked at
+eight windows of a hundred ticks: at 4 ms a tick that is 400 ms each, and
+under that load eight in a row each caught a stall. **Forty windows of 25
+ticks now**, which measure the rate as well - both ends are read with
+interrupts off - and give a loaded host forty chances in four seconds; and
+**a failure says which it was**: a clean window's counts against the rate's,
+or every window having missed a deadline. The drift it exists for, 27%,
+fails it as before.
