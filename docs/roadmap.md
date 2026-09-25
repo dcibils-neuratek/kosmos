@@ -1101,9 +1101,19 @@ processors, and still what follows USB:
      thrust, a mass that burns away, the rocket equation with the rocket
      marked on its graph, and the flight with altitude, speed and mass
      plotted against time, all following the sliders.
-   Proposed in the drawing, his to choose: more simulations for the lessons
-   (a pendulum, a drum skin, the Mandelbrot set), sliders, calculus,
-   matrices, data, units and sound.
+   - **Everything proposed, and the eight lessons** (26 September) - "MathLab
+     I like all your suggestions and sessions": simulations for the lessons
+     (a pendulum, a drum skin, the Mandelbrot set), sliders, calculus,
+     matrices, more graphs, data, units, sound, and more physics.
+   - **For people who know some calculus** - "The target is people that
+     know some calculus but want to understand how things work so it needs
+     to explain as much as possible". A lesson derives its laws, every step
+     a cell and said in words: lesson 6 now derives the rocket equation from
+     momentum alone, then counts what gravity and the air take from it
+     (574 and 482 m/s of 4,281, the flight's own sums).
+   Proposed order, in the drawing: the notebook and its graphs; sliders;
+   lesson 6 whole; the maths kit's vector paths and the Benchmark; then the
+   other lessons, and the other kinds of cell as they need them.
    Not started; queued after the H.264 and sound work is pushed.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we

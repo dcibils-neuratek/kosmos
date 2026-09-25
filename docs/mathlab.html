@@ -238,6 +238,10 @@ notebook has defined. The timings in the foot are the kind it will show, not mea
 representation of the functions and laws". So a lesson is a notebook that explains as it goes: text between the cells,
 each law typed and set and drawn as a graph, sliders for the numbers that matter, the simulation itself, and questions
 to try. Every cell stays live, so a lesson can be changed and taken apart like any other notebook.</p>
+<p class="why"><b>Who a lesson is for</b> &mdash; Diego: "people that know some calculus but want to understand how things
+work so it needs to explain as much as possible". So a lesson derives its laws rather than stating them: every step
+a cell, every step said in words, the calculus shown where it does the work &mdash; as lesson 6 derives the rocket
+equation from momentum alone, and then counts what gravity and the air take from it.</p>
 
 <div class="stage"><div class="fit" data-w="560">
   <div class="row">
@@ -301,7 +305,54 @@ three plots all follow at once, and the flight starts again.</p>
         <div class="out"><div id="tsiol"></div><div class="cap" id="tsiolcap"></div></div>
       </div></div>
 
+      <div class="cell txt"><div class="n"></div><div class="c"><div class="text">
+        <h4>Where the rocket equation comes from</h4>
+        <p>No law is assumed here but one: momentum is conserved. Watch the rocket for a moment <i>dt</i>, far from any
+        planet and any air, so that nothing outside pushes on it.</p>
+      </div></div></div>
+
       <div class="cell"><div class="n">4</div><div class="c">
+        <div class="text"><p>At the start of the moment the rocket has mass <i>m</i> and speed <i>v</i>. During it, a little
+        gas of mass <i>dm</i> leaves backwards at <i>v</i><sub>e</sub> relative to the rocket, and the rocket, now
+        <i>m</i> &minus; <i>dm</i>, is going a little faster. The momentum before equals the momentum after:</p></div>
+        <div class="math"><i>m v</i> = (<i>m</i> &minus; <i>dm</i>)(<i>v</i> + <i>dv</i>) + <i>dm</i> (<i>v</i> &minus; <i>v</i><sub>e</sub>)</div>
+        <div class="typed">m v = (m - dm)(v + dv) + dm (v - ve)</div>
+      </div></div>
+
+      <div class="cell"><div class="n">5</div><div class="c">
+        <div class="text"><p>Multiply out. The <i>mv</i> on each side cancels, and so do the <i>v dm</i> terms; <i>dm dv</i> is
+        a small thing times a small thing, which vanishes as <i>dt</i> shrinks. What is left says that the gas's
+        momentum backwards is the rocket's gain forwards. The mass the rocket loses is <i>dm</i>, so its own mass
+        changes by d<i>m</i><sub>rocket</sub> = &minus;<i>dm</i>:</p></div>
+        <div class="math"><i>m dv</i> = <i>v</i><sub>e</sub> <i>dm</i> &nbsp;&rArr;&nbsp; <i>dv</i> = &minus;<i>v</i><sub>e</sub> d<i>m</i><sub>rocket</sub> / <i>m</i></div>
+        <div class="typed">m dv = ve dm   =>   dv = -ve dm_rocket / m</div>
+      </div></div>
+
+      <div class="cell"><div class="n">6</div><div class="c">
+        <div class="text"><p>Add up every moment of the burn: integrate from the mass at launch, <i>m</i><sub>0</sub>, to the
+        mass when the fuel is gone, <i>m</i><sub>f</sub>. The integral of 1/<i>m</i> is the logarithm &mdash; and there is
+        the rocket equation of cell 3, with nothing assumed but momentum.</p></div>
+        <div class="math">&Delta;<i>v</i> = &minus;<i>v</i><sub>e</sub> &int;<sub><i>m</i><sub>0</sub></sub><sup><i>m</i><sub>f</sub></sup> <i>dm</i>/<i>m</i> = <i>v</i><sub>e</sub> ln(<i>m</i><sub>0</sub>/<i>m</i><sub>f</sub>)</div>
+        <div class="typed">dv = -ve * integral(1/m, m0, mf) = ve ln(m0/mf)</div>
+      </div></div>
+
+      <div class="cell txt"><div class="n"></div><div class="c"><div class="text">
+        <h4>And why a real rocket gets less</h4>
+        <p>The equation is for empty space. On a launch pad two things take their share while the engine burns:
+        gravity, which pulls back for every second of the burn &mdash; so a rocket that burns slowly loses more &mdash;
+        and the air, which pushes back harder the faster the rocket goes and the thicker the air is. Air thins by
+        about a factor of <i>e</i> for every 8.5 km of height, which is why rockets go up first and sideways later.
+        The flight below adds both up as it goes. A third, smaller share goes to pointing the engine where the rocket
+        is not quite going: this one keeps its angle while its path bends, and only the part of the thrust along the
+        path adds speed.</p>
+      </div></div></div>
+
+      <div class="cell"><div class="n">7</div><div class="c">
+        <div class="math">&Delta;<i>v</i><sub>real</sub> = &Delta;<i>v</i> &minus; &int;<sub>0</sub><sup><i>t</i><sub>b</sub></sup> <i>g</i> sin <i>&gamma;</i> <i>dt</i> &minus; &int;<sub>0</sub><sup><i>t</i><sub>b</sub></sup> <i>D</i>/<i>m</i> <i>dt</i>, &nbsp; <i>&rho;</i>(<i>h</i>) = 1.225 <i>e</i><sup>&minus;<i>h</i>/8500</sup></div>
+        <div class="typed">dv_real = dv - integral(g sin(gamma), 0, tb) - integral(D/m, 0, tb),  rho(h) = 1.225 e^(-h/8500)</div>
+      </div></div>
+
+      <div class="cell"><div class="n">8</div><div class="c">
         <div class="text"><h4>Your rocket</h4><p>A small rocket of 1,000 kg with its fuel burning for 60 seconds.</p></div>
         <div class="sliders">
           <div class="slider"><label for="s-fuel">Fuel <span id="v-fuel"></span></label><input id="s-fuel" type="range" autocomplete="off" min="500" max="15000" step="250" value="6000"></div>
@@ -312,14 +363,14 @@ three plots all follow at once, and the flight starts again.</p>
         <div class="facts" id="facts"></div>
       </div></div>
 
-      <div class="cell"><div class="n">5</div><div class="c">
+      <div class="cell"><div class="n">9</div><div class="c">
         <div class="math">launch</div>
         <div class="typed">launch</div>
         <div class="out"><canvas id="flight" width="860" height="360" aria-label="The rocket's flight, drawn along its trajectory"></canvas>
           <div class="cap" id="flightcap"></div><button class="btn replay" type="button" id="replay">Launch again</button></div>
       </div></div>
 
-      <div class="cell"><div class="n">6</div><div class="c">
+      <div class="cell"><div class="n">10</div><div class="c">
         <div class="math">plot <i>h</i>(<i>t</i>), <i>v</i>(<i>t</i>), <i>m</i>(<i>t</i>)</div>
         <div class="typed">plot h(t), v(t), m(t)</div>
         <div class="out plots3">
@@ -332,8 +383,9 @@ three plots all follow at once, and the flight starts again.</p>
       <div class="cell txt"><div class="n"></div><div class="c"><div class="ask2">
         <h4>Try it</h4>
         <ol>
-          <li>Double the fuel. Does it go twice as high? Look at the graph in cell 3 for why not.</li>
-          <li>Turn the air off. How much height did the air cost?</li>
+          <li>Double the fuel. Does it go twice as high? Look at the graph in cell 3, and at what gravity took, for why not.</li>
+          <li>Turn the air off. How much height did the air cost, and how much speed did it take (cell 7)?</li>
+          <li>Tilt the rocket lower. Gravity takes less of the burn &mdash; but what happens to the air's share, and why?</li>
           <li>Take the fuel down until the facts say it cannot lift off. What is the thrust then, against the weight?</li>
           <li>Which launch angle carries it furthest? Is it the 45&deg; that throws a ball furthest in lesson 3?</li>
         </ol>
@@ -392,9 +444,9 @@ with AVX2 marked as waiting on the kernel (<code>roadmap.md</code> 6l).</p>
 </div></div>
 <p class="why">Example figures, to show the layout; the window measures them when it opens and when asked.</p>
 
-<h2>More simulations, for the lessons <span class="proposed">Proposed</span></h2>
-<p class="why">Diego asked what would make MathLab rich, "like simulation of physics". Three cells to show what that
-could be, running here as they would there. A <b>pendulum</b>: its equation typed as it is written, solved step by
+<h2>More simulations, for the lessons</h2>
+<p class="why">Diego asked what would make MathLab rich, "like simulation of physics", and wants all three drawn here.
+Each belongs to a lesson &mdash; the pendulum to lesson 5, the drum to lesson 8 &mdash; and runs here as it will there. A <b>pendulum</b>: its equation typed as it is written, solved step by
 step, and shown both swinging and as the graph of its angle. A <b>drum skin</b> struck in the middle: the wave
 equation on a grid of points, every point moved at every step &mdash; the kind of work the vector units are for &mdash;
 drawn as a surface that can be turned while it moves. And the <b>Mandelbrot set</b>, the classic test of a machine's
@@ -437,9 +489,9 @@ less motion.</span></p>
   </div>
 </div></div>
 
-<h2>And more it could do <span class="proposed">Proposed</span></h2>
+<h2>And more it does</h2>
 <p class="why">Beyond simulations, the things that make a notebook like this worth opening every day. Each is a kind
-of cell; none of them is agreed yet.</p>
+of cell, and Diego wants all of them: "I like all your suggestions".</p>
 <div class="tablewrap">
 <table class="rules">
 <tr><th>Cell</th><th>What it does</th><th>What the vector units do in it</th></tr>
@@ -481,13 +533,20 @@ of cell; none of them is agreed yet.</p>
       laws drawn as graphs, sliders, the simulation and questions, as the rocket lesson above.</li>
 </ul>
 
+<h2>Decided, 26 September</h2>
+<ul class="ask">
+  <li><b>Everything proposed, and the eight lessons</b> &mdash; "MathLab I like all your suggestions and sessions": the
+      simulations, sliders, calculus, matrices, more graphs, data, units, sound and more physics.</li>
+  <li><b>Lessons for people who know some calculus</b> &mdash; "The target is people that know some calculus but want to
+      understand how things work so it needs to explain as much as possible". Laws derived, every step a cell and
+      said in words, as lesson 6 now does.</li>
+  <li><b>The order to build it in</b>, proposed: the notebook and its 2D and 3D graphs; then sliders; then lesson 6 whole,
+      because it uses nearly everything; then the maths kit's vector paths and the Benchmark; then the other lessons,
+      each a notebook, and the other kinds of cell as the lessons need them.</li>
+</ul>
+
 <h2>For Diego to decide</h2>
 <ul class="ask">
-  <li><b>The lessons, and their order</b>: the eight listed, or others. A suggestion: build the notebook and sliders
-      first, then the rocket lesson whole, because it uses nearly everything; then the others, each a notebook.</li>
-  <li><b>Who a lesson is for</b>: as drawn, someone who knows a little algebra and no calculus, the laws stated and
-      shown rather than derived; or deeper, with the derivations as cells of their own.</li>
-  <li><b>Which of the other proposals</b>, from the table above: matrices, data, units, sound.</li>
   <li><b>How equations are typed</b>: as here &mdash; <code>x^2</code> and <code>x*x</code> both, <code>3x</code> as three
       times <i>x</i>, <code>pi</code> and <code>e</code> by name.</li>
   <li><b>Shown set with the typed line under it, as drawn</b>, or set only, the typed line appearing while the cell is
@@ -1121,7 +1180,7 @@ of cell; none of them is agreed yet.</p>
     function simulate(fuel, ve, angle, air) {
       var mdot = fuel / BURN, thrust = mdot * ve, a = angle * Math.PI / 180;
       var x = 0, h = 0, vx = 0, vh = 0, t = 0, n = 0;
-      var r = { t: [], x: [], h: [], v: [], m: [], burnout: -1, apogee: -1,
+      var r = { t: [], x: [], h: [], v: [], m: [], burnout: -1, apogee: -1, lostG: 0, lostAir: 0,
                 thrust: thrust, m0: DRY + fuel, lifts: thrust > (DRY + fuel) * G };
       function keep(m) { r.t.push(t); r.x.push(x); r.h.push(h); r.v.push(Math.hypot(vx, vh)); r.m.push(m); }
       if (!r.lifts) { keep(DRY + fuel); return r; }
@@ -1132,6 +1191,12 @@ of cell; none of them is agreed yet.</p>
         var ax = 0, ah = -G;
         if (burning) { ax += thrust * Math.cos(a) / m; ah += thrust * Math.sin(a) / m; }
         if (v > 0) { ax -= drag * vx / v / m; ah -= drag * vh / v / m; }
+        /* What gravity and the air take from the speed while the engine
+           burns: the two integrals of cell 7, a step at a time. */
+        if (burning) {
+          r.lostG += G * (v > 0 ? vh / v : Math.sin(a)) * DT;
+          r.lostAir += (drag / m) * DT;
+        }
         vx += ax * DT; vh += ah * DT; x += vx * DT; h += vh * DT; t += DT;
         if (n++ % 2 === 0) { keep(m); }
         if (!burning && r.burnout < 0) { r.burnout = r.t.length - 1; }
@@ -1173,6 +1238,10 @@ of cell; none of them is agreed yet.</p>
         ["Thrust / weight", tw.toFixed(2)],
         ["\u0394v, ideal", thousands(dv) + " m/s"]
       ];
+      if (flight.lifts) {
+        facts.push(["Taken by gravity", thousands(flight.lostG) + " m/s"]);
+        facts.push(["Taken by the air", thousands(flight.lostAir) + " m/s"]);
+      }
       var html = facts.map(function (f) { return '<div class="fact"><b>' + f[1] + "</b>" + f[0] + "</div>"; }).join("");
       if (!flight.lifts) {
         html += '<div class="fact warn"><b>It cannot lift off</b>thrust ' + thousands(flight.thrust / 1000) +
