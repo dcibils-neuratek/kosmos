@@ -499,6 +499,60 @@ def main():
 
         handles("select")
 
+        # **Properties' numbers**: typed, scrubbed, and a sphere remade.
+        def fields_after(since):
+            line = said("cafesa3d: fields ", since) or ""
+            return dict((m.group(1), (ox + int(m.group(2)), oy + int(m.group(3))))
+                        for m in re.finditer(r"(\w+) (\d+),(\d+)", line))
+
+        mark = len(guest.seen)
+        click(ox + tabs["object"][0], oy + tabs["object"][1])
+        fl = fields_after(mark)
+        check("loc1" in fl and "rot3" in fl, "the Object tab shows no fields: %r" % fl)
+
+        if "loc1" in fl and "rot3" in fl:
+            mark = len(guest.seen)
+            click(*fl["loc1"])
+            check(said("cafesa3d: editing ", mark) == "Location X of Cube",
+                  "a click on Location X did not start typing into it")
+            keys("1", "dot", "5", "ret")
+            check(said("cafesa3d: set Location X of Cube to ", mark) == "1.50 - the scene is 2062 triangles",
+                  "typing 1.5 into Location X did not put the Cube there")
+
+            rz = turned2[2] if turned2 else 114.0
+            mark = len(guest.seen)
+            x0, y0 = fl["rot3"]
+            drag([(x0, y0)] + [(x0 + k * 8, y0) for k in range(1, 6)])
+            got = said("cafesa3d: set Rotation Z of Cube to ", mark)
+            m = re.match(r"(-?[\d.]+)", got or "")
+            check(m is not None and abs(float(m.group(1)) - (rz + 20)) < 1.6,
+                  "dragging across Rotation Z did not turn it 20 degrees from %.1f: %r" % (rz, got))
+
+        mark = len(guest.seen)
+        gr = rows.get("Gold")
+        click(ox + gr[0], oy + gr[1])
+        click(ox + tabs["data"][0], oy + tabs["data"][1])
+        fl = fields_after(guest.seen.rfind("cafesa3d: tab data"))
+        check("segments" in fl, "the Gold ball's Data tab shows no Segments: %r" % fl)
+
+        if "segments" in fl:
+            mark = len(guest.seen)
+            click(*fl["segments"])
+            keys("8", "ret")
+            check(said("cafesa3d: set Segments of Gold to ", mark) == "8 - the scene is 1342 triangles",
+                  "8 segments did not remake the gold ball as 240 triangles of 960")
+
+            mark = len(guest.seen)
+            click(*fl["radius"])
+            keys("5", "esc")
+            check(said("cafesa3d: left the field as it was", mark) is not None,
+                  "Esc did not leave the radius as it was")
+
+            mark = len(guest.seen)
+            keys("ctrl-z")
+            check(said("cafesa3d: undid ", mark) == "set Segments of Gold",
+                  "Ctrl Z did not undo the segments")
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
@@ -518,7 +572,8 @@ def main():
           "3D cursor, undone and redone; Shift D, Delete, and X asking first; G following "
           "the pointer with no button, G X 2, R Z 90, S 2, Esc and a right click "
           "cancelling, Ctrl Z; the Move, Rotate and Scale handles each changing its "
-          "axis alone)" % checks)
+          "axis alone; Location X typed, Rotation Z scrubbed, a sphere's segments "
+          "remaking it, Esc, Ctrl Z)" % checks)
     return 0
 
 

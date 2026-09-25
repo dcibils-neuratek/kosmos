@@ -241,8 +241,23 @@ core, allocating nothing and sharing tiles by an atomic counter since
 He asked what a futex is and why it is not built: step 5, agreed and not
 reached; whether threads 4-7 come before the ray tracer is his to say.
 
-**Next**: step two - adding things at the 3D cursor and moving them (G R S,
-the tools, editable Properties).
+**Step two is built** the same night: the Add menu with every shape
+Blender makes of faces (the kit gained ico spheres, cones, tori and grids),
+X and Delete, Shift D, undo and redo; G, R and S as Blender's, which needed
+the window manager to send a window its pointer without a button while it
+asks (`wmproto.track`, ui.md 16.24); the Move, Rotate and Scale handles;
+and Properties' numbers typed and scrubbed. 56 checks a board.
+
+Diego also asked: **delete old images** - the two old development stick
+images (0.10.146, 0.10.150) went to the Trash, 0.10.88-stable kept; the
+space returns when he empties it (the disk was at 1.7 GB free and a gate's
+screendumps failed on it; my own old scratch files, 1.9 GB, were cleared).
+And **sample scenes - a house, a car, a plane** (4l), with the reading half
+of step 5 brought forward to open them.
+
+**Next**: the sample scenes - a JSON reader, glTF with its `extras` for
+the kit's own shapes, and the three scenes as files Cafesa3D opens; then
+step three, the ray tracer.
 
 **Stashed** (`git stash list`, "6l in progress"): 6l's first step -
 `posix_memalign` and `aligned_alloc` in `malloc.c` with `tools/test_alloc.c`

@@ -1159,8 +1159,13 @@ processors, and still what follows USB:
    call it Cafesa3D", "Let's build it". So the view turns with a drag on
    empty space, it opens on the still life, and it is built in this order,
    each step used and tested before the next:
-   1. The window, the Solid view and selection (`/bin/cafesa3d.lua`).
-   2. Adding things and moving them.
+   1. **DONE** - the window, the Solid view and selection
+      (`/bin/cafesa3d.lua`, the 3D Kit; `testing.md` 18.188).
+   2. **DONE** - adding things and moving them: the Add menu with every
+      shape Blender makes of faces, X, Delete, Shift D, undo; G, R and S
+      with axis holds and typed amounts, the pointer tracked without a
+      button (`ui.md` 16.24); the Move, Rotate and Scale handles; and
+      Properties' numbers typed and scrubbed (18.190 to 18.193).
    3. The ray-tracing kit (`/kits/ray`) and the Rendered view.
    4. Materials, lights, the camera and `F12`.
    5. Saving and opening glTF.

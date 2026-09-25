@@ -9728,3 +9728,16 @@ Found on the way, in the app: a press and its release can come in two
 polls, and a release that changes nothing said nothing - so choosing a tool
 never said where its handles were. Every press and release that changes
 something now says it for itself.
+
+## 18.193 Properties' numbers, typed and scrubbed
+
+**Cafesa3D**, 56 checks on each board. A click on **Location X** types
+into it and 1.5 Return puts the Cube at exactly 1.50; **a drag across
+Rotation Z** turns it half a degree a pixel, 20 degrees for 40 pixels; the
+gold ball's **Segments** typed as 8 remakes it as 240 triangles of 960, and
+the scene says 1342; **Esc** leaves a field as it was; **Ctrl Z** undoes
+the segments. What each number is - unit, places, a pixel's worth of drag,
+the least and most, which for a grid's squares and a torus's tube depend on
+the shape - is said once in the app, and a number is held to sense before
+the kit, which raises on nonsense, is told. **Control**: typed values
+thrown away - the three checks that type fail.

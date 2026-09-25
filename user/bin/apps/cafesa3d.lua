@@ -120,6 +120,9 @@ end
 
 local function add(t)
   if SHAPES[t.kind] then
+    t.rot = t.rot or { 0, 0, 0 }
+    t.scale = t.scale or { 1, 1, 1 }
+
     local fields = shown(t)
 
     fields.kind = t.kind
@@ -972,6 +975,81 @@ local function fmt(v, places)
 end
 
 -- A label on the right of a 96-wide column, and a box of words after it.
+--------------------------------------------------------------------------
+-- A number Properties can change: click it to type one, drag across it to
+-- scrub it, as Blender's fields are. What each is - its unit, its places,
+-- how far a pixel of dragging moves it, and the least and most the kit
+-- will take - is said once here, and a number is held to sense before the
+-- kit is told, since the kit refuses nonsense by raising.
+--------------------------------------------------------------------------
+
+local FIELD = {
+  loc      = { unit = " m", places = 2, step = 0.01 },
+  rot      = { unit = "\u{b0}", places = 1, step = 0.5 },
+  scale    = { places = 3, step = 0.01, lo = 0.001, hi = 1000 },
+  size     = { unit = " m", places = 2, step = 0.01, lo = 0.001, hi = 1000 },
+  radius   = { unit = " m", places = 3, step = 0.01, lo = 0.001, hi = 1000 },
+  radius2  = { unit = " m", places = 3, step = 0.01, lo = 0, hi = 1000 },
+  depth    = { unit = " m", places = 3, step = 0.01, lo = 0.001, hi = 1000 },
+  segments = { int = true, step = 0.2, lo = 3, hi = 256 },
+  rings    = { int = true, step = 0.2, lo = 2, hi = 128 },
+  subdivisions = { int = true, step = 0.05, lo = 1, hi = 6 },
+  power    = { unit = " W", places = 0, step = 5, lo = 0, hi = 100000 },
+  focal    = { unit = " mm", places = 0, step = 0.5, lo = 1, hi = 500 },
+}
+
+local fields_drawn = {}                     -- { x, y, w, h, f }, as drawn
+local editing = nil                         -- { f, text, fresh } while typing
+local field_drag = nil
+
+local function F(t, name, index, label)
+  return { t = t, name = name, index = index, spec = FIELD[name],
+           label = label .. (index and (" " .. AXIS_NAME[index]) or "") }
+end
+
+local function field_value(f)
+  local v = f.t[f.name]
+
+  if f.index then v = v[f.index] end
+
+  return v
+end
+
+local function field_text(f, unit)
+  local v, sp = field_value(f), f.spec
+  local text = sp.int and tostring(math.floor(v + 0.5)) or fmt(v, sp.places)
+
+  return unit and (text .. (sp.unit or "")) or text
+end
+
+-- The least and most, which for a few depend on the shape: a grid may be
+-- one square across, and a torus's tube needs three sides.
+local function field_limits(f)
+  local sp, kind = f.spec, f.t.kind
+  local lo, hi = sp.lo, sp.hi
+
+  if kind == "grid" and (f.name == "segments" or f.name == "rings") then lo = 1 end
+  if kind == "torus" and f.name == "rings" then lo = 3 end
+
+  return lo, hi
+end
+
+local function field_set(f, v)
+  local lo, hi = field_limits(f)
+
+  if f.spec.int then v = math.floor(v + 0.5) end
+  if lo then v = math.max(lo, v) end
+  if hi then v = math.min(hi, v) end
+
+  if f.index then f.t[f.name][f.index] = v else f.t[f.name] = v end
+
+  sync(f.t)
+end
+
+local function same_field(a, b)
+  return a and b and a.t == b.t and a.name == b.name and a.index == b.index
+end
+
 local function field_row(s, x, y, w, label, values)
   s:text(x + 96 - gfx.measure(label, small), y + (26 - gfx.height(small)) // 2, label,
          theme.text_dim, nil, small)
@@ -982,11 +1060,22 @@ local function field_row(s, x, y, w, label, values)
 
   for i, v in ipairs(values) do
     local bx = fx + (i - 1) * (each + gap)
+    local f = type(v) == "table" and v or nil
+    local typing = f and editing and same_field(editing.f, f)
+    local text = f and (typing and (editing.text .. "|") or field_text(f, true)) or v
 
-    s:fill_round(bx, y, each, 26, theme.mix(theme.sunken, theme.window, 500), 6)
-    s:frame_round(bx, y, each, 26, theme.line_soft, 6)
-    s:text(bx + (each - gfx.measure(v, small)) // 2, y + (26 - gfx.height(small)) // 2, v,
-           theme.text, nil, small)
+    s:fill_round(bx, y, each, 26, typing and theme.sunken
+                 or theme.mix(theme.sunken, theme.window, 500), 6)
+    s:frame_round(bx, y, each, 26, typing and theme.ring or theme.line_soft, 6)
+
+    if typing then
+      s:frame_round(bx + 1, y + 1, each - 2, 24, theme.ring, 5)
+    end
+
+    s:text(bx + (each - gfx.measure(text, small)) // 2, y + (26 - gfx.height(small)) // 2, text,
+           f and theme.text or theme.text_dim, nil, small)
+
+    if f then fields_drawn[#fields_drawn + 1] = { x = bx, y = y, w = each, h = 26, f = f } end
   end
 
   return y + 31
@@ -1049,6 +1138,8 @@ local function hexcolour(c) return ("#%06x"):format(c & 0xffffff) end
 
 local function draw_props(s)
   local x0 = SX + TABS_W
+
+  fields_drawn = {}
   local top = PROPS_Y + 1
 
   s:fill(SX + 1, top, TABS_W - 1, H - FOOT - top, theme.mix(theme.window, theme.line_soft, 300))
@@ -1090,61 +1181,63 @@ local function draw_props(s)
   elseif tab == "object" then
     y = heading(s, x, y, t.name, kind_glyph(t))
     y = axis_letters(s, x, y, w)
-    y = field_row(s, x, y, w, "Location", { fmt(t.loc[1], 2) .. " m", fmt(t.loc[2], 2) .. " m",
-                                            fmt(t.loc[3], 2) .. " m" })
+    y = field_row(s, x, y, w, "Location", { F(t, "loc", 1, "Location"), F(t, "loc", 2, "Location"),
+                                            F(t, "loc", 3, "Location") })
     y = axis_letters(s, x, y, w)
 
-    local r = t.rot or { 0, 0, 0 }
-
-    y = field_row(s, x, y, w, "Rotation", { fmt(r[1], 1) .. "\u{b0}", fmt(r[2], 1) .. "\u{b0}",
-                                            fmt(r[3], 1) .. "\u{b0}" })
-    y = axis_letters(s, x, y, w)
-
-    local sc = t.scale or { 1, 1, 1 }
-
-    y = field_row(s, x, y, w, "Scale", { fmt(sc[1]), fmt(sc[2]), fmt(sc[3]) })
+    if t.id then
+      y = field_row(s, x, y, w, "Rotation", { F(t, "rot", 1, "Rotation"), F(t, "rot", 2, "Rotation"),
+                                              F(t, "rot", 3, "Rotation") })
+      y = axis_letters(s, x, y, w)
+      y = field_row(s, x, y, w, "Scale", { F(t, "scale", 1, "Scale"), F(t, "scale", 2, "Scale"),
+                                           F(t, "scale", 3, "Scale") })
+    else
+      y = field_row(s, x, y, w, "Rotation", { "0.0\u{b0}", "0.0\u{b0}", "0.0\u{b0}" })
+      y = axis_letters(s, x, y, w)
+      y = field_row(s, x, y, w, "Scale", { "1.000", "1.000", "1.000" })
+    end
     note(s, x, y + 6, w, "Where the object is, how it is turned and how large - and nothing about its shape, which is in the Data tab.")
   elseif tab == "data" then
     y = heading(s, x, y, KIND_NAME[t.kind], kind_glyph(t))
 
     if t.kind == "box" then
       y = axis_letters(s, x, y, w)
-      y = field_row(s, x, y, w, "Size", { fmt(t.size[1], 2) .. " m", fmt(t.size[2], 2) .. " m",
-                                          fmt(t.size[3], 2) .. " m" })
+      y = field_row(s, x, y, w, "Size", { F(t, "size", 1, "Size"), F(t, "size", 2, "Size"),
+                                          F(t, "size", 3, "Size") })
     elseif t.kind == "sphere" then
-      y = field_row(s, x, y, w, "Segments", { tostring(t.segments) })
-      y = field_row(s, x, y, w, "Rings", { tostring(t.rings) })
-      y = field_row(s, x, y, w, "Radius", { fmt(t.radius) .. " m" })
+      y = field_row(s, x, y, w, "Segments", { F(t, "segments", nil, "Segments") })
+      y = field_row(s, x, y, w, "Rings", { F(t, "rings", nil, "Rings") })
+      y = field_row(s, x, y, w, "Radius", { F(t, "radius", nil, "Radius") })
     elseif t.kind == "cylinder" then
-      y = field_row(s, x, y, w, "Vertices", { tostring(t.segments) })
-      y = field_row(s, x, y, w, "Radius", { fmt(t.radius) .. " m" })
-      y = field_row(s, x, y, w, "Depth", { fmt(t.depth) .. " m" })
+      y = field_row(s, x, y, w, "Vertices", { F(t, "segments", nil, "Vertices") })
+      y = field_row(s, x, y, w, "Radius", { F(t, "radius", nil, "Radius") })
+      y = field_row(s, x, y, w, "Depth", { F(t, "depth", nil, "Depth") })
     elseif t.kind == "plane" then
-      y = field_row(s, x, y, w, "Size", { fmt(t.size, 1) .. " m" })
+      y = field_row(s, x, y, w, "Size", { F(t, "size", nil, "Size") })
     elseif t.kind == "ico" then
-      y = field_row(s, x, y, w, "Subdivisions", { tostring(t.subdivisions) })
-      y = field_row(s, x, y, w, "Radius", { fmt(t.radius) .. " m" })
+      y = field_row(s, x, y, w, "Subdivisions", { F(t, "subdivisions", nil, "Subdivisions") })
+      y = field_row(s, x, y, w, "Radius", { F(t, "radius", nil, "Radius") })
     elseif t.kind == "cone" then
-      y = field_row(s, x, y, w, "Vertices", { tostring(t.segments) })
-      y = field_row(s, x, y, w, "Radius 1", { fmt(t.radius) .. " m" })
-      y = field_row(s, x, y, w, "Radius 2", { fmt(t.radius2) .. " m" })
-      y = field_row(s, x, y, w, "Depth", { fmt(t.depth) .. " m" })
+      y = field_row(s, x, y, w, "Vertices", { F(t, "segments", nil, "Vertices") })
+      y = field_row(s, x, y, w, "Radius 1", { F(t, "radius", nil, "Radius 1") })
+      y = field_row(s, x, y, w, "Radius 2", { F(t, "radius2", nil, "Radius 2") })
+      y = field_row(s, x, y, w, "Depth", { F(t, "depth", nil, "Depth") })
     elseif t.kind == "torus" then
-      y = field_row(s, x, y, w, "Major segments", { tostring(t.segments) })
-      y = field_row(s, x, y, w, "Minor segments", { tostring(t.rings) })
-      y = field_row(s, x, y, w, "Major radius", { fmt(t.radius) .. " m" })
-      y = field_row(s, x, y, w, "Minor radius", { fmt(t.radius2) .. " m" })
+      y = field_row(s, x, y, w, "Major segments", { F(t, "segments", nil, "Major segments") })
+      y = field_row(s, x, y, w, "Minor segments", { F(t, "rings", nil, "Minor segments") })
+      y = field_row(s, x, y, w, "Major radius", { F(t, "radius", nil, "Major radius") })
+      y = field_row(s, x, y, w, "Minor radius", { F(t, "radius2", nil, "Minor radius") })
     elseif t.kind == "grid" then
-      y = field_row(s, x, y, w, "X subdivisions", { tostring(t.segments) })
-      y = field_row(s, x, y, w, "Y subdivisions", { tostring(t.rings) })
-      y = field_row(s, x, y, w, "Size", { fmt(t.size, 1) .. " m" })
+      y = field_row(s, x, y, w, "X subdivisions", { F(t, "segments", nil, "X subdivisions") })
+      y = field_row(s, x, y, w, "Y subdivisions", { F(t, "rings", nil, "Y subdivisions") })
+      y = field_row(s, x, y, w, "Size", { F(t, "size", nil, "Size") })
     elseif t.kind == "light" then
       y = field_row(s, x, y, w, "Type", { "Point" })
       y = field_row(s, x, y, w, "Colour", { hexcolour(t.colour) })
-      y = field_row(s, x, y, w, "Power", { t.power .. " W" })
-      y = field_row(s, x, y, w, "Radius", { fmt(t.radius, 2) .. " m" })
+      y = field_row(s, x, y, w, "Power", { F(t, "power", nil, "Power") })
+      y = field_row(s, x, y, w, "Radius", { F(t, "radius", nil, "Radius") })
     elseif t.kind == "camera" then
-      y = field_row(s, x, y, w, "Focal length", { t.focal .. " mm" })
+      y = field_row(s, x, y, w, "Focal length", { F(t, "focal", nil, "Focal length") })
       y = field_row(s, x, y, w, "Sensor", { "36 mm" })
     end
 
@@ -1278,6 +1371,17 @@ local function say_where()
     end
 
     print(("cafesa3d: handles %s %s"):format(tool, table.concat(hs, "; ")))
+  end
+
+  if #fields_drawn > 0 then
+    local fs_ = {}
+
+    for _, d in ipairs(fields_drawn) do
+      fs_[#fs_ + 1] = ("%s%s %d,%d"):format(d.f.name, d.f.index or "", d.x + d.w // 2,
+                                            d.y + d.h // 2)
+    end
+
+    print("cafesa3d: fields " .. table.concat(fs_, "; "))
   end
 end
 
@@ -1819,6 +1923,43 @@ end
 
 local shift, ctrl = false, false
 local drag = nil
+
+-- The field under a point, as last drawn.
+local function field_at(x, y)
+  for _, d in ipairs(fields_drawn) do
+    if x >= d.x and x < d.x + d.w and y >= d.y and y < d.y + d.h then return d end
+  end
+end
+
+local function say_set(f)
+  local extra = f.t.id and (" - the scene is %d triangles"):format(scene:triangles()) or ""
+
+  print(("cafesa3d: set %s of %s to %s%s"):format(f.label, f.t.name, field_text(f, false), extra))
+end
+
+local function start_edit(f)
+  editing = { f = f, text = field_text(f, false), fresh = true }
+  print(("cafesa3d: editing %s of %s"):format(f.label, f.t.name))
+end
+
+-- What was typed, kept - if it is a number, and a different one.
+local function commit_edit()
+  local e = editing
+
+  editing = nil
+
+  if not e then return false end
+
+  local v = tonumber(e.text)
+
+  if v and v ~= field_value(e.f) then
+    will(("set %s of %s"):format(e.f.label, e.f.t.name))
+    field_set(e.f, v)
+    say_set(e.f)
+  end
+
+  return true
+end
 local pointer = { VX + VW // 2, VY + VH // 2 }  -- where it was last seen
 
 local function inside(c, x, y)
@@ -1833,6 +1974,20 @@ local function press(x, y)
   pointer = { x, y }
 
   if modal then finish(true) return true end
+
+  -- A field of Properties: a drag scrubs it, a click types into it; a
+  -- press anywhere else keeps what was being typed, as Blender's does.
+  local fd = field_at(x, y)
+
+  if editing and not (fd and same_field(fd.f, editing.f)) then commit_edit() end
+
+  if fd then
+    if not (editing and same_field(fd.f, editing.f)) then
+      field_drag = { f = fd.f, x = x, v0 = field_value(fd.f), moved = false }
+    end
+
+    return true
+  end
 
   for _, name in ipairs(TABS) do
     if inside(controls["tab:" .. name], x, y) then
@@ -1901,6 +2056,21 @@ end
 local function move(x, y)
   pointer = { x, y }
 
+  if field_drag then
+    local fdr = field_drag
+    local dx = x - fdr.x
+
+    if not fdr.moved and math.abs(dx) < 4 then return false end
+
+    if not fdr.moved then
+      fdr.moved = true
+      will(("set %s of %s"):format(fdr.f.label, fdr.f.t.name))
+    end
+
+    field_set(fdr.f, fdr.v0 + dx * fdr.f.spec.step)
+    return true
+  end
+
   if modal then
     if not modal.ref then
       modal.ref = { x, y }
@@ -1937,6 +2107,16 @@ local function move(x, y)
 end
 
 local function release(x, y)
+  if field_drag then
+    local fdr = field_drag
+
+    field_drag = nil
+
+    if fdr.moved then say_set(fdr.f) else start_edit(fdr.f) end
+
+    return true
+  end
+
   if modal and modal.by_drag then
     finish(true)
     return true
@@ -1993,6 +2173,50 @@ local function rawkey(ev)
   end
 
   if not ev.down then return false end
+
+  -- While a field is being typed in: its keys, and nothing else's.
+  if editing then
+    local e = editing
+    local ch = ({ [2] = "1", [3] = "2", [4] = "3", [5] = "4", [6] = "5", [7] = "6",
+                  [8] = "7", [9] = "8", [10] = "9", [11] = "0", [52] = ".", [12] = "-" })[ev.code]
+
+    if ch then
+      if e.fresh then e.text, e.fresh = "", false end
+      e.text = e.text .. ch
+      return true
+    end
+
+    if ev.code == 14 then
+      e.text = e.fresh and "" or e.text:sub(1, -2)
+      e.fresh = false
+      return true
+    end
+
+    if ev.code == 28 or ev.code == 96 then commit_edit() return true end
+
+    if ev.code == 1 then
+      editing = nil
+      print("cafesa3d: left the field as it was")
+      return true
+    end
+
+    if ev.code == 15 then
+      -- Tab: kept, and on to the next field, round to the first.
+      local at = 1
+
+      for i, d in ipairs(fields_drawn) do
+        if same_field(d.f, e.f) then at = i % #fields_drawn + 1 end
+      end
+
+      commit_edit()
+
+      if fields_drawn[at] then start_edit(fields_drawn[at].f) end
+
+      return true
+    end
+
+    return false
+  end
 
   -- While G, R or S is going: its keys, and nothing else's.
   if modal then
@@ -2153,6 +2377,14 @@ while win.running do
     end
   end
 
-  -- Where things are after a key or a menu changed them, as a release does.
-  if said_where then say_where() end
+  -- Where things are after a key or a menu changed them, as a release does
+  -- - drawn first, so the fields said are the ones on the screen.
+  if said_where then
+    if dirty then
+      if not draw_all() then break end
+      dirty = false
+    end
+
+    say_where()
+  end
 end
