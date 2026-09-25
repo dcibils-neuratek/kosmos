@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
 ---
 
@@ -177,19 +177,28 @@ Found on the way: every song and film ended one sample short (`sys.pcm`'s
 `last`); the Video app's pause showed the frame of the last seek; ER AAC-LD
 needs the sample entry's rate. Diego's two clips play with sound under QEMU.
 
-The gate: 35 suites passed; the host suite passed every step but its one
-Rosetta binary (`test_yuv_x86`), because **Rosetta hung on this Mac** -
-even `arch -x86_64 /usr/bin/true` sat in an uninterruptible wait - which a
-restart clears and which needs nothing of ours; `x86-sound`, which runs
-after the host suite, passed alone. A `make qemu` started the day before
-was still running, 17 hours in, and was left alone as Diego's.
+**0.10.164, "Push as 10.164"** (Diego, away from the Mac). Its gate found
+something first: **the x86-64 clocks were measured wrong under load**. With
+twenty-six suites running, QEMU's thread was set aside across the moment the
+8253 finished counting, the loop watching it noticed tens of milliseconds
+late, and the TSC came out at 4.8 times its speed - so `x86-film` read three
+seconds as 0.62, and `x86-display-4`'s Monitor drew no history, its tick
+calibrated from the same TSC. Both passed alone. Now both ends of the
+measurement are bracketed and an interrupted one is taken again; the local
+APIC's timer is measured against the TSC with the TSC read either side of
+each reading; the boot log says each rate, how close and in how many tries;
+and the new suite `x86-timer` stops QEMU with SIGSTOP inside each
+measurement on purpose (`testing.md` 18.186, two controls watched). The same
+fault is there on silicon, where an SMI is the stall.
+
+**Rosetta is still hung on this Mac**: `test_yuv_x86`, the host suite's one
+x86 binary, sits in an uninterruptible wait - a new x86 binary does, while
+`arch -x86_64 /usr/bin/true` now runs. It needs a restart, which is
+Diego's; the host suite runs every other step.
 
 The image's writable half is 2.79 MB now, every process's copy of FFmpeg's
 empty tables (6j, about 50 MB across the desktop) - now the largest memory
 cost in the image.
-
-**Next**: 6l, FFmpeg's NEON on AArch64, measured in the overlay; 6j, `.bss`
-as zero pages on demand; then 6k, reading a film ahead.
 
 **MathLab (4k), agreed the same afternoon** - Diego: a Mathcad-like app of
 equations and 2D and 3D graphs that shows the vector units working, "The app
@@ -198,24 +207,27 @@ plots". **Drawn** as `docs/mathlab.html` (published for him to see on his
 phone, https://claude.ai/artifact/HCxjubjL8S7NTSxLn8QgzM) and changed with
 him: a notebook of cells typed by hand, 3D turned by dragging and a Turn
 button, and a learning tool - lessons of physics, the rocket launch drawn
-working (roadmap 4k has his words). Waiting for his choices at the page's
-end; queued after the H.264 and sound work is pushed. **In progress, uncommitted**: 6l's
-first step - `posix_memalign` and `aligned_alloc` in `malloc.c` with
-`tools/test_alloc.c` (FFmpeg's `configure` refuses NEON without an aligned
-allocator), and `tools/ffmpeg_vendor.py` reshaped for three targets
-(aarch64 with NEON, generic C, the Mac's arm64), not yet run through.
-The gate for 0.10.155: 33 suites in 5:44, after three runs that each found
-something - a layout-sensitive x86 kernel fault (recorded, Known and
-unexplained), a frame-rate check that was a QEMU number, and a scheduler
-check that was a race between cores.
+working (roadmap 4k has his words). Then "all your suggestions", lessons
+that derive their laws for people who know some calculus, and the
+simulations as 3D scenes turned while they run - and then **on hold**:
+"Hold on the math lab app for now". Nothing built.
 
-**Queued, in order**: the camera (6d); then the eleven windows drawn in
-`docs/apps.html` on 24 September and not yet built (5zs); the pixel loops
+**Then a 3D modelling tool, ahead of it (4l)** - "I want to prioritize other
+app first", "A simple 3d modeling and animation tool like blender3d", scenes
+of primitives and meshes rendered by ray tracing, animation for a second
+version. Blender studied first, from its manual and the KitBash3D guide
+Diego sent; **next is its mockup**, before any code.
+
+**Stashed** (`git stash list`, "6l in progress"): 6l's first step -
+`posix_memalign` and `aligned_alloc` in `malloc.c` with `tools/test_alloc.c`
+(FFmpeg's `configure` refuses NEON without an aligned allocator), and
+`tools/ffmpeg_vendor.py` reshaped for three targets, not yet run through.
+6l, 6j (`.bss` as zero pages on demand) and 6k (reading a film ahead) wait
+behind the 3D tool.
+
+**Queued after those, in order**: the camera (6d); the eleven windows drawn
+in `docs/apps.html` on 24 September and not yet built (5zs); the pixel loops
 measured and vectorised (5zw).
-
-**The M700**: 0.10.150's stick was built and handed over (`make MEGA=1
-x86-usb-image`, `run_uefi.py`, `make stress`, a `boot.md` row), then the
-twelve windows of 5zs.
 
 ## 23 September: the M700, 8 GB, the tree sorted, and a new look
 

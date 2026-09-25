@@ -1101,7 +1101,7 @@ processors, and still what follows USB:
      thrust, a mass that burns away, the rocket equation with the rocket
      marked on its graph, and the flight with altitude, speed and mass
      plotted against time, all following the sliders.
-   - **Everything proposed, and the eight lessons** (26 September) - "MathLab
+   - **Everything proposed, and the eight lessons** (25 September) - "MathLab
      I like all your suggestions and sessions": simulations for the lessons
      (a pendulum, a drum skin, the Mandelbrot set), sliders, calculus,
      matrices, more graphs, data, units, sound, and more physics.
@@ -1111,10 +1111,42 @@ processors, and still what follows USB:
      a cell and said in words: lesson 6 now derives the rocket equation from
      momentum alone, then counts what gravity and the air take from it
      (574 and 482 m/s of 4,281, the flight's own sums).
+   - **The simulations are 3D scenes** (25 September) - "The rocket
+     simulator and else should be in 3d if possible so I can rotate and see
+     the animation from other angles". A simulation is drawn in the same
+     view as a 3D graph and turned the same way, by dragging and by the play
+     button, while it runs: the rocket climbs over a patch of ground with
+     its path drawn behind it, the pendulum swings in space, the drum skin
+     is a surface. What is flat stays a graph - altitude against time is a
+     2D plot - and the scene and its graphs are held to one clock, so a
+     pause stops both.
    Proposed order, in the drawing: the notebook and its graphs; sliders;
    lesson 6 whole; the maths kit's vector paths and the Benchmark; then the
    other lessons, and the other kinds of cell as they need them.
-   Not started; queued after the H.264 and sound work is pushed.
+   **ON HOLD since 25 September** - "Hold on the math lab app for now", the
+   same afternoon as the 3D scenes. Drawn and decided as above, nothing
+   built; the 3D scenes are decided and not yet drawn.
+4l. **AGREED on 25 September, ahead of MathLab - a 3D modelling tool, after
+   Blender, that renders by ray tracing.** Diego: "I want to prioritize
+   other app first", "A simple 3d modeling and animation tool like
+   blender3d", "A tool I can design a 3d scene with primitives and objects
+   like meshes, 3d spheres, cubes, etc", "Search for blender and how it
+   approaches modeling", "I wan to be able to design and render 3d scenes
+   with 3d rendering algorithms like ray tracing", and "Hold animation for
+   now as that is a second version of the app".
+   - **Version one is a scene and a render**: primitives and meshes -
+     spheres, cubes and the rest - placed, turned and sized in a 3D view,
+     given materials, lit, seen through a camera, and rendered by ray
+     tracing.
+   - **Version two is animation**, and is not started until one is lived
+     with.
+   - **Blender is studied first** - how it lays out its windows, separates
+     an object from its mesh, adds primitives, moves things and renders -
+     and **the app is drawn before it is written**, as every app is: a
+     mockup in `docs/`, changed with Diego until he agrees.
+   - The pixel loops are C, as always: the ray tracer is a kit, and the
+     vector units (6l) are what it is for.
+   Not started. The name is Diego's to give.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
