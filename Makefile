@@ -2088,10 +2088,21 @@ $(ASSET_LIST):
 	@mkdir -p $(dir $@)
 	@printf '%s' '$(ASSET_FILES)' > $@
 
+# Cafesa3D's sample scenes (`roadmap.md` 4l): written by the build from
+# `tools/cafesa3d_samples.py`, which is the scenes, and carried in the image
+# as `scenes/house.gltf` and the rest - so nothing generated is in the tree.
+SCENE_FILES := $(GEN)/scenes/house.gltf $(GEN)/scenes/car.gltf $(GEN)/scenes/plane.gltf
+
+$(GEN)/scenes/.made: tools/cafesa3d_samples.py
+	python3 tools/cafesa3d_samples.py $(GEN)/scenes
+	@touch $@
+
+$(SCENE_FILES): $(GEN)/scenes/.made
+
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
                  $(ASSET_FILES) $(ASSET_LIST) LICENSE \
-                 docs/cheatsheet.html tools/assets2c.py
+                 docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES)
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
 	        assets/images/test-pattern.png assets/images/test-quads.jpg \
@@ -2100,7 +2111,8 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        docs/cheatsheet.html \
 	        --prefix=16x16/ $(ICON16_FILES) \
 	        --prefix=64x64/ $(ICON64_FILES) \
-	        --prefix=line/ $(LINE_FILES)
+	        --prefix=line/ $(LINE_FILES) \
+	        --prefix=scenes/ $(SCENE_FILES)
 
 # The outline fonts, embedded the same way.
 #
@@ -3206,6 +3218,11 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/lua tools/test_procshare.lua
 	@# And an MP4's index, for the video player (roadmap 4e).
 	$(HOSTDIR)/lua tools/test_mp4.lua
+	@# JSON, and Cafesa3D's scenes read out of glTF: the samples written
+	@# here and read back, their two descriptions held to each other.
+	$(HOSTDIR)/lua tools/test_json.lua
+	python3 tools/cafesa3d_samples.py $(HOSTDIR)/scenes
+	$(HOSTDIR)/lua tools/test_scenefile.lua $(HOSTDIR)/scenes
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua

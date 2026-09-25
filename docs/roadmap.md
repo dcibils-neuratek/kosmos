@@ -1180,6 +1180,21 @@ processors, and still what follows USB:
      so **the reading half of step 5 comes forward to just after step 2**,
      and the three are the first scenes it opens; step 3's renderer gives
      them their look.
+     **First cut DONE on 25 September** (glTF read by `/lib/json.lua` and
+     `/lib/scenefile.lua`, the scenes written by
+     `tools/cafesa3d_samples.py`, opened from the dots' menu; 18, 25 and 32
+     objects). Diego, on seeing it: "I was expecting a much more polished
+     scenes and complex to showcase the modeler capabilities", "With more
+     detail and textures", "Show me how the ray tracer rendered scenes look
+     when they are ready", "For these scenes". So, in this order: **the
+     ray tracer** (step 3, and step 4's materials with it); **textures** -
+     3D procedural ones first, as Blender's Brick, Checker, Noise and Wave
+     nodes are, worked out from the point on the surface so nothing needs
+     unwrapping and the Solid view and the ray tracer share them; **a mesh
+     kind** in the kit, arbitrary triangles, which glTF carries anyway, so
+     the samples can have shaped parts - a fuselage turned on a lathe, a
+     body lofted from sections, bevelled edges, tori for tyres; then **the
+     three rebuilt with far more detail**, rendered, and shown to him.
    - **Every acceleration the machine has** - Diego, the same evening:
      "Make sure we used all available acceleration modes from simd and avx
      and in the future gpu acceleration when available". So the 3D Kit's

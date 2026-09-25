@@ -553,6 +553,40 @@ def main():
             check(said("cafesa3d: undid ", mark) == "set Segments of Gold",
                   "Ctrl Z did not undo the segments")
 
+        # **The samples** - the house, the car and the plane Diego asked
+        # for - opened as a person opens them: the dots, Open a sample, and
+        # the scene; each with every object read and its colours on screen.
+        def whiteish(c):
+            r, g, b = (c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff
+            return r > 190 and g > 190 and b > 190
+
+        colours = {"House": (reddish, 400), "Car": (reddish, 1500), "Plane": (whiteish, 1500)}
+
+        for row, (name, objects) in enumerate((("House", 18), ("Car", 25), ("Plane", 32))):
+            mark = len(guest.seen)
+            click(ox + header["more"][0], oy + header["more"][1])
+            opened = said("cafesa3d: more menu at ", mark)
+            m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", opened or "")
+            check(m is not None, "the dots did not open their menu")
+
+            if not m:
+                continue
+
+            mx, my, mw, rh = (int(v) for v in m.groups())
+            click(mx + 24, my + 2 + rh // 2)                         # Open a sample
+            click(mx + mw - 2 + 30, my + 2 + 2 + row * rh + rh // 2)   # the scene
+            got = said("cafesa3d: opened ", mark)
+            check(got is not None and got.startswith("%s, %d objects" % (name, objects))
+                  and got.endswith(", 0 skipped"),
+                  "Open a sample, %s did not open all %d of its objects: %r" % (name, objects, got))
+
+            test, least = colours[name]
+            seen = count(screen(), (ox + 46, oy + 46, ox + 1060, oy + 790), test)
+            check(seen > least, "%s opened but its colours are not on the screen (%d pixels)"
+                  % (name, seen))
+            open("/private/tmp/cafesa3d-%s.ppm" % name.lower(), "wb").write(guest.screendump()) \
+                if os.environ.get("CAFESA3D_SHOTS") else None
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
@@ -573,7 +607,8 @@ def main():
           "the pointer with no button, G X 2, R Z 90, S 2, Esc and a right click "
           "cancelling, Ctrl Z; the Move, Rotate and Scale handles each changing its "
           "axis alone; Location X typed, Rotation Z scrubbed, a sphere's segments "
-          "remaking it, Esc, Ctrl Z)" % checks)
+          "remaking it, Esc, Ctrl Z; the house, the car and the plane opened from the "
+          "samples, every object read and their colours on the screen)" % checks)
     return 0
 
 

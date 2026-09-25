@@ -30,6 +30,8 @@ local theme = ui.theme
 local pk = use("/lib/pixelkit.lua").new(ui)
 local wmproto = use("/lib/wmproto.lua")
 local k3 = use("/kits/3d")
+local json = use("/lib/json.lua")
+local scenefile = use("/lib/scenefile.lua")
 local game = use("/kits/game")
 local L = ui.layout
 
@@ -246,6 +248,11 @@ end
 --------------------------------------------------------------------------
 
 local shading = (tostring(args or "")):find("%-%-wire") and "wire" or "solid"
+local file_name = "still-life.scene"
+
+-- The light from everywhere that is not a lamp: a sky, from the zenith to
+-- the horizon. What the ray tracer (step three) lights a scene with.
+local world = { zenith = 0x6d90c6, horizon = 0xdfe6ef, strength = 0.9 }
 local tab = "object"
 local drawn_triangles = 0
 local VIEW_NAME = "User Perspective"
@@ -524,7 +531,7 @@ local function draw_header(s)
   end
 
   local shade_x = render.x - 8 - shade_w - 2
-  local title_end = pk.header(s, 0, 0, W, "Cafesa3D", "still-life.scene", shade_x)
+  local title_end = pk.header(s, 0, 0, W, "Cafesa3D", file_name, shade_x)
 
   local x = title_end + 18
   x = x + segmented(s, x, (HEAD - 1 - 31) // 2,
@@ -627,8 +634,12 @@ local function draw_lamp(s, t)
 end
 
 local function draw_camera(s, t)
-  -- Its frame, a metre ahead of it, sixteen by nine, as Blender draws one.
+  -- Its frame, a metre ahead of it, sixteen by nine, as Blender draws one -
+  -- unless the view is looking through it, as it is when a scene opens.
   local p, q = t.loc, t.target
+  local e = eye()
+
+  if (e[1] - p[1]) ^ 2 + (e[2] - p[2]) ^ 2 + (e[3] - p[3]) ^ 2 < 1 then return end
   local f = { q[1] - p[1], q[2] - p[2], q[3] - p[3] }
   local n = math.sqrt(f[1] ^ 2 + f[2] ^ 2 + f[3] ^ 2)
 
@@ -1172,9 +1183,9 @@ local function draw_props(s)
     note(s, x, y + 4, w, "The ray tracer is step three: Preview traces as Whitted did, Final as Cycles does.")
   elseif tab == "world" then
     y = heading(s, x, y, "World")
-    y = field_row(s, x, y, w, "Zenith", { "#6d90c6" })
-    y = field_row(s, x, y, w, "Horizon", { "#dfe6ef" })
-    y = field_row(s, x, y, w, "Strength", { "0.90" })
+    y = field_row(s, x, y, w, "Zenith", { hexcolour(world.zenith) })
+    y = field_row(s, x, y, w, "Horizon", { hexcolour(world.horizon) })
+    y = field_row(s, x, y, w, "Strength", { fmt(world.strength, 2) })
     note(s, x, y + 4, w, "The light from everywhere that is not a lamp: a sky.")
   elseif not t then
     note(s, x, y, w, "Nothing is selected. Click an object in the view, or its name above.")
@@ -1650,6 +1661,105 @@ local function add_menu(x, y)
   end
 end
 
+--------------------------------------------------------------------------
+-- Opening a scene: the samples the image carries (`roadmap.md` 4l), read
+-- out of glTF by `/lib/scenefile.lua`, which trusts nothing in the file.
+-- The whole scene is replaced - one undo step - and the view goes to where
+-- the scene's camera stands.
+--------------------------------------------------------------------------
+
+local SAMPLES = { { "house", "House" }, { "car", "Car" }, { "plane", "Plane" } }
+
+local function look_from(cam)
+  local d = { cam.loc[1] - cam.target[1], cam.loc[2] - cam.target[2], cam.loc[3] - cam.target[3] }
+  local n = math.sqrt(d[1] ^ 2 + d[2] ^ 2 + d[3] ^ 2)
+
+  if n < 1e-6 then return end
+
+  orbit.target = { cam.target[1], cam.target[2], cam.target[3] }
+  orbit.dist = n
+  orbit.az = math.atan(d[2], d[1])
+  orbit.el = math.max(-1.5, math.min(1.5, math.asin(d[3] / n)))
+  view_name = VIEW_NAME
+end
+
+local function open_scene(bytes, file)
+  local doc, why = json.decode(bytes or "")
+  local loaded
+
+  if doc then loaded, why = scenefile.from_gltf(doc) end
+
+  if not loaded then
+    print(("cafesa3d: could not open %s: %s"):format(file, tostring(why)))
+    return false
+  end
+
+  will("opened " .. loaded.name)
+
+  for _, t in ipairs(things) do
+    if t.id then scene:remove(t.id) end
+  end
+
+  things = {}
+
+  local camera
+
+  for _, t in ipairs(loaded.things) do
+    if t.kind == "camera" and not camera then camera = t end
+    add(t)
+  end
+
+  if loaded.world then
+    world.zenith = loaded.world.zenith or world.zenith
+    world.horizon = loaded.world.horizon or world.horizon
+    world.strength = loaded.world.strength or world.strength
+  end
+
+  selected = nil
+  file_name = file
+  cursor3d = { 0, 0, 0 }
+
+  if camera then look_from(camera) end
+
+  print(("cafesa3d: opened %s, %d objects, %d triangles, %d skipped"):format(
+    loaded.name, #things, scene:triangles(), loaded.skipped))
+
+  for _, w in ipairs(loaded.why) do print("cafesa3d:   skipped " .. w) end
+
+  return true
+end
+
+local function open_sample(file, name)
+  local bytes = sys.asset("scenes/" .. file .. ".gltf")
+
+  if not bytes then
+    print("cafesa3d: this image carries no sample called " .. name)
+    return
+  end
+
+  open_scene(bytes, file .. ".gltf")
+end
+
+-- The dots: opening a sample, and what comes later.
+local function more_menu(x, y)
+  local samples = {}
+
+  for _, s_ in ipairs(SAMPLES) do
+    samples[#samples + 1] = { text = s_[2], on_choose = function() open_sample(s_[1], s_[2]) end }
+  end
+
+  local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y, {
+    { text = "Open a sample", submenu = samples },
+    { separator = true },
+    { text = "Open...", disabled = true },
+    { text = "Save", disabled = true },
+  })
+
+  if m then
+    print(("cafesa3d: more menu at %d,%d, %d wide, rows of %d"):format(m.x, m.y, m.w, m.row))
+  end
+end
+
 -- X asks first, as Blender does; Delete does not.
 local function delete_menu(x, y)
   if not selected then return end
@@ -1998,6 +2108,7 @@ local function press(x, y)
   end
 
   if inside(controls.add, x, y) then add_menu(controls.add.x, HEAD) return true end
+  if inside(controls.more, x, y) then more_menu(controls.more.x + 26 - 190, HEAD) return true end
   if inside(controls.wire, x, y) then set_shading("wire") return true end
   if inside(controls.solid, x, y) then set_shading("solid") return true end
 
@@ -2312,8 +2423,8 @@ do
 
   local header = {}
 
-  for _, name in ipairs({ "add", "wire", "solid", "tool:select", "tool:move", "tool:rotate",
-                          "tool:scale" }) do
+  for _, name in ipairs({ "add", "more", "wire", "solid", "tool:select", "tool:move",
+                          "tool:rotate", "tool:scale" }) do
     local c = controls[name]
 
     header[#header + 1] = ("%s %d,%d"):format(name, c.x + c.w // 2, c.y + c.h // 2)

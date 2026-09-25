@@ -9741,3 +9741,34 @@ the least and most, which for a grid's squares and a torus's tube depend on
 the shape - is said once in the app, and a number is held to sense before
 the kit, which raises on nonsense, is told. **Control**: typed values
 thrown away - the three checks that type fail.
+
+## 18.194 JSON, glTF, and the sample scenes
+
+**`/lib/json.lua`**, `tools/test_json.lua` in the host suite, 30 checks:
+numbers, escapes and a surrogate pair read; written and read back byte for
+byte, names in order; and eighteen things JSON is not - a trailing comma, a
+single quote, a comment, a leading zero, NaN, a raw newline in a string,
+half a surrogate pair, a thousand brackets deep and the rest - each refused
+with its line and column. **Control**: no depth limit - the thousand
+brackets are let through.
+
+**The scene files**, `tools/test_scenefile.lua`, 35 checks: the house, the
+car and the plane - written by `tools/cafesa3d_samples.py`, the scenes
+themselves - read back as 18, 25 and 32 objects with nothing skipped, and
+**each file's two descriptions of every object held to each other**: the
+reader's conversion of every node's glTF transform (Y up, a quaternion,
+written by Python) must land where its own Z-up numbers say, compared as
+rotation matrices; every camera's glTF rotation must look at its target;
+every material's linear colour must be its hex to a step. And seven
+refusals: a sphere of two segments, a box with no sides, a negative radius,
+half a segment, another program's mesh, glTF 1.0, more than 2000 objects.
+**Control**: one sign flipped in the reader's conversion. It first failed
+only the cameras - every shape in the samples was turned about one axis,
+where the flipped term is nought - so the car's front wheels are now
+steered and the plane's winglets canted, and the control fails the car's
+objects too: the check had been blind to half of what it guarded.
+
+**Cafesa3D**, 65 checks on each board: the dots, Open a sample, and each
+scene opened with every object read and its colours on the screen - the
+roof's tiles, the car's paint, the plane's white. The view opens from the
+scene's camera, which is then not drawn.
