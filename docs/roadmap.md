@@ -1080,6 +1080,30 @@ processors, and still what follows USB:
      them overwritten whenever another process ran. `xsave`/`xrstor`, and
      AVX state enabled in CR4 and XCR0, is `arch/x86_64/` work and comes
      before any AVX code (6l says the same for FFmpeg).
+   **Drawn** the same afternoon, `docs/mathlab.html`, and changed with Diego
+   as he looked at it. **Decided**:
+   - **A notebook** - "I want to be able to input functions by hand to plot
+     them", "Like a notebook": one column of cells, each a line typed by
+     hand, set as mathematics, with what came of it underneath - a function
+     of x drawn at once, of x and y as a surface, `plot` for several.
+   - **3D graphs turn by dragging, and by a play button** - "Mouse drag is
+     good", "Leave out rotating with the keys" (the arrow keys were drawn
+     and taken out), "A play button that rotates the 3d grapgh is cool".
+   - **The 3D look is MATLAB's `surf`**, from his picture.
+   - **A learning tool, with lessons of physics** - "I want this ti be a
+     learning tool", "Like how to launch a Rocket", "And the physics
+     behind", "And plot the functions and rocket trajectory", "So we can
+     have learning lessons", "Of physics", "And a graphical representation
+     of the functions and laws". A lesson is a notebook with text between
+     its cells, each law typed, set and drawn as a graph, sliders for the
+     numbers that matter, the simulation, and questions to try. Drawn:
+     a library of eight lessons, and lesson 6, launching a rocket, working -
+     thrust, a mass that burns away, the rocket equation with the rocket
+     marked on its graph, and the flight with altitude, speed and mass
+     plotted against time, all following the sliders.
+   Proposed in the drawing, his to choose: more simulations for the lessons
+   (a pendulum, a drum skin, the Mandelbrot set), sliders, calculus,
+   matrices, data, units and sound.
    Not started; queued after the H.264 and sound work is pushed.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we

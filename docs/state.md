@@ -195,8 +195,11 @@ as zero pages on demand; then 6k, reading a film ahead.
 equations and 2D and 3D graphs that shows the vector units working, "The app
 is called MathLab", and a picture of MATLAB's `surf(peaks)`: "I like these 3d
 plots". **Drawn** as `docs/mathlab.html` (published for him to see on his
-phone), waiting for his changes and the five choices at its end; queued
-after the H.264 and sound work is pushed. **In progress, uncommitted**: 6l's
+phone, https://claude.ai/artifact/HCxjubjL8S7NTSxLn8QgzM) and changed with
+him: a notebook of cells typed by hand, 3D turned by dragging and a Turn
+button, and a learning tool - lessons of physics, the rocket launch drawn
+working (roadmap 4k has his words). Waiting for his choices at the page's
+end; queued after the H.264 and sound work is pushed. **In progress, uncommitted**: 6l's
 first step - `posix_memalign` and `aligned_alloc` in `malloc.c` with
 `tools/test_alloc.c` (FFmpeg's `configure` refuses NEON without an aligned
 allocator), and `tools/ffmpeg_vendor.py` reshaped for three targets

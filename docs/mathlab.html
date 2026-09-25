@@ -9,8 +9,15 @@
   sims usage like matrix multiplication and else", "a 2d and 3d graphihg app",
   "starting with f=x*x which is the basic parable", "A mathcad oriented app
   that we can do math equations and graphics using all the available simd
-  features", "The app is called MathLab", and for its 3D plots, a picture of
-  MATLAB's surf(peaks): "I like these 3d plots".
+  features", "The app is called MathLab"; for its 3D plots, a picture of
+  MATLAB's surf(peaks): "I like these 3d plots"; then "I want to be able to
+  input functions by hand to plot them", "Like a notebook", "Leave out
+  rotating with the keys / Mouse drag is good", and "What other things can
+  we add to MathLab to make it rich and really useful? Like simulation of
+  physics".
+
+  The notebook below is live: its cells are typed text run through the same
+  small parser the last cell uses, so what is set is exactly what was typed.
 -->
 <html lang="en">
 <head>
@@ -31,7 +38,7 @@
     /* The window, in the Plex look: always light, as the desktop draws it. */
     --w-desk: #3d63b8; --w-body: #fafafb; --w-line: #e0e2e6; --w-ink: #1d1f24;
     --w-dim: #74787f; --w-accent: #2a55c9; --w-head: #ffffff; --w-sel: #e9eefb;
-    --f-blue: #2a55c9; --f-orange: #e07b28; --f-green: #2f8a3e;
+    --w-err: #b42318;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -65,13 +72,9 @@
   .head .t { font-weight: 600; font-size: 14px; }
   .head .s { color: var(--w-dim); font-size: 12.5px; margin-left: 8px; white-space: nowrap; }
   .sp { flex: 1; }
-  .seg { display: inline-flex; border: 1px solid var(--w-line); border-radius: 7px; overflow: hidden; height: 31px; }
-  .seg span { padding: 0 13px; display: inline-flex; align-items: center; font-size: 12.5px; background: #fff; }
-  .seg span + span { border-left: 1px solid var(--w-line); }
-  .seg span.on { background: var(--w-sel); color: var(--w-accent); font-weight: 500; }
   .btn { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px;
          border: 1px solid var(--w-line); border-radius: 7px; background: #fff;
-         font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; }
+         font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; font-family: inherit; }
   .chip { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px;
           border-radius: 12px; background: #eef7ef; color: #1f6b2c; font-size: 12px; font-weight: 500; white-space: nowrap; }
   .chip i { width: 7px; height: 7px; border-radius: 50%; background: #2f8a3e; }
@@ -82,24 +85,47 @@
           font-variant-numeric: tabular-nums; flex: none; white-space: nowrap; }
   .foot b { color: var(--w-ink); font-weight: 500; }
 
-  /* The worksheet: one line an equation, typed in and shown set. */
-  .body { flex: 1; display: flex; min-height: 0; }
-  .sheet { width: 380px; flex: none; border-right: 1px solid var(--w-line); background: #fff;
-           padding: 10px 0; overflow: hidden; }
-  .line { padding: 9px 18px 9px 16px; border-left: 3px solid transparent; }
-  .line.on { background: var(--w-sel); border-left-color: var(--w-accent); }
-  .line .m { font-family: var(--math); font-size: 19px; line-height: 1.35; display: flex; align-items: baseline; gap: 10px; }
-  .line .m i { font-style: italic; }
-  .line .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; align-self: center; }
-  .line .typed { font-family: var(--mono); font-size: 11.5px; color: var(--w-dim); margin-top: 2px; }
-  .line.res .m { color: #3a3f48; }
-  .line .val { color: var(--w-accent); }
-  .sheet .rule { border-top: 1px solid var(--w-line); margin: 8px 16px; }
-  .sheet .new { margin: 6px 16px; padding: 8px 10px; border: 1px dashed #c9ced6; border-radius: 7px;
-                color: #9aa0a8; font-family: var(--mono); font-size: 12px; }
-  sup { font-size: .66em; line-height: 0; }
-  .plot { flex: 1; position: relative; background: #fff; min-width: 0; }
-  .plot svg, .plot canvas { display: block; }
+  /* The notebook: one column of cells, what was typed and what came of it. */
+  .book { flex: 1; overflow-y: auto; background: #fff; padding: 18px 0 40px; }
+  .cell { display: grid; grid-template-columns: 58px 1fr; padding: 10px 40px 10px 0; }
+  .cell + .cell { border-top: 1px solid #f0f1f4; }
+  .cell .n { font-family: var(--mono); font-size: 11.5px; color: #a3a8b0; text-align: right;
+             padding: 8px 16px 0 0; font-variant-numeric: tabular-nums; }
+  .cell .c { min-width: 0; }
+  .math { font-family: var(--math); font-size: 21px; line-height: 1.4; }
+  .math i { font-style: italic; }
+  .math .fn { font-style: normal; }
+  .math .val { color: var(--w-accent); }
+  .math sup { font-size: .68em; line-height: 0; }
+  .math sub { font-size: .68em; line-height: 0; }
+  .typed { font-family: var(--mono); font-size: 12px; color: var(--w-dim); margin-top: 1px; white-space: pre-wrap; word-break: break-word; }
+  .out { margin-top: 10px; }
+  .out .cap { font-size: 12px; color: var(--w-dim); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .err { color: var(--w-err); font-size: 13px; margin-top: 4px; }
+  .cell.edit { background: #f7f9ff; }
+  .cell.edit .n { color: var(--w-accent); }
+  .entry { width: 100%; font-family: var(--mono); font-size: 15px; color: var(--w-ink); background: #fff;
+           border: 1px solid #c9d3ea; border-radius: 8px; padding: 9px 12px; outline: none; }
+  .entry:focus { border-color: var(--w-accent); box-shadow: 0 0 0 3px rgba(42,85,201,.14); }
+  .entry::placeholder { color: #a3a8b0; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--w-dim); margin-top: 4px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .surf { position: relative; display: inline-block; cursor: grab; touch-action: none; }
+  .surf canvas { display: block; }
+  .spin { position: absolute; right: 70px; top: 8px; height: 28px; display: inline-flex; align-items: center; gap: 6px;
+          padding: 0 11px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-family: inherit;
+          font-size: 12.5px; color: var(--w-ink); cursor: pointer; }
+  .spin:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+  .spin svg { width: 10px; height: 10px; }
+  .hint { position: absolute; left: 12px; top: 10px; background: rgba(255,255,255,.92); border: 1px solid var(--w-line);
+          border-radius: 8px; padding: 3px 9px; font-size: 12px; color: var(--w-dim); pointer-events: none; }
+
+  .try { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+  .try button { font-family: var(--mono); font-size: 12.5px; border: 1px solid var(--rule); background: transparent;
+                color: var(--ink); border-radius: 7px; padding: 5px 10px; cursor: pointer; }
+  .try button:hover { border-color: var(--muted); }
+  .try button:focus-visible { outline: 2px solid #2a55c9; outline-offset: 2px; }
 
   .bench { padding: 16px 18px; display: grid; gap: 10px; }
   .units { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -114,95 +140,211 @@
   .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--w-accent); }
   .note { font-size: 12px; color: var(--w-dim); }
 
+  .proposed { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+              color: #8a5a00; background: #fff3d6; border-radius: 5px; padding: 1px 7px; margin-left: 8px; vertical-align: 2px; }
+  .sim { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* Lessons: text cells between the working ones, sliders, the flight. */
+  .lesson-list { padding: 8px 0; overflow-y: auto; flex: 1; background: #fff; }
+  .lesson { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 11px 18px; }
+  .lesson + .lesson { border-top: 1px solid #f0f1f4; }
+  .lesson.on { background: var(--w-sel); }
+  .lesson .num { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 600;
+                 background: #eef1f6; color: var(--w-dim); font-variant-numeric: tabular-nums; }
+  .lesson.on .num { background: var(--w-accent); color: #fff; }
+  .lesson b { display: block; font-weight: 600; font-size: 13.5px; }
+  .lesson span.d { font-size: 12.5px; color: var(--w-dim); }
+  .lesson .st { font-size: 11.5px; color: var(--w-dim); white-space: nowrap; }
+  .lesson .st.done { color: #1f6b2c; }
+  .text { font-size: 14.5px; line-height: 1.6; max-width: 72ch; color: #2b3038; }
+  .text h3 { font-family: var(--display); font-size: 22px; margin: 0 0 6px; color: var(--w-ink); }
+  .text h4 { font-size: 14px; margin: 0 0 4px; color: var(--w-ink); }
+  .text p { margin: 0 0 6px; }
+  .cell.txt .n { visibility: hidden; }
+  .sliders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 28px; max-width: 860px; margin-top: 8px; }
+  .slider label { display: flex; justify-content: space-between; font-size: 13px; color: var(--w-ink); }
+  .slider label span { color: var(--w-accent); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .slider input[type=range] { width: 100%; accent-color: var(--w-accent); }
+  .facts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .fact { border: 1px solid var(--w-line); border-radius: 8px; padding: 6px 12px; background: #fff; font-size: 12.5px; color: var(--w-dim); }
+  .fact b { display: block; color: var(--w-ink); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fact.warn { border-color: #f0c7c2; background: #fff5f4; }
+  .fact.warn b { color: var(--w-err); }
+  .plots3 { display: flex; gap: 14px; flex-wrap: wrap; }
+  .plots3 .t3 { font-size: 12.5px; color: var(--w-ink); margin-bottom: 2px; font-weight: 500; }
+  .ask2 { background: #fbf8ee; border: 1px solid #efe3c0; border-radius: 10px; padding: 12px 16px; max-width: 860px; }
+  .ask2 h4 { margin: 0 0 6px; font-size: 13.5px; }
+  .ask2 ol { margin: 0; padding-left: 20px; font-size: 14px; }
+  .ask2 li { margin-bottom: 4px; }
+  .replay { margin-top: 6px; }
+
   table.rules { border-collapse: collapse; font-size: 14px; margin: 10px 0 18px; }
-  table.rules td { padding: 5px 16px 5px 0; vertical-align: top; border-bottom: 1px solid var(--rule); }
+  table.rules td, table.rules th { padding: 6px 16px 6px 0; vertical-align: top; border-bottom: 1px solid var(--rule); text-align: left; }
+  table.rules th { font-weight: 600; font-size: 13px; color: var(--muted); }
   table.rules td:first-child { color: var(--muted); white-space: nowrap; }
   .tablewrap { overflow-x: auto; }
-  ul.ask { max-width: 74ch; }
+  ul.ask { max-width: 78ch; }
   ul.ask li { margin-bottom: 6px; }
+  @media (prefers-reduced-motion: reduce) { .anim-note { display: inline; } }
+  .anim-note { display: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
 <h1>MathLab</h1>
-<p class="sub">Equations, and their graphs in two and three dimensions, with the processor's vector units doing the
-arithmetic &mdash; and saying how much faster that was. Drawn at the size the machine draws it before any of it is
-written (<code>roadmap.md</code> 4k). Diego: "a mathcad oriented app that we can do math equations and graphics using
-all the available simd features", starting with <i>f</i>(<i>x</i>)&nbsp;=&nbsp;<i>x</i><sup>2</sup>.</p>
+<p class="sub">A notebook of mathematics: type a function by hand and it is drawn, in two dimensions or three;
+ask a question of it and it is answered; and the processor's vector units do the arithmetic and say how much
+faster that was. And lessons of physics built from the same cells &mdash; how to launch a rocket, with the laws behind
+it drawn and the flight plotted. Drawn at the size the machine draws it before any of it is written
+(<code>roadmap.md</code> 4k).</p>
 
-<h2>The worksheet, in 2D</h2>
-<p class="why">On the left, one line an equation: typed as plain text (the grey line under each), shown set like
-mathematics. A line that names a function is drawn, in its colour; a line that asks a question is answered in blue.
-On the right, the graph, with the point under the pointer read out. The foot says what the last evaluation cost and
-what the vector units saved.</p>
+<h2>The notebook</h2>
+<p class="why">One column of cells, as a notebook has. A cell is a line typed by hand &mdash; in grey &mdash; shown set as
+mathematics above it, and what came of it underneath: a function of <i>x</i> is drawn as soon as it is typed, a function
+of <i>x</i> and <i>y</i> as a surface, <code>plot</code> puts several on one graph, and anything else is worked out.
+The last cell is where the next line goes. <b>It works here as it will in the app: type in it and press Return</b>, and
+drag a surface to turn it.</p>
 
 <div class="stage"><div class="fit" data-w="1180">
   <div class="row">
-  <div class="win" style="width:1180px;height:700px">
+  <div class="win" style="width:1180px">
     <div class="head">
       <span class="t">MathLab</span><span class="s">parabola.math</span>
       <span class="sp"></span>
       <span class="chip"><i></i>NEON &middot; 4 lanes</span>
-      <span class="seg"><span class="on">2D</span><span>3D</span></span>
       <span class="btn">Benchmark</span>
       <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
     </div>
-    <div class="body">
-      <div class="sheet">
-        <div class="line on"><div class="m"><span class="sw" style="background:var(--f-blue)"></span><span><i>f</i>(<i>x</i>) = <i>x</i><sup>2</sup></span></div><div class="typed">f(x) = x^2</div></div>
-        <div class="line"><div class="m"><span class="sw" style="background:var(--f-orange)"></span><span><i>g</i>(<i>x</i>) = 2 sin(3<i>x</i>) &middot; <i>e</i><sup>&minus;<i>x</i><sup>2</sup>/4</sup></span></div><div class="typed">g(x) = 2 sin(3x) * e^(-x^2/4)</div></div>
-        <div class="line"><div class="m"><span class="sw" style="background:transparent"></span><span><i>x</i> from &minus;3 to 3</span></div><div class="typed">x from -3 to 3, 4096 points</div></div>
-        <div class="rule"></div>
-        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span><i>f</i>(1.5) = <span class="val">2.25</span></span></div><div class="typed">f(1.5)</div></div>
-        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span>&int;<sub>&minus;2</sub><sup>2</sup> <i>f</i>(<i>x</i>) d<i>x</i> = <span class="val">5.3333</span></span></div><div class="typed">integral f(x) from -2 to 2</div></div>
-        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span><i>f</i>(<i>x</i>) = 2 at <i>x</i> = <span class="val">&plusmn;1.4142</span></span></div><div class="typed">solve f(x) = 2</div></div>
-        <div class="line res"><div class="m"><span class="sw" style="background:transparent"></span><span>max <i>g</i> = <span class="val">1.8412</span> at <i>x</i> = <span class="val">0.5112</span></span></div><div class="typed">max g</div></div>
-        <div class="new">Type an equation&hellip;</div>
-      </div>
-      <div class="plot" id="plot2d" style="width:800px;height:624px"></div>
-    </div>
-    <div class="foot"><span>4096 points, two functions</span><span><b>0.021 ms</b> with NEON</span><span>0.083 ms one at a time</span><span><b>3.9&times;</b></span><span class="sp"></span><span>x 1.50 &middot; f 2.25 &middot; g &minus;1.43</span></div>
+    <div class="book" id="book"></div>
+    <div class="foot"><span id="foot-what">5 cells</span><span><b>0.021 ms</b> for 4096 points with NEON</span><span>0.083 ms one at a time</span><span><b>3.9&times;</b></span><span class="sp"></span><span>~/math/parabola.math</span></div>
   </div>
   </div>
 </div></div>
-<p class="why">The figures in the foot are the kind it will show, not measurements: the app measures them every time
-it evaluates.</p>
+<div class="try">Try typing:
+  <button type="button" data-try="h(x) = x^3 - 2x">h(x) = x^3 - 2x</button>
+  <button type="button" data-try="plot f, h">plot f, h</button>
+  <button type="button" data-try="k(x, y) = sin(x) cos(y)">k(x, y) = sin(x) cos(y)</button>
+  <button type="button" data-try="h(2) + f(3)">h(2) + f(3)</button>
+</div>
+<p class="why">The windows on this page are drawn whole; in the app a notebook longer than its window scrolls.</p>
+<p class="why">What it reads: <code>+ - * / ^</code> and brackets, <code>3x</code> as three times <i>x</i>,
+<code>sin cos tan exp ln log sqrt abs</code> and the rest, <code>pi</code> and <code>e</code>, and any function the
+notebook has defined. The timings in the foot are the kind it will show, not measurements.</p>
 
-<h2>The same worksheet, in 3D</h2>
-<p class="why">Diego's picture, MATLAB's <code>surf(peaks)</code>, drawn the way he liked it: the surface in faces coloured
-by height from deep blue to yellow, a thin dark mesh over them, a box with its back walls ruled and numbered, and the
-colour scale beside it. <b>Drag the surface to turn it</b> &mdash; in the app as here.</p>
+<h2>Lessons</h2>
+<p class="why">Diego: "I want this to be a learning tool", "like how to launch a rocket", "and the physics behind",
+"and plot the functions and rocket trajectory", "so we can have learning lessons of physics", "and a graphical
+representation of the functions and laws". So a lesson is a notebook that explains as it goes: text between the cells,
+each law typed and set and drawn as a graph, sliders for the numbers that matter, the simulation itself, and questions
+to try. Every cell stays live, so a lesson can be changed and taken apart like any other notebook.</p>
+
+<div class="stage"><div class="fit" data-w="560">
+  <div class="row">
+  <div class="win" style="width:560px;height:620px">
+    <div class="head"><span class="t">Lessons</span><span class="s">physics</span><span class="sp"></span>
+      <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span></div>
+    <div class="lesson-list">
+      <div class="lesson"><div class="num">1</div><div><b>Moving</b><span class="d">Position, speed and time, and the graphs of them</span></div><div class="st done">Done</div></div>
+      <div class="lesson"><div class="num">2</div><div><b>Falling</b><span class="d">Why everything falls at the same rate, near enough</span></div><div class="st done">Done</div></div>
+      <div class="lesson"><div class="num">3</div><div><b>Throwing a ball</b><span class="d">The parabola, and the angle that throws furthest</span></div><div class="st done">Done</div></div>
+      <div class="lesson"><div class="num">4</div><div><b>Newton's laws</b><span class="d">Force, mass and acceleration, one at a time</span></div><div class="st">Started</div></div>
+      <div class="lesson"><div class="num">5</div><div><b>Swinging</b><span class="d">The pendulum and the spring, and why they keep time</span></div><div class="st"></div></div>
+      <div class="lesson on"><div class="num">6</div><div><b>Launching a rocket</b><span class="d">Thrust, a mass that burns away, and the rocket equation</span></div><div class="st">Open</div></div>
+      <div class="lesson"><div class="num">7</div><div><b>Orbits</b><span class="d">Why the Moon keeps falling and never lands</span></div><div class="st"></div></div>
+      <div class="lesson"><div class="num">8</div><div><b>Waves</b><span class="d">A drum skin, a string, and the wave equation</span></div><div class="st"></div></div>
+    </div>
+    <div class="foot"><span>8 lessons</span><span class="sp"></span><span>/home/math/lessons</span></div>
+  </div>
+  </div>
+</div></div>
+
+<p class="why" style="margin-top:22px">Lesson 6, open. Move the sliders: the rocket, the numbers, the graph of the law and the
+three plots all follow at once, and the flight starts again.</p>
 
 <div class="stage"><div class="fit" data-w="1180">
   <div class="row">
-  <div class="win" style="width:1180px;height:700px">
+  <div class="win" style="width:1180px">
     <div class="head">
-      <span class="t">MathLab</span><span class="s">peaks.math</span>
+      <span class="t">MathLab</span><span class="s">Lesson 6 &middot; Launching a rocket</span>
       <span class="sp"></span>
       <span class="chip"><i></i>NEON &middot; 4 lanes</span>
-      <span class="seg"><span>2D</span><span class="on">3D</span></span>
-      <span class="btn">Benchmark</span>
+      <span class="btn">&lsaquo; Swinging</span><span class="btn">Orbits &rsaquo;</span>
       <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
     </div>
-    <div class="body">
-      <div class="sheet">
-        <div class="line on"><div class="m" style="font-size:17px;flex-wrap:wrap"><span><i>z</i>(<i>x</i>, <i>y</i>) = 3(1&minus;<i>x</i>)<sup>2</sup> <i>e</i><sup>&minus;<i>x</i><sup>2</sup>&minus;(<i>y</i>+1)<sup>2</sup></sup></span>
-          <span>&minus; 10(<i>x</i>/5 &minus; <i>x</i><sup>3</sup> &minus; <i>y</i><sup>5</sup>) <i>e</i><sup>&minus;<i>x</i><sup>2</sup>&minus;<i>y</i><sup>2</sup></sup></span>
-          <span>&minus; &frac13; <i>e</i><sup>&minus;(<i>x</i>+1)<sup>2</sup>&minus;<i>y</i><sup>2</sup></sup></span></div>
-          <div class="typed">z(x,y) = 3(1-x)^2 e^(-x^2-(y+1)^2) - 10(x/5-x^3-y^5) e^(-x^2-y^2) - 1/3 e^(-(x+1)^2-y^2)</div></div>
-        <div class="line"><div class="m"><span><i>x</i>, <i>y</i> from &minus;3 to 3</span></div><div class="typed">x, y from -3 to 3, 25 by 25</div></div>
-        <div class="rule"></div>
-        <div class="line res"><div class="m"><span>max <i>z</i> = <span class="val">8.106</span> at (<span class="val">&minus;0.009</span>, <span class="val">1.581</span>)</span></div><div class="typed">max z</div></div>
-        <div class="line res"><div class="m"><span>min <i>z</i> = <span class="val">&minus;6.551</span> at (<span class="val">0.228</span>, <span class="val">&minus;1.626</span>)</span></div><div class="typed">min z</div></div>
-        <div class="new">Type an equation&hellip;</div>
-      </div>
-      <div class="plot" style="width:800px;height:624px;cursor:grab"><canvas id="plot3d" width="800" height="624" aria-label="The surface z = peaks(x, y), which can be turned by dragging"></canvas></div>
+    <div class="book">
+      <div class="cell txt"><div class="n"></div><div class="c"><div class="text">
+        <h3>Launching a rocket</h3>
+        <p>A rocket carries its own push. It throws gas out of its back very fast, and the gas pushes back on the rocket
+        just as hard &mdash; Newton's third law. As it burns, the rocket gets lighter, so the same push moves it faster and
+        faster. This lesson works out how fast a rocket can go, and then flies one.</p>
+      </div></div></div>
+
+      <div class="cell"><div class="n">1</div><div class="c">
+        <div class="text"><h4>The push</h4><p>Thrust is how much gas leaves each second, times how fast it leaves.</p></div>
+        <div class="math"><i>T</i> = <i>&#7745;</i> <i>v</i><sub>e</sub></div>
+        <div class="typed">T = mdot * ve</div>
+      </div></div>
+
+      <div class="cell"><div class="n">2</div><div class="c">
+        <div class="text"><h4>Newton's second law, for a mass that burns away</h4><p>Thrust up, weight and air down; what is left accelerates the rocket.</p></div>
+        <div class="math"><i>m</i>(<i>t</i>) <i>a</i> = <i>T</i> &minus; <i>m</i>(<i>t</i>) <i>g</i> &minus; &frac12; <i>&rho;</i>(<i>h</i>) <i>v</i><sup>2</sup> <i>C</i><sub>d</sub> <i>A</i></div>
+        <div class="typed">m(t) a = T - m(t) g - 1/2 rho(h) v^2 Cd A</div>
+      </div></div>
+
+      <div class="cell"><div class="n">3</div><div class="c">
+        <div class="text"><h4>The rocket equation</h4><p>With no gravity and no air, the speed a rocket gains depends only on how fast
+        its gas leaves and how much lighter it ends. The logarithm is why rockets are mostly fuel: ten times the mass
+        at the start buys only 2.3 times the exhaust speed.</p></div>
+        <div class="math">&Delta;<i>v</i> = <i>v</i><sub>e</sub> ln(<i>m</i><sub>0</sub>/<i>m</i><sub>f</sub>)</div>
+        <div class="typed">dv(r) = ve * ln(r),  r = m0/mf</div>
+        <div class="out"><div id="tsiol"></div><div class="cap" id="tsiolcap"></div></div>
+      </div></div>
+
+      <div class="cell"><div class="n">4</div><div class="c">
+        <div class="text"><h4>Your rocket</h4><p>A small rocket of 1,000 kg with its fuel burning for 60 seconds.</p></div>
+        <div class="sliders">
+          <div class="slider"><label for="s-fuel">Fuel <span id="v-fuel"></span></label><input id="s-fuel" type="range" autocomplete="off" min="500" max="15000" step="250" value="6000"></div>
+          <div class="slider"><label for="s-ve">Exhaust speed <i>v</i><sub>e</sub> <span id="v-ve"></span></label><input id="s-ve" type="range" autocomplete="off" min="1000" max="4500" step="50" value="2200"></div>
+          <div class="slider"><label for="s-ang">Launch angle <span id="v-ang"></span></label><input id="s-ang" type="range" autocomplete="off" min="30" max="90" step="1" value="80"></div>
+          <div class="slider"><label for="s-air">Air <span id="v-air"></span></label><input id="s-air" type="range" autocomplete="off" min="0" max="1" step="1" value="1"></div>
+        </div>
+        <div class="facts" id="facts"></div>
+      </div></div>
+
+      <div class="cell"><div class="n">5</div><div class="c">
+        <div class="math">launch</div>
+        <div class="typed">launch</div>
+        <div class="out"><canvas id="flight" width="860" height="360" aria-label="The rocket's flight, drawn along its trajectory"></canvas>
+          <div class="cap" id="flightcap"></div><button class="btn replay" type="button" id="replay">Launch again</button></div>
+      </div></div>
+
+      <div class="cell"><div class="n">6</div><div class="c">
+        <div class="math">plot <i>h</i>(<i>t</i>), <i>v</i>(<i>t</i>), <i>m</i>(<i>t</i>)</div>
+        <div class="typed">plot h(t), v(t), m(t)</div>
+        <div class="out plots3">
+          <div><div class="t3">Altitude, km</div><div id="p-h"></div></div>
+          <div><div class="t3">Speed, m/s</div><div id="p-v"></div></div>
+          <div><div class="t3">Mass, kg</div><div id="p-m"></div></div>
+        </div>
+      </div></div>
+
+      <div class="cell txt"><div class="n"></div><div class="c"><div class="ask2">
+        <h4>Try it</h4>
+        <ol>
+          <li>Double the fuel. Does it go twice as high? Look at the graph in cell 3 for why not.</li>
+          <li>Turn the air off. How much height did the air cost?</li>
+          <li>Take the fuel down until the facts say it cannot lift off. What is the thrust then, against the weight?</li>
+          <li>Which launch angle carries it furthest? Is it the 45&deg; that throws a ball furthest in lesson 3?</li>
+        </ol>
+      </div></div></div>
     </div>
-    <div class="foot"><span>625 points, 576 faces</span><span><b>0.009 ms</b> to evaluate and turn with NEON</span><span>0.034 ms one at a time</span><span><b>3.8&times;</b></span><span class="sp"></span><span id="view3d">azimuth &minus;37.5&deg; &middot; elevation 30&deg;</span></div>
+    <div class="foot"><span>Each flight: 0.05 s steps, thrust, gravity and air</span><span class="sp"></span><span>/home/math/lessons/6-rocket.math</span></div>
   </div>
   </div>
 </div></div>
+<p class="why">The rocket is simple on purpose &mdash; a flat Earth, one stage, and a fixed angle &mdash; and the lesson
+says so; turning as it climbs and reaching orbit belong to lesson 7.</p>
 
 <h2>Benchmark: what the vector units buy</h2>
 <p class="why">The showcase Diego asked for, "matrix multiplication and else". Which vector units this processor
@@ -250,30 +392,106 @@ with AVX2 marked as waiting on the kernel (<code>roadmap.md</code> 6l).</p>
 </div></div>
 <p class="why">Example figures, to show the layout; the window measures them when it opens and when asked.</p>
 
-<h2>What it is made of</h2>
+<h2>More simulations, for the lessons <span class="proposed">Proposed</span></h2>
+<p class="why">Diego asked what would make MathLab rich, "like simulation of physics". Three cells to show what that
+could be, running here as they would there. A <b>pendulum</b>: its equation typed as it is written, solved step by
+step, and shown both swinging and as the graph of its angle. A <b>drum skin</b> struck in the middle: the wave
+equation on a grid of points, every point moved at every step &mdash; the kind of work the vector units are for &mdash;
+drawn as a surface that can be turned while it moves. And the <b>Mandelbrot set</b>, the classic test of a machine's
+arithmetic, every pixel its own sum. <span class="anim-note">Moving pictures are paused because this device asks for
+less motion.</span></p>
+
+<div class="stage"><div class="fit" data-w="1180">
+  <div class="row">
+  <div class="win" style="width:1180px">
+    <div class="head">
+      <span class="t">MathLab</span><span class="s">simulations.math</span>
+      <span class="sp"></span>
+      <span class="chip"><i></i>NEON &middot; 4 lanes</span>
+      <span class="btn">Benchmark</span>
+      <span class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.5" r="1.3"/></svg></span>
+    </div>
+    <div class="book">
+      <div class="cell"><div class="n">1</div><div class="c">
+        <div class="math"><i>&theta;</i>&Prime; = &minus;(<i>g</i>/<i>L</i>) sin <i>&theta;</i>, &nbsp; <i>g</i> = 9.81, <i>L</i> = 1</div>
+        <div class="typed">theta'' = -(g/L) sin(theta), g = 9.81, L = 1</div>
+      </div></div>
+      <div class="cell"><div class="n">2</div><div class="c">
+        <div class="math">simulate <i>&theta;</i> for <i>t</i> from 0 to 10, &nbsp;<i>&theta;</i>(0) = 1.2, <i>&theta;</i>&prime;(0) = 0</div>
+        <div class="typed">simulate theta for t from 0 to 10, theta(0) = 1.2, theta'(0) = 0</div>
+        <div class="out sim"><canvas id="pend" width="300" height="300" aria-label="A pendulum swinging"></canvas><div><div id="pendplot"></div><div class="cap" id="pendcap">Runge-Kutta, a millisecond a step</div></div></div>
+      </div></div>
+      <div class="cell"><div class="n">3</div><div class="c">
+        <div class="math">membrane 48 &times; 48, struck at the centre, <i>c</i> = 1</div>
+        <div class="typed">membrane 48 by 48, struck at the centre, c = 1</div>
+        <div class="out"><div class="surf" id="drum"><div class="hint">drag to turn it</div></div><div class="cap" id="drumcap">2,304 points moved each step, four at a time</div></div>
+      </div></div>
+      <div class="cell"><div class="n">4</div><div class="c">
+        <div class="math">mandelbrot for &minus;2.2 &le; re <i>z</i> &le; 0.8, &minus;1.2 &le; im <i>z</i> &le; 1.2</div>
+        <div class="typed">mandelbrot for re z from -2.2 to 0.8, im z from -1.2 to 1.2</div>
+        <div class="out"><canvas id="mandel" width="560" height="448" aria-label="The Mandelbrot set"></canvas><div class="cap">250,880 pixels, up to 200 steps each</div></div>
+      </div></div>
+    </div>
+    <div class="foot"><span>Each simulation step in C, with NEON</span><span class="sp"></span><span>~/math/simulations.math</span></div>
+  </div>
+  </div>
+</div></div>
+
+<h2>And more it could do <span class="proposed">Proposed</span></h2>
+<p class="why">Beyond simulations, the things that make a notebook like this worth opening every day. Each is a kind
+of cell; none of them is agreed yet.</p>
 <div class="tablewrap">
 <table class="rules">
-<tr><td>Worksheet</td><td>Lua: each line parsed into an expression, and a function compiled into a short program of vector steps &mdash; load <i>x</i>, square, multiply, add &mdash; that the kit runs over every point at once</td></tr>
-<tr><td>Maths Kit</td><td>C, <code>use("/kits/math")</code>: those programs over arrays, matrix multiply, 4 &times; 4 transforms, dot products; NEON on AArch64, SSE on x86-64, AVX2 when the kernel keeps its registers &mdash; each held to its one-at-a-time version on the Mac, as <code>yuv.c</code> is</td></tr>
-<tr><td>2D graph</td><td>Axes, grid and curves drawn into a surface in C; the readout under the pointer from the same numbers</td></tr>
-<tr><td>3D graph</td><td>The surface's points turned by one 4 &times; 4 matrix, its faces coloured by height and painted back to front with their mesh, in C; drag to turn, wheel to zoom</td></tr>
-<tr><td>Benchmark</td><td>A window of its own: the units this processor has, and each kind of work timed both ways, every answer checked first</td></tr>
-<tr><td>File</td><td><code>.math</code>, plain text, one line an equation, in <code>/home</code> &mdash; the grey lines above are exactly what it holds</td></tr>
-<tr><td>Window</td><td>1180 by 700: the kit's header, the worksheet 380 wide, the graph, and the foot</td></tr>
+<tr><th>Cell</th><th>What it does</th><th>What the vector units do in it</th></tr>
+<tr><td>Sliders</td><td><code>a = slider 0 to 5</code>, and every graph that uses <i>a</i> moves as it is dragged</td><td>Every graph evaluated again at once, per drag</td></tr>
+<tr><td>Calculus</td><td>Derivatives, integrals, roots, maxima, limits and series sums, worked out numerically</td><td>Thousands of points evaluated a step</td></tr>
+<tr><td>Matrices</td><td>Typed as a grid; multiply, solve, invert, determinants, eigenvalues; watch a matrix act on a shape</td><td>Matrix multiply and solve, four or eight at once</td></tr>
+<tr><td>More graphs</td><td>Parametric and polar curves, contour maps, vector and slope fields, several surfaces</td><td>Evaluation and the 3D turn</td></tr>
+<tr><td>Data</td><td>A table or a CSV file from <code>/home</code>: statistics, a histogram, a line or curve fitted through it</td><td>Sums and fits over the whole column</td></tr>
+<tr><td>Units</td><td><code>9.81 m/s^2</code> times <code>3 s</code> is <code>29.43 m/s</code>, and adding metres to seconds is refused</td><td>&mdash;</td></tr>
+<tr><td>Sound</td><td><code>play sin(2 pi 440 t)</code>: hear a function, through the audio server, and see it beside</td><td>Samples computed a period at a time</td></tr>
+<tr><td>More physics</td><td>Springs and masses, a thrown ball with air, two planets, a thousand particles, heat through a plate</td><td>Every body or grid point moved each step</td></tr>
 </table>
 </div>
 
+<h2>What it is made of</h2>
+<div class="tablewrap">
+<table class="rules">
+<tr><td>Notebook</td><td>Lua: each cell's line parsed into an expression, and a function compiled into a short program of vector steps &mdash; load <i>x</i>, square, multiply, add &mdash; that the kit runs over every point at once</td></tr>
+<tr><td>Maths Kit</td><td>C, <code>use("/kits/math")</code>: those programs over arrays, matrix multiply, 4 &times; 4 transforms, the simulations' steps; NEON on AArch64, SSE on x86-64, AVX2 when the kernel keeps its registers &mdash; each held to its one-at-a-time version on the Mac, as <code>yuv.c</code> is</td></tr>
+<tr><td>2D graph</td><td>Axes, grid and curves drawn into a surface in C; the range chosen from what the function does</td></tr>
+<tr><td>3D graph</td><td>The surface's points turned by one 4 &times; 4 matrix, its faces coloured by height and painted back to front with their mesh, in C. Turned by dragging it with the mouse, or round and round with its Turn button</td></tr>
+<tr><td>Benchmark</td><td>A window of its own: the units this processor has, and each kind of work timed both ways, every answer checked first</td></tr>
+<tr><td>File</td><td><code>.math</code>, plain text, one line a cell, in <code>/home/math</code> &mdash; the grey lines are exactly what it holds</td></tr>
+<tr><td>Window</td><td>1180 by 980: the kit's header, the notebook, and the foot</td></tr>
+</table>
+</div>
+
+<h2>Decided, 25 September</h2>
+<ul class="ask">
+  <li><b>A notebook</b> &mdash; Diego: "I want to be able to input functions by hand to plot them", "Like a notebook".
+      One column of cells, each a typed line and what came of it, as drawn.</li>
+  <li><b>A 3D graph turns when it is dragged with the mouse</b> &mdash; "Mouse drag is good", and "Leave out rotating with
+      the keys" &mdash; <b>and a play button turns it round by itself</b>: "A play button that rotates the 3d graph is cool".</li>
+  <li><b>The 3D look is MATLAB's <code>surf</code></b>: faces coloured by height, a mesh over them, the box's back walls
+      ruled, a colour scale &mdash; from Diego's picture, "I like these 3d plots".</li>
+  <li><b>A learning tool, with lessons of physics</b> &mdash; "I want this to be a learning tool", "like how to launch a
+      rocket", "and the physics behind", "and plot the functions and rocket trajectory", "so we can have learning lessons
+      of physics", "and a graphical representation of the functions and laws". A lesson is a notebook with text,
+      laws drawn as graphs, sliders, the simulation and questions, as the rocket lesson above.</li>
+</ul>
+
 <h2>For Diego to decide</h2>
 <ul class="ask">
-  <li><b>A list of lines, as drawn, or a page</b> where equations sit anywhere, as Mathcad places them. A list is
-      simpler to type into and to keep in a file; a page is closer to Mathcad.</li>
-  <li><b>How equations are typed</b>: <code>x^2</code> and <code>x*x</code> both; <code>3x</code> meaning three times
-      <i>x</i>; <code>pi</code> and <code>e</code> by name.</li>
-  <li><b>Shown set, as drawn</b>, with the typed text under each line &mdash; or set only, the typed text appearing when
-      the line is being edited.</li>
-  <li><b>The 3D look</b>: faces and mesh as in the MATLAB picture, drawn above; or without the mesh; or a wire mesh only.</li>
-  <li><b>What comes first after <i>f</i>(<i>x</i>) = <i>x</i><sup>2</sup></b>: questions about a function (values, roots,
-      maxima, integrals, as drawn), or more kinds of graph (parametric curves, contour maps, several surfaces).</li>
+  <li><b>The lessons, and their order</b>: the eight listed, or others. A suggestion: build the notebook and sliders
+      first, then the rocket lesson whole, because it uses nearly everything; then the others, each a notebook.</li>
+  <li><b>Who a lesson is for</b>: as drawn, someone who knows a little algebra and no calculus, the laws stated and
+      shown rather than derived; or deeper, with the derivations as cells of their own.</li>
+  <li><b>Which of the other proposals</b>, from the table above: matrices, data, units, sound.</li>
+  <li><b>How equations are typed</b>: as here &mdash; <code>x^2</code> and <code>x*x</code> both, <code>3x</code> as three
+      times <i>x</i>, <code>pi</code> and <code>e</code> by name.</li>
+  <li><b>Shown set with the typed line under it, as drawn</b>, or set only, the typed line appearing while the cell is
+      being edited.</li>
 </ul>
 
 </div>
@@ -282,275 +500,791 @@ with AVX2 marked as waiting on the kernel (<code>roadmap.md</code> 6l).</p>
 (function () {
   "use strict";
 
-  /* Each stage keeps its windows at one pixel to one, and scales them down
-     to fit a screen narrower than they are. */
-  function fitStages() {
-    document.querySelectorAll(".stage").forEach(function (stage) {
-      var fit = stage.querySelector(".fit");
-      var want = +fit.dataset.w;
-      var room = stage.clientWidth - 48;
-      var s = Math.min(1, room / want);
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var COLOURS = ["#2a55c9", "#e07b28", "#2f8a3e", "#8a4fd1", "#c7362f", "#0f8a8a"];
 
-      fit.style.transform = s < 1 ? "scale(" + s + ")" : "";
-      fit.style.width = want + "px";
-      fit.style.height = "";
-      stage.style.height = s < 1 ? (fit.scrollHeight * s + 60) + "px" : "";
-      if (s >= 1) { fit.style.width = ""; }
-    });
+  /* ---------------------------------------------------------------- *
+   * Reading what was typed: numbers, x and y, + - * / ^, brackets,
+   * 3x as 3 times x, the usual functions, pi and e, and the
+   * notebook's own functions.
+   * ---------------------------------------------------------------- */
+  var BUILTIN = {
+    sin: Math.sin, cos: Math.cos, tan: Math.tan, asin: Math.asin, acos: Math.acos,
+    atan: Math.atan, sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh,
+    exp: Math.exp, ln: Math.log, log: Math.log10, sqrt: Math.sqrt, abs: Math.abs,
+    floor: Math.floor, ceil: Math.ceil
+  };
+  var USER = {};
+
+  function tokens(s) {
+    var out = [], i = 0, m;
+    while (i < s.length) {
+      var c = s[i], rest = s.slice(i);
+      if (/\s/.test(c)) { i++; continue; }
+      if ((m = /^(\d+\.?\d*|\.\d+)/.exec(rest))) { out.push({ t: "num", v: parseFloat(m[1]) }); i += m[1].length; continue; }
+      if ((m = /^[A-Za-z_θπ][A-Za-z0-9_]*/.exec(rest))) { out.push({ t: "id", v: m[0] }); i += m[0].length; continue; }
+      if ("+-*/^(),".indexOf(c) >= 0) { out.push({ t: c }); i++; continue; }
+      if (c === "−") { out.push({ t: "-" }); i++; continue; }
+      if (c === "·" || c === "×") { out.push({ t: "*" }); i++; continue; }
+      throw new Error("cannot read “" + c + "”");
+    }
+    return out;
   }
 
-  /* ---- 2D: f(x) = x^2 and g(x) = 2 sin(3x) e^(-x^2/4) ---- */
-  function plot2d() {
-    var box = document.getElementById("plot2d");
-    var W = 800, H = 624, L = 64, R = 24, T = 24, B = 48;
-    var x0 = -3, x1 = 3, y0 = -2.5, y1 = 9.5;
-    var sx = function (x) { return L + (x - x0) / (x1 - x0) * (W - L - R); };
-    var sy = function (y) { return T + (y1 - y) / (y1 - y0) * (H - T - B); };
-    var f = function (x) { return x * x; };
-    var g = function (x) { return 2 * Math.sin(3 * x) * Math.exp(-x * x / 4); };
-    var ns = "http://www.w3.org/2000/svg";
-    var svg = document.createElementNS(ns, "svg");
+  function parse(src, vars) {
+    var ts = tokens(src), p = 0;
+    function peek() { return ts[p]; }
+    function eat(t) {
+      if (!ts[p] || ts[p].t !== t) { throw new Error("expected “" + t + "”"); }
+      p++;
+    }
+    function starts(k) { return k && (k.t === "num" || k.t === "id" || k.t === "("); }
+    function expr() {
+      var n = term();
+      while (peek() && (peek().t === "+" || peek().t === "-")) {
+        var op = ts[p++].t;
+        n = { k: "bin", op: op, a: n, b: term() };
+      }
+      return n;
+    }
+    function term() {
+      var n = unary();
+      for (;;) {
+        var k = peek();
+        if (k && (k.t === "*" || k.t === "/")) { p++; n = { k: "bin", op: k.t, a: n, b: unary() }; }
+        else if (starts(k)) { n = { k: "bin", op: "imp", a: n, b: unary() }; }
+        else { return n; }
+      }
+    }
+    function unary() {
+      if (peek() && peek().t === "-") { p++; return { k: "neg", a: unary() }; }
+      if (peek() && peek().t === "+") { p++; return unary(); }
+      return power();
+    }
+    function power() {
+      var b = primary();
+      if (peek() && peek().t === "^") { p++; return { k: "bin", op: "^", a: b, b: unary() }; }
+      return b;
+    }
+    function primary() {
+      var k = peek();
+      if (!k) { throw new Error("the line ends too soon"); }
+      if (k.t === "num") { p++; return { k: "num", v: k.v }; }
+      if (k.t === "(") { p++; var e = expr(); eat(")"); return { k: "par", a: e }; }
+      if (k.t === "id") {
+        p++;
+        var name = k.v;
+        if ((BUILTIN[name] || USER[name]) && peek() && peek().t === "(") {
+          p++;
+          var args = [expr()];
+          while (peek() && peek().t === ",") { p++; args.push(expr()); }
+          eat(")");
+          if (USER[name] && USER[name].params.length !== args.length) {
+            throw new Error(name + " takes " + USER[name].params.length + (USER[name].params.length === 1 ? " value" : " values"));
+          }
+          return { k: "call", f: name, args: args, user: !!USER[name] };
+        }
+        if (BUILTIN[name]) { return { k: "call", f: name, args: [power()], user: false, bare: true }; }
+        if (vars.indexOf(name) >= 0) { return { k: "var", v: name }; }
+        if (name === "pi" || name === "π") { return { k: "const", v: "pi" }; }
+        if (name === "e") { return { k: "const", v: "e" }; }
+        if (USER[name]) { throw new Error(name + " needs its value in brackets: " + name + "(…)"); }
+        throw new Error("“" + name + "” is not defined");
+      }
+      throw new Error("unexpected “" + k.t + "”");
+    }
+    var n = expr();
+    if (p < ts.length) { throw new Error("unexpected “" + (ts[p].v !== undefined ? ts[p].v : ts[p].t) + "”"); }
+    return n;
+  }
+
+  function compile(n) {
+    switch (n.k) {
+      case "num": return function () { return n.v; };
+      case "var": return function (env) { return env[n.v]; };
+      case "const": return function () { return n.v === "pi" ? Math.PI : Math.E; };
+      case "par": return compile(n.a);
+      case "neg": { var a = compile(n.a); return function (env) { return -a(env); }; }
+      case "call": {
+        var args = n.args.map(compile);
+        if (n.user) {
+          var f = USER[n.f];
+          return function (env) {
+            var inner = {};
+            f.params.forEach(function (q, i) { inner[q] = args[i](env); });
+            return f.body(inner);
+          };
+        }
+        var g = BUILTIN[n.f];
+        return function (env) { return g(args[0](env)); };
+      }
+      case "bin": {
+        var l = compile(n.a), r = compile(n.b);
+        switch (n.op) {
+          case "+": return function (env) { return l(env) + r(env); };
+          case "-": return function (env) { return l(env) - r(env); };
+          case "/": return function (env) { return l(env) / r(env); };
+          case "^": return function (env) { return Math.pow(l(env), r(env)); };
+          default: return function (env) { return l(env) * r(env); };
+        }
+      }
+    }
+    throw new Error("cannot work this out");
+  }
+
+  /* Set as mathematics, from the same tree. */
+  function num(v) {
+    var s = Math.abs(v) >= 1e6 || (Math.abs(v) < 1e-4 && v !== 0) ? v.toExponential(3) : String(+v.toPrecision(6));
+    return s.replace("-", "−");
+  }
+  var PREC = { "+": 1, "-": 1, "*": 2, "/": 2, imp: 2, neg: 3, "^": 4 };
+  function setMath(n, parent) {
+    switch (n.k) {
+      case "num": return num(n.v);
+      case "var": return "<i>" + (n.v === "theta" ? "θ" : n.v) + "</i>";
+      case "const": return n.v === "pi" ? "π" : "<i>e</i>";
+      case "par": return "(" + setMath(n.a, 0) + ")";
+      case "neg": return "−" + setMath(n.a, PREC.neg);
+      case "call":
+        return (n.user ? "<i>" + n.f + "</i>" : '<span class="fn">' + n.f + "</span>" + (n.bare ? " " : "")) +
+               (n.bare ? setMath(n.args[0], PREC.neg) : "(" + n.args.map(function (a) { return setMath(a, 0); }).join(", ") + ")");
+      case "bin": {
+        var s, pr = PREC[n.op];
+        if (n.op === "^") {
+          var ex = n.b.k === "par" ? n.b.a : n.b;
+          s = setMath(n.a, pr + 1) + "<sup>" + setMath(ex, 0) + "</sup>";
+        } else if (n.op === "imp" || n.op === "*") {
+          var left = setMath(n.a, pr), right = setMath(n.b, pr + 0.5);
+          var between = n.op === "*" && (n.b.k === "num") ? " · " :
+                        (n.a.k === "num" && (n.b.k === "var" || n.b.k === "par" || n.b.k === "const")) ? "" : " ";
+          if (n.op === "*" && n.a.k === "num" && n.b.k === "num") { between = " · "; }
+          s = left + between + right;
+        } else if (n.op === "/") {
+          s = setMath(n.a, pr) + "/" + setMath(n.b, pr + 0.5);
+        } else {
+          s = setMath(n.a, pr) + (n.op === "+" ? " + " : " − ") + setMath(n.b, pr + 0.5);
+        }
+        return parent > pr ? "(" + s + ")" : s;
+      }
+    }
+    return "";
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Graphs.
+   * ---------------------------------------------------------------- */
+  function nice(lo, hi, count) {
+    var span = hi - lo, raw = span / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    var step = [1, 2, 5, 10].map(function (m) { return m * mag; }).filter(function (s) { return s >= raw; })[0];
     var out = [];
-    var x, y, i;
-
-    svg.setAttribute("width", W);
-    svg.setAttribute("height", H);
-    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
-
-    for (x = -3; x <= 3; x += 0.5) {
-      out.push('<line x1="' + sx(x) + '" y1="' + T + '" x2="' + sx(x) + '" y2="' + (H - B) + '" stroke="' + (x === 0 ? "#9aa0a8" : "#eceef2") + '"/>');
-      if (x === Math.round(x)) {
-        out.push('<text x="' + sx(x) + '" y="' + (H - B + 20) + '" font-size="12" fill="#74787f" text-anchor="middle" font-family="IBM Plex Sans, sans-serif">' + String(x).replace("-", "−") + '</text>');
-      }
-    }
-    for (y = -2; y <= 9; y += 1) {
-      out.push('<line x1="' + L + '" y1="' + sy(y) + '" x2="' + (W - R) + '" y2="' + sy(y) + '" stroke="' + (y === 0 ? "#9aa0a8" : "#eceef2") + '"/>');
-      if (y % 2 === 0) {
-        out.push('<text x="' + (L - 10) + '" y="' + (sy(y) + 4) + '" font-size="12" fill="#74787f" text-anchor="end" font-family="IBM Plex Sans, sans-serif">' + String(y).replace("-", "−") + '</text>');
-      }
-    }
-    out.push('<text x="' + (W - R) + '" y="' + (H - B + 36) + '" font-size="13" fill="#74787f" text-anchor="end" font-style="italic" font-family="STIX Two Text, serif">x</text>');
-
-    function curve(fn, colour) {
-      var pts = [];
-      for (i = 0; i <= 600; i++) {
-        var xx = x0 + (x1 - x0) * i / 600;
-        pts.push(sx(xx).toFixed(1) + "," + sy(fn(xx)).toFixed(1));
-      }
-      return '<polyline fill="none" stroke="' + colour + '" stroke-width="2.4" stroke-linejoin="round" points="' + pts.join(" ") + '"/>';
-    }
-    out.push('<clipPath id="clip2d"><rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '"/></clipPath>');
-    out.push('<g clip-path="url(#clip2d)">' + curve(f, "#2a55c9") + curve(g, "#e07b28") + '</g>');
-
-    /* The readout, as the pointer would leave it at x = 1.5. */
-    var px = sx(1.5), pf = sy(f(1.5)), pg = sy(g(1.5));
-    out.push('<line x1="' + px + '" y1="' + T + '" x2="' + px + '" y2="' + (H - B) + '" stroke="#2a55c9" stroke-dasharray="3 4" stroke-opacity=".55"/>');
-    out.push('<circle cx="' + px + '" cy="' + pf + '" r="5" fill="#fff" stroke="#2a55c9" stroke-width="2.4"/>');
-    out.push('<circle cx="' + px + '" cy="' + pg + '" r="5" fill="#fff" stroke="#e07b28" stroke-width="2.4"/>');
-    out.push('<rect x="' + (px + 12) + '" y="' + (pf - 44) + '" width="118" height="38" rx="6" fill="#1d1f24" fill-opacity=".86"/>');
-    out.push('<text x="' + (px + 22) + '" y="' + (pf - 29) + '" font-size="12" fill="#fff" font-family="IBM Plex Mono, monospace">x = 1.50</text>');
-    out.push('<text x="' + (px + 22) + '" y="' + (pf - 14) + '" font-size="12" fill="#fff" font-family="IBM Plex Mono, monospace">f = 2.25</text>');
-    svg.innerHTML = out.join("");
-    box.appendChild(svg);
+    for (var v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) { out.push(+v.toPrecision(10)); }
+    return out;
   }
 
-  /* ---- 3D: MATLAB's peaks, as surf draws it ---- */
-  function peaks(x, y) {
-    return 3 * (1 - x) * (1 - x) * Math.exp(-x * x - (y + 1) * (y + 1))
-         - 10 * (x / 5 - x * x * x - Math.pow(y, 5)) * Math.exp(-x * x - y * y)
-         - Math.exp(-(x + 1) * (x + 1) - y * y) / 3;
+  function plot2d(fns, x0, x1, W, H, marks) {
+    var L = 58, R = 18, T = 14, B = 34;
+    var samples = [], lo = Infinity, hi = -Infinity;
+    fns.forEach(function (f) {
+      var ys = [];
+      for (var i = 0; i <= 480; i++) {
+        var x = x0 + (x1 - x0) * i / 480, y;
+        try { y = f.fn({ x: x }); } catch (e) { y = NaN; }
+        ys.push(y);
+        if (isFinite(y)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      }
+      samples.push(ys);
+    });
+    if (!isFinite(lo)) { lo = -1; hi = 1; }
+    if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+    var pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    var sx = function (x) { return L + (x - x0) / (x1 - x0) * (W - L - R); };
+    var sy = function (y) { return T + (hi - y) / (hi - lo) * (H - T - B); };
+    var o = ['<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="img">'];
+    nice(x0, x1, 8).forEach(function (x) {
+      o.push('<line x1="' + sx(x) + '" y1="' + T + '" x2="' + sx(x) + '" y2="' + (H - B) + '" stroke="' + (x === 0 ? "#a3a8b0" : "#edeff3") + '"/>');
+      o.push('<text x="' + sx(x) + '" y="' + (H - B + 18) + '" font-size="11.5" fill="#74787f" text-anchor="middle" font-family="IBM Plex Sans, sans-serif">' + num(x) + '</text>');
+    });
+    nice(lo, hi, 6).forEach(function (y) {
+      o.push('<line x1="' + L + '" y1="' + sy(y) + '" x2="' + (W - R) + '" y2="' + sy(y) + '" stroke="' + (y === 0 ? "#a3a8b0" : "#edeff3") + '"/>');
+      o.push('<text x="' + (L - 8) + '" y="' + (sy(y) + 4) + '" font-size="11.5" fill="#74787f" text-anchor="end" font-family="IBM Plex Sans, sans-serif">' + num(y) + '</text>');
+    });
+    var id = "c" + Math.random().toString(36).slice(2);
+    o.push('<clipPath id="' + id + '"><rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '"/></clipPath><g clip-path="url(#' + id + ')">');
+    samples.forEach(function (ys, k) {
+      var d = "", pen = false;
+      ys.forEach(function (y, i) {
+        var x = x0 + (x1 - x0) * i / 480;
+        if (!isFinite(y)) { pen = false; return; }
+        d += (pen ? "L" : "M") + sx(x).toFixed(1) + " " + sy(y).toFixed(1);
+        pen = true;
+      });
+      o.push('<path d="' + d + '" fill="none" stroke="' + fns[k].colour + '" stroke-width="2.3" stroke-linejoin="round"/>');
+    });
+    o.push("</g>");
+    (marks || []).forEach(function (m) {
+      o.push('<circle cx="' + sx(m.x) + '" cy="' + sy(m.y) + '" r="5.5" fill="#fff" stroke="' + m.colour + '" stroke-width="2.5"/>');
+      if (m.label) {
+        o.push('<text x="' + (sx(m.x) + 10) + '" y="' + (sy(m.y) + 16) + '" font-size="12" fill="#1d1f24" font-family="IBM Plex Sans, sans-serif">' + m.label + '</text>');
+      }
+    });
+    o.push("</svg>");
+    return o.join("");
   }
 
-  /* Blue through teal and green to yellow, in the manner of the picture. */
-  var STOPS = [
-    [0.00, 53, 42, 135], [0.13, 15, 92, 221], [0.25, 18, 125, 216],
-    [0.38, 7, 156, 207], [0.50, 21, 177, 180], [0.63, 89, 189, 140],
-    [0.75, 165, 190, 107], [0.88, 225, 185, 82], [1.00, 249, 251, 14]
-  ];
+  /* Blue through teal and green to yellow, in the manner of Diego's picture. */
+  var STOPS = [[0, 53, 42, 135], [0.13, 15, 92, 221], [0.25, 18, 125, 216], [0.38, 7, 156, 207],
+               [0.5, 21, 177, 180], [0.63, 89, 189, 140], [0.75, 165, 190, 107], [0.88, 225, 185, 82], [1, 249, 251, 14]];
   function colour(t) {
     t = Math.max(0, Math.min(1, t));
     for (var i = 1; i < STOPS.length; i++) {
       if (t <= STOPS[i][0]) {
         var a = STOPS[i - 1], b = STOPS[i], u = (t - a[0]) / (b[0] - a[0]);
-        return "rgb(" + Math.round(a[1] + (b[1] - a[1]) * u) + "," +
-               Math.round(a[2] + (b[2] - a[2]) * u) + "," +
-               Math.round(a[3] + (b[3] - a[3]) * u) + ")";
+        return "rgb(" + Math.round(a[1] + (b[1] - a[1]) * u) + "," + Math.round(a[2] + (b[2] - a[2]) * u) + "," + Math.round(a[3] + (b[3] - a[3]) * u) + ")";
       }
     }
     return "rgb(249,251,14)";
   }
 
-  function plot3d() {
-    var canvas = document.getElementById("plot3d");
-    var ctx = canvas.getContext("2d");
-    var W = 800, H = 624, N = 25;
+  /*
+   * A surface as MATLAB's surf draws it, turned by dragging. `grid` is N by N
+   * heights over x and y from -3 to 3; `range` fixes the colours and the box
+   * when the heights change under it, as the drum's do.
+   */
+  function surface(holder, W, H, N, heights, range, caption) {
+    var canvas = document.createElement("canvas");
     var dpr = window.devicePixelRatio || 1;
-    var az = -37.5, el = 30;
-    var Z0 = -8, Z1 = 10;
-    var pts = [], i, j;
-
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-    canvas.style.width = W + "px";
-    canvas.style.height = H + "px";
-
-    for (j = 0; j < N; j++) {
-      for (i = 0; i < N; i++) {
-        var x = -3 + 6 * i / (N - 1), y = -3 + 6 * j / (N - 1);
-        pts.push([x, y, peaks(x, y)]);
-      }
-    }
-
-    /* Into the box's own space, a cube from -1 to 1 with z a little flatter. */
-    function norm(p) { return [p[0] / 3, p[1] / 3, (p[2] - (Z0 + Z1) / 2) / (Z1 - Z0) * 1.5]; }
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    holder.appendChild(canvas);
+    var ctx = canvas.getContext("2d");
+    var view = { az: -37.5, el: 30 };
+    var zs = [-0.75, 0.75];
 
     function project(p) {
-      var a = az * Math.PI / 180, e = el * Math.PI / 180;
+      var a = view.az * Math.PI / 180, e = view.el * Math.PI / 180;
       var x = p[0] * Math.cos(a) + p[1] * Math.sin(a);
       var y = -p[0] * Math.sin(a) + p[1] * Math.cos(a);
-      var sx = x;
-      var sy = -(p[2] * Math.cos(e) + y * Math.sin(e));
-      var depth = y * Math.cos(e) - p[2] * Math.sin(e);
-      return [W / 2 - 40 + sx * 205, H / 2 - 8 + sy * 205, depth];
+      return [W / 2 - 40 + x * (H * 0.33), H / 2 - 8 - (p[2] * Math.cos(e) + y * Math.sin(e)) * (H * 0.33), y * Math.cos(e) - p[2] * Math.sin(e)];
     }
 
     function draw() {
+      var z = heights(), lo = range ? range[0] : Infinity, hi = range ? range[1] : -Infinity, i, j;
+      if (!range) { z.forEach(function (v) { if (isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }); }
+      if (!isFinite(lo) || hi - lo < 1e-9) { lo = -1; hi = 1; }
+      var zn = function (v) { return ((v - lo) / (hi - lo) - 0.5) * 1.5; };
+
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
 
-      var zs = [-0.75, 0.75];
-
-      /* The box's back walls: the three faces turned away from the eye. */
-      var faces = [
-        { n: [-1, 0, 0], at: function (u, v) { return [-1, u, v]; } },
-        { n: [1, 0, 0],  at: function (u, v) { return [1, u, v]; } },
-        { n: [0, -1, 0], at: function (u, v) { return [u, -1, v]; } },
-        { n: [0, 1, 0],  at: function (u, v) { return [u, 1, v]; } },
-        { n: [0, 0, -1], at: function (u, v) { return [u, v, zs[0]]; } }
+      var walls = [
+        { n: [-1, 0], at: function (u, v) { return [-1, u, v]; } }, { n: [1, 0], at: function (u, v) { return [1, u, v]; } },
+        { n: [0, -1], at: function (u, v) { return [u, -1, v]; } }, { n: [0, 1], at: function (u, v) { return [u, 1, v]; } },
+        { floor: true, at: function (u, v) { return [u, v, zs[0]]; } }
       ];
-      ctx.lineWidth = 1;
-      faces.forEach(function (f) {
-        /* A wall is behind the surface when its middle is farther from the
-           eye than the box's; the floor always is, seen from above. */
-        if (f.n[2] === 0 && project([f.n[0], f.n[1], 0])[2] <= 0) { return; }
-        var quad = f.n[2] === 0
-          ? [f.at(-1, zs[0]), f.at(1, zs[0]), f.at(1, zs[1]), f.at(-1, zs[1])]
-          : [f.at(-1, -1), f.at(1, -1), f.at(1, 1), f.at(-1, 1)];
-        var q = quad.map(project);
-        ctx.fillStyle = "#f7f8fa";
-        ctx.strokeStyle = "#d3d7de";
-        ctx.beginPath();
-        q.forEach(function (p, k) { if (k) { ctx.lineTo(p[0], p[1]); } else { ctx.moveTo(p[0], p[1]); } });
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+      walls.forEach(function (f) {
+        if (!f.floor && project([f.n[0], f.n[1], 0])[2] <= 0) { return; }
+        var q = (f.floor ? [f.at(-1, -1), f.at(1, -1), f.at(1, 1), f.at(-1, 1)]
+                         : [f.at(-1, zs[0]), f.at(1, zs[0]), f.at(1, zs[1]), f.at(-1, zs[1])]).map(project);
+        ctx.fillStyle = "#f7f8fa"; ctx.strokeStyle = "#d3d7de"; ctx.lineWidth = 1;
+        ctx.beginPath(); q.forEach(function (p, k) { if (k) { ctx.lineTo(p[0], p[1]); } else { ctx.moveTo(p[0], p[1]); } });
+        ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = "#e3e6eb";
         for (var s = 1; s < 6; s++) {
           var u = -1 + 2 * s / 6, a, b;
-          if (f.n[2] === 0) {
-            a = project(f.at(u, zs[0])); b = project(f.at(u, zs[1]));
-            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-            var vz = zs[0] + (zs[1] - zs[0]) * s / 6;
-            a = project(f.at(-1, vz)); b = project(f.at(1, vz));
-            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+          if (f.floor) {
+            a = project(f.at(u, -1)); b = project(f.at(u, 1)); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+            a = project(f.at(-1, u)); b = project(f.at(1, u)); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
           } else {
-            a = project(f.at(u, -1)); b = project(f.at(u, 1));
-            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-            a = project(f.at(-1, u)); b = project(f.at(1, u));
-            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+            a = project(f.at(u, zs[0])); b = project(f.at(u, zs[1])); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+            var vz = zs[0] + (zs[1] - zs[0]) * s / 6;
+            a = project(f.at(-1, vz)); b = project(f.at(1, vz)); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
           }
         }
       });
 
-      /* The surface: faces coloured by height, painted back to front. */
       var quads = [];
       for (j = 0; j < N - 1; j++) {
         for (i = 0; i < N - 1; i++) {
-          var k = j * N + i;
-          var four = [pts[k], pts[k + 1], pts[k + N + 1], pts[k + N]];
-          var pr = four.map(function (p) { return project(norm(p)); });
-          var zmean = (four[0][2] + four[1][2] + four[2][2] + four[3][2]) / 4;
-          var depth = (pr[0][2] + pr[1][2] + pr[2][2] + pr[3][2]) / 4;
-          quads.push({ p: pr, z: zmean, d: depth });
+          var k = j * N + i, ks = [k, k + 1, k + N + 1, k + N];
+          var pr = ks.map(function (kk) { return project([-1 + 2 * (kk % N) / (N - 1), -1 + 2 * Math.floor(kk / N) / (N - 1), zn(z[kk])]); });
+          var mean = (z[ks[0]] + z[ks[1]] + z[ks[2]] + z[ks[3]]) / 4;
+          if (!isFinite(mean)) { continue; }
+          quads.push({ p: pr, t: (mean - lo) / (hi - lo), d: pr[0][2] + pr[1][2] + pr[2][2] + pr[3][2] });
         }
       }
       quads.sort(function (a, b) { return b.d - a.d; });
-      ctx.lineWidth = 0.7;
-      ctx.strokeStyle = "rgba(20,24,32,.72)";
+      ctx.lineWidth = N > 30 ? 0.35 : 0.7;
+      ctx.strokeStyle = "rgba(20,24,32,.7)";
       quads.forEach(function (q) {
-        ctx.fillStyle = colour((q.z + 6.6) / (8.2 + 6.6));
-        ctx.beginPath();
-        ctx.moveTo(q.p[0][0], q.p[0][1]);
-        ctx.lineTo(q.p[1][0], q.p[1][1]);
-        ctx.lineTo(q.p[2][0], q.p[2][1]);
-        ctx.lineTo(q.p[3][0], q.p[3][1]);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        ctx.fillStyle = colour(q.t);
+        ctx.beginPath(); ctx.moveTo(q.p[0][0], q.p[0][1]); ctx.lineTo(q.p[1][0], q.p[1][1]);
+        ctx.lineTo(q.p[2][0], q.p[2][1]); ctx.lineTo(q.p[3][0], q.p[3][1]); ctx.closePath(); ctx.fill(); ctx.stroke();
       });
 
-      /* Numbers on the floor's near edges and the upright one. */
-      ctx.fillStyle = "#5f646c";
-      ctx.font = "12px IBM Plex Sans, sans-serif";
-      ctx.textAlign = "center";
+      ctx.fillStyle = "#5f646c"; ctx.font = "11.5px IBM Plex Sans, sans-serif"; ctx.textAlign = "center";
       [-3, -2, -1, 0, 1, 2, 3].forEach(function (v) {
-        var near = project([v / 3, -1.12, zs[0]]);
-        ctx.fillText(String(v).replace("-", "−"), near[0], near[1] + 14);
-        var side = project([1.12, v / 3, zs[0]]);
-        ctx.fillText(String(v).replace("-", "−"), side[0] + 8, side[1] + 12);
+        var a = project([v / 3, -1.13, zs[0]]); ctx.fillText(num(v), a[0], a[1] + 14);
+        var b = project([1.13, v / 3, zs[0]]); ctx.fillText(num(v), b[0] + 8, b[1] + 12);
       });
-      ctx.textAlign = "right";
-      [-5, 0, 5].forEach(function (v) {
-        var pz = (v - (Z0 + Z1) / 2) / (Z1 - Z0) * 1.5;
-        var p = project([-1, 1, pz]);
-        ctx.fillText(String(v).replace("-", "−"), p[0] - 8, p[1] + 4);
-      });
-
-      /* The colour scale. */
-      var bx = W - 58, by = 110, bh = 380;
-      for (var s2 = 0; s2 < bh; s2++) {
-        ctx.fillStyle = colour(1 - s2 / bh);
-        ctx.fillRect(bx, by + s2, 16, 1);
-      }
-      ctx.strokeStyle = "#b8bdc6";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bx + 0.5, by + 0.5, 16, bh);
-      ctx.fillStyle = "#5f646c";
-      ctx.textAlign = "left";
-      [-6, -4, -2, 0, 2, 4, 6, 8].forEach(function (v) {
-        var t = (v + 6.6) / (8.2 + 6.6);
-        ctx.fillText(String(v).replace("-", "−"), bx + 22, by + bh - t * bh + 4);
-      });
-
-      document.getElementById("view3d").textContent =
-        "azimuth " + String(az.toFixed(1)).replace("-", "−") + "° · elevation " +
-        String(el.toFixed(1)).replace("-", "−") + "°";
+      var bx = W - 56, by = H * 0.18, bh = H * 0.62;
+      for (var s2 = 0; s2 < bh; s2++) { ctx.fillStyle = colour(1 - s2 / bh); ctx.fillRect(bx, by + s2, 14, 1); }
+      ctx.strokeStyle = "#b8bdc6"; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, 14, bh);
+      ctx.fillStyle = "#5f646c"; ctx.textAlign = "left";
+      nice(lo, hi, 5).forEach(function (v) { ctx.fillText(num(v), bx + 20, by + bh - (v - lo) / (hi - lo) * bh + 4); });
+      if (caption) { caption(view); }
     }
 
-    /* Drag to turn it, with a mouse or a finger. */
-    var dragging = null;
-    canvas.addEventListener("pointerdown", function (e) {
-      dragging = { x: e.clientX, y: e.clientY, az: az, el: el };
-      canvas.setPointerCapture(e.pointerId);
-      canvas.parentNode.style.cursor = "grabbing";
+    /* A play button that turns it round and round, and stops it. */
+    var spin = document.createElement("button"), spinning = false;
+    spin.className = "spin";
+    spin.type = "button";
+    function label() {
+      spin.innerHTML = spinning
+        ? '<svg viewBox="0 0 10 10" fill="currentColor"><rect x="1.5" y="1" width="2.5" height="8"/><rect x="6" y="1" width="2.5" height="8"/></svg>Stop'
+        : '<svg viewBox="0 0 10 10" fill="currentColor"><path d="M2 1l7 4-7 4z"/></svg>Turn';
+      spin.setAttribute("aria-pressed", spinning ? "true" : "false");
+    }
+    label();
+    holder.appendChild(spin);
+    spin.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+    spin.addEventListener("click", function () {
+      spinning = !spinning;
+      label();
+      if (spinning) { requestAnimationFrame(turn); }
     });
-    canvas.addEventListener("pointermove", function (e) {
-      if (!dragging) { return; }
-      az = dragging.az - (e.clientX - dragging.x) * 0.5;
-      el = Math.max(-5, Math.min(89, dragging.el + (e.clientY - dragging.y) * 0.4));
+    function turn() {
+      if (!spinning) { return; }
+      view.az -= 0.45;
+      draw();
+      requestAnimationFrame(turn);
+    }
+
+    var drag = null;
+    holder.addEventListener("pointerdown", function (e) {
+      drag = { x: e.clientX, y: e.clientY, az: view.az, el: view.el };
+      holder.setPointerCapture(e.pointerId); holder.style.cursor = "grabbing";
+    });
+    holder.addEventListener("pointermove", function (e) {
+      if (!drag) { return; }
+      view.az = drag.az - (e.clientX - drag.x) * 0.5;
+      view.el = Math.max(-5, Math.min(89, drag.el + (e.clientY - drag.y) * 0.4));
       draw();
     });
-    function stop() { dragging = null; canvas.parentNode.style.cursor = "grab"; }
-    canvas.addEventListener("pointerup", stop);
-    canvas.addEventListener("pointercancel", stop);
-    canvas.style.touchAction = "none";
-
+    function stop() { drag = null; holder.style.cursor = "grab"; }
+    holder.addEventListener("pointerup", stop);
+    holder.addEventListener("pointercancel", stop);
     draw();
+    return { draw: draw };
   }
 
-  plot2d();
-  plot3d();
+  function grid(N, fn) {
+    var z = [];
+    for (var j = 0; j < N; j++) {
+      for (var i = 0; i < N; i++) {
+        var v;
+        try { v = fn({ x: -3 + 6 * i / (N - 1), y: -3 + 6 * j / (N - 1) }); } catch (e) { v = NaN; }
+        z.push(v);
+      }
+    }
+    return z;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * The notebook.
+   * ---------------------------------------------------------------- */
+  var book = document.getElementById("book");
+  var count = 0, colourNext = 0;
+
+  function cell(typed) {
+    var el = document.createElement("div");
+    el.className = "cell";
+    el.innerHTML = '<div class="n">' + (++count) + '</div><div class="c"><div class="math"></div><div class="typed"></div><div class="out"></div></div>';
+    el.querySelector(".typed").textContent = typed;
+    return el;
+  }
+
+  function run(typed) {
+    var el = cell(typed), math = el.querySelector(".math"), out = el.querySelector(".out");
+    var def = /^\s*([A-Za-z_]\w*)\s*\(\s*([A-Za-z])\s*(?:,\s*([A-Za-z])\s*)?\)\s*=\s*(.+)$/.exec(typed);
+    var plot = /^\s*plot\s+(.+?)(?:\s+from\s+(\S+)\s+to\s+(\S+))?\s*$/.exec(typed);
+    try {
+      if (def) {
+        var name = def[1], params = def[3] ? [def[2], def[3]] : [def[2]];
+        if (BUILTIN[name]) { throw new Error(name + " is already a function"); }
+        var tree = parse(def[4], params), body = compile(tree);
+        USER[name] = { params: params, body: body, colour: COLOURS[colourNext++ % COLOURS.length], tree: tree };
+        math.innerHTML = "<i>" + name + "</i>(" + params.map(function (q) { return "<i>" + q + "</i>"; }).join(", ") + ") = " + setMath(tree, 0);
+        if (params.length === 1) {
+          var f = USER[name];
+          out.innerHTML = plot2d([{ fn: function (env) { var e = {}; e[params[0]] = env.x; return body(e); }, colour: f.colour }], -3, 3, 860, 250);
+        } else {
+          var holder = document.createElement("div");
+          holder.className = "surf";
+          holder.innerHTML = '<div class="hint">drag to turn it</div>';
+          out.appendChild(holder);
+          var cap = document.createElement("div");
+          cap.className = "cap";
+          out.appendChild(cap);
+          var heights = grid(25, function (env) { var e = {}; e[params[0]] = env.x; e[params[1]] = env.y; return body(e); });
+          surface(holder, 860, 460, 25, function () { return heights; }, null, function (v) {
+            cap.textContent = "625 points, 576 faces · azimuth " + num(+v.az.toFixed(1)) + "°, elevation " + num(+v.el.toFixed(1)) + "°";
+          });
+        }
+      } else if (plot) {
+        var names = plot[1].split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+        var x0 = plot[2] ? compile(parse(plot[2], []))({}) : -3, x1 = plot[3] ? compile(parse(plot[3], []))({}) : 3;
+        var fns = names.map(function (nm) {
+          var f = USER[nm];
+          if (!f || f.params.length !== 1) { throw new Error(nm + " is not a function of one value in this notebook"); }
+          return { fn: function (env) { var e = {}; e[f.params[0]] = env.x; return f.body(e); }, colour: f.colour, name: nm };
+        });
+        math.innerHTML = "plot " + names.map(function (n) { return "<i>" + n + "</i>"; }).join(", ") +
+                         (plot[2] ? " from " + num(x0) + " to " + num(x1) : "");
+        out.innerHTML = plot2d(fns, x0, x1, 860, 330) + '<div class="legend">' +
+          fns.map(function (f) { return '<span><i style="background:' + f.colour + '"></i><em style="font-family:var(--math);font-size:15px">' + f.name + "</em></span>"; }).join("") + "</div>";
+      } else {
+        var t = parse(typed, []);
+        math.innerHTML = setMath(t, 0) + ' = <span class="val">' + num(compile(t)({})) + "</span>";
+        out.remove();
+      }
+    } catch (e) {
+      math.innerHTML = "";
+      math.remove();
+      out.className = "err";
+      out.textContent = "Cannot read this: " + e.message;
+    }
+    return el;
+  }
+
+  var entryCell = document.createElement("div");
+  entryCell.className = "cell edit";
+  entryCell.innerHTML = '<div class="n"></div><div class="c"><input class="entry" id="entry" type="text" autocomplete="off" spellcheck="false" aria-label="The next line of the notebook" placeholder="Type a function and press Return — h(x) = x^3 - 2x"></div>';
+  var entry = entryCell.querySelector("input");
+
+  function add(typed) {
+    book.insertBefore(run(typed), entryCell);
+    entryCell.querySelector(".n").textContent = count + 1;
+    document.getElementById("foot-what").textContent = count + (count === 1 ? " cell" : " cells");
+  }
+
+  book.appendChild(entryCell);
+  [
+    "f(x) = x^2",
+    "g(x) = 2 sin(3x) * e^(-x^2/4)",
+    "plot f, g",
+    "f(1.5)",
+    "z(x, y) = 3(1-x)^2 e^(-x^2-(y+1)^2) - 10(x/5 - x^3 - y^5) e^(-x^2-y^2) - 1/3 e^(-(x+1)^2-y^2)"
+  ].forEach(add);
+
+  entry.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && entry.value.trim()) {
+      add(entry.value.trim());
+      entry.value = "";
+      entryCell.scrollIntoView({ block: "nearest" });
+    }
+  });
+  document.querySelectorAll("[data-try]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      entry.value = b.dataset.try;
+      entry.focus({ preventScroll: true });
+      entryCell.scrollIntoView({ block: "nearest" });
+    });
+  });
+
+  /* ---------------------------------------------------------------- *
+   * The proposed simulations.
+   * ---------------------------------------------------------------- */
+
+  /* A pendulum: theta'' = -(g/L) sin(theta), by fourth-order Runge-Kutta. */
+  (function () {
+    var canvas = document.getElementById("pend"), ctx = canvas.getContext("2d"), dpr = window.devicePixelRatio || 1;
+    canvas.width = 300 * dpr; canvas.height = 300 * dpr; canvas.style.width = "300px"; canvas.style.height = "300px";
+    var g = 9.81, L = 1, th = 1.2, om = 0, t = 0, h = 0.001, trace = [];
+    function acc(a) { return -(g / L) * Math.sin(a); }
+    function step() {
+      var k1t = om, k1o = acc(th);
+      var k2t = om + h / 2 * k1o, k2o = acc(th + h / 2 * k1t);
+      var k3t = om + h / 2 * k2o, k3o = acc(th + h / 2 * k2t);
+      var k4t = om + h * k3o, k4o = acc(th + h * k3t);
+      th += h / 6 * (k1t + 2 * k2t + 2 * k3t + k4t);
+      om += h / 6 * (k1o + 2 * k2o + 2 * k3o + k4o);
+      t += h;
+    }
+    function drawPend() {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, 300, 300);
+      ctx.strokeStyle = "#eceef2"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(150, 70, 190, 0.35 * Math.PI, 0.65 * Math.PI); ctx.stroke();
+      var x = 150 + Math.sin(th) * 190, y = 70 + Math.cos(th) * 190;
+      ctx.fillStyle = "#5f646c"; ctx.fillRect(110, 64, 80, 6);
+      ctx.strokeStyle = "#5f646c"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(150, 70); ctx.lineTo(x, y); ctx.stroke();
+      ctx.fillStyle = "#2a55c9"; ctx.beginPath(); ctx.arc(x, y, 14, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = "#1d1f24"; ctx.font = "12px IBM Plex Mono, monospace";
+      ctx.fillText("t = " + t.toFixed(2) + " s", 12, 22);
+      ctx.fillText("θ = " + num(+th.toFixed(3)), 12, 40);
+    }
+    var holder = document.getElementById("pendplot"), last = 0;
+    function drawTrace() {
+      holder.innerHTML = plot2d([{ fn: function (env) {
+        var i = Math.round(env.x / 0.02);
+        return i < trace.length ? trace[i] : NaN;
+      }, colour: "#2a55c9" }], 0, 10, 520, 300);
+    }
+    function frame(now) {
+      if (!last) { last = now; }
+      var dt = Math.min(0.05, (now - last) / 1000); last = now;
+      for (var n = 0; n < Math.round(dt / h); n++) {
+        step();
+        if (Math.round(t / h) % 20 === 0) { trace.push(th); }
+      }
+      if (t >= 10) { t = 0; th = 1.2; om = 0; trace = []; }
+      drawPend();
+      if (trace.length % 3 === 0) { drawTrace(); }
+      requestAnimationFrame(frame);
+    }
+    if (reduced) {
+      for (var n = 0; n < 10000; n++) { step(); if (n % 20 === 0) { trace.push(th); } }
+      drawPend(); drawTrace();
+    } else {
+      drawPend(); drawTrace();
+      requestAnimationFrame(frame);
+    }
+  }());
+
+  /* A drum skin: the wave equation on a 48 by 48 grid, struck at the centre. */
+  (function () {
+    var N = 48, u = new Float32Array(N * N), prev = new Float32Array(N * N), next = new Float32Array(N * N);
+    var c2 = 0.18, damp = 0.9985, i, j;
+    function strike() {
+      for (j = 0; j < N; j++) {
+        for (i = 0; i < N; i++) {
+          var dx = i - N / 2, dy = j - N / 2;
+          u[j * N + i] = prev[j * N + i] = Math.exp(-(dx * dx + dy * dy) / 12);
+        }
+      }
+    }
+    strike();
+    function step() {
+      for (j = 1; j < N - 1; j++) {
+        for (i = 1; i < N - 1; i++) {
+          var k = j * N + i;
+          var lap = u[k - 1] + u[k + 1] + u[k - N] + u[k + N] - 4 * u[k];
+          next[k] = (2 * u[k] - prev[k] + c2 * lap) * damp;
+        }
+      }
+      var t = prev; prev = u; u = next; next = t;
+    }
+    var cap = document.getElementById("drumcap"), steps = 0;
+    var s = surface(document.getElementById("drum"), 860, 420, N, function () { return Array.prototype.slice.call(u); }, [-0.5, 0.5], null);
+    function frame() {
+      step(); step();
+      steps += 2;
+      if (steps > 1400) { strike(); steps = 0; }
+      s.draw();
+      cap.textContent = "2,304 points moved each step, four at a time · step " + steps;
+      requestAnimationFrame(frame);
+    }
+    if (reduced) { for (var n = 0; n < 40; n++) { step(); } s.draw(); } else { requestAnimationFrame(frame); }
+  }());
+
+  /* The Mandelbrot set, every pixel its own sum. */
+  (function () {
+    var canvas = document.getElementById("mandel"), ctx = canvas.getContext("2d");
+    var W = 560, H = 448, img = ctx.createImageData(W, H), d = img.data;
+    for (var py = 0; py < H; py++) {
+      for (var px = 0; px < W; px++) {
+        var cr = -2.2 + 3.0 * px / W, ci = -1.2 + 2.4 * py / H, zr = 0, zi = 0, n = 0;
+        while (n < 200 && zr * zr + zi * zi < 4) { var t = zr * zr - zi * zi + cr; zi = 2 * zr * zi + ci; zr = t; n++; }
+        var k = (py * W + px) * 4;
+        if (n === 200) { d[k] = 20; d[k + 1] = 22; d[k + 2] = 38; }
+        else {
+          var c = colour(Math.sqrt(n / 200) * 1.15).match(/\d+/g);
+          d[k] = +c[0]; d[k + 1] = +c[1]; d[k + 2] = +c[2];
+        }
+        d[k + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }());
+
+  /* ---------------------------------------------------------------- *
+   * Lesson 6: launching a rocket. A flat Earth, one stage, a fixed
+   * angle, thrust, gravity and air - simple on purpose, and said so.
+   * ---------------------------------------------------------------- */
+  (function () {
+    var DRY = 1000, BURN = 60, G = 9.81, CD = 0.5, AREA = 1.0, DT = 0.05;
+    var el = function (id) { return document.getElementById(id); };
+    var thousands = function (v) { return Math.round(v).toLocaleString("en-US"); };
+    var flight = null, play = 0, raf = 0;
+
+    function simulate(fuel, ve, angle, air) {
+      var mdot = fuel / BURN, thrust = mdot * ve, a = angle * Math.PI / 180;
+      var x = 0, h = 0, vx = 0, vh = 0, t = 0, n = 0;
+      var r = { t: [], x: [], h: [], v: [], m: [], burnout: -1, apogee: -1,
+                thrust: thrust, m0: DRY + fuel, lifts: thrust > (DRY + fuel) * G };
+      function keep(m) { r.t.push(t); r.x.push(x); r.h.push(h); r.v.push(Math.hypot(vx, vh)); r.m.push(m); }
+      if (!r.lifts) { keep(DRY + fuel); return r; }
+      for (;;) {
+        var burning = t < BURN, m = burning ? DRY + fuel - mdot * t : DRY;
+        var v = Math.hypot(vx, vh), rho = air ? 1.225 * Math.exp(-h / 8500) : 0;
+        var drag = 0.5 * rho * v * v * CD * AREA;
+        var ax = 0, ah = -G;
+        if (burning) { ax += thrust * Math.cos(a) / m; ah += thrust * Math.sin(a) / m; }
+        if (v > 0) { ax -= drag * vx / v / m; ah -= drag * vh / v / m; }
+        vx += ax * DT; vh += ah * DT; x += vx * DT; h += vh * DT; t += DT;
+        if (n++ % 2 === 0) { keep(m); }
+        if (!burning && r.burnout < 0) { r.burnout = r.t.length - 1; }
+        if (vh < 0 && r.apogee < 0 && t > 1) { r.apogee = r.t.length - 1; }
+        if (h <= 0 && t > 1) { h = 0; keep(m); break; }
+        if (t > 3000) { break; }
+      }
+      return r;
+    }
+
+    function series(arr, scale) {
+      return function (env) {
+        var i = env.x / (2 * DT);
+        var k = Math.floor(i);
+        if (k < 0 || k + 1 >= arr.length) { return k === arr.length - 1 ? arr[k] * scale : NaN; }
+        return (arr[k] + (arr[k + 1] - arr[k]) * (i - k)) * scale;
+      };
+    }
+
+    function update() {
+      var fuel = +el("s-fuel").value, ve = +el("s-ve").value, ang = +el("s-ang").value, air = el("s-air").value === "1";
+      el("v-fuel").textContent = thousands(fuel) + " kg";
+      el("v-ve").textContent = thousands(ve) + " m/s";
+      el("v-ang").textContent = ang + "\u00b0";
+      el("v-air").textContent = air ? "on" : "off";
+
+      flight = simulate(fuel, ve, ang, air);
+      var m0 = DRY + fuel, ratio = m0 / DRY, dv = ve * Math.log(ratio);
+      var weight = m0 * G, tw = flight.thrust / weight;
+
+      /* The law, as a graph, and this rocket on it. */
+      el("tsiol").innerHTML = plot2d([{ fn: function (env) { return ve * Math.log(env.x); }, colour: "#2a55c9" }],
+                                     1, 20, 860, 230, [{ x: ratio, y: dv, colour: "#e07b28", label: "your rocket: " + ratio.toFixed(1) + "\u00d7, " + thousands(dv) + " m/s" }]);
+      el("tsiolcap").textContent = "\u0394v against the mass ratio m\u2080/m_f, for v\u2091 = " + thousands(ve) + " m/s";
+
+      var facts = [
+        ["Mass at launch", thousands(m0) + " kg"],
+        ["Thrust", thousands(flight.thrust / 1000) + " kN"],
+        ["Thrust / weight", tw.toFixed(2)],
+        ["\u0394v, ideal", thousands(dv) + " m/s"]
+      ];
+      var html = facts.map(function (f) { return '<div class="fact"><b>' + f[1] + "</b>" + f[0] + "</div>"; }).join("");
+      if (!flight.lifts) {
+        html += '<div class="fact warn"><b>It cannot lift off</b>thrust ' + thousands(flight.thrust / 1000) +
+                " kN is less than its weight, " + thousands(weight / 1000) + " kN</div>";
+      } else {
+        var top = flight.apogee >= 0 ? flight.h[flight.apogee] : Math.max.apply(null, flight.h);
+        html += '<div class="fact"><b>' + (top / 1000).toFixed(1) + " km</b>Highest</div>" +
+                '<div class="fact"><b>' + (flight.x[flight.x.length - 1] / 1000).toFixed(1) + " km</b>Lands downrange</div>" +
+                '<div class="fact"><b>' + thousands(Math.max.apply(null, flight.v)) + " m/s</b>Fastest</div>" +
+                '<div class="fact"><b>' + Math.round(flight.t[flight.t.length - 1]) + " s</b>Flight</div>";
+      }
+      el("facts").innerHTML = html;
+
+      /* The functions of time. */
+      var end = flight.t[flight.t.length - 1] || 1;
+      el("p-h").innerHTML = plot2d([{ fn: series(flight.h, 0.001), colour: "#2a55c9" }], 0, end, 280, 200);
+      el("p-v").innerHTML = plot2d([{ fn: series(flight.v, 1), colour: "#e07b28" }], 0, end, 280, 200);
+      el("p-m").innerHTML = plot2d([{ fn: series(flight.m, 1), colour: "#2f8a3e" }], 0, end, 280, 200);
+
+      play = 0;
+      if (!raf) { raf = requestAnimationFrame(frame); }
+    }
+
+    var canvas = el("flight"), ctx = canvas.getContext("2d"), dpr = window.devicePixelRatio || 1;
+    var W = 860, H = 360, L = 56, R = 20, T = 18, B = 34;
+    canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.width = W + "px"; canvas.style.height = H + "px";
+
+    function drawFlight() {
+      var f = flight, i;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var sky = ctx.createLinearGradient(0, T, 0, H - B);
+      sky.addColorStop(0, "#e8eef9"); sky.addColorStop(1, "#fbfcfe");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = sky; ctx.fillRect(L, T, W - L - R, H - T - B);
+      var xmax = Math.max(1000, Math.max.apply(null, f.x) * 1.08), hmax = Math.max(1000, Math.max.apply(null, f.h) * 1.12);
+      var sx = function (x) { return L + x / xmax * (W - L - R); };
+      var sy = function (h) { return H - B - h / hmax * (H - T - B); };
+      ctx.font = "11.5px IBM Plex Sans, sans-serif"; ctx.fillStyle = "#74787f"; ctx.strokeStyle = "#e3e7ee"; ctx.lineWidth = 1;
+      ctx.textAlign = "center";
+      nice(0, xmax / 1000, 8).forEach(function (k) { var X = sx(k * 1000); ctx.beginPath(); ctx.moveTo(X, T); ctx.lineTo(X, H - B); ctx.stroke(); ctx.fillText(num(k), X, H - B + 17); });
+      ctx.textAlign = "right";
+      nice(0, hmax / 1000, 5).forEach(function (k) { var Y = sy(k * 1000); ctx.beginPath(); ctx.moveTo(L, Y); ctx.lineTo(W - R, Y); ctx.stroke(); ctx.fillText(num(k), L - 8, Y + 4); });
+      ctx.textAlign = "left"; ctx.fillText("km downrange", W - R - 84, H - 4); ctx.save(); ctx.translate(14, T + 70); ctx.rotate(-Math.PI / 2); ctx.fillText("km up", 0, 0); ctx.restore();
+      ctx.fillStyle = "#6b8f4e"; ctx.fillRect(L, H - B, W - L - R, 3);
+
+      /* The whole path faintly, what has been flown solidly. */
+      ctx.setLineDash([4, 5]); ctx.strokeStyle = "#b9c2d3"; ctx.beginPath();
+      for (i = 0; i < f.x.length; i++) { if (i) { ctx.lineTo(sx(f.x[i]), sy(f.h[i])); } else { ctx.moveTo(sx(f.x[i]), sy(f.h[i])); } }
+      ctx.stroke(); ctx.setLineDash([]);
+      var upto = Math.min(f.x.length - 1, Math.floor(play));
+      ctx.lineWidth = 2.5;
+      for (i = 1; i <= upto; i++) {
+        ctx.strokeStyle = (f.burnout < 0 || i <= f.burnout) ? "#e07b28" : "#2a55c9";
+        ctx.beginPath(); ctx.moveTo(sx(f.x[i - 1]), sy(f.h[i - 1])); ctx.lineTo(sx(f.x[i]), sy(f.h[i])); ctx.stroke();
+      }
+      function mark(k, text) {
+        if (k < 0 || k > upto) { return; }
+        ctx.fillStyle = "#fff"; ctx.strokeStyle = "#1d1f24"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(sx(f.x[k]), sy(f.h[k]), 4.5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#1d1f24"; ctx.font = "12px IBM Plex Sans, sans-serif"; ctx.textAlign = "left";
+        ctx.fillText(text, sx(f.x[k]) + 9, sy(f.h[k]) - 7);
+      }
+      mark(f.burnout, "fuel gone, " + Math.round(f.t[f.burnout] || 0) + " s");
+      mark(f.apogee, "highest, " + ((f.h[f.apogee] || 0) / 1000).toFixed(1) + " km");
+
+      /* The rocket, pointing where it goes, burning while it can. */
+      var k = upto, k0 = Math.max(0, k - 1);
+      var dx = sx(f.x[k]) - sx(f.x[k0]), dy = sy(f.h[k]) - sy(f.h[k0]);
+      var dir = (dx || dy) ? Math.atan2(dy, dx) : -Math.PI / 2;
+      ctx.save(); ctx.translate(sx(f.x[k]), sy(f.h[k])); ctx.rotate(dir + Math.PI / 2);
+      if (f.burnout < 0 || k < f.burnout) {
+        ctx.fillStyle = "#f5a623"; ctx.beginPath(); ctx.moveTo(-4, 9); ctx.lineTo(0, 22 + Math.random() * 6); ctx.lineTo(4, 9); ctx.fill();
+      }
+      ctx.fillStyle = "#1d1f24"; ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(5, 0); ctx.lineTo(5, 9); ctx.lineTo(-5, 9); ctx.lineTo(-5, 0); ctx.closePath(); ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = "#1d1f24"; ctx.font = "12px IBM Plex Mono, monospace"; ctx.textAlign = "left";
+      ctx.fillText("t " + (f.t[k] || 0).toFixed(1) + " s   up " + ((f.h[k] || 0) / 1000).toFixed(2) + " km   speed " +
+                   thousands(f.v[k] || 0) + " m/s   mass " + thousands(f.m[k] || 0) + " kg", L + 10, T + 18);
+      el("flightcap").textContent = f.lifts
+        ? "Orange while the engine burns, blue after; the dashed line is where it will go"
+        : "It stays on the pad: the thrust is less than the weight";
+    }
+
+    function frame() {
+      raf = 0;
+      if (!flight) { return; }
+      drawFlight();
+      if (play < flight.x.length - 1) {
+        play += Math.max(1, flight.x.length / 420);
+        raf = requestAnimationFrame(frame);
+      }
+    }
+
+    ["s-fuel", "s-ve", "s-ang", "s-air"].forEach(function (id) { el(id).addEventListener("input", update); });
+    el("replay").addEventListener("click", function () { play = 0; if (!raf) { raf = requestAnimationFrame(frame); } });
+    update();
+    if (reduced) { play = flight.x.length - 1; drawFlight(); }
+  }());
+
+  /* Each stage keeps its windows at one pixel to one, scaled down to fit a
+     screen narrower than they are. */
+  function fitStages() {
+    document.querySelectorAll(".stage").forEach(function (stage) {
+      var fit = stage.querySelector(".fit"), want = +fit.dataset.w, room = stage.clientWidth - 48;
+      var s = Math.min(1, room / want);
+      fit.style.width = want + "px";
+      fit.style.transform = s < 1 ? "scale(" + s + ")" : "";
+      stage.style.height = s < 1 ? (fit.scrollHeight * s + 60) + "px" : "";
+      if (s >= 1) { fit.style.width = ""; }
+    });
+  }
   fitStages();
   window.addEventListener("resize", fitStages);
 }());
