@@ -9711,3 +9711,20 @@ object - shadowed Lua's, selected the number 3, and the next draw raised.
 And the build's own check refused the first version, which drew the
 operation from names declared further down the file: `tools/luaglobals.py`
 saw four names that would have been nil.
+
+## 18.192 The tools' handles
+
+**Cafesa3D**, 48 checks on each board. The Move tool's three arrows, the
+Rotate tool's three rings and the Scale tool's three boxes on their axes,
+each the same size on the screen however far the object is: **a drag on
+Move's X arrow** moves the Cube along X and leaves Y and Z to the
+millimetre; **a drag round Rotate's Z ring** turns it about Z alone; **a
+drag on Scale's X box** stretches it along X alone. A drag on a handle is G,
+R or S held to that axis, and ends with the release rather than a click.
+The app says where each handle's grip is, as it says where everything else
+is. **Control**: no handle can be grabbed - the three checks fail.
+
+Found on the way, in the app: a press and its release can come in two
+polls, and a release that changes nothing said nothing - so choosing a tool
+never said where its handles were. Every press and release that changes
+something now says it for itself.

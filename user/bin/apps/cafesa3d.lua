@@ -562,9 +562,9 @@ local TOOL_LIST = {
   { name = "select", glyph = "select" },
   { name = "cursor", glyph = "cursor" },
   { gap = true },
-  { name = "move", glyph = "move", later = true },
-  { name = "rotate", glyph = "rotate", later = true },
-  { name = "scale", glyph = "scale", later = true },
+  { name = "move", glyph = "move" },
+  { name = "rotate", glyph = "rotate" },
+  { name = "scale", glyph = "scale" },
   { gap = true },
   { name = "measure", glyph = "measure", later = true },
 }
@@ -723,6 +723,144 @@ local function draw_gizmo(s)
   end
 end
 
+--------------------------------------------------------------------------
+-- The tools' handles: Move's three arrows, Rotate's three rings, Scale's
+-- three axes ending in boxes, and in the middle the handle that is held to
+-- no axis. The same size on the screen however far the object is, as
+-- Blender's are; a drag on one is G, R or S held to its axis.
+--------------------------------------------------------------------------
+
+local HANDLE_PX = 95
+local handles = {}
+
+local function make_handles()
+  handles = {}
+
+  local t = selected
+
+  if not t or t.hidden or modal or not (tool == "move" or tool == "rotate" or tool == "scale") then
+    return
+  end
+
+  if tool ~= "move" and not t.id then return end
+
+  local r, u, f = axes()
+  local e, c = eye(), t.loc
+  local depth = (c[1] - e[1]) * f[1] + (c[2] - e[2]) * f[2] + (c[3] - e[3]) * f[3]
+
+  if depth < 0.2 then return end
+
+  local L = HANDLE_PX * depth / ((VW / 2) / math.tan(FOV / 2))
+  local cx, cy = on_screen(c)
+
+  if not cx then return end
+
+  local function at(p) local x, y = on_screen(p) return x and { x, y } end
+
+  for i = 1, 3 do
+    local a = AXES[i]
+    local h = { op = ({ move = "grab", rotate = "rotate", scale = "scale" })[tool], axis = i,
+                colour = AXIS_COLOUR[i], pts = {} }
+
+    if tool == "rotate" then
+      -- A ring round the axis: two directions square to it and each other.
+      local p1 = AXES[i % 3 + 1]
+      local p2 = AXES[(i + 1) % 3 + 1]
+
+      for k = 0, 48 do
+        local ang = 2 * math.pi * k / 48
+        local q = at({ c[1] + (p1[1] * math.cos(ang) + p2[1] * math.sin(ang)) * L * 0.8,
+                       c[2] + (p1[2] * math.cos(ang) + p2[2] * math.sin(ang)) * L * 0.8,
+                       c[3] + (p1[3] * math.cos(ang) + p2[3] * math.sin(ang)) * L * 0.8 })
+
+        if q then h.pts[#h.pts + 1] = q end
+      end
+
+      h.grip = h.pts[7]
+    else
+      local from = tool == "move" and 0.2 or 0
+      local to = tool == "move" and 1 or 0.85
+      local p0 = at({ c[1] + a[1] * L * from, c[2] + a[2] * L * from, c[3] + a[3] * L * from })
+      local p1 = at({ c[1] + a[1] * L * to, c[2] + a[2] * L * to, c[3] + a[3] * L * to })
+
+      if p0 and p1 then
+        h.pts = { p0, p1 }
+        h.tip = p1
+        h.grip = { (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2 }
+      end
+    end
+
+    if #h.pts >= 2 then handles[#handles + 1] = h end
+  end
+
+  -- The middle: free, in the view's plane; or for Scale, all three at once.
+  if tool ~= "rotate" then
+    handles[#handles + 1] = { op = tool == "move" and "grab" or "scale", centre = { cx, cy },
+                              colour = 0xffffff, pts = {}, grip = { cx, cy } }
+  end
+end
+
+local function draw_handles(s)
+  for _, h in ipairs(handles) do
+    if h.centre then
+      ring(s, h.centre[1], h.centre[2], 9, h.colour)
+      ring(s, h.centre[1], h.centre[2], 10, h.colour)
+    else
+      for k = 1, #h.pts - 1 do
+        local a, b = h.pts[k], h.pts[k + 1]
+
+        line(s, a[1], a[2], b[1], b[2], h.colour)
+        line(s, a[1] + 0.7, a[2] + 0.7, b[1] + 0.7, b[2] + 0.7, h.colour)
+      end
+
+      if h.tip and h.op == "grab" then
+        local a, b = h.pts[1], h.tip
+        local dx, dy = b[1] - a[1], b[2] - a[2]
+        local n = math.sqrt(dx * dx + dy * dy)
+
+        if n > 1 then
+          dx, dy = dx / n, dy / n
+          s:triangle(b[1] + dx * 10, b[2] + dy * 10, b[1] - dy * 5, b[2] + dx * 5,
+                     b[1] + dy * 5, b[2] - dx * 5, opaque(h.colour))
+        end
+      elseif h.tip then
+        s:fill(round(h.tip[1]) - 4, round(h.tip[2]) - 4, 9, 9, opaque(h.colour))
+      end
+    end
+  end
+end
+
+-- The handle a press at `x, y` is on: within eight pixels of its line.
+local function handle_at(x, y)
+  local best, best_d = nil, 8
+
+  for _, h in ipairs(handles) do
+    if h.centre then
+      local d = math.sqrt((x - h.centre[1]) ^ 2 + (y - h.centre[2]) ^ 2)
+
+      if d < 12 and d < best_d + 4 then best, best_d = h, d end
+    end
+
+    for k = 1, #h.pts - 1 do
+      local a, b = h.pts[k], h.pts[k + 1]
+      local dx, dy = b[1] - a[1], b[2] - a[2]
+      local n2 = dx * dx + dy * dy
+      local t = n2 > 0 and math.max(0, math.min(1, ((x - a[1]) * dx + (y - a[2]) * dy) / n2)) or 0
+      local d = math.sqrt((x - a[1] - dx * t) ^ 2 + (y - a[2] - dy * t) ^ 2)
+
+      if d < best_d then best, best_d = h, d end
+    end
+
+    if h.tip then
+      local d = math.sqrt((x - h.tip[1]) ^ 2 + (y - h.tip[2]) ^ 2)
+
+      if d < best_d then best, best_d = h, d end
+    end
+  end
+
+  return best
+end
+
 local function draw_view(s)
   look()
   drawn_triangles = view:draw(scene, s, VX, VY, {
@@ -739,6 +877,8 @@ local function draw_view(s)
   end
 
   draw_cursor(s)
+  make_handles()
+  draw_handles(s)
   draw_gizmo(s)
 
   if modal and modal.axis then
@@ -1126,6 +1266,19 @@ local function say_where()
   end
 
   print("cafesa3d: at " .. table.concat(out, "; "))
+
+  make_handles()
+
+  if #handles > 0 then
+    local hs = {}
+
+    for _, h in ipairs(handles) do
+      hs[#hs + 1] = ("%s %d,%d"):format(h.axis and AXIS_NAME[h.axis] or "free",
+                                        round(h.grip[1]), round(h.grip[2]))
+    end
+
+    print(("cafesa3d: handles %s %s"):format(tool, table.concat(hs, "; ")))
+  end
 end
 
 -- A click in the view: the lamp or the camera if it is on one, then the
@@ -1695,7 +1848,11 @@ local function press(x, y)
 
   for _, t in ipairs(TOOL_LIST) do
     if t.name and not t.later and inside(controls["tool:" .. t.name], x, y) then
-      tool = t.name
+      if tool ~= t.name then
+        tool = t.name
+        print("cafesa3d: tool " .. tool)
+      end
+
       return true
     end
   end
@@ -1723,6 +1880,15 @@ local function press(x, y)
     local a = gizmo_hit(x, y)
 
     if a then axis_view(a) return true end
+
+    local h = handle_at(x, y)
+
+    if h and begin(h.op) then
+      modal.axis = h.axis
+      modal.ref = { x, y }
+      modal.by_drag = true
+      return true
+    end
 
     drag = { x = x, y = y, az = orbit.az, el = orbit.el,
              target = { orbit.target[1], orbit.target[2], orbit.target[3] },
@@ -1771,6 +1937,11 @@ local function move(x, y)
 end
 
 local function release(x, y)
+  if modal and modal.by_drag then
+    finish(true)
+    return true
+  end
+
   if modal then return false end
 
   local d = drag
@@ -1917,7 +2088,8 @@ do
 
   local header = {}
 
-  for _, name in ipairs({ "add", "wire", "solid" }) do
+  for _, name in ipairs({ "add", "wire", "solid", "tool:select", "tool:move", "tool:rotate",
+                          "tool:scale" }) do
     local c = controls[name]
 
     header[#header + 1] = ("%s %d,%d"):format(name, c.x + c.w // 2, c.y + c.h // 2)
@@ -1957,13 +2129,14 @@ while win.running do
         said_where = true
       end
     elseif ev.type == "mouse" and not ev.menu then
+      -- A press or a release that changed something says where things are
+      -- afterwards; they may come in two polls, so each says it for itself.
       if ev.action == "press" then
-        dirty = press(ev.x, ev.y) or dirty
+        if press(ev.x, ev.y) then dirty, said_where = true, true end
       elseif ev.action == "move" then
         dirty = move(ev.x, ev.y) or dirty
       elseif ev.action == "release" then
-        dirty = release(ev.x, ev.y) or dirty
-        if dirty then say_where() end
+        if release(ev.x, ev.y) then dirty, said_where = true, true end
       end
     elseif ev.type == "wheel" and in_view(ev.x, ev.y) then
       pointer = { ev.x, ev.y }

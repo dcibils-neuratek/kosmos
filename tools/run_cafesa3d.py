@@ -137,7 +137,7 @@ def main():
                     for m in re.finditer(r"(\w+) (\d+),(\d+)",
                                          said("cafesa3d: tabs ", mark)))
         header = dict((m.group(1), (int(m.group(2)), int(m.group(3))))
-                      for m in re.finditer(r"(\w+) (\d+),(\d+)",
+                      for m in re.finditer(r"([\w:]+) (\d+),(\d+)",
                                            said("cafesa3d: controls ", mark)))
 
         def where(since):
@@ -424,6 +424,81 @@ def main():
         keys("ctrl-z")
         check(said("cafesa3d: undid ", mark) == "scaled Cube", "Ctrl Z did not undo the scale")
 
+        # **The tools' handles**, the way the KitBash guide teaches: a drag
+        # on one arrow, ring or box, which changes that axis and no other.
+        def drag(points):
+            guest.mouse_to(*R._to_tablet(points[0][0], points[0][1], width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+
+            for p in points[1:]:
+                guest.mouse_to(*R._to_tablet(p[0], p[1], width, height))
+                time.sleep(0.15)
+
+            guest.mouse_button(False)
+            time.sleep(0.6)
+
+        def handles(tool):
+            mark_ = len(guest.seen)
+            click(ox + header["tool:" + tool][0], oy + header["tool:" + tool][1])
+            said("cafesa3d: tool ", mark_)
+            # The handles are said with the positions after the click's release.
+            line = said("cafesa3d: handles " + tool + " ", mark_) or ""
+            return dict((m.group(1), (ox + int(m.group(2)), oy + int(m.group(3))))
+                        for m in re.finditer(r"(\w+) (-?\d+),(-?\d+)", line))
+
+        def trio(text):
+            return location(text)
+
+        before = None
+        mv = handles("move")
+        check("X" in mv and "free" in mv, "the Move tool shows no handles: %r" % mv)
+
+        if "X" in mv and "free" in mv:
+            gx, gy = mv["X"]
+            vx, vy = gx - mv["free"][0], gy - mv["free"][1]
+            mark = len(guest.seen)
+            drag([(gx, gy)] + [(gx + vx * k / 6, gy + vy * k / 6) for k in range(1, 7)])
+            after = trio(said("cafesa3d: moved Cube", mark))
+            before = moved and exact
+            check(after is not None and exact is not None and abs(after[0] - exact[0]) > 0.1
+                  and abs(after[1] - exact[1]) < 0.006 and abs(after[2] - exact[2]) < 0.006,
+                  "dragging Move's X arrow did not move the Cube along X alone: %r from %r"
+                  % (after, exact))
+
+        rt = handles("rotate")
+        now = latest().get("Cube")
+        check("Z" in rt and now, "the Rotate tool shows no Z ring: %r" % rt)
+
+        if "Z" in rt and now:
+            gx, gy = rt["Z"]
+            r0 = ((gx - now[0]) ** 2 + (gy - now[1]) ** 2) ** 0.5
+            a0 = __import__("math").atan2(gy - now[1], gx - now[0])
+            pts = [(now[0] + r0 * __import__("math").cos(a0 + k * 0.12),
+                    now[1] + r0 * __import__("math").sin(a0 + k * 0.12)) for k in range(0, 7)]
+            mark = len(guest.seen)
+            drag(pts)
+            turned2 = trio(said("cafesa3d: rotated Cube", mark))
+            check(turned2 is not None and abs(turned2[0]) < 0.06 and abs(turned2[1]) < 0.06
+                  and abs(turned2[2] - 114) > 5,
+                  "dragging Rotate's Z ring did not turn the Cube about Z alone: %r" % (turned2,))
+
+        sc = handles("scale")
+        check("X" in sc and "free" in sc, "the Scale tool shows no handles: %r" % sc)
+
+        if "X" in sc and "free" in sc:
+            gx, gy = sc["X"]
+            vx, vy = gx - sc["free"][0], gy - sc["free"][1]
+            mark = len(guest.seen)
+            drag([(gx, gy)] + [(gx + vx * k / 5, gy + vy * k / 5) for k in range(1, 6)])
+            grown = trio(said("cafesa3d: scaled Cube", mark))
+            check(grown is not None and grown[0] > 1.2 and abs(grown[1] - 1) < 0.002
+                  and abs(grown[2] - 1) < 0.002,
+                  "dragging Scale's X box did not stretch the Cube along X alone: %r" % (grown,))
+
+        handles("select")
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
@@ -442,7 +517,8 @@ def main():
           "Z to Wireframe with the faces gone; 7 from the top; Add, Mesh, Cube at the "
           "3D cursor, undone and redone; Shift D, Delete, and X asking first; G following "
           "the pointer with no button, G X 2, R Z 90, S 2, Esc and a right click "
-          "cancelling, Ctrl Z)" % checks)
+          "cancelling, Ctrl Z; the Move, Rotate and Scale handles each changing its "
+          "axis alone)" % checks)
     return 0
 
 
