@@ -312,10 +312,15 @@ def main():
                   "Ctrl Shift Z did not redo it")
 
             # Shift D, then Delete; then X, which asks.
+            # Shift D, which moves the copy at once as Blender's does: Esc
+            # leaves it where the original is, then Delete.
             mark = len(guest.seen)
             guest.sendkey("shift-d")
             check(said("cafesa3d: duplicated ", mark) == "Cube.001 as Cube.002",
                   "Shift D did not duplicate Cube.001 as Cube.002")
+            check(said("cafesa3d: move ", mark) == "Cube.002",
+                  "Shift D did not start moving the copy")
+            guest.sendkey("esc")
             mark = len(guest.seen)
             guest.sendkey("delete")
             check(said("cafesa3d: deleted ", mark) == "Cube.002", "Delete did not delete it")
@@ -339,6 +344,86 @@ def main():
                 check(said("cafesa3d: deleted ", mark) == "Cube.001",
                       "choosing Delete in X's menu did not delete Cube.001")
 
+        # **G, R and S**, as Blender's: no button held while it follows the
+        # pointer, a click to put it down; X Y Z and a number for exact.
+        def latest():
+            at = guest.seen.rfind("cafesa3d: at ")
+            return where(at) if at >= 0 else {}
+
+        def keys(*names):
+            for k in names:
+                guest.sendkey(k)
+
+        def location(text):
+            m = re.search(r"to (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)$", text or "")
+            return tuple(float(v) for v in m.groups()) if m else None
+
+        cube = latest().get("Cube")
+        mark = len(guest.seen)
+
+        if cube:
+            click(*cube)
+
+        check(said("cafesa3d: selected ", mark) == "Cube", "a click did not select the Cube again")
+
+        mark = len(guest.seen)
+        keys("g")
+        check(said("cafesa3d: move ", mark) == "Cube", "G did not start moving the Cube")
+
+        # No button: the pointer alone, a few steps, then a click.
+        for step in range(0, 8):
+            guest.mouse_to(*R._to_tablet(cube[0] + 10 + step * 12, cube[1] + step * 6,
+                                         width, height))
+            time.sleep(0.15)
+
+        click(cube[0] + 10 + 7 * 12, cube[1] + 7 * 6)
+        moved = location(said("cafesa3d: moved Cube", mark))
+        check(moved is not None and abs(moved[0] - (-1.75)) + abs(moved[1] - 0.45) > 0.1,
+              "the Cube did not follow the pointer and stay where it was put: %r" % (moved,))
+
+        if moved:
+            mark = len(guest.seen)
+            keys("g", "x", "2", "ret")
+            exact = location(said("cafesa3d: moved Cube", mark))
+            check(exact is not None and abs(exact[0] - (moved[0] + 2)) < 0.006
+                  and abs(exact[1] - moved[1]) < 0.006 and abs(exact[2] - moved[2]) < 0.006,
+                  "G X 2 did not move the Cube two metres along X: %r from %r" % (exact, moved))
+
+        mark = len(guest.seen)
+        keys("r", "z", "9", "0", "ret")
+        turned = location(said("cafesa3d: rotated Cube", mark))
+        check(turned is not None and abs(turned[0]) < 0.06 and abs(turned[1]) < 0.06
+              and abs(turned[2] - 114) < 0.06,
+              "R Z 90 did not turn the Cube from 24 to 114 degrees about Z: %r" % (turned,))
+
+        mark = len(guest.seen)
+        keys("s", "2", "ret")
+        check(said("cafesa3d: scaled Cube to ", mark) == "2.000 2.000 2.000",
+              "S 2 did not double the Cube")
+
+        mark = len(guest.seen)
+        keys("g")
+        for step in range(0, 4):
+            guest.mouse_to(*R._to_tablet(cube[0] + step * 20, cube[1] + 40, width, height))
+            time.sleep(0.15)
+        keys("esc")
+        check(said("cafesa3d: cancelled ", mark) == "move", "Esc did not cancel G")
+
+        mark = len(guest.seen)
+        keys("r")
+        guest.mouse_to(*R._to_tablet(cube[0] + 60, cube[1] - 30, width, height))
+        time.sleep(0.2)
+        guest.mouse_to(*R._to_tablet(cube[0] + 30, cube[1] - 70, width, height))
+        time.sleep(0.2)
+        guest.mouse_button(True, "right")
+        time.sleep(0.2)
+        guest.mouse_button(False, "right")
+        check(said("cafesa3d: cancelled ", mark) == "rotate", "a right click did not cancel R")
+
+        mark = len(guest.seen)
+        keys("ctrl-z")
+        check(said("cafesa3d: undid ", mark) == "scaled Cube", "Ctrl Z did not undo the scale")
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
@@ -355,7 +440,9 @@ def main():
           "selected by a click and the outline moved to it; a row of the Outliner; an "
           "eye hiding and showing; the Material tab; a drag turning the view; the wheel; "
           "Z to Wireframe with the faces gone; 7 from the top; Add, Mesh, Cube at the "
-          "3D cursor, undone and redone; Shift D, Delete, and X asking first)" % checks)
+          "3D cursor, undone and redone; Shift D, Delete, and X asking first; G following "
+          "the pointer with no button, G X 2, R Z 90, S 2, Esc and a right click "
+          "cancelling, Ctrl Z)" % checks)
     return 0
 
 

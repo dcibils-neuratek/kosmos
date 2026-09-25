@@ -250,6 +250,13 @@ local view_name = VIEW_NAME
 
 local VP_INK, VP_DIM, SEL = 0xffd9dde4, 0xff9aa1ad, 0xffffa53d
 
+-- G, R and S (below), declared here because the view draws them.
+local modal = nil
+local modal_line
+local AXES = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }
+local AXIS_NAME = { "X", "Y", "Z" }
+local AXIS_COLOUR = { 0xe0524b, 0x7cbb3a, 0x4a86e0 }
+
 -- 0xRRGGBB to a surface's colour, and a colour's three channels for a line.
 local function opaque(c) return 0xff000000 | (c & 0xffffff) end
 
@@ -734,9 +741,23 @@ local function draw_view(s)
   draw_cursor(s)
   draw_gizmo(s)
 
+  if modal and modal.axis then
+    local a, p = AXES[modal.axis], modal.loc0
+    local planes = modal.plane and { modal.axis % 3 + 1, (modal.axis + 1) % 3 + 1 }
+                   or { modal.axis }
+
+    for _, i in ipairs(planes) do
+      local d = AXES[i]
+
+      view:line(s, VX, VY, p[1] - d[1] * 60, p[2] - d[2] * 60, p[3] - d[3] * 60,
+                p[1] + d[1] * 60, p[2] + d[2] * 60, p[3] + d[3] * 60,
+                AXIS_COLOUR[i], 220, false)
+    end
+  end
+
   local ty = VY + 10
 
-  s:text(VX + 14, ty, view_name, VP_INK, nil, small)
+  s:text(VX + 14, ty, modal and modal_line() or view_name, VP_INK, nil, small)
   s:text(VX + 14, ty + gfx.height(small) + 2,
          "Collection | " .. (selected and selected.name or "nothing selected"),
          VP_DIM, nil, small)
@@ -1043,8 +1064,10 @@ local function draw_foot(s)
 
   local x = 14
   local ty = y + (FOOT - gfx.height(small)) // 2
+  local keys = modal and { { "Click", "place" }, { "Esc", "cancel" }, { "X Y Z", "hold to an axis" },
+                           { "Shift X", "all but" }, { "0-9", "exact" } }
 
-  for _, k in ipairs({ { "Drag", "turn" }, { "Shift Drag", "move" }, { "Wheel", "closer" },
+  for _, k in ipairs(keys or { { "Drag", "turn" }, { "Shift Drag", "move" }, { "Wheel", "closer" },
                        { "Shift A", "add" }, { "X", "delete" }, { "Ctrl Z", "undo" },
                        { "Z", "shading" }, { "Home", "all" } }) do
     local kw = gfx.measure(k[1], tiny) + 10
@@ -1384,6 +1407,260 @@ local function delete_menu(x, y)
 end
 
 --------------------------------------------------------------------------
+-- G, R and S, as Blender's: the selection follows the pointer with no
+-- button held - the window manager tells a window where the pointer goes
+-- while it asks (`wmproto.track`) - until a click or Return puts it down,
+-- and Esc or a right click puts it back. X, Y or Z holds it to that axis,
+-- Shift with one holds it to the other two, and a number typed is the
+-- amount: metres, degrees, or a factor. One undo step each.
+--------------------------------------------------------------------------
+
+local OPS = { grab = "Move", rotate = "Rotate", scale = "Scale" }
+
+local function vadd(a, b) return { a[1] + b[1], a[2] + b[2], a[3] + b[3] } end
+local function vsub(a, b) return { a[1] - b[1], a[2] - b[2], a[3] - b[3] } end
+local function vmul(a, k) return { a[1] * k, a[2] * k, a[3] * k } end
+local function vdot(a, b) return a[1] * b[1] + a[2] * b[2] + a[3] * b[3] end
+
+-- The ray from the eye through a pixel of the window.
+local function ray(x, y)
+  local r, u, f = axes()
+  local F = (VW / 2) / math.tan(FOV / 2)
+  local d = {}
+
+  for i = 1, 3 do
+    d[i] = f[i] * F + r[i] * (x - VX - VW / 2) - u[i] * (y - VY - VH / 2)
+  end
+
+  return eye(), vmul(d, 1 / math.sqrt(vdot(d, d)))
+end
+
+-- Where that ray meets the plane through `p0` square to `n`.
+local function hit_plane(x, y, p0, n)
+  local o, d = ray(x, y)
+  local den = vdot(d, n)
+
+  if math.abs(den) < 1e-6 then return nil end
+
+  return vadd(o, vmul(d, vdot(vsub(p0, o), n) / den))
+end
+
+-- How far along the unit axis `a` through `p0` the ray passes nearest it.
+local function along(x, y, p0, a)
+  local o, d = ray(x, y)
+  local w = vsub(p0, o)
+  local b, c = vdot(a, d), vdot(d, d)
+  local den = c - b * b
+
+  if math.abs(den) < 1e-6 then return nil end
+
+  return (b * vdot(d, w) - c * vdot(a, w)) / den
+end
+
+-- Turning, as the kit does it: X, then Y, then Z - Rz Ry Rx, row by row.
+local function euler_matrix(rot)
+  local ax, ay, az = math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3])
+  local cx, sx, cy, sy = math.cos(ax), math.sin(ax), math.cos(ay), math.sin(ay)
+  local cz, sz = math.cos(az), math.sin(az)
+
+  return { cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
+           sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
+           -sy,     cy * sx,                cy * cx }
+end
+
+local function matrix_euler(R)
+  local y = math.asin(math.max(-1, math.min(1, -R[7])))
+  local x, z
+
+  if math.abs(math.cos(y)) > 1e-6 then
+    x, z = math.atan(R[8], R[9]), math.atan(R[4], R[1])
+  else
+    x, z = 0, math.atan(-R[2], R[5])
+  end
+
+  return { math.deg(x), math.deg(y), math.deg(z) }
+end
+
+-- A turn of `ang` about the unit axis `a`, by the right hand.
+local function axis_angle(a, ang)
+  local c, s_, t = math.cos(ang), math.sin(ang), 1 - math.cos(ang)
+  local x, y, z = a[1], a[2], a[3]
+
+  return { t * x * x + c,      t * x * y - s_ * z, t * x * z + s_ * y,
+           t * x * y + s_ * z, t * y * y + c,      t * y * z - s_ * x,
+           t * x * z - s_ * y, t * y * z + s_ * x, t * z * z + c }
+end
+
+local function mat_mul(A, B)
+  local C = {}
+
+  for i = 0, 2 do
+    for j = 0, 2 do
+      C[i * 3 + j + 1] = A[i * 3 + 1] * B[j + 1] + A[i * 3 + 2] * B[3 + j + 1]
+                         + A[i * 3 + 3] * B[6 + j + 1]
+    end
+  end
+
+  return C
+end
+
+local function begin(op)
+  local t = selected
+
+  if not t or modal or (op ~= "grab" and not t.id) then return false end
+
+  modal = { op = op, t = t, loc0 = copy(t.loc), rot0 = copy(t.rot or { 0, 0, 0 }),
+            scale0 = copy(t.scale or { 1, 1, 1 }), target0 = copy(t.target),
+            snap = snapshot(({ grab = "moved ", rotate = "rotated ", scale = "scaled " })[op]
+                            .. t.name),
+            axis = nil, plane = false, typed = "" }
+  wmproto.track(win.handle, true)
+  print(("cafesa3d: %s %s"):format(OPS[op]:lower(), t.name))
+  return true
+end
+
+-- The selection as the pointer at `x, y` (or the number typed) says.
+local function apply_modal(x, y)
+  local m = modal
+  local t = m.t
+  local typed = tonumber(m.typed)
+  local a = m.axis and AXES[m.axis]
+
+  t.loc, t.rot, t.scale = copy(m.loc0), copy(m.rot0), copy(m.scale0)
+  t.target = copy(m.target0)
+
+  if not typed and not (m.ref and x) then sync(t) return end
+
+  if m.op == "grab" then
+    local delta
+
+    if typed then
+      delta = vmul((a and not m.plane) and a or AXES[1], typed)
+    elseif a and not m.plane then
+      local t0, t1 = along(m.ref[1], m.ref[2], m.loc0, a), along(x, y, m.loc0, a)
+
+      if t0 and t1 then delta = vmul(a, t1 - t0) end
+    else
+      -- The view's own plane when nothing holds it: square to the eye.
+      -- (Not `select(3, axes())`: this file's `select` is choosing an
+      -- object, and it chose the number 3 and took the app down with it.)
+      local _, _, f = axes()
+      local n = a or f
+      local p0, p1 = hit_plane(m.ref[1], m.ref[2], m.loc0, n), hit_plane(x, y, m.loc0, n)
+
+      if p0 and p1 then delta = vsub(p1, p0) end
+    end
+
+    if delta then
+      t.loc = vadd(m.loc0, delta)
+      if m.target0 then t.target = vadd(m.target0, delta) end
+    end
+  elseif m.op == "rotate" then
+    local _, _, f = axes()
+    local k, ang
+
+    if typed then
+      k, ang = a or vmul(f, -1), math.rad(typed)
+    else
+      local cx, cy = on_screen(m.loc0)
+
+      if cx then
+        ang = math.atan(y - cy, x - cx) - math.atan(m.ref[2] - cy, m.ref[1] - cx)
+        k = f
+
+        -- Seen along an axis that points at the eye, the turn runs the
+        -- other way round.
+        if a then
+          k = a
+          if vdot(a, f) < 0 then ang = -ang end
+        end
+      end
+    end
+
+    if k then t.rot = matrix_euler(mat_mul(axis_angle(k, ang), euler_matrix(m.rot0))) end
+  else
+    local k = typed
+
+    if not k then
+      local cx, cy = on_screen(m.loc0)
+
+      if cx then
+        local d0 = math.max(1, math.sqrt((m.ref[1] - cx) ^ 2 + (m.ref[2] - cy) ^ 2))
+
+        k = math.sqrt((x - cx) ^ 2 + (y - cy) ^ 2) / d0
+      end
+    end
+
+    if k then
+      for i = 1, 3 do
+        if not a or (m.plane and i ~= m.axis) or (not m.plane and i == m.axis) then
+          t.scale[i] = m.scale0[i] * k
+        end
+      end
+    end
+  end
+
+  sync(t)
+end
+
+local function finish(keep)
+  local m = modal
+  local t = m.t
+
+  modal = nil
+  wmproto.track(win.handle, false)
+
+  if not keep then
+    t.loc, t.rot, t.scale, t.target = m.loc0, m.rot0, m.scale0, m.target0
+    sync(t)
+    print("cafesa3d: cancelled " .. OPS[m.op]:lower())
+    return
+  end
+
+  undo[#undo + 1] = m.snap
+  if #undo > 64 then table.remove(undo, 1) end
+  redo = {}
+
+  if m.op == "grab" then
+    print(("cafesa3d: moved %s to %s %s %s"):format(t.name, fmt(t.loc[1], 2), fmt(t.loc[2], 2),
+                                                   fmt(t.loc[3], 2)))
+  elseif m.op == "rotate" then
+    print(("cafesa3d: rotated %s to %s %s %s"):format(t.name, fmt(t.rot[1], 1),
+                                                     fmt(t.rot[2], 1), fmt(t.rot[3], 1)))
+  else
+    print(("cafesa3d: scaled %s to %s %s %s"):format(t.name, fmt(t.scale[1]),
+                                                    fmt(t.scale[2]), fmt(t.scale[3])))
+  end
+end
+
+-- What the operation says of itself, where the view's name was.
+function modal_line()
+  local m = modal
+  local t = m.t
+  local what
+
+  if m.op == "grab" then
+    local d = vsub(t.loc, m.loc0)
+
+    what = ("D: %s  %s  %s m"):format(fmt(d[1], 3), fmt(d[2], 3), fmt(d[3], 3))
+  elseif m.op == "rotate" then
+    what = ("%s\u{b0} %s\u{b0} %s\u{b0}"):format(fmt(t.rot[1], 1), fmt(t.rot[2], 1),
+                                                  fmt(t.rot[3], 1))
+  else
+    what = ("%s  %s  %s"):format(fmt(t.scale[1]), fmt(t.scale[2]), fmt(t.scale[3]))
+  end
+
+  local held = ""
+
+  if m.axis then
+    held = m.plane and ("  held off " .. AXIS_NAME[m.axis])
+           or ("  along " .. AXIS_NAME[m.axis])
+  end
+
+  return OPS[m.op] .. held .. "   " .. what .. (m.typed ~= "" and ("   typed " .. m.typed) or "")
+end
+
+--------------------------------------------------------------------------
 -- The loop.
 --------------------------------------------------------------------------
 
@@ -1401,6 +1678,8 @@ end
 
 local function press(x, y)
   pointer = { x, y }
+
+  if modal then finish(true) return true end
 
   for _, name in ipairs(TABS) do
     if inside(controls["tab:" .. name], x, y) then
@@ -1456,6 +1735,17 @@ end
 local function move(x, y)
   pointer = { x, y }
 
+  if modal then
+    if not modal.ref then
+      modal.ref = { x, y }
+    else
+      modal.last = { x, y }
+      apply_modal(x, y)
+    end
+
+    return true
+  end
+
   if not drag then return false end
 
   local dx, dy = x - drag.x, y - drag.y
@@ -1481,6 +1771,8 @@ local function move(x, y)
 end
 
 local function release(x, y)
+  if modal then return false end
+
   local d = drag
 
   drag = nil
@@ -1531,13 +1823,56 @@ local function rawkey(ev)
 
   if not ev.down then return false end
 
+  -- While G, R or S is going: its keys, and nothing else's.
+  if modal then
+    local m = modal
+    local digit = ({ [2] = "1", [3] = "2", [4] = "3", [5] = "4", [6] = "5", [7] = "6",
+                     [8] = "7", [9] = "8", [10] = "9", [11] = "0", [52] = "." })[ev.code]
+
+    if ev.code == 1 then finish(false) return true end
+    if ev.code == 28 or ev.code == 96 then finish(true) return true end
+
+    local axis = ({ [45] = 1, [21] = 2, [44] = 3 })[ev.code]
+
+    if axis then
+      if m.axis == axis and m.plane == shift then
+        m.axis = nil
+      else
+        m.axis, m.plane = axis, shift
+      end
+    elseif digit then
+      m.typed = m.typed .. digit
+    elseif ev.code == 12 then
+      m.typed = m.typed:sub(1, 1) == "-" and m.typed:sub(2) or ("-" .. m.typed)
+    elseif ev.code == 14 then
+      m.typed = m.typed:sub(1, -2)
+    else
+      return false
+    end
+
+    local at = m.last or m.ref
+
+    apply_modal(at and at[1], at and at[2])
+    return true
+  end
+
+  if not ctrl and not shift then
+    if ev.code == 34 then return begin("grab") end
+    if ev.code == 19 then return begin("rotate") end
+    if ev.code == 31 then return begin("scale") end
+  end
+
   if ctrl and ev.code == 44 then
     if shift then return redo_last() end
     return undo_last()
   end
 
   if shift and ev.code == 30 then add_menu(pointer[1], pointer[2]) return true end
-  if shift and ev.code == 32 then return duplicate_selected() end
+  if shift and ev.code == 32 then
+    -- As Blender's: the copy follows the pointer at once.
+    if duplicate_selected() then begin("grab") end
+    return true
+  end
   if ev.code == 45 then delete_menu(pointer[1], pointer[2]) return true end
   if ev.code == 111 then return delete_selected() end
 
@@ -1615,7 +1950,13 @@ while win.running do
       said_where = true
     elseif ev.type == "close" then
       win:close()
-    elseif ev.type == "mouse" and not ev.menu and ev.button ~= "right" then
+    elseif ev.type == "mouse" and not ev.menu and ev.button == "right" then
+      if modal and ev.action == "press" then
+        finish(false)
+        dirty = true
+        said_where = true
+      end
+    elseif ev.type == "mouse" and not ev.menu then
       if ev.action == "press" then
         dirty = press(ev.x, ev.y) or dirty
       elseif ev.action == "move" then

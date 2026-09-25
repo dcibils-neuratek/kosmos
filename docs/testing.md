@@ -9691,3 +9691,23 @@ before a drag and a turn to the top, so the app now says where things are
 after every key and menu as well as every release; a name with a dot in it
 was read as its number; and a square round the old cube reached a pixel of
 the next selection's outline, so it is a circle.
+
+## 18.191 G, R and S, and the pointer without a button
+
+**Cafesa3D**, 42 checks on each board now. **G with no button held**: the
+Cube follows the pointer as QEMU's tablet moves it, and a click puts it
+down somewhere else - through the window manager's new `track` (ui.md
+16.24). **G X 2 Return** moves it exactly two metres along X, **R Z 9 0
+Return** turns it from 24 to 114 degrees about Z - a turn composed with the
+one it had and read back as Euler angles - and **S 2 Return** doubles it;
+**Esc** cancels G and **a right click** cancels R, each putting it back;
+**Shift D** moves the copy at once; **Ctrl Z** undoes the scale, one step
+for the whole operation. **Control**: the window manager's tracking off -
+the Cube stays at -1.75, 0.45, 0.75.
+
+Found by it, in the app: the move code asked `select(3, axes())` for the
+third of three values, and this file's own `select` - which chooses an
+object - shadowed Lua's, selected the number 3, and the next draw raised.
+And the build's own check refused the first version, which drew the
+operation from names declared further down the file: `tools/luaglobals.py`
+saw four names that would have been nil.

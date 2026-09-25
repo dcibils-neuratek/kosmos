@@ -1575,6 +1575,24 @@ core as one. So everything drawn says Core 1 to Core N, and the numbers
 beside a process's threads are the same ones. A log line, the serial port and
 `sysinfo`'s fields keep the kernel's zero: those are read against the code.
 
+## 16.24 The pointer without a button, asked for
+
+The window manager sends a window its pointer's movement only while a
+button is held on it - every movement would otherwise be a message, and an
+application would poll a queue of them - and to a menu while one is open.
+Cafesa3D's **G, R and S are Blender's**, and in Blender the selection
+follows the pointer with no button held until a click puts it down. A drag
+would have been a different gesture from the one the drawing takes.
+
+So **a window may ask**: `wmproto.track(handle, true)` while such an
+operation lasts, and `false` when it ends. The window manager then posts one
+`move` a pass, marked `hover`, to that window **while it is the focused
+window** - the one the keyboard goes to, so it learns nothing it could not
+have been typed at it. Bounded as a menu's hover is: one message a pass, and
+only for as long as someone asked. Like the other requests it takes the
+window's handle as its authority; what it hands out is where the pointer is
+over the window that has the focus anyway.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

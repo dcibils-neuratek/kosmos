@@ -52,6 +52,12 @@ wmproto.WM = "/app/wm"
 -- Returns whatever the manager replied, or nil when it has gone away, which
 -- is the ordinary end of an application here.
 --
+-- The pointer's movement with no button held, while `on` - for an
+-- operation that follows the pointer until a click, as Blender's G does.
+function wmproto.track(handle, on)
+  return fs.send(wmproto.WM, { type = "track", window = handle, on = on and true or false })
+end
+
 function wmproto.poll(handle, wait_ticks)
   return fs.send(wmproto.WM, {
     type = "poll",

@@ -4526,6 +4526,26 @@ end
 --
 -- Bring one to the front. What clicking a name in the Deskbar does.
 --
+--
+-- **The pointer without a button, asked for and bounded.**
+--
+-- Movement goes only to a window holding a button (see where presses are
+-- handled) because every movement would be a message. Cafesa3D's G, R and
+-- S are Blender's: the object follows the pointer with no button held,
+-- until a click puts it down. So a window may ask, for as long as such an
+-- operation lasts, to be told where the pointer goes - at most once a pass,
+-- as a menu's hover is, and only while it is the focused window, which is
+-- the one the keyboard already goes to, so it learns nothing it could not
+-- have been typed. `{ type = "track", window = h, on = true|false }`.
+--
+handlers.track = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  win.tracking = req.on and true or nil
+  return { ok = true }
+end
+
 handlers.raise = function(req)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
@@ -6461,6 +6481,14 @@ local function pointer_pass(p)
     post(grabbed, { type = "mouse", action = "move",
                     x = nx - grabbed.x,
                     y = ny - grabbed.y - strips.below(grabbed) })
+  elseif not is_down and moved_this_pass and #menus == 0 then
+    -- A window that asked (`handlers.track`), and only while it has focus.
+    local f = focused_window()
+
+    if f and f.tracking then
+      post(f, { type = "mouse", action = "move", hover = true,
+                x = nx - f.x, y = ny - f.y - strips.below(f) })
+    end
   end
 
   --------------------------------------------------------------------------
