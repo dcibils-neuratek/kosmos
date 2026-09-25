@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "console.h"
 #include "cpu.h"
 #include "hal.h"
 #include "apic.h"
@@ -64,6 +65,26 @@ static bool on_apic_timer;
 
 #define CALIBRATE_MS    10u
 
+/*
+ * **A look at the chip says when the loop noticed, not when the count ran
+ * out** - and on 25 September that difference was the whole answer. The
+ * gate ran twenty-six suites at once on the Mac, QEMU's thread was set
+ * aside across the moment channel two finished, the loop saw it tens of
+ * milliseconds late, and the TSC came out at 4.8 times its speed: a film of
+ * three seconds took 0.62 by its own clock. Nothing here was wrong for a
+ * machine that is never interrupted, and no machine is that - a System
+ * Management Interrupt does the same on silicon.
+ *
+ * So each end of the interval is bracketed rather than read (`look`), and a
+ * measurement whose brackets are wider than 1/CALIBRATE_SLACK of it was
+ * interrupted and is taken again: about 0.4%, forty microseconds in ten
+ * milliseconds, and the midpoint is kept, so the answer is within half
+ * that. The narrowest of CALIBRATE_TRIES is used if none is that good, and
+ * the boot log says which it was.
+ */
+#define CALIBRATE_SLACK 256u
+#define CALIBRATE_TRIES 16u
+
 static uint64_t rdtsc(void)
 {
     uint32_t lo, hi;
@@ -81,8 +102,12 @@ static uint64_t rdtsc(void)
  * **The one clock that is running before any other is trusted.** Channel
  * two is the one wired to the speaker rather than to an interrupt line, so
  * it can be started and watched without disturbing anything - which is why
- * `calibrate` below has always used it to measure the TSC, and why the
- * local APIC's timer is measured against it too.
+ * `calibrate` below measures the TSC against it, and the local APIC's timer
+ * is measured against the TSC in turn.
+ *
+ * A wait is not a measurement: it ends when the loop notices, which can be
+ * late but never early, and that is all a wait promises. `look` is what
+ * measuring on this channel takes.
  *
  * The divisor is sixteen bits, so at 1.193 MHz this tops out around 54 ms.
  * Nothing asks for more; a caller that did would get a shorter wait than it
@@ -107,12 +132,17 @@ static uint64_t rdtsc(void)
  * outside the core. Before it is measured, the 8253 as before.
  */
 static uint64_t tsc_hz;
+static bool tsc_measured;
 
 static uint64_t calibrate(void);
 
+/* Once, whoever asks first: a second measurement would be against a chip
+ * that ACPI mode may have stopped since, and a channel that never finished
+ * costs ten seconds a look on silicon. */
 void pc_timer_measure_tsc(void)
 {
-    if (tsc_hz == 0) {
+    if (!tsc_measured) {
+        tsc_measured = true;
         tsc_hz = calibrate();
     }
 }
@@ -199,54 +229,117 @@ bool pc_pit_counts(void)
     return counted;
 }
 
-static uint64_t calibrate(void)
+/*
+ * One interval of channel two, bracketed: it began between `load` - the TSC
+ * before the count's last byte is written - and `opened`, after the gate
+ * opens, because an 8254 counts from the gate and QEMU's from the byte, and
+ * the two reads hold either. It ended between the read before the last look
+ * that saw it still counting and the read after the look that saw it done.
+ * So it lasted at least `*shortest` and at most `*longest` cycles.
+ *
+ * False only when the channel never finished, which is a machine to start
+ * with an unknown counter rather than one to try again on - ten million
+ * looks is ten seconds on silicon.
+ */
+static bool look(uint32_t divisor, uint64_t *shortest, uint64_t *longest)
 {
-    uint32_t divisor = (PIT_HZ * CALIBRATE_MS) / 1000u;
-
-    /* Measured already, before ACPI mode: the same answer, not a second
-     * measurement against a chip that may have stopped since. */
-    if (tsc_hz != 0) {
-        return tsc_hz;
-    }
-
-    uint64_t start, end;
+    uint64_t load, opened, counting, done = 0;
     uint8_t gate;
     unsigned spins;
+
+    /* The gate closed first, so the count cannot start before it opens. */
+    gate = (uint8_t)(pc_in8(PIT_GATE2) & ~(GATE2_ON | SPEAKER_ON));
+    pc_out8(PIT_GATE2, gate);
 
     /* Channel 2, low byte then high, mode 0, binary. */
     pc_out8(PIT_COMMAND, 0xB0);
     pc_out8(PIT_CHANNEL2, (uint8_t)(divisor & 0xFF));
+
+    load = rdtsc();
     pc_out8(PIT_CHANNEL2, (uint8_t)(divisor >> 8));
-
-    /* The gate low then high is what starts it counting; the speaker stays
-     * disconnected throughout. */
-    gate = (uint8_t)(pc_in8(PIT_GATE2) & ~(GATE2_ON | SPEAKER_ON));
-    pc_out8(PIT_GATE2, gate);
     pc_out8(PIT_GATE2, (uint8_t)(gate | GATE2_ON));
+    opened = rdtsc();
 
-    start = rdtsc();
+    counting = load;
 
-    /*
-     * Bounded, because this is the boot path: a channel that never reaches
-     * terminal count must be a machine that starts with an unknown counter
-     * rather than one that never starts. Ten million spins is far longer
-     * than ten milliseconds on anything, real or emulated.
-     */
     for (spins = 0; spins < 10000000u; spins++) {
+        uint64_t before = rdtsc();
+
         if ((pc_in8(PIT_GATE2) & OUT2_HIGH) != 0) {
+            done = rdtsc();
+            break;
+        }
+
+        counting = before;
+    }
+
+    pc_out8(PIT_GATE2, gate);   /* gate off again */
+
+    if (done == 0) {
+        return false;
+    }
+
+    /* Seen done before the gate had opened by the TSC's account: an
+     * interval that cannot be bounded below, and the widest possible. */
+    *shortest = counting > opened ? counting - opened : 0;
+    *longest = done - load;
+    return true;
+}
+
+static uint64_t calibrate(void)
+{
+    uint32_t divisor = (PIT_HZ * CALIBRATE_MS) / 1000u;
+    uint64_t shortest = 0, longest = 0, mid, hz;
+    unsigned tries;
+    bool clean = false;
+
+    /* The line's beginning before the measuring, so a machine that stops
+     * in it says where, and so `run_timer.py` knows when to interrupt it. */
+    kputs("timer: the TSC at ");
+
+    for (tries = 1; tries <= CALIBRATE_TRIES; tries++) {
+        uint64_t lo, hi;
+
+        if (!look(divisor, &lo, &hi)) {
+            kputs("an unknown rate - the 8253's channel two never finished "
+                  "counting\n");
+            return 0;
+        }
+
+        if (longest == 0 || hi - lo < longest - shortest) {
+            shortest = lo;
+            longest = hi;
+        }
+
+        if ((longest - shortest) * CALIBRATE_SLACK <= longest) {
+            clean = true;
             break;
         }
     }
 
-    end = rdtsc();
-
-    pc_out8(PIT_GATE2, gate);   /* gate off again */
-
-    if (spins >= 10000000u || end <= start) {
-        return 0;
+    if (tries > CALIBRATE_TRIES) {
+        tries = CALIBRATE_TRIES;
     }
 
-    return ((end - start) * 1000ULL) / CALIBRATE_MS;
+    /* The midpoint, over the interval the divisor really is: 11,931 counts
+     * of 1.193182 MHz is 9.9993 ms rather than ten. */
+    mid = shortest + (longest - shortest) / 2;
+    hz = mid * PIT_HZ / divisor;
+
+    kputu((unsigned long)(hz / 1000u));
+    kputs(" kHz, within ");
+    kputu((unsigned long)((longest - shortest) / 2 * 1000000u / (mid ? mid : 1)));
+    kputs(" ppm, against the 8253 in ");
+    kputu(tries);
+    kputs(tries == 1 ? " try" : " tries");
+    kputs(clean ? "\n" : ", none of them uninterrupted - the narrowest kept\n");
+
+    return hz;
+}
+
+uint64_t pc_timer_tsc_hz(void)
+{
+    return tsc_hz;
 }
 
 /* The tick's rate, for `ec_tick`'s thirty seconds. */
@@ -262,6 +355,10 @@ void hal_timer_init(unsigned hz)
 
     tick_hz = hz;
 
+    /* The TSC first, if ACPI's setup has not measured it already: the local
+     * APIC's timer is measured against it (`apic.c`). */
+    pc_timer_measure_tsc();
+
     /*
      * **The local APIC's own timer, when this machine is driving one.**
      *
@@ -271,11 +368,10 @@ void hal_timer_init(unsigned hz)
      * architecture. It is also the only tick a platform that has dropped
      * the legacy chips can offer at all.
      *
-     * Calibrated against the 8253 rather than computed, because nothing
-     * says how fast the bus clock it counts is - the same reason the TSC
-     * below is calibrated rather than read from a table. The PIT is still
-     * running at this point; `irq_bind.c` masks the 8259 pair, which is a
-     * different chip from the counter.
+     * Calibrated rather than computed, because nothing says how fast the
+     * bus clock it counts is - the same reason the TSC is calibrated rather
+     * than read from a table. Against the TSC, which was measured against
+     * the 8253, and bracketed the same way (`apic.c`).
      *
      * Falling through on failure is deliberate: a local APIC whose timer
      * did not count is a machine that still has a PIT, and a slower tick
@@ -283,10 +379,7 @@ void hal_timer_init(unsigned hz)
      */
     if (pc_irq_on_apic() && apic_timer_init(hz)) {
         on_apic_timer = true;
-
-        /* The cycle counter still wants measuring, and against the same
-         * channel two, which the APIC's calibration has finished with. */
-        cpu_set_counter_hz(calibrate());
+        cpu_set_counter_hz(tsc_hz);
         return;
     }
 
@@ -319,7 +412,7 @@ void hal_timer_init(unsigned hz)
      * userland as `/dev/cpu`'s `counter_hz`, and a zero there is a
      * division nobody guarded against.
      */
-    cpu_set_counter_hz(calibrate());
+    cpu_set_counter_hz(tsc_hz);
 }
 
 unsigned long hal_ticks(void)
@@ -379,6 +472,6 @@ void pc_timer_interrupt(void)
 const char *hal_timer_describe(void)
 {
     return on_apic_timer
-         ? "the local APIC's own timer, calibrated against the 8253"
+         ? "the local APIC's own timer, calibrated against the TSC"
          : "the 8253 through a pair of 8259s";
 }

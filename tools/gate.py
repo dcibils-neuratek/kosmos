@@ -174,6 +174,10 @@ SUITES = [
                         "cmdline_long,usb_hotplug,usb_mouse,usb_keyboard,"
                         "pointer"],
           x86=True),
+    # The clocks a PC does not state, measured with QEMU stopped as they
+    # are - what a Mac running this whole gate did by accident on 25
+    # September, and got a TSC at 4.8 times its speed.
+    Suite("x86-timer", ["python3", "tools/run_timer.py", X86], x86=True),
     Suite("x86-headless", ["python3", "tools/run_headless.py", X86], x86=True),
     Suite("x86-disk", ["python3", "tools/run_disk.py", X86], x86=True),
     Suite("x86-network", ["python3", "tools/run_network.py", X86], x86=True),

@@ -94,9 +94,9 @@ void pc_irq_unmask(unsigned irq);
 /* What `pic.c` calls when IRQ 0 arrives. In `timer.c`, which owns the count. */
 void pc_timer_interrupt(void);
 
-/* A busy wait on the 8253's channel two, for whoever needs a known interval
- * before there is a tick. `timer.c` calibrates the TSC with it and
- * `apic.c` measures the local APIC's timer against it. */
+/* A busy wait of some milliseconds, for whoever needs a known interval
+ * before there is a tick: on the TSC once it is measured, on the 8253's
+ * channel two before. A wait, never a measurement - it can only overrun. */
 void pc_timer_wait_ms(unsigned ms);
 
 /* The TSC measured against the 8253, once, so waits stop needing it - done
@@ -104,6 +104,9 @@ void pc_timer_wait_ms(unsigned ms);
  * channel two still counts, asked against the TSC. */
 void pc_timer_measure_tsc(void);
 bool pc_pit_counts(void);
+
+/* What it measured, in cycles a second; zero if it could not. */
+uint64_t pc_timer_tsc_hz(void);
 
 /* Masks every line on the 8259 pair. For a machine driving the I/O APIC
  * instead - see `apic.c`, which explains why silence is not the same as

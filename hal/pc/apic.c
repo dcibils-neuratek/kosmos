@@ -11,6 +11,8 @@
 #include "apic.h"
 #include "irq.h"
 #include "apic_decode.h"
+#include "console.h"
+#include "cpu.h"
 #include "hal.h"
 #include "mmio.h"
 #include "mmu.h"
@@ -490,55 +492,137 @@ bool apic_handle(void)
  *
  * **The local APIC timer counts the bus clock, and nothing says how fast
  * that is.** There is a CPUID leaf on recent processors and there is not on
- * the ones this might meet, so the honest way is the way `timer.c` already
+ * the ones this might meet, so the honest way is the way `timer.c`
  * calibrates the TSC: run the thing that is known against the thing that is
- * not. The 8253 is still there at this point in the boot - it is what this
- * is replacing, and it has not been silenced yet - so it is what the local
- * APIC is measured against.
+ * not. The known thing is the TSC, which `timer.c` has just measured against
+ * the 8253.
+ *
+ * **Two clocks read side by side, so a stall between readings costs
+ * nothing.** This used to read the count either side of a ten-millisecond
+ * wait and take the wait to have lasted ten milliseconds; a stall in it -
+ * QEMU's thread set aside, or an SMI - made the tick that much slower. Now
+ * the TSC is read either side of each reading of the count, and the span is
+ * whatever the TSC says it was: a stall in the wait lengthens both clocks
+ * alike, and the line in the boot log says how long it was.
+ *
+ * What a stall can still spoil is the microseconds between a reading of the
+ * count and its TSC neighbours, so each is bracketed as `timer.c` brackets
+ * its interval: the count's run lasted at least the inner pair's distance
+ * and at most the outer's, and a measurement whose two differ by more than
+ * 1/APIC_SLACK is taken again.
  *
  * A machine with no 8253 at all is the case this cannot serve, and it is
  * the case that has not arrived: a platform that drops the PIT keeps the
- * HPET, which is the next thing to measure against when one turns up.
+ * HPET, which is the next thing to measure the TSC against when one turns up.
  */
+#define APIC_SLACK 256u
+#define APIC_TRIES 16u
+
 bool apic_timer_init(unsigned hz)
 {
-    uint32_t before, after, per_tick;
+    uint64_t tsc_hz = pc_timer_tsc_hz();
+    uint64_t counts = 0, shortest = 0, longest = 0, mid, rate;
+    uint32_t per_tick;
+    unsigned tries;
+    bool clean = false;
 
-    if (!apic.present || hz == 0) {
+    if (!apic.present || hz == 0 || tsc_hz == 0) {
         return false;
     }
 
     apic.hz = hz;
 
     lapic_write(LAPIC_TIMER_DIVIDE, TIMER_DIVIDE_16);
-
-    /* Free-running from the top while the 8253 measures a known interval. */
     lapic_write(LAPIC_LVT_TIMER, LVT_MASKED);
-    lapic_write(LAPIC_TIMER_INIT, 0xffffffffu);
 
-    before = lapic_read(LAPIC_TIMER_CURRENT);
-    pc_timer_wait_ms(10);
-    after = lapic_read(LAPIC_TIMER_CURRENT);
+    /* Begun before the measuring, as `timer.c`'s is. */
+    kputs("timer: the local APIC's at ");
+
+    for (tries = 1; tries <= APIC_TRIES; tries++) {
+        uint64_t t0, t1, t2, t3, until;
+        uint32_t before, after;
+
+        /* Free-running from the top while the TSC measures ten ms. */
+        lapic_write(LAPIC_TIMER_INIT, 0xffffffffu);
+
+        t0 = cpu_cycles();
+        before = lapic_read(LAPIC_TIMER_CURRENT);
+        t1 = cpu_cycles();
+
+        until = t1 + tsc_hz / 100u;
+
+        while (cpu_cycles() < until) {
+            __asm__ volatile("pause");
+        }
+
+        t2 = cpu_cycles();
+        after = lapic_read(LAPIC_TIMER_CURRENT);
+        t3 = cpu_cycles();
+
+        if (before <= after) {
+            lapic_write(LAPIC_TIMER_INIT, 0);
+            kputs("nothing - it did not count\n");
+            return false;
+        }
+
+        /* Over a second is a machine that was stopped rather than one that
+         * was measured, and a minute of counts times the TSC's rate would
+         * not fit in sixty-four bits. */
+        if (t3 - t0 > tsc_hz) {
+            continue;
+        }
+
+        if (counts == 0 || (t3 - t0) - (t2 - t1) < longest - shortest) {
+            counts = before - after;
+            shortest = t2 - t1;
+            longest = t3 - t0;
+        }
+
+        if ((longest - shortest) * APIC_SLACK <= longest) {
+            clean = true;
+            break;
+        }
+    }
 
     lapic_write(LAPIC_TIMER_INIT, 0);
 
-    if (before <= after) {
-        return false;               /* it did not count */
+    if (tries > APIC_TRIES) {
+        tries = APIC_TRIES;
     }
 
-    /* Ticks in ten milliseconds, scaled to the period asked for. */
-    per_tick = (before - after) * 100u / hz;
-
-    if (per_tick == 0) {
+    if (counts == 0) {
+        kputs("nothing - every try took more than a second\n");
         return false;
     }
+
+    /* Counts a second: the counts over the interval's midpoint, in cycles. */
+    mid = shortest + (longest - shortest) / 2;
+    rate = counts * tsc_hz / mid;
+    per_tick = (uint32_t)(rate / hz);
+
+    if (per_tick == 0) {
+        kputs("too slow a rate for a tick\n");
+        return false;
+    }
+
+    kputu((unsigned long)(rate / 1000u));
+    kputs(" kHz, within ");
+    kputu((unsigned long)((longest - shortest) / 2 * 1000000u / mid));
+    kputs(" ppm, over ");
+    kputu((unsigned long)(mid * 10u / (tsc_hz / 1000u) / 10u));
+    kputs(".");
+    kputu((unsigned long)(mid * 10u / (tsc_hz / 1000u) % 10u));
+    kputs(" ms, against the TSC in ");
+    kputu(tries);
+    kputs(tries == 1 ? " try" : " tries");
+    kputs(clean ? "\n" : ", none of them uninterrupted - the narrowest kept\n");
 
     lapic_write(LAPIC_LVT_TIMER, VECTOR_OF(0) | LVT_PERIODIC);
     lapic_write(LAPIC_TIMER_INIT, per_tick);
 
     /* Kept, because every core's local APIC timer counts the same bus
-     * clock, and calibrating again on each would take ten milliseconds of
-     * the 8253 per core for the same answer. */
+     * clock, and calibrating again on each would take ten milliseconds per
+     * core for the same answer. */
     apic.per_tick = per_tick;
 
     return true;

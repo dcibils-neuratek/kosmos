@@ -9559,3 +9559,48 @@ QEMU with their sound recorded - H.264 and AAC at 29.9 frames a second of
 29.9, 2 of 727 dropped, 18.5 s of sound; Motion JPEG and MP3 at 29.9 with
 20 of 300 dropped on its second time round, a 2.1 Mbit/s film whose JPEGs
 take 10.7 ms each.
+
+## 18.186 The x86-64 clocks, measured while interrupted
+
+**x86-timer**, `tools/run_timer.py`, 6 checks. A PC does not say how fast
+its TSC or its local APIC's timer runs, so `hal/pc/timer.c` measures the
+TSC against the 8253's channel two and `hal/pc/apic.c` the local APIC's
+timer against the TSC. **The gate for 0.10.164 caught the TSC at 4.8 times
+its speed**: the Mac was running twenty-six suites, QEMU's thread was set
+aside across the moment channel two finished, and the loop watching it
+noticed tens of milliseconds late - what it measured was when it looked,
+not when the count ran out. Every clock in that machine was then wrong for
+the rest of its life, silently: **x86-film** read a film of three seconds
+as 0.62, and **x86-display-4**'s Monitor drew no history in eight seconds,
+its sampling running on a tick calibrated from the same TSC. Neither
+failed when it ran alone. The same fault is there on silicon, where an SMI
+is the stall.
+
+**The fix brackets both ends of each interval.** The count began between
+the TSC read before its last byte is written and the read after the gate
+opens - an 8254 counts from the gate and QEMU's from the byte, and the
+bracket holds either - and ended between the read before the last look
+that saw it counting and the read after the look that saw it done. Wider
+than 1/256 of itself is a measurement that was interrupted, taken again, up
+to sixteen times; the midpoint is kept, so it is within 0.2%. The local
+APIC's timer is read with the TSC either side of each reading of its count,
+so a stall in its wait lengthens the span both clocks measure and costs
+nothing; it used to read its count either side of a ten-millisecond wait
+and take the wait to have lasted ten. Both lines in the boot log say what
+came out, how close and in how many tries - *timer: the TSC at 1000068 kHz,
+within 50 ppm, against the 8253 in 2 tries* - and each line is begun
+before its measuring, so a machine that stops in one says which.
+
+**The suite does on purpose what the Mac did by accident.** It boots once
+left alone, then again stopping QEMU with SIGSTOP for a tenth of a second
+two milliseconds after each timer line begins - inside the ten its
+measuring takes; stopped at once, the stop arrived in the microseconds
+before the measuring started, nine boots in ten, and tested nothing - and
+both clocks must come out within 0.5% of the quiet boot, with the TSC
+taking itself again and the local APIC's span showing the stop. A clock
+measured on its first try, and right, is counted as untested and the
+machine booted again, up to ten times at a third of a second each; never
+landing is a failure, not a pass. **Controls**: the TSC keeping its first
+measurement - 5,807,899 kHz against 1,000,068, and the local APIC's wrong
+with it; the local APIC's old sum, its wait taken as ten milliseconds -
+706,618 kHz against 62,556.

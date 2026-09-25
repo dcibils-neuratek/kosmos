@@ -387,7 +387,8 @@ On x86-64 it is `apic_wake` in `hal/pc/apic.c`: a fixed IPI on vector 0x3E
 through the interrupt command register, addressed by the local APIC id the
 target recorded for itself in `hal_irq_init_here`, and its handler is the
 acknowledgement and nothing else. A secondary's own local APIC timer ticks
-at the rate core zero calibrated against the 8253, and `arch/x86_64/trap.c`
+at the rate core zero calibrated against the TSC (itself measured against
+the 8253, `testing.md` 18.186), and `arch/x86_64/trap.c`
 keeps the machine-wide half of a tick on core zero, exactly as
 `arch/aarch64/trap.c` does.
 
