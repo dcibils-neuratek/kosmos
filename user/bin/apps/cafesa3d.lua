@@ -36,12 +36,27 @@ local game = use("/kits/game")
 local L = ui.layout
 
 --------------------------------------------------------------------------
--- The window, at the drawing's 1400 by 820, or smaller on a smaller screen.
+-- The window, maximised: Diego, 26 September, "3d tools are mostly used
+-- maximized", "take the available space in the screen and open it
+-- maximised always". The rectangle the window manager's own maximise would
+-- give, asked for first, since a window that draws its own pixels is
+-- opened at its size and never resized; the drawing's 1400 by 820 when
+-- there is nobody to ask. `screen.area` rather than a local of its own:
+-- this chunk is at Lua's limit of two hundred.
 --------------------------------------------------------------------------
 
 local screen = fs.read("/dev/screen") or {}
-local W = math.min(1400, (screen.width or 1920) - 40)
-local H = math.min(820, (screen.height or 1080) - 110)
+
+do
+  local ok, got = pcall(fs.send, "/app/wm", { type = "workarea" })
+
+  if ok and type(got) == "table" and got.ok and tonumber(got.w) and tonumber(got.h) then
+    screen.area = got
+  end
+end
+
+local W = screen.area and screen.area.w or math.min(1400, (screen.width or 1920) - 40)
+local H = screen.area and screen.area.h or math.min(820, (screen.height or 1080) - 110)
 
 local HEAD, FOOT = L.head, 30
 local TOOLS, SIDE = 46, 340
@@ -55,8 +70,9 @@ local PROPS_Y = OUT_Y + OUT_H               -- Properties, under it
 local TABS_W = 38
 local ROW = 27
 
-local win = ui.window{ title = "Cafesa3D", w = W, h = H, centre = true,
-                       direct = true }
+local win = ui.window{ title = "Cafesa3D", w = W, h = H, direct = true,
+                       maximised = screen.area and true or nil,
+                       centre = not screen.area or nil }
 
 if not win or not win:surface() then
   print("cafesa3d: no window")
@@ -185,6 +201,12 @@ local function sync(t)
   scene_version = scene_version + 1
 end
 
+-- How pictures are made, as the Render tab shows it and the scene's file
+-- keeps it: F12's size, samples and bounces, the Rendered view's samples,
+-- and Final (path tracing) or Preview (Whitted's, quicker and harder).
+local RENDER = { name = "the render", w = 640, h = 360, samples = 256, view_samples = 64,
+                 bounces = 6, preview = false }
+
 -- `will` is further down with undo; these are only called once it exists.
 local will
 
@@ -205,6 +227,19 @@ function choose.base(t, c)
   t.mat.base = c
   sync(t)
   print(("cafesa3d: set Base colour of %s to #%06x"):format(t.name, c))
+end
+
+function choose.integrator(preview)
+  will("set the integrator of the render")
+  RENDER.preview = preview
+  scene_version = scene_version + 1
+  print(("cafesa3d: set integrator of the render to %s"):format(preview and "Preview" or "Final"))
+end
+
+function choose.size(w, h)
+  will("set the size of the render")
+  RENDER.w, RENDER.h = w, h
+  print(("cafesa3d: set size of the render to %d by %d"):format(w, h))
 end
 
 function choose.shading(t, smooth)
@@ -357,12 +392,13 @@ local FILE = { name = "still-life.scene", title = "Still life", path = nil, chan
 -- Full screen (`FULL.toggle`, near the end): whether it is on, the
 -- window's size to come back to, and the view's vertical angle, which is
 -- what stays when the view's shape changes.
-local FULL = { on = false, was = { W, H }, tv = math.tan(FOV / 2) * VH / VW }
+local FULL = { on = false, was = { W, H }, tv = math.tan(FOV / 2) * 744 / 1014 }
 
 -- The light from everywhere that is not a lamp: a sky, from the zenith to
 -- the horizon. What the ray tracer (step three) lights a scene with.
 local world = { zenith = 0x6d90c6, horizon = 0xdfe6ef, strength = 0.9 }
 local WORLD = { name = "the world" }        -- what a sky's fields say they are of
+
 local tab = "object"
 local drawn_triangles = 0
 local VIEW_NAME = "User Perspective"
@@ -430,7 +466,7 @@ end
 
 -- The view's render: `job`, what it saw (`key`), whether its last pass has
 -- been said, and `surf`, its pixels as they arrive.
-local shade = { samples = 64 }
+local shade = {}
 local HZ = fs.read("/dev/cpu").counter_hz
 
 local function lamps()
@@ -479,7 +515,8 @@ function shade.start(s)
 
   shade.surf = shade.surf or gfx.surface{ w = VW, h = VH }
   job, why = k3.render(scene, { w = VW, h = VH, eye = e, target = t, fov = FOV,
-                                passes = shade.samples, bounces = 6, world = world,
+                                passes = RENDER.view_samples, bounces = RENDER.bounces,
+                                preview = RENDER.preview, world = world,
                                 lights = lamps() })
 
   if not job then
@@ -1122,7 +1159,7 @@ local function draw_view(s)
   say(ty + step, "Collection | " .. (selected and selected.name or "nothing selected"), VP_DIM)
 
   if lit and shade.job then
-    say(ty + 2 * step, ("Sample %d/%d"):format(shade.job:passes(), shade.samples), VP_DIM)
+    say(ty + 2 * step, ("Sample %d/%d"):format(shade.job:passes(), RENDER.view_samples), VP_DIM)
   end
 
   if FILE.said then say(ty + 3 * step, FILE.said, VP_INK) end
@@ -1232,6 +1269,13 @@ local FIELD = {
 
   -- The sky's.
   strength = { places = 2, step = 0.01, lo = 0, hi = 10 },
+
+  -- The render's (`RENDER`): whole numbers, in the ranges the kit takes.
+  samples      = { int = true, step = 1, lo = 1, hi = 4096 },
+  view_samples = { int = true, step = 1, lo = 1, hi = 1024 },
+  bounces      = { int = true, step = 0.2, lo = 1, hi = 32 },
+  w            = { int = true, step = 4, lo = 16, hi = 8192 },
+  h            = { int = true, step = 4, lo = 16, hi = 8192 },
 
   -- A colour, typed as #rrggbb; nothing to scrub.
   colour   = { colour = true },
@@ -1471,12 +1515,32 @@ local function draw_props(s)
 
   if tab == "render" then
     y = heading(s, x, y, "Render")
-    y = field_row(s, x, y, w, "Integrator", { "Final" })
-    y = field_row(s, x, y, w, "Samples", { "256" })
-    y = field_row(s, x, y, w, "View samples", { tostring(shade.samples) })
-    y = field_row(s, x, y, w, "Bounces", { "6" })
-    y = field_row(s, x, y, w, "Resolution", { "640 \u{d7} 360" })
-    note(s, x, y + 4, w, "Final traces as Cycles does, on every processor. Rendered shows the view that way; F12 renders through the camera.")
+    y = chip.row(s, x, y, w, {
+      { text = "Final", key = "integrator:Final", on = not RENDER.preview,
+        go = function() choose.integrator(false) end },
+      { text = "Preview", key = "integrator:Preview", on = RENDER.preview,
+        go = function() choose.integrator(true) end },
+    })
+    y = field_row(s, x, y, w, "Samples", { F(RENDER, "samples", nil, "Samples") })
+    y = field_row(s, x, y, w, "View samples", { F(RENDER, "view_samples", nil, "View samples") })
+    y = field_row(s, x, y, w, "Bounces", { F(RENDER, "bounces", nil, "Bounces") })
+
+    s:text(x, y + 4, "SIZE", theme.text_dim, nil, tiny)
+    y = y + gfx.height(tiny) + 10
+
+    local sizes = {}
+
+    for _, wh in ipairs({ { 640, 360 }, { 1280, 720 }, { 1920, 1080 }, { 3440, 1440 } }) do
+      sizes[#sizes + 1] = { text = ("%d \u{d7} %d"):format(wh[1], wh[2]),
+                            key = ("size:%dx%d"):format(wh[1], wh[2]),
+                            on = RENDER.w == wh[1] and RENDER.h == wh[2],
+                            go = function() choose.size(wh[1], wh[2]) end }
+    end
+
+    y = chip.row(s, x, y, w, sizes)
+    y = field_row(s, x, y, w, "Width, height", { F(RENDER, "w", nil, "Width"),
+                                                  F(RENDER, "h", nil, "Height") })
+    note(s, x, y + 4, w, "Final traces as Cycles does, on every processor; Preview is Whitted's, quicker and harder. Rendered shows the view that way; F12 renders through the camera at this size.")
   elseif tab == "world" then
     y = heading(s, x, y, "World")
     y = field_row(s, x, y, w, "Zenith", { F(WORLD, "zenith", nil, "Zenith", world, "colour") })
@@ -1653,7 +1717,7 @@ local function draw_foot(s)
 
   for _, k in ipairs(keys or { { "Drag", "turn" }, { "Shift Drag", "move" }, { "Wheel", "closer" },
                        { "Shift A", "add" }, { "X", "delete" }, { "Ctrl Z", "undo" },
-                       { "Z", "shading" }, { "Home", "all" },
+                       { "Z", "shading" }, { "F", "frame" }, { "Home", "all" },
                        { "F11", FULL.on and "window" or "full screen" } }) do
     local kw = gfx.measure(k[1], tiny) + 10
 
@@ -1696,9 +1760,26 @@ end
 
 -- `win`, `job` and `pic` while it is open; `start`, `done` and `shown` of
 -- the render in it; `controls`, where its buttons are.
-local final = { w = 640, h = 360, samples = 256, side = 270, shown = -1, controls = {} }
+-- `win`, `job` and `pic` while it is open - `pic` at the render's own size,
+-- and shown at `dw` by `dh` when that is more than the screen has room for;
+-- `start`, `done` and `shown` of the render in it, `took` once it has
+-- finished, and `stopped` - its passes, rays and threads - once somebody
+-- stopped it, since a stopped job is gone; `controls`, where its buttons are.
+local final = { side = 270, shown = -1, controls = {} }
 
-final.W, final.H = final.w + final.side, L.head + final.h
+-- The window's size for the render's: the picture as it is, or shrunk to
+-- what the screen has room for beside the panel, and never shorter than
+-- the panel needs.
+function final.fit()
+  local screen_now = fs.read("/dev/screen") or {}
+  local room_w = math.max(320, (screen_now.width or 1920) - final.side - 80)
+  local room_h = math.max(180, (screen_now.height or 1080) - L.head - 160)
+  local k = math.min(1, room_w / RENDER.w, room_h / RENDER.h)
+
+  final.dw = math.max(1, math.floor(RENDER.w * k))
+  final.dh = math.max(1, math.floor(RENDER.h * k))
+  final.W, final.H = final.dw + final.side, L.head + math.max(final.dh, 360)
+end
 
 function final.camera()
   for _, t in ipairs(things) do
@@ -1706,44 +1787,64 @@ function final.camera()
   end
 end
 
+-- Still working on it: begun, not finished, and not stopped.
+function final.running()
+  return final.job ~= nil and not final.done
+end
+
 function final.draw()
   local s = final.win:surface()
-  local job = final.job
-  local save_w, again_w = pk.button_width("Save as PNG..."), pk.button_width("Render again")
+  local job, kept = final.job, final.stopped
+  local save_w = pk.button_width("Save as PNG...")
+  local again_w = math.max(pk.button_width("Render again"), pk.button_width("Stop"))
   local save_x = final.W - L.head_edge - save_w
   local again_x = save_x - 8 - again_w
+  local pw, ph = final.pic:size()
+  local passes = job and job:passes() or (kept and kept.passes) or 0
 
+  -- One button in one place: Stop while it renders, Render again after -
+  -- so the header does not move under the pointer as it changes.
   pk.header(s, 0, 0, final.W, "Render", ("%s \u{b7} Camera \u{b7} %d \u{d7} %d"):format(
-    FILE.name, final.w, final.h), again_x - 8)
+    FILE.name, pw, ph), again_x - 8)
   final.controls.again = { x = again_x, y = pk.centre(31), w = again_w, h = 31 }
-  pk.button(s, { x = again_x, y = pk.centre(31), text = "Render again" })
-  pk.button(s, { x = save_x, y = pk.centre(31), text = "Save as PNG...", disabled = true })
+  final.controls.save = { x = save_x, y = pk.centre(31), w = save_w, h = 31 }
+  pk.button(s, { x = again_x, y = pk.centre(31), w = again_w,
+                 text = final.running() and "Stop" or "Render again" })
+  pk.button(s, { x = save_x, y = pk.centre(31), text = "Save as PNG...",
+                 disabled = passes == 0 or nil })
 
-  s:blit(final.pic, 0, 0, final.w, final.h, 0, L.head)
+  -- The picture: at its own size, or shrunk to the window's, smoothly.
+  s:fill(0, L.head, final.dw, final.H - L.head, 0xff1d1f24)
+
+  if final.dw == pw and final.dh == ph then
+    s:blit(final.pic, 0, 0, pw, ph, 0, L.head)
+  else
+    s:stretch(final.pic, 0, 0, pw, ph, 0, L.head, final.dw, final.dh, nil, true)
+  end
 
   -- What it is doing.
-  local x, y, w = final.w + 16, L.head + 14, final.side - 32
-  local passes = job and job:passes() or 0
-  local secs = (sys.ticks() - final.start) / HZ
-  local rays = job and job:rays() or 0
+  local x, y, w = final.dw + 16, L.head + 14, final.side - 32
+  local secs = final.took or (sys.ticks() - final.start) / HZ
+  local rays = job and job:rays() or (kept and kept.rays) or 0
+  local want = final.samples or RENDER.samples
 
-  s:fill(final.w, L.head, final.side, final.h, theme.window)
-  s:fill(final.w, L.head, 1, final.h, theme.line_soft)
-  s:text(x, y, "Samples", theme.text_dim, nil, "ui")
+  s:fill(final.dw, L.head, final.side, final.H - L.head, theme.window)
+  s:fill(final.dw, L.head, 1, final.H - L.head, theme.line_soft)
+  s:text(x, y, kept and "Samples \u{b7} stopped" or "Samples", theme.text_dim, nil, "ui")
   y = y + gfx.height() + 4
-  s:text(x, y, ("%d / %d"):format(passes, final.samples), theme.text, nil, "title")
+  s:text(x, y, ("%d / %d"):format(passes, want), theme.text, nil, "title")
   y = y + gfx.height("title") + 8
   s:fill_round(x, y, w, 6, theme.sunken, 3)
 
   if passes > 0 then
-    s:fill_round(x, y, math.max(6, w * passes // final.samples), 6, theme.accent, 3)
+    s:fill_round(x, y, math.max(6, w * passes // want), 6, theme.accent, 3)
   end
 
   y = y + 14
 
   if secs > 0 then
     s:text(x, y, ("%.1f s, %d rays a sample"):format(secs, passes > 0 and
-      rays // (passes * final.w * final.h) or 0), theme.text_dim, nil, small)
+      rays // (passes * pw * ph) or 0), theme.text_dim, nil, small)
     s:text(x, y + gfx.height(small) + 2, ("%.1f million rays a second"):format(
       rays / secs / 1e6), theme.text_dim, nil, small)
   end
@@ -1752,10 +1853,11 @@ function final.draw()
   s:text(x, y, "LIGHT PATHS", theme.text_dim, nil, tiny)
   y = y + gfx.height(tiny) + 8
 
-  for _, row in ipairs({ { "Integrator", "Final \u{b7} path tracing" },
-                         { "Bounces", "up to 6" },
-                         { "Cores", ("%d thread%s, a tile each"):format(job and job:workers() or 0,
-                                   job and job:workers() == 1 and "" or "s") },
+  for _, row in ipairs({ { "Integrator", final.preview and "Preview \u{b7} Whitted's"
+                                                           or "Final \u{b7} path tracing" },
+                         { "Bounces", ("up to %d"):format(final.bounces or RENDER.bounces) },
+                         { "Cores", ("%d thread%s, a tile each"):format(final.threads or 0,
+                                   final.threads == 1 and "" or "s") },
                          { "Denoise", "not yet" } }) do
     s:text(x, y, row[1], theme.text_dim, nil, "ui")
     s:text(x + 96, y, row[2], theme.text, nil, "ui")
@@ -1780,21 +1882,63 @@ function final.begin()
     return false
   end
 
-  job, why = k3.render(scene, { w = final.w, h = final.h, eye = cam.loc, target = cam.target,
+  -- The picture at the render's size, made again when that has changed.
+  local pw, ph = 0, 0
+
+  if final.pic then pw, ph = final.pic:size() end
+
+  if pw ~= RENDER.w or ph ~= RENDER.h then
+    if final.pic then final.pic:free() end
+
+    local made
+
+    made, final.pic = pcall(gfx.surface, { w = RENDER.w, h = RENDER.h })
+
+    if not made then
+      final.pic = nil
+      print(("cafesa3d: no memory for a %d by %d picture"):format(RENDER.w, RENDER.h))
+      return false
+    end
+  end
+
+  -- What this render was asked for, kept: the tab may change under it.
+  final.samples, final.bounces, final.preview = RENDER.samples, RENDER.bounces, RENDER.preview
+
+  job, why = k3.render(scene, { w = RENDER.w, h = RENDER.h, eye = cam.loc, target = cam.target,
                                 fov = 2 * math.atan(18 / (cam.focal or 50)),
-                                passes = final.samples, bounces = 6, world = world,
-                                lights = lamps() })
+                                passes = RENDER.samples, bounces = RENDER.bounces,
+                                preview = RENDER.preview, world = world, lights = lamps() })
 
   if not job then
     print("cafesa3d: " .. tostring(why))
     return false
   end
 
-  final.job = job
-  final.pic:fill(0, 0, final.w, final.h, 0xff1d1f24)
+  final.job, final.threads = job, job:workers()
+  final.pic:fill(0, 0, RENDER.w, RENDER.h, 0xff1d1f24)
   final.start, final.done, final.shown, final.first = sys.ticks(), false, -1, false
+  final.took, final.stopped = nil, nil
   print(("cafesa3d: rendering %s through the camera, %d by %d, on %d thread%s"):format(
-    FILE.name, final.w, final.h, job:workers(), job:workers() == 1 and "" or "s"))
+    FILE.name, RENDER.w, RENDER.h, job:workers(), job:workers() == 1 and "" or "s"))
+  return true
+end
+
+-- Stopped by the person watching it, and kept: every tile's samples so far
+-- painted into the picture - which Save as PNG still saves - and the
+-- numbers read, before the job goes, since a stopped job is freed.
+function final.stop()
+  local job = final.job
+
+  if not final.running() then return false end
+
+  job:paint(final.pic, 0, 0, true)
+  final.stopped = { passes = job:passes(), rays = job:rays() }
+  final.took = (sys.ticks() - final.start) / HZ
+  job:stop()
+  final.job = nil
+  print(("cafesa3d: stopped the render at %d of %d samples, after %.1f s"):format(
+    final.stopped.passes, final.samples, final.took))
+  final.draw()
   return true
 end
 
@@ -1816,6 +1960,17 @@ function final.open()
     return false
   end
 
+  -- A window that draws its own pixels cannot be resized, so a render of
+  -- another size is another window.
+  local was_w, was_h = final.W, final.H
+
+  final.fit()
+
+  if final.win and (final.W ~= was_w or final.H ~= was_h) then
+    final.win:close()
+    final.win = nil
+  end
+
   if not final.win then
     local w = ui.window{ title = "Render", w = final.W, h = final.H, direct = true,
                          x = (win.origin_x or 0) + 60, y = (win.origin_y or 0) + 80 }
@@ -1826,11 +1981,18 @@ function final.open()
     end
 
     final.win = w
-    final.pic = final.pic or gfx.surface{ w = final.w, h = final.h }
     print(("cafesa3d: render window at %d,%d"):format(w.origin_x or 0, w.origin_y or 0))
   end
 
-  if final.begin() then final.draw() end
+  if final.begin() then
+    final.draw()
+
+    -- Where its two buttons are, for whoever drives Cafesa3D from outside.
+    local a, v = final.controls.again, final.controls.save
+
+    print(("cafesa3d: render controls again %d,%d; save %d,%d"):format(
+      a.x + a.w // 2, a.y + a.h // 2, v.x + v.w // 2, v.y + v.h // 2))
+  end
 
   return true
 end
@@ -1853,7 +2015,22 @@ function final.tend()
       return
     elseif ev.type == "mouse" and ev.action == "press"
            and pk.inside(final.controls.again, ev.x, ev.y) then
-      final.begin()
+      -- Stop while it renders; after, opened again rather than begun, in
+      -- case the size was changed.
+      if final.running() then
+        final.stop()
+      else
+        final.open()
+      end
+
+      return
+    elseif ev.type == "rawkey" and ev.down and ev.code == 1 then
+      final.stop()                -- Esc, as Blender's render window has it
+    elseif ev.type == "mouse" and ev.action == "press"
+           and pk.inside(final.controls.save, ev.x, ev.y)
+           and ((final.job and final.job:passes() > 0)
+                or (final.stopped and final.stopped.passes > 0)) then
+      final.save()
     end
   end
 
@@ -1873,9 +2050,35 @@ function final.tend()
 
   if passes >= final.samples and not final.done then
     final.done = true
+    final.took = (sys.ticks() - final.start) / HZ
     print(("cafesa3d: rendered %d samples, %d rays in %.1f s on %d threads"):format(
-      passes, job:rays(), (sys.ticks() - final.start) / HZ, job:workers()))
+      passes, job:rays(), final.took, job:workers()))
+    final.draw()                  -- the button, Render again now
   end
+end
+
+-- The picture as it stands, at its own size, as a PNG in /home/Renders.
+function final.save()
+  local dir = "/home/Renders"
+
+  fs.send(dir, { type = "mkdir" })
+  FILE.panel("save", {
+    title = "Save the render", start = dir, name = FILE.name:gsub("%.[%w]+$", "") .. ".png",
+    on_choose = function(path)
+      if FILE.ext(path) ~= "png" then path = path .. ".png" end
+
+      local ok, bytes = pcall(gfx.encode_png, final.pic)
+      local done, why = ok, bytes
+
+      if ok then done, why = fs.write(path, bytes) end
+
+      local pw, ph = final.pic:size()
+
+      print(done and ("cafesa3d: saved the render to %s, %d by %d, %d bytes"):format(
+                       path, pw, ph, #bytes)
+            or ("cafesa3d: could not save the render to %s: %s"):format(path, tostring(why)))
+    end,
+  })
 end
 
 --------------------------------------------------------------------------
@@ -2023,6 +2226,49 @@ local function frame_all()
 
   orbit.dist = math.max(3, span / 2 / math.tan(FOV / 2) * 1.15)
   print("cafesa3d: framed everything")
+end
+
+-- **F: the selected object, filling the view**, from the side the view
+-- already looks at it - Blender's View Selected (Diego, 26 September). By
+-- its triangles where they are in the world, so a mesh from a file is
+-- framed by its real size rather than a guess; a lamp or a camera, which
+-- has none, by a metre round where it stands. Nothing selected is Home.
+local function frame_selected()
+  local t = selected
+
+  if not t then
+    frame_all()
+    return true
+  end
+
+  local lo, hi
+
+  if t.id then
+    local ok, points = pcall(scene.world_triangles, scene, t.id)
+
+    if ok and type(points) == "string" and #points >= 12 then
+      local x0, y0, z0, x1, y1, z1 = k3.bounds(points)
+
+      lo, hi = { x0, y0, z0 }, { x1, y1, z1 }
+    end
+  end
+
+  if not lo then
+    lo = { t.loc[1] - 0.5, t.loc[2] - 0.5, t.loc[3] - 0.5 }
+    hi = { t.loc[1] + 0.5, t.loc[2] + 0.5, t.loc[3] + 0.5 }
+  end
+
+  orbit.target = { (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2, (lo[3] + hi[3]) / 2 }
+
+  -- The sphere round it inside the narrower of the view's two angles:
+  -- FOV is across, and a view wider than tall is narrower up and down.
+  local r = math.max(0.05, math.sqrt((hi[1] - lo[1]) ^ 2 + (hi[2] - lo[2]) ^ 2
+                                     + (hi[3] - lo[3]) ^ 2) / 2)
+  local half = math.min(FOV / 2, math.atan(math.tan(FOV / 2) * VH / VW))
+
+  orbit.dist = math.max(0.25, r / math.sin(half) * 1.1)
+  print(("cafesa3d: framed %s, %.2f m across, from %.2f m"):format(t.name, 2 * r, orbit.dist))
+  return true
 end
 
 local function set_shading(which)
@@ -2203,7 +2449,7 @@ local function add_menu(x, y)
     { text = "Camera", disabled = true },
     { text = "Empty", disabled = true },
     { separator = true },
-    { text = "Import OBJ...", disabled = true },
+    { text = "Import...", on_choose = function() FILE.import() end },
   })
 
   if m then
@@ -2370,6 +2616,8 @@ function SAMPLES.take(loaded, file, adding)
       world.strength = loaded.world.strength or world.strength
     end
 
+    for k, v in pairs(loaded.render or {}) do RENDER[k] = v end
+
     selected = nil
     FILE.name, FILE.title, FILE.path, FILE.changed, FILE.said = file, loaded.name, nil, false, nil
     cursor3d = { 0, 0, 0 }
@@ -2422,7 +2670,8 @@ function FILE.dir(path) return path:match("^(.*)/[^/]*$") end
 
 function FILE.write(path)
   local ok, text = pcall(function()
-    return json.encode(scenefile.to_gltf({ name = FILE.title, things = things, world = world },
+    return json.encode(scenefile.to_gltf({ name = FILE.title, things = things, world = world,
+                                           render = RENDER },
                                          { base64 = k3.base64, bounds = k3.bounds }))
   end)
   local done, why = false, text
@@ -2509,12 +2758,13 @@ function FILE.ext(name) return (name:match("%.(%w+)$") or ""):lower() end
 -- Translation Kit had them - one Lua file a format, in /lib/translators/
 -- and in /home/Translators for those a person adds, each saying what it
 -- reads and writes. Found once, the first time one is wanted. Each is
--- handed the 3D Kit's four loops over bytes and a way to make a material,
--- and nothing of the file system: Cafesa3D reads the bytes it translates
--- and writes what comes back.
+-- handed the 3D Kit's readers and writers, a way to make a material, and
+-- glTF's arithmetic for a world matrix and a linear colour - and nothing of
+-- the file system: Cafesa3D reads the bytes it translates and writes what
+-- comes back.
 --------------------------------------------------------------------------
 
-FILE.KIT = { read_stl = k3.read_stl, read_obj = k3.read_obj,
+FILE.KIT = { read_stl = k3.read_stl, read_obj = k3.read_obj, read_fbx = k3.read_fbx,
              write_stl = k3.write_stl, write_obj = k3.write_obj }
 
 function FILE.translators()
@@ -2583,6 +2833,10 @@ function FILE.import()
           local context = {
             name = stem,
             material = function(base) return material(base, "Plastic") end,
+            -- A world matrix, glTF's column-major and Y up, as a place, a
+            -- turn and a size; and a linear colour as the tab shows it.
+            place = function(m) return scenefile.place(m) end,
+            srgb = function(c) return scenefile.srgb(c) end,
             sidecar = function(name)
               if type(name) ~= "string" or name:find("/") or name:find("%.%.") then return nil end
 
@@ -3364,6 +3618,7 @@ local function rawkey(ev)
     return true
   end
   if ev.code == 102 then frame_all() return true end
+  if ev.code == 33 and not ctrl then return frame_selected() end
   if ev.code == 88 then final.open() return true end
   if ev.code == 59 then return TUTORIAL.open() end
   if ev.code == 87 then return FULL.toggle() end
@@ -3454,8 +3709,12 @@ function FULL.toggle()
   local fresh
 
   if v then
-    fresh, why = ui.window{ title = "Cafesa3D", w = w, h = h, centre = (not on) or nil,
-                            direct = true, fullscreen = on or nil }
+    -- Back to where it came from: maximised, or centred when there was
+    -- nobody to ask where that is.
+    fresh, why = ui.window{ title = "Cafesa3D", w = w, h = h, direct = true,
+                            fullscreen = on or nil,
+                            maximised = (not on and screen.area) and true or nil,
+                            centre = (not on and not screen.area) or nil }
 
     if fresh and not fresh:surface() then
       fresh:close()
@@ -3492,6 +3751,11 @@ function FULL.toggle()
   return true
 end
 
+-- Laid out for the size it opened at - the Outliner as tall as the room
+-- allows, and the view's angle the drawing's up and down - as full screen
+-- is.
+FULL.fit(W, H)
+
 if not draw_all() then return end
 
 FULL.say()
@@ -3507,7 +3771,7 @@ while win.running do
     dirty = false
   end
 
-  local rendering = (shade.job and shade.job:passes() < shade.samples)
+  local rendering = (shade.job and shade.job:passes() < RENDER.view_samples)
                     or (final.job and not final.done)
   local reply = wmproto.poll(win.handle, rendering and 8 or 25)
 
@@ -3527,7 +3791,7 @@ while win.running do
       print(("cafesa3d: the view's first pass in %.1f s"):format((sys.ticks() - shade.t0) / HZ))
     end
 
-    if not shade.said and job:passes() >= shade.samples then
+    if not shade.said and job:passes() >= RENDER.view_samples then
       shade.said = true
       print(("cafesa3d: rendered the view, %d samples, %d rays, on %d threads"):format(
         job:passes(), job:rays(), job:workers()))
@@ -3560,7 +3824,9 @@ while win.running do
       end
     elseif ev.type == "wheel" and in_view(ev.x, ev.y) then
       pointer = { ev.x, ev.y }
-      orbit.dist = math.max(2, math.min(60, orbit.dist * (0.9 ^ (ev.n or 0))))
+      -- As close as F frames a small thing, and no closer than the near
+      -- plane's 5 cm allows for.
+      orbit.dist = math.max(0.25, math.min(60, orbit.dist * (0.9 ^ (ev.n or 0))))
       view_name = VIEW_NAME
       print(("cafesa3d: %s, at %.1f"):format((ev.n or 0) > 0 and "closer" or "further",
                                              orbit.dist))

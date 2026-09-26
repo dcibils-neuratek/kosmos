@@ -1177,6 +1177,104 @@ static int l_read_obj(lua_State *L)
     return 1;
 }
 
+static void set_numbers(lua_State *L, const char *key, const float *v, int n)
+{
+    int i;
+
+    lua_createtable(L, n, 0);
+
+    for (i = 0; i < n; i++) {
+        lua_pushnumber(L, v[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+
+    lua_setfield(L, -2, key);
+}
+
+/*
+ * `k3.read_fbx(bytes)` -> { parts = { { name, material, hidden, matrix,
+ * points, triangles }, ... }, materials = { { name, base, emit, metallic,
+ * rough, trans, ior }, ... }, lamps, cameras }, or nil and why. A part's
+ * points are Y up and in metres in its own space, and `matrix` - sixteen
+ * numbers, column-major, as glTF's - puts them in the world; `material`
+ * counts from one into `materials`, or is absent. Colours are linear.
+ */
+static int l_read_fbx(lua_State *L)
+{
+    size_t len, i;
+    const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
+    struct k3d_fbx f;
+    const char *why = k3d_fbx_read(in, len, &f);
+
+    if (why) {
+        lua_pushnil(L);
+        lua_pushstring(L, why);
+        return 2;
+    }
+
+    lua_createtable(L, 0, 4);
+    lua_createtable(L, (int)f.nparts, 0);
+
+    for (i = 0; i < f.nparts; i++) {
+        const struct k3d_fbx_part *p = &f.parts[i];
+        int k;
+
+        lua_createtable(L, 0, 6);
+        lua_pushstring(L, p->name);
+        lua_setfield(L, -2, "name");
+
+        if (p->material < f.nmaterials) {
+            lua_pushinteger(L, (lua_Integer)p->material + 1);
+            lua_setfield(L, -2, "material");
+        }
+
+        lua_pushboolean(L, p->hidden);
+        lua_setfield(L, -2, "hidden");
+        lua_createtable(L, 16, 0);
+
+        for (k = 0; k < 16; k++) {
+            lua_pushnumber(L, p->matrix[k]);
+            lua_rawseti(L, -2, k + 1);
+        }
+
+        lua_setfield(L, -2, "matrix");
+        push_soup(L, &p->soup);
+        lua_setfield(L, -3, "triangles");
+        lua_setfield(L, -2, "points");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    lua_setfield(L, -2, "parts");
+    lua_createtable(L, (int)f.nmaterials, 0);
+
+    for (i = 0; i < f.nmaterials; i++) {
+        const struct k3d_fbx_material *m = &f.materials[i];
+
+        lua_createtable(L, 0, 7);
+        lua_pushstring(L, m->name);
+        lua_setfield(L, -2, "name");
+        set_numbers(L, "base", m->base, 3);
+        set_numbers(L, "emit", m->emit, 3);
+        lua_pushnumber(L, m->metallic);
+        lua_setfield(L, -2, "metallic");
+        lua_pushnumber(L, m->rough);
+        lua_setfield(L, -2, "rough");
+        lua_pushnumber(L, m->trans);
+        lua_setfield(L, -2, "trans");
+        lua_pushnumber(L, m->ior);
+        lua_setfield(L, -2, "ior");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    lua_setfield(L, -2, "materials");
+    lua_pushinteger(L, f.lamps);
+    lua_setfield(L, -2, "lamps");
+    lua_pushinteger(L, f.cameras);
+    lua_setfield(L, -2, "cameras");
+    k3d_fbx_free(&f);
+    return 1;
+}
+
 /* A soup out of a Lua table { points = ..., triangles = ... }; the strings
  * stay the table's, so the soup is only borrowed while the table lives. */
 static void soup_of(lua_State *L, int t, struct k3d_soup *s)
@@ -1375,6 +1473,7 @@ void kosmos_3d_kit(lua_State *L)
         { "sequence", l_sequence },
         { "read_stl", l_read_stl },
         { "read_obj", l_read_obj },
+        { "read_fbx", l_read_fbx },
         { "write_stl", l_write_stl },
         { "write_obj", l_write_obj },
         { NULL, NULL }

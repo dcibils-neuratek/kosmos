@@ -5035,6 +5035,14 @@ function ui.window(spec)
     --
     fullscreen = spec.fullscreen or nil,
 
+    --
+    -- **Maximised**: where the window manager's maximise would put it, and
+    -- left there even over other windows, which is what maximised means.
+    -- A window that draws its own pixels asks `workarea` for the size first
+    -- and opens at it, since it cannot be resized into place afterwards.
+    --
+    maximised = spec.maximised or nil,
+
     -- And its opposite: a strip across the top, undecorated and pinned,
     -- which takes room away from the screen rather than sitting over it.
     strip = spec.strip or nil,
@@ -5786,6 +5794,16 @@ end
 -- a menu this window has open, handled exactly as a kit window handles it.
 --
 function window:direct_event(ev)
+  -- Moved, by a drag or by whoever asked: menus are windows placed on the
+  -- screen from the origin, so without this every menu a direct window
+  -- opens after a drag opens where the window used to be - which is what
+  -- Diego saw of Cafesa3D's Add menu on 26 September. `run` does the same.
+  if ev.type == "moved" then
+    self.origin_x, self.origin_y = ev.x, ev.y
+    self.x, self.y = ev.x, ev.y
+    return true
+  end
+
   if ev.type == "menubar" then
     local m = self.direct_menus and self.direct_menus[ev.index]
 

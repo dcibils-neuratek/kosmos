@@ -1288,9 +1288,12 @@ processors, and still what follows USB:
       `.glb`, opened or imported; OBJ with its MTL, and STL, imported and
       exported through `/lib/translators/`, their loops over bytes in the
       3D Kit (`k3d_formats.c`). **Import...** adds to the scene, **Export**
-      writes it. **Next here**: FBX through `ufbx`, and pictures on
-      materials (image textures), which is what most downloaded models
-      wear and none of this reads yet.
+      writes it. **FBX DONE on 26 September** (18.203): through `ufbx`,
+      vendored, read only - Blender's, Maya's and 3ds Max's own files held
+      to the OBJ each program exported; lamps and cameras in an FBX are
+      counted and said, not read yet. **Next here**: pictures on materials
+      (image textures), which is what most downloaded models wear and none
+      of this reads yet - an FBX's embedded ones included.
    5d. **TO DESIGN - rendering on several machines.** Diego, 26 September:
       "What if we have a cluster of kosmos machines with cafesa installed
       and we could use these machines as a rendering node", "a main node and
@@ -1323,7 +1326,41 @@ processors, and still what follows USB:
       (control by message, the passes' pixels as the bulk), finding nodes
       (named by hand first), and a node that drops out mid-render handing
       its passes back to the others. Drawn and agreed before any of it is
-      built.
+      built. **Written up on 26 September: `docs/renderfarm.md`** - split by
+      passes rather than tiles, a `rendernode` program with the kit and the
+      network and nothing else, a declared protocol, a farm's key, and five
+      steps, the first tested with two QEMU machines on a socket network.
+   5e. **DONE on 26 September - the Render tab's settings, and Save as PNG**
+      (`testing.md` 18.201): Final or Preview, samples, the view's
+      samples, bounces and the size - four chips up to 3440 by 1440, or
+      typed - saved with the scene; F12 at that size, shown shrunk when the
+      screen is smaller, and Save as PNG into /home/Renders through
+      `gfx.encode_png` (stb_image_write, vendored). **Still wanted here**: a
+      denoiser, and the Rendered view at a fraction of the size, for a wide
+      screen under emulation.
+   5f. **DONE on 26 September - Stop, and F to frame the selection**, both
+      asked for by Diego while trying it on the Mac. "The render screen
+      needs a stop button if i want to cancel de render scene before it
+      finishes": the button that says Render again once a render is done
+      says Stop while it runs, in the same place, and Esc does the same;
+      the picture so far stays, and Save as PNG saves it. "When i select an
+      object in the viewport and I press F it zooms into the object like
+      blender does and positions the object centered in the screen": F
+      brings the selection's middle to the view's middle and near enough to
+      fill it, from the side the view already faced, sized by its triangles
+      where they are in the world; with nothing selected it is Home. The
+      wheel now comes as close as 25 cm, so it does not jump back from a
+      small thing F framed. And, the same evening: **Cafesa3D opens
+      maximised** ("3d tools are mostly used maximized"), at the rectangle
+      the window manager's `workarea` gives, opened with `maximised`; **the Add menu opens under its
+      button after the window has been dragged** (a direct window now hears
+      `moved`); and the Add menu's Import... works, where it said "Import
+      OBJ..." and did nothing (18.202).
+   5g. **WANTED - a panic an application can be told about.** Found on 26
+      September (18.202): `panic` inside a process that does not own the
+      console writes nowhere - the kernel refuses the write - so every
+      application's panic is `ended, code 70` and nothing else. It should
+      reach the console the way `print` does, or the log.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
    - **Sample scenes: a house, a car, a plane** - Diego, 25 September:

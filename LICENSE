@@ -27,7 +27,7 @@ Vendored third-party code keeps its own licence, which travels beside it:
   Lua 5.4, by Lua.org / PUC-Rio, MIT
       lua/upstream/, and the notice is at the bottom of lua.h
 
-  stb_truetype.h and stb_image.h, by Sean Barrett, MIT or public domain
+  stb_truetype.h, stb_image.h and stb_image_write.h, by Sean Barrett, MIT or public domain
       runtime/upstream/stb/, notice at the bottom of each header,
       pointed at by LICENSE.stb beside them, which also records the
       version and commit each was taken from
@@ -69,6 +69,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
   minimp4, by lieff, CC0 1.0 (public domain)
       runtime/upstream/minimp4/LICENSE, and the notice at the top of
       minimp4.h
+
+  ufbx, by Samuli Raivio, MIT or public domain
+      runtime/upstream/ufbx/LICENSE, with the vendoring recorded in
+      README.kosmos.md beside it
 
   LakeSnes, by angelo_wf and contributors, the CX4 by dink, MIT
       runtime/upstream/lakesnes/LICENSE.txt, with the vendoring recorded

@@ -10152,3 +10152,155 @@ pixels apart, which is `theme.metrics.row` in some looks and not this
 one's 32. The first run opened the `.glb` where it meant the broken scene,
 and the Import panel then began in /home, where the first row is a folder
 - so Open entered it, the panel stayed, and everything after it waited.
+
+## 18.201 The Render tab's settings, and a render saved as a PNG
+
+For Diego's 3440 by 1440 screen: F12 at any size, and the picture kept.
+
+**The settings** - Final or Preview, samples, the Rendered view's
+samples, bounces, and the size, by four chips from 640 by 360 to 3440 by
+1440 or typed - are the Render tab's fields, and **saved with the scene**:
+`tools/test_scenefile.lua` writes each sample with 3440 by 1440, 512
+samples, 32 view samples, 8 bounces and Preview, and reads the same back
+(85 checks).
+
+**PNG out** is `gfx.encode_png`, a surface's pixels as red, green and blue
+through stb_image_write's PNG writer - vendored beside `stb_image.h`, from
+the same commit, recorded in `LICENSE.stb` and `LICENSE`.
+
+**In the Cafesa3D suite**: the Render tab opened; Preview and 1280 by 720
+chosen by their chips and one sample typed, each said back; F12 makes the
+Render window again at the new size - a window that draws its own pixels
+cannot be resized - and renders at 1280 by 720; the one sample finishes;
+Save as PNG writes `/home/Renders/plane.png`. **Then, with the machine
+stopped, the file is read off the disk image on the Mac** with
+`kfs.lua get`, unfiltered row by row as PNG says, and must be a 1280 by
+720 picture of eight-bit colour with more than fifty colours in it - the
+one check here that the bytes Kosmos wrote are a picture another program
+reads.
+
+Two suite races found on the way, both in the driving and not the
+application: a click on the Samples field landing while the view's render
+started again, so the typing went nowhere - it now waits to hear "editing"
+first, and clicks once more if not; and Ctrl O arriving at the larger
+Render window rather than Cafesa3D - the broken scene is now opened
+through the dots, whose click brings Cafesa3D in front.
+
+**That first "race" was misread, and the correction is 18.202.** The click
+was never made: the suite had read the World tab's fields for the Render
+tab's.
+
+## 18.202 Stop, F, maximised, and a click that was never made
+
+Diego tried Cafesa3D on the Mac on 26 September and asked for four things
+while doing it; each is in the Cafesa3D suite (`tools/run_cafesa3d.py`).
+
+- **Stop** ("the render screen needs a stop button"): after the Render
+  window's first pass, the button that says Render again once a render is
+  done says Stop, and a press on it must say `stopped the render at N of
+  256 samples` with N short of 256, and leave the picture in the window
+  (more than twenty thousand pixels of it). Esc does the same in that
+  window.
+- **F** ("zooms into the object like blender does and positions the object
+  centered"): the gold ball selected, F must say it framed Gold, 2.08 m
+  across - the diagonal of a 0.6 m ball's box, whose sphere is what is
+  fitted - from under 4 m, and the ball's middle must then be within three
+  pixels of the view's.
+- **Maximised** ("3d tools are mostly used maximized"): Cafesa3D asks the
+  window manager for the rectangle its maximise would give -
+  `workarea`, new - and opens there at that size with `maximised`; every
+  position the suite clicks is one Cafesa3D said, so the suite follows
+  it. Its first run found two things: `workarea` said 1050 rows where
+  `open` gives 1046, the two rules having disagreed all along by the
+  frame, and F11 back came up 34 pixels down the cascade - a window not
+  asking for the middle is moved when a third of it would be buried, and
+  the full-screen window was still there. Every click after that missed
+  by 34 pixels, and seventeen checks failed behind the one that mattered.
+- **Menus after a drag** (the Add menu "appears away from the add menu"): a
+  window that runs its own loop never heard `moved`, so its menus opened
+  where it had been; `window:direct_event` takes it now, for every such
+  application.
+
+**And the x86-64 failure the gate reported, which was the suite.** "Typing
+1 into Samples did not set it" failed three runs in four on x86-64 and
+never on AArch64. It looked like a lost click - on one processor the
+Rendered view's first pass takes twenty seconds - and was chased as one:
+QEMU's `virtio_input_queue_full` trace said nothing was dropped, and a
+build logging every button transition in the window manager showed it
+received none at all for the Samples clicks while it received the clicks
+either side. **They were never sent.** The suite read the Render tab's
+fields from the first `fields` line after its mark, and on a slow machine
+the World tab drew once more after the mark - so the fields were the
+World's, there was no Samples among them, and the click was skipped by an
+`if`. The fields are read after the tab's own line now, and their absence
+is a failure rather than a skip. 18.201's "race" of the same symptom was
+this.
+
+**Found on the way, in the libc**: `snprintf`'s `*` - a width or a
+precision from the arguments, which C11 requires - panicked as an unknown
+conversion. The FBX reader prints ufbx's names with `%.*s`, so Cafesa3D
+ended with code 70 on importing one. `tests/tests.c` holds `*` now: a
+string by its length, none, a negative precision, a width from an
+argument and a negative one. **And the panic said nothing**: a process that
+does not own the console cannot write to it, so `panic`'s message goes
+nowhere and every application's panic is only an exit code. On the roadmap.
+
+## 18.203 FBX, against the programs that wrote it
+
+`tools/test_fbx.c` (host, in `make test`): FBX through ufbx
+(`runtime/upstream/ufbx/`) and `user/kits/3d/k3d_fbx.c`, held to what the
+programs that wrote the files say they drew.
+
+**The files are ufbx's own test data** - written by Blender, Maya and 3ds
+Max, not by hand - fetched by `tools/fetch_conformance.py fbx` at the
+vendored commit and held to their sums (`tools/fbx_conformance.txt`). Seven
+have an OBJ beside them, exported by the same program from the same scene
+in the file's own axes and unit.
+
+- **Against the OBJ** (Blender 2.79's cube; 3ds Max's boxes with their
+  pivots moved, as FBX 6.1 binary and 7.7 text; 3ds Max's box shown four
+  times with a pivot each; Maya's cube, its cube inside a stretched parent,
+  and one turn in all six rotation orders): each part put in the world by
+  its matrix, and the OBJ turned into Y up and metres by hand - Maya's
+  centimetres, 3ds Max's inches and Z up - must have every point within a
+  hundred-thousandth of the model's size of a point of the other, the same
+  number of triangles as the OBJ's polygons make, and **every triangle
+  lying on one of the OBJ's polygons and facing the way it faces**. The
+  last replaced area and volume: Maya's parent cube is bent out of flat on
+  purpose, and a bent quad's area depends on the diagonal it is cut along,
+  which is a choice.
+- **Instances, mirrors and parts**: one Suzanne shown eight times is eight
+  parts of 968 triangles, each 3.1 m from the middle on the ground; a
+  Suzanne and her mirror image, the second's matrix turning space inside
+  out, both facing outwards when a mirrored part is reversed as Cafesa3D
+  reverses it - and the mirror inwards without, so the check sees it; seven
+  materials on one mesh as seven parts, each named for the object and its
+  material.
+- **Materials to their numbers**: 3ds Max's PBR and physical materials with
+  every value typed by hand, each colour at its weight; Maya's default
+  Lambert, whose transparency is a black colour at a factor of one and so
+  opaque; Blender's Principled at an alpha of 0.456.
+- **What is not a model**: nothing, an OBJ (ufbx could read it and is built
+  not to), 63 cuts of a binary file, and a thousand copies with four bytes
+  changed - each a sentence or a model, never a crash.
+
+70 checks. **Controls**, each a copy of the reader with one thing broken:
+no conversion to Y up (3ds Max's files fail, as their axes differ), no
+conversion to metres (Maya's and 3ds Max's), triangles wound backwards
+(every file, and both Suzannes), a transparency without its colour (Maya's
+Lambert turns to glass), and pivots neither baked by ufbx nor applied by
+the reader (3ds Max's) - that one had first been tried as baking alone,
+and passed, because the reader applies what ufbx does not bake: the second
+mechanism hid the first. And a helper node's own empty name for a part's.
+
+**In the guest**, the Cafesa3D suite imports Blender's Suzanne in seven
+materials through Import... and the FBX translator: seven objects, nothing
+skipped, a part named `Suzanne Nose`.
+
+**The gate for both** (26 September, evening): 39 of 40 suites in 8:33,
+the host suite among them - its Rosetta hang had cleared - and both
+Cafesa3D suites, 122 checks each. `arm-display-3` failed the Deskbar's
+focus timing check ("a frame that arrives soon after the move and shows the
+focus where it was") with a QEMU of Diego's rendering on four cores beside
+the gate, and passed alone on the same image, 65 checks.
+

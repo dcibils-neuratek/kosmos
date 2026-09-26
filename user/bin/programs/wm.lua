@@ -3362,6 +3362,18 @@ end
 -- separate would let them disagree, which is how a maximised window ends up
 -- restoring to its own maximised size and can never be got back.
 --
+--
+-- The size a maximised window's contents have: the screen less the strip,
+-- the title bar and the frame - and never more than `open` lets a window
+-- be, whose room leaves eight pixels, where this leaves one border below.
+-- The two disagreed by four rows, and a window that asked for this size
+-- was quietly given less (26 September, Cafesa3D opening maximised).
+--
+function OUT.maximised()
+  return math.min(W - BORDER * 2, W - 8),
+         math.min(H - top_limit() - BORDER, H - TAB_H - 8)
+end
+
 local function maximise(win)
   if not resizable(win) then return false end
 
@@ -3390,8 +3402,7 @@ local function maximise(win)
   damage_window(win)
   win.x, win.y = BORDER, top_limit()
 
-  if not resize_window(win, W - BORDER * 2,
-                       H - top_limit() - BORDER) then
+  if not resize_window(win, OUT.maximised()) then
     win.x, win.y = was.x, was.y
     damage_window(win)
 
@@ -3829,8 +3840,16 @@ handlers.open = function(req, who, cap)
   -- Scenery places itself: the backdrop and the strip are pinned to 0,0 a
   -- few lines below, so searching for somewhere free for them is work
   -- whose answer is thrown away.
+  --
+  -- **A maximised window is placed, not searched for**: at the corner
+  -- maximise uses, over whatever is there, which is the point of it.
+  --
+  if req.maximised and not req.fullscreen and not req.backdrop and req.strip ~= "top" then
+    win.x, win.y = BORDER, top_limit()
+  end
+
   if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top"
-     and not req.centre then
+     and not req.centre and not req.maximised then
     --
     -- **Taken means hidden, not "in the same spot".**
     --
@@ -5037,6 +5056,20 @@ handlers.drag = function(req)
   add_damage(pointer_x, pointer_y, cursor_size())
 
   return { ok = true }
+end
+
+--
+-- **Where a maximised window goes**, asked before a window exists: the
+-- rectangle `maximise` gives one - the screen less the strip, the title bar
+-- and the frame. A window that draws its own pixels opens at its size and
+-- is never resized, so an application that wants to open maximised has to
+-- know the size first (Cafesa3D, 26 September: "3d tools are mostly used
+-- maximized"). The window's contents, in the screen's points.
+--
+handlers.workarea = function()
+  local w, h = OUT.maximised()
+
+  return { ok = true, x = BORDER, y = top_limit(), w = w, h = h }
 end
 
 --

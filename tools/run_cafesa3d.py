@@ -154,8 +154,20 @@ with open(BROKEN, "w") as f:
     import json as _json
     _json.dump(broken_scene(), f)
 
+# **And an FBX a program wrote**: Blender's Suzanne in seven materials, one
+# of the files `tools/test_fbx.c` holds to its OBJ - fetched once, with its
+# sum, into build/downloads. Named to sort last, so the Import panel's rows
+# for the others are where they were.
+subprocess.run([sys.executable, os.path.join(HERE, "fetch_conformance.py"), "fbx"],
+               check=True, capture_output=True)
+
+with open(os.path.join(os.path.dirname(HERE), "build", "downloads", "fbx-conformance",
+                       "blender_suzanne_multimaterial_7400_binary.fbx"), "rb") as f:
+    MONKEY = f.read()
+
 IMPORTS = {"a-cube.stl": stl_cube(), "b-parts.obj": OBJ_TEXT.encode(),
-           "b-parts.mtl": MTL_TEXT.encode(), "x-parts.glb": glb_parts()}
+           "b-parts.mtl": MTL_TEXT.encode(), "x-parts.glb": glb_parts(),
+           "zz-monkey.fbx": MONKEY}
 
 for _name, _bytes in IMPORTS.items():
     with open(os.path.join(WORK, _name), "wb") as f:
@@ -285,6 +297,8 @@ def main():
 
         at_start = where(mark)
         summary = said("cafesa3d: 7 objects, ", mark) or ""
+        view0 = re.search(r"the view (\d+) by (\d+)", summary)
+        view0 = (int(view0.group(1)), int(view0.group(2))) if view0 else (1014, 744)
 
         check(summary.startswith("2062 triangles"),
               "it opened on something other than the still life: 7 objects, "
@@ -732,6 +746,22 @@ def main():
             check(said("cafesa3d: undid ", mark) == "set Segments of Gold",
                   "Ctrl Z did not undo the segments")
 
+        # **F frames the selection** (Diego, 26 September: "like blender
+        # does"): the gold ball, chosen above, brought to the middle of the
+        # view and near enough to fill it, its size read from its triangles.
+        mark = len(guest.seen)
+        keys("f")
+        got = said("cafesa3d: framed ", mark) or ""
+        # Across is its box's diagonal - a 0.6 m ball's is 2.08 m - and the
+        # sphere round that box is what is fitted to the view.
+        m = re.match(r"Gold, ([\d.]+) m across, from ([\d.]+) m$", got)
+        check(m is not None and abs(float(m.group(1)) - 2.08) < 0.02 and float(m.group(2)) < 4,
+              "F did not frame the gold ball, a 0.6 m sphere, from close by: %r" % got)
+        now = where(mark).get("Gold")
+        middle = (ox + 46 + view0[0] // 2, oy + 46 + view0[1] // 2)
+        check(now is not None and abs(now[0] - middle[0]) <= 3 and abs(now[1] - middle[1]) <= 3,
+              "after F the gold ball is at %r, not the view's middle %r" % (now, middle))
+
         # **The samples** - the house, the car and the plane Diego asked
         # for - opened as a person opens them: the dots, Open a sample, and
         # the scene; each with every object read and its colours on screen.
@@ -970,6 +1000,25 @@ def main():
               "window's foot bar: its faces were lost (%d pixels differ)"
               % sum(a != b for a, b in zip(foot_before, foot_after)))
 
+        # **Stop** (Diego, 26 September: "the render screen needs a stop
+        # button"): the button that says Render again once a render is done
+        # says Stop while it runs, in the same place. Pressed after the first
+        # pass, the render stops short of its 256 samples and the picture so
+        # far stays in the window.
+        controls = said("cafesa3d: render controls ", mark, 10) or ""
+        m = re.match(r"again (\d+),(\d+);", controls)
+
+        if opened and m:
+            mark = len(guest.seen)
+            click(rx + int(m.group(1)), ry + int(m.group(2)))
+            got = said("cafesa3d: stopped the render at ", mark, 30) or ""
+            m = re.match(r"(\d+) of 256 samples, after [\d.]+ s$", got)
+            check(m is not None and 1 <= int(m.group(1)) < 256,
+                  "Stop did not stop the render short of its samples: %r" % got)
+            kept = count(screen(), (rx + 20, ry + 66, rx + 620, ry + 386),
+                         lambda c: c != 0x1d1f24)
+            check(kept > 20000, "the stopped render's picture is gone (%d pixels)" % kept)
+
         # **Full screen** (F11): the same scene in a window the size of the
         # screen, at its corner, the view taking what the panels do not and
         # the Rendered view starting again at that size; a click landing in
@@ -1026,14 +1075,107 @@ def main():
         check(back == "%d by %d, the view %d by %d, 106 objects" % (vw + 386, vh + 76, vw, vh),
               "F11 again did not bring the window back as it was: %r" % back)
 
+        # **The Render tab and a saved picture**: Preview, 1280 by 720 and one
+        # sample set in the tab - each said back - then F12, which makes the
+        # Render window again at the new size, the render finished, and Save
+        # as PNG through the panel into /home/Renders. The file itself is
+        # read back off the disk once the machine has stopped, below.
+        mark = len(guest.seen)
+        click(ox + tabs["render"][0], oy + tabs["render"][1])
+        check(said("cafesa3d: tab ", mark) == "render", "the Render tab did not open")
+
+        # Read after the tab's own line: the World tab can draw once more
+        # after the mark, and on one slow processor did - so its fields were
+        # taken for these, and the Samples click was never made (x86-64,
+        # 26 September; it looked like a lost click for an afternoon).
+        opened_at = guest.seen.find("cafesa3d: tab render", mark)
+        chips_now = placed(said("cafesa3d: chips ", opened_at))
+        fields_now = placed(said("cafesa3d: fields ", opened_at))
+        check("samples" in fields_now and "integrator:Preview" in chips_now,
+              "the Render tab's fields and chips were not said: %r %r"
+              % (sorted(fields_now), sorted(chips_now)))
+
+        for key, sets in (("integrator:Preview", "integrator of the render to Preview"),
+                          ("size:1280x720", "size of the render to 1280 by 720")):
+            mark = len(guest.seen)
+
+            if key in chips_now:
+                click(*chips_now[key])
+
+            check(said("cafesa3d: set " + sets.split(" to ")[0] + " to ", mark, 10)
+                  == sets.split(" to ")[1], "the %s chip did not set %s" % (key, sets))
+
+        mark = len(guest.seen)
+
+        # Typed once the field says it is being typed into: a click that
+        # lands while the view's render starts again can come too early.
+        for _ in range(2):
+            if "samples" in fields_now:
+                click(*fields_now["samples"])
+
+            if said("cafesa3d: editing Samples", mark, 5) is not None:
+                keys("1", "ret")
+                break
+
+        check(said("cafesa3d: set Samples of the render to ", mark, 10) == "1",
+              "typing 1 into Samples did not set it")
+
+        click(ox + vw + 300, oy + 46 + vh + 15)                 # the foot: in front
+        mark = len(guest.seen)
+        keys("f12")
+        rat = said("cafesa3d: render window at ", mark, 30)
+        began = said("cafesa3d: rendering ", mark, 30) or ""
+        buttons = said("cafesa3d: render controls ", mark, 30) or ""
+        check(began.startswith("plane.gltf through the camera, 1280 by 720"),
+              "F12 did not render at the size the tab says: %r" % began)
+        done = said("cafesa3d: rendered 1 samples", mark, 300)
+        check(done is not None, "the one-sample render never finished")
+
+        m = re.search(r"save (\d+),(\d+)$", buttons)
+        saved_png = None
+
+        if rat and m:
+            rx, ry = (int(v) for v in rat.split(","))
+            mark = len(guest.seen)
+            click(rx + int(m.group(1)), ry + int(m.group(2)))
+            button = panel_button("save", mark)
+
+            if button:
+                click(*button)
+
+            saved_png = said("cafesa3d: saved the render to ", mark, 60) or ""
+
+        check(saved_png is not None and re.match(r"/home/Renders/plane\.png, 1280 by 720, "
+                                                 r"\d+ bytes$", saved_png) is not None,
+              "Save as PNG did not write the render to /home/Renders: %r" % saved_png)
+
+        # Cafesa3D in front again, by its own title in the header - the
+        # larger Render window now covers the foot this suite clicks for it.
+        click(ox + 40, oy + 22)
+
+        # The dots' menu, and its `i`th row clicked: a click on the dots brings
+        # Cafesa3D in front, whatever else has the focus.
+        def dots_row(i):
+            mark_ = len(guest.seen)
+            click(ox + header["more"][0], oy + header["more"][1])
+            got_ = said("cafesa3d: more menu at ", mark_)
+            m_ = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", got_ or "")
+
+            if not m_:
+                return None
+
+            mx_, my_, mw_, rh_ = (int(v) for v in m_.groups())
+            click(mx_ + 24, my_ + 2 + i * rh_ + rh_ // 2)
+            return mx_, my_, mw_, rh_
+
         # **The broken scene** (made above, on the disk beside the saved
         # plane): opened from the panel's second row, its box kept, its
         # triangle skipped and named, and Cafesa3D still there to say so.
         mark = len(guest.seen)
-        keys("ctrl-o")
+        dots_row(4)                                                # Open...
         at = said("cafesa3d: open panel at ", mark, 30)
         m = re.match(r"(\d+),(\d+)", at or "")
-        check(m is not None, "Ctrl O did not open the panel for the broken scene")
+        check(m is not None, "the dots' Open... did not open the panel for the broken scene")
 
         if m:
             px, py = int(m.group(1)), int(m.group(2))
@@ -1055,19 +1197,6 @@ def main():
         # two parts with the MTL beside them found, and the .glb's three
         # parts; then the lot exported as STL - a binary STL is 84 bytes and
         # 50 a triangle - and that file imported back.
-        def dots_row(i):
-            mark_ = len(guest.seen)
-            click(ox + header["more"][0], oy + header["more"][1])
-            got_ = said("cafesa3d: more menu at ", mark_)
-            m_ = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", got_ or "")
-
-            if not m_:
-                return None
-
-            mx_, my_, mw_, rh_ = (int(v) for v in m_.groups())
-            click(mx_ + 24, my_ + 2 + i * rh_ + rh_ // 2)
-            return mx_, my_, mw_, rh_
-
         def import_row(row, since):
             at_ = said("cafesa3d: open panel at ", since, 30)
             m_ = re.match(r"(\d+),(\d+)", at_ or "")
@@ -1115,11 +1244,92 @@ def main():
         check(got.startswith("zz-broken, 1 objects, ") and got.endswith(", 0 skipped"),
               "the exported STL did not come back in as one object: %r" % got)
 
+        # **FBX** (step 5c): Blender's Suzanne in seven materials, through the
+        # FBX translator and ufbx - a part for each material, named for it,
+        # nothing skipped.
+        mark = len(guest.seen)
+        dots_row(5)
+        import_row(7, mark)
+        got = said("cafesa3d: imported ", mark, 60) or ""
+        check(got.startswith("zz-monkey, 7 objects, ") and got.endswith(", 0 skipped"),
+              "the FBX did not come in as Suzanne's seven parts: %r" % got)
+        check("Suzanne Nose " in (said("cafesa3d: at ",
+                                       guest.seen.find("cafesa3d: imported zz-monkey", mark),
+                                       10) or ""),
+              "the FBX's parts are not named for the object and its material")
+        found = said("cafesa3d: translator Autodesk FBX from ", 0, 1) or ""
+        check(found.startswith("/lib/translators/fbx.lua, reads fbx"),
+              "the FBX translator was not found in /lib/translators: %r" % found)
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
     finally:
         guest.close()
+
+    # **The saved render, off the disk**, with the machine stopped: a PNG,
+    # 1280 by 720, eight bits of red, green and blue, whose picture is not
+    # one colour all over.
+    got = os.path.join(WORK, "plane.png")
+    fetched = subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
+                              os.path.join(HERE, "kfs.lua"), "get", HOME_DISK,
+                              "/home/Renders/plane.png", got],
+                             capture_output=True, cwd=os.path.dirname(HERE))
+    size, colours = None, 0
+
+    if fetched.returncode == 0 and os.path.exists(got):
+        import struct
+        import zlib
+
+        data = open(got, "rb").read()
+
+        if data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
+            w, h, depth, kind = struct.unpack(">IIBB", data[16:26])
+            size = (w, h, depth, kind)
+            at, idat = 8, b""
+
+            while at < len(data):
+                n, name = struct.unpack(">I4s", data[at:at + 8])
+
+                if name == b"IDAT":
+                    idat += data[at + 8:at + 8 + n]
+
+                at += 12 + n
+
+            raw = zlib.decompress(idat)
+            stride, prev, seen = w * 3, bytearray(w * 3), set()
+
+            # Each row unfiltered as PNG says (none, sub, up, average,
+            # Paeth), and every hundred-and-first pixel's colour kept.
+            for y in range(h):
+                kind_, row = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:
+                                                                 (y + 1) * (stride + 1)])
+
+                for i in range(stride):
+                    a = row[i - 3] if i >= 3 else 0
+                    b, c = prev[i], (prev[i - 3] if i >= 3 else 0)
+
+                    if kind_ == 1:
+                        row[i] = (row[i] + a) & 255
+                    elif kind_ == 2:
+                        row[i] = (row[i] + b) & 255
+                    elif kind_ == 3:
+                        row[i] = (row[i] + (a + b) // 2) & 255
+                    elif kind_ == 4:
+                        pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                        row[i] = (row[i] + (a if pa <= pb and pa <= pc
+                                            else b if pb <= pc else c)) & 255
+
+                for x in range(y % 101, w, 101):
+                    seen.add(bytes(row[x * 3:x * 3 + 3]))
+
+                prev = row
+
+            colours = len(seen)
+
+    check(size == (1280, 720, 8, 2) and colours > 50,
+          "the saved render off the disk is not a 1280 by 720 picture of something: %r, "
+          "%d colours in it" % (size, colours))
 
     if failed:
         print("FAIL: %d of %d checks on Cafesa3D:" % (len(failed), checks))
@@ -1144,9 +1354,13 @@ def main():
           "in the browser; the plane "
           "Rendered on every processor and F12 through its camera, each first pass drawn, "
           "and the main window's faces untouched by the second; F11 to full screen with "
-          "the scene and the render carried over and a click landing, and back; a scene "
+          "the scene and the render carried over and a click landing, and back; the Render "
+          "tab's integrator, size and samples set, F12 at that size, and the picture saved "
+          "as a PNG read back off the disk; a scene "
           "with a broken mesh opened with that mesh skipped and named; an STL, an OBJ with "
-          "its MTL and a .glb imported, the scene exported as STL and imported back)" % checks)
+          "its MTL and a .glb imported, the scene exported as STL and imported back, "
+          "an FBX of Blender's in seven materials imported; F framing the gold ball; Stop "
+          "in the middle of a render)" % checks)
     return 0
 
 

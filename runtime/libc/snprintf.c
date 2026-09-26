@@ -527,15 +527,42 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
             fmt++;
         }
 
-        while (*fmt >= '0' && *fmt <= '9') {
-            sp.width = sp.width * 10 + (*fmt++ - '0');
+        /*
+         * A width or a precision may be `*`, taken from the next argument
+         * (C11 7.21.6.1): a negative width is a `-` flag and the rest, and a
+         * negative precision is as if there were none. `%.*s` - a string
+         * that is not terminated, by its length - is how the 3D Kit prints
+         * ufbx's names, and this panicked on it as an unknown conversion.
+         */
+        if (*fmt == '*') {
+            int w = va_arg(ap, int);
+
+            if (w < 0) {
+                sp.left = true;
+                w = -w;
+            }
+
+            sp.width = w;
+            fmt++;
+        } else {
+            while (*fmt >= '0' && *fmt <= '9') {
+                sp.width = sp.width * 10 + (*fmt++ - '0');
+            }
         }
 
         if (*fmt == '.') {
             fmt++;
-            sp.precision = 0;
-            while (*fmt >= '0' && *fmt <= '9') {
-                sp.precision = sp.precision * 10 + (*fmt++ - '0');
+
+            if (*fmt == '*') {
+                int pr = va_arg(ap, int);
+
+                sp.precision = (pr < 0) ? -1 : pr;
+                fmt++;
+            } else {
+                sp.precision = 0;
+                while (*fmt >= '0' && *fmt <= '9') {
+                    sp.precision = sp.precision * 10 + (*fmt++ - '0');
+                }
             }
         }
 

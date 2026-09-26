@@ -72,3 +72,16 @@
 #define STBI_NO_HDR
 #define STBI_ASSERT(x) ((void)0)
 #include "stb_image.h"
+
+/*
+ * **And PNG out**, for a Cafesa3D render saved and the screen's picture
+ * kept: stb_image_write, by the same author and under the same terms,
+ * taken from the same commit. Only its PNG writer is used, which carries
+ * its own deflate - this image has an inflater and nothing that compresses.
+ * No stdio, for the reason there is none above; and its asserts are
+ * silenced, for the reason STBI_ASSERT is.
+ */
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBI_WRITE_NO_STDIO
+#define STBIW_ASSERT(x) ((void)0)
+#include "stb_image_write.h"

@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 
 ---
 
@@ -17,6 +17,72 @@ Last updated: 2026-09-25
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 26 September: Cafesa3D reads and writes other formats, and renders to a file
+
+Diego, after the push: "And go ahead with the rest".
+
+**Translators** (dc2a76b, `testing.md` 18.200): glTF and GLB are read by
+`scenefile` itself - the node tree walked, matrices decomposed into
+Cafesa3D's Z-up location, rotation and scale, a mirror kept as a negative
+scale, Draco refused by name - and STL and OBJ by translators, files in
+`/lib/translators/` (and `/home/Translators` for his own) that Import and
+Export in the dots find without Cafesa3D knowing their names. Their byte
+loops are C in the 3D Kit (`k3d_formats.c`): STL welded and told text from
+binary by its count, OBJ with parts, fans and negative indices, MTL colours
+read through the translator's `sidecar`. FBX waits for `ufbx`.
+
+**The Render tab and a render saved as a PNG** (18.201, 4l 5e): Final or
+Preview, a size from 640 by 360 to 3440 by 1440 (his monitor), samples, the
+Rendered view's samples and the bounces - all kept in the scene's file. The
+Render window fits its picture to itself and opens again at a new size;
+**Save as PNG** writes `/home/Renders/<scene>.png` through `gfx.encode_png`,
+which is `stb_image_write` vendored beside `stb_image`. The suite reads the
+PNG back off the disk image and unfilters it on the Mac.
+
+**The render farm is designed, not built**: `docs/renderfarm.md`, for him to
+agree - passes rather than tiles to each machine, a `rendernode` with the
+kit and the network and nothing else, a declared protocol and a farm's key,
+and a first step tested with two QEMU machines on a socket network.
+
+**FBX, through ufbx** (18.203): vendored unmodified at v0.23.1, its
+switches in `k3d_ufbx.h`; `k3d_fbx.c` makes a part of each material's run
+of each node's mesh, Y up in metres, and `/lib/translators/fbx.lua` places
+them by the same decomposition a glTF node gets. Held on the Mac to
+Blender's, Maya's and 3ds Max's own files and the OBJ each exported
+(`tools/test_fbx.c`, 70 checks, fetched by `fetch_conformance.py fbx`).
+The guest found what the Mac could not: our `snprintf` had no `*`, and
+`%.*s` panicked Cafesa3D - fixed in the libc, tested in `tests/tests.c`.
+And it found that an application's panic prints nowhere (roadmap 5g).
+
+**Diego at the Mac, the evening of the 26th**, trying it under QEMU:
+"this is amazing!", and then, each built the same evening (18.202, 4l 5f):
+**Stop** in the Render window (and Esc); **F** frames the selection as
+Blender's View Selected; **Cafesa3D opens maximised** - the window
+manager's new `workarea` and an open with `maximised`; **menus follow a
+dragged window** - `direct_event` takes `moved`, for every application
+that runs its own loop; the Add menu's **Import...** works. And he asked
+for **a stick for the M700**, to try all of it there.
+
+**The x86-64 failure of the afternoon was the suite**, not a lost click:
+it read the World tab's fields for the Render tab's on a slow processor
+and never clicked. QEMU's input trace and a window manager logging every
+button said so between them (18.202).
+
+**The disk was 99% full at 19:50** - 2.2 GB free - and a link failed on a
+missing init image. The scratchpad's copies of images, 850 MB, were the
+part that was mine; with them gone and whatever else the system let go,
+11 GB.
+
+**Waiting on Diego**: the scripting mockup's five choices (where the panel
+sits, whether Run replaces or adds, one script or several, running as he
+types, Shift F4), and the render farm page.
+
+**Next**: FBX through `ufbx`; image textures; a denoiser; the Rendered view
+drawn at a fraction of its size while it settles; the Outliner scrolling
+(it shows seven names); a link's gap clickable in the browser.
+What is stashed and queued behind the 3D tool is at the end of 25
+September, below.
 
 ## 24 September: every window from its drawing, a frame all round, Endeavour first
 
@@ -373,12 +439,9 @@ perfectly"), asked for importers and exporters as plugins, and for
 rendering across several machines - all three in 4l, the last to be
 designed first.
 
-**Next**: the gate, commit and push saving and full screen for tonight.
-Then the Render tab's numbers
-editable
-(samples, bounces, clamp, resolution, Preview or Final) and a denoiser;
-then textures, a mesh kind, and the three scenes rebuilt with far more
-detail, rendered and shown to him.
+**Pushed as 0.10.167** (fae886e..1556458) at Diego's "Push it", with the
+scripting mockup (`docs/cafesa3d-scripting.html`) beside it. What came
+after is in 26 September, above.
 
 **Stashed** (`git stash list`, "6l in progress"): 6l's first step -
 `posix_memalign` and `aligned_alloc` in `malloc.c` with `tools/test_alloc.c`

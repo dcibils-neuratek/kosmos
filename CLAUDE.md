@@ -79,6 +79,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - How drives, places and the Open/Save window should look, before they are built: `docs/drives.html`
 - How Disk Benchmark should look, before it is built: `docs/diskbench.html`
 - How Music should look, after VOX, before it is built: `docs/music.html`
+- How Cafesa3D renders across several machines, before it is built: `docs/renderfarm.md`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
 - The path pixels take: `docs/gfx.md`

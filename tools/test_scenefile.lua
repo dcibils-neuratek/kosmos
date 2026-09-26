@@ -447,6 +447,8 @@ for _, name in ipairs({ "house", "car", "plane" }) do
 
   if first then
     first.things[3].hidden = true
+    first.render = { w = 3440, h = 1440, samples = 512, view_samples = 32, bounces = 8,
+                     preview = true }
 
     local text = json.encode(scenefile.to_gltf(first, codec))
     local again = as_app(scenefile.from_gltf(json.decode(text)))
@@ -462,6 +464,9 @@ for _, name in ipairs({ "house", "car", "plane" }) do
 
     check(d == nil, name .. " saved is not the scene it was: " .. tostring(d))
     check(differs(first.world, again.world, "world") == nil, name .. "'s sky came back otherwise")
+    local rd = differs(first.render, again.render, "render")
+
+    check(rd == nil, name .. "'s render settings came back otherwise: " .. tostring(rd))
     check(again.name == first.name, name .. " came back named " .. tostring(again.name))
     check(again.things[3].hidden == true and again.things[4].hidden == nil,
           name .. "'s hidden object did not come back hidden, and only it")

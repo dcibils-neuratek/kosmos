@@ -2761,6 +2761,55 @@ static int l_surface_bytes(lua_State *L)
     return 1;
 }
 
+/* stb_image_write's PNG writer (`runtime/upstream/stb/stb_impl.c`). */
+unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int stride_bytes, int x,
+                                     int y, int n, int *out_len);
+
+/*
+ * `gfx.encode_png(surface)` -> the bytes of a PNG of it: red, green and
+ * blue, eight bits each, as `gfx.png` reads them back. A loop over every
+ * pixel and a deflate, so here and not in Lua; for a Cafesa3D render saved
+ * and, later, the screen kept as a picture.
+ */
+static int l_encode_png(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    unsigned char *rgb, *png;
+    unsigned x, y;
+    int len = 0;
+
+    if (s->width == 0 || s->height == 0 || s->width > 16384 || s->height > 16384) {
+        return luaL_error(L, "a picture %ux%u is not one to save", s->width, s->height);
+    }
+
+    rgb = malloc((size_t)s->width * s->height * 3);
+
+    if (rgb == NULL) return luaL_error(L, "no memory to save a %ux%u picture", s->width,
+                                       s->height);
+
+    for (y = 0; y < s->height; y++) {
+        const uint32_t *row = (const uint32_t *)((const unsigned char *)s->pixels
+                                                 + (size_t)y * s->pitch);
+        unsigned char *out = rgb + (size_t)y * s->width * 3;
+
+        for (x = 0; x < s->width; x++) {
+            out[x * 3] = (unsigned char)(row[x] >> 16);
+            out[x * 3 + 1] = (unsigned char)(row[x] >> 8);
+            out[x * 3 + 2] = (unsigned char)row[x];
+        }
+    }
+
+    png = stbi_write_png_to_mem(rgb, (int)(s->width * 3), (int)s->width, (int)s->height, 3,
+                                &len);
+    free(rgb);
+
+    if (png == NULL) return luaL_error(L, "no memory to compress the picture");
+
+    lua_pushlstring(L, (const char *)png, (size_t)len);
+    free(png);
+    return 1;
+}
+
 static int l_screen(lua_State *L)
 {
     struct screen_info info;
@@ -2914,6 +2963,7 @@ static const luaL_Reg gfx_functions[] = {
     { "wrap",    l_wrap },
     { "bytes",   l_surface_bytes },
     { "screen",  l_screen },
+    { "encode_png", l_encode_png },
     { NULL, NULL }
 };
 

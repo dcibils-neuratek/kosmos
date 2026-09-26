@@ -473,7 +473,7 @@ LDFLAGS := -T boot/kosmos.ld \
 # anything this system decided. `runtime/upstream/musl-math/README.kosmos.md`
 # has the whole of it.
 #
-# Thirty-two files, compiled here rather than linked from an archive,
+# Forty-five files, compiled here rather than linked from an archive,
 # because the closure was taken over undefined symbols and every one of
 # them is reached.
 # ------------------------------------------------------------------
@@ -755,6 +755,17 @@ QUAKE_SRCS := $(QUAKE_ENGINE) user/bin/apps/quake/quake_kosmos.c
 #
 RECORD_CFLAGS := -w -Wno-error
 
+#
+# ufbx, which reads FBX for the 3D Kit (`runtime/upstream/ufbx/`), on its
+# own terms too. Its switches are in a header of ours,
+# `user/kits/3d/k3d_ufbx.h`, which `ufbx.h` includes first when
+# `UFBX_CONFIG_HEADER` names it - so `k3d_fbx.c`, which keeps every
+# warning, is compiled against the configuration ufbx was, and neither
+# vendored file is touched.
+#
+UFBX_CONFIG := -Iruntime/upstream/ufbx -Iuser/kits/3d '-DUFBX_CONFIG_HEADER="k3d_ufbx.h"'
+UFBX_CFLAGS := -w -Wno-error $(UFBX_CONFIG)
+
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
                  -Iruntime/upstream/tinygl/source
@@ -815,6 +826,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/3d/k3d_trace.c \
              user/kits/3d/k3d_texture.c \
              user/kits/3d/k3d_formats.c \
+             user/kits/3d/k3d_fbx.c \
+             runtime/upstream/ufbx/ufbx.c \
              user/kits/3d/k3d_kosmos.c \
              user/kits/gfx/png.c \
              user/kits/gfx/jpeg.c \
@@ -1182,7 +1195,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1274,6 +1287,15 @@ $(UBUILD)/user/kits/record/record_h264.c.o: user/kits/record/record_h264.c $(UFL
 $(UBUILD)/user/kits/record/record_mp4.c.o: user/kits/record/record_mp4.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(RECORD_CFLAGS) -MMD -MP -c $< -o $@
+
+# ufbx and the 3D Kit's reader of it, against the same switches.
+$(UBUILD)/runtime/upstream/ufbx/ufbx.c.o: runtime/upstream/ufbx/ufbx.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(UFBX_CFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/kits/3d/k3d_fbx.c.o: user/kits/3d/k3d_fbx.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(UFBX_CONFIG) -MMD -MP -c $< -o $@
 
 # FFmpeg, on its own terms (the `FFMPEG=1` note above).
 $(UBUILD)/runtime/upstream/ffmpeg/%.c.o: runtime/upstream/ffmpeg/%.c $(UFLAGS_FILE)
@@ -1800,6 +1822,22 @@ $(HOSTDIR)/test_k3d: tools/test_k3d.c $(K3D_CORE) user/kits/3d/k3d.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
 	        tools/test_k3d.c $(K3D_CORE) -lm
+
+# Its FBX reader (`tools/test_fbx.c`): Blender's, Maya's and 3ds Max's own
+# files, each against the OBJ its program exported of the same scene, and
+# damaged copies refused. ufbx is an object of its own, being a megabyte of
+# C that does not change when the test does.
+$(HOSTDIR)/ufbx.o: runtime/upstream/ufbx/ufbx.c runtime/upstream/ufbx/ufbx.h \
+                   user/kits/3d/k3d_ufbx.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -w -O1 $(UFBX_CONFIG) -c -o $@ $<
+
+$(HOSTDIR)/test_fbx: tools/test_fbx.c user/kits/3d/k3d_fbx.c user/kits/3d/k3d_formats.c \
+                     user/kits/3d/k3d.h user/kits/3d/k3d_ufbx.h $(HOSTDIR)/ufbx.o
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $(UFBX_CONFIG) -o $@ \
+	        tools/test_fbx.c user/kits/3d/k3d_fbx.c user/kits/3d/k3d_formats.c \
+	        $(HOSTDIR)/ufbx.o -lm
 
 # Its ray tracer: shapes against their triangles, the four-wide hierarchy
 # against every triangle, light against the arithmetic, and four threads
@@ -3228,7 +3266,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3304,6 +3342,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv
 	$(HOSTDIR)/test_k3d
+	@# Its FBX reader, against the programs' own files (`roadmap.md` 4l).
+	python3 tools/fetch_conformance.py fbx
+	$(HOSTDIR)/test_fbx
 	$(HOSTDIR)/test_trace
 	$(HOSTDIR)/test_yuv_x86
 	@# Broken-down time, which FFmpeg's option parser and logger reach.

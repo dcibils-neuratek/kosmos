@@ -4,17 +4,20 @@
 
     fetch_conformance.py h264      tools/h264_conformance.txt
     fetch_conformance.py aac       tools/aac_conformance.txt
+    fetch_conformance.py fbx       tools/fbx_conformance.txt
 
 Each manifest lists files and their sums. A file already in
 `build/downloads/<kind>-conformance/` with the right sum is left alone, so
 after the first run this reads what is there and does nothing else; a
-missing one is fetched from FFmpeg's FATE server, and one whose sum is
-wrong is refused, not used - a checksum test run against the wrong bytes
-would say the decoder is wrong.
+missing one is fetched from where its kind lives - FFmpeg's FATE server for
+the decoders' streams, ufbx's repository at the vendored commit for FBX -
+and one whose sum is wrong is refused, not used: a checksum test run
+against the wrong bytes would say the decoder is wrong.
 
 A manifest line is a name, then pairs of a file and its sha256 - one pair
 for H.264, whose references are FFmpeg's own and in the tree, two for AAC,
-whose references are PCM too large to carry - then a description.
+whose references are PCM too large to carry, one or two for FBX, the second
+an OBJ of the same scene - then a description.
 """
 
 import hashlib
@@ -25,9 +28,12 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = "https://fate-suite.ffmpeg.org/"
+UFBX = ("https://raw.githubusercontent.com/ufbx/ufbx/"
+        "26a482ae66871d7de36eb722aa060bce95bce274/data/")
 KINDS = {
-    "h264": ("tools/h264_conformance.txt", "h264-conformance"),
-    "aac": ("tools/aac_conformance.txt", "aac"),
+    "h264": ("tools/h264_conformance.txt", SERVER + "h264-conformance/"),
+    "aac": ("tools/aac_conformance.txt", SERVER + "aac/"),
+    "fbx": ("tools/fbx_conformance.txt", UFBX),
 }
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
@@ -60,7 +66,7 @@ def main():
         if os.path.exists(local) and sha256(local) == digest:
             continue
         os.makedirs(os.path.dirname(local), exist_ok=True)
-        url = SERVER + remote + "/" + path
+        url = remote + path
         try:
             with urllib.request.urlopen(url, timeout=120) as r:
                 data = r.read()

@@ -3692,6 +3692,22 @@ static bool test_snprintf_integers_and_strings(void)
     return str_is(b, "-9223372036854775808");
 }
 
+static bool test_snprintf_star(void)
+{
+    /* Width and precision from the arguments, as C11 7.21.6.1 has them: a
+     * string by its length, which is how names come out of ufbx and which
+     * this libc used to panic on, and a negative width being left-aligned. */
+    char b[64];
+
+    snprintf(b, sizeof(b), "%.*s|", 3, "abcdef");   if (!str_is(b, "abc|"))    return false;
+    snprintf(b, sizeof(b), "%.*s|", 0, "abcdef");   if (!str_is(b, "|"))       return false;
+    snprintf(b, sizeof(b), "%.*s|", -1, "abc");     if (!str_is(b, "abc|"))    return false;
+    snprintf(b, sizeof(b), "%*d|", 5, 42);          if (!str_is(b, "   42|"))  return false;
+    snprintf(b, sizeof(b), "%*d|", -5, 42);         if (!str_is(b, "42   |"))  return false;
+    snprintf(b, sizeof(b), "%*.*s|%d", 6, 2, "xyz", 7);
+    return str_is(b, "    xy|7");
+}
+
 static bool test_snprintf_truncates_and_reports_the_full_length(void)
 {
     /* Returning what it would have needed is how a caller sizes a buffer,
@@ -8741,6 +8757,7 @@ static const struct test tests[] = {
     { "heap: realloc preserves contents",      test_heap_realloc_preserves_contents },
     { "heap: exhaustion returns NULL",         test_heap_exhaustion_returns_null },
     { "snprintf: integers and strings",        test_snprintf_integers_and_strings },
+    { "snprintf: a width and a precision of *", test_snprintf_star },
     { "snprintf: truncates, reports full len", test_snprintf_truncates_and_reports_the_full_length },
     { "snprintf: floats",                      test_snprintf_floats },
     { "snprintf: rounded at the precision",    test_snprintf_rounds },

@@ -468,6 +468,12 @@ local function decompose(m)
   return { m[13], -m[15], m[14] }, matrix_euler(R), size
 end
 
+-- The same two for a translator whose format places its objects by a
+-- matrix too, as glTF's world transform - FBX's does - and says its colours
+-- linear, as glTF does.
+scenefile.place = decompose
+scenefile.srgb = srgb
+
 --
 -- `has_bin` says a binary glTF's chunk came with the file (`from_glb`),
 -- which is its first buffer when that buffer names no file of its own.
@@ -494,6 +500,26 @@ function scenefile.from_gltf(doc, has_bin)
   if world then
     out.world = { zenith = hexcolour(world.zenith), horizon = hexcolour(world.horizon),
                   strength = number(world.strength, 0, 10) }
+  end
+
+  -- How pictures of it are made, each number held to what the Render tab
+  -- takes; one out of range and that one keeps Cafesa3D's own.
+  local render = type(doc.extras) == "table" and type(doc.extras.cafesa3d) == "table"
+                 and type(doc.extras.cafesa3d.render) == "table" and doc.extras.cafesa3d.render
+  if render then
+    local function whole(v, lo, hi)
+      v = number(v, lo, hi)
+      return v and math.floor(v) == v and math.floor(v) or nil
+    end
+
+    out.render = { w = whole(render.width, 16, 8192), h = whole(render.height, 16, 8192),
+                   samples = whole(render.samples, 1, 4096),
+                   view_samples = whole(render.view_samples, 1, 1024),
+                   bounces = whole(render.bounces, 1, 32) }
+
+    if render.integrator == "Preview" or render.integrator == "Final" then
+      out.render.preview = render.integrator == "Preview"
+    end
   end
 
   local function skip(name, why)
@@ -977,11 +1003,22 @@ function scenefile.to_gltf(s, codec)
   if #cameras > 0 then doc.cameras = cameras end
   if #lights > 0 then doc.extensions = { KHR_lights_punctual = { lights = lights } } end
 
+  local own = {}
+
   if s.world then
-    doc.extras = { cafesa3d = { world = { zenith = hex(s.world.zenith),
-                                          horizon = hex(s.world.horizon),
-                                          strength = s.world.strength } } }
+    own.world = { zenith = hex(s.world.zenith), horizon = hex(s.world.horizon),
+                  strength = s.world.strength }
   end
+
+  if s.render then
+    local r = s.render
+
+    own.render = { width = r.w, height = r.h, samples = r.samples,
+                   view_samples = r.view_samples, bounces = r.bounces,
+                   integrator = r.preview and "Preview" or "Final" }
+  end
+
+  if next(own) then doc.extras = { cafesa3d = own } end
 
   if #meshes > 0 then
     local bytes = table.concat(pieces)

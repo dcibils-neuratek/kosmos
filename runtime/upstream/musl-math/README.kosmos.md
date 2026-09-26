@@ -82,6 +82,18 @@ Its AAC decoder the next day asked for three more of the same kind -
 declared, never defined - `cbrt.c`, `fabsf.c` and `sqrtf.c`, and
 `__math_invalidf.c`, which `sqrtf` calls. Forty-five files.
 
+## And two more, for ufbx (26 September 2026)
+
+The FBX reader in the 3D Kit (`runtime/upstream/ufbx/`) calls `fmin` and
+`fmax`, and the x86-64 link said so by name, as the paragraph that was here
+promised: AArch64 has an instruction for each and the compiler used it, so
+only the second architecture ever called them. `fmin.c` and `fmax.c`, from
+the same tarball and checked against the same sum, and they call nothing.
+Forty-five sources in `src/math/` now.
+
+    8f174565b041802c3ee1b141caf2c7240b4ed5f45e920caec11c1585682199a4  src/math/fmin.c
+    70d8ee2a5c78bf10a45a5e39ab346a9527867cfc16246d162e07c39d29e77c1f  src/math/fmax.c
+
 `math.h` still declares a few functions no file defines - `floorf`,
-`scalbnf`, `copysignf`, `fmin`, `fmax`, `log1p` - and a call to one fails at
-the link with its name, which is where the next of these will come from.
+`scalbnf`, `copysignf`, `log1p` - and a call to one fails at the link with
+its name, which is where the next of these will come from.

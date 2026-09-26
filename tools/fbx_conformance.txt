@@ -1,0 +1,30 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+#
+# The FBX files `tools/test_fbx.c` reads, one a line: a name, the FBX under
+# ufbx's `data/` at the commit vendored in `runtime/upstream/ufbx/` and its
+# sha256, the OBJ its program exported of the same scene and its sha256
+# where there is one, and what the file exercises.
+#
+# They are ufbx's own test files - written by the programs named, not by
+# hand - and an OBJ beside one is the geometry that program says it has, in
+# the file's own axes and unit: the check is that ours, turned into Y up
+# and metres, is the same shape in the same place.
+#
+# About 350 KB, so `tools/fetch_conformance.py fbx` puts them in
+# `build/downloads/fbx-conformance/` and holds each to its sum. The sums
+# are of the files as fetched on 26 September 2026, from
+# raw.githubusercontent.com at commit 26a482ae66871d7de36eb722aa060bce95bce274.
+#
+blender_default        blender_279_default_7400_binary.fbx            db93866edd663ccc2e68469db6ec65c040e77786b0b128bfc522a7a860d2035c blender_279_default.obj               9eb7a96fb349f1cfc64f25953bf58c2de1a8c2a112cb45759dc9e82c8a21a9e5  Blender 2.79's first scene: a cube, a lamp and a camera; binary 7.4, Y up
+max_pivots_binary      max_geometry_transform_6100_binary.fbx         11f369603c048dd5f7854f4d4115f88cf9dbc0a0f57907eb20bd33dfd4a824e7 max_geometry_transform.obj            7841b91d57dad6d14800533f2fa7749421030d51cb2bb5fbe26a050dec3543c6  3ds Max, two boxes with pivots moved off them; binary 6.1, Z up in inches
+max_pivots_ascii       max_geometry_transform_7700_ascii.fbx          c7ed32028f47e2d67805f46eb8b07b23f9210403caa67051960412e5af013537 max_geometry_transform.obj            7841b91d57dad6d14800533f2fa7749421030d51cb2bb5fbe26a050dec3543c6  the same scene as text, FBX 7.7
+max_pivot_instances    max_geometry_transform_instances_7700_ascii.fbx 21aca91bf854271dc9439c5bb1e6d8dc6b704e0fa59fa44cfd57e5d2eabc21a2 max_geometry_transform_instances.obj 1fa37b9d30b9eef746cfa3d67b6c27f75cf424690f7b3607a7c929dcb0e5fd12  one box shown four times, each with a pivot of its own
+maya_cube              maya_cube_7100_ascii.fbx                       631de3ea068cbe8aa586d808cd72c08a901a719bb2cedd7899fa72dd4d74989a maya_cube.obj                         3a3f936f1719a3f375d8eb07c94e36db96b61dd7ec9ca6081a502f64b9e33b2f  Maya's cube and its default Lambert; text 7.1, Y up in centimetres
+maya_parented          maya_parented_cubes_7500_ascii.fbx             643fb64619027196cf45d722678004b7a75f79cd942a4e95e1298d8b064c45d5 maya_parented_cubes.obj               5e11e4f5f7f8428f80dc2027c4cc76bdd23ed003f507592ab7a1fd3f13811eb4  a cube inside a moved, turned and stretched cube
+maya_rotation_orders   maya_rotation_order_7500_ascii.fbx             806c2c71feafd3bc7dca6fef805eb093c5aa7f59a98976370efb1c2010abc757 maya_rotation_order.obj               d47fd240ee698fa1c3c58e441f9cfd4390a5092308ef9dc686ef3ed130d813af  six objects turned the same three angles in the six orders
+blender_instancing     blender_293_instancing_7400_binary.fbx         825abc205df1c0b9cb118128e3b45b4c5c1d8e6bf5a62a6034b1e0ebb78939a7  one Suzanne shown eight times in a ring
+blender_mirrored       blender_340_mirrored_normals_7400_binary.fbx   21215a9fc93ed966d5d10dc2c1b5af01cc9630930e5be872651ce3f070fca03d  a Suzanne and a mirror image of her, scaled by -1
+blender_multimaterial  blender_suzanne_multimaterial_7400_binary.fbx  503bdf6683b7473bbd40e2220c9f7ab91b03598f06bf39692379afe020b1a3c6  one Suzanne wearing seven materials
+blender_materials      blender_293_material_mapping_7400_binary.fbx   abc8f2e7cb2febbb3b7ef254d0ffe70cfddba273a0ca869ece5a6afab84a95ed  Blender's Principled material, see-through
+max_pbr                max_pbr_metal_rough_material_7700_ascii.fbx    f84508c39a019d1a837d5cf7ef60dfbee0ab82df975863c4ea72a9170410edef  3ds Max's PBR material with every number set by hand
+max_physical           max_physical_material_properties_6100_ascii.fbx 3627a604e1018d9d5a253f0943a42cdf48041dee1a3311d7936bc37302398475  3ds Max's physical material, likewise

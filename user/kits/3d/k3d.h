@@ -371,4 +371,39 @@ void        k3d_obj_free(struct k3d_obj *o);
 char       *k3d_obj_write(const struct k3d_obj_part *parts, size_t n, const char *mtllib,
                           size_t *len);
 
+/*
+ * FBX (`k3d_fbx.c`, through ufbx): a part for each run of a mesh's faces
+ * under one material, for every node that shows the mesh. Points are in
+ * the part's own space, Y up and in metres whatever the file was drawn in;
+ * `matrix` places them in the world, column-major, as glTF's is.
+ */
+#define K3D_FBX_NO_MATERIAL 0xffffffffu
+
+struct k3d_fbx_part {
+    char     name[64];
+    uint32_t material;          /* into `materials`, or K3D_FBX_NO_MATERIAL */
+    bool     hidden;
+    double   matrix[16];
+    struct k3d_soup soup;
+};
+
+struct k3d_fbx_material {       /* the Material tab's terms, colours linear */
+    char  name[64];
+    float base[3], emit[3];
+    float metallic, rough, trans, ior;
+};
+
+struct k3d_fbx {
+    struct k3d_fbx_part     *parts;
+    size_t                   nparts;
+    struct k3d_fbx_material *materials;
+    size_t                   nmaterials;
+    uint32_t                 lamps, cameras;    /* in the file, not read yet */
+    char                     why[160];          /* a refusal, when there is one */
+};
+
+/* NULL, or why not - a sentence in `out->why`, with nothing else kept. */
+const char *k3d_fbx_read(const unsigned char *bytes, size_t len, struct k3d_fbx *out);
+void        k3d_fbx_free(struct k3d_fbx *f);
+
 #endif

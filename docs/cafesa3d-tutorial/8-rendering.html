@@ -39,14 +39,20 @@ p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
 <p>One path per pixel is a guess, so the first picture is grainy. Each <b>sample</b> is another path for every pixel, and the pixel is their average, so the grain fades as they build up: four times the samples leaves half the grain. The top left of the view counts them.</p>
 <p class="note">More samples make a picture cleaner, not more detailed. Detail comes from the objects: their shapes, textures and size in the picture.</p>
 <h2>The Render window</h2>
-<p><kbd>F12</kbd> renders through the camera, 640 by 360 pixels, to 256 samples. Beside the picture it shows how many samples it has, how long it has taken, and how many rays a second the machine is tracing. <b class="ui">Render again</b> starts afresh.</p>
-<p class="note">Saving the picture as a PNG is still to come.</p>
+<p><kbd>F12</kbd> renders through the camera at the size the <b class="ui">Render</b> tab says - 640 by 360 and 256 samples to begin with. Beside the picture it shows how many samples it has, how long it has taken, and how many rays a second the machine is tracing. <b class="ui">Render again</b> starts afresh, at the tab's settings as they are now.</p>
+<p><b class="ui">Save as PNG...</b> keeps the picture as it stands, at its full size, in <code>/home/Renders</code>. A picture bigger than the screen is shown shrunk in the window and saved whole.</p>
 <img src="render-window.png" width="860" height="408" alt="The Render window with the finished car and its sample count">
 <p class="caption">The Render window: the picture on the left; on the right how many samples it has, how long it took and how many rays a second - here under QEMU's emulation, which is far slower than a real machine.</p>
 <h2>Every processor, and never in your way</h2>
 <p>A render uses every processor the machine has: each takes a square of the picture, then the next. It runs below every window, so Cafesa3D, the desktop and everything else stay as quick to answer as ever - the render takes only the time nothing else wants.</p>
 <h2>The Render tab</h2>
-<p>The <b class="ui">Render</b> tab shows the settings: path tracing, 256 samples for <kbd>F12</kbd>, 64 for the Rendered view, up to six bounces, 640 by 360. They cannot be changed yet.</p>
+<p>The <b class="ui">Render</b> tab holds the settings, and they are saved with the scene:</p>
+<ul>
+<li><b class="ui">Final</b> or <b class="ui">Preview</b> - path tracing, as described above, or Whitted's older ray tracing: much quicker, with hard shadows and no light bounced off walls. Preview is for checking where things are.</li>
+<li><b class="ui">Samples</b> - how many <kbd>F12</kbd> takes; <b class="ui">View samples</b> - how many the Rendered view takes before it stops.</li>
+<li><b class="ui">Bounces</b> - how many times a path may bounce. Glass behind glass needs more; a plain room is right at four to six.</li>
+<li><b class="ui">Size</b> - four common sizes, up to 3440 by 1440 for a wide screen, or any <b class="ui">Width, height</b> you type.</li>
+</ul>
 <h2>Getting a good picture</h2>
 <ul>
 <li><b>Grainy?</b> Give it time: the grain halves each time the samples go up four times. The soft edges of shadows from a big lamp take longest to settle; a smaller lamp gives sharper shadows, which settle sooner.</li>
