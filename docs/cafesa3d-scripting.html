@@ -1,0 +1,412 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Scripting in Cafesa3D, drawn before it is written (roadmap.md 4l). One CSS
+  pixel to one screen pixel, in the Plex look, beside docs/cafesa3d.html.
+
+  Diego, 26 September 2026: "What if we add scripting capabilities to cafesa
+  with our one Lua programming language", "This means we could design scenes
+  with code in a scripting editor", "We would need to think about the
+  bindings and else but it would make perfect sense as it's already made in
+  Lua and adding programming language to make the app scriptable" - and, on
+  the shape proposed that afternoon, "Scripting proposal suits perfectly".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cafesa3D scripting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --w-desk: #3d63b8; --w-body: #fafafb; --w-line: #e0e2e6; --w-ink: #1d1f24;
+    --w-dim: #74787f; --w-accent: #2a55c9; --w-head: #ffffff; --w-sel: #e9eefb;
+    --vp-ink: #d9dde4; --vp-dim: #9aa1ad;
+    --c-kw: #7a3fb8; --c-num: #b3541e; --c-str: #2f7a32; --c-com: #8b919a; --c-fn: #1f5fbf;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1480px; margin: 0 auto; padding-block: 40px 80px; padding-inline: 20px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  h2 { font-family: var(--display); font-size: 19px; margin: 46px 0 6px;
+       padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  .sub, .why { color: var(--muted); max-width: 78ch; }
+  .why { margin: 0 0 14px; font-size: 14px; }
+  code, kbd { font-family: var(--mono); font-size: .88em; }
+  kbd { border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+
+  .stage { background: var(--w-desk);
+           background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+           padding: 30px 24px; border-radius: 12px; overflow-x: auto; }
+  .win { width: 1400px; height: 820px; margin: 0 auto; background: var(--w-body); border-radius: 10px; overflow: hidden;
+         box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+         font-size: 13.5px; color: var(--w-ink); display: flex; flex-direction: column; }
+  .head { height: 46px; background: var(--w-head); border-bottom: 1px solid var(--w-line);
+          display: flex; align-items: center; gap: 6px; padding: 0 10px 0 18px; flex: none; }
+  .head .t { font-weight: 600; font-size: 14px; }
+  .head .s { color: var(--w-dim); font-size: 12.5px; margin: 0 14px 0 8px; white-space: nowrap; }
+  .sp { flex: 1; }
+  .btn { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px;
+         border: 1px solid var(--w-line); border-radius: 7px; background: #fff;
+         font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; font-family: inherit; }
+  .btn.primary { background: var(--w-accent); border-color: var(--w-accent); color: #fff; font-weight: 500; }
+  .btn.on { background: var(--w-sel); border-color: #c4d2f4; color: var(--w-accent); font-weight: 500; }
+  .btn kbd { border: 0; padding: 0; color: var(--w-dim); font-size: 11px; }
+  .btn.primary kbd { color: #cfdaf7; }
+  .btn svg { width: 12px; height: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--w-line); border-radius: 7px; overflow: hidden; flex: none; background: #fff; }
+  .seg span { height: 29px; padding: 0 11px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+  .seg span + span { border-left: 1px solid var(--w-line); }
+  .seg span.on { background: var(--w-sel); color: var(--w-accent); font-weight: 500; }
+  .seg span.off { color: #b3b7be; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .foot { height: 30px; display: flex; align-items: center; padding: 0 14px; gap: 16px;
+          color: var(--w-dim); font-size: 12px; border-top: 1px solid var(--w-line); background: var(--w-body);
+          font-variant-numeric: tabular-nums; flex: none; white-space: nowrap; overflow: hidden; }
+  .foot kbd { border: 1px solid var(--w-line); border-bottom-width: 2px; background: #fff; color: var(--w-ink); font-size: 10.5px; padding: 0 4px; }
+
+  .layout { display: grid; grid-template-columns: 46px 1fr 470px 340px; flex: 1; min-height: 0; }
+  .tools { background: #f4f5f7; border-right: 1px solid var(--w-line); display: flex; flex-direction: column;
+           align-items: center; gap: 4px; padding: 10px 0; }
+  .tool { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: #4d535c; }
+  .tool.on { background: var(--w-accent); color: #fff; }
+  .tool svg { width: 17px; height: 17px; }
+  .vp { position: relative; overflow: hidden; background: #5f6368; }
+  .vp canvas { display: block; }
+  .vp .ov { position: absolute; left: 14px; top: 10px; color: var(--vp-ink); font-size: 12.5px; line-height: 1.45;
+            text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .vp .ov span { color: var(--vp-dim); }
+  .vp .hint { position: absolute; left: 14px; bottom: 12px; color: var(--vp-dim); font-size: 12px; }
+
+  /* The Script panel. */
+  .script { border-left: 1px solid var(--w-line); display: flex; flex-direction: column; min-height: 0; background: #fff; }
+  .panel-t { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; font-size: 12px; font-weight: 600;
+             color: var(--w-dim); letter-spacing: .04em; text-transform: uppercase; border-bottom: 1px solid var(--w-line);
+             background: #fbfbfc; flex: none; }
+  .panel-t .nm { text-transform: none; letter-spacing: 0; color: var(--w-ink); font-weight: 500; font-size: 12.5px; }
+  .panel-t .btn { height: 24px; padding: 0 9px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  .code { flex: 1; overflow: auto; font-family: var(--mono); font-size: 12.5px; line-height: 19px; padding: 8px 0;
+          counter-reset: ln; background: #fff; }
+  .code .l { display: grid; grid-template-columns: 40px 1fr; white-space: pre; }
+  .code .l::before { counter-increment: ln; content: counter(ln); color: #b3b7be; text-align: right; padding-right: 12px;
+                     user-select: none; }
+  .code .l.bad { background: #fde8e6; }
+  .code .l.bad::before { color: #c0392b; font-weight: 600; }
+  .code .caret { border-left: 2px solid var(--w-accent); margin-left: -1px; }
+  .kw { color: var(--c-kw); } .num { color: var(--c-num); } .str { color: var(--c-str); }
+  .com { color: var(--c-com); font-style: italic; } .fn { color: var(--c-fn); }
+  .out { flex: none; border-top: 1px solid var(--w-line); background: #f7f8fa; font-size: 12px; padding: 8px 12px 10px;
+         font-variant-numeric: tabular-nums; min-height: 78px; }
+  .out .pr { font-family: var(--mono); color: #4d535c; }
+  .out .ok { color: #1f6b2c; margin-top: 4px; }
+  .out .er { color: #b0281c; font-weight: 500; margin-top: 4px; }
+  .out .dim { color: var(--w-dim); }
+
+  .side { border-left: 1px solid var(--w-line); display: flex; flex-direction: column; min-height: 0; background: #fff; }
+  .outliner { height: 330px; overflow: hidden; border-bottom: 1px solid var(--w-line); flex: none; padding: 4px 0; }
+  .ol { display: grid; grid-template-columns: 18px 18px 1fr 22px; align-items: center; gap: 6px; height: 27px;
+        padding: 0 10px 0 12px; font-size: 13px; }
+  .ol.in { padding-left: 30px; }
+  .ol.coll { color: var(--w-dim); }
+  .ol.sel { background: var(--w-sel); }
+  .ol.sel .nm { color: var(--w-accent); font-weight: 500; }
+  .ol svg { width: 14px; height: 14px; color: #6a7482; }
+  .ol .by { font-size: 10.5px; color: #7a3fb8; background: #f2eafb; border-radius: 4px; padding: 0 5px; justify-self: end; }
+  .pane { padding: 12px 14px; font-size: 12.5px; }
+  .pane h4 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+  .f { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .f > label { color: #4d535c; text-align: right; }
+  .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+  .n { height: 26px; border: 1px solid #d6dae1; border-radius: 6px; background: #f7f8fa; font-size: 12px; text-align: center;
+       display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+  .pane .note { font-size: 12px; color: var(--w-dim); margin-top: 10px; line-height: 1.5; }
+  .pane .note b { color: #7a3fb8; font-weight: 500; }
+
+  .toggles { display: flex; gap: 8px; margin: 14px 0 0; flex-wrap: wrap; }
+  .toggles button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--rule);
+                    background: transparent; color: var(--ink); cursor: pointer; }
+  .toggles button[aria-pressed="true"] { border-color: #2a55c9; color: #2a55c9; font-weight: 500; }
+  .toggles button:focus-visible { outline: 2px solid #2a55c9; outline-offset: 2px; }
+
+  table.api { border-collapse: collapse; font-size: 14px; margin: 10px 0 18px; }
+  table.api td, table.api th { padding: 6px 18px 6px 0; vertical-align: top; border-bottom: 1px solid var(--rule); text-align: left; }
+  table.api th { font-weight: 600; font-size: 13px; color: var(--muted); }
+  table.api td:first-child { white-space: nowrap; font-family: var(--mono); font-size: 13px; }
+  .tablewrap { overflow-x: auto; }
+  ul.ask { max-width: 82ch; }
+  ul.ask li { margin-bottom: 8px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+  .cols p { max-width: 60ch; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Cafesa3D scripting</h1>
+<p class="sub">Scenes made with code, in the language Cafesa3D is already written in. A Script panel beside the 3D view: write Lua, press Run, and what it makes appears in the scene - as objects you can select, move, colour and save like any others. Drawn before it is written, for you to change before any of it is built.</p>
+
+<div class="toggles" role="group" aria-label="What the drawing shows">
+  <button type="button" id="show-ok" aria-pressed="true">After a run</button>
+  <button type="button" id="show-err" aria-pressed="false">After a mistake</button>
+</div>
+
+<div class="stage" style="margin-top:14px">
+  <div class="win" role="img" aria-label="Cafesa3D with the Script panel open beside the 3D view, a spiral staircase made by the script">
+    <div class="head">
+      <span class="t">Cafesa3D</span><span class="s">staircase.gltf</span>
+      <span class="seg"><span class="on">Object</span><span class="off">Edit</span></span>
+      <span class="btn" style="margin-left:6px">+ Add <kbd>Shift A</kbd></span>
+      <span class="btn on" style="margin-left:6px">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3 1.5 6 4 9M8 3l2.5 3L8 9"/></svg>
+        Script <kbd>Shift F4</kbd></span>
+      <span class="sp"></span>
+      <span class="seg"><span>Wireframe</span><span class="on"><i class="dot" style="background:#5f6368"></i> Solid</span><span><i class="dot" style="background:#e39a2b"></i> Rendered</span></span>
+      <span class="btn primary" style="margin-left:6px">Render <kbd>F12</kbd></span>
+      <span class="btn" style="border:0;padding:0 6px">&#8942;</span>
+    </div>
+    <div class="layout">
+      <div class="tools">
+        <span class="tool on"><svg viewBox="0 0 18 18"><path d="M4 2l10 7-5 1 3 6-2 1-3-6-3 4z" fill="currentColor"/></svg></span>
+        <span class="tool"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="4"/><path d="M9 1v4M9 13v4M1 9h4M13 9h4"/></svg></span>
+        <span class="tool"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2v14M2 9h14M9 2l-2 2M9 2l2 2M9 16l-2-2M9 16l2-2M2 9l2-2M2 9l2 2M16 9l-2-2M16 9l-2 2"/></svg></span>
+        <span class="tool"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 9a5 5 0 1 1-2-4M12 1v4h4"/></svg></span>
+        <span class="tool"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="9" height="9"/><path d="M8 2h8v8M16 2l-7 7"/></svg></span>
+      </div>
+      <div class="vp">
+        <canvas id="view" width="544" height="744" aria-hidden="true"></canvas>
+        <div class="ov">User Perspective<br><span>Collection | staircase | Step.007</span></div>
+        <div class="hint">Drag to turn &middot; Shift-drag to move &middot; scroll to come closer</div>
+      </div>
+      <div class="script">
+        <div class="panel-t">Script <span class="nm">staircase</span><span class="sp"></span>
+          <span class="btn" style="color:var(--w-dim)">Open .lua...</span>
+          <span class="btn primary">Run <kbd>Ctrl Enter</kbd></span>
+        </div>
+        <div class="code" id="code"></div>
+        <div class="out" id="out"></div>
+      </div>
+      <div class="side">
+        <div class="panel-t">Outliner</div>
+        <div class="outliner" id="outliner"></div>
+        <div class="panel-t">Properties</div>
+        <div class="pane">
+          <h4>Step.007</h4>
+          <div class="f"><label>Location</label><div class="trio"><span class="n">0.00 m</span><span class="n">0.80 m</span><span class="n">1.46 m</span></div></div>
+          <div class="f"><label>Rotation</label><div class="trio"><span class="n">0.0&deg;</span><span class="n">0.0&deg;</span><span class="n">105.0&deg;</span></div></div>
+          <div class="f"><label>Scale</label><div class="trio"><span class="n">1.000</span><span class="n">1.000</span><span class="n">1.000</span></div></div>
+          <p class="note">Made by <b>staircase</b>. Change it here and the next Run makes it again as the script says - copy it with <kbd>Shift D</kbd> to keep a change of your own.</p>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <span><kbd>Ctrl Enter</kbd> run</span><span><kbd>Ctrl Z</kbd> undo a run</span><span><kbd>Tab</kbd> indent</span>
+      <span><kbd>Shift F4</kbd> script</span><span class="sp"></span>
+      <span id="footcount">31 objects &nbsp; 818 triangles &nbsp; Selected Step.007</span>
+    </div>
+  </div>
+</div>
+
+<h2>What a script can reach</h2>
+<p class="why">The scene and nothing else. A script runs in a Lua environment of its own, made fresh for each Run, holding the calls below, Lua's own <code>math</code>, <code>string</code> and <code>table</code>, and <code>print</code>, whose lines go to the strip under the code. There is no <code>fs</code>, no <code>sys</code>, no <code>use</code>, no network and no other window - what a script was not handed it cannot reach, as everywhere else in Kosmos.</p>
+<div class="tablewrap">
+<table class="api">
+  <tr><th>Call</th><th>What it makes, and what it takes</th></tr>
+  <tr><td>scene.box{ ... }</td><td>A box: <code>size = { x, y, z }</code>. And <code>scene.plane</code>, <code>scene.sphere</code>, <code>scene.ico</code>, <code>scene.cylinder</code>, <code>scene.cone</code>, <code>scene.torus</code>, <code>scene.grid</code> - each with the numbers its Data tab shows, by the same names: <code>radius</code>, <code>depth</code>, <code>segments</code>, <code>rings</code> and the rest.</td></tr>
+  <tr><td>every shape also</td><td><code>name</code>, <code>loc</code>, <code>rot</code> in degrees, <code>scale</code>, <code>smooth</code>, <code>hidden</code>, and <code>material = { preset, base, metallic, rough, trans, ior, emit, texture, colour2, texture_scale, bump }</code> - the Material tab's fields, by its names.</td></tr>
+  <tr><td>scene.mesh{ ... }</td><td>Triangles of the script's own: <code>points = { {x, y, z}, ... }</code> and <code>faces = { {1, 2, 3}, ... }</code>, with <code>smooth_angle</code>. And three makers of them, the ones the samples are built with: <code>shapes.lathe(profile, segments)</code>, <code>shapes.loft(rings)</code> and <code>shapes.bevel(box, radius)</code>.</td></tr>
+  <tr><td>scene.light{ ... }</td><td>A lamp: <code>loc</code>, <code>power</code>, <code>radius</code>, <code>colour</code>.</td></tr>
+  <tr><td>scene.camera{ ... }</td><td>Moves the camera: <code>loc</code>, <code>target</code>, <code>focal</code>. There is one camera.</td></tr>
+  <tr><td>scene.world{ ... }</td><td>The sky: <code>zenith</code>, <code>horizon</code>, <code>strength</code>.</td></tr>
+  <tr><td>scene.find(name)</td><td>An object already in the scene, to read or move: <code>find("Ground").loc</code>. What a script changes this way is its to change back on the next Run.</td></tr>
+</table>
+</div>
+<p class="why">Every call is held to what the Properties tabs hold a number to, and a wrong name or value is refused with a sentence and the line - <em>"Line 13: the texture Wod is not one of None, Checker, Brick, Tiles, Noise, Wood, Marble"</em>. Colours are written as <code>0xrrggbb</code>, the way the file keeps them.</p>
+
+<h2>What a Run does</h2>
+<div class="cols">
+  <p class="why"><b>All or nothing, and one undo step.</b> The script runs to its end before the scene is touched; a mistake anywhere leaves the scene as it was and marks the line. <kbd>Ctrl Z</kbd> takes back a whole Run, as it takes back any other change.</p>
+  <p class="why"><b>A Run replaces what the last one made.</b> Objects a script makes are its own - the Outliner groups them under its name - so changing a number and pressing Run again gives the new staircase instead of a second one on top of the first. Objects made by hand are never touched.</p>
+  <p class="why"><b>A loop that never ends is stopped</b>, after a few seconds' worth of instructions, with nothing it made kept - Cafesa3D stays answering, because a script is counted as it runs rather than trusted to finish.</p>
+  <p class="why"><b>Saved with the scene.</b> The script goes in the scene's file, so opening it brings back the code with what it made. <b>Open .lua...</b> and Save take a script on its own, to share or keep. The house, the car and the plane become scripts Cafesa3D runs itself, instead of Python on the Mac.</p>
+</div>
+
+<h2>Yours to decide</h2>
+<ul class="ask">
+  <li><b>Where the panel sits</b> - beside the view, as drawn, which suits your 3440-wide screen; or under it, which suits a narrow one. It could follow the window's shape.</li>
+  <li><b>Whether a Run replaces what the last one made</b> (as drawn) or adds to the scene every time, which is Blender's way. Replacing is what makes changing a number and running again feel like turning a knob.</li>
+  <li><b>One script a scene, or several</b>, each with its name as a tab along the panel's top.</li>
+  <li><b>Running as you type</b>, a moment after you stop, as well as on <kbd>Ctrl Enter</kbd> - lively for a staircase, too eager for a script that builds a city.</li>
+  <li><b>The key that opens the panel</b>: <kbd>Shift F4</kbd> is drawn, beside Blender's <kbd>Shift F11</kbd> for its text editor, since <kbd>F11</kbd> is full screen here.</li>
+</ul>
+
+</div>
+
+<script>
+// The code, coloured: keywords, numbers, strings, comments and the calls.
+const SCRIPT = [
+  "-- A spiral staircase: a step every fifteen degrees,",
+  "-- each a little higher, round a steel column.",
+  "local steps, rise = 24, 0.18",
+  "",
+  "for i = 0, steps - 1 do",
+  "  local a = math.rad(i * 15)",
+  "",
+  "  scene.box{",
+  "    name = \"Step\", size = { 1.4, 0.34, 0.07 },",
+  "    loc = { math.cos(a) * 0.8, math.sin(a) * 0.8, 0.2 + i * rise },",
+  "    rot = { 0, 0, i * 15 },",
+  "    material = { preset = \"Plastic\", base = 0x7a4a2a,",
+  "                 texture = \"Wood\", rough = 0.45 },",
+  "  }",
+  "end",
+  "",
+  "scene.cylinder{",
+  "  name = \"Column\", radius = 0.1, depth = 0.4 + steps * rise,",
+  "  loc = { 0, 0, (0.4 + steps * rise) / 2 },",
+  "  material = { preset = \"Metal\", base = 0x8a8d92 },",
+  "}",
+  "",
+  "scene.light{ loc = { -3, -4, 7 }, power = 2500, radius = 1 }",
+  "print((\"%d steps, %.1f m up\"):format(steps, steps * rise))",
+];
+const BAD_LINE = 13;
+
+function colour(line) {
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const c = line.indexOf("--");
+  if (c >= 0) return colour(line.slice(0, c)) + '<span class="com">' + esc(line.slice(c)) + "</span>";
+  return line.split(/("[^"]*")/).map(part => {
+    if (part.startsWith('"')) return '<span class="str">' + esc(part) + "</span>";
+    return esc(part)
+      .replace(/\b(local|for|do|end|function|return|if|then|else)\b/g, '<span class="kw">$1</span>')
+      .replace(/\b(scene\.\w+|math\.\w+|print)\b/g, '<span class="fn">$1</span>')
+      .replace(/\b(0x[0-9a-f]+|\d+(\.\d+)?)\b/g, '<span class="num">$1</span>');
+  }).join("");
+}
+
+function showCode(bad) {
+  const lines = SCRIPT.map((l, i) => bad && i + 1 === BAD_LINE ? l.replace('"Wood"', '"Wod"') : l);
+  document.getElementById("code").innerHTML = lines.map((l, i) =>
+    '<div class="l' + (bad && i + 1 === BAD_LINE ? " bad" : "") + '"><span>' + (colour(l) || " ") + "</span></div>").join("");
+  document.getElementById("out").innerHTML = bad
+    ? '<div class="er">Line 13: the texture Wod is not one of None, Checker, Brick, Tiles, Noise, Wood, Marble.</div>' +
+      '<div class="dim" style="margin-top:4px">Nothing was made; the scene is as it was.</div>'
+    : '<div class="pr">24 steps, 4.3 m up</div>' +
+      '<div class="ok">Ran in 0.03 s: 26 objects and a lamp, replacing the 26 it made last time.</div>' +
+      '<div class="dim" style="margin-top:2px">Ctrl Z takes the run back.</div>';
+}
+
+// The Outliner: the script's objects grouped under its name.
+function showOutliner() {
+  const tri = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7 2 12 11H2z"/></svg>';
+  const eye = '<svg viewBox="0 0 14 14" fill="none" stroke="#9aa1ad" stroke-width="1.3"><path d="M1 7s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z"/><circle cx="7" cy="7" r="1.6"/></svg>';
+  const code = '<svg viewBox="0 0 14 14" fill="none" stroke="#7a3fb8" stroke-width="1.4"><path d="M5 3 2 7l3 4M9 3l3 4-3 4"/></svg>';
+  const rows = [
+    ["coll", "", "Collection", ""],
+    ["", code, "staircase", '<span class="by">script</span>'],
+    ["in", tri, "Column", eye], ["in", tri, "Step", eye], ["in", tri, "Step.001", eye],
+    ["in", tri, "Step.002", eye], ["in", tri, "&hellip; Step.006", ""], ["in sel", tri, "Step.007", eye],
+    ["in", tri, "&hellip; Step.023", ""], ["in", tri, "Light", eye],
+    ["", tri, "Camera", eye], ["", tri, "Ground", eye],
+  ];
+  document.getElementById("outliner").innerHTML = rows.map(([cls, ic, nm, end]) =>
+    '<div class="ol ' + cls + '"><span></span><span>' + ic + '</span><span class="nm">' + nm + "</span>" + end + "</div>").join("");
+}
+
+// The view: what the script makes, drawn in the Solid view's manner - flat
+// faces lit from one side, painter-sorted, over the ground's grid.
+function drawView() {
+  const cv = document.getElementById("view"), g = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  g.fillStyle = "#5f6368"; g.fillRect(0, 0, W, H);
+  const eye = [6.2, -7.4, 5.2], tgt = [0, 0, 2.2];
+  const f = norm(sub(tgt, eye)), r = norm(cross(f, [0, 0, 1])), u = cross(r, f);
+  const F = (W / 2) / Math.tan(0.62 / 2) * 0.62;
+  function proj(p) {
+    const d = sub(p, eye), z = dot(d, f);
+    return [W / 2 + dot(d, r) * F / z, H / 2 - dot(d, u) * F / z, z];
+  }
+  // The grid.
+  g.strokeStyle = "rgba(255,255,255,.09)"; g.lineWidth = 1;
+  for (let k = -10; k <= 10; k++) {
+    line(proj([k, -10, 0]), proj([k, 10, 0]), k === 0 ? "rgba(120,190,70,.55)" : null);
+    line(proj([-10, k, 0]), proj([10, k, 0]), k === 0 ? "rgba(230,90,80,.55)" : null);
+  }
+  function line(a, b, col) {
+    if (a[2] <= 0.1 || b[2] <= 0.1) return;
+    g.strokeStyle = col || "rgba(255,255,255,.09)";
+    g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  }
+  const faces = [], light = norm([-0.45, -0.6, 0.66]);
+  function box(c, s, az, colr, sel) {
+    const ca = Math.cos(az), sa = Math.sin(az);
+    const P = [];
+    for (const [x, y, z] of [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]) {
+      const lx = x * s[0] / 2, ly = y * s[1] / 2;
+      P.push([c[0] + lx * ca - ly * sa, c[1] + lx * sa + ly * ca, c[2] + z * s[2] / 2]);
+    }
+    for (const q of [[0,1,2,3],[4,7,6,5],[0,4,5,1],[1,5,6,2],[2,6,7,3],[3,7,4,0]]) {
+      const pts = q.map(i => P[i]);
+      const n = norm(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])));
+      const mid = pts.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0]);
+      if (dot(n, sub(eye, mid)) <= 0) continue;
+      faces.push({ pts, z: dot(sub(mid, eye), f), shade: 0.45 + 0.55 * Math.max(0, dot(n, light)), colr, sel });
+    }
+  }
+  function cylinder(c, rad, h, colr) {
+    const n = 24;
+    for (let k = 0; k < n; k++) {
+      const a0 = k / n * 2 * Math.PI, a1 = (k + 1) / n * 2 * Math.PI;
+      const pts = [[c[0] + rad * Math.cos(a0), c[1] + rad * Math.sin(a0), c[2] - h / 2],
+                   [c[0] + rad * Math.cos(a1), c[1] + rad * Math.sin(a1), c[2] - h / 2],
+                   [c[0] + rad * Math.cos(a1), c[1] + rad * Math.sin(a1), c[2] + h / 2],
+                   [c[0] + rad * Math.cos(a0), c[1] + rad * Math.sin(a0), c[2] + h / 2]];
+      const nn = [Math.cos((a0 + a1) / 2), Math.sin((a0 + a1) / 2), 0];
+      const mid = [c[0] + rad * nn[0], c[1] + rad * nn[1], c[2]];
+      if (dot(nn, sub(eye, mid)) <= 0) continue;
+      faces.push({ pts, z: dot(sub(mid, eye), f), shade: 0.5 + 0.5 * Math.max(0, dot(nn, light)), colr });
+    }
+  }
+  const steps = 24, rise = 0.18;
+  cylinder([0, 0, (0.4 + steps * rise) / 2], 0.1, 0.4 + steps * rise, [138, 141, 146]);
+  for (let i = 0; i < steps; i++) {
+    const a = i * 15 * Math.PI / 180;
+    box([Math.cos(a) * 0.8, Math.sin(a) * 0.8, 0.2 + i * rise], [1.4, 0.34, 0.07], a, [122, 74, 42], i === 7);
+  }
+  faces.sort((a, b) => b.z - a.z);
+  for (const fc of faces) {
+    const q = fc.pts.map(proj);
+    g.beginPath(); q.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath();
+    const [cr, cg, cb] = fc.colr.map(v => Math.round(v * fc.shade));
+    g.fillStyle = `rgb(${cr},${cg},${cb})`; g.fill();
+    if (fc.sel) { g.strokeStyle = "#ffa53d"; g.lineWidth = 1.5; g.stroke(); }
+  }
+  // The lamp, as the view draws one.
+  const L = proj([-3, -4, 7]);
+  g.strokeStyle = "#f2c230"; g.lineWidth = 1.5; g.beginPath(); g.arc(L[0], L[1], 6, 0, 7); g.stroke();
+}
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const n = Math.hypot(a[0], a[1], a[2]); return [a[0] / n, a[1] / n, a[2] / n]; }
+
+const ok = document.getElementById("show-ok"), err = document.getElementById("show-err");
+ok.onclick = () => { ok.setAttribute("aria-pressed", "true"); err.setAttribute("aria-pressed", "false"); showCode(false); };
+err.onclick = () => { err.setAttribute("aria-pressed", "true"); ok.setAttribute("aria-pressed", "false"); showCode(true); };
+showCode(false); showOutliner(); drawView();
+</script>
+</body>
+</html>
