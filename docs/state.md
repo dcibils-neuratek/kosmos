@@ -62,7 +62,13 @@ Blender's View Selected; **Cafesa3D opens maximised** - the window
 manager's new `workarea` and an open with `maximised`; **menus follow a
 dragged window** - `direct_event` takes `moved`, for every application
 that runs its own loop; the Add menu's **Import...** works. And he asked
-for **a stick for the M700**, to try all of it there.
+for **a stick for the M700**, to try all of it there:
+`build/x86_64/kosmos-usb-0.10.169-development.img` (226e7dc), 32 checks under
+OVMF and the gate 40 of 40, handed over the same evening - see `boot.md`.
+Building it found that a MEGA x86-64 image had outgrown 32 MB (the heap
+starts at 40 now) and that four x86-64 kernel objects never saw their
+headers change (18.202). **Next**: Processes' Threads column (6h), then
+the tutorial's pages for F, Stop and maximised.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor
