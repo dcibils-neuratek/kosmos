@@ -10304,3 +10304,18 @@ focus timing check ("a frame that arrives soon after the move and shows the
 focus where it was") with a QEMU of Diego's rendering on four cores beside
 the gate, and passed alone on the same image, 65 checks.
 
+**Then the stick would not link, and the build had a hole** (0.10.169).
+The x86-64 `MEGA=1` image ran past the 32 MB a process's image may take
+(`user/user.ld`'s assertion), with ufbx the last thing in; the starting heap
+moved to 40 MB. The next gate failed `el0: code shared, writable not` on
+x86-64 every time and never on AArch64, and a rebuild of the same source
+passed. The kept image and the rebuilt one differed in 86 bytes, and the
+kernel's were at `tests.c` line 1895, `as_page_entry(a->space,
+USER_HEAP_VA)`: 0x02000000 in one and 0x02800000 in the other. On x86-64
+the kernel's sources are compiled afresh at each link, except four built
+with floating point - `tests.c`, `math.c`, `snprintf.c`, `strtod.c` - which
+are objects whose `.d` files were written and never included; so the
+kernel mapped the heap at 40 MB and the suite looked for it at 32. The
+Makefile includes them now, and a touched `kernel/process.h` makes
+`tests.c` again - the control. The gate after: 40 of 40 in 9:51.
+

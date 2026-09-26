@@ -2143,6 +2143,14 @@ processors, and still what follows USB:
    columns above four cores, the window never taller than the screen, and
    past about sixteen a choice of one graph a core or one for all.
 
+6h. **AGREED on 26 September - Processes shows each process's threads.** Diego,
+   with a photograph of the window: "processes need a threads column to
+   tell how many threads a process is running". The header already says
+   "30 threads (7 in the kernel)" for the machine; a column says it for each
+   row, beside priority and core - so a program with workers (Cafesa3D
+   rendering on four) is visible as one. The kernel's `proc_info` is where
+   the count comes from; drawn in `docs/apps.html` first, as the window was.
+
 6g. **DONE on 24 September (0.10.161) - Processes says what a process is.** Diego:
    "isnt the e1000 a driver, not a server? i see it as a server in the
    process viewer". `procs.lua` takes a kind from a program in `/bin` of the

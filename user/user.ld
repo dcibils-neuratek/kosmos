@@ -102,15 +102,17 @@ SECTIONS
     /*
      * And the image has to end before the heap begins.
      *
-     * `USER_HEAP` in `user/include/kosmos.h` is thirty-two megabytes above
+     * `USER_HEAP` in `user/include/kosmos.h` is forty megabytes above
      * `USER_BASE`, fixed. An image that grew past it would overlap the heap,
      * and the link is the place to find that out rather than whatever the
      * first allocation lands on. It was sixteen until the desktop's
-     * wallpapers ran a `FULL=1` image into it, here, on 18 September 2026;
-     * `MEGA=1`, which carries everything, is still the one that gets closest.
+     * wallpapers ran a `FULL=1` image into it, here, on 18 September 2026,
+     * and thirty-two until an x86-64 `MEGA=1` image with ufbx in it did on
+     * the 26th; `MEGA=1`, which carries everything, is the one that gets
+     * closest.
      */
-    ASSERT(__image_end <= USER_BASE + 0x02000000,
-           "the userland image runs into its heap, which starts at USER_BASE + 32 MB (USER_HEAP, user/include/kosmos.h)")
+    ASSERT(__image_end <= USER_BASE + 0x02800000,
+           "the userland image runs into its heap, which starts at USER_BASE + 40 MB (USER_HEAP, user/include/kosmos.h)")
 
     /DISCARD/ : {
         *(.comment)

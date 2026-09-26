@@ -709,7 +709,7 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 #endif
 
 #define USER_TEXT       ((unsigned long)KOSMOS_USER_BASE)
-#define USER_HEAP       (USER_TEXT + 0x02000000UL)   /* kernel/process.h */
+#define USER_HEAP       (USER_TEXT + 0x02800000UL)   /* kernel/process.h */
 /*
  * The heap's size, and it must be the same number the *kernel* used.
  *

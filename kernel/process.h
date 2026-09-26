@@ -83,15 +83,16 @@ struct thread;
  */
 #define USER_TEXT_VA     USER_VA_BASE                       /* base         */
 /*
- * **The image may be 32 MB, and was 16.** A `FULL=1` image carries the
- * desktop's wallpapers - nine megabytes of photographs, 18 September 2026 -
- * and with them it ran past the heap's old start at the link. What moved is
- * only where the heap and the stack begin; the heap's size and the gaps
- * between the regions are what they were, and the screen and the mappings
- * still start at 48 and 64 MB. The image's read-only half is shared by every process, so the room
- * costs address space and not memory.
+ * **The image may be 40 MB, and was 32, and 16 before that.** A `FULL=1`
+ * image carries the desktop's wallpapers - nine megabytes of photographs,
+ * 18 September 2026 - and with them it ran past the heap's first start at
+ * the link. On 26 September a `MEGA=1` image for x86-64, with Quake, Lite
+ * XL, FFmpeg and then ufbx in it, ran past 32. What moved the second time
+ * is only where the heap begins: the stack, the screen and the mappings
+ * are where they were, at 46, 48 and 64 MB. The image's read-only half is
+ * shared by every process, so the room costs address space and not memory.
  */
-#define USER_HEAP_VA     (USER_VA_BASE + 0x02000000UL)      /* base + 32 MB */
+#define USER_HEAP_VA     (USER_VA_BASE + 0x02800000UL)      /* base + 40 MB */
 /*
  * Two megabytes, and overridable at build time.
  *
@@ -101,10 +102,12 @@ struct thread;
  * for six megabytes of zone before it draws anything, and `make DOOM=1`
  * passes a larger number here.
  *
- * It cannot grow without limit: `USER_HEAP_VA` sits 16 MB below
- * `USER_STACK_TOP` and the gap between them is deliberate - a heap that
- * ran off its top would land in the stack instead of in unmapped space,
- * and the fault is the thing that makes that a bug you can find.
+ * It does not grow in place: `runtime/libc/malloc.c` asks the kernel for
+ * another arena, somewhere else, when it runs out. So the space above it
+ * is a guard rather than room - nearly four megabytes of nothing between
+ * its top at 42 MB and the stack's bottom, unmapped, so a write that ran
+ * off the end faults instead of landing in the stack. It was sixteen when
+ * the heap started at 32 MB, from when it was the only heap there was.
  */
 #ifndef USER_HEAP_PAGES
 #define USER_HEAP_PAGES  512                                /* 2 MB       */

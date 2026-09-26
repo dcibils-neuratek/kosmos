@@ -2908,6 +2908,17 @@ ifdef TEST
   X86_FP_OBJS := $(patsubst %,$(X86_BUILD)/%.o,$(X86_FP_SRCS))
 
   X86_SRCS := $(filter-out $(X86_FP_SRCS),$(X86_SRCS)) $(X86_FP_OBJS)
+
+  #
+  # **And what they include, so a changed header makes them again.** The
+  # rest of the kernel is compiled afresh at every link, so it never went
+  # stale; these four are objects, and their `.d` files were written and
+  # never read. On 26 September the heap moved in `kernel/process.h`, the
+  # kernel was rebuilt with it and `tests.c` was not, and the suite looked
+  # for the heap where it used to be - failing every time on x86-64 and
+  # never on AArch64, whose objects' files `DEPS` has always named.
+  #
+  -include $(X86_FP_OBJS:.o=.d)
 endif
 
 # Everything the kernel is built with, minus the ban on FP.
