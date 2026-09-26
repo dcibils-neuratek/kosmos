@@ -4881,9 +4881,33 @@ end
 -- somebody picked an odd one is worse than an application with the old
 -- font.
 local sized_faces = {}
+local sized_order = {}                  -- their keys, in the order first asked
+local loaded_fonts = {}                 -- what `gfx` was last given, by role
 
 local function apply_fonts(fonts)
   if type(fonts) ~= "table" then return end
+
+  -- **The same fonts again are not a change.** Every window that opens is
+  -- told the desktop's faces, and a process with two windows - Cafesa3D and
+  -- its Render window - was told the same ones twice, and threw away every
+  -- face it had asked for by size in between: the numbers it held drew in
+  -- the bitmap font from then on.
+  --
+  -- Held against what `gfx` was actually given in this process, not against
+  -- `theme.fonts`, which starts as the shipped defaults - the very faces
+  -- the desktop sends first, so comparing with it loaded nothing at all.
+  local changed = false
+
+  for _, role in ipairs(theme.roles) do
+    local want, have = fonts[role], loaded_fonts[role]
+
+    if type(want) == "table" and want.font
+       and not (have and have.font == want.font and have.px == (tonumber(want.px) or 16)) then
+      changed = true
+    end
+  end
+
+  if not changed then return end
 
   -- **Four roles, which this loop said three of.** The compositor applies
   -- `title` as well, so an application that asked for it measured against a
@@ -4895,6 +4919,7 @@ local function apply_fonts(fonts)
     if type(want) == "table" and want.font then
       gfx.use_font(want.font, tonumber(want.px) or 16, role)
       theme.fonts[role] = { font = want.font, px = tonumber(want.px) or 16 }
+      loaded_fonts[role] = theme.fonts[role]
     end
   end
 
@@ -4902,8 +4927,19 @@ local function apply_fonts(fonts)
   -- slots are given back with them, since this cache is the only thing in
   -- a process holding one (`gfx.release_faces`). Clearing it alone left the
   -- slots taken, and a process told of new faces a few times ran out.
-  sized_faces = {}
+  --
+  -- **And cut again from the new ones, in the order they were first
+  -- asked for.** An application keeps the number `ui.sized` gave it, and
+  -- the pool fills from its lowest free slot, so asking again in the same
+  -- order puts each size back on the number its holder has.
   gfx.release_faces()
+
+  for _, key in ipairs(sized_order) do
+    local role, px = key:match("^(.-)@(%d+)$")
+    local want = theme.fonts[role]
+
+    sized_faces[key] = want and gfx.face(want.font, tonumber(px)) or false
+  end
 end
 
 --
@@ -4928,6 +4964,7 @@ function ui.sized(role, px)
   if got == nil then
     got = gfx.face(want.font, px) or false
     sized_faces[key] = got
+    sized_order[#sized_order + 1] = key
   end
 
   return got or role

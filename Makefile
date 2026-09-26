@@ -811,6 +811,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/game/gamesoft.c \
              user/kits/3d/k3d_mesh.c \
              user/kits/3d/k3d_raster.c \
+             user/kits/3d/k3d_trace.c \
              user/kits/3d/k3d_kosmos.c \
              user/kits/gfx/png.c \
              user/kits/gfx/jpeg.c \
@@ -1793,6 +1794,14 @@ $(HOSTDIR)/test_k3d: tools/test_k3d.c $(K3D_CORE) user/kits/3d/k3d.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
 	        tools/test_k3d.c $(K3D_CORE) -lm
+
+# Its ray tracer: shapes against their triangles, the four-wide hierarchy
+# against every triangle, light against the arithmetic, and four threads
+# against one, bit for bit (`tools/test_trace.c`).
+$(HOSTDIR)/test_trace: tools/test_trace.c $(K3D_CORE) user/kits/3d/k3d_trace.c user/kits/3d/k3d.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
+	        tools/test_trace.c $(K3D_CORE) user/kits/3d/k3d_trace.c -lm -lpthread
 
 #
 # FFmpeg's H.264 decoder and the kit's core on this Mac, held to FFmpeg's
@@ -3190,7 +3199,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3261,6 +3270,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv
 	$(HOSTDIR)/test_k3d
+	$(HOSTDIR)/test_trace
 	$(HOSTDIR)/test_yuv_x86
 	@# Broken-down time, which FFmpeg's option parser and logger reach.
 	$(HOSTDIR)/test_time

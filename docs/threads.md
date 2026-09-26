@@ -300,6 +300,13 @@ it, and the steps that cannot fail loudly come before the one that can.
    block**, because `errno` is read through the thread pointer and on x86
    that read faults when the pointer is zero - the first user thread this
    system made found that out.
+   **And on 25 September, where its stack begins** (`testing.md` 18.195):
+   x86 entered a thread's C function at the stack's 16-aligned top, where
+   System V wants it a word lower, as a `call` leaves it. Nothing noticed
+   until the 3D Kit's ray tracer - the first thread with an aligned SSE
+   store on its stack - faulted on its first one. `user_function_sp` in each
+   architecture's `context.h` says where a function expects its stack, and
+   this step's test now stores a vector on its thread's stack.
 4. **On other cores.** The same tests with each thread homed elsewhere, and
    *Work spreads* again: one process with four busy threads reads 100% on
    four cores.
@@ -309,6 +316,13 @@ it, and the steps that cannot fail loudly come before the one that can.
    another core, and while a sibling unmaps memory. The hardest step, so
    its tests are the kind that found SMP's bugs: kill in a loop under load,
    and `make stress` asking afterwards whether everything came back.
+   **Until it is built, a fault in a second thread panics the kernel**,
+   and that is a hole, not a detail. Found on 25 September by the fault
+   above: the thread that faulted tears the process down, waits for its
+   siblings to leave, and none is told to - so after five seconds it
+   panics with "a thread would not leave". Any program with a thread that
+   faults can stop the machine, which is the exact thing an address space
+   exists to prevent. This step is where it closes.
 7. **The libc**: `malloc` under a lock, `errno` per thread; the C thread
    kit.
 8. **Lua threads**: `use("/kits/thread")`, a state each, channels, and a

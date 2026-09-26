@@ -382,7 +382,7 @@ static void user_thread_main(void *arg)
     (void)arg;
     as_switch(self->space);
     thread_time_return(1);
-    enter_user(self->user_entry, USER_TSTACK_TOP(self->index),
+    enter_user(self->user_entry, user_function_sp(USER_TSTACK_TOP(self->index)),
                self->user_arg);
 }
 

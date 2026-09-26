@@ -43,6 +43,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -312,15 +313,42 @@ for board, image in (("arm", ARM), ("x86", X86)):
                             x86=(board == "x86")))
 
 
+# **No suite may hold the gate for ever.** On 25 September the host suite
+# waited 72 minutes on a test run through Rosetta that the Mac had wedged -
+# a process in an uninterruptible wait, beyond even SIGKILL - and the gate
+# said nothing, because it waited on each suite with no limit at all. The
+# budget for the whole gate is ten minutes (`CLAUDE.md`), so a suite past
+# twelve has hung: its process group is killed, the gate stops waiting
+# whether or not everything under it could be, and the log says why.
+SUITE_LIMIT = 12 * 60
+
+
 def run(suite, lock, started):
     begin = time.monotonic()
 
     with open(suite.log, "wb") as out:
-        done = subprocess.run(suite.cmd, cwd=ROOT, stdout=out,
-                              stderr=subprocess.STDOUT)
+        proc = subprocess.Popen(suite.cmd, cwd=ROOT, stdout=out,
+                                stderr=subprocess.STDOUT,
+                                start_new_session=True)
+
+        try:
+            suite.code = proc.wait(timeout=SUITE_LIMIT)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass                    # something under it will not die
+
+            out.write(b"\nFAIL: hung - no answer in %d s, and the gate stopped "
+                      b"waiting for it\n" % SUITE_LIMIT)
+            suite.code = -1
 
     suite.took = time.monotonic() - begin
-    suite.code = done.returncode
 
     with lock:
         at = time.monotonic() - started

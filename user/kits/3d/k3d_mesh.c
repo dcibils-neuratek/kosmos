@@ -69,6 +69,11 @@ void k3d_object_defaults(struct k3d_object *o, enum k3d_kind kind)
     o->colour = 0xcccccc;
     o->alpha = 1.0f;
     o->stale = true;
+
+    /* Blender's default material: 0.8 grey, half rough, an IOR of 1.5. */
+    o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.6038f;
+    o->mat.rough = 0.5f;
+    o->mat.ior = 1.5f;
 }
 
 struct k3d_object *k3d_scene_add(struct k3d_scene *s, enum k3d_kind kind)

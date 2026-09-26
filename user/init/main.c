@@ -122,10 +122,22 @@ static volatile unsigned long counted;
 
 static void counts_to_a_thousand(unsigned long arg)
 {
+    /* Sixteen bytes on this thread's own stack, stored and loaded as one
+     * vector - an aligned SSE move on x86, which faults if the thread began
+     * with its stack where a function does not expect it. The kernel
+     * started threads a word off until 25 September, and the 3D Kit's
+     * workers were the first to notice (`user_function_sp`). */
+    volatile float v __attribute__((vector_size(16))) = { 1, 2, 3, 4 };
     unsigned long i;
+
+    v = v + v;
 
     for (i = 0; i < arg; i++) {
         counted++;
+    }
+
+    if (v[3] != 8) {
+        kosmos_thread_exit(8);
     }
 
     /* Its own `errno`, which is the other half of step 2: set here, and read

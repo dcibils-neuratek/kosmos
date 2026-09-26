@@ -587,6 +587,74 @@ def main():
             open("/private/tmp/cafesa3d-%s.ppm" % name.lower(), "wb").write(guest.screendump()) \
                 if os.environ.get("CAFESA3D_SHOTS") else None
 
+        # **Rendered and F12** (step 3): the plane, ray traced on every
+        # processor - in the view, and through its camera in a window of its
+        # own. Only each render's first pass is waited for: every pixel
+        # traced once is the whole of the machinery, and 64 or 256 passes
+        # under TCG would be minutes spent proving the same thing again.
+        m = re.search(r"the view (\d+) by (\d+)", summary)
+        vw, vh = (int(v) for v in m.groups()) if m else (900, 700)
+        view_box = (ox + 46, oy + 46, ox + 46 + vw, oy + 46 + vh)
+        foot_box = (ox + 10, oy + 46 + vh + 4, ox + 700, oy + 46 + vh + 26)
+
+        def differing(a, b, box):
+            x0, y0, x1, y1 = box
+            n = total = 0
+
+            for y in range(y0, y1, 4):
+                for x in range(x0, x1, 4):
+                    total += 1
+                    n += a(x, y) != b(x, y)
+
+            return n, total
+
+        # Every processor the board was given: four on ARM, and the x86
+        # machine here is one.
+        cores = 4 if R.machine(image) == "aarch64" else 1
+        solid = screen()
+        mark = len(guest.seen)
+        click(ox + header["rendered"][0], oy + header["rendered"][1])
+        started = said("cafesa3d: rendering the view, ", mark, 30) or ""
+        threads = re.search(r"on (\d+) threads?", started)
+        check(threads is not None and int(threads.group(1)) == cores,
+              "Rendered did not start a thread on each of the %d processors: %r"
+              % (cores, started))
+        first = said("cafesa3d: the view's first pass in ", mark, 180)
+        check(first is not None, "the Rendered view's first pass never finished")
+        traced = screen()
+        n, total = differing(solid, traced, view_box)
+        check(n > total // 2, "the Rendered view looks like the Solid one after its first "
+              "pass: %d of %d pixels changed" % (n, total))
+
+        # A second window in the same process must not take the first one's
+        # faces with it: the foot bar is the same pixels before and after.
+        foot_before = [traced(x, y) for y in range(foot_box[1], foot_box[3])
+                       for x in range(foot_box[0], foot_box[2])]
+        mark = len(guest.seen)
+        keys("f12")
+        opened = said("cafesa3d: render window at ", mark, 30)
+        started = said("cafesa3d: rendering ", mark, 30) or ""
+        check(opened is not None, "F12 did not open the Render window")
+        check("through the camera" in started
+              and re.search(r"on %d threads?$" % cores, started) is not None,
+              "F12 did not render through the camera on %d threads: %r" % (cores, started))
+        first = said("cafesa3d: the render's first pass in ", mark, 180)
+        check(first is not None, "the Render window's first pass never finished")
+        at = screen()
+
+        if opened:
+            rx, ry = (int(v) for v in opened.split(","))
+            drawn = count(at, (rx + 20, ry + 66, rx + 620, ry + 386),
+                          lambda c: c != 0x1d1f24)
+            check(drawn > 20000, "the Render window's picture is still empty after its "
+                  "first pass (%d pixels)" % drawn)
+
+        foot_after = [at(x, y) for y in range(foot_box[1], foot_box[3])
+                      for x in range(foot_box[0], foot_box[2])]
+        check(foot_after == foot_before, "opening the Render window changed the main "
+              "window's foot bar: its faces were lost (%d pixels differ)"
+              % sum(a != b for a, b in zip(foot_before, foot_after)))
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
@@ -608,7 +676,9 @@ def main():
           "cancelling, Ctrl Z; the Move, Rotate and Scale handles each changing its "
           "axis alone; Location X typed, Rotation Z scrubbed, a sphere's segments "
           "remaking it, Esc, Ctrl Z; the house, the car and the plane opened from the "
-          "samples, every object read and their colours on the screen)" % checks)
+          "samples, every object read and their colours on the screen; the plane "
+          "Rendered on every processor and F12 through its camera, each first pass drawn, "
+          "and the main window's faces untouched by the second)" % checks)
     return 0
 
 

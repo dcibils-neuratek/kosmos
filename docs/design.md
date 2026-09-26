@@ -610,14 +610,53 @@ several sizes.
 **Every acceleration the machine has** - Diego: "Make sure we used all
 available acceleration modes from simd and avx and in the future gpu
 acceleration when available", and "So I expect cafesa3d uses all available
-cores". The hot loops are written with a scalar reference and vector
-versions held to it, as `yuv.c` is; NEON and SSE now, AVX once the kernel
-saves its registers (6l). Renders use a worker thread a core: C threads
-exist and every new one is placed on the least busy core, and since
-`malloc` is not yet under a lock and there is no futex (`threads.md` steps 7
-and 5), the workers allocate nothing and share out tiles through an atomic
-counter. And the kit's interface is a scene and "draw it", never how, so a
-GPU renderer can stand behind the same calls when Kosmos has one (7.1).
+cores". The hot loops are vector code held to a scalar reference: for
+`yuv.c` the reference is a scalar version in the kit, and for the ray
+tracer it is the test's - a loop over every triangle in the scene, in
+double precision, which the vector hierarchy must agree with ray for ray.
+NEON and SSE now, AVX once the kernel saves its registers (6l). Renders use
+a worker thread a core: C threads exist and every new one is placed on the
+least busy core, and since `malloc` is not yet under a lock and there is no
+futex (`threads.md` steps 7 and 5), the workers allocate nothing and share
+out tiles through an atomic counter. And the kit's interface is a scene and
+"draw it", never how, so a GPU renderer can stand behind the same calls
+when Kosmos has one (7.1).
+
+**The ray tracer is the kit's, not a kit of its own** (`k3d_trace.c`). The
+roadmap once named a `/kits/ray`; but a render reads the very objects the
+Solid view draws, so a second kit would have been a copy of the scene
+behind a second interface. It traces two ways, as `docs/cafesa3d.html`
+drew: *Final* is path tracing, Cycles' method, and *Preview* is Whitted's.
+What decides its shape:
+
+- **Shapes as they are.** A box and a plane are traced as themselves, and
+  so are a smooth sphere and cylinder, in the object's own space - an exact
+  outline at any size. A flat-shaded sphere, or a cylinder of three sides,
+  is its facets, because that is what was asked to be seen.
+- **Four at a time**, and only where the time goes. The hierarchies are
+  four-wide - one ray against four boxes in one pass - and a mesh's
+  triangles are packed four to a packet, so the two loops a ray spends its
+  life in are NEON and SSE, in the compiler's vector types as `gfx.c`'s
+  blitter is. The shading is not, because it is not where the time is. On
+  this Mac: 13 million rays a second on one core, 3.2 to 3.4 times that on
+  four, and 76 to 116 million on ten for the three sample scenes.
+- **A snapshot, and nothing shared that moves.** A render copies every
+  object, mesh and material when it starts, so the workers never read what
+  the application is changing; it is started again when anything changes.
+  A tile's next pass waits for its last, so no two threads add into the same
+  pixels, and each sample's random numbers come from where it is rather
+  than who drew it - so a render is the same, bit for bit, on one thread or
+  four, which the test holds it to.
+- **Below every window.** The workers step down to the LOW band as they
+  start (`SCHED_SET_MY_BAND`, which only goes down): the machine is the
+  render's when nothing else wants it, and the window that shows it stays as
+  quick to answer as it was. That is the responsiveness principle applied
+  to the heaviest thing an application can do.
+- **Sparks are noise, not light.** A glossy surface that waits for a random
+  bounce to find a small bright lamp makes a picture of white dots - the
+  first renders had them. Each lobe samples the lamps directly instead, and
+  light that has already bounced off something matte is held to a ceiling,
+  as Cycles' indirect clamp does.
 
 ### Where the line really falls: structure or a loop over bytes
 

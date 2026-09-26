@@ -180,6 +180,17 @@ static inline void context_init(struct context *ctx, void (*entry)(void *),
  */
 void enter_user(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
 
+/*
+ * **Where the stack pointer is when a C function begins**, for a thread
+ * entered straight at one: the 16-aligned top itself. AAPCS64 keeps sp
+ * 16-aligned at all times and the return address is a register, not a
+ * word on the stack - so nothing to leave room for, as x86 must.
+ */
+static inline uintptr_t user_function_sp(uintptr_t top)
+{
+    return top;
+}
+
 #endif /* !__ASSEMBLER__ */
 
 #endif /* ARCH_AARCH64_CONTEXT_H */

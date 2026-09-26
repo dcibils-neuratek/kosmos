@@ -227,6 +227,22 @@ static inline void context_init(struct context *ctx, void (*entry)(void *),
  */
 void enter_user(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
 
+/*
+ * **Where the stack pointer is when a C function begins**, for a thread
+ * entered straight at one (`threads.md` step 3). System V wants rsp + 8 a
+ * multiple of 16 at a function's first instruction - the state a `call`
+ * leaves - so the stack starts a word below its 16-aligned top, and that
+ * word, on a page the kernel zeroed, is the return address: a thread that
+ * returns from its entry jumps to nought and faults, rather than running
+ * on. A process's first thread goes through `_start`, which aligns for
+ * itself; a thread did not, and the first aligned SSE store in one - the
+ * 3D Kit's ray tracer, on 25 September - was a general protection fault.
+ */
+static inline uintptr_t user_function_sp(uintptr_t top)
+{
+    return top - 8;
+}
+
 #endif /* !__ASSEMBLER__ */
 
 #endif /* ARCH_X86_64_CONTEXT_H */

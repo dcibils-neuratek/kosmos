@@ -9772,3 +9772,103 @@ objects too: the check had been blind to half of what it guarded.
 scene opened with every object read and its colours on the screen - the
 roof's tiles, the car's paint, the plane's white. The view opens from the
 scene's camera, which is then not drawn.
+
+## 18.195 The ray tracer, and the Rendered view
+
+**`tools/test_trace.c`** in the host suite, 22 checks, about three seconds.
+Everything in it is knowable without looking at a picture:
+
+- **Shapes as they are**, against their own triangles: a box, a plane, and
+  a smooth sphere and cylinder of 512 sides, each turned and stretched,
+  and 5000 rays at each. A traced box or plane must meet every ray where its
+  triangles do; a sphere or cylinder a hair nearer, since a mesh lies
+  inside what it approximates.
+- **The four-wide hierarchy against every triangle**: sixty objects of
+  every kind, 19288 triangles, and 20000 rays. The hierarchy, its packets
+  of four and its early outs must find the nearest hit that a loop over
+  every triangle in the scene, in double precision, finds - and on the
+  object it names.
+- **Light against the arithmetic**: a floor under a lamp as bright as
+  P cos / 4 pi^2 d^2 says, under it and two metres off; a box between them
+  makes an exact shadow and a glass one does not; a mirror looked straight
+  down on shows the zenith; a ball of glass swaps a red wall and a blue one
+  behind it, and a ball of plaster shows neither; and the path tracer's
+  lamp, sampled over its cone, settles after 64 passes where Whitted's
+  point is.
+- **Threads**: one thread and four make the same picture, bit for bit,
+  with the same number of rays; painting only what moved on paints every
+  tile once and then none; a stopped render gives no more jobs.
+
+It also prints rays a second on one thread and four: 13.2 and 42.8 to 44.3
+million on this Mac, 3.2 to 3.4 times.
+
+**Controls**, each a copy of the tracer with one thing broken, and each
+failing what it should: the fourth lane of every box test dropped - the
+shapes and the hierarchy fail, 3664 rays missed; the fourth triangle of
+every packet ignored - the hierarchy fails; glass made to block shadows -
+the glass box fails; refraction switched off - the lens fails both ways;
+a sample's random numbers taken from a counter the threads share - one
+thread and four differ.
+
+**The sample scenes rendered on this Mac**, by the same file under a host
+driver, before any of it ran on Kosmos: 1280 by 720, 256 passes, ten
+threads, 6 to 10 seconds a scene at 76 to 116 million rays a second. The
+first renders had white sparks on every glossy surface - a lamp found now
+and then by a random bounce - and the second, with each glossy lobe
+sampling the lamps directly and bounced light clamped, had none.
+
+**Cafesa3D**, a phase at the end of its suite on each board, on the plane
+the samples leave open. **Rendered** must start a worker on every
+processor the board has - four on ARM, one on the x86 machine here - and
+its first pass must change more than half of the view from the Solid
+picture; **F12** must open the Render window, render through the camera on
+as many, and put a picture in it. Only each first pass is waited for: every
+pixel traced once is the whole of the machinery, and all 64 or 256 under
+TCG would be minutes proving it again. And the **main window's foot bar
+must be the same pixels before and after the Render window opens** - the
+check on a bug the second window found: every `ui.window` re-applied the
+desktop's fonts and released every face `ui.sized` had cut, so Cafesa3D's
+small type fell to the bitmap font. `ui.lua` now leaves the same fonts
+alone, and on a real change cuts every size again in the order first
+asked, which lands each on the number its holder kept.
+
+**Controls**, three images each one change from the tree, the suite run on
+all three beside the real one: `ui.lua` as committed - the foot bar fails,
+7911 pixels changed; one worker whatever the machine has - both "every
+processor" checks fail; the view never showing its render - 1633 of 47244
+pixels changed, and the check fails. Each failed only its own.
+
+**And x86 failed four of them first, which is how a kernel bug was found.**
+The worker died on its first instruction that stored a vector on its
+stack: the kernel entered a thread's C function at the stack's 16-aligned
+top, and System V wants it a word lower, as a `call` leaves it - the trap
+`_start` has always aligned for, which a thread skipped. ARM keeps sp
+16-aligned everywhere, so it never showed there. `user_function_sp` in each
+architecture's `context.h` now says where a function expects its stack.
+**The kernel suite's two-thread test stores a vector on its thread's stack
+now**: 178 of 178 on x86 with the fix, and with it undone test 56 fails on
+a general protection fault - and the kernel then panics, "a thread would
+not leave", because nothing tells a sibling to leave when a thread faults.
+That is `threads.md` step 6, recorded there as the hole it is.
+
+**The gate that ran it** failed three suites, and none was this work:
+
+- **host** waited 72 minutes on `test_yuv_x86`, run through Rosetta, which
+  this Mac had wedged - two copies in an uninterruptible wait that not even
+  SIGKILL ends; only a restart does. And **the gate waited with it,
+  saying nothing**, because it ran each suite with no time limit. It has
+  one now, `SUITE_LIMIT`, twelve minutes against a ten-minute budget for
+  the whole: past it the suite's process group is killed, the gate stops
+  waiting whether or not everything under it would die, and the log ends
+  `FAIL: hung`. Checked on a command that sleeps with a child: both gone in
+  two seconds, the suite failed and said why.
+- **x86-kernel** ran the *control* image. The fix was put back in the
+  same second the control build ended, and make on this Mac compares
+  mtimes to the second, so the gate's build saw nothing to do - the trap
+  a memory had been kept about. Rebuilt with a second's wait and a touch,
+  and compared by checksum against the kept control: 178 of 178.
+- **x86-film**: a run of silence in the film's sound 1.15 s in, 1292
+  samples of 266240, under the gate's forty suites. 13 of 13 run on its
+  own, and in every gate before it today. Recorded rather than rerun away:
+  sound that starves when the machine is busy is the thing this system
+  promises it will not do, and it has been seen once.

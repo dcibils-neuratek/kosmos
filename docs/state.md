@@ -255,9 +255,61 @@ screendumps failed on it; my own old scratch files, 1.9 GB, were cleared).
 And **sample scenes - a house, a car, a plane** (4l), with the reading half
 of step 5 brought forward to open them.
 
-**Next**: the sample scenes - a JSON reader, glTF with its `extras` for
-the kit's own shapes, and the three scenes as files Cafesa3D opens; then
-step three, the ray tracer.
+The sample scenes landed (c7cfaff, 18.194). Diego, on seeing them: "I was
+expecting a much more polished scenes", "With more detail and textures",
+and then "Let's prioritize the ray tracer renderer so we can see how it
+looks", "Also multi core usage", "The rendered should use simd and vector
+multiplication where necessary for speed".
+
+**Step three is built, not yet committed** (18.195): `k3d_trace.c` in the
+3D Kit - path tracing and Whitted's, shapes traced as themselves, four-wide
+hierarchies and packets of four triangles in NEON and SSE, a snapshot per
+render, one thread and four bit for bit alike; `k3.render` with a worker a
+core stepped down to the LOW band; Cafesa3D's **Rendered** view (64
+samples, starting again when anything moves) and **F12's Render window** as
+the drawing has it (256 samples). Materials, lamps and the sky reach the
+tracer. The samples rendered on this Mac at 80-120 million rays a second
+were sent to him, then the app itself under QEMU (the view's 64 samples in
+101 s under TCG, 1.5 million rays a second - QEMU's number, not a speed).
+The first renders had white sparks on glossy surfaces; each lobe now
+samples the lamps and bounced light is clamped.
+
+A bug the second window found: every `ui.window` re-applied the fonts and
+released every `ui.sized` face, so Cafesa3D's small type fell to the bitmap
+font when the Render window opened - fixed in `ui.lua` for font changes too
+(re-cut in the order asked, landing on the same numbers). The Cafesa3D
+suite checks it.
+
+He asked what tuning there is and whether more rays mean more detail:
+samples buy less noise (a quarter of it for four times the samples), not
+detail - detail is resolution, geometry and textures.
+
+**x86 found a kernel bug**: its worker died on the first vector stored on
+its stack - the kernel entered a thread's C function a word off the
+alignment System V expects, which `_start` has always fixed for the first
+thread and a thread skipped. Fixed per architecture (`user_function_sp`),
+held by the kernel suite's two-thread test, with a control. **And a hole
+it exposed, not fixed**: a fault in a second thread panics the kernel,
+"a thread would not leave", because nothing tells a sibling to leave until
+`threads.md` step 6 - any program can stop the machine that way. Recorded
+there; its place in the order is Diego's.
+
+The Cafesa3D suite's new phase passes on both boards (73 checks each) with
+three controls each failing only its own check.
+
+**The gate**, 3 of 40 red and none of it this work (`testing.md` 18.195):
+host hung 72 minutes on Rosetta, wedged on this Mac beyond SIGKILL until
+a restart - and the gate now stops waiting on any suite after twelve
+minutes; x86-kernel ran the control image, a one-second mtime (rebuilt,
+178/178); x86-film's sound starved once under load (13/13 alone). **The
+push is waiting on Diego**: a Mac restart and then `make prepush`, or
+pushing past the host suite's Rosetta test.
+
+**Next**: the push; then more complex scenes, which Diego asked to see
+after it. Then the Render tab's numbers editable
+(samples, bounces, clamp, resolution, Preview or Final) and a denoiser;
+then textures, a mesh kind, and the three scenes rebuilt with far more
+detail, rendered and shown to him.
 
 **Stashed** (`git stash list`, "6l in progress"): 6l's first step -
 `posix_memalign` and `aligned_alloc` in `malloc.c` with `tools/test_alloc.c`

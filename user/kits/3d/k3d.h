@@ -57,6 +57,16 @@ struct k3d_mesh {
 };
 
 /*
+ * What a surface is made of, for the ray tracer: Blender's Principled names
+ * and ranges, cut to the ones Cafesa3D's Material tab has. `base` is linear
+ * light, not the sRGB a colour picker shows; the binding converts.
+ */
+struct k3d_material {
+    float base[3];
+    float metallic, rough, trans, ior, emit;
+};
+
+/*
  * An object: where it is, what shape, what colour in the Solid view.
  *
  * `rot` is in degrees about X, then Y, then Z - Blender's default XYZ Euler
@@ -95,6 +105,9 @@ struct k3d_object {
     float    alpha;         /* below one: drawn through, after the rest */
     bool     smooth;
     bool     hidden;
+    bool     faceted;       /* traced as its triangles, not the true shape */
+
+    struct k3d_material mat;
 
     struct k3d_mesh mesh;
     bool     stale;         /* the mesh wants building again */
@@ -208,5 +221,71 @@ void k3d_line(struct k3d_view *v, const struct k3d_target *t,
 
 /* The object on a pixel of the last draw, or 0. */
 uint32_t k3d_pick(const struct k3d_view *v, int x, int y);
+
+/*--------------------------------------------------------------------------
+ * The ray tracer (`k3d_trace.c`).
+ *
+ * **A render reads a snapshot**, made when it starts: every object's place,
+ * shape and material copied, and a bounding volume hierarchy built over each
+ * mesh's triangles and another over the objects. So the threads that trace
+ * never look at anything the application is changing, and never allocate -
+ * `malloc` is not under a lock yet (`threads.md` step 7).
+ *
+ * **The work is tiles and passes**: a pass is one sample of every pixel, a
+ * tile sixteen pixels square, and a job one pass of one tile. Jobs are taken
+ * in order from one counter, so any number of threads can take them; a
+ * tile's next pass waits for its last, so no two ever add into the same
+ * pixels. Each sample's random numbers come from its tile, pass and pixel,
+ * never from which thread drew it - so a render is the same, bit for bit,
+ * whether one thread made it or eight.
+ *------------------------------------------------------------------------*/
+
+struct k3d_light {
+    float pos[3];
+    float radius;
+    float colour[3];        /* linear */
+    float power;            /* watts, as Blender's point light */
+};
+
+struct k3d_world {
+    float zenith[3], horizon[3];    /* linear */
+    float strength;
+};
+
+struct k3d_render_setup {
+    int   w, h;
+    float eye[3], target[3], fov;   /* fov across the width, radians */
+    bool  preview;                  /* Whitted, not paths */
+    int   bounces;
+    uint32_t passes;                /* stop after this many */
+    struct k3d_world world;
+    const struct k3d_light *lights;
+    int   nlights;
+};
+
+struct k3d_render;
+
+struct k3d_render *k3d_render_new(struct k3d_scene *s, const struct k3d_render_setup *how);
+void     k3d_render_free(struct k3d_render *r);
+
+/* The next job, taken: false when every pass is done or the render was
+ * stopped. `yield` is called while a tile's last pass is still being drawn. */
+bool     k3d_render_job(struct k3d_render *r, uint32_t *tile, uint32_t *pass,
+                        void (*yield)(void));
+void     k3d_render_tile(struct k3d_render *r, uint32_t tile, uint32_t pass);
+void     k3d_render_stop(struct k3d_render *r);
+
+/* The least number of passes every tile has had, and how many rays so far. */
+uint32_t k3d_render_passes(const struct k3d_render *r);
+uint64_t k3d_render_rays(const struct k3d_render *r);
+
+/* The light so far, tone-mapped into pixels: `w` by `h` of them. Only the
+ * tiles that have had a pass since the last paint, unless `all`; answers
+ * how many tiles it painted. From one thread, as a window is drawn from. */
+uint32_t k3d_render_paint(struct k3d_render *r, uint32_t *px, size_t pitch, bool all);
+
+/* One ray's first hit, for tests and for picking what a render shows. */
+bool     k3d_render_first_hit(const struct k3d_render *r, const float o[3],
+                              const float d[3], float *t, uint32_t *id);
 
 #endif

@@ -1166,8 +1166,19 @@ processors, and still what follows USB:
       with axis holds and typed amounts, the pointer tracked without a
       button (`ui.md` 16.24); the Move, Rotate and Scale handles; and
       Properties' numbers typed and scrubbed (18.190 to 18.193).
-   3. The ray-tracing kit (`/kits/ray`) and the Rendered view.
-   4. Materials, lights, the camera and `F12`.
+   3. **DONE on 25 September** - the ray tracer and the Rendered view,
+      moved ahead of the rest by Diego: "Let's prioritize the ray tracer
+      renderer so we can see how it looks", "Also multi core usage", and
+      "The rendered should use simd and vector multiplication where
+      necessary for speed". In the 3D Kit rather than a `/kits/ray`
+      (`design.md`, the 3D Kit): path tracing and Whitted's, four-wide
+      hierarchies and packets of four triangles in NEON and SSE, a worker a
+      core at the LOW band, and the Rendered view starting again whenever
+      the eye or the scene moves (`testing.md` 18.195).
+   4. Materials, lights, the camera and `F12`. **`F12` and its Render
+      window DONE with step 3**, as the drawing has it, and materials,
+      lamps and the sky reach the tracer; the Material tab's numbers
+      editable is what is left.
    5. Saving and opening glTF.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.

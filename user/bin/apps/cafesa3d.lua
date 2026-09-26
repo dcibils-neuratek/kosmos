@@ -117,8 +117,13 @@ local function shown(t)
     alpha = glass and 0.45 or 1,
     smooth = t.smooth or false,
     hidden = t.hidden or false,
+    mat = m,
   }
 end
+
+-- Bumped by every change the kit is told of, so a render can tell it is
+-- looking at a scene that has moved on.
+local scene_version = 0
 
 local function add(t)
   if SHAPES[t.kind] then
@@ -131,12 +136,16 @@ local function add(t)
     t.id = assert(scene:add(fields))
   end
 
+  scene_version = scene_version + 1
+
   things[#things + 1] = t
   return t
 end
 
 local function sync(t)
   if t.id then scene:set(t.id, shown(t)) end
+
+  scene_version = scene_version + 1
 end
 
 local function by_id(id)
@@ -176,6 +185,8 @@ end
 
 local function forget(t)
   if t.id then scene:remove(t.id) end
+
+  scene_version = scene_version + 1
 
   for i, x in ipairs(things) do
     if x == t then table.remove(things, i) break end
@@ -309,6 +320,79 @@ local function on_screen(p)
   if not x then return nil end
 
   return VX + x, VY + y
+end
+
+--------------------------------------------------------------------------
+-- The Rendered view: the scene ray traced as it is looked at, by the 3D
+-- Kit's tracer on every processor (`k3d_trace.c`). A render of its own,
+-- started again whenever the eye, the scene, a lamp or the sky moves;
+-- until its tiles arrive, the Solid view shows underneath them.
+--------------------------------------------------------------------------
+
+-- The view's render: `job`, what it saw (`key`), whether its last pass has
+-- been said, and `surf`, its pixels as they arrive.
+local shade = { samples = 64 }
+local HZ = fs.read("/dev/cpu").counter_hz
+
+local function lamps()
+  local out = {}
+
+  for _, t in ipairs(things) do
+    if t.kind == "light" and not t.hidden then
+      out[#out + 1] = { loc = t.loc, radius = t.radius or 0.1, power = t.power or 1000,
+                        colour = t.colour or 0xffffff }
+    end
+  end
+
+  return out
+end
+
+-- Everything a render looks at, as one string: when it differs from the
+-- running render's, that render is of something that is no longer there.
+local function render_key()
+  local e, t = eye(), orbit.target
+  local parts = { ("%.4f %.4f %.4f %.4f %.4f %.4f %d %x %x %.3f"):format(
+    e[1], e[2], e[3], t[1], t[2], t[3], scene_version, world.zenith, world.horizon,
+    world.strength) }
+
+  for _, l in ipairs(lamps()) do
+    parts[#parts + 1] = ("%.3f %.3f %.3f %.3f %.1f %x"):format(l.loc[1], l.loc[2], l.loc[3],
+                                                              l.radius, l.power, l.colour)
+  end
+
+  return table.concat(parts, "|")
+end
+
+function shade.stop()
+  if shade.job then
+    shade.job:stop()
+    shade.job = nil
+  end
+end
+
+-- `s` holds the Solid view just drawn, which is what shows until the
+-- render's own tiles cover it.
+function shade.start(s)
+  shade.stop()
+
+  local e, t = eye(), orbit.target
+  local job, why
+
+  shade.surf = shade.surf or gfx.surface{ w = VW, h = VH }
+  job, why = k3.render(scene, { w = VW, h = VH, eye = e, target = t, fov = FOV,
+                                passes = shade.samples, bounces = 6, world = world,
+                                lights = lamps() })
+
+  if not job then
+    print("cafesa3d: " .. tostring(why))
+    return
+  end
+
+  shade.job, shade.key, shade.said, shade.first = job, render_key(), false, false
+  shade.t0 = sys.ticks()
+  shade.surf:blit(s, VX, VY, VW, VH, 0, 0)
+  print(("cafesa3d: rendering the view, %d by %d, on %d thread%s"):format(VW, VH, job:workers(),
+                                                                         job:workers() == 1 and "" or "s"))
 end
 
 --------------------------------------------------------------------------
@@ -521,7 +605,7 @@ local function draw_header(s)
       end },
     { name = "solid", text = "Solid", on = shading == "solid",
       dot = function(s2, x, y) s2:disc(x + 6, y + 6, 6, theme.text_dim, true) end },
-    { name = "rendered", text = "Rendered", disabled = true,
+    { name = "rendered", text = "Rendered", on = shading == "rendered",
       dot = function(s2, x, y) s2:disc(x + 6, y + 6, 6, 0xffe0a84a, true) end },
   }
   local shade_w = 0
@@ -551,9 +635,8 @@ local function draw_header(s)
 
   segmented(s, shade_x, (HEAD - 1 - 31) // 2, shade_parts)
 
-  -- Render, the verb, filled - and at a third until step four.
-  s:fill_round(render.x, render.y, render.w, 31,
-               theme.mix(theme.sunken, theme.accent, 380), 7)
+  -- Render, the verb, filled.
+  s:fill_round(render.x, render.y, render.w, 31, theme.accent, 7)
   s:text(render.x + 12, render.y + (31 - gfx.height()) // 2, "Render",
          theme.text_on, nil, "ui")
   s:text(render.x + 12 + gfx.measure("Render") + 7,
@@ -877,11 +960,28 @@ end
 
 local function draw_view(s)
   look()
-  drawn_triangles = view:draw(scene, s, VX, VY, {
-    mode = shading == "wire" and "wire" or "solid",
-    selected = selected and selected.id or 0,
-    grid = true,
-  })
+
+  if shading == "rendered" then
+    -- The Solid view is drawn only when the render starts again: it is
+    -- what shows under tiles not yet traced, and what a click picks from,
+    -- and neither changes until the eye or the scene does.
+    if not shade.job or render_key() ~= shade.key then
+      drawn_triangles = view:draw(scene, s, VX, VY, { mode = "solid", selected = 0, grid = false })
+      shade.start(s)
+    end
+
+    if shade.job then
+      shade.job:paint(shade.surf, 0, 0)
+      s:blit(shade.surf, 0, 0, VW, VH, VX, VY)
+    end
+  else
+    shade.stop()
+    drawn_triangles = view:draw(scene, s, VX, VY, {
+      mode = shading == "wire" and "wire" or "solid",
+      selected = selected and selected.id or 0,
+      grid = true,
+    })
+  end
 
   for _, t in ipairs(things) do
     if not t.hidden then
@@ -909,15 +1009,25 @@ local function draw_view(s)
     end
   end
 
-  local ty = VY + 10
+  -- Light words on the Solid view's dark grey; on a render, which may be a
+  -- white sky, each has a shadow under it, as Blender's overlay text does.
+  local lit = shading == "rendered"
+  local ty, step = VY + 10, gfx.height(small) + 2
 
-  s:text(VX + 14, ty, modal and modal_line() or view_name, VP_INK, nil, small)
-  s:text(VX + 14, ty + gfx.height(small) + 2,
-         "Collection | " .. (selected and selected.name or "nothing selected"),
-         VP_DIM, nil, small)
-  s:text(VX + 14, VY + VH - 12 - gfx.height(small),
-         "Drag to turn \u{b7} Shift-drag to move \u{b7} scroll to come closer",
-         VP_DIM, nil, small)
+  local function say(y, text, colour)
+    if lit then s:text(VX + 15, y + 1, text, 0xff15171b, nil, small) end
+    s:text(VX + 14, y, text, lit and VP_INK or colour, nil, small)
+  end
+
+  say(ty, modal and modal_line() or view_name, VP_INK)
+  say(ty + step, "Collection | " .. (selected and selected.name or "nothing selected"), VP_DIM)
+
+  if lit and shade.job then
+    say(ty + 2 * step, ("Sample %d/%d"):format(shade.job:passes(), shade.samples), VP_DIM)
+  end
+
+  say(VY + VH - 12 - gfx.height(small),
+      "Drag to turn \u{b7} Shift-drag to move \u{b7} scroll to come closer", VP_DIM)
 end
 
 --------------------------------------------------------------------------
@@ -1177,10 +1287,10 @@ local function draw_props(s)
     y = heading(s, x, y, "Render")
     y = field_row(s, x, y, w, "Integrator", { "Final" })
     y = field_row(s, x, y, w, "Samples", { "256" })
+    y = field_row(s, x, y, w, "View samples", { tostring(shade.samples) })
     y = field_row(s, x, y, w, "Bounces", { "6" })
-    y = field_row(s, x, y, w, "Resolution", { "1920 \u{d7} 1080" })
-    y = field_row(s, x, y, w, "Saved to", { "/home/renders" })
-    note(s, x, y + 4, w, "The ray tracer is step three: Preview traces as Whitted did, Final as Cycles does.")
+    y = field_row(s, x, y, w, "Resolution", { "640 \u{d7} 360" })
+    note(s, x, y + 4, w, "Final traces as Cycles does, on every processor. Rendered shows the view that way; F12 renders through the camera.")
   elseif tab == "world" then
     y = heading(s, x, y, "World")
     y = field_row(s, x, y, w, "Zenith", { hexcolour(world.zenith) })
@@ -1340,6 +1450,197 @@ local function draw_all()
   draw_props(s)
   draw_foot(s)
   return win:commit{ x = 0, y = 0, w = W, h = H }
+end
+
+--------------------------------------------------------------------------
+-- The Render window: F12, as Blender's. The scene through its camera, in
+-- a window of its own, getting clearer the longer it runs - drawn as
+-- `docs/cafesa3d.html` has it, the picture on the left and what it is
+-- doing on the right.
+--------------------------------------------------------------------------
+
+-- `win`, `job` and `pic` while it is open; `start`, `done` and `shown` of
+-- the render in it; `controls`, where its buttons are.
+local final = { w = 640, h = 360, samples = 256, side = 270, shown = -1, controls = {} }
+
+final.W, final.H = final.w + final.side, L.head + final.h
+
+function final.camera()
+  for _, t in ipairs(things) do
+    if t.kind == "camera" and not t.hidden then return t end
+  end
+end
+
+function final.draw()
+  local s = final.win:surface()
+  local job = final.job
+  local save_w, again_w = pk.button_width("Save as PNG..."), pk.button_width("Render again")
+  local save_x = final.W - L.head_edge - save_w
+  local again_x = save_x - 8 - again_w
+
+  pk.header(s, 0, 0, final.W, "Render", ("%s \u{b7} Camera \u{b7} %d \u{d7} %d"):format(
+    file_name, final.w, final.h), again_x - 8)
+  final.controls.again = { x = again_x, y = pk.centre(31), w = again_w, h = 31 }
+  pk.button(s, { x = again_x, y = pk.centre(31), text = "Render again" })
+  pk.button(s, { x = save_x, y = pk.centre(31), text = "Save as PNG...", disabled = true })
+
+  s:blit(final.pic, 0, 0, final.w, final.h, 0, L.head)
+
+  -- What it is doing.
+  local x, y, w = final.w + 16, L.head + 14, final.side - 32
+  local passes = job and job:passes() or 0
+  local secs = (sys.ticks() - final.start) / HZ
+  local rays = job and job:rays() or 0
+
+  s:fill(final.w, L.head, final.side, final.h, theme.window)
+  s:fill(final.w, L.head, 1, final.h, theme.line_soft)
+  s:text(x, y, "Samples", theme.text_dim, nil, "ui")
+  y = y + gfx.height() + 4
+  s:text(x, y, ("%d / %d"):format(passes, final.samples), theme.text, nil, "title")
+  y = y + gfx.height("title") + 8
+  s:fill_round(x, y, w, 6, theme.sunken, 3)
+
+  if passes > 0 then
+    s:fill_round(x, y, math.max(6, w * passes // final.samples), 6, theme.accent, 3)
+  end
+
+  y = y + 14
+
+  if secs > 0 then
+    s:text(x, y, ("%.1f s, %d rays a sample"):format(secs, passes > 0 and
+      rays // (passes * final.w * final.h) or 0), theme.text_dim, nil, small)
+    s:text(x, y + gfx.height(small) + 2, ("%.1f million rays a second"):format(
+      rays / secs / 1e6), theme.text_dim, nil, small)
+  end
+
+  y = y + 2 * (gfx.height(small) + 2) + 20
+  s:text(x, y, "LIGHT PATHS", theme.text_dim, nil, tiny)
+  y = y + gfx.height(tiny) + 8
+
+  for _, row in ipairs({ { "Integrator", "Final \u{b7} path tracing" },
+                         { "Bounces", "up to 6" },
+                         { "Cores", ("%d thread%s, a tile each"):format(job and job:workers() or 0,
+                                   job and job:workers() == 1 and "" or "s") },
+                         { "Denoise", "not yet" } }) do
+    s:text(x, y, row[1], theme.text_dim, nil, "ui")
+    s:text(x + 96, y, row[2], theme.text, nil, "ui")
+    y = y + gfx.height() + 8
+  end
+
+  final.shown = passes
+  return final.win:commit{ x = 0, y = 0, w = final.W, h = final.H }
+end
+
+function final.begin()
+  if final.job then
+    final.job:stop()
+    final.job = nil
+  end
+
+  local cam = final.camera()
+  local job, why
+
+  if not cam then
+    print("cafesa3d: there is no camera to render through")
+    return false
+  end
+
+  job, why = k3.render(scene, { w = final.w, h = final.h, eye = cam.loc, target = cam.target,
+                                fov = 2 * math.atan(18 / (cam.focal or 50)),
+                                passes = final.samples, bounces = 6, world = world,
+                                lights = lamps() })
+
+  if not job then
+    print("cafesa3d: " .. tostring(why))
+    return false
+  end
+
+  final.job = job
+  final.pic:fill(0, 0, final.w, final.h, 0xff1d1f24)
+  final.start, final.done, final.shown, final.first = sys.ticks(), false, -1, false
+  print(("cafesa3d: rendering %s through the camera, %d by %d, on %d thread%s"):format(
+    file_name, final.w, final.h, job:workers(), job:workers() == 1 and "" or "s"))
+  return true
+end
+
+function final.close()
+  if final.job then
+    final.job:stop()
+    final.job = nil
+  end
+
+  if final.win then
+    final.win:close()
+    final.win = nil
+  end
+end
+
+function final.open()
+  if not final.camera() then
+    print("cafesa3d: there is no camera to render through")
+    return false
+  end
+
+  if not final.win then
+    local w = ui.window{ title = "Render", w = final.W, h = final.H, direct = true,
+                         x = (win.origin_x or 0) + 60, y = (win.origin_y or 0) + 80 }
+
+    if not w or not w:surface() then
+      print("cafesa3d: no window to render into")
+      return false
+    end
+
+    final.win = w
+    final.pic = final.pic or gfx.surface{ w = final.w, h = final.h }
+    print(("cafesa3d: render window at %d,%d"):format(w.origin_x or 0, w.origin_y or 0))
+  end
+
+  if final.begin() then final.draw() end
+
+  return true
+end
+
+-- The Render window's own events, and its picture as it clears.
+function final.tend()
+  if not final.win then return end
+
+  local reply = wmproto.poll(final.win.handle, 0)
+
+  if not reply then
+    final.close()
+    return
+  end
+
+  for _, ev in ipairs(reply.events or {}) do
+    if ev.type == "close" then
+      final.close()
+      print("cafesa3d: render window closed")
+      return
+    elseif ev.type == "mouse" and ev.action == "press"
+           and pk.inside(final.controls.again, ev.x, ev.y) then
+      final.begin()
+    end
+  end
+
+  local job = final.job
+
+  if not job then return end
+
+  local painted = job:paint(final.pic, 0, 0)
+  local passes = job:passes()
+
+  if painted > 0 or passes ~= final.shown then final.draw() end
+
+  if passes >= 1 and not final.first then
+    final.first = true
+    print(("cafesa3d: the render's first pass in %.1f s"):format((sys.ticks() - final.start) / HZ))
+  end
+
+  if passes >= final.samples and not final.done then
+    final.done = true
+    print(("cafesa3d: rendered %d samples, %d rays in %.1f s on %d threads"):format(
+      passes, job:rays(), (sys.ticks() - final.start) / HZ, job:workers()))
+  end
 end
 
 --------------------------------------------------------------------------
@@ -2111,6 +2412,8 @@ local function press(x, y)
   if inside(controls.more, x, y) then more_menu(controls.more.x + 26 - 190, HEAD) return true end
   if inside(controls.wire, x, y) then set_shading("wire") return true end
   if inside(controls.solid, x, y) then set_shading("solid") return true end
+  if inside(controls.rendered, x, y) then set_shading("rendered") return true end
+  if inside(controls.render, x, y) then final.open() return true end
 
   for _, t in ipairs(TOOL_LIST) do
     if t.name and not t.later and inside(controls["tool:" .. t.name], x, y) then
@@ -2390,6 +2693,7 @@ local function rawkey(ev)
     return true
   end
   if ev.code == 102 then frame_all() return true end
+  if ev.code == 88 then final.open() return true end
 
   return false
 end
@@ -2423,7 +2727,8 @@ do
 
   local header = {}
 
-  for _, name in ipairs({ "add", "more", "wire", "solid", "tool:select", "tool:move",
+  for _, name in ipairs({ "add", "more", "wire", "solid", "rendered", "render",
+                          "tool:select", "tool:move",
                           "tool:rotate", "tool:scale" }) do
     local c = controls[name]
 
@@ -2445,9 +2750,32 @@ while win.running do
     dirty = false
   end
 
-  local reply = wmproto.poll(win.handle, 25)
+  local rendering = (shade.job and shade.job:passes() < shade.samples)
+                    or (final.job and not final.done)
+  local reply = wmproto.poll(win.handle, rendering and 8 or 25)
 
   if not reply then break end
+
+  final.tend()
+
+  -- The view's render: new tiles are a reason to draw, and the last pass
+  -- is said once, for whoever is waiting for it.
+  local job = shading == "rendered" and shade.job
+
+  if job then
+    if job:paint(shade.surf, 0, 0) > 0 then dirty = true end
+
+    if not shade.first and job:passes() >= 1 then
+      shade.first = true
+      print(("cafesa3d: the view's first pass in %.1f s"):format((sys.ticks() - shade.t0) / HZ))
+    end
+
+    if not shade.said and job:passes() >= shade.samples then
+      shade.said = true
+      print(("cafesa3d: rendered the view, %d samples, %d rays, on %d threads"):format(
+        job:passes(), job:rays(), job:workers()))
+    end
+  end
 
   local said_where = false
 
@@ -2499,3 +2827,6 @@ while win.running do
     say_where()
   end
 end
+
+shade.stop()
+final.close()
