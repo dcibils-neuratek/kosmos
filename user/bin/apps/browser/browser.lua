@@ -7,6 +7,8 @@
 --
 --   wm browser                       the page inside the image
 --   wm browser:/home/notes.html      a file on this machine
+--   wm browser:asset:tutorial/cafesa3d/index.html
+--                                    a page the image carries
 --   wm browser:10.0.2.2:8000/        a server on the host running QEMU
 --   wm browser:188.184.67.127/       somewhere on the internet, by number
 --
@@ -175,6 +177,8 @@ local function resolve(base, href)
   local scheme = href:match("^(%a[%w+.%-]*):")
 
   if scheme then
+    if scheme:lower() == "asset" then return href end
+
     if scheme:lower() ~= "http" then
       return nil, ("this browser speaks http, not %s"):format(scheme)
     end
@@ -244,9 +248,10 @@ will not answer.</p>
 <ul>
   <li><strong>No https.</strong> There is no TLS, and most of the web now
       refuses to speak anything else.</li>
-  <li><strong>No cascade.</strong> libcss parses and answers and nothing
-      asks it: every colour and every face here comes from the tag.</li>
-  <li>No images, no forms, no box model.</li>
+  <li><strong>Half a cascade.</strong> Colours, faces and sizes are the
+      stylesheet's; margins, widths and floats are parsed and not used.</li>
+  <li>Pictures, PNG and JPEG, each on a line of its own; no forms, no box
+      model.</li>
 </ul>
 
 <blockquote>A word is where a font change, a link's hit rectangle and a
@@ -874,6 +879,64 @@ local function fetch(text)
   return nil
 end
 
+--------------------------------------------------------------------------
+-- Pictures: fetched from wherever their address says, decoded by `gfx`,
+-- and stretched into the boxes `web_paint.c` left for them.
+--------------------------------------------------------------------------
+
+-- A picture's bytes, from the three places a page itself comes from.
+local function bytes_at(where)
+  if where:match("^asset:") then return sys.asset(where:sub(7)) end
+
+  if where:sub(1, 1) == "/" then
+    local got = fs.read(where)
+
+    return type(got) == "string" and got or nil
+  end
+
+  return fetch(where)
+end
+
+--
+-- Each one into its box, with its shape kept and centred if the box is
+-- another shape. PNG or JPEG, told apart by their first bytes rather than
+-- by a name, which a server is free to get wrong. One that cannot be had
+-- leaves its grey box and is counted, and the page is still the page.
+--
+-- Bilinear when a picture is scaled, because a screenshot shrunk by nearest
+-- neighbour loses whole rows of text. At its own size the two are the same.
+--
+local function draw_pictures(doc)
+  local drawn, missing = 0, 0
+
+  for _, im in ipairs(doc:images()) do
+    if im.y < paper_h then
+      local where = resolve(here or "", im.src)
+      local bytes = where and bytes_at(where)
+      local decode = bytes and ((bytes:sub(1, 4) == "\x89PNG" and gfx.png)
+                                or (bytes:sub(1, 2) == "\xff\xd8" and gfx.jpeg))
+      local ok, pic = false, nil
+
+      if decode then ok, pic = pcall(decode, bytes) end
+
+      if ok and pic then
+        local pw, ph = pic:size()
+        local k = math.min(im.w / pw, im.h / ph)
+        local w, h = math.floor(pw * k + 0.5), math.floor(ph * k + 0.5)
+
+        paper:stretch(pic, 0, 0, pw, ph, im.x + (im.w - w) // 2,
+                      im.y + (im.h - h) // 2, w, h, nil, true)
+        pic:free()
+        drawn = drawn + 1
+      else
+        missing = missing + 1
+      end
+    end
+  end
+
+  return drawn, missing
+end
+
 local function load(text)
   if web == nil then
     say("this image has no web kit - build it with `make WEB=1`")
@@ -898,6 +961,23 @@ local function load(text)
   if text == HOME then
     say("the page inside this image")
     body, fetched_ms = START, 0
+
+  elseif text:match("^asset:") then
+    --
+    -- A page the image carries - Cafesa3D's tutorial is one - read where it
+    -- lies. Nothing is copied anywhere to be shown, so it is always the
+    -- page that came with this build, and its links and pictures resolve
+    -- beside it the same way.
+    --
+    body = sys.asset(text:sub(7))
+
+    if not body then
+      say(("this image carries no %s"):format(text:sub(7)))
+      return false
+    end
+
+    fetched_ms = 0
+    say(("read %d bytes from the image"):format(#body))
 
   elseif text:sub(1, 1) == "/" then
     local began = sys.ticks()
@@ -953,6 +1033,14 @@ local function load(text)
                          doc:count("h1") + doc:count("h2") + doc:count("h3"))
 
   local drawn, why_not = lay_out(doc)
+  local pictures, missing = 0, 0
+
+  if drawn then
+    local t2 = sys.ticks()
+
+    pictures, missing = draw_pictures(doc)
+    painted_ms = painted_ms + since(t2)
+  end
 
   if not drawn then
     say(counts .. " - " .. tostring(why_not))
@@ -976,6 +1064,15 @@ local function load(text)
     say(counts)
   end
 
+  if missing > 0 then
+    say(("%d of %d pictures could not be read or decoded"):format(missing,
+        pictures + missing))
+  end
+
+  -- For whoever opened it from outside - Cafesa3D's suite asks for its
+  -- tutorial and waits to hear the page arrive (`tools/run_cafesa3d.py`).
+  print(("browser: showing %s, \"%s\", %d pixels tall, %d pictures, %d missing")
+        :format(text, title or "", content_h, pictures, missing))
   return true
 end
 

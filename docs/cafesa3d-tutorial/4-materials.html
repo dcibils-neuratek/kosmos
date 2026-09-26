@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Materials and textures</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="3-shaping.html">Previous: Moving, turning and sizing</a> &middot; <a href="index.html">Contents</a> &middot; <a href="5-light.html">Next: Light, the sky and the camera</a></p>
+<h1>4. Materials and textures</h1>
+<p class="lead">A material is what an object is made of: its colour, and how it treats light - whether it shines, reflects like a mirror, lets light through like glass, or glows. It is in the <b class="ui">Material</b> tab, the last one.</p>
+<h2>Starting points</h2>
+<p>Five chips at the top set every number at once, and keep the colour:</p>
+<ul>
+<li><b class="ui">Plastic</b> - a colour under a thin shine. Most things are this: paint, wood, stone, fabric, skin.</li>
+<li><b class="ui">Metal</b> - reflects everything, tinted by its colour: gold, copper, steel.</li>
+<li><b class="ui">Mirror</b> - a perfect metal, sharp reflections.</li>
+<li><b class="ui">Glass</b> - light passes through and bends.</li>
+<li><b class="ui">Light</b> - glows: a bulb, a screen, a headlight.</li>
+</ul>
+<h2>Colour</h2>
+<p>Click one of the swatches under <b class="ui">Base colour</b>, or click the box and type a colour as the web writes them: six characters, two each for red, green and blue, from <code>0</code> to <code>9</code> and <code>a</code> to <code>f</code>. <code>c81d25</code> is a red and <code>2f6fc4</code> a blue. The box shows it with a <code>#</code> in front, which you do not type.</p>
+<h2>The numbers</h2>
+<ul>
+<li><b class="ui">Metallic</b> - 0 for anything that is not metal, 1 for metal. In between is rarely right.</li>
+<li><b class="ui">Roughness</b> - how sharp its reflections are: 0 is a polished surface, 1 is chalk. Car paint is about 0.1, a plastic toy 0.35, a brick wall 0.85.</li>
+<li><b class="ui">Transmission</b> - 1 lets light through: glass and water. <b class="ui">IOR</b> then says how much it bends light: 1.33 for water, 1.5 for glass, 2.4 for diamond.</li>
+<li><b class="ui">Emission</b> - how brightly it glows. Above 0 it shines with its own light, and lights what is around it.</li>
+</ul>
+<p class="tip">Car paint is Plastic, not Metal: a colour under a clear shine. As a metal, a red car reflects the dark road and looks almost black.</p>
+<h2>Textures</h2>
+<p>Under <b class="ui">Texture</b>, a pattern over the whole surface. Cafesa3D works each pattern out from where a point is, so nothing needs to be wrapped around the object, and the pattern is in real metres whatever size the object is.</p>
+<ul>
+<li><b class="ui">Checker</b> - squares in two colours.</li>
+<li><b class="ui">Brick</b> - bricks and mortar, each brick its own shade. On a floor it becomes paving.</li>
+<li><b class="ui">Tiles</b> - roof tiles, each row lapping over the one below.</li>
+<li><b class="ui">Noise</b> - a soft random mottle: grass, asphalt, rubber, rough stone.</li>
+<li><b class="ui">Wood</b> - the rings of a plank.</li>
+<li><b class="ui">Marble</b> - veins through stone.</li>
+</ul>
+<p>Choosing a pattern gives it starting numbers that look like the thing. Then:</p>
+<ul>
+<li><b class="ui">Second colour</b> - the other colour of the pattern: the mortar, the dark in the noise, the rings of the wood.</li>
+<li><b class="ui">Scale</b> - how many to a metre. Brick at 13 makes bricks about seven centimetres tall; noise at 28 is fine enough for asphalt.</li>
+<li><b class="ui">Bump</b> - how deep the pattern is, in metres. Mortar is 0.004 - four millimetres - and the light rakes across it; roof tiles are about 0.02. Nought is a flat print.</li>
+</ul>
+<p class="note">Textures show in the Rendered view and in the picture <kbd>F12</kbd> takes. The Solid view shows each object in its base colour.</p>
+<p><b class="ui">None</b> takes the texture away again.</p>
+<img src="material-tab.png" width="340" height="470" alt="The Material tab of the cube with the Brick texture chosen">
+<p class="caption">The Material tab with <b>Brick</b> chosen: the second colour is the mortar, thirteen courses a metre, four millimetres deep.</p>
+<p class="nav"><a href="3-shaping.html">Previous: Moving, turning and sizing</a> &middot; <a href="index.html">Contents</a> &middot; <a href="5-light.html">Next: Light, the sky and the camera</a></p>
+</body>
+</html>

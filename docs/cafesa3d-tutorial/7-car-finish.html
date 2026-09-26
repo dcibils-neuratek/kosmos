@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Making the car: wheels, lamps and the picture</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="6-car.html">Previous: Making the car: the stage and the body</a> &middot; <a href="index.html">Contents</a> &middot; <a href="8-rendering.html">Next: Rendering</a></p>
+<h1>7. Making the car: wheels, lamps and the picture</h1>
+<p class="lead">The wheels and the details that make it a car, and then its picture.</p>
+<h2>The wheels</h2>
+<ul>
+<li><b>13.</b> Add a <b class="ui">Cylinder</b>. In its <b class="ui">Data</b> tab: <b class="ui">Radius</b> <code>0.38</code>, <b class="ui">Depth</b> <code>0.3</code>, and <b class="ui">Shading</b> <b class="ui">Smooth</b>, so it renders perfectly round.</li>
+<li><b>14.</b> In the <b class="ui">Object</b> tab: <b class="ui">Rotation</b> <code>90</code>, <code>0</code>, <code>0</code> stands it on its edge, and <b class="ui">Location</b> <code>1.35</code>, <code>0.92</code>, <code>0.38</code> puts it at the front left.</li>
+<li><b>15.</b> Its material: <b class="ui">Plastic</b>, the black swatch, <b class="ui">Roughness</b> <code>0.9</code>, and the <b class="ui">Noise</b> texture with its scale at <code>40</code> - rubber.</li>
+<li><b>16.</b> Press <kbd>Shift D</kbd>, <kbd>Esc</kbd>, and type the copy's <b class="ui">Location</b>: <code>1.35</code>, <code>-0.92</code>, <code>0.38</code>. Twice more for <code>-1.35</code>, <code>0.92</code> and <code>-1.35</code>, <code>-0.92</code>. Four wheels.</li>
+<li><b>17.</b> The hubs: add a cylinder of <b class="ui">Radius</b> <code>0.2</code> and <b class="ui">Depth</b> <code>0.32</code> - a little wider than the tyre, so it shows - smooth, turned <code>90</code>, <code>0</code>, <code>0</code>, at the first wheel's location. Make it <b class="ui">Metal</b> with the white swatch and <b class="ui">Roughness</b> <code>0.4</code>: brushed aluminium. Copy it to the other three wheels as you did the tyres.</li>
+</ul>
+<p class="tip">Press <kbd>Home</kbd> and turn around your car. It is a car already.</p>
+<h2>Lamps that glow</h2>
+<ul>
+<li><b>18.</b> Headlights: add a <b class="ui">UV Sphere</b> of <b class="ui">Radius</b> <code>0.12</code>, smooth. Give it the <b class="ui">Scale</b> <code>0.6</code>, <code>1</code>, <code>1</code> - flattened front to back - and the <b class="ui">Location</b> <code>2.08</code>, <code>0.6</code>, <code>0.72</code>. Its material: the <b class="ui">Light</b> preset, <b class="ui">Base colour</b> <code>fff3c4</code>. Copy it to <code>2.08</code>, <code>-0.6</code>, <code>0.72</code>.</li>
+<li><b>19.</b> Tail lights: a cube of <b class="ui">Size</b> <code>0.04</code>, <code>0.36</code>, <code>0.1</code> at <code>-2.11</code>, <code>0.6</code>, <code>0.78</code>, with the <b class="ui">Light</b> preset, colour <code>ff2a1a</code> and <b class="ui">Emission</b> <code>3</code>. Copy it to <code>-2.11</code>, <code>-0.6</code>, <code>0.78</code>.</li>
+<li><b>20.</b> Bumpers: a cube of <b class="ui">Size</b> <code>0.14</code>, <code>1.84</code>, <code>0.2</code> at <code>2.16</code>, <code>0</code>, <code>0.44</code>, <b class="ui">Plastic</b>, the black swatch, <b class="ui">Roughness</b> <code>0.6</code>; a copy at <code>-2.16</code>, <code>0</code>, <code>0.44</code>.</li>
+</ul>
+<img src="car-solid.png" width="760" height="440" alt="The finished car in the Solid view, with wheels, lamps and bumpers">
+<p class="caption">The finished car, twenty-one objects with the ground, the lamp and the camera, after <kbd>Home</kbd>.</p>
+<h2>The picture</h2>
+<ul>
+<li><b>21.</b> Click <b class="ui">Rendered</b>. The view goes grainy, then clears as Cafesa3D adds sample after sample: the red shines, the lamp's highlight sits on the bonnet, and the car's shadow falls soft on the asphalt.</li>
+<li><b>22.</b> Press <kbd>F12</kbd>. A <b class="ui">Render</b> window opens and takes the picture through the camera, counting its samples as it goes. <b class="ui">Render again</b> starts it afresh after a change.</li>
+</ul>
+<img src="car-render.png" width="640" height="360" alt="The finished car rendered through the camera">
+<p class="caption">What <kbd>F12</kbd> makes of it: 256 samples, 640 by 360 - the red paint catching the lamp, the headlights glowing, the shadow soft on the asphalt.</p>
+<h2>Where to go from here</h2>
+<ul>
+<li>See what the sky does: in the <b class="ui">World</b> tab set <b class="ui">Strength</b> to <code>0</code> and watch the Rendered view. Every side the lamp does not reach goes black. Then put it back.</li>
+<li>Open the sample car from the dots menu and look at it beside yours: the same shapes, with a lofted body and lathed tyres. Choose its parts and read their tabs - its paint, its tinted glasshouse, its brake calipers.</li>
+<li>Add a brick wall behind your car: a cube <code>16</code> long, <code>0.3</code> thick and <code>4</code> high, with the <b class="ui">Brick</b> texture.</li>
+<li>Try other paint: the blue swatch, or <b class="ui">Metal</b> with the yellow swatch for a gold show car.</li>
+</ul>
+<p class="nav"><a href="6-car.html">Previous: Making the car: the stage and the body</a> &middot; <a href="index.html">Contents</a> &middot; <a href="8-rendering.html">Next: Rendering</a></p>
+</body>
+</html>

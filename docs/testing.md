@@ -9952,3 +9952,70 @@ rule with no recipe, and make does not look at such a target's time again
 once its prerequisite is made - so the assets were held against the
 scenes' old times. A recipe that does nothing, `@:`, and the Cafesa3D
 suite opened 202, 76 and 106 objects: 73 of 73 on ARM.
+
+## 18.198 The Material tab edited, and the tutorial with its pictures
+
+Diego asked for a tutorial and chose "Make materials editable first" when
+told the Material tab could not colour anything yet.
+
+**The Material tab**, in the Cafesa3D suite, used as a person uses it: a
+click on the Metal chip makes the Cube metal; the fifth swatch colours it
+`#2f6fc4`; Brick gives it a texture whose own fields - a second colour,
+scale and bump - then appear; and a colour typed as hex, letters and all
+(`1c1c1e`), is taken. Each is said back as what it set, and each is one
+undo step.
+
+**The tutorial, held to the application** (`tools/test_tutorial.lua`, in
+the host suite): Cafesa3D opens it at its first page, which the image
+carries; every page and picture in the folder is reachable from that page
+and every link and picture a page names is in the folder, since the image
+carries the whole folder; every picture is a PNG `gfx.png` decodes, at the
+size its page gives it; only elements Kosmos's browser draws, and no
+symbol spelt by number (the dots menu's glyph came out as a question
+mark); and every control a page names in bold is a name the application
+says. **Control**: "Roughness" renamed "Glossiness" in one page and a stray
+page left in the folder - both named and failed; put back, it passes.
+
+**The tutorial from the application**, in the Cafesa3D suite: F1 opens the
+browser on `asset:tutorial/cafesa3d/index.html`, and the browser says the
+page arrived with every picture on it read and decoded; the dots'
+Tutorial does the same. 83 of 83 on ARM. **Controls**, each built with a
+second's wait and a touch and the real image's checksum matched after: an
+image carrying none of the pages - the four tutorial checks fail, and
+nothing else; a browser that cannot decode PNG - the two "every picture"
+checks fail, saying "0 pictures, 1 missing".
+
+**Kosmos's browser draws pictures.** `<img>` is laid out by `web_paint.c`
+as a box of its own from its `width` and `height`, and `browser.lua` reads
+it from the image, a file or the network, decodes PNG or JPEG by its first
+bytes, and stretches it into the box. **An `asset:` address** is a page the
+image carries, and links and pictures resolve beside it - which is why the
+tutorial is no longer copied into /home, where the RAM filesystem holds
+16 KB a file.
+
+**Every page walked in Kosmos's browser**, by a script that opened the
+tutorial with F1 and followed each page's Next link: all ten arrive, with
+all eleven pictures drawn and none missing, the tallest page 1656 pixels.
+The first walk, before the pictures, found two things: the dots menu's
+glyph drawn as a question mark (the pages now say "the three dots"), and
+that the space between two words of a link is not part of it - a click
+there does nothing (roadmap 4l).
+
+**The car, built by its steps**: `tools/cafesa3d_tutorial_shots.py` boots
+the image, takes the pictures, and builds chapters 6 and 7's car through
+the pointer and the keyboard - every field clicked and typed, every chip
+and swatch pressed, Shift D and Esc for each copy - failing by name on any
+step whose field or chip is not where the page says. Run twice, once as a
+scratch driver and once as the tool, with no step failing either time:
+the car built in 928 seconds under TCG, twenty-one objects, and F12's 256
+samples in 407 to 409 seconds - **bit for bit the same picture both
+times**, which is the tracer's seeding working as `test_trace.c` says it
+does. Planning it found that the Outliner shows seven names and does not
+scroll, so the car chapters set the road, the lamp, the sky and the camera
+first, while the list is short.
+
+**The ten pictures** are 1.5 MB together, three renders most of it; they
+are read-only data, which every process maps from one copy. Each carries
+the licence line in a `tEXt` chunk, which `gfx.png` skips and
+`assets2c.py` now reads - so the project's own files, the cheat sheet
+among them, stop being reported as vendored data with no licence.

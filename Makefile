@@ -864,9 +864,11 @@ endif
 # that depends on somebody remembering is not a boundary. See
 # `user/doom/README.md`.
 #
-# **And because of the size.** The image is copied into every process, so a
-# megabyte of Doom on an eighteen-process desktop is paid for eighteen times
-# by seventeen processes that will never call it.
+# **And because of the size**, which is a smaller reason than it was. The
+# image's code and read-only data are mapped into every process from one
+# copy now (design.md, "The read-only half is mapped where it lies"), so a
+# megabyte of Doom costs a megabyte and not a megabyte a process - but its
+# writable data is still copied into each, and every boot still loads it.
 #
 # Its own VARIANT, so the objects never mix with an ordinary build's: they
 # are compiled with different flags and `make` compares timestamps, not
@@ -923,9 +925,9 @@ endif
 # `SNES=1` - LakeSnes, a Super Nintendo, on in `FULL=1`.
 #
 # **A build option for Doom's second reason and not its first.** LakeSnes is
-# MIT, so an image carrying it is as MIT as one without. But the image is
-# copied into every process, and ninety kilobytes of 65816 and SPC700 would
-# be paid by all of them for the one that runs it.
+# MIT, so an image carrying it is as MIT as one without. But its writable
+# data is copied into every process - the code is mapped from one copy
+# (design.md) - and would be paid by all of them for the one that runs it.
 #
 # The twelve files upstream's own Makefile names for the core, listed rather
 # than globbed for the reason Doom's are. Its SDL frontend, tracer and zip
@@ -2115,10 +2117,17 @@ $(GEN)/scenes/.made: tools/cafesa3d_samples.py
 $(SCENE_FILES): $(GEN)/scenes/.made
 	@:
 
+# Cafesa3D's tutorial, `docs/cafesa3d-tutorial/`: every page and picture
+# in the folder, carried as `tutorial/cafesa3d/index.html` and the rest and
+# read by the browser where they lie (`asset:` addresses). The folder is
+# flat because a name here is the file's own. `tools/test_tutorial.lua`
+# holds that nothing in it is unreachable from the first page.
+TUTORIAL_FILES := $(wildcard docs/cafesa3d-tutorial/*.html docs/cafesa3d-tutorial/*.png)
+
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
                  $(ASSET_FILES) $(ASSET_LIST) LICENSE \
-                 docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES)
+                 docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES) $(TUTORIAL_FILES)
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
 	        assets/images/test-pattern.png assets/images/test-quads.jpg \
@@ -2128,16 +2137,17 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        --prefix=16x16/ $(ICON16_FILES) \
 	        --prefix=64x64/ $(ICON64_FILES) \
 	        --prefix=line/ $(LINE_FILES) \
-	        --prefix=scenes/ $(SCENE_FILES)
+	        --prefix=scenes/ $(SCENE_FILES) \
+	        --prefix=tutorial/cafesa3d/ $(TUTORIAL_FILES)
 
 # The outline fonts, embedded the same way.
 #
 # In the image rather than on the disk, because the desktop has to be able
 # to draw text on a machine with no drive - which is how every display test
-# runs. The cost is real and is written down in roadmap.md: the image is
-# copied into every process, so these bytes are paid for per process, and
-# that makes the shared read-only text mapping already on that list worth
-# more than it was.
+# runs. They are read-only data, so they are paid for once: the image's
+# code and read-only data are mapped into every process from one copy
+# (design.md, "The read-only half is mapped where it lies"). This said each
+# process paid for them, which was true until that mapping was built.
 FONT_FILES := $(sort $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/*.otf))
 
 FONT_LIST := $(GEN)/fonts.list
@@ -3239,6 +3249,11 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	$(HOSTDIR)/lua tools/test_json.lua
 	python3 tools/cafesa3d_samples.py $(HOSTDIR)/scenes
 	$(HOSTDIR)/lua tools/test_scenefile.lua $(HOSTDIR)/scenes
+	@# And Cafesa3D's tutorial held to Cafesa3D: every page and picture
+	@# reachable from the first page, every picture one the browser can
+	@# decode at the size its page gives it, only what the browser draws,
+	@# and every control a page names in bold one the application has.
+	$(HOSTDIR)/lua tools/test_tutorial.lua $(TUTORIAL_FILES)
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
@@ -3499,6 +3514,17 @@ browser: $(HOSTDIR)/lua
 	python3 tools/run_browser.py $(TARGET) --out build/browser.png \
 	  $(if $(PAGE),--page $(PAGE),)
 
+# Cafesa3D's tutorial's pictures, taken again: the image booted, Cafesa3D
+# driven, the car of chapters 6 and 7 built by its steps and rendered, and
+# every picture written into `docs/cafesa3d-tutorial/`. Twenty minutes and
+# more under TCG, most of it the render, which is why it is not a suite;
+# run it when Cafesa3D's look changes, and look at the pictures before
+# committing them. It fails, by name, on a step the pages give that cannot
+# be followed.
+tutorial-shots: $(HOSTDIR)/lua
+	@$(MAKE) --no-print-directory $(TARGET)
+	python3 tools/cafesa3d_tutorial_shots.py $(TARGET) docs/cafesa3d-tutorial
+
 # Everything in one image, linked. `MEGA=1` is where Doom and Quake meet in
 # a single link - where a name both of them define shows up - and the image
 # that comes closest to its heap, which `user/user.ld` asserts. Built rather
@@ -3534,7 +3560,7 @@ prepush:
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
 
-.PHONY: shot web browser
+.PHONY: shot web browser tutorial-shots
 shot:
 	@$(MAKE) --no-print-directory FB=1920x1080 $(TARGET)
 	@mkdir -p $(SHOTDIR)

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Light, the sky and the camera</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="4-materials.html">Previous: Materials and textures</a> &middot; <a href="index.html">Contents</a> &middot; <a href="6-car.html">Next: Making the car: the stage and the body</a></p>
+<h1>5. Light, the sky and the camera</h1>
+<p class="lead">A rendered picture has three sources of light: lamps, the sky, and anything that glows. And it is taken through one camera.</p>
+<img src="rendered-view.png" width="860" height="500" alt="The still life in the Rendered view, with soft shadows and reflections">
+<p class="caption">The still life in the <b>Rendered</b> view, with bricks given to the cube: the lamp's soft shadows, the sky in the gold ball, and the glass ball bending the cube behind it.</p>
+<h2>Lamps</h2>
+<p>A lamp is an object: choose it like any other, and move it with <kbd>G</kbd>. In the view it is drawn as a small circle with a dashed line down to the ground. Its <b class="ui">Data</b> tab has:</p>
+<ul>
+<li><b class="ui">Colour</b> - warm white is <code>fff2e2</code>; a sunset might be <code>ffb070</code>.</li>
+<li><b class="ui">Power</b> - in watts, as Blender measures a lamp. A thousand watts a few metres away lights a small scene; a building wants several thousand.</li>
+<li><b class="ui">Radius</b> - how big the lamp is. A big lamp casts soft shadows with blurred edges, as an overcast sky does; a small one casts sharp shadows, like the sun at noon.</li>
+</ul>
+<p>Add more lamps with <kbd>Shift A</kbd>, then <b class="ui">Light</b>, <b class="ui">Point</b>. A new lamp is white, a thousand watts and ten centimetres across.</p>
+<h2>The sky</h2>
+<p>The <b class="ui">World</b> tab is the sky, which lights everything from every direction - it is why the shady side of an object is not black. <b class="ui">Zenith</b> is the colour straight up and <b class="ui">Horizon</b> the colour low down; <b class="ui">Strength</b> is how bright it is, from 0 for night to about 1 for a clear day.</p>
+<h2>Things that glow</h2>
+<p>An object whose material has <b class="ui">Emission</b> above nought - the <b class="ui">Light</b> preset, for instance - glows, and in a rendered picture it lights what is near it. A car's headlights and a lantern are made this way.</p>
+<h2>The camera</h2>
+<p>The camera is what the picture is taken through when you press <kbd>F12</kbd>. It is drawn as a pyramid pointing the way it looks. It always looks at one point: type a new <b class="ui">Location</b> in its Object tab and it moves there and turns to keep looking at that point; press <kbd>G</kbd> and it moves with the point, looking the same way as before.</p>
+<p>In its <b class="ui">Data</b> tab, <b class="ui">Focal length</b> is the lens, as on a real camera: 50 millimetres is the eye's own view, 24 is a wide angle that takes in more, and 85 is close and flattering.</p>
+<p class="note">The 3D view is your eye, not the camera: you can walk anywhere without moving the camera. The Rendered view renders what your eye sees; <kbd>F12</kbd> renders what the camera sees.</p>
+<p class="nav"><a href="4-materials.html">Previous: Materials and textures</a> &middot; <a href="index.html">Contents</a> &middot; <a href="6-car.html">Next: Making the car: the stage and the body</a></p>
+</body>
+</html>

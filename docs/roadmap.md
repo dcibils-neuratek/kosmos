@@ -1179,6 +1179,62 @@ processors, and still what follows USB:
       window DONE with step 3**, as the drawing has it, and materials,
       lamps and the sky reach the tracer; the Material tab's numbers
       editable is what is left.
+      **NEXT, at Diego's word on 26 September** - asked for a tutorial and
+      told the Material tab could not colour anything yet: "Make materials
+      editable first". So: the presets, the base colour and every number
+      in the Material tab editable, a texture section in it in the same
+      chips (the kit's patterns, a second colour, scale and bump), and the
+      World tab's sky; each an undo step, and the Rendered view starting
+      again on each.
+   - **A tutorial, launched from Cafesa3D's menu** - Diego, 26 September:
+     "Let's write a tutorial in html on how to use the cafesa3d app", "A
+     tutorial on how to use the UI and how to make a car (the car you
+     built)", "A tutorial for new users to familiarize with the interface
+     and concepts", "Objects, lighting, textures, modeling, etc", "Then
+     render options and processes", "That tutorial will be able to be
+     launched from cafesa3d menu", "It should launch the browser with the
+     html content". An HTML page in `docs/`, carried in the image, opened
+     in Kosmos's own browser from the dots menu; every step in it one the
+     app can do, which is why materials come first. **Then the roadmap
+     here resumes** ("After the tutorial we will continue with your
+     roadmap on cafesa3d").
+     **With screen captures** - Diego, the same day: "Make sure we add
+     screen captures to the HTML tutorials to make it easy to follow".
+     Kosmos's browser drew no pictures, so it gains them: `<img>` laid out
+     as a box of its own by `web_paint.c`, the picture decoded by `gfx.png`
+     or `gfx.jpeg` and stretched into it by `browser.lua`. And the browser
+     reads a page the image carries where it lies, as an `asset:` address,
+     rather than Cafesa3D copying the pages into /home first - where a
+     screenshot is more than one file of the RAM filesystem holds (16 KB).
+     The pictures are taken by a tool that drives Cafesa3D in QEMU, so they
+     are taken again when the application changes rather than going stale.
+     **Two things the tutorial found, for their turn**: the Outliner shows
+     seven names and does not scroll, so a scene of twenty-five parts has
+     names nobody can click (the car chapters set the stage first to stay
+     inside it); and in Kosmos's browser the space between two words of a
+     link is not part of the link - `web_page_link_at` tests each word's
+     box, and a click that lands between them does nothing.
+   - **PROPOSED - scripting, in Lua** - Diego, 26 September: "What if we add
+     scripting capabilities to cafesa with our one Lua programming
+     language", "This means we could design scenes with code in a
+     scripting editor", "We would need to think about the bindings and else
+     but it would make perfect sense as it's already made in Lua". Blender's
+     answer to the same wish is Python and `bpy`; here the language is
+     already the application's. The shape proposed, for Diego to agree or
+     change before anything is drawn:
+     - **A Script panel** - an editor beside the view, and Run. A mockup
+       first, as for any window.
+     - **A script is handed the scene and nothing else**: a Lua environment
+       of its own with `scene.add{ kind = "box", size = ..., loc = ... }`,
+       materials, textures, lamps, the sky and the camera - the calls the
+       Properties tabs already make - and no `fs`, no `sys`, no `use`. What
+       it was not handed it cannot reach, as everywhere else in Kosmos.
+     - **One Run is one undo step**, errors come back with their line, and
+       a loop that never ends is stopped by an instruction count rather
+       than taking the application with it.
+     - **Scripts are saved with the scene** (step 5), and the three samples
+       - written today by `tools/cafesa3d_samples.py`, in Python on the Mac
+       - become scripts Cafesa3D runs itself.
    5. Saving and opening glTF.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.

@@ -99,6 +99,34 @@ local function material(base, preset, extra)
   return m
 end
 
+-- How a material looks in the Material tab: the dots on the presets'
+-- chips, the colours a click picks, and the kit's patterns by the names the
+-- tab gives them, each with the numbers it starts from - the samples' own,
+-- which look like the thing.
+local LOOK = {
+  dot = { Plastic = 0xffc33b2c, Metal = 0xffe0a84a, Mirror = 0xffc9ced6,
+          Glass = 0xffbfe0f0, Light = 0xffffe28a },
+  swatches = { 0xc81d25, 0xe8772e, 0xf2c230, 0x3f8f3a, 0x2f6fc4, 0x7a4bc2,
+               0xf2f2f2, 0x8a8d92, 0x1c1c1e, 0x7a4a2a },
+  texture_order = { "None", "Checker", "Brick", "Tiles", "Noise", "Wood", "Marble" },
+  texture_name = { plain = "None", checker = "Checker", brick = "Brick", shingles = "Tiles",
+                   noise = "Noise", wood = "Wood", marble = "Marble" },
+}
+
+LOOK.textures = {
+  Checker = { pattern = "checker", colour2 = 0x1c1c1e, scale = 4, bump = 0 },
+  Brick   = { pattern = "brick", colour2 = 0xd8d0c2, scale = 13, ratio = 2.9, mortar = 0.14,
+              offset = 0.5, bump = 0.004 },
+  Tiles   = { pattern = "shingles", colour2 = 0x4a1d14, scale = 4.5, ratio = 1.3,
+              mortar = 0.05, offset = 0.5, bump = 0.018 },
+  Noise   = { pattern = "noise", colour2 = 0x2a2c30, scale = 3, detail = 4, distortion = 0.6,
+              bump = 0.01 },
+  Wood    = { pattern = "wood", colour2 = 0x5c3a20, scale = 9, detail = 3, distortion = 2.2,
+              bump = 0.002 },
+  Marble  = { pattern = "marble", colour2 = 0x3a3d42, scale = 2, detail = 4, distortion = 1.5,
+              bump = 0 },
+}
+
 local things = {}                           -- in the order they were added
 local SHAPES = { plane = true, box = true, sphere = true, cylinder = true,
                  ico = true, cone = true, torus = true, grid = true, mesh = true }
@@ -155,6 +183,55 @@ local function sync(t)
   if t.id then scene:set(t.id, shown(t)) end
 
   scene_version = scene_version + 1
+end
+
+-- `will` is further down with undo; these are only called once it exists.
+local will
+
+local choose = {}
+
+function choose.preset(t, p)
+  will(("set the preset of %s"):format(t.name))
+
+  for k, v in pairs(PRESETS[p]) do t.mat[k] = v end
+
+  t.mat.preset = p
+  sync(t)
+  print(("cafesa3d: set preset of %s to %s"):format(t.name, p))
+end
+
+function choose.base(t, c)
+  will(("set Base colour of %s"):format(t.name))
+  t.mat.base = c
+  sync(t)
+  print(("cafesa3d: set Base colour of %s to #%06x"):format(t.name, c))
+end
+
+function choose.shading(t, smooth)
+  will(("set the shading of %s"):format(t.name))
+  t.smooth = smooth
+  sync(t)
+  print(("cafesa3d: set shading of %s to %s"):format(t.name, smooth and "Smooth" or "Flat"))
+end
+
+-- A texture chosen by name: the pattern's own starting numbers, or none -
+-- `false` rather than nil, which the kit takes as "no texture" where nil
+-- would leave the last one on (`k3d_kosmos.c`).
+function choose.texture(t, name)
+  will(("set the texture of %s"):format(t.name))
+
+  if name == "None" then
+    t.mat.texture = false
+  else
+    local tx = {}
+
+    for k, v in pairs(LOOK.textures[name]) do tx[k] = v end
+
+    t.mat.texture = tx
+  end
+
+  sync(t)
+  print(("cafesa3d: set texture of %s to %s"):format(t.name, name))
 end
 
 local function by_id(id)
@@ -276,6 +353,7 @@ local file_name = "still-life.scene"
 -- The light from everywhere that is not a lamp: a sky, from the zenith to
 -- the horizon. What the ray tracer (step three) lights a scene with.
 local world = { zenith = 0x6d90c6, horizon = 0xdfe6ef, strength = 0.9 }
+local WORLD = { name = "the world" }        -- what a sky's fields say they are of
 local tab = "object"
 local drawn_triangles = 0
 local VIEW_NAME = "User Perspective"
@@ -1129,19 +1207,45 @@ local FIELD = {
   subdivisions = { int = true, step = 0.05, lo = 1, hi = 6 },
   power    = { unit = " W", places = 0, step = 5, lo = 0, hi = 100000 },
   focal    = { unit = " mm", places = 0, step = 0.5, lo = 1, hi = 500 },
+
+  -- A material's, Blender's Principled numbers in Blender's ranges.
+  metallic = { places = 2, step = 0.01, lo = 0, hi = 1 },
+  rough    = { places = 2, step = 0.01, lo = 0, hi = 1 },
+  ior      = { places = 2, step = 0.01, lo = 1, hi = 3 },
+  trans    = { places = 2, step = 0.01, lo = 0, hi = 1 },
+  emit     = { places = 1, step = 0.1, lo = 0, hi = 100 },
+
+  -- A texture's (`k3d_texture.c`): so many a metre, and so deep.
+  tscale   = { places = 2, step = 0.05, lo = 0.01, hi = 1000, key = "scale" },
+  bump     = { unit = " m", places = 3, step = 0.0005, lo = 0, hi = 0.2 },
+
+  -- The sky's.
+  strength = { places = 2, step = 0.01, lo = 0, hi = 10 },
+
+  -- A colour, typed as #rrggbb; nothing to scrub.
+  colour   = { colour = true },
 }
 
 local fields_drawn = {}                     -- { x, y, w, h, f }, as drawn
 local editing = nil                         -- { f, text, fresh } while typing
 local field_drag = nil
 
-local function F(t, name, index, label)
-  return { t = t, name = name, index = index, spec = FIELD[name],
+--
+-- A field of `t`, whose value is `holder[name]` - `t` itself unless it
+-- says otherwise, as a material's numbers are its object's `mat`, a
+-- texture's its `mat.texture` and the sky's the world's. `kind` names the
+-- spec when it is not the name: a texture's scale is not an object's.
+--
+local function F(t, name, index, label, holder, kind)
+  local spec = FIELD[kind or name]
+
+  return { t = t, name = spec.key or name, index = index, spec = spec,
+           holder = holder or t,
            label = label .. (index and (" " .. AXIS_NAME[index]) or "") }
 end
 
 local function field_value(f)
-  local v = f.t[f.name]
+  local v = f.holder[f.name]
 
   if f.index then v = v[f.index] end
 
@@ -1150,6 +1254,9 @@ end
 
 local function field_text(f, unit)
   local v, sp = field_value(f), f.spec
+
+  if sp.colour then return ("#%06x"):format((v or 0) & 0xffffff) end
+
   local text = sp.int and tostring(math.floor(v + 0.5)) or fmt(v, sp.places)
 
   return unit and (text .. (sp.unit or "")) or text
@@ -1174,13 +1281,13 @@ local function field_set(f, v)
   if lo then v = math.max(lo, v) end
   if hi then v = math.min(hi, v) end
 
-  if f.index then f.t[f.name][f.index] = v else f.t[f.name] = v end
+  if f.index then f.holder[f.name][f.index] = v else f.holder[f.name] = v end
 
   sync(f.t)
 end
 
 local function same_field(a, b)
-  return a and b and a.t == b.t and a.name == b.name and a.index == b.index
+  return a and b and a.holder == b.holder and a.name == b.name and a.index == b.index
 end
 
 local function field_row(s, x, y, w, label, values)
@@ -1205,7 +1312,16 @@ local function field_row(s, x, y, w, label, values)
       s:frame_round(bx + 1, y + 1, each - 2, 24, theme.ring, 5)
     end
 
-    s:text(bx + (each - gfx.measure(text, small)) // 2, y + (26 - gfx.height(small)) // 2, text,
+    -- A colour shows itself beside its number.
+    local tx = bx + (each - gfx.measure(text, small)) // 2
+
+    if f and f.spec.colour then
+      s:fill_round(bx + 7, y + 6, 14, 14, 0xff000000 | (field_value(f) or 0), 3)
+      s:frame_round(bx + 7, y + 6, 14, 14, theme.line_soft, 3)
+      tx = math.max(tx, bx + 26)
+    end
+
+    s:text(tx, y + (26 - gfx.height(small)) // 2, text,
            f and theme.text or theme.text_dim, nil, small)
 
     if f then fields_drawn[#fields_drawn + 1] = { x = bx, y = y, w = each, h = 26, f = f } end
@@ -1226,6 +1342,51 @@ local function axis_letters(s, x, y, w)
   end
 
   return y + gfx.height(tiny) + 1
+end
+
+--------------------------------------------------------------------------
+-- Chips: a row of choices with the one in force marked - a material's
+-- preset, a swatch, a texture's pattern - each saying what a click on it
+-- does. Found again from `chip.actions`, which is only what is drawn now.
+--------------------------------------------------------------------------
+
+local chip = { actions = {} }               -- actions: control name -> function, as drawn
+
+function chip.row(s, x, y, w, items)
+  local cx = x
+
+  for _, it in ipairs(items) do
+    local cw = it.swatch and 22 or gfx.measure(it.text, small) + (it.dot and 30 or 20)
+
+    if cx + cw > x + w then cx, y = x, y + 30 end
+
+    if it.swatch then
+      if it.on then s:frame_round(cx - 2, y, 26, 26, theme.accent, 7) end
+
+      s:fill_round(cx, y + 2, 22, 22, 0xff000000 | it.swatch, 5)
+      s:frame_round(cx, y + 2, 22, 22, theme.line_soft, 5)
+    else
+      local tx = cx + 10
+
+      s:fill_round(cx, y, cw, 26, it.on and theme.mix(theme.sunken, theme.accent, 110)
+                   or theme.sunken, 13)
+      s:frame_round(cx, y, cw, 26, it.on and theme.accent or theme.line_soft, 13)
+
+      if it.dot then
+        s:disc(cx + 12, y + 13, 5, it.dot, true)
+        tx = cx + 22
+      end
+
+      s:text(tx, y + (26 - gfx.height(small)) // 2, it.text, it.on and theme.accent or theme.text,
+             nil, small)
+    end
+
+    control(it.key, cx, y, cw, 26)
+    chip.actions[it.key] = it.go
+    cx = cx + cw + (it.swatch and 4 or 5)
+  end
+
+  return y + 34
 end
 
 local function heading(s, x, y, text, glyph, colour)
@@ -1274,6 +1435,7 @@ local function draw_props(s)
   local x0 = SX + TABS_W
 
   fields_drawn = {}
+  chip.actions = {}
   local top = PROPS_Y + 1
 
   s:fill(SX + 1, top, TABS_W - 1, H - FOOT - top, theme.mix(theme.window, theme.line_soft, 300))
@@ -1306,9 +1468,9 @@ local function draw_props(s)
     note(s, x, y + 4, w, "Final traces as Cycles does, on every processor. Rendered shows the view that way; F12 renders through the camera.")
   elseif tab == "world" then
     y = heading(s, x, y, "World")
-    y = field_row(s, x, y, w, "Zenith", { hexcolour(world.zenith) })
-    y = field_row(s, x, y, w, "Horizon", { hexcolour(world.horizon) })
-    y = field_row(s, x, y, w, "Strength", { fmt(world.strength, 2) })
+    y = field_row(s, x, y, w, "Zenith", { F(WORLD, "zenith", nil, "Zenith", world, "colour") })
+    y = field_row(s, x, y, w, "Horizon", { F(WORLD, "horizon", nil, "Horizon", world, "colour") })
+    y = field_row(s, x, y, w, "Strength", { F(WORLD, "strength", nil, "Strength", world) })
     note(s, x, y + 4, w, "The light from everywhere that is not a lamp: a sky.")
   elseif not t then
     note(s, x, y, w, "Nothing is selected. Click an object in the view, or its name above.")
@@ -1367,7 +1529,7 @@ local function draw_props(s)
       y = field_row(s, x, y, w, "Size", { F(t, "size", nil, "Size") })
     elseif t.kind == "light" then
       y = field_row(s, x, y, w, "Type", { "Point" })
-      y = field_row(s, x, y, w, "Colour", { hexcolour(t.colour) })
+      y = field_row(s, x, y, w, "Colour", { F(t, "colour", nil, "Colour") })
       y = field_row(s, x, y, w, "Power", { F(t, "power", nil, "Power") })
       y = field_row(s, x, y, w, "Radius", { F(t, "radius", nil, "Radius") })
     elseif t.kind == "camera" then
@@ -1381,7 +1543,17 @@ local function draw_props(s)
     if t.kind == "mesh" then
       note(s, x, y + 6, w, ("Its own triangles, %d of them, read from the file: the edges between faces that meet at less than the auto smooth angle are drawn round."):format(scene:triangles(t.id)))
     elseif t.id then
-      y = field_row(s, x, y, w, "Shading", { t.smooth and "Smooth" or "Flat" })
+      -- Blender's Shade Flat and Shade Smooth: the facets, or the shape
+      -- they stand for - which the ray tracer then traces exactly for a
+      -- sphere or a cylinder.
+      s:text(x + 96 - gfx.measure("Shading", small), y + (26 - gfx.height(small)) // 2,
+             "Shading", theme.text_dim, nil, small)
+      y = chip.row(s, x + 104, y, w - 104, {
+        { text = "Flat", key = "shade:flat", on = not t.smooth,
+          go = function() choose.shading(t, false) end },
+        { text = "Smooth", key = "shade:smooth", on = t.smooth,
+          go = function() choose.shading(t, true) end },
+      }) - 3
       note(s, x, y + 6, w, ("What the shape was made with stays editable here until it is edited as a mesh. The view draws its %d triangles."):format(scene:triangles(t.id)))
     end
   elseif tab == "material" then
@@ -1395,31 +1567,60 @@ local function draw_props(s)
 
       y = heading(s, x, y, t.name, "material", m.base)
 
-      -- The five starting points, as chips; the one in force marked.
-      local cx = x
+      -- The five starting points, as chips; the one in force marked. A
+      -- click sets all its numbers and keeps the colour and the texture.
+      local presets = {}
 
       for _, p in ipairs(PRESET_ORDER) do
-        local cw = gfx.measure(p, small) + 30
-
-        if cx + cw > x + w then cx, y = x, y + 32 end
-
-        local on = m.preset == p
-
-        s:fill_round(cx, y, cw, 26, on and theme.mix(theme.sunken, theme.accent, 110) or theme.sunken, 13)
-        s:frame_round(cx, y, cw, 26, on and theme.accent or theme.line_soft, 13)
-        s:disc(cx + 12, y + 13, 5, ({ Plastic = 0xffc33b2c, Metal = 0xffe0a84a, Mirror = 0xffc9ced6,
-                                     Glass = 0xffbfe0f0, Light = 0xffffe28a })[p], true)
-        s:text(cx + 22, y + (26 - gfx.height(small)) // 2, p, on and theme.accent or theme.text, nil, small)
-        cx = cx + cw + 5
+        presets[#presets + 1] = { text = p, key = "preset:" .. p, on = m.preset == p,
+                                  dot = LOOK.dot[p], go = function() choose.preset(t, p) end }
       end
 
-      y = y + 36
-      y = field_row(s, x, y, w, "Base colour", { hexcolour(m.base) })
-      y = field_row(s, x, y, w, "Metallic", { fmt(m.metallic, 2) })
-      y = field_row(s, x, y, w, "Roughness", { fmt(m.rough, 2) })
-      y = field_row(s, x, y, w, "IOR", { fmt(m.ior, 2) })
-      y = field_row(s, x, y, w, "Transmission", { fmt(m.trans, 2) })
-      field_row(s, x, y, w, "Emission", { fmt(m.emit, 1) })
+      y = chip.row(s, x, y, w, presets)
+      y = field_row(s, x, y, w, "Base colour", { F(t, "base", nil, "Base colour", m, "colour") })
+
+      local swatches = {}
+
+      for i, c in ipairs(LOOK.swatches) do
+        swatches[i] = { swatch = c, key = "swatch:" .. i, on = m.base == c,
+                        go = function() choose.base(t, c) end }
+      end
+
+      y = chip.row(s, x, y - 2, w, swatches)
+      y = field_row(s, x, y, w, "Metallic", { F(t, "metallic", nil, "Metallic", m) })
+      y = field_row(s, x, y, w, "Roughness", { F(t, "rough", nil, "Roughness", m) })
+      y = field_row(s, x, y, w, "Transmission", { F(t, "trans", nil, "Transmission", m) })
+
+      if (m.trans or 0) > 0 then
+        y = field_row(s, x, y, w, "IOR", { F(t, "ior", nil, "IOR", m) })
+      end
+
+      y = field_row(s, x, y, w, "Emission", { F(t, "emit", nil, "Emission", m) })
+
+      -- The texture: a pattern worked out from where a point is, mixing the
+      -- base colour towards a second one and standing the surface up by
+      -- its height (`k3d_texture.c`). The Rendered view shows it.
+      local tx = m.texture or nil
+      local now = tx and LOOK.texture_name[tx.pattern] or "None"
+
+      s:text(x, y + 4, "TEXTURE", theme.text_dim, nil, tiny)
+      y = y + gfx.height(tiny) + 10
+
+      local patterns = {}
+
+      for _, name in ipairs(LOOK.texture_order) do
+        patterns[#patterns + 1] = { text = name, key = "texture:" .. name, on = now == name,
+                                    go = function() choose.texture(t, name) end }
+      end
+
+      y = chip.row(s, x, y, w, patterns)
+
+      if tx then
+        y = field_row(s, x, y, w, "Second colour",
+                      { F(t, "colour2", nil, "Second colour", tx, "colour") })
+        field_row(s, x, y, w, "Scale, bump", { F(t, "tscale", nil, "Texture scale", tx, "tscale"),
+                                               F(t, "bump", nil, "Bump", tx) })
+      end
     end
   end
 end
@@ -1713,6 +1914,19 @@ local function say_where()
 
     print("cafesa3d: fields " .. table.concat(fs_, "; "))
   end
+
+  if next(chip.actions) then
+    local cs = {}
+
+    for key in pairs(chip.actions) do
+      local c = controls[key]
+
+      cs[#cs + 1] = ("%s %d,%d"):format(key, c.x + c.w // 2, c.y + c.h // 2)
+    end
+
+    table.sort(cs)
+    print("cafesa3d: chips " .. table.concat(cs, "; "))
+  end
 end
 
 -- A click in the view: the lamp or the camera if it is on one, then the
@@ -1842,7 +2056,7 @@ local function rebuild(snap)
 end
 
 -- Called before a change, with what it is called.
-local function will(label)
+function will(label)          -- the `local will` declared above sync
   undo[#undo + 1] = snapshot(label)
 
   if #undo > 64 then table.remove(undo, 1) end
@@ -1985,11 +2199,14 @@ end
 -- out of glTF by `/lib/scenefile.lua`, which trusts nothing in the file.
 -- The whole scene is replaced - one undo step - and the view goes to where
 -- the scene's camera stands.
+--
+-- One table rather than four locals: this chunk is at Lua's limit of two
+-- hundred, and has been folded twice before for it.
 --------------------------------------------------------------------------
 
 local SAMPLES = { { "house", "House" }, { "car", "Car" }, { "plane", "Plane" } }
 
-local function look_from(cam)
+function SAMPLES.look_from(cam)
   local d = { cam.loc[1] - cam.target[1], cam.loc[2] - cam.target[2], cam.loc[3] - cam.target[3] }
   local n = math.sqrt(d[1] ^ 2 + d[2] ^ 2 + d[3] ^ 2)
 
@@ -2002,7 +2219,7 @@ local function look_from(cam)
   view_name = VIEW_NAME
 end
 
-local function open_scene(bytes, file)
+function SAMPLES.open_scene(bytes, file)
   local doc, why = json.decode(bytes or "")
   local loaded
 
@@ -2056,7 +2273,7 @@ local function open_scene(bytes, file)
   file_name = file
   cursor3d = { 0, 0, 0 }
 
-  if camera then look_from(camera) end
+  if camera then SAMPLES.look_from(camera) end
 
   print(("cafesa3d: opened %s, %d objects, %d triangles, %d skipped"):format(
     loaded.name, #things, scene:triangles(), loaded.skipped))
@@ -2066,7 +2283,7 @@ local function open_scene(bytes, file)
   return true
 end
 
-local function open_sample(file, name)
+function SAMPLES.open(file, name)
   local bytes = sys.asset("scenes/" .. file .. ".gltf")
 
   if not bytes then
@@ -2074,19 +2291,36 @@ local function open_sample(file, name)
     return
   end
 
-  open_scene(bytes, file .. ".gltf")
+  SAMPLES.open_scene(bytes, file .. ".gltf")
 end
 
--- The dots: opening a sample, and what comes later.
+-- The tutorial, `docs/cafesa3d-tutorial/`: pages and pictures the image
+-- carries, which the browser reads where they lie (`asset:` addresses), so
+-- it is always the tutorial for the Cafesa3D it came with. It used to be
+-- copied out into /home first, and a screenshot is more than one file of
+-- the RAM filesystem holds.
+local TUTORIAL = { index = "asset:tutorial/cafesa3d/index.html" }
+
+function TUTORIAL.open()
+  local ok, why = fs.send("/app/wm", { type = "launch", program = "/bin/browser.lua",
+                                       args = TUTORIAL.index })
+
+  print(ok and ("cafesa3d: tutorial at " .. TUTORIAL.index)
+        or ("cafesa3d: could not start the browser: " .. tostring(why)))
+  return ok and true or false
+end
+
+-- The dots: opening a sample, the tutorial, and what comes later.
 local function more_menu(x, y)
   local samples = {}
 
   for _, s_ in ipairs(SAMPLES) do
-    samples[#samples + 1] = { text = s_[2], on_choose = function() open_sample(s_[1], s_[2]) end }
+    samples[#samples + 1] = { text = s_[2], on_choose = function() SAMPLES.open(s_[1], s_[2]) end }
   end
 
   local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y, {
     { text = "Open a sample", submenu = samples },
+    { text = "Tutorial", on_choose = TUTORIAL.open },
     { separator = true },
     { text = "Open...", disabled = true },
     { text = "Save", disabled = true },
@@ -2379,7 +2613,10 @@ local function field_at(x, y)
 end
 
 local function say_set(f)
-  local extra = f.t.id and (" - the scene is %d triangles"):format(scene:triangles()) or ""
+  -- The triangles, when a shape's own numbers changed them; a colour or a
+  -- roughness changes none.
+  local extra = f.t.id and f.holder == f.t
+                and (" - the scene is %d triangles"):format(scene:triangles()) or ""
 
   print(("cafesa3d: set %s of %s to %s%s"):format(f.label, f.t.name, field_text(f, false), extra))
 end
@@ -2398,6 +2635,12 @@ local function commit_edit()
   if not e then return false end
 
   local v = tonumber(e.text)
+
+  if e.f.spec.colour then
+    local hex = e.text:match("^#?(%x%x%x%x%x%x)$")
+
+    v = hex and tonumber(hex, 16)
+  end
 
   if v and v ~= field_value(e.f) then
     will(("set %s of %s"):format(e.f.label, e.f.t.name))
@@ -2434,6 +2677,14 @@ local function press(x, y)
     end
 
     return true
+  end
+
+  -- A chip: a preset, a swatch, a pattern.
+  for key, go in pairs(chip.actions) do
+    if inside(controls[key], x, y) then
+      go()
+      return true
+    end
   end
 
   for _, name in ipairs(TABS) do
@@ -2517,7 +2768,8 @@ local function move(x, y)
       will(("set %s of %s"):format(fdr.f.label, fdr.f.t.name))
     end
 
-    field_set(fdr.f, fdr.v0 + dx * fdr.f.spec.step)
+    if not fdr.f.spec.colour then field_set(fdr.f, fdr.v0 + dx * fdr.f.spec.step) end
+
     return true
   end
 
@@ -2610,7 +2862,7 @@ local function release(x, y)
 end
 
 -- Raw keys: 42 and 54 are the shifts, 29 and 97 the controls, 2..11 the
--- number row, 30 A, 32 D, 44 Z, 45 X, 102 Home, 111 Delete.
+-- number row, 30 A, 32 D, 44 Z, 45 X, 59 F1, 88 F12, 102 Home, 111 Delete.
 local function rawkey(ev)
   if ev.code == 42 or ev.code == 54 then
     shift = ev.down
@@ -2629,6 +2881,12 @@ local function rawkey(ev)
     local e = editing
     local ch = ({ [2] = "1", [3] = "2", [4] = "3", [5] = "4", [6] = "5", [7] = "6",
                   [8] = "7", [9] = "8", [10] = "9", [11] = "0", [52] = ".", [12] = "-" })[ev.code]
+
+    -- A colour is hex: a to f as well, and the # it is shown with.
+    if e.f.spec.colour then
+      ch = ({ [30] = "a", [48] = "b", [46] = "c", [32] = "d", [18] = "e", [33] = "f" })[ev.code]
+           or (ch ~= "." and ch ~= "-" and ch) or nil
+    end
 
     if ch then
       if e.fresh then e.text, e.fresh = "", false end
@@ -2730,6 +2988,7 @@ local function rawkey(ev)
   end
   if ev.code == 102 then frame_all() return true end
   if ev.code == 88 then final.open() return true end
+  if ev.code == 59 then return TUTORIAL.open() end
 
   return false
 end

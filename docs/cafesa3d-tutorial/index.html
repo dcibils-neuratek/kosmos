@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cafesa3D tutorial</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="1-interface.html">Next: The window, and moving around</a></p>
+<h1>Cafesa3D tutorial</h1>
+<p class="lead">Cafesa3D is Kosmos's 3D modeller. You place objects in a scene, give them colours and textures, light them, and render a picture of them by ray tracing - the way light really travels. It works like Blender, so what you learn here carries over.</p>
+<p>This tutorial is for somebody who has never used a 3D program. Read it in order the first time: each chapter uses what the one before taught. By the end you will have built a car and rendered it.</p>
+<img src="car-render.png" width="640" height="360" alt="The red car of chapters 6 and 7, rendered by Cafesa3D">
+<p class="caption">The car you will build in chapters 6 and 7, as <kbd>F12</kbd> renders it.</p>
+<p class="note">Open it again at any time with <kbd>F1</kbd> in Cafesa3D, or from the three dots at the right end of its header, then <b class="ui">Tutorial</b>.</p>
+<h2>Contents</h2>
+<ul>
+<li><a href="1-interface.html">1. The window, and moving around</a> - what every part of Cafesa3D is for, and how to look at a scene from anywhere.</li>
+<li><a href="2-objects.html">2. Objects</a> - adding, choosing, copying and deleting them, and undoing.</li>
+<li><a href="3-shaping.html">3. Moving, turning and sizing</a> - the <kbd>G</kbd>, <kbd>R</kbd> and <kbd>S</kbd> keys, typed numbers, and a shape's own numbers.</li>
+<li><a href="4-materials.html">4. Materials and textures</a> - what things are made of: colours, plastic, metal, glass, and patterns like brick and wood.</li>
+<li><a href="5-light.html">5. Light, the sky and the camera</a> - where the light comes from, and what the picture is taken through.</li>
+<li><a href="6-car.html">6. Making the car: the stage and the body</a> - a red sports car, step by step.</li>
+<li><a href="7-car-finish.html">7. Making the car: wheels, lamps and the picture</a> - finishing it, and taking its picture.</li>
+<li><a href="8-rendering.html">8. Rendering</a> - how Cafesa3D makes its pictures, and how to get good ones.</li>
+<li><a href="9-keys.html">9. Keys at a glance</a> - everything on one page.</li>
+</ul>
+<h2>Three words first</h2>
+<p><b>A scene</b> is everything in your 3D world: the objects, the lamps, the sky and the camera.</p>
+<p><b>An object</b> is one thing in it - a cube, a wheel, a lamp. Every object has a place, a turn and a size, a shape, and (unless it is a lamp or the camera) a material.</p>
+<p><b>Rendering</b> is making a picture of the scene. Cafesa3D follows rays of light around it, bouncing off every surface, so shadows, reflections and glass come out as they would in a photograph.</p>
+<p class="nav"><a href="1-interface.html">Next: The window, and moving around</a></p>
+</body>
+</html>

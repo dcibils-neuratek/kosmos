@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The window, and moving around</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Previous: Cafesa3D tutorial</a> &middot; <a href="index.html">Contents</a> &middot; <a href="2-objects.html">Next: Objects</a></p>
+<h1>1. The window, and moving around</h1>
+<p class="lead">Cafesa3D opens on a small still life: a red cube, a glass ball, a gold ball and a blue cylinder on the ground, with a lamp and a camera. Keep it open while you read.</p>
+<img src="interface.png" width="702" height="425" alt="Cafesa3D's window as it opens, with the still life in the 3D view">
+<p class="caption">Cafesa3D as it opens: the header along the top, the tools down the left, the 3D view in the middle, the Outliner and Properties on the right, and the foot along the bottom.</p>
+<h2>The parts of the window</h2>
+<h3>The header, along the top</h3>
+<ul>
+<li><b class="ui">Cafesa3D</b> and the name of the scene you have open.</li>
+<li><b class="ui">Object</b> and <b class="ui">Edit</b> - the two modes. Object mode is where you arrange whole objects; Edit mode, for shaping a mesh point by point, is still to come and is greyed out.</li>
+<li><b class="ui">Add</b> (<kbd>Shift A</kbd>) - puts a new object into the scene.</li>
+<li><b class="ui">Wireframe</b>, <b class="ui">Solid</b> and <b class="ui">Rendered</b> - three ways of looking at the scene: its edges, its surfaces, or the finished picture.</li>
+<li><b class="ui">Render</b> (<kbd>F12</kbd>) - takes the picture through the camera, in a window of its own.</li>
+<li><b>The three dots</b> at the right end - a menu with the sample scenes and this tutorial.</li>
+</ul>
+<h3>The tools, down the left</h3>
+<ul>
+<li><b class="ui">Select</b> - the arrow: click an object to choose it.</li>
+<li><b class="ui">Cursor</b> - click in the view to put the 3D cursor on the ground there. The 3D cursor is the red and white ring: it marks where new objects appear.</li>
+<li><b class="ui">Move</b>, <b class="ui">Rotate</b> and <b class="ui">Scale</b> - show handles on the chosen object that you drag with the mouse.</li>
+</ul>
+<h3>The 3D view, in the middle</h3>
+<p>The scene, seen from wherever you put your eye. The grid is the ground; the red line across it is the X axis and the green line the Y axis, and Z points up. The little ball of axes at the top right always shows which way X, Y and Z are; click one of its axes to look straight down it. At the top left the view says what it is looking from, which object is chosen, and - when it is rendering - how far the picture has got.</p>
+<h3>The Outliner, top right</h3>
+<p>Every object in the scene by name. Click a name to choose that object; click its eye to hide it or show it again.</p>
+<h3>Properties, under the Outliner</h3>
+<p>Five tabs down its left edge, each about one kind of thing:</p>
+<ul>
+<li><b class="ui">Render</b> - the settings the picture is made with.</li>
+<li><b class="ui">World</b> - the sky.</li>
+<li><b class="ui">Object</b> - where the chosen object is, how it is turned, and how big.</li>
+<li><b class="ui">Data</b> - its shape: a cube's sides, a sphere's radius, a lamp's power.</li>
+<li><b class="ui">Material</b> - what it is made of.</li>
+</ul>
+<h3>The foot, along the bottom</h3>
+<p>The keys that matter most right now on the left, and on the right how many objects and triangles the scene has and which object is chosen.</p>
+<h2>Moving around the scene</h2>
+<p>Everything here moves your eye, never the objects.</p>
+<ul>
+<li><b>Drag</b> in the view to turn around the point you are looking at.</li>
+<li><b>Shift and drag</b> to slide the view sideways and up and down.</li>
+<li><b>The wheel</b> brings you closer or takes you further away.</li>
+<li><kbd>1</kbd> looks from the front, <kbd>3</kbd> from the right, <kbd>7</kbd> from the top; hold <kbd>Shift</kbd> with one for the back, the left or the bottom.</li>
+<li><kbd>Home</kbd> brings everything into view.</li>
+<li><kbd>Z</kbd> switches between Solid and Wireframe.</li>
+</ul>
+<p class="tip">Try it now: drag to walk around the still life, roll the wheel to come close to the gold ball, then press <kbd>Home</kbd> to see everything again.</p>
+<p class="nav"><a href="index.html">Previous: Cafesa3D tutorial</a> &middot; <a href="index.html">Contents</a> &middot; <a href="2-objects.html">Next: Objects</a></p>
+</body>
+</html>

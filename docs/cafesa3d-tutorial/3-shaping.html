@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Moving, turning and sizing</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="2-objects.html">Previous: Objects</a> &middot; <a href="index.html">Contents</a> &middot; <a href="4-materials.html">Next: Materials and textures</a></p>
+<h1>3. Moving, turning and sizing</h1>
+<p class="lead">Three keys do most of the work, as in Blender: <kbd>G</kbd> to grab and move, <kbd>R</kbd> to rotate, <kbd>S</kbd> to scale.</p>
+<h2>G, R and S</h2>
+<p>Choose an object and press <kbd>G</kbd>. Without pressing a button, move the mouse: the object follows it. Click, or press <kbd>Return</kbd>, to put it down. <kbd>Esc</kbd> or a right click puts it back where it was.</p>
+<p><kbd>R</kbd> turns the object as you move the mouse around it, and <kbd>S</kbd> makes it bigger or smaller as you move away from it or towards it.</p>
+<h3>Holding to an axis</h3>
+<p>While moving, turning or sizing, press <kbd>X</kbd>, <kbd>Y</kbd> or <kbd>Z</kbd> to hold the change to that axis only - a line of the axis's colour shows it. <kbd>Shift X</kbd> holds it to the other two: everything but X.</p>
+<img src="grab.png" width="760" height="400" alt="The red cube being moved with G, held to the X axis">
+<p class="caption"><kbd>G</kbd>, then <kbd>X</kbd>: the cube follows the pointer along the red line, the X axis, and nowhere else.</p>
+<h3>An exact amount</h3>
+<p>Type a number while moving: <kbd>G</kbd> <kbd>X</kbd> <kbd>2</kbd> <kbd>Return</kbd> moves the object two metres along X. <kbd>R</kbd> <kbd>Z</kbd> <kbd>9</kbd> <kbd>0</kbd> turns it a quarter turn about Z, and <kbd>S</kbd> <kbd>2</kbd> doubles it. <kbd>-</kbd> makes the number negative. The top left of the view says what is happening as you type.</p>
+<h2>Handles</h2>
+<p>The <b class="ui">Move</b>, <b class="ui">Rotate</b> and <b class="ui">Scale</b> tools on the left put handles on the chosen object: an arrow, a ring or a small cube for each axis. Drag one and only that axis changes.</p>
+<h2>Typing numbers</h2>
+<p>The <b class="ui">Object</b> tab shows the chosen object's <b class="ui">Location</b>, <b class="ui">Rotation</b> and <b class="ui">Scale</b>, one box for each of X, Y and Z. Click a box and type a number, then <kbd>Return</kbd> to keep it, <kbd>Esc</kbd> to leave it as it was, or <kbd>Tab</kbd> to keep it and go on to the next box. Drag across a box instead of clicking to slide its number up and down.</p>
+<img src="object-tab.png" width="340" height="250" alt="The Object tab of the cube: Location, Rotation and Scale">
+<p class="caption">The Object tab: where the chosen object is, how it is turned and how big.</p>
+<p>Location is in metres, from the middle of the scene; rotation in degrees; scale is a factor, where 1 is the size the shape was made.</p>
+<h2>A shape's own numbers</h2>
+<p>The <b class="ui">Data</b> tab has the numbers a shape is made from: a cube's <b class="ui">Size</b>, a sphere's <b class="ui">Segments</b>, <b class="ui">Rings</b> and <b class="ui">Radius</b>, a cylinder's <b class="ui">Vertices</b>, <b class="ui">Radius</b> and <b class="ui">Depth</b>, and so on. Changing these remakes the shape; changing Scale in the Object tab only stretches it. For building things to size, the Data tab is usually what you want: a wheel is a cylinder of radius 0.38 metres, not a cylinder scaled by 0.38.</p>
+<h3>Flat or smooth</h3>
+<p>Round shapes are made of flat faces. <b class="ui">Shading</b>, in the Data tab, is <b class="ui">Flat</b> to see the faces or <b class="ui">Smooth</b> to hide them. A smooth sphere or cylinder with eight sides or more is rendered as a perfect curve, however coarse it looks in the Solid view.</p>
+<h2>Meshes</h2>
+<p>Some objects in the samples are <b>meshes</b>: shapes made of their own triangles rather than from a few numbers - the car's curved body, a tyre, the plane's wings. They were turned on a lathe, lofted through sections and bevelled by the program that made the samples. In Cafesa3D you can move, turn, size and colour them like anything else; shaping one point by point is what Edit mode will do, when it comes.</p>
+<p class="nav"><a href="2-objects.html">Previous: Objects</a> &middot; <a href="index.html">Contents</a> &middot; <a href="4-materials.html">Next: Materials and textures</a></p>
+</body>
+</html>

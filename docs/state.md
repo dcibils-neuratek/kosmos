@@ -317,7 +317,40 @@ build bug found on the way: the image had kept the first cut of the
 scenes, because the scene files hung off a stamp by a rule with no recipe.
 **Textures are the tracer's only**: the Solid view shows base colours.
 
-**Next**: the gate, then commit. Then the Render tab's numbers
+**Then the Material tab editable and the tutorial** (26 September,
+`testing.md` 18.198). Diego asked for a tutorial - the interface, the
+concepts, how to make the car, rendering - opened from Cafesa3D's menu in
+Kosmos's browser, and chose "Make materials editable first" when told the
+Material tab could not colour anything yet. So: presets, swatches, the base
+colour typed as hex, every Principled number, a texture section (the kit's
+six patterns, a second colour, scale and bump), the World tab's sky and a
+lamp's colour, and Flat or Smooth in the Data tab. The tutorial is ten
+pages in `docs/cafesa3d-tutorial/`, opened by F1 or the dots' Tutorial;
+every step checked against the code, and the car's numbers tuned on a host
+render before a word of them was written. Walking it in Kosmos's browser
+found two things: the dots' glyph is not in its fonts (now words), and a
+link's gaps between words are not clickable (roadmap). Planning to build
+the car by its steps found a third: the Outliner shows seven names and does
+not scroll, so the car chapters set the road, the lamp, the sky and the
+camera first, while the list is short.
+Then "Make sure we add screen captures", which Kosmos's browser could not
+show: it now draws `<img>` (PNG and JPEG, a line each) and reads a page the
+image carries where it lies, as `asset:` - the tutorial is no longer copied
+into /home, whose RAM filesystem holds 16 KB a file. The pictures are taken
+by `tools/cafesa3d_tutorial_shots.py`, which builds the car step by step
+through the pointer and the keyboard, and fails by name on a step that
+cannot be followed.
+And Diego proposed **scripting Cafesa3D in Lua** - scenes designed in code
+in an editor; recorded in 4l as proposed, with a shape for him to agree.
+
+The gate: 39 of 40 suites, the Cafesa3D suite 83 of 83 on each board; the
+host suite hung again on `test_yuv_x86` under Rosetta (a restart of the Mac
+is what clears it, and that is Diego's), with every host check before it
+and after it passing, the tutorial's 1224 among them. Committed, not
+pushed.
+
+**Next**: Diego's word on pushing - threads step 6, the textures and
+meshes, and this - and on scripting's shape. Then the Render tab's numbers
 editable
 (samples, bounces, clamp, resolution, Preview or Final) and a denoiser;
 then textures, a mesh kind, and the three scenes rebuilt with far more

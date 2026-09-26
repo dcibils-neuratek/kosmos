@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Making the car: the stage and the body</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="5-light.html">Previous: Light, the sky and the camera</a> &middot; <a href="index.html">Contents</a> &middot; <a href="7-car-finish.html">Next: Making the car: wheels, lamps and the picture</a></p>
+<h1>6. Making the car: the stage and the body</h1>
+<p class="lead">Now everything together: a red sports car on a road, built from the shapes in the Add menu. It takes about twenty minutes, over this chapter and the next.</p>
+<p class="note">The sample car, in the dots menu, is the same car made with meshes: a curved body, lathed tyres, rounded edges. Yours is built from boxes and cylinders, which is how every model starts - the blocks first, the curves later.</p>
+<h2>Clear the table</h2>
+<ul>
+<li><b>1.</b> Click <b class="ui">Cube</b> in the Outliner and press <kbd>Delete</kbd>. Do the same for <b class="ui">Glass</b>, <b class="ui">Gold</b> and <b class="ui">Cylinder</b>. Keep the ground, the lamp and the camera.</li>
+</ul>
+<h2>The stage first</h2>
+<p>The road, the lamp, the sky and the camera come first, while the Outliner lists three names. The car will be twenty-five parts, more than the Outliner has room to show, and the ground and the lamp would fall off the end of the list.</p>
+<ul>
+<li><b>2.</b> Choose <b class="ui">Ground</b>. In the <b class="ui">Material</b> tab, click <b class="ui">Plastic</b>, then type <code>5a5d62</code> into <b class="ui">Base colour</b> and <code>0.95</code> into <b class="ui">Roughness</b>.</li>
+<li><b>3.</b> Under <b class="ui">Texture</b>, click <b class="ui">Noise</b>. Type <code>2e3034</code> into <b class="ui">Second colour</b>, and in <b class="ui">Scale, bump</b> type <code>28</code> into the first box and <code>0.002</code> into the second. That is asphalt: a fine grey grit, two millimetres deep.</li>
+<li><b>4.</b> Choose the <b class="ui">Light</b>. In its <b class="ui">Object</b> tab put it at <code>-4</code>, <code>-6</code>, <code>9</code>: high, behind the car and to our side of it, where it will put a highlight on the bonnet and lay the shadow towards us. In its <b class="ui">Data</b> tab: <b class="ui">Power</b> <code>5000</code>, since it is eleven metres away, and <b class="ui">Radius</b> <code>1</code> for soft shadows.</li>
+<li><b>5.</b> In the <b class="ui">World</b> tab: <b class="ui">Zenith</b> <code>6f93c8</code>, <b class="ui">Horizon</b> <code>e3e8ee</code> and <b class="ui">Strength</b> <code>0.9</code> - a clear afternoon.</li>
+<li><b>6.</b> Choose the <b class="ui">Camera</b> and type its <b class="ui">Location</b>: <code>6.8</code>, <code>-6.0</code>, <code>2.9</code>. It keeps looking at the middle of the scene, where the car will be: in front of it, a little to the side, at about the height of a person.</li>
+</ul>
+<h2>The body</h2>
+<ul>
+<li><b>7.</b> Press <kbd>Shift A</kbd>, <b class="ui">Mesh</b>, <b class="ui">Cube</b>. In its <b class="ui">Data</b> tab type the <b class="ui">Size</b>: <code>4.2</code>, <code>1.8</code>, <code>0.56</code> - four metres long, nearly two wide. <kbd>Tab</kbd> takes you from one box to the next.</li>
+<li><b>8.</b> In the <b class="ui">Object</b> tab type its <b class="ui">Location</b>: <code>0</code>, <code>0</code>, <code>0.62</code>, which lifts it off the road.</li>
+<li><b>9.</b> In the <b class="ui">Material</b> tab click <b class="ui">Plastic</b> and the red swatch, then type <code>0.12</code> into <b class="ui">Roughness</b>: a glossy red paint.</li>
+</ul>
+<h2>The bonnet, the roof and the cabin</h2>
+<ul>
+<li><b>10.</b> With the body chosen, press <kbd>Shift D</kbd> then <kbd>Esc</kbd>: a copy, in the same place and the same red. Give it the <b class="ui">Size</b> <code>1.6</code>, <code>1.74</code>, <code>0.1</code>, the <b class="ui">Location</b> <code>1.25</code>, <code>0</code>, <code>0.93</code> and the <b class="ui">Rotation</b> <code>0</code>, <code>6</code>, <code>0</code> - the bonnet, tilted down to the front.</li>
+<li><b>11.</b> Copy it again for the roof: <b class="ui">Size</b> <code>1.7</code>, <code>1.58</code>, <code>0.08</code>, <b class="ui">Location</b> <code>-0.4</code>, <code>0</code>, <code>1.49</code>, and <b class="ui">Rotation</b> all <code>0</code>.</li>
+<li><b>12.</b> Add a new cube for the cabin: <b class="ui">Size</b> <code>2.0</code>, <code>1.56</code>, <code>0.5</code>, <b class="ui">Location</b> <code>-0.35</code>, <code>0</code>, <code>1.2</code>. Make it tinted glass: <b class="ui">Plastic</b>, <b class="ui">Base colour</b> <code>0e1014</code>, <b class="ui">Roughness</b> <code>0.04</code>. A car's windows look dark and glossy from outside - you see the sky in them, not the seats.</li>
+</ul>
+<p class="tip">Click <b class="ui">Rendered</b> to see it lit: the paint shines and the windows show the sky. Then back to <b class="ui">Solid</b> while you work, which is quicker.</p>
+<img src="car-body.png" width="760" height="440" alt="The car's body, bonnet, cabin and roof in the Solid view">
+<p class="caption">After step 12, in the Solid view: the body, the bonnet tilted to the front, the dark cabin and the roof.</p>
+<p class="nav"><a href="5-light.html">Previous: Light, the sky and the camera</a> &middot; <a href="index.html">Contents</a> &middot; <a href="7-car-finish.html">Next: Making the car: wheels, lamps and the picture</a></p>
+</body>
+</html>

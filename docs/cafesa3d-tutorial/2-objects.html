@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Objects</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="1-interface.html">Previous: The window, and moving around</a> &middot; <a href="index.html">Contents</a> &middot; <a href="3-shaping.html">Next: Moving, turning and sizing</a></p>
+<h1>2. Objects</h1>
+<p class="lead">An object is one thing in the scene. Cafesa3D keeps apart <em>where</em> an object is - its location, rotation and scale - and <em>what</em> it is: its shape and its material. That split is Blender's, and it is why you can stretch a box without it forgetting it is a box.</p>
+<h2>Choosing an object</h2>
+<p>Click it in the view: it is outlined in orange, and the Properties tabs now talk about it. Or click its name in the Outliner, which is handy when an object is small or hidden behind another. Click the empty sky to choose nothing.</p>
+<h2>Adding an object</h2>
+<p>Press <kbd>Shift A</kbd> (or click <b class="ui">Add</b>). Under <b class="ui">Mesh</b> are the shapes: <b class="ui">Plane</b>, <b class="ui">Cube</b>, <b class="ui">UV Sphere</b>, <b class="ui">Ico Sphere</b>, <b class="ui">Cylinder</b>, <b class="ui">Cone</b>, <b class="ui">Torus</b> and <b class="ui">Grid</b>. Under <b class="ui">Light</b>, <b class="ui">Point</b> is a lamp. The greyed items are still to come.</p>
+<p>The new object appears at the 3D cursor, with Blender's own sizes: a cube two metres across, a sphere of one metre radius. It is chosen at once, and the <b class="ui">Data</b> tab opens on its numbers. To add something somewhere else, first choose the <b class="ui">Cursor</b> tool and click where it should go.</p>
+<img src="add-menu.png" width="371" height="416" alt="The Add menu open at Mesh, with Cube about to be chosen">
+<p class="caption"><kbd>Shift A</kbd>, then <b>Mesh</b>: every shape Cafesa3D makes. The greyed ones are still to come.</p>
+<p>New objects are named as Blender names them: the first cube is Cube, the next Cube.001.</p>
+<h2>Copying an object</h2>
+<p>Choose it and press <kbd>Shift D</kbd>. The copy follows the mouse: click to put it down, or press <kbd>Esc</kbd> to leave it exactly on top of the original, which is useful when you are about to type where it goes. A copy keeps everything of the original: its shape, its size and its material.</p>
+<h2>Hiding and deleting</h2>
+<ul>
+<li>The eye beside a name in the Outliner hides an object, and shows it again. A hidden object is not rendered either.</li>
+<li><kbd>X</kbd> asks whether to delete the chosen object; <kbd>Delete</kbd> deletes it straight away.</li>
+</ul>
+<h2>Undoing</h2>
+<p><kbd>Ctrl Z</kbd> undoes the last change - an object added, moved, coloured or deleted - and <kbd>Ctrl Shift Z</kbd> does it again. Every change is a step, so you can go back a long way.</p>
+<h2>The sample scenes</h2>
+<p>The three dots at the right end of the header, then <b class="ui">Open a sample</b>, has three finished scenes: a <b>house</b>, a <b>car</b> and a <b>plane</b>. Each is between seventy and two hundred objects, with textures. Open one, choose its parts and look at their tabs: it is the quickest way to see how a scene is put together.</p>
+<p class="note">Opening a sample replaces what you have, and Cafesa3D cannot save a scene yet - saving is on its way. <kbd>Ctrl Z</kbd> brings back what you had.</p>
+<p class="nav"><a href="1-interface.html">Previous: The window, and moving around</a> &middot; <a href="index.html">Contents</a> &middot; <a href="3-shaping.html">Next: Moving, turning and sizing</a></p>
+</body>
+</html>

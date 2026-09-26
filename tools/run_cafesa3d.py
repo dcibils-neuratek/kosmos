@@ -217,6 +217,47 @@ def main():
         click(ox + tabs["material"][0], oy + tabs["material"][1])
         check(said("cafesa3d: tab ", mark) == "material", "the Material tab did not open")
 
+        # **The Material tab, edited** (step four, which the tutorial needs):
+        # a preset, a swatch, a texture whose own fields then appear, and a
+        # colour typed - letters and all - each said back as what it set.
+        def placed(line):
+            return dict((m.group(1), (ox + int(m.group(2)), oy + int(m.group(3))))
+                        for m in re.finditer(r"([\w:.]+) (\d+),(\d+)", line or ""))
+
+        chips_at = placed(said("cafesa3d: chips ", mark))
+        check("preset:Metal" in chips_at and "texture:Brick" in chips_at and "swatch:5" in chips_at,
+              "the Material tab has no presets, swatches or textures to click: %r"
+              % sorted(chips_at))
+
+        if "preset:Metal" in chips_at:
+            mark = len(guest.seen)
+            click(*chips_at["preset:Metal"])
+            got = said("cafesa3d: set preset of ", mark) or ""
+            check(got.endswith(" to Metal"), "a click on Metal did not make it metal: %r" % got)
+
+            mark = len(guest.seen)
+            click(*chips_at["swatch:5"])
+            got = said("cafesa3d: set Base colour of ", mark) or ""
+            check(got.endswith(" to #2f6fc4"), "a click on the blue swatch did not colour it: %r"
+                  % got)
+
+            mark = len(guest.seen)
+            click(*chips_at["texture:Brick"])
+            got = said("cafesa3d: set texture of ", mark) or ""
+            fields_now = placed(said("cafesa3d: fields ", mark))
+            check(got.endswith(" to Brick") and "colour2" in fields_now and "scale" in fields_now,
+                  "Brick did not give it a texture with its own fields: %r, %r"
+                  % (got, sorted(fields_now)))
+
+            if "base" in fields_now:
+                mark = len(guest.seen)
+                click(*fields_now["base"])
+                for k in ("1", "c", "1", "c", "1", "e", "ret"):
+                    guest.sendkey(k)
+                    time.sleep(0.15)
+                got = said("cafesa3d: set Base colour of ", mark) or ""
+                check(got.endswith(" to #1c1c1e"), "a colour typed as hex was not taken: %r" % got)
+
         # A drag turns the view: the objects move on the screen.
         before = screen()
         mark = len(guest.seen)
@@ -589,13 +630,54 @@ def main():
             open("/private/tmp/cafesa3d-%s.ppm" % name.lower(), "wb").write(guest.screendump()) \
                 if os.environ.get("CAFESA3D_SHOTS") else None
 
+        m = re.search(r"the view (\d+) by (\d+)", summary)
+        vw, vh = (int(v) for v in m.groups()) if m else (900, 700)
+
+        # **The tutorial** (`docs/cafesa3d-tutorial/`): F1 opens the browser
+        # on the pages the image carries, and the first page's pictures are
+        # all read and decoded; the dots' Tutorial opens it again. Between
+        # the two, a click on the foot - where nothing is - brings Cafesa3D
+        # back in front of the browser, and another after them, so what
+        # follows has its window to itself.
+        index = "asset:tutorial/cafesa3d/index.html"
+        foot = (ox + vw + 300, oy + 46 + vh + 15)
+
+        def showed(shown):
+            m = re.match(re.escape(index) + r', "Cafesa3D tutorial", \d+ pixels tall, '
+                         r"(\d+) pictures, (\d+) missing$", shown or "")
+            return m and int(m.group(1)) > 0 and int(m.group(2)) == 0
+
+        mark = len(guest.seen)
+        keys("f1")
+        got = said("cafesa3d: tutorial at ", mark, 30)
+        check(got == index, "F1 did not open the tutorial: %r" % got)
+        shown = said("browser: showing ", mark, 90)
+        check(showed(shown), "the browser did not show the tutorial's first page with "
+              "every picture on it: %r" % shown)
+
+        click(*foot)
+        mark = len(guest.seen)
+        click(ox + header["more"][0], oy + header["more"][1])
+        opened = said("cafesa3d: more menu at ", mark)
+        m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", opened or "")
+        check(m is not None, "the dots did not open their menu for the tutorial")
+
+        if m:
+            mx, my, mw, rh = (int(v) for v in m.groups())
+            click(mx + 24, my + 2 + rh + rh // 2)                   # Tutorial
+            got = said("cafesa3d: tutorial at ", mark, 30)
+            check(got == index, "the dots' Tutorial did not open the tutorial: %r" % got)
+            shown = said("browser: showing ", mark, 90)
+            check(showed(shown), "the browser did not show the tutorial from the dots: %r"
+                  % shown)
+
+        click(*foot)
+
         # **Rendered and F12** (step 3): the plane, ray traced on every
         # processor - in the view, and through its camera in a window of its
         # own. Only each render's first pass is waited for: every pixel
         # traced once is the whole of the machinery, and 64 or 256 passes
         # under TCG would be minutes spent proving the same thing again.
-        m = re.search(r"the view (\d+) by (\d+)", summary)
-        vw, vh = (int(v) for v in m.groups()) if m else (900, 700)
         view_box = (ox + 46, oy + 46, ox + 46 + vw, oy + 46 + vh)
         foot_box = (ox + 10, oy + 46 + vh + 4, ox + 700, oy + 46 + vh + 26)
 
@@ -671,14 +753,17 @@ def main():
 
     print("PASS: %d checks on Cafesa3D (the still life, the Cube outlined; the gold ball "
           "selected by a click and the outline moved to it; a row of the Outliner; an "
-          "eye hiding and showing; the Material tab; a drag turning the view; the wheel; "
+          "eye hiding and showing; the Material tab, a preset, a swatch, a texture and a "
+          "colour typed; a drag turning the view; the wheel; "
           "Z to Wireframe with the faces gone; 7 from the top; Add, Mesh, Cube at the "
           "3D cursor, undone and redone; Shift D, Delete, and X asking first; G following "
           "the pointer with no button, G X 2, R Z 90, S 2, Esc and a right click "
           "cancelling, Ctrl Z; the Move, Rotate and Scale handles each changing its "
           "axis alone; Location X typed, Rotation Z scrubbed, a sphere's segments "
           "remaking it, Esc, Ctrl Z; the house, the car and the plane opened from the "
-          "samples, every object read and their colours on the screen; the plane "
+          "samples, every object read and their colours on the screen; the tutorial "
+          "opened by F1 and from the dots, its first page and every picture on it shown "
+          "in the browser; the plane "
           "Rendered on every processor and F12 through its camera, each first pass drawn, "
           "and the main window's faces untouched by the second)" % checks)
     return 0

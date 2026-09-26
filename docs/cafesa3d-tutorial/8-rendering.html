@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rendering</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="7-car-finish.html">Previous: Making the car: wheels, lamps and the picture</a> &middot; <a href="index.html">Contents</a> &middot; <a href="9-keys.html">Next: Keys at a glance</a></p>
+<h1>8. Rendering</h1>
+<p class="lead">How Cafesa3D makes a picture, what its settings mean, and how to get a good one.</p>
+<h2>Three ways to look</h2>
+<ul>
+<li><b class="ui">Wireframe</b> shows only the edges: quick, and useful for seeing what is behind what.</li>
+<li><b class="ui">Solid</b> shows surfaces in their base colours, lit simply. It is instant, so it is where you work.</li>
+<li><b class="ui">Rendered</b> ray traces the view as you look: materials, textures, shadows, reflections, glass. It starts again whenever anything changes - the view turned, an object moved, a colour chosen.</li>
+</ul>
+<h2>How the picture is made</h2>
+<p>For every pixel, Cafesa3D sends a ray from your eye into the scene. Where it hits something, it asks each lamp how much light reaches that point, and then bounces on in a direction the material chooses - straight off a mirror, through glass, anywhere off plaster - until it reaches the sky or has bounced six times. That is <b>path tracing</b>, the method of Blender's Cycles.</p>
+<p>One path per pixel is a guess, so the first picture is grainy. Each <b>sample</b> is another path for every pixel, and the pixel is their average, so the grain fades as they build up: four times the samples leaves half the grain. The top left of the view counts them.</p>
+<p class="note">More samples make a picture cleaner, not more detailed. Detail comes from the objects: their shapes, textures and size in the picture.</p>
+<h2>The Render window</h2>
+<p><kbd>F12</kbd> renders through the camera, 640 by 360 pixels, to 256 samples. Beside the picture it shows how many samples it has, how long it has taken, and how many rays a second the machine is tracing. <b class="ui">Render again</b> starts afresh.</p>
+<p class="note">Saving the picture as a PNG is still to come.</p>
+<img src="render-window.png" width="860" height="408" alt="The Render window with the finished car and its sample count">
+<p class="caption">The Render window: the picture on the left; on the right how many samples it has, how long it took and how many rays a second - here under QEMU's emulation, which is far slower than a real machine.</p>
+<h2>Every processor, and never in your way</h2>
+<p>A render uses every processor the machine has: each takes a square of the picture, then the next. It runs below every window, so Cafesa3D, the desktop and everything else stay as quick to answer as ever - the render takes only the time nothing else wants.</p>
+<h2>The Render tab</h2>
+<p>The <b class="ui">Render</b> tab shows the settings: path tracing, 256 samples for <kbd>F12</kbd>, 64 for the Rendered view, up to six bounces, 640 by 360. They cannot be changed yet.</p>
+<h2>Getting a good picture</h2>
+<ul>
+<li><b>Grainy?</b> Give it time: the grain halves each time the samples go up four times. The soft edges of shadows from a big lamp take longest to settle; a smaller lamp gives sharper shadows, which settle sooner.</li>
+<li><b>Sparkles on the ground beside shiny metal?</b> That is lamplight bounced off the metal, found only by chance. A little more roughness on the metal - 0.4 rather than 0.2 - settles it.</li>
+<li><b>Sparkles on a small glowing object?</b> Tiny bright things are the hardest to find by chance. Make them bigger, or give the scene a lamp nearby.</li>
+<li><b>Too dark?</b> Turn up the lamp's power or the sky's strength - or check that the lamp is on the side the camera sees.</li>
+<li><b>Black glass?</b> Glass needs something behind it to show. Dark tinted glass, as on the car, is Plastic with a dark colour and little roughness.</li>
+<li><b>Slow?</b> Work in Solid, and switch to Rendered to check. Textures with bump, glass and big scenes all take longer.</li>
+</ul>
+<p class="nav"><a href="7-car-finish.html">Previous: Making the car: wheels, lamps and the picture</a> &middot; <a href="index.html">Contents</a> &middot; <a href="9-keys.html">Next: Keys at a glance</a></p>
+</body>
+</html>

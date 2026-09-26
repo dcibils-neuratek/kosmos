@@ -440,6 +440,43 @@ static int l_link_at(lua_State *L)
     return 1;
 }
 
+/*
+ * images() -> { { src = "...", x, y, w, h }, ... }, the pictures the layout
+ * made boxes for, in page coordinates.
+ *
+ * The src is whatever the document said, as with `link_at`: fetching it is
+ * the caller's, which knows the page's own address, and so is decoding it,
+ * which `gfx` does. Empty before `render` has laid the page out.
+ */
+static int l_images(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    size_t i, n = web_page_images(d->page);
+
+    lua_createtable(L, (int)n, 0);
+
+    for (i = 0; i < n; i++) {
+        int box[4];
+        size_t len = 0;
+        const char *src = web_page_image(d->page, i, &len, box);
+
+        lua_createtable(L, 0, 5);
+        lua_pushlstring(L, src, len);
+        lua_setfield(L, -2, "src");
+        lua_pushinteger(L, box[0]);
+        lua_setfield(L, -2, "x");
+        lua_pushinteger(L, box[1]);
+        lua_setfield(L, -2, "y");
+        lua_pushinteger(L, box[2]);
+        lua_setfield(L, -2, "w");
+        lua_pushinteger(L, box[3]);
+        lua_setfield(L, -2, "h");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    return 1;
+}
+
 static int l_close(lua_State *L)
 {
     struct doc *d = luaL_checkudata(L, 1, DOC_HANDLE);
@@ -688,6 +725,7 @@ void kosmos_web_kit(lua_State *L)
         { "blocks", l_blocks },
         { "render",  l_render },
         { "link_at", l_link_at },
+        { "images", l_images },
         { "title", l_title },
         { "close", l_close },
         { NULL, NULL }

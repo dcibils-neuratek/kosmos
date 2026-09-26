@@ -33,6 +33,13 @@ void web_page_paint(const struct web_page *p, struct surface *s,
 const char *web_page_link_at(const struct web_page *p, int x, int y,
                              size_t *len);
 
+/* How many pictures it has, and the `i`th: its src - the page's bytes, not
+ * NUL-terminated - and its box, x, y, w and h in page coordinates. NULL
+ * past the last. */
+size_t      web_page_images(const struct web_page *p);
+const char *web_page_image(const struct web_page *p, size_t i, size_t *len,
+                           int box[4]);
+
 void web_page_free(struct web_page *p);
 
 #endif /* KOSMOS_WEB_PAINT_H */

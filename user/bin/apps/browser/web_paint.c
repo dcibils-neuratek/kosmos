@@ -109,6 +109,7 @@ static const char *asset_for(const struct web_look *look)
 #define QUOTE_INK  0xff404040u
 #define RULE       0xffc0c0c0u
 #define LINK_INK   0xff1a4fbfu
+#define PICTURE    0xffe8e8e8u      /* a picture's box, until it arrives */
 
 /* Bounded, because a browser is handed documents written to break it and
  * this process has a fixed stack with a guard page under it. */
@@ -135,6 +136,20 @@ struct run {
 
 struct link {
     size_t at, len;             /* the href, into `page->text` */
+};
+
+/*
+ * A picture: the box `<img>` was given, and the address its bytes are at.
+ *
+ * The box is all this file does with it. Fetching belongs to the browser,
+ * which knows where the page came from, and decoding to `gfx`, which turns
+ * PNG and JPEG into a surface already - so the page says where and how
+ * big, and `browser.lua` stretches the picture into the box once the text
+ * round it is painted.
+ */
+struct image {
+    size_t at, len;             /* the src, into `page->text` */
+    int    x, y, w, h;
 };
 
 struct web_page {
@@ -165,6 +180,9 @@ struct web_page {
 
     struct link *links;
     size_t   nlinks, links_cap;
+
+    struct image *images;
+    size_t   nimages, images_cap;
 
     /* An allocation failed. The page is short rather than wrong, and the
      * caller is told by the height it gets back being what it is. */
@@ -670,37 +688,95 @@ static void put_pre(struct web_page *p, struct liner *l,
  * Inline content.
  *------------------------------------------------------------------------*/
 
-/* The element's href, kept and registered, or -1 if it has none. */
-static int href_of(struct web_page *p, dom_node *el)
+/* An attribute's value, or NULL when the element has none or it is
+ * empty. The caller unrefs what it is given. */
+static dom_string *attribute(dom_node *el, const char *name)
 {
-    dom_string *name = NULL, *value = NULL;
-    int out = -1;
+    dom_string *key = NULL, *value = NULL;
 
-    if (dom_string_create((const uint8_t *)"href", 4, &name) != DOM_NO_ERR) {
+    if (dom_string_create((const uint8_t *)name, strlen(name), &key)
+        != DOM_NO_ERR) {
+        return NULL;
+    }
+
+    if (dom_element_get_attribute(el, key, &value) != DOM_NO_ERR
+        || (value != NULL && dom_string_byte_length(value) == 0)) {
+        if (value != NULL) {
+            dom_string_unref(value);
+        }
+
+        value = NULL;
+    }
+
+    dom_string_unref(key);
+
+    return value;
+}
+
+/* An attribute's value kept in the page's text, and where it landed; false
+ * when there is none or no memory. */
+static bool kept_attribute(struct web_page *p, dom_node *el, const char *name,
+                           size_t *at, size_t *len)
+{
+    dom_string *value = attribute(el, name);
+
+    if (value == NULL) {
+        return false;
+    }
+
+    *len = dom_string_byte_length(value);
+    *at = keep(p, dom_string_data(value), *len);
+    dom_string_unref(value);
+
+    return *at != (size_t)-1;
+}
+
+/* A whole number of pixels, as `width="600"` says it, or -1. A unit or a
+ * percentage is not a number of pixels and is refused rather than read as
+ * one. */
+static int pixels_attribute(dom_node *el, const char *name)
+{
+    dom_string *value = attribute(el, name);
+    const char *d;
+    size_t i, n;
+    long v = 0;
+
+    if (value == NULL) {
         return -1;
     }
 
-    if (dom_element_get_attribute(el, name, &value) == DOM_NO_ERR
-        && value != NULL && dom_string_byte_length(value) > 0) {
-        size_t n = dom_string_byte_length(value);
-        size_t at = keep(p, dom_string_data(value), n);
+    d = dom_string_data(value);
+    n = dom_string_byte_length(value);
 
-        if (at != (size_t)-1
-            && grow((void **)&p->links, &p->links_cap, p->nlinks + 1,
-                    sizeof(struct link))) {
-            p->links[p->nlinks].at = at;
-            p->links[p->nlinks].len = n;
-            out = (int)p->nlinks++;
+    for (i = 0; i < n && v <= 100000; i++) {
+        if (d[i] < '0' || d[i] > '9') {
+            v = -1;
+            break;
         }
+
+        v = v * 10 + (d[i] - '0');
     }
 
-    if (value != NULL) {
-        dom_string_unref(value);
+    dom_string_unref(value);
+
+    return (v > 0 && v <= 100000) ? (int)v : -1;
+}
+
+/* The element's href, kept and registered, or -1 if it has none. */
+static int href_of(struct web_page *p, dom_node *el)
+{
+    size_t at, n;
+
+    if (!kept_attribute(p, el, "href", &at, &n)
+        || !grow((void **)&p->links, &p->links_cap, p->nlinks + 1,
+                 sizeof(struct link))) {
+        return -1;
     }
 
-    dom_string_unref(name);
+    p->links[p->nlinks].at = at;
+    p->links[p->nlinks].len = n;
 
-    return out;
+    return (int)p->nlinks++;
 }
 
 /*
@@ -861,6 +937,51 @@ static void lay_out_block(struct web_page *p, dom_node *el, const char *tag)
 }
 
 /*
+ * `<img>`, as a block of its own: a box `width` by `height` pixels as its
+ * attributes say, shrunk to the page's width with its shape kept.
+ *
+ * Without both numbers the size is not known until the picture is decoded,
+ * which is after layout, so it gets a box the width of the page and three
+ * fifths as tall, and the browser fits the picture inside it. A picture
+ * among the words of a line is a box model this file does not have; a
+ * picture on a line of its own is what a screenshot in a document is.
+ */
+static void lay_out_image(struct web_page *p, dom_node *el)
+{
+    int w = pixels_attribute(el, "width");
+    int h = pixels_attribute(el, "height");
+    size_t at, len;
+    struct image *im;
+
+    if (!kept_attribute(p, el, "src", &at, &len)
+        || !grow((void **)&p->images, &p->images_cap, p->nimages + 1,
+                 sizeof(struct image))) {
+        return;
+    }
+
+    if (w <= 0 || h <= 0) {
+        w = p->width;
+        h = p->width * 3 / 5;
+    }
+
+    if (w > p->width) {
+        h = (int)((long)h * p->width / w);
+        w = p->width;
+    }
+
+    im = &p->images[p->nimages++];
+    im->at = at;
+    im->len = len;
+    im->x = 0;
+    im->y = p->y + 6;
+    im->w = w;
+    im->h = h;
+
+    push_rect(p, im->x, im->y, w, h, PICTURE);
+    p->y += h + 18;
+}
+
+/*
  * Lays out every block at or below `node`, and says whether it laid out any.
  *
  * The answer is what stops a `<blockquote>` wrapping a `<p>` from being
@@ -903,7 +1024,10 @@ static bool layout_blocks(struct web_page *p, dom_node *node, int depth)
             struct web_look look = p->base;
             bool skip = web_style_of(p->style, child, &look) && look.hidden;
 
-            if (!skip) {
+            if (!skip && is_tag(tag, "img")) {
+                lay_out_image(p, child);
+                any = true;
+            } else if (!skip) {
                 bool below = layout_blocks(p, child, depth + 1);
 
                 if (!below && is_block(tag)) {
@@ -978,7 +1102,32 @@ void web_page_free(struct web_page *p)
     free(p->text);
     free(p->runs);
     free(p->links);
+    free(p->images);
     free(p);
+}
+
+size_t web_page_images(const struct web_page *p)
+{
+    return (p == NULL) ? 0 : p->nimages;
+}
+
+const char *web_page_image(const struct web_page *p, size_t i, size_t *len,
+                           int box[4])
+{
+    const struct image *im;
+
+    if (p == NULL || i >= p->nimages) {
+        return NULL;
+    }
+
+    im = &p->images[i];
+    box[0] = im->x;
+    box[1] = im->y;
+    box[2] = im->w;
+    box[3] = im->h;
+    *len = im->len;
+
+    return p->text + im->at;
 }
 
 int web_page_height(const struct web_page *p)
