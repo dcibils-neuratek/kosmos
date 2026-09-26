@@ -18,6 +18,9 @@
 -- And the refusals, because a scene is a file from outside: a sphere of two
 -- segments, a box with no sides, a file that is not glTF, a mesh of another
 -- program's triangles, and more objects than a scene may have.
+--
+-- And saving (`scenefile.to_gltf`), which is the same file the other way:
+-- each sample written and read back must be the scene it was.
 
 local json = assert(loadfile("user/lib/json.lua"))()
 local scenefile = assert(loadfile("user/lib/scenefile.lua"))()
@@ -323,6 +326,145 @@ do
   check(big and #big.things == 2000 and big.skipped == 1, "a scene stops at 2000 objects")
 end
 
+--
+-- **Saving, and reading back what was saved** (`scenefile.to_gltf`). Each
+-- sample is read as Cafesa3D reads it - its meshes' bytes sliced out of the
+-- buffer, as `open_scene` does - then written, encoded, decoded and read
+-- again, and must come back the same scene: every object's name, kind,
+-- numbers, place, turn and size, material and texture, a mesh's bytes, the
+-- lamps, the camera and the sky. One object is hidden first, and must stay
+-- hidden. The two loops over bytes are this file's own here; in Kosmos
+-- they are the 3D Kit's.
+--
+local B64_DIGITS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+local codec = {}
+
+function codec.base64(bytes)
+  local out = {}
+
+  for i = 1, #bytes, 3 do
+    local a, b, c = bytes:byte(i, i + 2)
+    local v = (a << 16) | ((b or 0) << 8) | (c or 0)
+
+    out[#out + 1] = B64_DIGITS:sub((v >> 18) + 1, (v >> 18) + 1)
+                    .. B64_DIGITS:sub(((v >> 12) & 63) + 1, ((v >> 12) & 63) + 1)
+                    .. (b and B64_DIGITS:sub(((v >> 6) & 63) + 1, ((v >> 6) & 63) + 1) or "=")
+                    .. (c and B64_DIGITS:sub((v & 63) + 1, (v & 63) + 1) or "=")
+  end
+
+  return table.concat(out)
+end
+
+function codec.bounds(points)
+  local lo, hi = {}, {}
+
+  for i = 1, #points, 12 do
+    local p = { string.unpack("<fff", points, i) }
+
+    for k = 1, 3 do
+      lo[k] = (lo[k] == nil or p[k] < lo[k]) and p[k] or lo[k]
+      hi[k] = (hi[k] == nil or p[k] > hi[k]) and p[k] or hi[k]
+    end
+  end
+
+  return lo[1], lo[2], lo[3], hi[1], hi[2], hi[3]
+end
+
+local function as_app(scene)
+  local buffers = {}
+
+  for i, text in pairs(scene.buffers) do buffers[i] = unbase64(text) end
+
+  for _, t in ipairs(scene.things) do
+    if t.kind == "mesh" then
+      local m, bytes = t.mesh, buffers[t.mesh.buffer]
+
+      t.vertices = bytes:sub(m.point_at + 1, m.point_at + m.points * 12)
+      t.triangles = bytes:sub(m.index_at + 1, m.index_at + m.indices * m.index_bytes)
+      t.index_bytes = m.index_bytes
+      t.mesh = nil
+    end
+  end
+
+  return scene
+end
+
+-- Two values alike, a number to ten significant digits, which is how
+-- `json.encode` writes one; the first difference, as a path, or nil.
+local function differs(a, b, path)
+  if type(a) == "number" and type(b) == "number" then
+    return math.abs(a - b) > 1e-8 * math.max(1, math.abs(a)) and path or nil
+  end
+
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return a ~= b and path or nil
+  end
+
+  for k, v in pairs(a) do
+    local d = differs(v, b[k], path .. "." .. tostring(k))
+
+    if d then return d end
+  end
+
+  for k in pairs(b) do
+    if a[k] == nil then return path .. "." .. tostring(k) end
+  end
+end
+
+for _, name in ipairs({ "house", "car", "plane" }) do
+  local doc = read(name)
+  local first = doc and as_app(scenefile.from_gltf(doc))
+
+  if first then
+    first.things[3].hidden = true
+
+    local text = json.encode(scenefile.to_gltf(first, codec))
+    local again = as_app(scenefile.from_gltf(json.decode(text)))
+    local d
+
+    check(#again.things == #first.things and again.skipped == 0,
+          ("%s saved and read back has %d objects of %d"):format(name, #again.things,
+                                                                #first.things))
+
+    for i = 1, math.min(#first.things, #again.things) do
+      d = d or differs(first.things[i], again.things[i], name .. "[" .. i .. "]")
+    end
+
+    check(d == nil, name .. " saved is not the scene it was: " .. tostring(d))
+    check(differs(first.world, again.world, "world") == nil, name .. "'s sky came back otherwise")
+    check(again.name == first.name, name .. " came back named " .. tostring(again.name))
+    check(again.things[3].hidden == true and again.things[4].hidden == nil,
+          name .. "'s hidden object did not come back hidden, and only it")
+
+    -- What another program sees: every node's glTF transform where its own
+    -- numbers say. The round trip above cannot tell, because the reader
+    -- takes the numbers of Cafesa3D's own when the file has them.
+    local written, wrong = json.decode(text), nil
+
+    for _, node in ipairs(written.nodes) do
+      local own = node.extras.cafesa3d
+
+      if own.rot then
+        local loc, rot, scale = scenefile.transform(node)
+
+        if not (close3(loc, own.loc, 1e-6) and same_turn(rot, own.rot)
+                and close3(scale, own.scale, 1e-6)) then
+          wrong = wrong or node.name
+        end
+      end
+    end
+
+    check(wrong == nil, name .. " written, " .. tostring(wrong)
+          .. "'s glTF transform is not where its own numbers say")
+
+    -- And the writing is stable: the same scene written twice is the same
+    -- file, so a save that changed nothing changes no bytes.
+    check(json.encode(scenefile.to_gltf(again, codec)) == text,
+          name .. " written twice is two different files")
+  end
+end
+
 if failed > 0 then
   print(("FAIL: %d of %d checks on the scene files"):format(failed, passed + failed))
   os.exit(1)
@@ -331,4 +473,6 @@ end
 print(("PASS: %d checks on the scene files (the house, the car and the plane read back as "
        .. "described; every node's glTF transform, every camera's rotation and every "
        .. "material's linear colour held to Cafesa3D's own numbers; every mesh held to its "
-       .. "accessors; another program's mesh read; nine refusals)"):format(passed))
+       .. "accessors; another program's mesh read; nine refusals; and each saved, read "
+       .. "back the same scene with its hidden object hidden, its glTF transforms where "
+       .. "its own numbers say, and the same file when written twice)"):format(passed))

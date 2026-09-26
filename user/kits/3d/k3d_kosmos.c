@@ -905,6 +905,82 @@ static int l_unbase64(lua_State *L)
     return 1;
 }
 
+/*
+ * `k3.base64(bytes)` - the other way, for saving: a mesh's points and
+ * triangles as the text of a `data:` URI, padded with `=` as the
+ * standard says, so any program's reader takes it.
+ */
+static int l_base64(lua_State *L)
+{
+    static const char digits[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t len, i;
+    const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
+    luaL_Buffer b;
+
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i + 2 < len; i += 3) {
+        uint32_t v = (uint32_t)in[i] << 16 | (uint32_t)in[i + 1] << 8 | in[i + 2];
+
+        luaL_addchar(&b, digits[v >> 18]);
+        luaL_addchar(&b, digits[(v >> 12) & 63]);
+        luaL_addchar(&b, digits[(v >> 6) & 63]);
+        luaL_addchar(&b, digits[v & 63]);
+    }
+
+    if (len - i == 1) {
+        uint32_t v = (uint32_t)in[i] << 16;
+
+        luaL_addchar(&b, digits[v >> 18]);
+        luaL_addchar(&b, digits[(v >> 12) & 63]);
+        luaL_addstring(&b, "==");
+    } else if (len - i == 2) {
+        uint32_t v = (uint32_t)in[i] << 16 | (uint32_t)in[i + 1] << 8;
+
+        luaL_addchar(&b, digits[v >> 18]);
+        luaL_addchar(&b, digits[(v >> 12) & 63]);
+        luaL_addchar(&b, digits[(v >> 6) & 63]);
+        luaL_addchar(&b, '=');
+    }
+
+    luaL_pushresult(&b);
+    return 1;
+}
+
+/*
+ * `k3.bounds(points)` -> min x, y, z, max x, y, z of a mesh's points, three
+ * little-endian floats each, as a file keeps them. glTF requires them of a
+ * mesh's positions, and they are a loop over every point.
+ */
+static int l_bounds(lua_State *L)
+{
+    size_t len, i;
+    const char *p = luaL_checklstring(L, 1, &len);
+    float lo[3], hi[3];
+    int k;
+
+    if (len < 12 || len % 12 != 0) {
+        return luaL_error(L, "points are three floats each, and there are none");
+    }
+
+    for (i = 0; i < len; i += 12) {
+        float v[3];
+
+        memcpy(v, p + i, sizeof(v));
+
+        for (k = 0; k < 3; k++) {
+            if (i == 0 || v[k] < lo[k]) lo[k] = v[k];
+            if (i == 0 || v[k] > hi[k]) hi[k] = v[k];
+        }
+    }
+
+    for (k = 0; k < 3; k++) lua_pushnumber(L, (lua_Number)lo[k]);
+    for (k = 0; k < 3; k++) lua_pushnumber(L, (lua_Number)hi[k]);
+
+    return 6;
+}
+
 static int l_job_gc(lua_State *L)
 {
     job_end(check_job(L, 1));
@@ -998,6 +1074,8 @@ void kosmos_3d_kit(lua_State *L)
         { "view",   l_view },
         { "render", l_render },
         { "unbase64", l_unbase64 },
+        { "base64", l_base64 },
+        { "bounds", l_bounds },
         { NULL, NULL }
     };
 

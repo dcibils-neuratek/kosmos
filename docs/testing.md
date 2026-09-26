@@ -10019,3 +10019,85 @@ are read-only data, which every process maps from one copy. Each carries
 the licence line in a `tEXt` chunk, which `gfx.png` skips and
 `assets2c.py` now reads - so the project's own files, the cheat sheet
 among them, stop being reported as vendored data with no licence.
+
+## 18.199 Saving and opening a scene, and full screen
+
+Diego, 26 September: "We need a way to save scenes in cafesa", "If not the
+app is useless", and "the cafesa app needs a full screen mode as I will be
+using it in my ultra widescreen monitor tonight at 3440x1440".
+
+**Saving is the reader backwards** (`scenefile.to_gltf`), held to the
+reader on the host in `tools/test_scenefile.lua`: each of the three
+samples, read as Cafesa3D reads it - its meshes sliced out of the buffer -
+is written, encoded, decoded and read again, and must be the same scene
+object for object: name, kind, every number, place, turn and size,
+material and texture, a mesh's bytes, the lamps, the camera, the sky, and
+one object hidden first and hidden still. What another program sees is
+held too - every written node's glTF transform lands where its own numbers
+say, which the round trip alone cannot see, since the reader prefers
+Cafesa3D's own numbers - and the same scene written twice is the same
+file. 67 checks. **Control**, three faults at once, each caught by its own
+check and the rest passing: a sign wrong in the glTF matrix, the hidden
+flag dropped, and every object given the first material.
+
+**In Kosmos**, the Cafesa3D suite, now booted with a disk for /home - the
+RAM filesystem a diskless guest has holds sixteen kilobytes a file, and a
+scene is hundreds: the plane, a sample and so nobody's file yet, is saved
+with Ctrl S, which asks where through the Open and Save panel (driven at
+its Save button, where `panel.lua` puts it in a window whose place
+Cafesa3D says) - 414 KB to `/home/Scenes/plane.gltf`, its meshes through
+the 3D Kit's base64; the house is opened over it; the plane is opened again
+from the Open panel with all 106 objects and every triangle, **and looks
+pixel for pixel as it did before it was saved**; and Ctrl S, which now
+knows the file, writes the same number of bytes. The pixel comparison
+failed once, on seven pixels, before it was right: the mouse pointer sat
+over the view in one picture and not the other, so both are taken with the
+pointer parked off the window.
+
+**Full screen**, in the same suite: F11 lays Cafesa3D out across the
+screen, the window at its corner, the view the screen less the panels
+(1534 by 1004 on the gate's 1920 by 1080), the scene still there, the
+Rendered view started again at the new size; a click lands on the World
+tab where full screen put it; the screen's far corner is Cafesa3D's foot
+rather than the desktop; the dots open their menu; and F11 again brings the
+window back as it was.
+
+**A window manager bug it found.** A press in the top rows of a full-screen
+window was taken for its title bar - which a full-screen window does not
+have - so it dragged the window, and at the top right, where a close box
+would be, asked the window to close. Cafesa3D's dots are at exactly that
+corner, and a click on them closed Cafesa3D. The video player's full
+screen had the same hole. The press now goes to the application, as it
+does for the backdrop and the strip, and the compositor stops painting a
+tab, a title and boxes under a full-screen window on every pass only for
+its contents to cover them.
+
+**A crash the first control found.** The first control put both faults
+below in one build, and the base64 one did not fail a check: it killed
+Cafesa3D. A mangled mesh still reads - its accessors fit its buffer - and
+the 3D Kit then refuses a triangle that names a point the mesh has not got,
+which Cafesa3D let through as an error while opening the file. An object
+the kit refuses is now skipped and named, as the reader's own refusals
+are. **Its permanent test**: the suite's disk carries
+`/home/Scenes/zz-broken.gltf`, a box and such a triangle, and at the end
+Cafesa3D opens it from the panel's second row - the box kept, the triangle
+skipped with its reason, and Cafesa3D still answering.
+
+**Controls**, one fault a build, the real image's checksum matched after:
+the window manager's fix taken out - the dots in full screen close
+Cafesa3D, so the dots check fails, then the screen's corner shows the
+desktop and F11 has nothing to bring back; the 3D Kit's base64 writing two
+of its digits swapped, which is still base64 and decodes to the wrong
+points - the plane comes back with 75 of its meshes skipped, looks
+otherwise, and saves smaller, and Cafesa3D keeps running.
+
+**The gate**: 39 of 40 suites, the host suite on its Rosetta hang again,
+and `arm-cafesa3d` stopped once at boot, before Cafesa3D had a window, by
+`spinlock: endpoint held by 0, wanted by 2` - the loaded-gate panic 5r
+asks to be made to name its holder, seen before on 0.10.104. The image was
+kept, and the same bytes then passed the suite alone, 100 of 100. x86's
+passed in the gate, 100 of 100.
+
+**At 3440 by 1440**, the size of Diego's monitor, under QEMU with its
+usual 512 MB: F11 made a 3054 by 1364 view, the still life in the middle
+and the Outliner tall enough for a car's twenty-five parts.

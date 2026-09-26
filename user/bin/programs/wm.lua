@@ -2648,7 +2648,11 @@ local function draw_window(i, r)
       -- second way, and that is the part worth not repeating: one predicate,
       -- used by the thing that measures and by the thing that paints.
       --
-      local bare = win.backdrop or win.strip
+      -- Undecorated: the backdrop, the strip, and a window that is the
+      -- screen. The last used to be left out, so a tab, its title and its
+      -- boxes were painted under a full-screen window's top rows on every
+      -- pass, only for its contents to cover them.
+      local bare = win.backdrop or win.strip or win.fullscreen
 
       -- The shadow is drawn before this, by `compose_rect`: it lies
       -- outside the frame, and `r` here is only the frame's visible part.
@@ -2657,7 +2661,7 @@ local function draw_window(i, r)
       -- The corners, kept before anything is painted over them. Put back at
       -- the end of this window's drawing, which is what rounds it.
       --
-      local kept = (not bare and not win.fullscreen)
+      local kept = not bare
                    and OUT.corners(fx, fy, fw, fh, r) or nil
 
       if kept then OUT.keep(kept) end
@@ -6255,7 +6259,14 @@ local function pointer_pass(p)
       -- Not a special case so much as the same rule as the decoration: a
       -- window with no tab has no tab to grab.
       --
-      if win.backdrop or win.strip then
+      -- **And a full-screen window has none either**, which this left out
+      -- when full screen arrived: its top rows were taken for a title bar
+      -- that is not drawn, so a press there dragged it, and one at the top
+      -- right - where the close box would be - asked it to close. Found on
+      -- 26 September when Cafesa3D's dots, at exactly that corner, closed
+      -- Cafesa3D instead of opening its menu.
+      --
+      if win.backdrop or win.strip or win.fullscreen then
         -- Straight to the application, which is what a bar is for - and
         -- grabbed, like any other press, or the release never arrives and a
         -- shortcut is a word that highlights and does nothing.

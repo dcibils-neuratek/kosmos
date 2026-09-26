@@ -349,8 +349,32 @@ is what clears it, and that is Diego's), with every host check before it
 and after it passing, the tutorial's 1224 among them. Committed, not
 pushed.
 
-**Next**: Diego's word on pushing - threads step 6, the textures and
-meshes, and this - and on scripting's shape. Then the Render tab's numbers
+**Pushed as 0.10.166** (584affd..fae886e) at Diego's "Push it", after
+the gate on the same tree (39 of 40, the host suite's Rosetta hang, which
+he will clear by restarting the Mac tonight), the Lite XL check, the MEGA
+link and the dated picture.
+
+**Then saving and full screen, the same afternoon** (`testing.md` 18.199).
+Diego: "We need a way to save scenes in cafesa", "If not the app is
+useless", and full screen "as I will be using it in my ultra widescreen
+monitor tonight at 3440x1440". Saving is glTF, written by
+`scenefile.to_gltf` - the reader backwards - through the Open and Save
+panel into /home/Scenes, on Ctrl S, Ctrl Shift S and Ctrl O and in the
+dots; the foot says when there are unsaved changes (in the header it moved
+Add, and the suite's click missed it). Full screen is F11: a second window
+at the screen's size in the same process, the view keeping its vertical
+angle. Three bugs found on the way: **the window manager took a
+full-screen window's top rows for a title bar**, so Cafesa3D's dots, at the
+top right, closed it (and the video player had the same hole); **a file
+whose mesh names points it has not got killed Cafesa3D** on opening, now
+skipped and said; and the compositor painted a tab under every
+full-screen window for nothing. He also agreed scripting ("suits
+perfectly"), asked for importers and exporters as plugins, and for
+rendering across several machines - all three in 4l, the last to be
+designed first.
+
+**Next**: the gate, commit and push saving and full screen for tonight.
+Then the Render tab's numbers
 editable
 (samples, bounces, clamp, resolution, Preview or Final) and a denoiser;
 then textures, a mesh kind, and the three scenes rebuilt with far more

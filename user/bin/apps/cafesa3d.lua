@@ -348,7 +348,16 @@ end
 -- gallery `make shot` takes has the ray tracer in it.
 local shading = (tostring(args or "")):find("%-%-wire") and "wire"
                 or (tostring(args or "")):find("%-%-rendered") and "rendered" or "solid"
-local file_name = "still-life.scene"
+-- The file the scene is in: its name in the header, where it was saved or
+-- opened from - none for the still life or a sample, which Save asks about
+-- - the scene's own name, and whether it has changed since. `said` is the
+-- last save's or open's outcome, on the view until the next change.
+local FILE = { name = "still-life.scene", title = "Still life", path = nil, changed = false }
+
+-- Full screen (`FULL.toggle`, near the end): whether it is on, the
+-- window's size to come back to, and the view's vertical angle, which is
+-- what stays when the view's shape changes.
+local FULL = { on = false, was = { W, H }, tv = math.tan(FOV / 2) * VH / VW }
 
 -- The light from everywhere that is not a lamp: a sky, from the zenith to
 -- the horizon. What the ray tracer (step three) lights a scene with.
@@ -705,7 +714,7 @@ local function draw_header(s)
   end
 
   local shade_x = render.x - 8 - shade_w - 2
-  local title_end = pk.header(s, 0, 0, W, "Cafesa3D", file_name, shade_x)
+  local title_end = pk.header(s, 0, 0, W, "Cafesa3D", FILE.name, shade_x)
 
   local x = title_end + 18
   x = x + segmented(s, x, (HEAD - 1 - 31) // 2,
@@ -1115,6 +1124,8 @@ local function draw_view(s)
   if lit and shade.job then
     say(ty + 2 * step, ("Sample %d/%d"):format(shade.job:passes(), shade.samples), VP_DIM)
   end
+
+  if FILE.said then say(ty + 3 * step, FILE.said, VP_INK) end
 
   say(VY + VH - 12 - gfx.height(small),
       "Drag to turn \u{b7} Shift-drag to move \u{b7} scroll to come closer", VP_DIM)
@@ -1642,7 +1653,8 @@ local function draw_foot(s)
 
   for _, k in ipairs(keys or { { "Drag", "turn" }, { "Shift Drag", "move" }, { "Wheel", "closer" },
                        { "Shift A", "add" }, { "X", "delete" }, { "Ctrl Z", "undo" },
-                       { "Z", "shading" }, { "Home", "all" } }) do
+                       { "Z", "shading" }, { "Home", "all" },
+                       { "F11", FULL.on and "window" or "full screen" } }) do
     local kw = gfx.measure(k[1], tiny) + 10
 
     s:fill_round(x, y + 6, kw, FOOT - 12, theme.sunken, 4)
@@ -1653,8 +1665,12 @@ local function draw_foot(s)
     x = x + gfx.measure(k[2], small) + 14
   end
 
-  local right = ("%d objects   %s triangles   Selected %s"):format(
-    #things, tostring(scene:triangles()), selected and selected.name or "none")
+  -- Unsaved changes are said here, at the right, and not beside the name in
+  -- the header: there it lengthened the title and moved every control after
+  -- it the moment anything was changed, so Add was not where it had been.
+  local right = ("%s%d objects   %s triangles   Selected %s"):format(
+    FILE.changed and "Unsaved changes   " or "", #things, tostring(scene:triangles()),
+    selected and selected.name or "none")
 
   s:text(W - 14 - gfx.measure(right, small), ty, right, theme.text_dim, nil, small)
 end
@@ -1698,7 +1714,7 @@ function final.draw()
   local again_x = save_x - 8 - again_w
 
   pk.header(s, 0, 0, final.W, "Render", ("%s \u{b7} Camera \u{b7} %d \u{d7} %d"):format(
-    file_name, final.w, final.h), again_x - 8)
+    FILE.name, final.w, final.h), again_x - 8)
   final.controls.again = { x = again_x, y = pk.centre(31), w = again_w, h = 31 }
   pk.button(s, { x = again_x, y = pk.centre(31), text = "Render again" })
   pk.button(s, { x = save_x, y = pk.centre(31), text = "Save as PNG...", disabled = true })
@@ -1778,7 +1794,7 @@ function final.begin()
   final.pic:fill(0, 0, final.w, final.h, 0xff1d1f24)
   final.start, final.done, final.shown, final.first = sys.ticks(), false, -1, false
   print(("cafesa3d: rendering %s through the camera, %d by %d, on %d thread%s"):format(
-    file_name, final.w, final.h, job:workers(), job:workers() == 1 and "" or "s"))
+    FILE.name, final.w, final.h, job:workers(), job:workers() == 1 and "" or "s"))
   return true
 end
 
@@ -2058,6 +2074,7 @@ end
 -- Called before a change, with what it is called.
 function will(label)          -- the `local will` declared above sync
   undo[#undo + 1] = snapshot(label)
+  FILE.changed, FILE.said = true, nil
 
   if #undo > 64 then table.remove(undo, 1) end
 
@@ -2258,9 +2275,19 @@ function SAMPLES.open_scene(bytes, file)
     end
   end
 
+  -- What the reader passed and the kit still refuses - a mesh whose faces
+  -- name points it has not got, which a mangled file is - is skipped and
+  -- said, as the reader's own refusals are. It took Cafesa3D down, and with
+  -- it whatever else was open, found by the suite's control on base64.
   for _, t in ipairs(loaded.things) do
-    if t.kind == "camera" and not camera then camera = t end
-    add(t)
+    local ok, why = pcall(add, t)
+
+    if ok then
+      if t.kind == "camera" and not camera then camera = t end
+    else
+      loaded.skipped = loaded.skipped + 1
+      loaded.why[#loaded.why + 1] = ("%s: %s"):format(t.name, tostring(why):gsub("^.-: ", ""))
+    end
   end
 
   if loaded.world then
@@ -2270,7 +2297,7 @@ function SAMPLES.open_scene(bytes, file)
   end
 
   selected = nil
-  file_name = file
+  FILE.name, FILE.title, FILE.path, FILE.changed, FILE.said = file, loaded.name, nil, false, nil
   cursor3d = { 0, 0, 0 }
 
   if camera then SAMPLES.look_from(camera) end
@@ -2292,6 +2319,98 @@ function SAMPLES.open(file, name)
   end
 
   SAMPLES.open_scene(bytes, file .. ".gltf")
+end
+
+--------------------------------------------------------------------------
+-- Saving, and opening what was saved (`roadmap.md` 4l, step 5). glTF, as
+-- the samples are, written by `/lib/scenefile.lua` - so the reader that
+-- opens a sample opens a saved scene, and any other program's glTF reader
+-- opens it too. Through the Open and Save panel every application has,
+-- into /home/Scenes unless the scene came from somewhere else.
+--------------------------------------------------------------------------
+
+FILE.DIR = "/home/Scenes"
+
+function FILE.base(path) return path:match("([^/]+)$") or path end
+function FILE.dir(path) return path:match("^(.*)/[^/]*$") end
+
+function FILE.write(path)
+  local ok, text = pcall(function()
+    return json.encode(scenefile.to_gltf({ name = FILE.title, things = things, world = world },
+                                         { base64 = k3.base64, bounds = k3.bounds }))
+  end)
+  local done, why = false, text
+
+  if ok then done, why = fs.write(path, text) end
+
+  if not done then
+    FILE.said = "Not saved: " .. tostring(why)
+    print(("cafesa3d: could not save %s: %s"):format(path, tostring(why)))
+    return false
+  end
+
+  FILE.path, FILE.name, FILE.changed = path, FILE.base(path), false
+  FILE.said = "Saved " .. FILE.name
+  print(("cafesa3d: saved %s, %d objects, %d bytes"):format(path, #things, #text))
+  return true
+end
+
+function FILE.save()
+  if FILE.path then return FILE.write(FILE.path) end
+
+  return FILE.save_as()
+end
+
+-- The panel runs until it is closed, as a dialog does; this window keeps
+-- its last picture meanwhile. Where it opened is said, for whoever drives
+-- Cafesa3D from outside (`tools/run_cafesa3d.py`).
+function FILE.panel(kind, spec)
+  local chooser = use("/lib/panel.lua")[kind](spec)
+
+  if not chooser then return false end
+
+  print(("cafesa3d: %s panel at %d,%d"):format(kind, chooser.origin_x or 0,
+                                               chooser.origin_y or 0))
+  chooser:run()
+  return true
+end
+
+function FILE.save_as()
+  local start = FILE.path and FILE.dir(FILE.path) or FILE.DIR
+
+  if start == FILE.DIR then fs.send(FILE.DIR, { type = "mkdir" }) end
+
+  return FILE.panel("save", {
+    title = "Save the scene", start = start, name = FILE.name:gsub("%.[%w]+$", "") .. ".gltf",
+    on_choose = function(path)
+      if not path:lower():match("%.gltf$") then path = path .. ".gltf" end
+
+      FILE.write(path)
+    end,
+  })
+end
+
+function FILE.open()
+  local start = FILE.path and FILE.dir(FILE.path)
+                or (fs.getattr(FILE.DIR) and FILE.DIR) or "/home"
+
+  return FILE.panel("open", {
+    title = "Open a scene", start = start,
+    filter = function(name) return name:lower():match("%.gltf$") ~= nil end,
+    on_choose = function(path)
+      local bytes, why = fs.read(path)
+
+      if type(bytes) ~= "string" then
+        FILE.said = "Not opened: " .. tostring(why or "not a file")
+        print(("cafesa3d: could not open %s: %s"):format(path, tostring(why)))
+        return
+      end
+
+      if SAMPLES.open_scene(bytes, FILE.base(path)) then
+        FILE.path = path
+      end
+    end,
+  })
 end
 
 -- The tutorial, `docs/cafesa3d-tutorial/`: pages and pictures the image
@@ -2321,9 +2440,12 @@ local function more_menu(x, y)
   local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y, {
     { text = "Open a sample", submenu = samples },
     { text = "Tutorial", on_choose = TUTORIAL.open },
+    { text = FULL.on and "Leave Full Screen" or "Full Screen",
+      on_choose = function() FULL.toggle() end },
     { separator = true },
-    { text = "Open...", disabled = true },
-    { text = "Save", disabled = true },
+    { text = "Open...", on_choose = FILE.open },
+    { text = "Save", on_choose = FILE.save },
+    { text = "Save As...", on_choose = FILE.save_as },
   })
 
   if m then
@@ -2989,19 +3111,50 @@ local function rawkey(ev)
   if ev.code == 102 then frame_all() return true end
   if ev.code == 88 then final.open() return true end
   if ev.code == 59 then return TUTORIAL.open() end
+  if ev.code == 87 then return FULL.toggle() end
+  if ctrl and ev.code == 31 then return (shift and FILE.save_as or FILE.save)() or true end
+  if ctrl and ev.code == 24 then return FILE.open() or true end
 
   return false
 end
 
 say_selected()
 
-if not draw_all() then return end
+--------------------------------------------------------------------------
+-- Full screen: F11, or the dots (`roadmap.md` 4l, 5b). The whole of
+-- Cafesa3D laid out again across the screen - the 3D view taking what the
+-- panels do not, the Outliner as tall as the room allows - and back again.
+--
+-- **A second window, not a bigger one.** A window that draws its own pixels
+-- cannot be resized: its buffers are a region made for its size (`wm.lua`,
+-- on `fullscreen`). The video player starts itself again at the new size,
+-- and that would lose a scene that is not saved - so here a window is
+-- opened at the new size and the old one closed, in this process, and the
+-- scene never leaves it.
+--
+-- **The view keeps its vertical angle**, so a wide screen shows more to
+-- either side at the same size rather than the same width closer up - which
+-- is what an ultrawide monitor is for.
+--------------------------------------------------------------------------
 
--- Where the window is and where its rows are, for whoever drives it from
--- outside - `tools/run_cafesa3d.py` clicks where these say.
-print(("cafesa3d: window at %d,%d"):format(win.origin_x or 0, win.origin_y or 0))
+function FULL.fit(w, h)
+  W, H = w, h
+  VW, VH = W - TOOLS - SIDE, H - HEAD - FOOT
+  SX = W - SIDE
 
-do
+  -- Properties keeps the height its tallest tab needs, and the Outliner
+  -- has the rest: a car of twenty-five parts fits in it at 1440 rows.
+  OUT_H = math.max(236, H - OUT_Y - FOOT - 600)
+  PROPS_Y = OUT_Y + OUT_H
+  FOV = 2 * math.atan(FULL.tv * VW / VH)
+end
+
+-- Where the window, its rows, its tabs and its controls are, for whoever
+-- drives Cafesa3D from outside - `tools/run_cafesa3d.py` clicks where
+-- these say - at the start and after every change of window.
+function FULL.say()
+  print(("cafesa3d: window at %d,%d"):format(win.origin_x or 0, win.origin_y or 0))
+
   local out = {}
 
   for _, r in ipairs(rows) do
@@ -3033,6 +3186,60 @@ do
   print("cafesa3d: controls " .. table.concat(header, "; "))
 end
 
+function FULL.toggle()
+  local on = not FULL.on
+  local screen_now = fs.read("/dev/screen") or {}
+  local w, h = FULL.was[1], FULL.was[2]
+
+  if on then w, h = screen_now.width or W, screen_now.height or H end
+
+  -- Everything the new size needs, made before anything is let go of: if
+  -- the machine will not give it, the window stays as it was.
+  local v, why = k3.view(w - TOOLS - SIDE, h - HEAD - FOOT)
+  local fresh
+
+  if v then
+    fresh, why = ui.window{ title = "Cafesa3D", w = w, h = h, centre = (not on) or nil,
+                            direct = true, fullscreen = on or nil }
+
+    if fresh and not fresh:surface() then
+      fresh:close()
+      fresh, why = nil, "no pixels for a window that size"
+    end
+  end
+
+  if not fresh then
+    FILE.said = "No full screen: " .. tostring(why)
+    print(("cafesa3d: could not %s: %s"):format(on and "go full screen" or "come back",
+                                               tostring(why)))
+    return true
+  end
+
+  -- The Rendered view's pixels are the old view's size; it starts again.
+  shade.stop()
+
+  if shade.surf then shade.surf:free() end
+
+  shade.surf, shade.key = nil, nil
+
+  local old = win
+
+  win, view, FULL.on = fresh, v, on
+  FULL.fit(w, h)
+  old:close()
+
+  if not draw_all() then return true end
+
+  FULL.say()
+  say_where()
+  print(("cafesa3d: %s, %d by %d, the view %d by %d, %d objects"):format(
+    on and "full screen" or "a window", W, H, VW, VH, #things))
+  return true
+end
+
+if not draw_all() then return end
+
+FULL.say()
 say_where()
 print(("cafesa3d: %d objects, %d triangles, the view %d by %d, %s"):format(
   #things, scene:triangles(), VW, VH, shading))

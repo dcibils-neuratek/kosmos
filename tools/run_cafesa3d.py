@@ -24,11 +24,67 @@ Usage: run_cafesa3d.py IMAGE
 
 import os
 import re
+import subprocess
 import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+
+import scratch                                               # noqa: E402
+
+# **A disk for /home**, made before the harness is imported, since that is
+# when it reads `KOSMOS_DISK`: a scene is saved to /home and opened again,
+# and the plane is a megabyte, where the RAM filesystem a diskless guest
+# has holds sixteen kilobytes a file.
+#
+# **And a scene that is broken in the one way the reader cannot see**: a
+# triangle naming a point its mesh has not got. Its accessors fit its
+# buffer, so the file reads; the 3D Kit refuses the mesh, and Cafesa3D must
+# skip it and say so rather than die with the scene it had - which is what
+# it did, found by a control that mangled the base64 of a saved plane.
+WORK = scratch.directory("cafesa3d")
+HOME_DISK = os.path.join(WORK, "home.img")
+BROKEN = os.path.join(WORK, "zz-broken.gltf")
+
+
+def broken_scene():
+    import base64
+    import json
+    import struct
+
+    data = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1, 0) + bytes([0, 1, 5, 0])
+    uri = "data:application/octet-stream;base64," + base64.b64encode(data).decode()
+    own = {"loc": [0, 0, 0], "rot": [0, 0, 0], "scale": [1, 1, 1]}
+
+    return {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"name": "Broken", "nodes": [0, 1]}],
+        "nodes": [
+            {"name": "Box", "extras": {"cafesa3d": dict(own, kind="box", size=[1, 1, 1])}},
+            {"name": "Tri", "mesh": 0, "extras": {"cafesa3d": dict(own, kind="mesh", mesh=0)}},
+        ],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5121, "count": 3, "type": "SCALAR"},
+        ],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36},
+                        {"buffer": 0, "byteOffset": 36, "byteLength": 3}],
+        "buffers": [{"byteLength": len(data), "uri": uri}],
+    }
+
+
+with open(BROKEN, "w") as f:
+    import json as _json
+    _json.dump(broken_scene(), f)
+
+subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
+                os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "64",
+                BROKEN + ":/home/Scenes/zz-broken.gltf"],
+               check=True, capture_output=True, cwd=os.path.dirname(HERE))
+os.environ["KOSMOS_DISK"] = HOME_DISK
 
 import run_screenshot as R                                   # noqa: E402
 
@@ -630,6 +686,99 @@ def main():
             open("/private/tmp/cafesa3d-%s.ppm" % name.lower(), "wb").write(guest.screendump()) \
                 if os.environ.get("CAFESA3D_SHOTS") else None
 
+        # **Saving, and opening what was saved** (step 5): the plane - a
+        # megabyte, its meshes base64 in the file - saved with Ctrl S, which
+        # asks where because a sample is nobody's file yet; the house opened
+        # over it; the plane opened again from the Open panel with every
+        # object and every triangle it had; and Ctrl S once more, which now
+        # knows the file and writes the same bytes. The panels are driven at
+        # their buttons, which sit where `panel.lua` puts them in a window
+        # whose place Cafesa3D says.
+        def panel_button(kind, since):
+            at = said("cafesa3d: %s panel at " % kind, since, 30)
+            m = re.match(r"(\d+),(\d+)", at or "")
+
+            if not m:
+                return None
+
+            return int(m.group(1)) + 640 - 12 - 48, int(m.group(2)) + 420 - 72 + 10 + 12
+
+        plane_triangles = None
+
+        for line in guest.seen.split("\n"):
+            m = re.search(r"cafesa3d: opened Plane, 106 objects, (\d+) triangles", line)
+
+            if m:
+                plane_triangles = int(m.group(1))
+
+        # The plane as it is on the screen before it is saved: opened again,
+        # it must be the same picture, pixel for pixel - which a mesh whose
+        # bytes were mangled on the way, the right length and the wrong
+        # points, would not be, where counting its triangles would pass it.
+        m = re.search(r"the view (\d+) by (\d+)", summary)
+        vw0, vh0 = (int(v) for v in m.groups()) if m else (900, 700)
+        plane_box = (ox + 46, oy + 46, ox + 46 + vw0, oy + 46 + vh0)
+
+        def parked():
+            """The screen with the pointer off the window, where it cannot be
+            a difference between two pictures."""
+            guest.mouse_to(*R._to_tablet(width - 4, height - 4, width, height))
+            return screen()
+
+        before_save = parked()
+
+        mark = len(guest.seen)
+        keys("ctrl-s")
+        button = panel_button("save", mark)
+        check(button is not None, "Ctrl S on a sample did not ask where to save it")
+
+        if button:
+            click(*button)
+
+        saved = said("cafesa3d: saved ", mark, 120) or ""
+        m = re.match(r"/home/Scenes/plane\.gltf, 106 objects, (\d+) bytes$", saved)
+        check(m is not None and int(m.group(1)) > 200000,
+              "Save did not write the plane to /home/Scenes/plane.gltf: %r" % saved)
+        size = m and m.group(1)
+
+        mark = len(guest.seen)
+        click(ox + header["more"][0], oy + header["more"][1])
+        opened = said("cafesa3d: more menu at ", mark)
+        m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", opened or "")
+
+        if m:
+            mx, my, mw, rh = (int(v) for v in m.groups())
+            click(mx + 24, my + 2 + rh // 2)                        # Open a sample
+            click(mx + mw - 2 + 30, my + 2 + 2 + rh // 2)           # the house
+            check((said("cafesa3d: opened ", mark, 120) or "").startswith("House, 202 objects"),
+                  "the house did not open over the saved plane")
+
+        mark = len(guest.seen)
+        keys("ctrl-o")
+        button = panel_button("open", mark)
+        check(button is not None, "Ctrl O did not open the Open panel")
+
+        if button:
+            click(*button)
+
+        got = said("cafesa3d: opened ", mark, 180) or ""
+        check(plane_triangles is not None and got == "Plane, 106 objects, %d triangles, "
+              "0 skipped" % plane_triangles,
+              "the saved plane did not open with its %s triangles: %r" % (plane_triangles, got))
+
+        after_open = parked()
+        x0, y0, x1, y1 = plane_box
+        moved = sum(1 for y in range(y0, y1, 3) for x in range(x0, x1, 3)
+                    if before_save(x, y) != after_open(x, y))
+        check(moved == 0, "the plane opened again does not look as it did before it was "
+              "saved: %d pixels differ" % moved)
+
+        mark = len(guest.seen)
+        keys("ctrl-s")
+        again = said("cafesa3d: saved ", mark, 120) or ""
+        check(size is not None and again == "/home/Scenes/plane.gltf, 106 objects, %s bytes"
+              % size, "Ctrl S on the opened file did not write the same file: %r" % again)
+
         m = re.search(r"the view (\d+) by (\d+)", summary)
         vw, vh = (int(v) for v in m.groups()) if m else (900, 700)
 
@@ -739,6 +888,85 @@ def main():
               "window's foot bar: its faces were lost (%d pixels differ)"
               % sum(a != b for a, b in zip(foot_before, foot_after)))
 
+        # **Full screen** (F11): the same scene in a window the size of the
+        # screen, at its corner, the view taking what the panels do not and
+        # the Rendered view starting again at that size; a click landing in
+        # the new layout; the screen's far corner Cafesa3D's rather than the
+        # desktop's; and F11 again, the window it was.
+        click(ox + vw + 300, oy + 46 + vh + 15)                 # the foot: in front again
+        mark = len(guest.seen)
+        keys("f11")
+        full = said("cafesa3d: full screen, ", mark, 60) or ""
+        want = "%d by %d, the view %d by %d, 106 objects" % (width, height, width - 386,
+                                                              height - 76)
+        check(full == want, "F11 did not lay Cafesa3D out across the screen: %r, not %r"
+              % (full, want))
+        check(said("cafesa3d: window at ", mark, 10) == "0,0",
+              "the full-screen window is not at the screen's corner")
+        check((said("cafesa3d: rendering the view, ", mark, 60) or "").startswith(
+              "%d by %d" % (width - 386, height - 76)),
+              "the Rendered view did not start again at the full-screen size")
+
+        tabs_now = dict((m.group(1), (int(m.group(2)), int(m.group(3))))
+                        for m in re.finditer(r"(\w+) (\d+),(\d+)",
+                                             said("cafesa3d: tabs ", mark) or ""))
+        top = dict((m.group(1), (int(m.group(2)), int(m.group(3))))
+                   for m in re.finditer(r"([\w:]+) (\d+),(\d+)",
+                                        said("cafesa3d: controls ", mark) or ""))
+        mark = len(guest.seen)
+
+        if "world" in tabs_now:
+            click(*tabs_now["world"])
+
+        check(said("cafesa3d: tab ", mark) == "world",
+              "a click on the World tab where full screen put it did not open it")
+
+        # The dots, at the screen's top right corner - which is where a
+        # window's close box is, and a full-screen window has no tab: the
+        # window manager took the press for one and asked Cafesa3D to close.
+        mark = len(guest.seen)
+
+        if "more" in top:
+            click(*top["more"])
+
+        check(said("cafesa3d: more menu at ", mark, 10) is not None,
+              "a click on the dots in full screen did not open their menu")
+        click(width // 2, height // 2)                           # and away
+
+        at = screen()
+        corner = at(width - 20, height - 12)
+        check(corner not in (0x2f5bb8, 0x305cba) and (corner >> 16) > 0xc0,
+              "the screen's far corner is not Cafesa3D's foot: %06x" % corner)
+
+        mark = len(guest.seen)
+        keys("f11")
+        back = said("cafesa3d: a window, ", mark, 60) or ""
+        check(back == "%d by %d, the view %d by %d, 106 objects" % (vw + 386, vh + 76, vw, vh),
+              "F11 again did not bring the window back as it was: %r" % back)
+
+        # **The broken scene** (made above, on the disk beside the saved
+        # plane): opened from the panel's second row, its box kept, its
+        # triangle skipped and named, and Cafesa3D still there to say so.
+        mark = len(guest.seen)
+        keys("ctrl-o")
+        at = said("cafesa3d: open panel at ", mark, 30)
+        m = re.match(r"(\d+),(\d+)", at or "")
+        check(m is not None, "Ctrl O did not open the panel for the broken scene")
+
+        if m:
+            px, py = int(m.group(1)), int(m.group(2))
+            # The second row: the list starts under its header, a line of
+            # text and four pixels below the trail's 34, and a row is 24.
+            click(px + 208 + 60, py + 34 + 26 + 24 + 12)
+            click(px + 580, py + 370)                            # Open
+
+        got = said("cafesa3d: opened ", mark, 60) or ""
+        check(got.startswith("Broken, 1 objects, ") and got.endswith(", 1 skipped"),
+              "the broken scene did not open with its box and its triangle skipped: %r" % got)
+        check(said("cafesa3d:   skipped ", mark, 10)
+              == "Tri: a mesh whose faces name points it does not have",
+              "the skipped triangle was not named with why")
+
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
               "Cafesa3D raised an error:\n" + guest.seen[-1200:])
@@ -761,11 +989,15 @@ def main():
           "cancelling, Ctrl Z; the Move, Rotate and Scale handles each changing its "
           "axis alone; Location X typed, Rotation Z scrubbed, a sphere's segments "
           "remaking it, Esc, Ctrl Z; the house, the car and the plane opened from the "
-          "samples, every object read and their colours on the screen; the tutorial "
+          "samples, every object read and their colours on the screen; the plane saved "
+          "to /home, the house opened over it, the plane opened again whole and saved "
+          "again the same; the tutorial "
           "opened by F1 and from the dots, its first page and every picture on it shown "
           "in the browser; the plane "
           "Rendered on every processor and F12 through its camera, each first pass drawn, "
-          "and the main window's faces untouched by the second)" % checks)
+          "and the main window's faces untouched by the second; F11 to full screen with "
+          "the scene and the render carried over and a click landing, and back; a scene "
+          "with a broken mesh opened with that mesh skipped and named)" % checks)
     return 0
 
 

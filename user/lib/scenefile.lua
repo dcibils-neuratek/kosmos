@@ -185,15 +185,20 @@ local function material(doc, index)
                    and (m.emissiveFactor[1] + (m.emissiveFactor[2] or 0)
                         + (m.emissiveFactor[3] or 0)) > 0
 
+  -- Cafesa3D's own numbers where the file has them, which a file it saved
+  -- always does; glTF's otherwise. A glowing black would otherwise come
+  -- back dark, glTF's emission being the colour times the strength.
   return {
     base = base,
     preset = type(own.preset) == "string" and own.preset or nil,
-    metallic = number(pbr.metallicFactor, 0, 1) or 1,
-    rough = number(pbr.roughnessFactor, 0, 1) or 1,
-    trans = ext_number("KHR_materials_transmission", "transmissionFactor", 0, 1, 0),
-    ior = ext_number("KHR_materials_ior", "ior", 1, 3, 1.5),
-    emit = emissive and ext_number("KHR_materials_emissive_strength", "emissiveStrength",
-                                   0, 1000, 1) or 0,
+    metallic = number(own.metallic, 0, 1) or number(pbr.metallicFactor, 0, 1) or 1,
+    rough = number(own.rough, 0, 1) or number(pbr.roughnessFactor, 0, 1) or 1,
+    trans = number(own.trans, 0, 1)
+            or ext_number("KHR_materials_transmission", "transmissionFactor", 0, 1, 0),
+    ior = number(own.ior, 1, 3) or ext_number("KHR_materials_ior", "ior", 1, 3, 1.5),
+    emit = number(own.emit, 0, 100) or (emissive and ext_number("KHR_materials_emissive_strength",
+                                                               "emissiveStrength", 0, 1000, 1)
+                                        or 0),
     texture = texture,
   }
 end
@@ -379,6 +384,8 @@ function scenefile.from_gltf(doc)
                    and type(node.extensions.KHR_lights_punctual) == "table"
                    and node.extensions.KHR_lights_punctual.light
 
+      local before = #out.things
+
       if KINDS[own.kind] then
         local t, why = shape(own, own.kind)
 
@@ -441,10 +448,331 @@ function scenefile.from_gltf(doc)
           skip(name, why)
         end
       end
+
+      -- Hidden with its eye closed, as it was saved; anything else shows.
+      if #out.things > before and own.hidden == true then
+        out.things[#out.things].hidden = true
+      end
     end
   end
 
   return out
+end
+
+--------------------------------------------------------------------------
+-- Writing: a scene as the file `from_gltf` reads, and any other program's
+-- glTF reader too.
+--
+--   local doc = scenefile.to_gltf({ name = ..., things = ..., world = ... },
+--                                 { base64 = k3.base64, bounds = k3.bounds })
+--   fs.write(path, json.encode(doc))
+--
+-- **The same file the samples are**, so there is one reader and it is
+-- already held to the host test: each object a node whose `extras.cafesa3d`
+-- keeps Cafesa3D's own numbers exactly - its kind, its shape's numbers,
+-- its place, turn and size - and whose glTF transform says the same in
+-- glTF's Y-up terms for everyone else. Materials in glTF's
+-- metallic-roughness terms with the preset and the texture in `extras`;
+-- lamps as `KHR_lights_punctual`; the camera as glTF's; the sky in the
+-- file's own `extras`.
+--
+-- **Meshes are written as they were read**: their points already in
+-- glTF's Y-up floats and their triangles in the width they came in, into
+-- one buffer carried in the file as base64. A mesh copied with Shift D
+-- shares its bytes with the original, and is written once.
+--
+-- `codec` holds the two loops over bytes, which in Kosmos are the 3D Kit's
+-- (`k3.base64`, `k3.bounds`) and on the host a test's own.
+--------------------------------------------------------------------------
+
+-- Cafesa3D to glTF: (x, y, z) here is (x, z, -y) there.
+local function to_gltf_vec(v) return { v[1], v[3], -v[2] } end
+
+-- 0xRRGGBB as "#rrggbb", and as glTF's linear factors.
+local function hex(c) return ("#%06x"):format(c & 0xffffff) end
+
+local function linear(c)
+  local out = {}
+
+  for i = 1, 3 do
+    local v = ((c >> (24 - 8 * i)) & 0xff) / 255
+
+    out[i] = v <= 0.04045 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
+  end
+
+  return out
+end
+
+-- Rz Ry Rx from Euler degrees: the turn `matrix_euler` reads back.
+local function euler_matrix(r)
+  local x, y, z = math.rad(r[1]), math.rad(r[2]), math.rad(r[3])
+  local cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y),
+                                 math.cos(z), math.sin(z)
+
+  return { cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
+           sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
+           -sy,     cy * sx,                cy * cx }
+end
+
+-- G = C R C^T, the inverse of `from_gltf_matrix`.
+local function to_gltf_matrix(R)
+  local function r(i, j) return R[(i - 1) * 3 + j] end
+
+  return { r(1, 1),  r(1, 3), -r(1, 2),
+           r(3, 1),  r(3, 3), -r(3, 2),
+          -r(2, 1), -r(2, 3),  r(2, 2) }
+end
+
+-- A rotation matrix as glTF's quaternion, x y z w.
+local function quaternion(M)
+  local function m(i, j) return M[(i - 1) * 3 + j] end
+
+  local tr = m(1, 1) + m(2, 2) + m(3, 3)
+  local x, y, z, w
+
+  if tr > 0 then
+    local s = math.sqrt(tr + 1) * 2
+
+    w, x, y, z = s / 4, (m(3, 2) - m(2, 3)) / s, (m(1, 3) - m(3, 1)) / s, (m(2, 1) - m(1, 2)) / s
+  elseif m(1, 1) > m(2, 2) and m(1, 1) > m(3, 3) then
+    local s = math.sqrt(1 + m(1, 1) - m(2, 2) - m(3, 3)) * 2
+
+    w, x, y, z = (m(3, 2) - m(2, 3)) / s, s / 4, (m(1, 2) + m(2, 1)) / s, (m(1, 3) + m(3, 1)) / s
+  elseif m(2, 2) > m(3, 3) then
+    local s = math.sqrt(1 + m(2, 2) - m(1, 1) - m(3, 3)) * 2
+
+    w, x, y, z = (m(1, 3) - m(3, 1)) / s, (m(1, 2) + m(2, 1)) / s, s / 4, (m(2, 3) + m(3, 2)) / s
+  else
+    local s = math.sqrt(1 + m(3, 3) - m(1, 1) - m(2, 2)) * 2
+
+    w, x, y, z = (m(2, 1) - m(1, 2)) / s, (m(1, 3) + m(3, 1)) / s, (m(2, 3) + m(3, 2)) / s, s / 4
+  end
+
+  return { x, y, z, w }
+end
+
+local function list3(v) return { v[1], v[2], v[3] } end
+
+-- A material as glTF's, and what it says of itself that glTF cannot.
+local function material_entry(m, name)
+  local lin = linear(m.base or 0xcccccc)
+  local own = { base = hex(m.base or 0xcccccc), preset = m.preset,
+                metallic = m.metallic, rough = m.rough, trans = m.trans, ior = m.ior,
+                emit = m.emit }
+  local tx = m.texture
+
+  if type(tx) == "table" then
+    own.texture = { pattern = tx.pattern, colour2 = tx.colour2 and hex(tx.colour2) or nil,
+                    scale = tx.scale, detail = tx.detail, distortion = tx.distortion,
+                    bump = tx.bump, mortar = tx.mortar, ratio = tx.ratio, offset = tx.offset }
+  end
+
+  local entry = {
+    name = name,
+    pbrMetallicRoughness = { baseColorFactor = { lin[1], lin[2], lin[3], 1 },
+                             metallicFactor = m.metallic or 0, roughnessFactor = m.rough or 0.5 },
+    extras = { cafesa3d = own },
+  }
+  local ext = {}
+
+  if (m.trans or 0) > 0 then
+    ext.KHR_materials_transmission = { transmissionFactor = m.trans }
+    ext.KHR_materials_ior = { ior = m.ior or 1.5 }
+  end
+
+  if (m.emit or 0) > 0 then
+    entry.emissiveFactor = lin
+    ext.KHR_materials_emissive_strength = { emissiveStrength = m.emit }
+  end
+
+  if next(ext) then entry.extensions = ext end
+
+  return entry
+end
+
+-- What a material says, as one string: two objects of the same paint share
+-- one material in the file, as they would in Blender.
+local function material_key(m)
+  local tx = type(m.texture) == "table" and m.texture or {}
+
+  return table.concat({ tostring(m.base), tostring(m.preset), tostring(m.metallic),
+                        tostring(m.rough), tostring(m.trans), tostring(m.ior),
+                        tostring(m.emit), tostring(tx.pattern), tostring(tx.colour2),
+                        tostring(tx.scale), tostring(tx.detail), tostring(tx.distortion),
+                        tostring(tx.bump), tostring(tx.mortar), tostring(tx.ratio),
+                        tostring(tx.offset) }, "|")
+end
+
+local SHAPE_FIELDS = { "size", "radius", "radius2", "depth", "segments", "rings",
+                       "subdivisions" }
+
+function scenefile.to_gltf(s, codec)
+  local nodes, materials, lights, meshes, accessors, views = {}, {}, {}, {}, {}, {}
+  local cameras = {}
+  local by_key, by_points, by_mesh = {}, {}, {}
+  local pieces, at = {}, 0
+
+  local function material_index(m, name)
+    local key = material_key(m)
+
+    if not by_key[key] then
+      materials[#materials + 1] = material_entry(m, name)
+      by_key[key] = #materials - 1
+    end
+
+    return by_key[key]
+  end
+
+  -- Bytes into the one buffer, four-aligned, as a view of it.
+  local function view(bytes, target)
+    local pad = (4 - at % 4) % 4
+
+    if pad > 0 then
+      pieces[#pieces + 1] = string.rep("\0", pad)
+      at = at + pad
+    end
+
+    views[#views + 1] = { buffer = 0, byteOffset = at, byteLength = #bytes, target = target }
+    pieces[#pieces + 1] = bytes
+    at = at + #bytes
+
+    return #views - 1
+  end
+
+  -- The strings themselves are the keys, so a copy's bytes - which are
+  -- the same string - are found without comparing megabytes.
+  local function mesh_index(t, mat)
+    local of = by_points[t.vertices] or {}
+    local acc = of[t.triangles]
+
+    by_points[t.vertices] = of
+
+    if not acc then
+      local x0, y0, z0, x1, y1, z1 = codec.bounds(t.vertices)
+      local width = t.index_bytes or 4
+
+      accessors[#accessors + 1] = { bufferView = view(t.vertices, 34962),
+                                    componentType = 5126, count = #t.vertices // 12,
+                                    type = "VEC3", min = { x0, y0, z0 },
+                                    max = { x1, y1, z1 } }
+      accessors[#accessors + 1] = { bufferView = view(t.triangles, 34963),
+                                    componentType = ({ [1] = 5121, [2] = 5123,
+                                                       [4] = 5125 })[width],
+                                    count = #t.triangles // width, type = "SCALAR" }
+      acc = { pos = #accessors - 2, idx = #accessors - 1 }
+      of[t.triangles] = acc
+    end
+
+    local key = acc.pos .. " " .. mat
+
+    if not by_mesh[key] then
+      meshes[#meshes + 1] = { name = t.name, primitives = {
+        { attributes = { POSITION = acc.pos }, indices = acc.idx, material = mat } } }
+      by_mesh[key] = #meshes - 1
+    end
+
+    return by_mesh[key]
+  end
+
+  for _, t in ipairs(s.things) do
+    local own = { kind = t.kind, loc = list3(t.loc), hidden = t.hidden or nil }
+    local node = { name = t.name, translation = to_gltf_vec(t.loc), extras = { cafesa3d = own } }
+
+    if t.kind == "light" then
+      local lin = linear(t.colour or 0xffffff)
+
+      own.radius, own.power, own.colour = t.radius, t.power, hex(t.colour or 0xffffff)
+      lights[#lights + 1] = { name = t.name, type = "point", color = lin,
+                              intensity = (t.power or 1000) / (4 * math.pi) }
+      node.extensions = { KHR_lights_punctual = { light = #lights - 1 } }
+    elseif t.kind == "camera" then
+      -- Looking down its own -Z with +Y up, in glTF's space.
+      local p, q = to_gltf_vec(t.loc), to_gltf_vec(t.target)
+      local f = { q[1] - p[1], q[2] - p[2], q[3] - p[3] }
+      local n = math.sqrt(f[1] ^ 2 + f[2] ^ 2 + f[3] ^ 2)
+
+      own.target, own.focal = list3(t.target), t.focal or 50
+
+      if n > 1e-9 then
+        f = { f[1] / n, f[2] / n, f[3] / n }
+
+        local r = { -f[3], 0, f[1] }
+        local rn = math.sqrt(r[1] ^ 2 + r[3] ^ 2)
+
+        if rn > 1e-9 then
+          r = { r[1] / rn, 0, r[3] / rn }
+
+          local u = { r[2] * f[3] - r[3] * f[2], r[3] * f[1] - r[1] * f[3],
+                      r[1] * f[2] - r[2] * f[1] }
+
+          node.rotation = quaternion({ r[1], u[1], -f[1],
+                                       r[2], u[2], -f[2],
+                                       r[3], u[3], -f[3] })
+        end
+      end
+
+      -- A 36 mm sensor seen at 16:9, as the samples' cameras are.
+      cameras[#cameras + 1] = { type = "perspective", name = t.name,
+                                perspective = { yfov = 2 * math.atan(10.125 / (t.focal or 50)),
+                                                aspectRatio = 16 / 9, znear = 0.1,
+                                                zfar = 1000 } }
+      node.camera = #cameras - 1
+    else
+      local mat = material_index(t.mat or {}, t.name)
+
+      own.rot, own.scale, own.material = list3(t.rot), list3(t.scale), mat
+      own.smooth = t.smooth or false
+      node.rotation = quaternion(to_gltf_matrix(euler_matrix(t.rot)))
+      node.scale = { t.scale[1], t.scale[3], t.scale[2] }
+
+      if t.kind == "mesh" then
+        own.mesh = mesh_index(t, mat)
+        own.smooth, own.smooth_angle = true, t.smooth_angle or 30
+        node.mesh = own.mesh
+      else
+        for _, field in ipairs(SHAPE_FIELDS) do
+          local v = t[field]
+
+          own[field] = type(v) == "table" and list3(v) or v
+        end
+      end
+    end
+
+    nodes[#nodes + 1] = node
+  end
+
+  local list = {}
+
+  for i = 1, #nodes do list[i] = i - 1 end
+
+  local doc = {
+    asset = { version = "2.0", generator = "Cafesa3D, Kosmos" },
+    scene = 0,
+    scenes = { { name = s.name or "Scene", nodes = list } },
+    nodes = nodes,
+    extensionsUsed = { "KHR_lights_punctual", "KHR_materials_transmission",
+                       "KHR_materials_ior", "KHR_materials_emissive_strength" },
+  }
+
+  if #materials > 0 then doc.materials = materials end
+  if #cameras > 0 then doc.cameras = cameras end
+  if #lights > 0 then doc.extensions = { KHR_lights_punctual = { lights = lights } } end
+
+  if s.world then
+    doc.extras = { cafesa3d = { world = { zenith = hex(s.world.zenith),
+                                          horizon = hex(s.world.horizon),
+                                          strength = s.world.strength } } }
+  end
+
+  if #meshes > 0 then
+    local bytes = table.concat(pieces)
+
+    doc.meshes, doc.accessors, doc.bufferViews = meshes, accessors, views
+    doc.buffers = { { byteLength = #bytes,
+                      uri = "data:application/octet-stream;base64," .. codec.base64(bytes) } }
+  end
+
+  return doc
 end
 
 return scenefile

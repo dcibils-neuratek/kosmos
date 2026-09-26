@@ -1214,7 +1214,7 @@ processors, and still what follows USB:
      inside it); and in Kosmos's browser the space between two words of a
      link is not part of the link - `web_page_link_at` tests each word's
      box, and a click that lands between them does nothing.
-   - **PROPOSED - scripting, in Lua** - Diego, 26 September: "What if we add
+   - **AGREED - scripting, in Lua** - Diego, 26 September: "What if we add
      scripting capabilities to cafesa with our one Lua programming
      language", "This means we could design scenes with code in a
      scripting editor", "We would need to think about the bindings and else
@@ -1235,7 +1235,86 @@ processors, and still what follows USB:
      - **Scripts are saved with the scene** (step 5), and the three samples
        - written today by `tools/cafesa3d_samples.py`, in Python on the Mac
        - become scripts Cafesa3D runs itself.
-   5. Saving and opening glTF.
+     Diego, the same afternoon: "Scripting proposal suits perfectly". It
+     comes after saving, since a script wants to be saved with its scene.
+   5. **DONE on 26 September - saving and opening glTF** (`testing.md`
+      18.199). Diego, 26 September: "We need a way
+      to save scenes in cafesa", "If not the app is useless". The format is
+      the one the samples are already in - glTF 2.0, with Cafesa3D's own
+      numbers in `extras` - so the reader is the one path back in and
+      another program still reads the file. Save, Save As and Open in the
+      dots menu and on Ctrl S, Ctrl Shift S and Ctrl O, through the Open and
+      Save panel; the header marks a scene with unsaved changes.
+   5b. **DONE on 26 September, with saving - full screen** (18.199).
+      Diego, the same message: "the
+      cafesa app needs a full screen mode as I will be using it in my ultra
+      widescreen monitor tonight at 3440x1440 resolution for increased
+      viewport space". F11 and the dots: the whole of Cafesa3D laid out
+      across the screen, the 3D view taking what the panels do not and the
+      Outliner as tall as the room allows. A window that draws its own
+      pixels cannot be resized, so a second window is opened at the screen's
+      size and the first closed - in the same process, so the scene stays.
+      The view keeps its vertical angle, so a wide screen shows more to
+      the sides rather than zooming in.
+   5c. **AGREED - importers and exporters, as translators.** Diego, 26
+      September: "Can we do a blender or other 3d format importer", "I like
+      that we have collaboration with other formats maintaining our native
+      one as now", "We could import and export in other formats and we can
+      have these as plugins so we can add these in the future". glTF stays
+      the native format; other formats come in and go out through
+      translators - BeOS's Translation Kit, one file each in a folder
+      Cafesa3D lists, each declaring the extensions it reads or writes and
+      turning bytes into the scene description `scenefile.lua` already uses
+      (and back). A translator is Lua; its byte loop, where it has one, is
+      a C function in the 3D Kit, as base64 already is. The formats, by how
+      much of what can be downloaded they open, in order:
+      - **glTF binary, `.glb`** - what Sketchfab, Poly Haven and most
+        modern libraries hand out; the same content as `.gltf` in one binary
+        container, so the reader is a few lines around the one we have.
+      - **Wavefront OBJ with its MTL** - the oldest common format and still
+        everywhere (TurboSquid, CGTrader, Free3D, NASA); text, meshes and
+        simple materials.
+      - **STL** - 3D printing's format, and the largest free libraries of
+        all (Thingiverse, Printables); triangles only, no colour.
+      - **FBX** - Autodesk's, and what game asset stores and Mixamo give;
+        closed, so read through `ufbx` (MIT, one C file), vendored.
+      - Export first to OBJ and STL, which every other program reads.
+      - **Not `.blend`**: Blender's own file is its memory written out and
+        changes with every version; Blender exports glTF faithfully, and
+        that is the way in.
+   5d. **TO DESIGN - rendering on several machines.** Diego, 26 September:
+      "What if we have a cluster of kosmos machines with cafesa installed
+      and we could use these machines as a rendering node", "a main node and
+      slave nodes that act as rendering nodes so we can use not only the
+      cores in the current machine but remote nodes of other machines",
+      "This might need a good architecture behind the ray tracer rendering
+      plugin so it can leverage multiple nodes as well as multiple cores".
+      What the tracer already gives this, and why it fits:
+      - **A render is already cut into independent work**: tiles and
+        passes, handed to workers by a counter. A node is a worker that is
+        further away.
+      - **Every sample's randomness comes from its tile, pass and pixel**,
+        so a pass is the same wherever it is traced - the tutorial's two
+        runs rendered bit for bit the same picture. So the main node can
+        hand each node whole passes and add the results, and the picture is
+        the one a single machine would have made.
+      - **The scene travels as the file saving writes** (step 5), which is
+        why this comes after it, and a node reads it with the reader that
+        trusts nothing in a file - a node must not trust its main node's
+        bytes more than any other file's.
+      - **Behind the same interface Cafesa3D uses now**: `k3.render`
+        answers a job with passes, rays and paint; a farm answers a job of
+        the same shape, so the application does not change when the
+        machines do.
+      - **A node need not be Kosmos**: the tracer is portable C that
+        already builds on the Mac for its tests, so a Mac or a Linux box can
+        be a node beside the Kosmos ones.
+      What it needs and has not got: a render node as a program with a
+      network capability, a declared protocol for scene, passes and results
+      (control by message, the passes' pixels as the bulk), finding nodes
+      (named by hand first), and a node that drops out mid-render handing
+      its passes back to the others. Drawn and agreed before any of it is
+      built.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
    - **Sample scenes: a house, a car, a plane** - Diego, 25 September:
