@@ -132,6 +132,10 @@ long             irq_wait_any(struct irq_line *const *set, unsigned count,
                               unsigned ends);
 void             irq_wake_watcher(struct thread *t);
 
+/* A thread of an ending process, out of a wait on a line or a watched
+ * endpoint if it is in one (`threads.md` step 6). */
+void             irq_nudge(struct thread *t);
+
 long             irq_ack(struct irq_line *line);
 
 #endif /* KERNEL_IRQ_H */

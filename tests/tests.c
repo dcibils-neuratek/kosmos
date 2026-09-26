@@ -3968,6 +3968,71 @@ static bool test_a_process_with_two_threads(void)
         && pmm_free_pages() == pages_before;
 }
 
+/*
+ * **A process ended from any of its threads** (`threads.md` step 6).
+ *
+ * Has to match `user/init/main.c`. Each role ends while one of its threads
+ * is somewhere it cannot notice by being at user level: asleep for a
+ * minute, waiting for a sibling that never ends, spinning. Each is given
+ * ten seconds of the scheduler's clock, against a sleep of sixty - so a
+ * process that ended only when its sleeper woke, or never, fails - and
+ * must end with the code that ended it first and give back every page and
+ * its slot. Until 25 September the first role panicked the kernel.
+ */
+#define CTEST_WORKER_FAULTS      901UL
+#define CTEST_FAULT_WHILE_JOINED 902UL
+#define CTEST_FIRST_LEAVES       903UL
+
+static bool ends_from_anywhere(unsigned long role, int want)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned before = process_count();
+    size_t pages_before = pmm_free_pages();
+    unsigned long start;
+    struct process *p;
+    int code;
+
+    p = process_create("t-ending", init_image, (size_t)init_image_len, role);
+
+    if (p == NULL) {
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+    start = hal_ticks();
+
+    while (!p->exited && hal_ticks() - start < 10UL * TICK_HZ) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    return code == want && process_count() == before
+        && pmm_free_pages() == pages_before;
+}
+
+static bool test_a_worker_faults(void)
+{
+    return ends_from_anywhere(CTEST_WORKER_FAULTS, -1);
+}
+
+static bool test_a_fault_while_joined(void)
+{
+    return ends_from_anywhere(CTEST_FAULT_WHILE_JOINED, -1);
+}
+
+static bool test_the_first_thread_leaves(void)
+{
+    return ends_from_anywhere(CTEST_FIRST_LEAVES, 5);
+}
+
 static bool test_lua_arithmetic(void)          { return luatest_role(0); }
 static bool test_lua_floats(void)              { return luatest_role(1); }
 static bool test_lua_strings_and_tables(void)  { return luatest_role(2); }
@@ -8625,6 +8690,9 @@ static const struct test tests[] = {
     { "thread: its own pointer survives a switch", test_a_threads_pointer_survives_a_switch },
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
     { "thread: a process with two threads", test_a_process_with_two_threads },
+    { "thread: a worker faults while the first sleeps", test_a_worker_faults },
+    { "thread: a worker faults while the first waits", test_a_fault_while_joined },
+    { "thread: the first returns, a worker asleep", test_the_first_thread_leaves },
     { "ipc: endpoints and regions grow past their old pools", test_endpoints_and_regions_grow },
     { "cap: a table holds more than it has room for", test_a_table_holds_more_than_it_has_room_for },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },

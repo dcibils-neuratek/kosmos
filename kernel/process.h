@@ -518,8 +518,17 @@ struct process {
      * That bounds the wait at one timer period even for a process that has
      * stopped making syscalls entirely, which is exactly the case a kill is
      * for - `/bin/spin.lua` is a user-level loop that yields to nothing.
+     *
+     * **Every thread of it, not only the first** (`threads.md` step 6):
+     * each leaves on its own way back to user level, a second thread as a
+     * thread and the first by tearing the process down once the others have
+     * gone. `end_code` is the code of whichever ended it first - a worker's
+     * fault, a `SYS_EXIT` from any thread, a kill - and it is the process's
+     * code, whoever turns off the lights. Both under `processes_lock`.
      */
     bool              killed;
+    bool              ending;
+    int               end_code;
 };
 
 /* Prepares the pool. Once, before any process exists. */

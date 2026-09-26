@@ -543,6 +543,17 @@ int process_thread_wait(struct process *p, unsigned index)
         struct thread *t;
         int code;
 
+        /*
+         * **Its process is ending: nothing collected, and no wait.** Looked
+         * at under the lock `mark_ending` sets it under, before anything
+         * else - so once a process is ending no sibling's slot leaves the
+         * list, which is what lets `nudge_all` walk it a thread at a time.
+         */
+        if (p->killed) {
+            spin_unlock(&processes_lock, flags);
+            return SYS_ERR_DENIED;
+        }
+
         while (*link != NULL && (*link)->index != index) {
             link = &(*link)->sibling;
         }
@@ -573,16 +584,6 @@ int process_thread_wait(struct process *p, unsigned index)
     }
 }
 
-/*
- * Every other thread of this process, gone, before anything it is running on
- * is freed (`threads.md` step 3).
- *
- * The first thread is the one that tears the process down, and it does that
- * here rather than trusting that no sibling is left: freeing an address
- * space under a running thread is the failure this ordering exists to
- * prevent. Marked killed first, so a sibling on its way back to user level
- * leaves instead; then waited for.
- */
 /* The slots of threads that ended and were never waited for, back to the
  * pool: a process that ends takes its zombies with it. */
 static void release_ended_threads(struct process *p)
@@ -602,25 +603,143 @@ static void release_ended_threads(struct process *p)
     spin_unlock(&processes_lock, flags);
 }
 
+/*
+ * **One thread of a process that is ending, out of whatever it waits in**
+ * (`threads.md` step 6). Each kind of wait is reached under the lock it
+ * blocks with, so the wake lands after its look at `killed` and cannot fall
+ * between that look and the block - and only a wait the thread is really
+ * in, because a bare wake to a thread queued on an endpoint would be taken
+ * for an answer. Every one of them looks at `killed` before blocking again
+ * and returns, and the thread leaves on its way back to user level.
+ *
+ * A thread running at user level needs nothing: the next tick finds it
+ * there, and a tick is what bounds a kill already.
+ */
+static void nudge(struct process *p, struct thread *t)
+{
+    unsigned long flags;
+    struct thread *q;
+
+    /* A line, or an endpoint it watches. */
+    irq_nudge(t);
+
+    /* Its process's children, or a sibling it waits for. */
+    flags = spin_lock(&processes_lock);
+
+    if (p->waiter == t) {
+        thread_wake(t);
+    }
+
+    for (q = p->threads; q != NULL; q = q->sibling) {
+        if (q->joiner == t) {
+            thread_wake(t);
+        }
+    }
+
+    spin_unlock(&processes_lock, flags);
+
+    /* An endpoint's queue: taken off it and told the endpoint is gone. */
+    ipc_abort(t);
+
+    /* A sleep, ended the way the timer ends one - early, which every wait
+     * with a deadline already has to allow for. */
+    if (t->state == THREAD_BLOCKED && t->wake_at != 0) {
+        ipc_timed_out(t);
+        thread_wake(t);
+    }
+}
+
+/*
+ * Every thread of `p` but `except`, nudged. Found one at a time under the
+ * lock and nudged outside it, because a nudge takes other locks; the list
+ * cannot lose a thread in between, since a process that is ending collects
+ * no ended sibling (`process_thread_wait`) and an ended one stays listed.
+ */
+static void nudge_all(struct process *p, struct thread *except)
+{
+    unsigned n;
+
+    for (n = 0;; n++) {
+        unsigned long flags = spin_lock(&processes_lock);
+        struct thread *t;
+        unsigned k = 0;
+        bool past, skip;
+
+        if (n == 0) {
+            t = p->thread;
+        } else {
+            for (t = p->threads; t != NULL && ++k < n; t = t->sibling) {
+            }
+        }
+
+        past = (n > 0 && t == NULL);
+        skip = (t == NULL || t == except || t->ended);
+        spin_unlock(&processes_lock, flags);
+
+        if (past) {
+            return;
+        }
+
+        if (!skip) {
+            nudge(p, t);
+        }
+    }
+}
+
+/*
+ * `p` is ending, with `code` unless something ended it first. Returns the
+ * code it ends with, which is the first one given.
+ */
+static int mark_ending(struct process *p, int code)
+{
+    unsigned long flags = spin_lock(&processes_lock);
+
+    if (!p->ending) {
+        p->ending = true;
+        p->end_code = code;
+    }
+
+    p->killed = true;
+    code = p->end_code;
+    spin_unlock(&processes_lock, flags);
+    return code;
+}
+
+/*
+ * The first thread's wait for the others to leave, before a byte of what
+ * they run on is freed.
+ *
+ * **Told, and told again.** Until 25 September nothing told them: a worker
+ * that faulted called `process_exit`, which waited here for the first
+ * thread - off running its program, never told - and after five seconds
+ * panicked, "a thread would not leave". Any program with a thread that
+ * faulted could stop the machine. Now every sibling is nudged each time
+ * round, a tick apart, so a nudge that met one between its look and its
+ * block is simply made again.
+ *
+ * **And never a panic.** A thread that still does not leave is a kernel bug
+ * - a wait that does not look at `killed` - and it is said once, with the
+ * process's name, while this goes on waiting. A process that will not end
+ * is a bug report; a kernel that stops is every program's.
+ */
 static void wait_for_siblings(struct process *p)
 {
     unsigned long start = hal_ticks();
+    bool said = false;
 
-    /*
-     * **Waited for, not killed.** Marking the process killed here sets the
-     * flag the *exiting* thread's own return path reads, and that path calls
-     * `process_exit` again - which on x86 was a reboot in the middle of the
-     * suite rather than an error anybody could read. Ending siblings that
-     * have not asked to end is step 6's work, with the waking and the
-     * interrupt it needs; step 3 waits for threads that are leaving anyway,
-     * and says so loudly if one does not.
-     */
     while (p->live_threads > 0) {
-        if (hal_ticks() - start > 5UL * TICK_HZ) {
-            panic("process: a thread would not leave");
+        nudge_all(p, thread_current());
+
+        if (!said && hal_ticks() - start > 5UL * TICK_HZ) {
+            kputs("process ");
+            kputu((unsigned long)p->id);
+            kputs(" (");
+            kputs(p->name[0] != '\0' ? p->name : "?");
+            kputs("): a thread has not left after five seconds; still waiting\n");
+            said = true;
         }
 
-        thread_yield();
+        thread_sleep_until(thread_deadline_in(1));
     }
 }
 
@@ -885,6 +1004,14 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
         unsigned long flags = spin_lock(&processes_lock);
 
         parent->waiter = NULL;
+
+        /* The waiting thread's own process is ending (`threads.md` step 6):
+         * it leaves on its way back to user level, and the children are
+         * init's to collect. */
+        if (process_should_die()) {
+            spin_unlock(&processes_lock, flags);
+            return -1;
+        }
 
         for (i = 0; i < procs_made(); i++) {
             struct process *c = proc(i);
@@ -1481,18 +1608,17 @@ int process_kill(struct process *parent, unsigned id)
             return 0;               /* already gone; nothing to do */
         }
 
-        c->killed = true;
+        (void)mark_ending(c, -1);
 
         /*
-         * A thread waiting on an endpoint is not running, so it cannot
-         * notice the flag. Unblocking it here is what makes the kill take
-         * effect on a process that is not spinning - it resumes, its IPC
-         * call fails, and the check on the way back to user level ends it.
+         * A thread that is waiting is not running, so it cannot notice the
+         * mark. Nudging it here is what makes the kill take effect on a
+         * process that is not spinning - it resumes, its wait fails, and the
+         * check on the way back to user level ends it. **Every thread**,
+         * since `threads.md` step 6: the first one alone left a worker
+         * asleep in a process that was ending.
          */
-        if (c->thread != NULL) {
-            ipc_abort(c->thread);
-        }
-
+        nudge_all(c, NULL);
         return 0;
     }
 
@@ -1633,6 +1759,26 @@ void process_exit(struct process *p, int code)
          * the alternative, which reads as cleanup and behaves as suicide.
          */
         panic("process_exit: only the running process may exit");
+    }
+
+    /*
+     * **Whichever thread ends it, every thread leaves** (`threads.md` step
+     * 6). Marked, with the code of whatever ended it first, and every
+     * sibling nudged out of its wait.
+     */
+    code = mark_ending(p, code);
+    nudge_all(p, thread_current());
+
+    /*
+     * **A second thread leaves as a thread.** The first is the one that
+     * tears the process down, because only it is certain to be here last:
+     * it waits below for the rest. A worker that faulted used to wait for
+     * the first thread instead, which nothing had told to come - and then
+     * the kernel panicked.
+     */
+    if (thread_current() != p->thread) {
+        process_thread_ended(p, thread_current(), code);
+        thread_exit();                      /* does not return */
     }
 
     /* Its other threads first, before a byte of what they run on is freed

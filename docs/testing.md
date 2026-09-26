@@ -9849,7 +9849,7 @@ architecture's `context.h` now says where a function expects its stack.
 now**: 178 of 178 on x86 with the fix, and with it undone test 56 fails on
 a general protection fault - and the kernel then panics, "a thread would
 not leave", because nothing tells a sibling to leave when a thread faults.
-That is `threads.md` step 6, recorded there as the hole it is.
+That was `threads.md` step 6, and the hole is closed in 18.196.
 
 **The gate that ran it** failed three suites, and none was this work:
 
@@ -9872,3 +9872,38 @@ That is `threads.md` step 6, recorded there as the hole it is.
   own, and in every gate before it today. Recorded rather than rerun away:
   sound that starves when the machine is busy is the thing this system
   promises it will not do, and it has been seen once.
+
+## 18.196 A process ended from any of its threads
+
+**`threads.md` step 6, the part that let any program stop the machine.** A
+fault in a second thread panicked the kernel: the worker called
+`process_exit`, which waited for the first thread to leave - and nothing
+told the first thread, off running its program - so after five seconds,
+"a thread would not leave". Now whichever thread ends a process marks it,
+with its code, and every sibling is nudged out of whatever it waits in,
+each wait reached under the lock it blocks with; a second thread leaves as
+a thread, and the first tears down once the others have gone, nudging them
+again each tick. A thread that still will not leave is said, not panicked
+over.
+
+**Three kernel tests on each board**, each a process of the C test roles
+started, given ten seconds of the scheduler's clock against a sleep of
+sixty, and held to its code, the process count and every page:
+
+- `a worker faults while the first sleeps` - the case that panicked; ends
+  at once with -1.
+- `a worker faults while the first waits` - one worker spins, another
+  faults, the first waits for the spinner: the waiter is freed and the
+  spinner stopped by its next tick.
+- `the first returns, a worker asleep` - one worker asleep for a minute and
+  one spinning: the process ends at once, with the first thread's 5.
+
+183 of 183 on ARM and 181 of 181 on x86.
+
+**Controls**, each built on ARM with a second's wait and a touch, and the
+real kernel's checksum matched afterwards: **nobody nudged** - the sleeping
+and the returning cases fail, and where the old kernel panicked this one
+says "a thread has not left after five seconds; still waiting"; the waiting
+case still passes, since a thread that ends wakes whoever waits for it,
+which is its own mechanism. **A second thread tearing down, as before** -
+all three fail, and the guest is left waiting, loudly, not panicked.

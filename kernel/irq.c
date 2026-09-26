@@ -280,6 +280,18 @@ long irq_wait(struct irq_line *line, unsigned long ticks)
             return SYS_ERR_DENIED;          /* released underneath us */
         }
 
+        /* Its process is ending (`threads.md` step 6): it leaves on the way
+         * back to user level, and looking here, under the lock `irq_nudge`
+         * takes, is what makes the nudge impossible to miss. */
+        if (process_should_die()) {
+            if (line->waiter == self) {
+                line->waiter = NULL;
+            }
+
+            spin_unlock(&lines_lock, flags);
+            return SYS_ERR_DENIED;
+        }
+
         if (line->pending > 0) {
             line->pending--;
             spin_unlock(&lines_lock, flags);
@@ -523,6 +535,12 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
             done = true;
         }
 
+        /* Its process is ending, as in `irq_wait`. */
+        if (!done && process_should_die()) {
+            answer = SYS_ERR_DENIED;
+            done = true;
+        }
+
         /* One watcher an endpoint, as `ipc_wait_for_caller` allows one. */
         for (e = 0; e < ends && !done; e++) {
             if (ep[e] != NULL && !ipc_endpoint_watch(ep[e], self, e)) {
@@ -596,6 +614,39 @@ void irq_wake_watcher(struct thread *t)
     unsigned long flags = spin_lock(&lines_lock);
 
     thread_wake(t);
+    spin_unlock(&lines_lock, flags);
+}
+
+/*
+ * **A thread of a process that is ending, woken from a wait on a line or on
+ * an endpoint it watches** (`threads.md` step 6). Under the lines' lock,
+ * which both waits block with, so the wake lands after their look and
+ * cannot fall between it and the block; and only if it is waiting in one of
+ * them, because a bare wake to a thread queued on an endpoint would be read
+ * as an answer.
+ */
+void irq_nudge(struct thread *t)
+{
+    unsigned long flags = spin_lock(&lines_lock);
+    bool waiting = false;
+    unsigned i, s;
+
+    for (i = 0; i < IRQ_LINES_MAX; i++) {
+        if (lines[i].in_use && lines[i].waiter == t) {
+            waiting = true;
+        }
+    }
+
+    for (s = 0; s < IPC_WATCH_MAX; s++) {
+        if (t->ipc.watching[s] != NULL) {
+            waiting = true;
+        }
+    }
+
+    if (waiting) {
+        thread_wake(t);
+    }
+
     spin_unlock(&lines_lock, flags);
 }
 

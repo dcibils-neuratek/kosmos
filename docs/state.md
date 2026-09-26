@@ -288,25 +288,28 @@ detail - detail is resolution, geometry and textures.
 its stack - the kernel entered a thread's C function a word off the
 alignment System V expects, which `_start` has always fixed for the first
 thread and a thread skipped. Fixed per architecture (`user_function_sp`),
-held by the kernel suite's two-thread test, with a control. **And a hole
-it exposed, not fixed**: a fault in a second thread panics the kernel,
-"a thread would not leave", because nothing tells a sibling to leave until
-`threads.md` step 6 - any program can stop the machine that way. Recorded
-there; its place in the order is Diego's.
+held by the kernel suite's two-thread test, with a control.
 
 The Cafesa3D suite's new phase passes on both boards (73 checks each) with
 three controls each failing only its own check.
 
-**The gate**, 3 of 40 red and none of it this work (`testing.md` 18.195):
-host hung 72 minutes on Rosetta, wedged on this Mac beyond SIGKILL until
-a restart - and the gate now stops waiting on any suite after twelve
-minutes; x86-kernel ran the control image, a one-second mtime (rebuilt,
-178/178); x86-film's sound starved once under load (13/13 alone). **The
-push is waiting on Diego**: a Mac restart and then `make prepush`, or
-pushing past the host suite's Rosetta test.
+**Pushed as 0.10.165 on 25 September** (93b55a7..584affd), past the
+host suite's Rosetta test at Diego's word ("Do the push"): the gate's 39
+other suites green, every other host check green. The gate now stops
+waiting on any suite after twelve minutes, after host hung 72 on Rosetta.
+The dated picture has Cafesa3D in it, and a new app joins it when it
+lands (Diego: "So as we are new apps we improve the screenshots") -
+`tile` gives a window that large two cells by two.
 
-**Next**: the push; then more complex scenes, which Diego asked to see
-after it. Then the Render tab's numbers editable
+**Then the kernel hole, closed** (26 September, `testing.md` 18.196): a
+fault in a second thread no longer panics the kernel. Whichever thread
+ends a process marks it and nudges every sibling out of its wait; a second
+thread leaves as a thread and the first tears down once the rest have
+gone. Three kernel tests a board, two controls. Committed, not pushed.
+
+**Next**: more complex scenes, which Diego asked to see after the push -
+textures, a mesh kind, the three rebuilt. Then the Render tab's numbers
+editable
 (samples, bounces, clamp, resolution, Preview or Final) and a denoiser;
 then textures, a mesh kind, and the three scenes rebuilt with far more
 detail, rendered and shown to him.

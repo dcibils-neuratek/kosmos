@@ -316,13 +316,22 @@ it, and the steps that cannot fail loudly come before the one that can.
    another core, and while a sibling unmaps memory. The hardest step, so
    its tests are the kind that found SMP's bugs: kill in a loop under load,
    and `make stress` asking afterwards whether everything came back.
-   **Until it is built, a fault in a second thread panics the kernel**,
-   and that is a hole, not a detail. Found on 25 September by the fault
-   above: the thread that faulted tears the process down, waits for its
-   siblings to leave, and none is told to - so after five seconds it
-   panics with "a thread would not leave". Any program with a thread that
-   faults can stop the machine, which is the exact thing an address space
-   exists to prevent. This step is where it closes.
+   **The part that let a program stop the machine is DONE on 26 September**
+   (`testing.md` 18.196). A fault in a second thread panicked the kernel -
+   the worker waited for the first thread to leave, nothing told it to, and
+   after five seconds "a thread would not leave". Now, as "Killing a
+   process that has threads" above has it: whichever thread ends the
+   process - a fault, `SYS_EXIT` from any thread, a kill - marks it with its
+   code, and every sibling is nudged out of whatever it waits in, each wait
+   under its own lock so the nudge cannot be missed: an endpoint's queue, a
+   line or a watched endpoint, a sibling or a child, a sleep. A second
+   thread leaves as a thread; the first tears down once the rest have gone,
+   nudging them again each tick, and a thread that still will not leave is
+   said and waited for, never a panic. A thread at user level needs no
+   nudge: its next tick finds it, which is what bounded a kill already.
+   **Still to do here**: memory unmapped under a running sibling (the
+   address space has no lock), a kill in a loop under load, and `make
+   stress` asking afterwards.
 7. **The libc**: `malloc` under a lock, `errno` per thread; the C thread
    kit.
 8. **Lua threads**: `use("/kits/thread")`, a state each, channels, and a

@@ -182,6 +182,77 @@ static int threads_role(void)
 
     return 0;
 }
+
+/*
+ * **A process whose threads end it from anywhere** (`threads.md` step 6).
+ * Three roles, each a process the kernel's suite starts and times, and
+ * each ends while a thread of it is somewhere a thread cannot be told to
+ * leave by being at user level: asleep for a minute, waiting for a sibling
+ * that never ends, spinning. Until 25 September the first of them panicked
+ * the kernel after five seconds.
+ */
+#define CTEST_WORKER_FAULTS     901UL   /* a worker faults; the first sleeps */
+#define CTEST_FAULT_WHILE_JOINED 902UL  /* one spins, one faults, the first waits */
+#define CTEST_FIRST_LEAVES      903UL   /* the first returns; one sleeps, one spins */
+
+#define A_MINUTE                (60UL * 250UL)  /* scheduler ticks, at 250 Hz */
+
+/* Stores to `nowhere`, which is an address with nothing mapped: given
+ * rather than written here, which the compiler would refuse to compile. */
+static void faults(unsigned long nowhere)
+{
+    *(volatile unsigned long *)nowhere = 1;
+    kosmos_thread_exit(9);                  /* not reached */
+}
+
+#define NOWHERE                 8UL
+
+static void spins(unsigned long arg)
+{
+    (void)arg;
+
+    for (;;) {
+        counted++;
+    }
+}
+
+static void sleeps(unsigned long ticks)
+{
+    kosmos_sleep(ticks);
+    kosmos_thread_exit(0);
+}
+
+static int worker_faults_role(void)
+{
+    if (kosmos_thread_start(faults, NOWHERE) < 0) {
+        return 1;
+    }
+
+    kosmos_sleep(A_MINUTE);
+    return 2;                               /* the fault ended it before this */
+}
+
+static int fault_while_joined_role(void)
+{
+    long spinner = kosmos_thread_start(spins, 0);
+
+    if (spinner < 0 || kosmos_thread_start(faults, NOWHERE) < 0) {
+        return 1;
+    }
+
+    (void)kosmos_thread_wait((unsigned long)spinner);
+    return 2;
+}
+
+static int first_leaves_role(void)
+{
+    if (kosmos_thread_start(sleeps, A_MINUTE) < 0
+        || kosmos_thread_start(spins, 0) < 0) {
+        return 1;
+    }
+
+    return 5;                               /* the process's code, at once */
+}
 #endif
 
 /* What this process calls itself, which is what `procs` and `kill` show. */
@@ -206,6 +277,18 @@ int main(unsigned long arg)
 #ifdef KOSMOS_TEST
     if (arg == CTEST_THREADS) {
         return threads_role();
+    }
+
+    if (arg == CTEST_WORKER_FAULTS) {
+        return worker_faults_role();
+    }
+
+    if (arg == CTEST_FAULT_WHILE_JOINED) {
+        return fault_while_joined_role();
+    }
+
+    if (arg == CTEST_FIRST_LEAVES) {
+        return first_leaves_role();
     }
 #endif
 
