@@ -9907,3 +9907,48 @@ says "a thread has not left after five seconds; still waiting"; the waiting
 case still passes, since a thread that ends wakes whoever waits for it,
 which is its own mechanism. **A second thread tearing down, as before** -
 all three fail, and the guest is left waiting, loudly, not panicked.
+
+## 18.197 Textures, meshes, and the scenes rebuilt with them
+
+Diego, on the first cut of the samples: "I was expecting a much more
+polished scenes and complex to showcase the modeler capabilities", "With
+more detail and textures".
+
+**Textures** (`k3d_texture.c`), in `tools/test_trace.c`: a checker changes
+colour half a metre along at two a metre and back half a metre across; a
+brick's bed and head joints are mortar and low, its middle brick and high,
+and the row above is half a brick along; **a floor is paved in x and y** -
+the point between two rows of paving is mortar where on a wall it is the
+middle of a brick (a path of paving had come out as planks, coursed by
+height alone); noise is the same twice, within one, about nought and
+continuous over twenty thousand points; wood's rings repeat outwards. And
+rendered: a checker floor is both colours, about half each; a brick wall
+under a raking light spans far more levels with its bump than without,
+which is the check's own control.
+
+**Meshes**, in `tools/test_k3d.c`: a cube given as eight points and twelve
+faces is taken, twelve triangles and eighteen edges each once, wound
+outwards; at thirty degrees every corner keeps its face's normal, at a
+hundred every corner is the three faces' average; a face naming a point the
+mesh has not got is refused and nothing changes; a mesh is not remade from
+numbers. **Control, run as it happened**: weighing the faces by area rather
+than by angle failed the hundred-degree check - two triangles of one face
+touch a corner and one of the next. And in the tracer's test, a mesh of a
+cube meets 5000 rays where a box does.
+
+**The scenes** (`tools/test_scenefile.lua`, 46 checks): the house, car and
+plane read as 202, 76 and 106 objects; every mesh decoded and held to its
+own accessors - its points inside the bounds the file records, its
+triangles naming points it has; the roof's tiles, the brick walls at
+thirteen courses a metre, the steered front tyre, the dark glasshouse, the
+plane's lofted wing; another program's mesh read; a mesh that says more
+than its buffer holds, and one whose buffer is another file, skipped and
+said why. **Control**: one accessor's recorded bound moved five
+centimetres - the bounds check fails.
+
+**A build bug the scenes found**: the image carried the *first* cut after
+the generator changed. The scene files hung off the generator's stamp by a
+rule with no recipe, and make does not look at such a target's time again
+once its prerequisite is made - so the assets were held against the
+scenes' old times. A recipe that does nothing, `@:`, and the Cafesa3D
+suite opened 202, 76 and 106 objects: 73 of 73 on ARM.

@@ -812,6 +812,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/3d/k3d_mesh.c \
              user/kits/3d/k3d_raster.c \
              user/kits/3d/k3d_trace.c \
+             user/kits/3d/k3d_texture.c \
              user/kits/3d/k3d_kosmos.c \
              user/kits/gfx/png.c \
              user/kits/gfx/jpeg.c \
@@ -1788,7 +1789,7 @@ $(HOSTDIR)/test_yuv: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.h
 # The 3D Kit (`roadmap.md` 4l, Cafesa3D): every shape wound outwards and
 # counted, and the rasteriser on scenes small enough to reason about.
 #
-K3D_CORE := user/kits/3d/k3d_mesh.c user/kits/3d/k3d_raster.c
+K3D_CORE := user/kits/3d/k3d_mesh.c user/kits/3d/k3d_raster.c user/kits/3d/k3d_texture.c
 
 $(HOSTDIR)/test_k3d: tools/test_k3d.c $(K3D_CORE) user/kits/3d/k3d.h
 	@mkdir -p $(dir $@)
@@ -2106,7 +2107,13 @@ $(GEN)/scenes/.made: tools/cafesa3d_samples.py
 	python3 tools/cafesa3d_samples.py $(GEN)/scenes
 	@touch $@
 
+# **A recipe, even one that does nothing, and it is not decoration.** With
+# none, make never looks at the files' times again once the stamp is made,
+# so it held the assets against the scenes' old times and carried the old
+# scenes in the image - found on 26 September, when the second cut of the
+# samples opened in Kosmos as the first.
 $(SCENE_FILES): $(GEN)/scenes/.made
+	@:
 
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \

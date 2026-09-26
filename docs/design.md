@@ -652,6 +652,20 @@ What decides its shape:
   render's when nothing else wants it, and the window that shows it stays as
   quick to answer as it was. That is the responsiveness principle applied
   to the heaviest thing an application can do.
+- **Textures are worked out, not stored** (`k3d_texture.c`). Blender's
+  Brick, Checker, Noise and Wave, as functions of the point on the
+  surface in the object's own metres - its space times its scale, so a
+  stretched wall has more bricks rather than longer ones. Nothing is
+  unwrapped, nothing costs memory, and a brick knows a wall from a path by
+  which way the surface faces, as Blender's box mapping does. Each gives a
+  height as well as a colour, and the tracer tilts the surface's normal by
+  the height's slope: mortar is a groove with no more triangles than a
+  box.
+- **A mesh is a kind like the others**, its triangles given rather than
+  made from numbers, and each corner's normal the faces round it within an
+  angle weighed by their angle there - Blender's auto smooth. By area
+  instead, a cube's corners leant towards whichever faces were split
+  through them, which the kit's test caught.
 - **Sparks are noise, not light.** A glossy surface that waits for a random
   bounce to find a small bright lamp makes a picture of white dots - the
   first renders had them. Each lobe samples the lamps directly instead, and

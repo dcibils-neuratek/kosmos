@@ -648,6 +648,7 @@ struct tobj {
     uint32_t id;
     float M[12], I[12], N[9];   /* to the world, from it, and normals out */
     float a, b, c;              /* a sphere's radius; a box's halves; ... */
+    float sc[3];                /* its scale, so a texture is in its metres */
     struct k3d_material mat;
     float lo[3], hi[3];         /* in the world */
 
@@ -767,6 +768,9 @@ static bool snapshot_object(struct tobj *t, struct k3d_object *o)
     t->id = o->id;
     t->mat = o->mat;
     t->smooth = o->smooth;
+    t->sc[0] = o->scale[0];
+    t->sc[1] = o->scale[1];
+    t->sc[2] = o->scale[2];
     t->shape = true_shape(o);
 
     switch (t->shape) {
@@ -1305,6 +1309,70 @@ static void basis(v3 n, v3 *a, v3 *b)
 
 static v3 reflect(v3 d, v3 n) { return d - mul(n, 2 * dot(d, n)); }
 
+/* Where `p` is on its object, in the object's own metres: its own space,
+ * times its scale, which is where a texture is worked out
+ * (`k3d_texture.c`). */
+static void metric(const struct tobj *o, v3 p, float q[3])
+{
+    v3 l = xpoint(o->I, p);
+
+    q[0] = l[0] * o->sc[0];
+    q[1] = l[1] * o->sc[1];
+    q[2] = l[2] * o->sc[2];
+}
+
+/*
+ * **A textured surface's colour at `p`, and its normal bent by the
+ * pattern's height.** The slope of the height across the surface, from four
+ * more looks two millimetres either side, tilts the normal against it - so
+ * mortar is a groove the light rakes across and a roof tile casts its edge,
+ * with no more triangles than a box has.
+ */
+static v3 textured(const struct tobj *o, v3 p, v3 *n)
+{
+    const struct k3d_texture *t = &o->mat.tex;
+    v3 base = from(o->mat.base);
+    const float *M = o->M;
+    float q[3], fac, h;
+
+    /* Which way the surface faces in the object's own space - the world's
+     * normal through the transpose of the object's turn - so a brick knows
+     * a wall from a floor. */
+    float nl[3] = { M[0] * (*n)[0] + M[4] * (*n)[1] + M[8] * (*n)[2],
+                    M[1] * (*n)[0] + M[5] * (*n)[1] + M[9] * (*n)[2],
+                    M[2] * (*n)[0] + M[6] * (*n)[1] + M[10] * (*n)[2] };
+    float len = sqrtf(nl[0] * nl[0] + nl[1] * nl[1] + nl[2] * nl[2]);
+
+    if (len > 0) {
+        nl[0] /= len;
+        nl[1] /= len;
+        nl[2] /= len;
+    }
+
+    metric(o, p, q);
+    k3d_pattern(t, q, nl, &fac, &h);
+
+    if (t->bump > 0) {
+        const float e = 0.002f;
+        float h1, h2, h3, h4, f;
+        v3 a, b, g;
+
+        basis(*n, &a, &b);
+        metric(o, p + mul(a, e), q);
+        k3d_pattern(t, q, nl, &f, &h1);
+        metric(o, p - mul(a, e), q);
+        k3d_pattern(t, q, nl, &f, &h2);
+        metric(o, p + mul(b, e), q);
+        k3d_pattern(t, q, nl, &f, &h3);
+        metric(o, p - mul(b, e), q);
+        k3d_pattern(t, q, nl, &f, &h4);
+        g = mul(a, (h1 - h2) / (2 * e)) + mul(b, (h3 - h4) / (2 * e));
+        *n = norm(*n - mul(g, t->bump));
+    }
+
+    return max4(base + mul(from(t->colour2) - base, fac), all4(0));
+}
+
 /* A direction near `dir`, spread by `amount`: a glossy reflection's. */
 static v3 fuzz(struct rng *g, v3 dir, float amount)
 {
@@ -1452,9 +1520,9 @@ static v3 radiance(const struct k3d_render *r, struct rng *g, v3 o, v3 d, uint64
         }
 
         m = &h.o->mat;
-        base = from(m->base);
         p = o + mul(d, h.t);
         n = world_normal(&h);
+        base = m->tex.pattern != K3D_PLAIN ? textured(h.o, p, &n) : from(m->base);
 
         if (m->emit > 0) {
             col += held(thr * mul(base, m->emit), bounced);

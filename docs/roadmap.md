@@ -1206,6 +1206,16 @@ processors, and still what follows USB:
      the samples can have shaped parts - a fuselage turned on a lathe, a
      body lofted from sections, bevelled edges, tori for tyres; then **the
      three rebuilt with far more detail**, rendered, and shown to him.
+     **All four DONE on 26 September** (`testing.md` 18.197): the ray
+     tracer (step 3 above); **textures** in the 3D Kit - checker, brick,
+     roof tiles, noise, wood and marble, in the object's own metres, laid
+     by which way a surface faces, each with a height the tracer bends the
+     surface by - **in the tracer only so far**, the Solid view showing the
+     base colour; **a mesh kind**, its normals Blender's auto smooth, read
+     from glTF's accessors - any program's whose buffer is in the file,
+     which brings the reading half of step 5 the rest of the way; and the
+     three **rebuilt**: 202, 76 and 106 objects, lathed, lofted and
+     bevelled, every surface textured.
    - **Every acceleration the machine has** - Diego, the same evening:
      "Make sure we used all available acceleration modes from simd and avx
      and in the future gpu acceleration when available". So the 3D Kit's

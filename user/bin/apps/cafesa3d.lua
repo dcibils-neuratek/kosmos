@@ -101,7 +101,7 @@ end
 
 local things = {}                           -- in the order they were added
 local SHAPES = { plane = true, box = true, sphere = true, cylinder = true,
-                 ico = true, cone = true, torus = true, grid = true }
+                 ico = true, cone = true, torus = true, grid = true, mesh = true }
 
 -- What the kit is told about a shape: where it is, and how the Solid view
 -- shows it. Glass is drawn through, as the drawing has it.
@@ -133,6 +133,15 @@ local function add(t)
     local fields = shown(t)
 
     fields.kind = t.kind
+
+    -- A mesh's triangles go to the kit when it is added and never again:
+    -- `sync` sends what moved, and sending them with it would work out
+    -- every corner's normal afresh on every step of a drag.
+    if t.kind == "mesh" then
+      fields.vertices, fields.triangles = t.vertices, t.triangles
+      fields.index_bytes, fields.yup, fields.smooth_angle = t.index_bytes, true, t.smooth_angle
+    end
+
     t.id = assert(scene:add(fields))
   end
 
@@ -1256,7 +1265,8 @@ end
 
 local KIND_NAME = { box = "Cube", sphere = "UV Sphere", cylinder = "Cylinder",
                     plane = "Plane", light = "Point light", camera = "Camera",
-                    ico = "Ico Sphere", cone = "Cone", torus = "Torus", grid = "Grid" }
+                    ico = "Ico Sphere", cone = "Cone", torus = "Torus", grid = "Grid",
+                    mesh = "Mesh" }
 
 local function hexcolour(c) return ("#%06x"):format(c & 0xffffff) end
 
@@ -1363,9 +1373,14 @@ local function draw_props(s)
     elseif t.kind == "camera" then
       y = field_row(s, x, y, w, "Focal length", { F(t, "focal", nil, "Focal length") })
       y = field_row(s, x, y, w, "Sensor", { "36 mm" })
+    elseif t.kind == "mesh" then
+      y = field_row(s, x, y, w, "Points", { tostring(#t.vertices // 12) })
+      y = field_row(s, x, y, w, "Auto smooth", { fmt(t.smooth_angle or 30, 0) .. "\u{b0}" })
     end
 
-    if t.id then
+    if t.kind == "mesh" then
+      note(s, x, y + 6, w, ("Its own triangles, %d of them, read from the file: the edges between faces that meet at less than the auto smooth angle are drawn round."):format(scene:triangles(t.id)))
+    elseif t.id then
       y = field_row(s, x, y, w, "Shading", { t.smooth and "Smooth" or "Flat" })
       note(s, x, y + 6, w, ("What the shape was made with stays editable here until it is edited as a mesh. The view draws its %d triangles."):format(scene:triangles(t.id)))
     end
@@ -2007,6 +2022,24 @@ local function open_scene(bytes, file)
   things = {}
 
   local camera
+  local buffers = {}
+
+  -- Each buffer decoded once, in C, and each mesh given its slices of it:
+  -- strings, so undo and Shift D copy them for nothing.
+  for i, text in pairs(loaded.buffers or {}) do
+    buffers[i] = k3.unbase64(text)
+  end
+
+  for _, t in ipairs(loaded.things) do
+    if t.kind == "mesh" then
+      local m, bytes = t.mesh, buffers[t.mesh.buffer]
+
+      t.vertices = bytes:sub(m.point_at + 1, m.point_at + m.points * 12)
+      t.triangles = bytes:sub(m.index_at + 1, m.index_at + m.indices * m.index_bytes)
+      t.index_bytes = m.index_bytes
+      t.mesh = nil
+    end
+  end
 
   for _, t in ipairs(loaded.things) do
     if t.kind == "camera" and not camera then camera = t end

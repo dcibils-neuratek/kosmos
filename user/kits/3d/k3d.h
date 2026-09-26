@@ -39,6 +39,7 @@ enum k3d_kind {
     K3D_CONE,
     K3D_TORUS,
     K3D_GRID,
+    K3D_MESH,            /* triangles given, not made from numbers */
 };
 
 /*
@@ -57,6 +58,35 @@ struct k3d_mesh {
 };
 
 /*
+ * **A texture: a pattern worked out from where a point is** (`k3d_texture.c`),
+ * mixing the base colour towards `colour2` and standing the surface up by
+ * `bump` metres where it is high. Blender's texture nodes, in the numbers
+ * they have: `scale` is how many a metre, `detail` a noise's octaves,
+ * `distortion` how far noise pushes a wood's rings or a marble's veins;
+ * a brick is `ratio` times as long as it is tall, with `mortar` of its
+ * height between, and each row moved `offset` of a brick along.
+ */
+enum k3d_pattern {
+    K3D_PLAIN, K3D_CHECKER, K3D_BRICK, K3D_SHINGLES, K3D_NOISE, K3D_WOOD, K3D_MARBLE
+};
+
+struct k3d_texture {
+    enum k3d_pattern pattern;
+    float colour2[3];       /* linear, as `base` is */
+    float scale, detail, distortion, bump;
+    float mortar, ratio, offset;
+};
+
+/* The pattern at `q`, in the object's own metres, on a surface facing `n` in
+ * the object's own space: how far towards the second colour, and how high,
+ * nought to one. */
+void  k3d_pattern(const struct k3d_texture *t, const float q[3], const float n[3],
+                  float *fac, float *height);
+
+/* Perlin's gradient noise in octaves, about nought and within one. */
+float k3d_noise(const float p[3], float detail);
+
+/*
  * What a surface is made of, for the ray tracer: Blender's Principled names
  * and ranges, cut to the ones Cafesa3D's Material tab has. `base` is linear
  * light, not the sRGB a colour picker shows; the binding converts.
@@ -64,6 +94,7 @@ struct k3d_mesh {
 struct k3d_material {
     float base[3];
     float metallic, rough, trans, ior, emit;
+    struct k3d_texture tex;
 };
 
 /*
@@ -190,6 +221,17 @@ bool               k3d_scene_remove(struct k3d_scene *s, uint32_t id);
 /* A shape's triangles, built from its numbers; false when out of memory. */
 bool     k3d_mesh_build(struct k3d_object *o);
 void     k3d_mesh_free(struct k3d_mesh *m);
+
+/*
+ * **A mesh's own triangles**, for `K3D_MESH`: `nverts` points and `ntris`
+ * triangles of indices into them, wound anticlockwise from outside. Each
+ * corner's normal is the average of the faces round its point that meet
+ * this face at less than `smooth_degrees` - Blender's auto smooth - so a
+ * bevel is round and the edge of a box is sharp in one mesh. False, and
+ * nothing changed, for an index past the points or no memory.
+ */
+bool     k3d_mesh_set(struct k3d_object *o, const float *pos, uint32_t nverts,
+                      const uint32_t *tri, uint32_t ntris, float smooth_degrees);
 uint32_t k3d_triangles(const struct k3d_object *o);
 
 /* Object space to world space, and a normal likewise (unit length). */

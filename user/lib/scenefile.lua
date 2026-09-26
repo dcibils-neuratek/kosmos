@@ -17,14 +17,24 @@
 -- **The file is from outside**, so nothing in it is trusted: every field is
 -- checked for its type and its range, and an object that fails is skipped
 -- and counted rather than handed to the kit, which raises on nonsense.
--- Nodes that are meshes of triangles - another program's glTF - are
--- counted too; reading those is step five's.
+--
+-- **Meshes are read** - Cafesa3D's own, and any other program's whose
+-- buffer is in the file as a `data:` URI and whose mesh is triangles: each
+-- becomes a `mesh` thing naming a buffer and where in it its points and
+-- indices are. The buffers stay base64, in `scene.buffers`, for whoever has
+-- a decoder in C to decode once (`k3.unbase64`); a mesh whose accessors say
+-- more than its buffer holds is skipped, as any other lie would be. A
+-- material's texture - which glTF has no word for - comes from its
+-- `extras.cafesa3d`, held to the ranges the kit holds it to.
 
 local scenefile = {}
 
 local KINDS = { plane = true, box = true, sphere = true, cylinder = true, ico = true,
                 cone = true, torus = true, grid = true }
+local PATTERNS = { plain = true, checker = true, brick = true, shingles = true, noise = true,
+                   wood = true, marble = true }
 local MAX_OBJECTS = 2000
+local MAX_POINTS = 1 << 24
 
 local function number(v, lo, hi)
   return type(v) == "number" and v == v and v >= lo and v <= hi and v or nil
@@ -148,6 +158,29 @@ local function material(doc, index)
     return number(e[field], lo, hi) or default
   end
 
+  -- The texture, each number in the range the kit takes it in; one out of
+  -- range and the surface is plain, which is a look rather than an error.
+  local texture
+  local tx = own.texture
+
+  if type(tx) == "table" and PATTERNS[tx.pattern] then
+    texture = { pattern = tx.pattern, colour2 = hexcolour(tx.colour2) }
+
+    for field, range in pairs({ scale = { 0.01, 1000 }, detail = { 0, 8 },
+                                distortion = { 0, 20 }, bump = { 0, 0.2 },
+                                mortar = { 0, 0.9 }, ratio = { 0.1, 10 },
+                                offset = { 0, 1 } }) do
+      if tx[field] ~= nil then
+        texture[field] = number(tx[field], range[1], range[2])
+
+        if texture[field] == nil then
+          texture = nil
+          break
+        end
+      end
+    end
+  end
+
   local emissive = type(m.emissiveFactor) == "table" and number(m.emissiveFactor[1], 0, 1)
                    and (m.emissiveFactor[1] + (m.emissiveFactor[2] or 0)
                         + (m.emissiveFactor[3] or 0)) > 0
@@ -161,7 +194,92 @@ local function material(doc, index)
     ior = ext_number("KHR_materials_ior", "ior", 1, 3, 1.5),
     emit = emissive and ext_number("KHR_materials_emissive_strength", "emissiveStrength",
                                    0, 1000, 1) or 0,
+    texture = texture,
   }
+end
+
+--------------------------------------------------------------------------
+-- A mesh node: where its points and triangles are in which buffer, every
+-- number held to what the file's own description says it has room for.
+--------------------------------------------------------------------------
+
+-- The base64 of a buffer carried in the file, or nil and why.
+local function embedded(doc, index)
+  local b = type(doc.buffers) == "table" and doc.buffers[index + 1]
+  local uri = type(b) == "table" and b.uri
+
+  if type(uri) ~= "string" then return nil, "a buffer not in the file" end
+
+  local data = uri:match("^data:application/[%w%-]+;base64,(.*)$")
+
+  if not data then return nil, "a buffer not in the file" end
+
+  return data, number(b.byteLength, 0, 1 << 30)
+end
+
+-- An accessor's place: its buffer, where in it, how many and how wide.
+local function accessor(doc, index, want_type, sizes)
+  local a = type(doc.accessors) == "table" and math.type(index) == "integer"
+            and doc.accessors[index + 1]
+
+  if type(a) ~= "table" or a.type ~= want_type or not sizes[a.componentType]
+     or a.sparse ~= nil then
+    return nil
+  end
+
+  local v = type(doc.bufferViews) == "table" and math.type(a.bufferView) == "integer"
+            and doc.bufferViews[a.bufferView + 1]
+  local each = sizes[a.componentType] * (want_type == "VEC3" and 3 or 1)
+
+  if type(v) ~= "table" or math.type(v.buffer) ~= "integer"
+     or (v.byteStride ~= nil and v.byteStride ~= each) then
+    return nil
+  end
+
+  local count = number(a.count, 1, MAX_POINTS * 3)
+  local offset = (number(v.byteOffset or 0, 0, 1 << 30) or -1) + (number(a.byteOffset or 0, 0, 1 << 30) or -1)
+  local length = number(v.byteLength, 0, 1 << 30)
+
+  if not count or math.type(count) ~= "integer" or offset < 0 or not length
+     or (number(a.byteOffset or 0, 0, 1 << 30) or 0) + count * each > length then
+    return nil
+  end
+
+  return { buffer = v.buffer, offset = offset, count = count, bytes = sizes[a.componentType] }
+end
+
+local function mesh_of(doc, index)
+  local m = type(doc.meshes) == "table" and math.type(index) == "integer"
+            and doc.meshes[index + 1]
+  local prim = type(m) == "table" and type(m.primitives) == "table" and m.primitives[1]
+
+  if type(prim) ~= "table" or type(prim.attributes) ~= "table" then
+    return nil, "a mesh with nothing in it"
+  end
+
+  if prim.mode ~= nil and prim.mode ~= 4 then return nil, "a mesh not of triangles" end
+  if #m.primitives > 1 then return nil, "a mesh of several parts" end
+
+  local pos = accessor(doc, prim.attributes.POSITION, "VEC3", { [5126] = 4 })
+  local idx = accessor(doc, prim.indices, "SCALAR", { [5121] = 1, [5123] = 2, [5125] = 4 })
+
+  if not pos or not idx or idx.count % 3 ~= 0 or pos.count > MAX_POINTS then
+    return nil, "a mesh whose accessors do not fit its buffer"
+  end
+
+  if pos.buffer ~= idx.buffer then return nil, "a mesh in two buffers" end
+
+  local data, length = embedded(doc, pos.buffer)
+
+  if not data then return nil, length end
+  if length and (pos.offset + pos.count * 12 > length
+                 or idx.offset + idx.count * idx.bytes > length) then
+    return nil, "a mesh past the end of its buffer"
+  end
+
+  return { buffer = pos.buffer + 1, points = pos.count, point_at = pos.offset,
+           indices = idx.count, index_at = idx.offset, index_bytes = idx.bytes,
+           material = prim.material }
 end
 
 local function name_of(node, fallback)
@@ -222,7 +340,7 @@ function scenefile.from_gltf(doc)
                  and type(doc.extensions.KHR_lights_punctual.lights) == "table"
                  and doc.extensions.KHR_lights_punctual.lights or {}
   local out = { name = type(sc.name) == "string" and sc.name:sub(1, 63) or "Scene",
-                things = {}, skipped = 0, why = {} }
+                things = {}, skipped = 0, why = {}, buffers = {} }
 
   local world = type(doc.extras) == "table" and type(doc.extras.cafesa3d) == "table"
                 and type(doc.extras.cafesa3d.world) == "table" and doc.extras.cafesa3d.world
@@ -305,8 +423,23 @@ function scenefile.from_gltf(doc)
         out.things[#out.things + 1] = { name = name, kind = "camera", loc = loc,
                                         target = target,
                                         focal = number(own.focal, 1, 500) or 50 }
-      elseif math.type(node.mesh) == "integer" then
-        skip(name, "a mesh of triangles (step five)")
+      elseif math.type(node.mesh) == "integer" or own.kind == "mesh" then
+        local where, why = mesh_of(doc, math.type(node.mesh) == "integer" and node.mesh
+                                        or own.mesh)
+
+        if where then
+          local material_index = math.type(own.material) == "integer" and own.material
+                                 or where.material
+
+          out.buffers[where.buffer] = out.buffers[where.buffer] or embedded(doc, where.buffer - 1)
+          out.things[#out.things + 1] = {
+            name = name, kind = "mesh", loc = loc, rot = rot, scale = scale, smooth = true,
+            smooth_angle = number(own.smooth_angle, 0, 180) or 30,
+            mat = material(doc, material_index), mesh = where,
+          }
+        else
+          skip(name, why)
+        end
       end
     end
   end

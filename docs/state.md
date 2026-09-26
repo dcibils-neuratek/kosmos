@@ -307,8 +307,17 @@ ends a process marks it and nudges every sibling out of its wait; a second
 thread leaves as a thread and the first tears down once the rest have
 gone. Three kernel tests a board, two controls. Committed, not pushed.
 
-**Next**: more complex scenes, which Diego asked to see after the push -
-textures, a mesh kind, the three rebuilt. Then the Render tab's numbers
+**Then the complex scenes, built** (26 September, `testing.md` 18.197):
+textures in the 3D Kit (checker, brick, roof tiles, noise, wood, marble,
+with bump), a mesh kind with Blender's auto smooth, glTF meshes read -
+any program's with its buffer in the file - and the three samples rebuilt:
+the house 202 objects, the car 76, the plane 106, lathed, lofted and
+bevelled. Rendered on this Mac and inside Kosmos, and sent to Diego. A
+build bug found on the way: the image had kept the first cut of the
+scenes, because the scene files hung off a stamp by a rule with no recipe.
+**Textures are the tracer's only**: the Solid view shows base colours.
+
+**Next**: the gate, then commit. Then the Render tab's numbers
 editable
 (samples, bounces, clamp, resolution, Preview or Final) and a denoiser;
 then textures, a mesh kind, and the three scenes rebuilt with far more

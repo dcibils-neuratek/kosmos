@@ -45,6 +45,7 @@
  */
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lua.h"
@@ -145,6 +146,127 @@ static bool has(lua_State *L, int t, const char *key)
     yes = !lua_isnil(L, -1);
     lua_pop(L, 1);
     return yes;
+}
+
+static float number(lua_State *L, int t, const char *key, float lo, float hi);
+
+/*
+ * **A mesh's triangles, as glTF keeps them**: `vertices` three little-endian
+ * floats a point, `triangles` three indices a face of `index_bytes` each -
+ * 1, 2 or 4 - and `yup` for points in glTF's Y-up rather than this kit's
+ * Z-up. Strings rather than tables, because a mesh is a buffer and a
+ * table of a hundred thousand numbers is exactly what C over Lua values is
+ * slowest at. Last in `apply`, so a field refused before it leaves no mesh.
+ */
+static void triangles(lua_State *L, struct k3d_object *o, int t)
+{
+    size_t vb, tb, i;
+    const char *v, *tr;
+    lua_Integer ib = 4;
+    float angle = 30, *pos;
+    uint32_t *idx, nverts, ntris;
+    bool yup, ok;
+
+    if (o->kind != K3D_MESH) {
+        luaL_error(L, "only a mesh is given its triangles");
+    }
+
+    lua_getfield(L, t, "vertices");
+    v = luaL_checklstring(L, -1, &vb);
+    lua_getfield(L, t, "triangles");
+    tr = luaL_checklstring(L, -1, &tb);
+    lua_getfield(L, t, "index_bytes");
+    ib = luaL_optinteger(L, -1, 4);
+    lua_getfield(L, t, "yup");
+    yup = lua_toboolean(L, -1);
+    lua_pop(L, 2);
+
+    if (has(L, t, "smooth_angle")) {
+        angle = number(L, t, "smooth_angle", 0, 180);
+    }
+
+    if ((ib != 1 && ib != 2 && ib != 4) || vb == 0 || vb % 12 != 0
+        || tb == 0 || tb % (size_t)(ib * 3) != 0 || vb / 12 > (1u << 24)) {
+        luaL_error(L, "a mesh is three floats a point and three indices a face");
+    }
+
+    nverts = (uint32_t)(vb / 12);
+    ntris = (uint32_t)(tb / (size_t)(ib * 3));
+    pos = malloc(vb);
+    idx = malloc((size_t)ntris * 3 * sizeof(uint32_t));
+
+    if (pos == NULL || idx == NULL) {
+        free(pos);
+        free(idx);
+        luaL_error(L, "no memory for a mesh of %d faces", (int)ntris);
+    }
+
+    memcpy(pos, v, vb);
+
+    /* glTF's Y up is this kit's Z: (x, y, z) there is (x, -z, y) here. */
+    if (yup) {
+        for (i = 0; i < nverts; i++) {
+            float y = pos[i * 3 + 1];
+
+            pos[i * 3 + 1] = -pos[i * 3 + 2];
+            pos[i * 3 + 2] = y;
+        }
+    }
+
+    for (i = 0; i < (size_t)ntris * 3; i++) {
+        const unsigned char *b = (const unsigned char *)tr + i * (size_t)ib;
+
+        idx[i] = ib == 1 ? b[0]
+               : ib == 2 ? (uint32_t)b[0] | (uint32_t)b[1] << 8
+               : (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16
+                 | (uint32_t)b[3] << 24;
+    }
+
+    lua_pop(L, 2);
+    ok = k3d_mesh_set(o, pos, nverts, idx, ntris, angle);
+    free(pos);
+    free(idx);
+
+    if (!ok) {
+        luaL_error(L, "a mesh whose faces name points it does not have");
+    }
+}
+
+/*
+ * **A texture, from `{ pattern = "brick", colour2 = 0xb8b0a4, scale = 13,
+ * bump = 0.004, ... }`** (`k3d_texture.c`). Blender's numbers and ranges,
+ * each held to its range: a mortar of the whole brick, or a bump a metre
+ * deep, is a mistake in whoever asked. What is not given keeps what the
+ * texture had, and `false` takes a texture off.
+ */
+static void texture(lua_State *L, int t, struct k3d_texture *out)
+{
+    static const char *const patterns[] = { "plain", "checker", "brick", "shingles",
+                                            "noise", "wood", "marble", NULL };
+
+    if (!lua_toboolean(L, t)) {
+        out->pattern = K3D_PLAIN;
+        return;
+    }
+
+    luaL_checktype(L, t, LUA_TTABLE);
+    lua_getfield(L, t, "pattern");
+    out->pattern = (enum k3d_pattern)luaL_checkoption(L, -1, NULL, patterns);
+    lua_pop(L, 1);
+
+    if (has(L, t, "colour2")) {
+        lua_getfield(L, t, "colour2");
+        linear((uint32_t)luaL_checkinteger(L, -1), out->colour2);
+        lua_pop(L, 1);
+    }
+
+    if (has(L, t, "scale"))      { out->scale = number(L, t, "scale", 0.01f, 1000); }
+    if (has(L, t, "detail"))     { out->detail = number(L, t, "detail", 0, 8); }
+    if (has(L, t, "distortion")) { out->distortion = number(L, t, "distortion", 0, 20); }
+    if (has(L, t, "bump"))       { out->bump = number(L, t, "bump", 0, 0.2f); }
+    if (has(L, t, "mortar"))     { out->mortar = number(L, t, "mortar", 0, 0.9f); }
+    if (has(L, t, "ratio"))      { out->ratio = number(L, t, "ratio", 0.1f, 10); }
+    if (has(L, t, "offset"))     { out->offset = number(L, t, "offset", 0, 1); }
 }
 
 static float number(lua_State *L, int t, const char *key, float lo, float hi)
@@ -261,7 +383,17 @@ static void apply(lua_State *L, struct k3d_object *o, int t)
         if (has(L, m, "ior"))      { o->mat.ior = number(L, m, "ior", 1, 4); }
         if (has(L, m, "emit"))     { o->mat.emit = number(L, m, "emit", 0, 1000); }
 
+        if (has(L, m, "texture")) {
+            lua_getfield(L, m, "texture");
+            texture(L, lua_gettop(L), &o->mat.tex);
+            lua_pop(L, 1);
+        }
+
         lua_pop(L, 1);
+    }
+
+    if (has(L, t, "vertices") || has(L, t, "triangles")) {
+        triangles(L, o, t);
     }
 }
 
@@ -269,7 +401,8 @@ static int l_add(lua_State *L)
 {
     /* In `enum k3d_kind`'s order, which is what makes the index the kind. */
     static const char *const kinds[] = { "plane", "box", "sphere", "cylinder",
-                                         "ico", "cone", "torus", "grid", NULL };
+                                         "ico", "cone", "torus", "grid", "mesh",
+                                         NULL };
     struct k3d_scene *s = check_scene(L, 1);
     struct k3d_object made, *o;
     uint32_t id;
@@ -725,6 +858,53 @@ static int l_render(lua_State *L)
     return 1;
 }
 
+/*
+ * `k3.unbase64(text)` - the bytes a glTF file's `data:` URI carries, which
+ * is how a scene file keeps its meshes. A loop over bytes, so here rather
+ * than in Lua; anything that is not base64 is refused rather than skipped.
+ */
+static int l_unbase64(lua_State *L)
+{
+    size_t len, i;
+    const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
+    luaL_Buffer b;
+    uint32_t acc = 0;
+    int bits = 0;
+
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i < len; i++) {
+        unsigned c = in[i], v;
+
+        if (c >= 'A' && c <= 'Z') {
+            v = c - 'A';
+        } else if (c >= 'a' && c <= 'z') {
+            v = c - 'a' + 26;
+        } else if (c >= '0' && c <= '9') {
+            v = c - '0' + 52;
+        } else if (c == '+') {
+            v = 62;
+        } else if (c == '/') {
+            v = 63;
+        } else if (c == '=') {
+            break;
+        } else {
+            return luaL_error(L, "not base64 at byte %d", (int)i);
+        }
+
+        acc = (acc << 6) | v;
+        bits += 6;
+
+        if (bits >= 8) {
+            bits -= 8;
+            luaL_addchar(&b, (char)((acc >> bits) & 0xff));
+        }
+    }
+
+    luaL_pushresult(&b);
+    return 1;
+}
+
 static int l_job_gc(lua_State *L)
 {
     job_end(check_job(L, 1));
@@ -817,6 +997,7 @@ void kosmos_3d_kit(lua_State *L)
         { "scene",  l_scene },
         { "view",   l_view },
         { "render", l_render },
+        { "unbase64", l_unbase64 },
         { NULL, NULL }
     };
 

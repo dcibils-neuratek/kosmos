@@ -645,6 +645,254 @@ static void threads(void)
     k3d_scene_free(&s);
 }
 
+/*--------------------------------------------------------------------------
+ * Textures, and a mesh of the kit's own.
+ *------------------------------------------------------------------------*/
+
+/* A wall facing -y, and a floor facing up: which way a surface faces is
+ * what a brick is laid by. */
+static const float WALL[3] = { 0, -1, 0 };
+static const float FLOOR[3] = { 0, 0, 1 };
+
+static void patterns(void)
+{
+    struct k3d_texture t;
+    float fac, h, fac2, h2, lo = 1e9f, hi = -1e9f, sum = 0, jump = 0;
+    char what[160];
+    unsigned seed = 3;
+    int i, same = 1;
+
+    memset(&t, 0, sizeof(t));
+    t.pattern = K3D_CHECKER;
+    t.scale = 2;
+    {
+        float a[3] = { 0.1f, 0.1f, 0.1f }, b[3] = { 0.6f, 0.1f, 0.1f }, c[3] = { 0.6f, 0.6f, 0.1f };
+
+        k3d_pattern(&t, a, WALL, &fac, &h);
+        k3d_pattern(&t, b, WALL, &fac2, &h2);
+        check(fac != fac2, "a checker changes colour half a metre along, at two a metre");
+        k3d_pattern(&t, c, WALL, &fac2, &h2);
+        check(fac == fac2, "and back again half a metre across");
+    }
+
+    /* Bricks 0.1 tall, 0.2 long, a tenth mortar, each row half along. */
+    t.pattern = K3D_BRICK;
+    t.scale = 10;
+    t.ratio = 2;
+    t.mortar = 0.1f;
+    t.offset = 0.5f;
+    {
+        float joint[3] = { 0.1f, 0, 0.1f };      /* on the bed joint between rows */
+        float middle[3] = { 0.1f, 0, 0.05f };    /* the middle of a brick */
+        float head[3] = { 0.2f, 0, 0.05f };      /* the head joint in row 0 */
+        float above[3] = { 0.2f, 0, 0.15f };     /* the same place, row 1: mid-brick */
+
+        k3d_pattern(&t, joint, WALL, &fac, &h);
+        check(fac == 1 && h == 0, "the bed joint between two rows is mortar, and low");
+        k3d_pattern(&t, middle, WALL, &fac, &h);
+        check(fac < 0.2f && h > 0.99f, "the middle of a brick is brick, and high");
+        k3d_pattern(&t, head, WALL, &fac, &h);
+        check(fac == 1, "the joint at the end of a brick is mortar");
+        k3d_pattern(&t, above, WALL, &fac, &h);
+        check(fac < 0.2f && h > 0.99f, "and the row above is half a brick along, so there it "
+              "is the middle of one");
+    }
+
+    /* A floor is paved in x and y: the course is along y, so a point on
+     * the joint between two rows of paving is mortar - where on a wall at
+     * the same height it would be the middle of a brick. */
+    {
+        float paved[3] = { 0, 0.1f, 0.05f };
+
+        k3d_pattern(&t, paved, FLOOR, &fac, &h);
+        check(fac == 1, "a floor is paved in x and y: between two of its rows is mortar");
+        k3d_pattern(&t, paved, WALL, &fac, &h);
+        check(fac < 0.2f, "and on a wall the same point is the middle of a brick");
+    }
+
+    /* Noise: the same for the same point, about nought, within one, and
+     * continuous - a step of a tenth of a millimetre moves it little. */
+    for (i = 0; i < 20000; i++) {
+        float p[3] = { (float)(frand(&seed) * 50 - 25), (float)(frand(&seed) * 50 - 25),
+                       (float)(frand(&seed) * 50 - 25) };
+        float q[3] = { p[0] + 1e-4f, p[1], p[2] };
+        float n = k3d_noise(p, 3), m = k3d_noise(q, 3);
+
+        same = same && n == k3d_noise(p, 3);
+        lo = n < lo ? n : lo;
+        hi = n > hi ? n : hi;
+        sum += n;
+        jump = fabsf(n - m) > jump ? fabsf(n - m) : jump;
+    }
+
+    snprintf(what, sizeof(what), "noise is the same twice, within one, about nought and "
+             "continuous: %.3f to %.3f, mean %.4f, worst step %.5f", (double)lo, (double)hi,
+             (double)(sum / 20000), (double)jump);
+    check(same && lo > -1 && hi < 1 && hi - lo > 0.8f && fabsf(sum / 20000) < 0.05f
+          && jump < 0.01f, what);
+
+    /* Wood: a ring a metre out from the axis at one ring a metre is the
+     * same as two metres out, with no noise to push it. */
+    t.pattern = K3D_WOOD;
+    t.scale = 1;
+    t.distortion = 0;
+    {
+        float a[3] = { 1, 0, 0 }, b[3] = { 0, 2, 5 };
+
+        k3d_pattern(&t, a, WALL, &fac, &h);
+        k3d_pattern(&t, b, WALL, &fac2, &h2);
+        check(fabsf(fac - fac2) < 1e-4f, "wood's rings repeat outwards from its upright");
+    }
+}
+
+/* A floor looked down on, lit from straight above, and how many of its
+ * pixels are each of two colours. */
+static void textured_floor(void)
+{
+    struct k3d_light lamp = { { 0, 0, 30 }, 0.1f, { 1, 1, 1 }, 60000 };
+    struct k3d_render_setup how = camera(LW, LH, 0, 0, 10, 0, 0, 0, 90);
+    struct k3d_scene s;
+    struct k3d_render *r;
+    struct k3d_object *o;
+    int x, y, bright = 0, dark = 0, flat, lit;
+    char what[160];
+
+    how.lights = &lamp;
+    how.nlights = 1;
+
+    k3d_scene_init(&s);
+    o = put(&s, K3D_PLANE, 0, 0, 0);
+    o->size[0] = 40;
+    material(o, 0.8f, 0.8f, 0.8f, 0, 1, 0, 0);
+    o->mat.tex.pattern = K3D_CHECKER;
+    o->mat.tex.scale = 0.5f;                /* squares two metres across */
+    o->mat.tex.colour2[0] = o->mat.tex.colour2[1] = o->mat.tex.colour2[2] = 0.05f;
+    r = k3d_render_new(&s, &how);
+    draw(r);
+    k3d_render_paint(r, picture, LW, true);
+
+    for (y = 0; y < LH; y++) {
+        for (x = 0; x < LW; x++) {
+            int g = (int)((picture[y * LW + x] >> 8) & 0xff);
+
+            bright += g > 150;              /* 0.8 under the lamp */
+            dark += g < 110;                /* 0.05, which tones to about 82 */
+        }
+    }
+
+    snprintf(what, sizeof(what), "a checker floor looked down on is both colours, about "
+             "half each: %d light, %d dark of %d", bright, dark, LW * LH);
+    check(bright > LW * LH / 3 && dark > LW * LH / 3, what);
+    k3d_render_free(r);
+
+    /* A brick wall - a box standing up, as a wall in a scene is, since
+     * bricks course by height - seen face on and lit from beside it: with
+     * bump the mortar is a groove the light cannot reach into, and the wall
+     * is no longer one colour. */
+    k3d_scene_free(&s);
+    k3d_scene_init(&s);
+    o = put(&s, K3D_BOX, 0, 0, 0);
+    o->size[0] = 16;
+    o->size[1] = 0.2f;
+    o->size[2] = 16;
+    material(o, 0.8f, 0.8f, 0.8f, 0, 1, 0, 0);
+    o->mat.tex.pattern = K3D_BRICK;
+    o->mat.tex.scale = 1;                   /* rows a metre tall, to be seen */
+    o->mat.tex.ratio = 2;
+    o->mat.tex.mortar = 0.15f;
+    o->mat.tex.offset = 0.5f;
+    o->mat.tex.colour2[0] = o->mat.tex.colour2[1] = o->mat.tex.colour2[2] = 0.8f;
+    lamp.pos[0] = 40;
+    lamp.pos[1] = -4;
+    lamp.pos[2] = 0;
+    how = camera(LW, LH, 0, -10, 0, 0, 0, 0, 90);
+    how.lights = &lamp;
+    how.nlights = 1;
+
+    for (lit = 0; lit < 2; lit++) {
+        int n = 0, least = 255, most = 0;
+
+        o->mat.tex.bump = lit ? 0.05f : 0;
+        r = k3d_render_new(&s, &how);
+        draw(r);
+        k3d_render_paint(r, picture, LW, true);
+
+        for (y = 8; y < LH - 8; y++) {
+            for (x = 8; x < LW - 8; x++) {
+                int g = (int)((picture[y * LW + x] >> 8) & 0xff);
+
+                least = g < least ? g : least;
+                most = g > most ? g : most;
+                n++;
+            }
+        }
+
+        if (!lit) {
+            flat = most - least;
+        } else {
+            snprintf(what, sizeof(what), "bump makes mortar a groove under a raking light: "
+                     "the wall spans %d levels with it, %d without", most - least, flat);
+            check(most - least > flat + 40, what);
+        }
+
+        (void)n;
+        k3d_render_free(r);
+    }
+
+    k3d_scene_free(&s);
+}
+
+/* The kit's own mesh of a cube, and a box: the same shape, met alike. */
+static void mesh_as_box(void)
+{
+    static const float pos[] = {
+        -1, -1, -1,   1, -1, -1,   1, 1, -1,   -1, 1, -1,
+        -1, -1,  1,   1, -1,  1,   1, 1,  1,   -1, 1,  1,
+    };
+    static const uint32_t tri[] = {
+        0, 2, 1,  0, 3, 2,  4, 5, 6,  4, 6, 7,  0, 1, 5,  0, 5, 4,
+        2, 3, 7,  2, 7, 6,  1, 2, 6,  1, 6, 5,  3, 0, 4,  3, 4, 7,
+    };
+    struct k3d_scene a, b;
+    struct k3d_render *ra, *rb;
+    struct k3d_object *o;
+    unsigned seed = 11;
+    int i, differ = 0, hits = 0;
+    char what[160];
+
+    k3d_scene_init(&a);
+    k3d_scene_init(&b);
+    o = put(&a, K3D_BOX, 0.2f, 0.1f, -0.3f);
+    o->rot[2] = 30;
+    o->scale[0] = 1.5f;
+    o = put(&b, K3D_MESH, 0.2f, 0.1f, -0.3f);
+    o->rot[2] = 30;
+    o->scale[0] = 1.5f;
+    check(k3d_mesh_set(o, pos, 8, tri, 12, 30), "a mesh of a cube is taken");
+    ra = alone(&a);
+    rb = alone(&b);
+
+    for (i = 0; i < 5000; i++) {
+        float or[3], d[3], ta = 0, tb = 0;
+        uint32_t ida, idb;
+        bool ha, hb;
+
+        random_ray(&seed, or, d);
+        ha = k3d_render_first_hit(ra, or, d, &ta, &ida);
+        hb = k3d_render_first_hit(rb, or, d, &tb, &idb);
+        hits += ha;
+        differ += ha != hb || (ha && fabsf(ta - tb) > 1e-3f);
+    }
+
+    snprintf(what, sizeof(what), "a mesh of a cube meets rays where a box does: %d of 5000 "
+             "differ, %d hit", differ, hits);
+    check(differ <= 5 && hits > 1000, what);
+    k3d_render_free(ra);
+    k3d_render_free(rb);
+    k3d_scene_free(&a);
+    k3d_scene_free(&b);
+}
+
 int main(void)
 {
     against_mesh(K3D_BOX, "box", 1e-3f);
@@ -654,6 +902,9 @@ int main(void)
     hierarchy();
     light();
     mirror_and_glass();
+    patterns();
+    textured_floor();
+    mesh_as_box();
     threads();
 
     if (fails) {
@@ -663,6 +914,8 @@ int main(void)
 
     printf("PASS: %d checks on the ray tracer (shapes traced as themselves against their "
            "triangles; the four-wide hierarchy against every triangle; light, shadow, glass, "
-           "a mirror and a lens against the arithmetic; one thread and four alike)\n", checks);
+           "a mirror and a lens against the arithmetic; checker, brick, noise and wood "
+           "worked out, a checker floor in both colours and mortar a groove under raking "
+           "light; a mesh of a cube met where a box is; one thread and four alike)\n", checks);
     return 0;
 }

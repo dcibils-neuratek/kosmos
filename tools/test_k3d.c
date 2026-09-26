@@ -432,10 +432,79 @@ static void rasteriser(void)
     k3d_view_free(&v);
 }
 
+/*--------------------------------------------------------------------------
+ * A mesh's own triangles.
+ *------------------------------------------------------------------------*/
+
+/* A cube two across as a program would give it: eight points shared by
+ * twelve faces, wound anticlockwise from outside. */
+static const float CUBE_POS[] = {
+    -1, -1, -1,   1, -1, -1,   1, 1, -1,   -1, 1, -1,
+    -1, -1,  1,   1, -1,  1,   1, 1,  1,   -1, 1,  1,
+};
+static const uint32_t CUBE_TRI[] = {
+    0, 2, 1,  0, 3, 2,      /* bottom */
+    4, 5, 6,  4, 6, 7,      /* top */
+    0, 1, 5,  0, 5, 4,      /* front, y = -1 */
+    2, 3, 7,  2, 7, 6,      /* back */
+    1, 2, 6,  1, 6, 5,      /* right */
+    3, 0, 4,  3, 4, 7,      /* left */
+};
+
+static void meshes(void)
+{
+    struct k3d_scene s;
+    struct k3d_object *o;
+    uint32_t bad[] = { 0, 1, 8 };
+    int sharp = 1, round = 1;
+    uint32_t i;
+
+    k3d_scene_init(&s);
+    o = k3d_scene_add(&s, K3D_MESH);
+
+    check(k3d_mesh_set(o, CUBE_POS, 8, CUBE_TRI, 12, 30), "a cube's triangles are taken");
+    check(k3d_triangles(o) == 12 && o->mesh.ntris == 12, "and are twelve");
+    check(o->mesh.nedges == 18, "its edges, each once: twelve and six diagonals");
+    check(wound_outwards(o), "every face wound outwards");
+
+    /* At thirty degrees every corner keeps its own face's normal: a cube's
+     * faces meet at ninety, so its edges stay sharp. */
+    for (i = 0; i < o->mesh.nverts; i++) {
+        const float *n = &o->mesh.nrm[i * 3];
+        int axes = (fabsf(n[0]) > 0.999f) + (fabsf(n[1]) > 0.999f) + (fabsf(n[2]) > 0.999f);
+
+        sharp = sharp && axes == 1;
+    }
+
+    check(sharp, "at thirty degrees its edges are sharp: every normal a face's");
+
+    /* At a hundred, the three faces at each corner are averaged. */
+    check(k3d_mesh_set(o, CUBE_POS, 8, CUBE_TRI, 12, 100), "and taken again");
+
+    for (i = 0; i < o->mesh.nverts; i++) {
+        const float *n = &o->mesh.nrm[i * 3];
+
+        round = round && fabsf(fabsf(n[0]) - 0.57735f) < 1e-3f
+                && fabsf(fabsf(n[1]) - 0.57735f) < 1e-3f && fabsf(fabsf(n[2]) - 0.57735f) < 1e-3f;
+    }
+
+    check(round, "at a hundred degrees every corner is the three faces' average");
+
+    check(!k3d_mesh_set(o, CUBE_POS, 8, bad, 1, 30) && o->mesh.ntris == 12,
+          "a face naming a point the mesh has not got is refused, and nothing changes");
+
+    /* Rebuilding it from numbers keeps what it was given. */
+    o->stale = true;
+    check(k3d_mesh_build(o) && o->mesh.ntris == 12, "a mesh is not remade from numbers");
+
+    k3d_scene_free(&s);
+}
+
 int main(void)
 {
     shapes();
     rasteriser();
+    meshes();
 
     if (fails) {
         printf("FAIL: %d of %d checks on the 3D Kit\n", fails, checks + fails);
@@ -446,6 +515,7 @@ int main(void)
            "edges counted; the nearer of two in front whichever came first, the back of a "
            "cube never drawn, the outline two pixels outside the selection, glass seen "
            "through and still picked, Wireframe picking, a line held behind a cube, a floor "
-           "cut at the near plane)\n", checks);
+           "cut at the near plane; a mesh's own triangles, sharp at thirty degrees and "
+           "round at a hundred, its edges once each, a bad index refused)\n", checks);
     return 0;
 }

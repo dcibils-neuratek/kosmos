@@ -562,7 +562,9 @@ def main():
 
         colours = {"House": (reddish, 400), "Car": (reddish, 1500), "Plane": (whiteish, 1500)}
 
-        for row, (name, objects) in enumerate((("House", 18), ("Car", 25), ("Plane", 32))):
+        # The second cut of the samples (`tools/cafesa3d_samples.py`): meshes
+        # of their own and textures, a megabyte of glTF each.
+        for row, (name, objects) in enumerate((("House", 202), ("Car", 76), ("Plane", 106))):
             mark = len(guest.seen)
             click(ox + header["more"][0], oy + header["more"][1])
             opened = said("cafesa3d: more menu at ", mark)
@@ -575,7 +577,7 @@ def main():
             mx, my, mw, rh = (int(v) for v in m.groups())
             click(mx + 24, my + 2 + rh // 2)                         # Open a sample
             click(mx + mw - 2 + 30, my + 2 + 2 + row * rh + rh // 2)   # the scene
-            got = said("cafesa3d: opened ", mark)
+            got = said("cafesa3d: opened ", mark, 120)
             check(got is not None and got.startswith("%s, %d objects" % (name, objects))
                   and got.endswith(", 0 skipped"),
                   "Open a sample, %s did not open all %d of its objects: %r" % (name, objects, got))

@@ -74,6 +74,16 @@ void k3d_object_defaults(struct k3d_object *o, enum k3d_kind kind)
     o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.6038f;
     o->mat.rough = 0.5f;
     o->mat.ior = 1.5f;
+
+    /* No texture, and the numbers one takes if only its pattern is given:
+     * Blender's own for a brick - twice as long as tall, a tenth mortar,
+     * each row half a brick along - and two octaves of noise. */
+    o->mat.tex.pattern = K3D_PLAIN;
+    o->mat.tex.scale = 1.0f;
+    o->mat.tex.detail = 2.0f;
+    o->mat.tex.mortar = 0.1f;
+    o->mat.tex.ratio = 2.0f;
+    o->mat.tex.offset = 0.5f;
 }
 
 struct k3d_object *k3d_scene_add(struct k3d_scene *s, enum k3d_kind kind)
@@ -760,6 +770,10 @@ bool k3d_mesh_build(struct k3d_object *o)
     case K3D_CONE:     ok = build_cone(o, &fresh);     break;
     case K3D_TORUS:    ok = build_torus(o, &fresh);    break;
     case K3D_GRID:     ok = build_grid(o, &fresh);     break;
+    case K3D_MESH:
+        /* Its triangles are what it is: nothing to make them from. */
+        o->stale = false;
+        return true;
     }
 
     if (!ok) {
@@ -786,9 +800,206 @@ uint32_t k3d_triangles(const struct k3d_object *o)
     case K3D_CONE:     return (uint32_t)((o->radius2 > 0 ? 4 : 2) * o->segments);
     case K3D_TORUS:    return (uint32_t)(2 * o->segments * o->rings);
     case K3D_GRID:     return (uint32_t)(2 * o->segments * o->rings);
+    case K3D_MESH:     return o->mesh.ntris;
     }
 
     return 0;
+}
+
+/* An edge, its two points in order, for sorting out the ones two faces
+ * share. */
+struct edge_pair { uint32_t a, b; };
+
+static int edge_order(const void *x, const void *y)
+{
+    const struct edge_pair *p = x, *q = y;
+
+    if (p->a != q->a) {
+        return p->a < q->a ? -1 : 1;
+    }
+
+    return p->b < q->b ? -1 : p->b > q->b ? 1 : 0;
+}
+
+bool k3d_mesh_set(struct k3d_object *o, const float *pos, uint32_t nverts,
+                  const uint32_t *tri, uint32_t ntris, float smooth_degrees)
+{
+    struct k3d_mesh m;
+    float *face = NULL;
+    uint32_t *count = NULL, *start = NULL, *around = NULL;
+    struct edge_pair *edges = NULL;
+    float limit = (float)cos((double)smooth_degrees * 3.14159265358979 / 180);
+    uint32_t i, k, e = 0;
+
+    if (ntris == 0 || nverts == 0 || ntris > (1u << 24)) {
+        return false;
+    }
+
+    for (i = 0; i < ntris * 3; i++) {
+        if (tri[i] >= nverts) {
+            return false;
+        }
+    }
+
+    memset(&m, 0, sizeof(m));
+    m.nverts = ntris * 3;                   /* a corner each: creases need it */
+    m.ntris = ntris;
+    m.pos = malloc((size_t)m.nverts * 3 * sizeof(float));
+    m.nrm = malloc((size_t)m.nverts * 3 * sizeof(float));
+    m.tri = malloc((size_t)ntris * 3 * sizeof(uint32_t));
+    face = malloc((size_t)ntris * 3 * sizeof(float));
+    count = calloc(nverts + 1, sizeof(uint32_t));
+    start = calloc(nverts + 1, sizeof(uint32_t));
+    around = malloc((size_t)ntris * 3 * sizeof(uint32_t));
+    edges = malloc((size_t)ntris * 3 * sizeof(struct edge_pair));
+
+    if (!m.pos || !m.nrm || !m.tri || !face || !count || !start || !around || !edges) {
+        goto fail;
+    }
+
+    /* Each face's normal, as long as twice its area. */
+    for (i = 0; i < ntris; i++) {
+        const float *p0 = &pos[tri[i * 3] * 3], *p1 = &pos[tri[i * 3 + 1] * 3];
+        const float *p2 = &pos[tri[i * 3 + 2] * 3];
+        float u[3] = { p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2] };
+        float v[3] = { p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2] };
+
+        face[i * 3] = u[1] * v[2] - u[2] * v[1];
+        face[i * 3 + 1] = u[2] * v[0] - u[0] * v[2];
+        face[i * 3 + 2] = u[0] * v[1] - u[1] * v[0];
+    }
+
+    /* The faces round each point: counted, then filed. */
+    for (i = 0; i < ntris * 3; i++) {
+        count[tri[i]]++;
+    }
+
+    for (i = 0; i < nverts; i++) {
+        start[i + 1] = start[i] + count[i];
+        count[i] = 0;
+    }
+
+    for (i = 0; i < ntris * 3; i++) {
+        around[start[tri[i]] + count[tri[i]]++] = i / 3;
+    }
+
+    /*
+     * Each corner: its point, and the faces round it within the angle -
+     * each weighed by its own angle at that point, as Blender weighs them.
+     * By area, a cube's corner leant towards whichever faces happened to be
+     * split through it: two triangles of one face touch it, and one of the
+     * next. By angle, a face counts the same however it was cut up.
+     */
+    for (i = 0; i < ntris * 3; i++) {
+        uint32_t v = tri[i], f = i / 3;
+        const float *fn = &face[f * 3];
+        float fl = sqrtf(fn[0] * fn[0] + fn[1] * fn[1] + fn[2] * fn[2]);
+        float n[3] = { 0, 0, 0 }, l;
+
+        for (k = start[v]; k < start[v + 1]; k++) {
+            uint32_t g = around[k], c;
+            const float *gn = &face[g * 3];
+            float gl = sqrtf(gn[0] * gn[0] + gn[1] * gn[1] + gn[2] * gn[2]);
+            const float *p0, *p1, *p2;
+            float e1[3], e2[3], l1, l2, cosa, w;
+
+            if (gl == 0 || (g != f && (fl == 0
+                    || (fn[0] * gn[0] + fn[1] * gn[1] + fn[2] * gn[2]) < limit * fl * gl))) {
+                continue;
+            }
+
+            /* The corner of `g` that is this point, and the angle there. */
+            for (c = 0; c < 3 && tri[g * 3 + c] != v; c++) {
+            }
+
+            p0 = &pos[v * 3];
+            p1 = &pos[tri[g * 3 + (c + 1) % 3] * 3];
+            p2 = &pos[tri[g * 3 + (c + 2) % 3] * 3];
+            e1[0] = p1[0] - p0[0]; e1[1] = p1[1] - p0[1]; e1[2] = p1[2] - p0[2];
+            e2[0] = p2[0] - p0[0]; e2[1] = p2[1] - p0[1]; e2[2] = p2[2] - p0[2];
+            l1 = sqrtf(e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]);
+            l2 = sqrtf(e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2]);
+
+            if (l1 == 0 || l2 == 0) {
+                continue;
+            }
+
+            cosa = (e1[0] * e2[0] + e1[1] * e2[1] + e1[2] * e2[2]) / (l1 * l2);
+            w = (float)acos((double)(cosa < -1 ? -1 : cosa > 1 ? 1 : cosa)) / gl;
+            n[0] += gn[0] * w;
+            n[1] += gn[1] * w;
+            n[2] += gn[2] * w;
+        }
+
+        l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+
+        if (l == 0) {
+            l = 1;
+            n[2] = 1;
+        }
+
+        m.pos[i * 3] = pos[v * 3];
+        m.pos[i * 3 + 1] = pos[v * 3 + 1];
+        m.pos[i * 3 + 2] = pos[v * 3 + 2];
+        m.nrm[i * 3] = n[0] / l;
+        m.nrm[i * 3 + 1] = n[1] / l;
+        m.nrm[i * 3 + 2] = n[2] / l;
+        m.tri[i] = i;
+    }
+
+    /* The edges Wireframe draws: every one once, however many faces share
+     * it, by the points it joins - sorted, and the repeats dropped. */
+    for (i = 0; i < ntris; i++) {
+        for (k = 0; k < 3; k++) {
+            uint32_t a = tri[i * 3 + k], b = tri[i * 3 + (k + 1) % 3];
+
+            edges[e].a = a < b ? a : b;
+            edges[e].b = a < b ? b : a;
+            e++;
+        }
+    }
+
+    qsort(edges, e, sizeof(edges[0]), edge_order);
+    m.edge = malloc((size_t)e * 2 * sizeof(uint32_t));
+
+    if (m.edge == NULL) {
+        goto fail;
+    }
+
+    /* An edge names corners, which are per face now: the first corner found
+     * on each of its points will do, since Wireframe draws positions. */
+    for (i = 0; i < ntris * 3; i++) {
+        count[tri[i]] = i;                  /* a corner of each point */
+    }
+
+    for (i = 0; i < e; i++) {
+        if (i > 0 && edges[i].a == edges[i - 1].a && edges[i].b == edges[i - 1].b) {
+            continue;
+        }
+
+        m.edge[m.nedges * 2] = count[edges[i].a];
+        m.edge[m.nedges * 2 + 1] = count[edges[i].b];
+        m.nedges++;
+    }
+
+    free(face);
+    free(count);
+    free(start);
+    free(around);
+    free(edges);
+    k3d_mesh_free(&o->mesh);
+    o->mesh = m;
+    o->stale = false;
+    return true;
+
+fail:
+    free(face);
+    free(count);
+    free(start);
+    free(around);
+    free(edges);
+    k3d_mesh_free(&m);
+    return false;
 }
 
 /*
