@@ -228,7 +228,8 @@ BIN_LUA := $(wildcard user/bin/apps/*.lua) $(wildcard user/bin/apps/*/*.lua) \
            $(wildcard user/bin/programs/*.lua)
 
 LUA_FILES := user/init/init.lua $(BIN_LUA) \
-             $(wildcard user/lib/*.lua) $(wildcard user/tests/*.lua)
+             $(wildcard user/lib/*.lua) $(wildcard user/lib/translators/*.lua) \
+             $(wildcard user/tests/*.lua)
 
 SRCS := boot/start.S \
         arch/aarch64/vectors.S \
@@ -813,6 +814,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/3d/k3d_raster.c \
              user/kits/3d/k3d_trace.c \
              user/kits/3d/k3d_texture.c \
+             user/kits/3d/k3d_formats.c \
              user/kits/3d/k3d_kosmos.c \
              user/kits/gfx/png.c \
              user/kits/gfx/jpeg.c \
@@ -1791,7 +1793,8 @@ $(HOSTDIR)/test_yuv: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.h
 # The 3D Kit (`roadmap.md` 4l, Cafesa3D): every shape wound outwards and
 # counted, and the rasteriser on scenes small enough to reason about.
 #
-K3D_CORE := user/kits/3d/k3d_mesh.c user/kits/3d/k3d_raster.c user/kits/3d/k3d_texture.c
+K3D_CORE := user/kits/3d/k3d_mesh.c user/kits/3d/k3d_raster.c user/kits/3d/k3d_texture.c \
+            user/kits/3d/k3d_formats.c
 
 $(HOSTDIR)/test_k3d: tools/test_k3d.c $(K3D_CORE) user/kits/3d/k3d.h
 	@mkdir -p $(dir $@)
@@ -2243,12 +2246,21 @@ LITEXL_ROOTED := $(if $(LITEXL),--rooted runtime/upstream/lite-xl/data litexl/)
 SOLAR_DATA := $(shell find user/lib/solar -name '*.lua' 2>/dev/null)
 SOLAR_ROOTED := --rooted user/lib/solar solar/
 
-$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(LITEXL_DATA) $(SOLAR_DATA) \
+#
+# Cafesa3D's translators - one Lua file a format, found by Cafesa3D when it
+# starts (`roadmap.md` 4l, 5c) - under `translators/`, so a new format is a
+# new file here and nothing else.
+#
+TRANSLATORS := $(wildcard user/lib/translators/*.lua)
+TRANSLATORS_ROOTED := --rooted user/lib/translators translators/
+
+$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(LITEXL_DATA) $(SOLAR_DATA) $(TRANSLATORS) \
                     tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
 	    $(LITEXL_ROOTED) $(LITEXL_DATA) \
-	    $(SOLAR_ROOTED) $(SOLAR_DATA)
+	    $(SOLAR_ROOTED) $(SOLAR_DATA) \
+	    $(TRANSLATORS_ROOTED) $(TRANSLATORS)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)

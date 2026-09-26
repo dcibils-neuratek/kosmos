@@ -10101,3 +10101,54 @@ passed in the gate, 100 of 100.
 **At 3440 by 1440**, the size of Diego's monitor, under QEMU with its
 usual 512 MB: F11 made a 3054 by 1364 view, the still life in the middle
 and the Outliner tall enough for a car's twenty-five parts.
+
+## 18.200 Other programs' files: glTF from anywhere, OBJ, STL
+
+Diego, 26 September: "Can we do a blender or other 3d format importer",
+"We could import and export in other formats and we can have these as
+plugins so we can add these in the future".
+
+**glTF as other programs write it**, in `tools/test_scenefile.lua` (82
+checks): nodes inside nodes, each where its parents put it - a wheel a
+metre along a car turned a quarter comes out at (2, -3, 2) turned a
+quarter about Z, and a matrix node inside that where both put it; a
+mirrored node keeping its handedness in a negative size; a mesh of two
+parts as two objects with their own materials, the second's triangles
+unlisted; points interleaved with the rest of a vertex, packed at their
+spacing; a mesh compressed with Draco skipped with its reason; a buffer in
+a file beside the scene named for the caller to read, and one on the
+network, from the root or above the folder refused - opening fetches
+nothing. **The car as a `.glb`** reads as the same scene, mesh bytes and
+all. **Control**: parent and child multiplied the wrong way round, and a
+mirror's handedness dropped - the three checks that should fail, fail.
+
+**STL and OBJ in C** (`k3d_formats.c`), in `tools/test_k3d.c` (12 new
+checks, 119): a binary STL cube is eight points and twelve triangles, its
+corners joined - even with "solid" at the start of its header, which is
+the text form's first word; a degenerate triangle dropped; a text STL
+read; a count that does not match the length refused; an STL written and
+read back at its scale. An OBJ of two objects is two parts under their
+names and materials, a four-cornered face fanned, an index counted back
+from the end, each part holding only its own points; written and read
+back the same; a face naming a point it has not got, and a point of two
+numbers, refused. **Control**: corners not joined, and indices counted
+back one short - six checks fail.
+
+**Translators** (`/lib/translators/stl.lua`, `obj.lua`), found by
+Cafesa3D in /lib and in /home/Translators, and in the Cafesa3D suite: from
+the disk, an STL cube imported as one object, an OBJ's two parts with the
+MTL beside it found (nothing skipped), and a `.glb`'s three parts - nested
+nodes, two parts of one mesh, a part with its triangles unlisted; the
+scene exported as STL - seven objects, 84 bytes and 50 a triangle - and
+imported back as one object. 106 of 106 on each board in the gate, which
+was 39 of 40 with the host suite on its Rosetta hang. **Control**, one
+build, the real image's checksum matched after: the MTL beside an OBJ
+never found, and a `.glb` never recognised - the OBJ comes in with one
+skipped, the `.glb` not at all, and the export after them counts four
+objects where there were seven.
+
+**A suite mistake worth keeping**: the panel's rows were clicked as 24
+pixels apart, which is `theme.metrics.row` in some looks and not this
+one's 32. The first run opened the `.glb` where it meant the broken scene,
+and the Import panel then began in /home, where the first row is a folder
+- so Open entered it, the panel stayed, and everything after it waited.

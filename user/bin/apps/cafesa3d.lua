@@ -2236,78 +2236,164 @@ function SAMPLES.look_from(cam)
   view_name = VIEW_NAME
 end
 
-function SAMPLES.open_scene(bytes, file)
-  local doc, why = json.decode(bytes or "")
+-- A glTF file's bytes - its text, or a binary `.glb` - read as a scene,
+-- every mesh's points and triangles packed as the kit takes them: points
+-- three floats apart wherever the file interleaved them, triangles listed
+-- where it left them implied. `dir` is where a buffer kept in a file
+-- beside the scene is read from. nil and why if it is not a scene.
+function SAMPLES.read(bytes, dir)
+  local doc, why, bin
+
+  if type(bytes) == "string" and bytes:sub(1, 4) == "glTF" then
+    local text
+
+    text, bin = scenefile.from_glb(bytes)
+
+    if text then doc, why = json.decode(text) else why, bin = bin, nil end
+  else
+    doc, why = json.decode(bytes or "")
+  end
+
   local loaded
 
-  if doc then loaded, why = scenefile.from_gltf(doc) end
-
-  if not loaded then
-    print(("cafesa3d: could not open %s: %s"):format(file, tostring(why)))
-    return false
-  end
-
-  will("opened " .. loaded.name)
-
-  for _, t in ipairs(things) do
-    if t.id then scene:remove(t.id) end
-  end
-
-  things = {}
-
-  local camera
-  local buffers = {}
+  if doc then loaded, why = scenefile.from_gltf(doc, bin ~= nil) end
+  if not loaded then return nil, why end
 
   -- Each buffer decoded once, in C, and each mesh given its slices of it:
   -- strings, so undo and Shift D copy them for nothing.
-  for i, text in pairs(loaded.buffers or {}) do
-    buffers[i] = k3.unbase64(text)
+  local buffers, missing = {}, {}
+
+  for i, b in pairs(loaded.buffers or {}) do
+    if b.base64 then
+      buffers[i] = k3.unbase64(b.base64)
+    elseif b.bin then
+      buffers[i] = bin
+    elseif b.file and dir then
+      local got = fs.read(dir .. "/" .. b.file)
+
+      buffers[i] = type(got) == "string" and got or nil
+    end
+
+    if not buffers[i] then missing[i] = b.file or "the file's own" end
   end
+
+  local kept = {}
 
   for _, t in ipairs(loaded.things) do
-    if t.kind == "mesh" then
-      local m, bytes = t.mesh, buffers[t.mesh.buffer]
+    local m = t.mesh
+    local lost
 
-      t.vertices = bytes:sub(m.point_at + 1, m.point_at + m.points * 12)
-      t.triangles = bytes:sub(m.index_at + 1, m.index_at + m.indices * m.index_bytes)
-      t.index_bytes = m.index_bytes
-      t.mesh = nil
+    if m then
+      local pb, ib = buffers[m.buffer], buffers[m.index_buffer or m.buffer]
+
+      if not pb or (m.indices and not ib) then
+        lost = ("its buffer %s could not be read"):format(missing[m.buffer]
+                                                          or missing[m.index_buffer] or "")
+      else
+        if m.point_stride == 12 then
+          t.vertices = pb:sub(m.point_at + 1, m.point_at + m.points * 12)
+        else
+          t.vertices, lost = k3.gather(pb, m.point_at, m.points, m.point_stride, 12)
+        end
+
+        if m.indices then
+          t.triangles = ib:sub(m.index_at + 1, m.index_at + m.indices * m.index_bytes)
+          t.index_bytes = m.index_bytes
+        else
+          t.triangles, t.index_bytes = k3.sequence(m.points), 4
+        end
+
+        t.mesh = nil
+      end
+    end
+
+    if lost then
+      loaded.skipped = loaded.skipped + 1
+      loaded.why[#loaded.why + 1] = ("%s: %s"):format(t.name, lost)
+    else
+      kept[#kept + 1] = t
     end
   end
+
+  loaded.things = kept
+  return loaded
+end
+
+-- What was read, into the scene: in place of it when opening, beside it
+-- when importing - where a file's camera does not move ours, its sky does
+-- not change ours, and every name is made one nothing else has.
+function SAMPLES.take(loaded, file, adding)
+  will((adding and "imported " or "opened ") .. loaded.name)
+
+  if not adding then
+    for _, t in ipairs(things) do
+      if t.id then scene:remove(t.id) end
+    end
+
+    things = {}
+  end
+
+  local camera, added, first = nil, 0, nil
 
   -- What the reader passed and the kit still refuses - a mesh whose faces
   -- name points it has not got, which a mangled file is - is skipped and
   -- said, as the reader's own refusals are. It took Cafesa3D down, and with
   -- it whatever else was open, found by the suite's control on base64.
   for _, t in ipairs(loaded.things) do
-    local ok, why = pcall(add, t)
-
-    if ok then
-      if t.kind == "camera" and not camera then camera = t end
-    else
+    if adding and t.kind == "camera" then
       loaded.skipped = loaded.skipped + 1
-      loaded.why[#loaded.why + 1] = ("%s: %s"):format(t.name, tostring(why):gsub("^.-: ", ""))
+      loaded.why[#loaded.why + 1] = t.name .. ": a camera, and the scene has one"
+    else
+      if adding then t.name = unique(t.name) end
+
+      local ok, why = pcall(add, t)
+
+      if ok then
+        added = added + 1
+        first = first or t
+        if t.kind == "camera" and not camera then camera = t end
+      else
+        loaded.skipped = loaded.skipped + 1
+        loaded.why[#loaded.why + 1] = ("%s: %s"):format(t.name, tostring(why):gsub("^.-: ", ""))
+      end
     end
   end
 
-  if loaded.world then
-    world.zenith = loaded.world.zenith or world.zenith
-    world.horizon = loaded.world.horizon or world.horizon
-    world.strength = loaded.world.strength or world.strength
+  if adding then
+    selected = first or selected
+    print(("cafesa3d: imported %s, %d objects, %d triangles, %d skipped"):format(
+      loaded.name, added, scene:triangles(), loaded.skipped))
+  else
+    if loaded.world then
+      world.zenith = loaded.world.zenith or world.zenith
+      world.horizon = loaded.world.horizon or world.horizon
+      world.strength = loaded.world.strength or world.strength
+    end
+
+    selected = nil
+    FILE.name, FILE.title, FILE.path, FILE.changed, FILE.said = file, loaded.name, nil, false, nil
+    cursor3d = { 0, 0, 0 }
+
+    if camera then SAMPLES.look_from(camera) end
+
+    print(("cafesa3d: opened %s, %d objects, %d triangles, %d skipped"):format(
+      loaded.name, #things, scene:triangles(), loaded.skipped))
   end
-
-  selected = nil
-  FILE.name, FILE.title, FILE.path, FILE.changed, FILE.said = file, loaded.name, nil, false, nil
-  cursor3d = { 0, 0, 0 }
-
-  if camera then SAMPLES.look_from(camera) end
-
-  print(("cafesa3d: opened %s, %d objects, %d triangles, %d skipped"):format(
-    loaded.name, #things, scene:triangles(), loaded.skipped))
 
   for _, w in ipairs(loaded.why) do print("cafesa3d:   skipped " .. w) end
 
   return true
+end
+
+function SAMPLES.open_scene(bytes, file, dir)
+  local loaded, why = SAMPLES.read(bytes, dir)
+
+  if not loaded then
+    print(("cafesa3d: could not open %s: %s"):format(file, tostring(why)))
+    return false
+  end
+
+  return SAMPLES.take(loaded, file)
 end
 
 function SAMPLES.open(file, name)
@@ -2396,7 +2482,7 @@ function FILE.open()
 
   return FILE.panel("open", {
     title = "Open a scene", start = start,
-    filter = function(name) return name:lower():match("%.gltf$") ~= nil end,
+    filter = function(name) return FILE.ext(name) == "gltf" or FILE.ext(name) == "glb" end,
     on_choose = function(path)
       local bytes, why = fs.read(path)
 
@@ -2406,9 +2492,166 @@ function FILE.open()
         return
       end
 
-      if SAMPLES.open_scene(bytes, FILE.base(path)) then
+      -- A `.glb` is somebody else's file: opened, it is read, and saving
+      -- it writes a `.gltf` of Cafesa3D's own rather than over theirs.
+      if SAMPLES.open_scene(bytes, FILE.base(path), FILE.dir(path))
+         and FILE.ext(path) == "gltf" then
         FILE.path = path
       end
+    end,
+  })
+end
+
+function FILE.ext(name) return (name:match("%.(%w+)$") or ""):lower() end
+
+--------------------------------------------------------------------------
+-- Other programs' formats: translators (`roadmap.md` 4l, 5c), as BeOS's
+-- Translation Kit had them - one Lua file a format, in /lib/translators/
+-- and in /home/Translators for those a person adds, each saying what it
+-- reads and writes. Found once, the first time one is wanted. Each is
+-- handed the 3D Kit's four loops over bytes and a way to make a material,
+-- and nothing of the file system: Cafesa3D reads the bytes it translates
+-- and writes what comes back.
+--------------------------------------------------------------------------
+
+FILE.KIT = { read_stl = k3.read_stl, read_obj = k3.read_obj,
+             write_stl = k3.write_stl, write_obj = k3.write_obj }
+
+function FILE.translators()
+  if FILE.found then return FILE.found end
+
+  FILE.found = {}
+
+  local where = {}
+
+  for _, name in ipairs(fs.list("/lib") or {}) do
+    if name:match("^translators/[%w_%-]+%.lua$") then where[#where + 1] = "/lib/" .. name end
+  end
+
+  for _, name in ipairs(fs.list("/home/Translators") or {}) do
+    if name:match("^[%w_%-]+%.lua$") then where[#where + 1] = "/home/Translators/" .. name end
+  end
+
+  for _, path in ipairs(where) do
+    local ok, t = pcall(use, path)
+
+    if ok and type(t) == "table" and type(t.name) == "string"
+       and (type(t.read) == "function" or type(t.write) == "function") then
+      t.reads = type(t.reads) == "table" and t.reads or {}
+      t.writes = type(t.writes) == "table" and t.writes or {}
+      FILE.found[#FILE.found + 1] = t
+      print(("cafesa3d: translator %s from %s, reads %s, writes %s"):format(t.name, path,
+            table.concat(t.reads, " "), table.concat(t.writes, " ")))
+    else
+      print(("cafesa3d: %s is not a translator: %s"):format(path, tostring(t)))
+    end
+  end
+
+  return FILE.found
+end
+
+function FILE.reader_for(ext)
+  for _, t in ipairs(FILE.translators()) do
+    for _, e in ipairs(t.reads) do
+      if e == ext and type(t.read) == "function" then return t end
+    end
+  end
+end
+
+-- Objects out of a file, beside what is there: glTF by Cafesa3D's own
+-- reader, anything else by the translator that reads it.
+function FILE.import()
+  local start = FILE.path and FILE.dir(FILE.path) or "/home"
+
+  return FILE.panel("open", {
+    title = "Import", start = start,
+    filter = function(name)
+      local ext = FILE.ext(name)
+
+      return ext == "gltf" or ext == "glb" or FILE.reader_for(ext) ~= nil
+    end,
+    on_choose = function(path)
+      local bytes, why = fs.read(path)
+      local ext, loaded = FILE.ext(path), nil
+      local stem = FILE.base(path):gsub("%.%w+$", "")
+
+      if type(bytes) == "string" then
+        if ext == "gltf" or ext == "glb" then
+          loaded, why = SAMPLES.read(bytes, FILE.dir(path))
+        else
+          local t = FILE.reader_for(ext)
+          local context = {
+            name = stem,
+            material = function(base) return material(base, "Plastic") end,
+            sidecar = function(name)
+              if type(name) ~= "string" or name:find("/") or name:find("%.%.") then return nil end
+
+              local got = fs.read(FILE.dir(path) .. "/" .. name)
+
+              return type(got) == "string" and got or nil
+            end,
+          }
+          local ok
+
+          ok, loaded, why = pcall(t.read, bytes, FILE.KIT, context)
+
+          if not ok then loaded, why = nil, loaded end
+        end
+      end
+
+      if not loaded then
+        FILE.said = "Not imported: " .. tostring(why or "not a file")
+        print(("cafesa3d: could not import %s: %s"):format(path, tostring(why)))
+        return
+      end
+
+      SAMPLES.take(loaded, FILE.base(path), true)
+    end,
+  })
+end
+
+-- The scene out, in another program's format: every shape and mesh that
+-- shows, each asked for its triangles where they are in the world.
+function FILE.export(t)
+  local ext = t.writes[1]
+  local start = FILE.path and FILE.dir(FILE.path) or FILE.DIR
+
+  if start == FILE.DIR then fs.send(FILE.DIR, { type = "mkdir" }) end
+
+  return FILE.panel("save", {
+    title = "Export as " .. t.name, start = start,
+    name = FILE.name:gsub("%.[%w]+$", "") .. "." .. ext,
+    on_choose = function(path)
+      if FILE.ext(path) ~= ext then path = path .. "." .. ext end
+
+      local objects = {}
+
+      for _, thing in ipairs(things) do
+        if thing.id and not thing.hidden then
+          objects[#objects + 1] = {
+            name = thing.name, mat = thing.mat,
+            world = function(how) return scene:world_triangles(thing.id, how) end,
+          }
+        end
+      end
+
+      local stem = FILE.base(path):gsub("%.%w+$", "")
+      local ok, bytes, beside = pcall(t.write, { name = stem, objects = objects }, FILE.KIT)
+      local done = ok and type(bytes) == "string"
+      local why = ok and "the translator gave nothing to write" or bytes
+
+      if done then done, why = fs.write(path, bytes) end
+
+      for name, extra in pairs(done and type(beside) == "table" and beside or {}) do
+        if type(name) == "string" and not name:find("/") and type(extra) == "string" then
+          fs.write(FILE.dir(path) .. "/" .. name, extra)
+        end
+      end
+
+      FILE.said = done and ("Exported " .. FILE.base(path)) or ("Not exported: " .. tostring(why))
+      print(done and ("cafesa3d: exported %s, %d objects, %d bytes"):format(path, #objects,
+                                                                            #bytes)
+            or ("cafesa3d: could not export %s: %s"):format(path, tostring(why)))
     end,
   })
 end
@@ -2437,6 +2680,16 @@ local function more_menu(x, y)
     samples[#samples + 1] = { text = s_[2], on_choose = function() SAMPLES.open(s_[1], s_[2]) end }
   end
 
+  local exports = {}
+
+  for _, t in ipairs(FILE.translators()) do
+    if #t.writes > 0 and type(t.write) == "function" then
+      exports[#exports + 1] = { text = t.name .. "...", on_choose = function() FILE.export(t) end }
+    end
+  end
+
+  if #exports == 0 then exports[1] = { text = "No translators", disabled = true } end
+
   local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y, {
     { text = "Open a sample", submenu = samples },
     { text = "Tutorial", on_choose = TUTORIAL.open },
@@ -2444,8 +2697,10 @@ local function more_menu(x, y)
       on_choose = function() FULL.toggle() end },
     { separator = true },
     { text = "Open...", on_choose = FILE.open },
+    { text = "Import...", on_choose = FILE.import },
     { text = "Save", on_choose = FILE.save },
     { text = "Save As...", on_choose = FILE.save_as },
+    { text = "Export", submenu = exports },
   })
 
   if m then

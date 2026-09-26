@@ -76,13 +76,95 @@ def broken_scene():
     }
 
 
+#
+# **Other programs' files, to import** (step 5c), named so the panel's rows
+# come in a known order: an STL cube as a printer's library would give it,
+# an OBJ of two parts coloured by the MTL beside it, and a binary glTF with
+# nodes inside nodes, a mesh of two parts and a part whose triangles are
+# not listed - what Sketchfab hands out.
+#
+def stl_cube():
+    import struct
+
+    p = [(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0),
+         (0, 0, 10), (10, 0, 10), (10, 10, 10), (0, 10, 10)]
+    t = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
+         (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
+    out = b"cube".ljust(80, b"\0") + struct.pack("<I", len(t))
+
+    for a, b, c in t:
+        out += struct.pack("<3f", 0, 0, 0) + struct.pack("<9f", *p[a], *p[b], *p[c]) + b"\0\0"
+
+    return out
+
+
+OBJ_TEXT = """mtllib b-parts.mtl
+o Red part
+usemtl Red
+v 0 0 0
+v 1 0 0
+v 1 1 0
+v 0 1 0
+f 1 2 3 4
+o Blue part
+usemtl Blue
+v 3 0 0
+v 4 0 0
+v 3 1 0
+f -3 -2 -1
+"""
+MTL_TEXT = "newmtl Red\nKd 0.8 0.1 0.1\nNs 250\nnewmtl Blue\nKd 0.1 0.2 0.9\n"
+
+
+def glb_parts():
+    import json
+    import struct
+
+    tri = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1, 0)
+    data = tri + struct.pack("<9f", 2, 0, 0, 3, 0, 0, 2, 1, 0) + struct.pack("<3I", 0, 1, 2)
+    doc = {
+        "asset": {"version": "2.0"}, "scene": 0,
+        "scenes": [{"name": "Parts", "nodes": [0]}],
+        "nodes": [{"name": "Parts", "translation": [0, 1, 0], "children": [1, 2]},
+                  {"name": "Body", "mesh": 0},
+                  {"name": "Wheel", "scale": [2, 2, 2], "mesh": 1}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 2, "material": 0},
+                                   {"attributes": {"POSITION": 1}, "indices": 2, "material": 1}]},
+                   {"primitives": [{"attributes": {"POSITION": 0}}]}],
+        "materials": [{"pbrMetallicRoughness": {"baseColorFactor": [1, 0.5, 0, 1]}},
+                      {"pbrMetallicRoughness": {"baseColorFactor": [0, 0.5, 1, 1]}}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                      {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3"},
+                      {"bufferView": 2, "componentType": 5125, "count": 3, "type": "SCALAR"}],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36},
+                        {"buffer": 0, "byteOffset": 36, "byteLength": 36},
+                        {"buffer": 0, "byteOffset": 72, "byteLength": 12}],
+        "buffers": [{"byteLength": len(data)}],
+    }
+    text = json.dumps(doc).encode()
+    text += b" " * ((4 - len(text) % 4) % 4)
+    data += b"\0" * ((4 - len(data) % 4) % 4)
+
+    return (struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(text) + 8 + len(data))
+            + struct.pack("<I4s", len(text), b"JSON") + text
+            + struct.pack("<I4s", len(data), b"BIN\0") + data)
+
+
 with open(BROKEN, "w") as f:
     import json as _json
     _json.dump(broken_scene(), f)
 
+IMPORTS = {"a-cube.stl": stl_cube(), "b-parts.obj": OBJ_TEXT.encode(),
+           "b-parts.mtl": MTL_TEXT.encode(), "x-parts.glb": glb_parts()}
+
+for _name, _bytes in IMPORTS.items():
+    with open(os.path.join(WORK, _name), "wb") as f:
+        f.write(_bytes)
+
 subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
                 os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "64",
-                BROKEN + ":/home/Scenes/zz-broken.gltf"],
+                BROKEN + ":/home/Scenes/zz-broken.gltf"]
+               + ["%s:/home/Scenes/%s" % (os.path.join(WORK, n), n) for n in IMPORTS],
                check=True, capture_output=True, cwd=os.path.dirname(HERE))
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -955,9 +1037,10 @@ def main():
 
         if m:
             px, py = int(m.group(1)), int(m.group(2))
-            # The second row: the list starts under its header, a line of
-            # text and four pixels below the trail's 34, and a row is 24.
-            click(px + 208 + 60, py + 34 + 26 + 24 + 12)
+            # The third row - plane.gltf and x-parts.glb before it: the list
+            # starts under its header, a line of text and four pixels below
+            # the trail's 34, and a row is the look's 32 (`theme.lua`).
+            click(px + 208 + 60, py + 34 + 26 + 2 * 32 + 16)
             click(px + 580, py + 370)                            # Open
 
         got = said("cafesa3d: opened ", mark, 60) or ""
@@ -966,6 +1049,71 @@ def main():
         check(said("cafesa3d:   skipped ", mark, 10)
               == "Tri: a mesh whose faces name points it does not have",
               "the skipped triangle was not named with why")
+
+        # **Importing and exporting** (step 5c), through the dots' Import...
+        # and Export, into the broken scene now open: the STL cube, the OBJ's
+        # two parts with the MTL beside them found, and the .glb's three
+        # parts; then the lot exported as STL - a binary STL is 84 bytes and
+        # 50 a triangle - and that file imported back.
+        def dots_row(i):
+            mark_ = len(guest.seen)
+            click(ox + header["more"][0], oy + header["more"][1])
+            got_ = said("cafesa3d: more menu at ", mark_)
+            m_ = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", got_ or "")
+
+            if not m_:
+                return None
+
+            mx_, my_, mw_, rh_ = (int(v) for v in m_.groups())
+            click(mx_ + 24, my_ + 2 + i * rh_ + rh_ // 2)
+            return mx_, my_, mw_, rh_
+
+        def import_row(row, since):
+            at_ = said("cafesa3d: open panel at ", since, 30)
+            m_ = re.match(r"(\d+),(\d+)", at_ or "")
+
+            if m_:
+                px_, py_ = int(m_.group(1)), int(m_.group(2))
+                click(px_ + 208 + 60, py_ + 34 + 26 + (row - 1) * 32 + 16)
+                click(px_ + 580, py_ + 370)                          # Open
+
+        found = said("cafesa3d: translator STL from ", mark, 1) or ""
+
+        for row, name, want in ((1, "a-cube", "1 objects"), (2, "b-parts", "2 objects"),
+                                (4, "Parts", "3 objects")):
+            mark = len(guest.seen)
+            dots_row(5)                                            # Import...
+            import_row(row, mark)
+            got = said("cafesa3d: imported ", mark, 60) or ""
+            check(got.startswith("%s, %s, " % (name, want)) and got.endswith(", 0 skipped"),
+                  "importing %s did not bring in %s with nothing skipped: %r" % (name, want, got))
+
+        found = found or said("cafesa3d: translator STL from ", 0, 1) or ""
+        check(found.startswith("/lib/translators/stl.lua, reads stl, writes stl"),
+              "the STL translator was not found in /lib/translators: %r" % found)
+
+        mark = len(guest.seen)
+        opened = dots_row(8)                                       # Export
+
+        if opened:
+            mx, my, mw, rh = opened
+            click(mx + mw - 2 + 30, my + 2 + 8 * rh + 2 + rh + rh // 2)    # STL...
+            button = panel_button("save", mark)
+
+            if button:
+                click(*button)
+
+        got = said("cafesa3d: exported ", mark, 60) or ""
+        m = re.match(r"/home/Scenes/zz-broken\.stl, 7 objects, (\d+) bytes$", got)
+        check(m is not None and (int(m.group(1)) - 84) % 50 == 0 and int(m.group(1)) > 84,
+              "Export, STL did not write the scene's seven objects as a binary STL: %r" % got)
+
+        mark = len(guest.seen)
+        dots_row(5)
+        import_row(6, mark)
+        got = said("cafesa3d: imported ", mark, 60) or ""
+        check(got.startswith("zz-broken, 1 objects, ") and got.endswith(", 0 skipped"),
+              "the exported STL did not come back in as one object: %r" % got)
 
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,
@@ -997,7 +1145,8 @@ def main():
           "Rendered on every processor and F12 through its camera, each first pass drawn, "
           "and the main window's faces untouched by the second; F11 to full screen with "
           "the scene and the render carried over and a click landing, and back; a scene "
-          "with a broken mesh opened with that mesh skipped and named)" % checks)
+          "with a broken mesh opened with that mesh skipped and named; an STL, an OBJ with "
+          "its MTL and a .glb imported, the scene exported as STL and imported back)" % checks)
     return 0
 
 

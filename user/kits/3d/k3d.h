@@ -330,4 +330,45 @@ uint32_t k3d_render_paint(struct k3d_render *r, uint32_t *px, size_t pitch, bool
 bool     k3d_render_first_hit(const struct k3d_render *r, const float o[3],
                               const float d[3], float *t, uint32_t *id);
 
+/*
+ * **Other programs' files, as triangles** (`k3d_formats.c`): STL and
+ * Wavefront OBJ, read into points and triangles and written from them.
+ * Every reader answers NULL, or a sentence saying why not - the file is
+ * from outside and is trusted for nothing.
+ */
+struct k3d_soup {               /* points, three floats each, and triangles */
+    float    *pos;
+    uint32_t *tri;
+    uint32_t  npos, ntri;
+};
+
+void k3d_soup_free(struct k3d_soup *s);
+
+/* STL, binary or text. A corner at exactly the place of another is the
+ * same point, so a surface is joined and can be drawn round. Points as the
+ * file has them: Z up, in whatever unit it was drawn in. */
+const char    *k3d_stl_read(const unsigned char *bytes, size_t len, struct k3d_soup *out);
+
+/* Binary STL of `n` soups, every point times `scale`; malloc'd, `*len`
+ * long, or NULL for no memory. */
+unsigned char *k3d_stl_write(const struct k3d_soup *soups, size_t n, float scale, size_t *len);
+
+/* OBJ: a part for each run of faces under one name and one material, each
+ * with only the points it uses. Y up, as OBJ is. */
+struct k3d_obj_part {
+    char name[64], material[64];
+    struct k3d_soup soup;
+};
+
+struct k3d_obj {
+    struct k3d_obj_part *parts;
+    size_t nparts;
+    char   mtllib[128];         /* the materials' file, if it names one */
+};
+
+const char *k3d_obj_read(const char *text, size_t len, struct k3d_obj *out);
+void        k3d_obj_free(struct k3d_obj *o);
+char       *k3d_obj_write(const struct k3d_obj_part *parts, size_t n, const char *mtllib,
+                          size_t *len);
+
 #endif

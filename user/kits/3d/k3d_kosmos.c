@@ -464,6 +464,71 @@ static int l_remove(lua_State *L)
 }
 
 /* One object's triangles, from its numbers; or every shown object's. */
+/*
+ * `scene:world_triangles(id [, "yup"])` -> points, triangles: an object's
+ * triangles where they are in the world, for exporting. Z up as this scene
+ * is, or glTF's and OBJ's Y up when asked. A mirrored object - a scale
+ * below nought an odd number of times - has its triangles turned round, so
+ * they still face outwards once the mirror is baked in.
+ */
+static int l_world_triangles(lua_State *L)
+{
+    struct k3d_scene *s = check_scene(L, 1);
+    struct k3d_object *o = find(L, s, 2);
+    bool yup = lua_isstring(L, 3) && strcmp(lua_tostring(L, 3), "yup") == 0;
+    int below = (o->scale[0] < 0) + (o->scale[1] < 0) + (o->scale[2] < 0);
+    bool flip = (below & 1) != 0;
+    float m[12];
+    luaL_Buffer b;
+    uint32_t i;
+
+    if (o->kind != K3D_MESH && (o->stale || o->mesh.pos == NULL)) {
+        if (!k3d_mesh_build(o)) return luaL_error(L, "no memory for its triangles");
+        o->stale = false;
+    }
+
+    k3d_object_matrix(o, m);
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i < o->mesh.nverts; i++) {
+        const float *p = &o->mesh.pos[i * 3];
+        float w[3];
+        int k;
+
+        for (k = 0; k < 3; k++) {
+            w[k] = m[k * 4] * p[0] + m[k * 4 + 1] * p[1] + m[k * 4 + 2] * p[2] + m[k * 4 + 3];
+        }
+
+        if (yup) {
+            float y = w[1];
+
+            w[1] = w[2];
+            w[2] = -y;
+        }
+
+        luaL_addlstring(&b, (const char *)w, 12);
+    }
+
+    luaL_pushresult(&b);
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i < o->mesh.ntris; i++) {
+        uint32_t t[3] = { o->mesh.tri[i * 3], o->mesh.tri[i * 3 + 1], o->mesh.tri[i * 3 + 2] };
+
+        if (flip) {
+            uint32_t x = t[1];
+
+            t[1] = t[2];
+            t[2] = x;
+        }
+
+        luaL_addlstring(&b, (const char *)t, 12);
+    }
+
+    luaL_pushresult(&b);
+    return 2;
+}
+
 static int l_triangles(lua_State *L)
 {
     struct k3d_scene *s = check_scene(L, 1);
@@ -981,6 +1046,235 @@ static int l_bounds(lua_State *L)
     return 6;
 }
 
+/*
+ * `k3.gather(bytes, offset, count, stride, width)` - `count` pieces of
+ * `width` bytes, `stride` apart from `offset`, packed together: a mesh's
+ * points out of a buffer where each sits among the rest of its vertex, as
+ * many programs write them. nil and why for pieces the bytes do not hold.
+ */
+static int l_gather(lua_State *L)
+{
+    size_t len;
+    const char *in = luaL_checklstring(L, 1, &len);
+    lua_Integer offset = luaL_checkinteger(L, 2), count = luaL_checkinteger(L, 3);
+    lua_Integer stride = luaL_checkinteger(L, 4), width = luaL_checkinteger(L, 5);
+    luaL_Buffer b;
+    lua_Integer i;
+
+    if (offset < 0 || count < 0 || width <= 0 || stride < width || count > (1 << 26)
+        || (count > 0 && (uint64_t)offset + (uint64_t)(count - 1) * (uint64_t)stride
+                         + (uint64_t)width > len)) {
+        lua_pushnil(L);
+        lua_pushstring(L, "points past the end of their buffer");
+        return 2;
+    }
+
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i < count; i++) {
+        luaL_addlstring(&b, in + offset + i * stride, (size_t)width);
+    }
+
+    luaL_pushresult(&b);
+    return 1;
+}
+
+/* `k3.sequence(n)` - 0, 1, 2 ... n - 1 as little-endian 32-bit indices:
+ * the triangles of a mesh that lists none, every three points one. */
+static int l_sequence(lua_State *L)
+{
+    lua_Integer n = luaL_checkinteger(L, 1), i;
+    luaL_Buffer b;
+
+    if (n < 0 || n > (1 << 26)) return luaL_error(L, "%d is not a number of points", (int)n);
+
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i < n; i++) {
+        char le[4] = { (char)(i & 0xff), (char)((i >> 8) & 0xff), (char)((i >> 16) & 0xff),
+                       (char)((i >> 24) & 0xff) };
+
+        luaL_addlstring(&b, le, 4);
+    }
+
+    luaL_pushresult(&b);
+    return 1;
+}
+
+/* A soup's points and triangles as two strings, three floats a point and
+ * three little-endian uint32 a triangle - the shape a mesh thing keeps. */
+static void push_soup(lua_State *L, const struct k3d_soup *s)
+{
+    lua_pushlstring(L, (const char *)s->pos, (size_t)s->npos * 12);
+    lua_pushlstring(L, (const char *)s->tri, (size_t)s->ntri * 12);
+}
+
+/*
+ * `k3.read_stl(bytes)` -> points, triangles, or nil and why. The points
+ * come out as a mesh here keeps them, glTF's Y up - STL is Z up, as this
+ * scene is, so (x, y, z) is written (x, z, -y) for the kit to take back.
+ */
+static int l_read_stl(lua_State *L)
+{
+    size_t len;
+    const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
+    struct k3d_soup s;
+    const char *why = k3d_stl_read(in, len, &s);
+    uint32_t i;
+
+    if (why) {
+        lua_pushnil(L);
+        lua_pushstring(L, why);
+        return 2;
+    }
+
+    for (i = 0; i < s.npos; i++) {
+        float y = s.pos[i * 3 + 1];
+
+        s.pos[i * 3 + 1] = s.pos[i * 3 + 2];
+        s.pos[i * 3 + 2] = -y;
+    }
+
+    push_soup(L, &s);
+    k3d_soup_free(&s);
+    return 2;
+}
+
+/* `k3.read_obj(text)` -> { mtllib, parts = { { name, material, points,
+ * triangles }, ... } }, or nil and why. OBJ is Y up already. */
+static int l_read_obj(lua_State *L)
+{
+    size_t len, i;
+    const char *in = luaL_checklstring(L, 1, &len);
+    struct k3d_obj o;
+    const char *why = k3d_obj_read(in, len, &o);
+
+    if (why) {
+        lua_pushnil(L);
+        lua_pushstring(L, why);
+        return 2;
+    }
+
+    lua_createtable(L, 0, 2);
+    lua_pushstring(L, o.mtllib);
+    lua_setfield(L, -2, "mtllib");
+    lua_createtable(L, (int)o.nparts, 0);
+
+    for (i = 0; i < o.nparts; i++) {
+        lua_createtable(L, 0, 4);
+        lua_pushstring(L, o.parts[i].name);
+        lua_setfield(L, -2, "name");
+        lua_pushstring(L, o.parts[i].material);
+        lua_setfield(L, -2, "material");
+        push_soup(L, &o.parts[i].soup);
+        lua_setfield(L, -3, "triangles");
+        lua_setfield(L, -2, "points");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    lua_setfield(L, -2, "parts");
+    k3d_obj_free(&o);
+    return 1;
+}
+
+/* A soup out of a Lua table { points = ..., triangles = ... }; the strings
+ * stay the table's, so the soup is only borrowed while the table lives. */
+static void soup_of(lua_State *L, int t, struct k3d_soup *s)
+{
+    size_t np, nt;
+    const char *p, *tr;
+
+    lua_getfield(L, t, "points");
+    lua_getfield(L, t, "triangles");
+    p = luaL_checklstring(L, -2, &np);
+    tr = luaL_checklstring(L, -1, &nt);
+    lua_pop(L, 2);
+
+    if (np % 12 || nt % 12) luaL_error(L, "points and triangles are twelve bytes each");
+
+    s->pos = (float *)(uintptr_t)p;
+    s->tri = (uint32_t *)(uintptr_t)tr;
+    s->npos = (uint32_t)(np / 12);
+    s->ntri = (uint32_t)(nt / 12);
+
+    {
+        uint32_t i;
+
+        for (i = 0; i < s->ntri * 3; i++) {
+            uint32_t v;
+
+            memcpy(&v, tr + i * 4, 4);
+
+            if (v >= s->npos) luaL_error(L, "a triangle naming a point there is not");
+        }
+    }
+}
+
+/* `k3.write_stl(parts, scale)` -> the bytes of a binary STL of every part. */
+static int l_write_stl(lua_State *L)
+{
+    lua_Integer n, i;
+    struct k3d_soup *soups;
+    float scale = (float)luaL_optnumber(L, 2, 1);
+    unsigned char *out;
+    size_t len;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    n = (lua_Integer)lua_rawlen(L, 1);
+    soups = lua_newuserdatauv(L, (size_t)(n > 0 ? n : 1) * sizeof(*soups), 0);
+
+    for (i = 0; i < n; i++) {
+        lua_rawgeti(L, 1, i + 1);
+        luaL_checktype(L, -1, LUA_TTABLE);
+        soup_of(L, lua_gettop(L), &soups[i]);
+        lua_pop(L, 1);
+    }
+
+    out = k3d_stl_write(soups, (size_t)n, scale, &len);
+
+    if (!out) return luaL_error(L, "no memory for the STL");
+
+    lua_pushlstring(L, (const char *)out, len);
+    free(out);
+    return 1;
+}
+
+/* `k3.write_obj(parts, mtllib)` -> the text of an OBJ of every part, each
+ * `{ name, material, points, triangles }`. */
+static int l_write_obj(lua_State *L)
+{
+    lua_Integer n, i;
+    struct k3d_obj_part *parts;
+    const char *mtllib = luaL_optstring(L, 2, NULL);
+    char *out;
+    size_t len;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    n = (lua_Integer)lua_rawlen(L, 1);
+    parts = lua_newuserdatauv(L, (size_t)(n > 0 ? n : 1) * sizeof(*parts), 0);
+    memset(parts, 0, (size_t)(n > 0 ? n : 1) * sizeof(*parts));
+
+    for (i = 0; i < n; i++) {
+        lua_rawgeti(L, 1, i + 1);
+        luaL_checktype(L, -1, LUA_TTABLE);
+        lua_getfield(L, -1, "name");
+        lua_getfield(L, -2, "material");
+        snprintf(parts[i].name, sizeof(parts[i].name), "%s", luaL_optstring(L, -2, "Object"));
+        snprintf(parts[i].material, sizeof(parts[i].material), "%s", luaL_optstring(L, -1, ""));
+        lua_pop(L, 2);
+        soup_of(L, lua_gettop(L), &parts[i].soup);
+        lua_pop(L, 1);
+    }
+
+    out = k3d_obj_write(parts, (size_t)n, mtllib, &len);
+
+    if (!out) return luaL_error(L, "no memory for the OBJ");
+
+    lua_pushlstring(L, out, len);
+    free(out);
+    return 1;
+}
+
 static int l_job_gc(lua_State *L)
 {
     job_end(check_job(L, 1));
@@ -1050,6 +1344,7 @@ void kosmos_3d_kit(lua_State *L)
         { "set",       l_set },
         { "remove",    l_remove },
         { "triangles", l_triangles },
+        { "world_triangles", l_world_triangles },
         { NULL, NULL }
     };
     static const luaL_Reg view_methods[] = {
@@ -1076,6 +1371,12 @@ void kosmos_3d_kit(lua_State *L)
         { "unbase64", l_unbase64 },
         { "base64", l_base64 },
         { "bounds", l_bounds },
+        { "gather", l_gather },
+        { "sequence", l_sequence },
+        { "read_stl", l_read_stl },
+        { "read_obj", l_read_obj },
+        { "write_stl", l_write_stl },
+        { "write_obj", l_write_obj },
         { NULL, NULL }
     };
 

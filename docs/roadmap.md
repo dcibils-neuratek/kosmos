@@ -1282,6 +1282,15 @@ processors, and still what follows USB:
       - **Not `.blend`**: Blender's own file is its memory written out and
         changes with every version; Blender exports glTF faithfully, and
         that is the way in.
+      **First part DONE on 26 September** (`testing.md` 18.200): glTF as
+      other programs write it - nested nodes, several parts a mesh,
+      unlisted triangles, interleaved points, a buffer beside the file - and
+      `.glb`, opened or imported; OBJ with its MTL, and STL, imported and
+      exported through `/lib/translators/`, their loops over bytes in the
+      3D Kit (`k3d_formats.c`). **Import...** adds to the scene, **Export**
+      writes it. **Next here**: FBX through `ufbx`, and pictures on
+      materials (image textures), which is what most downloaded models
+      wear and none of this reads yet.
    5d. **TO DESIGN - rendering on several machines.** Diego, 26 September:
       "What if we have a cluster of kosmos machines with cafesa installed
       and we could use these machines as a rendering node", "a main node and

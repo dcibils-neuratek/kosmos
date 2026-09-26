@@ -500,11 +500,151 @@ static void meshes(void)
     k3d_scene_free(&s);
 }
 
+/*--------------------------------------------------------------------------
+ * Other programs' files (`k3d_formats.c`): STL and OBJ, read and written.
+ *------------------------------------------------------------------------*/
+
+/* A unit cube as STL would carry it: twelve triangles, every corner its
+ * own three floats, so eight points thirty-six times over. */
+static const float CUBE[8][3] = {
+    { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 0, 1, 0 },
+    { 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 }, { 0, 1, 1 },
+};
+static const int CUBE_TRIS[12][3] = {
+    { 0, 2, 1 }, { 0, 3, 2 }, { 4, 5, 6 }, { 4, 6, 7 }, { 0, 1, 5 }, { 0, 5, 4 },
+    { 1, 2, 6 }, { 1, 6, 5 }, { 2, 3, 7 }, { 2, 7, 6 }, { 3, 0, 4 }, { 3, 4, 7 },
+};
+
+static void put32(unsigned char *b, unsigned v)
+{
+    b[0] = (unsigned char)v; b[1] = (unsigned char)(v >> 8);
+    b[2] = (unsigned char)(v >> 16); b[3] = (unsigned char)(v >> 24);
+}
+
+static size_t stl_cube(unsigned char *out, const char *header, int degenerate)
+{
+    int t, c, n = 12 + degenerate;
+
+    memset(out, 0, 84);
+    memcpy(out, header, strlen(header));
+    put32(out + 80, (unsigned)n);
+
+    for (t = 0; t < n; t++) {
+        for (c = 0; c < 3; c++) {
+            const float *p = CUBE[t < 12 ? CUBE_TRIS[t][c] : 0];
+
+            memcpy(out + 84 + t * 50 + 12 + c * 12, p, 12);
+        }
+    }
+
+    return 84 + (size_t)n * 50;
+}
+
+static void formats(void)
+{
+    static unsigned char buf[84 + 50 * 16];
+    struct k3d_soup s;
+    const char *why;
+    size_t len;
+
+    /* Binary, even with "solid" at the start of its header, which is the
+     * text form's first word - the count is what decides. */
+    len = stl_cube(buf, "solid but binary", 0);
+    why = k3d_stl_read(buf, len, &s);
+    check(why == NULL && s.npos == 8 && s.ntri == 12,
+          "a binary STL cube is eight points and twelve triangles, its corners joined");
+    k3d_soup_free(&s);
+
+    len = stl_cube(buf, "cube", 1);
+    why = k3d_stl_read(buf, len, &s);
+    check(why == NULL && s.ntri == 12, "a triangle with two corners in one place is dropped");
+
+    {
+        size_t out_len;
+        unsigned char *out = k3d_stl_write(&s, 1, 2.0f, &out_len);
+        struct k3d_soup back;
+
+        check(out && out_len == 84 + 12 * 50 && k3d_stl_read(out, out_len, &back) == NULL
+              && back.npos == 8 && back.ntri == 12 && back.pos[3] == 2.0f,
+              "an STL written and read again is the same cube, at the scale it was written");
+        k3d_soup_free(&back);
+        free(out);
+    }
+
+    k3d_soup_free(&s);
+
+    len = stl_cube(buf, "cube", 0);
+    check(k3d_stl_read(buf, len - 1, &s) != NULL, "an STL whose count does not match is refused");
+
+    {
+        const char *text = "solid t\n facet normal 0 0 1\n  outer loop\n   vertex 0 0 0\n"
+                           "   vertex 1 0 0\n   vertex 0 1 0\n  endloop\n endfacet\n"
+                           " facet normal 0 0 1\n  outer loop\n   vertex 1 0 0\n"
+                           "   vertex 1 1 0\n   vertex 0 1 0\n  endloop\n endfacet\nendsolid t\n";
+
+        why = k3d_stl_read((const unsigned char *)text, strlen(text), &s);
+        check(why == NULL && s.npos == 4 && s.ntri == 2, "a text STL square is four points");
+        k3d_soup_free(&s);
+        why = k3d_stl_read((const unsigned char *)"solid x\n vertex 1 2\n", 20, &s);
+        check(why != NULL, "a text STL vertex of two numbers is refused");
+    }
+
+    /* OBJ: two objects, a square fanned into two triangles, texture and
+     * normal numbers ignored, an index counted back from the end, and each
+     * part given only the points it uses. */
+    {
+        const char *text =
+            "# a test\nmtllib paint.mtl\n"
+            "o Square\nusemtl Red\n"
+            "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+            "vt 0 0\nvn 0 0 1\n"
+            "f 1/1/1 2/1/1 3/1/1 4/1/1\n"
+            "o Triangle\nusemtl Blue\n"
+            "v 5 0 0\nv 6 0 0\nv 5 1 0\n"
+            "f -3 -2 -1\n";
+        struct k3d_obj o;
+
+        why = k3d_obj_read(text, strlen(text), &o);
+        check(why == NULL && o.nparts == 2 && strcmp(o.mtllib, "paint.mtl") == 0,
+              "an OBJ of two objects is two parts, and names its materials' file");
+        check(why == NULL && strcmp(o.parts[0].name, "Square") == 0
+              && strcmp(o.parts[0].material, "Red") == 0 && o.parts[0].soup.ntri == 2
+              && o.parts[0].soup.npos == 4,
+              "a four-cornered face is two triangles, under its object's name and material");
+        check(why == NULL && strcmp(o.parts[1].name, "Triangle") == 0
+              && o.parts[1].soup.npos == 3 && o.parts[1].soup.pos[0] == 5.0f,
+              "an index counted back from the end, and a part holding only its own points");
+
+        if (why == NULL) {
+            size_t out_len;
+            char *out = k3d_obj_write(o.parts, o.nparts, "paint.mtl", &out_len);
+            struct k3d_obj back;
+
+            check(out && k3d_obj_read(out, out_len, &back) == NULL && back.nparts == 2
+                  && back.parts[0].soup.ntri == 2 && back.parts[1].soup.pos[3] == 6.0f
+                  && strcmp(back.parts[1].material, "Blue") == 0
+                  && memcmp(back.parts[0].soup.tri, o.parts[0].soup.tri, 24) == 0,
+                  "an OBJ written and read again is the same parts, points and triangles");
+
+            if (out) k3d_obj_free(&back);
+
+            free(out);
+            k3d_obj_free(&o);
+        }
+
+        why = k3d_obj_read("v 0 0 0\nv 1 0 0\nf 1 2 3\n", 24, &o);
+        check(why != NULL, "a face naming a point the file has not got is refused");
+        why = k3d_obj_read("v 0 0\nf 1 1 1\n", 14, &o);
+        check(why != NULL, "a point of two numbers is refused");
+    }
+}
+
 int main(void)
 {
     shapes();
     rasteriser();
     meshes();
+    formats();
 
     if (fails) {
         printf("FAIL: %d of %d checks on the 3D Kit\n", fails, checks + fails);
@@ -516,6 +656,8 @@ int main(void)
            "cube never drawn, the outline two pixels outside the selection, glass seen "
            "through and still picked, Wireframe picking, a line held behind a cube, a floor "
            "cut at the near plane; a mesh's own triangles, sharp at thirty degrees and "
-           "round at a hundred, its edges once each, a bad index refused)\n", checks);
+           "round at a hundred, its edges once each, a bad index refused; STL and OBJ read "
+           "and written and read again, an STL's corners joined, an OBJ's faces fanned and "
+           "split by object and material, and five kinds of broken file refused)\n", checks);
     return 0;
 }

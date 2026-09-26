@@ -208,21 +208,34 @@ end
 -- number held to what the file's own description says it has room for.
 --------------------------------------------------------------------------
 
--- The base64 of a buffer carried in the file, or nil and why.
-local function embedded(doc, index)
+-- Where a buffer's bytes are: the file's own base64 (`base64`), a binary
+-- glTF's chunk (`bin`), or a file beside this one (`file`, whose name is
+-- the caller's to read - this file does no reading of its own). A buffer
+-- somewhere on the network is refused: opening a scene fetches nothing.
+local function buffer_of(doc, index, has_bin)
   local b = type(doc.buffers) == "table" and doc.buffers[index + 1]
-  local uri = type(b) == "table" and b.uri
 
+  if type(b) ~= "table" then return nil, "a buffer the file does not have" end
+
+  local length = number(b.byteLength, 0, 1 << 30)
+  local uri = b.uri
+
+  if uri == nil and index == 0 and has_bin then return { bin = true }, length end
   if type(uri) ~= "string" then return nil, "a buffer not in the file" end
 
   local data = uri:match("^data:application/[%w%-]+;base64,(.*)$")
 
-  if not data then return nil, "a buffer not in the file" end
+  if data then return { base64 = data }, length end
 
-  return data, number(b.byteLength, 0, 1 << 30)
+  if uri:find("^%a[%w+.%-]*:") or uri:find("^/") or uri:find("%.%.") then
+    return nil, "a buffer somewhere else than beside the file"
+  end
+
+  return { file = uri }, length
 end
 
--- An accessor's place: its buffer, where in it, how many and how wide.
+-- An accessor's place: its buffer, where in it, how many, how wide each is
+-- and how far apart - points may be interleaved with the rest of a vertex.
 local function accessor(doc, index, want_type, sizes)
   local a = type(doc.accessors) == "table" and math.type(index) == "integer"
             and doc.accessors[index + 1]
@@ -236,55 +249,96 @@ local function accessor(doc, index, want_type, sizes)
             and doc.bufferViews[a.bufferView + 1]
   local each = sizes[a.componentType] * (want_type == "VEC3" and 3 or 1)
 
-  if type(v) ~= "table" or math.type(v.buffer) ~= "integer"
-     or (v.byteStride ~= nil and v.byteStride ~= each) then
-    return nil
-  end
+  if type(v) ~= "table" or math.type(v.buffer) ~= "integer" then return nil end
 
+  local stride = v.byteStride == nil and each or number(v.byteStride, each, 252)
   local count = number(a.count, 1, MAX_POINTS * 3)
-  local offset = (number(v.byteOffset or 0, 0, 1 << 30) or -1) + (number(a.byteOffset or 0, 0, 1 << 30) or -1)
+  local inside = number(a.byteOffset or 0, 0, 1 << 30)
+  local start = number(v.byteOffset or 0, 0, 1 << 30)
   local length = number(v.byteLength, 0, 1 << 30)
 
-  if not count or math.type(count) ~= "integer" or offset < 0 or not length
-     or (number(a.byteOffset or 0, 0, 1 << 30) or 0) + count * each > length then
+  if not stride or not count or math.type(count) ~= "integer" or not inside or not start
+     or not length or inside + (count - 1) * stride + each > length then
     return nil
   end
 
-  return { buffer = v.buffer, offset = offset, count = count, bytes = sizes[a.componentType] }
+  return { buffer = v.buffer, offset = start + inside, count = count,
+           bytes = sizes[a.componentType], stride = stride }
 end
 
-local function mesh_of(doc, index)
-  local m = type(doc.meshes) == "table" and math.type(index) == "integer"
-            and doc.meshes[index + 1]
-  local prim = type(m) == "table" and type(m.primitives) == "table" and m.primitives[1]
-
+-- One primitive of a mesh: where its points and triangles are. Triangles
+-- need not be listed - three points in a row are one - and a mesh squeezed
+-- by an extension this file cannot undo is refused by name.
+local function primitive_of(doc, prim)
   if type(prim) ~= "table" or type(prim.attributes) ~= "table" then
     return nil, "a mesh with nothing in it"
   end
 
   if prim.mode ~= nil and prim.mode ~= 4 then return nil, "a mesh not of triangles" end
-  if #m.primitives > 1 then return nil, "a mesh of several parts" end
+
+  if type(prim.extensions) == "table" and prim.extensions.KHR_draco_mesh_compression then
+    return nil, "a mesh compressed with Draco, which Cafesa3D does not read yet"
+  end
 
   local pos = accessor(doc, prim.attributes.POSITION, "VEC3", { [5126] = 4 })
-  local idx = accessor(doc, prim.indices, "SCALAR", { [5121] = 1, [5123] = 2, [5125] = 4 })
 
-  if not pos or not idx or idx.count % 3 ~= 0 or pos.count > MAX_POINTS then
-    return nil, "a mesh whose accessors do not fit its buffer"
+  if not pos then return nil, "a mesh whose points are not plain floats in its buffer" end
+  if pos.count > MAX_POINTS then return nil, "a mesh of more points than a scene may have" end
+
+  local out = { buffer = pos.buffer + 1, points = pos.count, point_at = pos.offset,
+                point_stride = pos.stride, material = prim.material }
+
+  if prim.indices ~= nil then
+    local idx = accessor(doc, prim.indices, "SCALAR", { [5121] = 1, [5123] = 2, [5125] = 4 })
+
+    if not idx or idx.count % 3 ~= 0 or idx.stride ~= idx.bytes then
+      return nil, "a mesh whose triangles do not fit its buffer"
+    end
+
+    out.index_buffer, out.indices = idx.buffer + 1, idx.count
+    out.index_at, out.index_bytes = idx.offset, idx.bytes
+  elseif pos.count % 3 ~= 0 then
+    return nil, "a mesh of unlisted triangles that is not a whole number of them"
   end
 
-  if pos.buffer ~= idx.buffer then return nil, "a mesh in two buffers" end
+  return out
+end
 
-  local data, length = embedded(doc, pos.buffer)
+-- Every primitive of a mesh, each held to its buffer's length; the first
+-- refusal, if there is one.
+local function mesh_of(doc, index, has_bin)
+  local m = type(doc.meshes) == "table" and math.type(index) == "integer"
+            and doc.meshes[index + 1]
 
-  if not data then return nil, length end
-  if length and (pos.offset + pos.count * 12 > length
-                 or idx.offset + idx.count * idx.bytes > length) then
-    return nil, "a mesh past the end of its buffer"
+  if type(m) ~= "table" or type(m.primitives) ~= "table" or #m.primitives == 0 then
+    return nil, "a mesh with nothing in it"
   end
 
-  return { buffer = pos.buffer + 1, points = pos.count, point_at = pos.offset,
-           indices = idx.count, index_at = idx.offset, index_bytes = idx.bytes,
-           material = prim.material }
+  local parts = {}
+
+  for i, prim in ipairs(m.primitives) do
+    local part, why = primitive_of(doc, prim)
+
+    if not part then return nil, why end
+
+    for _, which in ipairs({ "buffer", "index_buffer" }) do
+      if part[which] then
+        local where, length = buffer_of(doc, part[which] - 1, has_bin)
+
+        if not where then return nil, length end
+
+        local last = which == "buffer"
+                     and part.point_at + (part.points - 1) * part.point_stride + 12
+                     or part.index_at + part.indices * part.index_bytes
+
+        if length and last > length then return nil, "a mesh past the end of its buffer" end
+      end
+    end
+
+    parts[i] = part
+  end
+
+  return parts, type(m.name) == "string" and m.name or nil
 end
 
 local function name_of(node, fallback)
@@ -330,7 +384,95 @@ local function shape(own, kind)
   return t
 end
 
-function scenefile.from_gltf(doc)
+--------------------------------------------------------------------------
+-- Other programs' nodes: a tree, each placed inside its parent, by a matrix
+-- or by a translation, a rotation and a scale - all glTF's, Y up. What
+-- Cafesa3D keeps is a place, a turn and a size in its own Z-up space, so
+-- the tree is walked and each node's transform in the world worked out and
+-- turned into those three.
+--------------------------------------------------------------------------
+
+-- A node's own transform, as glTF's column-major 4x4.
+local function local_matrix(node)
+  if type(node.matrix) == "table" then
+    local m = {}
+
+    for i = 1, 16 do
+      m[i] = number(node.matrix[i], -1e6, 1e6)
+
+      if not m[i] then return nil end
+    end
+
+    return m
+  end
+
+  local t = vec3(node.translation, -1e6, 1e6) or { 0, 0, 0 }
+  local s = vec3(node.scale, -1e4, 1e4) or { 1, 1, 1 }
+  local q = node.rotation
+  local R = { 1, 0, 0, 0, 1, 0, 0, 0, 1 }
+
+  if type(q) == "table" and number(q[1], -2, 2) and number(q[2], -2, 2)
+     and number(q[3], -2, 2) and number(q[4], -2, 2) then
+    local n = math.sqrt(q[1] ^ 2 + q[2] ^ 2 + q[3] ^ 2 + q[4] ^ 2)
+
+    if n > 1e-9 then R = quat_matrix({ q[1] / n, q[2] / n, q[3] / n, q[4] / n }) end
+  end
+
+  return { R[1] * s[1], R[4] * s[1], R[7] * s[1], 0,
+           R[2] * s[2], R[5] * s[2], R[8] * s[2], 0,
+           R[3] * s[3], R[6] * s[3], R[9] * s[3], 0,
+           t[1],        t[2],        t[3],        1 }
+end
+
+local function mat_mul(a, b)
+  local c = {}
+
+  for j = 0, 3 do
+    for i = 1, 4 do
+      local v = 0
+
+      for k = 0, 3 do v = v + a[k * 4 + i] * b[j * 4 + k + 1] end
+
+      c[j * 4 + i] = v
+    end
+  end
+
+  return c
+end
+
+-- A glTF world transform as Cafesa3D's place, turn and size, or nil for
+-- one squashed flat. A mirrored node - a left wheel made from a right one
+-- by a scale of -1 - keeps its handedness in a negative size along X.
+local function decompose(m)
+  local A = from_gltf_matrix({ m[1], m[5], m[9], m[2], m[6], m[10], m[3], m[7], m[11] })
+  local R, size = {}, {}
+
+  for j = 1, 3 do
+    local x, y, z = A[j], A[3 + j], A[6 + j]
+
+    size[j] = math.sqrt(x * x + y * y + z * z)
+
+    if size[j] < 1e-9 then return nil end
+
+    R[j], R[3 + j], R[6 + j] = x / size[j], y / size[j], z / size[j]
+  end
+
+  local det = R[1] * (R[5] * R[9] - R[6] * R[8]) - R[2] * (R[4] * R[9] - R[6] * R[7])
+              + R[3] * (R[4] * R[8] - R[5] * R[7])
+
+  if det < 0 then
+    size[1] = -size[1]
+    R[1], R[4], R[7] = -R[1], -R[4], -R[7]
+  end
+
+  return { m[13], -m[15], m[14] }, matrix_euler(R), size
+end
+
+--
+-- `has_bin` says a binary glTF's chunk came with the file (`from_glb`),
+-- which is its first buffer when that buffer names no file of its own.
+--
+function scenefile.from_gltf(doc, has_bin)
   if type(doc) ~= "table" or type(doc.asset) ~= "table" or doc.asset.version ~= "2.0" then
     return nil, "not a glTF 2.0 file"
   end
@@ -359,104 +501,181 @@ function scenefile.from_gltf(doc)
     out.why[#out.why + 1] = name .. ": " .. why
   end
 
-  for n, index in ipairs(list) do
-    local node = math.type(index) == "integer" and nodes[index + 1]
+  -- One node's objects: a shape, a lamp, the camera, or a mesh's parts.
+  local function emit(node, name, own, loc, rot, scale)
+    local lamp = type(node.extensions) == "table"
+                 and type(node.extensions.KHR_lights_punctual) == "table"
+                 and node.extensions.KHR_lights_punctual.light
+    local before = #out.things
 
-    if #out.things >= MAX_OBJECTS then
-      skip("the rest", "more than " .. MAX_OBJECTS .. " objects")
-      break
+    if KINDS[own.kind] then
+      local t, why = shape(own, own.kind)
+
+      if t then
+        t.name, t.loc, t.rot, t.scale = name, loc, rot, scale
+        t.mat = material(doc, own.material)
+        out.things[#out.things + 1] = t
+      else
+        skip(name, why)
+      end
+    elseif own.kind == "light" or math.type(lamp) == "integer" then
+      local l = math.type(lamp) == "integer" and type(lights[lamp + 1]) == "table"
+                and lights[lamp + 1] or {}
+      local power = number(own.power, 0, 1e6)
+                    or (number(l.intensity, 0, 1e6) and l.intensity * 4 * math.pi) or 1000
+
+      out.things[#out.things + 1] = {
+        name = name, kind = "light", loc = loc,
+        radius = number(own.radius, 0.001, 100) or 0.1, power = power,
+        colour = hexcolour(own.colour)
+                 or (type(l.color) == "table" and srgb({ number(l.color[1], 0, 1) or 1,
+                                                         number(l.color[2], 0, 1) or 1,
+                                                         number(l.color[3], 0, 1) or 1 }))
+                 or 0xffffff,
+      }
+    elseif own.kind == "camera" or math.type(node.camera) == "integer" then
+      -- Where it looks: its own target, or ten metres down its -Z.
+      local target = vec3(own.target, -1e6, 1e6)
+
+      if not target then
+        local ax, ay, az = math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3])
+        local cx, sx, cy, sy = math.cos(ax), math.sin(ax), math.cos(ay), math.sin(ay)
+        local cz, sz = math.cos(az), math.sin(az)
+        -- Its -Z here is glTF's -Z turned: the third column of R, negated
+        -- and taken through (x, -z, y) - which is here's +Y column.
+        local col = { cz * sy * sx - sz * cx, sz * sy * sx + cz * cx, cy * sx }
+
+        target = { loc[1] + col[1] * 10, loc[2] + col[2] * 10, loc[3] + col[3] * 10 }
+      end
+
+      out.things[#out.things + 1] = { name = name, kind = "camera", loc = loc,
+                                      target = target,
+                                      focal = number(own.focal, 1, 500) or 50 }
+    elseif math.type(node.mesh) == "integer" or own.kind == "mesh" then
+      local parts, why = mesh_of(doc, math.type(node.mesh) == "integer" and node.mesh
+                                      or own.mesh, has_bin)
+
+      if parts then
+        for i, part in ipairs(parts) do
+          if #out.things >= MAX_OBJECTS then break end
+
+          -- A part of its own material each: a Sketchfab car is one mesh
+          -- of a dozen parts, paint and glass and chrome.
+          local material_index = (#parts == 1 and math.type(own.material) == "integer")
+                                  and own.material or part.material
+
+          for _, b in ipairs({ part.buffer, part.index_buffer }) do
+            if b and not out.buffers[b] then out.buffers[b] = (buffer_of(doc, b - 1, has_bin)) end
+          end
+
+          out.things[#out.things + 1] = {
+            name = i == 1 and name or ("%s.%03d"):format(name, i - 1), kind = "mesh",
+            loc = { loc[1], loc[2], loc[3] }, rot = { rot[1], rot[2], rot[3] },
+            scale = { scale[1], scale[2], scale[3] }, smooth = true,
+            smooth_angle = number(own.smooth_angle, 0, 180) or 30,
+            mat = material(doc, material_index), mesh = part,
+          }
+        end
+      else
+        skip(name, why)
+      end
     end
 
-    if type(node) ~= "table" then
-      skip("node " .. tostring(index), "not there")
-    else
-      local name = name_of(node, "Object " .. n)
-      local own = type(node.extras) == "table" and type(node.extras.cafesa3d) == "table"
-                  and node.extras.cafesa3d or {}
-      local loc, rot, scale = scenefile.transform(node)
-
-      -- Cafesa3D's own numbers, exact, when the file has them.
-      loc = vec3(own.loc, -1e6, 1e6) or loc
-      rot = vec3(own.rot, -1e5, 1e5) or rot
-      scale = vec3(own.scale, -1e4, 1e4) or scale
-
-      local lamp = type(node.extensions) == "table"
-                   and type(node.extensions.KHR_lights_punctual) == "table"
-                   and node.extensions.KHR_lights_punctual.light
-
-      local before = #out.things
-
-      if KINDS[own.kind] then
-        local t, why = shape(own, own.kind)
-
-        if t then
-          t.name, t.loc, t.rot, t.scale = name, loc, rot, scale
-          t.mat = material(doc, own.material)
-          out.things[#out.things + 1] = t
-        else
-          skip(name, why)
-        end
-      elseif own.kind == "light" or math.type(lamp) == "integer" then
-        local l = math.type(lamp) == "integer" and type(lights[lamp + 1]) == "table"
-                  and lights[lamp + 1] or {}
-        local power = number(own.power, 0, 1e6)
-                      or (number(l.intensity, 0, 1e6) and l.intensity * 4 * math.pi) or 1000
-
-        out.things[#out.things + 1] = {
-          name = name, kind = "light", loc = loc,
-          radius = number(own.radius, 0.001, 100) or 0.1, power = power,
-          colour = hexcolour(own.colour)
-                   or (type(l.color) == "table" and srgb({ number(l.color[1], 0, 1) or 1,
-                                                           number(l.color[2], 0, 1) or 1,
-                                                           number(l.color[3], 0, 1) or 1 }))
-                   or 0xffffff,
-        }
-      elseif own.kind == "camera" or math.type(node.camera) == "integer" then
-        -- Where it looks: its own target, or ten metres down its -Z.
-        local target = vec3(own.target, -1e6, 1e6)
-
-        if not target then
-          local _, r = scenefile.transform(node)
-          local ax, ay, az = math.rad(r[1]), math.rad(r[2]), math.rad(r[3])
-          local cx, sx, cy, sy = math.cos(ax), math.sin(ax), math.cos(ay), math.sin(ay)
-          local cz, sz = math.cos(az), math.sin(az)
-          -- Its -Z here is glTF's -Z turned: the third column of R, negated
-          -- and taken through (x, -z, y) - which is here's +Y column.
-          local col = { cz * sy * sx - sz * cx, sz * sy * sx + cz * cx, cy * sx }
-
-          target = { loc[1] + col[1] * 10, loc[2] + col[2] * 10, loc[3] + col[3] * 10 }
-        end
-
-        out.things[#out.things + 1] = { name = name, kind = "camera", loc = loc,
-                                        target = target,
-                                        focal = number(own.focal, 1, 500) or 50 }
-      elseif math.type(node.mesh) == "integer" or own.kind == "mesh" then
-        local where, why = mesh_of(doc, math.type(node.mesh) == "integer" and node.mesh
-                                        or own.mesh)
-
-        if where then
-          local material_index = math.type(own.material) == "integer" and own.material
-                                 or where.material
-
-          out.buffers[where.buffer] = out.buffers[where.buffer] or embedded(doc, where.buffer - 1)
-          out.things[#out.things + 1] = {
-            name = name, kind = "mesh", loc = loc, rot = rot, scale = scale, smooth = true,
-            smooth_angle = number(own.smooth_angle, 0, 180) or 30,
-            mat = material(doc, material_index), mesh = where,
-          }
-        else
-          skip(name, why)
-        end
-      end
-
-      -- Hidden with its eye closed, as it was saved; anything else shows.
-      if #out.things > before and own.hidden == true then
-        out.things[#out.things].hidden = true
-      end
+    -- Hidden with its eye closed, as it was saved; anything else shows.
+    if #out.things > before and own.hidden == true then
+      for i = before + 1, #out.things do out.things[i].hidden = true end
     end
   end
 
+  local seen = {}
+
+  local function walk(index, parent, depth, n)
+    if #out.things >= MAX_OBJECTS then
+      if not out.full then
+        out.full = true
+        skip("the rest", "more than " .. MAX_OBJECTS .. " objects")
+      end
+
+      return
+    end
+
+    local node = math.type(index) == "integer" and nodes[index + 1]
+
+    if type(node) ~= "table" then return skip("node " .. tostring(index), "not there") end
+    if seen[index] then return skip(name_of(node, "node " .. index), "reached twice") end
+    if depth > 64 then return skip(name_of(node, "node " .. index), "nested too deep") end
+
+    seen[index] = true
+
+    local name = name_of(node, "Object " .. n)
+    local own = type(node.extras) == "table" and type(node.extras.cafesa3d) == "table"
+                and node.extras.cafesa3d or nil
+    local here = local_matrix(node)
+    local world_m = here and (parent and mat_mul(parent, here) or here)
+
+    if own then
+      -- Cafesa3D's own numbers, exact, when the file has them; its nodes
+      -- are never nested, so their place is their own.
+      local loc, rot, scale = scenefile.transform(node)
+
+      emit(node, name, own, vec3(own.loc, -1e6, 1e6) or loc, vec3(own.rot, -1e5, 1e5) or rot,
+           vec3(own.scale, -1e4, 1e4) or scale)
+    elseif not world_m then
+      skip(name, "a matrix that is not sixteen numbers")
+    else
+      local loc, rot, scale = decompose(world_m)
+
+      if loc then
+        emit(node, name, {}, loc, rot, scale)
+      elseif node.mesh ~= nil then
+        skip(name, "squashed flat")
+      end
+    end
+
+    if type(node.children) == "table" and world_m then
+      for i, child in ipairs(node.children) do walk(child, world_m, depth + 1, n .. "." .. i) end
+    end
+  end
+
+  for n, index in ipairs(list) do walk(index, nil, 1, tostring(n)) end
+
   return out
+end
+
+--
+-- A binary glTF - `.glb`, what Sketchfab and Poly Haven hand out: a header,
+-- the JSON as the first chunk and the buffer as the second. Returns the
+-- JSON's text and the buffer's bytes, or nil and why; `from_gltf` is then
+-- told the buffer came along.
+--
+function scenefile.from_glb(bytes)
+  if type(bytes) ~= "string" or #bytes < 20 then return nil, "not a binary glTF file" end
+
+  local magic, version, length = string.unpack("<c4I4I4", bytes)
+
+  if magic ~= "glTF" then return nil, "not a binary glTF file" end
+  if version ~= 2 then return nil, "a binary glTF of version " .. version .. ", not 2" end
+  if length > #bytes then return nil, "a binary glTF cut short" end
+
+  local at, text, bin = 13, nil, nil
+
+  while at + 8 <= length + 1 do
+    local size, kind = string.unpack("<I4c4", bytes, at)
+
+    if at + 8 + size - 1 > length then return nil, "a chunk running past the file's end" end
+
+    if kind == "JSON" and not text then
+      text = bytes:sub(at + 8, at + 7 + size)
+    elseif kind == "BIN\0" and not bin then
+      bin = bytes:sub(at + 8, at + 7 + size)
+    end
+
+    at = at + 8 + size
+  end
+
+  if not text then return nil, "a binary glTF with no JSON in it" end
+
+  return text, bin
 end
 
 --------------------------------------------------------------------------

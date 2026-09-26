@@ -177,7 +177,7 @@ for _, name in ipairs({ "house", "car", "plane" }) do
 
     -- Every mesh against its own accessors: each index a point it has, and
     -- every point inside the bounds the file records for its accessor.
-    local bytes = scene and scene.buffers[1] and unbase64(scene.buffers[1])
+    local bytes = scene and scene.buffers[1] and unbase64(scene.buffers[1].base64)
     local meshes, inside, indexed = 0, true, true
 
     for i, t in ipairs(scene and scene.things or {}) do
@@ -306,8 +306,14 @@ do
   s = scenefile.from_gltf(doc_with(300, good))
   check(s and #s.things == 0 and s.skipped == 1, "a mesh that says more than its buffer holds is skipped")
   s = scenefile.from_gltf(doc_with(3, "mesh.bin"))
-  check(s and #s.things == 0 and s.why[1]:find("not in the file"),
-        "a mesh whose buffer is another file is skipped, and says why")
+  check(s and #s.things == 1 and s.buffers[1] and s.buffers[1].file == "mesh.bin",
+        "a mesh whose buffer is a file beside it is read, naming the file for the caller")
+
+  for _, far in ipairs({ "http://example.com/mesh.bin", "/home/mesh.bin", "../mesh.bin" }) do
+    s = scenefile.from_gltf(doc_with(3, far))
+    check(s and #s.things == 0 and s.why[1]:find("somewhere else"),
+          "a mesh whose buffer is " .. far .. " is skipped: opening fetches nothing")
+  end
 end
 check(scenefile.from_gltf({ asset = { version = "1.0" } }) == nil, "glTF 1.0 is not read")
 check(scenefile.from_gltf("text") == nil, "a string is not a scene")
@@ -371,18 +377,41 @@ function codec.bounds(points)
   return lo[1], lo[2], lo[3], hi[1], hi[2], hi[3]
 end
 
-local function as_app(scene)
+-- A scene's meshes as Cafesa3D holds them: their points packed three floats
+-- apart and their triangles listed, whatever the file did - which is the
+-- work `open_scene` hands to `k3.gather` and `k3.sequence` in Kosmos.
+local function as_app(scene, bin)
   local buffers = {}
 
-  for i, text in pairs(scene.buffers) do buffers[i] = unbase64(text) end
+  for i, b in pairs(scene.buffers) do
+    buffers[i] = b.base64 and unbase64(b.base64) or (b.bin and bin) or nil
+  end
 
   for _, t in ipairs(scene.things) do
     if t.kind == "mesh" then
       local m, bytes = t.mesh, buffers[t.mesh.buffer]
+      local points = {}
 
-      t.vertices = bytes:sub(m.point_at + 1, m.point_at + m.points * 12)
-      t.triangles = bytes:sub(m.index_at + 1, m.index_at + m.indices * m.index_bytes)
-      t.index_bytes = m.index_bytes
+      for k = 0, m.points - 1 do
+        points[#points + 1] = bytes:sub(m.point_at + k * m.point_stride + 1,
+                                        m.point_at + k * m.point_stride + 12)
+      end
+
+      t.vertices = table.concat(points)
+
+      if m.indices then
+        local ib = buffers[m.index_buffer]
+
+        t.triangles = ib:sub(m.index_at + 1, m.index_at + m.indices * m.index_bytes)
+        t.index_bytes = m.index_bytes
+      else
+        local list = {}
+
+        for k = 0, m.points - 1 do list[#list + 1] = string.pack("<I4", k) end
+
+        t.triangles, t.index_bytes = table.concat(list), 4
+      end
+
       t.mesh = nil
     end
   end
@@ -463,6 +492,124 @@ for _, name in ipairs({ "house", "car", "plane" }) do
     check(json.encode(scenefile.to_gltf(again, codec)) == text,
           name .. " written twice is two different files")
   end
+end
+
+--
+-- **Other programs' files** - the shapes Blender, Sketchfab and Poly Haven
+-- write and Cafesa3D's own never does: nodes inside nodes, a matrix instead
+-- of a translation, a rotation and a scale, a mirrored node, a mesh of
+-- several parts each with its own material, triangles not listed, points
+-- interleaved with the rest of a vertex, a mesh compressed with Draco, and
+-- the whole of it as a binary `.glb`.
+--
+do
+  local function tri(x) return string.pack("<fffffffff", x, 0, 0, x + 1, 0, 0, x, 1, 0) end
+  local bytes = tri(0) .. tri(5) .. string.pack("<I4I4I4", 0, 1, 2)
+  local uri = "data:application/octet-stream;base64," .. codec.base64(bytes)
+  local q = math.sqrt(0.5)
+  local doc = {
+    asset = { version = "2.0" }, scene = 0,
+    scenes = { { name = "Theirs", nodes = { 0, 3, 4, 5 } } },
+    nodes = {
+      { name = "Car", translation = { 1, 2, 3 }, rotation = { 0, q, 0, q }, children = { 1 } },
+      { name = "Wheel", translation = { 0, 0, 1 }, mesh = 0, children = { 2 } },
+      { name = "Hubcap", matrix = { 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 5, 0, 0, 1 }, mesh = 1 },
+      { name = "Mirrored", scale = { -1, 1, 1 }, mesh = 1 },
+      { name = "Squeezed", mesh = 2 },
+      { name = "Strided", mesh = 3 },
+    },
+    meshes = {
+      { primitives = { { attributes = { POSITION = 0 }, indices = 2, material = 0 },
+                       { attributes = { POSITION = 1 }, material = 1 } } },
+      { primitives = { { attributes = { POSITION = 0 }, indices = 2 } } },
+      { primitives = { { attributes = { POSITION = 0 },
+                         extensions = { KHR_draco_mesh_compression = { bufferView = 0 } } } } },
+      { primitives = { { attributes = { POSITION = 3 } } } },
+    },
+    materials = { { pbrMetallicRoughness = { baseColorFactor = { 1, 0, 0, 1 } } },
+                  { pbrMetallicRoughness = { baseColorFactor = { 0, 0, 1, 1 } } } },
+    accessors = {
+      { bufferView = 0, componentType = 5126, count = 3, type = "VEC3" },
+      { bufferView = 1, componentType = 5126, count = 3, type = "VEC3" },
+      { bufferView = 2, componentType = 5125, count = 3, type = "SCALAR" },
+      { bufferView = 3, componentType = 5126, count = 3, type = "VEC3" },
+    },
+    bufferViews = { { buffer = 0, byteOffset = 0, byteLength = 36 },
+                    { buffer = 0, byteOffset = 36, byteLength = 36 },
+                    { buffer = 0, byteOffset = 72, byteLength = 12 },
+                    { buffer = 0, byteOffset = 0, byteLength = 72, byteStride = 24 } },
+    buffers = { { byteLength = #bytes, uri = uri } },
+  }
+
+  local function by(scene, name)
+    for _, t in ipairs(scene.things) do if t.name == name then return t end end
+  end
+
+  local theirs = scenefile.from_gltf(doc)
+  local wheel, second = theirs and by(theirs, "Wheel"), theirs and by(theirs, "Wheel.001")
+  local hub, mirror = theirs and by(theirs, "Hubcap"), theirs and by(theirs, "Mirrored")
+  local strided = theirs and by(theirs, "Strided")
+
+  -- The wheel: a metre along the car's own Z, which the car's quarter turn
+  -- about glTF's Y makes a metre along X - here, (2, -3, 2), turned a
+  -- quarter about Z, since glTF's Y is here's Z.
+  check(wheel and close3(wheel.loc, { 2, -3, 2 }, 1e-9) and same_turn(wheel.rot, { 0, 0, 90 }),
+        "a node inside a node is where its parent puts it: " .. tostring(wheel and
+        table.concat(wheel.loc, " ")))
+  check(wheel and second and wheel.mat.base == 0xff0000 and second.mat.base == 0x0000ff
+        and second.mesh.indices == nil,
+        "a mesh of two parts is two objects with their own materials, the second's triangles unlisted")
+  -- The hubcap: five along the wheel's own X, which the car's turn makes
+  -- five along glTF's -Z - so (2, 2, -2) there, (2, 2, 2) here.
+  check(hub and close3(hub.loc, { 2, 2, 2 }, 1e-9) and same_turn(hub.rot, { 0, 0, 90 }),
+        "a matrix inside a node inside a node is where both put it: "
+        .. tostring(hub and table.concat(hub.loc, " ")))
+  check(hub and close3(hub.scale, { 2, 2, 2 }, 1e-9),
+        "a node's matrix gives its size: " .. tostring(hub and table.concat(hub.scale, " ")))
+  check(mirror and close3(mirror.scale, { -1, 1, 1 }, 1e-9) and same_turn(mirror.rot, { 0, 0, 0 }),
+        "a mirrored node keeps its handedness in a negative size along X")
+  check(strided and strided.mesh.point_stride == 24 and #as_app(scenefile.from_gltf(doc))
+        .things > 0, "points interleaved with the rest of a vertex are read at their spacing")
+
+  local squeezed = false
+
+  for _, w in ipairs(theirs and theirs.why or {}) do
+    squeezed = squeezed or (w:find("^Squeezed") and w:find("Draco")) ~= nil
+  end
+
+  check(squeezed, "a mesh compressed with Draco is skipped, and says so")
+
+  local app = as_app(scenefile.from_gltf(doc))
+  local s2 = by(app, "Strided")
+
+  -- Every 24 bytes from the start: the first triangle's first and third
+  -- points, then the second triangle's second.
+  check(s2 and s2.vertices == string.pack("<fffffffff", 0, 0, 0, 0, 1, 0, 6, 0, 0),
+        "interleaved points come out packed, each the one at its spacing")
+
+  -- **The same car, as a `.glb`**: the JSON chunk with its buffer's `uri`
+  -- gone, and the buffer's bytes in the binary chunk.
+  local car = read("car")
+  local raw = unbase64(car.buffers[1].uri:match("base64,(.*)$"))
+
+  car.buffers[1].uri = nil
+
+  local text = json.encode(car)
+  local pad = function(s, with) return s .. string.rep(with, (4 - #s % 4) % 4) end
+  local j, b = pad(text, " "), pad(raw, "\0")
+  local glb = string.pack("<c4I4I4", "glTF", 2, 12 + 8 + #j + 8 + #b)
+              .. string.pack("<I4c4", #j, "JSON") .. j .. string.pack("<I4c4", #b, "BIN\0") .. b
+  local got_text, got_bin = scenefile.from_glb(glb)
+  local from_glb = got_text and scenefile.from_gltf(json.decode(got_text), true)
+  local from_gltf = scenefile.from_gltf(read("car"))
+
+  check(from_glb and #from_glb.things == #from_gltf.things and from_glb.buffers[1].bin == true,
+        "the car as a .glb reads as the car")
+  check(from_glb and differs(as_app(from_gltf).things, as_app(from_glb, got_bin).things, "car")
+        == nil, "the car as a .glb is the same scene, mesh bytes and all")
+  check(scenefile.from_glb("glTF" .. string.pack("<I4I4", 1, 20) .. string.rep("\0", 8)) == nil,
+        "a binary glTF of version 1 is not read")
+  check(scenefile.from_glb(string.sub(glb, 1, 100)) == nil, "a binary glTF cut short is not read")
 end
 
 if failed > 0 then
