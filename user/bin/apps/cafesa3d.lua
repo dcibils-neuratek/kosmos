@@ -258,7 +258,10 @@ end
 -- What is showing.
 --------------------------------------------------------------------------
 
-local shading = (tostring(args or "")):find("%-%-wire") and "wire" or "solid"
+-- `--wire` and `--rendered` open on that shading: the second is how the
+-- gallery `make shot` takes has the ray tracer in it.
+local shading = (tostring(args or "")):find("%-%-wire") and "wire"
+                or (tostring(args or "")):find("%-%-rendered") and "rendered" or "solid"
 local file_name = "still-life.scene"
 
 -- The light from everywhere that is not a lamp: a sky, from the zenith to

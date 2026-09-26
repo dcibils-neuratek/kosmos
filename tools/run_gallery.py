@@ -70,8 +70,15 @@ ABS = 32767
 # Calculator, the gears and This Machine join them: each draws something of
 # its own with nothing on a disk, which is what a diskless guest has.
 #
+#
+# **And each new application joins it.** Diego, 25 September: "The dated
+# screenshot now needs to have Cafesa3D in it", "So as we are new apps we
+# improve the screenshots". Cafesa3D opens on its Rendered view - the scene
+# ray traced - and `tile` gives a window that size two cells by two.
+#
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
-        "glgears", "machine", "procs", "sysmon", "cube3d", "tile"]
+        "glgears", "machine", "procs", "sysmon", "cube3d",
+        "cafesa3d:--rendered", "tile"]
 
 
 def png(width, height, rgb):

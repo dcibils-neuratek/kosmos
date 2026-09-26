@@ -4398,7 +4398,11 @@ handlers.windows = function(req)
                -- it away. Without this the bar would have to remember what
                -- it did last, and a second memory of one fact is a second
                -- thing to be wrong.
-               hidden = win.hidden or nil }
+               hidden = win.hidden or nil,
+
+               -- How large its content is, which `tile` needs to give a
+               -- big window room rather than a corner of it.
+               w = win.w, h = win.h }
   end
 
   -- `watch`: and post this window a `windows` event whenever this answer

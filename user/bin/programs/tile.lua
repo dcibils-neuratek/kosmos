@@ -90,29 +90,88 @@ if #wins == 0 then return end
 --
 -- As square a grid as the count allows, biased wide because a screen is.
 --
-local across = math.ceil(math.sqrt(#wins))
-local down = math.ceil(#wins / across)
+--
+-- **A big window gets two cells by two.** Cafesa3D is 1400 by 820, and a
+-- corner of it one cell wide showed its header and nothing it is for. So a
+-- window that would cover four cells of the grid the small ones make is
+-- given four, placed first, and the rest fill in around it. The grid has as
+-- many rows as a square would and as many columns as that needs - which for
+-- eleven small windows is the four by three this always made, and for a
+-- wide screen leans the same way it is wide.
+--
+local function grid_for(cells)
+  local down = math.max(1, math.floor(math.sqrt(cells)))
+
+  return math.ceil(cells / down), down
+end
 
 -- The Deskbar's own corner is out of bounds: it is 210 wide with a margin,
 -- and a window placed under it is a window you cannot read.
-local usable = W - 240
-local cell_w = usable // across
-local cell_h = (H - 60) // down
+local usable_w, usable_h = W - 240, H - 60
+local across, down = grid_for(#wins)
+local big, cells = {}, 0
 
-for i, w in ipairs(wins) do
-  local col = (i - 1) % across
-  local row = (i - 1) // across
+for _, w in ipairs(wins) do
+  big[w] = (w.w or 0) >= 2 * (usable_w // across) and (w.h or 0) >= 2 * (usable_h // down)
+  cells = cells + (big[w] and 4 or 1)
+end
 
-  local ok, why = fs.send("/app/wm", {
-    type = "move",
-    window = w.handle,
-    x = 30 + col * cell_w,
-    y = 60 + row * cell_h,
-  })
+across, down = grid_for(cells)
 
-  if not ok then
-    print(("tile: %s would not move: %s"):format(w.title, tostring(why)))
+local cell_w, cell_h = usable_w // across, usable_h // down
+local taken = {}
+
+local function free(col, row, n)
+  if col + n > across or row + n > down then return false end
+
+  for r = row, row + n - 1 do
+    for c = col, col + n - 1 do
+      if taken[r * across + c] then return false end
+    end
   end
+
+  return true
+end
+
+-- The first cells, reading across, with room for `n` by `n`.
+local function place(w, n)
+  for row = 0, down - 1 do
+    for col = 0, across - 1 do
+      if free(col, row, n) then
+        for r = row, row + n - 1 do
+          for c = col, col + n - 1 do taken[r * across + c] = true end
+        end
+
+        local ok, why = fs.send("/app/wm", {
+          type = "move",
+          window = w.handle,
+          x = 30 + col * cell_w,
+          y = 60 + row * cell_h,
+        })
+
+        if not ok then
+          print(("tile: %s would not move: %s"):format(w.title, tostring(why)))
+        end
+
+        -- Raised in the order placed, the big first, so each small window
+        -- lies over the big one's overflow rather than under it: the one
+        -- that opened last - Cafesa3D, reading its scene - was on top of
+        -- everything, and covered most of the screen.
+        fs.send("/app/wm", { type = "raise", window = w.handle })
+        return
+      end
+    end
+  end
+
+  print(("tile: no room for %s"):format(w.title))
+end
+
+for _, w in ipairs(wins) do
+  if big[w] then place(w, 2) end
+end
+
+for _, w in ipairs(wins) do
+  if not big[w] then place(w, 1) end
 end
 
 print(("tile: %d windows, %dx%d"):format(#wins, across, down))

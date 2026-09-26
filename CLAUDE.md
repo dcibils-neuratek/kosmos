@@ -886,9 +886,16 @@ that arrives on its own.
 
 **A push carries a picture. `make prepush`** runs the suites, the display
 harness, `make litexl-check`, a MEGA link and `make shot`, which puts a
-1920x1080 screenshot of the desktop - Tracker, the widget gallery,
-Processes, Monitor and the cube, tiled - into `docs/screenshots/` under the
-date and the revision.
+1920x1080 screenshot of the desktop into `docs/screenshots/` under the date
+and the revision - every application that draws something of its own with
+nothing on a disk, tiled, and the newest one given room (`OPEN` in
+`tools/run_gallery.py`).
+
+**A new application joins the picture when it lands.** Diego, 25 September
+2026: "The dated screenshot now needs to have Cafesa3D in it", "So as we
+are new apps we improve the screenshots". It had shown the same five
+windows for weeks while the system grew around them; Cafesa3D opens on its
+Rendered view, and `tile` gives a window that large two cells by two.
 
 It is a make target rather than a habit because it is the step that would be
 forgotten: nothing fails without it, and a series of these with gaps in it
