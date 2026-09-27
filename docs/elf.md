@@ -36,11 +36,12 @@ rest of the system does:
 - **A program in userland reads the file**, checks it, and lays its
   segments out in memory it owns. A malformed file is that program's
   problem and is refused there, with a sentence.
-- **The kernel is handed pages and a map** - these bytes, at this address,
-  readable and executable or readable and writable, never both - and an
-  entry point, and makes a process of them. What it checks is what it has
-  always checked about memory: that the addresses are the user's, that
-  nothing overlaps, that nothing is writable and executable at once.
+- **The kernel is handed an image in the one form it already knows** -
+  Kosmos's sixteen-byte header, the code, the data - and makes a process
+  of it, checking what it has always checked about that form: the magic,
+  the code's size, and that code is read and execute and data read and
+  write, never both (*The design* has why that form rather than a list of
+  segments: it is the check the kernel already makes).
 
 QNX puts its loader in the process manager beside the kernel; seL4 leaves
 it entirely to userland. This is seL4's answer, for the same reason: the
