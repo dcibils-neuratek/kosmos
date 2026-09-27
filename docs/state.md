@@ -176,6 +176,11 @@ its own - fixed and rerun on both boards (18.206).
   the window manager sends a key's release where its press went - Ctrl O's
   panel had left Cafesa3D holding Ctrl.
 
+**First, the gate back under ten minutes**: `make prepush` for 0.10.172 took
+10:16 (the gate before it, on the same code, 9:33). The long pole is
+`x86-cafesa3d` at about 400 s, and `run_script` grew to about 114 s a board
+with 6d; the same checks in less time, as the rule says, before 6e starts.
+
 **Next: 6e, the tutorial's lessons** (roadmap item 7), widened on 27
 September - kits, drivers, servers, 3D, video, audio, compression, and the
 bundled apps (Camera, Music, Blocks, Processes) as lessons a developer
