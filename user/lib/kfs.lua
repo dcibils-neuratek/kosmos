@@ -1232,14 +1232,29 @@ local function split(path)
   return parts
 end
 
--- One name inside one directory.
+--
+-- **A name is found whatever its case, and keeps the case it was given**
+-- (`roadmap.md` 6s). Diego, 27 September: "it doesnet make sense to have
+-- case sensitiveness in this day and age". So `notes.txt` finds the entry
+-- called `Notes.txt`, and a directory cannot hold both - but what is
+-- stored, listed and shown is the spelling the file was made with. Folded
+-- a letter at a time from A to Z and nothing else, as the FAT reader does:
+-- a byte past 127 is part of a UTF-8 sequence and is compared as it is.
+--
+local function same(a, b)
+  return a == b or a:lower() == b:lower()
+end
+
+kfs.same_name = same
+
+-- One name inside one directory: its inode, and the name as it is stored.
 local function entry_in(sb, dir_node, name)
   local entries, err = kfs.read_dir(sb, dir_node)
 
   if not entries then return nil, err end
 
   for _, e in ipairs(entries) do
-    if e.name == name then return e.inode end
+    if same(e.name, name) then return e.inode, e.name end
   end
 
   return nil, "no such file"
@@ -1410,6 +1425,39 @@ function kfs.parent_of(sb, path)
   return number, node, parts[#parts]
 end
 
+--
+-- A path as this disk spells it: each part that exists written as it is
+-- stored, the rest as given - and with `keep_last`, the last part as given
+-- whatever is there, for a rename that changes only a name's case.
+--
+-- The disk server turns every path into this as it arrives. What it keeps
+-- about a file by its path - the attributes' index - has to have one key a
+-- file and not one a way of typing it, or a query would answer `/Home/x`
+-- and `/home/x` as two files.
+--
+function kfs.spelled(sb, path, keep_last)
+  local parts = split(path)
+
+  if not parts or #parts == 0 then return path end
+
+  local node = kfs.read_inode(sb, kfs.ROOT_INODE)
+  local out = {}
+
+  for i, part in ipairs(parts) do
+    local number, stored
+
+    if node and node.kind == kfs.KIND_DIR and not (keep_last and i == #parts) then
+      number, stored = entry_in(sb, node, part)
+    end
+
+    -- Not found, `entry_in`'s second answer is why, not a name.
+    out[i] = number and stored or part
+    node = number and kfs.read_inode(sb, number) or nil
+  end
+
+  return "/" .. table.concat(out, "/")
+end
+
 function kfs.list(sb, path)
   local number, node = kfs.find(sb, path)
 
@@ -1439,8 +1487,10 @@ local function link(sb, dir_number, dir_node, name, inode)
 
   if not entries then return nil, err end
 
+  -- Whatever case it is written in, a name already here is replaced
+  -- where it points and keeps its spelling.
   for _, e in ipairs(entries) do
-    if e.name == name then
+    if same(e.name, name) then
       e.inode = inode
       return kfs.write_dir(sb, dir_number, dir_node, entries)
     end
@@ -1578,7 +1628,7 @@ function kfs.rename(sb, path, to)
   local at
 
   for i, e in ipairs(entries) do
-    if e.name == name then at = i end
+    if same(e.name, name) then at = i end
   end
 
   if not at then return nil, "no such file" end
@@ -1590,8 +1640,10 @@ function kfs.rename(sb, path, to)
   -- with the first.
   --
   if to_number == dir_number then
-    for _, e in ipairs(entries) do
-      if e.name == to_name then return nil, "that name is taken" end
+    -- Its own name in another case is not taken: `notes.txt` to
+    -- `Notes.txt` is how a file's spelling is changed.
+    for i, e in ipairs(entries) do
+      if i ~= at and same(e.name, to_name) then return nil, "that name is taken" end
     end
 
     entries[at].name = to_name
@@ -1614,7 +1666,7 @@ function kfs.rename(sb, path, to)
   if not there then return nil, terr end
 
   for _, e in ipairs(there) do
-    if e.name == to_name then return nil, "that name is taken" end
+    if same(e.name, to_name) then return nil, "that name is taken" end
   end
 
   there[#there + 1] = { inode = inode, name = to_name }
@@ -1634,7 +1686,7 @@ function kfs.rename(sb, path, to)
   if not mine then return nil, merr end
 
   for i, e in ipairs(mine) do
-    if e.name == name then
+    if same(e.name, name) then
       table.remove(mine, i)
       break
     end
@@ -1668,7 +1720,7 @@ function kfs.unlink(sb, path)
   local at, victim
 
   for i, e in ipairs(entries) do
-    if e.name == name then
+    if same(e.name, name) then
       at, victim = i, e.inode
       break
     end

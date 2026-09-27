@@ -45,10 +45,10 @@ browser and Video shipped. Changing the shipped system from `/Home` is **not dec
 skipped for now. Not yet answered: the four names outside the two trees
 (`/Dev`, `/Drives`, `/App`, `/Temporary`).
 
-**Names are to be case-insensitive and case-preserving** (Diego: "it
-doesnt make sense to have case sensitiveness in this day and age"). Not
-built: kfs compares names exactly, the namespace matches prefixes exactly,
-ramfs likewise; the FAT reader already folds case.
+**Names are case-insensitive and case-preserving** (Diego: "it doesnt
+make sense to have case sensitiveness in this day and age"), built the same
+night (18.228, `design.md` 8.3c): each place holding a name folds its own,
+and the disk spells a path its own way while its index exists.
 
 **Programs from a file, `docs/elf.md`, steps 1 to 4 DONE**: `SYS_SPAWN_IMAGE`
 (18.221) - the kernel copies an image from a region into its own memory
@@ -75,10 +75,11 @@ first before enforcing things that limit the usage". And his focus: "an
 elegant and easy way to understand where things go ... systems should be
 self explanatory in their structure of files and directorues".
 
-**Next**, in his order: case-insensitive names, then ELF step 5 once the
-app's anatomy is agreed, then 6e's lesson plan drawn (the tutorial, with
-the bundled apps as lessons). 6q, the flaky Deskbar focus and Large icons
-checks, stands.
+**Next**: the layout's renames (6s) once Diego answers the five names
+beside the two trees - `/Devices`, `/Drives`, `/Network`, `/Running`,
+`/Temporary` - drawn as "the root, whole" in `docs/layout.html`; then ELF
+step 5, Doom into its own folder in the new layout; then 6e's lesson plan
+drawn. 6q, the flaky Deskbar focus and Large icons checks, stands.
 
 ## 26 September: Cafesa3D reads and writes other formats, and renders to a file
 

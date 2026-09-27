@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <strings.h>
 
 #include "kosmos.h"
 #include "blockproto.h"
@@ -591,21 +592,13 @@ static struct volume *volume_for(const char *path, const char **rest,
         return NULL;
     }
 
+    /* Whatever its case (`roadmap.md` 6s), as the names inside a FAT
+     * volume already are - and as `drives_unique_name` numbers two drives
+     * that differ only in case apart, so one cannot hide the other. */
     for (i = 0; i < volume_count; i++) {
-        if (len_of(volumes[i].name) == n) {
-            unsigned k;
-            bool same = true;
-
-            for (k = 0; k < n; k++) {
-                if (volumes[i].name[k] != at[k]) {
-                    same = false;
-                    break;
-                }
-            }
-
-            if (same) {
-                return &volumes[i];
-            }
+        if (len_of(volumes[i].name) == n
+            && strncasecmp(volumes[i].name, at, n) == 0) {
+            return &volumes[i];
         }
     }
 

@@ -24,6 +24,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 #include "kosmos.h"
 #include "appproto.h"
@@ -46,7 +47,8 @@ static struct entry *find(const char *name)
     unsigned i;
 
     for (i = 0; i < APP_MAX; i++) {
-        if (apps[i].in_use && strcmp(apps[i].name, name) == 0) {
+        /* Whatever its case, as every name (`roadmap.md` 6s). */
+        if (apps[i].in_use && strcasecmp(apps[i].name, name) == 0) {
             return &apps[i];
         }
     }

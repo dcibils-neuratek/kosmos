@@ -114,6 +114,50 @@ def main():
             # rather than a raise from `string.pack` inside the namespace kit.
             'print("F-LONG", pcall(fs.getattr, "/dev/" .. string.rep("d", 40)), '
             'pcall(fs.getattr, "/bin/" .. string.rep("b", 80)))',
+
+            # **Names whatever their case, kept as they were given**
+            # (`roadmap.md` 6s): one file on the disk and one in memory,
+            # written and read however the path is typed, and a write in
+            # another case replacing the file and keeping its name.
+            'fs.write("/Home/Case.txt", "disk") fs.write("/RAMFS/Case.txt", "memory") '
+            'fs.write("/HOME/CASE.TXT", "disk again")',
+
+            'print("C-READ", fs.read("/home/case.txt"), fs.read("/ramfs/CASE.TXT"))',
+
+            'local n, c = 0, nil for _, x in ipairs(fs.list("/home") or {}) do '
+            'if x:lower() == "case.txt" then n, c = n + 1, x end end '
+            'print("C-LIST", n, c)',
+
+            # The disk's index is keyed by path - it was built by the queries
+            # above - so an attribute set through another case has to land
+            # under the file's own spelling, once.
+            'fs.setattr("/HOME/case.TXT", { kind = "cased" }) '
+            'print("C-QUERY", table.concat(fs.query("/Home", { kind = "cased" }) or {}, ","))',
+
+            # The programs, the devices, the registry and a library.
+            'print("C-BIN", (fs.getattr("/BIN/CLOCK.lua") or {}).kind, type(fs.read("/Dev/CPU")))',
+
+            'E1, E2 = sys.endpoint(), sys.endpoint() '
+            'R1 = fs.send("/App", { type = "register", name = "Cased" }, E1) '
+            'R2 = fs.send("/app", { type = "register", name = "CASED" }, E2) '
+            'print("C-APP", R1 and R1.name, R2 and R2.name) '
+            'fs.send("/app", { type = "unregister", name = R1 and R1.name or "" }) '
+            'fs.send("/app", { type = "unregister", name = R2 and R2.name or "" })',
+
+            # `use` is a program's, not the prompt's: a program that asks
+            # for one library by two spellings.
+            'fs.write("/ramfs/usetwice.lua", "print(\\"C-USE\\", '
+            'use(\\"/LIB/Text.lua\\") == use(\\"/lib/text.lua\\"))\\n")',
+
+            'run /ramfs/usetwice.lua',
+
+            # And a name's spelling changed by a rename to itself in another
+            # case, on both kinds of mount.
+            'print("C-RENAME", fs.send("/home/case.txt", { type = "rename", to = "/home/CASE.txt" }) and true, '
+            'fs.send("/ramfs/case.txt", { type = "rename", to = "/ramfs/CASE.txt" }) and true) '
+            'local seen = {} for _, m in ipairs({ "/home", "/ramfs" }) do '
+            'for _, x in ipairs(fs.list(m) or {}) do if x:lower() == "case.txt" then '
+            'seen[#seen + 1] = x end end end print("C-NAMES", table.concat(seen, ","))',
         #
         # Five seconds a command, not forty. `pump` waits the whole time
         # rather than stopping at the prompt, so `each` is a real cost per
@@ -146,6 +190,44 @@ def main():
                 raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
                               + flat[-1200:])
             checks += 1
+
+        #
+        # Names whatever their case: each marker's line, exactly.
+        #
+        missed = []
+
+        for marker, want, what in [
+            ("C-READ", "disk again memory",
+             "a file was not found whatever the case of its path, on the disk "
+             "and in memory - or a write in another case did not replace it"),
+            ("C-LIST", "1 Case.txt",
+             "the disk did not keep one file under the name it was made with"),
+            ("C-QUERY", "/home/Case.txt",
+             "an attribute set through another case was not indexed under the "
+             "file's own spelling, once"),
+            ("C-BIN", "application table",
+             "/BIN/CLOCK.lua or /Dev/CPU was not found whatever its case"),
+            ("C-APP", "Cased CASED2",
+             "/app did not take CASED for the name Cased already has"),
+            ("C-USE", "true",
+             "a library used through two spellings was loaded twice"),
+            ("C-RENAME", "true true",
+             "a rename to a name's own other case was refused"),
+            ("C-NAMES", "CASE.txt,CASE.txt",
+             "a rename to another case did not change the name's spelling"),
+        ]:
+            lines = [l for l in flat.splitlines() if l.startswith(marker + " ")]
+
+            # All of them, rather than the first: a control that breaks one
+            # mechanism should show every check that stands on it.
+            if not lines or lines[-1][len(marker) + 1:].strip() != want:
+                missed.append(f"{what}: wanted {marker} {want!r}, got "
+                              + (repr(lines[-1]) if lines else "nothing"))
+            checks += 1
+
+        if missed:
+            raise Failure(f"{len(missed)} of the checks on names whatever their "
+                          "case:\n  " + "\n  ".join(missed))
 
         #
         # The sixty-four character names. Read back rather than listed alone:
@@ -265,7 +347,9 @@ def main():
         checks += 1
 
         print(f"PASS: {checks} checks on attributes and the queries over "
-              "them, on both kinds of mount.")
+              "them, on both kinds of mount - and names found whatever "
+              "their case and kept as they were given, on the disk, in "
+              "memory, in /bin, /dev, /app and a library used twice.")
         return 0
     except Failure as e:
         print(f"FAIL: {e}")

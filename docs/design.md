@@ -979,6 +979,16 @@ instead of a string it assembled, and refused past a megabyte. A 3 MB file
 is written and read back in the gate, the instant between the bytes and the
 commit is held on the host, and `make powertest` still passes (18.178).
 
+### 8.3c A name is found whatever its case, and keeps the case it was given
+
+Decided on 27 September 2026 by Diego, once the layout gave every name a capital - `/Kosmos/Libraries`, `/Home` - "it doesnet make sense to have case sensitiveness in this day and age". Kosmos had compared names exactly everywhere but the FAT reader.
+
+**Folded to compare, kept as given.** `notes.txt` finds `Notes.txt`; a directory cannot hold both; a listing says `Notes.txt`, the spelling the file was made with; writing `NOTES.TXT` replaces it and keeps its name; renaming it to `notes.txt` is how the spelling changes. The fold is A to Z and nothing else, as FAT's is: a byte past 127 is part of a UTF-8 name and compares as itself.
+
+**Each place that holds a name folds its own**, and nothing is folded twice: the namespace matches a mount's prefix folded and hands the rest to the server as typed; `kfs` compares a directory's entries folded; `ramfs`, `binfs`, `/app`, the devices and the drives each find a name the same way; and `use` keeps one instance of a library however its path is spelled.
+
+**The one place a spelling is kept by path is the disk's index**, the attributes a query answers from, and `/Home/x` and `/home/x` there would be two keys for one file. So while an index exists, the disk server turns each path into the disk's own spelling as it arrives (`kfs.spelled`); before there is one it does not, because that is a walk of the path's directories and kfs has no block cache - a machine that never asks a query never pays it. `ramfs` stores a new file under its directories' existing spelling for the same reason: its table holds whole paths, and a query hands them back.
+
 ### 8.4 A large file is mapped, not copied
 
 `read` returning a string is right for a configuration file and wrong for a picture. A 936 KB PNG through `fs.read` gives `not enough memory`, because the string is accumulated on a 2 MB process heap.
@@ -993,22 +1003,27 @@ So a large read returns a **memory capability** instead: the server puts the fil
 
 There is no distinction between writing an app and modifying the system. An app and the window manager are the same class of thing, in the same language, reachable from the same REPL. That is the Lisp Machine property.
 
-An app is a directory with `.lua` files and a manifest. No compilation, no linker, no custom executable format. You copy the folder.
+**An application is one folder, and everything that is it is in the folder** (decided with Diego, 27 September 2026; `docs/elf.md`): its program, the Lua file named after the folder (`Doom/doom.lua`); its own Lua files, reached as `use("menu.lua")`; an ELF with its C in it when it has C (`doom.elf`, reached as `use("doom.elf")`); what it plays or shows - Doom's WAD is part of Doom; and its settings and its saves. It stands on what Kosmos shares - kits, servers, drivers - and brings only what is its own. Copying the folder copies the application, and deleting it removes everything it brought: "i want to be able to delete an app and all that the app brought,its gone". What a person saves *through* it - a document chosen in the Save window - is theirs and stays.
+
+This said "no compilation, no linker, no custom executable format". That held while every application was Lua. An application with C in it - a game's engine - is linked, and ELF is the format, read in userland into the image the kernel accepts; a Lua application needs none of it.
 
 ### 9.2 The manifest
 
-This is where capabilities stop being a kernel abstraction and become something visible:
+**The manifest is the program's own header**, the comment its file opens with, and not a second file:
 
 ```lua
-return {
-  name = "Notes",
-  needs = { "ui", "/home/notes", "/dev/clock" },
-}
+-- kosmos: application
+-- kosmos: icon App_Generic
+-- kosmos: section demos
+-- kosmos: image doom.elf
+-- kosmos: needs audio
 ```
 
-The launcher builds the namespace with exactly that. The app reaches nothing else because nothing else exists in its world.
+Doom's, as step 5 of `elf.md` will make it: the first three lines are its header today.
 
-Even the clock is a capability. If you do not ask for it, you do not have it.
+`binfs` reads it to say whether a file is an application or a program and where the Deskbar lists it; the Deskbar draws the icon; the launcher runs the program in the image it names, and grants what it says it needs. One place for these facts, in the file they describe, so they cannot drift from it.
+
+**What `needs` does is less than this section once said, and the difference is written down rather than left.** It said the launcher builds an application's namespace from its needs and the application reaches nothing else. What is true: a need is a word - `processes`, `audio`, `network`, `camera` - and the launcher grants that power or that device only to a program that declares it (`init.lua`, `launch`); a Deskbar replicant's files are narrowed to the paths it declares (`ui.restricted`). Everything else a program is handed whatever it declares - `/home`, read and write, among it. Handing an application only what it declares, or only its own folder, was proposed on 27 September and set aside by Diego: "we need to use the systme first before enforcing things that limit the usage". It is per-launcher permissions' ground, for when using the system says it is time.
 
 ### 9.3 Example: Monitor
 

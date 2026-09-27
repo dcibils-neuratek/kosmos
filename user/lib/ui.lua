@@ -4862,9 +4862,15 @@ function ui.restricted(needs)
     allowed[#allowed + 1] = path
   end
 
+  -- Whatever the case of either, as the namespace behind it finds a name
+  -- (`roadmap.md` 6s): given `/dev/clock`, `/Dev/Clock` is the same path.
   local function permitted(path)
+    local p = tostring(path):lower()
+
     for _, prefix in ipairs(allowed) do
-      if path == prefix or path:sub(1, #prefix + 1) == prefix .. "/" then
+      local want = prefix:lower()
+
+      if p == want or p:sub(1, #want + 1) == want .. "/" then
         return true
       end
     end

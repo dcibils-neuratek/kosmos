@@ -30,6 +30,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 #include "kosmos.h"
 #include "ramproto.h"
@@ -159,12 +160,18 @@ static bool is_root(const char *path)
     return path[0] == '/' && path[1] == '\0';
 }
 
+/*
+ * **Whatever its case** (`roadmap.md` 6s): `/Notes.txt` finds `/notes.txt`,
+ * and the store cannot hold both. A path keeps the spelling it was made
+ * with, directories included (`spell_parents`), so what a listing or a
+ * query says is what was typed when the file was made.
+ */
 static struct node *find(const char *path)
 {
     unsigned i;
 
     for (i = 0; i < NODES; i++) {
-        if (nodes[i].used && strcmp(nodes[i].path, path) == 0) {
+        if (nodes[i].used && strcasecmp(nodes[i].path, path) == 0) {
             return &nodes[i];
         }
     }
@@ -186,7 +193,7 @@ static const char *child_of(const char *dir, const char *path)
     if (is_root(dir)) {
         rest = path + 1;                  /* "/a" is a child of "/" */
     } else {
-        if (strncmp(path, dir, n) != 0 || path[n] != '/') {
+        if (strncasecmp(path, dir, n) != 0 || path[n] != '/') {
             return NULL;
         }
 
@@ -229,6 +236,35 @@ static bool has_children(const char *dir)
  */
 static struct node *claim(const char *path);
 
+/*
+ * `path`'s directories as they are spelled here, its last name as given.
+ *
+ * A new file's directories are found whatever the case they were typed in,
+ * and a flat table stores each node's whole path - so without this, a file
+ * made as `/NOTES/x` in the directory `/notes` would keep `/NOTES/x`, and a
+ * query would hand back a path whose directory nobody made. Folding keeps
+ * the length of an ASCII name, which is what lets the spelling be copied
+ * over in place.
+ */
+static void spell_parents(char *path)
+{
+    size_t i;
+
+    for (i = 1; path[i] != '\0'; i++) {
+        if (path[i] == '/') {
+            char dir[RAM_PATH_MAX];
+            struct node *d;
+
+            copy_into(dir, sizeof(dir), path, i);
+            d = find(dir);
+
+            if (d != NULL && strlen(d->path) == i) {
+                memcpy(path, d->path, i);
+            }
+        }
+    }
+}
+
 static void ensure_parents(const char *path)
 {
     char dir[RAM_PATH_MAX];
@@ -265,6 +301,7 @@ static struct node *claim(const char *path)
             memset(&nodes[i], 0, sizeof(nodes[i]));
             nodes[i].used = true;
             copy_into(nodes[i].path, RAM_PATH_MAX, path, strlen(path));
+            spell_parents(nodes[i].path);
             return &nodes[i];
         }
     }
@@ -399,7 +436,7 @@ static unsigned evaluate(const char *under,
             }
 
             if (!whole
-                && (strncmp(n->path, under, under_len) != 0
+                && (strncasecmp(n->path, under, under_len) != 0
                     || (n->path[under_len] != '\0'
                         && n->path[under_len] != '/'))) {
                 continue;
@@ -886,6 +923,7 @@ static void answer(const struct message *msg, uint64_t sender)
         size_t from_len;
 
         normalise(to, req.u.data);
+        spell_parents(to);
 
         if (is_root(path) || is_root(to)) {
             fail(sender, RAM_ERR_NO_PATH);
@@ -899,7 +937,9 @@ static void answer(const struct message *msg, uint64_t sender)
             return;
         }
 
-        if (find(to) != NULL) {
+        /* Its own path in another case is not taken: `/notes` to
+         * `/Notes` is how a spelling is changed. */
+        if (find(to) != NULL && find(to) != n) {
             fail(sender, RAM_ERR_EXISTS);
             return;
         }
@@ -912,7 +952,7 @@ static void answer(const struct message *msg, uint64_t sender)
          * under it, and the string test is exact because both are absolute
          * paths through the same flat table.
          */
-        if (strncmp(to, path, from_len) == 0 && to[from_len] == '/') {
+        if (strncasecmp(to, path, from_len) == 0 && to[from_len] == '/') {
             fail(sender, RAM_ERR_NO_PATH);
             return;
         }
@@ -931,7 +971,7 @@ static void answer(const struct message *msg, uint64_t sender)
                 continue;
             }
 
-            if (strncmp(nodes[i].path, path, from_len) != 0
+            if (strncasecmp(nodes[i].path, path, from_len) != 0
                 || nodes[i].path[from_len] != '/') {
                 continue;
             }

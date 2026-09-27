@@ -653,6 +653,62 @@ check(kfs.free_blocks(odd) == counted,
       "a block past the end of the disk is never free, whatever the bitmap says")
 
 --------------------------------------------------------------------------
+-- A name is found whatever its case, and keeps the case it was given
+-- (`roadmap.md` 6s, Diego: "it doesnet make sense to have case
+-- sensitiveness in this day and age").
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+-- Not `/Home`: a fresh disk has `/home`, and so, now, has that too.
+
+kfs.mkdir(sb, "/Work", 1)
+kfs.store(sb, "/Work/Notes.txt", "first", 1)
+
+local function names(path)
+  return table.concat(kfs.list(sb, path) or {}, ",")
+end
+
+-- What is in the file at `path`, or nil where there is none - so a check
+-- that finds nothing fails with its sentence rather than stopping the run.
+local function contents(path)
+  local _, node = kfs.find(sb, path)
+
+  return type(node) == "table" and kfs.read_file(sb, node) or nil
+end
+
+check(contents("/work/notes.TXT") == "first",
+      "a file is found whatever the case of its path")
+check(names("/WORK") == "Notes.txt", "a listing gives the name as it was made")
+
+kfs.store(sb, "/work/NOTES.TXT", "second", 2)
+check(names("/Work") == "Notes.txt"
+      and contents("/Work/Notes.txt") == "second",
+      "writing it in another case replaces the file and keeps its name")
+
+check(kfs.mkdir(sb, "/WORK", 3) == nil, "a directory in another case is taken")
+
+kfs.store(sb, "/Work/Other.txt", "other", 3)
+check(kfs.rename(sb, "/work/other.txt", "NOTES.txt") == nil,
+      "a rename onto another file's name in another case is refused")
+check(kfs.rename(sb, "/work/other.txt", "OTHER.txt") == true
+      and names("/Work") == "Notes.txt,OTHER.txt",
+      "a rename to its own name in another case changes its spelling")
+
+kfs.mkdir(sb, "/Work/Docs", 4)
+check(kfs.rename(sb, "/WORK/OTHER.TXT", "/work/docs/Moved.txt") == true
+      and names("/Work/Docs") == "Moved.txt",
+      "a rename across directories finds both whatever their case")
+
+check(kfs.spelled(sb, "/WORK/docs/moved.TXT") == "/Work/Docs/Moved.txt"
+      and kfs.spelled(sb, "/work/DOCS/New.txt") == "/Work/Docs/New.txt"
+      and kfs.spelled(sb, "/work/docs/MOVED.txt", true) == "/Work/Docs/MOVED.txt",
+      "a path spelled as the disk has it, a new last name kept as given")
+
+check(kfs.unlink(sb, "/WORK/NOTES.TXT") == true and names("/Work") == "Docs",
+      "a file is removed whatever the case it is named in")
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed.")

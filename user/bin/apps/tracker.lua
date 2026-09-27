@@ -2590,7 +2590,9 @@ function rename_field:on_enter(text)
     return
   end
 
-  if fs.getattr(files.join(where, text)) then
+  -- Its own name in another case is not another file: names are found
+  -- whatever their case, so `notes.txt` to `Notes.txt` is a respelling.
+  if text:lower() ~= from:lower() and fs.getattr(files.join(where, text)) then
     status.text = text .. " already exists"
     return
   end

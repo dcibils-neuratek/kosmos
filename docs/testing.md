@@ -11233,3 +11233,43 @@ inside. **Controls**: matched with its case - `0 files`, two fail; and
 without the shorter-first rule - `clock-replicant.lua` first, two fail.
 
 The gate with Find a file: 50 of 50 in 9:43.
+
+## 18.228 A name whatever its case
+
+`roadmap.md` 6s, `design.md` 8.3c - Diego: "yes case insensitive, it
+doesnet make sense to have case sensitiveness in this day and age". Found
+whatever its case, kept as given: the namespace folds a mount's prefix and
+hands the rest on as typed; `kfs`, `ramfs`, `binfs`, `/app`, the devices
+and the drives each fold their own; `use` keeps one instance of a library
+however it is spelled; `mv`, `files.move` and Tracker's rename let a name
+be respelled; and a replicant's guard folds the paths it was given. While
+the disk has an index - the attributes a query answers from, keyed by
+path - each path is turned into the disk's own spelling as it arrives
+(`kfs.spelled`), and `ramfs` stores a new file under its directories'
+existing spelling, because a query hands whole paths back.
+
+**On the Mac, `test_kfs.lua`, 75 checks**, nine new: a file found through
+another case and listed as made; written through another case, replaced
+and keeping its name; a directory in another case taken; a rename onto
+another file's name in another case refused and onto its own changing its
+spelling; a rename across directories whatever their case; `kfs.spelled`;
+and a remove. They read through a helper that answers nil, so a control
+names each check it breaks rather than stopping at the first. **Control**:
+names compared exactly - eight of the nine fail; the ninth, a refused
+rename, is refused either way.
+
+**In the queries suite, both boards, 26 checks**, eight new, on one boot
+with a disk: `/Home/Case.txt` and `/RAMFS/Case.txt` written, `/HOME/CASE.TXT`
+written again and both read back through other cases; the disk listing one
+file, as made; an attribute set as `/HOME/case.TXT` found by a query at
+`/Home` as `/home/Case.txt`, once; `/BIN/CLOCK.lua` an application and
+`/Dev/CPU` read; `/app` numbering `CASED` apart from `Cased`; a program
+using `/LIB/Text.lua` and `/lib/text.lua` and getting one table; and a
+rename to each file's own name in capitals, on both mounts. The suite
+reports every one of the eight that misses rather than the first.
+**Controls**, three: the namespace matching exactly - all eight fail; each
+server exact, the disk unspelled and `use` by the typed path - seven fail,
+each on its own server (the disk's listing stands, since `kfs` still
+folds); and `use` alone by the typed path - `C-USE false`.
+
+The gate with names whatever their case: 50 of 50 in 9:09.

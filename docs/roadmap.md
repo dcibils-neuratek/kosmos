@@ -2223,6 +2223,11 @@ processors, and still what follows USB:
    sensitiveness in this day and age"** - so every name is found whatever
    its case and keeps the case it was given, in `kfs`, the namespace and
    every server that holds names. The four outside both, not yet answered.
+   **Case-insensitive names DONE the same night** (`testing.md` 18.228,
+   `design.md` 8.3c): the namespace, `kfs`, the disk's index, `ramfs`,
+   `binfs`, `/app`, the devices, the drives and `use`'s cache fold a name
+   to find it and keep it as given; `mv`, `files.move` and Tracker's rename
+   let a name be respelled.
    **And his focus, the same night**: "i do want to focus on having an
    elegant and easy way to understand where things go and are placed in as
    sytem, as i believes systems should be self explanatory in their
@@ -2232,7 +2237,17 @@ processors, and still what follows USB:
    `/Network` (`/net`), `/Running` (`/app`, which beside two `Apps`
    folders reads as applications) and `/Temporary` (`/ramfs`); `/system`
    and `/user`, which the disk is made with and almost nothing reads, go.
-   Asked.
+   **Diego: "yes, those five names are good, go ahead"** - AGREED. The
+   renames, each a step with the whole gate behind it, so a fault points at
+   one name: **(a)** the five beside the trees, `/dev` to `/Devices`,
+   `/drives` to `/Drives`, `/net` to `/Network`, `/app` to `/Running`,
+   `/ramfs` to `/Temporary`; **(b)** `/home` to `/Home` - only its case, so
+   every `/home/...` already written, and the partition on a stick, go on
+   working; **(c)** the `/Kosmos` tree - `/lib` to `/Kosmos/Libraries`,
+   `/kits` to `/Kosmos/Kits`, `/bin` split into `/Kosmos/Apps` and
+   `/Kosmos/Programs`, `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
+   in /Kosmos/Themes, yes"), `/system` and `/user` gone; **(d)** the dotfiles at
+   the top of `/home` into `/Home/Preferences`.
 
 6u. **AGREED on 27 September - one scrollbar, everywhere.** Diego, seeing
    the IDE's thin one: "Why scrollbars here look flat and in other apps look

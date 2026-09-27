@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 #include "kosmos.h"
 #include "devproto.h"
@@ -381,15 +382,16 @@ static void node_kernel(const struct sysinfo *i, struct dev_reply *r)
  * The order `list` returns, so a listing is reproducible.
  *
  * `console` is deliberately absent - see the note at the top of this file.
+ * Asked for whatever the case, as every name is (`roadmap.md` 6s).
  */
 static bool node_read(const char *want, const struct sysinfo *i,
                       struct dev_reply *r)
 {
-    if (strcmp(want, "cpu") == 0)    { node_cpu(i, r);    return true; }
-    if (strcmp(want, "memory") == 0) { node_memory(i, r); return true; }
-    if (strcmp(want, "kernel") == 0) { node_kernel(i, r); return true; }
+    if (strcasecmp(want, "cpu") == 0)    { node_cpu(i, r);    return true; }
+    if (strcasecmp(want, "memory") == 0) { node_memory(i, r); return true; }
+    if (strcasecmp(want, "kernel") == 0) { node_kernel(i, r); return true; }
 
-    if (strcmp(want, "timer") == 0) {
+    if (strcasecmp(want, "timer") == 0) {
         put_num(r, "hz", i->tick_hz);
         put_num(r, "counter_hz", i->counter_hz);
         return true;
@@ -413,13 +415,13 @@ static bool node_read(const char *want, const struct sysinfo *i,
      * assume. There is no zone here: the board keeps UTC and a preference
      * turns it into local time.
      */
-    if (strcmp(want, "clock") == 0) {
+    if (strcasecmp(want, "clock") == 0) {
         put_num(r, "epoch", i->epoch);
         put_num(r, "utc", 1);
         return true;
     }
 
-    if (strcmp(want, "screen") == 0 && i->screen_width > 0) {
+    if (strcasecmp(want, "screen") == 0 && i->screen_width > 0) {
         put_num(r, "width", i->screen_width);
         put_num(r, "height", i->screen_height);
         put_num(r, "pitch", i->screen_pitch);
@@ -445,7 +447,7 @@ static bool node_read(const char *want, const struct sysinfo *i,
      * is going, in the words a bar shows. Absent from the listing and
      * unreadable otherwise, as a screen is on a board without one.
      */
-    if (strcmp(want, "battery") == 0 && i->battery_known != 0) {
+    if (strcasecmp(want, "battery") == 0 && i->battery_known != 0) {
         put_num(r, "present", i->battery_present);
         put_num(r, "percent", i->battery_percent);
         put_num(r, "on_ac", i->battery_on_ac);
@@ -457,7 +459,7 @@ static bool node_read(const char *want, const struct sysinfo *i,
         return true;
     }
 
-    if (strcmp(want, "keyboard") == 0 && i->has_keyboard != 0) {
+    if (strcasecmp(want, "keyboard") == 0 && i->has_keyboard != 0) {
         put_text(r, "transport", "virtio-input, polled");
         return true;
     }

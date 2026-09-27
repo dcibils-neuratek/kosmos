@@ -541,6 +541,22 @@ local function new_namespace()
   local ns = {}
 
   --
+  -- **A name is found whatever its case, and keeps the case it was given**
+  -- (`roadmap.md` 6s): `/HOME/notes.txt` reaches the mount at `/home`, and
+  -- what is left of the path goes to the server as it was typed, for the
+  -- server to fold in its own way. `key` is a mount's prefix folded once,
+  -- when it is mounted, so a lookup folds only the path it is asked about.
+  --
+  local function fold(path) return path:lower() end
+
+  -- `path` is `prefix`, or inside it, whatever the case of either.
+  local function within(path, key)
+    local p = fold(path)
+
+    return p == key or p:sub(1, #key + 1) == key .. "/"
+  end
+
+  --
   -- `root` is which part of the server appears here. Left out, the whole
   -- of it does, which is what every mount did before subtrees existed.
   --
@@ -564,13 +580,14 @@ local function new_namespace()
     -- must be the terminal's.
     --
     for i, m in ipairs(mounts) do
-      if m.prefix == prefix then
+      if m.key == fold(prefix) then
         table.remove(mounts, i)
         break
       end
     end
 
-    mounts[#mounts + 1] = { prefix = prefix, cap = capability, root = root , proto = proto }
+    mounts[#mounts + 1] = { prefix = prefix, key = fold(prefix), cap = capability,
+                            root = root, proto = proto }
 
     -- Longest prefix first, so /a/b wins over /a regardless of mount order.
     table.sort(mounts, function(x, y) return #x.prefix > #y.prefix end)
@@ -620,7 +637,7 @@ local function new_namespace()
 
   local function match(path)
     for _, m in ipairs(mounts) do
-      if path == m.prefix or path:sub(1, #m.prefix + 1) == m.prefix .. "/" then
+      if within(path, m.key) then
         local rest = path:sub(#m.prefix + 1)
 
         if rest == "" then rest = "/" end
@@ -693,7 +710,7 @@ local function new_namespace()
     -- Nothing matched at all. Still worth asking, for a registry mounted
     -- somewhere this path only partly overlaps.
     for _, a in ipairs(autos) do
-      if path:sub(1, #a.prefix + 1) == a.prefix .. "/" then
+      if within(path, fold(a.prefix)) and fold(path) ~= fold(a.prefix) then
         if lookup_into(a.prefix, a.cap, path) then
           return match(path)
         end
@@ -1891,11 +1908,11 @@ local function new_namespace()
     local seen, names = {}, {}
 
     for _, m in ipairs(mounts) do
-      if m.prefix ~= path and m.prefix:sub(1, #prefix) == prefix then
+      if m.key ~= fold(path) and m.key:sub(1, #prefix) == fold(prefix) then
         local child = m.prefix:sub(#prefix + 1):match("^([^/]+)")
 
-        if child and not seen[child] then
-          seen[child] = true
+        if child and not seen[fold(child)] then
+          seen[fold(child)] = true
           names[#names + 1] = child
         end
       end
@@ -1963,9 +1980,9 @@ local function new_namespace()
     -- and it holds `console` because something else was attached there.
     if entries then
       local seen = {}
-      for _, n in ipairs(entries) do seen[n] = true end
+      for _, n in ipairs(entries) do seen[fold(n)] = true end
       for _, n in ipairs(attached) do
-        if not seen[n] then entries[#entries + 1] = n end
+        if not seen[fold(n)] then entries[#entries + 1] = n end
       end
       table.sort(entries)
       return entries
@@ -2120,7 +2137,7 @@ local function new_namespace()
     -- what the server said with what is mounted below: the shape of the
     -- tree is the namespace's answer to give.
     for _, m in ipairs(mounts) do
-      if m.prefix == path then
+      if m.key == fold(path) then
         local r = request("getattr", path)
         local attrs = r and r.attrs or {}
 
@@ -2902,7 +2919,7 @@ local function diskfs_handlers(state)
     return out
   end
 
-  return {
+  local handlers = {
     list = function(req)
       local sb = mounted()
 
@@ -2954,7 +2971,7 @@ local function diskfs_handlers(state)
     read = function(req, who, cap)
       local name = req.path:match("([^/]+)$")
 
-      if name == ".super" or req.path == "/.super" then
+      if (name or ""):lower() == ".super" or req.path == "/.super" then
         return { ok = true, value = describe() }
       end
 
@@ -2965,7 +2982,7 @@ local function diskfs_handlers(state)
       -- fields, zeroed, when nothing counts - `describe` gives the reason a
       -- reply's shape must not depend on that.
       --
-      if name == ".device" or req.path == "/.device" then
+      if (name or ""):lower() == ".device" or req.path == "/.device" then
         local d = state.device or {}
 
         return { ok = true, value = {
@@ -3105,7 +3122,7 @@ local function diskfs_handlers(state)
     write = function(req, who, cap)
       local name = req.path:match("([^/]+)$")
 
-      if name == ".format" then
+      if (name or ""):lower() == ".format" then
         -- Checked here rather than only in `mkfs`, because this is the
         -- boundary. A program reaching this path is asking to erase the
         -- disk, and "it asked nicely" has to be part of the request rather
@@ -3136,7 +3153,7 @@ local function diskfs_handlers(state)
         return { ok = false, error = "there is no filesystem here" }
       end
 
-      if not name or RESERVED[name] then
+      if not name or RESERVED[name:lower()] then
         return { ok = false, error = "that name is reserved" }
       end
 
@@ -3262,7 +3279,7 @@ local function diskfs_handlers(state)
 
       local name = req.path:match("([^/]+)$")
 
-      if not name or RESERVED[name] then
+      if not name or RESERVED[name:lower()] then
         return { ok = false, error = "that name is reserved" }
       end
 
@@ -3308,7 +3325,7 @@ local function diskfs_handlers(state)
 
       local name = req.path:match("([^/]+)$")
 
-      if not name or RESERVED[name] then
+      if not name or RESERVED[name:lower()] then
         return { ok = false, error = "that name is reserved" }
       end
 
@@ -3320,7 +3337,7 @@ local function diskfs_handlers(state)
       -- the names `x` is.
       local to_name = req.to:match("([^/]+)$")
 
-      if not to_name or RESERVED[to_name] then
+      if not to_name or RESERVED[to_name:lower()] then
         return { ok = false, error = "that name is reserved" }
       end
 
@@ -3368,7 +3385,7 @@ local function diskfs_handlers(state)
       local name = req.path:match("([^/]+)$")
       local sb = mounted()
 
-      if not name or RESERVED[name] then
+      if not name or RESERVED[name:lower()] then
         return { ok = true, attrs = { kind = "device" } }
       end
 
@@ -3429,7 +3446,7 @@ local function diskfs_handlers(state)
 
       local name = req.path:match("([^/]+)$")
 
-      if not name or RESERVED[name] then
+      if not name or RESERVED[name:lower()] then
         return { ok = false, error = "that name is the disk, not a file" }
       end
 
@@ -3534,8 +3551,8 @@ local function diskfs_handlers(state)
       for path in pairs(candidates) do
         local attrs = state.attrs[path]
         local keep = attrs ~= nil
-                     and (scoped == nil or path == under
-                          or path:sub(1, #scoped) == scoped)
+                     and (scoped == nil or kfs.same_name(path, under)
+                          or kfs.same_name(path:sub(1, #scoped), scoped))
 
         if keep then
           for name, value in pairs(where) do
@@ -3554,6 +3571,36 @@ local function diskfs_handlers(state)
       return { ok = true, paths = out }
     end,
   }
+
+  --
+  -- **Paths in the disk's own spelling, while anything is kept by path.**
+  -- A name is found whatever its case (`kfs.same_name`), so the handlers
+  -- need nothing - except that the index and the attributes beside it are
+  -- keyed by path, and `/Home/x` and `/home/x` would be two keys for one
+  -- file: a query answering it twice, a delete leaving the other behind. So
+  -- while an index exists every path is turned into the disk's spelling as
+  -- it arrives (`kfs.spelled`) - a walk of its directories, which is why not
+  -- before: a machine that never asks a query never pays it. A rename's
+  -- destination keeps its last part as typed, because that is the new
+  -- name, and `notes.txt` to `Notes.txt` is how a spelling is changed.
+  --
+  for op, handler in pairs(handlers) do
+    handlers[op] = function(req, ...)
+      local sb = state.index and state.sb
+
+      if sb and type(req) == "table" then
+        if type(req.path) == "string" then req.path = kfs.spelled(sb, req.path) end
+
+        if type(req.to) == "string" and req.to:find("/") then
+          req.to = kfs.spelled(sb, req.to, true)
+        end
+      end
+
+      return handler(req, ...)
+    end
+  end
+
+  return handlers
 end
 
 --------------------------------------------------------------------------
@@ -6264,8 +6311,15 @@ if role == ROLE_RUNNER then
   local loaded = {}
 
   env.use = function(path)
-    if loaded[path] ~= nil then
-      return loaded[path]
+    --
+    -- Cached by the path folded, as a name is found (`roadmap.md` 6s): a
+    -- library asked for as `/lib/ui.lua` and as `/LIB/UI.lua` is one file,
+    -- and two instances of it would be two sets of its state.
+    --
+    local key = tostring(path):lower()
+
+    if loaded[key] ~= nil then
+      return loaded[key]
     end
 
     --
@@ -6282,7 +6336,7 @@ if role == ROLE_RUNNER then
     -- rule the rest of the system runs on still holds: what you were not
     -- given, you do not have. A program with no `use` has no kits.
     --
-    local kit = path:match("^/kits/([%w_]+)$")
+    local kit = key:match("^/kits/([%w_]+)$")
 
     if kit then
       local value, why = sys.kit(kit)
@@ -6291,7 +6345,7 @@ if role == ROLE_RUNNER then
         error(("use: %s: %s"):format(path, tostring(why)), 2)
       end
 
-      loaded[path] = value
+      loaded[key] = value
       return value
     end
 
@@ -6313,7 +6367,7 @@ if role == ROLE_RUNNER then
     -- after the first would run it again.
     if value == nil then value = true end
 
-    loaded[path] = value
+    loaded[key] = value
     return value
   end
 

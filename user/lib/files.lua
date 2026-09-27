@@ -257,17 +257,22 @@ end
 function files.move(from, to)
   if from == to then return nil, "it is already there" end
 
+  -- The same path in another case is the same file (`roadmap.md` 6s), so
+  -- a move to it is a change of spelling, and the file being there is not
+  -- a reason to refuse: `notes.txt` to `Notes.txt`.
+  local respelled = from:lower() == to:lower()
+
   --
   -- Refused here rather than by the filesystem, because only one of the
   -- two answers is right and the filesystem does not know which. A move of
   -- `/home/a` to `/home/a/b` would either loop or orphan a subtree, and the
   -- string test is exact: both are absolute paths through the same tree.
   --
-  if to:sub(1, #from + 1) == from .. "/" then
+  if to:lower():sub(1, #from + 1) == from:lower() .. "/" then
     return nil, "a directory cannot be moved into itself"
   end
 
-  if fs.getattr(to) then return nil, to .. " already exists" end
+  if not respelled and fs.getattr(to) then return nil, to .. " already exists" end
 
   local ok = fs.send(from, { type = "rename", to = to })
 

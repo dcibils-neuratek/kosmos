@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 #include "kosmos.h"
 #include "source.h"
@@ -46,12 +47,13 @@ extern const unsigned            libraries_lua_count;
 static const struct source_entry *store;
 static unsigned                   store_count;
 
+/* Whatever its case (`roadmap.md` 6s): `/bin/Clock.lua` is `clock.lua`. */
 static const struct source_entry *find(const char *name)
 {
     unsigned i;
 
     for (i = 0; i < store_count; i++) {
-        if (strcmp(store[i].name, name) == 0) {
+        if (strcasecmp(store[i].name, name) == 0) {
             return &store[i];
         }
     }

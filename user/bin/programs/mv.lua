@@ -25,7 +25,9 @@ local to   = files.abs(b, cwd)
 
 local there = fs.getattr(to)
 
-if there and there.kind == "directory" then
+-- A directory given as the destination is where it goes - unless it is the
+-- one being moved, named in another case: `mv box Box` respells it.
+if there and there.kind == "directory" and from:lower() ~= to:lower() then
   to = files.join(to, from:match("([^/]+)$") or from)
 end
 
