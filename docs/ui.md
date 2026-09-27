@@ -210,6 +210,19 @@ console's line editor, `edit.lua`, the window manager's prefix - and drops
 what it does not know rather than typing it; each took a sequence to be
 three bytes, so Page Up typed a `~`.
 
+**A key's release goes where its press went** (27 September, `testing.md`
+18.216). `rawkey` went to whichever window had the focus when the key moved,
+so a release sent after the focus changed went to a window that had never
+seen the press, and the one that had kept the key down for ever. Cafesa3D's
+Ctrl O opens the Open panel, which takes the focus before Ctrl comes up, and
+the first Z after the panel closed was Ctrl Z - it undid the scene just
+opened. So the window manager remembers which window each key's press went
+to, and sends its repeats and its release there too, whoever is in front by
+then. It is the rule and not a patch to Cafesa3D because every application
+that reads `rawkey` holds keys - Doom, Quake, the Super Nintendo, Camera,
+Video, Solar - and a game whose W is down when Super Tab moves the focus
+walked on for the same reason.
+
 A widget's `key(c)` is handed one number: a character is itself, a key that
 is not one is a small negative number (`ui.UP` -1 to `ui.LEFT` -4 as ever,
 then `ui.HOME`, `ui.END`, `ui.PAGEUP`, `ui.PAGEDOWN`, `ui.INSERT`,

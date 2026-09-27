@@ -406,11 +406,12 @@ local FULL = { on = false, was = { W, H }, tv = math.tan(FOV / 2) * 744 / 1014 }
 -- two hundred.
 --
 local SCRIPT = {
-  W = 470, OUT = 78, open = false, focused = false, name = "script",
+  W = 470, OUT = 78, open = false, focused = false, name = "staircase",
   out = {}, decode = ui.key_decoder(),
   -- The drawing's own script (`docs/cafesa3d-scripting.html`): a spiral
-  -- staircase, twenty-four steps round a column, and a lamp.
-  text = table.concat({
+  -- staircase, twenty-four steps round a column, and a lamp. What the panel
+  -- offers a scene that came with no script of its own.
+  SAMPLE = table.concat({
     "-- A spiral staircase: a step every fifteen degrees,",
     "-- each a little higher, round a steel column.",
     "local steps, rise = 24, 0.18",
@@ -437,6 +438,11 @@ local SCRIPT = {
     "print((\"%d steps, %.1f m up\"):format(steps, steps * rise))",
   }, "\n") .. "\n",
 }
+
+-- The panel's text before its editor is made; `kept` is whether the scene
+-- has a script to save - once the panel has been open over it, or it came
+-- with one (6d).
+SCRIPT.text, SCRIPT.kept = SCRIPT.SAMPLE, false
 
 -- The light from everywhere that is not a lamp: a sky, from the zenith to
 -- the horizon. What the ray tracer (step three) lights a scene with.
@@ -644,6 +650,12 @@ function GLYPH.camera(s, x, y, c)
                 { x + 1.5, y + 11 }, { x + 1.5, y + 4 } }, c)
   polyline(s, { { x + 9.5, y + 6.5 }, { x + 13.5, y + 4.5 }, { x + 13.5, y + 10.5 },
                 { x + 9.5, y + 8.5 } }, c)
+end
+
+-- A script: the two angle brackets code is written between.
+function GLYPH.script(s, x, y, c)
+  polyline(s, { { x + 5, y + 3 }, { x + 1.5, y + 7.5 }, { x + 5, y + 12 } }, c)
+  polyline(s, { { x + 9, y + 3 }, { x + 12.5, y + 7.5 }, { x + 9, y + 12 } }, c)
 end
 
 function GLYPH.collection(s, x, y, c)
@@ -1230,10 +1242,54 @@ end
 
 --------------------------------------------------------------------------
 -- The Outliner: the collection and everything in it, by name, each with
--- its eye.
+-- its eye - what a script made under the script's name, as the drawing
+-- has it (6d) - and the wheel to reach what does not fit: a script makes
+-- more objects than there are rows.
 --------------------------------------------------------------------------
 
-local rows = {}                              -- as drawn: { y, thing }
+-- As drawn: `rows`, each { y, thing } or { y, script }; `top`, how many
+-- rows the wheel has taken off the top.
+local OUTLINER = { rows = {}, top = 0 }
+
+-- What it lists, in order: each script's objects under its name, then
+-- what was made by hand, each by name.
+function OUTLINER.list()
+  local by, names, loose, list = {}, {}, {}, {}
+  local function by_name(a, b) return a.name < b.name end
+
+  for _, t in ipairs(things) do
+    if t.by then
+      if not by[t.by] then by[t.by], names[#names + 1] = {}, t.by end
+      table.insert(by[t.by], t)
+    else
+      loose[#loose + 1] = t
+    end
+  end
+
+  table.sort(names)
+
+  for _, name in ipairs(names) do
+    list[#list + 1] = { script = name }
+    table.sort(by[name], by_name)
+    for _, t in ipairs(by[name]) do list[#list + 1] = { thing = t, inside = true } end
+  end
+
+  table.sort(loose, by_name)
+  for _, t in ipairs(loose) do list[#list + 1] = { thing = t } end
+
+  return list
+end
+
+-- Three rows a notch; true when it moved.
+function OUTLINER.wheel(n)
+  local top = math.max(0, math.min(OUTLINER.top - n * 3,
+                                   (OUTLINER.count or 0) - (OUTLINER.room or 0)))
+
+  if top == OUTLINER.top then return false end
+
+  OUTLINER.top = top
+  return true
+end
 
 local function panel_title(s, y, text)
   s:fill(SX, y, SIDE, PANEL_T, theme.mix(theme.sunken, theme.window, 400))
@@ -1247,38 +1303,77 @@ local function draw_outliner(s)
   s:fill(SX, HEAD, 1, H - HEAD - FOOT, theme.line_soft)
   panel_title(s, HEAD, "Outliner")
 
-  local sorted = {}
-
-  for _, t in ipairs(things) do sorted[#sorted + 1] = t end
-  table.sort(sorted, function(a, b) return a.name < b.name end)
-
-  rows = {}
-
+  local list = OUTLINER.list()
   local y = OUT_Y + 4
   local ty = (ROW - gfx.height()) // 2
+  local first = y + ROW
+  local room = (PROPS_Y - first) // ROW
+
+  OUTLINER.top = math.max(0, math.min(OUTLINER.top, #list - room))
+  OUTLINER.count, OUTLINER.room, OUTLINER.rows = #list, room, {}
 
   GLYPH.collection(s, SX + 30, y + (ROW - 14) // 2, theme.text_dim)
   s:text(SX + 52, y + ty, "Collection", theme.text_dim, nil, "ui")
-  y = y + ROW
+  y = first
 
-  for _, t in ipairs(sorted) do
+  for i = OUTLINER.top + 1, #list do
     if y + ROW > PROPS_Y then break end
 
-    local on = t == selected
+    local r = list[i]
 
-    if on then s:fill(SX + 1, y, SIDE - 1, ROW, theme.mix(theme.sunken, theme.accent, 110)) end
+    if r.script then
+      -- The script's own row: its name and a badge saying what it is.
+      local bx = SX + 52 + gfx.measure(r.script) + 8
 
-    GLYPH[kind_glyph(t)](s, SX + 48, y + (ROW - 14) // 2,
-                         t.hidden and DIM or theme.text_dim)
-    s:text(SX + 70, y + ty, t.name,
-           t.hidden and DIM or (on and theme.accent or theme.text), nil, "ui")
-    GLYPH.eye(s, SX + SIDE - 30, y + (ROW - 14) // 2, t.hidden and DIM or theme.text_dim,
-              t.hidden)
-    rows[#rows + 1] = { y = y, thing = t }
+      GLYPH.script(s, SX + 30, y + (ROW - 14) // 2, theme.accent)
+      s:text(SX + 52, y + ty, r.script, theme.text, nil, "ui")
+      s:frame_round(bx, y + 5, gfx.measure("script", tiny) + 10, ROW - 10, theme.line_soft, 4)
+      s:text(bx + 5, y + (ROW - gfx.height(tiny)) // 2, "script", theme.text_dim, nil, tiny)
+    else
+      local t, dx = r.thing, r.inside and 14 or 0
+      local on = t == selected
+
+      if on then s:fill(SX + 1, y, SIDE - 1, ROW, theme.mix(theme.sunken, theme.accent, 110)) end
+
+      GLYPH[kind_glyph(t)](s, SX + 48 + dx, y + (ROW - 14) // 2,
+                           t.hidden and DIM or theme.text_dim)
+      s:text(SX + 70 + dx, y + ty, t.name,
+             t.hidden and DIM or (on and theme.accent or theme.text), nil, "ui")
+      GLYPH.eye(s, SX + SIDE - 30, y + (ROW - 14) // 2, t.hidden and DIM or theme.text_dim,
+                t.hidden)
+    end
+
+    r.y = y
+    OUTLINER.rows[#OUTLINER.rows + 1] = r
     y = y + ROW
   end
 
+  -- Where the rows shown are among all of them, when not all fit.
+  if #list > room then
+    local track = PROPS_Y - first - 4
+    local bh = math.max(16, track * room // #list)
+
+    s:fill(SX + SIDE - 7, first + (track - bh) * OUTLINER.top // (#list - room), 3, bh,
+           theme.line)
+  end
+
   s:fill(SX, PROPS_Y, SIDE, 1, theme.line_soft)
+
+  -- What it shows, said when that changes - for whoever drives Cafesa3D
+  -- from outside (`tools/run_script.py`).
+  local shown = {}
+
+  for _, r in ipairs(OUTLINER.rows) do
+    shown[#shown + 1] = r.script and ("script " .. r.script) or r.thing.name
+  end
+
+  local said = ("rows %d to %d of %d: %s"):format(OUTLINER.top + 1,
+                OUTLINER.top + #OUTLINER.rows, #list, table.concat(shown, ", "))
+
+  if said ~= OUTLINER.said then
+    OUTLINER.said = said
+    print("cafesa3d: outliner " .. said)
+  end
 end
 
 --------------------------------------------------------------------------
@@ -1817,8 +1912,6 @@ function SCRIPT.draw(s)
   s:fill(x0 + 1, y0 + PANEL_T - 1, w - 1, 1, theme.line_soft)
   s:text(x0 + 12, y0 + (PANEL_T - 1 - gfx.height(tiny)) // 2, "SCRIPT",
          theme.text_dim, nil, tiny)
-  s:text(x0 + 12 + gfx.measure("SCRIPT", tiny) + 8, y0 + (PANEL_T - 1 - gfx.height()) // 2,
-         SCRIPT.name, theme.text, nil, "ui")
 
   local run_w = 10 + gfx.measure("Run") + 7 + gfx.measure("Ctrl Enter", small) + 10
   local run = control("script:run", x0 + w - 8 - run_w, y0 + (PANEL_T - 1 - 24) // 2, run_w, 24)
@@ -1827,6 +1920,31 @@ function SCRIPT.draw(s)
   s:text(run.x + 10, run.y + (24 - gfx.height()) // 2, "Run", theme.text_on, nil, "ui")
   s:text(run.x + 10 + gfx.measure("Run") + 7, run.y + (24 - gfx.height(small)) // 2,
          "Ctrl Enter", theme.mix(theme.accent, theme.text_on, 600), nil, small)
+
+  -- A script on its own, to share or keep (6d): Save .lua... beside Run,
+  -- and Open .lua... before it.
+  local bx = run.x - 6
+
+  for _, b in ipairs({ { "save", "Save .lua..." }, { "open", "Open .lua..." } }) do
+    local bw = gfx.measure(b[2]) + 20
+    local c = control("script:" .. b[1], bx - bw, run.y, bw, 24)
+
+    s:fill_round(c.x, c.y, bw, 24, theme.window, 6)
+    s:frame_round(c.x, c.y, bw, 24, theme.line_soft, 6)
+    s:text(c.x + 10, c.y + (24 - gfx.height()) // 2, b[2], theme.text, nil, "ui")
+    bx = c.x - 6
+  end
+
+  -- The name in what is left, cut to fit it.
+  local nx = x0 + 12 + gfx.measure("SCRIPT", tiny) + 8
+  local name = SCRIPT.name
+
+  if gfx.measure(name) > bx - 8 - nx then
+    while #name > 1 and gfx.measure(name .. "...") > bx - 8 - nx do name = name:sub(1, -2) end
+    name = name .. "..."
+  end
+
+  s:text(nx, y0 + (PANEL_T - 1 - gfx.height()) // 2, name, theme.text, nil, "ui")
 
   -- The code: the IDE's editor, in this window's pixels.
   local lines = math.max(1, #SCRIPT.out)
@@ -1842,8 +1960,11 @@ function SCRIPT.draw(s)
   -- whoever drives Cafesa3D from outside (`tools/run_script.py`).
   if not SCRIPT.told then
     SCRIPT.told = true
-    print(("cafesa3d: script code %d,%d %dx%d; run %d,%d"):format(x0 + 1, y0 + PANEL_T,
-          e.w, e.h, run.x + run.w // 2, run.y + run.h // 2))
+    local op, sv = controls["script:open"], controls["script:save"]
+
+    print(("cafesa3d: script code %d,%d %dx%d; run %d,%d; open %d,%d; save %d,%d"):format(
+          x0 + 1, y0 + PANEL_T, e.w, e.h, run.x + run.w // 2, run.y + run.h // 2,
+          op.x + op.w // 2, op.y + op.h // 2, sv.x + sv.w // 2, sv.y + sv.h // 2))
   end
 
   -- What the last run printed, and how it went.
@@ -1885,6 +2006,7 @@ function SCRIPT.toggle()
   SCRIPT.open = open
   SCRIPT.focused = open
   SCRIPT.told = nil
+  SCRIPT.kept = SCRIPT.kept or open
 
   if open and not SCRIPT.editor then
     SCRIPT.editor = ui.editor{ x = 0, y = 0, w = SCRIPT.W - 1, h = 100,
@@ -1914,7 +2036,12 @@ function SCRIPT.key(ev)
     if k == 13 and mods == ui.CTRL then
       SCRIPT.run()
     elseif c ~= 27 then
+      local before = SCRIPT.editor.version
+
       SCRIPT.editor:key(c)
+
+      -- The script is the scene's, so an edit to it is a change to save.
+      if SCRIPT.editor.version ~= before then FILE.changed, FILE.said = true, nil end
     end
   end
 
@@ -1925,6 +2052,105 @@ end
 function SCRIPT.say(text, colour)
   SCRIPT.out[#SCRIPT.out + 1] = { text = text, colour = colour }
   print("cafesa3d: script " .. text)
+end
+
+-- The panel's text as it is now.
+function SCRIPT.current()
+  return SCRIPT.editor and SCRIPT.editor:content() or SCRIPT.text
+end
+
+-- What the scene's file keeps of its script (6d), or nil when it has none.
+function SCRIPT.saved_form()
+  return SCRIPT.kept and { name = SCRIPT.name, text = SCRIPT.current() } or nil
+end
+
+-- A script given to the panel - a scene's, a file's, or the sample - with
+-- nothing to undo back into the one before it, and nothing said of it yet.
+function SCRIPT.adopt(name, text, kept)
+  SCRIPT.name, SCRIPT.text, SCRIPT.kept, SCRIPT.out, SCRIPT.path = name, text, kept, {}, nil
+
+  if SCRIPT.editor then SCRIPT.editor:set(text) end
+end
+
+-- A scene opened: its script, or the sample when it came with none - which
+-- the scene then has only if the panel is open over it.
+function SCRIPT.opened(script)
+  if not script then return SCRIPT.adopt("staircase", SCRIPT.SAMPLE, SCRIPT.open) end
+
+  SCRIPT.adopt(script.name, script.text, true)
+  print(("cafesa3d: script %s came with the scene, %d lines"):format(script.name,
+        select(2, script.text:gsub("[^\n]*\n", "")) + (script.text:match("[^\n]$") and 1 or 0)))
+end
+
+-- A file's name without its `.lua`, as a script's name.
+function SCRIPT.named(path)
+  local name = FILE.base(path):gsub("%.[Ll][Uu][Aa]$", "")
+
+  return name ~= "" and name or "script"
+end
+
+-- **Open .lua...**: a script on its own into the panel, named after its
+-- file. The scene's script is then that one, a change to save.
+function SCRIPT.open_file()
+  local start = SCRIPT.path and FILE.dir(SCRIPT.path)
+                or (fs.getattr(FILE.DIR) and FILE.DIR) or "/home"
+
+  return FILE.panel("open", {
+    title = "Open a script", start = start,
+    filter = function(name) return FILE.ext(name) == "lua" end,
+    on_choose = function(path)
+      local text, why = fs.read(path)
+
+      if type(text) ~= "string" or #text > (1 << 20) then
+        SCRIPT.say(("could not open %s: %s"):format(path, tostring(why or "not a script")),
+                   theme.bad)
+        return
+      end
+
+      SCRIPT.adopt(SCRIPT.named(path), text, true)
+      SCRIPT.path = path
+      SCRIPT.focused = true
+      FILE.changed, FILE.said = true, nil
+      SCRIPT.say(("opened %s, %d lines"):format(path, #SCRIPT.editor.buf.lines))
+    end,
+  })
+end
+
+-- **Save .lua...**: the panel's text as a file of its own. Saved under
+-- another name the script is called that from now on, and what it made is
+-- still its own - so its next Run replaces it.
+function SCRIPT.save_file()
+  local start = SCRIPT.path and FILE.dir(SCRIPT.path) or FILE.DIR
+
+  if start == FILE.DIR then fs.send(FILE.DIR, { type = "mkdir" }) end
+
+  return FILE.panel("save", {
+    title = "Save the script", start = start, name = SCRIPT.name .. ".lua",
+    on_choose = function(path)
+      if not path:lower():match("%.lua$") then path = path .. ".lua" end
+
+      local text = SCRIPT.current()
+      local done, why = fs.write(path, text)
+
+      if not done then
+        SCRIPT.say("not saved: " .. tostring(why), theme.bad)
+        return
+      end
+
+      local name = SCRIPT.named(path)
+
+      if name ~= SCRIPT.name then
+        for _, t in ipairs(things) do
+          if t.by == SCRIPT.name then t.by = name end
+        end
+
+        SCRIPT.name, FILE.changed, FILE.said = name, true, nil
+      end
+
+      SCRIPT.path = path
+      SCRIPT.say(("saved %s, %d bytes"):format(path, #text), theme.good)
+    end,
+  })
 end
 
 -- The instructions a run may take before it is stopped: a few seconds'
@@ -3188,6 +3414,8 @@ function SAMPLES.take(loaded, file, adding)
 
     for k, v in pairs(loaded.render or {}) do RENDER[k] = v end
 
+    SCRIPT.opened(loaded.script)
+
     selected = nil
     FILE.name, FILE.title, FILE.path, FILE.changed, FILE.said = file, loaded.name, nil, false, nil
     cursor3d = { 0, 0, 0 }
@@ -3241,7 +3469,7 @@ function FILE.dir(path) return path:match("^(.*)/[^/]*$") end
 function FILE.write(path)
   local ok, text = pcall(function()
     return json.encode(scenefile.to_gltf({ name = FILE.title, things = things, world = world,
-                                           render = RENDER },
+                                           render = RENDER, script = SCRIPT.saved_form() },
                                          { base64 = k3.base64, bounds = k3.bounds }))
   end)
   local done, why = false, text
@@ -3872,6 +4100,8 @@ local function press(x, y)
 
   if SCRIPT.open then
     if inside(controls["script:run"], x, y) then return SCRIPT.run() end
+    if inside(controls["script:open"], x, y) then return SCRIPT.open_file() end
+    if inside(controls["script:save"], x, y) then return SCRIPT.save_file() end
 
     local c = controls["script:code"]
 
@@ -3933,11 +4163,15 @@ local function press(x, y)
   end
 
   -- A row of the Outliner: its eye shows or hides it; anywhere else on it
-  -- selects it.
+  -- selects it. A script's row opens the script, in its panel.
   if x >= SX and y >= OUT_Y and y < PROPS_Y then
-    for _, r in ipairs(rows) do
+    for _, r in ipairs(OUTLINER.rows) do
       if y >= r.y and y < r.y + ROW then
-        if x >= SX + SIDE - 36 then
+        if r.script then
+          if not SCRIPT.open then SCRIPT.toggle() end
+
+          SCRIPT.focused = true
+        elseif x >= SX + SIDE - 36 then
           will((r.thing.hidden and "showed " or "hid ") .. r.thing.name)
           r.thing.hidden = not r.thing.hidden
           sync(r.thing)
@@ -4288,9 +4522,11 @@ function FULL.say()
 
   local out = {}
 
-  for _, r in ipairs(rows) do
-    out[#out + 1] = ("%s %d,%d eye %d"):format(r.thing.name, SX + 90, r.y + ROW // 2,
-                                              SX + SIDE - 23)
+  for _, r in ipairs(OUTLINER.rows) do
+    if r.thing then
+      out[#out + 1] = ("%s %d,%d eye %d"):format(r.thing.name, SX + 90, r.y + ROW // 2,
+                                                SX + SIDE - 23)
+    end
   end
 
   local tabs = {}
@@ -4477,6 +4713,8 @@ local function pass()
       end
     elseif ev.type == "key" then
       if SCRIPT.key(ev) then dirty = true end
+    elseif ev.type == "wheel" and ev.x >= SX and ev.y >= OUT_Y and ev.y < PROPS_Y then
+      dirty = OUTLINER.wheel(ev.n or 0) or dirty
     elseif ev.type == "wheel" and SCRIPT.open
            and inside(controls["script:code"], ev.x, ev.y) then
       SCRIPT.editor:wheel(ev.n or 0)

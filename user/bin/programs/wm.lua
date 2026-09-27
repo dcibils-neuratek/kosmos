@@ -5478,8 +5478,26 @@ end
 -- in the system. This one already owns input and already knows who is in
 -- front.
 --
-local function raw_to_focused(code, down)
-  post(focused_window(), { type = "rawkey", code = code, down = down })
+-- **A key's release goes where its press went**, and so does its repeat,
+-- whoever is in front by then. An application that reads `rawkey` holds
+-- which keys are down, and a release sent to another window leaves one
+-- down in it for ever: Cafesa3D's Ctrl O opens the Open panel, which takes
+-- the focus before Ctrl comes up, and the next Z after the panel closed
+-- was Ctrl Z - undoing the scene just opened (`testing.md` 18.216). A game
+-- whose W is held while Super Tab moves the focus walks on for the same
+-- reason. A window closed meanwhile is posted to and never reads it.
+--
+local raw_to_focused
+
+do
+  local pressed_in = {}                      -- a key's code -> its press's window
+
+  function raw_to_focused(code, down)
+    local win = pressed_in[code] or focused_window()
+
+    pressed_in[code] = down and win or nil
+    post(win, { type = "rawkey", code = code, down = down })
+  end
 end
 
 --

@@ -1213,7 +1213,7 @@ processors, and still what follows USB:
      are taken again when the application changes rather than going stale.
      **Two things the tutorial found, for their turn**: the Outliner shows
      seven names and does not scroll, so a scene of twenty-five parts has
-     names nobody can click (the car chapters set the stage first to stay
+     names nobody can click - **scrolling with the wheel in 6n's 6d** (the car chapters set the stage first to stay
      inside it); and in Kosmos's browser the space between two words of a
      link is not part of the link - `web_page_link_at` tests each word's
      box, and a click that lands between them does nothing.
@@ -1237,7 +1237,9 @@ processors, and still what follows USB:
        than taking the application with it.
      - **Scripts are saved with the scene** (step 5), and the three samples
        - written today by `tools/cafesa3d_samples.py`, in Python on the Mac
-       - become scripts Cafesa3D runs itself.
+       - become scripts Cafesa3D runs itself. **Not for now**, Diego on 27
+       September: "We don't need the house car and plane as scripts for
+       now" - the samples stay glTF files, and 6n's 6e is the tutorial.
      Diego, the same afternoon: "Scripting proposal suits perfectly". It
      comes after saving, since a script wants to be saved with its scene.
      **Drawn the same day** (`docs/cafesa3d-scripting.html`), and **its five
@@ -2253,11 +2255,23 @@ processors, and still what follows USB:
       value refused on its line with nothing made; nothing changes until
       the script has finished, then all of it as one undo step, replacing
       what the last Run made and never what was made by hand; the sample is
-      the drawing's staircase (`testing.md` 18.215); 6d scripts saved with
+      the drawing's staircase (`testing.md` 18.215); **6d DONE on 27
+      September** (`testing.md` 18.216) - scripts saved with
       the scene - and with them which script made each object, so a Run
-      after opening the file still replaces the right ones, and the
-      Outliner grouping them under the script's name, as drawn; 6e the
-      three samples as scripts.
+      after opening the file still replaces the right ones; **Open
+      .lua...** and **Save .lua...** in the panel's title strip, for a
+      script on its own; and the Outliner grouping a script's objects
+      under its name, as drawn - **and scrolling**, found while 6c was
+      gated: the Outliner stops at Properties and has no wheel, so of the
+      staircase's twenty-six objects the last dozen could not be reached
+      from it at all. And a fault 6d's suite found in the window manager:
+      a key's release went to whichever window had the focus by then, so
+      after Ctrl O's panel closed, Cafesa3D still held Ctrl and Z was Ctrl Z
+      - a release goes where its press went now; **6e the tutorial's lessons** (item 7), which is what
+      6e became on 27 September. Diego: "We don't need the house car and
+      plane as scripts for now", "6e does need the tutorial lessons for the
+      ide" - so the samples stay the glTF files `tools/cafesa3d_samples.py`
+      writes, and step 6 ends with the IDE's first project.
    Later: debugging.
 
 6m. **DONE on 26 September - Processes shows each process's threads.** Diego,
@@ -3809,6 +3823,31 @@ processors, and still what follows USB:
    the IDE's first project: opened in its tree, read in it, run from it, in
    the order above. The PNG writer it needed exists now (`gfx.encode_png`,
    `testing.md` 18.201).
+
+   **And wider, 27 September, as 6n's step 6e.** Diego: "Make sure the
+   tutorial includes calling kits, drivers, servers, and other useful things
+   we already do, 3d kit, video, audio, compression, etc", "Even our current
+   apps could be part of the tutorial, like the webcam capture, music
+   player, falling blocks, processes", "The idea is that a developer could
+   change the bundled os apps as wanted using our ide editor in the future",
+   and "This tutorial is as well a showcase of capabilities for the os from
+   a developer perspective". So the lessons are two things at once:
+   - **Building an app**, in the order agreed - a button first, 3D last -
+     with every part of Kosmos a developer can reach given its lesson or a
+     place in one: the kits (`/kits/3d`, `/kits/gl`, `/kits/ffmpeg` and
+     `/kits/mp3` for video and sound, `/kits/compress`, `/kits/pdf`,
+     `/kits/network`, `/kits/record`), the servers asked through the
+     namespace (`/dev/audio`, `/dev/cpu`, the processes, `/dev/blocks`),
+     and the drivers, which are processes too and are read rather than
+     written - the USB mouse and the power button.
+   - **The bundled apps as lessons**: Camera's capture, Music, Blocks and
+     Processes, opened in the IDE from `/bin`, read as worked examples of
+     what their lesson teaches, changed and run - the first step to a
+     developer changing any app the system ships, in the system's own
+     editor.
+   The lesson list above was drawn for the first of those alone; the plan
+   with the second in it is drawn and agreed before any lesson is written,
+   as the first one was.
 
    **What it needs first, or will find out:** a PNG writer for `paint` to save
    with, which the screenshot shortcut wants as well; that an application run

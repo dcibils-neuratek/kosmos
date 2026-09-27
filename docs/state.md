@@ -170,12 +170,18 @@ its own - fixed and rerun on both boards (18.206).
   `scene.box{...}` and the rest held to what Properties holds, refused on
   the script's line, nothing made until the script ends and then one undo
   step, and a Run replacing what the last one made; the sample is the
-  drawing's staircase.
+  drawing's staircase. 6d (18.216): the script saved in the scene's file and
+  which script made each object with it; Open .lua... and Save .lua...; the
+  Outliner grouping a script's objects under its name and scrolling. And
+  the window manager sends a key's release where its press went - Ctrl O's
+  panel had left Cafesa3D holding Ctrl.
 
-**Next, in order**: saving scripts with the scene (6d) - with which script
-made each object, and the Outliner grouping them under its name, which 6c
-left for it - and the samples as scripts (6e);
-the tutorial's lessons (7), the IDE's first project. And 6q, the Deskbar
+**Next: 6e, the tutorial's lessons** (roadmap item 7), widened on 27
+September - kits, drivers, servers, 3D, video, audio, compression, and the
+bundled apps (Camera, Music, Blocks, Processes) as lessons a developer
+changes in the IDE; a showcase of the system from a developer's side. The
+lesson plan with the bundled apps in it is drawn and agreed first. The
+house, car and plane stay glTF files ("not for now"). And 6q, the Deskbar
 focus check and the Large icons check, which each fail now and then under
 the whole gate and pass alone. Commits unpushed since 0.10.171: the IDE's
 steps 0 to 5 and 6a to 6c.

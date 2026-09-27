@@ -193,6 +193,7 @@
       <div class="script">
         <div class="panel-t">Script <span class="nm">staircase</span><span class="sp"></span>
           <span class="btn" style="color:var(--w-dim)">Open .lua...</span>
+          <span class="btn" style="color:var(--w-dim)">Save .lua...</span>
           <span class="btn primary">Run <kbd>Ctrl Enter</kbd></span>
         </div>
         <div class="code" id="code"></div>
@@ -240,7 +241,7 @@
   <p class="why"><b>All or nothing, and one undo step.</b> The script runs to its end before the scene is touched; a mistake anywhere leaves the scene as it was and marks the line. <kbd>Ctrl Z</kbd> takes back a whole Run, as it takes back any other change.</p>
   <p class="why"><b>A Run replaces what the last one made.</b> Objects a script makes are its own - the Outliner groups them under its name - so changing a number and pressing Run again gives the new staircase instead of a second one on top of the first. Objects made by hand are never touched.</p>
   <p class="why"><b>A loop that never ends is stopped</b>, after a few seconds' worth of instructions, with nothing it made kept - Cafesa3D stays answering, because a script is counted as it runs rather than trusted to finish.</p>
-  <p class="why"><b>Saved with the scene.</b> The script goes in the scene's file, so opening it brings back the code with what it made. <b>Open .lua...</b> and Save take a script on its own, to share or keep. The house, the car and the plane become scripts Cafesa3D runs itself, instead of Python on the Mac.</p>
+  <p class="why"><b>Saved with the scene.</b> The script goes in the scene's file, so opening it brings back the code with what it made. <b>Open .lua...</b> and <b>Save .lua...</b> take a script on its own, to share or keep. (The house, the car and the plane stay glTF files for now - Diego, 27 September.)</p>
 </div>
 
 <h2>Yours to decide</h2>

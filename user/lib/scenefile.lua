@@ -26,6 +26,11 @@
 -- more than its buffer holds is skipped, as any other lie would be. A
 -- material's texture - which glTF has no word for - comes from its
 -- `extras.cafesa3d`, held to the ranges the kit holds it to.
+--
+-- **And the scene's script** (`roadmap.md` 6n, 6d): the Script panel's name
+-- and text in the file's own `extras.cafesa3d.script`, and on each object a
+-- script made, `by` - that script's name - so a Run after the file is
+-- opened again still replaces what the last one made.
 
 local scenefile = {}
 
@@ -35,6 +40,14 @@ local PATTERNS = { plain = true, checker = true, brick = true, shingles = true, 
                    wood = true, marble = true }
 local MAX_OBJECTS = 2000
 local MAX_POINTS = 1 << 24
+local MAX_SCRIPT = 1 << 20              -- a megabyte of Lua is not a scene's script
+
+-- A script's name, or nil: words on one line, cut to what a name holds.
+local function script_name(v)
+  if type(v) ~= "string" or v == "" or v:find("%c") then return nil end
+
+  return v:sub(1, 63)
+end
 
 local function number(v, lo, hi)
   return type(v) == "number" and v == v and v >= lo and v <= hi and v or nil
@@ -527,6 +540,22 @@ function scenefile.from_gltf(doc, has_bin)
     out.why[#out.why + 1] = name .. ": " .. why
   end
 
+  -- The scene's script, as the Script panel had it; one that is not a
+  -- name and a text, or is longer than a megabyte, is skipped and said, and
+  -- the scene opens without it.
+  local script = type(doc.extras) == "table" and type(doc.extras.cafesa3d) == "table"
+                 and doc.extras.cafesa3d.script
+
+  if script then
+    if type(script) ~= "table" or type(script.text) ~= "string" or not script_name(script.name) then
+      skip("the script", "not a name and a text")
+    elseif #script.text > MAX_SCRIPT then
+      skip("the script", "longer than a megabyte")
+    else
+      out.script = { name = script_name(script.name), text = script.text }
+    end
+  end
+
   -- One node's objects: a shape, a lamp, the camera, or a mesh's parts.
   local function emit(node, name, own, loc, rot, scale)
     local lamp = type(node.extensions) == "table"
@@ -610,6 +639,12 @@ function scenefile.from_gltf(doc, has_bin)
     -- Hidden with its eye closed, as it was saved; anything else shows.
     if #out.things > before and own.hidden == true then
       for i = before + 1, #out.things do out.things[i].hidden = true end
+    end
+
+    -- Made by a script, which the next Run of it replaces; a `by` that is
+    -- not a name leaves the object made by hand, and kept.
+    if script_name(own.by) then
+      for i = before + 1, #out.things do out.things[i].by = script_name(own.by) end
     end
   end
 
@@ -920,7 +955,7 @@ function scenefile.to_gltf(s, codec)
   end
 
   for _, t in ipairs(s.things) do
-    local own = { kind = t.kind, loc = list3(t.loc), hidden = t.hidden or nil }
+    local own = { kind = t.kind, loc = list3(t.loc), hidden = t.hidden or nil, by = t.by }
     local node = { name = t.name, translation = to_gltf_vec(t.loc), extras = { cafesa3d = own } }
 
     if t.kind == "light" then
@@ -1017,6 +1052,8 @@ function scenefile.to_gltf(s, codec)
                    view_samples = r.view_samples, bounces = r.bounces,
                    integrator = r.preview and "Preview" or "Final" }
   end
+
+  if s.script then own.script = { name = s.script.name, text = s.script.text } end
 
   if next(own) then doc.extras = { cafesa3d = own } end
 

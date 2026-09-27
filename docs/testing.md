@@ -10784,3 +10784,70 @@ defaults and Blender's names come from there, and before it `ADDABLE` is a
 global that will not exist, which `luaglobals` said at build time.
 
 The gate with 6c: 48 of 48 in 9:15.
+
+## 18.216 A scene's script, saved with it
+
+Step 6d of the IDE (roadmap 6n, 4l). **The script goes in the scene's
+file**: `scenefile.to_gltf` writes the Script panel's name and text in the
+file's own `extras.cafesa3d.script`, and on each object a Run made its
+script's name as `by`; `from_gltf` reads both back, held as the rest is - a
+script that is not a name and a text, or is over a megabyte, is skipped and
+said, and a `by` that is not a name on one line leaves the object made by
+hand and kept. A scene has a script once the panel has been open over it or
+it came with one; opening a scene with none gives the panel the sample.
+**Open .lua...** and **Save .lua...**, in the panel's title strip as the
+drawing now has them, take a script on its own; saved under another name the
+script is called that, and what it made is still its own. An edit to the
+script is a change to the scene, so the foot says "Unsaved changes".
+
+**The Outliner lists a script's objects under its name**, with the drawing's
+angle brackets and a `script` badge, before what was made by hand - and
+**scrolls with the wheel**, three rows a notch, with a bar saying where: it
+stopped at Properties, and of the staircase's twenty-six objects the last
+dozen could not be reached from it at all (the Cafesa3D tutorial had found it
+too, on the car). A click on a script's row opens its panel. What it shows
+is said in the log when it changes, as "outliner rows 1 to 11 of 34: script
+staircase, Column, ...".
+
+**`tools/test_scenefile.lua`, in `host`, 102 checks now**: each sample saved
+with a script - quotes, a backslash, a tab and a last line with no end in its
+text - and one object made by it, read back with both and only that object
+marked; a scene's script read; one with no text, no name, as a bare string or
+over a megabyte skipped and said; a name cut to 63; a `by` of a number, an
+empty string, two lines or a table leaving the object kept and made by hand.
+**Controls**: the writer leaving out `by` fails six; leaving out the script
+fails three.
+
+**`tools/run_script.py`, on a `/home` disk of its own, 18 checks, about two
+minutes a board**: 6c's, and the Outliner listing "script staircase, Column,
+Light.001, Step, ..." of 34, reaching Step.023 in its last row with the wheel
+and coming back; the loop's line made `print("from the file")` and Ctrl S
+saving "still-life.gltf, 33 objects"; that line changed to `print("not
+saved")` and the saved scene opened again - "script staircase came with the
+scene, 25 lines" - its Run printing "from the file" and never "not saved",
+and "replacing the 26 it made last time"; Save .lua... writing
+`staircase.lua`; Open .lua... opening the disk's `a-tower.lua`, whose Run
+makes a spire and leaves the staircase alone, the Outliner saying "script
+a-tower, Spire, script staircase, Column"; and with the machine stopped,
+`staircase.lua` and the scene read off the disk, the script's text in both
+and 26 nodes marked `by` staircase. **Control**: a scene saved without its
+script, and a wheel that does not move the Outliner, fail five - the wheel,
+the script coming back, the Run printing the saved line, and both files off
+the disk - while "replacing the 26" still passes, because `by` is kept apart
+from the script.
+
+**What the suite found in the window manager.** After Open .lua..., Escape
+then Z answered "undid ran a-tower": Cafesa3D had Ctrl held. It keeps the
+modifiers from `rawkey` presses and releases, and the Ctrl of Ctrl O came up
+after the Open panel had taken the focus, so its release went to the panel.
+It is a class and not Cafesa3D's - every application that reads `rawkey`
+holds keys - so the window manager now sends a key's repeats and release to
+the window its press went to (`ui.md`). The suite failed exactly that check
+on the same code before the fix, and passes with it; that is its control.
+
+One mistake in the suite on the way: the positions of the code, Run and the
+buttons were matched with the line's first word, which `said` had already
+taken off, so nothing was clicked and every wait ran out - 8:39 for a suite
+of two minutes.
+
+The gate with 6d: 48 of 48 in 9:33.

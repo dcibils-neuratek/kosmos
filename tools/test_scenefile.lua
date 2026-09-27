@@ -283,6 +283,39 @@ check(s and #s.things == 0 and s.skipped == 1, "half a segment is skipped")
 s = one({}, { mesh = 0 })
 check(s and s.skipped == 1 and s.why[1]:find("mesh"), "a mesh the file does not have is skipped")
 
+-- Which script made an object: a name, or the object is one made by hand.
+s = one({ kind = "box", size = { 1, 1, 1 }, by = "staircase" })
+check(s and #s.things == 1 and s.things[1].by == "staircase", "an object a script made says which")
+
+for _, bad in ipairs({ 7, "", "two\nlines", { "staircase" } }) do
+  s = one({ kind = "box", size = { 1, 1, 1 }, by = bad })
+  check(s and #s.things == 1 and s.things[1].by == nil,
+        "a by of " .. tostring(bad) .. " leaves the object made by hand, and kept")
+end
+
+-- The scene's script: a name and a text, or it is skipped and the scene
+-- opens without it.
+local function with_script(script)
+  return scenefile.from_gltf({ asset = { version = "2.0" }, scenes = { { nodes = {} } },
+                               extras = { cafesa3d = { script = script } } })
+end
+
+s = with_script({ name = "staircase", text = "scene.box{}\n" })
+check(s and s.script and s.script.name == "staircase" and s.script.text == "scene.box{}\n"
+      and s.skipped == 0, "a scene's script is read, its name and its text")
+s = with_script({ name = "staircase" })
+check(s and s.script == nil and s.skipped == 1 and s.why[1]:find("the script"),
+      "a script with no text is skipped and said to be")
+s = with_script({ text = "print(1)\n" })
+check(s and s.script == nil and s.skipped == 1, "a script with no name is skipped")
+s = with_script("print(1)")
+check(s and s.script == nil and s.skipped == 1, "a script that is only a string is skipped")
+s = with_script({ name = "big", text = string.rep("-", (1 << 20) + 1) })
+check(s and s.script == nil and s.skipped == 1 and s.why[1]:find("megabyte"),
+      "a script longer than a megabyte is skipped and said to be")
+s = with_script({ name = string.rep("n", 100), text = "" })
+check(s and s.script and #s.script.name == 63, "a script's name is cut to 63")
+
 -- A mesh whose accessor says more points than its buffer holds, and one
 -- whose buffer is somewhere else.
 do
@@ -449,6 +482,11 @@ for _, name in ipairs({ "house", "car", "plane" }) do
     first.things[3].hidden = true
     first.render = { w = 3440, h = 1440, samples = 512, view_samples = 32, bounces = 8,
                      preview = true }
+    -- A script, and an object it made: every character of the text back,
+    -- quotes, a backslash, a tab and a line with no end included.
+    first.script = { name = "staircase",
+                     text = 'scene.box{ name = "Step" } -- a \\ and a\ttab\nprint("done")' }
+    first.things[4].by = "staircase"
 
     local text = json.encode(scenefile.to_gltf(first, codec))
     local again = as_app(scenefile.from_gltf(json.decode(text)))
@@ -470,6 +508,11 @@ for _, name in ipairs({ "house", "car", "plane" }) do
     check(again.name == first.name, name .. " came back named " .. tostring(again.name))
     check(again.things[3].hidden == true and again.things[4].hidden == nil,
           name .. "'s hidden object did not come back hidden, and only it")
+    check(again.things[4].by == "staircase" and again.things[3].by == nil
+          and again.things[5].by == nil,
+          name .. "'s object made by its script did not come back so, and only it")
+    check(differs(first.script, again.script, "script") == nil,
+          name .. "'s script came back otherwise: " .. tostring((differs(first.script, again.script, "script"))))
 
     -- What another program sees: every node's glTF transform where its own
     -- numbers say. The round trip above cannot tell, because the reader
@@ -625,6 +668,7 @@ end
 print(("PASS: %d checks on the scene files (the house, the car and the plane read back as "
        .. "described; every node's glTF transform, every camera's rotation and every "
        .. "material's linear colour held to Cafesa3D's own numbers; every mesh held to its "
-       .. "accessors; another program's mesh read; nine refusals; and each saved, read "
-       .. "back the same scene with its hidden object hidden, its glTF transforms where "
+       .. "accessors; another program's mesh read; nine refusals, and a script's and a by's; "
+       .. "and each saved, read back the same scene with its hidden object hidden, its "
+       .. "script and what it made, its glTF transforms where "
        .. "its own numbers say, and the same file when written twice)"):format(passed))
