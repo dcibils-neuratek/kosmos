@@ -184,6 +184,22 @@ import run_screenshot as R                                   # noqa: E402
 
 ORANGE = 0xffa53d
 
+#
+# **Where item `i` of the dots' menu starts**, counting from zero with the
+# separator after Full Screen among them (`cafesa3d.lua`'s dots menu: Open a
+# sample, Tutorial, Full Screen, a separator, Open..., Import..., Save,
+# Save As..., Export). A separator is a third of a row (`menu_step` in
+# `ui.lua`, `roadmap.md` 6zc), so every item after it sits that much higher
+# than a row count says - which is how the clicks below came to press the
+# item under the one they meant and wait for ever.
+#
+DOTS_SEPARATOR = 3
+
+
+def dots_top(top, i, rh):
+    above = 1 if i > DOTS_SEPARATOR else 0
+    return top + 2 + (i - above) * rh + above * (rh // 3)
+
 
 def pixels(data):
     """The screen's size, and its pixels as 0xRRGGBB, out of bounds black."""
@@ -1170,7 +1186,7 @@ def main():
                 return None
 
             mx_, my_, mw_, rh_ = (int(v) for v in m_.groups())
-            click(mx_ + 24, my_ + 2 + i * rh_ + rh_ // 2)
+            click(mx_ + 24, dots_top(my_, i, rh_) + rh_ // 2)
             return mx_, my_, mw_, rh_
 
         # **The broken scene** (made above, on the disk beside the saved
@@ -1231,7 +1247,7 @@ def main():
 
         if opened:
             mx, my, mw, rh = opened
-            click(mx + mw - 2 + 30, my + 2 + 8 * rh + 2 + rh + rh // 2)    # STL...
+            click(mx + mw - 2 + 30, dots_top(my, 8, rh) + 2 + rh + rh // 2)  # STL...
             button = panel_button("save", mark)
 
             if button:

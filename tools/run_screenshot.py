@@ -8818,7 +8818,9 @@ def check_icon_sizes(guest):
             if row in skip:
                 continue
 
-            top = oy + 2 + (row - 1) * MENU_ROW
+            # A separator above this row is a third of one (`MENU_SEP`).
+            above = sum(1 for sep in skip if sep < row)
+            top = oy + 2 + (row - 1 - above) * MENU_ROW + above * MENU_SEP
             ink = 0
 
             for yy in range(top + 6, top + 18):
