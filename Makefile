@@ -1949,13 +1949,22 @@ check-lua: $(HOSTDIR)/lua.ok
 # `make release` stamped every image it built "-dirty" while the source it
 # was built from was clean. The name is a claim about the source.
 #
-# `docs/screenshots` and the top-level dot-directories are left out for the
-# same reason: nothing in an image comes from them. A ThinkPad photograph of
+# `docs/` and the top-level dot-directories are left out for the same
+# reason: nothing in an image comes from them. A ThinkPad photograph of
 # 0.10.54 said `d6dfabb-dirty` because of an editor's `.vscode/` and a stray
-# screenshot. The rest of `docs/` still counts - `docs/cheatsheet.html` is in
-# the image - and so do untracked files elsewhere, because `user/bin/` is
+# screenshot. Untracked files elsewhere still count, because `user/bin/` is
 # picked up by wildcard.
-KOSMOS_DIRTY := $(shell git status --porcelain -- . ':!builds' ':!docs/screenshots' ':!.*' 2>/dev/null | head -1)
+#
+# **Except the two parts of `docs/` the image carries**, asked about on
+# their own: the cheat sheet and Cafesa3D's tutorial (the assets rule
+# below). All of `docs/` used to count, and on 27 September a note written
+# into `boot.md` while the gate ran made its second make `-dirty` and its
+# first not: `make apps` relinked `init.elf` for the new string and had no
+# reason to make `init.bin` again, so the host suite found the two
+# disagreeing - a failure about the notes, in a gate about the code.
+IMAGE_DOCS := docs/cheatsheet.html docs/cafesa3d-tutorial
+KOSMOS_DIRTY := $(shell { git status --porcelain -- . ':!builds' ':!docs' ':!.*'; \
+                          git status --porcelain -- $(IMAGE_DOCS); } 2>/dev/null | head -1)
 KOSMOS_BUILD := $(shell git describe --always 2>/dev/null || echo "no-git")$(if $(KOSMOS_DIRTY),-dirty,)
 KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
                         2>/dev/null || echo "unknown")
