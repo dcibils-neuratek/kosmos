@@ -1412,6 +1412,19 @@ DESKBAR_ICON = 24
 # menu phase came to press row 2 for row 3.
 MENU_ROW = LAYOUT_ROW
 
+# A separator in a menu is a third of a row (`menu_step` in `ui.lua`,
+# `roadmap.md` 6zc), where it had been a whole one. So row `i` of a menu
+# opened at `y` starts at `y + 2 + (i - 1 - s) * MENU_ROW + s * MENU_SEP`,
+# `s` being how many separators are above it - which the caller knows,
+# because it built the menu or read the file that did.
+MENU_SEP = MENU_ROW // 3
+
+
+def menu_row_middle(top, row, separators=0):
+    """The middle of row `row`, from one, of a menu whose window is at `top`."""
+    return (top + 2 + (row - 1 - separators) * MENU_ROW
+            + separators * MENU_SEP + MENU_ROW // 2)
+
 
 def check_registry(guest):
     """A window manager started a second time is found by name.
@@ -4023,7 +4036,7 @@ def check_direct_menu(guest):
         guest.mouse_button(False)
         time.sleep(0.6)
 
-    def choose(row, marker):
+    def choose(row, marker, separators=0):
         before = len(guest.seen)
         click(x + 4 + 10, y + strip // 2)
 
@@ -4043,7 +4056,7 @@ def check_direct_menu(guest):
         # does. This said 22 - "a glyph and six" - a size the rows had not
         # been since the layout was fixed, and it worked while row 3 at 22
         # still landed inside row 3 at 24.
-        click(mx + 20, my + 2 + (row - 1) * MENU_ROW + MENU_ROW // 2)
+        click(mx + 20, menu_row_middle(my, row, separators))
 
         deadline = time.monotonic() + 15
 
@@ -4056,7 +4069,25 @@ def check_direct_menu(guest):
                           "on_choose:\n%s" % (row, guest.seen[before:][-600:]))
 
     choose(1, "strip: said hello")
-    choose(3, "strip: gone")
+
+    #
+    # **The menu is as tall as what is in it** (`roadmap.md` 6zc): two items
+    # and a separator between them, so two rows, a third of one and the two
+    # pixels of edge at each end - 78, where a separator a whole row tall
+    # made it 100. The window manager says the size it opened. Quit, below
+    # the separator, is then pressed where it now is.
+    #
+    sizes = re.findall(r"wm: menu of Strip at -?\d+,-?\d+ (\d+)x(\d+)",
+                       guest.seen[mark:])
+    want = 2 + 2 * MENU_ROW + MENU_SEP + 2
+
+    if not sizes or int(sizes[-1][1]) != want:
+        raise Failure("the Strip's File menu - two items and a separator - "
+                      "is not %d pixels tall, which a separator a third of a "
+                      "row makes it: the window manager opened %r"
+                      % (want, sizes[-1] if sizes else None))
+
+    choose(3, "strip: gone", separators=1)
 
     back = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
@@ -4071,7 +4102,7 @@ def check_direct_menu(guest):
 
         time.sleep(0.3)
 
-    return 3
+    return 4
 
 
 def check_appearance(guest):
@@ -6960,7 +6991,8 @@ def check_camera(guest):
         mx, my = (int(v) for v in
                   re.match(r"(\d+),(\d+)", menu).groups())
         time.sleep(1.0)
-        click(mx + 20, my + 2 + 3 * MENU_ROW + MENU_ROW // 2)
+        # Mirror, a separator, then the cameras: Silent pattern is row 4.
+        click(mx + 20, menu_row_middle(my, 4, separators=1))
         guest.wait_for_line("camera: Silent pattern at ",
                             "the silent pattern chosen from the menu", before)
 
@@ -10454,7 +10486,8 @@ def main():
           f"{wallpaper_checks} on the desktop's wallpapers carried in the "
           f"image and one reaching the screen pixel for pixel, "
           f"{direct_menu_checks} on a menu bar above a window that draws its "
-          f"own pixels, and its menu reaching the program, "
+          f"own pixels, and its menu reaching the program and as tall as "
+          f"what is in it, "
           f"{drives_app_checks} on the Drives app opening and drawing, "
           f"{appearance_checks} on the Appearance panel laying itself out "
           f"from the faces in force rather than from a constant, and Plex "

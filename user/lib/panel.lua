@@ -33,6 +33,7 @@ local ui      = use("/Kosmos/Libraries/ui.lua")
 local files   = use("/Kosmos/Libraries/files.lua")
 local types   = use("/Kosmos/Libraries/filetypes.lua")
 local sidebar = use("/Kosmos/Libraries/sidebar.lua")
+local placelib = use("/Kosmos/Libraries/places.lua")
 
 local theme = ui.theme
 
@@ -133,7 +134,7 @@ local function open(spec, mode)
 
     local shown = {}
 
-    for _, e in ipairs(found) do
+    for _, e in ipairs(placelib.files_only(path, found)) do
       if e.kind == "directory" or not spec.filter or spec.filter(e.name) then
         shown[#shown + 1] = e
       end

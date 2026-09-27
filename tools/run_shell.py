@@ -287,6 +287,50 @@ def main():
 
         checks += 1
 
+        #
+        # ---- a name under /Running, asked about by its own process -------
+        #
+        # `roadmap.md` 6zb: opening `/Running` hung Tracker, because the
+        # namespace asked each name there what it was by calling that
+        # program's endpoint - and Tracker's own window is one of them. The
+        # shell is a process that can be both: it registers two names with
+        # endpoints of its own, and nothing in it will ever receive on them.
+        #
+        # `silent` is described by the registry alone, so asking what it is
+        # comes back. `selftest` is answered in this process
+        # (`fs.answer_here`), so listing it comes back with what the answer
+        # made. Without either, each line waits for this very process and
+        # the boot never reaches the next prompt - which is the failure.
+        #
+        registry = run_disk.boot(image, disk, [
+            'local ep = sys.endpoint() '
+            'fs.send("/Running", { type = "register", name = "silent" }, ep) '
+            'local a = fs.getattr("/Running/silent") or {} '
+            'local b = fs.getattr("/Running/nosuchname") '
+            'print("self" .. "attr " .. tostring(a.kind) .. " " .. tostring(b))',
+            'local ep = sys.endpoint() '
+            'fs.send("/Running", { type = "register", name = "selftest" }, ep) '
+            'fs.answer_here("/Running/selftest", function(req) '
+            'return { ok = true, entries = { "asked-" .. tostring(req.type) } } '
+            'end) '
+            'print("self" .. "list " .. table.concat('
+            'fs.list("/Running/selftest") or {}, ","))',
+        ])
+
+        for marker, what in [
+            ("selfattr directory nil",
+             "a name under /Running was not described by the registry - a "
+             "registered one as a folder, an absent one as nothing - without "
+             "asking the program behind it"),
+            ("selflist asked-list",
+             "a process listing its own name under /Running was not answered "
+             "in the process"),
+        ]:
+            if marker not in registry:
+                raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
+                              + registry[-1500:])
+            checks += 1
+
         print(f"PASS: {checks} checks on the shell as a place to work "
               "(a file made at the prompt, then counted, read from both "
               "ends, searched, walked and measured - each verb agreeing "

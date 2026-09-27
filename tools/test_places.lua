@@ -172,9 +172,43 @@ check(#places.read({ list = function() return nil end,
                      getattr = function() return nil end }) == 0,
       "no `/Home/Places` yet is no places, not an error")
 
+--------------------------------------------------------------------------
+-- Where there are no files (`roadmap.md` 6zb): Tracker is for files.
+--------------------------------------------------------------------------
+
+check(not places.holds_files("/Running") and not places.holds_files("/running")
+      and not places.holds_files("/Devices/cpu")
+      and not places.holds_files("/Network"),
+      "/Running, /Devices and /Network hold no files, in any case and below")
+
+check(places.holds_files("/Home") and places.holds_files("/Kosmos/Apps")
+      and places.holds_files("/Drives") and places.holds_files("/Temporary")
+      and places.holds_files("/RunningShoes"),
+      "every other root holds files - and a name that only begins like one")
+
+local root = {}
+
+for _, n in ipairs({ "Devices", "Drives", "Home", "Kosmos", "Network",
+                     "Running", "Temporary" }) do
+  root[#root + 1] = { name = n, kind = "directory" }
+end
+
+local seen = {}
+
+for _, e in ipairs(places.files_only("/", root)) do seen[#seen + 1] = e.name end
+
+check(table.concat(seen, ",") == "Drives,Home,Kosmos,Temporary",
+      "the root as a window for people lists it: " .. table.concat(seen, ","))
+
+local inside = { { name = "Running" }, { name = "cpu" } }
+
+check(#places.files_only("/Home", inside) == 2,
+      "a folder that is not the root is listed whole, a Running in it too")
+
 if failed == 0 then
   print(("PASS: %d checks on Tracker's shortcut places - made, named, and "
-         .. "found again by what their volume is, on this machine."):format(checks))
+         .. "found again by what their volume is, on this machine; and the "
+         .. "root without the names that hold no files."):format(checks))
 else
   print(("FAIL: %d of %d checks"):format(failed, checks))
   os.exit(1)

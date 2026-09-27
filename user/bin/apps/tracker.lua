@@ -1690,6 +1690,10 @@ function show(path)
     return
   end
 
+  -- Tracker is for files: at the root, the names that hold none are not
+  -- shown (`places.holds_files`).
+  listed = placelib.files_only(path, listed)
+
   -- A directory listing replaces a query's answer: the two are different
   -- windows onto the filesystem and showing one over the other would be a
   -- list nobody could account for.

@@ -2135,7 +2135,8 @@ processors, and still what follows USB:
    in that menu was a 32-pixel band of nothing. **To do**: a separator a
    third of a row, and those four places asking one function where an
    item starts; the display harness, which clicks items by their row,
-   told where the separators are.
+   told where the separators are. **DONE the same evening** (`testing.md`
+   18.236).
 
 6zb. **FOUND on 27 September, on the M700 with 0.10.175 - opening
    `/Running` in Tracker hangs Tracker.** Diego: "trying to open the folder
@@ -2150,7 +2151,15 @@ processors, and still what follows USB:
    the program it names; only a path *below* the name reaches the program.
    What `/Running` is for, as Diego asked: how one program finds another -
    `/Running/wm` is the window manager - and a person's view of what is
-   running is Processes.
+   running is Processes. **DONE the same evening** (`testing.md` 18.236),
+   both halves - and a process's own name is answered in the process, so a
+   window looking at itself cannot wait for itself. **And Tracker is for
+   files**, Diego's answer to his own question: "tracker is for files",
+   "not processes". `/Running`, `/Devices` and `/Network` are left out of
+   Tracker's root, its System and the Open and Save window; the Terminal
+   has them. **Still open**: a program busy elsewhere makes whoever asks it
+   wait until its loop comes round, since a call has no deadline - a kernel
+   change, for when it is felt.
 
 6za. **WANTED on 27 September - a folder pinned to the sidebar, and a right
    click that offers what applies.** Diego, on the M700 with 0.10.174: "I

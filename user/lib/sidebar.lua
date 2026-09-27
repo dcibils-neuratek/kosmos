@@ -112,7 +112,7 @@ local function mount_roots()
     -- seconds to fail is a bug wherever it lives, and this only stops the
     -- desktop being the thing that pays for it.
     --
-    if not nested then
+    if not nested and placelib.holds_files(prefix) then
       out[#out + 1] = { text = prefix:sub(2), path = prefix,
                         children = subdirs }
     end
@@ -134,9 +134,13 @@ end
 -- earlier version here was a set literal of my own invention: it swallowed
 -- `/system` and `/user` as well, so Places was left holding `user` - which
 -- the drawing never mentions - and no `Desktop`, which it does.
+--
+-- `/Running`, `/Devices` and `/Network` were here too, until opening
+-- `/Running` hung Tracker and Diego asked why it was there at all:
+-- "tracker is for files". They are left out of the roots above
+-- (`places.holds_files`), so System is the two that hold files.
 local SYSTEM_MOUNTS = {
-  ["/Kosmos"] = true, ["/Running"] = true,
-  ["/Devices"] = true, ["/Network"] = true, ["/Temporary"] = true,
+  ["/Kosmos"] = true, ["/Temporary"] = true,
 }
 
 --

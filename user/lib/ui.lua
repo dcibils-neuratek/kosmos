@@ -5476,6 +5476,17 @@ function ui.window(spec)
     if registered then
       w.control = ep
       w.name = registered.name
+
+      -- Asked from inside this process, the name is answered here rather
+      -- than through `ep`: a call to its own endpoint would wait for this
+      -- very loop, which is the one waiting (`roadmap.md` 6zb).
+      fs.answer_here("/Running/" .. w.name, function(req)
+        local reply, wrote = w:property_reply(req)
+
+        if wrote then w.written_here = true end
+
+        return reply
+      end)
     else
       sys.destroy(ep)
     end
@@ -5572,55 +5583,71 @@ function window:resize(w, h)
 end
 
 --
+-- The answer to one request about this window's properties, and whether it
+-- wrote one. From the endpoint below, or from this process asking about its
+-- own name, which `fs.answer_here` hands straight to this (`roadmap.md` 6zb).
+--
+function window:property_reply(req)
+  local name = tostring(req.path or ""):match("([^/]+)$")
+  local p = name and self.properties[name]
+  local reply, wrote = nil, false
+
+  if req.type == "list" then
+    local names = {}
+    for key in pairs(self.properties) do names[#names + 1] = key end
+    table.sort(names)
+    reply = { ok = true, entries = names }
+
+  elseif not p then
+    reply = { ok = false, error = "no such property" }
+
+  elseif req.type == "read" then
+    reply = { ok = true, value = tostring(p.get()) }
+
+  elseif req.type == "getattr" then
+    reply = { ok = true, attrs = { kind = "property",
+                                   size = #tostring(p.get()),
+                                   writable = p.set ~= nil } }
+
+  elseif req.type == "write" then
+    if not p.set then
+      reply = { ok = false, error = name .. " is read-only" }
+    else
+      -- A trailing newline is what `write` from a shell sends and never
+      -- what a property means.
+      local ok, err = pcall(p.set, (tostring(req.value):gsub("\n$", "")))
+      reply = ok and { ok = true } or { ok = false, error = tostring(err) }
+      wrote = true
+    end
+
+  else
+    reply = { ok = false, error = "no such operation on a property" }
+  end
+
+  return reply, wrote
+end
+
+--
 -- One request from the shell, or from anything else holding this window's
 -- endpoint. Non-blocking, drained every pass of the loop below, so a slow
--- reader cannot slow the interface down.
+-- reader cannot slow the interface down. A write this process made to its
+-- own name counts as a change on the next pass, as one from outside does.
 --
 local function serve_properties(self)
   if not self.control then return false end
 
-  local changed = false
+  local changed = self.written_here or false
+
+  self.written_here = false
 
   while true do
     local req, who = sys.receive(self.control, true)
 
     if not req then return changed end
 
-    local name = tostring(req.path or ""):match("([^/]+)$")
-    local p = name and self.properties[name]
-    local reply
+    local reply, wrote = self:property_reply(req)
 
-    if req.type == "list" then
-      local names = {}
-      for key in pairs(self.properties) do names[#names + 1] = key end
-      table.sort(names)
-      reply = { ok = true, entries = names }
-
-    elseif not p then
-      reply = { ok = false, error = "no such property" }
-
-    elseif req.type == "read" then
-      reply = { ok = true, value = tostring(p.get()) }
-
-    elseif req.type == "getattr" then
-      reply = { ok = true, attrs = { kind = "property",
-                                     size = #tostring(p.get()),
-                                     writable = p.set ~= nil } }
-
-    elseif req.type == "write" then
-      if not p.set then
-        reply = { ok = false, error = name .. " is read-only" }
-      else
-        -- A trailing newline is what `write` from a shell sends and never
-        -- what a property means.
-        local ok, err = pcall(p.set, (tostring(req.value):gsub("\n$", "")))
-        reply = ok and { ok = true } or { ok = false, error = tostring(err) }
-        changed = true
-      end
-
-    else
-      reply = { ok = false, error = "no such operation on a property" }
-    end
+    if wrote then changed = true end
 
     pcall(sys.reply, who, reply)
   end
@@ -5717,6 +5744,7 @@ function window:close()
   fs.send("/Running/wm", { type = "close", window = self.handle })
 
   if self.control then
+    fs.answer_here("/Running/" .. self.name, nil)
     fs.send("/Running", { type = "unregister", name = self.name })
     sys.destroy(self.control)
     self.control = nil
@@ -5921,6 +5949,43 @@ local function menu_marked(items)
   return false
 end
 
+--
+-- **A separator is a third of a row** (`roadmap.md` 6zc). Every item was one
+-- row, separators included, so Tracker's `...` menu - eleven items, four
+-- separators - was fifteen rows tall, with bands of nothing between its
+-- groups. Diego, on the M700: "it shouldnt occupy all this vertical space".
+-- The drawing, the height, the item under the pointer and where a submenu
+-- opens all ask these, so no two of them can disagree about where an item
+-- is.
+--
+local function menu_step(it, row)
+  return it.separator and row // 3 or row
+end
+
+-- Where item `n` starts, below the menu's two pixels of edge.
+local function menu_item_y(items, row, n)
+  local y = 2
+
+  for i = 1, n - 1 do y = y + menu_step(items[i], row) end
+
+  return y
+end
+
+-- Which item is at `y`: nil on the edges.
+local function menu_item_at(items, row, y)
+  local top = 2
+
+  for i, it in ipairs(items) do
+    local h = menu_step(it, row)
+
+    if y >= top and y < top + h then return i end
+
+    top = top + h
+  end
+
+  return nil
+end
+
 local function menu_metrics(items)
   local widest = 0
   local deep = false
@@ -5941,7 +6006,7 @@ local function menu_metrics(items)
   return widest + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0)
                 + (pictured and MENU_ICON + 6 or 0)
                 + (menu_marked(items) and MENU_MARK or 0),
-         #items * row + 4, row
+         menu_item_y(items, row, #items + 1) + 2, row
 end
 
 --
@@ -5980,10 +6045,11 @@ function window:paint_menu(m)
                  + (menu_pictured(m.items) and MENU_ICON + 6 or 0)
 
   for i, it in ipairs(m.items) do
-    local y = 2 + (i - 1) * m.row
+    local y = menu_item_y(m.items, m.row, i)
 
     if it.separator then
-      g:groove(MENU_PAD, y + m.row // 2, m.w - MENU_PAD * 2, 2)
+      g:groove(MENU_PAD, y + (menu_step(it, m.row) - 2) // 2,
+               m.w - MENU_PAD * 2, 2)
     else
       -- A greyed item is drawn and never lit: it is there to say the thing
       -- exists and is not ready, which a missing item cannot say.
@@ -6151,10 +6217,10 @@ function window:menu_mouse(ev)
 
   local row = nil
 
-  if ev.x >= 0 and ev.x < m.w and ev.y >= 2 then
-    local i = (ev.y - 2) // m.row + 1
+  if ev.x >= 0 and ev.x < m.w then
+    local i = menu_item_at(m.items, m.row, ev.y)
 
-    if i >= 1 and i <= #m.items and not m.items[i].separator then
+    if i and not m.items[i].separator then
       row = i
     end
   end
@@ -6215,7 +6281,8 @@ function window:menu_mouse(ev)
   if item and item.submenu then
     -- Beside the parent and level with the row, overlapping by the border
     -- so the two read as one shape rather than two windows.
-    self:push_menu(m.x + m.w - 2, m.y + 2 + (row - 1) * m.row, item.submenu)
+    self:push_menu(m.x + m.w - 2, m.y + menu_item_y(m.items, m.row, row),
+                   item.submenu)
   end
 
   return true

@@ -778,6 +778,37 @@ local function new_namespace()
     autos[#autos + 1] = { prefix = prefix, cap = capability }
   end
 
+  --
+  -- **A name of this process's own, answered in this process** (`roadmap.md`
+  -- 6zb). A window registers its title under `/Running` with an endpoint it
+  -- drains between frames, and `/Running/Tracker` is reached by calling that
+  -- endpoint - so Tracker opening its own name called itself, and waited
+  -- for an answer only it could give. The kernel cannot tell a call to
+  -- yourself from any other; the process can. So the window says which name
+  -- is its own and how it answers, and a request for anything under that
+  -- name is handed to it here, as `/Kosmos/Kits` is answered here. `nil`
+  -- takes the name back.
+  --
+  local own = {}
+
+  function ns.answer_here(path, answer)
+    own[fold(tostring(path))] = answer
+  end
+
+  -- The reply, when `prefix` is a name of this process's own; nothing
+  -- otherwise, and the request goes out as it always did.
+  local function answered_here(prefix, req)
+    local answer = prefix and own[fold(prefix)]
+
+    if not answer then return nil end
+
+    local ok, reply = pcall(answer, req)
+
+    if not ok then return { ok = false, error = tostring(reply) } end
+
+    return reply or { ok = false, error = "no answer" }
+  end
+
   -- `pass` is a capability travelling with the request, which the kernel
   -- translates into the server's own index for the same object. It is how
   -- a buffer is handed over for a large read: the pages, not the bytes.
@@ -1869,7 +1900,7 @@ local function new_namespace()
   end
 
   local function request(op, path, extra, pass)
-    local capability, rest, _, proto = resolve(path)
+    local capability, rest, prefix, proto = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
       -- simply no such path in this process's world.
@@ -1931,6 +1962,13 @@ local function new_namespace()
 
     local req = { type = op, path = rest }
     if extra then for k, v in pairs(extra) do req[k] = v end end
+
+    local mine = answered_here(prefix, req)
+
+    if mine then
+      if not mine.ok then return nil, mine.error end
+      return mine
+    end
 
     --
     -- A value too big for a message goes through a region instead.
@@ -2223,7 +2261,48 @@ local function new_namespace()
     return r ~= nil, e
   end
 
+  --
+  -- **A name in a registry is the registry's to describe** (`roadmap.md`
+  -- 6zb). `/Running/wm` is the window manager's own endpoint, which is what
+  -- lets `fs.send("/Running/wm", ...)` reach it - so asking what the name
+  -- *is* went to the program too, and a program is not a server: it answers
+  -- when its loop comes round, or never if it is the asker. Tracker opening
+  -- `/Running` asked every name there, its own among them, and hung. The
+  -- name is in the registry's list or it is not, and that is the whole
+  -- answer; it is a folder, because what is under it - a window's
+  -- properties, a server's operations - is the program's. `nil` for a path
+  -- that is not directly under a registry.
+  --
+  local function registered(path)
+    local key = fold(path)
+
+    for _, a in ipairs(autos) do
+      local pre = fold(a.prefix)
+
+      if key:sub(1, #pre + 1) == pre .. "/" then
+        local name = key:sub(#pre + 2)
+
+        if name ~= "" and not name:find("/", 1, true) then
+          local r = app_request(a.cap, "list")
+
+          for _, n in ipairs(r and r.entries or {}) do
+            if fold(n) == name then return { kind = "directory" } end
+          end
+
+          return false
+        end
+      end
+    end
+
+    return nil
+  end
+
   function ns.getattr(path)
+    local listed = registered(path)
+
+    if listed then return listed end
+    if listed == false then return nil, "no such path: " .. path end
+
     -- A mount point is a directory, and only this table knows it.
     --
     -- `/bin` is a name in this process's mount table; the server behind it
@@ -2378,7 +2457,7 @@ local function new_namespace()
   -- an index means something different on each side and only the kernel can
   -- translate it.
   function ns.send(path, message, pass)
-    local capability, rest, _, proto = resolve(path)
+    local capability, rest, prefix, proto = resolve(path)
 
     if not capability then
       return nil, "no such path: " .. path
@@ -2455,6 +2534,13 @@ local function new_namespace()
 
     local req = { path = rest }
     for k, v in pairs(message) do req[k] = v end
+
+    local mine = answered_here(prefix, req)
+
+    if mine then
+      if not mine.ok then return nil, mine.error end
+      return mine
+    end
 
     local reply, err = sys.call(capability, req, pass)
     if not reply then return nil, err end

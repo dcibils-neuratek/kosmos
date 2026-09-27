@@ -11520,3 +11520,44 @@ by looking for names that began `translators/` in a flat listing of
 `/Kosmos/Libraries`; with the folder listed once, it found none. It lists
 `/Kosmos/Libraries/translators` itself now, as it does `/Home/Translators`,
 and the suite passes on both boards, 122 checks each.
+
+## 18.236 `/Running` is not asked about itself, Tracker is for files, and a separator is a third of a row
+
+Three things Diego found on the M700 with 0.10.175 (`roadmap.md` 6zb,
+6zc), each with a check and a control that fails it.
+
+**Opening `/Running` hung Tracker.** The namespace asked each name there
+what it was by calling that program's endpoint, and every window registers
+its title there - so Tracker asked itself and waited for ever. A name
+directly under a registry is now described by the registry, from its list,
+as a folder; and a process's own name is answered in the process
+(`fs.answer_here`, which a window calls when it registers), so listing it
+never sends the process a message. `run_shell.py` registers two names from
+the shell with endpoints nothing will ever receive on: `silent`, whose
+`getattr` must come back a folder (and a name never registered nothing),
+and `selftest`, answered in the shell, whose listing must come back with
+what the answer made. 29 checks on ARM. Controls: the registry step
+answering nothing - the `getattr` line never returns and `selfattr` is
+missing; the in-process answer removed - the listing never returns and
+`selflist` is missing.
+
+**Tracker is for files** - Diego: "why do we need access to 'running' in
+tracker in the first place", "tracker is for files", "not processes". The
+root's listing, the sidebar's System and the Open and Save window leave out
+`/Devices`, `/Network` and `/Running` (`places.holds_files`,
+`places.files_only`); the Terminal keeps them. `test_places.lua`, 21:
+the three refused in any case and below, every other root and a name that
+only begins like one kept, the root listed as Drives, Home, Kosmos,
+Temporary, and a folder that is not the root listed whole. Control: a rule
+that refuses nothing fails two.
+
+**A separator was as tall as an item.** Now a third of a row, and the
+drawing, the height, the item under the pointer and a submenu's place ask
+the same two functions (`menu_item_y`, `menu_item_at`). The display
+harness's direct menu phase reads the Strip's File menu - two items and a
+separator - from the window manager's own line and wants it 78 pixels, and
+presses Quit where it now is; Camera's Silent pattern too, below its
+separator (`menu_row_middle`). Both boards pass the direct menu, places and
+camera phases. Control: a separator a whole row again - the window manager
+opens it 100 tall and the phase fails.
+

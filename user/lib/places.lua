@@ -141,6 +141,45 @@ function places.read(store, dir)
 end
 
 --
+-- **Where there are no files** (Diego, 27 September 2026, after opening
+-- `/Running` hung Tracker: "why do we need access to 'running' in tracker
+-- in the first place", "tracker is for files", "not processes"). Three of
+-- the root's seven names are for programs: `/Running`, where one finds
+-- another; `/Devices`, the machine's devices; `/Network`, a protocol rather
+-- than a tree. Tracker and the Open and Save window leave them out of the
+-- root and of System. The Terminal, which is for programs, has them all.
+--
+places.NOT_FILES = { "/Devices", "/Network", "/Running" }
+
+-- Is `path` somewhere files are? Whatever the case it is spelled in, as
+-- every name is found.
+function places.holds_files(path)
+  local key = tostring(path or ""):lower()
+
+  for _, root in ipairs(places.NOT_FILES) do
+    local k = root:lower()
+
+    if key == k or key:sub(1, #k + 1) == k .. "/" then return false end
+  end
+
+  return true
+end
+
+-- A folder's entries as a window for people shows them: all of them, but
+-- at the root only the names that hold files.
+function places.files_only(path, entries)
+  if path ~= "/" then return entries end
+
+  local out = {}
+
+  for _, e in ipairs(entries or {}) do
+    if places.holds_files("/" .. tostring(e.name)) then out[#out + 1] = e end
+  end
+
+  return out
+end
+
+--
 -- A name to offer for a new place: the folder's own, or the volume's when it
 -- is the volume itself. Offered, not imposed - the field it goes into is
 -- there to be typed over.
