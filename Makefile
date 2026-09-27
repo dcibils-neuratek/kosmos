@@ -3270,6 +3270,10 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# lives in `/lib` and not inside the Deskbar.
 	$(HOSTDIR)/lua tools/test_deskbarmenu.lua
 	$(HOSTDIR)/lua tools/test_places.lua
+	@# What a right click offers on each kind of thing, and how Info counts
+	@# a folder a slice at a time (`roadmap.md` 6za).
+	$(HOSTDIR)/lua tools/test_filemenu.lua
+	$(HOSTDIR)/lua tools/test_tally.lua
 	@# What kind of thing a process is, for Processes: a driver by its
 	@# device authority, a server by init starting it, the rest by /bin.
 	$(HOSTDIR)/lua tools/test_prockind.lua

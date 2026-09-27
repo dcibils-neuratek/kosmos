@@ -3087,6 +3087,30 @@ function ui.slider(spec)
 end
 
 --
+-- **Words cut to fit `room`**, ending in `...` when they were cut - never in
+-- the middle of a UTF-8 character, because a FAT long name arrives as UTF-8
+-- and half a character draws as rubbish. `role` is the face they are drawn
+-- in. From `panel.lua`, where it began, for Info's paths as well.
+--
+function ui.fitted(text, room, role)
+  text = tostring(text or "")
+
+  if gfx.measure(text, role) <= room then return text end
+
+  while #text > 1 and gfx.measure(text .. "...", role) > room do
+    text = text:sub(1, -2)
+
+    while #text > 1 and text:byte(-1) >= 0x80 and text:byte(-1) < 0xC0 do
+      text = text:sub(1, -2)
+    end
+
+    if #text > 0 and text:byte(-1) >= 0xC0 then text = text:sub(1, -2) end
+  end
+
+  return text .. "..."
+end
+
+--
 -- **A page of cards**: groups of rows, each a name above a rounded card,
 -- every row the drawings' 11 + what is in it + 11 and 48 at the least, its
 -- name on the left and its control against the right.
@@ -5933,6 +5957,14 @@ local MENU_ICON = 32
 --
 local MENU_MARK = 12
 
+--
+-- **A word on the right of an item, dim** (`docs/rightclick.html`): what
+-- Open will open a file in - "Open ... Video" - or where Delete sends it.
+-- `hint` on the item, measured into the menu's width with this much room
+-- between it and the item's own words, so the two never meet.
+--
+local MENU_HINT_GAP = 24
+
 local function menu_pictured(items)
   for _, it in ipairs(items) do
     if it.icon then return true end
@@ -5995,6 +6027,7 @@ local function menu_metrics(items)
     -- Measured, not counted. A character count is a width only while every
     -- glyph is the same width, and the interface font need not be.
     local n = gfx.measure(tostring(it.text or ""))
+              + (it.hint and gfx.measure(tostring(it.hint)) + MENU_HINT_GAP or 0)
 
     if n > widest then widest = n end
     if it.submenu then deep = true end
@@ -6082,6 +6115,16 @@ function window:paint_menu(m)
       g:text(text_x, y + centred(m.row), tostring(it.text or ""),
              it.disabled and theme.text_dim
              or (hot and theme.text_on or theme.text), bg)
+
+      if it.hint then
+        local hint = tostring(it.hint)
+        local hx = m.w - MENU_PAD - 4 - gfx.measure(hint)
+                   - (it.submenu and MENU_ARROW or 0)
+
+        g:text(hx, y + centred(m.row), hint,
+               (hot and not it.disabled) and theme.text_on or theme.text_dim,
+               bg)
+      end
 
       --
       -- The submenu marker, built out of fills because there is no line and

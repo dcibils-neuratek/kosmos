@@ -44,26 +44,8 @@ local SIDE_W = 190
 local TOP    = 34                     -- the trail above, the panes below
 local FOOT   = 72                     -- the name, the buttons, the status
 
---
--- A name cut to fit its column, ending in `...` when it was cut - and never
--- in the middle of a UTF-8 character, because a FAT long name arrives as
--- UTF-8 and half a character draws as rubbish.
---
-local function fitted(text, room)
-  if gfx.measure(text) <= room then return text end
-
-  while #text > 1 and gfx.measure(text .. "...") > room do
-    text = text:sub(1, -2)
-
-    while #text > 1 and text:byte(-1) >= 0x80 and text:byte(-1) < 0xC0 do
-      text = text:sub(1, -2)
-    end
-
-    if #text > 0 and text:byte(-1) >= 0xC0 then text = text:sub(1, -2) end
-  end
-
-  return text .. "..."
-end
+-- A name cut to fit its column (`ui.fitted`, which began here).
+local function fitted(text, room) return ui.fitted(text, room) end
 
 local function open(spec, mode)
   local win, err = ui.window{

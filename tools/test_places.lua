@@ -173,6 +173,57 @@ check(#places.read({ list = function() return nil end,
       "no `/Home/Places` yet is no places, not an error")
 
 --------------------------------------------------------------------------
+-- Pinned in an order, and found again (`roadmap.md` 6za).
+--------------------------------------------------------------------------
+
+local pinned = {
+  ["/Home/Places/zeta"] = { kind = "place", path = "/Home/zeta", order = 1 },
+  ["/Home/Places/Alpha"] = { kind = "place", path = "/Home/Alpha", order = 3 },
+  ["/Home/Places/mid"] = { kind = "place", path = "/Home/roms", order = 2 },
+  ["/Home/Places/old"] = { kind = "place", path = "/Home/old" },
+  ["/Home/Places/usb"] = { kind = "place", volume = "fat:1A2B-3C4D",
+                           within = "/Italy", volume_name = "PHOTOS" },
+}
+
+local pinstore = {
+  list = function(dir)
+    local out = {}
+
+    for p in pairs(pinned) do
+      local name = p:match("^" .. dir .. "/([^/]+)$")
+
+      if name then out[#out + 1] = name end
+    end
+
+    table.sort(out)
+    return out
+  end,
+  getattr = function(path) return pinned[path] end,
+}
+
+local pins = places.read(pinstore)
+local pin_order = {}
+
+for i, p in ipairs(pins) do pin_order[i] = p.name end
+
+check(table.concat(pin_order, ",") == "old,usb,zeta,mid,Alpha",
+      "places made before there was an order first, by name; then in the "
+      .. "order pinned, whatever their names: " .. table.concat(pin_order, ","))
+
+check(places.next_order(pins) == 4 and places.next_order({}) == 1,
+      "the next place is given one past the highest order, and the first 1")
+
+check(places.find(pins, "/home/ROMS/") and places.find(pins, "/Home/roms").name == "mid",
+      "a folder is found as a place by where the place leads, in any case")
+
+check(places.find(pins, "/Drives/PHOTOS/Italy", plugged)
+      and not places.find(pins, "/Drives/PHOTOS/Italy", {}),
+      "a place on a drive is found while its drive is plugged in, and not after")
+
+check(places.find(pins, "/Home/rom") == nil,
+      "a folder that is not a place is not found as one")
+
+--------------------------------------------------------------------------
 -- Where there are no files (`roadmap.md` 6zb): Tracker is for files.
 --------------------------------------------------------------------------
 

@@ -8452,11 +8452,30 @@ def check_places(guest):
     _, _, after = parse_ppm(guest.screendump())
     emptied = differing(after, 236, first_row_y - 7, 180, 14)
 
-    to(60, place_row_y)                 # and take it out again
+    #
+    # **And take it out again, through the menu the right click opens**
+    # (`roadmap.md` 6za): Open, a separator, Unpin from sidebar - which the
+    # click itself used to do at once. Where the menu opened is the window
+    # manager's line.
+    #
+    opened_at = len(guest.seen)
+    to(60, place_row_y)
     time.sleep(0.3)
     guest.mouse_button(True, "right")
     time.sleep(0.1)
     guest.mouse_button(False, "right")
+
+    menu = guest.wait_for_line("wm: menu of Tracker at ",
+                               "the sidebar's menu to open", opened_at)
+    mx, my = (int(v) for v in re.match(r"(\d+),(\d+)", menu).groups())
+    time.sleep(1.0)
+
+    guest.mouse_to(*_to_tablet(mx + 20, menu_row_middle(my, 3, separators=1),
+                               width, height))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.1)
+    guest.mouse_button(False)
     time.sleep(2.0)
 
     back = len(guest.seen)
@@ -8520,7 +8539,80 @@ def check_places(guest):
             "%d pixels of a row before the click and %d after, where an "
             "empty folder leaves none" % (held, emptied))
 
-    return 3
+    #
+    # **Pin to sidebar and Info, from the right click** (`roadmap.md` 6za).
+    # A Tracker again on the same folder: the folder's own menu pins it -
+    # Open, a separator, Pin to sidebar - and it is a place again, given an
+    # order; the empty space's menu opens Info on the folder shown, which
+    # counts what is in it and says so. In a list, that menu is New folder,
+    # Paste, Select all, Refresh and Info on it, with three separators.
+    #
+    mark = len(guest.seen)
+    guest.type("wm tracker:/Home/placetest")
+    guest.wait_for_line("tracker: content at ", "Tracker to open again", mark)
+    time.sleep(2.0)
+
+    def menu_choose(x, y, row, separators, what):
+        at = len(guest.seen)
+        to(x, y)
+        time.sleep(0.3)
+        guest.mouse_button(True, "right")
+        time.sleep(0.1)
+        guest.mouse_button(False, "right")
+
+        said_ = guest.wait_for_line("wm: menu of Tracker at ", what, at)
+        mx_, my_ = (int(v) for v in re.match(r"(\d+),(\d+)", said_).groups())
+        time.sleep(1.0)
+        guest.mouse_to(*_to_tablet(mx_ + 20,
+                                   menu_row_middle(my_, row, separators),
+                                   width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.1)
+        guest.mouse_button(False)
+
+    menu_choose(260, first_row_y, 3, 1, "the folder's menu to open")
+    guest.wait_for_line("tracker: place %s at " % NAME,
+                        "Pin to sidebar to make a place", mark)
+
+    menu_choose(400, first_row_y + 4 * LAYOUT_ROW, 8, 3,
+                "the empty space's menu to open")
+    counted = guest.wait_for_line("info: /Home/placetest, ",
+                                  "Info to open and count", mark)
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        guest._read_available()
+        if PROMPT in guest.seen[back:]:
+            break
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after Pin and "
+                      "Info.\n" + guest.seen[back:][-600:])
+
+    asked = len(guest.seen)
+    guest.type('local p = fs.getattr("/Home/Places/%s") or {} '
+               'print("pin" .. "check " .. tostring(p.kind) .. " " '
+               '.. tostring(p.path) .. " " .. tostring(p.order))' % NAME)
+    pin = guest.wait_for_line("pincheck ", "the pinned place to be read",
+                              asked)
+
+    if pin.split() != ["place", "/Home/placetest/" + NAME, "1"]:
+        raise Failure(
+            "Pin to sidebar on %s did not make a place pointing at it and "
+            "given the first order - /Home/Places/%s reads %r"
+            % (NAME, NAME, pin))
+
+    if counted != "0 files in 1 folders, 0 bytes":
+        raise Failure(
+            "Info on /Home/placetest, which holds one empty folder, did not "
+            "count one folder and nothing else: %r" % counted)
+
+    return 5
 
 
 def check_icon_sizes(guest):
@@ -8687,7 +8779,21 @@ def check_icon_sizes(guest):
     # was what made that phase fail twice for a reason that had nothing to do
     # with what it was testing.
     #
-    MENU_W, MENU_H = 200, 3 * MENU_ROW + 8
+    #
+    # **The desktop's menu since the right click offers what applies**
+    # (`roadmap.md` 6za): New folder, Paste, a separator, Select all, a
+    # separator, the three sizes, a separator, Refresh, a separator, Info on
+    # Desktop. The sizes are rows 6, 7 and 8, two separators above them; it
+    # was the three sizes alone.
+    #
+    SMALL, MEDIUM, LARGE = 6, 7, 8
+    SEPARATORS = (3, 5)                 # the ones above the sizes
+    MENU_W = 220
+    MENU_H = 2 + 8 * MENU_ROW + 4 * MENU_SEP + 2
+
+    def row_middle(row):
+        return menu_row_middle(at_y, row,
+                               sum(1 for sep in SEPARATORS if sep < row))
 
     def bare(x0, y0):
         # The menu's room, and the strip above the pointer the check below
@@ -8741,8 +8847,7 @@ def check_icon_sizes(guest):
         settle(guest, menu_over,
                "a right press on the bare desktop opened no menu to choose "
                f"row {row} from")
-        press("left", at_x + 24,
-              at_y + 2 + (row - 1) * MENU_ROW + MENU_ROW // 2)
+        press("left", at_x + 24, row_middle(row))
 
     #
     # The menu itself first: a press on the background has to put something
@@ -8838,15 +8943,16 @@ def check_icon_sizes(guest):
     def only_marked(row):
         def look(w, h, pixels):
             return (w, h, pixels) \
-                if marked_rows(w, pixels, at_x, at_y, 3) == [row] else None
+                if marked_rows(w, pixels, at_x, at_y, LARGE, SEPARATORS) \
+                == [row] else None
 
         return look
 
     _, _, px = settle(
-        guest, only_marked(2),
+        guest, only_marked(MEDIUM),
         "the desktop's menu should mark Medium icons, the second of its three "
-        "rows, as the size in force - and marks "
-        + str(marked_rows(width, px, at_x, at_y, 3) or "none")
+        "sizes, as the size in force - and marks "
+        + str(marked_rows(width, px, at_x, at_y, LARGE, SEPARATORS) or "none")
         + ". A menu of choices that "
         "does not say which one you are looking at is a menu you have to "
         "guess at: `mark` in `ui.lua`.")
@@ -8855,7 +8961,7 @@ def check_icon_sizes(guest):
     # And away again without choosing: a press outside a menu closes it.
     press("left", min(at_x + 400, width - 40), at_y + 200)
 
-    choose(3)                          # Large icons
+    choose(LARGE)
 
     def grew(w, h, pixels):
         low = lowest_ink(w, h, pixels)
@@ -8987,13 +9093,13 @@ def check_icon_sizes(guest):
     time.sleep(0.3)
     guest.mouse_button(False, "right")
 
-    settle(guest, only_marked(3),
+    settle(guest, only_marked(LARGE),
            "Large icons is in force and the desktop's menu does not mark its "
            "third row. `ui.menu_items` works a menu's items out when it "
            "opens, so that a mark says what is true now.")
     checks += 1
 
-    press("left", at_x + 24, at_y + 2 + MENU_ROW + MENU_ROW // 2)  # Medium
+    press("left", at_x + 24, row_middle(MEDIUM))
 
     look, _ = column_at(before, "back where it was", cell_top(items - 1, 32))
     settle(guest, look,
@@ -10453,7 +10559,8 @@ def main():
           f"{icon_size_checks} on the icon size chosen on the desktop and "
           f"kept, "
           f"{places_checks} on a place made by a drop, opened by a click "
-          f"and taken out by a right-click, "
+          f"and unpinned from its right click's menu, a folder pinned from "
+          f"its own and Info counting the folder shown, "
           f"{panel_checks} on the Open window's filter, its one click that "
           f"only selects and its second that hands over the path, "
           f"{clip_checks} on copying text from one application into "

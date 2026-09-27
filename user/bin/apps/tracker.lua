@@ -44,6 +44,7 @@ local types = use("/Kosmos/Libraries/filetypes.lua")
 local layout = use("/Kosmos/Libraries/iconlayout.lua")
 local iconsize = use("/Kosmos/Libraries/iconsize.lua")
 local placelib = use("/Kosmos/Libraries/places.lua")
+local filemenu = use("/Kosmos/Libraries/filemenu.lua")
 local sidebar  = use("/Kosmos/Libraries/sidebar.lua")
 local theme = ui.theme
 
@@ -383,6 +384,10 @@ local start_drag
 -- And the one that changes directory, because the places tree calls it and
 -- is built above it.
 local show, visit
+
+-- And the right click's two menus, which the views above open and which are
+-- written below the actions they name (`roadmap.md` 6za).
+local context_menu, place_menu
 local go_back, go_forward, go_up
 local sort_by  = "name"
 local scroll   = 1        -- the first row shown; the bar moves this
@@ -750,32 +755,18 @@ function places:drop(kind, payload, _, _)
 end
 
 --
--- **A right-click on a place takes it out of Places**, into the Trash like
--- every other delete in Tracker - so the wrong one is one drag back. It is
--- the shortcut that goes, never what it points at. Home and Desktop are not
--- files anybody made, and say so.
+-- **A right click on the sidebar opens a menu** (`roadmap.md` 6za): Open and
+-- Info on Home, Desktop and the folders every home has; Empty Trash on the
+-- Trash; Unpin on a place a person made, which used to be taken out of
+-- Places at once by the click itself; Pin on a drive. `place_menu` is with
+-- the other menus, below the actions it names.
 --
-function places:on_context(_, y)
+function places:on_context(x, y)
   local it = self:item_at(y)
 
   if not it then return true end
 
-  if not it.place then
-    status.text = it.name .. " is built in, not a place you made"
-    return true
-  end
-
-  local name, why = files.free_name(files.TRASH, it.place.name)
-  local ok = false
-
-  if name then
-    ok, why = files.move(it.place.file, files.join(files.TRASH, name))
-  end
-
-  status.text = ok and (it.place.name .. " is out of Places, and in the Trash")
-                or ("could not remove it: " .. tostring(why))
-
-  refresh_places()
+  place_menu(it, win.origin_x + self.x + x, win.origin_y + self.y + y)
   return true
 end
 
@@ -1239,55 +1230,25 @@ local function open_selected()
 end
 
 --
--- Right-click a launcher: edit what it starts.
+-- **A right click offers what applies to what it was pressed on**
+-- (`roadmap.md` 6za, `docs/rightclick.html`): a folder, a file, a Lua file,
+-- a launcher, several things, the Trash, or the window itself. It used to
+-- do one thing where it did anything - the launcher editor on a launcher,
+-- the icon sizes on the empty space - and on a folder it said "roms is not
+-- a launcher".
 --
--- The same window the Deskbar's menu opens on a right press, because it is
--- the same kind of file - a desktop icon and a menu row are two views of one
--- launcher, and having two ways to edit it would be two ways to disagree.
---
--- Only a launcher answers. Right-clicking anything else says so rather than
--- opening a window about a file that has nothing to edit; a general context
--- menu for every kind of file is a bigger idea and is not this one.
---
--- `dispatch_context` in `ui.lua` hit-tests to this view and hands local
--- coordinates, so `at_point` is the same function a left press uses and the
--- desktop's free-placed icons are found the same way.
+-- **What was pressed on becomes the selection** first, unless it is one of
+-- several already selected: the menu then acts on all of them, and says how
+-- many. `dispatch_context` in `ui.lua` hit-tests to this view and hands
+-- local coordinates, so `at_point` is the same function a left press uses.
 --
 function rows:on_context(x, y)
   local n = at_point(self, x, y)
   local e = n and self.shown and self.shown[n]
 
-  if not e then
-    --
-    -- Nothing under it: how big the icons here are, which is the one thing
-    -- the background of a view full of icons has to say. On the desktop it
-    -- is the *only* way to it, because a desktop has no menu bar - and a
-    -- press on the background asking about the background is what every
-    -- desktop has meant by a right click since there were two buttons.
-    --
-    if mode == "icons" then
-      win:open_menu(win.origin_x + self.x + x, win.origin_y + self.y + y,
-                    icons:items())
+  if e and not marked[e.name] then mark_only(n, self.shown) end
 
-      return true
-    end
-
-    status.text = "nothing there"
-    return true
-  end
-
-  if e.kind ~= "launcher" then
-    status.text = e.name .. " is not a launcher"
-    return true
-  end
-
-  local ok, why = fs.send("/Running/wm", { type = "launch",
-                                       program = "/Kosmos/Apps/launcheredit.lua",
-                                       args = path_of(e) })
-
-  status.text = ok and ("editing " .. e.name)
-                or ("could not open it: " .. tostring(why))
-
+  context_menu(e, win.origin_x + self.x + x, win.origin_y + self.y + y)
   return true
 end
 
@@ -2464,6 +2425,252 @@ function more_menu()
 end
 
 --
+-- Where a place went, in the window, for the display harness - which clicks
+-- it and right-clicks it, and would otherwise count rows it cannot see: a
+-- new place comes after a hairline, not at a fixed row. A drop and a Pin
+-- both say it.
+--
+local function announce_place(text)
+  for id, it in pairs(place_by_id) do
+    if it.place and it.name == text then
+      local y, pitch = places:row_of(id)
+
+      if y then
+        print(("tracker: place %s at %d"):format(text,
+                                                 places.y + y + pitch // 2))
+      end
+    end
+  end
+end
+
+--
+-- **Write a place**: the file in `/Home/Places`, given the next `order` so
+-- places are listed as they were pinned. What a drop and a Pin share.
+--
+local function write_place(name, attrs)
+  if not fs.getattr(placelib.DIR) then
+    fs.send(placelib.DIR, { type = "mkdir" })
+  end
+
+  attrs.order = placelib.next_order(placelib.read(fs))
+
+  local file = files.join(placelib.DIR, name)
+  local ok, why = fs.write(file, "")
+
+  if ok then ok, why = fs.setattr(file, attrs) end
+
+  refresh_places()
+
+  if ok then announce_place(name) end
+
+  return ok, why
+end
+
+--------------------------------------------------------------------------
+-- The right click (`roadmap.md` 6za, `docs/rightclick.html`).
+--
+-- `/Kosmos/Libraries/filemenu.lua` decides what is offered on what; this
+-- says what each item does, because the doing is Tracker's - the selection,
+-- the clipboard and the window are here.
+--------------------------------------------------------------------------
+
+--
+-- **Pin to sidebar**: a place, as a drop on the sidebar makes one, named
+-- after the folder - a second `roms` is `roms 2` - and listed after the
+-- others, in the order pinned. **Unpin** takes the place and never the
+-- folder, into the Trash like every other removal here, so the wrong one is
+-- one drag back.
+--
+local function pin(path)
+  local attrs, why = placelib.from_path(path, side.volumes(true))
+
+  if not attrs then
+    status.text = tostring(why)
+    return
+  end
+
+  local list = placelib.read(fs)
+
+  if placelib.find(list, path, side.volumes()) then
+    status.text = path .. " is in the sidebar already"
+    return
+  end
+
+  local name, taken = files.free_name(placelib.DIR, placelib.suggest(path))
+
+  if not name then
+    status.text = tostring(taken)
+    return
+  end
+
+  local ok, err = write_place(name, attrs)
+
+  status.text = ok and (name .. " is in the sidebar")
+                or ("could not pin it: " .. tostring(err))
+end
+
+local function unpin_place(p)
+  local name, why = files.free_name(files.TRASH, p.name)
+  local ok = false
+
+  if name then
+    ok, why = files.move(p.file, files.join(files.TRASH, name))
+  end
+
+  status.text = ok and (p.name .. " is out of the sidebar, and in the Trash")
+                or ("could not unpin it: " .. tostring(why))
+
+  refresh_places()
+end
+
+local function unpin(path)
+  local p = placelib.find(placelib.read(fs), path, side.volumes())
+
+  if p then unpin_place(p) else status.text = path .. " is not pinned" end
+end
+
+--
+-- **Info**, a window of its own for each time it is asked: one path, or
+-- several one a line.
+--
+local function open_info(paths)
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = "info",
+                                       args = table.concat(paths, "\n") })
+
+  if not ok then status.text = "could not open Info: " .. tostring(why) end
+end
+
+--
+-- The kit's menu items from the decisions: each id to what it does here,
+-- the icon sizes put where the decisions left room for them, and anything
+-- with nothing to do drawn dim rather than left to do nothing.
+--
+local function menu_of(items, act)
+  local out = {}
+
+  for _, it in ipairs(items or {}) do
+    if it.separator then
+      out[#out + 1] = { separator = true }
+    elseif it.id == "icon_sizes" then
+      for _, size in ipairs(icons:items()) do out[#out + 1] = size end
+    else
+      local fn = act[it.id]
+
+      out[#out + 1] = { text = it.text, hint = it.hint,
+                        disabled = (it.off or not fn) or nil,
+                        on_choose = fn }
+    end
+  end
+
+  return out
+end
+
+--
+-- The window's right click: on `e`, which is selected by now, or on nothing
+-- at all. At the screen position `sx`, `sy`.
+--
+function context_menu(e, sx, sy)
+  local chosen_now = e and marked_entries(rows.shown) or {}
+  local t
+
+  if not e then
+    t = { what = "space", here = where:match("([^/]+)$"),
+          root = (where == "/"),
+          paste = (clipboard ~= nil and #clipboard > 0),
+          icons = (mode == "icons") }
+  elseif #chosen_now > 1 then
+    t = { what = "several", count = #chosen_now,
+          in_trash = files.in_trash(path_of(e)) }
+  else
+    local path = path_of(e)
+
+    t = { what = filemenu.what_of(e, path, files.TRASH), name = e.name,
+          in_trash = files.in_trash(path) and path ~= files.TRASH }
+
+    if t.what == "folder" then
+      t.pinned = placelib.find(placelib.read(fs), path, side.volumes()) ~= nil
+    elseif t.what == "file" then
+      local program = types.opener(path, e.attrs)
+
+      t.opener = program and types.app_name(program)
+    end
+  end
+
+  local function selected_paths()
+    local out = {}
+
+    for _, one in ipairs(marked_entries(rows.shown)) do
+      out[#out + 1] = path_of(one)
+    end
+
+    return out
+  end
+
+  local act = {
+    open = function() open_selected() end,
+    edit = function()
+      if e and e.kind == "launcher" then
+        local ok, why = fs.send("/Running/wm", {
+          type = "launch", program = "/Kosmos/Apps/launcheredit.lua",
+          args = path_of(e) })
+
+        status.text = ok and ("editing " .. e.name)
+                      or ("could not open it: " .. tostring(why))
+      else
+        do_edit()
+      end
+    end,
+    rename = function() do_rename() end,
+    cut = function() do_cut() end,
+    copy = function() do_copy() end,
+    paste = function() do_paste() end,
+    delete = function() delete_selected() end,
+    empty_trash = function() empty_trash() end,
+    new_folder = function() new_folder() end,
+    select_all = function() select_all() end,
+    refresh = function() refresh_places() show(where) end,
+    pin = e and function() pin(path_of(e)) end,
+    unpin = e and function() unpin(path_of(e)) end,
+    info = function()
+      open_info(e and selected_paths() or { where })
+    end,
+  }
+
+  win:open_menu(sx, sy, menu_of(filemenu.items(t), act))
+end
+
+--
+-- The sidebar's right click, on the row `it` - a place, the Trash, a drive,
+-- or one of the folders every home has.
+--
+function place_menu(it, sx, sy)
+  local t
+
+  if it.place then
+    t = { what = "place" }
+  elseif it.path == files.TRASH then
+    t = { what = "trash" }
+  elseif it.icon == "drive" then
+    t = { what = "drive", pinned = it.path ~= nil and placelib.find(
+            placelib.read(fs), it.path, side.volumes()) ~= nil }
+  else
+    t = { what = "builtin" }
+  end
+
+  local act = {
+    open = it.path and function() visit(it.path) end,
+    info = it.path and function() open_info({ it.path }) end,
+    empty_trash = function() empty_trash() end,
+    unpin = function()
+      if it.place then unpin_place(it.place) else unpin(it.path) end
+    end,
+    pin = it.path and function() pin(it.path) end,
+  }
+
+  win:open_menu(sx, sy, menu_of(filemenu.items(t), act))
+end
+
+--
 -- Where you are, as a menu: every segment of the path, innermost last, each
 -- one a place to go back to. The same list the trail drew across the window.
 --
@@ -2541,34 +2748,10 @@ local function name_place(field, text)
     return
   end
 
-  if not fs.getattr(placelib.DIR) then
-    fs.send(placelib.DIR, { type = "mkdir" })
-  end
-
-  local ok, why = fs.write(file, "")
-
-  if ok then ok, why = fs.setattr(file, attrs) end
+  local ok, why = write_place(text, attrs)
 
   status.text = ok and (text .. " is in Places")
                 or ("could not make it: " .. tostring(why))
-
-  refresh_places()
-
-  --
-  -- Where it went, in the window, for the display harness - which clicks it
-  -- and right-clicks it, and would otherwise count rows it cannot see: a
-  -- new place comes after a hairline, not at a fixed row.
-  --
-  for id, it in pairs(place_by_id) do
-    if it.place and it.name == text then
-      local y, pitch = places:row_of(id)
-
-      if y then
-        print(("tracker: place %s at %d"):format(text,
-                                                 places.y + y + pitch // 2))
-      end
-    end
-  end
 end
 
 function rename_field:on_enter(text)

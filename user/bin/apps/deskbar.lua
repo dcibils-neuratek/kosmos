@@ -144,7 +144,9 @@ do
       local short = file:gsub("%.lua$", "")
 
       -- The Deskbar does not list itself. It is not something you start.
-      if short ~= "deskbar" then
+      -- `section none`: a window something else opens with a file in it -
+      -- Info - which has nothing to show opened on its own from a menu.
+      if short ~= "deskbar" and attrs.section ~= "none" then
         programs[short] = attrs
         launchable[#launchable + 1] = short
       end

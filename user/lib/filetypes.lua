@@ -116,6 +116,57 @@ end
 -- program name. Keeping them apart is what lets the type come from an
 -- attribute later without this function changing at all.
 --
+--
+-- **What a kind of file is called**, for Info's line under the name and the
+-- File types page that 6z draws: the words a person would use, not the
+-- extension read aloud. An extension with no words here is named by itself
+-- - "SFC file" - which is honest and never wrong.
+--
+filetypes.names = {
+  lua = "Lua source", txt = "Text", md = "Note", conf = "Settings",
+  pdf = "PDF document", html = "Web page",
+  png = "Picture", jpg = "Photograph", jpeg = "Photograph",
+  mp3 = "Song", wav = "Sound", mp4 = "Film",
+  wad = "Doom level", sfc = "Super Nintendo cartridge",
+  smc = "Super Nintendo cartridge", zip = "Archive", theme = "Look",
+  scene = "Cafesa3D scene", gltf = "3D scene", glb = "3D scene",
+}
+
+function filetypes.describe(path, attrs)
+  attrs = attrs or {}
+
+  if attrs.kind == "directory" then return "Folder" end
+  if attrs.kind == "launcher" then return "Launcher" end
+  if attrs.kind == "kit" then return "Kit, part of the system" end
+  if attrs.kind == "application" then return "Application" end
+  if attrs.kind == "program" then return "Program" end
+
+  local ext = filetypes.kind_of(path, attrs)
+
+  if not ext then return "File" end
+
+  return filetypes.names[ext] or (ext:upper() .. " file")
+end
+
+--
+-- **An opener by the name its window has**, for the right click's "Open -
+-- Video" and Info's "Opens with". A program's name is a file's, and `pdfview`
+-- is not what anybody calls it. 6z replaces this with what each
+-- application says of itself in its header.
+--
+local APP_NAMES = {
+  editor = "Editor", reader = "Reader", photo = "Photo", pdfview = "PDF",
+  video = "Video", browser = "Browser", music = "Music", play = "Play",
+  launcheredit = "Launcher editor", terminal = "Terminal",
+}
+
+function filetypes.app_name(program)
+  program = tostring(program or "")
+
+  return APP_NAMES[program]
+         or (program:sub(1, 1):upper() .. program:sub(2))
+end
+
 function filetypes.opener(path, attrs)
   local kind = filetypes.kind_of(path, attrs)
 

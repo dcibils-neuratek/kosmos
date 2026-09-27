@@ -2138,6 +2138,52 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6zl. **WANTED on 27 September - the Deskbar's indicators drawn with the
+   line icons, drawn first.** Diego, with the Mac's menu bar beside him:
+   "now that we have status icons from our new icon library, can we mockup
+   on how it would look with these status icons instead of the icons we
+   have now for network, volume, wifi, etc?". A page: the Deskbar's right
+   end as it is, and the same indicators - network, Wi-Fi, volume, battery,
+   the processor meter, the clock - in the line icons the image carries
+   (`assets/icons/line`), in the Deskbar's own look, for Diego to compare
+   before anything changes.
+
+6zk. **FOUND on 27 September - the shadow a window casts is thin beside
+   the drawings'.** Diego: "the drop shadow in the mockups look amazing, but
+   the real drop shadow looks much worse". The drawings cast two: a large
+   soft one - 40 pixels of blur, 18 below, at 28 per cent - and a tight one
+   - 6 of blur, 2 below, at 20 - each fading as a blur does, quickly near
+   the window and then a long tail. `shadow.c` casts one, 14 pixels, fading
+   in a straight line, a third of that below. **To do**: the drawings'
+   two, as the sum of two blurred-rectangle falloffs - a blurred
+   rectangle's edge is a one-dimensional curve, made once per call into
+   the table `shadow.c` already keeps - and both layers' sizes and
+   strengths in the look (`theme.metrics`), so a look can be flatter.
+   **What it costs, measured before it lands**: a shadow reaching about 60
+   pixels darkens four times the band of one reaching 14 on every frame of
+   a drag, which is what made the shadow slow on 24 September; `frames`
+   and `tools/test_shadow.c` say whether it is affordable.
+
+6zj. **WANTED on 27 September - windows that open straight onto their
+   content: the header is the title bar.** Diego, with the right-click
+   mockup beside him: "i love the fact that the mockups dont have an actual
+   window chrome above the app contents, it just opens directly with the
+   content and the dragging occurs directly from the app itself", "that is
+   how macos currently does it as well. how hard is to do it? it looks much
+   cleaner". Four parts: (1) the window manager draws a window with no
+   title bar - its corners, shadow and resizing edges only - and takes one
+   new request, "begin moving me", after which it follows the pointer as it
+   does for a title bar; (2) the kit's header (`ui.header`) draws the three
+   window buttons and turns a press on its empty band into that request, a
+   double click into maximise; (3) it is a property of the look - the Plex
+   looks content-first, the BeOS look keeping its tab, which is what BeOS
+   is - and a window without a header (Terminal, a game, the Cube) keeps a
+   title bar in every look; (4) the display harness learns to move and close
+   such a window. **Drawn first**, since it changes every window: where the
+   three buttons go - at the left as on the Mac, or at the right where
+   Kosmos has them - on Tracker, Preferences and the IDE. **Order**: after
+   6za's step (a).
+
 6zi. **WANTED on 27 September - a Mouse page in Preferences.** Diego:
    "preferences app need a mouse setting panel (pointer speed, mouse click
    speed)". **Pointer speed**: the board adds every relative device into one
@@ -2327,6 +2373,13 @@ processors, and still what follows USB:
    reporting it, `filetypes` from the applications, Open with, File types
    in Preferences, Info's Opens with; (d) 6v - miniz, `zip` and `unzip`,
    Compress and Extract.
+   **(a) DONE on 27 September** (`testing.md` 18.237): the right click by
+   what it was pressed on, in the window and in the sidebar
+   (`filemenu.lua`); Pin to sidebar and Unpin, pins in the order pinned;
+   and Info, a window of its own (`info.lua`, counting with `tally.lua`)
+   drawn to the page's measurements - Diego: "make sure we make them pixel
+   perfect on kosmos". A menu item has a dim word on its right now (`hint`
+   in `ui.lua`), which "Open ... Video" and "Delete ... to the Trash" are.
 
 6z. **WANTED on 27 September - what opens what, and a Preferences page for
    it.** Diego, on the M700 with 0.10.174, a film in his home refused -

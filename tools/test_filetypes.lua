@@ -159,6 +159,22 @@ check(types.opener("/Home/magicword-clip.mp4") == "video",
 check(types.opener("/Home/think.JPG") == "photo" and types.opener("/Home/a.jpeg") == "photo",
       "a .jpg or .jpeg is not opened by Photo")
 
+-- What a kind of file is called, for Info (`roadmap.md` 6za): words, and
+-- the extension named by itself where there are none.
+check(types.describe("/Home/magicword-clip.mp4") == "Film"
+      and types.describe("/Home/roms", { kind = "directory" }) == "Folder"
+      and types.describe("/Home/Desktop/Doom", { kind = "launcher" }) == "Launcher"
+      and types.describe("/Home/x.SFC") == "Super Nintendo cartridge",
+      "a film, a folder, a launcher and a cartridge are not called what they are")
+check(types.describe("/Home/data.xyz") == "XYZ file"
+      and types.describe("/Home/README") == "File",
+      "an extension with no words is not named by itself, or no extension not a File")
+
+-- An opener by its window's name, not its file's.
+check(types.app_name("pdfview") == "PDF" and types.app_name("video") == "Video"
+      and types.app_name("newthing") == "Newthing",
+      "an opener is not called what its window is called")
+
 if failed == 0 then
   print(("PASS: %d checks on what a file is and what opens it, on this "
          .. "machine."):format(checks))

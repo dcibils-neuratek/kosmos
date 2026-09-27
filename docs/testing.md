@@ -11573,3 +11573,45 @@ somebody types works the name out once and hands it down (`export
 KOSMOS_BUILD KOSMOS_DATE`, under `ifndef`): checked by hand, a make handed
 `KOSMOS_BUILD=handed-down` keeps it and one handed nothing works it out.
 
+## 18.237 The right click, Pin to sidebar, and Info (6za step a)
+
+`docs/rightclick.html`, agreed on 27 September, built to its measurements.
+
+**What is offered on what** is `user/lib/filemenu.lua`'s, and Tracker only
+says what each item does. `tools/test_filemenu.lua`, 23: a folder offers
+Open, Pin to sidebar, Rename, Cut, Copy, Delete and Info and no Edit, Empty
+Trash or Paste; a pinned one Unpin; Delete says the Trash, or "for good"
+inside it; a file's Open names what opens it and is dim when nothing does;
+a Lua file Runs and Edits; a launcher Opens and Edits in the launcher
+editor; several say how many; Empty Trash is on the Trash and nowhere else;
+the empty space keeps the icon sizes (in icons, not in a list), Paste dim
+with nothing to paste, and no Info at `/`; the sidebar's place, built-in
+folder and drive; and what an entry is. Control: Edit on a folder - two
+fail.
+
+**How much is in a folder** is `user/lib/tally.lua`, a walk that stops:
+`tools/test_tally.lua`, 7 - every level, a step at a time and the same as
+all at once, several things with each folder among them counted, a folder
+that will not list said so, a file and an empty folder. Control: a walk
+that does not go down - four fail.
+
+**Places in the order pinned**, and found by the folder they lead to:
+`test_places.lua` 26 (5 new). `test_filetypes.lua` 29 (3 new): what a kind
+of file is called - "Film", "Folder", "SFC file" - and an opener by its
+window's name.
+
+**On the machine**, the display harness's places phase, 5: the drop, the
+click, then Unpin from the place's right-click menu (where the click itself
+used to take it out), then a second Tracker - Pin to sidebar from the
+folder's own menu, read back from `/Home/Places` as a place with order 1,
+and Info from the empty space's menu counting `/Home/placetest` as one
+folder and nothing else. Control: a Pin that gives no order fails it. The
+icon sizes phase finds the sizes where the desktop's menu has them now,
+rows 6 to 8 under two separators.
+
+**Pixel for pixel**: captured under QEMU and set beside the page - the
+folder's menu, the empty space's, and Info on a film (the name and "Film,
+MP4" beside a 48-pixel picture, one card: Where, Size with the bytes under
+it grouped, Opens with). A menu's dim word on the right is the kit's now
+(`hint`), with 24 pixels between it and the item's words.
+

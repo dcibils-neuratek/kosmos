@@ -117,9 +117,14 @@ function places.resolve(attrs, volumes)
 end
 
 --
--- Every place in `dir`, sorted by name without regard to case, each as
--- { name = , file = , attrs = }. Only `kind == "place"` counts - anything
--- else somebody keeps in the folder is their business, as in the Deskbar's.
+-- Every place in `dir`, each as { name = , file = , attrs = }. Only
+-- `kind == "place"` counts - anything else somebody keeps in the folder is
+-- their business, as in the Deskbar's.
+--
+-- **In the order they were pinned** (`roadmap.md` 6za, Diego's 6: "yes"),
+-- which `order` records - a number one past the highest, given when a place
+-- is made. A place made before there was an order has none and comes first,
+-- by name without regard to case, as every place did.
 --
 function places.read(store, dir)
   dir = dir or places.DIR
@@ -135,9 +140,45 @@ function places.read(store, dir)
     end
   end
 
-  table.sort(out, function(a, b) return a.name:lower() < b.name:lower() end)
+  table.sort(out, function(a, b)
+    local x, y = tonumber(a.attrs.order) or 0, tonumber(b.attrs.order) or 0
+
+    if x ~= y then return x < y end
+
+    return a.name:lower() < b.name:lower()
+  end)
 
   return out
+end
+
+-- The `order` a new place is given: one past the highest there is.
+function places.next_order(list)
+  local top = 0
+
+  for _, p in ipairs(list or {}) do
+    top = math.max(top, tonumber(p.attrs.order) or 0)
+  end
+
+  return top + 1
+end
+
+--
+-- **The place that is `path`**, when there is one: what Pin and Unpin ask,
+-- and Info's Sidebar line. Found by where it leads now - so a place on a
+-- drive is found only while that drive is plugged in, which is the one time
+-- anybody can be looking at its folder - and whatever the case either is
+-- written in, as every name is found.
+--
+function places.find(list, path, volumes)
+  local want = tidy(path):lower()
+
+  for _, p in ipairs(list or {}) do
+    local there = places.resolve(p.attrs, volumes)
+
+    if there and tidy(there):lower() == want then return p end
+  end
+
+  return nil
 end
 
 --
