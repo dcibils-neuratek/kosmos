@@ -18,6 +18,41 @@ Last updated: 2026-09-27
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 27 September, late: the root as agreed, two sticks on the M700, and the right click drawn
+
+**Nothing is pushed since 0.10.172 (9d6c204)**; main is about forty
+commits ahead, and a push takes Diego's word, a bump and `make prepush`.
+
+**The root is the agreed seven**: `/Devices`, `/Drives`, `/Home`, `/Kosmos`,
+`/Network`, `/Running`, `/Temporary` - 6s (a), (b) and (c) DONE (18.229 to
+18.235). `/Kosmos` holds `Apps`, `Programs`, `Libraries`, `Kits` and
+`Themes`; there is no `/bin`, `/lib`, `/system` or `/user`. A store lists
+its folders (`/Kosmos/Libraries/translators`), and the five looks are
+files in `/Kosmos/Themes`. **Left of 6s**: (d) the dotfiles into
+`/Home/Preferences`, and (e) `layout.md` rewritten to the root as it is.
+
+**The M700**: 0.10.173 - "173 works great on m700"; 0.10.174 booted and
+Diego found three things - `/Kosmos/Libraries` as long flat names, a
+`.mp4` nothing claimed, the `/Home` partition still "Untitled" in Tracker's
+own pane - all fixed in **0.10.175, handed over for the M700 and not booted
+yet** (`boot.md`). The M700's stable is still 0.10.169; whether 0.10.173
+or later replaces it is Diego's word, not asked again until he has used
+0.10.175. Old development images were deleted at his word ("delete all
+old builds"); the two stables stay.
+
+**Drawn and waiting for Diego**: `docs/rightclick.html`, published - the
+right click offering what applies on a folder, a file, a zip, a launcher,
+several, the Trash, empty space and a place; Pin to sidebar (6za), Compress
+and Extract (6v), Info (6za), Open with and Preferences' File types (6z).
+**Seven questions under it**; nothing is built before they are answered.
+The one real finding in it: Info's Modified needs the disk server to stamp
+the wall clock rather than `sys.ticks()`.
+
+**Next, in order**: Diego's answers on the page, then 6s (d) and (e), then
+6w's places, then ELF step 5 (Doom into `/Home/Apps/Doom`). Wanted and in
+the roadmap: 6v, 6w, 6x (later), 6y DONE, 6z (first step DONE), 6za, 4h on
+the wishlist.
+
 ## 27 September: what the 0.10.172 stick asked for, and programs from a file
 
 Diego on the stick: "The stick do present the correct app icons on the
