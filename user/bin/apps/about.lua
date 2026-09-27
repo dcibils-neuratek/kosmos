@@ -11,7 +11,7 @@
 -- own copy of LICENSE.
 --
 -- Every number on the left is read from the same nodes every other program
--- here reads - /dev/cpu, /dev/kernel, /dev/memory - and the version comes
+-- here reads - /Devices/cpu, /Devices/kernel, /Devices/memory - and the version comes
 -- from `sys.build()`, which the Makefile compiles in from the commit.
 
 local ui = use("/lib/ui.lua")
@@ -37,8 +37,8 @@ if not win then
 end
 
 local b = sys.build()
-local cpu = fs.read("/dev/cpu") or {}
-local mem = fs.read("/dev/memory") or {}
+local cpu = fs.read("/Devices/cpu") or {}
+local mem = fs.read("/Devices/memory") or {}
 local hz = cpu.counter_hz or 62500000
 
 --------------------------------------------------------------------------
@@ -133,7 +133,7 @@ fact("Machine:", hardware.name(sys.info()) or b.platform)
 --
 -- Both numbers when they differ, which on this machine they do.
 --
--- It said "1 core" on a four-processor machine, because `/dev/cpu`'s
+-- It said "1 core" on a four-processor machine, because `/Devices/cpu`'s
 -- `cores` is what the kernel schedules on. That is a true sentence about
 -- Kosmos and a false one about the computer, and `About Kosmos` is a window
 -- about the computer.
@@ -237,7 +237,7 @@ win:add(ui.text{
 
     { style = "body", text =
       "A process holds capabilities by index. There is no global name for " ..
-      "anything, so a program that was not handed /dev does not get " ..
+      "anything, so a program that was not handed /Devices does not get " ..
       "permission denied - the path does not exist for it. Every window " ..
       "you see was started with exactly what it needs and nothing more." },
 
@@ -273,7 +273,7 @@ local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function ticker:tick()
   local up = sys.ticks() // hz
-  local m = fs.read("/dev/memory") or {}
+  local m = fs.read("/Devices/memory") or {}
 
   facts["Running:"].text = ("%d minutes, %d seconds"):format(up // 60, up % 60)
   facts["Memory:"].text = ("%d MB, %d free"):format(m.total_mb or 0,

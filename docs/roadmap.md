@@ -2115,6 +2115,54 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6x. **WANTED, for later, on 27 September - recording the screen.** Diego:
+   "in the future I want screen recording capabilities in kosmos that will
+   store mp4 video files in captures". A recording of what is on the screen,
+   saved as an MP4 in `/Home/Captures` beside the camera's (6w). **What
+   exists**: the Record Kit already writes H.264 in an MP4 from the camera's
+   ring (6d 8f), timed by the counter as each frame is taken; what is new is
+   where the frames come from - the window manager, which owns every pixel
+   and already composes each frame into one surface - and their size, 1920
+   by 1080 being nearly seven times the camera's 640 by 480 for an encoder
+   that is software. **To decide when it comes**: how it is started and
+   stopped (a key, as the screenshot shortcut will have, and something in
+   the Deskbar that says it is recording), whether the whole screen or one
+   window, and sound. Not before the renames and 6w.
+
+6w. **WANTED on 27 September - Tracker's places for what a person keeps.**
+   Diego: "tracker needs places like photos, documents, movies, captures,
+   music", and "Captures is basically webcam video captures". So Places,
+   after Home and Desktop: **Documents, Photos, Movies, Captures, Music** -
+   each a folder in `/Home`, made the first time it is missing as Tracker
+   makes `Desktop`, each with its own icon. And the applications agree with
+   them: Camera saves its recordings in `Captures` (today `/home/videos`),
+   Music opens `Music` first, Video `Movies`, the photo viewer `Photos`,
+   and Cafesa3D's scenes and renders go in `Documents` (today `/home/Scenes`
+   and `/home/Renders`). After `/Home` is spelled so (6s b), so they are made
+   once under their own names; and `docs/drives.html`'s sidebar shows them
+   first, as the drawing Places follows.
+
+6v. **WANTED on 27 September - Compress and Extract in Tracker, and zip in
+   a kit.** Diego: "add a way to right click a file in tracker, open context
+   menu, click 'compress' and it will Zip the file", "Same thing win
+   uncompressing zip files", and "We need to have a zip compression kit
+   added". So: **Compress** in the menu a right click opens on a file - or
+   on several, or a folder - making a `.zip` beside it; **Extract** on a
+   `.zip`, its contents into a folder beside it named after it; and the
+   byte work in a kit, reached as `use("/kits/zip")` - or grown into the
+   compress kit, whose name already says it - since DEFLATE, CRC-32 and a
+   zip's headers are loops over bytes (`CLAUDE.md`'s question: yes).
+   **What exists**: the compress kit *inflates* only - `inflate`,
+   `inflate_into`, `inflated_size`, for PNG and PDF - so reading a zip is a
+   container parser and a CRC away, and writing one needs a compressor this
+   system does not have. **To decide first**: DEFLATE written here, or
+   vendored - miniz is one file with a compressor, the inflater and zip
+   reading and writing, and licences are no reason either way; the kit's
+   name and its calls; what Tracker shows while a large file is being
+   compressed, and where a name that is already taken goes. **Drawn before
+   it is built**, as the menu and that progress are windows: the context
+   menu with Compress and Extract, and the file that appears.
+
 6s. **ASKED on 27 September, for Diego to decide - applications in `/apps`.**
    Diego, reading `/lib/clock.lua` in the IDE: "I don't understand why
    clock.lua is in /lib as it is a bundled kosmos app", "Shouldn't they be on
@@ -2241,13 +2289,16 @@ processors, and still what follows USB:
    renames, each a step with the whole gate behind it, so a fault points at
    one name: **(a)** the five beside the trees, `/dev` to `/Devices`,
    `/drives` to `/Drives`, `/net` to `/Network`, `/app` to `/Running`,
-   `/ramfs` to `/Temporary`; **(b)** `/home` to `/Home` - only its case, so
+   `/ramfs` to `/Temporary` - **DONE the same evening** (`testing.md`
+   18.229), and `sys.pack` no longer bounded by a message; **(b)** `/home` to `/Home` - only its case, so
    every `/home/...` already written, and the partition on a stick, go on
    working; **(c)** the `/Kosmos` tree - `/lib` to `/Kosmos/Libraries`,
    `/kits` to `/Kosmos/Kits`, `/bin` split into `/Kosmos/Apps` and
    `/Kosmos/Programs`, `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
    in /Kosmos/Themes, yes"), `/system` and `/user` gone; **(d)** the dotfiles at
-   the top of `/home` into `/Home/Preferences`.
+   the top of `/home` into `/Home/Preferences`; **(e)** `layout.md`, the
+   layout in words, rewritten to the agreed root - it still describes the
+   plan before it, with `/tmp` and `/system/libraries`.
 
 6u. **AGREED on 27 September - one scrollbar, everywhere.** Diego, seeing
    the IDE's thin one: "Why scrollbars here look flat and in other apps look

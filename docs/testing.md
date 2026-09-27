@@ -11273,3 +11273,39 @@ each on its own server (the disk's listing stands, since `kfs` still
 folds); and `use` alone by the typed path - `C-USE false`.
 
 The gate with names whatever their case: 50 of 50 in 9:09.
+
+## 18.229 The five names beside the two trees
+
+`roadmap.md` 6s (a) - Diego: "yes, those five names are good, go ahead".
+`/dev` is `/Devices`, `/drives` `/Drives`, `/net` `/Network`, `/app`
+`/Running` and `/ramfs` `/Temporary`: 901 paths in the code and the suites,
+rewritten where each stands as a Kosmos path - never the Mac's `/dev/null`
+or a stick's `/dev/rdisk` - and 89 in the documents that describe the
+system as it is, while the logs of what happened keep their day's names.
+Lines the longer names pushed out of their columns were set back by hand:
+the help, the headers' usage, the runner's mounts and a diagram in
+`architecture.md`. The whole gate is what checks it, since every suite now
+reaches the system by the new names; and the queries suite's case checks
+spell them in capitals, `/TEMPORARY`, `/devices/CPU`, `/RUNNING`.
+
+**It found a limit that had nothing to do with names.** The Clock stopped
+starting - `init:1645: attempt to index a nil value` - because `sys.pack`
+packed into a message, and the Clock's replicant, its own source beside a
+little state, passed 2048 bytes when `/dev/cpu` became `/Devices/cpu`. A
+write to `/Temporary` goes in pieces and was never bounded by a message;
+only the serialiser's buffer was. So the serialiser takes a buffer of the
+caller's (`serialize_pack_into`, `serialize_unpack_from`), and `sys.pack`
+tries a message first and then 64 KB, refusing past that; and the
+namespace answers a refusal instead of crashing on it. **Two checks**: the
+Lua suite's pack test packs 200 strings of 40 - over 2048 bytes - and gets
+them back, and refuses 2000; the queries suite writes the same table to
+`/Temporary` and reads it whole (`T-BIG`). **Control**: `sys.pack` bounded
+by a message again - `T-BIG false false nil`, and the Lua suite fails on
+the new check.
+
+And two paths the rewrite could not see, because an escape followed them:
+`"cd /ramfs\n"` typed into a Terminal, and the drive server's first line.
+
+The first gate with the names failed six display suites - the Clock, the
+Terminal's `cd`, and the Large icons check, which passed alone (6q, the
+flake it is known for). With the two fixed: 50 of 50 in 9:37.

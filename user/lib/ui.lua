@@ -43,7 +43,7 @@ local ui = { theme = theme }
 -- `sys.ticks()` is the counter and every timeout is in scheduler ticks, so
 -- anything converting between them needs both. They are read on first use
 -- rather than at load: this is a library, and a process that never opens a
--- window should not pay a `/dev/cpu` read for it. The lazy default used to
+-- window should not pay a `/Devices/cpu` read for it. The lazy default used to
 -- do that read *every pass* of every window's loop, which is a syscall a
 -- hundred times a second to learn a number that cannot change.
 --
@@ -67,7 +67,7 @@ local cached_again
 
 local function ui_again()
   if not cached_again then
-    cached_again = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+    cached_again = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   end
 
   return cached_again
@@ -75,7 +75,7 @@ end
 
 local function ui_per_tick()
   if not cached_per_tick then
-    local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+    local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
     cached_per_tick = math.max(1, hz // ui_tick_hz())
   end
@@ -504,7 +504,7 @@ function gc:picture(x, y, w, h, name)
     return
   end
 
-  local size = fs.send("/app/wm", { type = "image_size", asset = name })
+  local size = fs.send("/Running/wm", { type = "image_size", asset = name })
 
   if not size or (size.w or 0) <= 0 then return end
 
@@ -4461,7 +4461,7 @@ function ui.image(spec)
     self.asset = asset
     self.ox, self.oy = 0, 0
 
-    local size = asset and fs.send("/app/wm", { type = "image_size",
+    local size = asset and fs.send("/Running/wm", { type = "image_size",
                                                asset = asset })
 
     iw, ih = size and size.w or 0, size and size.h or 0
@@ -4832,10 +4832,10 @@ end
 --
 --   { source = "...the view's code...",
 --     state  = { format = "24h" },
---     needs  = { "/dev/cpu" } }
+--     needs  = { "/Devices/cpu" } }
 --
 -- The host loads the source into an environment built from `needs` and
--- nothing else. A replicant that asked for /dev/cpu cannot read your files -
+-- nothing else. A replicant that asked for /Devices/cpu cannot read your files -
 -- not because it is checked when it tries, but because there is no name in
 -- its world that reaches them.
 --
@@ -4851,8 +4851,8 @@ end
 --
 -- A namespace with exactly the paths `needs` asked for.
 --
--- Prefix matching, so "/dev/cpu" grants that node and anything under it and
--- nothing beside it: "/dev/cpuboard" does not match, because the test is on
+-- Prefix matching, so "/Devices/cpu" grants that node and anything under it and
+-- nothing beside it: "/Devices/cpuboard" does not match, because the test is on
 -- a path component and not on a string.
 --
 function ui.restricted(needs)
@@ -4863,7 +4863,7 @@ function ui.restricted(needs)
   end
 
   -- Whatever the case of either, as the namespace behind it finds a name
-  -- (`roadmap.md` 6s): given `/dev/clock`, `/Dev/Clock` is the same path.
+  -- (`roadmap.md` 6s): given `/Devices/clock`, `/Dev/Clock` is the same path.
   local function permitted(path)
     local p = tostring(path):lower()
 
@@ -4985,7 +4985,7 @@ end
 -- The publishing is the part worth explaining. `roadmap.md` M7 asks that an
 -- application be manipulable from the shell "without its author having done
 -- anything", and this is where that is paid for: a window registers itself
--- with /app and answers reads and writes for its own properties. An
+-- with /Running and answers reads and writes for its own properties. An
 -- application that calls `ui.window` is scriptable; one that does not, is
 -- not. Nobody writes scripting code either way.
 --
@@ -4993,7 +4993,7 @@ end
 -- application was scriptable because its author used BApplication, not
 -- because they supported scripting. The difference here is that the
 -- properties are a namespace rather than a message hierarchy, so the shell
--- needs no special verb: `cat /app/gallery/title` is the ordinary read.
+-- needs no special verb: `cat /Running/gallery/title` is the ordinary read.
 --------------------------------------------------------------------------
 
 local window = {}
@@ -5081,7 +5081,7 @@ local function send_ops(handle, ops)
 
     local last = at > #ops
 
-    if not fs.send("/app/wm", { type = "draw", window = handle,
+    if not fs.send("/Running/wm", { type = "draw", window = handle,
                                 ops = batch,
                                 more = (not last) or nil }) then
       return false
@@ -5280,7 +5280,7 @@ function ui.window(spec)
     end
   end
 
-  local reply, err = fs.send("/app/wm", {
+  local reply, err = fs.send("/Running/wm", {
     type = "open",
     title = spec.title or "window",
     w = spec.w or 400, h = spec.h or 240,
@@ -5471,7 +5471,7 @@ function ui.window(spec)
   local ep = sys.endpoint()
 
   if ep then
-    local registered = fs.send("/app", { type = "register",
+    local registered = fs.send("/Running", { type = "register",
                                          name = spec.title or "app" }, ep)
     if registered then
       w.control = ep
@@ -5514,7 +5514,7 @@ function window:commit(damage)
 
   damage = damage or { x = 0, y = 0, w = self.root.w, h = self.root.h }
 
-  local reply = fs.send("/app/wm", {
+  local reply = fs.send("/Running/wm", {
     type = "commit", window = self.handle,
     x = damage.x, y = damage.y, w = damage.w, h = damage.h,
   })
@@ -5541,7 +5541,7 @@ function window:move(x, y)
   -- window used to be.
   self.origin_x, self.origin_y = x, y
 
-  fs.send("/app/wm", { type = "move", window = self.handle, x = x, y = y })
+  fs.send("/Running/wm", { type = "move", window = self.handle, x = x, y = y })
 end
 
 --
@@ -5560,7 +5560,7 @@ end
 -- width got the old one.
 --
 function window:resize(w, h)
-  local reply, why = fs.send("/app/wm", { type = "resize",
+  local reply, why = fs.send("/Running/wm", { type = "resize",
                                           window = self.handle, w = w, h = h })
 
   if not reply then return false, why end
@@ -5657,12 +5657,12 @@ function window:add(child)
     self.ticking[#self.ticking + 1] = child
 
     -- Half a second, in counter ticks. Read the first time a window has
-    -- anything that ticks at all, so an ordinary window never asks /dev/cpu
+    -- anything that ticks at all, so an ordinary window never asks /Devices/cpu
     -- a question it has no use for. Without this the default was "every
     -- pass", which is a full repaint per yield and would drown the window
     -- manager in messages about a clock that changes once a second.
     if not self.tick_every or self.tick_every == 0 then
-      local cpu = fs.read("/dev/cpu")
+      local cpu = fs.read("/Devices/cpu")
       -- Once a second. Anything that ticks here is showing a number a
       -- person reads - a clock, a meter - and a person cannot read two a
       -- second, so redrawing twice as often is twice the work for nothing.
@@ -5714,10 +5714,10 @@ function window:close()
   self.closed = true
   self.running = false
 
-  fs.send("/app/wm", { type = "close", window = self.handle })
+  fs.send("/Running/wm", { type = "close", window = self.handle })
 
   if self.control then
-    fs.send("/app", { type = "unregister", name = self.name })
+    fs.send("/Running", { type = "unregister", name = self.name })
     sys.destroy(self.control)
     self.control = nil
   end
@@ -6051,7 +6051,7 @@ end
 function window:push_menu(x, y, items)
   local w, h, row = menu_metrics(items)
 
-  local reply = fs.send("/app/wm", { type = "open", kind = "menu",
+  local reply = fs.send("/Running/wm", { type = "open", kind = "menu",
                                      owner = self.handle,
                                      x = x, y = y, w = w, h = h })
 
@@ -6113,7 +6113,7 @@ function window:close_menus(from)
   from = from or 1
 
   for i = #self.menus, from, -1 do
-    fs.send("/app/wm", { type = "close", window = self.menus[i].handle })
+    fs.send("/Running/wm", { type = "close", window = self.menus[i].handle })
     self.menus[i] = nil
   end
 
@@ -6287,7 +6287,7 @@ function window:paint()
     -- arrive in the next two.
     local last = at > #g.ops
 
-    local ok = fs.send("/app/wm", { type = "draw", window = self.handle,
+    local ok = fs.send("/Running/wm", { type = "draw", window = self.handle,
                                     ops = batch,
                                     more = (not last) or nil })
 
@@ -6571,18 +6571,18 @@ end
 function window:retitle(text)
   self.title = tostring(text)
 
-  return fs.send("/app/wm", { type = "retitle", window = self.handle,
+  return fs.send("/Running/wm", { type = "retitle", window = self.handle,
                               title = self.title })
 end
 
 function ui.drag(win, kind, payload, label)
-  return fs.send("/app/wm", { type = "drag", window = win.handle,
+  return fs.send("/Running/wm", { type = "drag", window = win.handle,
                               kind = kind, payload = payload,
                               label = label })
 end
 
 function ui.undrag(win)
-  return fs.send("/app/wm", { type = "drag", window = win.handle })
+  return fs.send("/Running/wm", { type = "drag", window = win.handle })
 end
 
 --
@@ -6594,7 +6594,7 @@ end
 -- tells it.
 --
 function ui.dropped(win, ok, count, err)
-  return fs.send("/app/wm", { type = "dropped", window = win.handle,
+  return fs.send("/Running/wm", { type = "dropped", window = win.handle,
                               ok = ok and true or false,
                               count = count or 0, error = err })
 end
@@ -6666,9 +6666,9 @@ function window:run()
     -- started stops with it.
     --
     -- Leaving by `return` was wrong and took a while to show itself. The
-    -- registration in /app outlived the process, so the *next* run of the
+    -- registration in /Running outlived the process, so the *next* run of the
     -- same program registered as "gallery2" and anything written to
-    -- /app/gallery went to an endpoint whose process no longer existed.
+    -- /Running/gallery went to an endpoint whose process no longer existed.
     -- Nothing failed loudly; the name was simply taken by a ghost.
     --
     if not reply then break end

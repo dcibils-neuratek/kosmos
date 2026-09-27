@@ -145,7 +145,7 @@ local at, sent, dry, lowest = 1, 0, 0, DEPTH
 -- measurement is of a test rig and should be ignored. An instrument that
 -- cannot say whether it was measuring anything is worse than none.
 --
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local began = sys.ticks()
 
 while at <= #tone do

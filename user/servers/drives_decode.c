@@ -93,7 +93,7 @@ unsigned mbr_partitions(const uint8_t *sector, unsigned size,
     /*
      * A protective MBR names the whole drive as one 0xEE partition so that a
      * tool which does not know about GPT sees the space as taken. Offering it
-     * as a volume would put the entire drive in `/drives` beside the real
+     * as a volume would put the entire drive in `/Drives` beside the real
      * partitions on it.
      */
     if (mbr_is_protective(sector, size)) {

@@ -17,7 +17,7 @@
  * controller reaches, and copies them into that region. A client's pages are
  * never given to the controller (`README.md`, the fifth of step 5's calls).
  *
- * **Two endpoints, one shape** (USB step 5e). `/dev/blocks` is for reading,
+ * **Two endpoints, one shape** (USB step 5e). `/Devices/blocks` is for reading,
  * and every program is given it; a write or a flush that arrives there is
  * refused. The write endpoint takes every operation, and only the disk server
  * is given it. Which endpoint a request came in on is the one thing a server

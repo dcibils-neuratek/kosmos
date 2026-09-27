@@ -55,10 +55,10 @@ function pulse.height(cores, ident_lines)
 end
 
 --
--- What processor this is, in the words `/dev/cpu` uses.
+-- What processor this is, in the words `/Devices/cpu` uses.
 --
 -- **The rate is labelled "counter" and that is not pedantry.** Pulse said
--- "450 MHz" and meant the core clock; `/dev/cpu` has no such number on
+-- "450 MHz" and meant the core clock; `/Devices/cpu` has no such number on
 -- either of this system's boards. What it has is the frequency of the
 -- counter the kernel measures time with - 62.5 MHz under TCG, 24 under hvf,
 -- a thousand on the other machine - and printing that where a person reads
@@ -67,7 +67,7 @@ end
 -- `architecture.md` §5 is why there are two.
 --
 function pulse.identity()
-  local cpu  = fs.read("/dev/cpu") or {}
+  local cpu  = fs.read("/Devices/cpu") or {}
   local out  = {}
 
   if cpu.implementer then out[#out + 1] = cpu.implementer end

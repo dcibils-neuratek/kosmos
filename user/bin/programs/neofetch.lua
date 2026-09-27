@@ -19,7 +19,7 @@
 -- "what am I typing at" actually has an answer to.
 --
 -- There is no `Terminal:` line, because a program **cannot** find out. It
--- prints by sending `write` to whatever it was handed as `/dev/console`,
+-- prints by sending `write` to whatever it was handed as `/Devices/console`,
 -- and a Terminal window mounts itself there speaking the same protocol the
 -- console server does. The runner cannot tell the two apart and must not
 -- need to, which is `terminal.lua`'s whole design. A field that guessed
@@ -119,10 +119,10 @@ end
 local hardware = use("/lib/hardware.lua")
 
 local b      = sys.build()
-local cpu    = fs.read("/dev/cpu")    or {}
-local mem    = fs.read("/dev/memory") or {}
-local kern   = fs.read("/dev/kernel") or {}
-local screen = fs.read("/dev/screen")
+local cpu    = fs.read("/Devices/cpu")    or {}
+local mem    = fs.read("/Devices/memory") or {}
+local kern   = fs.read("/Devices/kernel") or {}
+local screen = fs.read("/Devices/screen")
 local info   = sys.info() or {}
 
 local LABEL = 10        -- columns the field names are given
@@ -165,7 +165,7 @@ row("Kernel", ("%s, build %s"):format(b.kernel or "Nebula", b.build or "?"))
 -- division rather than remembered.
 --
 -- That is the discipline the two-clocks rule asks for, and it is cheap
--- here because `/dev/cpu` has already been read for the processor's name.
+-- here because `/Devices/cpu` has already been read for the processor's name.
 -- The number the counter runs at differs by a factor of four between this
 -- machine emulated and the same machine run natively, so a constant would
 -- be wrong on one of them and there is no ratio to keep in your head.
@@ -259,7 +259,7 @@ end
 -- **Two questions, and this program may only ask one of them.**
 --
 -- `net_info` answers through the stack, and a program that was not handed
--- `/net` gets nothing back - which is not the same fact as there being no
+-- `/Network` gets nothing back - which is not the same fact as there being no
 -- card, and reporting it as one is the exact lie `machine` was written to
 -- avoid. So whether a card *exists* comes from the kernel describing the
 -- machine rather than handing anything over - `sysinfo`, and the bus it
@@ -272,7 +272,7 @@ end
 -- at all was printed as virtio-net. The card's name is the bus's now, and a
 -- controller nothing drives is named rather than called "no card".
 --
-local net = fs.net_info("/net")
+local net = fs.net_info("/Network")
 local driven, undriven = hardware.network(sys.bus())
 
 if driven[1] or (info.net_mtu or 0) > 0 then
@@ -371,7 +371,7 @@ end
 -- you notice a program that did not give something back - which is what
 -- `make stress` exists to provoke and what this line exists to show.
 --
--- `regions` comes from `sysinfo` rather than from `/dev/kernel`, which
+-- `regions` comes from `sysinfo` rather than from `/Devices/kernel`, which
 -- does not carry it. It is the one most worth watching: a region is what
 -- gets leaked per font, per size, per window, and it is the pool that has
 -- filled up in practice.

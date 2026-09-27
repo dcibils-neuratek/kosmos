@@ -178,8 +178,8 @@ def main():
               "Ctrl+Enter did not run r.lua as changed on the screen to its error on "
               "line 3, with what it printed: %r" % ended)
 
-        # **A library, as it is, and larger than /ramfs holds**: bench.lua is
-        # 21 KB, and its run was refused - "/ramfs is full" - when every run
+        # **A library, as it is, and larger than /Temporary holds**: bench.lua is
+        # 21 KB, and its run was refused - "/Temporary is full" - when every run
         # went through a copy there (Diego, 27 September). Unchanged, it runs
         # from where it is, and the IDE says first that it is a library.
         stop_desktop()

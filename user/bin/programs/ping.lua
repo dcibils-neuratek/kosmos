@@ -15,7 +15,7 @@
 -- later for completeness.
 --
 -- **The round trip is in counter ticks until this program divides it.**
--- `/net` reports what it measured and `/dev/cpu` says how fast the counter
+-- `/Network` reports what it measured and `/Devices/cpu` says how fast the counter
 -- runs, because that is 62.5 MHz under QEMU's TCG and 24 MHz when the same
 -- machine runs natively under `hvf`. A stack that converted to milliseconds
 -- would have baked in one of them, and the number would be silently four
@@ -57,13 +57,13 @@ end
 --
 -- Through the namespace, not a capability.
 --
--- `fs.ping` resolves `/net`, checks that what is mounted there really is a
+-- `fs.ping` resolves `/Network`, checks that what is mounted there really is a
 -- network stack, and hands the kit the capability - so this program never
 -- holds one. That is the rule the whole system runs on and it is why there
 -- is no `fs.capability`: a program that could ask for a raw capability by
 -- path could reach past whoever decided what to mount for it.
 --
-local info, why = fs.net_info("/net")
+local info, why = fs.net_info("/Network")
 
 if not info then
   print("ping: " .. tostring(why))
@@ -105,7 +105,7 @@ end
 -- The counter's frequency, read rather than assumed. See the note at the
 -- top: this is the number that differs between TCG and hvf.
 --
-local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 print(("PING %s from %s, 56 bytes"):format(dotted(target),
                                            dotted(info.address)))
@@ -127,7 +127,7 @@ local best, worst, total = nil, nil, 0
 for seq = 1, count do
   sent = sent + 1
 
-  local reply, err = fs.ping("/net", target, seq, PAYLOAD)
+  local reply, err = fs.ping("/Network", target, seq, PAYLOAD)
 
   if reply then
     -- Milliseconds to two places, from ticks. Integer arithmetic until the

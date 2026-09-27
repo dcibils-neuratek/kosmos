@@ -49,9 +49,9 @@ about x86:
     to a build with no object files; left off, `ramfb.c` took its 1024x768
     fallback and the machine came up at a resolution nothing had asked for.
 
-And two places where a *string* was the bug rather than the code: `/dev/cpu`
+And two places where a *string* was the bug rather than the code: `/Devices/cpu`
 had no x86 decoder, so `devices` printed "nil nil nil, 1 core", and the same
-listing said `/dev/console  PL011 UART, polled` on a machine whose console
+listing said `/Devices/console  PL011 UART, polled` on a machine whose console
 is a 16550 at port 0x3f8. Both are the mistake the boot log already made and
 this file already records, one layer up and in the userland.
 

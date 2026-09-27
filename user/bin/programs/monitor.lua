@@ -31,7 +31,7 @@ if not screen then
   return
 end
 
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 local w, h = screen:size()
 local top = h - RESERVED_ROWS * gfx.font.h
 
@@ -49,9 +49,9 @@ local last_idle, last_busy
 local until_ = sys.ticks() + hz * seconds
 
 while sys.ticks() < until_ do
-  local k = fs.read("/dev/kernel")
-  local m = fs.read("/dev/memory")
-  local c = fs.read("/dev/cpu")
+  local k = fs.read("/Devices/kernel")
+  local m = fs.read("/Devices/memory")
+  local c = fs.read("/Devices/cpu")
 
   local pct = 0
   if last_idle then

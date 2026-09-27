@@ -1,5 +1,5 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- The screen's brightness, from Lua: `/dev/backlight`, the backlight driver.
+-- The screen's brightness, from Lua: `/Devices/backlight`, the backlight driver.
 --
 -- **The layout below is `backlightproto.h` written a second time**, as
 -- `audio.lua` and `blocks.lua` write theirs: two words each way, asserted
@@ -30,7 +30,7 @@ local ERRORS = {
 }
 
 local function request(op, level)
-  local reply, why = fs.raw("/dev/backlight", string.pack(REQUEST, op, level))
+  local reply, why = fs.raw("/Devices/backlight", string.pack(REQUEST, op, level))
 
   if not reply then return nil, tostring(why) end
 

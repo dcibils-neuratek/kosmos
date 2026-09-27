@@ -323,37 +323,37 @@ local APPLY = {
 
     for _, k in ipairs(theme.tokens) do colours[k] = look[k] end
 
-    return fs.send("/app/wm", { type = "theme", palette = colours,
+    return fs.send("/Running/wm", { type = "theme", palette = colours,
                                 fonts = look.fonts })
   end,
 
   scale = function(pct)
-    return fs.send("/app/wm", { type = "scale", pct = pct })
+    return fs.send("/Running/wm", { type = "scale", pct = pct })
   end,
 
   wallpaper = function(path)
-    return fs.send("/app/wm", { type = "wallpaper",
+    return fs.send("/Running/wm", { type = "wallpaper",
                                 path = (path ~= "") and path or nil })
   end,
 
   -- One field each, and the manager ignores a field it does not know - so
   -- another of these is one line.
   corner = function(on)
-    return fs.send("/app/wm", { type = "theme", corner = on })
+    return fs.send("/Running/wm", { type = "theme", corner = on })
   end,
 
   shadow = function(on)
-    return fs.send("/app/wm", { type = "theme", shadow = on })
+    return fs.send("/Running/wm", { type = "theme", shadow = on })
   end,
 
   -- What the power button and the Super key do: the manager acts on both
   -- in its key path and holds them rather than reading a file there.
   button = function(what)
-    return fs.send("/app/wm", { type = "keys", power = what })
+    return fs.send("/Running/wm", { type = "keys", power = what })
   end,
 
   super = function(what)
-    return fs.send("/app/wm", { type = "keys", super = what })
+    return fs.send("/Running/wm", { type = "keys", super = what })
   end,
 }
 
@@ -525,7 +525,7 @@ local function control_for(it, x, y, changed)
   if it.kind == "open" then
     return ui.button{ x = x, y = y, text = "Open",
                       on_click = function()
-                        fs.send("/app/wm", { type = "launch",
+                        fs.send("/Running/wm", { type = "launch",
                                              program = it.program })
                       end }
   end
@@ -611,15 +611,15 @@ end
 -- What the machine is, read once: the About rows and nothing else.
 --
 -- `sys.build()` for the version, `hardware.name(sys.info())` for what the
--- machine calls itself and `/dev/memory` for its size - the same three doors
+-- machine calls itself and `/Devices/memory` for its size - the same three doors
 -- `neofetch` reads, so the two programs cannot disagree about what this
 -- machine is. A second way of asking would be a second answer eventually.
 --
 local function facts()
   local b = sys.build() or {}
-  local mem = fs.read("/dev/memory") or {}
+  local mem = fs.read("/Devices/memory") or {}
   local info = sys.info() or {}
-  local screen = fs.read("/dev/screen") or {}
+  local screen = fs.read("/Devices/screen") or {}
   local out = {
     version = tostring(b.version or "?"),
     -- The firmware's name for it, or the board's where there is no
@@ -656,7 +656,7 @@ local function facts()
   -- gives: a card the stack does not answer for is not "no card".
   --
   local driven = hardware.network(sys.bus())
-  local net = fs.net_info and fs.net_info("/net") or nil
+  local net = fs.net_info and fs.net_info("/Network") or nil
 
   local function dotted(a)
     if type(a) == "string" and #a == 4 and a ~= "\0\0\0\0" then

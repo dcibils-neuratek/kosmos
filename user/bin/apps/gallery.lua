@@ -11,7 +11,7 @@
 --   Enter / Space  activate
 --   arrows         move in a list, or a level
 --
--- Started by `wm`, which hands it /app/wm and nothing else it did not
+-- Started by `wm`, which hands it /Running/wm and nothing else it did not
 -- already have. It draws by sending commands; the pixels stay in the
 -- window manager, which is why this window would survive this program
 -- hanging.

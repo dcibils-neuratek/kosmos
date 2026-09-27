@@ -42,8 +42,8 @@ server that validates with one that is correct by construction.
 audio period is 5.8 ms and a frame is 16. Not speed — structure-shaped Lua
 costs about 2%, measured, which is nothing. The worst case is what decides.
 
-Seven servers speak structs declared in `user/include/`: `/dev/audio`,
-`/dev`, `/bin`, `/lib`, `/app`, `/dev/console`, `/ramfs`. Five headers, about
+Seven servers speak structs declared in `user/include/`: `/Devices/audio`,
+`/Devices`, `/bin`, `/lib`, `/Running`, `/Devices/console`, `/Temporary`. Five headers, about
 3,700 lines with the servers themselves. Everything above them is still Lua
 tables, and that is most of the system.
 
@@ -254,9 +254,9 @@ A detail that is easy to forget and ruins server restart: **when an endpoint is 
 
 **And an endpoint ends with the process that made it.** The paragraph above says what destroying one has to do, and for a long time nothing destroyed an endpoint whose process died without doing it itself - killed, faulted, or unwound by an error nothing caught. Its clients waited for ever, the pool of ninety-six was one short for good, and anybody holding a capability to it could not tell it from a live one. `process_exit` destroys every endpoint the process created, before a parent's wait can return, so the waiting are woken with an error and every other capability to it goes stale.
 
-The *maker* rather than whoever receives on it, and that is what keeps §10's level 2 possible: every server's endpoint is made by somebody else and handed over - the console's, `/ramfs`'s, `/dev`'s and `/bin`'s by the kernel before init exists, the rest by init - so a server that dies leaves its endpoint behind for a restarted one to take up, with every client's capability still good.
+The *maker* rather than whoever receives on it, and that is what keeps §10's level 2 possible: every server's endpoint is made by somebody else and handed over - the console's, `/Temporary`'s, `/Devices`'s and `/bin`'s by the kernel before init exists, the rest by init - so a server that dies leaves its endpoint behind for a restarted one to take up, with every client's capability still good.
 
-A holder finds out with `SYS_CAP_CHECK`, which resolves an index and uses nothing. Nothing else could answer: calling a live endpoint to ask blocks, and receiving on one can take a message meant for its server. The `/app` registry asks it about every capability it holds before it answers a request, so **a name lasts as long as the endpoint registered under it**, and nothing has to unregister - which matters, because the window manager stopped with Control-C does not, and a process that is killed cannot. That was a bug before it was a rule: a second `wm` was filed as `wm2`, and a lookup of `wm` handed out an endpoint that had ended.
+A holder finds out with `SYS_CAP_CHECK`, which resolves an index and uses nothing. Nothing else could answer: calling a live endpoint to ask blocks, and receiving on one can take a message meant for its server. The `/Running` registry asks it about every capability it holds before it answers a request, so **a name lasts as long as the endpoint registered under it**, and nothing has to unregister - which matters, because the window manager stopped with Control-C does not, and a process that is killed cannot. That was a bug before it was a rule: a second `wm` was filed as `wm2`, and a lookup of `wm` handed out an endpoint that had ended.
 
 **A sleep can watch an endpoint without receiving on it.** The window manager
 sleeps in `wait_input` - which is a call to the console server, whose
@@ -292,7 +292,7 @@ A process cannot name what you did not hand it. There is no global table to enum
 
 The namespace server is the root of the system. It maintains, per process, the mapping of paths to server capabilities.
 
-When a process resolves `/dev/temp`, the namespace returns the capability to the server that serves that node. From then on it talks to the server directly.
+When a process resolves `/Devices/temp`, the namespace returns the capability to the server that serves that node. From then on it talks to the server directly.
 
 **The client never holds a direct, permanent capability to the server.** It holds a namespace node. That is what lets a server die, come back as a new process with a new endpoint, and have clients reconnect without knowing anything happened.
 
@@ -307,11 +307,11 @@ setattr(path, attrs)    -> ok
 query(path, pred, cb)   -> live query handle
 ```
 
-`read` returns a table, not a string. `fs.read("/dev/temp")` gives `{celsius = 47.2}`, not `"47200\n"` to be parsed. This is where BeOS typed attributes go inside the Plan 9 primitive, and that fusion is what makes Kosmos Kosmos rather than two ideas taped together.
+`read` returns a table, not a string. `fs.read("/Devices/temp")` gives `{celsius = 47.2}`, not `"47200\n"` to be parsed. This is where BeOS typed attributes go inside the Plan 9 primitive, and that fusion is what makes Kosmos Kosmos rather than two ideas taped together.
 
 ### 4.4.1 Colour on the console, and why it is a field
 
-`write` to `/dev/console` carries a colour: `0xAARRGGBB`, with zero meaning
+`write` to `/Devices/console` carries a colour: `0xAARRGGBB`, with zero meaning
 the console's own. It is worth writing down because two other shapes were
 available and both are wrong here.
 
@@ -904,7 +904,7 @@ Live queries are the part of BeOS nobody replicated and that neither macOS nor L
 
 This paragraph used to say FAT32 at first, because the Pi's firmware boots from it, and an own filesystem later. The own filesystem came instead: kfs, with the attributes on disk and the index rebuilt at mount (§8.3). FAT32 has no attributes, no journal and no way to say what a file is, and Kosmos's disk is not FAT32.
 
-**FAT32 and exFAT come back only as other machines' drives**, decided on 14 September 2026: Kosmos's own reader, read-only first, so a flash drive's files can be read in Kosmos. They are somebody else's filesystems, mounted, and nothing Kosmos stores lives in them. FAT16 is read too, since it is the same reader, and names are found without regard to case, as FAT finds them - which is the one place a path under `/drives` does not behave like a path in kfs.
+**FAT32 and exFAT come back only as other machines' drives**, decided on 14 September 2026: Kosmos's own reader, read-only first, so a flash drive's files can be read in Kosmos. They are somebody else's filesystems, mounted, and nothing Kosmos stores lives in them. FAT16 is read too, since it is the same reader, and names are found without regard to case, as FAT finds them - which is the one place a path under `/Drives` does not behave like a path in kfs.
 
 ### 8.3 What is in memory and what is on disk
 
@@ -985,7 +985,7 @@ Decided on 27 September 2026 by Diego, once the layout gave every name a capital
 
 **Folded to compare, kept as given.** `notes.txt` finds `Notes.txt`; a directory cannot hold both; a listing says `Notes.txt`, the spelling the file was made with; writing `NOTES.TXT` replaces it and keeps its name; renaming it to `notes.txt` is how the spelling changes. The fold is A to Z and nothing else, as FAT's is: a byte past 127 is part of a UTF-8 name and compares as itself.
 
-**Each place that holds a name folds its own**, and nothing is folded twice: the namespace matches a mount's prefix folded and hands the rest to the server as typed; `kfs` compares a directory's entries folded; `ramfs`, `binfs`, `/app`, the devices and the drives each find a name the same way; and `use` keeps one instance of a library however its path is spelled.
+**Each place that holds a name folds its own**, and nothing is folded twice: the namespace matches a mount's prefix folded and hands the rest to the server as typed; `kfs` compares a directory's entries folded; `ramfs`, `binfs`, `/Running`, the devices and the drives each find a name the same way; and `use` keeps one instance of a library however its path is spelled.
 
 **The one place a spelling is kept by path is the disk's index**, the attributes a query answers from, and `/Home/x` and `/home/x` there would be two keys for one file. So while an index exists, the disk server turns each path into the disk's own spelling as it arrives (`kfs.spelled`); before there is one it does not, because that is a walk of the path's directories and kfs has no block cache - a machine that never asks a query never pays it. `ramfs` stores a new file under its directories' existing spelling for the same reason: its table holds whole paths, and a query hands them back.
 
@@ -1032,7 +1032,7 @@ Everything it reads comes from servers exposing a namespace. None of it is a fil
 ```lua
 return {
   name = "Monitor",
-  needs = { "ui", "/proc", "/dev/temp", "/dev/uptime" },
+  needs = { "ui", "/proc", "/Devices/temp", "/Devices/uptime" },
 }
 ```
 
@@ -1050,8 +1050,8 @@ local function refresh()
   end
   table.sort(procs, function(a, b) return a.cpu > b.cpu end)
 
-  temp   = fs.read("/dev/temp").celsius
-  uptime = fs.read("/dev/uptime").seconds
+  temp   = fs.read("/Devices/temp").celsius
+  uptime = fs.read("/Devices/uptime").seconds
   win:invalidate()
 end
 
@@ -1082,7 +1082,7 @@ A real filesystem plus attributes and live queries.
 ```lua
 return {
   name = "Notes",
-  needs = { "ui", "/home/notes", "/dev/clock" },
+  needs = { "ui", "/home/notes", "/Devices/clock" },
 }
 ```
 
@@ -1097,7 +1097,7 @@ local function save()
   if not current then return end
   fs.write("/home/notes/" .. current, buffer)
   fs.setattr("/home/notes/" .. current, {
-    modified = fs.read("/dev/clock").epoch,
+    modified = fs.read("/Devices/clock").epoch,
     words    = select(2, buffer:gsub("%S+", "")),
   })
 end

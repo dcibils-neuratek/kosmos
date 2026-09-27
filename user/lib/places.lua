@@ -17,7 +17,7 @@
 -- **A place on a drive keys on the volume's own identity, never its name or
 -- its unit.** A name depends on the order drives arrived, so `PHOTOS` can
 -- come back as `PHOTOS 2`; a unit is handed out afresh on every replug
--- (`units_named++` in `xhci.c`). `/drives` reports what the volume *is* - a
+-- (`units_named++` in `xhci.c`). `/Drives` reports what the volume *is* - a
 -- FAT serial or a GPT partition's GUID (`usb.md` 6c) - and that travels with
 -- it. `volume_name` is only what it was called last, for the note shown
 -- while it is away; nothing is ever found by it.
@@ -33,11 +33,11 @@ local places = {}
 places.DIR = "/home/Places"
 
 --
--- A path under `/drives`, as its volume's name and the rest - `/` for the
+-- A path under `/Drives`, as its volume's name and the rest - `/` for the
 -- volume itself. Anything else is not on a drive.
 --
 local function on_drive(path)
-  local name, rest = path:match("^/drives/([^/]+)(.*)$")
+  local name, rest = path:match("^/Drives/([^/]+)(.*)$")
 
   if not name then return nil end
 
@@ -106,7 +106,7 @@ function places.resolve(attrs, volumes)
 
   for _, v in ipairs(volumes or {}) do
     if v.id == attrs.volume then
-      local base = "/drives/" .. v.name
+      local base = "/Drives/" .. v.name
       local within = attrs.within or "/"
 
       return (within == "/") and base or (base .. within), v.name

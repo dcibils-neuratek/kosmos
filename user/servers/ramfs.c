@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /ramfs: files, attributes and live queries, in memory.
+ * /Temporary: files, attributes and live queries, in memory.
  *
  * The seventh server to move and the last one that will. It is also the one
  * whose conversion cost something rather than only buying: ramfs was what
@@ -37,7 +37,7 @@
 
 #define NODES        128u
 /*
- * The biggest thing /ramfs will hold.
+ * The biggest thing /Temporary will hold.
  *
  * 4096 was the first guess and it was too small by inspection rather than by
  * failure: a replicant publishes a table holding its own source, and
@@ -127,7 +127,7 @@ static void copy_into(char *dst, size_t cap, const char *src, size_t n)
  * Callers send "/a/b", "a/b" and "/a/b/" for the same thing, and the leading
  * slash has to survive rather than be stripped - the namespace joins a
  * mount's prefix onto whatever comes back, so a path returned as "a" becomes
- * "/dataa" instead of "/ramfs/a". Found by a query, which is the only
+ * "/dataa" instead of "/Temporary/a". Found by a query, which is the only
  * operation that hands whole paths back.
  */
 static void normalise(char *dst, const char *src)
@@ -1013,7 +1013,7 @@ void ramfs_server(long endpoint)
     long at = kosmos_map((sizeof(struct node) * NODES + 4095u) / 4096u);
 
     if (at < 0) {
-        /* Without a store there is no /ramfs, and a server that ran anyway
+        /* Without a store there is no /Temporary, and a server that ran anyway
          * would answer every write with success and hold nothing. */
         kosmos_write("ramfs: no memory for the store\n", 31);
         return;

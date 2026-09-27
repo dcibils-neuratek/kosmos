@@ -13,12 +13,12 @@
 --
 -- This is a console server. The real one - the process that owns the serial
 -- port and the keyboard - answers `read`, `write` and a couple of other
--- verbs at `/dev/console`, and every program in this system prints by
+-- verbs at `/Devices/console`, and every program in this system prints by
 -- sending `write` to whatever is mounted there. None of them knows or can
 -- ask what is behind it.
 --
 -- So a terminal is a process that speaks the same three verbs and hands
--- itself to its children as their `/dev/console`. `run` already takes a
+-- itself to its children as their `/Devices/console`. `run` already takes a
 -- `shares` table naming capabilities to pass under a path, and a namespace
 -- mount replaces what was at that path - so the child gets exactly one
 -- console and it is this window.
@@ -409,7 +409,7 @@ local function launch(text)
   -- speaking Lua tables, and every `write` would arrive here as a
   -- serialised table where a `con_request` was expected.
   local ok, why = run(path, rest, true,
-                      { ["/dev/console"] = { cap = ep, proto = "console" } },
+                      { ["/Devices/console"] = { cap = ep, proto = "console" } },
                       cwd)
 
   if ok then
@@ -426,7 +426,7 @@ end
 --
 -- This window is a console, and says so in the console's own words.
 --
--- A terminal mounts itself as its child's `/dev/console`, so a program
+-- A terminal mounts itself as its child's `/Devices/console`, so a program
 -- running in one prints to an application and cannot tell - which is the
 -- namespace working as intended, and which means this window implements a
 -- system ABI. It used to answer with Lua tables while the real console
@@ -477,7 +477,7 @@ local BURST_WAIT = 1        -- scheduler ticks: how long to wait mid-burst
 -- Counter units, and read rather than assumed: `sys.ticks()` is the counter
 -- and the two clocks differ by a quarter of a million on this board. The
 -- same read `tile` does, with the same fallback.
-local BURST_SPAN = ((fs.read("/dev/cpu") or {}).counter_hz or 62500000) // 60
+local BURST_SPAN = ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000) // 60
 
 --------------------------------------------------------------------------
 -- How long this window keeps waking quickly after somebody wrote to it.

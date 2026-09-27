@@ -2,7 +2,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """The editor, typed at through a keyboard (`roadmap.md` 6n, steps 0 and 1).
 
-Booted, `wm editor:/ramfs/keys.txt`, and then every key pressed with QEMU's
+Booted, `wm editor:/Temporary/keys.txt`, and then every key pressed with QEMU's
 own keyboard - `sendkey`, which goes through the virtio keyboard on one
 board and the PS/2 controller on the other - so what is checked is the
 whole path a key takes: the driver, the board's sequence with its
@@ -92,7 +92,7 @@ def main():
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
         mark = len(guest.seen)
-        guest.type("wm editor:/ramfs/keys.txt")
+        guest.type("wm editor:/Temporary/keys.txt")
 
         if said("wm: window keys.txt - Editor at ", mark, 90) is None:
             print("FAIL: the Editor never opened its window.\n--- the guest said ---\n"
@@ -116,7 +116,7 @@ def main():
         mark = len(guest.seen)
         press("ctrl-s")
         saved = said("editor: saved ", mark, 20)
-        check(saved == "2 lines to /ramfs/keys.txt",
+        check(saved == "2 lines to /Temporary/keys.txt",
               "Control-S did not save two lines: %r" % saved)
 
         # The desktop away, and the file read back at the prompt - as hex,
@@ -131,7 +131,7 @@ def main():
             time.sleep(0.2)
 
         mark = len(guest.seen)
-        guest.type('local b, t = fs.read("/ramfs/keys.txt") or "", {} '
+        guest.type('local b, t = fs.read("/Temporary/keys.txt") or "", {} '
                    'for c in b:gmatch(".") do t[#t + 1] = ("%02x"):format(c:byte()) end '
                    'print("file" .. "-hex:" .. table.concat(t, " "))')
         hexes = said("file-hex:", mark, 20)

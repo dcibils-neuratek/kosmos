@@ -20,7 +20,7 @@
 --
 -- It knows nothing about disks. Every question it asks is the ordinary
 -- filesystem protocol through its own namespace, so it browses `/home` on
--- the disk, `/ramfs` in memory and `/bin` in the image with the same code,
+-- the disk, `/Temporary` in memory and `/bin` in the image with the same code,
 -- and would browse a directory served from another machine without
 -- noticing which it was.
 --
@@ -30,7 +30,7 @@
 -- Printing the number anyway would be a column that looks like a date and
 -- is not one.
 --
--- **What is in the way is not the clock.** `/dev/clock` exists and answers
+-- **What is in the way is not the clock.** `/Devices/clock` exists and answers
 -- with the epoch - it was dropped when `devices` moved from Lua to C and
 -- restored when every clock in the system started saying "no clock". What
 -- is in the way is that `diskfs` stamps `sys.ticks()` rather than asking
@@ -125,7 +125,7 @@ end
 -- window and no new knowledge, and everything else is here.
 --
 if backdrop then
-  local screen = fs.read("/dev/screen") or {}
+  local screen = fs.read("/Devices/screen") or {}
 
   W, H = screen.width or 1024, screen.height or 768
 
@@ -287,14 +287,14 @@ local place_button, search, trail_menu, more_menu, view_menu
 local header
 
 -- The place button's picture: the drawing's house for Home, the Trash's
--- bin, a drive for anything under `/drives`, and a folder for the rest.
+-- bin, a drive for anything under `/Drives`, and a folder for the rest.
 local function place_icon(path)
   if path == "/home" then return "home" end
   if path == files.TRASH or path:sub(1, #files.TRASH + 1) == files.TRASH .. "/"
   then
     return "trash"
   end
-  if path == "/drives" or path:match("^/drives/") then return "drive" end
+  if path == "/Drives" or path:match("^/Drives/") then return "drive" end
 
   return "folder"
 end
@@ -675,7 +675,7 @@ local function place_items()
   if #drives > 0 then items[#items + 1] = { gap = true, rule = true } end
 
   for _, v in ipairs(drives) do
-    add(v.name, files.join("/drives", v.name), "drive")
+    add(v.name, files.join("/Drives", v.name), "drive")
   end
 
   return items, by
@@ -1180,7 +1180,7 @@ local function start_launcher(path, name)
     return
   end
 
-  local ok, why = fs.send("/app/wm", { type = "launch", program = program,
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = program,
                                        args = tostring(a.args or "") })
 
   status.text = ok and ("started " .. program)
@@ -1198,7 +1198,7 @@ local function open_selected()
     -- The desktop does not wander off into a folder, because it is the
     -- desktop. A folder opened from it opens in a Tracker window of its
     -- own, which is what BeOS did and what a person reaching for one means.
-    local ok, why = fs.send("/app/wm", { type = "launch", program = "tracker",
+    local ok, why = fs.send("/Running/wm", { type = "launch", program = "tracker",
                                          args = path_of(e) })
 
     status.text = ok and ("opened " .. e.name)
@@ -1222,7 +1222,7 @@ local function open_selected()
       return
     end
 
-    local ok, why = fs.send("/app/wm", { type = "launch",
+    local ok, why = fs.send("/Running/wm", { type = "launch",
                                          program = how.program,
                                          args = how.args })
 
@@ -1281,7 +1281,7 @@ function rows:on_context(x, y)
     return true
   end
 
-  local ok, why = fs.send("/app/wm", { type = "launch",
+  local ok, why = fs.send("/Running/wm", { type = "launch",
                                        program = "/bin/launcheredit.lua",
                                        args = path_of(e) })
 
@@ -2294,7 +2294,7 @@ local QUERY_WAIT = 125            -- scheduler ticks; TICK_HZ is 250
 -- Mac's own cores under `hvf`. A constant here would ask twice a second in
 -- one case and once every five in the other.
 --
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local ask_every  = counter_hz // 2
 local asked_at   = 0
 
@@ -2354,7 +2354,7 @@ local function do_edit()
   end
 
   local program = types.opener(path_of(e)) or "editor"
-  local ok, why = fs.send("/app/wm", { type = "launch", program = program,
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = program,
                                        args = path_of(e) })
 
   status.text = ok and ("editing " .. e.name .. " in " .. program)
@@ -2652,7 +2652,7 @@ end
 side_menu.on_click = function()
   win:open_menu(win.origin_x + side_menu.x, win.origin_y + L.head, {
     { text = "New window", on_choose = function()
-        fs.send("/app/wm", { type = "launch", program = "tracker",
+        fs.send("/Running/wm", { type = "launch", program = "tracker",
                              args = where })
       end },
     { separator = true },

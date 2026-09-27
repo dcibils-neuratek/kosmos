@@ -78,7 +78,7 @@ void xhci_server(long console, long blocks, long writes, long frames,
 void e1000_server(long console, long frames);
 
 /* Its own endpoint, the USB driver's *read* endpoint, and the console's.
- * Never the write endpoint: `/drives` is read-only by what it was handed
+ * Never the write endpoint: `/Drives` is read-only by what it was handed
  * rather than by what it agrees to. */
 void drives_server(long endpoint, long blocks, long console);
 

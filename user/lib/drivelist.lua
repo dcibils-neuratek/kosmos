@@ -5,11 +5,11 @@
 -- window so it can be asked at a prompt and held to what a test put on a
 -- stick. Two sources, and nothing new asked of either:
 --
---   the USB driver, `/dev/blocks`   each stick: what it says it is, how
---                                   many blocks, how long a block is
---   the drive server, `/drives`     each filesystem it found: its name,
---                                   type, size, how much is free, and which
---                                   stick and partition it is on
+--   the USB driver, `/Devices/blocks`   each stick: what it says it is, how
+--                                       many blocks, how long a block is
+--   the drive server, `/Drives`         each filesystem it found: its name,
+--                                       type, size, how much is free, and which
+--                                       stick and partition it is on
 --
 -- and the machine's own disk, `sys.disk()`, whose size is known and whose
 -- partitions are not read yet: the drive server reads sticks, and the disk
@@ -51,7 +51,7 @@ end
 --
 function drivelist.drives()
   local out = {}
-  local volumes = (fs.volumes and fs.volumes("/drives")) or {}
+  local volumes = (fs.volumes and fs.volumes("/Drives")) or {}
   local units = have_blocks and blocks.units() or 0
 
   for unit = 0, (units or 0) - 1 do
@@ -96,7 +96,7 @@ end
 
 -- Where a volume opens in Tracker.
 function drivelist.path(volume)
-  return "/drives/" .. volume.name
+  return "/Drives/" .. volume.name
 end
 
 return drivelist

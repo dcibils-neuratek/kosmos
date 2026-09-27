@@ -13,7 +13,7 @@
 -- translated. `testing.md` 18.3 says the same thing about the benchmarks -
 -- these numbers detect a regression, they do not predict a Pi.
 
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 
 local function timed(what, pixels, fn)
   local began = sys.ticks()

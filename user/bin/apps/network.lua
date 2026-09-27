@@ -73,7 +73,7 @@ end
 
 --------------------------------------------------------------------------
 
-local info = fs.net_info("/net")
+local info = fs.net_info("/Network")
 
 -- Which card, from the bus. See `/lib/hardware.lua` for why it is not the
 -- name of the driver.
@@ -213,14 +213,14 @@ function apply(and_save)
     return
   end
 
-  local ok, why = fs.net_configure("/net", a, m, g)
+  local ok, why = fs.net_configure("/Network", a, m, g)
 
   if not ok then
     status.text = "the stack refused it: " .. tostring(why)
     return
   end
 
-  info = fs.net_info("/net")
+  info = fs.net_info("/Network")
 
   if not and_save then
     status.text = "applied, until the next reboot"
@@ -253,8 +253,8 @@ local function test_gateway()
     return
   end
 
-  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
-  local reply, why = fs.ping("/net", a, 1, "kosmos network settings test")
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  local reply, why = fs.ping("/Network", a, 1, "kosmos network settings test")
 
   if reply then
     local us = reply.ticks * 1000000 // hz

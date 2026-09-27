@@ -53,9 +53,9 @@ print(("timer at %d Hz, so a period is %d counter ticks")
 print()
 
 local yield  = timeit("sys.yield",     function() sys.yield() end)
-local trip   = timeit("an IPC round trip", function() fs.getattr("/ramfs") end)
+local trip   = timeit("an IPC round trip", function() fs.getattr("/Temporary") end)
 local query  = timeit("a query",       function()
-  fs.query("/ramfs", { kind = "latency-probe" })
+  fs.query("/Temporary", { kind = "latency-probe" })
 end)
 
 print()

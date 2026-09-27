@@ -2,7 +2,7 @@
 /*
  * An Intel Ethernet controller, driven from a process.
  *
- *   /net  <--- ethring.h ---  this  --- registers and rings --->  the card
+ *   /Network  <--- ethring.h ---  this  --- registers and rings --->  the card
  *
  * **Why it is here and not in `hal/`.** `docs/drivers.md` decided it on 12
  * September: a microkernel can do what a monolithic kernel cannot, which is

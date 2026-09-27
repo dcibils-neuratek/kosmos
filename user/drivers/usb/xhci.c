@@ -4929,7 +4929,7 @@ static bool camera_start(struct camera *k, int size, uint8_t *target,
 
 /*
  * **A camera plugged in.** Said and configured, and then left until a
- * program opens it through `/dev/camera` - or, with `opt/kosmos/camera=count`
+ * program opens it through `/Devices/camera` - or, with `opt/kosmos/camera=count`
  * (`tools/usbhost.sh`), streamed at once at 640x480 with nobody watching, so
  * a test with no window has frames to count.
  */
@@ -6310,7 +6310,7 @@ static void block_flush(const struct block_request *req, struct say_line *line,
  * One request, answered: exactly a `struct block_request` long, or refused as
  * `audio.c` refuses one. A capability that arrives with anything but an open
  * is given back rather than kept. `may_write` is which endpoint it came in on,
- * and a write or a flush from `/dev/blocks` is refused as read only.
+ * and a write or a flush from `/Devices/blocks` is refused as read only.
  */
 static void block_answer(const struct message *in, uint64_t sender, long cap,
                          bool may_write, struct say_line *line)
@@ -6396,7 +6396,7 @@ static void drain(long endpoint, bool may_write, struct say_line *line)
 
 /*
  * **Both block endpoints, after every wake**: the write endpoint's requests,
- * which may write, then `/dev/blocks`', which may not. Both are on the watch's
+ * which may write, then `/Devices/blocks`', which may not. Both are on the watch's
  * wait, so a caller on either wakes it at once.
  */
 static void serve_blocks(struct say_line *line)
@@ -6416,9 +6416,9 @@ static void serve_blocks(struct say_line *line)
  * unit. Only a receive the kernel refuses - an endpoint that is not one -
  * ends it.
  *
- * **`/dev/blocks` alone**, because with no interrupt line a wait can be on one
+ * **`/Devices/blocks` alone**, because with no interrupt line a wait can be on one
  * endpoint and no more. Nothing is lost by it: no stick can be ready here, and
- * the disk server finds its partition through `/dev/blocks` before it ever
+ * the disk server finds its partition through `/Devices/blocks` before it ever
  * calls the write endpoint (`usb.md` §7).
  */
 static void serve_camera(struct say_line *line);
@@ -6445,12 +6445,12 @@ static void serve_without_controllers(int code)
          * wait takes since 22 September. The network stack asks this process
          * whether there is an adapter even on a machine with no USB
          * controller at all, and its call would wait for ever on a receive
-         * that only watched `/dev/blocks` - so the stack would never
+         * that only watched `/Devices/blocks` - so the stack would never
          * start. Polling the two instead would be wakes a second on a
          * machine where nothing is happening.
          */
         /* Forever, unless a stream wants looking at: the test pattern's
-         * frames, and a lease, come round on the clock (`/dev/camera`). */
+         * frames, and a lease, come round on the clock (`/Devices/camera`). */
         long woke = kosmos_irq_wait_any(NULL, 0, ticks_for(camera_wait_ms(0)),
                                         ends, 3u);
 
@@ -6658,7 +6658,7 @@ static void serve_frames(struct say_line *line)
     }
 }
 
-/*--------------------------------------------------------- `/dev/camera` */
+/*--------------------------------------------------------- `/Devices/camera` */
 
 /*
  * **The one stream, and whose it is** (`cameraproto.h`, `usb.md` §11 8d).
@@ -6672,7 +6672,7 @@ static void serve_frames(struct say_line *line)
  * with `opt/kosmos/camera=pattern` - a test pattern this driver draws itself:
  * eight colour bars and a square that moves, at thirty frames a second. QEMU
  * has no camera and a real one needs root on the Mac, so the pattern is what
- * lets `/dev/camera`, the kit and the Camera app be held by the gate on both
+ * lets `/Devices/camera`, the kit and the Camera app be held by the gate on both
  * boards; a real camera arrives at the same slots through the same calls.
  */
 static long camera_endpoint = -1;
@@ -7234,7 +7234,7 @@ static void watch(struct controller *list, unsigned count,
         long woke = SYS_NO_INTERRUPT;
 
         /* And this driver's endpoints on the same wait: the disk server's
-         * write endpoint (USB step 5c), `/dev/blocks`, and the network
+         * write endpoint (USB step 5c), `/Devices/blocks`, and the network
          * stack's frames (7d). An endpoint not on the wait waits out
          * WATCH_MS - 17 a second, on the ThinkPad and under QEMU alike -
          * which is what watching one cost and is why the kernel now watches

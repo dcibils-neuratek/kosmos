@@ -746,15 +746,15 @@ def usb_blocks(image, check):
 
     A stick laid out by `mkusb_image.write_gpt`, on the second controller.
     Once the driver has read that stick's partition table itself, `sticks`
-    asks the driver for it through `/dev/blocks`: each unit's size and names,
+    asks the driver for it through `/Devices/blocks`: each unit's size and names,
     the header at block 1, and the entries it points to - which have to be
     the partition `write_gpt` wrote, read through a region the program handed
     over. Then a read of one block past the last, by a two-line program
-    written to `/ramfs` and run by its file - the prompt's own Lua has no
+    written to `/Temporary` and run by its file - the prompt's own Lua has no
     `use`, which is a program's - and the driver has to refuse it by name
     rather than send it to the stick.
 
-    And a write and a flush sent on `/dev/blocks` by a program, the same way:
+    And a write and a flush sent on `/Devices/blocks` by a program, the same way:
     both refused as read only (USB step 5e), because the endpoint that writes
     is the disk server's alone. A write that got through would land on this
     check's own stick, which is thrown away.
@@ -771,16 +771,16 @@ def usb_blocks(image, check):
     # argument is where to start reading - so the reply is in parentheses.
     out = boot(image, None, 150.0,
                typed=("sticks",
-                      'fs.write("/ramfs/past.lua", [[local r = '
+                      'fs.write("/Temporary/past.lua", [[local r = '
                       'use("/lib/blocks.lua").open() print("past:", '
                       'r:read(0, %d, 1)) r:close()]])' % blocks,
-                      "/ramfs/past.lua",
-                      'fs.write("/ramfs/refused.lua", [[local r = '
+                      "/Temporary/past.lua",
+                      'fs.write("/Temporary/refused.lua", [[local r = '
                       'use("/lib/blocks.lua").open() local function ask(op) '
-                      'return (string.unpack("<I4", (fs.raw("/dev/blocks", '
+                      'return (string.unpack("<I4", (fs.raw("/Devices/blocks", '
                       'string.pack("<I4I4I8I4I4", op, 0, 0, 1, r.handle))))) '
                       'end print("refused:", ask(4), ask(6)) r:close()]])',
-                      "/ramfs/refused.lua"),
+                      "/Temporary/refused.lua"),
                extra=extra, after="its backup")
 
     if out is None:
@@ -798,7 +798,7 @@ def usb_blocks(image, check):
     check(unit is not None
           and unit.group(1, 2, 3, 4) == (str(blocks), "512", "QEMU",
                                          "QEMU HARDDISK"),
-          "`sticks` did not say, through /dev/blocks, that unit 0 is %d "
+          "`sticks` did not say, through /Devices/blocks, that unit 0 is %d "
           "blocks of 512 bytes, \"QEMU\" \"QEMU HARDDISK\":\n    %s"
           % (blocks, shown))
 
@@ -816,7 +816,7 @@ def usb_blocks(image, check):
 
     # BLOCK_OP_WRITE and BLOCK_OP_FLUSH, each answered BLOCK_ERR_READ_ONLY.
     check("refused:\t7\t7" in out,
-          "a write and a flush sent on /dev/blocks were not both refused as "
+          "a write and a flush sent on /Devices/blocks were not both refused as "
           "read only, error 7:\n    %s" % shown)
 
 
@@ -824,7 +824,7 @@ def usb_diskbench(image, check):
     """**Disk Benchmark on a USB stick's blocks** (storage at full speed).
 
     The stick `usb_blocks` reads, with `diskbench` pointed at it: listed as
-    unit 0 by its names; its two read rows measured through `/dev/blocks` -
+    unit 0 by its names; its two read rows measured through `/Devices/blocks` -
     sequential in the largest reads one USB transfer moves, random in 4 KB -
     and both write rows refused by the program itself, because a drive's raw
     blocks are never written. The numbers are QEMU's. What this holds is that
@@ -878,14 +878,14 @@ def usb_diskbench(image, check):
           "random 4 KB x1 on the stick did not read a number of IOPS above "
           "zero and refuse to write: %r" % rnd)
 
-    # **And no request waits for the driver's deadline.** `/dev/blocks` was not
+    # **And no request waits for the driver's deadline.** `/Devices/blocks` was not
     # on the USB driver's wait, so every read there waited out its 50 ms: 17
     # IOPS, the ThinkPad's own number, where `/home` on the same stick model
     # read 938. At 200 a request is answered on its own clock rather than the
     # driver's; past that, QEMU's numbers say nothing.
     check(iops is not None and int(iops.group(1)) >= 200,
           "random 4 KB reads on the stick's blocks came at %s IOPS - a request "
-          "on /dev/blocks is waiting for the USB driver's 50 ms deadline: %r"
+          "on /Devices/blocks is waiting for the USB driver's 50 ms deadline: %r"
           % (iops.group(1) if iops else "no", rnd))
 
     check("in 124 KB reads, the most one USB read moves" in out,
@@ -980,7 +980,7 @@ def stick_with_home(path, megabytes=16, unique=None):
 
 
 def usb_drives(image, check):
-    """**USB step 6b: another machine's FAT volume, at `/drives`.**
+    """**USB step 6b: another machine's FAT volume, at `/Drives`.**
 
     A stick mtools laid out - `tools/fatstick.py` - attached over xHCI, and
     the drive server asked what is on it. **Somebody else's reading of the
@@ -1008,7 +1008,7 @@ def usb_drives(image, check):
     import fatstick
 
     if not fatstick.available():
-        print("SKIP: the /drives phase, because mtools is not installed.")
+        print("SKIP: the /Drives phase, because mtools is not installed.")
         return
 
     stick = scratch.path("x86-fat-stick.img")
@@ -1023,23 +1023,23 @@ def usb_drives(image, check):
     # from stdin. And no Lua comments in it - `fs.write` puts the whole thing
     # on one line, so a `--` would comment out everything after it.
     program = (
-        'local names, err = fs.list("/drives") '
+        'local names, err = fs.list("/Drives") '
         'print("drives" .. ": volumes " .. table.concat(names or {}, ",") '
         '.. " err=" .. tostring(err)) '
-        'local top = fs.list("/drives/PHOTOS") '
+        'local top = fs.list("/Drives/PHOTOS") '
         'print("drives" .. ": top " .. table.concat(top or {}, "|")) '
-        'local hello = fs.read("/drives/PHOTOS/hello.txt") '
+        'local hello = fs.read("/Drives/PHOTOS/hello.txt") '
         'print("drives" .. ": hello " .. tostring(hello)) '
-        'local roma = fs.read("/drives/PHOTOS/Italy/roma.txt") '
+        'local roma = fs.read("/Drives/PHOTOS/Italy/roma.txt") '
         'print("drives" .. ": roma " .. tostring(roma)) '
-        'local big = fs.read("/drives/PHOTOS/A Long File Name.txt") '
+        'local big = fs.read("/Drives/PHOTOS/A Long File Name.txt") '
         'print("drives" .. ": big " .. tostring(big and #big or -1)) '
-        'local second = fs.list("/drives/BACKUP") '
+        'local second = fs.list("/Drives/BACKUP") '
         'print("drives" .. ": second " .. table.concat(second or {}, "|")) '
-        'local notes = fs.read("/drives/BACKUP/notes.txt") '
+        'local notes = fs.read("/Drives/BACKUP/notes.txt") '
         'print("drives" .. ": notes " .. tostring(notes)) '
         'local ids = {} '
-        'for _, v in ipairs(fs.volumes("/drives") or {}) do '
+        'for _, v in ipairs(fs.volumes("/Drives") or {}) do '
         'ids[#ids + 1] = v.name .. "=" .. tostring(v.id) end '
         'print("drives" .. ": ids " .. table.concat(ids, ",")) '
         'print("drives" .. ": done")'
@@ -1061,10 +1061,10 @@ def usb_drives(image, check):
     # Nothing was typed, and seven checks failed against a program that was
     # never sent. This is the driver's own last line, whatever the stick.
     out = boot(image, None, 180.0,
-               typed=("fs.write('/ramfs/d.lua', %r)" % program,
-                      "/ramfs/d.lua",
-                      "fs.write('/ramfs/m.lua', %r)" % model,
-                      "/ramfs/m.lua"),
+               typed=("fs.write('/Temporary/d.lua', %r)" % program,
+                      "/Temporary/d.lua",
+                      "fs.write('/Temporary/m.lua', %r)" % model,
+                      "/Temporary/m.lua"),
                extra=extra, after="watching for devices")
 
     if out is None:
@@ -1080,7 +1080,7 @@ def usb_drives(image, check):
     volumes = said("volumes")
 
     check("PHOTOS" in volumes,
-          "/drives did not list the stick's volume under its label PHOTOS - "
+          "/Drives did not list the stick's volume under its label PHOTOS - "
           "a volume with no label is Untitled, so this is the label being "
           "read rather than a default:\n    " + shown)
 
@@ -1112,7 +1112,7 @@ def usb_drives(image, check):
     got = dict(p.split("=", 1) for p in ids.split(",") if "=" in p)
 
     check(got == fatstick.IDS,
-          "/drives did not report each volume's own serial - wanted %r, "
+          "/Drives did not report each volume's own serial - wanted %r, "
           "got %r:\n    %s" % (fatstick.IDS, got, shown))
 
     # The chain, which is the part nothing else here can show.
@@ -1120,7 +1120,7 @@ def usb_drives(image, check):
 
     # **The second volume, which is what a one-volume fixture cannot show.**
     #
-    # A listing of `/drives` was answered with 104-byte volume records and
+    # A listing of `/Drives` was answered with 104-byte volume records and
     # decoded as 80-byte entries, so the first name was right - a name is the
     # first 64 bytes of both - and the second read 24 bytes into the middle
     # of the first record. One volume is exactly the case where that is
@@ -1137,7 +1137,7 @@ def usb_drives(image, check):
                    if n != "")
 
     check(names == ["BACKUP", "PHOTOS"],
-          "/drives listed %r where both volumes should be there, exactly. "
+          "/Drives listed %r where both volumes should be there, exactly. "
           "A stride error decodes the second name as empty, which a "
           "substring test cannot see:\n    %s"
           % (names, shown))
@@ -1177,7 +1177,7 @@ def usb_home(image, check):
 
     A stick with an EFI partition and a blank Kosmos partition, and a machine
     started with `opt/kosmos/home=usb`. On the first boot the disk server finds
-    the partition through `/dev/blocks`, formats it because it is blank, and
+    the partition through `/Devices/blocks`, formats it because it is blank, and
     `save` writes a file to `/home` through the write endpoint only it holds;
     the second boot is a machine that has never seen the stick, and the file
     has to be there. What a file written and read back in one boot could not
@@ -2662,11 +2662,11 @@ def battery(image, check):
     q35 has no embedded controller, so the reading is `opt/kosmos/battery`'s
     - the one input the kernel takes for a test instead of the ThinkPad's
     registers, and says so at boot - and everything above it is what runs on
-    the ThinkPad: `hal_battery_read`, `sysinfo`, `/dev/battery` from the
+    the ThinkPad: `hal_battery_read`, `sysinfo`, `/Devices/battery` from the
     devices server, and the Deskbar drawing it. The registers themselves are
     `test_batterydecode`'s, on the host.
 
-      at a prompt, 57 and charging: `/dev/battery` says 57, charging, on AC;
+      at a prompt, 57 and charging: `/Devices/battery` says 57, charging, on AC;
       the desktop, 57 and charging: the Deskbar says "57% charging";
       the desktop, 8: the Deskbar says "8%", and says it in red - which is
         the reddish pixels of that screen against the charging one's, the
@@ -2707,7 +2707,7 @@ def battery(image, check):
                 + value.replace(",", ",,")]
 
     out = boot(image, None, 90.0,
-               typed=('local b = fs.read("/dev/battery") print("BAT" .. "TERY", '
+               typed=('local b = fs.read("/Devices/battery") print("BAT" .. "TERY", '
                       'b and b.percent, b and b.state, b and b.on_ac)',),
                extra=option("57,charging"))
 
@@ -2719,7 +2719,7 @@ def battery(image, check):
           in out,
           "the kernel did not say the battery reading was the option's")
     check(re.search(r"BATTERY\s+57\s+charging\s+1", out) is not None,
-          "/dev/battery did not say 57, charging, on AC: "
+          "/Devices/battery did not say 57, charging, on AC: "
           + next((l.strip() for l in out.splitlines()
                   if l.startswith("BATTERY")), "nothing"))
 
@@ -3719,7 +3719,7 @@ def core(image, check, fails):
 
     # What it prints is its own capability list, asked of the namespace - so
     # this is IPC and the servers rather than a string in the image.
-    for path in ("/bin", "/dev", "/home", "/lib"):
+    for path in ("/bin", "/Devices", "/home", "/lib"):
         check(path in ran, "a process could not see %s" % path)
 
     check("process died" not in ran, "the program faulted on its way out")
@@ -4649,7 +4649,7 @@ def main():
           "finds a USB stick and a keyboard on two xHCI "
           "controllers and asks the stick what it is through its bulk "
           "endpoints, moves the pointer and clicks with a USB mouse, reads "
-          "it through a plug on either controller, reads another machine's FAT32 volume at /drives - its label, its long names, a file one directory down and a chain of clusters - and "
+          "it through a plug on either controller, reads another machine's FAT32 volume at /Drives - its label, its long names, a file one directory down and a chain of clusters - and "
           "opens a menu with a click through a PS/2 mouse whether or not "
           "the machine has a serial port)."
           % checks)

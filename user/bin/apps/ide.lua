@@ -613,7 +613,7 @@ local header = ui.header{
 -- Running (step 3).
 --
 -- **This window is the console of what it runs**, as a Terminal is: its
--- own endpoint, mounted as the child's `/dev/console` and speaking the
+-- own endpoint, mounted as the child's `/Devices/console` and speaking the
 -- console's protocol through the Console Kit - so a program cannot tell it
 -- is printing to an IDE, which is the namespace working as intended.
 --
@@ -622,7 +622,7 @@ local header = ui.header{
 -- copy is written to `/home/.ide-run` under its own name and run from
 -- there, in its own folder, with the copy's path turned back into the
 -- file's in everything it says - so an error names the line in the file
--- you are looking at. The copy was in `/ramfs`, whose files hold 16 KB -
+-- you are looking at. The copy was in `/Temporary`, whose files hold 16 KB -
 -- it keeps replicants' state, not programs - and `bench.lua` would not run
 -- at all: "ramfs is full" (Diego, 27 September). `/home` is the disk on a
 -- real machine, and memory only on one that has none.
@@ -632,7 +632,7 @@ local con = use("/kits/console")
 local console = sys.endpoint()
 
 local RUN_DIR = "/home/.ide-run"
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 -- What is running: `{ id, path, scratch, started, printed, line, error }`.
 local running = nil
@@ -685,7 +685,7 @@ local function start()
 
   local app = body:find("%-%- kosmos: application") ~= nil
   local started, err, id = run(scratch, "", true,
-                               { ["/dev/console"] = { cap = console,
+                               { ["/Devices/console"] = { cap = console,
                                                       proto = "console" } },
                                f.path:match("^(.*)/") or "/")
 

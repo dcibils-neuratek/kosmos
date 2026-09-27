@@ -5,13 +5,13 @@
 #include <stdint.h>
 
 /*
- * /ramfs: a filesystem that lives in memory, written down.
+ * /Temporary: a filesystem that lives in memory, written down.
  *
  * The largest of these headers, because ramfs is the only server here that
  * is a filesystem *and* an attribute store *and* a query engine. Every piece
  * of it has a precedent in one of the four before it, though:
  *
- *   - attributes are `/dev`'s problem - a fixed number of named scalars,
+ *   - attributes are `/Devices`'s problem - a fixed number of named scalars,
  *     each a fixed size, so a variable shape travels in a fixed one;
  *   - listings are `/bin`'s - a page of entries at an offset, because a
  *     directory can hold more names than a message can carry;
@@ -38,7 +38,7 @@
  * The three that make this a filesystem rather than a place to publish.
  *
  * They were missing for a reason worth recording: everything that had ever
- * used /ramfs *published* - a replicant writing its own source, the web
+ * used /Temporary *published* - a replicant writing its own source, the web
  * server writing its status, a benchmark tagging files to query for. Nothing
  * ever took anything back out, so nothing asked for these, and an operation
  * with no caller does not get written.
@@ -86,7 +86,7 @@
 /*
  * An attribute, as text with a note saying what it was.
  *
- * `/dev` settled this shape and the reasoning carries: a value is a number
+ * `/Devices` settled this shape and the reasoning carries: a value is a number
  * or a string, the wire carries the characters either way, and `kind` says
  * which so the far side can hand back the type that went in. A union of
  * `double` and a buffer would save nothing - the buffer decides the size -
@@ -104,7 +104,7 @@ struct ram_attr {
 /*
  * Whether the bytes of a value are text or a serialised Lua value.
  *
- * /ramfs is a *value* store, not a byte store, and that is a documented
+ * /Temporary is a *value* store, not a byte store, and that is a documented
  * property rather than an accident: `help("fs")` promises that a read gives
  * back the table you wrote, integers still integers and floats still floats.
  * The Lua ramfs got it for free by keeping the deserialised value in a table.
@@ -152,8 +152,8 @@ struct ram_reply {
 };
 
 _Static_assert(sizeof(struct ram_request) <= 2048,
-               "a /ramfs request must fit in one message");
+               "a /Temporary request must fit in one message");
 _Static_assert(sizeof(struct ram_reply) <= 2048,
-               "a /ramfs reply must fit in one message");
+               "a /Temporary reply must fit in one message");
 
 #endif /* KOSMOS_RAMPROTO_H */

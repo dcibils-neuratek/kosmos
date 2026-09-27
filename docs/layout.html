@@ -70,6 +70,7 @@
   .tag.prop { color: var(--ask); background: var(--ask-soft); }
   .tag.ask  { color: var(--ask); background: var(--ask-soft); border: 1px dashed var(--ask); }
   .tag.later { color: var(--muted); background: transparent; border: 1px solid var(--rule); }
+  .tag.done { color: var(--sys); background: var(--sys-soft); }
 
   /* The two trees, side by side where there is room. */
   .trees { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 22px; margin-top: 26px; }
@@ -155,6 +156,7 @@
   <span><span class="tag prop">proposed</span> a name or a place not yet agreed</span>
   <span><span class="tag ask">question</span> waiting for a decision</span>
   <span><span class="tag later">after the loader</span> needs the ELF loader (6t)</span>
+  <span><span class="tag done">done</span> renamed, 27 September</span>
 </div>
 
 <h2 id="root">The root, whole</h2>
@@ -204,7 +206,8 @@
       <li><span class="name">Development/</span><span class="what">Your projects: what the IDE opens, and the tutorial's lessons to start from</span></li>
       <li><span class="name">Preferences/</span><span class="what">Your choices: the look, the keyboard, the Deskbar, what starts at login, and the settings of the applications Kosmos ships - an application you installed keeps its own in its folder<small>Today dotfiles at the top of <code>/home</code>: <code>.appearance</code>, <code>.keyboard</code>, <code>.terminal</code>, <code>.clock</code>, <code>.ide</code> ...</small></span></li>
       <li><span class="name">Documents/</span><span class="what">What you write and keep - and Cafesa3D's scenes and renders</span></li>
-      <li><span class="name">Music/ Photos/ Videos/</span><span class="what">What Music, Photo and Video open first</span></li>
+      <li><span class="name">Photos/ Movies/ Music/</span><span class="what">What the photo viewer, Video and Music open first</span></li>
+      <li><span class="name">Captures/</span><span class="what">What the camera recorded<small>Today <code>/home/videos</code>. Each of these five is a place in Tracker's sidebar (<code>roadmap.md</code> 6w)</small></span></li>
       <li><span class="name">Desktop/</span><span class="what">What is on the desktop</span></li>
       <li><span class="name">Deskbar/</span><span class="what">The launchers in the Deskbar's menu</span></li>
       <li><span class="name">Trash/</span><span class="what">What you threw away, until you empty it</span></li>
@@ -251,7 +254,7 @@
 </div>
 
 <h2 id="today">From today</h2>
-<p>Where each thing is now, and where it goes. The last rows wait for the ELF loader; the rest are renames and moves.</p>
+<p>Where each thing was, and where it goes. The renames are made a step at a time, the whole test suite behind each (<code>roadmap.md</code> 6s): the five beside the two trees are done; <code>/Home</code>, the <code>/Kosmos</code> tree and the preferences follow; the games wait for the ELF loader.</p>
 <div class="tablewrap">
 <table>
   <tr><th>Today</th><th>Then</th><th>What it is</th></tr>
@@ -261,11 +264,11 @@
   <tr><td class="path">/lib/clock.lua, /lib/blocks.lua</td><td class="path s">/Kosmos/Libraries/localtime.lua, blockdev.lua</td><td>Names that clash with the Clock and Blocks applications and are not them <span class="tag prop">proposed</span></td></tr>
   <tr><td class="path">/home/.appearance, .clock, .terminal ...</td><td class="path h">/Home/Preferences/...</td><td>Your preferences, out of the way at the top of your home</td></tr>
   <tr><td class="path">/home</td><td class="path h">/Home</td><td>A capital, as every name here</td></tr>
-  <tr><td class="path">/ramfs</td><td class="path">/Temporary</td><td>Memory</td></tr>
-  <tr><td class="path">/dev, /dev/audio, /dev/camera ...</td><td class="path">/Devices, /Devices/Audio, /Devices/Camera ...</td><td>The hardware</td></tr>
-  <tr><td class="path">/net</td><td class="path">/Network</td><td>The network</td></tr>
-  <tr><td class="path">/app</td><td class="path">/Running</td><td>What is running, by name</td></tr>
-  <tr><td class="path">/drives</td><td class="path">/Drives</td><td>Other drives</td></tr>
+  <tr><td class="path">/ramfs</td><td class="path">/Temporary</td><td>Memory <span class="tag done">done</span></td></tr>
+  <tr><td class="path">/dev, /dev/audio, /dev/camera ...</td><td class="path">/Devices, /Devices/Audio, /Devices/Camera ...</td><td>The hardware <span class="tag done">done</span></td></tr>
+  <tr><td class="path">/net</td><td class="path">/Network</td><td>The network <span class="tag done">done</span></td></tr>
+  <tr><td class="path">/app</td><td class="path">/Running</td><td>What is running, by name <span class="tag done">done</span></td></tr>
+  <tr><td class="path">/drives</td><td class="path">/Drives</td><td>Other drives <span class="tag done">done</span></td></tr>
   <tr><td class="path">/system/themes</td><td class="path s">/Kosmos/Themes</td><td>The looks</td></tr>
   <tr><td class="path">/system, /user</td><td class="path">-</td><td>Gone, once their one reader has moved</td></tr>
   <tr><td class="path">/home/log.txt</td><td class="path s">/Kosmos/Logs</td><td>The system's log</td></tr>

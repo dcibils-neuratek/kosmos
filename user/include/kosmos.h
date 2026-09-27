@@ -206,7 +206,7 @@ static inline void kosmos_sleep(unsigned long ticks)
  * The monotonic counter, in CNTFRQ_EL0 ticks.
  *
  * Not a date. It counts from whenever the machine started and is only good
- * for measuring how long something took; `design.md` §4.4's `/dev/clock` is
+ * for measuring how long something took; `design.md` §4.4's `/Devices/clock` is
  * where a date comes from, and it is a capability rather than this.
  */
 static inline unsigned long kosmos_ticks(void)
@@ -302,7 +302,7 @@ static inline long kosmos_irq_ack(long cap)
  *
  * **The endpoints are an array**, which they became on 22 September when the
  * xHCI driver needed a third - the network stack's frames beside the disk
- * server's writes and `/dev/blocks`. A syscall has five arguments and all
+ * server's writes and `/Devices/blocks`. A syscall has five arguments and all
  * five were spoken for (`usb.md` 7d).
  */
 static inline long kosmos_irq_wait_any(const long *caps, unsigned long count,

@@ -8,7 +8,7 @@
 -- one answers "which machine did you mean", and between them a person can
 -- tell a broken name from a broken route without guessing.
 --
--- **The resolver was built and nothing could reach it.** `/net` has spoken
+-- **The resolver was built and nothing could reach it.** `/Network` has spoken
 -- DNS for as long as it has spoken TCP - a query, a reply, names written
 -- with a length in front of each label, and the compression pointers a real
 -- server answers with - and the only caller was the browser's address bar.
@@ -17,7 +17,7 @@
 -- separate consequences of there being no command for it.
 
 --
--- What `/net` can say about a lookup, by the numbers `netproto.h` gives
+-- What `/Network` can say about a lookup, by the numbers `netproto.h` gives
 -- them.
 --
 -- Named here rather than reached through the kit, because this program does
@@ -48,13 +48,13 @@ end
 --
 -- Through the namespace, not a capability.
 --
--- `fs.resolve` finds `/net`, checks that what is mounted there really is a
+-- `fs.resolve` finds `/Network`, checks that what is mounted there really is a
 -- network stack, and hands the kit the capability - so this program never
 -- holds one. The same rule `ping` obeys and the same reason: a program that
 -- could ask for a raw capability by path could reach past whoever decided
 -- what to mount for it.
 --
-local info, why = fs.net_info("/net")
+local info, why = fs.net_info("/Network")
 
 if not info then
   print("host: " .. tostring(why))
@@ -94,7 +94,7 @@ end
 --
 -- The wait, in *scheduler* ticks.
 --
--- `/net` counts a timeout the way `sys.sleep` does, and `tick_hz` says how
+-- `/Network` counts a timeout the way `sys.sleep` does, and `tick_hz` says how
 -- many of those go in a second - 250 today and not a number to write out,
 -- for the reason `wmproto.lua` gives at length: this system has two clocks
 -- and the one a timeout is in is not the one `sys.ticks()` returns.

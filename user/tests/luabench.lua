@@ -37,7 +37,7 @@ local LIVE     = 3000
 -- What a message between servers actually looks like: a tag, a couple of
 -- strings, and a small nested table of options.
 local function typical()
-  return { tag = 3, op = "read", path = "/dev/temp",
+  return { tag = 3, op = "read", path = "/Devices/temp",
            opts = { follow = true, limit = 64 } }
 end
 

@@ -1,15 +1,15 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /drives: every volume on every drive, read only (USB step 6b,
+ * /Drives: every volume on every drive, read only (USB step 6b,
  * `docs/drives.html`).
  *
- * **One server owns the whole prefix.** `drives.html` says `/drives` is "one
+ * **One server owns the whole prefix.** `drives.html` says `/Drives` is "one
  * folder every program has from the moment it starts", with drives appearing
  * and disappearing inside it while programs run. A mount is an entry in a
  * process's own namespace, made when that process is built, so a volume
  * appearing later would mean editing the namespace of every running program -
  * which nothing can do. A server behind one prefix needs none of that: the
- * matcher routes `/drives/PHOTOS 2024/Italy` here with the rest of the path
+ * matcher routes `/Drives/PHOTOS 2024/Italy` here with the rest of the path
  * intact, exactly as `/home` is routed to the disk server today.
  *
  * **It writes nothing, and that is structural rather than promised.** init
@@ -558,9 +558,9 @@ static void fail(uint64_t to, uint32_t code)
  * `/PHOTOS 2024/Italy/x.jpg` is the volume `PHOTOS 2024` and `Italy/x.jpg`.
  *
  * **`named` is what tells the two kinds of NULL apart**, and leaving it out
- * was a real bug: `/drives/nonesuch` also ends with `rest` empty, so a path
+ * was a real bug: `/Drives/nonesuch` also ends with `rest` empty, so a path
  * naming a volume that is not there was answered with the list of volumes,
- * as though the caller had asked for `/drives`. `n` is the difference and
+ * as though the caller had asked for `/Drives`. `n` is the difference and
  * this function is the only place that has it - zero means the root was
  * asked for, anything else means a name was given and did not match.
  */
@@ -929,7 +929,7 @@ static void answer_volume_entries(uint64_t sender, uint32_t offset)
         }
 
         /* Every volume is a directory, whether or not this server can open
-         * one: a kfs volume is still a folder in `/drives`, and asking for
+         * one: a kfs volume is still a folder in `/Drives`, and asking for
          * its contents is what says otherwise. */
         rep.u.entries[taken].directory = 1u;
         rep.u.entries[taken].size = 0u;
@@ -1107,7 +1107,7 @@ static void answer(const struct message *msg, uint64_t sender)
 
     v = volume_for(req.path, &rest, &named);
 
-    /* The root of `/drives` is the volumes, listed as a directory is - but
+    /* The root of `/Drives` is the volumes, listed as a directory is - but
      * only when no volume was named. A name that matched nothing is a path
      * that is not there. */
     if (v == NULL) {
@@ -1223,7 +1223,7 @@ void drives_server(long endpoint, long blocks_cap, long console_cap)
             /*
              * A machine with no USB driver is a supported way to run, and is
              * how every display test runs. The server stays: it answers with
-             * no volumes, which is what an empty `/drives` should say, rather
+             * no volumes, which is what an empty `/Drives` should say, rather
              * than failing to start and taking the namespace's mount with it.
              */
             say(console, "drives: the USB driver would not take its buffer; "
@@ -1242,7 +1242,7 @@ void drives_server(long endpoint, long blocks_cap, long console_cap)
      * and returns them *successfully*. One line at startup settles that from
      * outside, the way every other server here says what it is.
      */
-    say(console, "drives: serving /drives\n");
+    say(console, "drives: serving /Drives\n");
 
     for (;;) {
         struct message msg;

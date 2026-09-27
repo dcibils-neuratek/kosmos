@@ -12,6 +12,8 @@
  * generates both from one description.
  */
 
+#include <stddef.h>
+
 struct lua_State;
 
 #ifdef KOSMOS_USER
@@ -32,6 +34,20 @@ int serialize_pack(struct lua_State *L, int index, struct message *m);
 /* Pushes the value `m` holds. On failure the stack is left as it was
  * found, rather than holding half a table. */
 int serialize_unpack(struct lua_State *L, const struct message *m);
+
+/*
+ * The same over a buffer of the caller's, for a value that is kept rather
+ * than sent. A Lua table written to `/Temporary` is stored in pieces, a
+ * message at a time, so what bounds it is the store and not a message - and
+ * a replicant, which is its own source beside a little state, passed 2048
+ * bytes the day a path in it grew by four letters. `*len` is what was
+ * written; SERIALIZE_ERR_TOO_BIG when `cap` was not enough.
+ */
+int serialize_pack_into(struct lua_State *L, int index, unsigned char *buf,
+                        size_t cap, size_t *len);
+
+int serialize_unpack_from(struct lua_State *L, const unsigned char *buf,
+                          size_t len);
 
 /* A sentence for an error code, for putting in a Lua error. */
 const char *serialize_error(int rc);

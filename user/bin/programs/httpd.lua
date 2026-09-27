@@ -48,7 +48,7 @@ local function dotted(bytes)
   return ("%d.%d.%d.%d"):format(bytes:byte(1, 4))
 end
 
-local info = fs.net_info("/net")
+local info = fs.net_info("/Network")
 
 if not info or not info.card then
   print("httpd: this machine has no network card")
@@ -58,20 +58,20 @@ end
 --------------------------------------------------------------------------
 -- What this server is doing, where something else can read it.
 --
--- **In `/ramfs` rather than printed, because a manager cannot read a
+-- **In `/Temporary` rather than printed, because a manager cannot read a
 -- console.** The desktop launches this as a process of its own and its
 -- output goes wherever that process's console goes, which is not a window.
 -- So the state and the log are *written*, and `webserver` reads them - the
 -- same arrangement any service manager has with any service, and the reason
 -- daemons have log files rather than shouting.
 --
--- `/ramfs` and not `/home`: ramfs is always there, a disk is not, and a log
+-- `/Temporary` and not `/home`: ramfs is always there, a disk is not, and a log
 -- that vanishes when the machine stops is the right lifetime for a log
 -- about what the machine did while it was running.
 --------------------------------------------------------------------------
 
-local STATUS = "/ramfs/httpd/status"
-local LOG    = "/ramfs/httpd/log"
+local STATUS = "/Temporary/httpd/status"
+local LOG    = "/Temporary/httpd/log"
 
 --
 -- The last forty lines and no more.
@@ -273,7 +273,7 @@ end
 
 --------------------------------------------------------------------------
 
-local listener, why = fs.listen("/net", port)
+local listener, why = fs.listen("/Network", port)
 
 if not listener then
   print("httpd: could not listen on port " .. port .. ": " .. tostring(why))
@@ -399,7 +399,7 @@ while true do
     end
   end
 
-  local ready, arrived = fs.poll("/net", reading, writing, listener, 25)
+  local ready, arrived = fs.poll("/Network", reading, writing, listener, 25)
 
   if not ready then
     note("httpd: poll: " .. tostring(arrived))
@@ -415,7 +415,7 @@ while true do
     -- With a deadline, because `poll` saying somebody arrived and this
     -- message reaching the stack are two moments, and a reset in between
     -- would otherwise park this loop for good.
-    local conn, from = fs.accept("/net", listener, 25)
+    local conn, from = fs.accept("/Network", listener, 25)
 
     if conn then
       -- Waiting to read, because that is where `serve` begins: on a
@@ -462,7 +462,7 @@ while true do
     end
   end
 
-  if fs.interrupted and fs.interrupted("/dev/console") then
+  if fs.interrupted and fs.interrupted("/Devices/console") then
     note("stopping")
     break
   end

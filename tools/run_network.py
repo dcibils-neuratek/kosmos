@@ -518,8 +518,8 @@ def main():
             "-netdev", f"user,id=net0,hostfwd=tcp::{forward}-:80",
             "-device", run_screenshot.device(image, "net") + ",netdev=net0",
         ], [
-            'fs.write("/ramfs/w/index.html", "<h1>Kosmos</h1>")',
-            "httpd 80 /ramfs/w",
+            'fs.write("/Temporary/w/index.html", "<h1>Kosmos</h1>")',
+            "httpd 80 /Temporary/w",
         ], seconds=120, then=lambda: _fetch(forward))
 
         if _served.get("code") != 200:
@@ -549,7 +549,7 @@ def main():
         # would take turns anyway.
         #
         # Served out of `/lib` rather than a file written first, because
-        # `ui.lua` is a hundred kilobytes - six times the ring - and `/ramfs`
+        # `ui.lua` is a hundred kilobytes - six times the ring - and `/Temporary`
         # holds sixteen. A body that fits in the ring never waits for room,
         # and waiting for room is the whole of what this checks.
         #

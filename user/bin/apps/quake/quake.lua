@@ -4,8 +4,8 @@
 -- kosmos: icon App_Generic
 -- kosmos: section demos
 --
---   wm quake                        /home/id1/pak0.pak
---   wm quake:/ramfs/pak0.pak        somewhere else
+--   wm quake                       /home/id1/pak0.pak
+--   wm quake:/Temporary/pak0.pak   somewhere else
 --
 -- Only in an image built with `make QUAKE=1`; see
 -- `runtime/upstream/quake/README.kosmos.md` for why that is a build option
@@ -192,7 +192,7 @@ local ctrl_down = false
 -- the first button is held, so looking around is a drag.
 local mouse_x, mouse_y
 
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local last = sys.ticks()
 
 while win.running do

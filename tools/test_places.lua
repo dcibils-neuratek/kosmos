@@ -24,7 +24,7 @@ local function check(ok, what)
 end
 
 --
--- What `fs.volumes("/drives")` answers, trimmed to the fields a place reads.
+-- What `fs.volumes("/Drives")` answers, trimmed to the fields a place reads.
 -- The unit is there on purpose: it changes between these tables, as it does
 -- on every replug, and nothing may depend on it.
 --
@@ -38,18 +38,18 @@ local plugged = {
 -- Making a place.
 --------------------------------------------------------------------------
 
-local a, why = places.from_path("/drives/PHOTOS/Italy", plugged)
+local a, why = places.from_path("/Drives/PHOTOS/Italy", plugged)
 
 check(a and a.kind == "place" and a.volume == "fat:1A2B-3C4D"
       and a.within == "/Italy" and a.volume_name == "PHOTOS" and not a.path,
       "a folder on a drive remembers the volume's identity and the path in it: "
       .. tostring(why))
 
-local root = places.from_path("/drives/PHOTOS", plugged)
+local root = places.from_path("/Drives/PHOTOS", plugged)
 
 check(root and root.within == "/", "a volume itself is its root, `/`")
 
-local slashed = places.from_path("/drives/PHOTOS/Italy/", plugged)
+local slashed = places.from_path("/Drives/PHOTOS/Italy/", plugged)
 
 check(slashed and slashed.within == "/Italy",
       "a trailing slash is not part of the place")
@@ -59,18 +59,18 @@ local home = places.from_path("/home/Music", plugged)
 check(home and home.path == "/home/Music" and not home.volume,
       "a folder not on a drive is remembered by its path")
 
-local none, none_why = places.from_path("/drives/KOSMOS HOME/notes", plugged)
+local none, none_why = places.from_path("/Drives/KOSMOS HOME/notes", plugged)
 
 check(none == nil and tostring(none_why):find("nothing to know it by"),
       "a volume with no identity is refused, not remembered by its name")
 
-local gone, gone_why = places.from_path("/drives/ELSEWHERE/x", plugged)
+local gone, gone_why = places.from_path("/Drives/ELSEWHERE/x", plugged)
 
 check(gone == nil and tostring(gone_why):find("not plugged in"),
       "a volume that is not there cannot be made a place")
 
-check(places.suggest("/drives/PHOTOS") == "PHOTOS"
-      and places.suggest("/drives/PHOTOS/Italy") == "Italy"
+check(places.suggest("/Drives/PHOTOS") == "PHOTOS"
+      and places.suggest("/Drives/PHOTOS/Italy") == "Italy"
       and places.suggest("/home/Music/") == "Music",
       "the offered name is the folder's, or the volume's at its root")
 
@@ -80,10 +80,10 @@ check(places.suggest("/drives/PHOTOS") == "PHOTOS"
 
 local now, called = places.resolve(a, plugged)
 
-check(now == "/drives/PHOTOS/Italy" and called == "PHOTOS",
+check(now == "/Drives/PHOTOS/Italy" and called == "PHOTOS",
       "a place resolves to its folder while its drive is plugged in")
 
-check(places.resolve(root, plugged) == "/drives/PHOTOS",
+check(places.resolve(root, plugged) == "/Drives/PHOTOS",
       "a place that is a whole volume resolves to the volume")
 
 --
@@ -97,7 +97,7 @@ local replugged = {
 
 now, called = places.resolve(a, replugged)
 
-check(now == "/drives/PHOTOS 2/Italy" and called == "PHOTOS 2",
+check(now == "/Drives/PHOTOS 2/Italy" and called == "PHOTOS 2",
       "after a replug under another name and unit, it finds its own volume: "
       .. tostring(now))
 

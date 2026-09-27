@@ -648,7 +648,7 @@ end
 -- `media.lua`'s lesson rather than this window's invention.
 --------------------------------------------------------------------------
 
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 function pace()
   if player then

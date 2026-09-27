@@ -65,7 +65,7 @@ return function(name, title)
   end
 
   local frames, from, fps = 0, sys.ticks(), 0
-  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
   while win.running do
     local s = win:surface()

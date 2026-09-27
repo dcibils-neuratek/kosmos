@@ -39,7 +39,7 @@ on kosmos", "then you have exfat as well". Decided on 14 September: **Kosmos's
 own reader, read-only first** - `README.md` has the decision and why. Built
 in six pieces, in the order Diego agreed ("go with your order"): **6a** the
 FAT reader, tested on the Mac; **6b** the drive server, and every FAT
-partition at `/drives/<label>`; **6c** Tracker's sidebar - Places, System,
+partition at `/Drives/<label>`; **6c** Tracker's sidebar - Places, System,
 Drives - and the whole trail; **6d** one Open and Save window; **6e** the
 Drives app; **6f** exFAT.
 
@@ -1342,7 +1342,7 @@ its waits until 5d gives it an endpoint.
 **A program reads a stick's blocks through the driver**, and `sticks` is the
 program: each stick's size and names, then its GUID partition table - the
 header at block 1, held to the block it says it is at, and the entries it
-points to - all asked of the driver through `/dev/blocks`.
+points to - all asked of the driver through `/Devices/blocks`.
 
 **The shape is `blockproto.h`**, declared as `audioproto.h` is: a 24-byte
 request - operation, unit, first block, count, handle - and a 48-byte reply -
@@ -1388,8 +1388,8 @@ buffer back when it is unplugged.
 **How it is wired.** init makes the endpoint and hands it to the driver as its
 second capability; the driver waits for callers on the same wait as its
 interrupts (5c) and serves every request waiting after each wake. The shell
-is given it too and mounts it as `/dev/blocks`, and so does every program it
-starts, as `/dev/audio` is. **Read only, and mounted for everybody for that
+is given it too and mounts it as `/Devices/blocks`, and so does every program it
+starts, as `/Devices/audio` is. **Read only, and mounted for everybody for that
 reason**: writing is given to one process, the disk server, on 5e's second
 endpoint (`README.md`). A driver that finds no controller stays, and answers every
 request with "no stick at that unit", as the audio and network servers answer
@@ -1422,27 +1422,27 @@ with ones over the partition, as `tools/kfs.lua` replaces them with a file on
 the Mac. A block number has the partition's first block added to it, and one
 outside the partition is refused before the driver is asked.
 
-**Found through `/dev/blocks`, written through an endpoint of its own.** The
+**Found through `/Devices/blocks`, written through an endpoint of its own.** The
 disk server walks the units, reads each 512-byte stick's GPT header at block 1
 and the entries it points to, and takes the first entry of the Kosmos type. A
 server cannot tell its callers apart - it knows which endpoint a message came
 in on and nothing else - so the right to write is a second endpoint: init makes
 it and gives it to the driver and the disk server, and to nobody else. The
-driver answers a write or a flush there, and refuses both on `/dev/blocks`.
+driver answers a write or a flush there, and refuses both on `/Devices/blocks`.
 
 **One wait, both endpoints.** The driver's wait watches the write endpoint
-and `/dev/blocks` together, and a caller on either wakes it at once; after
-every wake it answers the write endpoint and then `/dev/blocks`.
+and `/Devices/blocks` together, and a caller on either wakes it at once; after
+every wake it answers the write endpoint and then `/Devices/blocks`.
 
 **It watched one, and that cost 17 requests a second.** `SYS_IRQ_WAIT_ANY`
 took a single endpoint in 5c, and the write endpoint had it: the disk server
 was the busy client, and `sticks` reads a handful of blocks when somebody types
-it, so a read on `/dev/blocks` waiting for the watch's next deadline, 50 ms,
-looked affordable. Disk Benchmark reads `/dev/blocks` continuously, and on the
+it, so a read on `/Devices/blocks` waiting for the watch's next deadline, 50 ms,
+looked affordable. Disk Benchmark reads `/Devices/blocks` continuously, and on the
 ThinkPad `diskbench usb 0` gave 2.1 MB/s and 17 IOPS - 58 ms a request. QEMU
 gave the same 17 on a stick whose `/home` read at 938, and that is what said
 the stick was not the cost. The disk server's search for its partition asks
-`/dev/blocks` too, four or five requests a look, and every one of them waited
+`/Devices/blocks` too, four or five requests a look, and every one of them waited
 the same way.
 
 So the wait takes a second endpoint (`kernel/irq.c`): both locked in the order
@@ -1455,7 +1455,7 @@ its own. Under QEMU the same stick's blocks then read at 759 MB/s and 9765 IOPS
 (`testing.md` §18.71) - numbers that say the wait is gone, not how fast a stick
 is.
 
-A driver with no controller has nothing to wait on but `/dev/blocks`, and
+A driver with no controller has nothing to wait on but `/Devices/blocks`, and
 nothing is left waiting on the write endpoint there: the disk server asks it
 only once a stick with its partition has been found, which on such a machine
 never happens.
@@ -1575,9 +1575,9 @@ partition out through the raw device, as root because macOS lets nobody else
 read a whole disk. **Nothing opens the stick for writing.** `kfs.lua get` takes
 the file from the copy, which is the filesystem code the machine itself runs.
 
-Three names in `/dev` are not read by `diagnose`, because they are other
-servers mounted there: `/dev/audio` and `/dev/blocks` speak their own
-protocols, and a read of `/dev/console` is a line somebody types - which the
+Three names in `/Devices` are not read by `diagnose`, because they are other
+servers mounted there: `/Devices/audio` and `/Devices/blocks` speak their own
+protocols, and a read of `/Devices/console` is a line somebody types - which the
 first version found by waiting at the prompt for one and writing nothing.
 
 **A unit is a name, and 5d's was not.** In 5d a unit was the Nth stick ready,
@@ -1645,7 +1645,7 @@ names that partition when one differs, rather than calling it the backup GPT.
   Kingston DataTraveler Exodia 128 GB it booted from (`b8c6f10`, `boot.md`):
   `0951:1666` at SuperSpeed on `00:14.0` port 14, in bursts of 4 where QEMU's
   stick bursts 16, 242155520 blocks of 512 bytes, the GPT's header at block 1,
-  and `sticks` reading its partition through `/dev/blocks`. Its last block
+  and `sticks` reading its partition through `/Devices/blocks`. Its last block
   holds **no backup** table, which is the image rather than the stick:
   `mkusb_image.py` writes the backup where the image ends, 475202 blocks in,
   and the firmware boots it anyway. **And written**: the `c70d9df` stick, whose
@@ -1673,8 +1673,8 @@ names that partition when one differs, rather than calling it the backup GPT.
 
 - **`tools/run_x86.py`'s `usb_blocks`**, 4 checks: `sticks` at the prompt says
   unit 0 is 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK", through
-  `/dev/blocks`; it reads the partition `write_gpt` wrote, "KOSMOS", blocks 34
-  to 32734, an EFI system partition; a two-line program written to `/ramfs`
+  `/Devices/blocks`; it reads the partition `write_gpt` wrote, "KOSMOS", blocks 34
+  to 32734, an EFI system partition; a two-line program written to `/Temporary`
   and run by its file reads one block past the last and is refused as past the
   last; and another sends a write and a flush there, each refused as read only
   (5e). `usb`, `usb_hotplug` and `usb_mouse` pass with every command's data
@@ -1774,7 +1774,7 @@ never needs the hint; a writer will.
 ### 6c: a volume remembered by its own identity
 
 **A shortcut in Tracker's Places has to find its volume again after the
-drive has been unplugged**, and nothing `/drives` said could do that. A
+drive has been unplugged**, and nothing `/Drives` said could do that. A
 volume's *name* depends on the order drives arrived - `PHOTOS` can come back
 as `PHOTOS 2` - and a *unit* is worse: `xhci.c` hands one out with
 `units_named++`, "the next never given out", so the very same stick replugged
@@ -1820,7 +1820,7 @@ disk's partitions are the kernel's and not read.
 ### What is not done yet
 
 - **6b is built, as far as naming volumes goes** (16 September). A drive
-  server in C owns the whole `/drives` prefix - one server, not a mount per
+  server in C owns the whole `/Drives` prefix - one server, not a mount per
   volume, because a volume plugged in later could never be given a mount in a
   namespace that already exists. It walks every unit, reads whichever
   partition table the drive has, identifies FAT16, FAT32 and kfs, names each
@@ -2256,13 +2256,13 @@ what a driver in the kernel had:
   Refused to a process that does not drive devices.
 - **A wait watches three endpoints, not two**, and takes them as an array
   rather than two arguments: a syscall has five and all five were spoken
-  for. The driver watches the disk server's writes, `/dev/blocks` and now
+  for. The driver watches the disk server's writes, `/Devices/blocks` and now
   the stack's frames, and an endpoint that is not on the wait waits out the
   driver's whole watch interval - which is the fault that made this two
   rather than one.
 - **A wait on endpoints with no interrupt lines**, which is what the same
   driver has on a machine with no USB controller at all: it still answers
-  `/dev/blocks` and the stack, and polling the two would be wakes a second
+  `/Devices/blocks` and the stack, and polling the two would be wakes a second
   where nothing is happening.
 - **`process_grant_net` no longer asks whether there is a card.** The grant
   says who holds the network, and the kernel's part in that is that it is
@@ -2329,7 +2329,7 @@ The steps, each written here when it lands:
 - **8b** - isochronous IN transfers in the xHCI driver.
 - **8c** - the stream negotiated with the camera and frames put together, in
   the driver.
-- **8d** - `/dev/camera`, and the region the frames are in.
+- **8d** - `/Devices/camera`, and the region the frames are in.
 - **8e** - the app, as drawn.
 - **8f** - recording, to H.264 in an MP4.
 
@@ -2391,7 +2391,7 @@ root (below).
   doorbell per pass over the event ring, not one per TD.
 - **Put together**: each payload to `uvc_payload`, a whole frame counted,
   and a line every five seconds - frames, dropped, intervals missed - which
-  is what the live test is read by. Until `/dev/camera` (8d) it streams
+  is what the live test is read by. Until `/Devices/camera` (8d) it streams
   640x480 from the moment it is plugged in.
 
 **Run without root on 24 September**, the camera through QEMU's `usb-host`:
@@ -2406,14 +2406,14 @@ The camera found and read right by the driver itself; then refused, because
 macOS holds its interfaces. `sudo sh tools/usbhost.sh 046d:08e5 30` is the
 run with root, and Diego's to start.
 
-### 8d and 8e: `/dev/camera`, and the Camera app
+### 8d and 8e: `/Devices/camera`, and the Camera app
 
 **Asked for, not streamed at plug.** A camera is configured when it is
 plugged in and streams only when a program opens it - or, with
 `opt/kosmos/camera=count`, at once and to nobody, which is how
 `tools/usbhost.sh` counts frames with no window.
 
-**`/dev/camera`** is the USB driver's fourth endpoint (the kernel's wait now
+**`/Devices/camera`** is the USB driver's fourth endpoint (the kernel's wait now
 watches four, `IPC_WATCH_MAX`), and speaks `cameraproto.h`: LIST a camera's
 name and sizes, OPEN one size with a region the program made, CLOSE by the
 handle OPEN answered. The frames are in that region, never in a message:
@@ -2429,7 +2429,7 @@ handle OPEN answered. The frames are in that region, never in a message:
 - **a handle** - CLOSE names the stream it opened, so a window whose stream
   already ended cannot close another's.
 
-**Only to a program that declares it.** `/dev/camera` is handed down to a
+**Only to a program that declares it.** `/Devices/camera` is handed down to a
 program whose header says `kosmos: needs camera`, and to the window manager,
 which declares it to pass it on - so a program in a Terminal never holds the
 camera at all. `/bin` now reads six needs a program, not four: the window
@@ -2438,7 +2438,7 @@ manager has five.
 **A test pattern behind the same door.** With `opt/kosmos/camera=pattern`
 the driver offers a camera of its own - eight colour bars and a square that
 moves, 30 a second, at three sizes - on both boards; on AArch64, which has
-no USB controller, from the loop that serves `/dev/blocks` there. That is
+no USB controller, from the loop that serves `/Devices/blocks` there. That is
 what the gate holds the Camera app to, since QEMU has no camera. LIST says
 which it is - `source`, `CAMERA_SOURCE_USB` or `CAMERA_SOURCE_PATTERN` -
 because the foot said "over USB" of the pattern until Diego saw it on his

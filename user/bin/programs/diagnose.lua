@@ -15,7 +15,7 @@
 -- **It asks, as those programs do, and runs none of them.** A program is a
 -- process the shell starts with the capabilities it names, and one program
 -- cannot start another. So each section reads what its program reads -
--- `sys.info()`, the nodes in `/dev`, `/home/.super`, the USB driver through
+-- `sys.info()`, the nodes in `/Devices`, `/home/.super`, the USB driver through
 -- `/lib/blocks.lua`, `sys.processes()` - and writes the answer whole, as a
 -- table rather than a sentence, because a diagnosis wants the field nobody
 -- thought to print.
@@ -122,9 +122,9 @@ dump(info, "  ")
 section("devices")
 
 --
--- **Not every name in `/dev` is the device server's.** `fs.list` gives what
+-- **Not every name in `/Devices` is the device server's.** `fs.list` gives what
 -- is mounted below a directory as well as what its server holds, and three
--- things mounted there answer a read in their own way. `/dev/console` answers
+-- things mounted there answer a read in their own way. `/Devices/console` answers
 -- with a line somebody types, so the first version of this program sat at
 -- the prompt waiting for one and wrote nothing at all.
 --
@@ -134,13 +134,13 @@ local NOT_READ = {
   blocks  = "the USB driver speaks its own protocol; the sticks are below",
 }
 
-for _, entry in ipairs(fs.list("/dev") or {}) do
+for _, entry in ipairs(fs.list("/Devices") or {}) do
   local name = type(entry) == "table" and entry.name or entry
 
   if NOT_READ[name] then
-    say("  /dev/" .. name .. ": not read - " .. NOT_READ[name])
+    say("  /Devices/" .. name .. ": not read - " .. NOT_READ[name])
   else
-    node("/dev/" .. name)
+    node("/Devices/" .. name)
   end
 end
 

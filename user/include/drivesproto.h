@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /*
- * /drives: every volume on every drive, read only (USB step 6b,
+ * /Drives: every volume on every drive, read only (USB step 6b,
  * `docs/drives.html`).
  *
  * `audioproto.h`'s shape for `audioproto.h`'s reason - fixed fields, fixed
@@ -22,13 +22,13 @@
  * where the second only pretends to most of it.
  *
  * **One server owns the whole prefix**, rather than a mount per volume.
- * `drives.html` says `/drives` is "one folder every program has from the
+ * `drives.html` says `/Drives` is "one folder every program has from the
  * moment it starts", with drives appearing and disappearing inside it while
  * programs run - and a mount is an entry in a process's own namespace, made
  * when that process is built. A volume appearing later would mean editing
  * the namespace of every running program, which nothing can do. A server
  * behind one prefix needs none of that: the matcher routes
- * `/drives/PHOTOS 2024/Italy` to it with the rest of the path intact,
+ * `/Drives/PHOTOS 2024/Italy` to it with the rest of the path intact,
  * exactly as `/home` is routed today.
  *
  * **Nothing here writes.** There is no write, no delete, no rename, and the
@@ -155,7 +155,7 @@ struct drives_request {
     uint32_t length;            /* bytes wanted, up to DRIVES_DATA_MAX */
     uint32_t reserved;
 
-    /* The path under `/drives`, as the namespace hands it over: the volume's
+    /* The path under `/Drives`, as the namespace hands it over: the volume's
      * name first, then whatever is inside it. Empty, or `/`, is the list of
      * volumes itself. */
     char     path[DRIVES_PATH_MAX];
@@ -199,9 +199,9 @@ _Static_assert(sizeof(((struct drives_reply *)0)->u) == DRIVES_DATA_MAX,
                "a page of volumes has to fit inside the reply's data");
 
 _Static_assert(sizeof(struct drives_request) <= 2048,
-               "a /drives request must fit in one message");
+               "a /Drives request must fit in one message");
 _Static_assert(sizeof(struct drives_reply) <= 2048,
-               "a /drives reply must fit in one message - lower "
+               "a /Drives reply must fit in one message - lower "
                "DRIVES_VOLUMES_MAX or DRIVES_ENTRIES_MAX");
 
 #endif /* KOSMOS_DRIVESPROTO_H */

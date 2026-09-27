@@ -51,7 +51,7 @@ end
 -- they are compiled into the window manager - so polling for them would be
 -- work with a constant answer.
 --
-local reply = fs.send("/app/wm", { type = "shortcuts" })
+local reply = fs.send("/Running/wm", { type = "shortcuts" })
 
 local groups = {}
 

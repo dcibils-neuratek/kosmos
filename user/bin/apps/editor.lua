@@ -3,10 +3,10 @@
 -- kosmos: icon App_StyledEdit
 -- A text editor, in a window.
 --
---   wm editor                     a new file
---   wm editor:/ramfs/hello.lua     one that exists
+--   wm editor                        a new file
+--   wm editor:/Temporary/hello.lua   one that exists
 --
--- Save with the button or Control-S. `run /ramfs/hello.lua` from the shell
+-- Save with the button or Control-S. `run /Temporary/hello.lua` from the shell
 -- runs what you wrote, which is the point: the machine can change itself
 -- without a rebuild.
 --
@@ -26,7 +26,7 @@ local panel = use("/lib/panel.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local path = tostring(args or ""):match("^%s*(%S+)") or "/ramfs/untitled.lua"
+local path = tostring(args or ""):match("^%s*(%S+)") or "/Temporary/untitled.lua"
 
 local W, H = 560, 420
 
@@ -129,7 +129,7 @@ function run_file()
 
   save()
 
-  local ok, why = fs.send("/app/wm", { type = "launch", program = path })
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = path })
 
   header.sub = ok and ("running " .. path)
                 or ("could not run it: " .. tostring(why))

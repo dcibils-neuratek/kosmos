@@ -40,7 +40,7 @@ if not where then
   return
 end
 
-local conn, why = fs.connect("/net", where, port)
+local conn, why = fs.connect("/Network", where, port)
 
 if not conn then
   local said = ({ [4] = "no route to it", [7] = "connection refused",

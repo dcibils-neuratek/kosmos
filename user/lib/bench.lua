@@ -57,7 +57,7 @@ bench.SECONDS = 4.0
 local SECONDS = bench.SECONDS
 local SLICE        = 0.10     -- how long a batch may run before yielding
 
-bench.cpu = fs.read("/dev/cpu") or {}
+bench.cpu = fs.read("/Devices/cpu") or {}
 local cpu = bench.cpu
 local HZ  = cpu.counter_hz or 62500000
 
@@ -268,13 +268,13 @@ test("Runtime", "garbage collection", "collections", function(n)
 end)
 
 test("Runtime", "serialise a table", "messages", function(n)
-  local message = { type = "read", path = "/dev/cpu", n = 42,
+  local message = { type = "read", path = "/Devices/cpu", n = 42,
                     flags = { true, false, true }, note = "a message" }
   for _ = 1, n do sys.pack(message) end
 end)
 
 test("Runtime", "parse a table", "messages", function(n)
-  local packed = sys.pack{ type = "read", path = "/dev/cpu", n = 42,
+  local packed = sys.pack{ type = "read", path = "/Devices/cpu", n = 42,
                            flags = { true, false, true },
                            note = "a message" }
   for _ = 1, n do sys.unpack(packed) end
@@ -308,7 +308,7 @@ test("Kernel", "round trip to a server", "messages", function(n)
   -- kernel primitive and calling it that would flatter the number by a
   -- long way. The bare send is far cheaper; this is what a program
   -- actually pays, and on a microkernel a program pays it constantly.
-  for _ = 1, n do fs.read("/dev/cpu") end
+  for _ = 1, n do fs.read("/Devices/cpu") end
 end)
 
 --------------------------------------------------------------------------
@@ -354,12 +354,12 @@ end)
 -- zero for a thing the machine does not have is a benchmark that says a
 -- machine with no drive is slow, which is not a fact about speed.
 --
--- The path is under /ramfs and every file it makes is removed at the end.
+-- The path is under /Temporary and every file it makes is removed at the end.
 -- A benchmark that leaves a thousand files behind is a benchmark you run
 -- once.
 --------------------------------------------------------------------------
 
--- **`/home`, not `/ramfs`.** `/ramfs` is the ramfs - a server keeping nodes
+-- **`/home`, not `/Temporary`.** `/Temporary` is the ramfs - a server keeping nodes
 -- in its own heap - and timing it would produce a filesystem score that
 -- said nothing about the disk. The disk is mounted at `/home`, and the
 -- first version of this measured the wrong one and reported a thousand

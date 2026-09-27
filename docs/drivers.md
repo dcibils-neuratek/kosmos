@@ -20,7 +20,7 @@ a server   in C
 a program  in Lua
 ```
 
-`/dev/audio` is already exactly this: the HDA driver, the audio server, and
+`/Devices/audio` is already exactly this: the HDA driver, the audio server, and
 `beep`. So is the disk: a block driver, `diskfs`, and Tracker. The shape is
 not in question.
 
@@ -186,7 +186,7 @@ are Linux's rather than a datasheet's (`thinkpad.md` 8b), and a driver that
 has not seen its registers on the machine does not get to write them. The
 ThinkPad's reading confirmed them - controller 0 on at a third - and since
 0.10.83 it raises that to 80% at boot, and reads the value back. Since
-0.10.86 it stays and serves `/dev/backlight` - a level from 0 to 256, for the
+0.10.86 it stays and serves `/Devices/backlight` - a level from 0 to 256, for the
 brightness keys (`backlightproto.h`, `thinkpad.md` 8c). It is the first
 userland driver for a device the kernel also knows is there and has never
 touched: the firmware left the screen lit, and nothing since has had any
@@ -233,7 +233,7 @@ drivers/net/e1000.c".
 **The test for which is which is his, and it is one line: a driver drives
 hardware.** Asked whether `drives.c` counted, since it is about USB sticks:
 "drives.c is a server then, not a driver, a driver drives hardware". So
-`/drives` serves a namespace out of FAT that something else read off the
+`/Drives` serves a namespace out of FAT that something else read off the
 wire, and stays a server; `e1000`, `xhci`, `backlight` and `powerbutton` each
 own a piece of silicon.
 

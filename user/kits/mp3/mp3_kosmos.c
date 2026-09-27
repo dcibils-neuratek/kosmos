@@ -9,7 +9,7 @@
  *
  * **It decodes and it does not play.** `music` still owns the loop, still
  * reads its own window of the file, still resamples through `sys.pcm` and
- * still hands periods to `/dev/audio`. This replaces exactly one step - the
+ * still hands periods to `/Devices/audio`. This replaces exactly one step - the
  * one that turned WAV's bytes into samples by reading them - and everything
  * downstream is the path that already worked.
  *

@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /dev/audio: the one process that may make a noise, so that several can.
+ * /Devices/audio: the one process that may make a noise, so that several can.
  *
  * **The first server in C**, and the reason is the deadline. The device
  * wants a period every 5.8 milliseconds; a garbage collector in this

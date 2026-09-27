@@ -2,7 +2,7 @@
 /*
  * The network kit: `use("/kits/network")`.
  *
- * `/net` speaks a declared shape - `netproto.h` - and this is the side that
+ * `/Network` speaks a declared shape - `netproto.h` - and this is the side that
  * builds it. One place that knows the layout, so a program says
  * `net.ping(where, 1)` and never writes a byte offset.
  *
@@ -10,7 +10,7 @@
  * still holds: this comes through the namespace, and a program that was not
  * given `use` has no kits. It is also why the capability is a *parameter* to
  * every call here rather than something this file finds for itself - what
- * you were not handed, you cannot reach, and a kit that resolved `/net`
+ * you were not handed, you cannot reach, and a kit that resolved `/Network`
  * itself would be a back door around whoever decided not to mount it.
  *
  * **In C for the reason the console kit is**: a struct on the wire has one
@@ -216,7 +216,7 @@ static int l_configure(lua_State *L)
  * stack is a server rather than this kit doing the work.
  *
  * Returns a table with the round trip in *counter ticks*, undecoded. The
- * caller divides by `counter_hz` from `/dev/cpu`, because that is 62.5 MHz
+ * caller divides by `counter_hz` from `/Devices/cpu`, because that is 62.5 MHz
  * under QEMU's TCG and 24 MHz when the same machine runs under `hvf`, and a
  * kit that converted here would bake one of them in.
  */

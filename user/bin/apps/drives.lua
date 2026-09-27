@@ -249,7 +249,7 @@ local function open_in_tracker()
     return
   end
 
-  local reply, why = fs.send("/app/wm", { type = "launch", program = "tracker",
+  local reply, why = fs.send("/Running/wm", { type = "launch", program = "tracker",
                                           args = drivelist.path(v) })
 
   status.text = reply and ("Opened " .. drivelist.path(v) .. " in Tracker.")

@@ -20,7 +20,7 @@
 -- "time passed and this did not run". What it settles is whether a missed
 -- deadline is worth looking for in the design at all.
 
-local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local us = hz // 1000000
 local seconds = tonumber((args or ""):match("%d+")) or 1
 

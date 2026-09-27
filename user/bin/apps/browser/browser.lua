@@ -47,7 +47,7 @@
 -- slash is read from the namespace instead of the network, for the same
 -- reason.
 --
--- **Names work**, through `/net`'s resolver - a query, a reply, and the
+-- **Names work**, through `/Network`'s resolver - a query, a reply, and the
 -- compression pointers a real server answers with. What does not is TLS, so
 -- `https` is out, and that alone is why the reachable web is smaller than
 -- the web.
@@ -236,7 +236,7 @@ engine, so if you can read this then the engine works.</p>
 <p>A name or an address, then a path. Type one in the bar above and press
 Return. A file on this machine works too - anything beginning with a slash
 is read from the namespace rather than the network:</p>
-<pre>  example.com/              a name, looked up through /net
+<pre>  example.com/              a name, looked up through /Network
   10.0.2.2:8000/            a server on the computer running QEMU
   188.184.67.127/           somewhere on the internet, by number
   /home/notes.html          a file on this machine</pre>
@@ -294,7 +294,7 @@ local said = ""
 --
 local timing = ""
 
-local HZ = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 -- The other clock. Every timeout in this system is in these.
 local TICK_HZ = (sys.info() or {}).tick_hz or 250
@@ -746,7 +746,7 @@ local function fetch(text)
       -- Five seconds, in *scheduler* ticks.
       --
       -- This passed `HZ`, the counter's frequency, and that was wrong in a
-      -- way that worked: `/net` was adding the number to a counter value
+      -- way that worked: `/Network` was adding the number to a counter value
       -- without converting, so the only caller of the resolver and the only
       -- reader of the field agreed on the wrong unit and nothing noticed.
       -- `host` was written, passed the documented unit, and every lookup
@@ -769,7 +769,7 @@ local function fetch(text)
 
     say("connecting to " .. text .. " ...")
 
-    local conn, why = fs.connect("/net", where, port)
+    local conn, why = fs.connect("/Network", where, port)
 
     if not conn then
       local because = ({ [4] = "no route to it",

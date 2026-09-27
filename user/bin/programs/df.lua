@@ -12,7 +12,7 @@
 -- The disk has a block count in its superblock and a bitmap of the blocks
 -- in use, and the disk server counts the free ones out of the bitmap, so
 -- that is a real number. (This said the superblock kept a free count. It
--- never did, and the server's stand-in for one ignored every file.) `/ramfs` is a fixed pool of nodes decided at
+-- never did, and the server's stand-in for one ignored every file.) `/Temporary` is a fixed pool of nodes decided at
 -- compile time. `/bin` and `/lib` are in the image and cannot grow at all.
 -- Rather than invent a total for each, this prints what each one is able
 -- to say and leaves the rest blank, which is the honest shape.
@@ -54,7 +54,7 @@ local storage = {}
 -- Which mounts are storage at all, decided by asking each one to list.
 --
 -- **Nothing below may touch a mount that is not in here**, and that is not
--- tidiness. `/net` speaks a fixed protocol, and a `read` aimed at it goes
+-- tidiness. `/Network` speaks a fixed protocol, and a `read` aimed at it goes
 -- through the generic path - a Lua table sent to a server that expects a
 -- struct, which is the exact mistake `ns.send` refuses by hand. A listing
 -- is the cheap question that tells the two apart.

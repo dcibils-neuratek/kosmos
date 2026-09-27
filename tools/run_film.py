@@ -56,7 +56,7 @@ PROGRAM = (
     'if not f then print("FILM" .. "-ERR " .. tostring(why)) '
     'print("FILM" .. "-DONE") return end '
     'local heard, silent = f:audible() '
-    'local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1 '
+    'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1 '
     'local began = sys.ticks() '
     'f:play(0) '
     'while f:position() < f.duration '
@@ -80,7 +80,7 @@ PROGRAM = (
 SEEKS = (
     'local video = use("/lib/video.lua") '
     'local f = assert(video.open(args)) '
-    'local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1 '
+    'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1 '
     'local function run(seconds) local t0 = sys.ticks() '
     'while (sys.ticks() - t0) / hz < seconds do f:tick() sys.sleep(1) end end '
     'f:play(0) run(1.0) f:pause() local paused = f:position() '
@@ -267,12 +267,12 @@ def main():
 
     try:
         guest.wait_for("kosmos>", "a shell prompt")
-        guest.type('fs.write("/ramfs/film.lua", [=[' + PROGRAM + ']=])')
+        guest.type('fs.write("/Temporary/film.lua", [=[' + PROGRAM + ']=])')
         time.sleep(1.0)
 
         mark = os.path.getsize(wav) if os.path.exists(wav) else WAV_HEADER
         seen = len(guest.seen)
-        guest.type("/ramfs/film.lua /home/sound.mp4")
+        guest.type("/Temporary/film.lua /home/sound.mp4")
         guest.wait_for("FILM-DONE", "the film to play through")
         said = re.search(r"^FILM (\S+) (\S+) ([\d.]+) ([\d.]+) (\d+) "
                          r"(.*?)\r?$", guest.seen[seen:], re.M)
@@ -317,11 +317,11 @@ def main():
                      first[4] if first else "", first[5] if first else ""))
 
         # Paused, and sought.
-        guest.type('fs.write("/ramfs/seek.lua", [=[' + SEEKS + ']=])')
+        guest.type('fs.write("/Temporary/seek.lua", [=[' + SEEKS + ']=])')
         time.sleep(1.0)
         mark = os.path.getsize(wav)
         seen = len(guest.seen)
-        guest.type("/ramfs/seek.lua /home/sound.mp4")
+        guest.type("/Temporary/seek.lua /home/sound.mp4")
         guest.wait_for("SEEK-DONE", "the paused and sought film")
         row = re.search(r"^SEEK ([\d.]+) ([\d.]+) ([\d.]+)",
                         guest.seen[seen:], re.M)

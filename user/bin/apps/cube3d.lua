@@ -49,7 +49,7 @@ local projection = g3d.perspective(math.pi / 4, W / H, 0.1, 100)
 local view       = g3d.look_at({ 0, 0, -4.5 }, { 0, 0, 0 }, { 0, 1, 0 })
 local view_proj  = g3d.multiply(view, projection)
 
-local hz    = fs.read("/dev/cpu").counter_hz
+local hz    = fs.read("/Devices/cpu").counter_hz
 local angle = 0
 
 -- The rate, measured over the last second rather than since the window

@@ -15,7 +15,7 @@ local text = tostring(args or "")
 local seconds, rest = text:match("^%s*(%d+)%s+(.*)$")
 
 if seconds then
-  local hz = fs.read("/dev/cpu").counter_hz
+  local hz = fs.read("/Devices/cpu").counter_hz
   local until_ = sys.ticks() + hz * tonumber(seconds)
 
   while sys.ticks() < until_ do

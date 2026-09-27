@@ -430,7 +430,7 @@ end
 -- also runs for every key and every step of a drag, and a scroll should not
 -- copy the ring.
 --
-local HALF = ((fs.read("/dev/cpu") or {}).counter_hz or 62500000) // 2
+local HALF = ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000) // 2
 local due = 0
 
 function win:on_frame()

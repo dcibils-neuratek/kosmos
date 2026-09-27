@@ -5,7 +5,7 @@
 -- hand it to somebody else, and loaded by whoever receives it, into an
 -- environment built from the `needs` list beside it and nothing more.
 --
--- So it may ask /dev/cpu how fast the counter runs, and it may not read a
+-- So it may ask /Devices/cpu how fast the counter runs, and it may not read a
 -- file, list a directory, draw outside its own rectangle, or find out that
 -- any of those things exist.
 --
@@ -15,7 +15,7 @@
 return function(state)
   local clock = { since = 0, label = state.label or "up" }
 
-  local cpu = fs.read("/dev/cpu")
+  local cpu = fs.read("/Devices/cpu")
   clock.hz = cpu and cpu.counter_hz or 1
 
   --
@@ -30,7 +30,7 @@ return function(state)
   -- two fields are the only honest evidence about what this environment is.
   --
   clock.declared = cpu ~= nil
-  clock.escaped = fs.read("/ramfs/replicants/clock") ~= nil
+  clock.escaped = fs.read("/Temporary/replicants/clock") ~= nil
 
   function clock:tick()
     self.since = ticks() // self.hz

@@ -1269,7 +1269,7 @@ static int l_call_raw(lua_State *L)
     /*
      * And whatever capability came back beside them.
      *
-     * `/app`'s whole purpose is answering `lookup` with an endpoint, and a
+     * `/Running`'s whole purpose is answering `lookup` with an endpoint, and a
      * raw call that dropped it would make the registry unable to do the one
      * thing it exists for. Second return value, as `sys.call` has always
      * done, and -1 when there was none.
@@ -1319,7 +1319,7 @@ static int l_receive(lua_State *L)
  * a Lua server talking to Lua clients and exactly wrong for one implementing
  * a declared protocol. These two hand over the payload as it arrived.
  *
- * They exist because `/dev/console` has two implementations - the server in
+ * They exist because `/Devices/console` has two implementations - the server in
  * `user/servers/console.c` and any terminal window, which mounts itself as
  * its child's console. A C server gets these for free by being C; a terminal
  * needed a way to answer the same struct, and inventing a second wire format
@@ -1407,12 +1407,22 @@ static int l_reply(lua_State *L)
  *     `design.md` §1's thesis priced in ticks, and pricing it through a
  *     round trip would be measuring the IPC path instead.
  *
- * Bounded by a message, because a message is the buffer it writes into. A
- * value larger than one is refused rather than truncated.
+ * **Not bounded by a message any more, and it was.** A message was the
+ * buffer it wrote into, so a table larger than 2048 bytes could not be kept
+ * anywhere, though a write to `/Temporary` or the disk goes in pieces and was
+ * never limited by one: the Clock's replicant, its own source beside a little
+ * state, passed the line on the day `/dev/cpu` became `/Devices/cpu`, and the
+ * Clock stopped starting. So a message first, which is nearly every value,
+ * and past it a buffer of PACK_MOST on the Lua heap, for as long as the call.
+ * Larger than that is refused rather than truncated.
  */
+#define PACK_MOST (64u * 1024u)
+
 static int l_pack(lua_State *L)
 {
     struct message m;
+    unsigned char *big;
+    size_t len = 0;
     int rc;
 
     luaL_checkany(L, 1);
@@ -1423,14 +1433,25 @@ static int l_pack(lua_State *L)
 
     rc = serialize_pack(L, 1, &m);
 
-    if (rc != SERIALIZE_OK) {
-        lua_pushnil(L);
-        lua_pushstring(L, serialize_error(rc));
-        return 2;
+    if (rc == SERIALIZE_OK) {
+        lua_pushlstring(L, (const char *)m.data, m.length);
+        return 1;
     }
 
-    lua_pushlstring(L, (const char *)m.data, m.length);
-    return 1;
+    if (rc == SERIALIZE_ERR_TOO_BIG) {
+        big = lua_newuserdatauv(L, PACK_MOST, 0);
+        rc = serialize_pack_into(L, 1, big, PACK_MOST, &len);
+
+        if (rc == SERIALIZE_OK) {
+            lua_pushlstring(L, (const char *)big, len);
+            return 1;
+        }
+    }
+
+    lua_pushnil(L);
+    lua_pushstring(L, rc == SERIALIZE_ERR_TOO_BIG ? "value is larger than sys.pack keeps"
+                                                  : serialize_error(rc));
+    return 2;
 }
 
 /*
@@ -1475,26 +1496,19 @@ static int l_unpack(lua_State *L)
 {
     size_t len;
     const char *s = luaL_checklstring(L, 1, &len);
-    struct message m;
     int rc;
 
-    if (len > MSG_BYTES) {
+    if (len > PACK_MOST) {
         lua_pushnil(L);
-        lua_pushstring(L, "longer than a message");
+        lua_pushstring(L, "longer than sys.pack makes");
         return 2;
     }
 
     /*
-     * Into a message rather than read in place, because serialize_unpack
-     * takes one. The copy is what the caller would pay anyway if this had
-     * come off a wire, and it keeps one definition of the reader.
+     * Read in place: the string is the value's bytes, as `sys.pack` made
+     * them, and a message was only ever the buffer, not the format.
      */
-    m.tag = 0;
-    m.cap_plus_one = 0;
-    m.length = (uint32_t)len;
-    memcpy(m.data, s, len);
-
-    rc = serialize_unpack(L, &m);
+    rc = serialize_unpack_from(L, (const unsigned char *)s, len);
 
     if (rc != SERIALIZE_OK) {
         lua_pushnil(L);
@@ -2757,13 +2771,13 @@ static int l_pointer(lua_State *L)
  * percentage is the difference between two readings, and only the caller
  * knows how far apart it wants them.
  *
- * The machine's *total* is still `/dev/kernel`'s `idle_ticks` and
+ * The machine's *total* is still `/Devices/kernel`'s `idle_ticks` and
  * `busy_ticks`, and four programs read it. This is the split, and it exists
  * because a total cannot answer the question SMP raises: one core pinned
  * and three asleep sums to the same number as four cores at a quarter each,
  * and those are opposite machines.
  *
- * Straight from `sysinfo` rather than through `/dev/kernel`, exactly as
+ * Straight from `sysinfo` rather than through `/Devices/kernel`, exactly as
  * `sys.bus` is and for the same reason - it is an array, and the table
  * protocol a device node speaks is for flat facts.
  */

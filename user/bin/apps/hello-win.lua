@@ -4,7 +4,7 @@
 -- kosmos: section demos
 -- An application with a window.
 --
--- Started by `wm`, which hands it the window manager under /app/wm and
+-- Started by `wm`, which hands it the window manager under /Running/wm and
 -- nothing else it did not already have. It draws once, then redraws when a
 -- key arrives, and it never touches a pixel: everything it wants on screen
 -- leaves here as a list of commands.
@@ -17,7 +17,7 @@ local wmproto = use("/lib/wmproto.lua")
 
 local W, H = 360, 200
 
-local win, err = fs.send("/app/wm", {
+local win, err = fs.send("/Running/wm", {
   type = "open", title = "hello", w = W, h = H, x = 80, y = 120,
 })
 
@@ -30,7 +30,7 @@ local handle = win.window
 local presses = 0
 
 local function draw()
-  fs.send("/app/wm", { type = "draw", window = handle, ops = {
+  fs.send("/Running/wm", { type = "draw", window = handle, ops = {
     { op = "fill", x = 0, y = 0, w = W, h = H, color = 0xff101820 },
     { op = "fill", x = 0, y = 0, w = W, h = 28,  color = 0xff1f6feb },
     { op = "text", x = 10, y = 7, s = "A window of my own",

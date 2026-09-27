@@ -27,18 +27,18 @@ local ROLE_SHELL    = 5
 local ROLE_INIT     = 7   -- starts everything else, and outlives it
 
 local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
-local ROLE_DEVICES   = 9  -- serves /dev: what hardware was found
+local ROLE_DEVICES   = 9  -- serves /Devices: what hardware was found
 local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
 local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
 local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
-local ROLE_APPFS     = 14 -- serves /app: what each running program exposes
+local ROLE_APPFS     = 14 -- serves /Running: what each running program exposes
 local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
-local ROLE_AUDIO     = 16 -- serves /dev/audio: the one process that may play
-local ROLE_NET       = 17 -- serves /net: the one process that holds the card
+local ROLE_AUDIO     = 16 -- serves /Devices/audio: the one process that may play
+local ROLE_NET       = 17 -- serves /Network: the one process that holds the card
 local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
 local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are any
-local ROLE_DRIVES     = 20 -- serves /drives: every volume on every drive, read only
-local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /dev/backlight
+local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read only
+local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 
 --
@@ -288,8 +288,8 @@ local function line(s) sys.write(s .. "\n") end
 -- print it.
 --
 -- Splitting belongs here and not in `ns.write`, because a console is a
--- stream and a file is not: two writes to /dev/console are one line after
--- another, and two writes to /ramfs/notes are the second replacing the
+-- stream and a file is not: two writes to /Devices/console are one line after
+-- another, and two writes to /Temporary/notes are the second replacing the
 -- first. Only the caller knows which it meant.
 --------------------------------------------------------------------------
 local CONSOLE_CHUNK = 1400
@@ -370,12 +370,12 @@ end
 --
 -- design.md 4.4: `list`, `read`, `write`, `getattr`, `setattr`, over typed
 -- records rather than byte streams. `read` returns a value and not a string,
--- which is the whole point - `fs.read("/dev/temp")` gives `{ celsius = 47.2 }`
+-- which is the whole point - `fs.read("/Devices/temp")` gives `{ celsius = 47.2 }`
 -- rather than "47200\n" for whoever asked to parse.
 --
 -- **What carries those verbs depends on who answers**, and that is the
 -- change this file has been through. Six servers are C and take a *declared
--- struct*: `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/ramfs`, each
+-- struct*: `/Devices`, `/bin`, `/lib`, `/Running`, `/Devices/console` and `/Temporary`, each
 -- with a header in `user/include/` that both sides compile against. A mount
 -- names which, and `request` below branches on it.
 --
@@ -506,7 +506,7 @@ local function serve(endpoint, state, make_handlers)
 end
 
 --------------------------------------------------------------------------
--- /ramfs is `user/servers/ramfs.c`, and `main.c` dispatches role 1 to it
+-- /Temporary is `user/servers/ramfs.c`, and `main.c` dispatches role 1 to it
 -- before the interpreter is opened.
 --
 -- The seventh and last to move, and the only one whose conversion cost a
@@ -575,7 +575,7 @@ local function new_namespace()
     -- runs of the same program.
     --
     -- The case that needs it is a terminal: it hands its child a
-    -- `/dev/console` of its own, and the child's runner has already mounted
+    -- `/Devices/console` of its own, and the child's runner has already mounted
     -- the real one there. The child must get exactly one console and it
     -- must be the terminal's.
     --
@@ -596,7 +596,7 @@ local function new_namespace()
   --
   -- Directories whose children are looked up when they are first used.
   --
-  -- `/app` is one: an application registers itself while it runs, so what is
+  -- `/Running` is one: an application registers itself while it runs, so what is
   -- under there changes as programs come and go and cannot be mounted ahead
   -- of time. Asking the registry for a name and mounting what comes back is
   -- how that is done without a global tree - the answer is a capability, and
@@ -615,7 +615,7 @@ local function new_namespace()
     if not name then return nil end
 
     --
-    -- Raw, because `/app` is C. The capability comes back beside the bytes
+    -- Raw, because `/Running` is C. The capability comes back beside the bytes
     -- as it always did: `sys.call_raw` returns the reply's payload and the
     -- endpoint travels in the message rather than in it.
     --
@@ -667,7 +667,7 @@ local function new_namespace()
     -- A registry is asked *before* the answer is taken, not after it fails.
     --
     -- The first version only looked a name up when nothing matched, and
-    -- nothing ever failed to match: `/app` is mounted, so `/app/gallery` hit
+    -- nothing ever failed to match: `/Running` is mounted, so `/Running/gallery` hit
     -- the registry itself with `/gallery` left over, and the registry was
     -- asked to read a property it has never heard of. The symptom was a
     -- clean, wrong answer - "no such operation: write" from a directory.
@@ -738,7 +738,7 @@ local function new_namespace()
   -- **This is the migration showing through, and it is meant to be visible
   -- rather than hidden.** A mount says which protocol the server on the
   -- other side speaks, and this kit packs accordingly. Every mount without
-  -- one speaks tables, which is all of them but `/dev` today.
+  -- one speaks tables, which is all of them but `/Devices` today.
   --
   -- It lives here because this is the client half of the boundary: the
   -- namespace is the kit that knows how to talk to servers, so knowing that
@@ -754,10 +754,10 @@ local function new_namespace()
   --------------------------------------------------------------------------
 
   --------------------------------------------------------------------------
-  -- /drives: every volume on every drive, read only (USB step 6b).
+  -- /Drives: every volume on every drive, read only (USB step 6b).
   --
   -- `user/servers/drives.c` is the server and `drivesproto.h` the shapes.
-  -- Its own protocol rather than /ramfs's, because a read-only drive server
+  -- Its own protocol rather than /Temporary's, because a read-only drive server
   -- would implement three of that one's eleven operations and refuse eight.
   --
   -- **The sizes are the compiler's, not arithmetic done here.** Every field
@@ -774,14 +774,14 @@ local function new_namespace()
   local DRIVES_ENTRY   = "<c64I8I4I4"
 
   assert(#string.pack(DRIVES_REQUEST, 0, 0, 0, 0, 0, "") == 280,
-         "namespace: the /drives request layout does not match drivesproto.h")
+         "namespace: the /Drives request layout does not match drivesproto.h")
   assert(#string.pack(DRIVES_REPLY, 0, 0, 0, 0, 0, 0, 0, "") == 1056,
-         "namespace: the /drives reply layout does not match drivesproto.h")
+         "namespace: the /Drives reply layout does not match drivesproto.h")
   assert(#string.pack(DRIVES_VOLUME, "", 0, 0, 0, 0, 0, 0, 0, 0, "")
          == DRIVES_VOLUME_BYTES,
-         "namespace: the /drives volume layout does not match drivesproto.h")
+         "namespace: the /Drives volume layout does not match drivesproto.h")
   assert(#string.pack(DRIVES_ENTRY, "", 0, 0, 0) == 80,
-         "namespace: the /drives entry layout does not match drivesproto.h")
+         "namespace: the /Drives entry layout does not match drivesproto.h")
 
   -- Cut to the field and zero-padded to it. `string.pack`'s `c` raises on a
   -- string longer than the field, and the namespace already has a `fixed`
@@ -816,9 +816,9 @@ local function new_namespace()
   local DEV_HEAD    = "<I4I4"           -- error, count
 
   assert(#string.pack(DEV_REQUEST, 0, "") == 24,
-         "namespace: the /dev request layout does not match devproto.h")
+         "namespace: the /Devices request layout does not match devproto.h")
   assert(#string.pack(DEV_FIELD, 0, 0, "", "") == 64,
-         "namespace: the /dev field layout does not match devproto.h")
+         "namespace: the /Devices field layout does not match devproto.h")
 
   local DEV_OPS = { list = 1, read = 2, getattr = 3 }
   local DEV_ERRORS = {
@@ -910,7 +910,7 @@ local function new_namespace()
 
     if not reply then return nil, tostring(why) end
 
-    if #reply < 1056 then return nil, "a /drives reply of the wrong size" end
+    if #reply < 1056 then return nil, "a /Drives reply of the wrong size" end
 
     local err, more, count, length, size, directory, _, blob =
         string.unpack(DRIVES_REPLY, reply)
@@ -996,7 +996,7 @@ local function new_namespace()
 
     if not reply then return nil, tostring(why) end
 
-    if #reply < 8 then return nil, "a /dev reply of the wrong size" end
+    if #reply < 8 then return nil, "a /Devices reply of the wrong size" end
 
     local err, count = string.unpack(DEV_HEAD, reply)
 
@@ -1131,7 +1131,7 @@ local function new_namespace()
   end
 
   --------------------------------------------------------------------------
-  -- /app, which is C and speaks `appproto.h`.
+  -- /Running, which is C and speaks `appproto.h`.
   --
   -- The registry is not mounted like the others - `mount_registry` looks a
   -- child up on demand and mounts what comes back - so this is spoken to
@@ -1144,14 +1144,14 @@ local function new_namespace()
   local APP_NAMES   = 32 + 1                     -- past the header, 1-based
 
   assert(#string.pack(APP_REQUEST, 0, "") == 28,
-         "namespace: the /app request layout does not match appproto.h")
+         "namespace: the /Running request layout does not match appproto.h")
 
   local APP_OPS = { register = 1, lookup = 2, list = 3, unregister = 4 }
   local APP_ERRORS = {
     [1] = "register: no endpoint came with that",
     [2] = "no such application",
     [3] = "too many applications registered",
-    [4] = "the /app registry did not understand that",
+    [4] = "the /Running registry did not understand that",
   }
 
   local function app_request(capability, op, name, pass)
@@ -1179,7 +1179,7 @@ local function new_namespace()
                                     pass)
 
     if not reply then return nil, tostring(got) end
-    if #reply < APP_NAMES - 1 then return nil, "an /app reply of the wrong size" end
+    if #reply < APP_NAMES - 1 then return nil, "a /Running reply of the wrong size" end
 
     local err, count, settled = string.unpack(APP_HEAD, reply)
 
@@ -1202,7 +1202,7 @@ local function new_namespace()
   end
 
   --------------------------------------------------------------------------
-  -- /dev/console, which is C and speaks `conproto.h`.
+  -- /Devices/console, which is C and speaks `conproto.h`.
   --
   -- Through the Console Kit rather than `string.pack`, and it is the only
   -- one of these four that does. The difference is that the console has two
@@ -1245,9 +1245,9 @@ local function new_namespace()
   end
 
   --
-  -- `/net`, through the kit, exactly as the console goes through its own.
+  -- `/Network`, through the kit, exactly as the console goes through its own.
   --
-  -- **A program never sees the capability.** It says `fs.ping("/net", ...)`
+  -- **A program never sees the capability.** It says `fs.ping("/Network", ...)`
   -- and the namespace resolves the path, checks that what is mounted there
   -- really is a network stack, and hands the kit the capability. That is
   -- what keeps the rule the whole system runs on - what you were not handed,
@@ -1267,7 +1267,7 @@ local function new_namespace()
   end
 
   function ns.net_info(path)
-    local net, capability, why = net_at(path or "/net")
+    local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
@@ -1275,7 +1275,7 @@ local function new_namespace()
   end
 
   function ns.net_configure(path, address, netmask, gateway, dns)
-    local net, capability, why = net_at(path or "/net")
+    local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
@@ -1292,7 +1292,7 @@ local function new_namespace()
   -- arrive is a process stopped for ever.
   --
   function ns.resolve(name, ticks)
-    local net, capability, why = net_at("/net")
+    local net, capability, why = net_at("/Network")
 
     if not net then return nil, why end
 
@@ -1307,7 +1307,7 @@ local function new_namespace()
   -- is not there does not stop another from reading a file.
   --
   function ns.ping(path, to, seq, payload)
-    local net, capability, why = net_at(path or "/net")
+    local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
@@ -1323,7 +1323,7 @@ local function new_namespace()
   -- number to guess and no table to index.
   --
   function ns.connect(path, to, port)
-    local net, capability, why = net_at(path or "/net")
+    local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
@@ -1334,7 +1334,7 @@ local function new_namespace()
   -- number because it holds nothing; what `accept` hands back is a
   -- connection, which is a region somebody was given.
   function ns.listen(path, port)
-    local net, capability, why = net_at(path or "/net")
+    local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
@@ -1345,7 +1345,7 @@ local function new_namespace()
   -- ever, which is right for a program that has nothing else to do and
   -- wrong for an event loop.
   function ns.accept(path, listener, ticks)
-    local net, capability, why = net_at(path or "/net")
+    local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
@@ -1364,7 +1364,7 @@ local function new_namespace()
   -- list cost. A connection may be in both.
   --
   function ns.poll(path, reading, writing, listener, ticks)
-    local net, capability, why = net_at(path or "/net")
+    local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
@@ -1464,7 +1464,7 @@ local function new_namespace()
   end
 
   --------------------------------------------------------------------------
-  -- /ramfs, which is C and speaks `ramproto.h`.
+  -- /Temporary, which is C and speaks `ramproto.h`.
   --
   -- `string.pack` rather than a kit, and the difference from the console is
   -- the whole reason that one needed a kit: ramfs has exactly one
@@ -1481,7 +1481,7 @@ local function new_namespace()
   local RAM_ENTRIES_MAX, RAM_DATA_MAX = 4, 1024
 
   assert(#string.pack(RAM_REPLY, 0, 0, 0, 0, 0, "") == 1044,
-         "namespace: the /ramfs reply layout does not match ramproto.h")
+         "namespace: the /Temporary reply layout does not match ramproto.h")
 
   local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
                     setattr = 5, query = 6, watch = 7, watchers = 8,
@@ -1491,8 +1491,8 @@ local function new_namespace()
     [1] = "no such path",
     [2] = "not a directory",
     [3] = "not readable",
-    [4] = "/ramfs did not understand that",
-    [5] = "/ramfs is full",
+    [4] = "/Temporary did not understand that",
+    [5] = "/Temporary is full",
     [6] = "too many attributes on one node",
     [7] = "the directory is not empty",
     [8] = "it is already there",
@@ -1509,7 +1509,7 @@ local function new_namespace()
   -- A table of attributes, as the eight slots the struct has.
   --
   -- Numbers travel as text with `kind` saying they were numbers, which is
-  -- what `/dev` settled: the wire carries characters either way, and the far
+  -- what `/Devices` settled: the wire carries characters either way, and the far
   -- side hands back the type that went in.
   --
   local function pack_attrs(attrs)
@@ -1577,12 +1577,12 @@ local function new_namespace()
     local raw, why = sys.call_raw(capability, bytes)
 
     if not raw then return nil, tostring(why) end
-    if #raw < 1044 then return nil, "a /ramfs reply of the wrong size" end
+    if #raw < 1044 then return nil, "a /Temporary reply of the wrong size" end
 
     local err, more, count, length, packed, blob = string.unpack(RAM_REPLY, raw)
 
     if err ~= 0 then
-      return nil, RAM_ERRORS[err] or ("/ramfs error " .. tostring(err))
+      return nil, RAM_ERRORS[err] or ("/Temporary error " .. tostring(err))
     end
 
     return { more = more ~= 0, count = count, length = length,
@@ -1619,7 +1619,7 @@ local function new_namespace()
 
     if op == "write" then
       --
-      -- /ramfs holds Lua values, and this is where that survives the move to
+      -- /Temporary holds Lua values, and this is where that survives the move to
       -- C. A string goes as itself; anything else - a table, a float, a
       -- boolean - goes as `sys.pack` and comes back through `sys.unpack`, so
       -- `help("fs")`'s promise still holds: you get back the table you wrote.
@@ -1636,7 +1636,15 @@ local function new_namespace()
       if type(value) == "string" then
         text, packed = value, 0
       else
-        text, packed = sys.pack(value), 1
+        -- Refused is an answer, and the caller's to have: this crashed on
+        -- the nil instead, and took the Clock with it.
+        local why
+
+        text, why = sys.pack(value)
+
+        if not text then return nil, why end
+
+        packed = 1
       end
 
       local at = 0
@@ -1815,13 +1823,13 @@ local function new_namespace()
     -- **Every other protocol is a declared shape, and a table is not one.**
     --
     -- A mount with no protocol is a server that takes tables - the disk, an
-    -- application's `/app` name. A mount that names one is a C server with a
+    -- application's `/Running` name. A mount that names one is a C server with a
     -- struct of its own, reached through its kit (`fs.raw`, the network
     -- kit), and a table sent to it is answered as though it were that
     -- struct. That is what happened on 19 September: `find` asks every
-    -- mount, `/dev/backlight` answered its table with BACKLIGHT_ERR_BAD_OP,
+    -- mount, `/Devices/backlight` answered its table with BACKLIGHT_ERR_BAD_OP,
     -- and the reply's first byte, 2, unpacked as the Lua value `true` - so
-    -- init indexed a boolean. `/dev/audio` and `/dev/blocks` had been sent
+    -- init indexed a boolean. `/Devices/audio` and `/Devices/blocks` had been sent
     -- the same tables for months and survived only because their BAD_OP
     -- numbers unpack as `false` and as a string, which read as a failure. Refused here, with a sentence,
     -- which is what `ns.send` already does for the same reason.
@@ -1839,7 +1847,7 @@ local function new_namespace()
     -- A value too big for a message goes through a region instead.
     --
     -- **`fs.write` used to raise here**, and only on some mounts. The
-    -- namespace splits a long write for `/ramfs` - `ram_request` does it, a
+    -- namespace splits a long write for `/Temporary` - `ram_request` does it, a
     -- piece per message - and diskfs cannot be written that way at all: its
     -- `write` takes no offset and hands the whole body to `kfs.store`, so
     -- there is nothing to append to. Everything above about two kilobytes
@@ -1899,9 +1907,9 @@ local function new_namespace()
   -- holds; only the namespace knows what has been attached to it and where,
   -- and the mount table lives in this process and nowhere else. Without it
   -- `/` is not a directory at all - there is no server for it, so listing it
-  -- returns "no such path" while `/ramfs` and `/dev` both plainly exist.
+  -- returns "no such path" while `/Temporary` and `/Devices` both plainly exist.
   --
-  -- Only the immediate child: with `/dev/console` mounted, `/` contains
+  -- Only the immediate child: with `/Devices/console` mounted, `/` contains
   -- `dev` and not `dev/console`, which is what a directory means.
   local function mounted_under(path)
     local prefix = (path == "/") and "/" or (path .. "/")
@@ -1930,16 +1938,16 @@ local function new_namespace()
   -- Every volume on every drive, with what a sidebar needs to draw one.
   --
   -- **Its own verb, because nothing else could reach the operation.**
-  -- `/drives` speaks a declared shape, so `ns.send` refuses it - a struct
+  -- `/Drives` speaks a declared shape, so `ns.send` refuses it - a struct
   -- server must not be handed an arbitrary table - and `ns.raw` would make
   -- the caller pack `drivesproto.h` itself, which is exactly the knowledge a
-  -- namespace exists to hold. `fs.list("/drives")` gives the names; this
+  -- namespace exists to hold. `fs.list("/Drives")` gives the names; this
   -- gives the filesystem, the size, how much is free, whether that number
   -- was counted or is FAT32's hint, and the unit and partition - which are
   -- the stable handle, since a *name* can renumber when a drive is replugged.
   --
   function ns.volumes(path)
-    local r, e = request("volumes", path or "/drives")
+    local r, e = request("volumes", path or "/Drives")
 
     if not r then return nil, e end
 
@@ -1976,7 +1984,7 @@ local function new_namespace()
     local attached = mounted_under(path)
 
     -- Whatever the server said, plus whatever is mounted below it. Both are
-    -- true: `/dev` holds cpu and memory because the device server says so,
+    -- true: `/Devices` holds cpu and memory because the device server says so,
     -- and it holds `console` because something else was attached there.
     if entries then
       local seen = {}
@@ -2177,7 +2185,7 @@ local function new_namespace()
   --
   -- Which is exactly what `find /home kind=book` returned, for as long as
   -- the disk has been able to answer a query. It went unnoticed because
-  -- every test of queries used `/ramfs`, and `/ramfs` is mounted with no root
+  -- every test of queries used `/Temporary`, and `/Temporary` is mounted with no root
   -- - so the two paths through this function had never both been walked.
   --
   local function to_local(p, prefix, root)
@@ -2287,7 +2295,7 @@ local function new_namespace()
     -- `send` is the generic escape hatch - whatever you put in the table
     -- reaches the server - and that is exactly what a struct server must
     -- not be given. Refused here, with a sentence, because the alternative
-    -- is what happened the first time: a `send` to a path under `/dev` that
+    -- is what happened the first time: a `send` to a path under `/Devices` that
     -- named nothing was answered by the C devices server, its struct reply
     -- was unpacked as a Lua value, and the caller crashed indexing a
     -- number. Before the conversion the same mistake produced "no such
@@ -2302,7 +2310,7 @@ local function new_namespace()
     -- routes to it; where it does not, it refuses with a sentence.
     --
     -- The alternative is what happened before the check existed: a `send`
-    -- to a path under `/dev` that named nothing was answered by the C
+    -- to a path under `/Devices` that named nothing was answered by the C
     -- devices server, its struct reply was unpacked as a Lua value, and the
     -- caller crashed indexing a number. "No such device" is the behaviour
     -- worth keeping.
@@ -2313,7 +2321,7 @@ local function new_namespace()
     end
 
     --
-    -- `mkdir`, `delete` and `rename` on /ramfs.
+    -- `mkdir`, `delete` and `rename` on /Temporary.
     --
     -- The refusal below is right for everything else this protocol speaks -
     -- a struct server must not be handed an arbitrary table - and wrong for
@@ -2499,7 +2507,7 @@ end
 --
 -- It is the fifth server to move and the first whose protocol something
 -- other than a server implements. A terminal window mounts itself as its
--- child's `/dev/console`, so `terminal.lua` answers `conproto.h` too -
+-- child's `/Devices/console`, so `terminal.lua` answers `conproto.h` too -
 -- through `use("/kits/console")`, which is the same header compiled once
 -- rather than a format string copied into an application.
 --
@@ -2523,11 +2531,11 @@ end
 --------------------------------------------------------------------------
 
 --------------------------------------------------------------------------
--- The devices server: /dev.
+-- The devices server: /Devices.
 --
 -- Every device the machine was found to have, reachable the way everything
 -- else is - by name, through a namespace, over the same list/read protocol
--- the filesystem uses. `fs.list("/dev")` is not a special command; it is the
+-- the filesystem uses. `fs.list("/Devices")` is not a special command; it is the
 -- same request the ramfs answers, sent somewhere else.
 --
 -- It is the only thing that calls `sys.info()`, exactly as the console
@@ -2536,7 +2544,7 @@ end
 -- authority.
 --
 -- Read fresh on every request rather than cached at startup, because half of
--- it is live: threads and processes and free pages change, and a /dev that
+-- it is live: threads and processes and free pages change, and a /Devices that
 -- answered with the numbers from boot would be worse than useless.
 --------------------------------------------------------------------------
 
@@ -2570,16 +2578,16 @@ end
 --
 
 --------------------------------------------------------------------------
--- /app: the registry of what is running and what it exposes.
+-- /Running: the registry of what is running and what it exposes.
 --
 -- `beos.md` 17.2 and roadmap M7's scripting architecture. Every application
 -- publishes its own properties as nodes in its own namespace, and this is
 -- the directory that says which name belongs to which endpoint. So from the
 -- shell:
 --
---   apps                            what is running
---   cat /app/gallery/title          read a property
---   write /app/gallery/title hi     change one
+--   apps                              what is running
+--   cat /Running/gallery/title        read a property
+--   write /Running/gallery/title hi   change one
 --
 -- and the application in question contains no scripting code at all. It
 -- called `ui.window`, and `ui.window` publishes the window's properties the
@@ -2595,7 +2603,7 @@ end
 --------------------------------------------------------------------------
 
 --
--- No `appfs` here: /app is served by `user/servers/appfs.c`, and `main.c`
+-- No `appfs` here: /Running is served by `user/servers/appfs.c`, and `main.c`
 -- dispatches role 14 before the interpreter is opened.
 --
 
@@ -3662,7 +3670,7 @@ local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 -- `tools/kfs.lua` replaces them for a file on the Mac - by ones over that
 -- partition. `kfs.lua` does not change, and cannot tell.
 --
--- **Found through `/dev/blocks`, written through the write endpoint.** The
+-- **Found through `/Devices/blocks`, written through the write endpoint.** The
 -- first is always answered, even by a driver with no controller; the second
 -- is asked only once a stick with the partition is there, so nothing ever
 -- waits on it where nobody would answer. Only this process holds it.
@@ -4085,14 +4093,14 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap)
   local ns = new_namespace()
-  ns.mount("/dev/console", console_cap, nil, "console")
-  ns.mount("/ramfs", ramfs_cap, nil, "ram")
+  ns.mount("/Devices/console", console_cap, nil, "console")
+  ns.mount("/Temporary", ramfs_cap, nil, "ram")
 
-  -- Longest prefix wins, so /dev/console keeps going to the console server
-  -- while everything else under /dev goes to the device server. Two servers
+  -- Longest prefix wins, so /Devices/console keeps going to the console server
+  -- while everything else under /Devices goes to the device server. Two servers
   -- under one directory, and neither knows about the other - which is what a
   -- per-process mount table buys.
-  ns.mount("/dev", devices_cap, nil, "dev")
+  ns.mount("/Devices", devices_cap, nil, "dev")
 
   --
   -- Every volume on every drive (USB step 6b, `docs/drives.html`).
@@ -4102,50 +4110,50 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- a process is built, so a volume plugged in later could never be given a
   -- mount of its own in a namespace that already exists.
   --
-  if drives_cap then ns.mount("/drives", drives_cap, nil, "drives") end
+  if drives_cap then ns.mount("/Drives", drives_cap, nil, "drives") end
 
   --
-  -- Over the top of `/dev`, because longest prefix wins.
+  -- Over the top of `/Devices`, because longest prefix wins.
   --
-  -- `/dev/audio` is a different server from the one that answers the rest
-  -- of `/dev`, exactly as `/dev/console` is - the devices server describes
+  -- `/Devices/audio` is a different server from the one that answers the rest
+  -- of `/Devices`, exactly as `/Devices/console` is - the devices server describes
   -- hardware and this one *is* a piece of it. Mounted for everybody rather
-  -- than passed to children the way `/app/wm` is, because any program may
+  -- than passed to children the way `/Running/wm` is, because any program may
   -- ask to make a noise and the answer is a stream with a volume on it
   -- rather than a refusal.
   --
-  if audio_cap then ns.mount("/dev/audio", audio_cap, nil, "audio") end
+  if audio_cap then ns.mount("/Devices/audio", audio_cap, nil, "audio") end
 
   --
-  -- `/dev/blocks`: the USB sticks' blocks, served by the USB driver (USB step
+  -- `/Devices/blocks`: the USB sticks' blocks, served by the USB driver (USB step
   -- 5d, `usb.md` §7). Read only - the driver refuses a write - and mounted
-  -- for every program, as `/dev/audio` is; writing will be given to one
+  -- for every program, as `/Devices/audio` is; writing will be given to one
   -- process, the disk server, and not mounted like this.
   --
-  if blocks_cap then ns.mount("/dev/blocks", blocks_cap, nil, "blocks") end
+  if blocks_cap then ns.mount("/Devices/blocks", blocks_cap, nil, "blocks") end
 
   --
-  -- `/dev/backlight`: the screen's brightness, from the backlight driver.
-  -- Mounted for everybody, as `/dev/audio` is and for its reason - a level a
+  -- `/Devices/backlight`: the screen's brightness, from the backlight driver.
+  -- Mounted for everybody, as `/Devices/audio` is and for its reason - a level a
   -- program may change - and the driver keeps a floor no caller can go
   -- under (`backlightproto.h`).
   --
   if backlight_cap then
-    ns.mount("/dev/backlight", backlight_cap, nil, "backlight")
+    ns.mount("/Devices/backlight", backlight_cap, nil, "backlight")
   end
 
   --
-  -- `/net`, not `/dev/net`, and the distinction is the one the window
+  -- `/Network`, not `/Devices/net`, and the distinction is the one the window
   -- manager settled: a *card* is a device and the stack is someone you ask.
   -- The card is behind `SPAWN_NET` and has no name in the namespace at all,
   -- because nothing but the stack may reach it.
   --
-  -- Plan 9 put the whole of networking under `/net` as files - `/net/tcp/
+  -- Plan 9 put the whole of networking under `/Network` as files - `/Network/tcp/
   -- clone`, then a `ctl` and a `data` - and `roadmap.md` M12 keeps that as
   -- the target. What is here is the same name with a declared protocol
   -- behind it, because there are no connections yet to be directories of.
   --
-  if net_cap then ns.mount("/net", net_cap, nil, "net") end
+  if net_cap then ns.mount("/Network", net_cap, nil, "net") end
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
@@ -4157,7 +4165,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- What is running, and what each one exposes. A registry rather than a
   -- mount: the names under it appear and disappear with the programs.
-  ns.mount_registry("/app", app_cap, "app")
+  ns.mount_registry("/Running", app_cap, "app")
 
   -- Files, on the disk, surviving the power going off. design.md 8.1 names
   -- this as where user data lives, and the two reserved names at its root -
@@ -4196,8 +4204,8 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- there is no backdrop. A laptop with no NVMe driver is exactly that
   -- machine, so this was the first real boot arriving without a desktop.
   --
-  -- The same server that serves `/ramfs`, at a different root - so a file
-  -- written to `/home/notes` is `/ramfs/home/notes` as well, which is
+  -- The same server that serves `/Temporary`, at a different root - so a file
+  -- written to `/home/notes` is `/Temporary/home/notes` as well, which is
   -- honest rather than a coincidence: it *is* the same memory, and it goes
   -- away for the same reason.
   --
@@ -4214,7 +4222,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
       -- And the directory itself, which is the part that looked like the
       -- mount not working.
       --
-      -- `/ramfs` is mounted with no root, so its prefix names the server's
+      -- `/Temporary` is mounted with no root, so its prefix names the server's
       -- own root and that always exists. This one is a *subtree*: `/home`
       -- resolves to the path `/home` inside the same server, and a path
       -- inside `ramfs` exists only once something has made it. So the mount
@@ -4226,12 +4234,12 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
     end
   end
 
-  local function out(s) write_text(ns, "/dev/console", s) end
+  local function out(s) write_text(ns, "/Devices/console", s) end
 
   -- An installed program's image made at the prompt is said where it was
   -- typed: this process's own `print` reaches nothing (`IMAGES`).
   IMAGES.say = function(text) out(text .. "\n") end
-  local function readline() return ns.read("/dev/console") end
+  local function readline() return ns.read("/Devices/console") end
 
   --------------------------------------------------------------------------
   -- help
@@ -4262,7 +4270,7 @@ The prompt takes commands as well as Lua. `/commands` lists them.
 
   devices              a command
   /devices             the same command, said explicitly
-  fs.list("/dev")      the same thing, as a program
+  fs.list("/Devices")  the same thing, as a program
 
 **A leading slash means a command**, unless the word is a file ending in
 `.lua`, which runs: `/home/hello.lua`. Without one, a bare word is
@@ -4339,8 +4347,11 @@ THE MACHINE
 WHERE THINGS LIVE
   /bin /lib            the programs and libraries in the image
   /home /user /system  the disk; these survive a reboot
-  /ramfs               memory; this does not
-  /dev /net /app       devices, the network, the running applications
+  /Temporary           memory; this does not
+  /Devices             the hardware
+  /Drives              other drives, by their names
+  /Network             the network
+  /Running             what is running now, by name
 
 `/` is not a filesystem. It is a list of mounts, each answered by a
 different server, and `ls /` shows exactly the ones this process was
@@ -4379,11 +4390,11 @@ are - which is what keeps `fs.read` the same operation for everybody.
 mount does not exist; that is not a permission check, there is simply
 nothing there to deny.
 
-  fs.list("/ramfs")                     -> a table of names
-  fs.read("/ramfs/sensor")              -> whatever was written
-  fs.write("/ramfs/x", { n = 1 })       -> true
-  fs.getattr("/ramfs/x")                -> { size = ... }
-  fs.read("/nowhere")                  -> nil, "no such path: /nowhere"
+  fs.list("/Temporary")                 -> a table of names
+  fs.read("/Temporary/sensor")          -> whatever was written
+  fs.write("/Temporary/x", { n = 1 })   -> true
+  fs.getattr("/Temporary/x")            -> { size = ... }
+  fs.read("/nowhere")                   -> nil, "no such path: /nowhere"
 
 Values are Lua values, not bytes. A read gives you back the table you
 wrote, integers still integers and floats still floats.
@@ -4446,13 +4457,13 @@ What this machine is, and what was found on it.
   mem            RAM, and how much of it the kernel has
   ps             threads, processes and endpoints, used of total
 
-All four read /dev, which is a *server* reached through the namespace -
+All four read /Devices, which is a *server* reached through the namespace -
 the same list/read protocol the filesystem answers, sent somewhere else.
 Nothing here is a special case in the shell:
 
-  fs.list("/dev")
-  fs.read("/dev/cpu").part
-  fs.read("/dev/memory").free_mb
+  fs.list("/Devices")
+  fs.read("/Devices/cpu").part
+  fs.read("/Devices/memory").free_mb
 
 The kernel decodes none of it. `sys.info()` hands back raw ID registers
 and pool counts, and the tables that turn 0x410fd083 into "Cortex-A72"
@@ -4482,7 +4493,7 @@ Aliases:
 another; `def` compiles a line of Lua and gives it a name, so anything
 you can type here can become a command:
 
-  def hot = local d = fs.read("/ramfs/sensor")
+  def hot = local d = fs.read("/Temporary/sensor")
             return d.celsius > 40 and "hot" or "cold"
   /hot
 
@@ -4491,7 +4502,7 @@ The argument string arrives as `...`, so a program can take one:
   def count = local n = 0
               for _ in ipairs(fs.list(...)) do n = n + 1 end
               return n .. " under " .. ...
-  /count /dev
+  /count /Devices
 
 It is compiled when you define it, so a syntax error is reported then
 rather than the first time somebody runs it, and it is compiled into the
@@ -4533,9 +4544,9 @@ The serialiser, which is how every message travels:
 
 Attributes, and a query that finds by them rather than by name:
 
-  fs.write("/ramfs/a", "one")
-  fs.setattr("/ramfs/a", { kind = "note" })
-  fs.query("/ramfs", { kind = "note" })
+  fs.write("/Temporary/a", "one")
+  fs.setattr("/Temporary/a", { kind = "note" })
+  fs.query("/Temporary", { kind = "note" })
 
 BeOS's idea: the filesystem is a database, and a folder is a saved
 query. `find` and `watch` are built on exactly these two calls.
@@ -4729,7 +4740,7 @@ query. `find` and `watch` are built on exactly these two calls.
   -- prompt can be given a name and a place in `/commands`.
   --
   --   def ls2 = for _, n in ipairs(fs.list(...)) do print(n) end
-  --   /ls2 /ramfs
+  --   /ls2 /Temporary
   --
   -- The argument string arrives as `...`, so a program can take one. It is
   -- compiled once, when defined, so a syntax error is reported then rather
@@ -4923,11 +4934,11 @@ query. `find` and `watch` are built on exactly these two calls.
   end
 
   commands.devices = function()
-    local names = ns.list("/dev")
+    local names = ns.list("/Devices")
     if not names then return end
 
-    out("Devices found on this machine. Each is a node in /dev, read the\n")
-    out("same way a file is - fs.read(\"/dev/cpu\") is the same request the\n")
+    out("Devices found on this machine. Each is a node in /Devices, read the\n")
+    out("same way a file is - fs.read(\"/Devices/cpu\") is the same request the\n")
     out("filesystem answers, sent to a different server.\n\n")
 
     -- Named here rather than listed by the device server, because it is not
@@ -4938,12 +4949,12 @@ query. `find` and `watch` are built on exactly these two calls.
     -- 16550 at port 0x3f8 and no PL011 anywhere. Nothing here knows which
     -- - the console server does, and it answers with lines of input rather
     -- than with descriptions - so the honest thing is not to claim.
-    out("  /dev/console    served by the console server, not by /dev: a\n")
-    out("                  read of it is a line of input, not a\n")
-    out("                  description\n")
+    out("  /Devices/console    served by the console server, not by /Devices: a\n")
+    out("                      read of it is a line of input, not a\n")
+    out("                      description\n")
 
     for _, name in ipairs(names) do
-      local d = ns.read("/dev/" .. name)
+      local d = ns.read("/Devices/" .. name)
       local summary = ""
 
       if name == "cpu" then
@@ -4963,15 +4974,15 @@ query. `find` and `watch` are built on exactly these two calls.
           d.hz, d.counter_hz // 1000000)
       end
 
-      out(string.format("  /dev/%-10s %s\n", name, summary))
+      out(string.format("  /Devices/%-10s %s\n", name, summary))
     end
   end
 
   commands.cpu = function()
-    local c = ns.read("/dev/cpu")
+    local c = ns.read("/Devices/cpu")
     if not c then return end
 
-    -- What every machine answers, then what only this one does. /dev/cpu
+    -- What every machine answers, then what only this one does. /Devices/cpu
     -- carries the architecture precisely so a reader can tell the
     -- difference rather than printing "nil" for a field that was never
     -- going to be there.
@@ -5017,7 +5028,7 @@ query. `find` and `watch` are built on exactly these two calls.
   end
 
   commands.mem = function()
-    local m = ns.read("/dev/memory")
+    local m = ns.read("/Devices/memory")
     if not m then return end
     out(string.format("%d MB of RAM at 0x%x, in %d pages of %d KB\n",
         m.total_mb, m.base, m.pages_total, m.page_size // 1024))
@@ -5027,7 +5038,7 @@ query. `find` and `watch` are built on exactly these two calls.
   end
 
   commands.ps = function()
-    local k = ns.read("/dev/kernel")
+    local k = ns.read("/Devices/kernel")
     if not k then return end
 
     --
@@ -5172,7 +5183,7 @@ query. `find` and `watch` are built on exactly these two calls.
     -- a misspelled colour should cost you a colour, not your output.
     --
     write = function(text, colour)
-      return write_text(ns, "/dev/console", tostring(text), colour)
+      return write_text(ns, "/Devices/console", tostring(text), colour)
     end,
     print = function(...)
       local parts = {}
@@ -5496,7 +5507,7 @@ if role == ROLE_INIT then
   local BACKLIGHT_EP = sys.endpoint()
 
   --
-  -- **`/dev/camera`**, answered by the USB driver (`usb.md` §11 8d). Handed
+  -- **`/Devices/camera`**, answered by the USB driver (`usb.md` §11 8d). Handed
   -- down only to a program that declares `kosmos: needs camera` - and to
   -- the desktop, which declares it so it can pass it on - because a camera
   -- is a thing a program should have to say it wants: what a program was
@@ -5553,7 +5564,7 @@ if role == ROLE_INIT then
   -- which is what keeps this from being two boot paths: what differs is one
   -- flag, not whether a process exists.
   --
-  -- And the USB driver's two block endpoints (USB step 5e): `/dev/blocks`, to
+  -- And the USB driver's two block endpoints (USB step 5e): `/Devices/blocks`, to
   -- find a stick's Kosmos partition, and the write endpoint, which nothing
   -- else is given - so `/home` on a stick is this process's to write and
   -- nobody else's, as the kernel's disk is.
@@ -5602,7 +5613,7 @@ if role == ROLE_INIT then
   -- all, and the stack is given `FRAMES_EP` only when it did.
   --
   -- It is given the block endpoint it serves (USB step 5d) - a stick's
-  -- blocks, to whoever is given `/dev/blocks` - and the write endpoint, which
+  -- blocks, to whoever is given `/Devices/blocks` - and the write endpoint, which
   -- only the disk server is given as well (USB step 5e): the right to write
   -- to a stick is holding it.
   --
@@ -5697,7 +5708,7 @@ if role == ROLE_INIT then
 
   --
   -- **The backlight**, the same way: device authority, the console's
-  -- endpoint, and the one it serves `/dev/backlight` on. It reads the Intel
+  -- endpoint, and the one it serves `/Devices/backlight` on. It reads the Intel
   -- display engine's two PWM controllers, says what they hold, raises a dim
   -- one to a comfortable level, and then answers for the brightness keys; on
   -- a machine without Intel graphics it says so and answers "no backlight",
@@ -5716,14 +5727,14 @@ if role == ROLE_INIT then
   --
   -- And the drive server, which reads what is on those sticks (USB step 6b).
   --
-  -- **It is given `BLOCKS_EP` and never `BLOCKS_WRITE_EP`**, so `/drives` is
+  -- **It is given `BLOCKS_EP` and never `BLOCKS_WRITE_EP`**, so `/Drives` is
   -- read-only by what this process holds rather than by what its code agrees
   -- to. Writing to another machine's filesystem comes later and deliberately.
   --
   -- Started whether or not there is a USB driver, for the disk server's
   -- reason: a machine with no stick is a supported way to run - it is how
   -- every display test runs - and a server that answers "no volumes" keeps
-  -- one boot path where a spawn that is skipped would leave `/drives`
+  -- one boot path where a spawn that is skipped would leave `/Drives`
   -- unmounted and every program asking about it getting a different error.
   --
   start("the drive server", ROLE_DRIVES,
@@ -5751,12 +5762,12 @@ if role == ROLE_INIT then
   do
     --
     -- init has no namespace of its own - it hands them out - so this makes
-    -- one holding only what the address needs: `/net` to configure, and the
+    -- one holding only what the address needs: `/Network` to configure, and the
     -- disk to read the settings from if there is one.
     --
     local mine = new_namespace()
 
-    mine.mount("/net", NET_EP, nil, "net")
+    mine.mount("/Network", NET_EP, nil, "net")
 
     if DISKFS_EP then mine.mount("/home", DISKFS_EP, "/home") end
 
@@ -5788,7 +5799,7 @@ if role == ROLE_INIT then
                          tonumber(c) % 256, tonumber(d) % 256)
     end
 
-    local ok, why = mine.net_configure("/net", bytes(address),
+    local ok, why = mine.net_configure("/Network", bytes(address),
                                        bytes(netmask), bytes(gateway),
                                        bytes(dns))
 
@@ -5974,7 +5985,7 @@ end
 -- No branch for ROLE_AUDIO here, and its absence is the point.
 --
 -- The audio server is C and `user/init/main.c` dispatches it before the
--- interpreter is opened, so a process serving /dev/audio never has a
+-- interpreter is opened, so a process serving /Devices/audio never has a
 -- `lua_State` at all. `CLAUDE.md` says a server runs on behalf of another
 -- process and therefore does not get a collector; the way to mean that is
 -- for there to be no collector in the process, rather than a promise not to
@@ -6025,12 +6036,12 @@ if role == ROLE_RUNNER then
   -- for its child, and a terminal speaks the same protocol the server does -
   -- through the same kit, which is the whole reason that kit exists. The
   -- runner cannot tell the two apart and must not need to.
-  if req.console then ns.mount("/dev/console", req.console, nil, "console") end
-  if req.data    then ns.mount("/ramfs",        req.data, nil, "ram") end
-  if req.bin     then ns.mount("/bin",         req.bin, nil, "bin") end
-  if req.devices then ns.mount("/dev",         req.devices, nil, "dev") end
-  if req.lib     then ns.mount("/lib",         req.lib, nil, "bin") end
-  if req.app     then ns.mount_registry("/app", req.app, "app") end
+  if req.console then ns.mount("/Devices/console", req.console, nil, "console") end
+  if req.data    then ns.mount("/Temporary",       req.data, nil, "ram") end
+  if req.bin     then ns.mount("/bin",             req.bin, nil, "bin") end
+  if req.devices then ns.mount("/Devices",         req.devices, nil, "dev") end
+  if req.lib     then ns.mount("/lib",             req.lib, nil, "bin") end
+  if req.app     then ns.mount_registry("/Running", req.app, "app") end
   if req.disk    then
     ns.mount("/system", req.disk, "/system")
     ns.mount("/user",   req.disk, "/user")
@@ -6045,16 +6056,16 @@ if role == ROLE_RUNNER then
     ns.mount("/home", req.data, "/home", "ram")
   end
 
-  -- After `/dev`, because longest prefix wins and this is a different
+  -- After `/Devices`, because longest prefix wins and this is a different
   -- server from the one that answers the rest of it.
-  if req.audio   then ns.mount("/dev/audio",   req.audio, nil, "audio") end
-  if req.net     then ns.mount("/net",         req.net, nil, "net") end
-  if req.blocks  then ns.mount("/dev/blocks",  req.blocks, nil, "blocks") end
-  if req.drives  then ns.mount("/drives",      req.drives, nil, "drives") end
+  if req.audio   then ns.mount("/Devices/audio",   req.audio, nil, "audio") end
+  if req.net     then ns.mount("/Network",         req.net, nil, "net") end
+  if req.blocks  then ns.mount("/Devices/blocks",  req.blocks, nil, "blocks") end
+  if req.drives  then ns.mount("/Drives",          req.drives, nil, "drives") end
   if req.backlight then
-    ns.mount("/dev/backlight", req.backlight, nil, "backlight")
+    ns.mount("/Devices/backlight", req.backlight, nil, "backlight")
   end
-  if req.camera  then ns.mount("/dev/camera",  req.camera, nil, "camera") end
+  if req.camera  then ns.mount("/Devices/camera",  req.camera, nil, "camera") end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -6068,7 +6079,7 @@ if role == ROLE_RUNNER then
     end
   end
 
-  local function out(s) write_text(ns, "/dev/console", s) end
+  local function out(s) write_text(ns, "/Devices/console", s) end
 
   --
   -- A program can start a program.
@@ -6086,7 +6097,7 @@ if role == ROLE_RUNNER then
   -- what a command line wants.
   --
   -- `shares` hands the child capabilities this program holds, each under a
-  -- name in the child's namespace: run(path, args, detach, { ["/app/wm"] = c }).
+  -- name in the child's namespace: run(path, args, detach, { ["/Running/wm"] = c }).
   --
   -- This is how a program becomes a server for its own children. The window
   -- manager needs it: it makes an endpoint, starts applications, and each
@@ -6111,7 +6122,7 @@ if role == ROLE_RUNNER then
     -- The audio server comes last, and has to be here: a program launched
     -- by another program - which is every application, because the window
     -- manager launches them - gets its namespace from this list, and
-    -- without it `/dev/audio` is a path that does not exist. The Mixer said
+    -- without it `/Devices/audio` is a path that does not exist. The Mixer said
     -- "nothing is playing" while two tones were running, because they were
     -- not able to reach the server to say otherwise.
     -- `req.backlight` last, matching `backlight = 12` in the request below
@@ -6129,7 +6140,7 @@ if role == ROLE_RUNNER then
     --
     -- This passed the index alone, and the child mounted it speaking Lua
     -- tables - which was right while every server did. It stopped being
-    -- right when `/dev/console` became a struct: a terminal shares its own
+    -- right when `/Devices/console` became a struct: a terminal shares its own
     -- endpoint there, the child mounted it with no protocol, and a `write`
     -- arrived at the terminal as 83 bytes of serialised table where 1036
     -- bytes of `con_request` were expected.
@@ -6267,7 +6278,7 @@ if role == ROLE_RUNNER then
     -- gets false, which is right - it cannot be typed at either.
     --
     interrupted = function()
-      return ns.interrupted("/dev/console") == true
+      return ns.interrupted("/Devices/console") == true
     end,
     --
     -- One run of text, in a colour. No newline is added, because a run is
@@ -6282,7 +6293,7 @@ if role == ROLE_RUNNER then
     -- a misspelled colour should cost you a colour, not your output.
     --
     write = function(text, colour)
-      return write_text(ns, "/dev/console", tostring(text), colour)
+      return write_text(ns, "/Devices/console", tostring(text), colour)
     end,
     print = function(...)
       local parts = {}
@@ -6463,7 +6474,7 @@ end
 -- A client. The name it mounts the filesystem under is its own business,
 -- and is the whole demonstration: the same server, two processes, two
 -- different worlds.
-local mount_point = (role == ROLE_CLIENT_B) and "/files" or "/ramfs"
+local mount_point = (role == ROLE_CLIENT_B) and "/files" or "/Temporary"
 
 local fs = new_namespace()
 
@@ -6507,7 +6518,7 @@ check(attrs ~= nil and attrs.size == 5, "getattr returned the wrong size")
 -- server somewhere else. That name does not exist here, and the answer is
 -- "no such path" rather than "denied": nothing was refused, because there was
 -- nothing to refuse.
-local other = (mount_point == "/ramfs") and "/files" or "/ramfs"
+local other = (mount_point == "/Temporary") and "/files" or "/Temporary"
 local value, err = fs.read(other .. "/sensor")
 check(value == nil, "the other client's mount point was visible")
 check(err:find("no such path") ~= nil, "the wrong error for an unmounted path")

@@ -272,7 +272,7 @@ win:add(side)
 -- Falling, and the keyboard.
 --------------------------------------------------------------------------
 
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 local last = sys.ticks()
 
 local function interval()

@@ -42,12 +42,12 @@ if terms == 0 then
   return
 end
 
-local known = fs.query("/ramfs", where) or {}
+local known = fs.query("/Temporary", where) or {}
 
 print(("watching for %d change(s); %d match now"):format(rounds, #known))
 
 for i = 1, rounds do
-  local paths, err = fs.watch("/ramfs", where, known)
+  local paths, err = fs.watch("/Temporary", where, known)
 
   if not paths then
     print("watch: " .. tostring(err))

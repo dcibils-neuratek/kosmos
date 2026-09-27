@@ -7,7 +7,7 @@
 -- Ten by default, which is the number every other system chose and there is
 -- no reason to disagree with them about it.
 --
--- A read here returns a *value*, not a stream of bytes - `/ramfs` gives back
+-- A read here returns a *value*, not a stream of bytes - `/Temporary` gives back
 -- the table that was written - so a thing with no lines in it says so rather
 -- than being turned into text nobody wrote. `cat` prints those.
 

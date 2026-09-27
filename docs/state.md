@@ -75,11 +75,15 @@ first before enforcing things that limit the usage". And his focus: "an
 elegant and easy way to understand where things go ... systems should be
 self explanatory in their structure of files and directorues".
 
-**Next**: the layout's renames (6s) once Diego answers the five names
-beside the two trees - `/Devices`, `/Drives`, `/Network`, `/Running`,
-`/Temporary` - drawn as "the root, whole" in `docs/layout.html`; then ELF
-step 5, Doom into its own folder in the new layout; then 6e's lesson plan
-drawn. 6q, the flaky Deskbar focus and Large icons checks, stands.
+**The root's five names beside the two trees are in** (18.229): `/Devices`,
+`/Drives`, `/Network`, `/Running`, `/Temporary` - Diego: "yes, those five
+names are good, go ahead". They found `sys.pack` bounded by one message,
+which stopped the Clock; it packs up to 64 KB now. **Next**: 6s (b), `/home`
+to `/Home`; (c) the `/Kosmos` tree with `/Kosmos/Themes`; (d) the
+preferences; (e) `layout.md`. Then 6w, Tracker's places - Documents,
+Photos, Movies, Captures, Music - and ELF step 5. Wanted and written down
+the same evening: 6v, Compress and Extract in Tracker with zip in a kit;
+6x, recording the screen into Captures, later.
 
 ## 26 September: Cafesa3D reads and writes other formats, and renders to a file
 

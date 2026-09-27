@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /*
- * /net: the stack, as a shape.
+ * /Network: the stack, as a shape.
  *
  * One process holds the card - `SPAWN_NET`, which is the disk's grant
  * pointed outwards - and everything else asks it. That is what makes a
@@ -251,7 +251,7 @@ struct net_request {
  *
  * `ticks` is the physical counter, undecoded - not milliseconds. The same
  * division `hal_pointer_poll` draws by reporting device units: the counter's
- * frequency is `/dev/cpu`'s to report and the caller's to divide by, and a
+ * frequency is `/Devices/cpu`'s to report and the caller's to divide by, and a
  * server that converted here would be baking in a rate that is 62.5 MHz
  * under QEMU's TCG and 24 MHz when the same machine runs natively under
  * `hvf`. That is not a hypothetical - both happen on this machine, today.

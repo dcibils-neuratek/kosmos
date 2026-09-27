@@ -40,7 +40,7 @@
 if sys.step_down then pcall(sys.step_down, 2) end   -- 2 is NORMAL
 
 local seconds = tonumber(args) or 10
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 local until_ = sys.ticks() + hz * seconds
 
 while sys.ticks() < until_ do end

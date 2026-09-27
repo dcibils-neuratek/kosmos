@@ -45,10 +45,10 @@ local L = ui.layout
 -- this chunk is at Lua's limit of two hundred.
 --------------------------------------------------------------------------
 
-local screen = fs.read("/dev/screen") or {}
+local screen = fs.read("/Devices/screen") or {}
 
 do
-  local ok, got = pcall(fs.send, "/app/wm", { type = "workarea" })
+  local ok, got = pcall(fs.send, "/Running/wm", { type = "workarea" })
 
   if ok and type(got) == "table" and got.ok and tonumber(got.w) and tonumber(got.h) then
     screen.area = got
@@ -531,7 +531,7 @@ end
 -- The view's render: `job`, what it saw (`key`), whether its last pass has
 -- been said, and `surf`, its pixels as they arrive.
 local shade = {}
-local HZ = fs.read("/dev/cpu").counter_hz
+local HZ = fs.read("/Devices/cpu").counter_hz
 
 local function lamps()
   local out = {}
@@ -2379,7 +2379,7 @@ local final = { side = 270, shown = -1, controls = {} }
 -- what the screen has room for beside the panel, and never shorter than
 -- the panel needs.
 function final.fit()
-  local screen_now = fs.read("/dev/screen") or {}
+  local screen_now = fs.read("/Devices/screen") or {}
   local room_w = math.max(320, (screen_now.width or 1920) - final.side - 80)
   local room_h = math.max(180, (screen_now.height or 1080) - L.head - 160)
   local k = math.min(1, room_w / RENDER.w, room_h / RENDER.h)
@@ -3837,7 +3837,7 @@ end
 local TUTORIAL = { index = "asset:tutorial/cafesa3d/index.html" }
 
 function TUTORIAL.open()
-  local ok, why = fs.send("/app/wm", { type = "launch", program = "/bin/browser.lua",
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = "/bin/browser.lua",
                                        args = TUTORIAL.index })
 
   print(ok and ("cafesa3d: tutorial at " .. TUTORIAL.index)
@@ -4758,7 +4758,7 @@ end
 
 function FULL.toggle()
   local on = not FULL.on
-  local screen_now = fs.read("/dev/screen") or {}
+  local screen_now = fs.read("/Devices/screen") or {}
   local w, h = FULL.was[1], FULL.was[2]
 
   if on then w, h = screen_now.width or W, screen_now.height or H end

@@ -6,7 +6,7 @@
 --
 --   wm snes                        the first ROM in /home/roms/snes
 --   wm snes:Top Gear 2.sfc         that one, from the same directory
---   wm snes:/ramfs/other.smc       anywhere else
+--   wm snes:/Temporary/other.smc   anywhere else
 --   wm snes:--scale 2              the first ROM, in a window twice the size
 --   wm snes:--scale 2 Top Gear 2.sfc
 --
@@ -362,7 +362,7 @@ local function relaunch(at_scale, rom)
   -- Kept before the other one starts, because it reads what this writes.
   keep_game()
 
-  local reply, why = fs.send("/app/wm", { type = "launch",
+  local reply, why = fs.send("/Running/wm", { type = "launch",
                                           program = "snes", args = words })
 
   if reply and reply.ok then
@@ -555,7 +555,7 @@ local KEYS = {
 -- P, and the key marked Pause, as the Game menu's item.
 local PAUSE_KEYS = { [25] = true, [119] = true }
 
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local period = counter_hz / fps
 due = sys.ticks()
 

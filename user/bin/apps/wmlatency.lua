@@ -32,7 +32,7 @@ local counter_hz = info.counter_hz or 62500000
 local tick_hz = info.tick_hz or 250
 local tick = counter_hz / tick_hz
 
-local win, err = fs.send("/app/wm", {
+local win, err = fs.send("/Running/wm", {
   type = "open", title = "wmlatency", w = 240, h = 60, x = 40, y = 60,
 })
 

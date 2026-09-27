@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /net: Ethernet, ARP, IPv4 and ICMP echo.
+ * /Network: Ethernet, ARP, IPv4 and ICMP echo.
  *
  * The one process that holds the card. `SPAWN_NET` is the disk's grant
  * pointed outwards - whoever can put a raw frame on a wire can claim any

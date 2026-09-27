@@ -171,7 +171,7 @@ more.on_click = function()
           return
         end
 
-        local ok, why = fs.send("/app/wm", { type = "wallpaper",
+        local ok, why = fs.send("/Running/wm", { type = "wallpaper",
                                             path = name })
 
         say(ok and "that is the desktop now"

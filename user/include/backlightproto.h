@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /*
- * What you may ask the backlight driver, at `/dev/backlight`.
+ * What you may ask the backlight driver, at `/Devices/backlight`.
  *
  * A declared shape, as `audioproto.h` is and for its reasons: two fixed
  * fields each way, and nothing a caller can send that the driver has to

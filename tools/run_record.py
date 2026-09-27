@@ -49,11 +49,11 @@ READ_BACK = (
 # the Video app decodes it - the MP4 reader, the H.264 Kit, FFmpeg and the
 # conversion onto a surface - counting the frames that came out as the one
 # asked for, and the eight bars' colours read off the last, a quarter of the
-# way down and in the middle of each bar. A program in /ramfs rather than a
+# way down and in the middle of each bar. A program in /Temporary rather than a
 # line at the prompt, because a program has `use`; in a `[=[` string,
 # because the program says `samples[order[i]]` and `]]` would end a `[[`.
 DECODE = (
-    'fs.write("/ramfs/decode.lua", [=[local video = use("/lib/video.lua") '
+    'fs.write("/Temporary/decode.lua", [=[local video = use("/lib/video.lua") '
     'local f, why = video.open(args) '
     'if not f then print("DECODE-ERR " .. tostring(why)) '
     'print("DECODE" .. "-DONE") return end '
@@ -62,7 +62,7 @@ DECODE = (
     'for i = 1, f.frames do local want = samples[order[i]].pts '
     'for _ = 1, 50 do f:frame(i) '
     'if f.shown_pts == want then exact = exact + 1 break end end end '
-    'local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1 '
+    'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1 '
     'local bars = {} for b = 0, 7 do bars[#bars + 1] = ("%06x"):format('
     'f.picture:get(((2 * b + 1) * f.width) // 16, f.height // 4) & 0xffffff) '
     'end print(("DECODE %s %d %d %.1f %s"):format(f.codec:gsub(" ", ""), '
@@ -158,7 +158,7 @@ def main():
 
         mark = len(guest.seen)
         guest.type(DECODE)
-        guest.type("/ramfs/decode.lua " + path)
+        guest.type("/Temporary/decode.lua " + path)
         guest.wait_for("DECODE-DONE", "the recording decoded")
         said = guest.seen[mark:]
         row = re.search(r"^DECODE (\S+) (\d+) (\d+) ([\d.]+) (\S+)", said,

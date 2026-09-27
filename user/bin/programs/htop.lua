@@ -2,7 +2,7 @@
 -- htop: what this machine is doing, in layers.
 --
 -- A program, in /bin, running in an address space of its own. It reads
--- /dev through its own namespace - the same list/read protocol the
+-- /Devices through its own namespace - the same list/read protocol the
 -- filesystem answers - and asks the kernel only for the process table.
 --
 -- What is worth seeing about Kosmos is not that there are five processes.
@@ -50,7 +50,7 @@ end
 -- never moves. Every run of this program is a fresh process with no memory
 -- of the last one, so it takes both samples itself.
 local function sample()
-  local k = fs.read("/dev/kernel")
+  local k = fs.read("/Devices/kernel")
   local by_pid = {}
 
   for _, p in ipairs(sys.processes()) do
@@ -69,9 +69,9 @@ local function pause(ticks)
 end
 
 local function report(before, after)
-  local cpu = fs.read("/dev/cpu")
-  local mem = fs.read("/dev/memory")
-  local k   = fs.read("/dev/kernel")
+  local cpu = fs.read("/Devices/cpu")
+  local mem = fs.read("/Devices/memory")
+  local k   = fs.read("/Devices/kernel")
 
   local elapsed = (after.idle + after.busy) - (before.idle + before.busy)
   local busy = after.busy - before.busy
@@ -120,7 +120,7 @@ local function report(before, after)
 end
 
 local rounds = tonumber(args) or 1
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 
 for i = 1, rounds do
   local before = sample()

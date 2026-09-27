@@ -4,8 +4,8 @@
 -- kosmos: icon App_Generic
 -- kosmos: section demos
 --
---   wm doom                    /home/doom1.wad
---   wm doom:/ramfs/other.wad    somewhere else
+--   wm doom                        /home/doom1.wad
+--   wm doom:/Temporary/other.wad   somewhere else
 --
 -- Only in an image with Doom compiled in: `make` and `make qemu` build one
 -- (`FULL=1`, the default) and `make FULL=0` does not. See

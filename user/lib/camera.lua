@@ -7,10 +7,10 @@
 --   s:draw(surface, true)                     -- the newest frame, mirrored
 --   s:close()
 --
--- `/dev/camera` speaks a declared struct (`cameraproto.h`), and this is the
+-- `/Devices/camera` speaks a declared struct (`cameraproto.h`), and this is the
 -- one place in Lua that knows its shape - the same bargain `/lib/audio.lua`
--- makes for `/dev/audio`. Only a program that declares `kosmos: needs
--- camera` has `/dev/camera` at all; for any other `camera.all()` is empty
+-- makes for `/Devices/audio`. Only a program that declares `kosmos: needs
+-- camera` has `/Devices/camera` at all; for any other `camera.all()` is empty
 -- and says why.
 --
 -- **No picture passes through Lua.** The program makes a region, hands it
@@ -66,7 +66,7 @@ camera.IN_USE = ERRORS[4]
 local PIXELS = { [1] = "yuy2", [2] = "mjpeg" }
 
 local function ask(op, which, size, pass, handle)
-  local ok, reply, why = pcall(fs.raw, "/dev/camera",
+  local ok, reply, why = pcall(fs.raw, "/Devices/camera",
                                string.pack(REQUEST, op, which or 0,
                                            size or 0, handle or 0), pass)
 
@@ -293,7 +293,7 @@ function stream:record_start()
     return nil, "no memory for the encoder: " .. tostring(wat)
   end
 
-  local mem = fs.read("/dev/memory")
+  local mem = fs.read("/Devices/memory")
   local free_mb = type(mem) == "table" and tonumber(mem.free_mb) or 64
   local want = math.max(16, math.min(256, free_mb // 4)) * 1024 * 1024
   local ocap, oat, out_bytes = largest(want, 8 * 1024 * 1024)

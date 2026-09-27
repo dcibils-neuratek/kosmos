@@ -43,7 +43,7 @@ local want = tonumber(args)
 local chunk = string.rep("\0", fmt.period)
 local out = assert(audio.open("audiolag", want))
 
-local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local us = hz // 1000000
 
 local worst, over, sent = 0, 0, 0

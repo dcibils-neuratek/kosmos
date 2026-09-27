@@ -394,7 +394,7 @@ keeps the machine-wide half of a tick on core zero, exactly as
 
 ### What userland sees
 
-`sysinfo` carries `cpus`, `cpus_online` and `cpus_present`; `/dev/cpu` adds
+`sysinfo` carries `cpus`, `cpus_online` and `cpus_present`; `/Devices/cpu` adds
 `cores`, `cores_online` and `cores_present`. Monitor and `cores` draw one
 segmented meter per processor, all of them measured — `sys.cpuload()`
 returns a `{idle, busy}` pair per online core, and every core charges its own

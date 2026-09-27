@@ -28,7 +28,7 @@
  *   map      that one page, uncached                       SYS_DEV_MAP
  *   read     both controllers, and say what they hold
  *   write    the on-time of the one that is on, if dim, and read it back
- *   serve    `/dev/backlight`: get and set a level, 0 to 256
+ *   serve    `/Devices/backlight`: get and set a level, 0 to 256
  *
  * **And then it stays, answering** (`backlightproto.h`), because F5 and F6
  * arrived on 19 September - `hal/pc/ec.c` turns them into keys, and the
@@ -39,7 +39,7 @@
  *
  * **It answers on a machine with no backlight too**, with
  * `BACKLIGHT_ERR_NO_DEVICE`, rather than exiting. The endpoint is init's,
- * so a driver that left would leave `/dev/backlight` a name whose calls
+ * so a driver that left would leave `/Devices/backlight` a name whose calls
  * wait for a receiver that is never coming - and the caller that matters
  * is the window manager's key path, where nothing may wait.
  *
@@ -114,7 +114,7 @@ static void report(long console, unsigned which,
     say_send(console, &line);
 }
 
-/* The controller `/dev/backlight` serves: where its registers are, or 0. */
+/* The controller `/Devices/backlight` serves: where its registers are, or 0. */
 static uintptr_t lit;
 
 static void read_controller(uintptr_t at, struct backlight_controller *c)
@@ -215,7 +215,7 @@ static bool bring_up(long console)
     }
 
     say_begin(&line);
-    say_text(&line, "backlight: serving /dev/backlight, controller ");
+    say_text(&line, "backlight: serving /Devices/backlight, controller ");
     say_dec(&line, (unsigned)((lit - base) / CONTROLLER_STRIDE));
     say_send(console, &line);
     return true;

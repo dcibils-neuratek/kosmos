@@ -26,7 +26,7 @@ local blocks = use("/lib/blocks.lua")
 
 local diskbench = {}
 
-local HZ = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 local function now()
   return sys.ticks() / HZ

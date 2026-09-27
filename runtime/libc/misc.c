@@ -51,7 +51,7 @@ char *setlocale(int category, const char *locale)
 
 /*
  * There is no wall clock, and the kernel is not where one belongs: time is a
- * resource reached through a namespace, at /dev/clock, which is why even the
+ * resource reached through a namespace, at /Devices/clock, which is why even the
  * clock is a capability in `design.md` §9.2.
  *
  * Lua wants time() only to seed hash randomisation, and that seed is
@@ -62,11 +62,11 @@ char *setlocale(int category, const char *locale)
 time_t time(time_t *t)
 {
     (void)t;
-    panic("time(): there is no wall clock. Read /dev/clock instead.");
+    panic("time(): there is no wall clock. Read /Devices/clock instead.");
 }
 
 clock_t clock(void)
 {
-    panic("clock(): there is no wall clock. Read /dev/clock instead.");
+    panic("clock(): there is no wall clock. Read /Devices/clock instead.");
 }
 

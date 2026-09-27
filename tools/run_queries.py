@@ -14,7 +14,7 @@ namespace maps `/home/doc.pdf` onto `/home/doc.pdf` in the server and put
 the mount prefix back on the way out, giving `/home/home/doc.pdf`; and the
 server answered a question asked about `/home` with everything on the disk,
 `/system` included. Both were invisible because every query test used
-`/ramfs`, which is the one mount with no root - so the two paths through
+`/Temporary`, which is the one mount with no root - so the two paths through
 that code had never both been walked.
 
 So the checks below are all about *which* paths come back, on both kinds of
@@ -57,11 +57,11 @@ def main():
             # mount are exercised by the same run.
             'fs.write("/home/a.txt", "one") '
             'fs.write("/system/b.txt", "two") '
-            'fs.write("/ramfs/c.txt", "three")',
+            'fs.write("/Temporary/c.txt", "three")',
 
             'fs.setattr("/home/a.txt", { kind = "book" }) '
             'fs.setattr("/system/b.txt", { kind = "book" }) '
-            'fs.setattr("/ramfs/c.txt", { kind = "book", size = "small" })',
+            'fs.setattr("/Temporary/c.txt", { kind = "book", size = "small" })',
 
             'print("Q-HOME", table.concat(fs.query("/home", '
             '{ kind = "book" }) or {}, ","))',
@@ -69,11 +69,11 @@ def main():
             'print("Q-SYSTEM", table.concat(fs.query("/system", '
             '{ kind = "book" }) or {}, ","))',
 
-            'print("Q-DATA", table.concat(fs.query("/ramfs", '
+            'print("Q-DATA", table.concat(fs.query("/Temporary", '
             '{ kind = "book" }) or {}, ","))',
 
             # Two terms, and the second one is what narrows it.
-            'print("Q-TWO", table.concat(fs.query("/ramfs", '
+            'print("Q-TWO", table.concat(fs.query("/Temporary", '
             '{ kind = "book", size = "small" }) or {}, ","))',
 
             'print("Q-NONE", table.concat(fs.query("/home", '
@@ -87,42 +87,42 @@ def main():
 
             # A sixty-four character name, on both kinds of mount, and in
             # memory a directory down: a 64-character directory holding a
-            # 64-character file is 136 bytes of path, which /ramfs's old
+            # 64-character file is 136 bytes of path, which /Temporary's old
             # 128-byte field refused outright.
             'D, N = string.rep("d", 64), string.rep("n", 60) .. ".txt" '
-            'fs.send("/ramfs/" .. D, { type = "mkdir" }) '
-            'fs.write("/ramfs/" .. D .. "/" .. N, "deep") '
+            'fs.send("/Temporary/" .. D, { type = "mkdir" }) '
+            'fs.write("/Temporary/" .. D .. "/" .. N, "deep") '
             'fs.write("/home/" .. N, "long")',
 
-            'print("L-RAMFS", fs.read("/ramfs/" .. D .. "/" .. N) or "none", '
-            'table.concat(fs.list("/ramfs/" .. D) or {}, ",")) '
+            'print("L-RAMFS", fs.read("/Temporary/" .. D .. "/" .. N) or "none", '
+            'table.concat(fs.list("/Temporary/" .. D) or {}, ",")) '
             'print("L-HOME", fs.read("/home/" .. N) or "none")',
 
-            # A name longer than /app keeps, registered the way `ui.window`
+            # A name longer tha /Running keeps, registered the way `ui.window`
             # registers a window under its title. The namespace kit used to
             # raise inside `string.pack` before the registry saw it, which
             # killed the process that asked - a window titled with a ROM's
             # No-Intro name was the first to be that long.
             'E = sys.endpoint() '
-            'R = fs.send("/app", { type = "register", '
+            'R = fs.send("/Running", { type = "register", '
             'name = string.rep("t", 46) }, E) '
             'print("A-LONG", R and R.name or "refused") '
-            'if R then fs.send("/app", { type = "unregister", name = R.name }) end',
+            'if R then fs.send("/Running", { type = "unregister", name = R.name }) end',
 
-            # And the rest of that class: a name longer than its field at /dev
+            # And the rest of that class: a name longer than its field at /Devices
             # and at /bin is an answer - no such device, no such program -
             # rather than a raise from `string.pack` inside the namespace kit.
-            'print("F-LONG", pcall(fs.getattr, "/dev/" .. string.rep("d", 40)), '
+            'print("F-LONG", pcall(fs.getattr, "/Devices/" .. string.rep("d", 40)), '
             'pcall(fs.getattr, "/bin/" .. string.rep("b", 80)))',
 
             # **Names whatever their case, kept as they were given**
             # (`roadmap.md` 6s): one file on the disk and one in memory,
             # written and read however the path is typed, and a write in
             # another case replacing the file and keeping its name.
-            'fs.write("/Home/Case.txt", "disk") fs.write("/RAMFS/Case.txt", "memory") '
+            'fs.write("/Home/Case.txt", "disk") fs.write("/TEMPORARY/Case.txt", "memory") '
             'fs.write("/HOME/CASE.TXT", "disk again")',
 
-            'print("C-READ", fs.read("/home/case.txt"), fs.read("/ramfs/CASE.TXT"))',
+            'print("C-READ", fs.read("/home/case.txt"), fs.read("/Temporary/CASE.TXT"))',
 
             'local n, c = 0, nil for _, x in ipairs(fs.list("/home") or {}) do '
             'if x:lower() == "case.txt" then n, c = n + 1, x end end '
@@ -135,27 +135,35 @@ def main():
             'print("C-QUERY", table.concat(fs.query("/Home", { kind = "cased" }) or {}, ","))',
 
             # The programs, the devices, the registry and a library.
-            'print("C-BIN", (fs.getattr("/BIN/CLOCK.lua") or {}).kind, type(fs.read("/Dev/CPU")))',
+            'print("C-BIN", (fs.getattr("/BIN/CLOCK.lua") or {}).kind, type(fs.read("/devices/CPU")))',
 
             'E1, E2 = sys.endpoint(), sys.endpoint() '
-            'R1 = fs.send("/App", { type = "register", name = "Cased" }, E1) '
-            'R2 = fs.send("/app", { type = "register", name = "CASED" }, E2) '
+            'R1 = fs.send("/RUNNING", { type = "register", name = "Cased" }, E1) '
+            'R2 = fs.send("/Running", { type = "register", name = "CASED" }, E2) '
             'print("C-APP", R1 and R1.name, R2 and R2.name) '
-            'fs.send("/app", { type = "unregister", name = R1 and R1.name or "" }) '
-            'fs.send("/app", { type = "unregister", name = R2 and R2.name or "" })',
+            'fs.send("/Running", { type = "unregister", name = R1 and R1.name or "" }) '
+            'fs.send("/Running", { type = "unregister", name = R2 and R2.name or "" })',
+
+            # A table larger than a message, kept in memory: stored in pieces
+            # as it always was, and no longer refused by `sys.pack` for being
+            # larger than the one message it used to pack into - the Clock's
+            # replicant crossed that line when `/dev/cpu` became `/Devices/cpu`.
+            'local t = {} for i = 1, 200 do t[i] = ("r"):rep(40) end '
+            'local ok = fs.write("/Temporary/big.tbl", t) local back = fs.read("/Temporary/big.tbl") '
+            'print("T-BIG", ok and true, type(back) == "table" and #back, back and back[200] == ("r"):rep(40))',
 
             # `use` is a program's, not the prompt's: a program that asks
             # for one library by two spellings.
-            'fs.write("/ramfs/usetwice.lua", "print(\\"C-USE\\", '
+            'fs.write("/Temporary/usetwice.lua", "print(\\"C-USE\\", '
             'use(\\"/LIB/Text.lua\\") == use(\\"/lib/text.lua\\"))\\n")',
 
-            'run /ramfs/usetwice.lua',
+            'run /Temporary/usetwice.lua',
 
             # And a name's spelling changed by a rename to itself in another
             # case, on both kinds of mount.
             'print("C-RENAME", fs.send("/home/case.txt", { type = "rename", to = "/home/CASE.txt" }) and true, '
-            'fs.send("/ramfs/case.txt", { type = "rename", to = "/ramfs/CASE.txt" }) and true) '
-            'local seen = {} for _, m in ipairs({ "/home", "/ramfs" }) do '
+            'fs.send("/Temporary/case.txt", { type = "rename", to = "/Temporary/CASE.txt" }) and true) '
+            'local seen = {} for _, m in ipairs({ "/home", "/Temporary" }) do '
             'for _, x in ipairs(fs.list(m) or {}) do if x:lower() == "case.txt" then '
             'seen[#seen + 1] = x end end end print("C-NAMES", table.concat(seen, ","))',
         #
@@ -174,10 +182,10 @@ def main():
             ("Q-SYSTEM /system/b.txt",
              "and the same disk answers a different mount with that mount's "
              "files"),
-            ("Q-DATA /ramfs/c.txt",
+            ("Q-DATA /Temporary/c.txt",
              "a mount with no root still works, which is the case that used "
              "to be the only one tested"),
-            ("Q-TWO /ramfs/c.txt",
+            ("Q-TWO /Temporary/c.txt",
              "a second term narrows rather than widens"),
             ("Q-NONE ",
              "and a value nothing carries finds nothing"),
@@ -206,15 +214,18 @@ def main():
              "an attribute set through another case was not indexed under the "
              "file's own spelling, once"),
             ("C-BIN", "application table",
-             "/BIN/CLOCK.lua or /Dev/CPU was not found whatever its case"),
+             "/BIN/CLOCK.lua or /devices/CPU was not found whatever its case"),
             ("C-APP", "Cased CASED2",
-             "/app did not take CASED for the name Cased already has"),
+             "/Running did not take CASED for the name Cased already has"),
             ("C-USE", "true",
              "a library used through two spellings was loaded twice"),
             ("C-RENAME", "true true",
              "a rename to a name's own other case was refused"),
             ("C-NAMES", "CASE.txt,CASE.txt",
              "a rename to another case did not change the name's spelling"),
+            ("T-BIG", "true 200 true",
+             "a table larger than a message was not kept in /Temporary and read "
+             "back whole"),
         ]:
             lines = [l for l in flat.splitlines() if l.startswith(marker + " ")]
 
@@ -238,7 +249,7 @@ def main():
 
         for marker, content, what in [
             ("L-RAMFS", "deep",
-             "a 64-character file inside a 64-character directory in /ramfs "
+             "a 64-character file inside a 64-character directory in /Temporary "
              "- 136 bytes of path"),
             ("L-HOME", "long", "a 64-character file on the disk"),
         ]:
@@ -262,7 +273,7 @@ def main():
         lines = [l for l in flat.splitlines() if l.startswith("A-LONG ")]
 
         if not lines or lines[-1].strip() != want:
-            raise Failure("a 46-byte name registered in /app did not come "
+            raise Failure("a 46-byte name registered in /Running did not come "
                           "back as its first 23 bytes.\n"
                           + "\n".join(lines or [flat[-1200:]]))
         checks += 1
@@ -272,7 +283,7 @@ def main():
         lines = [l for l in flat.splitlines() if l.startswith("F-LONG ")]
 
         if not lines or not lines[-1].startswith("F-LONG true true"):
-            raise Failure("a name longer than its field at /dev or /bin raised "
+            raise Failure("a name longer than its field at /Devices or /bin raised "
                           "inside the namespace kit instead of being answered.\n"
                           + "\n".join(lines or [flat[-1200:]]))
         checks += 1
@@ -295,7 +306,7 @@ def main():
         # ---- the file verbs, on the mount that had none -----------------
         #
         # `mkdir`, `delete` and `rename` did not exist in `ramproto.h` at
-        # all, because everything that had ever used /ramfs *published* - a
+        # all, because everything that had ever used /Temporary *published* - a
         # replicant writing its own source, the web server writing its
         # status - and nothing took anything back out. An operation with no
         # caller does not get written.
@@ -307,7 +318,7 @@ def main():
         # match line for line.
         #
         verbs = run_disk.boot(image, disk, [
-            "cd /ramfs",
+            "cd /Temporary",
             "touch alpha.txt",
             "mkdir box",
             "cp alpha.txt box",
@@ -319,13 +330,13 @@ def main():
         ])
 
         for marker, what in [
-            ("made /ramfs/alpha.txt",
+            ("made /Temporary/alpha.txt",
              "touch did not make a file in memory"),
-            ("made /ramfs/box",
+            ("made /Temporary/box",
              "mkdir did not make a directory in memory"),
-            ("copied to /ramfs/box/alpha.txt",
+            ("copied to /Temporary/box/alpha.txt",
              "cp did not copy into a directory in memory"),
-            ("moved to /ramfs/beta.txt",
+            ("moved to /Temporary/beta.txt",
              "rename did not move a file in memory"),
             ("is a directory; use -r",
              "a directory with something in it was removed without -r"),
@@ -341,7 +352,7 @@ def main():
         # own reports: what is there at the end is the only claim that
         # cannot be made by a program that did nothing.
         if "(empty)" not in verbs.split("rm beta.txt")[-1]:
-            raise Failure("what /ramfs holds at the end is not what the "
+            raise Failure("what /Temporary holds at the end is not what the "
                           "session did to it.\n" + verbs[-1200:])
 
         checks += 1
@@ -349,7 +360,7 @@ def main():
         print(f"PASS: {checks} checks on attributes and the queries over "
               "them, on both kinds of mount - and names found whatever "
               "their case and kept as they were given, on the disk, in "
-              "memory, in /bin, /dev, /app and a library used twice.")
+              "memory, in /bin, /Devices, /Running and a library used twice.")
         return 0
     except Failure as e:
         print(f"FAIL: {e}")

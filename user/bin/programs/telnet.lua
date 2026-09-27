@@ -45,7 +45,7 @@ end
 
 print(("connecting to %s port %d"):format(words[1], port))
 
-local conn, why = fs.connect("/net", where, port)
+local conn, why = fs.connect("/Network", where, port)
 
 if not conn then
   --
@@ -81,12 +81,12 @@ while not conn:closed() do
 
   if text then io.write(text) end
 
-  if fs.interrupted and fs.interrupted("/dev/console") then
+  if fs.interrupted and fs.interrupted("/Devices/console") then
     print("")
     break
   end
 
-  local key = fs.keys and fs.keys("/dev/console")
+  local key = fs.keys and fs.keys("/Devices/console")
 
   for _, code in ipairs(key or {}) do
     if code == 13 or code == 10 then
@@ -104,7 +104,7 @@ end
 
 local last = conn:read()
 
-if last then fs.write("/dev/console", last) end
+if last then fs.write("/Devices/console", last) end
 
 conn:close()
 print("")

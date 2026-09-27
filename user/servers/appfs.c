@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /app: which running application answers to which name.
+ * /Running: which running application answers to which name.
  *
  * A registry rather than a filesystem. An application publishes its own
  * endpoint here under a name, and anything that wants to script it asks for
@@ -115,7 +115,7 @@ static void unique(char *name)
  * window manager registers as `wm` and, stopped with Control-C, destroys its
  * endpoint without unregistering: the next one was filed as `wm2`, and a
  * lookup of `wm` handed out a capability that named nothing. The Tracker
- * `desktop` starts died of it - "no such path: /app/wm", under a desktop
+ * `desktop` starts died of it - "no such path: /Running/wm", under a desktop
  * that was running.
  *
  * So the registry does not wait to be told. The kernel ends an endpoint

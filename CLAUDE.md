@@ -307,7 +307,7 @@ by ninety-six thousand on the same board run natively, and by four million
 on the other, so **there is no ratio to keep in your head**.
 
 Inside a function this is safe, and the reason is visible: every correct
-piece of counter arithmetic here reads `counter_hz` from `/dev/cpu` three
+piece of counter arithmetic here reads `counter_hz` from `/Devices/cpu` three
 lines above the sum. **A number mailed to another process arrives naked**,
 and that is where it has gone wrong twice - the window manager's `wait` in
 0.9.1, `NET_OP_RESOLVE`'s `ticks` in 0.9.6, the second one *after* the
@@ -356,7 +356,7 @@ expressed, so the wire refuses them and the server never has to.
 
 What it costs is real and is not hidden: adding a field means editing a
 header and rebuilding both sides, and an error is a number with the sentence
-composed by whoever shows it to a person. **Only `/dev/audio` speaks this way
+composed by whoever shows it to a person. **Only `/Devices/audio` speaks this way
 today**; the rest still take tables and are being moved one at a time, each
 lived with before the next is started.
 

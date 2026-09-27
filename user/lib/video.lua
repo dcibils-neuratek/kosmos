@@ -616,7 +616,7 @@ function video.open(path, options)
     --
     debuginfo = options.debuginfo and true or false,
     info_open = options.debuginfo and options.open_now and true or false,
-    hz = (fs.read("/dev/cpu") or {}).counter_hz or 1,
+    hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1,
     drawn = 0, dropped = 0, rate = 0,
     rate_at = sys.ticks(), rate_frames = 0,
     ms_read = 0, ms_decode = 0, ms_screen = 0,

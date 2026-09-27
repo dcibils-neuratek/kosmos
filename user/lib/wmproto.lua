@@ -4,7 +4,7 @@
 --
 -- `design.md` §17's argument, one protocol at a time: what crosses into a
 -- server is a *declared shape* rather than whatever somebody put in a
--- table. `user/include/audioproto.h` is that for `/dev/audio` and this is
+-- table. `user/include/audioproto.h` is that for `/Devices/audio` and this is
 -- the same idea where both sides are Lua - a module both of them name,
 -- rather than a header both of them compile against. It cannot make a
 -- wrong field a compile error the way the C headers can. What it can do is
@@ -28,7 +28,7 @@
 --
 -- Every other place in the tree that does arithmetic on `sys.ticks()` is
 -- correct, and correct for one reason: it reads `counter_hz` from
--- `/dev/cpu` three lines above, where the unit is visible. This was the
+-- `/Devices/cpu` three lines above, where the unit is visible. This was the
 -- only one where the number was *mailed to another process*, and a message
 -- carries no units.
 --
@@ -39,7 +39,7 @@ local wmproto = {}
 
 -- The window manager's path in the namespace. Named once so a caller does
 -- not repeat a string the server could rename.
-wmproto.WM = "/app/wm"
+wmproto.WM = "/Running/wm"
 
 --
 -- Ask for events, blocking up to `wait_ticks` *scheduler* ticks.
@@ -73,7 +73,7 @@ end
 -- screen: a clipboard is shared between programs that cannot reach each
 -- other, so it belongs to the one process both of them already talk to.
 -- No global name and no shared page - an application that was not given
--- `/app/wm` has no clipboard, which is the right answer rather than a
+-- `/Running/wm` has no clipboard, which is the right answer rather than a
 -- missing feature.
 --
 -- **The cap is enforced here, on the way out, and that is not a detail.**

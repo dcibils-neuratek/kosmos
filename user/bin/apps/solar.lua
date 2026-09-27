@@ -123,7 +123,7 @@ end
 -- `tools/profile.lua` in the portable project does this with `os.clock`,
 -- which Kosmos does not have - the libraries opened here are base,
 -- coroutine, table, string, math and utf8. So the timing is the counter,
--- with its rate read from `/dev/cpu` beside the sum, which is this system's
+-- with its rate read from `/Devices/cpu` beside the sum, which is this system's
 -- rule about clocks. Everything else is the reference's method: warm up,
 -- then time N frames of update and draw.
 --
@@ -133,7 +133,7 @@ end
 --------------------------------------------------------------------------
 
 local function timer()
-  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
 
   return function() return sys.ticks() / hz end
 end
@@ -322,7 +322,7 @@ local function bench(width, height, count)
 
   if not ok then print("solar: no /kits/game") return end
 
-  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
   local fb = {}
 
   for i = 1, width * height do fb[i] = 0 end
@@ -622,7 +622,7 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
 
   local function go_full(want)
     local focus = app.focus and app.focus.id
-    local reply, sent = fs.send("/app/wm", {
+    local reply, sent = fs.send("/Running/wm", {
       type = "launch", program = "solar",
       args = ("%s--level %d --days %.6f%s%s%s"):format(
                want and "--full " or "",
@@ -723,7 +723,7 @@ local function run(width, height, scale, level, assets, auto, stars, belts,
     present = function(dst) dst:pixels(app.g.fb, width, height, scale) end
   end
 
-  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 1
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
   local last = sys.ticks()
 
   --

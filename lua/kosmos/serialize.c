@@ -319,12 +319,13 @@ static int pack_value(lua_State *L, int index, struct writer *w, int depth)
     return (w->overflow) ? SERIALIZE_ERR_TOO_BIG : SERIALIZE_OK;
 }
 
-int serialize_pack(lua_State *L, int index, struct message *m)
+int serialize_pack_into(lua_State *L, int index, unsigned char *buf,
+                        size_t cap, size_t *len)
 {
-    struct writer w = { m->data, MSG_BYTES, 0, false };
+    struct writer w = { buf, cap, 0, false };
     int rc;
 
-    m->length = 0;
+    *len = 0;
 
     rc = pack_value(L, index, &w, 0);
 
@@ -336,8 +337,17 @@ int serialize_pack(lua_State *L, int index, struct message *m)
         return SERIALIZE_ERR_TOO_BIG;
     }
 
-    m->length = (uint32_t)w.len;
+    *len = w.len;
     return SERIALIZE_OK;
+}
+
+int serialize_pack(lua_State *L, int index, struct message *m)
+{
+    size_t len = 0;
+    int rc = serialize_pack_into(L, index, m->data, MSG_BYTES, &len);
+
+    m->length = (uint32_t)len;
+    return rc;
 }
 
 static int unpack_value(lua_State *L, struct reader *r, int depth)
@@ -463,13 +473,18 @@ static int unpack_value(lua_State *L, struct reader *r, int depth)
 
 int serialize_unpack(lua_State *L, const struct message *m)
 {
-    struct reader r = { m->data, m->length, 0, false };
-    int top = lua_gettop(L);
-    int rc;
-
     if (m->length > MSG_BYTES) {
         return SERIALIZE_ERR_MALFORMED;
     }
+
+    return serialize_unpack_from(L, m->data, m->length);
+}
+
+int serialize_unpack_from(lua_State *L, const unsigned char *buf, size_t len)
+{
+    struct reader r = { buf, len, 0, false };
+    int top = lua_gettop(L);
+    int rc;
 
     rc = unpack_value(L, &r, 0);
 

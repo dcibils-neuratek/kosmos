@@ -14,7 +14,7 @@
 --   local side = sidebar.new()
 --   ui.tree{ ..., roots = side.roots() }
 --   side.refresh()              -- after a place is made, and on Refresh
---   side.volumes(true)          -- what /drives answers now, not at last draw
+--   side.volumes(true)          -- what /Drives answers now, not at last draw
 --
 -- One per window, because the volume cache and the groups a refresh clears
 -- belong to the tree that drew them.
@@ -43,20 +43,20 @@ end
 -- listed here.
 --
 -- **Six strings used to be written out at this spot, and they fell
--- behind.** `/user`, `/app` and `/ramfs` are all mounted and none of them
+-- behind.** `/user`, `/Running` and `/Temporary` are all mounted and none of them
 -- was offered, so a file manager could not reach places its own process
 -- could see - which reads as the system hiding things from you and is
 -- really a hardcoded list going stale. The rename of `/data` left the
--- label saying `data` beside a path saying `/ramfs`, which is the same
+-- label saying `data` beside a path saying `/Temporary`, which is the same
 -- rot one step further on.
 --
 -- Two filters, and both are about what a *browser* can use:
 --
--- **A mount inside another one is not a root.** `/dev/console` and
--- `/dev/audio` are mounts and already appear inside `/dev`; offering them
+-- **A mount inside another one is not a root.** `/Devices/console` and
+-- `/Devices/audio` are mounts and already appear inside `/Devices`; offering them
 -- again would be a pane that disagrees with the tree underneath it.
 --
--- **A mount that cannot be listed is not offered.** `/net` is a protocol
+-- **A mount that cannot be listed is not offered.** `/Network` is a protocol
 -- rather than a tree and answers a listing with an error, and so does the
 -- disk on a machine that has none. Asking is the only way to tell them
 -- apart - nothing on a mount says "browsable" - and a root that did
@@ -90,7 +90,7 @@ local function mount_roots()
     -- every Tracker startup, and Tracker is the desktop: if any one of them
     -- does not answer, the desktop does not exist.
     --
-    -- One did not. `/net` on a laptop with no network card took **18.4
+    -- One did not. `/Network` on a laptop with no network card took **18.4
     -- seconds** to come back, measured, while every other mount answered in
     -- four to twelve milliseconds. Both Tracker processes sat in this loop;
     -- the compositor cycled happily with nothing to draw on; four other
@@ -131,8 +131,8 @@ end
 -- `/system` and `/user` as well, so Places was left holding `user` - which
 -- the drawing never mentions - and no `Desktop`, which it does.
 local SYSTEM_MOUNTS = {
-  ["/bin"] = true, ["/lib"] = true, ["/app"] = true,
-  ["/dev"] = true, ["/net"] = true, ["/ramfs"] = true,
+  ["/bin"] = true, ["/lib"] = true, ["/Running"] = true,
+  ["/Devices"] = true, ["/Network"] = true, ["/Temporary"] = true,
 }
 
 --
@@ -140,7 +140,7 @@ local SYSTEM_MOUNTS = {
 --
 -- `mount_roots` above records what probing mounts at startup once cost: 18.4
 -- seconds on a laptop with no network card, with the whole desktop looking
--- hung, because Tracker *is* the desktop. Asking `/drives` what is plugged
+-- hung, because Tracker *is* the desktop. Asking `/Drives` what is plugged
 -- in is the same shape of question one mount further along, so it is asked
 -- here - inside `children`, which `ui.tree` calls when somebody opens the
 -- group - and never on the way to a first frame.
@@ -153,7 +153,7 @@ sidebar.subdirs = subdirs
 
 function sidebar.new()
   --
-  -- **What `/drives` answered, once per refresh**, shared by the Drives group
+  -- **What `/Drives` answered, once per refresh**, shared by the Drives group
   -- and by any place on a drive. Both are drawn in the same pass, and asking
   -- twice would be the same question twice on the way to a frame.
   --
@@ -161,7 +161,7 @@ function sidebar.new()
 
   local function volumes_now()
     if volumes_seen == nil then
-      volumes_seen = (fs.volumes and fs.volumes("/drives")) or {}
+      volumes_seen = (fs.volumes and fs.volumes("/Drives")) or {}
     end
 
     return volumes_seen
@@ -181,7 +181,7 @@ function sidebar.new()
 
       if not v.readable then note = note .. ", not opened" end
 
-      out[#out + 1] = { text = v.name, path = files.join("/drives", v.name),
+      out[#out + 1] = { text = v.name, path = files.join("/Drives", v.name),
                         note = note, children = subdirs }
     end
 
@@ -215,7 +215,7 @@ function sidebar.new()
   -- A place whose drive is away stays in the list, dimmed and saying so -
   -- `drives.html`: "Unplug the drive and MyPhotos stays in Places, greyed
   -- out". `quiet` is the tree's word for a row with nowhere to go. Only a
-  -- place on a drive asks `/drives` anything, so a sidebar without one costs
+  -- place on a drive asks `/Drives` anything, so a sidebar without one costs
   -- the first frame nothing.
   --
   local function place_rows()
@@ -247,7 +247,7 @@ function sidebar.new()
     local system, other = {}, {}
 
     for _, m in ipairs(mount_roots()) do
-      if m.path == "/drives" then
+      if m.path == "/Drives" then
         -- The Drives group answers for it, with what each volume is.
       elseif SYSTEM_MOUNTS[m.path] then
         system[#system + 1] = m
@@ -296,7 +296,7 @@ function sidebar.new()
   end
 
   --
-  -- What `/drives` answers - fresh when asked for, because a place has to
+  -- What `/Drives` answers - fresh when asked for, because a place has to
   -- key on what is plugged in *now*, not at the last draw.
   --
   function self.volumes(fresh)

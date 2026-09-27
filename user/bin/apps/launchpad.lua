@@ -147,7 +147,7 @@ local function launch()
   -- `launcher.lua` gives: this process holds a screen and nothing else, and
   -- what may be started is the window manager's judgement to make.
   --
-  fs.send("/app/wm", { type = "launch",
+  fs.send("/Running/wm", { type = "launch",
                        program = item.program,
                        args = item.args })
   win:close()
@@ -195,12 +195,12 @@ end
 -- it, which is what every file list since the Macintosh has said and what a
 -- person expects here.
 --
--- The span is read from `/dev/cpu` rather than assumed, because `sys.ticks`
+-- The span is read from `/Devices/cpu` rather than assumed, because `sys.ticks`
 -- is the counter and the two clocks differ by a quarter of a million on one
 -- board and four million on another. Half a second is slow enough for a
 -- hand that is not in a hurry and far short of two deliberate clicks.
 --------------------------------------------------------------------------
-local CLICK_SPAN = ((fs.read("/dev/cpu") or {}).counter_hz or 62500000) // 2
+local CLICK_SPAN = ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000) // 2
 
 local clicked_row, clicked_at = nil, 0
 

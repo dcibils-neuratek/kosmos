@@ -32,13 +32,13 @@ local ROUNDS = 200
 local TARGET = 5
 local SLOPE  = 1.6      -- how much the slowest size may cost over the fastest
 
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 local made = 0
 
 local function grow_to(total)
   while made < total do
     made = made + 1
-    local ok, err = fs.setattr(("/ramfs/bench/f%d"):format(made),
+    local ok, err = fs.setattr(("/Temporary/bench/f%d"):format(made),
                                { kind = "filler", n = made })
     if not ok then
       print(("qbench: could not create node %d: %s"):format(made, tostring(err)))
@@ -50,7 +50,7 @@ end
 
 -- The five that always match, made once and never touched again.
 for i = 1, TARGET do
-  local ok, err = fs.setattr(("/ramfs/bench/target%d"):format(i),
+  local ok, err = fs.setattr(("/Temporary/bench/target%d"):format(i),
                              { kind = "qbench-target" })
   if not ok then
     print("qbench: " .. tostring(err))
@@ -71,13 +71,13 @@ for _, size in ipairs(SIZES) do
 
   -- One of each first, so the measured rounds are not paying for whatever
   -- the first call after a growth spurt costs.
-  fs.getattr("/ramfs")
-  fs.query("/ramfs", { kind = "qbench-target" })
+  fs.getattr("/Temporary")
+  fs.query("/Temporary", { kind = "qbench-target" })
 
   local start = sys.ticks()
 
   for _ = 1, ROUNDS do
-    fs.getattr("/ramfs")
+    fs.getattr("/Temporary")
   end
 
   local control = (sys.ticks() - start) / ROUNDS
@@ -86,7 +86,7 @@ for _, size in ipairs(SIZES) do
   local found = 0
 
   for _ = 1, ROUNDS do
-    local paths = fs.query("/ramfs", { kind = "qbench-target" })
+    local paths = fs.query("/Temporary", { kind = "qbench-target" })
     found = paths and #paths or -1
   end
 

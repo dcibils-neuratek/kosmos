@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /*
- * What you may ask the /app registry, written down.
+ * What you may ask the /Running registry, written down.
  *
  * The fourth protocol here to be a definition rather than a convention, and
  * the first where a *capability* travels in both directions: `register`
@@ -47,6 +47,6 @@ struct app_reply {
 };
 
 _Static_assert(sizeof(struct app_reply) <= 2048,
-               "an /app reply must fit in one message - lower APP_MAX");
+               "a /Running reply must fit in one message - lower APP_MAX");
 
 #endif /* KOSMOS_APPPROTO_H */

@@ -13,7 +13,7 @@
 -- drawing. Two processes is what lets one of them wait and the other stay
 -- alive.
 --
--- So the two of them talk through `/ramfs`. `httpd` writes its state and its
+-- So the two of them talk through `/Temporary`. `httpd` writes its state and its
 -- last forty lines there; this reads them on a tick. That is a file rather
 -- than a message because the server has no idea anybody is watching, and
 -- should not have to.
@@ -24,8 +24,8 @@ local theme = ui.theme
 local W, H = 560, 460
 local L = nil                  -- the kit's layout, once it is loaded
 
-local STATUS = "/ramfs/httpd/status"
-local LOG    = "/ramfs/httpd/log"
+local STATUS = "/Temporary/httpd/status"
+local LOG    = "/Temporary/httpd/log"
 
 local win, err = ui.window{ title = "Web Server", w = W, h = H, x = 120, y = 80 }
 
@@ -190,7 +190,7 @@ function start()
   -- with `run` would make this process the parent and this window the thing
   -- the server dies with.
   --
-  local ok, why = fs.send("/app/wm", { type = "launch", program = "httpd",
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = "httpd",
                                        args = port .. " " .. root })
 
   said = ok and ("started on port " .. port)
@@ -207,7 +207,7 @@ function stop()
 
   -- The desktop started it, so the desktop is its parent and the only thing
   -- that may end it. `procs` does exactly this and for the same reason.
-  local ok, why = fs.send("/app/wm", { type = "end_process", pid = id })
+  local ok, why = fs.send("/Running/wm", { type = "end_process", pid = id })
 
   said = ok and "" or ("could not stop it: " .. tostring(why))
 end
@@ -224,7 +224,7 @@ end
 --
 -- Re-read on a tick rather than on a change.
 --
--- `/ramfs` can be *watched* - `fs.watch` blocks until a query's answer
+-- `/Temporary` can be *watched* - `fs.watch` blocks until a query's answer
 -- changes, which is what M7 built - and this does not use it, because this
 -- window is already blocked in the desktop's poll and there is no way to
 -- wait on two things at once. **The fourth time that missing `select` has
@@ -238,7 +238,7 @@ local shown_state = nil
 
 function win:on_frame()
   local now = sys.ticks()
-  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
   self.poll_wait_ticks = 125
 

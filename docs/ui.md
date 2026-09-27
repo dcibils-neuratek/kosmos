@@ -322,13 +322,13 @@ A replicant is a message:
   type   = "replicant",
   source = "...the view's code...",
   state  = { zone = "Montevideo", format = "24h" },
-  needs  = { "/dev/clock" },
+  needs  = { "/Devices/clock" },
 }
 ```
 
 The destination process receives that, does `load()` on the source, instantiates it with the state, and mounts in its namespace exactly what `needs` declares. The replicant runs in the destination process with the capabilities it asked for, and none beyond them.
 
-A replicant that asks for `/dev/clock` cannot read your files. In BeOS a replicant was native binary code with full access to the process hosting it.
+A replicant that asks for `/Devices/clock` cannot read your files. In BeOS a replicant was native binary code with full access to the process hosting it.
 
 This is the intersection of the system's three ideas: the Lisp Machine live image makes the code transportable, seL4 capabilities make it safe, and the BeOS idea gives it its purpose.
 
@@ -576,13 +576,13 @@ code, moved out of `tracker.lua` as it was, one `sidebar.new()` per window.
 Making and removing places stayed Tracker's; an Open window only gets
 around. `tools/test_places.lua` is 17 checks, and the control that
 matters keys `resolve` on the name: the replugged stick and the other stick
-called PHOTOS both then open `/drives/PHOTOS/Italy`, the wrong drive, and
+called PHOTOS both then open `/Drives/PHOTOS/Italy`, the wrong drive, and
 both checks fail.
 
 **Two changes to the kit came with it, both small.** The tree has
 `node_at(y)`, which its own clicks now use too: a drop and a right-click
 need the row under the pointer, and a second copy of that arithmetic in an
-application would be a row height it does not own. And `/drives` is asked
+application would be a row height it does not own. And `/Drives` is asked
 once per refresh, shared by the Drives group and any place on a drive -
 only a place on a drive asks at all, so a sidebar without one costs the
 first frame nothing.
@@ -802,7 +802,7 @@ between programs that are not allowed to reach each other, which is exactly
 the shape of the screen and of the console, and it gets the same answer: the
 one process both of them already talk to holds it, and everybody asks. There
 is no global name and no shared page. An application that was never handed
-`/app/wm` has no clipboard, which is the correct answer rather than a
+`/Running/wm` has no clipboard, which is the correct answer rather than a
 missing feature.
 
 `wmproto.copy(text)` and `wmproto.paste()` are the whole client side, and
@@ -1105,7 +1105,7 @@ for.
 refused to draw them for subsystems that did not exist, on the grounds that
 a picture which lies about what the system knows is worse than a gap. What
 decides it now is the kernel rather than a comment: `needs audio` grants
-nothing on a board with no sound card, so `/dev/audio` is absent from the
+nothing on a board with no sound card, so `/Devices/audio` is absent from the
 Deskbar's namespace and the speaker is not drawn. The battery is the
 exception and says so - it is drawn with a question mark beside it, because
 this machine cannot read one and a battery drawn at 72% would be
@@ -1386,7 +1386,7 @@ Appearance's slider, which changes the scale with windows open: every
 window is rebuilt at its new size in pixels, keeping its size and place
 in points, and told to draw again, and the log names each one's new size.
 The third is what reads the screen's size before it has a window - Lite
-XL sizes its buffers from `/dev/screen` - and the window manager's
+XL sizes its buffers from `/Devices/screen` - and the window manager's
 drawings that are not windows: the pointer, the level bar, a drag's
 label, the launcher pad.
 

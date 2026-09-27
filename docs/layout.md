@@ -67,7 +67,7 @@ second without breaking the machine.
                     contents, which this filesystem already supports
   queries/          saved live queries, which re-evaluate when asked
 
-/dev/               devices: cpu, memory, screen, keyboard, console, audio
+/Devices/           devices: cpu, memory, screen, keyboard, console, audio
 /tmp/               the ramfs. Fast, and gone at the next boot.
 ```
 
@@ -103,10 +103,10 @@ processes get different subsets of it:
    the shell                     a game started from the Deskbar
    ---------                     ------------------------------
    /system/libraries             /system/libraries
-   /user/programs                /app/wm
+   /user/programs                /Running/wm
    /user/applications            /home/settings
    /home
-   /dev
+   /Devices
    /tmp                          (that is the whole list)
 ```
 
@@ -136,7 +136,7 @@ still compiled into the image rather than read from a disk.
 | the apps and programs | Lua, in `user/bin/apps/` and `user/bin/programs/`, both served flat at `/bin` | write them to the disk at build time |
 | fonts and images | inside the image, ~700 KB of it | write them to the disk; the wallpaper case wants this first |
 | `/home` | a real disk, real files, journalled | done |
-| `/tmp` | the ramfs, at `/ramfs` today | rename |
+| `/tmp` | the ramfs, at `/Temporary` since 27 September - the agreed root's word for it (`layout.html`) | done |
 
 **A disk this Mac cannot mount is still a disk this Mac can write.**
 `tools/kfs.lua` runs the filesystem on the development machine, over the

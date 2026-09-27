@@ -24,7 +24,7 @@
 --   wm                    the Deskbar, and nothing else yet
 --   wm hello-win          start /bin/hello-win.lua in a window
 --   wm hello-win,stuck    two applications, one of which hangs
---   wm gallery,setprop:/app/gallery/title=hello
+--   wm gallery,setprop:/Running/gallery/title=hello
 --                         and one that changes the other's title
 --
 -- Control-C gives the screen back to the shell.
@@ -1106,7 +1106,7 @@ end
 -- nothing breaks; requests are simply answered a sleep late, as they were.
 --
 do
-  local watched, why = fs.watch_input("/dev/console", ep)
+  local watched, why = fs.watch_input("/Devices/console", ep)
 
   if not watched then
     print("wm: requests will wait for the next pass: " .. tostring(why))
@@ -1116,40 +1116,40 @@ end
 --
 -- Publish it, so a process that was not started by this one can find it.
 --
--- The window manager used to be reachable only as `/dev/wm`, and only by
+-- The window manager used to be reachable only as `/Devices/wm`, and only by
 -- children it launched itself - the endpoint was handed over at spawn and
 -- there was no other way to get it. That made two things wrong at once.
 --
--- It was in `/dev`, which is devices: `cpu`, `memory`, `screen`, `keyboard`,
+-- It was in `/Devices`, which is devices: `cpu`, `memory`, `screen`, `keyboard`,
 -- read a path and get a table of facts. A window manager is not a fact and
 -- is not hardware. It is a *server* - the thing every graphical application
 -- talks to - and the screen is the device it draws on, reached by syscall
 -- and not by path at all. Plan 9, which this system takes namespaces from,
--- names the interface and never the program: it has `/dev/draw` and
--- `/dev/cons`, and no `/dev/rio`.
+-- names the interface and never the program: it has `/Devices/draw` and
+-- `/Devices/cons`, and no `/Devices/rio`.
 --
 -- And nothing could discover a running desktop. `frames` and `procs` both
 -- ask the window manager questions, both are run from a shell, and neither
--- was ever handed `/dev/wm` - so both failed, reporting a protocol error
--- from the *devices* server, because `/dev/wm` fell back to the `/dev`
+-- was ever handed `/Devices/wm` - so both failed, reporting a protocol error
+-- from the *devices* server, because `/Devices/wm` fell back to the `/Devices`
 -- mount by prefix. An error that names the wrong server is worse than one
 -- that says nothing.
 --
--- `/app` is exactly the registry for this: which running application
+-- `/Running` is exactly the registry for this: which running application
 -- answers to which name. It hands over the endpoint and steps out of the
 -- way rather than forwarding, so a hung desktop blocks whoever chose to
 -- talk to it and nobody else.
 --
 -- **Children are still handed it directly**, mounted under the same name.
 -- That is not redundancy: a game started from the Deskbar gets a window
--- manager and nothing else, and must not need `/app` to draw - `/app` would
+-- manager and nothing else, and must not need `/Running` to draw - `/Running` would
 -- let it enumerate and script every other running application. One name,
 -- two ways to get it: given to you, or looked up if you are allowed to look.
 --
-if not fs.send("/app", { type = "register", name = "wm" }, ep) then
+if not fs.send("/Running", { type = "register", name = "wm" }, ep) then
   -- Not fatal. A desktop that cannot publish itself still works for
   -- everything it starts, which is how it worked before this existed.
-  print("wm: could not register in /app; only my own children can find me")
+  print("wm: could not register in /Running; only my own children can find me")
 end
 
 -- Which build this is, in the corner. `sys.build()` is compiled in by the
@@ -1313,7 +1313,7 @@ local per_tick
 
 function counter_per_tick()
   if not per_tick then
-    local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+    local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
     local rate = (sys.info() or {}).tick_hz or 100
 
     per_tick = math.max(1, hz // rate)
@@ -2110,7 +2110,7 @@ end
 
 -- Everything measured, flattened: the serialiser crosses this as a table of
 -- scalars, and a stage is two numbers rather than a structure worth naming
--- twice. Times are counter ticks - what a tick is worth is `/dev/cpu`'s
+-- twice. Times are counter ticks - what a tick is worth is `/Devices/cpu`'s
 -- business and the reporting program's, not this one's.
 local function profile_report()
   local out = { ok = true, profiling = profiling,
@@ -2857,7 +2857,7 @@ local osd = {
   W = 300, H = 74, R = 18,
   HOLD = 2.0,                           -- seconds after the last change
   FADE = 0.18,                          -- seconds of fading out
-  HZ = (fs.read("/dev/cpu") or {}).counter_hz or 62500000,
+  HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000,
 
   EDGE  = 0xe63a3a3a,                   -- the rim
   BODY  = 0xe61e1e1e,                   -- the panel, at nine tenths
@@ -4177,7 +4177,7 @@ handlers.launch = function(req)
   --
   print(("wm: launching %s"):format(tostring(req.program)))
 
-  local ok, err, id = run(path, req.args or "", true, { ["/app/wm"] = ep })
+  local ok, err, id = run(path, req.args or "", true, { ["/Running/wm"] = ep })
 
   print(("wm: launched %s -> %s %s"):format(tostring(req.program),
         tostring(ok), tostring(ok and id or err)))
@@ -4227,8 +4227,8 @@ end
 --
 -- Every window on the desktop, back to front.
 --
--- The Deskbar asks this rather than asking /app, and the difference matters:
--- /app holds applications that registered, which means the ones that used
+-- The Deskbar asks this rather than asking /Running, and the difference matters:
+-- /Running holds applications that registered, which means the ones that used
 -- `ui.window`. A program that opens a window by talking to this process
 -- directly - as the first two demonstrations here do, because they were
 -- written before there was a kit - has a window on screen and no
@@ -4524,7 +4524,7 @@ end
 -- taking the caller's pages instead of opening a file. **Control by message,
 -- data by shared memory**, which is the system's rule rather than an exception
 -- here, and it keeps working where a copy through a file would not: `/home` is
--- not always a disk, and `/ramfs` caps a file at 16 KB where a cover is
+-- not always a disk, and `/Temporary` caps a file at 16 KB where a cover is
 -- hundreds.
 --
 -- **The name carries the track**, because the cache is keyed by name: one
@@ -5520,7 +5520,7 @@ end
 -- **A call from the key path, and why this one cannot deadlock.** Nothing
 -- may block in here: a synchronous call from the key handler to a window
 -- once waited on a window that was waiting on this loop, and the desktop
--- stopped. `/dev/audio` is the audio server, which never sends to the
+-- stopped. `/Devices/audio` is the audio server, which never sends to the
 -- window manager, so there is no cycle for this to close - and it answers
 -- a `set` without touching the device.
 --
@@ -5597,9 +5597,9 @@ end
 -- Brightness is `volume_key`'s arithmetic on the backlight driver: sixteen
 -- steps of 0 to 256, snapped to the nearest step first so a level set some
 -- other way comes back onto the grid, and the Display bar shown with what
--- the driver says it now holds. `/dev/backlight` is a driver that never
+-- the driver says it now holds. `/Devices/backlight` is a driver that never
 -- sends to this process, so the call cannot close a cycle - the rule
--- `volume_key` states for `/dev/audio`.
+-- `volume_key` states for `/Devices/audio`.
 --
 -- **The power button shuts down**, exactly as the Deskbar's Shut Down does:
 -- every window told, then the machine off. Holding it for four seconds
@@ -5728,7 +5728,7 @@ local close_grace = 0
 local silent_grace = 0
 
 do
-  local cpu = fs.read("/dev/cpu")
+  local cpu = fs.read("/Devices/cpu")
   close_grace  = (cpu and cpu.counter_hz or 62500000)
   silent_grace = close_grace * 5
 end
@@ -5752,7 +5752,7 @@ end
 -- Reading does not stop the measurement and does not reset it, so a long
 -- run can be sampled while it happens; `on = true` is what clears the
 -- counters. Times are in counter ticks, because this process has no
--- business deciding what a tick is worth - `/dev/cpu` says, and the
+-- business deciding what a tick is worth - `/Devices/cpu` says, and the
 -- program that prints the report is where that division belongs.
 --
 handlers.profile = function(req, who)
@@ -7041,7 +7041,7 @@ for entry in wanted:gmatch("[^,]+") do
 
     local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
     local ok, err, id = run(path, argument or "", true,
-                            { ["/app/wm"] = ep })
+                            { ["/Running/wm"] = ep })
 
     if not ok then
       print(("wm: could not start %s: %s"):format(path, tostring(err)))
@@ -7171,7 +7171,7 @@ while running do
   end
 
   step("wait")
-  local input = fs.wait_input("/dev/console", sleep_for()) or {}
+  local input = fs.wait_input("/Devices/console", sleep_for()) or {}
 
   -- Idle, and charged as such: this is the loop asleep with nothing to do,
   -- and counting it as work would make an empty desktop look busy.

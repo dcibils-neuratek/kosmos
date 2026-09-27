@@ -59,7 +59,7 @@ nothing with it. The power button was the first, in September 2026, and the
 xHCI controller, the Intel Ethernet card and the backlight followed.
 
 **The test for which is which is one line: a driver drives hardware.** Asked
-whether `/drives` was one, since it is about USB sticks: Diego, 23 September
+whether `/Drives` was one, since it is about USB sticks: Diego, 23 September
 2026, "drives.c is a server then, not a driver, a driver drives hardware".
 It reads FAT off blocks somebody else fetched, so it owns a namespace rather
 than a device, and it is a server. `tools/test_layout.py` holds the line
@@ -93,7 +93,7 @@ hides that program from the prompt, which is what the last three did until
 they moved here (`design.md` §6).
 
 `/kits/console` is the odd one and worth knowing about, because it is a kit for
-a reason none of the others share. `/dev/console` is the only protocol here
+a reason none of the others share. `/Devices/console` is the only protocol here
 with **two implementations**: a terminal window mounts itself as its child's
 console, so an application answers the same ABI the server does. The kit is
 where that layout is compiled once, rather than living as a format string in
@@ -220,7 +220,7 @@ else.
 
 **9P** — Plan 9's protocol. Every resource, local or remote, is spoken to the same way. The Kosmos protocol is 9P with typed records instead of byte streams.
 
-**Mount** — Placing a server at a point in a process's namespace. `/proc`, `/dev/temp` and `/home` can be three different servers mounted in the same tree.
+**Mount** — Placing a server at a point in a process's namespace. `/proc`, `/Devices/temp` and `/home` can be three different servers mounted in the same tree.
 
 ---
 

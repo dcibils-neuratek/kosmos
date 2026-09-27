@@ -1,16 +1,16 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Change a property of something that is running.
 --
---   setprop /app/gallery/title  a different name
---   setprop /app/gallery/x 300
+--   setprop /Running/gallery/title  a different name
+--   setprop /Running/gallery/x 300
 --
 -- The target contains no code about any of this. It called `ui.window`,
--- and the window kit registered it with /app and answers for its
+-- and the window kit registered it with /Running and answers for its
 -- properties - `roadmap.md` M7's scripting architecture, and the same
 -- bargain BeOS made: an application was scriptable because its author used
 -- the framework, not because they supported scripting.
 --
--- Started by `wm` as `setprop:/app/gallery/title=something` when there is
+-- Started by `wm` as `setprop:/Running/gallery/title=something` when there is
 -- no shell available to type at, which there is not while the window
 -- manager has the keyboard.
 
@@ -39,7 +39,7 @@ end
 -- The target may not have registered yet: `wm` starts everything it was
 -- given at once, and there is no ordering between them. Waiting a little is
 -- honest about that; waiting for ever would not be.
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 local until_ = sys.ticks() + hz * 5
 local ok, err
 

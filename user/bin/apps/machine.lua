@@ -10,10 +10,10 @@
 -- can leave open, which is what BeOS had and called it that.
 --
 -- **Every line here is read, never assumed.** The nodes are the ones every
--- other program reads - /dev/cpu, /dev/memory, /dev/screen, /dev/keyboard,
--- /dev/clock, /dev/kernel - plus `sys.disk`, `sys.net` and `sys.info` for
+-- other program reads - /Devices/cpu, /Devices/memory, /Devices/screen, /Devices/keyboard,
+-- /Devices/clock, /Devices/kernel - plus `sys.disk`, `sys.net` and `sys.info` for
 -- the three devices that answer through their own servers rather than
--- through /dev. Nothing is hardcoded, and where the machine cannot be
+-- through /Devices. Nothing is hardcoded, and where the machine cannot be
 -- asked, the last section says so by name rather than leaving a gap.
 --
 -- That last part is the point of a window like this. A hardware inventory
@@ -35,13 +35,13 @@ local W, H = 700, 720
 --------------------------------------------------------------------------
 
 local b      = sys.build()
-local cpu    = fs.read("/dev/cpu")      or {}
-local mem    = fs.read("/dev/memory")   or {}
-local screen = fs.read("/dev/screen")
-local keyb   = fs.read("/dev/keyboard")
-local clock  = fs.read("/dev/clock")    or {}
-local kern   = fs.read("/dev/kernel")   or {}
-local timer  = fs.read("/dev/timer")    or {}
+local cpu    = fs.read("/Devices/cpu")      or {}
+local mem    = fs.read("/Devices/memory")   or {}
+local screen = fs.read("/Devices/screen")
+local keyb   = fs.read("/Devices/keyboard")
+local clock  = fs.read("/Devices/clock")    or {}
+local kern   = fs.read("/Devices/kernel")   or {}
+local timer  = fs.read("/Devices/timer")    or {}
 local info   = sys.info() or {}
 local disk   = sys.disk()
 local net    = sys.net()

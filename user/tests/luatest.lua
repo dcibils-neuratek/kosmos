@@ -73,7 +73,7 @@ local R_STRETCH      = 48
 local R_PNG_PALETTE  = 49
 local R_FACES_BACK   = 50
 
--- The /app registry's role in `user/init/main.c`. Not offset by BASE: a
+-- The /Running registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
 -- registry itself rather than a Lua stand-in for it.
 local ROLE_APPFS     = 14
@@ -446,6 +446,25 @@ if role == R_TABLE_CLIENT then
   check(sys.unpack(sys.pack(-2.25)) == -2.25, "a negative float round trips")
   check(math.type(sys.unpack(sys.pack(7))) == "integer",
         "an integer is still an integer after the change")
+
+  -- **A value is not bounded by a message when it is kept rather than
+  -- sent.** The Clock's replicant - its own source beside a little state -
+  -- passed 2048 bytes when `/dev/cpu` became `/Devices/cpu`, and could no
+  -- longer be written to `/Temporary`. Past a message, a buffer of 64 KB;
+  -- past that, refused rather than truncated.
+  local large = {}
+  for i = 1, 200 do large[i] = ("k"):rep(40) end
+
+  local kept = sys.pack(large)
+  local back = kept and sys.unpack(kept)
+
+  check(kept ~= nil and #kept > 2048 and type(back) == "table" and #back == 200
+        and back[200] == ("k"):rep(40), "a value larger than a message packs and comes back")
+
+  local huge = {}
+  for i = 1, 2000 do huge[i] = ("h"):rep(40) end
+
+  check(sys.pack(huge) == nil, "a value larger than sys.pack keeps is refused")
 
   sys.call(ep, { tag = STOP })
   wait_all(1)
@@ -1571,13 +1590,13 @@ if role == R_OWNED_CLIENT then
 end
 
 if role == R_NAMES_MAIN then
-  -- A name in /app lasts as long as the endpoint registered under it.
+  -- A name in /Running lasts as long as the endpoint registered under it.
   --
   -- The window manager registers as `wm` and, stopped with Control-C,
   -- destroys its endpoint without unregistering. The registry kept the name
   -- anyway: the next window manager was filed as `wm2`, and a program that
   -- looked `wm` up was handed an endpoint that had ended. `desktop` started a
-  -- Tracker that died of it at once - "no such path: /app/wm" - under a
+  -- Tracker that died of it at once - "no such path: /Running/wm" - under a
   -- desktop that was running.
   --
   -- So: the real registry, and one name held three times in turn - by a
@@ -1675,7 +1694,7 @@ if role == R_NAMES_HOLDER then
 end
 
 if role == R_NAMES_ASKER then
-  -- What a program started with `run` does to reach /app/wm, with nothing
+  -- What a program started with `run` does to reach /Running/wm, with nothing
   -- else in the way: ask the registry for the name and call what it hands
   -- over. 0 is the parent and 1 the registry.
   local reply, got = sys.call_raw(1, string.pack("<I4c24", 2, "wm"))

@@ -12,7 +12,7 @@
 local which = tostring(args or ""):match("^%s*(%S+)")
 
 if not which then
-  local names, err = fs.list("/app")
+  local names, err = fs.list("/Running")
 
   if not names then
     print("apps: " .. tostring(err))
@@ -33,7 +33,7 @@ if not which then
   return
 end
 
-local names, err = fs.list("/app/" .. which)
+local names, err = fs.list("/Running/" .. which)
 
 if not names then
   print("apps: " .. tostring(err))
@@ -41,9 +41,9 @@ if not names then
 end
 
 for _, name in ipairs(names) do
-  local value = fs.read("/app/" .. which .. "/" .. name)
+  local value = fs.read("/Running/" .. which .. "/" .. name)
   print(("  %-10s %s"):format(name, tostring(value)))
 end
 
 print()
-print(("write one with: write /app/%s/title something"):format(which))
+print(("write one with: write /Running/%s/title something"):format(which))

@@ -176,7 +176,7 @@ win:add(picture)
 --
 -- Saved, and the Deskbar told.
 --
--- `setprop /app/Deskbar/menu reload` is what a person would type; this
+-- `setprop /Running/Deskbar/menu reload` is what a person would type; this
 -- writes the same property directly, which is the same thing without the
 -- program in between. Deliberately not an error when no Deskbar is running -
 -- editing a launcher on the desktop is an ordinary thing to do with no menu
@@ -217,7 +217,7 @@ function save()
     return
   end
 
-  fs.write("/app/Deskbar/menu", "reload")
+  fs.write("/Running/Deskbar/menu", "reload")
 
   header.sub = "saved - " .. name .. " starts " .. starts
   win.dirty = true

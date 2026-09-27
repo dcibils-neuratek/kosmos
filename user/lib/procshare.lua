@@ -5,7 +5,7 @@
 --   local share = use("/lib/procshare.lua")
 --   local state = {}
 --   for _, r in ipairs(share.rows(state, sys.processes(),
---                                 fs.read("/dev/kernel"))) do ... end
+--                                 fs.read("/Devices/kernel"))) do ... end
 --
 -- **A share of the machine, not of the work that happened.** Each process's
 -- ticks since the last look, over every tick that passed - idle ones

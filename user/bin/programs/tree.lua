@@ -1,8 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- tree: what is under a path, and under that.
 --
---   tree            where you are
---   tree /ramfs     somewhere else
+--   tree              where you are
+--   tree /Temporary   somewhere else
 --
 -- `ls` shows one level and this shows all of them, which on a machine whose
 -- root is a list of mounts is the fastest way to see what there actually is.

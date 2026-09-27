@@ -34,14 +34,14 @@ local theme = ui.theme
 -- counter arithmetic in this system reads the rate three lines above the
 -- sum. `architecture.md` §5 is the whole account.
 --
-local cpu = fs.read("/dev/cpu") or {}
+local cpu = fs.read("/Devices/cpu") or {}
 local counter_hz = cpu.counter_hz or 62500000
 
 --
 -- **The privilege each row runs at** (`roadmap.md` 6m): the processor's own
 -- word for it, which is an exception level on AArch64 and a ring on
 -- x86-64. Every process is at the least privileged - EL0, ring 3 - and the
--- kernel at what `/dev/cpu` says it runs at, which is the whole of the
+-- kernel at what `/Devices/cpu` says it runs at, which is the whole of the
 -- microkernel's shape in one column: the filesystem, the console and the
 -- desktop all read EL0, and only the kernel's row does not.
 --
@@ -662,7 +662,7 @@ win:add(table_view)
 --
 -- **These came from `sysmon`, and they are in the right place now.** That
 -- window was five unrelated numbers keeping one another company because
--- they happened to arrive in the same `/dev/kernel` reply - and it has
+-- they happened to arrive in the same `/Devices/kernel` reply - and it has
 -- become the processor monitor alone, which is one thing rather than six.
 --
 -- A total belongs beside the detail it is the total *of*. The table under
@@ -830,7 +830,7 @@ function end_selected()
       return
     end
 
-    local ok, why = fs.send("/app/wm", { type = "end_process", pid = r.id })
+    local ok, why = fs.send("/Running/wm", { type = "end_process", pid = r.id })
 
     if ok then
       say("asked the desktop to end " .. r.name)
@@ -861,13 +861,13 @@ win:add(header)
 sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function sampler:tick()
-  local k = fs.read("/dev/kernel")
+  local k = fs.read("/Devices/kernel")
   local list = sys.processes()
 
   -- Which processes have windows, and how those windows draw.
   video = {}
 
-  local desktop = fs.send("/app/wm", { type = "windows" })
+  local desktop = fs.send("/Running/wm", { type = "windows" })
 
   for _, w in ipairs(desktop and desktop.windows or {}) do
     if w.pid then
@@ -967,11 +967,11 @@ function sampler:tick()
   --
   -- The machine's own totals, which used to be a second window.
   --
-  -- `/dev/memory` is a second read and it is worth it: this sampler already
-  -- reads `/dev/kernel` every tick for the idle and busy counters, and the
+  -- `/Devices/memory` is a second read and it is worth it: this sampler already
+  -- reads `/Devices/kernel` every tick for the idle and busy counters, and the
   -- memory node is the only other place the free page count lives.
   --
-  local m = fs.read("/dev/memory")
+  local m = fs.read("/Devices/memory")
 
   if k then
     totals_state.threads,   totals_state.threads_max   = k.threads, k.threads_max

@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- What time it is here, as opposed to what time it is.
 --
--- `/dev/clock` reads the board's RTC and answers in UTC, because that is
+-- `/Devices/clock` reads the board's RTC and answers in UTC, because that is
 -- what the hardware knows. This turns that into the time on the wall in
 -- front of whoever is looking at the screen.
 --
@@ -31,7 +31,7 @@ local SETTINGS = "/home/.clock"
 -- on 1 March, which puts the leap day at the *end* of the year rather than
 -- in a hole in the middle of one, and then the months tile evenly.
 --
--- The same lines are in `init.lua`, for `/dev/clock` itself, and that is a
+-- The same lines are in `init.lua`, for `/Devices/clock` itself, and that is a
 -- real duplicate rather than an oversight. `init.lua` is the process that
 -- serves `/lib`, so it cannot `use()` something out of a namespace it has
 -- not finished building - and a machine that could not say what time it is
@@ -108,7 +108,7 @@ end
 -- Now, where you are. Nil when the machine has no clock at all.
 --
 function clock.now()
-  local dev = fs.read("/dev/clock")
+  local dev = fs.read("/Devices/clock")
 
   if type(dev) ~= "table" or not dev.epoch then return nil end
 

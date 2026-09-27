@@ -9,7 +9,7 @@
 --
 -- **The blocks do not come back in the reply.** `open` creates a region and
 -- hands it to the driver once; a read fills it, and this copies out what was
--- read. **Read only**: `/dev/blocks` refuses a write and a flush, and only the
+-- read. **Read only**: `/Devices/blocks` refuses a write and a flush, and only the
 -- disk server holds the endpoint that takes them (`blockproto.h`).
 
 local blocks = {}
@@ -55,7 +55,7 @@ end
 local function exchange(op, fields, pass)
   local bytes = string.pack(REQUEST, op, fields.unit or 0, fields.lba or 0,
                             fields.count or 0, fields.handle or 0)
-  local reply, why = fs.raw("/dev/blocks", bytes, pass)
+  local reply, why = fs.raw("/Devices/blocks", bytes, pass)
 
   if not reply then return nil, tostring(why) end
 

@@ -481,7 +481,7 @@ function media.cover(path)
   end
 
   local name = "cover:" .. path
-  local reply, err = fs.send("/app/wm",
+  local reply, err = fs.send("/Running/wm",
                              { type = "picture", name = name,
                                mime = t.cover.mime, bytes = bytes }, region)
 

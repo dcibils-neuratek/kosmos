@@ -4514,7 +4514,7 @@ static bool test_sized_faces_given_back(void)          { return luatest_role(50)
 static bool test_endpoint_ends_with_its_process(void)  { return luatest_role(41); }
 
 /*
- * The /app registry takes a name back once nothing can answer to it - from a
+ * The /Running registry takes a name back once nothing can answer to it - from a
  * holder that destroyed its endpoint without unregistering, which is how the
  * window manager stops, and from one that was killed - and a lookup reaches
  * the holder that is still there.
@@ -5289,7 +5289,7 @@ static bool test_an_interrupt_wait_takes_a_caller_too(void)
 /*
  * **Two endpoints on one wait, and a caller on either ends it** (storage at
  * full speed). The xHCI driver's wait watched the disk server's write
- * endpoint and not `/dev/blocks`, so a read there waited out the driver's
+ * endpoint and not `/Devices/blocks`, so a read there waited out the driver's
  * 50 ms deadline: 17 requests a second, on the ThinkPad and under QEMU alike.
  * With both on the wait, it has to:
  *
@@ -5368,7 +5368,7 @@ static void both_waiter(void *arg)
 
     /*
      * **Three endpoints**, which is what the xHCI driver watches since 22
-     * September: the disk server's writes, `/dev/blocks`, and the network
+     * September: the disk server's writes, `/Devices/blocks`, and the network
      * stack's frames (`usb.md` 7d). Two was the limit and the third was
      * refused outright; what this asks is that three are taken, with one of
      * them naming nothing - which is how the driver says "no adapter here"

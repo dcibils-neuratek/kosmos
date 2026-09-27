@@ -104,7 +104,7 @@ local function say_instead(lines, title)
     local chooser = panel.open{
       start = "/home", title = "Open a film", filter = is_film,
       on_choose = function(chosen)
-        fs.send("/app/wm", { type = "launch", program = "video",
+        fs.send("/Running/wm", { type = "launch", program = "video",
                              args = chosen })
         win:close()
       end,
@@ -261,7 +261,7 @@ local win
 
 local function again(size)
   local at = now_at()
-  local reply, sent = fs.send("/app/wm", {
+  local reply, sent = fs.send("/Running/wm", {
     type = "launch", program = "video",
     args = ("--size %s --at %.2f %s%s"):format(size, at,
             debugging and "--debug " or "", path),
@@ -280,7 +280,7 @@ local function open_another()
   local chooser = panel.open{
     start = "/home", title = "Open a film", filter = is_film,
     on_choose = function(chosen)
-      local reply = fs.send("/app/wm", { type = "launch", program = "video",
+      local reply = fs.send("/Running/wm", { type = "launch", program = "video",
                                          args = chosen })
 
       if reply and reply.ok then win:close() end

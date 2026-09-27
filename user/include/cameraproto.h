@@ -3,7 +3,7 @@
 #define KOSMOS_CAMERAPROTO_H
 
 /*
- * **`/dev/camera`**: what a program says to the camera's driver, and the
+ * **`/Devices/camera`**: what a program says to the camera's driver, and the
  * region the pictures come back in (`roadmap.md` 6d, `usb.md` §11 8d).
  *
  * Control by message, data by shared memory (`CLAUDE.md`). A frame is the

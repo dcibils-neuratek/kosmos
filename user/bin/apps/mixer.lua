@@ -16,7 +16,7 @@
 -- A muted stream still shows a moving meter, which is the whole point when
 -- you are looking for the program that will not shut up.
 --
--- Nothing here plays anything. It asks `/dev/audio` what exists and tells
+-- Nothing here plays anything. It asks `/Devices/audio` what exists and tells
 -- it what to change, which is the same relationship the Deskbar has with
 -- the window manager: the authority is in the server and this is a view of
 -- it.
@@ -249,7 +249,7 @@ local header = ui.header{
     --
     ui.button{ text = "Test tone", hidden = (fmt.period == 0),
                on_click = function()
-                 fs.send("/app/wm", { type = "launch", program = "beep",
+                 fs.send("/Running/wm", { type = "launch", program = "beep",
                                       args = "440 3000" })
                end },
   },
@@ -339,7 +339,7 @@ local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 --
 -- **Through `/lib/audio.lua`**, which speaks the server's declared struct.
--- This asked `/dev/audio` with a table, which the server stopped taking
+-- This asked `/Devices/audio` with a table, which the server stopped taking
 -- when it moved to `audioproto.h` - so every reply was a refusal, the rows
 -- were always empty, and the window said "nothing is playing" while
 -- something was.

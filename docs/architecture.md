@@ -51,18 +51,18 @@ shell rather than underneath it.
        .      ^   ^    window that moves.                               .
        .      |   |                                                     .
        .   +------+ +--------+                                          .
-       .   |hello-| | stuck  |  started by wm, each handed /app/wm and   .
-       .   | win  | |        |  nothing else it did not already have     .
+       .   |hello-| | stuck  |  started by wm, each handed /Running/wm  .
+       .   | win  | |        |  and nothing it did not already have     .
        .   +------+ +--------+                                          .
        .        ^                                                       .
-       .        | spawned, each in a space of its own                    .
+       .        | spawned, each in a space of its own                   .
        .   +---------+                                                  .
-       .   |  shell  |          servers, in C                            .
-       .   +---------+     +---------+ +---------+ +---------+ +------+ .
-       .        ^          | console | |  /ramfs  | |  /bin   | | /dev | .
-       .        |          +---------+ +---------+ +---------+ +------+ .
-       .        |               ^           ^           ^          ^    .
-       .        +-------- IPC --+-----------+-----------+----------+    .
+       .   |  shell  |          servers, in C                           .
+       .   +---------+ +---------+ +------------+ +------+ +----------+ .
+       .        ^      | console | | /Temporary | | /bin | | /Devices | .
+       .        |      +---------+ +------------+ +------+ +----------+ .
+       .        |           ^             ^           ^          ^      .
+       .        +-- IPC ----+-------------+-----------+----------+      .
        .                                                                .
        .   +--------+       init starts all of the above and holds the  .
        .   |  init  |       capabilities nobody else is allowed         .
@@ -131,7 +131,7 @@ and that is a limitation rather than a principle. See `hal.md`.
 Three differences from the first picture, and they are the whole design.
 
 **The kernel does not know what a file is.** There is no `open` in the list of
-eighteen syscalls, because there is nothing for it to open. `/ramfs` is a
+eighteen syscalls, because there is nothing for it to open. `/Temporary` is a
 process. `/bin` is a process. When `cat` reads a file it sends a message to
 another program and waits for the answer, exactly as it would over a network.
 
@@ -145,7 +145,7 @@ been handed more capabilities.
 **There is no global namespace.** A process cannot walk a tree to find
 something, because there is no tree to walk. It has a table of capabilities,
 by index, and a mount table mapping names onto them. A program that was not
-given `/dev` does not get "permission denied" - the path does not exist. See
+given `/Devices` does not get "permission denied" - the path does not exist. See
 `design.md` §6.
 
 ---
@@ -260,7 +260,7 @@ number it is spawned with decides what it becomes.
 **Where that number is answered moved in September 2026.** `user/init/main.c`
 dispatches the server roles *before* the Lua interpreter is opened, so those
 processes have no collector at all rather than a promise not to allocate:
-`/dev/audio`, `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/ramfs` are
+`/Devices/audio`, `/Devices`, `/bin`, `/lib`, `/Running`, `/Devices/console` and `/Temporary` are
 each one file in `user/servers/`, speaking a struct declared in
 `user/include/`.
 
@@ -270,7 +270,7 @@ each one file in `user/servers/`, speaking a struct declared in
 an EL0 process with an endpoint and a role number, exactly as a server is,
 which is the point `drivers.md` §3 makes at length. The split is for the
 person reading the tree, and the line between the two is Diego's:
-**a driver drives hardware.** `/drives` serves a namespace out of FAT that
+**a driver drives hardware.** `/Drives` serves a namespace out of FAT that
 something else read off the wire, so it is a server; `e1000` owns a card, so
 it is not.
 
@@ -398,7 +398,7 @@ number crossed a process boundary and its unit did not cross with it.
 
 | | what it is | the question it answers | who uses it |
 |---|---|---|---|
-| **the wall clock** | `/dev/clock`, from the board's RTC, in seconds since 1970 | *"What is the date?"* | 4 files |
+| **the wall clock** | `/Devices/clock`, from the board's RTC, in seconds since 1970 | *"What is the date?"* | 4 files |
 | **the counter** | `sys.ticks()` / `kosmos_ticks()` - CNTPCT_EL0 on ARM, the TSC on x86 | *"How long did that take?"* | ~114 sites |
 | **the scheduler tick** | a count of timer interrupts, at `TICK_HZ` = 250 | *"Wake me later"* | every timeout |
 
@@ -441,7 +441,7 @@ QEMU q35, x86-64        ~1 GHz         250 Hz           ~4,000,000
 **The same board gives two different answers** depending on whether it is
 run under `make qemu` or `make fast`. There is no constant to keep in your
 head, which is why every correct piece of counter arithmetic in this tree
-reads `counter_hz` from `/dev/cpu` three lines above the sum - where the
+reads `counter_hz` from `/Devices/cpu` three lines above the sum - where the
 unit is visible - and why the two that were wrong were the two that did
 not.
 

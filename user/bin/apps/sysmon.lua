@@ -47,7 +47,7 @@ local CORES = math.max(1, #load0)
 
 -- The counter's rate, for the window's clock, read where it is used as
 -- every piece of counter arithmetic here does (`architecture.md` §5).
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 --
 -- The three paces, and what sixty columns of each come to. A second to

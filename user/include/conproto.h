@@ -51,7 +51,7 @@
  * Nothing here reads a line.
  *
  * A terminal's answer, and the reason this protocol has an error for it at
- * all: a terminal window mounts itself as its child's `/dev/console`, so it
+ * all: a terminal window mounts itself as its child's `/Devices/console`, so it
  * must answer every operation the real console answers - including the one
  * it cannot do. It used to reply with the sentence "this terminal cannot be
  * read from yet", which was a string invented by one of the two things that

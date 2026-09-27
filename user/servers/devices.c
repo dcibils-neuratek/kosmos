@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /dev: what hardware this turned out to be.
+ * /Devices: what hardware this turned out to be.
  *
  * A description rather than a device: the nodes here are read, printed and
  * looked at, and nothing is on a deadline. **So this one is not in C for
@@ -8,9 +8,9 @@
  * server is a system component that receives exactly what it expects rather
  * than whatever somebody put in a table.
  *
- * `/dev/console` and `/dev/audio` are *not* served from
+ * `/Devices/console` and `/Devices/audio` are *not* served from
  * here. They are mounted over this prefix by whoever owns them and longest
- * prefix wins, so a read of `/dev/console` goes to the console server and
+ * prefix wins, so a read of `/Devices/console` goes to the console server and
  * means "give me a line". Listing a name this server does not answer for
  * would be a lie and an expensive one: the first version of the Lua original
  * listed `console`, the `devices` command dutifully read every name it was
@@ -320,7 +320,7 @@ static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
 {
     /*
      * What every machine can say, before anything that only one of them
-     * can. A reader of /dev/cpu on an architecture nothing here decodes yet
+     * can. A reader of /Devices/cpu on an architecture nothing here decodes yet
      * still gets the count, the clock and the raw words - which is the
      * point of the kernel handing them over undecoded.
      */
@@ -402,7 +402,7 @@ static bool node_read(const char *want, const struct sysinfo *i,
      *
      * **Restored, having been dropped when this server moved from Lua to C.**
      * The Lua one built a `clock` node out of `sysinfo.epoch` and nothing
-     * here replaced it, so `/dev/clock` stopped existing and every clock in
+     * here replaced it, so `/Devices/clock` stopped existing and every clock in
      * the system said "no clock --:--" - the Deskbar's, the `datetime`
      * program's, and the topbar's.
      *
@@ -432,7 +432,7 @@ static bool node_read(const char *want, const struct sysinfo *i,
      * The transport is deliberately not named, and it used to be:
      * "virtio-input over virtio-mmio", on a PC where it is virtio-pci. The
      * fifth string in this system to describe one board's hardware on
-     * both, after the boot log's PL011, /dev/console's copy of it, EL0 in
+     * both, after the boot log's PL011, /Devices/console's copy of it, EL0 in
      * `procs`, and "on AArch64" in `about`.
      *
      * Nothing here knows which bus it is. `sysinfo` carries `has_keyboard`
@@ -545,7 +545,7 @@ void devices_server(long endpoint)
 
         /*
          * Blocking, with no deadline, and that is right here. Nothing in
-         * `/dev` happens on its own - every field is computed from `sysinfo`
+         * `/Devices` happens on its own - every field is computed from `sysinfo`
          * when somebody asks - so there is nothing to wake up for and an
          * idle machine should be idle.
          */

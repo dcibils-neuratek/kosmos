@@ -474,7 +474,7 @@ def main():
                'print("media" .. ": vbr " .. v.info.seconds .. " s " .. v.info.bitrate '
                '.. " kbps " .. tostring(v.info.vbr)) v:close() '
                'local p = assert(media.open("/home/tone.wav")) '
-               'local hz = fs.read("/dev/cpu").counter_hz '
+               'local hz = fs.read("/Devices/cpu").counter_hz '
                'local function run(s) local stop = sys.ticks() + math.floor(s * hz) '
                'while sys.ticks() < stop and not p:finished() do p:tick() sys.sleep(1) end end '
                'print("media" .. ": seconds " .. p.info.seconds) '
@@ -487,10 +487,10 @@ def main():
 
     try:
         guest.wait_for(PROMPT, "reached a shell")
-        guest.type('fs.write("/ramfs/media.lua", [[' + program + ']])')
+        guest.type('fs.write("/Temporary/media.lua", [[' + program + ']])')
         time.sleep(1.5)
         mark = len(guest.seen)
-        guest.type("/ramfs/media.lua")
+        guest.type("/Temporary/media.lua")
         guest.wait_for("media: done", "the program played the tone to its end")
 
         said = guest.seen[mark:]
@@ -556,10 +556,10 @@ def main():
             'print("film" .. ": an mp3 opens as " .. tostring(bad ~= nil)) '
             'print("film" .. ": done")')
 
-        guest.type('fs.write("/ramfs/film.lua", [[' + film_program + ']])')
+        guest.type('fs.write("/Temporary/film.lua", [[' + film_program + ']])')
         time.sleep(1.0)
         mark = len(guest.seen)
-        guest.type("/ramfs/film.lua")
+        guest.type("/Temporary/film.lua")
         guest.wait_for("film: done", "the video kit opened and decoded the film")
 
         heard = guest.seen[mark:]
@@ -641,10 +641,10 @@ def main():
             'print("window" .. ": " .. n .. " of 1200") '
             'print("window" .. ": done")')
 
-        guest.type('fs.write("/ramfs/window.lua", [[' + window_program + ']])')
+        guest.type('fs.write("/Temporary/window.lua", [[' + window_program + ']])')
         time.sleep(1.0)
         mark = len(guest.seen)
-        guest.type("/ramfs/window.lua")
+        guest.type("/Temporary/window.lua")
         guest.wait_for("window: done",
                        "the shared-window check to finish")
 
@@ -682,7 +682,7 @@ def main():
         def play_one(muted, marker):
             return ('local media = use("/lib/media.lua") '
                     'local audio = use("/lib/audio.lua") '
-                    'local hz = fs.read("/dev/cpu").counter_hz '
+                    'local hz = fs.read("/Devices/cpu").counter_hz '
                     'local was = audio.stats() '
                     'audio.set{ master_muted = %s } '
                     'local p = assert(media.open("/home/tone.wav")) '
@@ -696,17 +696,17 @@ def main():
 
         before_mute, _ = settled(wav_out)
 
-        guest.type('fs.write("/ramfs/mutea.lua", [[' + play_one(True, "muted") + ']])')
+        guest.type('fs.write("/Temporary/mutea.lua", [[' + play_one(True, "muted") + ']])')
         time.sleep(1.0)
         mark = len(guest.seen)
-        guest.type("/ramfs/mutea.lua")
+        guest.type("/Temporary/mutea.lua")
         a = whole_line(guest, mark, r"mute: muted (\w+) level (\d+) (\d+)\r?\n")
         during_mute, _ = settled(wav_out)
 
-        guest.type('fs.write("/ramfs/muteb.lua", [[' + play_one(False, "unmuted") + ']])')
+        guest.type('fs.write("/Temporary/muteb.lua", [[' + play_one(False, "unmuted") + ']])')
         time.sleep(1.0)
         mark = len(guest.seen)
-        guest.type("/ramfs/muteb.lua")
+        guest.type("/Temporary/muteb.lua")
         b = whole_line(guest, mark, r"mute: unmuted (\w+) level (\d+) (\d+)\r?\n")
         after_mute, _ = settled(wav_out)
 
@@ -1055,7 +1055,7 @@ def main():
     # library does not decode a thousand covers to show ten; `media.cover`
     # is the other half, for the one song being played. The bytes go into a
     # region and the region to the window manager with a name, because the
-    # picture is data and the message is control - and because `/ramfs` caps
+    # picture is data and the message is control - and because `/Temporary` caps
     # a file at 16 KB where a cover is hundreds.
     #
     # The picture is one colour this file chose, so finding that colour on
@@ -1080,8 +1080,8 @@ def main():
             "w:add(v) w:run()"
         )
 
-        guest.type("fs.write('/ramfs/cover.lua', %r)" % program)
-        guest.type("wm cover,/ramfs/cover.lua")
+        guest.type("fs.write('/Temporary/cover.lua', %r)" % program)
+        guest.type("wm cover,/Temporary/cover.lua")
 
         mark = len(guest.seen)
         placed, deadline = None, time.monotonic() + 40
@@ -1330,7 +1330,7 @@ def main():
 
     clock = ('local media = use("/lib/media.lua") '
              'local p = assert(media.open("/home/tone.wav")) '
-             'local hz = fs.read("/dev/cpu").counter_hz '
+             'local hz = fs.read("/Devices/cpu").counter_hz '
              'local t0 = sys.ticks() '
              'p:play() '
              'for i = 1, 8 do '
@@ -1350,9 +1350,9 @@ def main():
         # `use` is a global inside a program the loader runs, not in the chunk
         # the shell evaluates from stdin - so the program goes to a file and
         # the file is run, exactly as the phases above do it.
-        guest.type('fs.write("/ramfs/clock.lua", [[' + clock + ']])')
+        guest.type('fs.write("/Temporary/clock.lua", [[' + clock + ']])')
         time.sleep(1.5)
-        guest.type("/ramfs/clock.lua")
+        guest.type("/Temporary/clock.lua")
 
         start = time.monotonic()
         taken = 0
@@ -1424,9 +1424,9 @@ def main():
 
     try:
         guest.wait_for(PROMPT, "reached a shell")
-        guest.type('fs.write("/ramfs/level.lua", [[' + level_prog + ']])')
+        guest.type('fs.write("/Temporary/level.lua", [[' + level_prog + ']])')
         time.sleep(1.0)
-        guest.type("wm /ramfs/level.lua")
+        guest.type("wm /Temporary/level.lua")
         guest.wait_for("wm: window Level at", "the level bar's window opened")
         time.sleep(2.5)
 

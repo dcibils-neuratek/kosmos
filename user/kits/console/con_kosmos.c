@@ -3,18 +3,18 @@
  * The Console Kit: the console's wire format, in the language that defines
  * it.
  *
- * `/dev/console` is the one protocol in this system with **two
+ * `/Devices/console` is the one protocol in this system with **two
  * implementations**, and that is what this kit exists for. Usually a server
  * is the only thing that answers its own protocol, so the shape can live in
  * the server's C and nobody else needs it. Not here: a terminal window
- * mounts *itself* as its child's `/dev/console`, so a program running in a
+ * mounts *itself* as its child's `/Devices/console`, so a program running in a
  * terminal prints to an application and cannot tell. That is the namespace
  * working exactly as intended - and it means the console ABI has an
  * application on one end of it.
  *
  * The alternative was `string.pack` in `terminal.lua` against a format
  * string copied from `conproto.h`, which is what the namespace does for
- * `/dev`, `/bin` and `/app`. It works, and it puts a second copy of the
+ * `/Devices`, `/bin` and `/Running`. It works, and it puts a second copy of the
  * layout in a second language, where nothing but an `assert` on the total
  * size notices when the two drift.
  *
@@ -124,7 +124,7 @@ static int l_encode_request(lua_State *L)
      * third argument is `pass`, the capability to send along with the
      * message. Every console write whose text was short enough to be a valid
      * index handed one of the writer's own capabilities to whatever was
-     * behind `/dev/console`.
+     * behind `/Devices/console`.
      *
      * A terminal ran out of capability slots after about eighty short writes
      * and could no longer start a program. That is the visible half; the

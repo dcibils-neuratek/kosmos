@@ -53,7 +53,7 @@ VOLUMES = [
 # chose can only be checked for being *some* serial - which a decoder reading
 # the wrong four bytes also passes. Named here once, and read by the guest's
 # check, so the stamp and the expectation cannot drift apart. The form is
-# what `/drives` answers: `fat:` and the serial as Windows' `vol` prints it.
+# what `/Drives` answers: `fat:` and the serial as Windows' `vol` prints it.
 IDS = {
     "PHOTOS": "fat:1A2B-3C4D",
     "BACKUP": "fat:0BAD-CAFE",

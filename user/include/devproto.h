@@ -10,7 +10,7 @@
  * The second protocol here to be a definition rather than a convention, and
  * it is deliberately not shaped like the first. `audioproto.h` has one
  * struct per operation because the audio server's operations are fixed and
- * few. `/dev` is not like that: it is a description of whatever machine this
+ * few. `/Devices` is not like that: it is a description of whatever machine this
  * turned out to be, the nodes differ from one another, and half of what they
  * hold is text meant for a person to read.
  *

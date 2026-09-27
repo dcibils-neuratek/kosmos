@@ -2,7 +2,7 @@
 """Servers and drivers are in the right directories, and the rule is one line.
 
 Diego, 23 September 2026, splitting `user/servers/` when it reached 28 files:
-"a driver drives hardware". `/drives` reads FAT off blocks somebody else
+"a driver drives hardware". `/Drives` reads FAT off blocks somebody else
 fetched and is therefore a server; `e1000` owns a card and is not.
 
 **A rule nobody enforces is a rule that drifts**, and this one is unusually

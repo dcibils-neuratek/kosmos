@@ -82,11 +82,11 @@ local elapsed = sys.ticks() - started
 -- differ by a factor of about 250,000 on this machine. Dividing by TICK_HZ
 -- here reported a 0.2 second decode as fourteen hours.
 --
--- The frequency comes from `/dev/cpu` rather than a constant, because it is
+-- The frequency comes from `/Devices/cpu` rather than a constant, because it is
 -- 62 MHz under QEMU and 54 on a Pi 5, and a number compiled in would make
 -- every measurement on real hardware quietly wrong.
 --
-local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 if elapsed < 1 then elapsed = 1 end
 

@@ -402,7 +402,7 @@ local ICONS = {
 -- they are places rather than containers, and Haiku draws both.
 local BY_PATH = {
   ["/home"] = "Folder_home",
-  ["/ramfs"] = "Device_Ramdisk",
+  ["/Temporary"] = "Device_Ramdisk",
 }
 
 --

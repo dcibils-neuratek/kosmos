@@ -33,12 +33,12 @@
 -- somebody tiled a different set.
 --
 local function settled()
-  local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   local last, steady = -1, 0
   local giveup = sys.ticks() + hz * 30
 
   while sys.ticks() < giveup do
-    local r = fs.send("/app/wm", { type = "windows" })
+    local r = fs.send("/Running/wm", { type = "windows" })
 
     if not r or not r.windows then return nil end
 
@@ -69,7 +69,7 @@ if not reply or not reply.windows then
   return
 end
 
-local screen = fs.read("/dev/screen") or {}
+local screen = fs.read("/Devices/screen") or {}
 local W = screen.width or 1024
 local H = screen.height or 768
 
@@ -142,7 +142,7 @@ local function place(w, n)
           for c = col, col + n - 1 do taken[r * across + c] = true end
         end
 
-        local ok, why = fs.send("/app/wm", {
+        local ok, why = fs.send("/Running/wm", {
           type = "move",
           window = w.handle,
           x = 30 + col * cell_w,
@@ -157,7 +157,7 @@ local function place(w, n)
         -- lies over the big one's overflow rather than under it: the one
         -- that opened last - Cafesa3D, reading its scene - was on top of
         -- everything, and covered most of the screen.
-        fs.send("/app/wm", { type = "raise", window = w.handle })
+        fs.send("/Running/wm", { type = "raise", window = w.handle })
         return
       end
     end

@@ -47,7 +47,7 @@ if not win:surface() then
   return
 end
 
-local hz = fs.read("/dev/cpu").counter_hz
+local hz = fs.read("/Devices/cpu").counter_hz
 local frames = 0
 local started = sys.ticks()
 

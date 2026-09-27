@@ -312,7 +312,7 @@ function request(op, fields, pass)
   -- `string.pack` raises for a string longer than `c24` rather than cutting
   -- it, and a stream named for its window - a ROM's No-Intro name, say - is
   -- that long. `audio.c` ends whatever arrives at 23, so this sends what
-  -- would be kept. `init.lua` cuts a window's `/app` name the same way.
+  -- would be kept. `init.lua` cuts a window's `/Running` name the same way.
   --
   local name = tostring(fields.name or ""):sub(1, 23)
 
@@ -325,7 +325,7 @@ function request(op, fields, pass)
                             fields.master_muted or -1,
                             name)
 
-  local reply, why = fs.raw("/dev/audio", bytes, pass)
+  local reply, why = fs.raw("/Devices/audio", bytes, pass)
 
   if not reply then return nil, tostring(why) end
 

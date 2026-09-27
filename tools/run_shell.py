@@ -14,7 +14,7 @@ that checked each program against a number written here would pass with all
 of them wrong in the same direction, which is the failure a session cannot
 have.
 
-It runs on `/ramfs`, which needs no disk - and that is the point of choosing
+It runs on `/Temporary`, which needs no disk - and that is the point of choosing
 it: these verbs worked on the disk and not here until the mount grew
 `mkdir`, `delete` and `rename`, and a test on the mount that was missing
 them is the one that would have noticed.
@@ -42,16 +42,16 @@ def main():
 
     try:
         out = run_disk.boot(image, disk, [
-            "cd /ramfs",
+            "cd /Temporary",
             "mkdir notes",
-            'fs.write("/ramfs/notes/a.txt", "one\\ntwo\\nthree\\nfour\\nfive")',
+            'fs.write("/Temporary/notes/a.txt", "one\\ntwo\\nthree\\nfour\\nfive")',
             "wc notes/a.txt",
             "head -n 2 notes/a.txt",
             "tail -n 2 notes/a.txt",
             "grep three notes/a.txt",
             "grep nothinghere notes/a.txt",
-            "tree /ramfs",
-            "du /ramfs",
+            "tree /Temporary",
+            "du /Temporary",
             "acpi",
         ])
 
@@ -102,7 +102,7 @@ def main():
         checks += 1
 
         # du agrees with wc about how many bytes there are.
-        if "23 B" not in out.split("du /ramfs")[-1]:
+        if "23 B" not in out.split("du /Temporary")[-1]:
             raise Failure("du disagrees with wc about the size of the only "
                           "file there is.\n" + out[-1400:])
 
@@ -157,7 +157,7 @@ def main():
         # graphical console too.
         #
         history = run_disk.boot(image, disk, [
-            "cd /ramfs",
+            "cd /Temporary",
             "touch one.txt",
             "touch two.txt",
             "\x1b[A\x1b[A",              # up up: touch one.txt
@@ -167,13 +167,13 @@ def main():
             'print("keys-" .. "pa\x1b[5~ge\x1b[1;2A\x1b[1;5Dup\x1b[15;2~")',
         ])
 
-        if "/ramfs/one.txt is already there" not in history:
+        if "/Temporary/one.txt is already there" not in history:
             raise Failure("the up-arrow did not recall and run the line two "
                           "back.\n" + history[-1500:])
 
         checks += 1
 
-        if "/ramfs/two.txt is already there" not in history:
+        if "/Temporary/two.txt is already there" not in history:
             raise Failure("the down-arrow did not walk back towards the line "
                           "being typed.\n" + history[-1500:])
 
@@ -204,11 +204,11 @@ def main():
         # table nobody made.
         #
         programs = run_disk.boot(image, disk, [
-            "cd /ramfs",
-            'fs.write("/ramfs/hi.lua", "print(\\"hi-\\" .. args)")',
+            "cd /Temporary",
+            'fs.write("/Temporary/hi.lua", "print(\\"hi-\\" .. args)")',
             "./hi.lua one",
             "hi.lua two",
-            "/ramfs/hi.lua three",
+            "/Temporary/hi.lua three",
             "run hi.lua four",
             "mkdir sub",
             "cd sub",
@@ -220,13 +220,13 @@ def main():
             ("hi-one", "./hi.lua did not run the file in the current "
                        "directory"),
             ("hi-two", "hi.lua did not run the file by its bare name"),
-            ("hi-three", "/ramfs/hi.lua did not run the file by its whole "
+            ("hi-three", "/Temporary/hi.lua did not run the file by its whole "
                          "path"),
             ("hi-four", "run hi.lua did not run the file from the current "
                         "directory"),
             ("hi-five", "../hi.lua did not run the file in the directory "
                         "above"),
-            ("run: /ramfs/sub/nothere.lua: no such program",
+            ("run: /Temporary/sub/nothere.lua: no such program",
              "a .lua that is not there did not say so"),
         ]:
             if marker not in programs:
@@ -244,7 +244,7 @@ def main():
         tools = run_disk.boot(image, disk, [
             "which grep",
             "which nosuchthing",
-            "cd /ramfs",
+            "cd /Temporary",
             "touch s.txt",
             "stat s.txt",
             "df",

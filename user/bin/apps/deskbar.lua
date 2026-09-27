@@ -30,7 +30,7 @@
 --
 -- Neither widens what this can reach on a machine that lacks the hardware:
 -- `init.lua` grants `audio` only when there is a sound card, so on a board
--- without one `/dev/audio` is not in this namespace and the speaker is not
+-- without one `/Devices/audio` is not in this namespace and the speaker is not
 -- drawn. The old rule - never draw an indicator for a subsystem that does
 -- not exist - is now enforced by the kernel rather than remembered by a
 -- comment.
@@ -40,7 +40,7 @@
 -- keeps.
 --
 -- **What is running** is the window manager's own list of windows, not
--- `/app`. The registry holds applications that *registered*, which means
+-- `/Running`. The registry holds applications that *registered*, which means
 -- the ones that used `ui.window`; a program that opens a window by talking
 -- to the desktop directly has a window on screen and no registration
 -- anywhere, and the first two demonstrations here do exactly that because
@@ -289,10 +289,10 @@ end
 -- Asking is `menu`, which is published below and written the way anything
 -- running is written to:
 --
---   setprop /app/Deskbar/menu reload
+--   setprop /Running/Deskbar/menu reload
 --
 -- No new mechanism and no new program: `ui.window` registers this window
--- with `/app` and answers for its properties, and `setprop` is the general
+-- with `/Running` and answers for its properties, and `setprop` is the general
 -- four-line program that writes one. The editor sends the same thing after
 -- it changes a launcher, so the menu is right without anybody being told to
 -- do anything.
@@ -360,7 +360,7 @@ read_sections()
 --
 -- **Both of these may be unanswerable, and that is not an error.** A
 -- capability this process was not granted means the device is not in its
--- namespace at all - `/dev/audio` is not denied, it is absent - so the
+-- namespace at all - `/Devices/audio` is not denied, it is absent - so the
 -- honest answer is "no indicator" rather than a picture of silence or a
 -- crossed-out aerial. `topbar.lua` refused to draw indicators for
 -- subsystems that did not exist and was right; the difference now is that
@@ -397,8 +397,8 @@ end
 -- can say in an icon. `network.lua` is where the rest of it lives, and
 -- clicking the icon opens it.
 --
--- `fs.net_info("/net")` is what that program asks, and it is the only thing
--- that answers: there is no `/dev/net`. The devices server serves `cpu`,
+-- `fs.net_info("/Network")` is what that program asks, and it is the only thing
+-- that answers: there is no `/Devices/net`. The devices server serves `cpu`,
 -- `clock`, `screen`, `keyboard`, `memory` and `cores`, and the network is
 -- not one of them - it is reached through the capability rather than
 -- through a device file, which is why `needs network` is the whole of the
@@ -408,7 +408,7 @@ end
 -- How busy the machine is, as a percentage, and how much memory is in use.
 --
 -- The same two readings `monitor.lua` draws, from the same two device
--- files: `/dev/kernel` counts idle and busy ticks and `/dev/memory` says
+-- files: `/Devices/kernel` counts idle and busy ticks and `/Devices/memory` says
 -- how much there is. Busy is a *difference* between two readings, so the
 -- first pass has nothing to say and reports nothing rather than nought -
 -- which would be a bar claiming an idle machine before it had looked.
@@ -420,7 +420,7 @@ end
 local last_idle, last_busy = nil, nil
 
 local function load_now()
-  local ok, k = pcall(fs.read, "/dev/kernel")
+  local ok, k = pcall(fs.read, "/Devices/kernel")
 
   if not ok or type(k) ~= "table" then return nil end
 
@@ -439,7 +439,7 @@ local function load_now()
 end
 
 local function memory_now()
-  local ok, m = pcall(fs.read, "/dev/memory")
+  local ok, m = pcall(fs.read, "/Devices/memory")
 
   if not ok or type(m) ~= "table" or not m.total_mb then return nil end
 
@@ -447,11 +447,11 @@ local function memory_now()
 end
 
 --
--- The battery, from `/dev/battery`, or nil when the machine reads none -
+-- The battery, from `/Devices/battery`, or nil when the machine reads none -
 -- the devices server lists that node only when the board has a reading.
 --
 local function battery_now()
-  local ok, b = pcall(fs.read, "/dev/battery")
+  local ok, b = pcall(fs.read, "/Devices/battery")
 
   if not ok or type(b) ~= "table" or b.present ~= 1 or not b.percent then
     return nil
@@ -461,7 +461,7 @@ local function battery_now()
 end
 
 local function network_now()
-  local ok, info = pcall(fs.net_info, "/net")
+  local ok, info = pcall(fs.net_info, "/Network")
 
   if not ok or type(info) ~= "table" then return nil end
 
@@ -481,7 +481,7 @@ if not win then
 end
 
 --
--- `setprop /app/Deskbar/menu reload` - the menu, read again.
+-- `setprop /Running/Deskbar/menu reload` - the menu, read again.
 --
 -- Reading it costs about fifty messages to the disk server, so it happens
 -- when somebody says the tree changed rather than on every click. Anything
@@ -507,7 +507,7 @@ win:publish("menu",
 --------------------------------------------------------------------------
 -- What is running, told by the window manager when it changes.
 --
--- The window manager's list of windows, not `/app`: the registry holds
+-- The window manager's list of windows, not `/Running`: the registry holds
 -- applications that *registered*, and a program that opens a window by
 -- talking to the desktop directly has a window on screen and no
 -- registration anywhere. What belongs on a taskbar is what is on the
@@ -576,7 +576,7 @@ end
 -- field and the line that asks then says what it is asking for.
 --
 local function refresh()
-  local reply = fs.send("/app/wm", { type = "windows", watch = win.handle })
+  local reply = fs.send("/Running/wm", { type = "windows", watch = win.handle })
   local list = {}
 
   --
@@ -663,7 +663,7 @@ function win:on_menu_context(item)
     return
   end
 
-  local ok, why = fs.send("/app/wm", { type = "launch",
+  local ok, why = fs.send("/Running/wm", { type = "launch",
                                        program = "launcheredit",
                                        args = item.path })
 
@@ -706,7 +706,7 @@ local function launcher(item)
         return
       end
 
-      local ok, why = fs.send("/app/wm", { type = "launch",
+      local ok, why = fs.send("/Running/wm", { type = "launch",
                                            program = item.program,
                                            args = item.args })
 
@@ -786,7 +786,7 @@ local function open_kosmos_menu()
       text = "Restart",
       on_choose = function()
         say("restarting")
-        fs.send("/app/wm", { type = "power", action = "restart" })
+        fs.send("/Running/wm", { type = "power", action = "restart" })
       end,
     }
 
@@ -794,7 +794,7 @@ local function open_kosmos_menu()
       text = "Shut Down",
       on_choose = function()
         say("shutting down")
-        fs.send("/app/wm", { type = "power", action = "off" })
+        fs.send("/Running/wm", { type = "power", action = "off" })
       end,
     }
 
@@ -848,7 +848,7 @@ end
 --
 -- Reloading is here for the same reason it is a property rather than a
 -- per-click read: the tree is read once, so something has to say when it
--- changed, and `setprop /app/Deskbar/menu reload` at a prompt is a poor
+-- changed, and `setprop /Running/Deskbar/menu reload` at a prompt is a poor
 -- answer for somebody who just dragged a file in a window.
 --
 local function kosmos_context_menu()
@@ -873,7 +873,7 @@ local function kosmos_context_menu()
                     text = "Open Deskbar Folder",
                     icon = "Folder_generic",
                     on_choose = function()
-                      local ok, why = fs.send("/app/wm",
+                      local ok, why = fs.send("/Running/wm",
                                               { type = "launch",
                                                 program = "tracker",
                                                 args = DESKBAR })
@@ -1125,7 +1125,7 @@ function bar:draw(g)
   -- exist, on the grounds that a picture which lies about what the system
   -- knows is worse than a gap. What decides it now is the kernel rather
   -- than this file: `needs audio` grants nothing on a board with no sound
-  -- card, so `/dev/audio` is not in this namespace and `audio.stats()` says
+  -- card, so `/Devices/audio` is not in this namespace and `audio.stats()` says
   -- so. The rule is the same one; it is enforced instead of remembered.
   --
   if volume_now() then
@@ -1152,7 +1152,7 @@ function bar:draw(g)
   -- question mark, drawn before anything could read one, so the reading
   -- would replace the query and nothing else would move - and that is what
   -- it does. The ThinkPad's embedded controller is read by the kernel every
-  -- thirty seconds (`hal/pc/ec.c`) and `/dev/battery` is that reading.
+  -- thirty seconds (`hal/pc/ec.c`) and `/Devices/battery` is that reading.
   --
   -- **Nothing is drawn where there is nothing to read**, by the volume's
   -- rule above: a charge on a machine that cannot measure one would be
@@ -1306,17 +1306,17 @@ function bar:mouse(action, x, y)
   end
 
   if self.volume_x and x >= self.volume_x and x < self.volume_x + ICON then
-    fs.send("/app/wm", { type = "launch", program = "/bin/mixer.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/bin/mixer.lua" })
     return true
   end
 
   if self.network_x and x >= self.network_x and x < self.network_x + ICON then
-    fs.send("/app/wm", { type = "launch", program = "/bin/network.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/bin/network.lua" })
     return true
   end
 
   if self.meters_x and x >= self.meters_x and x < self.meters_x + 26 then
-    fs.send("/app/wm", { type = "launch", program = "/bin/sysmon.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/bin/sysmon.lua" })
     return true
   end
 
@@ -1324,7 +1324,7 @@ function bar:mouse(action, x, y)
     -- The clock and the date, which are a control: a clock showing the
     -- wrong time with no way to say so from the clock is the first thing
     -- anybody hits on a new machine.
-    fs.send("/app/wm", { type = "launch", program = "/bin/datetime.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/bin/datetime.lua" })
     return true
   end
 
@@ -1377,7 +1377,7 @@ function bar:mouse(action, x, y)
         w_.hidden = true
       end
 
-      local ok = fs.send("/app/wm", { type = what, window = w_.handle })
+      local ok = fs.send("/Running/wm", { type = what, window = w_.handle })
 
       if not ok then
         refresh()
@@ -1450,7 +1450,7 @@ do
     if not known then
       print(("deskbar: %s is not in /bin, so it was not started"):format(name))
     else
-      local sent = fs.send("/app/wm", { type = "launch", program = name })
+      local sent = fs.send("/Running/wm", { type = "launch", program = name })
 
       print(("deskbar: launch %s -> %s"):format(name, tostring(sent)))
 

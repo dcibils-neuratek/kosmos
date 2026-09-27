@@ -42,7 +42,7 @@ elseif a then
   seconds = tonumber(a) or 5
 end
 
-local cpu = fs.read("/dev/cpu") or {}
+local cpu = fs.read("/Devices/cpu") or {}
 local HZ  = cpu.counter_hz or 62500000
 
 local function ms(ticks) return ticks * 1000.0 / HZ end
@@ -59,7 +59,7 @@ local function us(ticks) return ticks * 1000000.0 / HZ end
 -- failure that names itself.
 --
 local function ask(msg)
-  local reply, err = fs.send("/app/wm", msg)
+  local reply, err = fs.send("/Running/wm", msg)
 
   if reply then return reply end
 

@@ -60,7 +60,7 @@ So there are two phases here, and the second is the one that matters:
      works.
 
   9. **An application scripted from the shell**, with no scripting code in
-     it: `fs.write("/app/gallery/title", ...)` has to widen the window's tab,
+     it: `fs.write("/Running/gallery/title", ...)` has to widen the window's tab,
      which is as wide as its title. Checked by consequence, not by reply - a
      property store that accepted the write and told nobody would pass a
      read-back and fail this.
@@ -272,7 +272,7 @@ QEMU_ARGS = [
     "-fw_cfg", "name=opt/kosmos/smp,string=" + os.environ["KOSMOS_SMPWORK"],
 ] if os.environ.get("KOSMOS_SMPWORK") else []) + [
     #
-    # The USB driver's test pattern, offered at `/dev/camera` (`usb.md` §11
+    # The USB driver's test pattern, offered at `/Devices/camera` (`usb.md` §11
     # 8d): QEMU has no camera, and the real one needs root on the Mac, so
     # this is what the Camera app is held to. `+silent` offers a second one
     # that never sends a frame, which is what holds the lease (`check_camera`).
@@ -1415,18 +1415,18 @@ MENU_ROW = LAYOUT_ROW
 def check_registry(guest):
     """A window manager started a second time is found by name.
 
-    `wm` registers itself in /app, and a program started with `run` and
-    handed nothing else reaches `/app/wm` by asking the registry for that
+    `wm` registers itself in /Running, and a program started with `run` and
+    handed nothing else reaches `/Running/wm` by asking the registry for that
     name - which is how `desktop` starts the Tracker. Stopped with
     Control-C, a window manager destroys its endpoint and does not
     unregister, and the registry used to keep the name: the next one was
     filed as `wm2`, a lookup of `wm` was handed an endpoint that had ended,
-    and the Tracker died at once with "no such path: /app/wm" under a
+    and the Tracker died at once with "no such path: /Running/wm" under a
     desktop that was running.
 
     So this starts a window manager, stops it, and starts another. Each
     time, the program `wm` launches starts a second one with `run` and no
-    shares, and that one looks up /app/wm, calls it, and prints what /app
+    shares, and that one looks up /Running/wm, calls it, and prints what /Running
     holds.
 
     **The first start is the control, which is why this phase comes before
@@ -1441,26 +1441,26 @@ def check_registry(guest):
     # The marker is split in the source, so the echo of the line that writes
     # the program cannot be mistaken for the program printing it.
     probe = (
-        "local answer, why = fs.send('/app/wm', { type = 'windows' }) "
+        "local answer, why = fs.send('/Running/wm', { type = 'windows' }) "
         "local said = answer and (answer.ok and 'answered' "
         "or tostring(answer.error)) or tostring(why) "
         "print('registry' .. '-probe: ' .. said .. ' | ' "
-        ".. table.concat(fs.list('/app') or {}, ' ') .. ' |')"
+        ".. table.concat(fs.list('/Running') or {}, ' ') .. ' |')"
     )
     launcher = (
-        "local ok, why = run('/ramfs/probe.lua', '', false) "
+        "local ok, why = run('/Temporary/probe.lua', '', false) "
         "if not ok then print('registry' .. '-probe: ' .. tostring(why) "
         ".. ' | |') end"
     )
 
-    guest.type("fs.write('/ramfs/probe.lua', %r)" % probe)
+    guest.type("fs.write('/Temporary/probe.lua', %r)" % probe)
     time.sleep(2)
-    guest.type("fs.write('/ramfs/viarun.lua', %r)" % launcher)
+    guest.type("fs.write('/Temporary/viarun.lua', %r)" % launcher)
     time.sleep(2)
 
     def start_and_probe(which):
         mark = len(guest.seen)
-        guest.type("wm /ramfs/viarun.lua")
+        guest.type("wm /Temporary/viarun.lua")
 
         deadline = time.monotonic() + 40
         found = None
@@ -1474,7 +1474,7 @@ def check_registry(guest):
         if found is None:
             raise Failure(
                 f"the {which} window manager started, and the program run "
-                "under it never said what it found at /app/wm.\n"
+                "under it never said what it found at /Running/wm.\n"
                 "--- what the guest said ---\n" + guest.seen[mark:][-800:])
 
         # Back to the shell, the way every phase here ends.
@@ -1502,7 +1502,7 @@ def check_registry(guest):
     if said != "answered":
         raise Failure(
             "under the first window manager of this boot, a program started "
-            f"with `run` could not reach it through /app/wm: {said}. /app "
+            f"with `run` could not reach it through /Running/wm: {said}. /Running "
             f"held {names}. Nothing in the registry can be stale yet, so the "
             "lookup or the probe is what broke, not a restart.")
 
@@ -1511,12 +1511,12 @@ def check_registry(guest):
     if said != "answered":
         raise Failure(
             "under a second window manager, a program started with `run` "
-            f"could not reach it through /app/wm: {said}. /app held {names}. "
+            f"could not reach it through /Running/wm: {said}. /Running held {names}. "
             "The registry is handing out a name whose holder has ended.")
 
     if names != ["wm"]:
         raise Failure(
-            f"/app held {names} under the second window manager, where `wm` "
+            f"/Running held {names} under the second window manager, where `wm` "
             "alone belongs. The first one's name was kept after it ended, so "
             "the second was registered under another.")
 
@@ -1560,11 +1560,11 @@ def check_context(guest):
         'win:run()'
     )
 
-    guest.type("fs.write('/ramfs/ctxprobe.lua', %r)" % probe)
+    guest.type("fs.write('/Temporary/ctxprobe.lua', %r)" % probe)
     time.sleep(2)
 
     mark = len(guest.seen)
-    guest.type("wm /ramfs/ctxprobe.lua")
+    guest.type("wm /Temporary/ctxprobe.lua")
 
     deadline = time.monotonic() + 40
     where = None
@@ -2262,7 +2262,7 @@ def check_default_look(guest, ask_wm):
         "ok[#ok + 1] = gfx.use_font(f[r].font, f[r].px, r) and 'y' or 'n' end "
         "local thin = gfx.measure('iiiiiiiiii', 'ui') "
         "local wide = gfx.measure('MMMMMMMMMM', 'ui') "
-        "local r = (%s) and fs.send('/app/wm', { type = 'theme' }) or {} "
+        "local r = (%s) and fs.send('/Running/wm', { type = 'theme' }) or {} "
         "local held = {} "
         "for _, role in ipairs { 'ui', 'title', 'text', 'mono' } do "
         "local h = (r.held or {})[role] "
@@ -2276,14 +2276,14 @@ def check_default_look(guest, ask_wm):
     ) % ("true" if ask_wm else "false")
 
     mark = len(guest.seen)
-    guest.type("fs.write('/ramfs/look.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/look.lua', %r)" % program)
 
     # **Under `wm`, because half of what is asked is a question only the
     # window manager can answer** - and it has to be a desktop with nothing
     # saved, which is this phase and no other: the pin below gives every
     # later desktop a font table to load, and a window manager that loads
     # what it was given is exactly the bug this cannot see.
-    guest.type("wm /ramfs/look.lua" if ask_wm else "./ramfs/look.lua")
+    guest.type("wm /Temporary/look.lua" if ask_wm else "./ramfs/look.lua")
     # Waited for the marker *after* the line, not for the line itself: the
     # line arrives from QEMU in pieces, and reading it the instant its first
     # characters land gives "ibmplexsans 14 ibm". `run_media.py` has the same
@@ -2404,8 +2404,8 @@ def check_text_size(guest):
         "w:add(v) w:run()"
     )
 
-    guest.type("fs.write('/ramfs/sized.lua', %r)" % program)
-    guest.type("wm sized,/ramfs/sized.lua")
+    guest.type("fs.write('/Temporary/sized.lua', %r)" % program)
+    guest.type("wm sized,/Temporary/sized.lua")
 
     mark = len(guest.seen)
     placed, deadline = None, time.monotonic() + 40
@@ -2565,8 +2565,8 @@ def check_window_resize(guest):
         "w:run()"
     )
 
-    guest.type("fs.write('/ramfs/folds.lua', %r)" % program)
-    guest.type("wm folds,/ramfs/folds.lua")
+    guest.type("fs.write('/Temporary/folds.lua', %r)" % program)
+    guest.type("wm folds,/Temporary/folds.lua")
 
     mark = len(guest.seen)
     placed, deadline = None, time.monotonic() + 40
@@ -2698,8 +2698,8 @@ def check_window_resize(guest):
         "w:run()"
     )
 
-    guest.type("fs.write('/ramfs/grew.lua', %r)" % grower)
-    guest.type("wm grew,/ramfs/grew.lua")
+    guest.type("fs.write('/Temporary/grew.lua', %r)" % grower)
+    guest.type("wm grew,/Temporary/grew.lua")
 
     mark = len(guest.seen)
     grown, deadline = None, time.monotonic() + 40
@@ -2794,8 +2794,8 @@ def check_triangle(guest):
         "w:add(v) w:run()"
     )
 
-    guest.type("fs.write('/ramfs/tri.lua', %r)" % program)
-    guest.type("wm tri,/ramfs/tri.lua")
+    guest.type("fs.write('/Temporary/tri.lua', %r)" % program)
+    guest.type("wm tri,/Temporary/tri.lua")
 
     mark = len(guest.seen)
     placed, deadline = None, time.monotonic() + 40
@@ -2859,13 +2859,13 @@ def check_scripting(guest):
 
     roadmap.md M7's third definition of done. `gallery.lua` contains not one
     line about properties: it calls `ui.window`, and `ui.window` registers
-    the window with /app and answers for its properties. `setprop` is a
+    the window with /Running and answers for its properties. `setprop` is a
     general four-line program that writes a path. Neither knows about the
     other.
 
-    `wm gallery,setprop:/app/gallery/title=renamed by another process`
-    starts both, each in its own address space, each handed /app/wm and
-    /app and nothing else.
+    `wm gallery,setprop:/Running/gallery/title=renamed by another process`
+    starts both, each in its own address space, each handed /Running/wm and
+    /Running and nothing else.
 
     Foreground, and that is not incidental. A window manager reads the
     keyboard, and so does the shell's line editor, so running one detached
@@ -2929,7 +2929,7 @@ def check_scripting(guest):
     guest.proc.stdin.flush()
     time.sleep(2)
 
-    guest.type("wm gallery,setprop:/app/gallery/title=renamed by another one")
+    guest.type("wm gallery,setprop:/Running/gallery/title=renamed by another one")
     started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
@@ -2997,7 +2997,7 @@ def check_replicants(guest):
     """A view moved between processes, still running, with what it declared.
 
     roadmap.md M7's second definition of done, minus the dragging - there is
-    no pointer yet, so `clock` offers the replicant through /ramfs and
+    no pointer yet, so `clock` offers the replicant through /Temporary and
     `adopt` picks it up. The mechanism is the whole of it either way; the
     pointer is the part that is missing.
 
@@ -3014,7 +3014,7 @@ def check_replicants(guest):
         `adopt` re-runs the same source with its own state, so the two
         read differently and neither is a copy of the other's pixels.
       * `adopt` also prints what the replicant's restricted namespace
-        actually answers - it tries /dev/cpu, which was declared, and /ramfs,
+        actually answers - it tries /Devices/cpu, which was declared, and /Temporary,
         which was not - so the sandbox line on screen is a measurement and
         not a claim. That line is green only when the refusal happened.
     """
@@ -3029,7 +3029,7 @@ def check_replicants(guest):
             f"expected three bands of replicant green - a clock in each of "
             f"two windows and the sandbox result - and found {len(bands)}. "
             "Either the replicant did not load in one of them, or the "
-            "restricted namespace let /ramfs through, which turns that line "
+            "restricted namespace let /Temporary through, which turns that line "
             "red."
         )
 
@@ -3737,7 +3737,7 @@ def check_faces(guest):
         "end end end "
         "print('faces' .. ': batch done')"
     )
-    guest.type("fs.write('/ramfs/faces.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/faces.lua', %r)" % program)
     time.sleep(1.0)
 
     drawn, refused, total = {}, {}, None
@@ -3745,7 +3745,7 @@ def check_faces(guest):
 
     while total is None or first <= total + 1:
         mark = len(guest.seen)
-        guest.type("/ramfs/faces.lua %d %d" % (first, first + 7))
+        guest.type("/Temporary/faces.lua %d %d" % (first, first + 7))
 
         deadline = time.monotonic() + 40
 
@@ -3849,10 +3849,10 @@ def check_wallpapers(guest):
         "end "
         "print('walls' .. ': done')"
     )
-    guest.type("fs.write('/ramfs/walls.lua', %r)" % probe)
+    guest.type("fs.write('/Temporary/walls.lua', %r)" % probe)
     time.sleep(1.0)
     mark = len(guest.seen)
-    guest.type("/ramfs/walls.lua")
+    guest.type("/Temporary/walls.lua")
 
     deadline = time.monotonic() + 40
 
@@ -3967,10 +3967,10 @@ def check_direct_menu(guest):
         "end end "
         "print('strip' .. ': gone')"
     )
-    guest.type("fs.write('/ramfs/strip.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/strip.lua', %r)" % program)
     time.sleep(1.0)
     mark = len(guest.seen)
-    guest.type("wm /ramfs/strip.lua")
+    guest.type("wm /Temporary/strip.lua")
 
     def said(text, seconds=20):
         deadline = time.monotonic() + seconds
@@ -4253,7 +4253,7 @@ def check_theme_events(guest):
         "local wmproto = use('/lib/wmproto.lua') "
         "local w = ui.window{ title = 'Events', w = 200, h = 80, "
         "x = 100, y = 600 } "
-        "for _ = 1, 4 do fs.send('/app/wm', { type = 'theme', "
+        "for _ = 1, 4 do fs.send('/Running/wm', { type = 'theme', "
         "palette = ui.theme.current(), fonts = ui.theme.fonts }) end "
         "local got, polls = 0, 0 "
         "while got < 4 and polls < 20 do "
@@ -4264,10 +4264,10 @@ def check_theme_events(guest):
         "if ev.type == 'theme' then got = got + 1 end end end "
         "print('theme' .. '-events: ' .. got .. ' in ' .. polls)"
     )
-    guest.type("fs.write('/ramfs/events.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/events.lua', %r)" % program)
     time.sleep(1.0)
     mark = len(guest.seen)
-    guest.type("wm events,/ramfs/events.lua")
+    guest.type("wm events,/Temporary/events.lua")
 
     try:
         said = guest.wait_for_line("theme-events: ",
@@ -4376,16 +4376,16 @@ def check_theme_plex(guest):
                "local l = ui.list{ x = 0, y = 0, w = 100, h = 60, "
                "items = { 'a' } } "
                "local b = ui.button{ text = 'Probe' } "
-               "local r = fs.send('/app/wm', { type = 'theme' }) "
+               "local r = fs.send('/Running/wm', { type = 'theme' }) "
                "local h = r and r.held and r.held.heading "
                "print('theme' .. '-now: ' .. tostring(r and r.palette) .. ' ' "
                ".. tostring(h and (h.font .. '/' .. h.px))) "
                "print('theme' .. '-space: ' .. l:row_height() "
                ".. ' ' .. (b.w - gfx.measure('Probe')) .. ' ' .. b.h)")
-    guest.type("fs.write('/ramfs/themenow.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/themenow.lua', %r)" % program)
     time.sleep(1.0)
     mark = len(guest.seen)
-    guest.type("wm themenow,/ramfs/themenow.lua")
+    guest.type("wm themenow,/Temporary/themenow.lua")
 
     try:
         now = guest.wait_for_line("theme-now: ",
@@ -4479,12 +4479,12 @@ def check_tabs(guest):
         guest.type("TABS_SRC = TABS_SRC .. %r" % program[at:at + 600])
         time.sleep(0.3)
 
-    guest.type("fs.write('/ramfs/tabs.lua', TABS_SRC) print('tabs' .. '-written')")
+    guest.type("fs.write('/Temporary/tabs.lua', TABS_SRC) print('tabs' .. '-written')")
     guest.type(appearance('tabs = "beos"') + ' print("tabs" .. "-saved")')
     guest.wait_for("tabs-saved", "save the old panel's tab shape")
     time.sleep(1.0)
     mark = len(guest.seen)
-    guest.type("wm /ramfs/tabs.lua")
+    guest.type("wm /Temporary/tabs.lua")
 
     def said(text, seconds=25):
         deadline = time.monotonic() + seconds
@@ -4647,9 +4647,9 @@ def check_corners(guest):
         "return false end "
         "w:run()"
     )
-    guest.type("fs.write('/ramfs/corner.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/corner.lua', %r)" % program)
     mark = len(guest.seen)
-    guest.type("wm /ramfs/corner.lua")
+    guest.type("wm /Temporary/corner.lua")
 
     deadline = time.monotonic() + 40
 
@@ -4732,11 +4732,11 @@ def check_shadow(guest):
         "return false end "
         "w:run()"
     )
-    guest.type("fs.write('/ramfs/shade.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/shade.lua', %r)" % program)
     guest.type(appearance("shadow = true") + ' print("shadow" .. "-on")')
     guest.wait_for("shadow-on", "switch shadows on")
     mark = len(guest.seen)
-    guest.type("wm /ramfs/shade.lua")
+    guest.type("wm /Temporary/shade.lua")
 
     deadline = time.monotonic() + 40
 
@@ -4884,12 +4884,12 @@ def check_scale(guest):
         "while w.running do local r = wmproto.poll(w.handle, 1) "
         "if not r then break end end"
     )
-    guest.type("fs.write('/ramfs/direct.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/direct.lua', %r)" % program)
     guest.type(appearance("scale = 150") + ' print("scale" .. "-saved")')
     guest.wait_for("scale-saved", "save a scale of 150")
     time.sleep(0.5)
     mark = len(guest.seen)
-    guest.type("wm gallery,/ramfs/direct.lua")
+    guest.type("wm gallery,/Temporary/direct.lua")
 
     def said(pattern, seconds=30):
         deadline = time.monotonic() + seconds
@@ -5316,11 +5316,11 @@ def check_volume_keys(guest):
         "local w = ui.window{ title = 'Keys', w = 200, h = 120, x = 400, y = 300 } "
         "if w then w:run() end"
     )
-    guest.type("fs.write('/ramfs/keys.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/keys.lua', %r)" % program)
     time.sleep(1.0)
 
     mark = len(guest.seen)
-    guest.type("wm /ramfs/keys.lua")
+    guest.type("wm /Temporary/keys.lua")
 
     deadline = time.monotonic() + 40
     while "wm: window Keys at" not in guest.seen[mark:] \
@@ -5661,9 +5661,9 @@ def check_terminal(guest):
     console, which is checked by the graphical-mode phase separately.
 
     What this proves is the design rather than a feature. The terminal is a
-    console server: it speaks the same `write` and `read` a `/dev/console`
+    console server: it speaks the same `write` and `read` a `/Devices/console`
     speaks, and hands itself to its children under that name. No program
-    knows or can ask what is behind `/dev/console` - a name resolves to a
+    knows or can ask what is behind `/Devices/console` - a name resolves to a
     capability and nothing has a global meaning - so a terminal is a
     process that answers three verbs and passes itself on.
 
@@ -5836,7 +5836,7 @@ def check_programs_by_file(guest):
     """A program run by its file in the Terminal, and one opened as Tracker
     opens it.
 
-    **In the Terminal**: `cd /ramfs`, then `./term.lua` - a file made at the
+    **In the Terminal**: `cd /Temporary`, then `./term.lua` - a file made at the
     prompt before the desktop starts - and its output has to be drawn in the
     window, counted by ink as `check_terminal` counts `hello`'s.
 
@@ -5850,13 +5850,13 @@ def check_programs_by_file(guest):
     decision it asks is `test_filetypes.lua`'s, and the rest of the way is
     this.
     """
-    guest.type('fs.write("/ramfs/term.lua", '
+    guest.type('fs.write("/Temporary/term.lua", '
                '[[for i = 1, 30 do print("term-" .. i) end]]) '
-               'fs.write("/ramfs/opener.lua", '
+               'fs.write("/Temporary/opener.lua", '
                '[[local t = use("/lib/filetypes.lua") '
-               'local how = t.how_to_open("/ramfs/term.lua", nil, '
-               'fs.read("/ramfs/term.lua")) '
-               'fs.send("/app/wm", { type = "launch", program = how.program, '
+               'local how = t.how_to_open("/Temporary/term.lua", nil, '
+               'fs.read("/Temporary/term.lua")) '
+               'fs.send("/Running/wm", { type = "launch", program = how.program, '
                'args = how.args })]]) '
                'print("programs-by" .. "-file")')
     guest.wait_for("programs-by-file",
@@ -5895,7 +5895,7 @@ def check_programs_by_file(guest):
     guest.mouse_button(False)
     time.sleep(0.6)
 
-    typed("cd /ramfs\n")
+    typed("cd /Temporary\n")
     typed("clear\n")
     time.sleep(1.5)
 
@@ -5906,7 +5906,7 @@ def check_programs_by_file(guest):
 
     settle(guest,
            lambda w_, h_, px_: True if ink(px_) > before + 200 else None,
-           "typing `./term.lua` into the Terminal in /ramfs put nothing in its "
+           "typing `./term.lua` into the Terminal in /Temporary put nothing in its "
            "window: a file is not being run from where the window is.",
            seconds=25)
 
@@ -5940,7 +5940,7 @@ def check_programs_by_file(guest):
 
     if not ended:
         raise Failure(
-            "the Terminal the window manager started for `/ramfs/term.lua` "
+            "the Terminal the window manager started for `/Temporary/term.lua` "
             "never ran it - no `term` ended after the launch:\n"
             + guest.seen[mark:][-1200:])
 
@@ -6132,7 +6132,7 @@ def check_log_view(guest):
     TrueType face at 20 pixels, because at spleen's 16 the second bug cannot
     be seen. Both are put back afterwards.
 
-    What is logged is under this phase's control. `/ramfs/logger.lua` opens a
+    What is logged is under this phase's control. `/Temporary/logger.lua` opens a
     small window and prints when it is clicked: forty plain lines, then one
     the log colours as a fault; the second click, forty more and one it
     colours as a stage. Finding them by colour rather than by shape is what
@@ -6184,7 +6184,7 @@ def check_log_view(guest):
         "w:add(v) w:run()"
     )
 
-    guest.type("fs.write('/ramfs/logger.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/logger.lua', %r)" % program)
     #
     # **Classic, named rather than defaulted to.** This wrote no palette and
     # took whatever a machine nobody has set up wears - BeOS, which is what
@@ -6202,7 +6202,7 @@ def check_log_view(guest):
                    "wrote the logger and chose BeOS with a TrueType face")
 
     mark = len(guest.seen)
-    guest.type("wm logview,/ramfs/logger.lua")
+    guest.type("wm logview,/Temporary/logger.lua")
 
     placed = {}
     deadline = time.monotonic() + 40
@@ -6726,12 +6726,12 @@ def check_monitor(guest):
 
 
 def check_camera(guest):
-    """**The Camera app shows what `/dev/camera` sends** (`roadmap.md` 6d,
+    """**The Camera app shows what `/Devices/camera` sends** (`roadmap.md` 6d,
     `usb.md` §11 8d, `docs/camera.html`).
 
     Against the USB driver's test pattern, which this harness offers with
     `opt/kosmos/camera=pattern`: eight bars, white to black, over a square
-    that moves. The whole path is the real one - `/dev/camera` handed only to
+    that moves. The whole path is the real one - `/Devices/camera` handed only to
     a program that declares it, a region made by the app and handed over,
     whole frames published by the driver, and `surface:camera` taking the
     newest in C - with the pattern where a camera would be.
@@ -7602,7 +7602,7 @@ def check_deskbar(guest):
     appear in a census of windows any more than the desktop itself would.
 
     The Deskbar asks the window manager what is on screen rather than asking
-    /app what registered. The difference is real: a program that opens a
+    /Running what registered. The difference is real: a program that opens a
     window by talking to the desktop directly - which the two oldest
     demonstrations here do - has a window and no registration, and would be
     missing from a list built the other way.
@@ -8191,14 +8191,14 @@ def check_panel(guest):
         "on_choose = function(p) print('pick' .. 'ed ' .. p) end } "
         "if w then w:run() end"
     )
-    guest.type("fs.write('/ramfs/pick.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/pick.lua', %r)" % program)
     time.sleep(1.0)
 
     # A path alone: `wm` starts every comma-separated entry as a program, so
-    # `wm pick,/ramfs/pick.lua` would try `/bin/pick.lua` first and say it
+    # `wm pick,/Temporary/pick.lua` would try `/bin/pick.lua` first and say it
     # could not - which the triangle and resize phases do, harmlessly.
     mark = len(guest.seen)
-    guest.type("wm /ramfs/pick.lua")
+    guest.type("wm /Temporary/pick.lua")
 
     placed, deadline = None, time.monotonic() + 40
     while placed is None and time.monotonic() < deadline:
@@ -9727,7 +9727,7 @@ def check_window_manager(guest):
         raise Failure(
             "the hung application's window is not on screen at all, so "
             "there is nothing here to drag. Either `wm` did not start, or "
-            "it could not hand /app/wm to the applications it started."
+            "it could not hand /Running/wm to the applications it started."
         )
 
     # Dragged by its title bar, with the mouse, which is what the milestone
@@ -9910,11 +9910,11 @@ def check_reaped(guest):
         "w:add(v) w:run()"
     )
 
-    guest.type("fs.write('/ramfs/dying.lua', %r)" % program)
+    guest.type("fs.write('/Temporary/dying.lua', %r)" % program)
     time.sleep(2)
 
     mark = len(guest.seen)
-    guest.type("wm /ramfs/dying.lua")
+    guest.type("wm /Temporary/dying.lua")
 
     # It has to appear before it can be missed. If it never opens, the check
     # below would pass for the wrong reason.
@@ -9994,7 +9994,7 @@ def check_editor(guest):
 
     Before the window manager phase, which takes the screen for good.
     """
-    guest.type("edit /ramfs/sum.lua")
+    guest.type("edit /Temporary/sum.lua")
     time.sleep(3)
 
     program = (
@@ -10029,7 +10029,7 @@ def check_editor(guest):
     time.sleep(1.5)
 
     mark = len(guest.seen)
-    guest.type("run /ramfs/sum.lua")
+    guest.type("run /Temporary/sum.lua")
 
     deadline = time.monotonic() + 20
 
