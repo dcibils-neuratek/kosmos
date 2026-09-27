@@ -1395,6 +1395,10 @@ processors, and still what follows USB:
       button (and `?`) opening every key in six groups; asked whether
       Duplicate belongs in the header or a menu for the selection. **Diego:
       "both"** - in the header beside Add, and in a menu beside Delete.
+      **DONE the same day** (`testing.md` 18.226): Duplicate beside Add and
+      in the selection's menu, a right click in the view; Keys beside
+      Render and on `?`, the sheet drawn from the table the keys are now
+      handled from.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
    - **Sample scenes: a house, a car, a plane** - Diego, 25 September:

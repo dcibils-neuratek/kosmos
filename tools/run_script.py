@@ -145,6 +145,12 @@ def main():
 
         view_w = int(wide.group(1))
         ox, oy = (int(v) for v in (said("cafesa3d: window at ", mark, 5) or "0,0").split(","))
+        header = dict((m.group(1), (int(m.group(2)), int(m.group(3))))
+                      for m in re.finditer(r"([\w:]+) (\d+),(\d+)",
+                                           said("cafesa3d: controls ", mark, 5) or ""))
+        at_start = dict((m.group(1), (int(m.group(2)), int(m.group(3))))
+                        for m in re.finditer(r"([\w.]+) (-?\d+),(-?\d+)",
+                                             said("cafesa3d: at ", mark, 5) or ""))
         first_row = re.search(r"[\w.]+ (\d+),(\d+) eye", said("cafesa3d: rows ", mark, 5) or "")
         width, height, _ = R.pixel_reader(guest.screendump())
 
@@ -167,6 +173,83 @@ def main():
             return int(m.group(1)) + 640 - 12 - 48, int(m.group(2)) + 420 - 72 + 10 + 12
 
         time.sleep(2)
+
+        # **Every key in one place** (`roadmap.md` 4l, 5h): ? opens the sheet,
+        # drawn from the table the keys are handled from, in its six groups;
+        # ? closes it, and so do Escape and a click anywhere.
+        mark = len(guest.seen)
+        press("shift-slash")
+        shown = said("cafesa3d: keys shown, ", mark, 20)
+        check(shown is not None and shown.endswith(" in 6 groups")
+              and int(shown.split()[0]) > 40,
+              "? did not open the Keys sheet with its six groups: %r" % shown)
+        closed_by = []
+
+        for how in ("?", "Escape", "a click"):
+            mark = len(guest.seen)
+
+            if how == "?":
+                press("shift-slash")
+            elif how == "Escape":
+                press("shift-slash")
+                said("cafesa3d: keys shown, ", mark, 20)
+                press("esc")
+            else:
+                press("shift-slash")
+                said("cafesa3d: keys shown, ", mark, 20)
+                click(ox + 700, oy + 500)
+
+            if said("cafesa3d: keys hidden", mark, 20) is not None:
+                closed_by.append(how)
+
+        check(closed_by == ["?", "Escape", "a click"],
+              "the Keys sheet did not close by ?, Escape and a click: %r" % closed_by)
+
+        # Duplicate, from the header: the Cube, selected when Cafesa3D opens,
+        # copied and following the pointer until Escape leaves it in place.
+        mark = len(guest.seen)
+
+        if "duplicate" in header:
+            click(ox + header["duplicate"][0], oy + header["duplicate"][1])
+
+        duplicated = said("cafesa3d: duplicated ", mark, 20)
+        press("esc")
+        check(duplicated == "Cube as Cube.001",
+              "the header's Duplicate did not copy the Cube: %r" % duplicated)
+
+        # And from the selection's menu: a right click on the Cube opens it,
+        # and its first row is Duplicate.
+        mark = len(guest.seen)
+
+        if "Cube" in at_start:
+            cx, cy = at_start["Cube"]
+            guest.mouse_to(*R._to_tablet(ox + cx, oy + cy, width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True, "right")
+            time.sleep(0.2)
+            guest.mouse_button(False, "right")
+
+        menu = re.match(r"(\d+),(\d+), rows of (\d+)",
+                        said("cafesa3d: selection menu at ", mark, 20) or "")
+
+        if menu:
+            mx, my, row = (int(v) for v in menu.groups())
+            click(mx + 30, my + 2 + row // 2)
+
+        again = said("cafesa3d: duplicated ", mark, 20)
+        press("esc")
+        check(menu is not None and again is not None and again.startswith("Cube"),
+              "a right click on the Cube did not offer Duplicate and copy it: %r, %r"
+              % (menu and menu.group(0), again))
+
+        # Both copies taken back - one undo step each, the cancelled moves
+        # none - so the scene is the seven objects the rest of this counts on.
+        mark = len(guest.seen)
+        press("ctrl-z", "ctrl-z")
+        said("cafesa3d: undid duplicated", mark, 10)
+        time.sleep(1)
+        check(guest.seen[mark:].count("cafesa3d: undid duplicated") == 2,
+              "Ctrl Z twice did not take both copies back")
 
         # Shift F4: the panel, and a narrower view.
         mark = len(guest.seen)
@@ -393,7 +476,9 @@ def main():
         print("--- what Cafesa3D said last ---\n" + "\n".join(said_lines[-30:]))
         return 1
 
-    print("PASS: %d checks on Cafesa3D's Script panel (opened with Shift F4 beside "
+    print("PASS: %d checks on Cafesa3D's Script panel and its keys (the Keys sheet "
+          "opened by ? in six groups and closed three ways; Duplicate from the header "
+          "and from a right click; the panel opened with Shift F4 beside "
           "a view narrower by its width; the staircase made, listed under its script "
           "and reached with the wheel, made again in its own place, and taken back "
           "with one Ctrl Z; a field the box has not got refused on its line with nothing "

@@ -11165,3 +11165,36 @@ no ridge, none of the title bar's yellow. **Control**: the kit as it was -
 pill.
 
 The gate with the pill: 50 of 50 in 8:48.
+
+## 18.226 Duplicate, and every key in one place
+
+`roadmap.md` 4l, 5h - Diego: "We need a shortcut and menu option to
+duplicate objects like blender", "Also I want a button that pops up all key
+commands and shortcuts", and for Duplicate, "both". **Shift D was already
+there**, the copy following the pointer as Blender's does, in no menu and
+not on the foot; so **Duplicate** joins Add in the header, dim while
+nothing is selected, and **a right click in the view** selects what is
+under the pointer and opens the selection's menu - Duplicate, then Delete.
+
+**The keys are handled from one table now, `KEYS.list`, and the Keys
+sheet is drawn from it**, so the sheet cannot name a key the handler has
+not got or miss one it has. Each row states Shift and Control only where
+they matter, which keeps what the if-chain it replaced did: the number
+row's views take either Control, X asks whatever is held, G, R and S want
+neither. Rows with no key code are the ones handled elsewhere - the
+pointer, the keys inside G, R and S, a field, the Script panel - and are
+on the sheet for the reader. **Keys** beside Render, or `?`, opens it over
+the view in three columns; `?`, Escape or a click anywhere closes it.
+Cafesa3D is at Lua's two hundred locals in its main chunk: `KEYS` is the
+one new one, and everything else is a field of it.
+
+**In the Script suite, both boards, 23 checks now**: `?` showing the sheet
+with 43 rows in six groups, and `?`, Escape and a click each closing it;
+the header's Duplicate copying the selected Cube as Cube.001, Escape
+leaving the copy where it was; a right click on the Cube opening the
+selection's menu, whose first row copies it; and both copies taken back
+with two Ctrl Z, one step each. **Control**: no `?` row in the table and
+no click on Duplicate - four fail. And the Cafesa3D suite's 122 checks,
+which press most of the keys, pass on both boards through the table.
+
+The gate with Duplicate and the keys: 50 of 50 in 9:06.

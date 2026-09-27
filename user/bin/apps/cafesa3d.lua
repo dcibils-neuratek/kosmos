@@ -439,6 +439,20 @@ local SCRIPT = {
   }, "\n") .. "\n",
 }
 
+--
+-- **Every key, in one table** (`roadmap.md` 4l, 5h). Diego, 27 September: "I
+-- want a button that pops up all key commands and shortcuts". The keys the
+-- view answers are handled from `KEYS.list` (filled beside `rawkey`, where
+-- what they call exists) and the Keys sheet is drawn from it, so the sheet
+-- cannot name a key the handler has not got or miss one it has. A row with
+-- no `code` is shown and handled somewhere else: the pointer, the keys
+-- inside G, R and S, a field in Properties, the Script panel.
+--
+local KEYS = { open = false,
+  GROUPS = { "The view", "Objects", "Move, turn, size", "Files and the window",
+             "The script", "A number in Properties" },
+}
+
 -- The panel's text before its editor is made; `kept` is whether the scene
 -- has a script to save - once the panel has been open over it, or it came
 -- with one (6d).
@@ -785,8 +799,10 @@ local function draw_header(s)
 
   -- From the right: the dots, Render, the shading.
   local more = control("more", right - 26, (HEAD - 1 - 26) // 2, 26, 26)
+  local keys_w = 12 + gfx.measure("Keys") + 8 + gfx.measure("?", small) + 12
+  local keysb = control("keys", more.x - L.head_gap - keys_w, cy, keys_w, 31)
   local render_w = pk.button_width("Render F12") + 4
-  local render = control("render", more.x - L.head_gap - render_w, cy, render_w, 31)
+  local render = control("render", keysb.x - L.head_gap - render_w, cy, render_w, 31)
 
   local shade_parts = {
     { name = "wire", text = "Wireframe", on = shading == "wire",
@@ -825,9 +841,20 @@ local function draw_header(s)
   s:text(addb.x + 29 + gfx.measure("Add") + 8, addb.y + (31 - gfx.height(small)) // 2,
          "Shift A", theme.text_dim, nil, small)
 
+  -- Duplicate, with its key (`roadmap.md` 4l, 5h): Diego, "both" - here, and
+  -- in the selection's menu. Dim while nothing is selected.
+  local dup_w = 12 + gfx.measure("Duplicate") + 8 + gfx.measure("Shift D", small) + 12
+  local db = control("duplicate", addb.x + addb.w + 6, cy, dup_w, 31)
+
+  pk.button(s, { x = db.x, y = db.y, w = db.w, text = "" })
+  s:text(db.x + 12, db.y + (31 - gfx.height()) // 2, "Duplicate",
+         selected and theme.text or theme.text_dim, nil, "ui")
+  s:text(db.x + 12 + gfx.measure("Duplicate") + 8, db.y + (31 - gfx.height(small)) // 2,
+         "Shift D", theme.text_dim, nil, small)
+
   -- Script, with its key, lit while the panel is open.
   local script_w = 12 + gfx.measure("Script") + 8 + gfx.measure("Shift F4", small) + 12
-  local sb = control("script", addb.x + addb.w + 6, cy, script_w, 31)
+  local sb = control("script", db.x + db.w + 6, cy, script_w, 31)
 
   if SCRIPT.open then
     s:fill_round(sb.x, sb.y, sb.w, 31, theme.mix(theme.sunken, theme.accent, 120), 7)
@@ -851,7 +878,100 @@ local function draw_header(s)
          render.y + (31 - gfx.height(small)) // 2, "F12",
          theme.mix(theme.accent, theme.text_on, 600), nil, small)
 
+  -- Keys, lit while the sheet is open.
+  if KEYS.open then
+    s:fill_round(keysb.x, keysb.y, keysb.w, 31, theme.mix(theme.sunken, theme.accent, 120), 7)
+  else
+    pk.button(s, { x = keysb.x, y = keysb.y, w = keysb.w, text = "" })
+  end
+
+  s:text(keysb.x + 12, keysb.y + (31 - gfx.height()) // 2, "Keys",
+         KEYS.open and theme.accent or theme.text, nil, "ui")
+  s:text(keysb.x + 12 + gfx.measure("Keys") + 8, keysb.y + (31 - gfx.height(small)) // 2,
+         "?", theme.text_dim, nil, small)
+
   pk.iconbutton(s, { x = more.x, y = more.y, icon = "more" })
+end
+
+--
+-- **The Keys sheet**, over the view: the groups in three columns, each key
+-- on the right of its column and what it does beside it. Opened by the
+-- button or `?`, closed by either, Escape, or a click anywhere.
+--
+function KEYS.toggle()
+  KEYS.open = not KEYS.open
+
+  if KEYS.open then
+    local groups = {}
+
+    for _, k in ipairs(KEYS.list) do groups[k.group] = true end
+
+    local n = 0
+
+    for _ in pairs(groups) do n = n + 1 end
+
+    print(("cafesa3d: keys shown, %d in %d groups"):format(#KEYS.list, n))
+  else
+    print("cafesa3d: keys hidden")
+  end
+
+  return true
+end
+
+function KEYS.draw(s)
+  if not KEYS.open then return end
+
+  local ROW, HEAD_H, GAP, PAD = 22, 26, 34, 24
+  local place = { { 1, 5 }, { 2, 6 }, { 3, 4 } }
+  local rows, kw, sw = {}, 0, 0
+
+  for _, k in ipairs(KEYS.list) do
+    rows[k.group] = rows[k.group] or {}
+    table.insert(rows[k.group], k)
+    kw = math.max(kw, gfx.measure(k.keys, small))
+    sw = math.max(sw, gfx.measure(k.says))
+  end
+
+  local colw = kw + 12 + sw
+  local tall = 0
+
+  for _, col in ipairs(place) do
+    local h = 0
+
+    for _, g in ipairs(col) do h = h + HEAD_H + #(rows[g] or {}) * ROW + 12 end
+
+    tall = math.max(tall, h)
+  end
+
+  local w = #place * colw + (#place - 1) * GAP + 2 * PAD
+  local h = tall + 2 * PAD + 30
+  local x0 = VX + math.max(8, (VW - w) // 2)
+  local y0 = VY + math.max(8, (VH - h) // 2)
+
+  s:fill_round(x0, y0, w, h, theme.window, 10)
+  s:frame_round(x0, y0, w, h, theme.line_soft, 10)
+  s:text(x0 + PAD, y0 + PAD - 4, "Keys", theme.text, nil, "ui")
+  s:text(x0 + PAD + gfx.measure("Keys") + 12, y0 + PAD - 2,
+         "? or Esc closes these, or a click anywhere", theme.text_dim, nil, small)
+
+  for c, col in ipairs(place) do
+    local x = x0 + PAD + (c - 1) * (colw + GAP)
+    local y = y0 + PAD + 30
+
+    for _, g in ipairs(col) do
+      s:text(x, y + 6, KEYS.GROUPS[g]:upper(), theme.text_dim, nil, tiny)
+      y = y + HEAD_H
+
+      for _, k in ipairs(rows[g] or {}) do
+        s:text(x + kw - gfx.measure(k.keys, small), y + (ROW - gfx.height(small)) // 2,
+               k.keys, theme.accent, nil, small)
+        s:text(x + kw + 12, y + (ROW - gfx.height()) // 2, k.says, theme.text, nil, "ui")
+        y = y + ROW
+      end
+
+      y = y + 12
+    end
+  end
 end
 
 --------------------------------------------------------------------------
@@ -2234,6 +2354,7 @@ local function draw_all()
   SCRIPT.draw(s)
   draw_outliner(s)
   draw_props(s)
+  KEYS.draw(s)
   draw_foot(s)
   return win:commit{ x = 0, y = 0, w = W, h = H }
 end
@@ -4094,6 +4215,16 @@ local function press(x, y)
 
   if modal then finish(true) return true end
 
+  -- The Keys sheet closes on a click anywhere, which does nothing else.
+  if KEYS.open then return KEYS.toggle() end
+  if inside(controls.keys, x, y) then return KEYS.toggle() end
+
+  -- Duplicate, as Shift D does: the copy follows the pointer at once.
+  if inside(controls.duplicate, x, y) then
+    if duplicate_selected() then begin("grab") end
+    return true
+  end
+
   -- The Script button and the panel: a press in the code gives it the
   -- keyboard, a press anywhere else takes the keyboard back.
   if inside(controls.script, x, y) then return SCRIPT.toggle() end
@@ -4330,6 +4461,89 @@ local function release(x, y)
   return true
 end
 
+--
+-- The keys, their groups on the sheet, and what each does (`KEYS`, above).
+-- `shift` and `ctrl` are true or false when they matter and absent when they
+-- do not: the number row's views take either Control, X asks whatever is
+-- held, and G, R and S want neither.
+--
+KEYS.list = {
+  { group = 1, keys = "drag", says = "turn it" },
+  { group = 1, keys = "Shift drag", says = "move it" },
+  { group = 1, keys = "wheel", says = "closer, further" },
+  { group = 1, code = 2, shift = false, keys = "1", says = "from the front",
+    run = function() set_view("front") return true end },
+  { group = 1, code = 2, shift = true, keys = "Shift 1", says = "from the back",
+    run = function() set_view("back") return true end },
+  { group = 1, code = 4, shift = false, keys = "3", says = "from the right",
+    run = function() set_view("right") return true end },
+  { group = 1, code = 4, shift = true, keys = "Shift 3", says = "from the left",
+    run = function() set_view("left") return true end },
+  { group = 1, code = 8, shift = false, keys = "7", says = "from the top",
+    run = function() set_view("top") return true end },
+  { group = 1, code = 8, shift = true, keys = "Shift 7", says = "from the bottom",
+    run = function() set_view("bottom") return true end },
+  { group = 1, code = 102, keys = "Home", says = "everything in view",
+    run = function() frame_all() return true end },
+  { group = 1, code = 33, ctrl = false, keys = "F", says = "the selection in view",
+    run = function() return frame_selected() end },
+  { group = 1, code = 44, ctrl = false, keys = "Z", says = "wireframe or solid",
+    run = function() set_shading(shading == "solid" and "wire" or "solid") return true end },
+
+  { group = 2, keys = "click", says = "select" },
+  { group = 2, keys = "right click", says = "duplicate it or delete it" },
+  { group = 2, code = 30, shift = true, keys = "Shift A", says = "add",
+    run = function() add_menu(pointer[1], pointer[2]) return true end },
+  { group = 2, code = 32, shift = true, keys = "Shift D", says = "duplicate, and move it",
+    -- As Blender's: the copy follows the pointer at once.
+    run = function() if duplicate_selected() then begin("grab") end return true end },
+  { group = 2, code = 45, keys = "X", says = "delete, asking",
+    run = function() delete_menu(pointer[1], pointer[2]) return true end },
+  { group = 2, code = 111, keys = "Delete", says = "delete",
+    run = function() return delete_selected() end },
+  { group = 2, code = 44, ctrl = true, shift = false, keys = "Ctrl Z", says = "undo",
+    run = function() return undo_last() end },
+  { group = 2, code = 44, ctrl = true, shift = true, keys = "Ctrl Shift Z", says = "redo",
+    run = function() return redo_last() end },
+
+  { group = 3, code = 34, shift = false, ctrl = false, keys = "G", says = "move",
+    run = function() return begin("grab") end },
+  { group = 3, code = 19, shift = false, ctrl = false, keys = "R", says = "rotate",
+    run = function() return begin("rotate") end },
+  { group = 3, code = 31, shift = false, ctrl = false, keys = "S", says = "scale",
+    run = function() return begin("scale") end },
+  { group = 3, keys = "X Y Z", says = "then only along that axis" },
+  { group = 3, keys = "Shift X Y Z", says = "then all but that axis" },
+  { group = 3, keys = "0-9 . -", says = "then by exactly that much" },
+  { group = 3, keys = "Enter, click", says = "then keep it" },
+  { group = 3, keys = "Esc, right click", says = "then put it back" },
+
+  { group = 4, code = 31, ctrl = true, shift = false, keys = "Ctrl S", says = "save",
+    run = function() return FILE.save() or true end },
+  { group = 4, code = 31, ctrl = true, shift = true, keys = "Ctrl Shift S", says = "save as",
+    run = function() return FILE.save_as() or true end },
+  { group = 4, code = 24, ctrl = true, keys = "Ctrl O", says = "open",
+    run = function() return FILE.open() or true end },
+  { group = 4, code = 88, keys = "F12", says = "render",
+    run = function() final.open() return true end },
+  { group = 4, code = 87, keys = "F11", says = "full screen",
+    run = function() return FULL.toggle() end },
+  { group = 4, code = 59, keys = "F1", says = "the tutorial",
+    run = function() return TUTORIAL.open() end },
+  { group = 4, code = 53, shift = true, keys = "?", says = "these keys",
+    run = function() return KEYS.toggle() end },
+
+  { group = 5, keys = "Shift F4", says = "the Script panel" },
+  { group = 5, keys = "Ctrl Enter", says = "run it" },
+  { group = 5, keys = "Esc", says = "the keys back to the view" },
+
+  { group = 6, keys = "click", says = "type one" },
+  { group = 6, keys = "drag across", says = "scrub it" },
+  { group = 6, keys = "Tab", says = "the next field" },
+  { group = 6, keys = "Enter", says = "keep it" },
+  { group = 6, keys = "Esc", says = "leave it as it was" },
+}
+
 -- Raw keys: 42 and 54 are the shifts, 29 and 97 the controls, 2..11 the
 -- number row, 30 A, 32 D, 44 Z, 45 X, 59 F1, 88 F12, 102 Home, 111 Delete.
 local function rawkey(ev)
@@ -4347,6 +4561,9 @@ local function rawkey(ev)
 
   -- Shift F4 opens and closes the Script panel, whoever has the keyboard.
   if ev.code == 62 and shift then return SCRIPT.toggle() end
+
+  -- Escape closes the Keys sheet before it means anything else.
+  if KEYS.open and ev.code == 1 then return KEYS.toggle() end
 
   -- While the script holds the keyboard, keys are words there: the
   -- letters that are commands here arrive as characters, below. Escape
@@ -4445,40 +4662,13 @@ local function rawkey(ev)
     return true
   end
 
-  if not ctrl and not shift then
-    if ev.code == 34 then return begin("grab") end
-    if ev.code == 19 then return begin("rotate") end
-    if ev.code == 31 then return begin("scale") end
+  -- The rest from the table the Keys sheet is drawn from.
+  for _, k in ipairs(KEYS.list) do
+    if k.code == ev.code and (k.shift == nil or k.shift == shift)
+       and (k.ctrl == nil or k.ctrl == ctrl) then
+      return k.run()
+    end
   end
-
-  if ctrl and ev.code == 44 then
-    if shift then return redo_last() end
-    return undo_last()
-  end
-
-  if shift and ev.code == 30 then add_menu(pointer[1], pointer[2]) return true end
-  if shift and ev.code == 32 then
-    -- As Blender's: the copy follows the pointer at once.
-    if duplicate_selected() then begin("grab") end
-    return true
-  end
-  if ev.code == 45 then delete_menu(pointer[1], pointer[2]) return true end
-  if ev.code == 111 then return delete_selected() end
-
-  if ev.code == 2 then set_view(shift and "back" or "front") return true end
-  if ev.code == 4 then set_view(shift and "left" or "right") return true end
-  if ev.code == 8 then set_view(shift and "bottom" or "top") return true end
-  if ev.code == 44 and not ctrl then
-    set_shading(shading == "solid" and "wire" or "solid")
-    return true
-  end
-  if ev.code == 102 then frame_all() return true end
-  if ev.code == 33 and not ctrl then return frame_selected() end
-  if ev.code == 88 then final.open() return true end
-  if ev.code == 59 then return TUTORIAL.open() end
-  if ev.code == 87 then return FULL.toggle() end
-  if ctrl and ev.code == 31 then return (shift and FILE.save_as or FILE.save)() or true end
-  if ctrl and ev.code == 24 then return FILE.open() or true end
 
   return false
 end
@@ -4542,8 +4732,8 @@ function FULL.say()
 
   local header = {}
 
-  for _, name in ipairs({ "add", "more", "wire", "solid", "rendered", "render",
-                          "tool:select", "tool:move",
+  for _, name in ipairs({ "add", "duplicate", "keys", "more", "wire", "solid",
+                          "rendered", "render", "tool:select", "tool:move",
                           "tool:rotate", "tool:scale" }) do
     local c = controls[name]
 
@@ -4686,6 +4876,28 @@ local function pass()
         finish(false)
         dirty = true
         said_where = true
+      elseif ev.action == "press" and in_view(ev.x, ev.y) then
+        -- **The selection's menu** (`roadmap.md` 4l, 5h): what is under the
+        -- pointer selected first, as a right click in Blender acts on it,
+        -- then Duplicate beside Delete - Diego's "both".
+        local under = pick(ev.x, ev.y)
+
+        if under then select(under) end
+
+        if selected then
+          local t = selected
+          local m = win:open_menu((win.origin_x or 0) + ev.x, (win.origin_y or 0) + ev.y, {
+            { text = "Duplicate " .. t.name,
+              on_choose = function() if duplicate_selected() then begin("grab") end end },
+            { text = "Delete " .. t.name, on_choose = delete_selected },
+          })
+
+          if m then
+            print(("cafesa3d: selection menu at %d,%d, rows of %d"):format(m.x, m.y, m.row))
+          end
+
+          dirty = true
+        end
       end
     elseif ev.type == "mouse" and not ev.menu then
       -- A press or a release that changed something says where things are
