@@ -305,7 +305,8 @@ end
 -- Responsiveness is a design goal rather than a later optimisation, and a
 -- banner is exactly the kind of thing that quietly stops obeying it.
 --
-row("Programs", ("%d in /bin"):format(#(fs.list("/bin") or {})))
+row("Programs", ("%d applications, %d programs"):format(#(fs.list("/Kosmos/Apps") or {}),
+                                                     #(fs.list("/Kosmos/Programs") or {})))
 
 --------------------------------------------------------------------------
 -- The mark and the column, side by side.

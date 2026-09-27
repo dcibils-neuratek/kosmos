@@ -255,8 +255,8 @@ def main():
         ])
 
         for marker, what in [
-            ("/bin/grep.lua", "which did not find a program that is there"),
-            ("is not in /bin", "which claimed a program that does not exist"),
+            ("/Kosmos/Programs/grep.lua", "which did not find a program that is there"),
+            ("is not in /Kosmos/Apps or /Kosmos/Programs", "which claimed a program that does not exist"),
             ("kind      file", "stat did not report what the node is"),
             ("blocks free of",
              "df did not read the superblock for a real free count"),
@@ -274,7 +274,7 @@ def main():
         # process that ends says so now, and `process 17 (df) ended` follows
         # df's output - so the last `df` in the transcript was that line, and
         # /bin was looked for after it.
-        if "/bin" not in tools.split("kosmos> df")[-1]:
+        if "/Kosmos/Apps" not in tools.split("kosmos> df")[-1]:
             raise Failure("df did not list the mounts it can measure.\n"
                           + tools[-1500:])
 

@@ -22,7 +22,7 @@
 -- compositor underneath them.
 --
 --   wm                    the Deskbar, and nothing else yet
---   wm hello-win          start /bin/hello-win.lua in a window
+--   wm hello-win          start /Kosmos/Apps/hello-win.lua in a window
 --   wm hello-win,stuck    two applications, one of which hangs
 --   wm gallery,setprop:/Running/gallery/title=hello
 --                         and one that changes the other's title
@@ -823,7 +823,7 @@ sys.screen_take(true)
 --
 -- **Bounded rather than switched on, because a flag has to be remembered by
 -- somebody already having a bad evening.** `args` is the list of programs
--- to start, so `wm trace` would try to run `/bin/trace.lua`; and a machine
+-- to start, so `wm trace` would try to run `/Kosmos/Programs/trace.lua`; and a machine
 -- that hangs on the third pass is one nobody gets to type a flag into
 -- twice. Forty passes is about a third of a second of a healthy desktop and
 -- some eight kilobytes of the sixty-four in the ring - it costs a blink at
@@ -4167,7 +4167,7 @@ handlers.launch = function(req)
     return { ok = false, error = "not a program name: " .. name }
   end
 
-  local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
+  local path = fs.program(name)
   --
   -- When, and with what result. `launch` is how everything except the
   -- desktop and the Deskbar gets started, so without this the log has no
@@ -5747,7 +5747,7 @@ end
 -- a reason to yet.
 --------------------------------------------------------------------------
 --
--- Start, stop, or read the profile. `/bin/frames.lua` is the client.
+-- Start, stop, or read the profile. `/Kosmos/Programs/frames.lua` is the client.
 --
 -- Reading does not stop the measurement and does not reset it, so a long
 -- run can be sampled while it happens; `on = true` is what clears the
@@ -7006,7 +7006,7 @@ if wanted == "" then wanted = "desktop,deskbar" end
 
 --
 -- `trace` first, so it is a setting rather than a program: it has to be out
--- of the list before the loop below tries to start `/bin/trace.lua`, and it
+-- of the list before the loop below tries to start `/Kosmos/Programs/trace.lua`, and it
 -- has to be *set* before the first window opens or the opening is the one
 -- thing the trace misses.
 --
@@ -7039,7 +7039,7 @@ for entry in wanted:gmatch("[^,]+") do
     local name, argument = entry:match("^([^:]+):(.*)$")
     name = name or entry
 
-    local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
+    local path = fs.program(name)
     local ok, err, id = run(path, argument or "", true,
                             { ["/Running/wm"] = ep })
 

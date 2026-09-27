@@ -369,11 +369,12 @@ local function launch(text)
   end
 
   if name == "help" then
-    local names = fs.list("/bin") or {}
     local out = {}
 
-    for _, f in ipairs(names) do
-      out[#out + 1] = f:gsub("%.lua$", "")
+    for _, dir in ipairs({ "/Kosmos/Programs", "/Kosmos/Apps" }) do
+      for _, f in ipairs(fs.list(dir) or {}) do
+        out[#out + 1] = f:gsub("%.lua$", "")
+      end
     end
 
     emit(table.concat(out, "  ") .. "\n")
@@ -391,7 +392,7 @@ local function launch(text)
   if name:match("%.lua$") or name:find("/", 1, true) then
     path = tidy(resolve(name))
   else
-    path = "/bin/" .. name .. ".lua"
+    path = fs.program(name)
   end
 
   if not fs.getattr(path) then

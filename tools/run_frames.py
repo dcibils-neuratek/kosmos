@@ -7,7 +7,7 @@ recurring question - should the window manager be C? - has never had a
 number attached to it. All five gated benchmarks measure the kernel: IPC,
 context switch, page fault, allocation. None of them measures a frame.
 
-So this measures frames. `wm` keeps per-stage counters, `/bin/frames.lua`
+So this measures frames. `wm` keeps per-stage counters, `/Kosmos/Programs/frames.lua`
 reads them, and this drives a desktop under three loads so the numbers can
 be read against each other rather than in isolation:
 

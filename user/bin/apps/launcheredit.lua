@@ -89,7 +89,7 @@ local L = ui.layout
 --
 -- **What the field holds, said in the row's note**: the Lua file to run,
 -- and it does not have to be in `/bin` - `/Home/mine.lua` is as ordinary as
--- `/bin/doom.lua`. The window manager would complete a bare name, and this
+-- `/Kosmos/Apps/doom.lua`. The window manager would complete a bare name, and this
 -- stores the completed one on save rather than the short one, so what is in
 -- the file is what runs.
 --
@@ -189,13 +189,13 @@ function save()
   --
   -- The completion belongs in the typing, not in the file. A launcher that
   -- records `doom` runs correctly and reads as broken to anybody who does
-  -- not know that the window manager will put `/bin/` and `.lua` around it;
-  -- one that records `/bin/doom.lua` says what it does.
+  -- not know that the window manager will find its file; one that records
+  -- `/Kosmos/Apps/doom.lua` says what it does.
   --
   local starts = program.text
 
   if starts ~= "" and not starts:find("/") then
-    starts = "/bin/" .. starts .. ".lua"
+    starts = fs.program(starts)
     program.text = starts
     program.caret = #starts + 1
   end

@@ -559,8 +559,8 @@ local function control_for(it, x, y, changed)
   if it.kind == "startup" then
     local names, ticked = {}, {}
 
-    for _, file in ipairs(fs.list("/bin") or {}) do
-      local attrs = fs.getattr("/bin/" .. file)
+    for _, file in ipairs(fs.list("/Kosmos/Apps") or {}) do
+      local attrs = fs.getattr("/Kosmos/Apps/" .. file)
 
       if attrs and attrs.kind == "application" then
         local short = file:gsub("%.lua$", "")

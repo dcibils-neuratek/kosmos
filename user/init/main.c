@@ -263,7 +263,7 @@ static int first_leaves_role(void)
  * first thing that was not as it should be.
  */
 #define CTEST_TABLE             904UL
-#define TABLE_FILE              "/bin/t-table.lua"
+#define TABLE_FILE              "/Kosmos/Programs/t-table.lua"
 
 /*
  * **An image from a region** (`docs/elf.md` step 1). `CTEST_IMAGE` is run by

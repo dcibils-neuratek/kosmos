@@ -2140,7 +2140,7 @@ static int l_set_quantum(lua_State *L)
  * for a band at or above the current one is refused.
  *
  * `sys.scheduler().bands` says how many there are; NORMAL is 2 and the
- * compositor's DISPLAY is 3. `/bin/spin.lua` is the caller this exists for.
+ * compositor's DISPLAY is 3. `/Kosmos/Programs/spin.lua` is the caller this exists for.
  */
 static int l_step_down(lua_State *L)
 {

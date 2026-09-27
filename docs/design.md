@@ -43,7 +43,7 @@ audio period is 5.8 ms and a frame is 16. Not speed — structure-shaped Lua
 costs about 2%, measured, which is nothing. The worst case is what decides.
 
 Seven servers speak structs declared in `user/include/`: `/Devices/audio`,
-`/Devices`, `/bin`, `/Kosmos/Libraries`, `/Running`, `/Devices/console`, `/Temporary`. Five headers, about
+`/Devices`, `/Kosmos/Apps` and `/Kosmos/Programs`, `/Kosmos/Libraries`, `/Running`, `/Devices/console`, `/Temporary`. Five headers, about
 3,700 lines with the servers themselves. Everything above them is still Lua
 tables, and that is most of the system.
 
@@ -498,7 +498,7 @@ hides the program. On 12 September `snes --scale 3` at the prompt printed
 `table: 0x00000081002300` and ran nothing, `--scale 3` having become a Lua
 comment; `doom` did the same in the default image, and `quake` in a `MEGA=1`
 one. `wm snes:--scale 2` and launchers worked, because they start
-`/bin/snes.lua` by path, which is how it went unnoticed.
+`/Kosmos/Apps/snes.lua` by path, which is how it went unnoticed.
 
 They are `/Kosmos/Kits/doom`, `/Kosmos/Kits/quake` and `/Kosmos/Kits/snes` now, in the list only
 where the image compiles them, and each program asks with `pcall` and says

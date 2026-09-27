@@ -867,7 +867,7 @@ static const luaL_Reg quake_lib[] = {
  * The kit, `use("/Kosmos/Kits/quake")`. The window's size rides along, so the Lua
  * side does not carry the number.
  *
- * Not a global, which it was: a global named `quake` hid `/bin/quake.lua`
+ * Not a global, which it was: a global named `quake` hid `/Kosmos/Apps/quake.lua`
  * from the prompt. `snes_kosmos.c` has the longer account.
  */
 void kosmos_quake_kit(lua_State *L)

@@ -3,7 +3,7 @@
 --
 --   cat /Temporary/notes
 --   cat /Devices/cpu
---   cat /bin/hello.lua
+--   cat /Kosmos/Programs/hello.lua
 --
 -- The name is Linux's and the behaviour is not quite: what a server
 -- returns here is a *value*, not a stream of bytes. `cat /Temporary/sensor`
@@ -22,7 +22,7 @@ local path = name and (name:sub(1, 1) == "/" and name
 
 if not path then
   print("usage: cat <path>")
-  print("  try /Temporary/notes, /Devices/cpu, or /bin/hello.lua")
+  print("  try /Temporary/notes, /Devices/cpu, or /Kosmos/Programs/hello.lua")
   return
 end
 

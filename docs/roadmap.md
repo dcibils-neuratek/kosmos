@@ -2330,7 +2330,7 @@ processors, and still what follows USB:
    every `/home/...` already written, and the partition on a stick, go on
    working; **DONE the same evening** (18.230), **(c)** the `/Kosmos` tree - (c1) `/lib` to `/Kosmos/Libraries`,
    `/kits` to `/Kosmos/Kits` - **DONE** (18.232) - (c2) `/bin` split into `/Kosmos/Apps` and
-   `/Kosmos/Programs`, `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
+   `/Kosmos/Programs` - **DONE** (18.233), `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
    in /Kosmos/Themes, yes"), `/system` and `/user` gone; **(d)** the dotfiles at
    the top of `/home` into `/Home/Preferences`; **(e)** `layout.md`, the
    layout in words, rewritten to the agreed root - it still describes the
@@ -4785,6 +4785,15 @@ so that the lower runs before the higher is awake - and neither is measured.
 The next step is many runs with each thread's core printed.
 
 ---
+
+**A film's sound lost one AAC frame, once** (27 September, `testing.md`
+18.233). `x86-film` heard 1024 samples of silence 1.15 s into the test
+film where FFmpeg's reference has sound - one frame, the first of the four
+channels written and the other three zero - under the whole gate, and not
+again alone or in the four suites rerun side by side. A frame decoded to
+nothing, or its samples not yet in the ring when the check read them: which
+one is the question, and the ring's own counters beside the check's read
+would say.
 
 ## What to do when you get stuck
 

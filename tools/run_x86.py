@@ -3763,7 +3763,7 @@ def core(image, check, fails):
 
     # What it prints is its own capability list, asked of the namespace - so
     # this is IPC and the servers rather than a string in the image.
-    for path in ("/bin", "/Devices", "/Home", "/Kosmos/Libraries"):
+    for path in ("/Kosmos/Apps", "/Devices", "/Home", "/Kosmos/Libraries"):
         check(path in ran, "a process could not see %s" % path)
 
     check("process died" not in ran, "the program faulted on its way out")

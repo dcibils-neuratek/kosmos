@@ -106,20 +106,40 @@ def main():
             failed.append(complaint)
 
     def run(name, want, seconds):
-        """`run` the program; the first line after it holding `want`."""
+        """`run` the program; the first line after it holding `want`.
+
+        **And then the prompt, before the next one is typed.** A line a
+        program says can arrive after the shell has printed its prompt, and
+        this typed the next `run` at once - so on 27 September `plain`'s
+        check read its own echoed command, which names `apptest`, and the
+        `broken` check read `plain`'s late error. The echo of what was typed
+        is never an answer either.
+        """
         mark = len(guest.seen)
         started = time.monotonic()
         guest.type("run /Home/apps/apptest/%s.lua" % name)
         deadline = started + seconds
+        found = None
 
-        while time.monotonic() < deadline:
+        while time.monotonic() < deadline and found is None:
             for line in guest.seen[mark:].split("\n")[1:]:
-                if want in line:
-                    return line.strip(), time.monotonic() - started
-            time.sleep(0.1)
-            guest._read_available()
+                if want in line and not line.lstrip().startswith("kosmos>"):
+                    found = line.strip()
+                    break
+            if found is None:
+                time.sleep(0.1)
+                guest._read_available()
 
-        return None, time.monotonic() - started
+        took = time.monotonic() - started
+
+        if found is not None:
+            at = guest.seen.find(found, mark) + len(found)
+
+            while time.monotonic() < deadline and "kosmos> " not in guest.seen[at:]:
+                time.sleep(0.1)
+                guest._read_available()
+
+        return found, took
 
     try:
         guest.wait_for("kosmos> ", "reached a prompt")

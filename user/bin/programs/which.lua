@@ -20,11 +20,11 @@ if not name then
   return
 end
 
-local path = (name:sub(1, 1) == "/") and name or ("/bin/" .. name .. ".lua")
+local path = fs.program(name)
 local attrs = fs.getattr(path)
 
 if not attrs then
-  print(name .. " is not in /bin")
+  print(name .. " is not in /Kosmos/Apps or /Kosmos/Programs")
   print("  `/commands` lists the words the shell answers to itself")
   return
 end

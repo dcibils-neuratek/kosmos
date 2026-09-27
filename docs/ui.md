@@ -1217,7 +1217,8 @@ prompt keeps a leading `/` without `.lua` for commands, as it always has.
 `.` and `..` are taken out of the path before anything is asked, because no
 server has a directory called `..`.
 
-**A bare name is still a program in `/bin`, and only that.** The current
+**A bare name is still a program in `/Kosmos/Programs` or `/Kosmos/Apps`,
+and only that** (`ns.program`). The current
 directory is not searched for a word. If it were, a file called `ls.lua` left
 in a folder would be what `ls` ran there - the reason `.` is kept off a Unix
 `PATH` - and `ls` and `./ls.lua` would stop being two different requests: one

@@ -106,7 +106,8 @@ inflate is a kit - it computes - and the disk is a server - it owns.
 source into the caller's own environment. `ui`, `panel`, `pdf`, `kfs`.
 
 **A program** is console-based: it prints, it reads lines, it lives in
-`/bin` and you type its name at the prompt. `ls`, `cat`, `htop`, `stress`.
+`/Kosmos/Programs` and you type its name at the prompt. `ls`, `cat`, `htop`,
+`stress`. The applications Kosmos ships are in `/Kosmos/Apps`.
 One that lives anywhere else is typed as the file it is - `./hello.lua` -
 and opening it in Tracker runs it in a Terminal.
 

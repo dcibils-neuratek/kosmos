@@ -2456,7 +2456,7 @@ Run on 24 September with the C920 through `tools/camera.sh`, without root:
 ```
 xhci: 00:03.0 port 5: a camera, USB Video Class 1.0: 18 sizes in YUY2 and 17 in MJPEG, streaming on interface 1 in 11 settings up to 3072 bytes an interval
 xhci: 00:03.0 port 5: SET_CONFIGURATION for the camera failed: Stall Error (6); it is not driven
-wm: started /bin/camera.lua as 20
+wm: started /Kosmos/Apps/camera.lua as 20
 camera: no camera - there is no camera with that number
 ```
 

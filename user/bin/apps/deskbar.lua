@@ -137,8 +137,8 @@ local programs = {}
 local launchable = {}
 
 do
-  for _, file in ipairs(fs.list("/bin") or {}) do
-    local attrs = fs.getattr("/bin/" .. file)
+  for _, file in ipairs(fs.list("/Kosmos/Apps") or {}) do
+    local attrs = fs.getattr("/Kosmos/Apps/" .. file)
 
     if attrs and attrs.kind == "application" then
       local short = file:gsub("%.lua$", "")
@@ -217,7 +217,7 @@ local function add_launcher(short)
     -- `handlers.launch` accepts either - a bare name becomes
     -- `/bin/<name>.lua` - and what a *file* records should not depend on
     -- a completion rule the file cannot state. A launcher that says
-    -- `/bin/doom.lua` says what it runs; one that says `doom` says what
+    -- `/Kosmos/Apps/doom.lua` says what it runs; one that says `doom` says what
     -- it runs only to somebody who knows the rule, and reads as broken to
     -- anybody who does not.
     --
@@ -226,7 +226,7 @@ local function add_launcher(short)
     -- migrated.
     --
     fine, oops = fs.setattr(path, { kind = "launcher", type = "launcher",
-                                    program = "/bin/" .. short .. ".lua",
+                                    program = "/Kosmos/Apps/" .. short .. ".lua",
                                     args = "", icon = attrs.icon })
   end
 
@@ -301,11 +301,13 @@ local sections = {}
 
 --
 -- A launcher to a program that is gone is not shown: `programs` is what
--- `/bin` declared at the start, and a path outside `/bin` is somebody's own
--- and trusted.
+-- `/Kosmos/Apps` declared at the start, and a path outside it is somebody's
+-- own and trusted. `/bin/<name>.lua` is how a launcher made before 27
+-- September says the same (`ns.program` starts it from its new place).
 --
 local function exists(program)
-  local short = program:match("^/bin/([^/]+)%.lua$")
+  local short = program:match("^/[Kk][Oo][Ss][Mm][Oo][Ss]/[Aa][Pp][Pp][Ss]/([^/]+)%.lua$")
+                or program:match("^/[Bb][Ii][Nn]/([^/]+)%.lua$")
 
   if short then return programs[short] ~= nil end
   if not program:find("/", 1, true) then
@@ -1306,17 +1308,17 @@ function bar:mouse(action, x, y)
   end
 
   if self.volume_x and x >= self.volume_x and x < self.volume_x + ICON then
-    fs.send("/Running/wm", { type = "launch", program = "/bin/mixer.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/mixer.lua" })
     return true
   end
 
   if self.network_x and x >= self.network_x and x < self.network_x + ICON then
-    fs.send("/Running/wm", { type = "launch", program = "/bin/network.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/network.lua" })
     return true
   end
 
   if self.meters_x and x >= self.meters_x and x < self.meters_x + 26 then
-    fs.send("/Running/wm", { type = "launch", program = "/bin/sysmon.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/sysmon.lua" })
     return true
   end
 
@@ -1324,7 +1326,7 @@ function bar:mouse(action, x, y)
     -- The clock and the date, which are a control: a clock showing the
     -- wrong time with no way to say so from the clock is the first thing
     -- anybody hits on a new machine.
-    fs.send("/Running/wm", { type = "launch", program = "/bin/datetime.lua" })
+    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/datetime.lua" })
     return true
   end
 

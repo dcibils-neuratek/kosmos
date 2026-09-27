@@ -47,7 +47,7 @@ extern const unsigned            libraries_lua_count;
 static const struct source_entry *store;
 static unsigned                   store_count;
 
-/* Whatever its case (`roadmap.md` 6s): `/bin/Clock.lua` is `clock.lua`. */
+/* Whatever its case (`roadmap.md` 6s): `/Kosmos/Apps/Clock.lua` is `clock.lua`. */
 static const struct source_entry *find(const char *name)
 {
     unsigned i;
@@ -130,6 +130,56 @@ static const char *declared(const char *src, unsigned long len,
     }
 
     return NULL;
+}
+
+/*
+ * **Which of the image's files a mount shows** (`roadmap.md` 6s c2). One
+ * store holds the applications and the programs, as `user/bin/` does, and
+ * the layout shows them as two folders: `/Kosmos/Apps`, what opens a
+ * window, and `/Kosmos/Programs`, the rest. The namespace puts a mount's
+ * root in front of every path it sends, so the view is the name's first
+ * part - `/apps/clock.lua` - and a name with neither is the whole store,
+ * as the libraries are served.
+ */
+enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS };
+
+static enum view view_of(const char **name)
+{
+    static const struct { const char *word; enum view view; } views[] = {
+        { "apps", VIEW_APPS }, { "programs", VIEW_PROGRAMS },
+    };
+    const char *n = *name;
+    unsigned i;
+
+    if (*n == '/') {
+        n++;
+    }
+
+    for (i = 0; i < sizeof(views) / sizeof(views[0]); i++) {
+        size_t len = strlen(views[i].word);
+
+        if (strncasecmp(n, views[i].word, len) == 0
+            && (n[len] == '\0' || n[len] == '/')) {
+            *name = n + len;
+            return views[i].view;
+        }
+    }
+
+    return VIEW_ALL;
+}
+
+static bool in_view(const struct source_entry *e, enum view v)
+{
+    unsigned long n = 0;
+    bool app;
+
+    if (v == VIEW_ALL) {
+        return true;
+    }
+
+    app = declared(e->text, e->length, "application", &n) != NULL;
+
+    return (v == VIEW_APPS) ? app : !app;
 }
 
 static void copy_word(char *dst, unsigned cap, const char *src,
@@ -217,6 +267,8 @@ static void answer(const struct message *in, uint64_t sender)
         (const struct bin_request *)(const void *)in->data;
     const struct source_entry *e;
     char name[BIN_NAME_MAX];
+    const char *at;
+    enum view view;
 
     memset(&out, 0, sizeof(out));
     out.tag = in->tag;
@@ -229,9 +281,12 @@ static void answer(const struct message *in, uint64_t sender)
     }
 
     /* The mount prefix is stripped before this arrives; a leading slash is
-     * not, so "/ls.lua" and "ls.lua" both name the same program. */
+     * not, so "/ls.lua" and "ls.lua" both name the same program. A view,
+     * when the mount has one, is the first part of what is left. */
     memcpy(name, req->name, BIN_NAME_MAX);
     name[BIN_NAME_MAX - 1] = '\0';
+    at = name;
+    view = view_of(&at);
 
     switch (req->op) {
     case BIN_OP_LIST: {
@@ -253,16 +308,29 @@ static void answer(const struct message *in, uint64_t sender)
          * a number it can see. It was checking the wrong side of the
          * inequality: the chunk shrinking, rather than the image growing.
          */
-        unsigned i = (req->offset < store_count) ? req->offset : store_count;
+        /* The offset is how many of *this view's* names the caller already
+         * has - it counts what it was sent - so the ones the view leaves
+         * out are skipped without being counted. */
+        unsigned i, seen = 0;
 
-        while (i < store_count && rep->count < BIN_CHUNK / BIN_NAME_MAX) {
+        for (i = 0; i < store_count; i++) {
+            if (!in_view(&store[i], view)) {
+                continue;
+            }
+
+            if (seen++ < req->offset) {
+                continue;
+            }
+
+            if (rep->count >= BIN_CHUNK / BIN_NAME_MAX) {
+                rep->more = 1u;
+                break;
+            }
+
             copy_word((char *)rep->data + rep->count * BIN_NAME_MAX,
                       BIN_NAME_MAX, store[i].name, strlen(store[i].name));
             rep->count++;
-            i++;
         }
-
-        rep->more = (i < store_count) ? 1u : 0u;
 
         break;
     }
@@ -270,9 +338,10 @@ static void answer(const struct message *in, uint64_t sender)
     case BIN_OP_READ: {
         unsigned long left;
 
-        e = find((name[0] == '/') ? name + 1 : name);
+        e = find((at[0] == '/') ? at + 1 : at);
 
-        if (e == NULL) {
+        /* A program asked for under `/Kosmos/Apps` is not there. */
+        if (e == NULL || !in_view(e, view)) {
             rep->error = BIN_ERR_NO_PROGRAM;
             break;
         }
@@ -292,9 +361,9 @@ static void answer(const struct message *in, uint64_t sender)
     }
 
     case BIN_OP_GETATTR:
-        e = find((name[0] == '/') ? name + 1 : name);
+        e = find((at[0] == '/') ? at + 1 : at);
 
-        if (e == NULL) {
+        if (e == NULL || !in_view(e, view)) {
             rep->error = BIN_ERR_NO_PROGRAM;
             break;
         }

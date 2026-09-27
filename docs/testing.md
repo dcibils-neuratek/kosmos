@@ -11404,3 +11404,52 @@ for a place of mounts - both fail.
 The gate for (c1): 50 of 50 in 9:06 - on the second try, the first having
 collided with a gate stopped a moment before, whose `make` was still
 linking the x86 image when this one began.
+
+## 18.233 `/Kosmos/Apps` and `/Kosmos/Programs`
+
+`roadmap.md` 6s (c2). `/bin` was one flat folder of the image's
+applications and programs; it is two now, from the same store. **The
+server gives each mount a view**: the namespace puts a mount's root in
+front of every path it sends, so `/Kosmos/Apps` arrives as `/apps/...` and
+`/Kosmos/Programs` as `/programs/...`, and `binfs` shows under each only
+the files whose header says that kind - a listing skipping the others
+without counting them, since the client counts its offset in what it was
+sent. A program asked for in the wrong folder is not there.
+
+**A program by its name is one question, asked of the namespace**
+(`ns.program`, `fs.program` to a program): in whichever of the two holds
+it - a name is in one, as its header decides, so the order never matters.
+The prompt, the window manager's `launch` and its startup list, `which`,
+the Terminal, `launcher` and the launcher editor ask it, where fourteen
+places built `/bin/` and a name. Here rather than in a library because
+every program has its namespace, and the window manager is at Lua's limit
+of locals. **A launcher made before the split** says `/bin/clock.lua`;
+`ns.program` takes that as the program of that name, and the Deskbar and
+its menu recognise both spellings - so a menu on a disk made last week
+keeps its applications, and nobody's file is rewritten.
+
+The rest followed: the Deskbar, Preferences' startup list and the
+Startup window list `/Kosmos/Apps`; Processes both; `neofetch` counts each;
+the Terminal's help lists both; the IDE's tree has both folders, holds all
+of `/Kosmos` read only, and Find a file walks both; Tracker's sidebar shows
+the root's own names, one `Kosmos`, where it would have shown four mounts.
+
+**Checks**: the start-up suite lists each folder and counts it against its
+own half of `user/bin/` - so a file in the wrong view makes both wrong,
+6 checks; the queries suite, 32: `/Kosmos` holding `Apps`, `Kits`,
+`Libraries`, `Programs`, the Clock only in Apps and `ls` only in Programs,
+`fs.program` for both and for `/bin/tracker.lua`, and no `bin` at the
+root; the shell's `which` naming the two folders. **Control**: no views,
+and no old-path mapping - `/Kosmos/Apps` lists all 119, and `K-APPS` fails.
+
+The gate: 46 of 50. Two were the harness: the Deskbar's icon check built
+its pattern as `/bin/%s.lua`, which the rewrite could not see as a path -
+the Deskbar drew the right pictures and the check looked for the old name;
+and the loader suite typed each `run` without waiting for the last one's
+prompt, so `plain`'s check read its own echoed command and `broken`'s read
+`plain`'s late error - it waits for the prompt now, and never takes an echo
+for an answer. **And one was not understood**: `x86-film` heard 1024
+samples of silence 1.15 s into the film, once - FFmpeg's reference had a
+frame there. The same image passed alone, 13 checks, as did the four
+rerun side by side; it is written down (`roadmap.md`, known and
+unexplained) rather than rerun until it went away.

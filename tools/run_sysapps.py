@@ -13,7 +13,7 @@ its headings are and what its rows hold - `id:name:threads:privilege:file`
 - once when it opens and again after each press, and this holds both to
 what they should be:
 
-- **the file**: Processes itself runs `/bin/procs.lua` and says so, and a
+- **the file**: Processes itself runs `/Kosmos/Apps/procs.lua` and says so, and a
   server built into the image, the console, runs no file;
 - **the threads**: one for a process with no workers, and threads of the
   kernel's own on its row, its idle threads among them;
@@ -145,8 +145,8 @@ def main():
 
         # The file each one runs.
         me = by_name.get("procs")
-        check(me is not None and me["file"] == "/bin/procs.lua",
-              "Processes does not say it runs /bin/procs.lua: %r" % me)
+        check(me is not None and me["file"] == "/Kosmos/Apps/procs.lua",
+              "Processes does not say it runs /Kosmos/Apps/procs.lua: %r" % me)
         console = by_name.get("console")
         check(console is not None and console["file"] is None,
               "the console, built into the image, says it runs a file: %r" % console)

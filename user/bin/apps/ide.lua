@@ -108,7 +108,7 @@ if not fs.getattr(project) then
 end
 
 -- Places a Kosmos program reads and does not write.
-local READ_ONLY = { "/bin", "/Kosmos/Libraries", "/Kosmos/Kits" }
+local READ_ONLY = { "/Kosmos" }
 
 -- `path` is `top` or inside it, whatever the case of either: a name is
 -- found whatever its case (`roadmap.md` 6s), so `/kosmos/libraries/ui.lua`
@@ -399,7 +399,8 @@ local tree = ui.tree{
       return root
     end)(),
     { text = "Kosmos, to read", heading = true },
-    folder("/bin", "/bin", "read only"),
+    folder("/Kosmos/Apps", "/Kosmos/Apps", "read only"),
+    folder("/Kosmos/Programs", "/Kosmos/Programs", "read only"),
     folder("/Kosmos/Libraries", "/Kosmos/Libraries", "read only"),
     -- The kits are C, reached with `use("/Kosmos/Kits/...")`: named here, with
     -- nothing to open, so a person can see what there is to use.
@@ -667,7 +668,7 @@ local function start()
   -- **A library says so first.** Running `/Kosmos/Libraries/clock.lua` builds the
   -- table it gives whoever uses it and nothing else, so it ended at once
   -- with nothing printed and looked broken (Diego, 27 September, on the
-  -- M700). Not "the application is /bin/clock.lua": that one does not use
+  -- M700). Not "the application is /Kosmos/Apps/clock.lua": that one does not use
   -- it - `/Kosmos/Libraries/clock.lua` is the local time, for the Deskbar's clock - and
   -- a name shared is not a relation.
   if under(f.path, "/Kosmos/Libraries") then
@@ -1392,13 +1393,12 @@ found.items, found.on, found.first = {}, 1, 1
 -- Every file a search can find, while one is being typed.
 local findable = nil
 
--- What a file is, from where it is: `/bin` says which of its files open a
--- window, and everything in `/Kosmos/Libraries` is a library. The
--- project's are yours.
+-- What a file is, from where it is: `/Kosmos/Apps` holds the applications,
+-- `/Kosmos/Programs` the programs, and `/Kosmos/Libraries` the libraries.
+-- The project's are yours.
 local function kind_of(path, e)
-  if under(path, "/bin") then
-    return (e.kind == "application") and "application" or "program"
-  end
+  if under(path, "/Kosmos/Apps") then return "application" end
+  if under(path, "/Kosmos/Programs") then return "program" end
 
   if under(path, "/Kosmos/Libraries") then return "library" end
 
@@ -1431,7 +1431,8 @@ end
 local function read_places()
   local list, seen = {}, {}
 
-  for place, top in ipairs({ project, "/bin", "/Kosmos/Libraries" }) do
+  for place, top in ipairs({ project, "/Kosmos/Apps", "/Kosmos/Programs",
+                             "/Kosmos/Libraries" }) do
     walk(top, 1, place, seen, list)
   end
 

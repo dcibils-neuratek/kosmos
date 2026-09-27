@@ -164,11 +164,11 @@ check(type(spun) == "table" and #spun == 1,
 
 local seeded_tree = {
   ["/D/Applications"] = DIR,
-  ["/D/Applications/tracker"] = launcher("/bin/tracker.lua", ""),
+  ["/D/Applications/tracker"] = launcher("/Kosmos/Apps/tracker.lua", ""),
   ["/D/Applications/calc"] = launcher("calc", ""),
   ["/D/Applications/notes.txt"] = { kind = "file" },
   ["/D/Preferences"] = DIR,
-  ["/D/Preferences/appearance"] = launcher("/bin/appearance.lua", ""),
+  ["/D/Preferences/appearance"] = launcher("/Kosmos/Apps/appearance.lua", ""),
 }
 local seeded_store = store_of(seeded_tree)
 local present = menu.programs_in(seeded_store, "/D")
@@ -195,7 +195,7 @@ check(#add == 1 and add[1] == "preferences",
 
 -- A launcher to a program that is gone is not shown; the rest are.
 local exists = function(program)
-  return program ~= "/bin/appearance.lua"
+  return program ~= "/Kosmos/Apps/appearance.lua"
 end
 local shown = menu.sections(seeded_store, "/D", exists)
 local prefs = nil

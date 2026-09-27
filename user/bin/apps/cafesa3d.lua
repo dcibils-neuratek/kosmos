@@ -3837,7 +3837,7 @@ end
 local TUTORIAL = { index = "asset:tutorial/cafesa3d/index.html" }
 
 function TUTORIAL.open()
-  local ok, why = fs.send("/Running/wm", { type = "launch", program = "/bin/browser.lua",
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
                                        args = TUTORIAL.index })
 
   print(ok and ("cafesa3d: tutorial at " .. TUTORIAL.index)

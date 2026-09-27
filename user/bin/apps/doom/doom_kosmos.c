@@ -455,7 +455,7 @@ static const luaL_Reg doom_lib[] = {
  * can make a window that fits without either of them carrying the other's
  * number.
  *
- * Not a global, which it was: a global named `doom` hid `/bin/doom.lua` from
+ * Not a global, which it was: a global named `doom` hid `/Kosmos/Apps/doom.lua` from
  * the prompt. `snes_kosmos.c` has the longer account.
  */
 void kosmos_doom_kit(lua_State *L)

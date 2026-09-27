@@ -70,16 +70,19 @@ end
 local function mount_roots()
   local all = fs.mounts()
   local out = {}
+  local seen = {}
 
-  for _, prefix in ipairs(all) do
-    local nested = false
+  --
+  -- **The root's own names**, one each: `/Kosmos` is made of four mounts -
+  -- its apps, programs, libraries and kits - and nothing is mounted at it,
+  -- so the first part of each prefix is what the root holds, as `ls /`
+  -- says (`roadmap.md` 6s c2).
+  --
+  for _, mounted in ipairs(all) do
+    local prefix = mounted:match("^/[^/]+") or mounted
+    local nested = seen[prefix:lower()] ~= nil
 
-    for _, other in ipairs(all) do
-      if other ~= prefix and prefix:sub(1, #other + 1) == other .. "/" then
-        nested = true
-        break
-      end
-    end
+    seen[prefix:lower()] = true
 
     --
     -- **It used to ask each mount for a listing first, and that is what
@@ -132,7 +135,7 @@ end
 -- `/system` and `/user` as well, so Places was left holding `user` - which
 -- the drawing never mentions - and no `Desktop`, which it does.
 local SYSTEM_MOUNTS = {
-  ["/bin"] = true, ["/Kosmos/Libraries"] = true, ["/Running"] = true,
+  ["/Kosmos"] = true, ["/Running"] = true,
   ["/Devices"] = true, ["/Network"] = true, ["/Temporary"] = true,
 }
 

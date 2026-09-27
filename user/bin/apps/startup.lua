@@ -42,13 +42,13 @@ end
 -- Everything that can be started, which is exactly what the Deskbar lists.
 --
 -- Read from the program store rather than kept in a table here, so an
--- application dropped into `/bin` appears in both without either being
+-- application dropped into `/Kosmos/Apps` appears in both without either being
 -- edited - and so this cannot offer to start something that is not there.
 --
 local names = {}
 
-for _, file in ipairs(fs.list("/bin") or {}) do
-  local attrs = fs.getattr("/bin/" .. file)
+for _, file in ipairs(fs.list("/Kosmos/Apps") or {}) do
+  local attrs = fs.getattr("/Kosmos/Apps/" .. file)
 
   if attrs and attrs.kind == "application" then
     local short = file:gsub("%.lua$", "")

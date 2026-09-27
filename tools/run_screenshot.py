@@ -1066,7 +1066,7 @@ def check_programs_by_name(guest):
     `--scale 3` became a comment. They are `use("/Kosmos/Kits/snes")` now.
 
     Three checks, and the first is the one that holds the class. The shell
-    walks `/bin` against its own environment and names every program it
+    walks `/Kosmos/Programs` and `/Kosmos/Apps` against its own environment and names every program it
     hides - for any name, not only these three, so the next thing to leak a
     global is caught whatever it is called. The second asks the image for
     its kits and requires each to be a table. The third types the three
@@ -1079,10 +1079,11 @@ def check_programs_by_name(guest):
     # The count is printed so an empty `/bin` cannot pass by hiding nothing.
     # Assembled at run time so waiting for it cannot match the echo.
     guest.type('local n = 0 '
-               'for _, e in ipairs(fs.list("/bin") or {}) do '
+               'for _, d in ipairs({ "/Kosmos/Programs", "/Kosmos/Apps" }) do '
+               'for _, e in ipairs(fs.list(d) or {}) do '
                'local w = tostring(e):match("^(.-)%.lua$") '
                'if w then n = n + 1 '
-               'if _ENV[w] ~= nil then print("hidden: " .. w) end end end '
+               'if _ENV[w] ~= nil then print("hidden: " .. w) end end end end '
                'print("bin" .. "-scanned " .. n)')
     guest.wait_for("bin-scanned ", "walked /bin against its environment")
 
@@ -1151,7 +1152,7 @@ def check_programs_by_name(guest):
 
 
 def reaches_program(guest, line, name, built=None):
-    """Types `line` at the prompt and fails unless `/bin/<name>.lua` answered.
+    """Types `line` at the prompt and fails unless `/Kosmos/Apps/<name>.lua` answered.
 
     `built` is whether the image lists `/Kosmos/Kits/<name>`. When it does, "this
     image was not built with" is the wrong answer even though it is the
@@ -1188,7 +1189,7 @@ def reaches_program(guest, line, name, built=None):
 
     if not re.search(rf"^{name}: ", said, re.M):
         raise Failure(
-            f"`{line}` at the prompt did not reach /bin/{name}.lua - "
+            f"`{line}` at the prompt did not reach /Kosmos/Apps/{name}.lua - "
             f"nothing it printed starts `{name}: `. A `table: 0x...`, or "
             "an `error:` from Lua, means the shell took the line as Lua "
             "because a global of that name exists.\n"
@@ -1197,7 +1198,7 @@ def reaches_program(guest, line, name, built=None):
     if built and re.search(rf"^{name}: this image was not built with",
                            said, re.M):
         raise Failure(
-            f"`{line}` reached /bin/{name}.lua, and it said the image was "
+            f"`{line}` reached /Kosmos/Apps/{name}.lua, and it said the image was "
             f"not built with it - but this image lists /Kosmos/Kits/{name}, so the "
             "program did not get the kit it asked for.\n"
             f"--- what arrived ---\n{said}")
@@ -6998,7 +6999,7 @@ def check_cores(guest):
     in the suite would have noticed - the *total* was right, and the total
     is what four other programs read.
 
-    A worker is `/bin/spin.lua`, which exists for exactly this and
+    A worker is `/Kosmos/Programs/spin.lua`, which exists for exactly this and
     deliberately does not yield. So this is also a check on the priority
     bands: the window is DISPLAY and the spinner is NORMAL, and if the
     button stopped answering while a core was pinned the screenshot below
@@ -7922,7 +7923,7 @@ def check_focus_shown(guest):
         guest._read_available()
 
         for name in wanted:
-            m = re.search(r"deskbar: /bin/%s\.lua draws as (\S+)" % name,
+            m = re.search(r"deskbar: /Kosmos/Apps/%s\.lua draws as (\S+)" % name,
                           guest.seen[mark:])
             drawn[name] = m and m.group(1)
 
@@ -8195,7 +8196,7 @@ def check_panel(guest):
     time.sleep(1.0)
 
     # A path alone: `wm` starts every comma-separated entry as a program, so
-    # `wm pick,/Temporary/pick.lua` would try `/bin/pick.lua` first and say it
+    # `wm pick,/Temporary/pick.lua` would try `/Kosmos/Programs/pick.lua` first and say it
     # could not - which the triangle and resize phases do, harmlessly.
     mark = len(guest.seen)
     guest.type("wm /Temporary/pick.lua")
@@ -9442,14 +9443,14 @@ def check_desktop(guest):
     # The whole path, not the short name.
     #
     # `handlers.launch` accepts either and completes a bare `tracker` to
-    # `/bin/tracker.lua`, which is right for somebody typing. What a *file*
+    # `/Kosmos/Apps/tracker.lua`, which is right for somebody typing. What a *file*
     # records should say what it runs without the reader knowing that rule,
     # so everything that writes a launcher writes the path - and this check
     # is where that decision is held to.
     #
-    if fields[3:6] != ["launcher", "/bin/tracker.lua", "/"]:
+    if fields[3:6] != ["launcher", "/Kosmos/Apps/tracker.lua", "/"]:
         raise Failure("Drive should be a launcher for Tracker at /: "
-                      "kind=launcher, program=/bin/tracker.lua, args=/. A "
+                      "kind=launcher, program=/Kosmos/Apps/tracker.lua, args=/. A "
                       "launcher records the whole path rather than a short "
                       "name the window manager would complete.\n" + at)
 

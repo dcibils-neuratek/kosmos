@@ -40,7 +40,7 @@ shell rather than underneath it.
        .  space of its own, a capability table of its own, and no way   .
        .  to name anything that is not in that table.                   .
        .                                                                .
-       .   programs, in Lua, from /bin                                  .
+       .   programs, in Lua, from /Kosmos/Programs                      .
        .   +--------+--------+--------+--------+--------+--------+      .
        .   |  htop  |  cat   |   ls   | monitor| hello  |benchmark      .
        .   +--------+--------+--------+--------+--------+--------+      .
@@ -59,7 +59,7 @@ shell rather than underneath it.
        .   +---------+                                                  .
        .   |  shell  |          servers, in C                           .
        .   +---------+ +---------+ +------------+ +------+ +----------+ .
-       .        ^      | console | | /Temporary | | /bin | | /Devices | .
+       .        ^      | console | | /Temporary | |Kosmos| | /Devices | .
        .        |      +---------+ +------------+ +------+ +----------+ .
        .        |           ^             ^           ^          ^      .
        .        +-- IPC ----+-------------+-----------+----------+      .
@@ -260,7 +260,7 @@ number it is spawned with decides what it becomes.
 **Where that number is answered moved in September 2026.** `user/init/main.c`
 dispatches the server roles *before* the Lua interpreter is opened, so those
 processes have no collector at all rather than a promise not to allocate:
-`/Devices/audio`, `/Devices`, `/bin`, `/Kosmos/Libraries`, `/Running`, `/Devices/console` and `/Temporary` are
+`/Devices/audio`, `/Devices`, `/Kosmos/Apps` and `/Kosmos/Programs`, `/Kosmos/Libraries`, `/Running`, `/Devices/console` and `/Temporary` are
 each one file in `user/servers/`, speaking a struct declared in
 `user/include/`.
 
@@ -304,7 +304,7 @@ and run by typing the name.
 
 ---
 
-## 3. What actually happens when you type `cat /bin/ls.lua`
+## 3. What actually happens when you type `cat /Kosmos/Programs/ls.lua`
 
 Follow one command all the way down and back. Every arrow is a real boundary.
 
@@ -325,7 +325,7 @@ Follow one command all the way down and back. Every arrow is a real boundary.
      |
      v
    the shell has a line. "cat" is not a Lua name,           EL0, shell
-   so it asks /bin whether /bin/cat.lua exists -
+   so it asks /bin whether /Kosmos/Programs/cat.lua exists -
    asks, and does not read it
      |
      v
@@ -339,7 +339,7 @@ Follow one command all the way down and back. Every arrow is a real boundary.
    given, and fetches the program through it
      |
      v
-   cat.lua runs. fs.read("/bin/ls.lua") is an IPC           EL0, cat
+   cat.lua runs. fs.read("/Kosmos/Programs/ls.lua") is an IPC           EL0, cat
    call to /bin, which answers in 1400-byte chunks
    because a message is 2048 bytes
      |
@@ -364,7 +364,7 @@ the *name* to a process that could fetch it. The bytes cross the boundary
 once. That was not the first design - the first one sent the source in the
 spawn message and broke the moment a program grew past 2,048 bytes.
 
-**Nothing in that chain has ambient authority.** `cat` can read `/bin/ls.lua`
+**Nothing in that chain has ambient authority.** `cat` can read `/Kosmos/Programs/ls.lua`
 because the shell chose to hand it the `/bin` capability. Had it not, the path
 would not exist for `cat`. There is no configuration that grants this and no
 check that denies it; the capability either is in the table or is not.

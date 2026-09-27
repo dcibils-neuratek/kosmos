@@ -744,6 +744,35 @@ local function new_namespace()
     return path
   end
 
+  --
+  -- **A program's file by its name** (`roadmap.md` 6s c2): in `/Kosmos/Apps`
+  -- or `/Kosmos/Programs`, whichever holds it - a name is in one of the two,
+  -- as its header decides, so the order asked in never changes the answer.
+  -- A name with a slash is a path already. Here rather than in a library
+  -- because every program has its namespace as `fs` and the shell has it as
+  -- `ns`, so the prompt, the window manager and a launcher ask the same
+  -- question the same way, with nothing to load; `/Kosmos/Programs/<name>`
+  -- when neither has it, for the refusal to name.
+  --
+  function ns.program(name)
+    name = tostring(name or "")
+
+    -- A launcher or a startup list written before `/bin` was split, on 27
+    -- September, says `/bin/clock.lua`: the program of that name, wherever
+    -- it is now. A person's file is not rewritten to say it.
+    name = name:match("^/[Bb][Ii][Nn]/([^/]+)%.lua$") or name
+
+    if name:sub(1, 1) == "/" then return name end
+
+    for _, dir in ipairs({ "/Kosmos/Apps", "/Kosmos/Programs" }) do
+      local path = dir .. "/" .. name .. ".lua"
+
+      if ns.getattr(path) then return path end
+    end
+
+    return "/Kosmos/Programs/" .. name .. ".lua"
+  end
+
   function ns.mount_registry(prefix, capability, proto)
     ns.mount(prefix, capability, nil, proto)
     autos[#autos + 1] = { prefix = prefix, cap = capability }
@@ -2631,7 +2660,7 @@ end
 -- writable, on a disk when there is one and in memory when there is not.
 --
 -- It is an ordinary server answering the ordinary protocol. `ls /bin` and
--- `cat /bin/htop.lua` are the same requests the filesystem answers, sent
+-- `cat /Kosmos/Programs/htop.lua` are the same requests the filesystem answers, sent
 -- somewhere else, and nothing in the shell knows /bin is special.
 --------------------------------------------------------------------------
 
@@ -4223,10 +4252,13 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
-  ns.mount("/bin", bin_cap, nil, "bin")
+  -- The applications and the programs: one store in the image, shown as two
+  -- folders by the root each mount gives (`binfs.c`, `view_of`).
+  ns.mount("/Kosmos/Apps", bin_cap, "/apps", "bin")
+  ns.mount("/Kosmos/Programs", bin_cap, "/programs", "bin")
 
-  -- And what programs load rather than run. Separate from /bin so that `ls
-  -- /bin` lists things you can type and nothing else.
+  -- And what programs load rather than run. Separate from the programs so
+  -- that `ls /Kosmos/Programs` lists things you can type and nothing else.
   ns.mount("/Kosmos/Libraries", lib_cap, nil, "bin")
   ns.mount("/Kosmos/Kits", true, nil, "kits")          -- answered in-process
 
@@ -4878,7 +4910,7 @@ query. `find` and `watch` are built on exactly these two calls.
   -- capabilities named here and can pass on no more than it holds.
   --------------------------------------------------------------------------
   local function run_program(name, argument, detach)
-    local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
+    local path = ns.program(name)
 
     -- Asked about rather than read. The shell does not need the program;
     -- the process that will run it does.
@@ -5432,7 +5464,7 @@ query. `find` and `watch` are built on exactly these two calls.
       -- language by being installed.
       --------------------------------------------------------------------
       if word and not shadows_lua(word) and not rest:match("^[=%(%.%:%[]") then
-        local exists = ns.getattr("/bin/" .. word .. ".lua")
+        local exists = ns.getattr(ns.program(word))
 
         if exists then
           -- pcall, like the command path above. Without it a program that
@@ -6108,7 +6140,8 @@ if role == ROLE_RUNNER then
   -- runner cannot tell the two apart and must not need to.
   if req.console then ns.mount("/Devices/console",   req.console, nil, "console") end
   if req.data    then ns.mount("/Temporary",         req.data, nil, "ram") end
-  if req.bin     then ns.mount("/bin",               req.bin, nil, "bin") end
+  if req.bin     then ns.mount("/Kosmos/Apps",       req.bin, "/apps", "bin") end
+  if req.bin     then ns.mount("/Kosmos/Programs",   req.bin, "/programs", "bin") end
   if req.devices then ns.mount("/Devices",           req.devices, nil, "dev") end
   if req.lib     then ns.mount("/Kosmos/Libraries",  req.lib, nil, "bin") end
 

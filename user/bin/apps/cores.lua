@@ -122,7 +122,7 @@ local last = {}
 --------------------------------------------------------------------------
 -- The workers.
 --
--- `/bin/spin.lua`, which exists for exactly this and says so in its own
+-- `/Kosmos/Programs/spin.lua`, which exists for exactly this and says so in its own
 -- first line: it burns a core and **deliberately does not yield**, because
 -- a process that hands the core back politely is not what a workload looks
 -- like. It is the thing the scheduler has to preempt.
@@ -220,7 +220,7 @@ local why = nil
 local function add_worker()
   -- A long spin, so it outlives a look. It is killed rather than waited
   -- out; `spin 600` is ten minutes and nobody watches for ten minutes.
-  local ok, err = run("/bin/spin.lua", "600", true)
+  local ok, err = run("/Kosmos/Programs/spin.lua", "600", true)
 
   if ok then
     workers = workers + 1

@@ -122,7 +122,7 @@ def main():
             # and at /bin is an answer - no such device, no such program -
             # rather than a raise from `string.pack` inside the namespace kit.
             'print("F-LONG", pcall(fs.getattr, "/Devices/" .. string.rep("d", 40)), '
-            'pcall(fs.getattr, "/bin/" .. string.rep("b", 80)))',
+            'pcall(fs.getattr, "/Kosmos/Programs/" .. string.rep("b", 80)))',
 
             # **Names whatever their case, kept as they were given**
             # (`roadmap.md` 6s): one file on the disk and one in memory,
@@ -144,7 +144,7 @@ def main():
             'print("C-QUERY", table.concat(fs.query("/home", { kind = "cased" }) or {}, ","))',
 
             # The programs, the devices, the registry and a library.
-            'print("C-BIN", (fs.getattr("/BIN/CLOCK.lua") or {}).kind, type(fs.read("/devices/CPU")))',
+            'print("C-BIN", (fs.getattr("/KOSMOS/apps/CLOCK.lua") or {}).kind, type(fs.read("/devices/CPU")))',
 
             'E1, E2 = sys.endpoint(), sys.endpoint() '
             'R1 = fs.send("/RUNNING", { type = "register", name = "Cased" }, E1) '
@@ -174,6 +174,15 @@ def main():
             'local _, why = fs.read("/Kosmos/Kits/pdf") '
             'print("K-KOSMOS", k and k.kind, table.concat(fs.list("/Kosmos") or {}, ","), '
             'p and p.kind, why)',
+
+            # **The applications and the programs, apart** (6s c2): one
+            # store in the image, two folders, each holding only its kind;
+            # and a program found by its name, or by the path a launcher
+            # made before the split still says.
+            'local function has(p) return fs.getattr(p) ~= nil end '
+            'print("K-APPS", has("/Kosmos/Apps/clock.lua"), has("/Kosmos/Programs/clock.lua"), '
+            'has("/Kosmos/Programs/ls.lua"), has("/Kosmos/Apps/ls.lua"), '
+            'fs.program("clock"), fs.program("ls"), fs.program("/bin/tracker.lua"))',
 
             'local n = 0 for _, x in ipairs(fs.list("/Kosmos/Kits") or {}) do '
             'if x == "pdf" or x == "compress" or x == "3d" then n = n + 1 end end '
@@ -241,7 +250,7 @@ def main():
              "an attribute set through another case was not indexed under the "
              "file's own spelling, once"),
             ("C-BIN", "application table",
-             "/BIN/CLOCK.lua or /devices/CPU was not found whatever its case"),
+             "/KOSMOS/apps/CLOCK.lua or /devices/CPU was not found whatever its case"),
             ("C-APP", "Cased CASED2",
              "/Running did not take CASED for the name Cased already has"),
             ("C-USE", "true",
@@ -250,10 +259,14 @@ def main():
              "a rename to a name's own other case was refused"),
             ("C-NAMES", "CASE.txt,CASE.txt",
              "a rename to another case did not change the name's spelling"),
-            ("K-KOSMOS", 'directory Kits,Libraries kit a kit is C, and is used rather '
+            ("K-KOSMOS", 'directory Apps,Kits,Libraries,Programs kit a kit is C, and is used rather '
                          'than read: use("/Kosmos/Kits/pdf")',
              "/Kosmos was not a folder of Kits and Libraries, a kit in it a kit, "
              "and reading one an answer saying to use it"),
+            ("K-APPS", "true false true false /Kosmos/Apps/clock.lua "
+                       "/Kosmos/Programs/ls.lua /Kosmos/Apps/tracker.lua",
+             "the Clock was not in /Kosmos/Apps and ls in /Kosmos/Programs, each "
+             "only there, and found by name and by a launcher's old /bin path"),
             ("K-KITS", "3",
              "/Kosmos/Kits did not list the image's kits - pdf, compress, 3d"),
             ("T-BIG", "true 200 true",
@@ -276,7 +289,7 @@ def main():
         lines = [l for l in flat.splitlines() if l.startswith("R-ROOT ")]
         root = set(lines[-1][len("R-ROOT "):].strip().split(",")) if lines else set()
         want_there = {"Home", "Devices", "Running", "Temporary", "Kosmos"}
-        gone = {"home", "dev", "app", "ramfs", "net", "drives", "lib", "kits"}
+        gone = {"home", "dev", "app", "ramfs", "net", "drives", "lib", "kits", "bin"}
 
         if not want_there <= root or root & gone:
             missed.append("the root did not list %s and none of %s: got %s"

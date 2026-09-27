@@ -2,7 +2,7 @@
 -- grep: the lines of a file that match.
 --
 --   grep deadline notes.txt
---   grep "^local" /bin/ls.lua
+--   grep "^local" /Kosmos/Programs/ls.lua
 --
 -- **The pattern is a Lua pattern, not a regular expression**, and that is
 -- worth knowing before it surprises you: `.` matches any character as it

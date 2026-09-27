@@ -129,7 +129,7 @@ end
 
 --
 -- **Which applications a launcher names**, anywhere under `root`: the short
--- name of each, `/bin/doom.lua` and `doom` alike - the two ways a launcher
+-- name of each, `/Kosmos/Apps/doom.lua` and `doom` alike - the two ways a launcher
 -- has recorded one.
 --
 function menu.programs_in(store, root, depth)
@@ -147,7 +147,9 @@ function menu.programs_in(store, root, depth)
       end
     elseif attrs.kind == "launcher" then
       local program = tostring(attrs.program or "")
-      local short = program:match("^/bin/([^/]+)%.lua$")
+      -- `/bin/` is how a launcher made before 27 September says it.
+      local short = program:match("^/[Kk][Oo][Ss][Mm][Oo][Ss]/[Aa][Pp][Pp][Ss]/([^/]+)%.lua$")
+                    or program:match("^/[Bb][Ii][Nn]/([^/]+)%.lua$")
 
       if not short and not program:find("/", 1, true) then
         short = (program:gsub("%.lua$", ""))

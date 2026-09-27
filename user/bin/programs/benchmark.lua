@@ -22,7 +22,7 @@ if n < 1 or n > 8 then
 end
 
 for i = 1, n do
-  local ok, err = run("/bin/spin.lua", "10", true)
+  local ok, err = run("/Kosmos/Programs/spin.lua", "10", true)
 
   if not ok then
     print(("could not start %d of %d: %s"):format(i, n, tostring(err)))

@@ -71,7 +71,7 @@ local failed = nil
 do
   local cap = sys.memory(2)
   if cap then sys.release(cap) end
-  run("/bin/hello.lua", "", false)
+  run("/Kosmos/Programs/hello.lua", "", false)
 
   -- Waited for, for the reason the loop below gives.
   sys.wait()
@@ -124,7 +124,7 @@ for n = 1, rounds do
   -- And a process, which is a thread, an endpoint, an address space and a
   -- capability table - created, run to completion and reaped.
   --
-  if not run("/bin/uselib.lua", "", false) then
+  if not run("/Kosmos/Programs/uselib.lua", "", false) then
     failed = ("round %d: a program would not start"):format(n)
     break
   end

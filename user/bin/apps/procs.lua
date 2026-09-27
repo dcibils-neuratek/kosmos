@@ -97,12 +97,14 @@ local prockind = use("/Kosmos/Libraries/prockind.lua")
 local from_bin = {}
 
 do
-  for _, file in ipairs(fs.list("/bin") or {}) do
-    local attrs = fs.getattr("/bin/" .. file)
-    local kind  = attrs and attrs.kind
+  for _, dir in ipairs({ "/Kosmos/Apps", "/Kosmos/Programs" }) do
+    for _, file in ipairs(fs.list(dir) or {}) do
+      local attrs = fs.getattr(dir .. "/" .. file)
+      local kind  = attrs and attrs.kind
 
-    from_bin[(file:gsub("%.lua$", ""))] =
-      (kind == "application") and "app" or kind or "program"
+      from_bin[(file:gsub("%.lua$", ""))] =
+        (kind == "application") and "app" or kind or "program"
+    end
   end
 end
 

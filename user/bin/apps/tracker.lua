@@ -184,7 +184,7 @@ if backdrop then
 
     if ok then
       ok, why = fs.setattr(drive, { kind = "launcher", type = "launcher",
-                                    program = "/bin/tracker.lua",
+                                    program = "/Kosmos/Apps/tracker.lua",
                                     args = "/", icon = "Device_Harddisk" })
     end
 
@@ -1282,7 +1282,7 @@ function rows:on_context(x, y)
   end
 
   local ok, why = fs.send("/Running/wm", { type = "launch",
-                                       program = "/bin/launcheredit.lua",
+                                       program = "/Kosmos/Apps/launcheredit.lua",
                                        args = path_of(e) })
 
   status.text = ok and ("editing " .. e.name)

@@ -163,7 +163,7 @@ header = ui.header{
     on_click = function()
       -- Detached, so this window keeps answering while it spins. `spin`
       -- exists for exactly this: a program whose whole job is to be busy.
-      if run("/bin/spin.lua", "", true) then
+      if run("/Kosmos/Programs/spin.lua", "", true) then
         spinners = spinners + 1
         refresh(("%d busy thread%s - now change something")
                 :format(spinners, spinners == 1 and "" or "s"))

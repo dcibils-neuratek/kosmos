@@ -166,44 +166,55 @@ def main():
     #    C beside their Lua. `/bin` is still flat - `progs2c.py` serves each
     #    file under its basename - so a count that stopped at the top level
     #    would be five short and say the machine had lost them.
+    #    **Two folders now, each counted against its own half** (`roadmap.md`
+    #    6s c2): `/Kosmos/Apps` against `user/bin/apps/` and `/Kosmos/Programs`
+    #    against `user/bin/programs/`. The server decides which view a file
+    #    is in by its header, and the source tree by its folder, so the two
+    #    counts agreeing says both that nothing is lost and that each file is
+    #    where its folder says - a program with an application's header
+    #    would move one across and make both wrong.
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    expected = 0
+    said_total = 0
 
-    for half in ("apps", "programs"):
+    for half, folder in (("apps", "/Kosmos/Apps"), ("programs", "/Kosmos/Programs")):
+        expected = 0
+
         for _base, _dirs, names in os.walk(os.path.join(root, "user", "bin",
                                                         half)):
             expected += len([f for f in names if f.endswith(".lua")])
 
-    #
-    # `ls /bin`, because the boot option runs a *program* rather than
-    # evaluating Lua - which is what `boot=wm` means and is the one way a
-    # program starts here. `ls` prints one entry a line, so counting them is
-    # counting lines that name a program.
-    #
-    out = boot(image, "ls /bin", b"kosmos>", 60.0)
-    # The *first* field of each line: `ls` prints "  name  size  kind", so
-    # a line ends in its kind and not in the name it is reporting.
-    said = len([l for l in out.splitlines()
-                if l.split() and l.split()[0].endswith(".lua")])
+        #
+        # `ls`, because the boot option runs a *program* rather than
+        # evaluating Lua - which is what `boot=wm` means and is the one way a
+        # program starts here. `ls` prints one entry a line, so counting them
+        # is counting lines that name a program.
+        #
+        out = boot(image, "ls " + folder, b"kosmos>", 60.0)
+        # The *first* field of each line: `ls` prints "  name  size  kind", so
+        # a line ends in its kind and not in the name it is reporting.
+        said = len([l for l in out.splitlines()
+                    if l.split() and l.split()[0].endswith(".lua")])
 
-    if said == 0:
-        print("FAIL: /bin would not list at all:")
-        print("  " + repr(out[-300:]))
-        return 1
+        if said == 0:
+            print("FAIL: %s would not list at all:" % folder)
+            print("  " + repr(out[-300:]))
+            return 1
 
-    if said != expected:
-        print("FAIL: /bin lists %d programs and there are %d."
-              % (said, expected))
-        print("  A listing that stops early stops silently, and the Deskbar")
-        print("  builds its menu from it - so applications go missing with")
-        print("  no error. See BIN_OP_LIST in user/servers/binfs.c.")
-        return 1
+        if said != expected:
+            print("FAIL: %s lists %d and user/bin/%s has %d."
+                  % (folder, said, half, expected))
+            print("  A listing that stops early stops silently, and the Deskbar")
+            print("  builds its menu from it - so applications go missing with")
+            print("  no error. See BIN_OP_LIST in user/servers/binfs.c.")
+            return 1
 
-    checks += 1
+        said_total += said
+        checks += 1
 
     print("PASS: %d checks on a machine with no display (it reaches a "
-          "prompt, every server started, a program runs, and /bin lists "
-          "all %d of them)." % (checks, expected))
+          "prompt, every server started, a program runs, and /Kosmos/Apps "
+          "and /Kosmos/Programs list all %d of them, each its own)."
+          % (checks, said_total))
     return 0
 
 

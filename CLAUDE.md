@@ -935,8 +935,9 @@ user/           everything at EL0:
                   with the app, in bin/apps/browser/, doom/, quake/, snes/
   lib/            the same position, in Lua. All .lua and nothing else
   include/        the protocol headers both sides compile against
-  bin/            apps/ and programs/, in Lua, both served flat at /bin.
-                  An app opens a window; a program prints
+  bin/            apps/ and programs/, in Lua, served from the image as
+                  /Kosmos/Apps and /Kosmos/Programs. An app opens a
+                  window; a program prints
   tests/          the Lua suite
 tests/          guest-side tests, in C
 bench/          benchmarks and baselines.json

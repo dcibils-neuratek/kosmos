@@ -6,7 +6,7 @@
 --   launcher --icon App_StyledEdit /Home/Desktop/Notes editor /Home/notes.txt
 --
 -- The first word after the path is what to start - a whole path like
--- `/bin/tracker.lua`, or a short name like `tracker`, which is stored as
+-- `/Kosmos/Apps/tracker.lua`, or a short name like `tracker`, which is stored as
 -- the whole path either way. The rest of the line is its arguments, spaces
 -- and all. Opening a launcher in Tracker asks the window manager to start
 -- that program with those arguments, which is exactly what choosing it in
@@ -32,7 +32,7 @@ if not path then
 end
 
 if not icon and not program:find("/") then
-  local declared = fs.getattr("/bin/" .. program .. ".lua")
+  local declared = fs.getattr(fs.program(program))
 
   icon = declared and declared.icon
 end
@@ -40,17 +40,17 @@ end
 --
 -- Typed short, stored whole.
 --
--- `handlers.launch` accepts either and completes a bare name to
--- `/bin/<name>.lua`, which is right at a prompt where somebody is typing.
+-- `handlers.launch` accepts either and completes a bare name to its file
+-- (`fs.program`), which is right at a prompt where somebody is typing.
 -- It is wrong in a *file*: what a launcher records should say what it runs
 -- without anybody having to know a rule the file cannot state. So the
 -- convenience stays in the typing and the attribute is explicit.
 --
--- This is also what makes `/Home/mine.lua` and `/bin/doom.lua` look like
--- the same kind of thing in the editor, which they are.
+-- This is also what makes `/Home/mine.lua` and `/Kosmos/Apps/doom.lua`
+-- look like the same kind of thing in the editor, which they are.
 --
 if not program:find("/") then
-  program = "/bin/" .. program .. ".lua"
+  program = fs.program(program)
 end
 
 if not fs.getattr(path) then
