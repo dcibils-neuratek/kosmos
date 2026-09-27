@@ -183,7 +183,8 @@ anything is spawned, and names the page that differs.
    refused, and the parent writing the region afterwards changes nothing
    the child runs. The stale comments in `process.h` (49-50, 552-560,
    "copied rather than mapped in place") are corrected on the way.
-2. **The ELF reader**, in C, tested on the Mac: a real image read into the
+2. **DONE on 27 September** (`testing.md` 18.223) - **The ELF reader**, in
+   C, tested on the Mac: a real image read into the
    same bytes `objcopy` makes, and each malformed case refused with its
    sentence.
 3. **DONE on 27 September** (`testing.md` 18.222) - **An image of its own,

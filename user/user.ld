@@ -19,6 +19,22 @@
 
 ENTRY(_start)
 
+/*
+ * **Two segments, and the ELF says which is which** (`docs/elf.md`). The
+ * code and what it only reads, read and execute; the data, read and write.
+ * It was one segment with every permission, and the split existed only in
+ * the header's `rx_bytes` below - which is all the kernel reads, so nothing
+ * noticed until a program's image came off a disk and its reader wanted to
+ * refuse a segment that was writable and executable at once. The flat
+ * binary `objcopy` makes is the same bytes either way: this names the
+ * segments and moves nothing.
+ */
+PHDRS
+{
+    code PT_LOAD FLAGS(5);              /* read and execute */
+    data PT_LOAD FLAGS(6);              /* read and write */
+}
+
 SECTIONS
 {
     . = USER_BASE;
@@ -44,16 +60,16 @@ SECTIONS
 
         KEEP(*(.text.start))
         *(.text .text.*)
-    }
+    } :code
 
-    .rodata : { *(.rodata .rodata.*) }
+    .rodata : { *(.rodata .rodata.*) } :code
 
     /* Everything above this is mapped read-only and executable, everything
      * below it writable and never executable. */
     . = ALIGN(4096);
     __rx_end = .;
 
-    .data   : { *(.data .data.*) }
+    .data   : { *(.data .data.*) } :data
 
     /*
      * .bss is NOT marked NOLOAD, on purpose.

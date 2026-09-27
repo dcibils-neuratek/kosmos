@@ -2249,7 +2249,10 @@ processors, and still what follows USB:
    DONE** (18.222), ahead of 2, which waited for Diego's word on ELF - given
    the same evening, "ELF copied yes", with `-- kosmos: image`: a
    program's image is the system's objects and its kit, a link and not a
-   build - the kits leaving the system are weak in `sys_user.c`.
+   build - the kits leaving the system are weak in `sys_user.c`. **Step 2
+   DONE** (18.223): the reader, `user/init/elfimage.c`, refusing twenty-three
+   ways and reading the system's own ELF into exactly `objcopy`'s bytes on
+   both boards - once the ELF said which segment is code, which it did not.
 
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the

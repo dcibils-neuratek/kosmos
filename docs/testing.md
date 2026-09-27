@@ -11066,3 +11066,40 @@ image needs - its wallpapers, say - is step 5's question.
 The gate with step 3: 48 of 48 in 9:34 - the images step builds the program
 image on both boards now, and took longer for recompiling everything after
 `sys_user.c` changed.
+
+## 18.223 The ELF reader, and an ELF that says which part is code
+
+Step 2 of the loader (`docs/elf.md`): **`user/init/elfimage.c`**, plain C
+over buffers, turning a program's ELF into Kosmos's image form and refusing
+anything that is not a Kosmos program with the rule it broke - not an ELF,
+not 64-bit, not little-endian, position-independent, an object file,
+another processor, program headers past the end, none, a dynamic linker
+asked for, a segment past the end (sized so that offset plus size would
+wrap), larger in the file than in memory, below the base, longer than the
+forty megabytes before the heap, writable and executable at once,
+unreadable, out of order or overlapping, data first, code after data, no
+Kosmos header, a header whose code size is not whole pages, code running
+past where the header says it ends, data beginning inside it, and an entry
+other than the base plus sixteen.
+
+**What it found first: the system's own ELF was one segment with every
+permission.** `user.ld` placed code and data at the right addresses, and
+the header's `rx_bytes` told the kernel where code ends, but the ELF itself
+had a single `PT_LOAD`, readable, writable and executable - so a reader
+refusing a segment that is both would have refused Kosmos's own programs.
+`user.ld` names two segments now, `code` and `data`, and nothing moved:
+**the same objects linked with the old script and the new one flatten to
+identical bytes**, 31,978,100 on AArch64 and 32,509,332 on x86-64. (The
+first comparison, of two builds either side of the edit, differed - the
+image carries its build's name and the tree had become dirty; the same
+objects under both scripts is the comparison that means something.)
+
+**`tools/test_elfimage.c`, in `host`, 28 checks**: a Kosmos program built
+in memory - two segments, the header at the front of the code - read into
+its two pages exactly; too little room refused; the twenty-three ways
+above, each with its sentence; and **the system's own ELF read into exactly
+the bytes `objcopy` made of it**, on both boards. **Controls**: without the
+writable-and-executable rule, and without the data-inside-code rule, the
+case for each is read instead of refused.
+
+The gate: 48 of 48 in 9:36.
