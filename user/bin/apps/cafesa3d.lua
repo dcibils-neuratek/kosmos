@@ -394,6 +394,31 @@ local FILE = { name = "still-life.scene", title = "Still life", path = nil, chan
 -- what stays when the view's shape changes.
 local FULL = { on = false, was = { W, H }, tv = math.tan(FOV / 2) * 744 / 1014 }
 
+--
+-- **The Script panel** (`roadmap.md` 4l, 6n step 6; `docs/cafesa3d-scripting.html`):
+-- beside the view, 470 wide, opened and closed with Shift F4. Its editor is
+-- the IDE's - `ui.editor` in the code look, drawn into this window's own
+-- pixels by `ui.paint_view` - and under it a strip for what a run printed
+-- and how it went. While it holds the keyboard, keys are words in it rather
+-- than commands here; a press anywhere else, or Escape, gives them back.
+--
+-- One table rather than several locals, because this file is near Lua's
+-- two hundred.
+--
+local SCRIPT = {
+  W = 470, OUT = 78, open = false, focused = false, name = "script",
+  out = {}, decode = ui.key_decoder(),
+  text = table.concat({
+    "-- A script for this scene: Ctrl Enter runs it, and what it",
+    "-- prints is below. It is handed the scene and nothing else.",
+    "local steps = 3",
+    "",
+    "for i = 1, steps do",
+    "  print((\"step %d of %d\"):format(i, steps))",
+    "end",
+  }, "\n") .. "\n",
+}
+
 -- The light from everywhere that is not a lamp: a sky, from the zenith to
 -- the horizon. What the ray tracer (step three) lights a scene with.
 local world = { zenith = 0x6d90c6, horizon = 0xdfe6ef, strength = 0.9 }
@@ -768,6 +793,22 @@ local function draw_header(s)
   s:text(addb.x + 29, addb.y + (31 - gfx.height()) // 2, "Add", theme.text, nil, "ui")
   s:text(addb.x + 29 + gfx.measure("Add") + 8, addb.y + (31 - gfx.height(small)) // 2,
          "Shift A", theme.text_dim, nil, small)
+
+  -- Script, with its key, lit while the panel is open.
+  local script_w = 12 + gfx.measure("Script") + 8 + gfx.measure("Shift F4", small) + 12
+  local sb = control("script", addb.x + addb.w + 6, cy, script_w, 31)
+
+  if SCRIPT.open then
+    s:fill_round(sb.x, sb.y, sb.w, 31, theme.mix(theme.sunken, theme.accent, 120), 7)
+    s:frame_round(sb.x, sb.y, sb.w, 31, theme.mix(theme.line_soft, theme.accent, 300), 7)
+  else
+    pk.button(s, { x = sb.x, y = sb.y, w = sb.w, text = "" })
+  end
+
+  s:text(sb.x + 12, sb.y + (31 - gfx.height()) // 2, "Script",
+         SCRIPT.open and theme.accent or theme.text, nil, "ui")
+  s:text(sb.x + 12 + gfx.measure("Script") + 8, sb.y + (31 - gfx.height(small)) // 2,
+         "Shift F4", theme.text_dim, nil, small)
 
   segmented(s, shade_x, (HEAD - 1 - 31) // 2, shade_parts)
 
@@ -1739,12 +1780,196 @@ local function draw_foot(s)
   s:text(W - 14 - gfx.measure(right, small), ty, right, theme.text_dim, nil, small)
 end
 
+--------------------------------------------------------------------------
+-- The Script panel: drawn, opened, closed and run.
+--------------------------------------------------------------------------
+
+function SCRIPT.draw(s)
+  if not SCRIPT.open then return end
+
+  local x0, y0, w, h = VX + VW, HEAD, SCRIPT.W, H - HEAD - FOOT
+  local strip = theme.mix(theme.window, theme.sunken, 500)
+
+  s:fill(x0, y0, w, h, theme.sunken)
+  s:fill(x0, y0, 1, h, theme.line_soft)
+
+  -- The title strip: SCRIPT and its name, Open .lua... and Run.
+  s:fill(x0 + 1, y0, w - 1, PANEL_T, strip)
+  s:fill(x0 + 1, y0 + PANEL_T - 1, w - 1, 1, theme.line_soft)
+  s:text(x0 + 12, y0 + (PANEL_T - 1 - gfx.height(tiny)) // 2, "SCRIPT",
+         theme.text_dim, nil, tiny)
+  s:text(x0 + 12 + gfx.measure("SCRIPT", tiny) + 8, y0 + (PANEL_T - 1 - gfx.height()) // 2,
+         SCRIPT.name, theme.text, nil, "ui")
+
+  local run_w = 10 + gfx.measure("Run") + 7 + gfx.measure("Ctrl Enter", small) + 10
+  local run = control("script:run", x0 + w - 8 - run_w, y0 + (PANEL_T - 1 - 24) // 2, run_w, 24)
+
+  s:fill_round(run.x, run.y, run.w, 24, theme.accent, 6)
+  s:text(run.x + 10, run.y + (24 - gfx.height()) // 2, "Run", theme.text_on, nil, "ui")
+  s:text(run.x + 10 + gfx.measure("Run") + 7, run.y + (24 - gfx.height(small)) // 2,
+         "Ctrl Enter", theme.mix(theme.accent, theme.text_on, 600), nil, small)
+
+  -- The code: the IDE's editor, in this window's pixels.
+  local lines = math.max(1, #SCRIPT.out)
+  local oh = math.max(SCRIPT.OUT, 16 + lines * (gfx.height() + 3))
+  local e = SCRIPT.editor
+
+  e.w, e.h = w - 1, h - PANEL_T - oh
+  e.focused = SCRIPT.focused
+  control("script:code", x0 + 1, y0 + PANEL_T, e.w, e.h)
+  ui.paint_view(e, s, x0 + 1, y0 + PANEL_T)
+
+  -- What the last run printed, and how it went.
+  local oy = y0 + PANEL_T + e.h
+
+  s:fill(x0 + 1, oy, w - 1, oh, strip)
+  s:fill(x0 + 1, oy, w - 1, 1, theme.line_soft)
+
+  if #SCRIPT.out == 0 then
+    s:text(x0 + 12, oy + 8, "Ctrl Enter runs it; what it prints is shown here.",
+           theme.text_dim, nil, "ui")
+  end
+
+  for i, line in ipairs(SCRIPT.out) do
+    s:text(x0 + 12, oy + 8 + (i - 1) * (gfx.height() + 3), line.text,
+           line.colour or theme.text, nil, "ui")
+  end
+end
+
+-- Opened or closed: the view made again at its new width - if the machine
+-- will not give it, the panel stays as it was - and the Rendered view
+-- started again at that size, as full screen does.
+function SCRIPT.toggle()
+  local open = not SCRIPT.open
+  local v, why = k3.view(W - TOOLS - SIDE - (open and SCRIPT.W or 0), H - HEAD - FOOT)
+
+  if not v then
+    FILE.said = "No script panel: " .. tostring(why)
+    print("cafesa3d: no script panel: " .. tostring(why))
+    return true
+  end
+
+  shade.stop()
+
+  if shade.surf then shade.surf:free() end
+
+  shade.surf, shade.key = nil, nil
+  view = v
+  SCRIPT.open = open
+  SCRIPT.focused = open
+
+  if open and not SCRIPT.editor then
+    SCRIPT.editor = ui.editor{ x = 0, y = 0, w = SCRIPT.W - 1, h = 100,
+                               code = "lua", text = SCRIPT.text }
+  end
+
+  FULL.fit(W, H)
+  print(("cafesa3d: script panel %s, the view %d by %d"):format(
+        open and "open" or "closed", VW, VH))
+  return true
+end
+
+-- The characters, decoded, to the script's editor while it holds the
+-- keyboard: Ctrl Enter runs, and the rest are the editor's. Every character
+-- goes through the decoder whoever holds the keyboard, so it never keeps
+-- half a sequence from before; Escape is the raw key's (`rawkey`). A
+-- function of its own, so its locals are not the main chunk's, which is at
+-- two hundred.
+function SCRIPT.key(ev)
+  local a, b = SCRIPT.decode(ev.code)
+
+  if not (SCRIPT.open and SCRIPT.focused) then return false end
+
+  for _, c in ipairs({ a, b }) do
+    local k, mods = ui.keyparts(c)
+
+    if k == 13 and mods == ui.CTRL then
+      SCRIPT.run()
+    elseif c ~= 27 then
+      SCRIPT.editor:key(c)
+    end
+  end
+
+  return a ~= nil
+end
+
+-- A line for the strip under the code, and the same in the log.
+function SCRIPT.say(text, colour)
+  SCRIPT.out[#SCRIPT.out + 1] = { text = text, colour = colour }
+  print("cafesa3d: script " .. text)
+end
+
+-- The instructions a run may take before it is stopped: a few seconds'
+-- worth under emulation, and far more than any scene needs.
+SCRIPT.BUDGET = 200000000
+
+--
+-- **Run**: the script in a Lua environment of its own, made fresh for each
+-- run, holding Lua's `math`, `string` and `table` and a `print` whose lines
+-- go to the strip - and, from 6c, the scene. No `fs`, no `sys`, no `use`:
+-- what a script was not handed it cannot reach. In a coroutine with a
+-- budget of instructions (`sys.budget`), so a loop that never ends is
+-- stopped rather than taking Cafesa3D with it. An error comes back with its
+-- line, which is marked in the code.
+--
+function SCRIPT.run()
+  local e = SCRIPT.editor
+
+  SCRIPT.out = {}
+  e:clear_marks()
+
+  local printed = {}
+  local env = {
+    math = math, string = string, table = table,
+    ipairs = ipairs, pairs = pairs, next = next, select = select,
+    tostring = tostring, tonumber = tonumber, type = type,
+    error = error, pcall = pcall, assert = assert,
+    print = function(...)
+      local parts = {}
+
+      for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
+
+      printed[#printed + 1] = table.concat(parts, "  ")
+    end,
+  }
+
+  local chunk, err = load(e:content(), "=" .. SCRIPT.name, "t", env)
+  local ok, why = chunk ~= nil, err
+
+  if chunk then
+    local co = coroutine.create(chunk)
+
+    sys.budget(co, SCRIPT.BUDGET)
+    ok, why = coroutine.resume(co)
+  end
+
+  for _, line in ipairs(printed) do SCRIPT.say(line) end
+
+  if ok then
+    SCRIPT.say(("ran: %d line%s printed"):format(#printed, #printed == 1 and "" or "s"),
+               theme.good)
+  else
+    local line, text = tostring(why):match(":(%d+): (.*)$")
+
+    if line then
+      e:mark(tonumber(line), "error")
+      e:go_to(tonumber(line), 1)
+      SCRIPT.say(("line %s: %s - nothing was made"):format(line, text), theme.bad)
+    else
+      SCRIPT.say(tostring(why) .. " - nothing was made", theme.bad)
+    end
+  end
+
+  return true
+end
+
 local function draw_all()
   local s = win:surface()
 
   draw_header(s)
   draw_tools(s)
   draw_view(s)
+  SCRIPT.draw(s)
   draw_outliner(s)
   draw_props(s)
   draw_foot(s)
@@ -3296,6 +3521,24 @@ local function press(x, y)
 
   if modal then finish(true) return true end
 
+  -- The Script button and the panel: a press in the code gives it the
+  -- keyboard, a press anywhere else takes the keyboard back.
+  if inside(controls.script, x, y) then return SCRIPT.toggle() end
+
+  if SCRIPT.open then
+    if inside(controls["script:run"], x, y) then return SCRIPT.run() end
+
+    local c = controls["script:code"]
+
+    if inside(c, x, y) then
+      SCRIPT.focused, SCRIPT.pressing = true, true
+      SCRIPT.editor:mouse("press", x - c.x, y - c.y)
+      return true
+    end
+
+    SCRIPT.focused = false
+  end
+
   -- A field of Properties: a drag scrubs it, a click types into it; a
   -- press anywhere else keeps what was being typed, as Blender's does.
   local fd = field_at(x, y)
@@ -3386,6 +3629,14 @@ local function press(x, y)
 end
 
 local function move(x, y)
+  -- A drag in the code selects, wherever the pointer goes on the way.
+  if SCRIPT.pressing then
+    local c = controls["script:code"]
+
+    SCRIPT.editor:mouse("move", x - c.x, y - c.y)
+    return true
+  end
+
   pointer = { x, y }
 
   if field_drag then
@@ -3440,6 +3691,14 @@ local function move(x, y)
 end
 
 local function release(x, y)
+  if SCRIPT.pressing then
+    local c = controls["script:code"]
+
+    SCRIPT.pressing = false
+    SCRIPT.editor:mouse("release", x - c.x, y - c.y)
+    return true
+  end
+
   if field_drag then
     local fdr = field_drag
 
@@ -3506,6 +3765,23 @@ local function rawkey(ev)
   end
 
   if not ev.down then return false end
+
+  -- Shift F4 opens and closes the Script panel, whoever has the keyboard.
+  if ev.code == 62 and shift then return SCRIPT.toggle() end
+
+  -- While the script holds the keyboard, keys are words there: the
+  -- letters that are commands here arrive as characters, below. Escape
+  -- gives the keyboard back, taken here as the key it is: in the stream of
+  -- characters an Escape is not known to be one until the byte after it,
+  -- so Escape then Z could reach the script as a Z.
+  if SCRIPT.open and SCRIPT.focused then
+    if ev.code == 1 then
+      SCRIPT.focused = false
+      return true
+    end
+
+    return false
+  end
 
   -- While a field is being typed in: its keys, and nothing else's.
   if editing then
@@ -3649,7 +3925,7 @@ say_selected()
 
 function FULL.fit(w, h)
   W, H = w, h
-  VW, VH = W - TOOLS - SIDE, H - HEAD - FOOT
+  VW, VH = W - TOOLS - SIDE - (SCRIPT.open and SCRIPT.W or 0), H - HEAD - FOOT
   SX = W - SIDE
 
   -- Properties keeps the height its tallest tab needs, and the Outliner
@@ -3694,6 +3970,19 @@ function FULL.say()
   end
 
   print("cafesa3d: controls " .. table.concat(header, "; "))
+
+  local sb = controls.script
+
+  if sb then
+    print(("cafesa3d: script button %d,%d"):format(sb.x + sb.w // 2, sb.y + sb.h // 2))
+  end
+
+  local code, run = controls["script:code"], controls["script:run"]
+
+  if SCRIPT.open and code and run then
+    print(("cafesa3d: script code %d,%d %dx%d; run %d,%d"):format(code.x, code.y,
+          code.w, code.h, run.x + run.w // 2, run.y + run.h // 2))
+  end
 end
 
 function FULL.toggle()
@@ -3705,7 +3994,8 @@ function FULL.toggle()
 
   -- Everything the new size needs, made before anything is let go of: if
   -- the machine will not give it, the window stays as it was.
-  local v, why = k3.view(w - TOOLS - SIDE, h - HEAD - FOOT)
+  local v, why = k3.view(w - TOOLS - SIDE - (SCRIPT.open and SCRIPT.W or 0),
+                         h - HEAD - FOOT)
   local fresh
 
   if v then
@@ -3765,9 +4055,13 @@ print(("cafesa3d: %d objects, %d triangles, the view %d by %d, %s"):format(
 
 local dirty = false
 
-while win.running do
+--
+-- One pass of the loop, in a function of its own: its locals are not the
+-- main chunk's, which is at Lua's two hundred. False ends the loop.
+--
+local function pass()
   if dirty then
-    if not draw_all() then break end
+    if not draw_all() then return false end
     dirty = false
   end
 
@@ -3775,7 +4069,7 @@ while win.running do
                     or (final.job and not final.done)
   local reply = wmproto.poll(win.handle, rendering and 8 or 25)
 
-  if not reply then break end
+  if not reply then return false end
 
   final.tend()
 
@@ -3836,6 +4130,12 @@ while win.running do
         dirty = true
         said_where = true
       end
+    elseif ev.type == "key" then
+      if SCRIPT.key(ev) then dirty = true end
+    elseif ev.type == "wheel" and SCRIPT.open
+           and inside(controls["script:code"], ev.x, ev.y) then
+      SCRIPT.editor:wheel(ev.n or 0)
+      dirty = true
     end
   end
 
@@ -3843,12 +4143,17 @@ while win.running do
   -- - drawn first, so the fields said are the ones on the screen.
   if said_where then
     if dirty then
-      if not draw_all() then break end
+      if not draw_all() then return false end
       dirty = false
     end
 
     say_where()
   end
+  return true
+end
+
+while win.running do
+  if not pass() then break end
 end
 
 shade.stop()

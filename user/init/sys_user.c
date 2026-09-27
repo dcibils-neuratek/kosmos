@@ -1094,6 +1094,36 @@ static int l_exit(lua_State *L)
     return 0;
 }
 
+/*
+ * **A budget of instructions for a coroutine**: `sys.budget(co, n)`, after
+ * which the coroutine stops with an error its `resume` reports. Cafesa3D
+ * runs a scene's script in one (`roadmap.md` 4l, 6n step 6), so a loop
+ * that never ends is stopped with nothing it made kept, rather than taking
+ * the application with it - a script is counted as it runs rather than
+ * trusted to finish.
+ *
+ * Lua's count hook, set on that coroutine's own thread and no other: the
+ * caller's instructions are not counted, and the hook goes when the
+ * coroutine does. The first time it fires is the end of the budget.
+ */
+static void budget_spent(lua_State *L, lua_Debug *ar)
+{
+    (void)ar;
+    luaL_error(L, "it ran too long, and was stopped");
+}
+
+static int l_budget(lua_State *L)
+{
+    lua_State *co = lua_tothread(L, 1);
+    lua_Integer n = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, co != NULL, 1, "a coroutine");
+    luaL_argcheck(L, n > 0 && n <= 0x7fffffff, 2, "a number of instructions");
+
+    lua_sethook(co, budget_spent, LUA_MASKCOUNT, (int)n);
+    return 0;
+}
+
 static int l_yield(lua_State *L)
 {
     (void)L;
@@ -2782,6 +2812,7 @@ static const luaL_Reg sys_functions[] = {
     { "wait",     l_wait },
     { "exit",     l_exit },
     { "yield",    l_yield },
+    { "budget",   l_budget },
     { "ring_create", l_ring_create },
     { "ring_map",    l_ring_map },
     { "ring_ready",  l_ring_ready },

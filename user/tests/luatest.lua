@@ -170,6 +170,30 @@ if role == R_COROUTINES then
   check(x == 2, "the first yield")
   check(y == 20, "the value sent back in")
   check(coroutine.status(co) == "dead", "it did not finish")
+
+  -- **A budget of instructions** (`sys.budget`): a coroutine that would
+  -- never end is stopped, its resume says so, and the caller - counted by
+  -- nobody - goes on. Cafesa3D's scripts run this way.
+  local forever = coroutine.create(function() while true do end end)
+
+  sys.budget(forever, 100000)
+
+  local ran, why = coroutine.resume(forever)
+
+  check(ran == false and tostring(why):find("ran too long", 1, true) ~= nil,
+        "an endless loop under a budget was not stopped: " .. tostring(why))
+
+  -- And one that ends inside its budget ends as it would have.
+  local short = coroutine.create(function()
+    local n = 0
+    for i = 1, 1000 do n = n + i end
+    return n
+  end)
+
+  sys.budget(short, 1000000)
+  local done, n = coroutine.resume(short)
+
+  check(done and n == 500500, "a short run under a budget did not finish")
   sys.exit(0)
 end
 

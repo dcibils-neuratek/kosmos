@@ -10693,3 +10693,37 @@ first to draw into its own pixels with it is Cafesa3D's Script panel, 6b,
 and its suite will check that.
 
 The gate with 6a: 46 of 46 in 8:57.
+
+## 18.214 Cafesa3D's Script panel
+
+Step 6b of the IDE (roadmap 6n, 4l): Shift F4 opens a panel beside the 3D
+view, as `docs/cafesa3d-scripting.html` draws it - the view made again
+narrower by the panel's 470, the Rendered view started again at its size -
+with the IDE's editor in it, drawn into Cafesa3D's own pixels by
+`ui.paint_view`, and a strip under it for what a run printed. Keys are the
+editor's while it holds the keyboard; Escape, as the raw key, gives them
+back - in the stream of characters an Escape is not one until the byte
+after it arrives, and a first version let Escape then Z reach the script as
+a Z, once in three runs on x86-64. Ctrl Enter runs the script in a Lua
+environment of its own - `math`, `string`, `table`, `print` and nothing
+else - in a coroutine with a budget of instructions, `sys.budget`: Lua's
+count hook on that coroutine's thread, whose first firing ends it.
+
+**`luatest.lua`'s coroutine role, in the kernel suite on both boards**: an
+endless loop under a budget stopped and its resume saying so; a short one
+finishing with its answer. **Control**: a hook that does not raise hangs the
+suite.
+
+**`tools/run_script.py`, in `make test` as `arm-script` and `x86-script`,
+about 25 seconds a board, 6 checks**: Shift F4 opening the panel and the view
+470 narrower; the sample run to its three lines and "ran"; `error("boom")`
+typed on line 8 and said on its line with nothing made; `while true do end`
+stopped by its budget - in 5 to 6 seconds - with Cafesa3D answering; Escape
+then Z changing the shading; Shift F4 closing it and the view as wide as it
+was. **Control**: the characters not routed to the editor fails four.
+
+Cafesa3D was at Lua's 200 locals in its main chunk: the panel is one table,
+`SCRIPT`, and the main loop's body a function, `pass()`, whose locals are
+its own.
+
+The gate with 6b: 48 of 48 in 9:26.

@@ -136,6 +136,13 @@ SUITES = [
     Suite("arm-ide", ["python3", "tools/run_ide.py", ARM]),
     Suite("x86-ide", ["python3", "tools/run_ide.py", X86], x86=True),
 
+    # **Cafesa3D's Script panel** (`roadmap.md` 4l, 6n step 6): the IDE's
+    # editor in Cafesa3D's own pixels, a script run, an error on its line,
+    # a loop without end stopped by its budget. A suite of its own rather
+    # than more of `cafesa3d`, which is the gate's longest already.
+    Suite("arm-script", ["python3", "tools/run_script.py", ARM]),
+    Suite("x86-script", ["python3", "tools/run_script.py", X86], x86=True),
+
     # **A film's sound, heard** (`roadmap.md` 4e): a film whose sound is an
     # AAC conformance stream's first three seconds, played through
     # `/lib/video.lua` with QEMU recording what came out - every sample

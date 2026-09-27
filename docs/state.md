@@ -162,7 +162,14 @@ its own - fixed and rerun on both boards (18.206).
   Tab or Enter takes one, Escape closes, Ctrl+Space asks for a plain word.
   And `ui.slidr` is an error, "ui has no slidr - did you mean slider?".
 
-**Next, in order**: Cafesa3D's Script panel on the component (6n step 6);
+- **Step 6, Cafesa3D's Script panel**, in parts: 6a the drawing commands
+  shared (`/lib/paint.lua`, `ui.paint_view`); 6b the panel itself (18.214) -
+  Shift F4, the IDE's editor in Cafesa3D's own pixels, Run with a budget of
+  instructions. Cafesa3D and `wm.lua` were both at Lua's 200 locals; the
+  main loop of Cafesa3D is a function now.
+
+**Next, in order**: the scene for scripts (6c), saving them with the scene
+(6d), the samples as scripts (6e);
 the tutorial's lessons (7), the IDE's first project. And 6q, the Deskbar
 focus check that fails now and then. Commits unpushed since 0.10.171: the
 IDE's steps 0 to 5.
