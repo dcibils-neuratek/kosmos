@@ -3693,8 +3693,13 @@ function FILE.translators()
 
   local where = {}
 
-  for _, name in ipairs(fs.list("/Kosmos/Libraries") or {}) do
-    if name:match("^translators/[%w_%-]+%.lua$") then where[#where + 1] = "/Kosmos/Libraries/" .. name end
+  -- A folder of the libraries since 27 September (`roadmap.md` 6s c3b):
+  -- the store was listed flat, and a translator was a name that began
+  -- `translators/`.
+  for _, name in ipairs(fs.list("/Kosmos/Libraries/translators") or {}) do
+    if name:match("^[%w_%-]+%.lua$") then
+      where[#where + 1] = "/Kosmos/Libraries/translators/" .. name
+    end
   end
 
   for _, name in ipairs(fs.list("/Home/Translators") or {}) do

@@ -1,0 +1,44 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# **Studio**: for the media applications - Video, Music, the solar system.
+# Near-black and low-glare, so a picture is the brightest thing on the
+# screen, with one warm amber for what is selected and in focus, and the
+# tab in the same amber so the focused window is found at a glance
+# (`docs/looks.html`).
+
+name       = studio
+desktop    = #0e0f12
+window     = #18191d
+raised     = #24262c
+sunken     = #0f1013
+
+line       = #000000
+line_soft  = #2c2f36
+track      = #34373f
+swatch     = #1e1e1e
+
+edge_light = #30333a
+edge_dark  = #08090a
+
+text       = #e8e6e3
+text_dim   = #8d8a86
+text_on    = #1a0f05
+
+tab        = #e8833a
+tab_idle   = #8a8c90
+tab_text   = #1a0f05
+desktop_text = #d9d6d2
+console      = #08090a
+console_text = #d8d4ce
+
+accent     = #e8833a
+good       = #3fb950
+bad        = #ff6b5e
+ring       = #f0a060
+stamp      = #2a2c31
+
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

@@ -46,6 +46,7 @@ extern const unsigned            libraries_lua_count;
 
 static const struct source_entry *store;
 static unsigned                   store_count;
+static bool                       libraries;     /* which store this serves */
 
 /* Whatever its case (`roadmap.md` 6s): `/Kosmos/Apps/Clock.lua` is `clock.lua`. */
 static const struct source_entry *find(const char *name)
@@ -177,9 +178,83 @@ static bool in_view(const struct source_entry *e, enum view v)
         return true;
     }
 
+    /* The applications and the programs are the store's top level: what
+     * is in a folder of it - the looks, in `themes/` - is neither. */
+    if (strchr(e->name, '/') != NULL) {
+        return false;
+    }
+
     app = declared(e->text, e->length, "application", &n) != NULL;
 
     return (v == VIEW_APPS) ? app : !app;
+}
+
+/*
+ * **Folders** (`roadmap.md` 6s c3b). A store is flat - each entry one name,
+ * `ui.lua` or `luacheck/check.lua` or `themes/Plex.theme` - and it used to
+ * be listed flat, so `ls /Kosmos/Libraries` said `luacheck/check.lua` as
+ * though that were one name. A folder is now the first part of the names
+ * below it, listed once, and a path naming one answers as a directory.
+ *
+ * `name` is inside `dir` ("" the top) when it is `dir/...`; what it is
+ * called there is its next part, `*folder` when more follows. NULL when it
+ * is not inside.
+ */
+static const char *child_of(const char *name, const char *dir, size_t dlen,
+                            size_t *clen, bool *folder)
+{
+    const char *rest = name;
+    const char *slash;
+
+    if (dlen > 0) {
+        if (strncasecmp(name, dir, dlen) != 0 || name[dlen] != '/') {
+            return NULL;
+        }
+
+        rest = name + dlen + 1;
+    }
+
+    slash = strchr(rest, '/');
+    *clen = (slash != NULL) ? (size_t)(slash - rest) : strlen(rest);
+    *folder = (slash != NULL);
+
+    return (*clen > 0) ? rest : NULL;
+}
+
+/* A folder an earlier entry already gave: listed once, not once a file. */
+static bool listed_before(unsigned upto, const char *dir, size_t dlen,
+                          const char *child, size_t clen)
+{
+    unsigned j;
+
+    for (j = 0; j < upto; j++) {
+        size_t l;
+        bool f;
+        const char *c = child_of(store[j].name, dir, dlen, &l, &f);
+
+        if (c != NULL && f && l == clen && strncasecmp(c, child, clen) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* Whether some entry is below `dir`: a folder, though no entry is called it. */
+static bool is_folder(const char *dir, size_t dlen)
+{
+    unsigned i;
+
+    for (i = 0; i < store_count; i++) {
+        size_t l;
+        bool f;
+
+        if (child_of(store[i].name, dir, dlen, &l, &f) != NULL) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 static void copy_word(char *dst, unsigned cap, const char *src,
@@ -199,6 +274,24 @@ static void fill_attrs(const struct source_entry *e, struct bin_reply *rep)
     const char *s;
 
     rep->size = (uint32_t)e->length;
+
+    /* What it is, said as it is (`roadmap.md` 6s c3b): a file that is not
+     * Lua - a look, `Plex.theme` - is a file, and a library is a library.
+     * Both used to report `program`, which is what the rest of this reads
+     * a header for. */
+    {
+        size_t len = strlen(e->name);
+
+        if (len < 4 || strcasecmp(e->name + len - 4, ".lua") != 0) {
+            copy_word(rep->kind, BIN_WORD_MAX, "file", 4);
+            return;
+        }
+    }
+
+    if (libraries) {
+        copy_word(rep->kind, BIN_WORD_MAX, "library", 7);
+        return;
+    }
 
     s = declared(e->text, e->length, "application", &n);
     rep->windowed = (s != NULL) ? 1u : 0u;
@@ -310,12 +403,33 @@ static void answer(const struct message *in, uint64_t sender)
          */
         /* The offset is how many of *this view's* names the caller already
          * has - it counts what it was sent - so the ones the view leaves
-         * out are skipped without being counted. */
+         * out are skipped without being counted. With no view, the names
+         * are the children of the folder asked for, a folder once. */
         unsigned i, seen = 0;
+        const char *dir = (at[0] == '/') ? at + 1 : at;
+        size_t dlen = strlen(dir);
+
+        while (dlen > 0 && dir[dlen - 1] == '/') {
+            dlen--;
+        }
 
         for (i = 0; i < store_count; i++) {
-            if (!in_view(&store[i], view)) {
-                continue;
+            const char *shown = store[i].name;
+            size_t slen = strlen(shown);
+
+            if (view != VIEW_ALL) {
+                if (!in_view(&store[i], view)) {
+                    continue;
+                }
+            } else {
+                bool folder;
+
+                shown = child_of(store[i].name, dir, dlen, &slen, &folder);
+
+                if (shown == NULL
+                    || (folder && listed_before(i, dir, dlen, shown, slen))) {
+                    continue;
+                }
             }
 
             if (seen++ < req->offset) {
@@ -328,7 +442,7 @@ static void answer(const struct message *in, uint64_t sender)
             }
 
             copy_word((char *)rep->data + rep->count * BIN_NAME_MAX,
-                      BIN_NAME_MAX, store[i].name, strlen(store[i].name));
+                      BIN_NAME_MAX, shown, slen);
             rep->count++;
         }
 
@@ -363,6 +477,16 @@ static void answer(const struct message *in, uint64_t sender)
     case BIN_OP_GETATTR:
         e = find((at[0] == '/') ? at + 1 : at);
 
+        /* A folder of the store: `luacheck`, `themes`. */
+        if (e == NULL && view == VIEW_ALL) {
+            const char *dir = (at[0] == '/') ? at + 1 : at;
+
+            if (dir[0] != '\0' && is_folder(dir, strlen(dir))) {
+                copy_word(rep->kind, BIN_WORD_MAX, "directory", 9);
+                break;
+            }
+        }
+
         if (e == NULL || !in_view(e, view)) {
             rep->error = BIN_ERR_NO_PROGRAM;
             break;
@@ -379,8 +503,10 @@ static void answer(const struct message *in, uint64_t sender)
     (void)kosmos_reply(sender, &out);
 }
 
-void binfs_server(long endpoint, int libraries)
+void binfs_server(long endpoint, int serving_libraries)
 {
+    libraries = (serving_libraries != 0);
+
     if (libraries) {
         store = libraries_lua_table;
         store_count = libraries_lua_count;

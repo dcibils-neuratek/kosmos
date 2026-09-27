@@ -567,7 +567,7 @@ local function load_appearance()
       end
     end
 
-    return nil, "no theme called " .. name .. " in /Kosmos/Libraries/themes.lua or "
+    return nil, "no theme called " .. name .. " in /Kosmos/Themes or "
                 .. "/Home/Themes"
   end
 

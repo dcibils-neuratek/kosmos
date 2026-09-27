@@ -2126,6 +2126,51 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6za. **WANTED on 27 September - a folder pinned to the sidebar, and a right
+   click that offers what applies.** Diego, on the M700 with 0.10.174: "I
+   should be able to pin home folders to the side panel below desktop as
+   favorites for easy access", and "A context menu on right click should
+   appear on the folder and give me options - pin to sidebar - compress -
+   info (a new ui that displays basic info of the folder like size and
+   amount of files, date modified, etc)". **What there is**: Places already
+   holds a person's shortcuts, one file each in `/Home/Places`, drawn after
+   Home and Desktop in the sidebar and in Tracker's pane - made by dragging a
+   drive or a folder there (`/Kosmos/Libraries/places.lua`); a right click
+   in Tracker opens one menu whatever it was on - Open, Edit, Rename, Cut,
+   Copy, Paste, Select all and none, Delete, Empty Trash, Refresh - so on a
+   folder in Home it offered Edit, which is a launcher's ("roms is not a
+   launcher"), and Empty Trash. **So**: the menu offers what applies to what
+   was clicked - a folder, a file, a launcher, the Trash, the empty space of
+   a window - with, on a folder, **Pin to sidebar** (a place, below Desktop,
+   and Unpin on one already there), **Compress** (6v) and **Info**; on a
+   file, **Open with** (6z) as well. **Info is a new window**: the name, the
+   kind, where it is, its size - a folder's counted through everything in
+   it, with how many files and folders - when it was made and last changed,
+   and what opens it. **Drawn first**, in one page with 6z's File types and
+   6v's Compress and Extract, since they are the same menu.
+
+6z. **WANTED on 27 September - what opens what, and a Preferences page for
+   it.** Diego, on the M700 with 0.10.174, a film in his home refused -
+   "magicword-clip.mp4: nothing claims a .mp4 file": "file associations with
+   programs is nowhere to be found", "MP4 should be opened with video player
+   for example", and "A preference panel should be added for this to be
+   configurable as well for all file types and what programs handle those
+   files". **What there is**: a short table in `/Kosmos/Libraries/filetypes.lua`
+   - `lua`, `txt`, `md`, `png`, `pdf`, `html`, `mp3`, `wav` and launchers -
+   written by hand, with nothing for `mp4`, `jpg`, a WAD or a ROM though
+   Video, Photo, Doom and the Super Nintendo open them. **Proposed**: an
+   application says what it opens in its own header, as it says its icon -
+   `-- kosmos: opens mp4 mov` - the manifest being the header (6t); `binfs`
+   reports it as it reports `needs`; `filetypes` gathers the answer from
+   `/Kosmos/Apps`, and `/Home/Apps` once applications are installed there;
+   and a person's choice for a type, where two applications open it, is kept
+   in `/Home/Preferences`. **A Preferences page, "File types"**: every type
+   something opens, the application that opens it, and the others that
+   could. **Drawn first** (`CLAUDE.md`: an app is drawn before it is
+   written) - the page, and Tracker's right-click "Open with" beside it. The
+   first step while it is drawn: `mp4` to Video and `jpg` to Photo in the
+   table, so a film and a photograph open today - **DONE** (18.235).
+
 6y. **FOUND on 27 September, on the M700 with 0.10.173 - a USB drive's
    folders would not open, and `/Home`'s partition read "Untitled".** Diego,
    with photographs: "I can't browse kosmos in tracker" - the stick's
@@ -2331,7 +2376,7 @@ processors, and still what follows USB:
    working; **DONE the same evening** (18.230), **(c)** the `/Kosmos` tree - (c1) `/lib` to `/Kosmos/Libraries`,
    `/kits` to `/Kosmos/Kits` - **DONE** (18.232) - (c2) `/bin` split into `/Kosmos/Apps` and
    `/Kosmos/Programs` - **DONE** (18.233), `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
-   in /Kosmos/Themes, yes"), `/system` and `/user` gone - **DONE** (18.234), a look somebody adds in `/Home/Themes`; **(d)** the dotfiles at
+   in /Kosmos/Themes, yes"), `/system` and `/user` gone - **DONE** (18.234), a look somebody adds in `/Home/Themes`; `/Kosmos/Themes`, the looks as files, **DONE** (18.235); **(d)** the dotfiles at
    the top of `/home` into `/Home/Preferences`; **(e)** `layout.md`, the
    layout in words, rewritten to the agreed root - it still describes the
    plan before it, with `/tmp` and `/system/libraries`.

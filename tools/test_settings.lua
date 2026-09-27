@@ -229,6 +229,18 @@ end
 -- fifth as the raw word `endeavour`. Nothing was broken; it just looked
 -- like somebody had not finished.
 --
+-- The looks are files on the machine, `/Kosmos/Themes/<Name>.theme`, which
+-- `themes.lua` reads with `fs.read`; here they are the tree's.
+fs = fs or { read = function(path)
+  local f = io.open((path:gsub("^/Kosmos/Themes/", "user/themes/")), "rb")
+
+  if not f then return nil end
+
+  local text = f:read("a")
+  f:close()
+  return text
+end }
+
 local themes = dofile("user/lib/themes.lua")
 local theme_item
 

@@ -1,0 +1,45 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# **Plex Night**: Plex in the dark, for the evening and for film. Slate
+# windows on a midnight desk; the blue lifted so it still reads on a dark
+# ground; BeOS's yellow tab dimmed to amber so it is still the tab and not
+# the brightest thing on the screen (`docs/looks.html`). An unfocused tab is
+# a light grey, not the slate of the windows: the tab's words are dark on
+# both, and the first build drew them dark on slate, where they vanished.
+
+name       = plexnight
+desktop    = #16213a
+window     = #1f2227
+raised     = #2c3038
+sunken     = #15171b
+
+line       = #0a0b0d
+line_soft  = #3a3f47
+track      = #3a3f47
+swatch     = #3d63b8
+
+edge_light = #3a3f48
+edge_dark  = #0d0e11
+
+text       = #e6e8eb
+text_dim   = #9aa1ab
+text_on    = #ffffff
+
+tab        = #d9a92a
+tab_idle   = #9aa0a8
+tab_text   = #231a00
+desktop_text = #e6e8eb
+console      = #0d0f12
+console_text = #d6dae0
+
+accent     = #4f7dff
+good       = #3fb950
+bad        = #ff6b5e
+ring       = #7aa0ff
+stamp      = #3a4a6e
+
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

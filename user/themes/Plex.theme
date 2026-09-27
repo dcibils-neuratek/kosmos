@@ -1,0 +1,89 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Plex: Kosmos's own, and the only one here that is not somebody else's.
+#
+# Diego, on 21 September 2026, looking at the mockups this project draws
+# its applications in before writing them: "i love the font used in the
+# mockups", and then "i want the theme to look exactly as the mockup, same
+# fonts same sizes same spacing, same colors". Every value below is one of
+# those pages' - `docs/indicators.html` for the desktop, the bar and the
+# panels, `docs/video.html` for the window's tab and the dark surfaces -
+# and `docs/plex.html` says which, and marks the few no page draws.
+#
+# Cooler than BeOS's greys and warmer than white: the panels are a faint
+# stone, the rules between things a little darker, and the one
+# saturated colour is a deep IBM-ish blue for the selection and the ring.
+# The yellow tab is BeOS's idea kept, in a softer yellow - on the windows
+# and on the Deskbar, which is where a look's tab colour goes in every look
+# (`theme.lua`); a scrollbar's thumb wore it too until 24 September, when
+# Diego sent it back to the scrollbar's own grey. The mockups drew the Deskbar in
+# stone, and it was until Diego, 22 September: "the deskbar tab color should
+# be yellow or at least the same color of the acccent color of the theme".
+#
+# **Flat, and the surfaces are the application mockups', since 24
+# September** (`roadmap.md` 5zp). Diego: "pixel perfect as the html
+# mockups" - and `docs/preferences.html` and `docs/tracker2.html`, which he
+# approved as "Perfect with kosmos blue and I love the look, we might
+# replicate it all over the system", are drawn in this look's blue over
+# cooler greys than the stone above: a page of `#fafafb`, cards and headers
+# of white, every rule `#e0e2e6`, words `#1d1f24` and `#74787f`.
+#
+# And flat, which he had asked for on 23 September - "our theme uses bevels
+# in the deskbar and else, lets use flat shading like the mockups" - and
+# which went to Endeavour alone, as though "our theme" meant another one.
+# The stone and the bevels are in the history; `docs/plex.html` records
+# where they came from. The desktop's blue, the accent and the yellow tab
+# are unchanged, because no mockup says otherwise.
+
+name       = plex
+flat       = yes
+desktop    = #3d63b8
+window     = #fafafb
+raised     = #ffffff
+sunken     = #ffffff
+
+line       = #777777
+line_soft  = #e0e2e6
+track      = #cdd0d6
+swatch     = #f2c230
+
+edge_light = #ffffff
+edge_dark  = #9a9a94
+
+text       = #1d1f24
+text_dim   = #74787f
+text_on    = #ffffff
+
+tab        = #f2c230
+tab_idle   = #e7e7e3
+tab_text   = #3a2e00
+desktop_text = #ffffff
+console      = #1c1c1e
+console_text = #ececec
+
+accent     = #2a55c9
+good       = #2f8a3e
+bad        = #b3261e
+ring       = #2a55c9
+stamp      = #8fa9df
+
+# The mockups' type, converted (`roadmap.md` 5zp, `theme.lua`). A size in
+# this file is stb_truetype's, which fits the face's whole ascent and
+# descent into the number; a mockup's is CSS, which fits the em. For IBM
+# Plex the ratio is 1.30, so the drawings' 13.5 for window text is 18 here
+# and their 14 semibold titles are 18 semibold. Diego, 24 September, with
+# the mockups beside the machine: "I want the screen to match it". Their
+# 12.5 for controls and group labels would be 16, and is 18: the same day,
+# with a menu open, "push the regular font up a point or two as toy see
+# items in menus look small compared to the height of the selection".
+#
+# Until then everything a person reads was 16 here - a 12.3 px em, a tenth
+# smaller than the page - because `docs/looks.html` drew the bar at 16 CSS
+# pixels and the number was carried across as though it meant the same.
+# The window's title was Plex Sans Condensed 14 before that, which as CSS
+# was 10.8.
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

@@ -1,0 +1,59 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# **Classic**: BeOS R5 as it was, in Plex type. The colours are from
+# Haiku's `_kDefaultColors[]` - which is not a recollection of R5's colours,
+# it is R5's colours. R5 drew its Deskbar grey; here it is the tab's yellow,
+# as the Deskbar is in every look.
+#
+# The yellow is #ffcb00, which is 255,203,0: a faintly green-shifted
+# saturated yellow, and an exact entry in BeOS's 8-bit palette whose cube
+# steps 0/51/102/152/203/254. That is why it is 203 and not a round number,
+# and why #ffc700 - which is what this shipped first - is wrong.
+#
+# Two things that are easy to get backwards:
+#
+#   the button face is LIGHTER than the panel it sits on. Windows 95 made it
+#   the same grey, and copying that is the fastest way to stop looking like
+#   BeOS.
+#
+#   nothing in the interface is blue except the desktop and the focus ring.
+#   Selections are GREY with the text still black - a blue selection reads as
+#   Windows, or as modern Haiku, but not as R5. The ring is #0000e5, an
+#   almost violent blue, and it is the only place that colour appears.
+
+name       = classic
+desktop    = #336698
+window     = #d8d8d8
+raised     = #e8e8e8
+sunken     = #ffffff
+
+line       = #606060
+line_soft  = #b8b8b8
+track      = #b8b8b8
+swatch     = #d8d8d4
+
+edge_light = #ffffff
+edge_dark  = #989898
+
+text       = #000000
+text_dim   = #808080
+text_on    = #000000
+
+tab        = #ffcb00
+tab_idle   = #e8e8e8
+tab_text   = #000000
+desktop_text = #ffffff
+console      = #0b0b0b
+console_text = #d8d8d8
+
+accent     = #bebebe
+good       = #009800
+bad        = #cb0000
+ring       = #0000e5
+stamp      = #5d85ad
+# The faces all four looks share (`docs/looks.html`).
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

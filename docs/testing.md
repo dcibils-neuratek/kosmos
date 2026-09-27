@@ -11476,3 +11476,47 @@ old way. **Controls**: the query's scope ignored - `Q-SUB` answers with
 both; `/system` mounted again - the root lists it.
 
 The gate for (c3a): 50 of 50 in 9:33.
+
+## 18.235 `/Kosmos/Themes`, a store's folders, and what Diego found on 0.10.174
+
+`roadmap.md` 6s (c3b), 6y, 6z. **The looks are files**: the five that ship,
+`user/themes/*.theme` - their text exactly as it was inside `themes.lua`,
+with the licence line - carried in the image's program store under
+`themes/` and mounted as `/Kosmos/Themes`. `themes.lua` keeps the order
+and the names, and reads a look from its file the first time it is asked
+for; the window manager and Appearance ask it as before. A file name has
+no space in it, because make cannot hold one: `PlexNight.theme`.
+
+**A store has folders now.** `binfs` listed its store flat, so
+`/Kosmos/Libraries` held `luacheck/vendor/sha1/bit_ops.lua` as one name, and
+Tracker drew the long ones over the Size column - Diego, on the M700: "There
+are some weird things happening when accessing kosmos/libraries in the
+Tracker". A folder is the first part of the names below it, listed once,
+and a path naming one answers as a directory; the applications and the
+programs are the store's top level, so the looks are in neither. And a
+library says `library` and a look `file`, where both said `program`.
+
+**Tracker's own pane named the /Home partition by hand.** 18.231 taught the
+Drives window and the Open and Save sidebar that the partition the machine
+was told is `/Home` is called Home; Tracker's "Files" pane drew its drives
+itself, and on the M700 it still said Untitled and opened `/Drives/Untitled`
+- "a filesystem this cannot read". It draws them with the sidebar's
+`volume_label` and `volume_path` now. **Not checked on a screen**: the
+display harness's `/Home` is a virtio disk, not a partition named by GUID;
+what is checked is the one function both call (18.231).
+
+**And a film and a photograph open** - "magicword-clip.mp4: nothing claims
+a .mp4 file": `mp4` to Video, `jpg` and `jpeg` to Photo, the first step of
+6z. `test_filetypes.lua`, 26 checks; control - no `mp4` - fails it.
+
+**In the queries suite, 33 checks**: `/Kosmos` with `Themes`, the five
+looks listed, a look a file and a library a library, `luacheck` a folder in
+`/Kosmos/Libraries` once and no name there with a slash. The theme test
+reads the files through a stand-in for `fs.read`, 197 checks. **Control**:
+the store listed flat again - `K-THEMES` fails.
+
+The gate: 48 of 50 - Cafesa3D on both boards, which found its translators
+by looking for names that began `translators/` in a flat listing of
+`/Kosmos/Libraries`; with the folder listed once, it found none. It lists
+`/Kosmos/Libraries/translators` itself now, as it does `/Home/Translators`,
+and the suite passes on both boards, 122 checks each.

@@ -188,6 +188,17 @@ def main():
             'has("/Kosmos/Programs/ls.lua"), has("/Kosmos/Apps/ls.lua"), '
             'fs.program("clock"), fs.program("ls"), fs.program("/bin/tracker.lua"))',
 
+            # **The looks, and folders in a store** (6s c3b): the five
+            # looks in `/Kosmos/Themes`, a look a file and a library a
+            # library; and `luacheck` a folder in `/Kosmos/Libraries`, once,
+            # where the listing used to hold each of its files by its path.
+            'local function kind(p) return (fs.getattr(p) or {}).kind end '
+            'local n, flat = 0, 0 for _, x in ipairs(fs.list("/Kosmos/Libraries") or {}) do '
+            'if x == "luacheck" then n = n + 1 end if x:find("/") then flat = flat + 1 end end '
+            'print("K-THEMES", table.concat(fs.list("/Kosmos/Themes") or {}, ","), '
+            'kind("/Kosmos/Themes/Plex.theme"), kind("/Kosmos/Libraries/ui.lua"), '
+            'kind("/Kosmos/Libraries/luacheck"), n, flat)',
+
             'local n = 0 for _, x in ipairs(fs.list("/Kosmos/Kits") or {}) do '
             'if x == "pdf" or x == "compress" or x == "3d" then n = n + 1 end end '
             'print("K-KITS", n)',
@@ -263,7 +274,7 @@ def main():
              "a rename to a name's own other case was refused"),
             ("C-NAMES", "CASE.txt,CASE.txt",
              "a rename to another case did not change the name's spelling"),
-            ("K-KOSMOS", 'directory Apps,Kits,Libraries,Programs kit a kit is C, and is used rather '
+            ("K-KOSMOS", 'directory Apps,Kits,Libraries,Programs,Themes kit a kit is C, and is used rather '
                          'than read: use("/Kosmos/Kits/pdf")',
              "/Kosmos was not a folder of Kits and Libraries, a kit in it a kit, "
              "and reading one an answer saying to use it"),
@@ -271,6 +282,11 @@ def main():
                        "/Kosmos/Programs/ls.lua /Kosmos/Apps/tracker.lua",
              "the Clock was not in /Kosmos/Apps and ls in /Kosmos/Programs, each "
              "only there, and found by name and by a launcher's old /bin path"),
+            ("K-THEMES", "Classic.theme,Endeavour.theme,Plex.theme,PlexNight.theme,"
+                         "Studio.theme file library directory 1 0",
+             "/Kosmos/Themes did not hold the five looks, a look a file and a "
+             "library a library, or /Kosmos/Libraries did not show luacheck as "
+             "one folder and no path as a name"),
             ("K-KITS", "3",
              "/Kosmos/Kits did not list the image's kits - pdf, compress, 3d"),
             ("T-BIG", "true 200 true",

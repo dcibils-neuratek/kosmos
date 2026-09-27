@@ -152,6 +152,13 @@ check(types.how_to_open("/Home/nothing") == nil,
 check(types.opener("/Home/diego.lua") == "editor",
       "the editor is still what handles a .lua, for Edit")
 
+-- A film and a photograph (`roadmap.md` 6z): Video and Photo, whatever case
+-- the extension is written in.
+check(types.opener("/Home/magicword-clip.mp4") == "video",
+      "an .mp4 is not opened by Video")
+check(types.opener("/Home/think.JPG") == "photo" and types.opener("/Home/a.jpeg") == "photo",
+      "a .jpg or .jpeg is not opened by Photo")
+
 if failed == 0 then
   print(("PASS: %d checks on what a file is and what opens it, on this "
          .. "machine."):format(checks))

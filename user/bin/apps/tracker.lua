@@ -675,7 +675,7 @@ local function place_items()
   if #drives > 0 then items[#items + 1] = { gap = true, rule = true } end
 
   for _, v in ipairs(drives) do
-    add(v.name, files.join("/Drives", v.name), "drive")
+    add(sidebar.volume_label(v), sidebar.volume_path(v), "drive")
   end
 
   return items, by

@@ -2127,9 +2127,16 @@ $(GEN)/version.c: FORCE
 .PHONY: FORCE
 FORCE:
 
-$(GEN)/programs.c: $(BIN_LUA) tools/progs2c.py $(HOSTDIR)/lua.ok
+# **And the looks** (`roadmap.md` 6s c3b): `user/themes/*.theme`, carried
+# under `themes/` in the same store and shown as `/Kosmos/Themes` - a folder
+# of the store, which the applications and the programs, its top level,
+# never include. A file name without a space: make cannot hold one.
+THEMES := $(wildcard user/themes/*.theme)
+
+$(GEN)/programs.c: $(BIN_LUA) $(THEMES) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
-	python3 tools/progs2c.py programs_lua $@ $(BIN_LUA)
+	python3 tools/progs2c.py programs_lua $@ $(BIN_LUA) \
+	    --rooted user/themes themes/ $(THEMES)
 
 # The libraries in user/lib/, the same way and for the same reason. A
 # separate store rather than a directory inside /bin, because a program is

@@ -36,6 +36,14 @@ filetypes.by_extension = {
   png  = "photo",
   pdf  = "pdfview",
 
+  -- A film and a photograph, which Video and Photo open and nothing here
+  -- said so: "magicword-clip.mp4: nothing claims a .mp4 file" (Diego, on
+  -- the M700, 27 September). The first step of `roadmap.md` 6z, where an
+  -- application says what it opens in its own header and this table goes.
+  mp4  = "video",
+  jpg  = "photo",
+  jpeg = "photo",
+
   html = "browser",
 
   mp3  = "music",

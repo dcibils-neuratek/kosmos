@@ -155,6 +155,13 @@ local SYSTEM_MOUNTS = {
 --
 sidebar.subdirs = subdirs
 
+-- A volume's name where a person reads it, and where it opens: the one that
+-- is `/Home` by that name (`drivelist.label`, `drivelist.path`). Tracker's
+-- own pane draws its drives with these, as this sidebar does - it drew them
+-- by hand, and read "Untitled" on the M700 after this had learned "Home".
+sidebar.volume_label = drivelist.label
+sidebar.volume_path = drivelist.path
+
 function sidebar.new()
   --
   -- **What `/Drives` answered, once per refresh**, shared by the Drives group

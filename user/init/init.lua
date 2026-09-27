@@ -4257,6 +4257,9 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   ns.mount("/Kosmos/Apps", bin_cap, "/apps", "bin")
   ns.mount("/Kosmos/Programs", bin_cap, "/programs", "bin")
 
+  -- And the looks that ship, a folder of the same store.
+  ns.mount("/Kosmos/Themes", bin_cap, "/themes", "bin")
+
   -- And what programs load rather than run. Separate from the programs so
   -- that `ls /Kosmos/Programs` lists things you can type and nothing else.
   ns.mount("/Kosmos/Libraries", lib_cap, nil, "bin")
@@ -6139,6 +6142,7 @@ if role == ROLE_RUNNER then
   if req.data    then ns.mount("/Temporary",         req.data, nil, "ram") end
   if req.bin     then ns.mount("/Kosmos/Apps",       req.bin, "/apps", "bin") end
   if req.bin     then ns.mount("/Kosmos/Programs",   req.bin, "/programs", "bin") end
+  if req.bin     then ns.mount("/Kosmos/Themes",     req.bin, "/themes", "bin") end
   if req.devices then ns.mount("/Devices",           req.devices, nil, "dev") end
   if req.lib     then ns.mount("/Kosmos/Libraries",  req.lib, nil, "bin") end
 
