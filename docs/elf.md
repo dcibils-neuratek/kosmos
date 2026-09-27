@@ -201,11 +201,13 @@ anything is spawned, and names the page that differs.
 
 ---
 
-## Decisions that are Diego's
+## Decided by Diego, 27 September
 
-- **ELF on the disk**, read in userland into Kosmos's own image form - or
-  Kosmos's flat image on the disk too, which needs no reader at all but is
-  a format nothing else knows.
+"ELF copied yes":
+
+- **ELF on the disk**, read in userland into Kosmos's own image form -
+  rather than Kosmos's flat image, which would need no reader but is a
+  format nothing else knows.
 - **Copied, not shared**, until regions can be sealed - a game started
   twice holds its code twice.
 - **`-- kosmos: image doom.elf`** as the way a program names its image.

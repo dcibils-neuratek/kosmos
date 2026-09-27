@@ -1393,7 +1393,8 @@ processors, and still what follows USB:
       foot, so nobody could know. **Drawn the same day** in
       `docs/cafesa3d.html`: Duplicate beside Add in the header, and a Keys
       button (and `?`) opening every key in six groups; asked whether
-      Duplicate belongs in the header or a menu for the selection.
+      Duplicate belongs in the header or a menu for the selection. **Diego:
+      "both"** - in the header beside Add, and in a menu beside Delete.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
    - **Sample scenes: a house, a car, a plane** - Diego, 25 September:
@@ -2213,6 +2214,10 @@ processors, and still what follows USB:
    the FAT and exFAT reader ignores case. Asked: case-insensitive and
    case-preserving, as a Mac is, or every path typed as it is named; and
    `/Dev`, `/Drives`, `/App` and `/Temporary` for what is outside both.
+   **Diego: "yes case insensitive, it doesnet make sense to have case
+   sensitiveness in this day and age"** - so every name is found whatever
+   its case and keeps the case it was given, in `kfs`, the namespace and
+   every server that holds names. The four outside both, not yet answered.
 
 6u. **AGREED on 27 September - one scrollbar, everywhere.** Diego, seeing
    the IDE's thin one: "Why scrollbars here look flat and in other apps look
@@ -2222,7 +2227,7 @@ processors, and still what follows USB:
    (in those two a bar under 60 pixels drops its arrows), and the browser,
    which draws its own. So one scrollbar in every look, at every height and
    in every application, the browser's through the kit. Asked: the pill or
-   the trough with arrows.
+   the trough with arrows. **Diego: "pill"** - the flat one, in every look.
 
 6t. **AGREED on 27 September - the ELF loader: a program loaded from a
    file.** Diego: "i want to go ahead and make the elf loader so we can
@@ -2241,7 +2246,8 @@ processors, and still what follows USB:
    by `-- kosmos: image`, an ELF read and checked in userland, copied by the
    kernel. **Step 1 DONE** (`testing.md` 18.221): `SYS_SPAWN_IMAGE`, a
    process from an image in a region, the kernel's own copy of it. **Step 3
-   DONE** (18.222), ahead of 2, which waits for Diego's word on ELF: a
+   DONE** (18.222), ahead of 2, which waited for Diego's word on ELF - given
+   the same evening, "ELF copied yes", with `-- kosmos: image`: a
    program's image is the system's objects and its kit, a link and not a
    build - the kits leaving the system are weak in `sys_user.c`.
 
@@ -2455,7 +2461,7 @@ processors, and still what follows USB:
       dots and on Ctrl = and Ctrl -. **Find a file drawn** in
       `docs/kosmos-ide.html` - a field where Tracker keeps its Search, Ctrl
       P, the matches under it with where each lives and what it is - and
-      built once Diego has seen it.
+      built once Diego has seen it. **Diego: "yes"**, as drawn.
       **And two faults from the same evening, DONE the same day**
       (`testing.md` 18.218): "I can't run things like bench.lua from the ide
       as it says ramfs is full" - every Run went through a copy in `/ramfs`,
