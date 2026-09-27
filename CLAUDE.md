@@ -777,10 +777,12 @@ every check under OVMF, which is necessary and not sufficient. So:
     `build/x86_64/kosmos-usb-<version>-development.img`, from `main`, booted
     under OVMF before it is handed over. Each build handed over takes its own
     revision first (`make bump`), so no two builds share a name.
-  - **A build is stable when Diego says so**, after using it on the ThinkPad,
+  - **A build is stable when Diego says so**, after using it on the machine,
     and not before. Its file is then renamed `-stable` - the bytes he used,
-    never rebuilt - and the stable image before it goes to the Trash. There is
-    always exactly one, and a stick that misbehaves is written back with it.
+    never rebuilt - and that machine's stable image before it goes to the
+    Trash. **There is exactly one a machine** - the ThinkPad's 0.10.88 and the
+    M700's 0.10.169 on 26 September, when Diego agreed "one per machine" -
+    and a stick that misbehaves is written back with its machine's.
   - Each development build is the stable one plus what came since, so a stick
     that stops points at what came since.
 - **On a boot that works, the first photograph is `log loader`**, which is

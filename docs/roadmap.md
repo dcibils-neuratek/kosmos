@@ -2103,6 +2103,17 @@ processors, and still what follows USB:
    piece both use rather than two with two sets of bugs. **Agreed by Diego
    the same night**, component and all; the IDE's drawing comes before
    Cafesa3D's scripting is built.
+   **What he asked of it, the same night**, with a screenshot of ZeroBrane
+   Studio: "i love the script editor in cafesa so we should base our Lua IDE
+   (Kosmos IDE) in the same idea. I like a plain IDE with a tree source tree
+   view, a nice editor with suggestions and auto completion. a simple button
+   bar with main things like run, stop, and more like ZeroBrane Studio", "it
+   should be able to launch lua scripts from there", "syntax coloring and
+   check is expected with LUA Lint or something else", "first lets mockup the
+   editor as we do with all the apps". So: **Kosmos IDE** - a source tree, an
+   editor that suggests and completes, a button bar with Run and Stop at its
+   centre, Lua coloured and checked as it is written, and any script run
+   from it. **Drawn first**: `docs/kosmos-ide.html`.
 
 6m. **AGREED on 26 September - Processes shows each process's threads.** Diego,
    with a photograph of the window: "processes need a threads column to
