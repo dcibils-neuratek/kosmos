@@ -2092,6 +2092,33 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6s. **ASKED on 27 September, for Diego to decide - applications in `/apps`.**
+   Diego, reading `/lib/clock.lua` in the IDE: "I don't understand why
+   clock.lua is in /lib as it is a bundled kosmos app", "Shouldn't they be on
+   /apps ?". Two things in that. **A name clash**: `/lib/clock.lua` is the
+   local-time library (the Deskbar's clock, Date & Time, Preferences, Camera
+   use it) and has nothing to do with the Clock application; `/lib/blocks.lua`
+   is block devices, not the Blocks game - worth renaming either way,
+   `localtime.lua` and `blockdev.lua` say what they are. **And the split
+   itself**: `/bin` serves 55 applications and 64 programs flat, while the
+   tree already keeps them apart (`user/bin/apps/`, `user/bin/programs/`);
+   Haiku keeps applications in `apps` and the command line in `bin`. What it
+   touches: every `/bin/<app>.lua` - the Deskbar's menu and the launchers in
+   `/home/Deskbar`, the startup list, `wm <name>`, Tracker, the tests and the
+   documents - and a stick's `/home` needs its launchers rewritten once.
+   Proposed, drawn first if agreed.
+
+6r. **FOUND and DONE on 27 September - every application in the Deskbar had
+   the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the
+   deskbar", "all the app icons look the same, not the real app icon as it
+   should be". Each application declares its icon (`-- kosmos: icon`, since
+   0.10.28), and the Deskbar showed the generic one for Music, Tracker,
+   Calculator, Preferences, Terminal and the rest. **The cause**: the window
+   manager knew a window's program only when it had launched it, remembered
+   for the next window to open, so a window started any other way had
+   none, and the Deskbar's four launches at login overwrote each other.
+   Each window says the file it runs now.
+
 6q. **FOUND on 27 September - the Deskbar's focus check fails now and then.**
    `arm-display-3` stopped a gate on "after Control-W Tab moved the focus to
    clock, the Deskbar's buttons ... show the focus where it was", and passed
@@ -2272,6 +2299,24 @@ processors, and still what follows USB:
       plane as scripts for now", "6e does need the tutorial lessons for the
       ide" - so the samples stay the glTF files `tools/cafesa3d_samples.py`
       writes, and step 6 ends with the IDE's first project.
+   7. **WANTED on 27 September, from using 0.10.172 - three things the
+      IDE is missing.** Diego, with a photograph of the IDE on `ui.lua`:
+      "the ide is missing a scrollbar to see where we are on the file";
+      "we need a way to increase font size like we have in the terminal
+      app"; and "it also needs a ide wide search field to find files easily
+      by name or part of name". So: the editor's scrollbar - where the view
+      is in the file, and dragged to go there; the text larger and smaller
+      as Terminal's is, remembered as Terminal's is; and a field that finds
+      a file anywhere in the project by any part of its name, and opens it.
+      And "the ide looks great!".
+      **And two faults from the same evening, DONE the same day**
+      (`testing.md` 18.218): "I can't run things like bench.lua from the ide
+      as it says ramfs is full" - every Run went through a copy in `/ramfs`,
+      whose files hold 16 KB, so an unchanged file runs from where it is now
+      and a changed one's copy goes to `/home/.ide-run`; and "I can't run
+      simple apps like clock.lua in the m700" - the file was `/lib/clock.lua`,
+      the local-time library, which builds a table and ends, so a library
+      says so before it runs.
    Later: debugging.
 
 6m. **DONE on 26 September - Processes shows each process's threads.** Diego,

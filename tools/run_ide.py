@@ -152,6 +152,8 @@ def main():
         # **Run** (step 3): a program that prints and then fails on its
         # second line, run with Ctrl+Enter as it is on the screen, and the
         # IDE saying how it ended - the error's line found in what it wrote.
+        # A line typed at its top first and not saved, so what runs is the
+        # screen's copy, in /home/.ide-run: the error is on line 3.
         stop_desktop()
         guest.type('fs.write("/home/development/r.lua", '
                    '"print(\\"ran\\")\\nerror(\\"boom\\")\\n")')
@@ -161,14 +163,34 @@ def main():
         said("ide: project ", mark, 90)
         time.sleep(1.5)
 
+        press("ctrl-home", "p", "r", "i", "n", "t", "shift-9", "shift-apostrophe",
+              "n", "e", "w", "shift-apostrophe", "shift-0", "ret")
         mark = len(guest.seen)
         press("ctrl-ret")
         ended = said("ide: r.lua ", mark, 30)
         printed = re.search(r"(\d+) lines printed$", ended or "")
-        check(ended is not None and ended.startswith("ended with an error at line 2")
-              and "boom" in ended and printed and int(printed.group(1)) >= 2,
-              "Ctrl+Enter did not run r.lua to its error on line 2, with what "
-              "it printed: %r" % ended)
+        check(ended is not None and ended.startswith("ended with an error at line 3")
+              and "boom" in ended and printed and int(printed.group(1)) >= 3,
+              "Ctrl+Enter did not run r.lua as changed on the screen to its error on "
+              "line 3, with what it printed: %r" % ended)
+
+        # **A library, as it is, and larger than /ramfs holds**: bench.lua is
+        # 21 KB, and its run was refused - "/ramfs is full" - when every run
+        # went through a copy there (Diego, 27 September). Unchanged, it runs
+        # from where it is, and the IDE says first that it is a library.
+        stop_desktop()
+        mark = len(guest.seen)
+        guest.type("wm ide:/lib/bench.lua")
+        said("ide: project ", mark, 90)
+        time.sleep(1.5)
+        mark = len(guest.seen)
+        press("ctrl-ret")
+        library = said("ide: bench.lua is a library: ", mark, 20)
+        bench = said("ide: bench.lua ended, ", mark, 60)
+        check(library is not None and 'use("/lib/bench.lua")' in library
+              and bench is not None and bench.startswith("code 0"),
+              "/lib/bench.lua was not said to be a library and run to its end: "
+              "%r, %r" % (library, bench))
 
         # **Stop**: a program that never ends, run with F5 and stopped with
         # Shift+F5.
@@ -293,7 +315,8 @@ def main():
     print("PASS: %d checks on the IDE (a file opened with its folder as the "
           "project, in the code look; Tab kept to indent, Ctrl+/ and undo, a new "
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
-          "its file remembered; a program run to its error with Ctrl+Enter, "
+          "its file remembered; a program changed and not saved run to its error "
+          "with Ctrl+Enter, a 21 KB library run as it is and said to be one, "
           "another started with F5 and stopped with Shift+F5; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab)" % checks)
     return 0
 

@@ -587,16 +587,21 @@ local header = ui.header{
 -- console's protocol through the Console Kit - so a program cannot tell it
 -- is printing to an IDE, which is the namespace working as intended.
 --
--- **The file as it is on the screen**, not as it was last saved: written to
--- `/ramfs/.ide` under its own name and run from there, in its own folder,
--- with the scratch path turned back into the file's in everything it says -
--- so an error names the line in the file you are looking at.
+-- **The file as it is on the screen**, not as it was last saved. Unchanged,
+-- it runs from where it is, so Processes names its real file; changed, a
+-- copy is written to `/home/.ide-run` under its own name and run from
+-- there, in its own folder, with the copy's path turned back into the
+-- file's in everything it says - so an error names the line in the file
+-- you are looking at. The copy was in `/ramfs`, whose files hold 16 KB -
+-- it keeps replicants' state, not programs - and `bench.lua` would not run
+-- at all: "ramfs is full" (Diego, 27 September). `/home` is the disk on a
+-- real machine, and memory only on one that has none.
 --------------------------------------------------------------------------
 
 local con = use("/kits/console")
 local console = sys.endpoint()
 
-local RUN_DIR = "/ramfs/.ide"
+local RUN_DIR = "/home/.ide-run"
 local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 
 -- What is running: `{ id, path, scratch, started, printed, line, error }`.
@@ -620,15 +625,32 @@ local function start()
     running = nil
   end
 
-  fs.send(RUN_DIR, { type = "mkdir" })
+  -- **A library says so first.** Running `/lib/clock.lua` builds the
+  -- table it gives whoever uses it and nothing else, so it ended at once
+  -- with nothing printed and looked broken (Diego, 27 September, on the
+  -- M700). Not "the application is /bin/clock.lua": that one does not use
+  -- it - `/lib/clock.lua` is the local time, for the Deskbar's clock - and
+  -- a name shared is not a relation.
+  if f.path:match("^/lib/") then
+    say(('%s is a library: running it only builds what it gives whoever uses it, '
+         .. 'with use("%s") - applications and programs are in /bin')
+        :format(base(f.path), f.path), theme.text_dim)
+  end
 
-  local scratch = RUN_DIR .. "/" .. base(f.path)
   local body = f.editor:content()
-  local ok, why = fs.write(scratch, body)
+  local scratch = f.path
 
-  if not ok then
-    say(("could not run %s: %s"):format(base(f.path), tostring(why)), theme.bad)
-    return
+  if f.editor.dirty then
+    fs.send(RUN_DIR, { type = "mkdir" })
+    scratch = RUN_DIR .. "/" .. base(f.path)
+
+    local ok, why = fs.write(scratch, body)
+
+    if not ok then
+      say(("could not run the changes to %s: %s - save them, and run it again")
+          :format(base(f.path), tostring(why)), theme.bad)
+      return
+    end
   end
 
   local app = body:find("%-%- kosmos: application") ~= nil

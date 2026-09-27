@@ -6195,6 +6195,11 @@ if role == ROLE_RUNNER then
   sys.name((path:match("([^/]+)%.lua$") or path:match("([^/]+)$") or "run"),
            path)
 
+  -- And kept, for what this process says of itself: a window it opens
+  -- names the file it runs, which is how the Deskbar finds its picture
+  -- whoever started it (`roadmap.md` 6r).
+  sys.program = path
+
   local source, read_err = ns.read(path)
 
   if not source then

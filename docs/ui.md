@@ -986,6 +986,18 @@ picture's height, because nothing here scales one and a column of names
 that did not line up would be worse than a taller menu. The icons are
 Haiku's, and `assets/icons/README.md` says which, and from where.
 
+**A window says which file it runs** (27 September, `roadmap.md` 6r). A
+running window's button gets its picture from the program that opened it,
+and the window manager used to know that only for what it had launched
+itself, remembered for the next window to open. Every window started any
+other way - by `wm` itself, a Terminal, Tracker, the IDE's Run - had none,
+and the Deskbar's four launches at login overwrote each other before their
+windows arrived: Diego's bar was a row of the same generic picture. The
+runner that starts a Lua program keeps its path as `sys.program`, the kit's
+`ui.window` sends it with `open`, and the window manager takes a plain path
+from the window in preference to the launch's guess. A window that lies can
+only show another program's picture.
+
 ---
 
 ## 16.13 One bar: the Deskbar is the strip

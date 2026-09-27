@@ -561,6 +561,7 @@ local function picture(program)
     local attrs = fs.getattr(program)
 
     icon_of[program] = (attrs and attrs.icon) or "App_Generic"
+    print(("deskbar: %s draws as %s"):format(program, icon_of[program]))
   end
 
   return icon_of[program]

@@ -4026,19 +4026,24 @@ handlers.open = function(req, who, cap)
   pending_pid = nil
 
   --
-  -- And what was started to produce it, tied the same way and with the same
-  -- honesty about how good the tie is: the next window to open after a
-  -- launch is taken to be that launch's.
+  -- And what was started to produce it. The Deskbar draws a button per
+  -- window and wants the application's picture on it, and a *title* cannot
+  -- give it one - a title is a sentence the application chose and changes
+  -- whenever it likes. The program is a path, and a path has a
+  -- `kosmos: icon` line at the end of it.
   --
-  -- The Deskbar draws a button per window and wants the application's
-  -- picture on it, and a *title* cannot give it one - a title is a sentence
-  -- the application chose and changes whenever it likes. The program is a
-  -- path, and a path has a `kosmos: icon` line at the end of it.
-  --
-  -- Nil for a window nothing launched: the desktop, the bar itself, and
-  -- anything started before there was a window manager to ask.
-  --
-  win.program = pending_program
+  -- **The window's own word first** (`roadmap.md` 6r): the kit sends the
+  -- file its process runs, which is right however the process was started
+  -- - from a Terminal, by Tracker, by the IDE's Run, at startup - where
+  -- the launch's guess was right only for what this process launched, so
+  -- every other window had the generic picture. A plain path or nothing:
+  -- all it can do if it lies is show another program's picture. The
+  -- launch's guess stays for a window that says nothing - one opened
+  -- without the kit - and nil is a window neither names: the generic one.
+  local said = type(req.program) == "string" and #req.program < 128
+               and req.program:match("^/[%w%-_./]+$") and req.program
+
+  win.program = said or pending_program
   pending_program = nil
 
   next_handle = next_handle + 1

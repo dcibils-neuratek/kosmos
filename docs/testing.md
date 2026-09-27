@@ -10851,3 +10851,53 @@ taken off, so nothing was clicked and every wait ran out - 8:39 for a suite
 of two minutes.
 
 The gate with 6d: 48 of 48 in 9:33.
+
+## 18.217 Each window's own picture in the Deskbar
+
+Diego, 27 September, with a photograph of the bar on the 0.10.172 stick:
+"all the app icons look the same, not the real app icon as it should be"
+(`roadmap.md` 6r). The Deskbar draws a running window's button with the
+picture its program declares (`-- kosmos: icon`), and asks the window
+manager which program that is. The window manager knew only what it had
+launched itself, remembered as `pending_program` for the next window to
+open: a window started by `wm` itself, a Terminal, Tracker or the IDE had
+none, and the Deskbar's four launches at login - Tracker, Monitor, Processes
+and Log in a moment - overwrote it before their windows arrived. So the
+runner keeps the path it runs as `sys.program`, `ui.window` sends it with
+`open`, and the window manager prefers a plain path from the window to the
+launch's guess. The Deskbar says, once a program, which picture it chose:
+"deskbar: /bin/clock.lua draws as App_Clock".
+
+**In the display harness's `deskbar focus` phase, which starts `wm
+trace,deskbar,clock,calc`**: the clock and the calculator, which the window
+manager starts itself, drawn as App_Clock and App_Calculator. **Control**:
+the kit sending no program - both drawn with none, as on Diego's bar.
+
+## 18.218 Run in the IDE: a file where it is, a library said to be one
+
+Two faults Diego found on the 0.10.172 stick, 27 September. **"I can't run
+things like bench.lua from the ide as it says ramfs is full"**: every Run
+wrote the editor's text to `/ramfs/.ide` and ran the copy, and a `/ramfs`
+file holds 16 KB - it is where replicants keep their state - while
+`/lib/bench.lua` is 21 KB. So an unchanged file runs from where it is, which
+also has Processes name its real file, and only a changed one is copied, to
+`/home/.ide-run` - the disk on a real machine; `/home/.ide` is the IDE's
+settings file, so the folder has a name of its own. Where the copy cannot be
+written the IDE says so and asks for the changes to be saved.
+
+**"I can't run simple apps like clock.lua in the m700 while they work on
+qemu"**: the file was `/lib/clock.lua`, the local-time library, which builds
+the table it returns and ends - code 0, nothing printed, which looked like a
+failure on either machine. A file under `/lib` says first that it is a
+library, used with `use(...)`, and that applications and programs are in
+`/bin`. It does not name "the application of the same name": `/bin/clock.lua`
+does not use `/lib/clock.lua`, and a name shared is not a relation.
+
+**`tools/run_ide.py`, 21 checks now**: `r.lua` changed on the screen - a
+line typed at its top and not saved - and run to its error on line 3, which
+only the copy has; and `/lib/bench.lua`, 21 KB, opened and run as it is,
+said to be a library and ending with code 0. **Control**: every Run through
+a copy in `/ramfs` again - bench.lua is said to be a library and never runs.
+
+The gate with 18.217 and 18.218: 48 of 48 in 10:09 - over the ten minutes,
+and the next thing is the suites' fixed pauses (`state.md`).

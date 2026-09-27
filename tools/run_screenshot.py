@@ -7870,6 +7870,36 @@ def check_focus_shown(guest):
             raise Failure("the Deskbar never finished a frame.")
         time.sleep(0.3)
 
+    #
+    # **Each with its own picture** (`roadmap.md` 6r). Diego, 27 September,
+    # with a photograph of the bar: "all the app icons look the same, not the
+    # real app icon as it should be". The window manager knew a window's
+    # program only when it had launched it for the Deskbar, and remembered
+    # it for the next window to open - so these two, started by `wm` itself,
+    # had none, and the Deskbar's own login launches overwrote each other
+    # before their windows arrived. A window says the file it runs now, and
+    # the Deskbar says, once a program, which picture it drew it with.
+    #
+    wanted = {"clock": "App_Clock", "calc": "App_Calculator"}
+    drawn = {}
+    seen_by = time.monotonic() + 15
+
+    while drawn != wanted and time.monotonic() < seen_by:
+        guest._read_available()
+
+        for name in wanted:
+            m = re.search(r"deskbar: /bin/%s\.lua draws as (\S+)" % name,
+                          guest.seen[mark:])
+            drawn[name] = m and m.group(1)
+
+        time.sleep(0.3)
+
+    if drawn != wanted:
+        raise Failure(
+            "the Deskbar did not draw the clock and the calculator, which the "
+            "window manager started, with their own pictures - wanted %r, "
+            "drew %r" % (wanted, drawn))
+
     time.sleep(2)
     width, height, _ = parse_ppm(guest.screendump())
 
@@ -8075,7 +8105,7 @@ def check_focus_shown(guest):
                           "desktop.")
         time.sleep(0.3)
 
-    return 3
+    return 4
 
 
 def check_panel(guest):

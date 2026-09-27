@@ -5335,6 +5335,10 @@ function ui.window(spec)
     w = spec.w or 400, h = spec.h or 240,
     x = spec.x, y = spec.y,
 
+    -- The file this process runs, as its runner kept it: what the Deskbar
+    -- reads the window's picture from (`-- kosmos: icon`).
+    program = sys.program,
+
     -- Part of the desktop rather than something running on it: no close
     -- box, no minimise, no maximise. The Deskbar is the only one, because
     -- it is how a hidden window comes back and how anything is started.
