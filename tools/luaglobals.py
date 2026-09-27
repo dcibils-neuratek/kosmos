@@ -52,7 +52,7 @@ ENVIRONMENTS = {
     # A program in /bin gets an environment built by the runner.
     #
     # `doom`, `quake` and `snes` used to be listed here, as globals only the
-    # images that compiled them had. They are kits now, `use("/kits/doom")`,
+    # images that compiled them had. They are kits now, `use("/Kosmos/Kits/doom")`,
     # because a global with a program's name hides the program from the
     # prompt. Not listing them is what makes this checker refuse a program
     # that reads one as a global again.

@@ -17,7 +17,7 @@
 -- again; it does not know what a menu is, and the Deskbar does not know this
 -- exists.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
 
 local path = tostring(args or ""):match("^%s*(%S+)")

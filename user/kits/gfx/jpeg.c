@@ -6,7 +6,7 @@
  * --------------------------------------------------------------------
  * Why this is a function on `gfx` and not a kit.
  *
- * A kit is code you run, reached through the namespace - `use("/kits/pdf")`
+ * A kit is code you run, reached through the namespace - `use("/Kosmos/Kits/pdf")`
  * - and a JPEG decoder has the shape of one: a loop over bytes, small and
  * bounded, exactly where C buys something. It was nearly written as one.
  *

@@ -11373,3 +11373,34 @@ reading the name before the last at row 220 where the finished picture has
 it at 241: "the same picture twice" had caught the desktop between two
 stages of drawing. Still means the same picture for a second and a half now
 (`roadmap.md` 6q); the part alone, 79 checks.
+
+## 18.232 `/Kosmos/Libraries` and `/Kosmos/Kits`
+
+`roadmap.md` 6s (c1). `/lib` is `/Kosmos/Libraries` and `/kits` is
+`/Kosmos/Kits` - 480 paths in the code and the suites, 53 in the documents.
+**The kits are a folder the namespace answers itself**: a kit is C in the
+process's own image, so no server holds one - `/Kosmos/Kits` lists the
+image's kits (`sys.kit_names`), says each is a kit, and answers a read with
+what to do instead, `use("/Kosmos/Kits/pdf")`. **And `/Kosmos` is a folder**
+though nothing is mounted at it: a place made only of mounts had no server
+to ask, so `getattr` answered nothing and a listing would have drawn it as a
+file - the fault 18.231 found on a USB drive, in a second place.
+
+Three things the rewrite could not have seen, found by reading what it did:
+`use`'s kit pattern, matched against the path folded, had to be written in
+small letters; the IDE compared `path:sub(1, 5)` with `/Kosmos/Libraries/`,
+which no path of five characters equals, so Find a file called no file a
+library; and the IDE's read-only test compared exactly, so a library
+opened as `/kosmos/libraries/ui.lua` would have been editable. Both IDE
+tests fold now (`under`).
+
+**In the queries suite, 31 checks**: `/kosmos` a directory, `ls /Kosmos`
+`Kits,Libraries`, `/Kosmos/Kits/pdf` a kit and reading it the sentence;
+`/Kosmos/Kits` holding pdf, compress and 3d; the root with `Kosmos` and
+without `lib` and `kits`; and the library used through two spellings,
+`/KOSMOS/libraries/Text.lua` now. **Control**: no kits mount and no folder
+for a place of mounts - both fail.
+
+The gate for (c1): 50 of 50 in 9:06 - on the second try, the first having
+collided with a gate stopped a moment before, whose `make` was still
+linking the x86 image when this one began.

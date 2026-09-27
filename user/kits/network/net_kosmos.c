@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The network kit: `use("/kits/network")`.
+ * The network kit: `use("/Kosmos/Kits/network")`.
  *
  * `/Network` speaks a declared shape - `netproto.h` - and this is the side that
  * builds it. One place that knows the layout, so a program says

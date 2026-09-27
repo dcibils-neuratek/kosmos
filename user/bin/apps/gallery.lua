@@ -26,7 +26,7 @@
 -- What the last control did goes where every converted window says what it
 -- is doing: beside the title.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the

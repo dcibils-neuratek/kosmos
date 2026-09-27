@@ -2,7 +2,7 @@
 /*
  * The Game Kit's drawing layer, in C.
  *
- *   local game = use("/kits/game")
+ *   local game = use("/Kosmos/Kits/game")
  *   game.clear(fb, w, h, 0x000000)
  *   game.line(fb, w, h, x0, y0, x1, y1, r, g, b, a)
  *

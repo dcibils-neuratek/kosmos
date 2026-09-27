@@ -31,11 +31,11 @@
 -- names.
 --------------------------------------------------------------------------
 
-local ui   = use("/lib/ui.lua")
-local menu = use("/lib/deskbarmenu.lua")
+local ui   = use("/Kosmos/Libraries/ui.lua")
+local menu = use("/Kosmos/Libraries/deskbarmenu.lua")
 
 -- `fs` is a global this process is handed, not a library to `use` - there is
--- no `/lib/fs.lua` and asking for one is how this failed to start at all.
+-- no `/Kosmos/Libraries/fs.lua` and asking for one is how this failed to start at all.
 
 local W, H = 460, 300
 

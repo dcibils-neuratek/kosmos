@@ -1223,8 +1223,8 @@ def main():
                   "importing %s did not bring in %s with nothing skipped: %r" % (name, want, got))
 
         found = found or said("cafesa3d: translator STL from ", 0, 1) or ""
-        check(found.startswith("/lib/translators/stl.lua, reads stl, writes stl"),
-              "the STL translator was not found in /lib/translators: %r" % found)
+        check(found.startswith("/Kosmos/Libraries/translators/stl.lua, reads stl, writes stl"),
+              "the STL translator was not found in /Kosmos/Libraries/translators: %r" % found)
 
         mark = len(guest.seen)
         opened = dots_row(8)                                       # Export
@@ -1263,8 +1263,8 @@ def main():
                                        10) or ""),
               "the FBX's parts are not named for the object and its material")
         found = said("cafesa3d: translator Autodesk FBX from ", 0, 1) or ""
-        check(found.startswith("/lib/translators/fbx.lua, reads fbx"),
-              "the FBX translator was not found in /lib/translators: %r" % found)
+        check(found.startswith("/Kosmos/Libraries/translators/fbx.lua, reads fbx"),
+              "the FBX translator was not found in /Kosmos/Libraries/translators: %r" % found)
 
         # And it is still running: nothing above raised.
         check("stack traceback" not in guest.seen and "cafesa3d.lua:" not in guest.seen,

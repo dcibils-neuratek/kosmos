@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- What the machine is, in words: its name, and its network hardware.
 --
---   local hardware = use("/lib/hardware.lua")
+--   local hardware = use("/Kosmos/Libraries/hardware.lua")
 --
 --   hardware.name(sys.info())      "LENOVO 20W000T9US ThinkPad T14 Gen 2i"
 --   hardware.network(sys.bus())    network controllers, driven and not

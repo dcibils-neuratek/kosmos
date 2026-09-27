@@ -73,7 +73,7 @@ static uint8_t *slurp(const char *path, size_t *n)
     return data;
 }
 
-/* The track, as `mp4index.lua` prints it from `/lib/mp4.lua`. */
+/* The track, as `mp4index.lua` prints it from `/Kosmos/Libraries/mp4.lua`. */
 struct index {
     uint8_t config[64];
     size_t  config_n;
@@ -247,7 +247,7 @@ static void one_stream(const char *name, const char *file, const char *ref,
     snprintf(path, sizeof path, "%s%s", STREAMS, file);
 
     if (!read_index(path, &x)) {
-        snprintf(what, sizeof what, "%s: /lib/mp4.lua found no audio track "
+        snprintf(what, sizeof what, "%s: /Kosmos/Libraries/mp4.lua found no audio track "
                  "in %s", name, file);
         check(0, what);
         free(data);

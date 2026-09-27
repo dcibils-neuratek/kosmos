@@ -9,7 +9,7 @@
  * (`h264_kosmos.c`) is only the Lua face.
  *
  * A decoder is a conversation rather than a function, which is what makes
- * it unlike the Motion JPEG it sits beside in `/lib/video.lua`: a picture
+ * it unlike the Motion JPEG it sits beside in `/Kosmos/Libraries/video.lua`: a picture
  * can depend on pictures before and after it, so samples go in in the order
  * they are *decoded* and pictures come out in the order they are *shown*,
  * a few behind. `h264_send` hands over one sample; `h264_receive` answers

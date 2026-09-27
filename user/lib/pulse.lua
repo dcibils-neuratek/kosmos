@@ -22,7 +22,7 @@
 -- bargain one layer down: it draws segments and knows nothing about
 -- processors.
 --
-local ui    = use("/lib/ui.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
 
 local pulse = {}

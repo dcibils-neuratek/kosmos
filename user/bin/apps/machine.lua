@@ -22,8 +22,8 @@
 -- the memory's speed, the graphics accelerator and the USB tree are
 -- listed as unanswerable, with the reason.
 
-local ui = use("/lib/ui.lua")
-local hardware = use("/lib/hardware.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local hardware = use("/Kosmos/Libraries/hardware.lua")
 
 local W, H = 700, 720
 
@@ -381,7 +381,7 @@ head("On the bus")
 -- turning 0x1af4:0x1041 into "virtio-net" is a table, and a table that
 -- lives in a driver is a driver deciding how somebody else prints.
 --
--- The tables are `/lib/hardware.lua`'s, so that a card this listing names is
+-- The tables are `/Kosmos/Libraries/hardware.lua`'s, so that a card this listing names is
 -- called the same thing by `neofetch` and the Network preference.
 local VENDORS = hardware.VENDORS
 local CLASSES = hardware.CLASSES

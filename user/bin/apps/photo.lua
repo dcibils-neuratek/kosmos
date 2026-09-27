@@ -25,9 +25,9 @@
 -- said to drag a big one around, and waited for the scaler to do better -
 -- it did, in 0.10.149 (`ui.image`'s `contain`).
 
-local ui    = use("/lib/ui.lua")
-local panel = use("/lib/panel.lua")
-local files = use("/lib/files.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
+local panel = use("/Kosmos/Libraries/panel.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 -- The *kit's* palette, not a copy of it.
 --

@@ -7,9 +7,9 @@
 --   wm glgears
 --
 -- TinyGL's `gears`, unmodified upstream C, rasterised in software on a
--- machine with no GPU. The window and the loop are `/lib/gldemo.lua`; the
+-- machine with no GPU. The window and the loop are `/Kosmos/Libraries/gldemo.lua`; the
 -- triangles are `runtime/upstream/tinygl/examples/gears.c`.
 
-local demo = use("/lib/gldemo.lua")
+local demo = use("/Kosmos/Libraries/gldemo.lua")
 
 demo("gears", "Gears")

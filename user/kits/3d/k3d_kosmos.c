@@ -1,8 +1,8 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /kits/3d: the 3D Kit, reached from Lua.
+ * /Kosmos/Kits/3d: the 3D Kit, reached from Lua.
  *
- *   local k3 = use("/kits/3d")
+ *   local k3 = use("/Kosmos/Kits/3d")
  *   local scene = k3.scene()
  *   local id = scene:add{ kind = "box", size = { 1.5, 1.5, 1.5 },
  *                         loc = { -1.75, 0.45, 0.75 }, rot = { 0, 0, 24 },

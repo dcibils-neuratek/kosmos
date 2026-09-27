@@ -2,7 +2,7 @@
 /*
  * The Game Kit's software rasterizer: a surface, and every loop that fills it.
  *
- *   local Soft = use("/kits/game").soft
+ *   local Soft = use("/Kosmos/Kits/game").soft
  *   local g = Soft.new(960, 540, gfx.surface{ w = 960, h = 540 })
  *   g:clear(0)  g:line(...)  g:sphere{...}  g:ring{...}  g:sun{...}
  *

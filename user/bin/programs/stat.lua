@@ -14,7 +14,7 @@
 -- disk. Both come back in the same table, which is why the split is worth
 -- naming: everything below `attributes` here was written by somebody.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local name = args:match("^%s*(%S+)")
 

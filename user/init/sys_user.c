@@ -2868,7 +2868,7 @@ static int l_libraries(lua_State *L)
  * The kits, each in its own file, each building its own table.
  *
  * `sys.kit(name)` is the door and it is deliberately dull: `use` turns
- * `/kits/pdf` into a call to it, so a kit is reached the way a library is,
+ * `/Kosmos/Kits/pdf` into a call to it, so a kit is reached the way a library is,
  * through the namespace, and nothing has to know which of the two it got.
  *
  * **A kit is never also a global.** Doom's, Quake's and the Super

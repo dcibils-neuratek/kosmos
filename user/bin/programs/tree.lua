@@ -12,7 +12,7 @@
 -- walk for as long as you let it. Twelve is deeper than anything real and
 -- shallow enough to end.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local MAX_DEPTH = 12
 

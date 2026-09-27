@@ -21,8 +21,8 @@
 -- the window manager: the authority is in the server and this is a view of
 -- it.
 
-local ui    = use("/lib/ui.lua")
-local audio = use("/lib/audio.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
 
 local theme = ui.theme
 
@@ -338,7 +338,7 @@ end
 local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 --
--- **Through `/lib/audio.lua`**, which speaks the server's declared struct.
+-- **Through `/Kosmos/Libraries/audio.lua`**, which speaks the server's declared struct.
 -- This asked `/Devices/audio` with a table, which the server stopped taking
 -- when it moved to `audioproto.h` - so every reply was a refusal, the rows
 -- were always empty, and the window said "nothing is playing" while

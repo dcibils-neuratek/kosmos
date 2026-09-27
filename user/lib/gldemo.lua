@@ -25,9 +25,9 @@
 -- when an allocation fails and an assert here is a panic. The kit refuses
 -- an impossible size now and says what would fit.
 
-local ui = use("/lib/ui.lua")
-local gl = use("/kits/gl")
-local wmproto = use("/lib/wmproto.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local gl = use("/Kosmos/Kits/gl")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 return function(name, title)
   local BG, DIM = 0xff101828, 0xff7c8ba0

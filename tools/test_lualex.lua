@@ -37,8 +37,8 @@ local function is(text, want, what, state)
 end
 
 -- The drawing's own lines (`docs/kosmos-ide.html`), as it colours them.
-is('local ui = use("/lib/ui.lua")',
-   'keyword:local library:use string:"/lib/ui.lua"',
+is('local ui = use("/Kosmos/Libraries/ui.lua")',
+   'keyword:local library:use string:"/Kosmos/Libraries/ui.lua"',
    "a use of a library")
 is('local win = ui.window{ title = "Converter", w = 420, h = 260 }',
    'keyword:local call:window string:"Converter" number:420 number:260',

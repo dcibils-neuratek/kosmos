@@ -25,7 +25,7 @@
 -- still, commands are *fewer bytes* than a buffer swap - and the window
 -- survives this program hanging, which a direct one does not.
 
-local ui    = use("/lib/ui.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
 
 local COLS, ROWS = 10, 20

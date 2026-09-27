@@ -18,7 +18,7 @@
 -- they are the thing the window is for, the way a list is what Tracker is
 -- for. The rule is about verbs that act on what the window shows.
 
-local ui    = use("/lib/ui.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
 
 --

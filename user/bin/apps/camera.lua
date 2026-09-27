@@ -17,7 +17,7 @@
 -- a list of commands the window manager draws - cannot carry. So the header
 -- and its controls come from `pixelkit`, at the kit's numbers, and the
 -- picture comes from `surface:camera`, in C, straight out of the region the
--- driver writes (`/lib/camera.lua`). No pixel passes through this file.
+-- driver writes (`/Kosmos/Libraries/camera.lua`). No pixel passes through this file.
 --
 -- **Record** records to H.264 in an MP4 in `/Home/videos` (step 8f), and
 -- R does it from the keyboard, as M mirrors.
@@ -25,11 +25,11 @@
 --   camera                 the first camera, at 640x480
 --   camera 320x240         at that size, or the largest inside it
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
-local pk = use("/lib/pixelkit.lua").new(ui)
-local camera = use("/lib/camera.lua")
-local wmproto = use("/lib/wmproto.lua")
+local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
+local camera = use("/Kosmos/Libraries/camera.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local L = ui.layout
 
 local want_w, want_h = 640, 480
@@ -93,7 +93,7 @@ end
 -- kit takes the camera's bytes and the mirror is only this window's.
 --------------------------------------------------------------------------
 
-local clock = use("/lib/clock.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
 local VIDEOS = "/Home/videos"
 
 -- A size as a person reads it: KB under a megabyte, where "0.0 MB" read as

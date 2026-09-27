@@ -51,7 +51,7 @@ def this_boards_image():
 PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The loader's test program (`tools/run_loader.py`).
 {line}
-local kit = use("/kits/apptest")
+local kit = use("/Kosmos/Kits/apptest")
 print("apptest: " .. tostring(kit.answer()))
 """
 

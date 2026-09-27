@@ -25,7 +25,7 @@
 -- what starts applications. The window manager knows how to composite and
 -- should not learn a policy about which programs a person likes.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 
 local SETTINGS = "/Home/.startup"
 
@@ -78,7 +78,7 @@ local ticked = {}
 -- opened. A panel that showed nothing ticked while three applications were
 -- on the desktop would be the machine contradicting itself.
 --
-for _, name in ipairs(use("/lib/startup.lua").items()) do
+for _, name in ipairs(use("/Kosmos/Libraries/startup.lua").items()) do
   ticked[tostring(name)] = true
 end
 

@@ -32,14 +32,14 @@
 -- the difference between two readings.** Totals since boot, per core; the
 -- subtractions below are the whole of what makes them a meter.
 --
--- The processor meters this replaced were BeOS's Pulse (`/lib/pulse.lua`),
+-- The processor meters this replaced were BeOS's Pulse (`/Kosmos/Libraries/pulse.lua`),
 -- which `cores` still draws.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 -- The kit's palette, not a copy: only the one `ui.lua` holds is the one it
 -- changes when the desktop changes look.
 local theme = ui.theme
-local pulse = use("/lib/pulse.lua")
+local pulse = use("/Kosmos/Libraries/pulse.lua")
 local L = ui.layout
 
 local load0 = sys.cpuload() or {}

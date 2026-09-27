@@ -3,7 +3,7 @@
 --
 --   build/host/lua tools/test_prockind.lua
 --
--- `/lib/prockind.lua` over rows shaped as `sys.processes()` gives them, and
+-- `/Kosmos/Libraries/prockind.lua` over rows shaped as `sys.processes()` gives them, and
 -- a `/bin` with the Drives app in it - the name the drives server shares.
 
 local prockind = dofile("user/lib/prockind.lua")

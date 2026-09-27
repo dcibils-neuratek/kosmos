@@ -12,12 +12,12 @@
 -- does not have yet. The mechanism is the same either way and the pointer
 -- is the part that is missing.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 
-local source = fs.read("/lib/clock-replicant.lua")
+local source = fs.read("/Kosmos/Libraries/clock-replicant.lua")
 
 if not source then
-  print("clock: /lib/clock-replicant.lua is not there")
+  print("clock: /Kosmos/Libraries/clock-replicant.lua is not there")
   return
 end
 

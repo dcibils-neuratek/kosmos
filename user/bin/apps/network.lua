@@ -19,8 +19,8 @@
 -- with a real question behind it - which one is the default route - and it
 -- can be built then.
 
-local ui = use("/lib/ui.lua")
-local hardware = use("/lib/hardware.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local hardware = use("/Kosmos/Libraries/hardware.lua")
 local theme = ui.theme
 
 local W, H = 500, 490
@@ -75,7 +75,7 @@ end
 
 local info = fs.net_info("/Network")
 
--- Which card, from the bus. See `/lib/hardware.lua` for why it is not the
+-- Which card, from the bus. See `/Kosmos/Libraries/hardware.lua` for why it is not the
 -- name of the driver.
 local driven, undriven = hardware.network(sys.bus())
 local L = ui.layout

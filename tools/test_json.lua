@@ -1,5 +1,5 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- /lib/json.lua on this machine: what JSON is, read and written back, and
+-- /Kosmos/Libraries/json.lua on this machine: what JSON is, read and written back, and
 -- what it is not, refused with where.
 --
 -- Cafesa3D's scenes are glTF, which is JSON, and a scene is a file from

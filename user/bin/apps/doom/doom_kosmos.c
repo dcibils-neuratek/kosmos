@@ -451,7 +451,7 @@ static const luaL_Reg doom_lib[] = {
 };
 
 /*
- * The kit, `use("/kits/doom")`, and the size Doom renders at, so the Lua side
+ * The kit, `use("/Kosmos/Kits/doom")`, and the size Doom renders at, so the Lua side
  * can make a window that fits without either of them carrying the other's
  * number.
  *

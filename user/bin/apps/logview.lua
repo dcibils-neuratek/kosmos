@@ -47,7 +47,7 @@
 -- (`ui.md` 16.20).
 --------------------------------------------------------------------------
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -200,12 +200,12 @@ local view = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
 view.focusable = true
 
 --
--- **Its own text size**, from the View menu (`/lib/textsize.lua`): Diego,
+-- **Its own text size**, from the View menu (`/Kosmos/Libraries/textsize.lua`): Diego,
 -- 22 September, "a way to increase font size in the menu of the log viewer
 -- and terminal". Kept in `/Home/.logview`. The rows are measured and drawn
 -- in `size:face()` at `size:size()`, so a new size rewraps them.
 --
-local textsize = use("/lib/textsize.lua")
+local textsize = use("/Kosmos/Libraries/textsize.lua")
 local size = textsize.new(ui, "/Home/.logview")
 
 --

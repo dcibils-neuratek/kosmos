@@ -13,14 +13,14 @@
 -- in use, and the disk server counts the free ones out of the bitmap, so
 -- that is a real number. (This said the superblock kept a free count. It
 -- never did, and the server's stand-in for one ignored every file.) `/Temporary` is a fixed pool of nodes decided at
--- compile time. `/bin` and `/lib` are in the image and cannot grow at all.
+-- compile time. `/bin` and `/Kosmos/Libraries` are in the image and cannot grow at all.
 -- Rather than invent a total for each, this prints what each one is able
 -- to say and leaves the rest blank, which is the honest shape.
 --
 -- `diskinfo` is the long answer about the disk alone, including the
 -- geometry and where the journal sits.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local MAX_DEPTH = 12
 

@@ -260,7 +260,7 @@ number it is spawned with decides what it becomes.
 **Where that number is answered moved in September 2026.** `user/init/main.c`
 dispatches the server roles *before* the Lua interpreter is opened, so those
 processes have no collector at all rather than a promise not to allocate:
-`/Devices/audio`, `/Devices`, `/bin`, `/lib`, `/Running`, `/Devices/console` and `/Temporary` are
+`/Devices/audio`, `/Devices`, `/bin`, `/Kosmos/Libraries`, `/Running`, `/Devices/console` and `/Temporary` are
 each one file in `user/servers/`, speaking a struct declared in
 `user/include/`.
 
@@ -275,9 +275,9 @@ something else read off the wire, so it is a server; `e1000` owns a card, so
 it is not.
 
 **Beside them, the two things that are not processes at all.** A *kit* is C
-compiled into whoever asks for it - `use("/kits/pdf")` - and lives in
+compiled into whoever asks for it - `use("/Kosmos/Kits/pdf")` - and lives in
 `user/kits/`, one directory per kit. A *library* is the same position in
-Lua - `use("/lib/ui.lua")` - and lives in `user/lib/`. No message crosses
+Lua - `use("/Kosmos/Libraries/ui.lua")` - and lives in `user/lib/`. No message crosses
 either: calling one is a function call in your own address space, which is
 the whole difference from a server.
 

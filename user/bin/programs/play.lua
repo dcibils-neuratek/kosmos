@@ -14,9 +14,9 @@
 -- The Video app (`docs/video.html`) is this with chrome around it, and so
 -- is anybody else's.
 --
-local ui = use("/lib/ui.lua")
-local media = use("/lib/media.lua")
-local wmproto = use("/lib/wmproto.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local media = use("/Kosmos/Libraries/media.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 --
 -- The argument a program is started with is a string in `args`, which is

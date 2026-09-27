@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""`/lib/media.lua` on the machine, heard: a tone played, sought and finished.
+"""`/Kosmos/Libraries/media.lua` on the machine, heard: a tone played, sought and finished.
 
 The engine under Music, and under a video app later (`docs/music.html`). What
 it promises is about time, and time is the sound's - so this holds it to the
@@ -469,7 +469,7 @@ def main():
     # Each line the program prints is put together from pieces, so the line
     # typed to start it - which the shell echoes - never holds the words
     # waited for.
-    program = ('local media = use("/lib/media.lua") '
+    program = ('local media = use("/Kosmos/Libraries/media.lua") '
                'local v = assert(media.open("/Home/vbr.mp3")) '
                'print("media" .. ": vbr " .. v.info.seconds .. " s " .. v.info.bitrate '
                '.. " kbps " .. tostring(v.info.vbr)) v:close() '
@@ -537,7 +537,7 @@ def main():
         # its own phase for what reaches the screen.
         #
         film_program = (
-            'local media = use("/lib/media.lua") '
+            'local media = use("/Kosmos/Libraries/media.lua") '
             'local f, why = media.open("/Home/tiny.mp4") '
             'if not f then print("film" .. ": no " .. tostring(why)) return end '
             'print("film" .. ": " .. f.codec .. " " .. f.width .. "x" .. f.height '
@@ -680,8 +680,8 @@ def main():
         # than across a pause somebody has to time.
         #
         def play_one(muted, marker):
-            return ('local media = use("/lib/media.lua") '
-                    'local audio = use("/lib/audio.lua") '
+            return ('local media = use("/Kosmos/Libraries/media.lua") '
+                    'local audio = use("/Kosmos/Libraries/audio.lua") '
                     'local hz = fs.read("/Devices/cpu").counter_hz '
                     'local was = audio.stats() '
                     'audio.set{ master_muted = %s } '
@@ -1067,8 +1067,8 @@ def main():
         guest.wait_for(PROMPT, "reached a shell")
 
         program = (
-            "local ui = use('/lib/ui.lua') "
-            "local media = use('/lib/media.lua') "
+            "local ui = use('/Kosmos/Libraries/ui.lua') "
+            "local media = use('/Kosmos/Libraries/media.lua') "
             "local name, cw, ch = media.cover('/Home/cover.mp3') "
             "if not name then print('cover: ' .. tostring(cw)) return end "
             "print('cover: ' .. name .. ' ' .. tostring(cw) .. 'x' .. tostring(ch)) "
@@ -1328,7 +1328,7 @@ def main():
     #
     run_screenshot.use_audiodev("none,id=snd0")
 
-    clock = ('local media = use("/lib/media.lua") '
+    clock = ('local media = use("/Kosmos/Libraries/media.lua") '
              'local p = assert(media.open("/Home/tone.wav")) '
              'local hz = fs.read("/Devices/cpu").counter_hz '
              'local t0 = sys.ticks() '
@@ -1415,7 +1415,7 @@ def main():
     # needs one to have a level at all, and a window of its own well away
     # from the corner.
     #
-    level_prog = ("local ui = use('/lib/ui.lua') "
+    level_prog = ("local ui = use('/Kosmos/Libraries/ui.lua') "
                   "local w = ui.window{ title = 'Level', w = 240, h = 140, "
                   "x = 200, y = 300 } "
                   "if w then w:run() end")

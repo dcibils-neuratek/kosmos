@@ -10,7 +10,7 @@
 --   Open                          choose a file
 --
 -- `roadmap.md` asked for this at M7 and named the missing piece exactly: not
--- the parser, which is small and in `/lib/markdown.lua`, but "a view that
+-- the parser, which is small and in `/Kosmos/Libraries/markdown.lua`, but "a view that
 -- wraps text". That is what this is - the parser produces blocks, the
 -- wrapper turns them into lines that fit, and this draws the lines with a
 -- colour per kind.
@@ -20,9 +20,9 @@
 -- what this display can actually do. Pretending to a second font size by
 -- drawing a heading twice as wide would be worse than saying it plainly.
 
-local ui       = use("/lib/ui.lua")
-local panel    = use("/lib/panel.lua")
-local markdown = use("/lib/markdown.lua")
+local ui       = use("/Kosmos/Libraries/ui.lua")
+local panel    = use("/Kosmos/Libraries/panel.lua")
+local markdown = use("/Kosmos/Libraries/markdown.lua")
 local theme    = ui.theme
 
 local W, H = 620, 460
@@ -169,7 +169,7 @@ A markdown viewer, written for the manuals this system will carry.
 Inline `code` keeps its backticks, and a fenced block is shown whole:
 
 ```
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 print("hello from Kosmos")
 ```
 

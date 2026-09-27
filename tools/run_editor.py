@@ -7,7 +7,7 @@ own keyboard - `sendkey`, which goes through the virtio keyboard on one
 board and the PS/2 controller on the other - so what is checked is the
 whole path a key takes: the driver, the board's sequence with its
 modifiers, the window manager, the kit's decoder, and `ui.editor` doing
-what the key means over `/lib/textbuf.lua`.
+what the key means over `/Kosmos/Libraries/textbuf.lua`.
 
 One file is written by keys alone and saved with Control-S, then read back
 at the prompt, and it has to be exactly what the keys meant:

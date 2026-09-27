@@ -38,13 +38,13 @@
 -- it a wall clock is a mount, and a decision about which servers get one,
 -- rather than a line here.
 
-local ui    = use("/lib/ui.lua")
-local files = use("/lib/files.lua")
-local types = use("/lib/filetypes.lua")
-local layout = use("/lib/iconlayout.lua")
-local iconsize = use("/lib/iconsize.lua")
-local placelib = use("/lib/places.lua")
-local sidebar  = use("/lib/sidebar.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
+local files = use("/Kosmos/Libraries/files.lua")
+local types = use("/Kosmos/Libraries/filetypes.lua")
+local layout = use("/Kosmos/Libraries/iconlayout.lua")
+local iconsize = use("/Kosmos/Libraries/iconsize.lua")
+local placelib = use("/Kosmos/Libraries/places.lua")
+local sidebar  = use("/Kosmos/Libraries/sidebar.lua")
 local theme = ui.theme
 
 local W, H = 780, 520
@@ -619,7 +619,7 @@ end
 -- mounts are one press away through the place button's menu, which starts
 -- at `/`.
 --
--- `/lib/sidebar.lua` still answers for the drives and is what the Open and
+-- `/Kosmos/Libraries/sidebar.lua` still answers for the drives and is what the Open and
 -- Save window draws; Tracker lists them itself because its sidebar is the
 -- drawing's list and not a tree.
 --
@@ -1206,7 +1206,7 @@ local function open_selected()
   elseif e.kind == "directory" then
     visit(path_of(e))
   else
-    -- How it opens is `/lib/filetypes.lua`'s answer, not Tracker's.
+    -- How it opens is `/Kosmos/Libraries/filetypes.lua`'s answer, not Tracker's.
     -- Tracker does not need to know what an editor is - only that opening
     -- a file is somebody else's job and that something knows whose. A Lua
     -- file is a program and runs, which needs its opening comment to say

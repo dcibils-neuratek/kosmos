@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The UI kit: a view tree, follow modes, and widgets.
 --
---   local ui = use("/lib/ui.lua")
+--   local ui = use("/Kosmos/Libraries/ui.lua")
 --
 --   local win = ui.window{ title = "example", w = 400, h = 240 }
 --   win:add(ui.label{ x = 12, y = 12, text = "Hello" })
@@ -32,8 +32,8 @@
 -- against the same model.
 --------------------------------------------------------------------------
 
-local theme = use("/lib/theme.lua")
-local wmproto = use("/lib/wmproto.lua")
+local theme = use("/Kosmos/Libraries/theme.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 local ui = { theme = theme }
 
@@ -926,7 +926,7 @@ ui.leds = leds
 -- sequence and a widget that wants to know "up" has to reassemble it. One
 -- decoder does that for every reader - `win:run()` and any application with
 -- a direct window that drives its own loop - and it lives in
--- `/lib/keys.lua`, which says what a key's number is made of and is tested
+-- `/Kosmos/Libraries/keys.lua`, which says what a key's number is made of and is tested
 -- on the Mac (`tools/test_keys.lua`).
 --
 -- The names are here too, so a widget writes `ui.HOME` and `ui.CTRL`
@@ -935,7 +935,7 @@ ui.leds = leds
 -- nothing of modifiers goes on working and simply does not answer Ctrl+Up.
 --------------------------------------------------------------------------
 
-local keys = use("/lib/keys.lua")
+local keys = use("/Kosmos/Libraries/keys.lua")
 
 ui.UP, ui.DOWN, ui.RIGHT, ui.LEFT = keys.UP, keys.DOWN, keys.RIGHT, keys.LEFT
 ui.HOME, ui.END, ui.PAGEUP, ui.PAGEDOWN = keys.HOME, keys.END,
@@ -3638,7 +3638,7 @@ end
 --   ui.editor{ x =, y =, w =, h =, text = "..." }
 --   ui.editor{ ..., code = "lua" }       the IDE's: coloured, marked, Tab kept
 --
--- **The view over a `/lib/textbuf.lua`**, which holds the lines, the caret,
+-- **The view over a `/Kosmos/Libraries/textbuf.lua`**, which holds the lines, the caret,
 -- the selection and the undo, and is tested on the Mac. This file draws it
 -- and turns keys and the pointer into its calls. It was an array of lines
 -- and a cursor with every edit written out where its key was handled - "no
@@ -3649,7 +3649,7 @@ end
 -- report use and the display harness checks the colours of: a block caret
 -- on the character, a selection in the caret's colours, `%4d ` numbers.
 -- And `code`, as `docs/kosmos-ide.html` draws it: Lua coloured by
--- `/lib/lualex.lua`, a gutter with a column for marks and the numbers
+-- `/Kosmos/Libraries/lualex.lua`, a gutter with a column for marks and the numbers
 -- right-aligned and faint, the current line on a band, a line with
 -- something wrong tinted and marked with its dot or triangle and the words
 -- underlined, and a thin caret in the accent. Editing is the same in both:
@@ -3662,8 +3662,8 @@ end
 -- an editor that hangs is a window you can still move.
 --
 
-local textbuf = use("/lib/textbuf.lua")
-local lualex = use("/lib/lualex.lua")
+local textbuf = use("/Kosmos/Libraries/textbuf.lua")
+local lualex = use("/Kosmos/Libraries/lualex.lua")
 
 --
 -- **The code look's colours: the drawing's two palettes, light and dark,
@@ -3721,7 +3721,7 @@ function ui.editor(spec)
 
   -- The face it draws in: `spec.face`, a function asked each time it is
   -- needed - a sized face is given back when the desktop's faces change,
-  -- so one kept would name a slot that is gone (`/lib/textsize.lua`) - or
+  -- so one kept would name a slot that is gone (`/Kosmos/Libraries/textsize.lua`) - or
   -- the desktop's `mono`. It is how the IDE makes its text larger.
   v.face = spec.face
 
@@ -5175,7 +5175,7 @@ end
 --
 -- **A view drawn into a surface**, for a window whose pixels its program
 -- draws: the same commands a kit window sends the window manager, made the
--- same way and replayed by `/lib/paint.lua`, which is the window manager's
+-- same way and replayed by `/Kosmos/Libraries/paint.lua`, which is the window manager's
 -- own - so a widget looks the same in either kind of window. Cafesa3D's
 -- Script panel is the first to want it, for the IDE's editor (`roadmap.md`
 -- 6n, step 6). `x`, `y` is where the view's own corner lands in the surface,
@@ -5208,7 +5208,7 @@ do
   end
 
   function ui.paint_view(view, surface, x, y)
-    painter = painter or use("/lib/paint.lua").new(picture, ui.sized)
+    painter = painter or use("/Kosmos/Libraries/paint.lua").new(picture, ui.sized)
 
     local g = new_gc()
 
@@ -5216,7 +5216,7 @@ do
     g.cx, g.cy, g.cw, g.ch = x or 0, y or 0, view.w, view.h
 
     view:paint(g)
-    use("/lib/paint.lua").run(surface, g.ops, painter)
+    use("/Kosmos/Libraries/paint.lua").run(surface, g.ops, painter)
   end
 end
 

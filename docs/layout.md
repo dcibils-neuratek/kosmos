@@ -128,11 +128,11 @@ still compiled into the image rather than read from a disk.
 | what | today | to change it |
 |---|---|---|
 | programs and applications | inside the kernel image, served from `/bin` | write them to the disk at build time |
-| libraries | inside the image, served from `/lib` | the same |
+| libraries | inside the image, served from `/Kosmos/Libraries` | the same |
 | the servers | one C file each in `user/servers/`, chosen by a role number that `user/init/main.c` dispatches before Lua is opened | see below |
 | the drivers | the same, one C file each in `user/drivers/`, under the device's kind - `net/`, `usb/`, `display/`, `power/`. Built and spawned identically to a server; the directory is for whoever is reading | see below |
-| the kits | C compiled into every process, one directory each in `user/kits/`, reached as `use("/kits/<name>")` | see `glossary.md` |
-| the libraries | the same position in Lua, one file each in `user/lib/`, reached as `use("/lib/<name>.lua")` | the same |
+| the kits | C compiled into every process, one directory each in `user/kits/`, reached as `use("/Kosmos/Kits/<name>")` | see `glossary.md` |
+| the libraries | the same position in Lua, one file each in `user/lib/`, reached as `use("/Kosmos/Libraries/<name>.lua")` | the same |
 | the apps and programs | Lua, in `user/bin/apps/` and `user/bin/programs/`, both served flat at `/bin` | write them to the disk at build time |
 | fonts and images | inside the image, ~700 KB of it | write them to the disk; the wallpaper case wants this first |
 | `/Home` | a real disk, real files, journalled | done |
@@ -195,7 +195,7 @@ now.
 3. **Move fonts and assets to the disk.** Reclaims most of the 19.6 MB the
    image currently costs across fourteen processes, and makes wallpapers
    possible.
-4. **Move `/bin` and `/lib` to the disk**, and split them into
+4. **Move `/bin` and `/Kosmos/Libraries` to the disk**, and split them into
    `/system/...` and `/user/...`.
 5. **An ELF loader**, when a server or an application should be its own
    binary. This is also what Doom needs, since Doom is not Lua.

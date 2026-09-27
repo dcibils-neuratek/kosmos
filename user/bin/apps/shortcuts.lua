@@ -29,7 +29,7 @@
 -- list. It cannot be out of date, because there is only one of it.
 --------------------------------------------------------------------------
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 
 --
 -- Wide enough for the longest sentence in the list, which is a thing to

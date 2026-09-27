@@ -306,11 +306,11 @@ static int l_pdf_scan(lua_State *L)
 }
 
 /*
- * The PDF kit: `use("/kits/pdf")`.
+ * The PDF kit: `use("/Kosmos/Kits/pdf")`.
  *
  * The scanner and the names for what it returns, and deliberately nothing
  * else: the object layer and the content interpreter above it are Lua, in
- * `/lib/pdf.lua` and `/lib/pdfpage.lua`, because they are where the
+ * `/Kosmos/Libraries/pdf.lua` and `/Kosmos/Libraries/pdfpage.lua`, because they are where the
  * decisions live and where the changes will be. This half is a scanner for a
  * syntax that was frozen in 1993 and has nothing to reload.
  */

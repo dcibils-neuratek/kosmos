@@ -19,20 +19,20 @@
 -- view is a surface's worth of pixels on every turn of it, which a widget
 -- cannot carry. So the header comes from `pixelkit` and the rest is drawn
 -- here with a surface's primitives - and **no pixel of the 3D view is
--- computed in this file**: the 3D Kit (`/kits/3d`) holds the scene and
+-- computed in this file**: the 3D Kit (`/Kosmos/Kits/3d`) holds the scene and
 -- draws it, and this file decides what is in it and where the eye is.
 --
 --   cafesa3d              the still life
 --   cafesa3d --wire       starting in Wireframe
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
-local pk = use("/lib/pixelkit.lua").new(ui)
-local wmproto = use("/lib/wmproto.lua")
-local k3 = use("/kits/3d")
-local json = use("/lib/json.lua")
-local scenefile = use("/lib/scenefile.lua")
-local game = use("/kits/game")
+local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local k3 = use("/Kosmos/Kits/3d")
+local json = use("/Kosmos/Libraries/json.lua")
+local scenefile = use("/Kosmos/Libraries/scenefile.lua")
+local game = use("/Kosmos/Kits/game")
 local L = ui.layout
 
 --------------------------------------------------------------------------
@@ -3376,7 +3376,7 @@ end
 
 --------------------------------------------------------------------------
 -- Opening a scene: the samples the image carries (`roadmap.md` 4l), read
--- out of glTF by `/lib/scenefile.lua`, which trusts nothing in the file.
+-- out of glTF by `/Kosmos/Libraries/scenefile.lua`, which trusts nothing in the file.
 -- The whole scene is replaced - one undo step - and the view goes to where
 -- the scene's camera stands.
 --
@@ -3576,7 +3576,7 @@ end
 
 --------------------------------------------------------------------------
 -- Saving, and opening what was saved (`roadmap.md` 4l, step 5). glTF, as
--- the samples are, written by `/lib/scenefile.lua` - so the reader that
+-- the samples are, written by `/Kosmos/Libraries/scenefile.lua` - so the reader that
 -- opens a sample opens a saved scene, and any other program's glTF reader
 -- opens it too. Through the Open and Save panel every application has,
 -- into /Home/Scenes unless the scene came from somewhere else.
@@ -3619,7 +3619,7 @@ end
 -- its last picture meanwhile. Where it opened is said, for whoever drives
 -- Cafesa3D from outside (`tools/run_cafesa3d.py`).
 function FILE.panel(kind, spec)
-  local chooser = use("/lib/panel.lua")[kind](spec)
+  local chooser = use("/Kosmos/Libraries/panel.lua")[kind](spec)
 
   if not chooser then return false end
 
@@ -3674,7 +3674,7 @@ function FILE.ext(name) return (name:match("%.(%w+)$") or ""):lower() end
 
 --------------------------------------------------------------------------
 -- Other programs' formats: translators (`roadmap.md` 4l, 5c), as BeOS's
--- Translation Kit had them - one Lua file a format, in /lib/translators/
+-- Translation Kit had them - one Lua file a format, in /Kosmos/Libraries/translators/
 -- and in /Home/Translators for those a person adds, each saying what it
 -- reads and writes. Found once, the first time one is wanted. Each is
 -- handed the 3D Kit's readers and writers, a way to make a material, and
@@ -3693,8 +3693,8 @@ function FILE.translators()
 
   local where = {}
 
-  for _, name in ipairs(fs.list("/lib") or {}) do
-    if name:match("^translators/[%w_%-]+%.lua$") then where[#where + 1] = "/lib/" .. name end
+  for _, name in ipairs(fs.list("/Kosmos/Libraries") or {}) do
+    if name:match("^translators/[%w_%-]+%.lua$") then where[#where + 1] = "/Kosmos/Libraries/" .. name end
   end
 
   for _, name in ipairs(fs.list("/Home/Translators") or {}) do

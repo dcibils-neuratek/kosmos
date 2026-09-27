@@ -184,16 +184,16 @@ def main():
         # from where it is, and the IDE says first that it is a library.
         stop_desktop()
         mark = len(guest.seen)
-        guest.type("wm ide:/lib/bench.lua")
+        guest.type("wm ide:/Kosmos/Libraries/bench.lua")
         said("ide: project ", mark, 90)
         time.sleep(1.5)
         mark = len(guest.seen)
         press("ctrl-ret")
         library = said("ide: bench.lua is a library: ", mark, 20)
         bench = said("ide: bench.lua ended, ", mark, 60)
-        check(library is not None and 'use("/lib/bench.lua")' in library
+        check(library is not None and 'use("/Kosmos/Libraries/bench.lua")' in library
               and bench is not None and bench.startswith("code 0"),
-              "/lib/bench.lua was not said to be a library and run to its end: "
+              "/Kosmos/Libraries/bench.lua was not said to be a library and run to its end: "
               "%r, %r" % (library, bench))
 
         # **Text larger and smaller** (Diego, 27 September, "like we have in
@@ -306,7 +306,7 @@ def main():
         # typed on a new line, `ui.` offering ui.lua's names, `sl` and Tab
         # taking `slider`, and `win:` offering a window's methods.
         stop_desktop()
-        guest.type('fs.write("/Home/development/u.lua", "local ui = use(\\"/lib/ui.lua\\")\\n'
+        guest.type('fs.write("/Home/development/u.lua", "local ui = use(\\"/Kosmos/Libraries/ui.lua\\")\\n'
                    'local win = ui.window{}\\nlocal s = ui.slidr{}\\nprint(s, win)\\n")')
         time.sleep(1)
         mark = len(guest.seen)
@@ -350,15 +350,15 @@ def main():
         mark = len(guest.seen)
         press("ctrl-p", "shift-c", "l", "o", "c")
         listed = said("ide: find Cloc: ", mark, 30)
-        check(listed == "3 files: /bin/clock.lua application, /lib/clock.lua library, "
-                        "/lib/clock-replicant.lua library",
+        check(listed == "3 files: /bin/clock.lua application, /Kosmos/Libraries/clock.lua library, "
+                        "/Kosmos/Libraries/clock-replicant.lua library",
               "Cloc did not find the Clock, then the library, then the longer name, "
               "whatever the case: %r" % listed)
 
         mark = len(guest.seen)
         press("down", "ret")
-        check(said("ide: opened ", mark, 20) == "/lib/clock.lua, read only",
-              "Down and Enter did not open the second file found, /lib/clock.lua")
+        check(said("ide: opened ", mark, 20) == "/Kosmos/Libraries/clock.lua, read only",
+              "Down and Enter did not open the second file found, /Kosmos/Libraries/clock.lua")
 
         mark = len(guest.seen)
         press("ctrl-p", "u", "dot", "l")

@@ -43,7 +43,7 @@ audio period is 5.8 ms and a frame is 16. Not speed — structure-shaped Lua
 costs about 2%, measured, which is nothing. The worst case is what decides.
 
 Seven servers speak structs declared in `user/include/`: `/Devices/audio`,
-`/Devices`, `/bin`, `/lib`, `/Running`, `/Devices/console`, `/Temporary`. Five headers, about
+`/Devices`, `/bin`, `/Kosmos/Libraries`, `/Running`, `/Devices/console`, `/Temporary`. Five headers, about
 3,700 lines with the servers themselves. Everything above them is still Lua
 tables, and that is most of the system.
 
@@ -481,9 +481,9 @@ in the Lua above it. That is why the speed exceptions are allowed at all.
 That C is reached two ways, and they are not equal. `sys` and `gfx` are
 opened into every Lua state by `kosmos_lua_open`, because every process asks
 the kernel for things and every process can draw. Everything else is a
-**kit**: `use("/kits/pdf")` asks `sys.kit`, which builds the table from the
+**kit**: `use("/Kosmos/Kits/pdf")` asks `sys.kit`, which builds the table from the
 list in `sys_user.c`, and a program that does not ask does not have it. The
-caller writes the line it would write for `use("/lib/ui.lua")`, so a hot loop
+caller writes the line it would write for `use("/Kosmos/Libraries/ui.lua")`, so a hot loop
 moved into C changes no call site.
 
 **A kit is never also a global.** Doom's, Quake's and the Super Nintendo's
@@ -500,10 +500,10 @@ comment; `doom` did the same in the default image, and `quake` in a `MEGA=1`
 one. `wm snes:--scale 2` and launchers worked, because they start
 `/bin/snes.lua` by path, which is how it went unnoticed.
 
-They are `/kits/doom`, `/kits/quake` and `/kits/snes` now, in the list only
+They are `/Kosmos/Kits/doom`, `/Kosmos/Kits/quake` and `/Kosmos/Kits/snes` now, in the list only
 where the image compiles them, and each program asks with `pcall` and says
 which build it is on when the answer is no - as `browser.lua` asks for
-`/kits/web`.
+`/Kosmos/Kits/web`.
 
 **The move went wrong once itself, and how is the other half of the rule.**
 One `lua_setglobal` stayed behind in `snes_kosmos.c`. A kit's build function
@@ -561,8 +561,8 @@ a file before playing it, and the conformance test found both
 than guessed, and cropping is to the pixel rather than to an aligned column.
 
 **The sound came through the same door**, with one decoder named in the
-script and a kit beside the first: `/kits/aac`, one frame in and sixteen-bit
-PCM out, shaped like `/kits/mp3`'s so the film's sound treats them alike.
+script and a kit beside the first: `/Kosmos/Kits/aac`, one frame in and sixteen-bit
+PCM out, shaped like `/Kosmos/Kits/mp3`'s so the film's sound treats them alike.
 More than two channels are mixed to two inside the decoder rather than
 after, because only the decoder knows which channel is which: FFmpeg hands
 them back in its own order, and a stream with a program config element
@@ -584,7 +584,7 @@ rather be late than skip.
 
 Cafesa3D (`roadmap.md` 4l) arranges a scene in a rasterised view and judges
 it in a ray-traced one, and both read the same objects - so the objects live
-in C, in `/kits/3d`, and the application holds their names and its own
+in C, in `/Kosmos/Kits/3d`, and the application holds their names and its own
 state. **An object is its id** on the Lua side: nothing that points into the
 scene crosses the boundary, because removing an object moves the ones after
 it, which the kit's own test found the first time it kept a pointer.
@@ -623,7 +623,7 @@ out tiles through an atomic counter. And the kit's interface is a scene and
 when Kosmos has one (7.1).
 
 **The ray tracer is the kit's, not a kit of its own** (`k3d_trace.c`). The
-roadmap once named a `/kits/ray`; but a render reads the very objects the
+roadmap once named a `/Kosmos/Kits/ray`; but a render reads the very objects the
 Solid view draws, so a second kit would have been a copy of the scene
 behind a second interface. It traces two ways, as `docs/cafesa3d.html`
 drew: *Final* is path tracing, Cycles' method, and *Preview* is Whitted's.
@@ -885,7 +885,7 @@ One tree on the SD card, persistent, with real files:
 
 ```
 /system    binaries and config
-/lib       Lua libraries
+/Kosmos/Libraries       Lua libraries
 /apps      installed apps
 /Home      user data
 ```
@@ -1159,7 +1159,7 @@ That reduction is the whole argument, and it is the reason to build this even if
 
 The full design of the UI kit and window manager is in [ui.md](ui.md). Summary: BeOS lineage (view tree, follow modes, one message handler per window, replicants), with the locks removed because coroutines replace threads, and with `Draw()` producing commands instead of writing into a shared buffer.
 
-The consistency rule: **an app does not draw UI primitives.** The kit lives in `/lib/ui` and is resolved by namespace, and the visual tokens are in `/system/ui/theme`. Editing `button.lua` changes every app the next time one starts - it used to say "instantly", which was written when servers reloaded and was never true of a *library* anyway: `use` caches what it loaded, and an application holds the table it was given.
+The consistency rule: **an app does not draw UI primitives.** The kit lives in `/Kosmos/Libraries/ui` and is resolved by namespace, and the visual tokens are in `/system/ui/theme`. Editing `button.lua` changes every app the next time one starts - it used to say "instantly", which was written when servers reloaded and was never true of a *library* anyway: `use` caches what it loaded, and an application holds the table it was given.
 
 ### 9.7 The first app
 
@@ -1348,7 +1348,7 @@ The line was crossed the moment `fork`, signals, a global `/`, or a server handi
 
 **For porting apps (M10):** `malloc`/`free` over the process heap, `printf`, `abort`, `qsort`, and `fopen`/`fread`/`fwrite`/`fclose`.
 
-**The rule that holds the line:** every libc I/O function is a call into the process's namespace and nothing else. `fopen("/lib/config")` resolves against what was mounted for it. If it does not have it, it fails. No fallback to a global tree, no special case.
+**The rule that holds the line:** every libc I/O function is a call into the process's namespace and nothing else. `fopen("/Kosmos/Libraries/config")` resolves against what was mounted for it. If it does not have it, it fails. No fallback to a global tree, no special case.
 
 **Never:** `fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`, and all of `unistd.h`. If a port asks for one, patch the port.
 

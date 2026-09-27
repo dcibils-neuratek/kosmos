@@ -16,9 +16,9 @@
 -- **Which decoder is behind it is not a fact its user should have to
 -- know** (`CLAUDE.md`, on kits). It decoded Motion JPEG first, because
 -- `gfx.jpeg` was already in the image; it decodes H.264 now, through
--- FFmpeg's decoder in `/kits/h264` (`roadmap.md` 4e), and nothing written
+-- FFmpeg's decoder in `/Kosmos/Kits/h264` (`roadmap.md` 4e), and nothing written
 -- against this file changed - not one call site. That is the same promise
--- `use("/kits/pdf")` makes about a scanner that moved from Lua to C.
+-- `use("/Kosmos/Kits/pdf")` makes about a scanner that moved from Lua to C.
 --
 -- **It owns the clock and not the loop.** An application has a loop
 -- already - it is answering the pointer and the keyboard in it - and a kit
@@ -35,8 +35,8 @@
 -- on a machine without a device, keeps it by the counter instead, and the
 -- caller cannot tell which.
 --
-local mp4 = use("/lib/mp4.lua")
-local audio = use("/lib/audio.lua")
+local mp4 = use("/Kosmos/Libraries/mp4.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
 
 local video = {}
 
@@ -110,7 +110,7 @@ local h264_kit
 
 local function h264()
   if h264_kit == nil then
-    local ok, kit = pcall(use, "/kits/h264")
+    local ok, kit = pcall(use, "/Kosmos/Kits/h264")
 
     h264_kit = (ok and type(kit) == "table") and kit or false
   end
@@ -189,7 +189,7 @@ end
 
 --------------------------------------------------------------------------
 -- **The sound**: a film's audio track, decoded and fed to the audio
--- server - AAC through `/kits/aac`, MP3 through `/kits/mp3` - and the
+-- server - AAC through `/Kosmos/Kits/aac`, MP3 through `/Kosmos/Kits/mp3` - and the
 -- clock the picture follows.
 --------------------------------------------------------------------------
 
@@ -232,7 +232,7 @@ local function sound_decoder(track)
   local object = track.object or 0
 
   if track.codec == "mp4a" and object == 0x40 then
-    local ok, kit = pcall(use, "/kits/aac")
+    local ok, kit = pcall(use, "/Kosmos/Kits/aac")
 
     if not ok or type(kit) ~= "table" then
       return nil, "this film's sound is AAC, and this system was built "
@@ -254,7 +254,7 @@ local function sound_decoder(track)
   end
 
   if track.codec == "mp4a" and (object == 0x6b or object == 0x69) then
-    local mp3 = use("/kits/mp3")
+    local mp3 = use("/Kosmos/Kits/mp3")
     local d = mp3.decoder()
 
     return function(_, n, bytes)

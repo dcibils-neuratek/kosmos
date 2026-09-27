@@ -334,7 +334,7 @@ it, and the steps that cannot fail loudly come before the one that can.
    stress` asking afterwards.
 7. **The libc**: `malloc` under a lock, `errno` per thread; the C thread
    kit.
-8. **Lua threads**: `use("/kits/thread")`, a state each, channels, and a
+8. **Lua threads**: `use("/Kosmos/Kits/thread")`, a state each, channels, and a
    worker's answers as events in a window's loop.
 9. **The first users**: the video player's decoder, Music decoding ahead,
    the Game Kit's rasteriser - each measured before and after, because a

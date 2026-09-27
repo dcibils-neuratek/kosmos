@@ -33,7 +33,7 @@ local SETTINGS = "/Home/.clock"
 --
 -- The same lines are in `init.lua`, for `/Devices/clock` itself, and that is a
 -- real duplicate rather than an oversight. `init.lua` is the process that
--- serves `/lib`, so it cannot `use()` something out of a namespace it has
+-- serves `/Kosmos/Libraries`, so it cannot `use()` something out of a namespace it has
 -- not finished building - and a machine that could not say what time it is
 -- until its library server was up would be one you could not debug.
 --

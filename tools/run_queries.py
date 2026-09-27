@@ -167,10 +167,22 @@ def main():
 
             'cd /home',
 
+            # **`/Kosmos`** (6s c): a folder made of mounts, holding the
+            # libraries and the kits - the kits answered in-process, each
+            # one a thing to `use` and never a file to read.
+            'local k = fs.getattr("/kosmos") local p = fs.getattr("/Kosmos/Kits/pdf") '
+            'local _, why = fs.read("/Kosmos/Kits/pdf") '
+            'print("K-KOSMOS", k and k.kind, table.concat(fs.list("/Kosmos") or {}, ","), '
+            'p and p.kind, why)',
+
+            'local n = 0 for _, x in ipairs(fs.list("/Kosmos/Kits") or {}) do '
+            'if x == "pdf" or x == "compress" or x == "3d" then n = n + 1 end end '
+            'print("K-KITS", n)',
+
             # `use` is a program's, not the prompt's: a program that asks
             # for one library by two spellings.
             'fs.write("/Temporary/usetwice.lua", "print(\\"C-USE\\", '
-            'use(\\"/LIB/Text.lua\\") == use(\\"/lib/text.lua\\"))\\n")',
+            'use(\\"/KOSMOS/libraries/Text.lua\\") == use(\\"/Kosmos/Libraries/text.lua\\"))\\n")',
 
             'run /Temporary/usetwice.lua',
 
@@ -238,6 +250,12 @@ def main():
              "a rename to a name's own other case was refused"),
             ("C-NAMES", "CASE.txt,CASE.txt",
              "a rename to another case did not change the name's spelling"),
+            ("K-KOSMOS", 'directory Kits,Libraries kit a kit is C, and is used rather '
+                         'than read: use("/Kosmos/Kits/pdf")',
+             "/Kosmos was not a folder of Kits and Libraries, a kit in it a kit, "
+             "and reading one an answer saying to use it"),
+            ("K-KITS", "3",
+             "/Kosmos/Kits did not list the image's kits - pdf, compress, 3d"),
             ("T-BIG", "true 200 true",
              "a table larger than a message was not kept in /Temporary and read "
              "back whole"),
@@ -257,8 +275,8 @@ def main():
         #
         lines = [l for l in flat.splitlines() if l.startswith("R-ROOT ")]
         root = set(lines[-1][len("R-ROOT "):].strip().split(",")) if lines else set()
-        want_there = {"Home", "Devices", "Running", "Temporary"}
-        gone = {"home", "dev", "app", "ramfs", "net", "drives"}
+        want_there = {"Home", "Devices", "Running", "Temporary", "Kosmos"}
+        gone = {"home", "dev", "app", "ramfs", "net", "drives", "lib", "kits"}
 
         if not want_there <= root or root & gone:
             missed.append("the root did not list %s and none of %s: got %s"

@@ -420,7 +420,7 @@ end)
 -- stopped being true when `fs.write` began sending a large value through a
 -- region, as `fs.write_from` does: the ceiling now is `diskfs` assembling a
 -- write in its own heap and refusing more than a megabyte. Megabytes are
--- Disk Benchmark's to measure (`/lib/diskbench.lua`), not this group's.
+-- Disk Benchmark's to measure (`/Kosmos/Libraries/diskbench.lua`), not this group's.
 test("Filesystem", "bulk write", "bytes", function(n)
   local blob = string.rep("0123456789abcdef", 64)   -- 1 KB
 

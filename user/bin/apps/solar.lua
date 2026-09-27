@@ -8,7 +8,7 @@
 --   wm solar
 --   solar --check          the simulation alone, no window (bring-up step 1)
 --
--- **The core is not ours and is not touched** (`/lib/solar`, and its
+-- **The core is not ours and is not touched** (`/Kosmos/Libraries/solar`, and its
 -- `README.kosmos.md`): a program that runs unmodified under stock `lua`, in
 -- LÖVE, and here. This file is the *host*, and a host owes it four things -
 -- a clock, somewhere to put a finished frame, an input queue, and a way to
@@ -23,15 +23,15 @@ local use_ = use
 --------------------------------------------------------------------------
 -- `require`, which this system does not have.
 --
--- Kosmos loads a library with `use("/lib/x.lua")` - a file in this
+-- Kosmos loads a library with `use("/Kosmos/Libraries/x.lua")` - a file in this
 -- process's namespace, with no package path, no search and no global module
 -- table, and that is a deliberate position rather than an omission
 -- (`init.lua`). The core asks for `require "solar.sim"` because it also
 -- runs on interpreters where that is the only way.
 --
 -- So the host provides one, here, in eight lines: `solar.app` becomes
--- `/lib/solar/app.lua`, and `solar.fonts.f24` becomes
--- `/lib/solar/fonts/f24.lua`. It is a *global* because the core reads it as
+-- `/Kosmos/Libraries/solar/app.lua`, and `solar.fonts.f24` becomes
+-- `/Kosmos/Libraries/solar/fonts/f24.lua`. It is a *global* because the core reads it as
 -- one, and `use` hands a library this program's own environment - so the
 -- files it loads see this `require` and can load their own dependencies.
 --
@@ -46,7 +46,7 @@ function require(name)
 
   if already ~= nil then return already end
 
-  local path = "/lib/" .. tostring(name):gsub("%.", "/") .. ".lua"
+  local path = "/Kosmos/Libraries/" .. tostring(name):gsub("%.", "/") .. ".lua"
   local ok, value = pcall(use_, path)
 
   if not ok then
@@ -318,9 +318,9 @@ end
 -- for where a renderer's pixels should live.
 --
 local function bench(width, height, count)
-  local ok, game = pcall(use_, "/kits/game")
+  local ok, game = pcall(use_, "/Kosmos/Kits/game")
 
-  if not ok then print("solar: no /kits/game") return end
+  if not ok then print("solar: no /Kosmos/Kits/game") return end
 
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
   local fb = {}
@@ -396,7 +396,7 @@ local wanted = args or ""
 --------------------------------------------------------------------------
 
 local function native_soft()
-  local ok, game = pcall(use_, "/kits/game")
+  local ok, game = pcall(use_, "/Kosmos/Kits/game")
 
   if not ok or type(game) ~= "table" or type(game.soft) ~= "table" then
     return nil
@@ -544,8 +544,8 @@ end
 local function run(width, height, scale, level, assets, auto, stars, belts,
                    fps_wanted, full, days, focus)
   local App = require "solar.app"
-  local ui = use_("/lib/ui.lua")
-  local wmproto = use_("/lib/wmproto.lua")
+  local ui = use_("/Kosmos/Libraries/ui.lua")
+  local wmproto = use_("/Kosmos/Libraries/wmproto.lua")
 
   local read = (assets ~= "none") and reader() or nil
 
@@ -893,11 +893,11 @@ end
 --------------------------------------------------------------------------
 
 local function compare(width, height)
-  local Lua = use_("/lib/solar/soft.lua")
+  local Lua = use_("/Kosmos/Libraries/solar/soft.lua")
   local C = native_soft()
 
   if not C then
-    print("solar: no /kits/game, so there is nothing to compare against")
+    print("solar: no /Kosmos/Kits/game, so there is nothing to compare against")
     print("solar: FAIL")
     return
   end

@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- `/lib/textsize.lua`: a window's own text size, as the Terminal and Log
+-- `/Kosmos/Libraries/textsize.lua`: a window's own text size, as the Terminal and Log
 -- View keep it (`roadmap.md` 5zc). On the host, because it is arithmetic
 -- over a settings file and a face name - `fs` and the kit are stood in for
 -- here, which is what makes it host-testable at all.

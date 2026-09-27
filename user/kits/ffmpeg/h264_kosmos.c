@@ -1,9 +1,9 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * **The H.264 Kit**: FFmpeg's decoder behind a Lua face (`roadmap.md` 4e),
- * for `/lib/video.lua` and anything else that has a film's samples.
+ * for `/Kosmos/Libraries/video.lua` and anything else that has a film's samples.
  *
- *   local h264 = use("/kits/h264")
+ *   local h264 = use("/Kosmos/Kits/h264")
  *   local d, why = h264.decoder(avcc)   -- the MP4's avcC box, as a string
  *   d:send(at, length, pts)   -- one sample from memory at `at`, in decoding
  *                             -- order: true, or false and "full" (take a

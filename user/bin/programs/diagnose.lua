@@ -16,7 +16,7 @@
 -- process the shell starts with the capabilities it names, and one program
 -- cannot start another. So each section reads what its program reads -
 -- `sys.info()`, the nodes in `/Devices`, `/Home/.super`, the USB driver through
--- `/lib/blocks.lua`, `sys.processes()` - and writes the answer whole, as a
+-- `/Kosmos/Libraries/blocks.lua`, `sys.processes()` - and writes the answer whole, as a
 -- table rather than a sentence, because a diagnosis wants the field nobody
 -- thought to print.
 --
@@ -169,7 +169,7 @@ end
 section("sticks")
 
 do
-  local blocks = use("/lib/blocks.lua")
+  local blocks = use("/Kosmos/Libraries/blocks.lua")
   local named, why = blocks.units()
 
   if not named then

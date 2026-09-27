@@ -3027,7 +3027,7 @@ int luaopen_gfx(lua_State *L)
 
     /* Doom, Quake and the Super Nintendo were opened here too, as globals,
      * and hid their own programs from the prompt. They are kits now, in
-     * `sys_user.c`'s list: `use("/kits/doom")`. */
+     * `sys_user.c`'s list: `use("/Kosmos/Kits/doom")`. */
     kosmos_docfont_open(L);
 
     return 1;

@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import run_disk                                        # noqa: E402
 
-# The rows as `/lib/diskbench.lua` prints them: a name, the queue, then read
+# The rows as `/Kosmos/Libraries/diskbench.lua` prints them: a name, the queue, then read
 # and write - each a number with its unit, or a sentence.
 QUEUED = "not yet: one command at a time"
 

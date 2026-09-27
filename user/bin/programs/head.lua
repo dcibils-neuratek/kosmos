@@ -11,8 +11,8 @@
 -- the table that was written - so a thing with no lines in it says so rather
 -- than being turned into text nobody wrote. `cat` prints those.
 
-local files = use("/lib/files.lua")
-local text = use("/lib/text.lua")
+local files = use("/Kosmos/Libraries/files.lua")
+local text = use("/Kosmos/Libraries/text.lua")
 
 local n, name = text.count_and_path(args, 10)
 

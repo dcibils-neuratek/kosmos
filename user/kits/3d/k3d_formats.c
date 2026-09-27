@@ -10,7 +10,7 @@
  * welding STL's repeated corners and scanning OBJ's numbers are exactly the
  * per-byte work the rest of Kosmos keeps out of Lua. What is decided about
  * the results - names, materials, where a part goes - is the translators'
- * (`/lib/translators/`), in Lua.
+ * (`/Kosmos/Libraries/translators/`), in Lua.
  *
  * **Nothing here trusts the file.** Every count is held to what the bytes
  * can hold, every index to the points there are, and a refusal is a

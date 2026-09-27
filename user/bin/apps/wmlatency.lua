@@ -21,7 +21,7 @@
 -- performance numbers, and the statement is "not paced by a sleep", not
 -- "fast".
 
-local wmproto = use("/lib/wmproto.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 local N = 200
 

@@ -22,7 +22,7 @@
 -- same seconds, and the best of a few is kept. Under an emulator these
 -- numbers measure the emulator; compare runs on the same footing.
 
-local blocks = use("/lib/blocks.lua")
+local blocks = use("/Kosmos/Libraries/blocks.lua")
 
 local diskbench = {}
 
@@ -68,7 +68,7 @@ local QUEUED = "not yet: one command at a time"
 -- this found. Since 24 September a file's bytes go once, outside the
 -- journal (`design.md` 8.3b), and a write is bounded by the disk.
 --
-local kfs = use("/lib/kfs.lua")
+local kfs = use("/Kosmos/Libraries/kfs.lua")
 local FILE_BYTES = 1024 * 1024
 local FILE_DIR = "/Home/.diskbench"
 
@@ -361,7 +361,7 @@ end
 --
 function diskbench.save(result)
   local DIR = "/Home/benchmarks"
-  local clock = use("/lib/clock.lua")
+  local clock = use("/Kosmos/Libraries/clock.lua")
   local t = clock.now()
   local name
 

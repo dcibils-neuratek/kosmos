@@ -71,9 +71,9 @@
 -- rather than a right.
 --------------------------------------------------------------------------
 
-local ui = use("/lib/ui.lua")
-local menudata = use("/lib/deskbarmenu.lua")
-local clock = use("/lib/clock.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local menudata = use("/Kosmos/Libraries/deskbarmenu.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -374,7 +374,7 @@ read_sections()
 local audio_lib = nil
 
 do
-  local ok, got = pcall(use, "/lib/audio.lua")
+  local ok, got = pcall(use, "/Kosmos/Libraries/audio.lua")
 
   audio_lib = ok and got or nil
 end
@@ -1424,9 +1424,9 @@ win:add(bar)
 -- opens at startup and the same item chosen by hand are the same thing.
 --------------------------------------------------------------------------
 do
-  -- The list, or what a machine nobody has told opens. `/lib/startup.lua`
+  -- The list, or what a machine nobody has told opens. `/Kosmos/Libraries/startup.lua`
   -- holds both so that this and the panel cannot disagree about it.
-  local items = use("/lib/startup.lua").items()
+  local items = use("/Kosmos/Libraries/startup.lua").items()
 
   local started = 0
 

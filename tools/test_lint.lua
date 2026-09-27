@@ -67,7 +67,7 @@ end
 --
 do
   local src = table.concat({
-    'local ui = use("/lib/ui.lua")',                -- 1: known
+    'local ui = use("/Kosmos/Libraries/ui.lua")',   -- 1: known
     'local win = ui.window{ title = "x" }',         -- 2
     'local unused = 1',                             -- 3: unused
     'function f(a, b) return a end',                -- 4: global set, b unused
@@ -110,7 +110,7 @@ do
   check(ordered, "the problems are not in line order")
 
   -- A clean file has none, and a second check reuses what was loaded.
-  local clean = lint.check('local ui = use("/lib/ui.lua")\nui.run()\n', read, ROOT)
+  local clean = lint.check('local ui = use("/Kosmos/Libraries/ui.lua")\nui.run()\n', read, ROOT)
 
   check(clean and #clean == 0, "a clean file had problems: "
         .. tostring(clean and clean[1] and clean[1].text))

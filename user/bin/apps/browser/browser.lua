@@ -58,7 +58,7 @@
 -- down - and no command a person could type, so nothing ever contradicted
 -- the prose.
 
-local ui    = use("/lib/ui.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
 
 --------------------------------------------------------------------------
@@ -96,7 +96,7 @@ local PAPER = 0xffffffff             -- what `web_paint.c` fills a page with
 -- build it is running on. An application that raised here would be a broken
 -- entry in the Deskbar of every ordinary image.
 --
-local have, web = pcall(use, "/kits/web")
+local have, web = pcall(use, "/Kosmos/Kits/web")
 
 if not have or type(web) ~= "table" then web = nil end
 

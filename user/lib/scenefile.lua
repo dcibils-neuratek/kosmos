@@ -1,8 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- A Cafesa3D scene, out of a glTF file's JSON.
 --
---   local json = use("/lib/json.lua")
---   local scenefile = use("/lib/scenefile.lua")
+--   local json = use("/Kosmos/Libraries/json.lua")
+--   local scenefile = use("/Kosmos/Libraries/scenefile.lua")
 --   local scene, why = scenefile.from_gltf(json.decode(text))
 --   -- scene.name, scene.things (what Cafesa3D adds), scene.world, scene.skipped
 --

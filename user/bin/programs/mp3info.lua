@@ -7,7 +7,7 @@
 -- and "faster" here means with enough margin that a busy desktop does not
 -- eat it. This prints the ratio.
 
-local mp3 = use("/kits/mp3")
+local mp3 = use("/Kosmos/Kits/mp3")
 
 local path = (args or ""):match("^%s*(%S+)")
 

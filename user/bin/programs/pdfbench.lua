@@ -17,10 +17,10 @@
 --   tokenize  the scanner alone, every token thrown away
 --   walk      the scanner plus the interpreter plus the decode
 
-local pdf      = use("/lib/pdf.lua")
-local pdfpage  = use("/lib/pdfpage.lua")
-local compress = use("/kits/compress")
-local pdfkit   = use("/kits/pdf")
+local pdf      = use("/Kosmos/Libraries/pdf.lua")
+local pdfpage  = use("/Kosmos/Libraries/pdfpage.lua")
+local compress = use("/Kosmos/Kits/compress")
+local pdfkit   = use("/Kosmos/Kits/pdf")
 
 local path   = args[1] or "/Home/odyssey.pdf"
 local wanted = tonumber(args[2]) or 3

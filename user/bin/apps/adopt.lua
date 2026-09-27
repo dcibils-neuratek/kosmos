@@ -17,7 +17,7 @@
 -- `needs` list, so a replicant that asked for /Devices/cpu has no name for
 -- anything else.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 
 local win = ui.window{ title = "Adopt", w = 300, h = 150, x = 420, y = 260 }
 

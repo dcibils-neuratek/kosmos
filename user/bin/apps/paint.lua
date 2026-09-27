@@ -25,8 +25,8 @@
 -- each writing a few hundred pixels. `gfx.md` 19.11 has the rule that makes
 -- that the right shape rather than a guess.
 
-local ui = use("/lib/ui.lua")
-local wmproto = use("/lib/wmproto.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 local PAL_W  = 96
 local CANVAS_W, CANVAS_H = 520, 380

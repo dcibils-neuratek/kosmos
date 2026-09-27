@@ -3,6 +3,6 @@
 -- depends on it.
 return {
   greet = function(who)
-    return "hello, " .. tostring(who) .. ", from /lib"
+    return "hello, " .. tostring(who) .. ", from /Kosmos/Libraries"
   end,
 }

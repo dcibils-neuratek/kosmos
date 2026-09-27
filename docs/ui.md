@@ -229,7 +229,7 @@ then `ui.HOME`, `ui.END`, `ui.PAGEUP`, `ui.PAGEDOWN`, `ui.INSERT`,
 `ui.DELETE`, `ui.F[1]` to `ui.F[12]`), and a modified key is that less 1024
 for each step of `ui.SHIFT`, `ui.ALT` and `ui.CTRL` - always negative, so a
 widget that types what it is given never types Ctrl+/. `ui.keyparts(c)` is
-the key and its modifiers; `/lib/keys.lua` does the arithmetic and nothing
+the key and its modifiers; `/Kosmos/Libraries/keys.lua` does the arithmetic and nothing
 else should. **Tab is the window's** and Shift+Tab steps back; a widget that
 says `takes_tab` - a code editor - keeps both, and **Control with Tab always
 moves the focus**, so nothing can trap it.
@@ -567,7 +567,7 @@ name it now has. A volume with nothing to know it by, a filesystem with no
 serial on a drive with no GPT, is refused as a place rather than remembered
 by its name.
 
-**The rule is `/lib/places.lua`, the rows are `/lib/sidebar.lua`, and what
+**The rule is `/Kosmos/Libraries/places.lua`, the rows are `/Kosmos/Libraries/sidebar.lua`, and what
 is done with a row is the caller's.** The rule for `deskbarmenu.lua`'s reason:
 the decisions are worth testing where a test costs no boot. The rows since
 USB step 6d, when the Open and Save window became the sidebar's second user
@@ -589,7 +589,7 @@ first frame nothing.
 
 ## 16.8f The Open and Save window, and the three things the kit took from it
 
-**Every application opens and saves through one window, `/lib/panel.lua`**,
+**Every application opens and saves through one window, `/Kosmos/Libraries/panel.lua`**,
 and since USB step 6d it is the one `drives.html` draws: the same sidebar as
 Tracker - Places, System, Drives - the path as a trail, and the folder as
 Name, Size and Kind. It runs inside the application that opened it, so it
@@ -862,7 +862,7 @@ with the pointer, *not* with Shift, because Shift never reached a window;
 since 26 September it does (*Keys with their modifiers*, above), and the
 model did not have to change to take it.
 
-**`ui.editor` is the view over a `/lib/textbuf.lua`** (`roadmap.md` 6n,
+**`ui.editor` is the view over a `/Kosmos/Libraries/textbuf.lua`** (`roadmap.md` 6n,
 step 1): the lines, the caret, the selection and the undo live there, and
 **every edit is one `replace`** - bytes out between two places, a string
 in - which is exactly what undo records and plays back the other way.
@@ -883,7 +883,7 @@ words, and an icon on the filled one; a disabled icon button; and
 **Two looks.** Plain, for the Editor app and the Machine report: a block
 caret on the character and a selection in the caret's colours, as ever.
 And `code = "lua"`, as `docs/kosmos-ide.html` draws it: Lua coloured by
-`/lib/lualex.lua` a line at a time, a gutter with a column for marks and the
+`/Kosmos/Libraries/lualex.lua` a line at a time, a gutter with a column for marks and the
 numbers right-aligned and faint, the current line on a band, a line with
 something wrong tinted, marked with its dot or triangle and underlined, and
 a thin caret in the accent. The colours are the drawing's two palettes,

@@ -10,7 +10,7 @@
 -- is a function nobody calls.
 --
 -- **What would go wrong once it runs** is luacheck - `lint.check` - vendored
--- unmodified in `runtime/upstream/luacheck/` and carried as `/lib/luacheck/`:
+-- unmodified in `runtime/upstream/luacheck/` and carried as `/Kosmos/Libraries/luacheck/`:
 -- a name used and never set, a local set and never used, one that hides
 -- another. It is told what a Kosmos program is given - the names
 -- `tools/luaglobals.py` holds the tree to - so `use` and `fs` are known, and
@@ -32,11 +32,11 @@ lint.KOSMOS = { "sys", "gfx", "fs", "args", "cwd", "run", "interrupted",
 -- What upstream Lua has and a Kosmos program does not, and what to use.
 lint.ABSENT = {
   io = "files are fs",
-  os = "the date is use(\"/lib/clock.lua\"), a duration sys.ticks, and a "
+  os = "the date is use(\"/Kosmos/Libraries/clock.lua\"), a duration sys.ticks, and a "
        .. "program ends with sys.exit",
   debug = "and no debugger yet",
-  package = "a library is use(\"/lib/...\")",
-  require = "a library is use(\"/lib/...\")",
+  package = "a library is use(\"/Kosmos/Libraries/...\")",
+  require = "a library is use(\"/Kosmos/Libraries/...\")",
   dofile = "a file is run with run",
   loadfile = "a file is read with fs.read and loaded with load",
 }
@@ -136,11 +136,11 @@ local luacheck = nil
 --
 -- What luacheck finds in `source`, as problems in line order - or nil and
 -- why, when it could not be loaded. `read` reads a file, `root` is where
--- luacheck's modules are: `/lib/` on the machine, where `luacheck/` is.
+-- luacheck's modules are: `/Kosmos/Libraries/` on the machine, where `luacheck/` is.
 --
 function lint.check(source, read, root)
   if not luacheck then
-    local ok, got = pcall(load_luacheck, read, root or "/lib/")
+    local ok, got = pcall(load_luacheck, read, root or "/Kosmos/Libraries/")
 
     if not ok then return nil, tostring(got) end
 

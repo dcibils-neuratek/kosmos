@@ -638,7 +638,7 @@ Reload used to be the other half of this, and is not any more - there is nothing
 
 The legitimate exception is pixel loops: never in Lua. Lua decides what gets drawn and where, the loop happens inside a surface, in C.
 
-**Those C libraries are kits**, and they are reached through the namespace: `use("/kits/pdf")` gets a table the runtime built, exactly as `use("/lib/ui.lua")` gets one a Lua file returned. The caller writes the same line either way, because which language something is written in is not a fact its user should have to know - and a library whose hot loop later moves into C should not change a single call site.
+**Those C libraries are kits**, and they are reached through the namespace: `use("/Kosmos/Kits/pdf")` gets a table the runtime built, exactly as `use("/Kosmos/Libraries/ui.lua")` gets one a Lua file returned. The caller writes the same line either way, because which language something is written in is not a fact its user should have to know - and a library whose hot loop later moves into C should not change a single call site.
 
 The name is BeOS's and so is the idea (Interface Kit, Storage Kit, Media Kit, Translation Kit). Reaching them through the namespace rather than as globals keeps the rule everything else obeys: **what you were not given, you do not have.** `kits` at the prompt lists them.
 

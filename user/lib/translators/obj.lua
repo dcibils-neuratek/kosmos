@@ -2,7 +2,7 @@
 -- Wavefront OBJ for Cafesa3D, with its MTL: the oldest common format and
 -- still everywhere (TurboSquid, CGTrader, Free3D, NASA).
 --
--- **A translator** (`roadmap.md` 4l, 5c): one file in `/lib/translators/`,
+-- **A translator** (`roadmap.md` 4l, 5c): one file in `/Kosmos/Libraries/translators/`,
 -- handed the 3D Kit's loops over bytes and nothing of the file system. An
 -- OBJ's materials are in another file, the MTL it names; `context.sidecar`
 -- is how that one is asked for, and only by its name beside the OBJ.

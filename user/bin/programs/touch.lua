@@ -11,7 +11,7 @@
 -- An existing file is left exactly as it is rather than emptied, which is
 -- the one thing `touch` must never do.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local name = args:match("^%s*(%S+)")
 

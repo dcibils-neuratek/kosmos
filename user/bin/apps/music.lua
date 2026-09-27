@@ -22,14 +22,14 @@
 -- actually draw a sleeve and a play arrow, rather than by assuming it could.
 --
 -- **What is borrowed rather than rebuilt**: the playing itself is
--- `/lib/media.lua`'s - reading, decoding, feeding, the clock and seeking - and
+-- `/Kosmos/Libraries/media.lua`'s - reading, decoding, feeding, the clock and seeking - and
 -- so is the pacing that cost half the playback speed when it was confused,
 -- the peak meter read from the server rather than from a progress bar, and
 -- saying *why* a folder could not be listed instead of showing an empty list.
 
-local ui    = use("/lib/ui.lua")
-local audio = use("/lib/audio.lua")
-local media = use("/lib/media.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
+local media = use("/Kosmos/Libraries/media.lua")
 
 --------------------------------------------------------------------------
 -- The look.

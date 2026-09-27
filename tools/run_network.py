@@ -548,7 +548,7 @@ def main():
         # two threads inside it would want a lock around the interpreter and
         # would take turns anyway.
         #
-        # Served out of `/lib` rather than a file written first, because
+        # Served out of `/Kosmos/Libraries` rather than a file written first, because
         # `ui.lua` is a hundred kilobytes - six times the ring - and `/Temporary`
         # holds sixteen. A body that fits in the ring never waits for room,
         # and waiting for room is the whole of what this checks.
@@ -559,7 +559,7 @@ def main():
             "-netdev", f"user,id=net0,hostfwd=tcp::{forward}-:80",
             "-device", run_screenshot.device(image, "net") + ",netdev=net0",
         ], [
-            "httpd 80 /lib",
+            "httpd 80 /Kosmos/Libraries",
         ], seconds=240, then=lambda: _at_once(forward, 6))
 
         single = _many.get("single")

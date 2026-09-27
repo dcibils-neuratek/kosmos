@@ -17,17 +17,17 @@
 --
 -- **Step 4, checking**: Lua's own parser a moment after typing stops, and
 -- luacheck - told what a Kosmos program is given - when a file opens, when
--- it is saved and on F7 (`/lib/lint.lua`). Each problem is marked on its
+-- it is saved and on F7 (`/Kosmos/Libraries/lint.lua`). Each problem is marked on its
 -- line and listed in Problems, a click from the line.
 --
 -- **Step 5, suggestions**: after `ui.` the names `ui.lua` defines, after
 -- `win:` a window's methods, each with the comment above it in its source
--- as what it is (`/lib/libdoc.lua`) - read, never run. And the drawing's
+-- as what it is (`/Kosmos/Libraries/libdoc.lua`) - read, never run. And the drawing's
 -- third check: a name a library does not have, `ui.slidr`, asked of the
 -- library and answered with the nearest name it does have.
 --
 -- **Find a file**, asked for after using it: Ctrl P and any part of a name,
--- over the project, `/bin` and `/lib`, each found file with where it lives
+-- over the project, `/bin` and `/Kosmos/Libraries`, each found file with where it lives
 -- and what it is.
 --
 -- `docs/kosmos-ide.html` is the drawing, agreed as drawn ("the mockup is
@@ -45,16 +45,16 @@
 -- surface of its own. Every piece follows the edges it should, so a bigger
 -- window is a bigger editor.
 --
--- **Kosmos is in the tree to be read**: `/bin`, `/lib` and the kits, under
+-- **Kosmos is in the tree to be read**: `/bin`, `/Kosmos/Libraries` and the kits, under
 -- the project, read only - so the way to learn what `ui.slider` does is to
 -- open `ui.lua` and read it.
 
-local ui = use("/lib/ui.lua")
-local files = use("/lib/files.lua")
-local lint = use("/lib/lint.lua")
-local libdoc = use("/lib/libdoc.lua")
-local lualex = use("/lib/lualex.lua")
-local panel = use("/lib/panel.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local files = use("/Kosmos/Libraries/files.lua")
+local lint = use("/Kosmos/Libraries/lint.lua")
+local libdoc = use("/Kosmos/Libraries/libdoc.lua")
+local lualex = use("/Kosmos/Libraries/lualex.lua")
+local panel = use("/Kosmos/Libraries/panel.lua")
 local theme = ui.theme
 local L = ui.layout
 
@@ -68,11 +68,11 @@ local SETTINGS = "/Home/.ide"
 --
 -- **Its text larger and smaller**, as Terminal's and Log View's is: Diego,
 -- 27 September, "we need a way to increase font size like we have in the
--- terminal app". `/lib/textsize.lua`'s steps and its menu, in the dots, and
+-- terminal app". `/Kosmos/Libraries/textsize.lua`'s steps and its menu, in the dots, and
 -- Ctrl = and Ctrl - besides; kept in a file of its own, since `/Home/.ide`
 -- is the project's memory. Every editor asks for the face as it draws.
 --
-local textsize = use("/lib/textsize.lua")
+local textsize = use("/Kosmos/Libraries/textsize.lua")
 local text                    -- declared first: the callback below names it
 
 text = textsize.new(ui, "/Home/.ide-text", function()
@@ -108,11 +108,20 @@ if not fs.getattr(project) then
 end
 
 -- Places a Kosmos program reads and does not write.
-local READ_ONLY = { "/bin", "/lib", "/kits" }
+local READ_ONLY = { "/bin", "/Kosmos/Libraries", "/Kosmos/Kits" }
+
+-- `path` is `top` or inside it, whatever the case of either: a name is
+-- found whatever its case (`roadmap.md` 6s), so `/kosmos/libraries/ui.lua`
+-- typed is the same file, and just as read only.
+local function under(path, top)
+  local p, t = path:lower(), top:lower()
+
+  return p == t or p:sub(1, #t + 1) == t .. "/"
+end
 
 local function read_only(path)
   for _, top in ipairs(READ_ONLY) do
-    if path == top or path:sub(1, #top + 1) == top .. "/" then return true end
+    if under(path, top) then return true end
   end
 
   return false
@@ -391,11 +400,11 @@ local tree = ui.tree{
     end)(),
     { text = "Kosmos, to read", heading = true },
     folder("/bin", "/bin", "read only"),
-    folder("/lib", "/lib", "read only"),
-    -- The kits are C, reached with `use("/kits/...")`: named here, with
+    folder("/Kosmos/Libraries", "/Kosmos/Libraries", "read only"),
+    -- The kits are C, reached with `use("/Kosmos/Kits/...")`: named here, with
     -- nothing to open, so a person can see what there is to use.
     {
-      text = "/kits", note = "C",
+      text = "/Kosmos/Kits", note = "C",
       children = function()
         local kids = {}
 
@@ -628,7 +637,7 @@ local header = ui.header{
 -- real machine, and memory only on one that has none.
 --------------------------------------------------------------------------
 
-local con = use("/kits/console")
+local con = use("/Kosmos/Kits/console")
 local console = sys.endpoint()
 
 local RUN_DIR = "/Home/.ide-run"
@@ -655,13 +664,13 @@ local function start()
     running = nil
   end
 
-  -- **A library says so first.** Running `/lib/clock.lua` builds the
+  -- **A library says so first.** Running `/Kosmos/Libraries/clock.lua` builds the
   -- table it gives whoever uses it and nothing else, so it ended at once
   -- with nothing printed and looked broken (Diego, 27 September, on the
   -- M700). Not "the application is /bin/clock.lua": that one does not use
-  -- it - `/lib/clock.lua` is the local time, for the Deskbar's clock - and
+  -- it - `/Kosmos/Libraries/clock.lua` is the local time, for the Deskbar's clock - and
   -- a name shared is not a relation.
-  if f.path:match("^/lib/") then
+  if under(f.path, "/Kosmos/Libraries") then
     say(('%s is a library: running it only builds what it gives whoever uses it, '
          .. 'with use("%s") - applications and programs are in /bin')
         :format(base(f.path), f.path), theme.text_dim)
@@ -784,7 +793,7 @@ run_button.on_click = function() start() end
 stop.on_click = function() stop_run() end
 
 --------------------------------------------------------------------------
--- What a file's names are bound to (step 5): `local ui = use("/lib/ui.lua")`
+-- What a file's names are bound to (step 5): `local ui = use("/Kosmos/Libraries/ui.lua")`
 -- makes `ui` that library, and `local win = ui.window{ ... }` makes `win` a
 -- window - the one kind of object the drawing asks methods of.
 --------------------------------------------------------------------------
@@ -798,7 +807,7 @@ local function doc_of(path)
 
     if type(source) == "string" then
       docs[path] = libdoc.read(source)
-    elseif path:match("^/kits/") then
+    elseif path:lower():match("^/kosmos/kits/") then
       -- A kit is C and has no source to read: its names are the table's,
       -- which the kit gives anyone who asks, without comments.
       local ok, kit = pcall(use, path)
@@ -1045,7 +1054,7 @@ function check_now(f, open_panel)
   parse_now(f)
 
   if not f.parse_problem and not f.editor.read_only then
-    local list, why = lint.check(f.editor:content(), fs.read, "/lib/")
+    local list, why = lint.check(f.editor:content(), fs.read, "/Kosmos/Libraries/")
 
     if not list then
       say("luacheck could not load: " .. tostring(why), theme.bad)
@@ -1351,11 +1360,11 @@ end
 --------------------------------------------------------------------------
 -- Finding a file (27 September). Diego: "an ide wide search field to find
 -- files easily by name or part of name". Every file the tree reaches - the
--- project, `/bin`, `/lib` - whose name has what is typed in it, whatever
+-- project, `/bin`, `/Kosmos/Libraries` - whose name has what is typed in it, whatever
 -- its case; the names that begin with it first, and the shorter before the
 -- longer, so `cloc` puts `clock.lua` above `clock-replicant.lua`. Beside
 -- each, where it lives and what it is, because two files can share a name
--- and be unrelated: `/lib/clock.lua` is the local time, not the Clock.
+-- and be unrelated: `/Kosmos/Libraries/clock.lua` is the local time, not the Clock.
 --
 -- **Read when a search starts, and not kept**: the places are walked at the
 -- first letter and held until the field is emptied, so a file made since is
@@ -1384,13 +1393,14 @@ found.items, found.on, found.first = {}, 1, 1
 local findable = nil
 
 -- What a file is, from where it is: `/bin` says which of its files open a
--- window, and everything in `/lib` is a library. The project's are yours.
+-- window, and everything in `/Kosmos/Libraries` is a library. The
+-- project's are yours.
 local function kind_of(path, e)
-  if path:sub(1, 5) == "/bin/" then
+  if under(path, "/bin") then
     return (e.kind == "application") and "application" or "program"
   end
 
-  if path:sub(1, 5) == "/lib/" then return "library" end
+  if under(path, "/Kosmos/Libraries") then return "library" end
 
   return "yours"
 end
@@ -1404,7 +1414,7 @@ local function walk(dir, depth, place, seen, list)
     if #list >= FIND_MOST then return end
 
     -- Not what is hidden, as the tree does not show it; and a file once,
-    -- when the project is `/lib` itself.
+    -- when the project is `/Kosmos/Libraries` itself.
     if e.name:sub(1, 1) ~= "." and not seen[path] then
       seen[path] = true
 
@@ -1421,7 +1431,7 @@ end
 local function read_places()
   local list, seen = {}, {}
 
-  for place, top in ipairs({ project, "/bin", "/lib" }) do
+  for place, top in ipairs({ project, "/bin", "/Kosmos/Libraries" }) do
     walk(top, 1, place, seen, list)
   end
 

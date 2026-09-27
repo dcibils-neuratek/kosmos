@@ -84,7 +84,7 @@ local EDIT_KEYS = {
   [22] = "paste",         -- Control-V
 }
 
-local theme = use("/lib/theme.lua")
+local theme = use("/Kosmos/Libraries/theme.lua")
 
 --
 -- **Twenty-six, and the reasoning that gave twenty was measuring the wrong
@@ -482,7 +482,7 @@ end
 -- became Endeavour (`roadmap.md` 5zq) one of them would have stayed behind.
 --
 local function default_appearance()
-  local ok, shipped = pcall(use, "/lib/themes.lua")
+  local ok, shipped = pcall(use, "/Kosmos/Libraries/themes.lua")
 
   if not ok or type(shipped) ~= "table" or type(shipped.order) ~= "table" then
     return
@@ -549,7 +549,7 @@ local function load_appearance()
     if type(name) ~= "string" then return nil, "no name" end
     if theme.palettes[name] then return theme.palettes[name] end
 
-    local ok, shipped = pcall(use, "/lib/themes.lua")
+    local ok, shipped = pcall(use, "/Kosmos/Libraries/themes.lua")
 
     if ok and type(shipped) == "table" and type(shipped[name]) == "string" then
       return theme.install(name, (theme.read(shipped[name], "dark")))
@@ -565,7 +565,7 @@ local function load_appearance()
       end
     end
 
-    return nil, "no theme called " .. name .. " in /lib/themes.lua or "
+    return nil, "no theme called " .. name .. " in /Kosmos/Libraries/themes.lua or "
                 .. "/system/themes"
   end
 
@@ -1851,11 +1851,11 @@ function scale.op(o, pct)
   end
 end
 
--- The commands a window sends, drawn: `/lib/paint.lua`, shared with
+-- The commands a window sends, drawn: `/Kosmos/Libraries/paint.lua`, shared with
 -- `ui.paint_view` so a widget looks the same in a window that owns its
 -- pixels as in one that sends drawing. Used where it is made rather than
 -- held in a local of its own: this file is at Lua's two hundred.
-local ops = use("/lib/paint.lua").new(picture_named, sized)
+local ops = use("/Kosmos/Libraries/paint.lua").new(picture_named, sized)
 
 --------------------------------------------------------------------------
 -- The pointer.
@@ -5528,7 +5528,7 @@ end
 --
 local KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP = 113, 114, 115
 local VOLUME_STEP = 16                  -- a sixteenth of 256
-local have_audio, audio = pcall(use, "/lib/audio.lua")
+local have_audio, audio = pcall(use, "/Kosmos/Libraries/audio.lua")
 
 local function volume_key(code, down)
   if code ~= KEY_MUTE and code ~= KEY_VOLUMEDOWN and code ~= KEY_VOLUMEUP then
@@ -5613,7 +5613,7 @@ local machine_keys = {
 }
 
 machine_keys.have_backlight, machine_keys.backlight =
-  pcall(use, "/lib/backlight.lua")
+  pcall(use, "/Kosmos/Libraries/backlight.lua")
 
 function machine_keys.brightness(up)
   local which = up and "up" or "down"

@@ -16,8 +16,8 @@
 -- with the one chosen opening in Tracker. The model is `drivelist.lua`, so
 -- a prompt can ask it the same questions.
 
-local ui = use("/lib/ui.lua")
-local drivelist = use("/lib/drivelist.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local drivelist = use("/Kosmos/Libraries/drivelist.lua")
 
 --
 -- **The drawings' page** (`docs/apps.html`, `roadmap.md` 5zp): a header

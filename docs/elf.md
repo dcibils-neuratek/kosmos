@@ -76,7 +76,7 @@ Mapped on 27 September, with every claim against the code:
   own namespace and loads it (`init.lua` 5997, 6195-6210). A Lua program
   in `/Home` runs today - which is how the IDE runs one.
 - **Doom, Quake and the Super Nintendo are kits** in that one image:
-  `doom.lua` does `use("/kits/doom")`, and `sys.kit` finds `doom` compiled
+  `doom.lua` does `use("/Kosmos/Kits/doom")`, and `sys.kit` finds `doom` compiled
   in under `KOSMOS_DOOM` (`sys_user.c` 2720-2760). Their Lua is a file
   already; their C is the image.
 - **The image is checked four times a boot** against sums the build wrote
@@ -148,7 +148,7 @@ handed, a role word, a heap and a stack - so `run` starts a runner in the
 game's image exactly as it starts one in the system's, and the runner
 loads `doom.lua`, which reaches the engine this image carries. **Not as a
 kit**: Doom's C is Doom's, and a kit is what Kosmos ships for every program
-(Diego: "there is no /kits/doom folder and wont be"). It names the file:
+(Diego: "there is no /Kosmos/Kits/doom folder and wont be"). It names the file:
 `use("doom.elf")`, decided below.
 
 ### The bytes are the ones the build wrote
@@ -202,7 +202,7 @@ anything is spawned, and names the page that differs.
    with a sentence rather than a crash.
 5. **Doom leaves the image**: `/Home/Apps/Doom` with `doom.lua` and
    `doom.elf` and its WAD in one folder, `use("doom.elf")` in place of
-   `use("/kits/doom")`, the stick built that way,
+   `use("/Kosmos/Kits/doom")`, the stick built that way,
    and `KOSMOS_DOOM` out of the system's build. Then Quake and the Super
    Nintendo.
 
@@ -229,7 +229,7 @@ files are inherent parts of the game, not savedata that you generate". So:
   Lua, its ELF, what it plays, its settings, its saves. There is no
   `/Home/Games`; deleting the folder removes the application entirely, and
   copying it copies all of it.
-- **An application's C is not a kit.** There is no `/kits/doom` and there
+- **An application's C is not a kit.** There is no `/Kosmos/Kits/doom` and there
   will not be: kits are what the system ships for any program to use, and
   Doom's engine belongs to Doom.
 - **Self-contained, on the system's parts**: "i like the idea that most
@@ -261,7 +261,7 @@ the application goes.
 
 - **An application's Lua reaches its own C by the file**: `use("doom.elf")`
   returns the table the engine in that image builds, as `use` of a kit
-  does; `/kits` holds only what Kosmos ships. And by the same rule an
+  does; `/Kosmos/Kits` holds only what Kosmos ships. And by the same rule an
   application's own Lua files: `use("menu.lua")` is the file beside the
   program.
 - **The manifest is the program's `-- kosmos:` header**, which `binfs`, the

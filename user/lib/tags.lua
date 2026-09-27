@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Tags: what an audio file says about itself.
 --
---   local tags = use("/lib/tags.lua")
+--   local tags = use("/Kosmos/Libraries/tags.lua")
 --   local t = tags.read(read, size)    -- read(offset, bytes) -> string or nil
 --   t.title  t.artist  t.album  t.genre  t.year  t.track
 --   t.cover = { mime = "image/jpeg", offset = 1234, bytes = 56789 }

@@ -33,7 +33,7 @@
 -- and are worth doing properly rather than partly.
 --------------------------------------------------------------------------
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 
 -- Where this window is. A shell's working directory belongs to the shell,
 -- never to a server: a server is always told a whole path and knows nothing
@@ -190,13 +190,13 @@ local view = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
                                  top = true, bottom = true } }
 
 --
--- **Its own text size**, from the View menu (`/lib/textsize.lua`): Diego,
+-- **Its own text size**, from the View menu (`/Kosmos/Libraries/textsize.lua`): Diego,
 -- 22 September, "a way to increase font size in the menu of the log viewer
 -- and terminal". Kept in `/Home/.terminal`. Everything below measures and
 -- draws in `size:face()` at `size:size()`, which is the desktop's `mono`
 -- until somebody chooses otherwise.
 --
-local textsize = use("/lib/textsize.lua")
+local textsize = use("/Kosmos/Libraries/textsize.lua")
 local size = textsize.new(ui, "/Home/.terminal")
 
 --
@@ -436,11 +436,11 @@ end
 --
 -- The server is C now and the protocol is `conproto.h`. Rather than copy a
 -- format string in here, both sides go through the Console Kit, which
--- compiles that header once. `use("/kits/console")` is the same line
--- `use("/lib/ui.lua")` is; that the layout is defined in C is not something
+-- compiles that header once. `use("/Kosmos/Kits/console")` is the same line
+-- `use("/Kosmos/Libraries/ui.lua")` is; that the layout is defined in C is not something
 -- this file has to know.
 --
-local con = use("/kits/console")
+local con = use("/Kosmos/Kits/console")
 
 --------------------------------------------------------------------------
 -- A burst of writes is one repaint, not one repaint each.

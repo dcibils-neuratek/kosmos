@@ -500,7 +500,7 @@ static const char *const button_names[12] = {
 };
 
 /*
- * The kit: `use("/kits/snes")`, built when it is asked for.
+ * The kit: `use("/Kosmos/Kits/snes")`, built when it is asked for.
  *
  * It was a global called `snes`, set in every Lua state, and a global with a
  * program's name hides the program: the shell sends a word that names

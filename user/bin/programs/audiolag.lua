@@ -7,7 +7,7 @@
 -- is a whole tick, the pipeline is running at the tick rate instead of the
 -- device rate, which is exactly the fault that made a beep cost 63% of the
 -- machine and still play at two thirds speed.
-local audio = use("/lib/audio.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
 
 local fmt = audio.format()
 if fmt.period == 0 then print("audiolag: no sound device") return end

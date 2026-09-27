@@ -7,10 +7,10 @@
 --
 -- The rows Disk Benchmark's window will draw, printed as each one finishes,
 -- and the run saved in `/Home/benchmarks` so a later one can be compared
--- with it. `/lib/diskbench.lua` has what each row measures and why some say
+-- with it. `/Kosmos/Libraries/diskbench.lua` has what each row measures and why some say
 -- "not yet".
 
-local diskbench = use("/lib/diskbench.lua")
+local diskbench = use("/Kosmos/Libraries/diskbench.lua")
 
 local words = {}
 

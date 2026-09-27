@@ -26,17 +26,17 @@
 --
 --   make image FILES="game.sfc:/Home/roms/snes/game.sfc"
 
-local ui = use("/lib/ui.lua")
-local panel = use("/lib/panel.lua")
-local wmproto = use("/lib/wmproto.lua")
-local audio = use("/lib/audio.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local panel = use("/Kosmos/Libraries/panel.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
 
 --
 -- The core is a kit, and only in an image built with it. It used to be a
 -- global, and a global named `snes` hid this program from the prompt: the
 -- shell gives a word that already names something to Lua.
 --
-local have, snes = pcall(use, "/kits/snes")
+local have, snes = pcall(use, "/Kosmos/Kits/snes")
 
 if not have or type(snes) ~= "table" then
   print("snes: this image was not built with SNES=1")

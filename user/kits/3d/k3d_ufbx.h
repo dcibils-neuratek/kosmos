@@ -13,7 +13,7 @@
 /* The bytes come from Cafesa3D, which read the file; ufbx opens nothing. */
 #define UFBX_NO_STDIO
 
-/* OBJ has a translator of its own (`/lib/translators/obj.lua`). */
+/* OBJ has a translator of its own (`/Kosmos/Libraries/translators/obj.lua`). */
 #define UFBX_NO_FORMAT_OBJ
 
 /* What a model for Cafesa3D does not need: vertex caches, animation

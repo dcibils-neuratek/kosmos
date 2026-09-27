@@ -12,7 +12,7 @@
 -- slow machine the difference between "working" and "hung" is whether
 -- anything is coming out of the cable.
 
-local bench = use("/lib/bench.lua")
+local bench = use("/Kosmos/Libraries/bench.lua")
 
 print(("Kosmos benchmark: %d measurements, about %d minutes.")
       :format(#bench.TESTS, math.ceil(#bench.TESTS * bench.SECONDS / 60)))

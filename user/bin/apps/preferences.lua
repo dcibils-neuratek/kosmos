@@ -27,12 +27,12 @@
 -- there, and it appears here.
 --
 
-local ui = use("/lib/ui.lua")
-local settings = use("/lib/settings.lua")
-local hardware = use("/lib/hardware.lua")
-local audio = use("/lib/audio.lua")
-local clock = use("/lib/clock.lua")
-local backlight_ok, backlight = pcall(use, "/lib/backlight.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local settings = use("/Kosmos/Libraries/settings.lua")
+local hardware = use("/Kosmos/Libraries/hardware.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
+local backlight_ok, backlight = pcall(use, "/Kosmos/Libraries/backlight.lua")
 local theme = ui.theme
 
 --
@@ -45,7 +45,7 @@ local theme = ui.theme
 -- Appearance panel had these six lines from the day it was written, and it
 -- folded into this window on 24 September (`roadmap.md` 5zp).
 --
-local LOOKS = use("/lib/themes.lua")
+local LOOKS = use("/Kosmos/Libraries/themes.lua")
 
 for _, name in ipairs(LOOKS.order) do
   local palette, said = theme.read(LOOKS[name], "dark")
@@ -571,7 +571,7 @@ local function control_for(it, x, y, changed)
 
     table.sort(names)
 
-    for _, name in ipairs(use("/lib/startup.lua").items()) do
+    for _, name in ipairs(use("/Kosmos/Libraries/startup.lua").items()) do
       ticked[tostring(name)] = true
     end
 

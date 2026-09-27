@@ -864,7 +864,7 @@ static const luaL_Reg quake_lib[] = {
 };
 
 /*
- * The kit, `use("/kits/quake")`. The window's size rides along, so the Lua
+ * The kit, `use("/Kosmos/Kits/quake")`. The window's size rides along, so the Lua
  * side does not carry the number.
  *
  * Not a global, which it was: a global named `quake` hid `/bin/quake.lua`

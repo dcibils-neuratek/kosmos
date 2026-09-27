@@ -9,7 +9,7 @@
 -- `/` a directory at all. Nothing is mounted there, so no server answers
 -- for it, and it is a directory made entirely of mount points.
 
-local types = use("/lib/filetypes.lua")
+local types = use("/Kosmos/Libraries/filetypes.lua")
 
 local name = args:match("^%s*(%S+)")
 local path = name and (name:sub(1, 1) == "/" and name
@@ -50,7 +50,7 @@ for _, entry in ipairs(entries) do
   -- happens to hold. That number is true and it is not what anybody asking
   -- means, which is the definition of a misleading answer.
   -- Size and kind in their own columns, the same two Tracker shows and
-  -- from the same table - `/lib/filetypes.lua`. Two programs answering
+  -- from the same table - `/Kosmos/Libraries/filetypes.lua`. Two programs answering
   -- "what is this" differently is the thing that table exists to stop.
   local size, kind
 

@@ -6,7 +6,7 @@
 -- `tools/test_record.c` records sixty frames of the camera's test pattern -
 -- 640 by 480, thirty a second, two seconds - with the Record Kit's own code,
 -- and writes the file to `build/host/test_record.mp4`; FFmpeg decodes it
--- there. This reads the same file with `/lib/mp4.lua`, which is how Video
+-- there. This reads the same file with `/Kosmos/Libraries/mp4.lua`, which is how Video
 -- will open a recording once it decodes H.264 (`roadmap.md` 4e): a writer
 -- and a reader that agree only with themselves would not be a file format.
 

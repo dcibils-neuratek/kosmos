@@ -19,8 +19,8 @@
 -- Any of the three failing says so plainly rather than showing an empty
 -- window and leaving which layer broke to be guessed at.
 
-local pdf      = use("/lib/pdf.lua")
-local compress = use("/kits/compress")
+local pdf      = use("/Kosmos/Libraries/pdf.lua")
+local compress = use("/Kosmos/Kits/compress")
 
 local path = args[1] or "/Home/odyssey.pdf"
 

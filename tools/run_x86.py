@@ -772,11 +772,11 @@ def usb_blocks(image, check):
     out = boot(image, None, 150.0,
                typed=("sticks",
                       'fs.write("/Temporary/past.lua", [[local r = '
-                      'use("/lib/blocks.lua").open() print("past:", '
+                      'use("/Kosmos/Libraries/blocks.lua").open() print("past:", '
                       'r:read(0, %d, 1)) r:close()]])' % blocks,
                       "/Temporary/past.lua",
                       'fs.write("/Temporary/refused.lua", [[local r = '
-                      'use("/lib/blocks.lua").open() local function ask(op) '
+                      'use("/Kosmos/Libraries/blocks.lua").open() local function ask(op) '
                       'return (string.unpack("<I4", (fs.raw("/Devices/blocks", '
                       'string.pack("<I4I4I8I4I4", op, 0, 0, 1, r.handle))))) '
                       'end print("refused:", ask(4), ask(6)) r:close()]])',
@@ -1058,7 +1058,7 @@ def usb_drives(image, check):
     # The Drives app's model, as a program of its own: the one above is
     # typed at the prompt, and a line there is cut at about a kilobyte.
     model = (
-        'for _, d in ipairs(use("/lib/drivelist.lua").drives()) do '
+        'for _, d in ipairs(use("/Kosmos/Libraries/drivelist.lua").drives()) do '
         'local v = {} for _, x in ipairs(d.volumes) do v[#v + 1] = x.name end '
         'print("drives" .. ": model " .. d.kind .. "|" .. d.bytes .. "|" '
         '.. table.concat(v, ",") .. "|" .. d.unclaimed) end'
@@ -1692,7 +1692,7 @@ def usb_home_named(image, check):
     # And what the Drives window and Tracker's sidebar say of each volume,
     # through the one library both read: the partition that is `/Home` by
     # that name and opening there, and the other stick's by its own.
-    labels = ('local dl = use("/lib/drivelist.lua") '
+    labels = ('local dl = use("/Kosmos/Libraries/drivelist.lua") '
               'for _, d in ipairs(dl.drives()) do for _, v in ipairs(d.volumes) do '
               'print("drives" .. ": volume " .. dl.label(v) .. " at " .. dl.path(v) '
               '.. " opens " .. tostring(dl.opens(v))) end end')
@@ -3763,7 +3763,7 @@ def core(image, check, fails):
 
     # What it prints is its own capability list, asked of the namespace - so
     # this is IPC and the servers rather than a string in the image.
-    for path in ("/bin", "/Devices", "/Home", "/lib"):
+    for path in ("/bin", "/Devices", "/Home", "/Kosmos/Libraries"):
         check(path in ran, "a process could not see %s" % path)
 
     check("process died" not in ran, "the program faulted on its way out")

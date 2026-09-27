@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Media: a file played, whoever is playing it.
 --
---   local media = use("/lib/media.lua")
+--   local media = use("/Kosmos/Libraries/media.lua")
 --   local p, why = media.open("/Home/song.mp3")
 --   p:play()                     -- and p:tick() on the caller's own tick
 --   p:seek(90)   p:position()   p:volume(0.5)   p:finished()   p:close()
@@ -23,10 +23,10 @@
 -- returns at "full", because whoever calls it is a window with a pointer to
 -- answer. WAV and MP3.
 
-local audio = use("/lib/audio.lua")
-local wav   = use("/lib/wav.lua")
-local mp3   = use("/kits/mp3")
-local tags  = use("/lib/tags.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
+local wav   = use("/Kosmos/Libraries/wav.lua")
+local mp3   = use("/Kosmos/Kits/mp3")
+local tags  = use("/Kosmos/Libraries/tags.lua")
 
 local media = {}
 
@@ -98,7 +98,7 @@ function media.open(path, options)
   local kind = tostring(path):lower():match("%.(%w+)$")
 
   if kind and FILMS[kind] then
-    return use("/lib/video.lua").open(path, options)
+    return use("/Kosmos/Libraries/video.lua").open(path, options)
   end
 
   local fmt = audio.format()
@@ -394,7 +394,7 @@ end
 --
 -- What a file says about itself - title, artist, album, genre, year, track,
 -- and where its cover is - read from the file and never written onto it
--- (`/lib/tags.lua`). An empty table when it says nothing, and nil with why
+-- (`/Kosmos/Libraries/tags.lua`). An empty table when it says nothing, and nil with why
 -- when it cannot be read at all.
 --
 -- Through one page, read a window at a time as `tags.lua` asks: a tag's

@@ -15,8 +15,8 @@
 -- `find` is the other half of searching and looks at *attributes* - what a
 -- file is, rather than what is in it.
 
-local files = use("/lib/files.lua")
-local text = use("/lib/text.lua")
+local files = use("/Kosmos/Libraries/files.lua")
+local text = use("/Kosmos/Libraries/text.lua")
 
 local pattern, name = args:match("^%s*(%S+)%s+(%S+)")
 

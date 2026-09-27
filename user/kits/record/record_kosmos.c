@@ -3,7 +3,7 @@
  * **The Record Kit**: a camera's frames, taken from its ring, into an MP4 of
  * H.264 (`roadmap.md` 6d 8f) - `record_core.c` behind a Lua face.
  *
- *   local record = use("/kits/record")
+ *   local record = use("/Kosmos/Kits/record")
  *   local bytes = record.work_bytes(640, 480)    -- nil: not recordable
  *   local r, why = record.open{ work = at, work_bytes = n,
  *                               out = at, out_bytes = n,
@@ -17,7 +17,7 @@
  * **Both memories are the caller's regions**, made with `sys.memory` and
  * mapped - the encoder's frames alone outgrow a process's 2 MB heap - and
  * the file, whole in `out`, is written to the disk with one `write_from`
- * when the recording stops. `/lib/camera.lua` does that part.
+ * when the recording stops. `/Kosmos/Libraries/camera.lua` does that part.
  *
  * **Timed by the counter at the moment each frame is taken**, so a machine
  * that encodes slower than the camera sends makes a recording with fewer

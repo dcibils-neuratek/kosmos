@@ -20,7 +20,7 @@
 
 local drivelist = {}
 
-local have_blocks, blocks = pcall(use, "/lib/blocks.lua")
+local have_blocks, blocks = pcall(use, "/Kosmos/Libraries/blocks.lua")
 
 local function trimmed(s)
   return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))

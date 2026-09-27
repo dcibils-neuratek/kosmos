@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- An MP4's first audio track, as `/lib/mp4.lua` reads it, printed for a
+-- An MP4's first audio track, as `/Kosmos/Libraries/mp4.lua` reads it, printed for a
 -- test written in C (`tools/test_aac.c`): the track's description on one
 -- line, then each sample's offset and length, in decoding order.
 --

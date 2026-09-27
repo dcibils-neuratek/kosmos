@@ -1,9 +1,9 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * **The AAC Kit**: FFmpeg's AAC decoder behind a Lua face (`roadmap.md`
- * 4e), for a film's sound in `/lib/video.lua`.
+ * 4e), for a film's sound in `/Kosmos/Libraries/video.lua`.
  *
- *   local aac = use("/kits/aac")
+ *   local aac = use("/Kosmos/Kits/aac")
  *   local d, why = aac.decoder(config, rate, channels)
  *                             -- the MP4's AudioSpecificConfig, and the
  *                             -- rate and channels its sample entry states
@@ -15,7 +15,7 @@
  *   d:reset()                 -- a seek: forget the frame before
  *   d:close()
  *
- * **The shape of `/kits/mp3`'s `decode`, on purpose**: PCM and the rate
+ * **The shape of `/Kosmos/Kits/mp3`'s `decode`, on purpose**: PCM and the rate
  * and channel count it is in, and the conversion to the device left to
  * `sys.pcm`, which already answers that question for every format. More
  * than two channels are mixed to two here, because only the decoder knows

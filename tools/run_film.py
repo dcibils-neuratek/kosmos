@@ -11,7 +11,7 @@ to, so it is also what the machine has to play.
 
 QEMU writes whatever the guest plays to a WAV on this Mac (`virtio-sound`
 on the ARM board, HDA on x86-64). The guest plays the film through
-`/lib/video.lua` - the kit's clock, the AAC Kit, `sys.pcm`, the audio
+`/Kosmos/Libraries/video.lua` - the kit's clock, the AAC Kit, `sys.pcm`, the audio
 server - and afterwards the WAV is laid against the reference: found where
 it starts, and every sample of the three seconds held within two steps.
 Both boards run their sound at 44.1 kHz, so nothing is resampled and the
@@ -51,7 +51,7 @@ WAV_HEADER = 44
 # prints is put together from pieces, so the line typed to start it - which
 # the shell echoes - never holds the words the harness waits for.
 PROGRAM = (
-    'local video = use("/lib/video.lua") '
+    'local video = use("/Kosmos/Libraries/video.lua") '
     'local f, why = video.open(args) '
     'if not f then print("FILM" .. "-ERR " .. tostring(why)) '
     'print("FILM" .. "-DONE") return end '
@@ -78,7 +78,7 @@ PROGRAM = (
 # device playing out, about a fifth of a second - and stand at 2.0 after the
 # seek; and about two seconds of sound come out rather than three.
 SEEKS = (
-    'local video = use("/lib/video.lua") '
+    'local video = use("/Kosmos/Libraries/video.lua") '
     'local f = assert(video.open(args)) '
     'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1 '
     'local function run(seconds) local t0 = sys.ticks() '
@@ -368,7 +368,7 @@ def main():
         return 1
 
     offset, shared, far, worst, _ = fit
-    print("PASS: %d checks on a film's sound (AAC-LC through /lib/video.lua, "
+    print("PASS: %d checks on a film's sound (AAC-LC through /Kosmos/Libraries/video.lua, "
           "%.2f s of it heard within %d of FFmpeg's reference, a %.2f s film "
           "in %.2f s by its own clock, and the Video app hearing it)"
           % (checks, shared / RATE, worst, float(said.group(3)),

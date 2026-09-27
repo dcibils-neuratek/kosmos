@@ -14,7 +14,7 @@
 -- that is the same question `mkdir -p` is refused for: the honest answers
 -- are "keep what was made" or "undo it", and the second is a transaction.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local a, b = args:match("^%s*(%S+)%s+(%S+)")
 

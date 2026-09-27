@@ -1,8 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The kit's header and controls, drawn into a surface.
 --
---   local ui = use("/lib/ui.lua")
---   local pk = use("/lib/pixelkit.lua").new(ui)
+--   local ui = use("/Kosmos/Libraries/ui.lua")
+--   local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 --   pk.header(s, 0, 0, W, "PDF", "page 3 of 120")
 --   pk.iconbutton(s, { x = 10, y = 10, icon = "back" })
 --   pk.button(s, { x = W - 90, y = 7, text = "Open", go = true })

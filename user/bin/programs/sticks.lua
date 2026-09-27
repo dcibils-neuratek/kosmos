@@ -8,7 +8,7 @@
 -- table read through it - the header at block 1, held to the block it says it
 -- is at, and the entries it points to. It only reads.
 
-local blocks = use("/lib/blocks.lua")
+local blocks = use("/Kosmos/Libraries/blocks.lua")
 
 local function u32(s, at) return (string.unpack("<I4", s, at)) end
 local function u64(s, at) return (string.unpack("<I8", s, at)) end

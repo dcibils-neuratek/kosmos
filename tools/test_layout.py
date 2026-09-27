@@ -127,12 +127,12 @@ def main():
     # live in a doom specific directory".
     #
     # Checked as a name collision because that is what the mistake looks
-    # like every time: `/kits/doom` existed beside `doom.lua`, and so did
+    # like every time: `/Kosmos/Kits/doom` existed beside `doom.lua`, and so did
     # quake, snes, litexl and web. A kit that shares its name with an app is
     # a binding to one engine wearing a general word - it can have no second
     # caller, which is the whole of what makes something a kit.
     #
-    # Caller-counting was tried first and is the wrong test: `/kits/game` has
+    # Caller-counting was tried first and is the wrong test: `/Kosmos/Kits/game` has
     # one caller today and is a rasterizer written to have many.
     #
     apps = os.path.join(ROOT, "user", "bin", "apps")

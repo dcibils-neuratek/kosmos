@@ -24,7 +24,7 @@
  * and a description of it.
  *
  * **A kit rather than a global**, so the rule the rest of the system runs on
- * still holds: `use("/kits/console")` comes through the namespace, and a
+ * still holds: `use("/Kosmos/Kits/console")` comes through the namespace, and a
  * program that was not given `use` has no kits.
  */
 

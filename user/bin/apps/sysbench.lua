@@ -6,7 +6,7 @@
 --
 --   wm sysbench
 --
--- The window. Everything it measures lives in `/lib/bench.lua`, which
+-- The window. Everything it measures lives in `/Kosmos/Libraries/bench.lua`, which
 -- `score` uses as well - one engine, two faces, so a board with a serial
 -- cable and no display gets the same numbers as a desktop does.
 --
@@ -18,10 +18,10 @@
 -- failure this whole system exists to avoid, and a benchmark that did it
 -- would be a poor advertisement for the design it is measuring.
 
-local ui    = use("/lib/ui.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
-local bench = use("/lib/bench.lua")
-local wmproto = use("/lib/wmproto.lua")
+local bench = use("/Kosmos/Libraries/bench.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 local W, H  = 620, 700
 local ROW   = 20

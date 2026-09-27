@@ -150,7 +150,7 @@ SUITES = [
 
     # **A film's sound, heard** (`roadmap.md` 4e): a film whose sound is an
     # AAC conformance stream's first three seconds, played through
-    # `/lib/video.lua` with QEMU recording what came out - every sample
+    # `/Kosmos/Libraries/video.lua` with QEMU recording what came out - every sample
     # within one step of FFmpeg's reference, the film's clock the sound's,
     # and paused and sought. Both boards: virtio-sound and HDA, and the AAC
     # decoder's floats on each.

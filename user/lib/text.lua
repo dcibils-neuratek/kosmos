@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Splitting text into lines, and the argument shape three programs share.
 --
---   local text = use("/lib/text.lua")
+--   local text = use("/Kosmos/Libraries/text.lua")
 --
 -- Small on purpose. `head`, `tail`, `wc` and `grep` all had the same two
 --questions to solve - where do lines end, and how is `-n 3` spelled - and three

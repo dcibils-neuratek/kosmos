@@ -1023,7 +1023,7 @@ end
 
 if role == R_G3D then
   -- `use` belongs to the program runner and this chunk is not a program, so
-  -- the library is loaded from the same table `/lib` serves. It needs
+  -- the library is loaded from the same table `/Kosmos/Libraries` serves. It needs
   -- nothing but `math`, which every Lua state has.
   -- `sys.libraries` hands back the *source of a chunk* that returns the
   -- table, which is the same shape `sys.programs` has and the same reason:

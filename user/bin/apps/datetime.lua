@@ -22,8 +22,8 @@
 -- would be a list that cannot describe where a billion and a half people
 -- live.
 
-local ui    = use("/lib/ui.lua")
-local clock = use("/lib/clock.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
 
 local W, H = 300, 300
 

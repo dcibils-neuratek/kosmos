@@ -3,7 +3,7 @@
 -- of models there are (Thingiverse, Printables).
 --
 -- **A translator** (`roadmap.md` 4l, 5c), as BeOS's Translation Kit had
--- them: one file in `/lib/translators/`, found by Cafesa3D when it starts,
+-- them: one file in `/Kosmos/Libraries/translators/`, found by Cafesa3D when it starts,
 -- saying what it reads and writes. It reaches only what it is handed - the
 -- 3D Kit's loops over bytes, and a way to make a material - and nothing of
 -- the file system: Cafesa3D reads the bytes and writes what comes back.

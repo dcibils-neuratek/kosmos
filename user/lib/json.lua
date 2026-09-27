@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- JSON, read and written: RFC 8259, and nothing looser.
 --
---   local json = use("/lib/json.lua")
+--   local json = use("/Kosmos/Libraries/json.lua")
 --   local value, why = json.decode(text)   -- nil and a sentence if it is not JSON
 --   local text = json.encode(value)
 --

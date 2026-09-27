@@ -82,17 +82,17 @@ endpoint, receive a typed message, reply. What makes it worth the boundary
 is not the loop, it is that the boundary is real - "only the disk server can
 corrupt the disk" is true because nothing else can name the disk.
 
-**A kit is C that runs inside your own process.** `use("/kits/compress")`
+**A kit is C that runs inside your own process.** `use("/Kosmos/Kits/compress")`
 hands back a table of C functions compiled into your address space. No
 process, no message, no ownership: calling it is a function call. `kits` at
-the prompt lists what a machine has: `/kits/compress` to inflate, `/kits/pdf`
-to scan a content stream, `/kits/gl` for TinyGL, `/kits/console` for the
-console's wire format, `/kits/mp3`, `/kits/network`, and in the images that
-compile them `/kits/web`, `/kits/doom`, `/kits/quake` and `/kits/snes`. **A kit is never a global as well**: one named after a program
+the prompt lists what a machine has: `/Kosmos/Kits/compress` to inflate, `/Kosmos/Kits/pdf`
+to scan a content stream, `/Kosmos/Kits/gl` for TinyGL, `/Kosmos/Kits/console` for the
+console's wire format, `/Kosmos/Kits/mp3`, `/Kosmos/Kits/network`, and in the images that
+compile them `/Kosmos/Kits/web`, `/Kosmos/Kits/doom`, `/Kosmos/Kits/quake` and `/Kosmos/Kits/snes`. **A kit is never a global as well**: one named after a program
 hides that program from the prompt, which is what the last three did until
 they moved here (`design.md` §6).
 
-`/kits/console` is the odd one and worth knowing about, because it is a kit for
+`/Kosmos/Kits/console` is the odd one and worth knowing about, because it is a kit for
 a reason none of the others share. `/Devices/console` is the only protocol here
 with **two implementations**: a terminal window mounts itself as its child's
 console, so an application answers the same ABI the server does. The kit is
@@ -102,7 +102,7 @@ the namespace and a second copy inside the terminal.
 So: **a kit is code you run; a server is someone you ask.** That is why
 inflate is a kit - it computes - and the disk is a server - it owns.
 
-**A library is the same position, in Lua.** `use("/lib/ui.lua")` loads Lua
+**A library is the same position, in Lua.** `use("/Kosmos/Libraries/ui.lua")` loads Lua
 source into the caller's own environment. `ui`, `panel`, `pdf`, `kfs`.
 
 **A program** is console-based: it prints, it reads lines, it lives in

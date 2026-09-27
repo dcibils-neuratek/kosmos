@@ -7,9 +7,9 @@
 --   wm glmorph3d
 --
 -- TinyGL's `morph3d`, unmodified upstream C, rasterised in software on a
--- machine with no GPU. The window and the loop are `/lib/gldemo.lua`; the
+-- machine with no GPU. The window and the loop are `/Kosmos/Libraries/gldemo.lua`; the
 -- triangles are `runtime/upstream/tinygl/examples/morph3d.c`.
 
-local demo = use("/lib/gldemo.lua")
+local demo = use("/Kosmos/Libraries/gldemo.lua")
 
 demo("morph3d", "Morph 3D")

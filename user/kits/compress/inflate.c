@@ -256,7 +256,7 @@ static int l_inflated_size(lua_State *L)
 }
 
 /*
- * The compression kit: `use("/kits/compress")`.
+ * The compression kit: `use("/Kosmos/Kits/compress")`.
  *
  * It was in `sys` for an evening, next to `pack` and `fnv1a`, and it did not
  * belong there. `sys` is the syscall boundary - what only the kernel can do
@@ -267,8 +267,8 @@ static int l_inflated_size(lua_State *L)
  * A kit is the BeOS answer and this system already claims that lineage:
  * Interface Kit, Storage Kit, Media Kit, Translation Kit. A named, documented
  * library of things a program will want, reached through the namespace like
- * everything else - so a program that was not given `/kits` has none, the
- * same way a program that was not given `/lib` has no libraries.
+ * everything else - so a program that was not given `/Kosmos/Kits` has none, the
+ * same way a program that was not given `/Kosmos/Libraries` has no libraries.
  */
 void kosmos_compress_kit(lua_State *L)
 {

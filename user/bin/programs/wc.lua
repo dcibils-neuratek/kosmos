@@ -8,8 +8,8 @@
 -- outside ASCII is in the file. Bytes is what a filesystem stores and what
 -- `ls` shows, so it is the one worth reporting without qualification.
 
-local files = use("/lib/files.lua")
-local text = use("/lib/text.lua")
+local files = use("/Kosmos/Libraries/files.lua")
+local text = use("/Kosmos/Libraries/text.lua")
 
 local name = args:match("^%s*(%S+)")
 

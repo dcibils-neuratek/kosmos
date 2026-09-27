@@ -116,7 +116,7 @@ end
 -- as "there is no such thing", so the line stays and says so.
 --------------------------------------------------------------------------
 
-local hardware = use("/lib/hardware.lua")
+local hardware = use("/Kosmos/Libraries/hardware.lua")
 
 local b      = sys.build()
 local cpu    = fs.read("/Devices/cpu")    or {}

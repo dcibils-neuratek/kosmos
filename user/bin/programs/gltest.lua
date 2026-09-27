@@ -4,7 +4,7 @@
 -- A console check, deliberately without a window: if this passes and the
 -- application is blank, the fault is in the application; if this fails, it
 -- is in the kit. Two questions that look identical on a screen.
-local gl  = use("/kits/gl")
+local gl  = use("/Kosmos/Kits/gl")
 local gfx_ = gfx
 
 local list = gl.demos()

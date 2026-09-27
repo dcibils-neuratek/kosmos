@@ -2,7 +2,7 @@
 -- What share of the machine each process had since the last look, for the
 -- Processes window.
 --
---   local share = use("/lib/procshare.lua")
+--   local share = use("/Kosmos/Libraries/procshare.lua")
 --   local state = {}
 --   for _, r in ipairs(share.rows(state, sys.processes(),
 --                                 fs.read("/Devices/kernel"))) do ... end

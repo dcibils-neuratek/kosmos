@@ -34,7 +34,7 @@
 /*
  * Two stores, one server.
  *
- * `/bin` and `/lib` differ only in which array they serve - the Lua original
+ * `/bin` and `/Kosmos/Libraries` differ only in which array they serve - the Lua original
  * had the same property and used one function for both roles, which is worth
  * keeping rather than discovering again. The store is set once at entry and
  * never changes.

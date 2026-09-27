@@ -2,7 +2,7 @@
 /*
  * The web kit: HTML into a document, and CSS into a stylesheet.
  *
- * `use("/kits/web")`, the same way `/kits/pdf` and `/kits/gl` are reached,
+ * `use("/Kosmos/Kits/web")`, the same way `/Kosmos/Kits/pdf` and `/Kosmos/Kits/gl` are reached,
  * and for the same reason: which language a library is written in is not a
  * fact its caller should have to know.
  *

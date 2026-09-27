@@ -15,8 +15,8 @@
 -- editor that hangs is a window you can still drag out of the way - and it
 -- sits beside everything else instead of taking the display.
 
-local ui    = use("/lib/ui.lua")
-local panel = use("/lib/panel.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
+local panel = use("/Kosmos/Libraries/panel.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the

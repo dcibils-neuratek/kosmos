@@ -18,7 +18,7 @@
 -- than a message because the server has no idea anybody is watching, and
 -- should not have to.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
 
 local W, H = 560, 460

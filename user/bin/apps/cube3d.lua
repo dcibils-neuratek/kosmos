@@ -8,7 +8,7 @@
 --
 -- The demonstration is the split, not the cube. Every vertex transform,
 -- every back-face test and the whole depth ordering happen in Lua, in
--- `/lib/g3d.lua`. The only thing in C is `surface:triangle`, because that
+-- `/Kosmos/Libraries/g3d.lua`. The only thing in C is `surface:triangle`, because that
 -- is the one loop that runs once per *pixel*.
 --
 -- The numbers that make that the obvious division rather than a matter of
@@ -20,9 +20,9 @@
 -- finished frame is one `commit` and no pixel is ever copied between
 -- processes.
 
-local ui  = use("/lib/ui.lua")
-local g3d = use("/lib/g3d.lua")
-local wmproto = use("/lib/wmproto.lua")
+local ui  = use("/Kosmos/Libraries/ui.lua")
+local g3d = use("/Kosmos/Libraries/g3d.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 local W, H = 400, 320
 local BG = 0xff101828

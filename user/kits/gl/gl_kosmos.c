@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /kits/gl: TinyGL, drawing into a Kosmos surface.
+ * /Kosmos/Kits/gl: TinyGL, drawing into a Kosmos surface.
  *
  * **A kit rather than a library, and the rule decides it rather than a
  * preference.** `CLAUDE.md`: a finished algorithm has nothing to reload -

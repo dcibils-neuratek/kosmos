@@ -37,10 +37,10 @@
 -- Still missing: images, so a cover page is blank. `DCTDecode` is JPEG and
 -- `stb_image` is the same vendor as the rasteriser already here.
 
-local ui       = use("/lib/ui.lua")
-local panel    = use("/lib/panel.lua")
-local pdf      = use("/lib/pdf.lua")
-local pdfpage  = use("/lib/pdfpage.lua")
+local ui       = use("/Kosmos/Libraries/ui.lua")
+local panel    = use("/Kosmos/Libraries/panel.lua")
+local pdf      = use("/Kosmos/Libraries/pdf.lua")
+local pdfpage  = use("/Kosmos/Libraries/pdfpage.lua")
 
 local W, H = 760, 620
 local BAR  = 22                       -- the status line along the bottom

@@ -10,7 +10,7 @@
 -- exactly what this application can see, and nothing more.
 --
 -- **It is drawn in `drives.html`**: the same sidebar as Tracker - Places,
--- System and Drives, from `/lib/sidebar.lua` - the path as a trail, and the
+-- System and Drives, from `/Kosmos/Libraries/sidebar.lua` - the path as a trail, and the
 -- folder as Name, Size and Kind. What the application is handed is the file
 -- at its real place, so no application has to know that MyPhotos exists.
 --
@@ -29,10 +29,10 @@
 -- hides files it answers false for; folders always show, because a folder
 -- is how you reach the files.
 
-local ui      = use("/lib/ui.lua")
-local files   = use("/lib/files.lua")
-local types   = use("/lib/filetypes.lua")
-local sidebar = use("/lib/sidebar.lua")
+local ui      = use("/Kosmos/Libraries/ui.lua")
+local files   = use("/Kosmos/Libraries/files.lua")
+local types   = use("/Kosmos/Libraries/filetypes.lua")
+local sidebar = use("/Kosmos/Libraries/sidebar.lua")
 
 local theme = ui.theme
 

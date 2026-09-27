@@ -1349,7 +1349,7 @@ request - operation, unit, first block, count, handle - and a 48-byte reply -
 error, block size, blocks, count moved, handle, and the vendor and product
 INQUIRY answered. Info, open, read and close; a write is refused. The driver
 answers a request of any other length with `BLOCK_ERR_BAD_OP`, and
-`/lib/blocks.lua` writes the layout a second time in Lua and asserts its
+`/Kosmos/Libraries/blocks.lua` writes the layout a second time in Lua and asserts its
 sizes when it loads, so a disagreement is loud.
 
 **Control by message, data by shared memory** (the fifth call, `README.md`).
@@ -2544,7 +2544,7 @@ yet, and says so when it does.
 
 ### 8f: recording, H.264 in an MP4
 
-**The Record Kit** (`user/kits/record`), `use("/kits/record")`: lieff's
+**The Record Kit** (`user/kits/record`), `use("/Kosmos/Kits/record")`: lieff's
 `minih264e` encodes and his `minimp4` writes the file, both CC0 and vendored
 unchanged (`runtime/upstream/minih264`, `minimp4`, each with a README of how
 it is built). Diego chose H.264, "as all modern video players are h264".

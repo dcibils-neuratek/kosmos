@@ -8,7 +8,7 @@
 -- "leave the ones it made" or "undo them", both of which are a transaction
 -- and neither of which belongs here before there is a journal.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local name = args:match("^%s*(%S+)")
 

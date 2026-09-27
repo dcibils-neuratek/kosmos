@@ -19,9 +19,9 @@
 -- One per window, because the volume cache and the groups a refresh clears
 -- belong to the tree that drew them.
 
-local files    = use("/lib/files.lua")
-local placelib = use("/lib/places.lua")
-local drivelist = use("/lib/drivelist.lua")
+local files    = use("/Kosmos/Libraries/files.lua")
+local placelib = use("/Kosmos/Libraries/places.lua")
+local drivelist = use("/Kosmos/Libraries/drivelist.lua")
 
 local sidebar = {}
 
@@ -132,7 +132,7 @@ end
 -- `/system` and `/user` as well, so Places was left holding `user` - which
 -- the drawing never mentions - and no `Desktop`, which it does.
 local SYSTEM_MOUNTS = {
-  ["/bin"] = true, ["/lib"] = true, ["/Running"] = true,
+  ["/bin"] = true, ["/Kosmos/Libraries"] = true, ["/Running"] = true,
   ["/Devices"] = true, ["/Network"] = true, ["/Temporary"] = true,
 }
 
@@ -212,7 +212,7 @@ function sidebar.new()
   -- **And the shortcuts a person made**, the drawing's `MyPhotos on PHOTOS
   -- 2024`: files in `/Home/Places`, each found again by what its volume *is*
   -- rather than by its name or its unit, both of which change on a replug
-  -- (`/lib/places.lua` has the rule and `tools/test_places.lua` the proof).
+  -- (`/Kosmos/Libraries/places.lua` has the rule and `tools/test_places.lua` the proof).
   --
   -- A place whose drive is away stays in the list, dimmed and saying so -
   -- `drives.html`: "Unplug the drive and MyPhotos stays in Places, greyed

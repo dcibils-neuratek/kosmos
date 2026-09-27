@@ -53,9 +53,9 @@
 -- moving. Every meter in this system makes the same subtraction and
 -- `sysmon` says so too.
 --
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
-local pulse = use("/lib/pulse.lua")
+local pulse = use("/Kosmos/Libraries/pulse.lua")
 
 --
 -- Two numbers, and the rows are the larger one.
@@ -72,7 +72,7 @@ local ONLINE     = info.cpus_online or SCHEDULING
 local CORES      = info.cpus_present or ONLINE
 
 --------------------------------------------------------------------------
--- The panel is `/lib/pulse.lua`, which `sysmon` draws too.
+-- The panel is `/Kosmos/Libraries/pulse.lua`, which `sysmon` draws too.
 --
 -- Identity box, one segmented bar per processor, a numbered chip on each.
 -- That library says why the layout is BeOS's and why it is worth copying;

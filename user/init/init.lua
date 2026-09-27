@@ -30,7 +30,7 @@ local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
 local ROLE_DEVICES   = 9  -- serves /Devices: what hardware was found
 local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
 local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
-local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
+local ROLE_LIBFS     = 13 -- serves /Kosmos/Libraries: the libraries carried in the image
 local ROLE_APPFS     = 14 -- serves /Running: what each running program exposes
 local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
 local ROLE_AUDIO     = 16 -- serves /Devices/audio: the one process that may play
@@ -375,7 +375,7 @@ end
 --
 -- **What carries those verbs depends on who answers**, and that is the
 -- change this file has been through. Six servers are C and take a *declared
--- struct*: `/Devices`, `/bin`, `/lib`, `/Running`, `/Devices/console` and `/Temporary`, each
+-- struct*: `/Devices`, `/bin`, `/Kosmos/Libraries`, `/Running`, `/Devices/console` and `/Temporary`, each
 -- with a header in `user/include/` that both sides compile against. A mount
 -- names which, and `request` below branches on it.
 --
@@ -1807,12 +1807,48 @@ local function new_namespace()
   --
   local INLINE_MAX = 1024
 
+  --
+  -- **`/Kosmos/Kits`, answered here.** A kit is C in this process's own
+  -- image, so no server holds it and nothing needs asking: the folder lists
+  -- the kits this image has, each one a thing to `use` and never a file to
+  -- read (`roadmap.md` 6s c).
+  --
+  local function kits_request(op, rest)
+    local name = (rest or ""):match("^/?([^/]+)$")
+    local names = sys.kit_names and sys.kit_names() or {}
+
+    if op == "list" then
+      if name then return nil, "not a directory" end
+
+      return { ok = true, entries = names }
+    end
+
+    if op == "getattr" then
+      if not name then return { ok = true, attrs = { kind = "directory" } } end
+
+      for _, k in ipairs(names) do
+        if k:lower() == name:lower() then
+          return { ok = true, attrs = { kind = "kit" } }
+        end
+      end
+
+      return nil, "no such path: " .. tostring(rest)
+    end
+
+    return nil, ('a kit is C, and is used rather than read: use("/Kosmos/Kits/%s")')
+                :format(tostring(name))
+  end
+
   local function request(op, path, extra, pass)
     local capability, rest, _, proto = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
       -- simply no such path in this process's world.
       return nil, "no such path: " .. path
+    end
+
+    if proto == "kits" then
+      return kits_request(op, rest)
     end
 
     if proto == "console" then
@@ -2179,6 +2215,12 @@ local function new_namespace()
     end
 
     local r, e = request("getattr", path)
+
+    -- A place made only of mounts - `/Kosmos`, whose parts are each mounted
+    -- - is a folder, which only this table knows; no server holds it, so
+    -- asking one answered nothing and a listing drew it as a file.
+    if not r and #mounted_under(path) > 0 then return { kind = "directory" } end
+
     return r and r.attrs, e
   end
 
@@ -2532,7 +2574,7 @@ end
 -- It is the fifth server to move and the first whose protocol something
 -- other than a server implements. A terminal window mounts itself as its
 -- child's `/Devices/console`, so `terminal.lua` answers `conproto.h` too -
--- through `use("/kits/console")`, which is the same header compiled once
+-- through `use("/Kosmos/Kits/console")`, which is the same header compiled once
 -- rather than a format string copied into an application.
 --
 -- What the move bought, beyond a server with no collector on the path every
@@ -4014,7 +4056,7 @@ local function diskfs_main(endpoint, read_cap, write_cap)
   --   14  out of memory - the string did not fit in this process's heap
   --   15  a syntax error - the source arrived corrupted, which is what
   --       `beep` saw on the same machine as
-  --       "/lib/audio.lua:1: unexpected symbol near '$'"
+  --       "/Kosmos/Libraries/audio.lua:1: unexpected symbol near '$'"
   --   11  anything else
   --
   -- The message cannot be printed - this server owns no console and
@@ -4185,7 +4227,8 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- And what programs load rather than run. Separate from /bin so that `ls
   -- /bin` lists things you can type and nothing else.
-  ns.mount("/lib", lib_cap, nil, "bin")
+  ns.mount("/Kosmos/Libraries", lib_cap, nil, "bin")
+  ns.mount("/Kosmos/Kits", true, nil, "kits")          -- answered in-process
 
   -- What is running, and what each one exposes. A registry rather than a
   -- mount: the names under it appear and disappear with the programs.
@@ -4369,7 +4412,9 @@ THE MACHINE
   diskinfo             what is on the disk
 
 WHERE THINGS LIVE
-  /bin /lib            the programs and libraries in the image
+  /bin                 the programs, in the image
+  /Kosmos/Libraries    the libraries, in the image
+  /Kosmos/Kits         the kits: C, in every program's own image
   /Home /user /system  the disk; these survive a reboot
   /Temporary           memory; this does not
   /Devices             the hardware
@@ -6061,11 +6106,15 @@ if role == ROLE_RUNNER then
   -- for its child, and a terminal speaks the same protocol the server does -
   -- through the same kit, which is the whole reason that kit exists. The
   -- runner cannot tell the two apart and must not need to.
-  if req.console then ns.mount("/Devices/console", req.console, nil, "console") end
-  if req.data    then ns.mount("/Temporary",       req.data, nil, "ram") end
-  if req.bin     then ns.mount("/bin",             req.bin, nil, "bin") end
-  if req.devices then ns.mount("/Devices",         req.devices, nil, "dev") end
-  if req.lib     then ns.mount("/lib",             req.lib, nil, "bin") end
+  if req.console then ns.mount("/Devices/console",   req.console, nil, "console") end
+  if req.data    then ns.mount("/Temporary",         req.data, nil, "ram") end
+  if req.bin     then ns.mount("/bin",               req.bin, nil, "bin") end
+  if req.devices then ns.mount("/Devices",           req.devices, nil, "dev") end
+  if req.lib     then ns.mount("/Kosmos/Libraries",  req.lib, nil, "bin") end
+
+  -- A kit is in this process's own image, so every program has the folder
+  -- that lists them, answered in-process (`kits_request`).
+  ns.mount("/Kosmos/Kits", true, nil, "kits")
   if req.app     then ns.mount_registry("/Running", req.app, "app") end
   if req.disk    then
     ns.mount("/system", req.disk, "/system")
@@ -6329,11 +6378,11 @@ if role == ROLE_RUNNER then
     end,
   }
   --------------------------------------------------------------------------
-  -- `use("/lib/ui.lua")` - a library, loaded into this program's world.
+  -- `use("/Kosmos/Libraries/ui.lua")` - a library, loaded into this program's world.
   --
   -- Not `require`. There is no package path, no search, no C loader and no
   -- global module table: a library is a file in this process's namespace,
-  -- and a program that was not given /lib does not have one. That is the
+  -- and a program that was not given /Kosmos/Libraries does not have one. That is the
   -- same sentence as everywhere else in this system, applied to code.
   --
   -- The library is loaded with *this program's* environment, so it sees the
@@ -6349,7 +6398,7 @@ if role == ROLE_RUNNER then
   env.use = function(path)
     --
     -- Cached by the path folded, as a name is found (`roadmap.md` 6s): a
-    -- library asked for as `/lib/ui.lua` and as `/LIB/UI.lua` is one file,
+    -- library asked for as `/Kosmos/Libraries/ui.lua` and as `/LIB/UI.lua` is one file,
     -- and two instances of it would be two sets of its state.
     --
     local key = tostring(path):lower()
@@ -6361,8 +6410,8 @@ if role == ROLE_RUNNER then
     --
     -- A kit is a library that happens to be C.
     --
-    -- `use("/lib/ui.lua")` reads Lua out of the namespace and runs it;
-    -- `use("/kits/pdf")` gets a table the runtime built. The caller writes
+    -- `use("/Kosmos/Libraries/ui.lua")` reads Lua out of the namespace and runs it;
+    -- `use("/Kosmos/Kits/pdf")` gets a table the runtime built. The caller writes
     -- the same line either way, which is the point: where a library's speed
     -- comes from is not something the program using it should have to know,
     -- and a kit that later grows a Lua half - or a Lua library that has its
@@ -6372,7 +6421,7 @@ if role == ROLE_RUNNER then
     -- rule the rest of the system runs on still holds: what you were not
     -- given, you do not have. A program with no `use` has no kits.
     --
-    local kit = key:match("^/kits/([%w_]+)$")
+    local kit = key:match("^/kosmos/kits/([%w_]+)$")
 
     if kit then
       local value, why = sys.kit(kit)

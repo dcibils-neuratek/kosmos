@@ -3,7 +3,7 @@
 -- A text size of a window's own, for the windows that are made of text in
 -- the monospace face: the Terminal and Log View.
 --
---   local textsize = use("/lib/textsize.lua")
+--   local textsize = use("/Kosmos/Libraries/textsize.lua")
 --   local size = textsize.new(ui, "/Home/.terminal")
 --   size:face()                   -- the face to measure and draw with
 --   size:size()                   -- its size, to hand `g:text`

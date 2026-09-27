@@ -11,7 +11,7 @@
 -- exists - because the filesystem does not know which answer is wanted and
 -- guessing is how a move becomes a delete.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local a, b = args:match("^%s*(%S+)%s+(%S+)")
 

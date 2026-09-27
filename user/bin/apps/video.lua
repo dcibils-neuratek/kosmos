@@ -25,10 +25,10 @@
 -- why, the way the Drives app shows `Format...`: an item that is missing
 -- teaches nothing, and one that refuses says what it would do.
 --
-local ui = use("/lib/ui.lua")
-local media = use("/lib/media.lua")
-local panel = use("/lib/panel.lua")
-local wmproto = use("/lib/wmproto.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local media = use("/Kosmos/Libraries/media.lua")
+local panel = use("/Kosmos/Libraries/panel.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local theme = ui.theme
 
 --------------------------------------------------------------------------
@@ -219,7 +219,7 @@ if full then W, H = screen_w, screen_h end
 
 --
 -- **The film keeps the time**, and it is the sound's: frames heard, or the
--- counter when there is no sound to hear (`/lib/video.lua`). This file
+-- counter when there is no sound to hear (`/Kosmos/Libraries/video.lua`). This file
 -- kept its own clock once, from the counter, and it had a fault the kit's
 -- does not: pausing showed the frame of the last seek rather than the one
 -- on screen, because the moment it paused at was never written down.

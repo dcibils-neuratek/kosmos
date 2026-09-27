@@ -14,7 +14,7 @@
 -- It also prints how close it came to the deadline, which is the number
 -- `roadmap.md` M11a promises instead of a bound.
 
-local audio = use("/lib/audio.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
 
 local fmt = audio.format()
 

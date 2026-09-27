@@ -3,7 +3,7 @@
  * FBX, through ufbx (`roadmap.md` 4l, 5c): Autodesk's format, which game
  * asset stores and Mixamo hand out and which nobody documents. ufbx
  * (`runtime/upstream/ufbx/`) reads the file; this turns what it read into
- * the parts and materials `/lib/translators/fbx.lua` gives Cafesa3D.
+ * the parts and materials `/Kosmos/Libraries/translators/fbx.lua` gives Cafesa3D.
  *
  * **A part for each run of a mesh's faces under one material, for each
  * node that shows the mesh** - so a mesh a file places six times is six

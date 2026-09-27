@@ -13,7 +13,7 @@
 -- side: because the pixels live in the window manager, this program can
 -- stop answering and its window carries on existing.
 
-local wmproto = use("/lib/wmproto.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 local W, H = 360, 200
 

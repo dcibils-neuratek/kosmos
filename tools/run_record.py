@@ -12,7 +12,7 @@ four seconds later; the app says how many frames and bytes it kept and where.
 Then, at the prompt, the file is asked for: that size, in `/Home/videos`, and
 read by the video player's own MP4 reader - one H.264 track, the pattern's
 size, as many samples as frames, the first a key frame. And played
-(`roadmap.md` 4e): every frame decoded by FFmpeg through `/lib/video.lua`,
+(`roadmap.md` 4e): every frame decoded by FFmpeg through `/Kosmos/Libraries/video.lua`,
 each coming out as the frame asked for, and the pattern's eight bars read
 back off the picture in their colours.
 
@@ -32,10 +32,10 @@ os.environ["KOSMOS_DISK"] = DISK
 
 import run_screenshot as R                                  # noqa: E402
 
-# The file read at the prompt with `/lib/mp4.lua`, which is how Video will
+# The file read at the prompt with `/Kosmos/Libraries/mp4.lua`, which is how Video will
 # open one: `use` is a program's, so the library is loaded as a chunk.
 READ_BACK = (
-    'local mp4 = load(fs.read("/lib/mp4.lua"))() '
+    'local mp4 = load(fs.read("/Kosmos/Libraries/mp4.lua"))() '
     'local path = "%s" local a = fs.getattr(path) or {} '
     'local d = fs.read(path) or "" '
     'local f = #d > 0 and mp4.open(function(at, n) '
@@ -45,7 +45,7 @@ READ_BACK = (
     't.height, #(t.samples or {}), t.samples and t.samples[1] '
     'and t.samples[1].key) print("MP4" .. "-READ")')
 
-# And the recording played: every frame decoded through `/lib/video.lua`, as
+# And the recording played: every frame decoded through `/Kosmos/Libraries/video.lua`, as
 # the Video app decodes it - the MP4 reader, the H.264 Kit, FFmpeg and the
 # conversion onto a surface - counting the frames that came out as the one
 # asked for, and the eight bars' colours read off the last, a quarter of the
@@ -53,7 +53,7 @@ READ_BACK = (
 # line at the prompt, because a program has `use`; in a `[=[` string,
 # because the program says `samples[order[i]]` and `]]` would end a `[[`.
 DECODE = (
-    'fs.write("/Temporary/decode.lua", [=[local video = use("/lib/video.lua") '
+    'fs.write("/Temporary/decode.lua", [=[local video = use("/Kosmos/Libraries/video.lua") '
     'local f, why = video.open(args) '
     'if not f then print("DECODE-ERR " .. tostring(why)) '
     'print("DECODE" .. "-DONE") return end '
@@ -198,7 +198,7 @@ def main():
     print("PASS: %d checks on recording the camera (R, four seconds, R: %d "
           "frames in %d bytes kept in /Home/videos, read back as one H.264 "
           "track of the pattern's size and frames, and played: every frame "
-          "decoded by FFmpeg through /lib/video.lua, %.1f ms each under "
+          "decoded by FFmpeg through /Kosmos/Libraries/video.lua, %.1f ms each under "
           "QEMU, and the eight bars their colours: %s)"
           % (checks, frames, size, decode_ms,
              ",".join("%06x" % b for b in bars_seen)))

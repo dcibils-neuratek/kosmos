@@ -15,7 +15,7 @@
 -- the table looks like, because a process table is not authority: knowing
 -- that something exists is not being able to reach it.
 
-local ui = use("/lib/ui.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -84,12 +84,12 @@ if not win then
 end
 
 --------------------------------------------------------------------------
--- What kind of thing each process is: `/lib/prockind.lua` decides, from
+-- What kind of thing each process is: `/Kosmos/Libraries/prockind.lua` decides, from
 -- device authority, who started it, and what its file in `/bin` declares -
 -- and says why it is those three and not a name.
 --------------------------------------------------------------------------
 
-local prockind = use("/lib/prockind.lua")
+local prockind = use("/Kosmos/Libraries/prockind.lua")
 
 -- Asked once. `/bin` does not change while this runs, and a round trip
 -- per row per second for an answer that never moves would be a lot of
@@ -112,7 +112,7 @@ end
 
 local rows = {}          -- { name, kind, id, pct, pages, caps, owns, exited }
 local totals = { procs = 0, threads = 0 }
-local share = use("/lib/procshare.lua")
+local share = use("/Kosmos/Libraries/procshare.lua")
 local sampled = {}       -- what `share.rows` keeps from one sample to the next
 
 --
@@ -672,7 +672,7 @@ win:add(table_view)
 -- always a small act of arithmetic nobody should have been doing.
 --
 -- Drawn as a continuous fill and not as the segments a processor gets, and
--- that difference is deliberate: `/lib/pulse.lua` says why. A processor is
+-- that difference is deliberate: `/Kosmos/Libraries/pulse.lua` says why. A processor is
 -- *watched* and wants to show change; a pool is *read* and wants to show a
 -- level.
 --------------------------------------------------------------------------
@@ -887,7 +887,7 @@ function sampler:tick()
   --
   -- Each process's share of every tick since the last sample, and the
   -- kernel's row beside them - and no idle row, which read as a process
-  -- eating the machine. `/lib/procshare.lua` has why, and is tested on the
+  -- eating the machine. `/Kosmos/Libraries/procshare.lua` has why, and is tested on the
   -- Mac.
   --
   local fresh = {}

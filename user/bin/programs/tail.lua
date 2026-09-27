@@ -9,8 +9,8 @@
 -- end of one. On a file too big for that, the read fails and says so, which
 -- is better than a `tail` that quietly showed the wrong lines.
 
-local files = use("/lib/files.lua")
-local text = use("/lib/text.lua")
+local files = use("/Kosmos/Libraries/files.lua")
+local text = use("/Kosmos/Libraries/text.lua")
 
 local n, name = text.count_and_path(args, 10)
 

@@ -14,9 +14,9 @@
 -- here reads - /Devices/cpu, /Devices/kernel, /Devices/memory - and the version comes
 -- from `sys.build()`, which the Makefile compiles in from the commit.
 
-local ui = use("/lib/ui.lua")
-local licences = use("/lib/licences.lua")
-local hardware = use("/lib/hardware.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local licences = use("/Kosmos/Libraries/licences.lua")
+local hardware = use("/Kosmos/Libraries/hardware.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -156,7 +156,7 @@ fact("Memory:", ("%d MB, %d free"):format(mem.total_mb or 0,
 -- Whose work is in it, after what it is.
 --
 -- Read out of the image's own copy of LICENSE rather than written here, so
--- this window cannot say something the file does not. `/lib/licences.lua`
+-- this window cannot say something the file does not. `/Kosmos/Libraries/licences.lua`
 -- reads the shape LICENSE keeps, and `tools/test_licences.lua` holds the
 -- file to the tree, so a library vendored without an entry fails `make test`
 -- rather than going missing from this list.

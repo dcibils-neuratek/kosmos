@@ -23,9 +23,9 @@
 
 local pdfpage = {}
 
-local pdf      = use("/lib/pdf.lua")
-local compress = use("/kits/compress")
-local pdfkit   = use("/kits/pdf")
+local pdf      = use("/Kosmos/Libraries/pdf.lua")
+local compress = use("/Kosmos/Kits/compress")
+local pdfkit   = use("/Kosmos/Kits/pdf")
 
 --------------------------------------------------------------------------
 -- Matrices.

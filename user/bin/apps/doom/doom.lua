@@ -24,11 +24,11 @@
 -- straight from the disk server, and Doom reads it where it lies. The limit
 -- was pointing at the better design.
 
-local ui = use("/lib/ui.lua")
-local wmproto = use("/lib/wmproto.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 -- A kit, not a global, for the reason `snes.lua` gives.
-local have, doom = pcall(use, "/kits/doom")
+local have, doom = pcall(use, "/Kosmos/Kits/doom")
 
 if not have or type(doom) ~= "table" then
   print("doom: this image was not built with DOOM=1")

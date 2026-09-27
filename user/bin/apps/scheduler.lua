@@ -36,7 +36,7 @@
 -- the only way to feel any of this: with an idle machine every policy looks
 -- identical and every quantum is unused.
 
-local ui    = use("/lib/ui.lua")
+local ui    = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
 
 local W, H = 560, 520

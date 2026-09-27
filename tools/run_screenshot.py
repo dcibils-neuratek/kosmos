@@ -1063,7 +1063,7 @@ def check_programs_by_name(guest):
     that is what the Doom, Quake and Super Nintendo kits did: each set a
     global named after its program in every Lua state, the shell's included.
     `snes --scale 3` printed `table: 0x00000081002300` and ran nothing, since
-    `--scale 3` became a comment. They are `use("/kits/snes")` now.
+    `--scale 3` became a comment. They are `use("/Kosmos/Kits/snes")` now.
 
     Three checks, and the first is the one that holds the class. The shell
     walks `/bin` against its own environment and names every program it
@@ -1111,7 +1111,7 @@ def check_programs_by_name(guest):
             f"{len(hidden)} of {scanned} program(s) in /bin cannot be run by "
             f"typing their name, because the shell's environment already "
             f"holds that name: {', '.join(hidden)}. A kit that sets a global "
-            "does this; a kit is reached with use(\"/kits/<name>\").")
+            "does this; a kit is reached with use(\"/Kosmos/Kits/<name>\").")
 
     #
     # Which kits this image has, and that each one is a table.
@@ -1139,7 +1139,7 @@ def check_programs_by_name(guest):
     if broken:
         raise Failure(
             "sys.kit answered with something other than a table for "
-            + ", ".join(f"/kits/{k} (a {kits[k]})" for k in broken)
+            + ", ".join(f"/Kosmos/Kits/{k} (a {kits[k]})" for k in broken)
             + ". A kit's build function has to leave its table on top of "
             "the stack; one that also sets a global leaves the caller's "
             "argument there instead.")
@@ -1153,7 +1153,7 @@ def check_programs_by_name(guest):
 def reaches_program(guest, line, name, built=None):
     """Types `line` at the prompt and fails unless `/bin/<name>.lua` answered.
 
-    `built` is whether the image lists `/kits/<name>`. When it does, "this
+    `built` is whether the image lists `/Kosmos/Kits/<name>`. When it does, "this
     image was not built with" is the wrong answer even though it is the
     program's own.
 
@@ -1198,7 +1198,7 @@ def reaches_program(guest, line, name, built=None):
                            said, re.M):
         raise Failure(
             f"`{line}` reached /bin/{name}.lua, and it said the image was "
-            f"not built with it - but this image lists /kits/{name}, so the "
+            f"not built with it - but this image lists /Kosmos/Kits/{name}, so the "
             "program did not get the kit it asked for.\n"
             f"--- what arrived ---\n{said}")
 
@@ -1548,7 +1548,7 @@ def check_context(guest):
     # Split in the source so the echo of the line that writes the program
     # cannot be mistaken for the program printing it.
     probe = (
-        'local ui = use("/lib/ui.lua") '
+        'local ui = use("/Kosmos/Libraries/ui.lua") '
         'local win = ui.window{ title = "Context", w = 300, h = 160, '
         'x = 200, y = 200 } '
         'win:add(ui.button{ x = 20, y = 40, w = 120, text = "Press", '
@@ -2255,7 +2255,7 @@ def check_default_look(guest, ask_wm):
     """
     checks = 0
     program = (
-        "local theme = use('/lib/theme.lua') "
+        "local theme = use('/Kosmos/Libraries/theme.lua') "
         "local f = theme.fonts "
         "local ok = {} "
         "for _, r in ipairs { 'ui', 'title', 'text', 'mono' } do "
@@ -2391,7 +2391,7 @@ def check_text_size(guest):
     guest.wait_for("sized-font-ready", "chose a scalable face for the widgets")
 
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Sized', w = 320, h = 150, "
         "x = 760, y = 130 } "
         "if not w then return end "
@@ -2549,7 +2549,7 @@ def check_window_resize(guest):
     """
     BLOCK = (0x30, 0x80, 0xd0)
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Folds', w = 300, h = 200, "
         "x = 700, y = 200 } "
         "if not w then return end "
@@ -2685,7 +2685,7 @@ def check_window_resize(guest):
             + (guest.seen[mark:][-1500:] or "(nothing at all)"))
 
     grower = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Grew', w = 200, h = 140, "
         "x = 700, y = 200, background = false } "
         "if not w then return end "
@@ -2782,7 +2782,7 @@ def check_triangle(guest):
     """
     INK = (0xf0, 0x90, 0x20)
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Tri', w = 200, h = 160, "
         "x = 820, y = 240 } "
         "if not w then return end "
@@ -3207,7 +3207,7 @@ def check_idle(guest):
 
     **The run tolerates gaps of two pixels, because the bar has them now.**
     A processor meter is drawn in segments - six lit, two dark, BeOS Pulse's
-    look, `/lib/pulse.lua` - so the longest unbroken run of red in a meter
+    look, `/Kosmos/Libraries/pulse.lua` - so the longest unbroken run of red in a meter
     that is completely full is six. Left alone, this check would have gone
     on passing and stopped meaning anything, which is worse than failing:
     the threshold below is forty, and six can never reach it. Bridging the
@@ -3946,8 +3946,8 @@ def check_direct_menu(guest):
       File, then Quit, closes it - the program says so, and ends.
     """
     program = (
-        "local ui = use('/lib/ui.lua') "
-        "local wmproto = use('/lib/wmproto.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
+        "local wmproto = use('/Kosmos/Libraries/wmproto.lua') "
         "local win "
         "win = ui.window{ title = 'Strip', w = 240, h = 120, x = 400, y = 300, "
         "direct = true, menubar = { { title = 'File', items = { "
@@ -4249,8 +4249,8 @@ def check_theme_events(guest):
     across however many replies it takes.
     """
     program = (
-        "local ui = use('/lib/ui.lua') "
-        "local wmproto = use('/lib/wmproto.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
+        "local wmproto = use('/Kosmos/Libraries/wmproto.lua') "
         "local w = ui.window{ title = 'Events', w = 200, h = 80, "
         "x = 100, y = 600 } "
         "for _ = 1, 4 do fs.send('/Running/wm', { type = 'theme', "
@@ -4370,7 +4370,7 @@ def check_theme_plex(guest):
     # list's row is 24 whatever the face, and a button given no size is its
     # words and 16 either side, 28 tall.
     #
-    program = ("local ui = use('/lib/ui.lua') "
+    program = ("local ui = use('/Kosmos/Libraries/ui.lua') "
                "local w = ui.window{ title = 'Spacing', w = 200, h = 90, "
                "x = 900, y = 500 } "
                "local l = ui.list{ x = 0, y = 0, w = 100, h = 60, "
@@ -4453,8 +4453,8 @@ def check_tabs(guest):
     manager would open it somewhere it is not buried.
     """
     program = (
-        "local ui = use('/lib/ui.lua') "
-        "local wmproto = use('/lib/wmproto.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
+        "local wmproto = use('/Kosmos/Libraries/wmproto.lua') "
         "local back = ui.window{ title = 'Behind', w = 700, h = 400, x = 300, "
         "y = 250, direct = true } "
         "local front = ui.window{ title = 'Front', w = 500, h = 150, x = 350, "
@@ -4630,7 +4630,7 @@ def check_corners(guest):
     loop kept and put back its corners, where they are the menu's own.
     """
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Corner', w = 240, h = 140, "
         "x = 400, y = 300 } "
         "if not w then return end "
@@ -4722,7 +4722,7 @@ def check_shadow(guest):
     is the build that clipped the shadow to the frame, which shows none.
     """
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Shade', w = 240, h = 140, "
         "x = 400, y = 300 } "
         "if not w then return end "
@@ -4874,8 +4874,8 @@ def check_scale(guest):
       bottom-right corner.
     """
     program = (
-        "local ui = use('/lib/ui.lua') "
-        "local wmproto = use('/lib/wmproto.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
+        "local wmproto = use('/Kosmos/Libraries/wmproto.lua') "
         "local w = ui.window{ title = 'Direct', w = 200, h = 100, x = 800, "
         "y = 150, direct = true } "
         "for _ = 1, 2 do w:surface():fill(0, 0, 200, 100, 0xff30a040) "
@@ -5312,7 +5312,7 @@ def check_volume_keys(guest):
     quiet.
     """
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Keys', w = 200, h = 120, x = 400, y = 300 } "
         "if w then w:run() end"
     )
@@ -5840,7 +5840,7 @@ def check_programs_by_file(guest):
     prompt before the desktop starts - and its output has to be drawn in the
     window, counted by ink as `check_terminal` counts `hello`'s.
 
-    **As Tracker opens it**: Tracker asks `/lib/filetypes.lua` how to open a
+    **As Tracker opens it**: Tracker asks `/Kosmos/Libraries/filetypes.lua` how to open a
     file and sends what it answers to the window manager - for a Lua program
     that is not an application, a Terminal with the program's path as its
     argument. `opener.lua` does exactly that, from inside the first Terminal.
@@ -5853,7 +5853,7 @@ def check_programs_by_file(guest):
     guest.type('fs.write("/Temporary/term.lua", '
                '[[for i = 1, 30 do print("term-" .. i) end]]) '
                'fs.write("/Temporary/opener.lua", '
-               '[[local t = use("/lib/filetypes.lua") '
+               '[[local t = use("/Kosmos/Libraries/filetypes.lua") '
                'local how = t.how_to_open("/Temporary/term.lua", nil, '
                'fs.read("/Temporary/term.lua")) '
                'fs.send("/Running/wm", { type = "launch", program = how.program, '
@@ -6167,7 +6167,7 @@ def check_log_view(guest):
     FACE_PX = 20
 
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Logger', w = 240, h = 90, "
         "x = 900, y = 110 } "
         "if not w then return end "
@@ -6452,7 +6452,7 @@ def check_log_view(guest):
                 failures.append(str(e))
 
         #
-        # 5. **Larger text, from the `...` menu** (`/lib/textsize.lua`).
+        # 5. **Larger text, from the `...` menu** (`/Kosmos/Libraries/textsize.lua`).
         # Diego, 22 September: "a way to increase font size in the menu of
         # the log viewer and terminal". The face here is 20, so a step up is
         # 24 and the rows have to stand that much apart afterwards. The menu
@@ -8184,7 +8184,7 @@ def check_panel(guest):
     # No comments inside: fs.write puts it on one line. The marker is joined
     # by Lua so it never appears in the echo of the line that writes it.
     program = (
-        "local panel = use('/lib/panel.lua') "
+        "local panel = use('/Kosmos/Libraries/panel.lua') "
         "local w = panel.open{ title = 'Pick', start = '/Home/picktest', "
         "x = 300, y = 200, "
         "filter = function(n) return n:match('%.sfc$') ~= nil end, "
@@ -9923,7 +9923,7 @@ def check_reaped(guest):
     # already proved the machine can write its own.
     #
     program = (
-        "local ui = use('/lib/ui.lua') "
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
         "local w = ui.window{ title = 'Dying', w = 220, h = 90, "
         "x = 300, y = 300 } "
         "if not w then return end "
@@ -10155,7 +10155,7 @@ def main():
         #
         # **The login set, emptied, before any phase starts a desktop.**
         #
-        # `/lib/startup.lua` opens the top bar, Tracker, Monitor, Processes
+        # `/Kosmos/Libraries/startup.lua` opens the top bar, Tracker, Monitor, Processes
         # and the log on a machine nobody has told otherwise, which is right
         # for a person and wrong for a harness: every phase below counts
         # windows, and a bare `wm` would arrive with six of them for reasons

@@ -20,11 +20,11 @@
 -- megabytes and the Lua heap starts at two, so it goes into a region the way
 -- Doom's WAD does, and the libc is told that region is `pak0.pak`.
 
-local ui = use("/lib/ui.lua")
-local wmproto = use("/lib/wmproto.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 -- A kit, not a global, for the reason `snes.lua` gives.
-local have, quake = pcall(use, "/kits/quake")
+local have, quake = pcall(use, "/Kosmos/Kits/quake")
 
 if not have or type(quake) ~= "table" then
   print("quake: this image was not built with QUAKE=1")

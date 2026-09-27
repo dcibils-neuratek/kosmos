@@ -16,7 +16,7 @@
 -- nobody reads and a half-deleted tree nobody can describe; the reason one
 -- delete failed is almost always the reason the next twenty will.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local recursive = false
 local list = {}

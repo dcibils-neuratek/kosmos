@@ -2328,8 +2328,8 @@ processors, and still what follows USB:
    `/ramfs` to `/Temporary` - **DONE the same evening** (`testing.md`
    18.229), and `sys.pack` no longer bounded by a message; **(b)** `/home` to `/Home` - only its case, so
    every `/home/...` already written, and the partition on a stick, go on
-   working; **DONE the same evening** (18.230), **(c)** the `/Kosmos` tree - `/lib` to `/Kosmos/Libraries`,
-   `/kits` to `/Kosmos/Kits`, `/bin` split into `/Kosmos/Apps` and
+   working; **DONE the same evening** (18.230), **(c)** the `/Kosmos` tree - (c1) `/lib` to `/Kosmos/Libraries`,
+   `/kits` to `/Kosmos/Kits` - **DONE** (18.232) - (c2) `/bin` split into `/Kosmos/Apps` and
    `/Kosmos/Programs`, `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
    in /Kosmos/Themes, yes"), `/system` and `/user` gone; **(d)** the dotfiles at
    the top of `/home` into `/Home/Preferences`; **(e)** `layout.md`, the

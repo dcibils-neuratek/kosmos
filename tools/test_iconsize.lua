@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- `/lib/iconsize.lua`: how big the icons are where a grid of them is drawn
+-- `/Kosmos/Libraries/iconsize.lua`: how big the icons are where a grid of them is drawn
 -- (`roadmap.md` 5za). On the host, because it is arithmetic over a settings
 -- file - `fs` is stood in for here, which is what makes it host-testable.
 --

@@ -14,7 +14,7 @@
 -- same file would be worse than one that admits it only counts what it can
 -- see.
 
-local files = use("/lib/files.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local MAX_DEPTH = 12
 

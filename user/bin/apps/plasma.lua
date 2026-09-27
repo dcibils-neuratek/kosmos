@@ -28,8 +28,8 @@
 -- tests it hardest.
 --------------------------------------------------------------------------
 
-local ui = use("/lib/ui.lua")
-local wmproto = use("/lib/wmproto.lua")
+local ui = use("/Kosmos/Libraries/ui.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
 local W, H = 420, 300
 local BANDS = 60                -- horizontal strips, each one `span` call

@@ -1,14 +1,14 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- A camera, as a program sees one (`roadmap.md` 6d, `usb.md` §11 8d).
 --
---   local camera = use("/lib/camera.lua")
+--   local camera = use("/Kosmos/Libraries/camera.lua")
 --   local all = camera.all()                  -- every camera, and its sizes
 --   local s = camera.open(0, all[1].sizes[1]) -- one camera, at one size
 --   s:draw(surface, true)                     -- the newest frame, mirrored
 --   s:close()
 --
 -- `/Devices/camera` speaks a declared struct (`cameraproto.h`), and this is the
--- one place in Lua that knows its shape - the same bargain `/lib/audio.lua`
+-- one place in Lua that knows its shape - the same bargain `/Kosmos/Libraries/audio.lua`
 -- makes for `/Devices/audio`. Only a program that declares `kosmos: needs
 -- camera` has `/Devices/camera` at all; for any other `camera.all()` is empty
 -- and says why.
@@ -275,7 +275,7 @@ local function largest(want, least)
 end
 
 function stream:record_start()
-  local kit = use("/kits/record")
+  local kit = use("/Kosmos/Kits/record")
 
   if self.recording then return true end
 
