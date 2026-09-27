@@ -1,0 +1,277 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Where things live in Kosmos: two trees, /kosmos for everything the system
+  ships and /home for everything a person has. Agreed with Diego on 27
+  September 2026 (roadmap.md 6s), drawn before anything moves, and kept as
+  the documentation of the layout from then on - "the tree drawn of the
+  directories serve as part of the documentation for kosmos". What is
+  marked proposed is waiting for him; docs/layout.md is the text beside it.
+-->
+<title>Where Things Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --card: #ffffff;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --faint: #8d96a4;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --sys: #2a55c9;          /* /kosmos: what ships */
+    --sys-soft: #e7edfb;
+    --home: #b8630f;         /* /home: what you have */
+    --home-soft: #fbefe2;
+    --ask: #8a5a00;
+    --ask-soft: #fff4d6;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14171c; --card: #1b1f26; --ink: #e6e9ef; --muted: #a2abb9; --faint: #6f7886;
+      --rule: #2b313b; --accent: #7fa2ff; --sys: #86a6ff; --sys-soft: #1d2640;
+      --home: #f0a458; --home-soft: #33261a; --ask: #f0c060; --ask-soft: #332a16;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #14171c; --card: #1b1f26; --ink: #e6e9ef; --muted: #a2abb9; --faint: #6f7886;
+    --rule: #2b313b; --accent: #7fa2ff; --sys: #86a6ff; --sys-soft: #1d2640;
+    --home: #f0a458; --home-soft: #33261a; --ask: #f0c060; --ask-soft: #332a16;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  main { max-width: 1180px; margin: 0 auto; padding: 40px 20px 72px; }
+  h1 { font-family: var(--display); font-size: 34px; line-height: 1.1; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-family: var(--display); font-size: 21px; margin: 52px 0 8px; padding-top: 22px;
+       border-top: 1px solid var(--rule); text-wrap: balance; }
+  p { max-width: 72ch; }
+  .lede { color: var(--muted); font-size: 16.5px; margin: 0 0 6px; }
+  code, kbd { font-family: var(--mono); font-size: .9em; }
+  .note { color: var(--muted); font-size: 13.5px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 0; font-size: 13.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+         border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .tag.prop { color: var(--ask); background: var(--ask-soft); }
+  .tag.ask  { color: var(--ask); background: var(--ask-soft); border: 1px dashed var(--ask); }
+  .tag.later { color: var(--muted); background: transparent; border: 1px solid var(--rule); }
+
+  /* The two trees, side by side where there is room. */
+  .trees { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 22px; margin-top: 26px; }
+  .tree { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+  .tree header { padding: 16px 20px 14px; border-bottom: 1px solid var(--rule); }
+  .tree.sys header { background: var(--sys-soft); }
+  .tree.home header { background: var(--home-soft); }
+  .tree header .root { font-family: var(--mono); font-size: 22px; font-weight: 600; }
+  .tree.sys .root { color: var(--sys); }
+  .tree.home .root { color: var(--home); }
+  .tree header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .tree ul { list-style: none; margin: 0; padding: 10px 0 14px; }
+  .tree li { display: grid; grid-template-columns: minmax(150px, 38%) 1fr; gap: 14px; padding: 7px 20px;
+             border-top: 1px solid transparent; }
+  .tree li + li { border-top-color: var(--rule); }
+  .tree .name { font-family: var(--mono); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+  .tree .name .dim { color: var(--faint); font-weight: 400; }
+  .tree .what { font-size: 14px; color: var(--ink); }
+  .tree .what small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .tree .what .tag { margin-left: 6px; vertical-align: 1px; }
+  .tree li.sub .name { padding-left: 18px; }
+  .tree li.sub .name::before { content: "\2514\2500 "; color: var(--faint); }
+
+  /* Outside both trees. */
+  .others { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 16px; }
+  .other { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
+  .other .name { font-family: var(--mono); font-weight: 600; }
+  .other p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+
+  /* What a program sees. */
+  .sees { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 18px; }
+  .ns { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px 16px; }
+  .ns h3 { margin: 0; font-size: 15px; }
+  .ns .kind { color: var(--muted); font-size: 13px; margin: 2px 0 10px; }
+  .ns ul { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 13px; display: grid; gap: 4px; }
+  .ns li { display: flex; justify-content: space-between; gap: 10px; }
+  .ns li .rw { font-family: var(--body); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+  .ns li.s { color: var(--sys); }
+  .ns li.h { color: var(--home); }
+  .ns .not { margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+  /* From today. */
+  .tablewrap { overflow-x: auto; margin-top: 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 14px; border-top: 1px solid var(--rule); vertical-align: top; }
+  th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 12.5px; letter-spacing: .03em; text-transform: uppercase; }
+  td.path { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  td.path.s { color: var(--sys); }
+  td.path.h { color: var(--home); }
+
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 28px; }
+  ul.list { padding-left: 20px; margin: 10px 0 0; }
+  ul.list li { margin: 6px 0; max-width: 70ch; }
+  ul.ask li::marker { color: var(--ask); }
+
+  @media (max-width: 520px) {
+    main { padding: 28px 16px 56px; }
+    h1 { font-size: 28px; }
+    .tree li { grid-template-columns: 1fr; gap: 2px; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Where things live</h1>
+<p class="lede">Kosmos has two trees. <code>/kosmos</code> is everything the system ships. <code>/home</code> is everything you have, and it travels: copy it to another Kosmos machine and you arrive with your applications, your games, your work and your preferences.</p>
+<p class="note">Agreed with Diego on 27 September 2026 (<code>roadmap.md</code> 6s), drawn before anything moves, and the documentation of the layout from then on. It is BeOS's hard line between what the system ships and what a person makes, with your own applications on your side of it. Nothing here is built yet; <a href="#today">From today</a> says what moves where.</p>
+<div class="legend">
+  <span><span class="tag prop">proposed</span> a name or a place not yet agreed</span>
+  <span><span class="tag ask">question</span> waiting for a decision</span>
+  <span><span class="tag later">after the loader</span> needs the ELF loader (6t)</span>
+</div>
+
+<div class="trees">
+
+  <section class="tree sys" aria-label="The /kosmos tree">
+    <header>
+      <div class="root">/kosmos</div>
+      <p>What the system ships. The same on every Kosmos machine of a version, and read only while it runs.</p>
+    </header>
+    <ul>
+      <li><span class="name">apps/</span><span class="what">The applications that come with Kosmos: Tracker, Terminal, the IDE, Cafesa3D, Music, Camera, Processes, Monitor, Preferences, the Deskbar, the demos<small>Each a window, <code>-- kosmos: application</code>; the Deskbar's menu sections come from each one's own header</small></span></li>
+      <li><span class="name">programs/</span><span class="what">The console programs: <code>ls</code>, <code>cat</code>, <code>ping</code>, <code>neofetch</code> and 60 more<small>Each prints and reads lines, and is run by its name at a prompt</small></span></li>
+      <li><span class="name">libraries/</span><span class="what">The Lua libraries: <code>ui.lua</code>, <code>theme.lua</code>, <code>json.lua</code> and the rest<small><code>use("/kosmos/libraries/ui.lua")</code> - today <code>/lib</code></small></span></li>
+      <li><span class="name">kits/</span><span class="what">The C kits a Lua program calls into: 3D, GL, PDF, compress, network, console, MP3, record, game<small><code>use("/kosmos/kits/pdf")</code> - today <code>/kits</code></small></span></li>
+      <li><span class="name">servers/</span><span class="what">The processes the system asks: console, ramfs, audio, network, devices, drives <span class="tag prop">proposed</span><small>Running, not files you run; listed with their source to read</small></span></li>
+      <li><span class="name">drivers/</span><span class="what">The processes that drive hardware: USB, network cards, the display, the power button <span class="tag prop">proposed</span><small>By the kind of device, as <code>user/drivers/</code> keeps them</small></span></li>
+      <li><span class="name">kernel</span><span class="what">Nebula, the microkernel, as the loader started it</span></li>
+      <li><span class="name">fonts/ icons/ wallpapers/</span><span class="what">What the system draws with <span class="tag prop">proposed</span><small>IBM Plex, the Spleen faces, Haiku's icons - each with its licence beside it</small></span></li>
+      <li><span class="name">documentation/</span><span class="what">The tutorials and the cheat sheet, opened in the browser <span class="tag prop">proposed</span></span></li>
+      <li><span class="name">settings/</span><span class="what">This machine's settings - its screen's scale, its network card, what its power button does, its sound card <span class="tag prop">proposed</span><small>The machine's, not yours: a home carried from the ThinkPad does not bring its 14-inch scale to the M700</small></span></li>
+      <li><span class="name">logs/</span><span class="what">What the system has said, kept<small>Today <code>log save</code> writes <code>/home/log.txt</code></small></span></li>
+    </ul>
+  </section>
+
+  <section class="tree home" aria-label="The /home tree">
+    <header>
+      <div class="root">/home</div>
+      <p>What you have. Yours to change, and it goes wherever you take it.</p>
+    </header>
+    <ul>
+      <li><span class="name">apps/</span><span class="what">Applications you installed or wrote, and the games<small>Each in a folder of its own: its program, and whatever it came with</small></span></li>
+      <li class="sub"><span class="name">doom/</span><span class="what">Doom, with its WAD <span class="tag later">after the loader</span><small>Its engine is C, so it leaves the image once a program can be loaded from a file</small></span></li>
+      <li class="sub"><span class="name">quake/</span><span class="what">Quake, with <code>id1</code> <span class="tag later">after the loader</span></span></li>
+      <li class="sub"><span class="name">super-nintendo/</span><span class="what">The Super Nintendo, with your ROMs <span class="tag later">after the loader</span></span></li>
+      <li><span class="name">development/</span><span class="what">Your projects: what the IDE opens, and the tutorial's lessons to start from</span></li>
+      <li><span class="name">preferences/</span><span class="what">Your choices: the look, the keyboard, the Deskbar, what starts at login, each application's own<small>Today dotfiles at the top of <code>/home</code>: <code>.appearance</code>, <code>.keyboard</code>, <code>.terminal</code>, <code>.clock</code>, <code>.ide</code> ...</small></span></li>
+      <li><span class="name">documents/</span><span class="what">What you write and keep - and Cafesa3D's scenes and renders <span class="tag prop">proposed</span></span></li>
+      <li><span class="name">music/ photos/ videos/</span><span class="what">What Music, Photo and Video open first <span class="tag prop">proposed</span></span></li>
+      <li><span class="name">desktop/</span><span class="what">What is on the desktop <span class="tag prop">proposed</span><small>Today <code>/home/Desktop</code></small></span></li>
+      <li><span class="name">deskbar/</span><span class="what">The launchers in the Deskbar's menu <span class="tag prop">proposed</span><small>Today <code>/home/Deskbar</code></small></span></li>
+      <li><span class="name">trash/</span><span class="what">What you threw away, until you empty it <span class="tag prop">proposed</span></span></li>
+    </ul>
+  </section>
+
+</div>
+
+<h2>Outside both</h2>
+<p>Three things belong to neither tree, because they are not files anybody keeps.</p>
+<div class="others">
+  <div class="other"><div class="name">/dev</div><p>The devices: the screen, the keyboard, the audio ring, the processors, a stick's blocks.</p></div>
+  <div class="other"><div class="name">/drives</div><p>Other drives by name - a USB stick, an SD card - as <code>drives.html</code> draws them.</p></div>
+  <div class="other"><div class="name">/tmp</div><p>Memory, gone at the next start. Today <code>/ramfs</code>.</p></div>
+  <div class="other"><div class="name">/app</div><p>The servers running now, by name, for whoever may ask them.</p></div>
+</div>
+
+<h2>What a program sees</h2>
+<p>There is no global tree. A process sees what it was handed, and a path that was not handed to it does not exist for it - not forbidden, absent (<code>layout.md</code> §3). So the two trees are a convention every program can rely on, and each program gets the part of them it needs.</p>
+<div class="sees">
+  <div class="ns">
+    <h3>Terminal</h3>
+    <p class="kind">You, at a prompt</p>
+    <ul>
+      <li class="s">/kosmos <span class="rw">read</span></li>
+      <li class="h">/home <span class="rw">read and write</span></li>
+      <li>/dev <span class="rw">the console</span></li>
+      <li>/drives, /tmp <span class="rw">read and write</span></li>
+    </ul>
+  </div>
+  <div class="ns">
+    <h3>Doom</h3>
+    <p class="kind">An installed game <span class="tag later">after the loader</span></p>
+    <ul>
+      <li class="s">/kosmos/libraries <span class="rw">read</span></li>
+      <li class="h">/home/apps/doom <span class="rw">its own folder</span></li>
+      <li>/dev/screen, audio, keys <span class="rw">to play</span></li>
+    </ul>
+    <p class="not">Not your photos or your documents: they were never handed to it, so it cannot name them.</p>
+  </div>
+  <div class="ns">
+    <h3>Kosmos IDE</h3>
+    <p class="kind">What you build with</p>
+    <ul>
+      <li class="s">/kosmos <span class="rw">read, to learn from</span></li>
+      <li class="h">/home/development <span class="rw">read and write</span></li>
+      <li class="h">/home/apps <span class="rw">read and write</span></li>
+      <li>its own console <span class="rw">for what it runs</span></li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="today">From today</h2>
+<p>Where each thing is now, and where it goes. The last rows wait for the ELF loader; the rest are renames and moves.</p>
+<div class="tablewrap">
+<table>
+  <tr><th>Today</th><th>Then</th><th>What it is</th></tr>
+  <tr><td class="path">/bin</td><td class="path s">/kosmos/apps, /kosmos/programs</td><td>55 applications and 64 programs, served flat in one folder; the source tree already keeps them apart</td></tr>
+  <tr><td class="path">/lib</td><td class="path s">/kosmos/libraries</td><td>51 Lua libraries; every <code>use("/lib/...")</code> changes once</td></tr>
+  <tr><td class="path">/kits</td><td class="path s">/kosmos/kits</td><td>11 kits, C, compiled into every process</td></tr>
+  <tr><td class="path">/lib/clock.lua, /lib/blocks.lua</td><td class="path s">/kosmos/libraries/localtime.lua, blockdev.lua</td><td>Names that clash with the Clock and Blocks applications and are not them <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/home/.appearance, .clock, .terminal ...</td><td class="path h">/home/preferences/...</td><td>Your preferences, out of the way at the top of your home</td></tr>
+  <tr><td class="path">/home/Desktop, Deskbar</td><td class="path h">/home/desktop, deskbar</td><td>Lower case, as everything else <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/ramfs</td><td class="path">/tmp</td><td>Memory</td></tr>
+  <tr><td class="path">/home/log.txt</td><td class="path s">/kosmos/logs</td><td>The system's log</td></tr>
+  <tr><td class="path">Doom, Quake, the Super Nintendo, in the image</td><td class="path h">/home/apps/doom, quake, super-nintendo</td><td>Vendored engines in C: installed, not shipped <span class="tag later">after the loader</span></td></tr>
+</table>
+</div>
+
+<h2>Decided, and open</h2>
+<div class="cols">
+  <div>
+    <p><b>Decided</b> - Diego, 27 September:</p>
+    <ul class="list">
+      <li><code>/home</code> is everything a person has - installed applications, games, documents, photos - and travels to another Kosmos machine.</li>
+      <li><code>/kosmos</code> is everything the system ships.</li>
+      <li>Doom, Quake and the Super Nintendo are home things, not bundled - which needs the ELF loader, agreed as 6t.</li>
+      <li>This drawing is part of Kosmos's documentation, kept true as the layout changes.</li>
+      <li>Changing the shipped system - your own window manager in place of ours - is set aside, undecided.</li>
+    </ul>
+  </div>
+  <div>
+    <p><b>Open</b> - for Diego:</p>
+    <ul class="list ask">
+      <li><b>The browser and Video.</b> The browser is NetSurf and Video decodes with FFmpeg, both vendored as the games are. Home things too, once they can be installed?</li>
+      <li><b>A game's own files</b> - Doom's WAD, your ROMs: in the game's folder as drawn, or in <code>/home/documents</code> or a <code>/home/games</code> of their own, so reinstalling a game never touches them?</li>
+      <li><b>The proposed names</b> above: <code>servers</code>, <code>drivers</code>, <code>fonts</code>, <code>documentation</code>, <code>settings</code>, <code>documents</code>, <code>music</code>, and lower case for <code>desktop</code> and <code>deskbar</code>.</li>
+      <li><b>How a home is found at boot</b> - today by its partition's GUID on the kernel's command line, so it belongs to one stick; to travel, found by what it is on any drive plugged in.</li>
+    </ul>
+  </div>
+</div>
+
+</main>
+</body>
+</html>

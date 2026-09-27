@@ -70,6 +70,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 
 - The layers and how a command crosses them: `docs/architecture.md`
 - What lives where, in the tree and at runtime: `docs/layout.md`
+- Where things live, drawn - `/kosmos` and `/home`, agreed 27 September and kept as documentation: `docs/layout.html`
 - Design and the reasoning behind every decision: `docs/design.md`
 - Current state and next step: `docs/state.md` — **read it before proposing anything**
 - Milestones: `docs/roadmap.md`
