@@ -11145,3 +11145,23 @@ parts, as a launcher reads it, into the same bytes as whole; and program
 headers beyond what was read, refused.
 
 The gate with step 4: 50 of 50 in 8:49.
+
+## 18.225 One scrollbar, the pill
+
+`roadmap.md` 6u: Diego, "Let's just have 1 scrollbars style go all the os",
+"pill". The kit's `draw_scrollbar` draws the pill in every look - 6 across,
+5 in from the edge, in a grey between the list's ground and its dim words -
+and its trough, ridged thumb and arrow buttons are gone, with their hit
+test in `ui.scrollbar_mouse`; a click above or below the pill still pages.
+The browser, which drew a scrollbar of its own into its page's surface,
+draws the same pill with the kit's geometry, and its press and drag lost
+the arrows too.
+
+**In the display harness's `widgets` phase**: the gallery's list, in the
+harness's `dark` look where it was a ridged thumb, has a pill sixteen rows
+or more down its middle column and nothing of the trough - no raised face,
+no ridge, none of the title bar's yellow. **Control**: the kit as it was -
+624 pixels of raised face and 35 of ridge, and four rows of anything like a
+pill.
+
+The gate with the pill: 50 of 50 in 8:48.

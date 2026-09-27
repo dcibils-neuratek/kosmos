@@ -431,7 +431,9 @@ disable it". It is drawn flat, since raised is how this look says a thing
 can be pressed, with its glyph in `text_dim`, and a press on it does
 nothing.
 
-**A scrollbar's thumb is the tab's colour, with a grip** (22 September,
+**A scrollbar's thumb is the tab's colour, with a grip** (22 September - and
+since 27 September no longer: one scrollbar, the pill, in every look; 16.22,
+`roadmap.md` 6u,
 `roadmap.md` 5y). Mac OS 9's Platinum filled the thumb with the accent a
 person chose and ridged its middle; Diego, showing its Appearance control
 panel: "i want the scrollbar handle to be colored after the tab bar color
@@ -1643,10 +1645,18 @@ window, against a picture that was wrong.
 colour, Mac OS 9's Platinum, at Diego's asking. On 24 September, beside a
 list's blue selection: *"the scroll bars look bad now with the colors"*,
 *"We should go back to scrollbars and handle with the same color"*. The
-thumb is the controls' face with a grip in the look's edge colours; in a
-flat look it is a pill 6 across in a grey between the list's ground and its
-dim words, with no trough and no arrows, as `docs/apps.html` draws a list.
-The column it sits in is still 16 wide, so the hit test did not change.
+thumb was the controls' face with a grip in the look's edge colours, in a
+trough with an arrow button at each end, and in a flat look a pill.
+
+**One scrollbar, the pill, in every look** (27 September, `roadmap.md` 6u).
+Diego, seeing the IDE's: "Why scrollbars here look flat and in other apps
+look different?", then "Let's just have 1 scrollbars style go all the os",
+"pill". Three things made them differ - the look, the height (a bar under
+sixty pixels dropped its arrows) and the browser, which drew its own - and
+now none does: a pill 6 across in a grey between the list's ground and its
+dim words, with no trough and no arrows, as `docs/apps.html` draws a list,
+the browser's the same. The column it sits in is still 16 wide, and a click
+above or below the pill still pages; one row at a time is the wheel's.
 
 ## 16.23 A person counts from one
 

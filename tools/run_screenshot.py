@@ -1980,40 +1980,46 @@ def check_widgets(guest):
         )
 
     #
-    # **The list's thumb is the scrollbar's own grey, ridged** - not the
-    # tab's colour. It wore the tab's from 22 September (`roadmap.md` 5y)
-    # until Diego took it back on 24 September: "We should go back to
-    # scrollbars and handle with the same color". The gallery's list is five
-    # items in three rows, so it has a bar; in the harness's `dark` look the
-    # thumb is `raised`, #21262d, with four ridges each an `edge_light` line
-    # directly over an `edge_dark` one. Counted in the strip the bar
-    # occupies - the list's last eighteen columns - where the tab's yellow
-    # has no business at all: the control for a thumb in the tab's colour is
-    # the build before this, which fails the first count.
+    # **The list's scrollbar is the pill** (`roadmap.md` 6u) - Diego, 27
+    # September: "Let's just have 1 scrollbars style go all the os", "pill".
+    # It was a raised thumb with four ridges in this, the harness's `dark`
+    # look, and a pill only in the flat ones; the tab's colour it wore from
+    # 22 to 24 September is long gone and stays gone. The gallery's list is
+    # five items in three rows, so it has a bar: 6 across, 5 in from the
+    # list's right edge (`ui.lua`, `draw_scrollbar`). Down its middle column
+    # the colour differs from the list's ground beside it for sixteen rows
+    # at least, and nowhere in the strip is the raised face, a ridge, or the
+    # title bar's yellow. **Control**: the trough and ridged thumb put back -
+    # the ridges and the face are found.
     #
     list_x, list_y = 60 + lx, 90 + ly
     RAISED, LIT, DARK = (0x21, 0x26, 0x2d), (0x42, 0x4a, 0x55), (0x05, 0x08, 0x0c)
-    yellow = face = ridges = 0
+    yellow = face = ridges = pill = 0
+
+    def colour(x, y):
+        at = (y * width + x) * 3
+        return (px[at], px[at + 1], px[at + 2])
 
     for y in range(list_y, list_y + lh - 1):
         for x in range(list_x + lw - 18, list_x + lw):
-            at = (y * width + x) * 3
-            below = at + width * 3
-            p = (px[at], px[at + 1], px[at + 2])
+            p = colour(x, y)
 
             if p == TAB:
                 yellow += 1
             elif p == RAISED:
                 face += 1
-            elif p == LIT and (px[below], px[below + 1], px[below + 2]) == DARK:
+            elif p == LIT and colour(x, y + 1) == DARK:
                 ridges += 1
 
-    if yellow or face < 150 or ridges < 16:
+        if colour(list_x + lw - 8, y) != colour(list_x + lw - 14, y):
+            pill += 1
+
+    if yellow or face or ridges or pill < 16:
         raise Failure(
-            f"the gallery's scrollbar has {yellow} pixels of the tab's yellow, "
-            f"{face} of the controls' face and {ridges} of ridge - wanted a "
-            "thumb in the scrollbar's own grey with a grip across it, and "
-            "none of the title bar's colour."
+            f"the gallery's scrollbar has {pill} rows of pill, {face} pixels of "
+            f"the raised face, {ridges} of ridge and {yellow} of the tab's "
+            "yellow - wanted the pill, sixteen rows or more, and nothing of "
+            "the trough and ridged thumb it replaced."
         )
 
     def send(data, wait=0.4):

@@ -706,29 +706,17 @@ end
 local SCROLL_W = 16
 
 --
--- An arrow button at each end, which is Mac OS 8 and 9 and is not decoration.
+-- **One scrollbar, the pill, in every look** (`roadmap.md` 6u). Diego, 27
+-- September, seeing the IDE's thin one: "Why scrollbars here look flat and
+-- in other apps look different?", then "Let's just have 1 scrollbars style
+-- go all the os", and "pill". They differed three ways: the flat looks drew
+-- the thumb alone, Classic and Studio a sunken trough, a raised thumb with a
+-- grip and an arrow button at each end, and a bar under sixty pixels dropped
+-- its arrows; the browser drew its own. So there is one: the thumb, a pill,
+-- over the list's own ground, and the column it stands in pages when it is
+-- clicked above or below it. The arrows went with the trough - they were
+-- what scrolled by a single row, which the wheel does now.
 --
--- A trough alone can only page. Scrolling by *one* row - which is what you
--- want most of the time, and the only thing you want when the list is nearly
--- as tall as its view - had no gesture at all: a page in a five-row list is
--- five rows, so a click either did nothing or went past what you were
--- looking at.
---
--- They cost the track two squares' worth of height, so a bar too short to
--- have both and still leave a usable track has neither. A scrollbar that is
--- all buttons is not a scrollbar.
---
-local ARROW = SCROLL_W
-
---
--- **No arrows in a flat look**, which draws the thumb alone - the drawings'
--- scrollbar - and pages with the trough it does not draw. Asked here, so
--- the drawing, the hit test and the drag all lose them together.
---
-local function has_arrows(h)
-  return not theme.flat and h >= 4 + 2 * ARROW + 24
-end
-
 --
 -- Where everything is, or nil when it all fits and there is no bar.
 --
@@ -741,9 +729,8 @@ end
 local function thumb_of(h, total, shown, top)
   if total <= shown then return nil end
 
-  local arrows = has_arrows(h) and ARROW or 0
-  local y0 = 2 + arrows
-  local track = h - 4 - 2 * arrows
+  local y0 = 2
+  local track = h - 4
   local size = math.max(16, (track * shown) // total)
   local room = track - size
   local at = ((top - 1) * room) // math.max(1, total - shown)
@@ -752,81 +739,16 @@ local function thumb_of(h, total, shown, top)
 end
 
 --
--- A triangle, four rows tall, centred in the button.
+-- The pill: 6 across, 5 in from the edge, round-ended, in a grey between
+-- the list's ground and its dim words - `docs/apps.html`'s list. The column
+-- it sits in is the kit's 16, so the hit test is the same in every look.
 --
--- Drawn rather than vendored: it is eleven pixels and it has to be the
--- theme's ink, which a picture could not be.
---
-local function triangle(g, x, y, up)
-  for k = 0, 3 do
-    local w = 1 + k * 2
-
-    g:fill(x + (ARROW - w) // 2, up and (y + 5 + k) or (y + 8 - k),
-           w, 1, "text")
-  end
-end
-
---
--- **The thumb is the scrollbar's own grey, with a grip across it.**
---
--- It wore the tab's colour from 22 September - Diego: "i want the
--- scrollbar handle to be colored after the tab bar color as an accent
--- color like how macos 9 had it" - and he took that back on 24 September,
--- looking at a pale blue thumb in a grey trough beside a list's blue
--- selection: "the scroll bars look bad now with the colors", "We should go
--- back to scrollbars and handle with the same color". Three colours in a
--- strip sixteen pixels wide, one of them the title bar's, is chrome
--- reaching into a window's contents. So the thumb is raised in the
--- controls' face and the trough sunken in the window's, as they were.
---
--- Four ridges, each a lit line over a shaded one - raised, in the same
--- vocabulary as the bevel around them - eight pixels wide and centred, in
--- the look's own edge colours, so a new look repaints them like everything
--- else.
---
-local GRIP_W, RIDGES = 8, 4
-
 local function draw_scrollbar(g, w, h, total, shown, top)
   local y, size = thumb_of(h, total, shown, top)
 
   if not y then return false end
 
-  local x = w - SCROLL_W - 2
-
-  --
-  -- **In a flat look, a pill and nothing else**: 6 across, 5 in from the
-  -- edge, round-ended, in a grey between the list's ground and its dim
-  -- words - `docs/apps.html`'s list. The column it sits in is the same 16,
-  -- so the trough still pages and the hit test is unchanged.
-  --
-  if theme.flat then
-    g:fill_round(w - 5 - 6, y, 6, size,
-                 theme.mix(theme.sunken, theme.text_dim, 450), 3)
-    return true
-  end
-
-  g:sunken(x, 2, SCROLL_W, h - 4, "window")
-  g:raised(x + 1, y, SCROLL_W - 2, size, "raised")
-
-  if size >= 2 * RIDGES + 6 then
-    local gx = x + 1 + (SCROLL_W - 2 - GRIP_W) // 2
-    local gy = y + (size - 2 * RIDGES) // 2
-    local lit, dark = theme.edge_light, theme.edge_dark
-
-    for i = 0, RIDGES - 1 do
-      g:fill(gx, gy + 2 * i, GRIP_W, 1, lit)
-      g:fill(gx, gy + 2 * i + 1, GRIP_W, 1, dark)
-    end
-  end
-
-  if has_arrows(h) then
-    g:raised(x + 1, 3, SCROLL_W - 2, ARROW - 2, "raised")
-    triangle(g, x + 1, 3, true)
-
-    g:raised(x + 1, h - 2 - ARROW, SCROLL_W - 2, ARROW - 2, "raised")
-    triangle(g, x + 1, h - 2 - ARROW, false)
-  end
-
+  g:fill_round(w - 5 - 6, y, 6, size, theme.mix(theme.sunken, theme.text_dim, 450), 3)
   return true
 end
 
@@ -891,17 +813,6 @@ function ui.scrollbar_mouse(w_, action, x, y, w, h, total, shown, top)
 
   -- Not a press on the bar, and no drag to continue: not ours.
   if total <= shown or x < w - SCROLL_W - 2 then return nil end
-
-  -- The buttons, one row each. A held button does not repeat: nothing here
-  -- has a clock, and a widget that wanted one would need the event loop to
-  -- wake it rather than a timer of its own.
-  if has_arrows(h) then
-    if y < 2 + ARROW then
-      return math.max(1, top - 1)
-    elseif y >= h - 2 - ARROW then
-      return math.min(math.max(1, total - shown + 1), top + 1)
-    end
-  end
 
   local ty, size = thumb_of(h, total, shown, top)
 

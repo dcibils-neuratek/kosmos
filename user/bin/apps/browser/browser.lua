@@ -508,53 +508,37 @@ local function reach()
   return math.max(0, math.min(content_h, paper_h) - VIEW_H)
 end
 
+-- The track the kit's pill runs in (`ui.lua`, `thumb_of`): two pixels in
+-- at each end, and a thumb never shorter than sixteen.
 local function thumb()
-  local track = VIEW_H - SBAR * 2
+  local track = VIEW_H - 4
   local shown = math.min(content_h, paper_h)
   local last  = reach()
 
   if track < 8 or shown <= VIEW_H then
-    return VIEW_Y + SBAR, track           -- nothing to scroll: a full thumb
+    return nil, track                     -- nothing to scroll: no pill
   end
 
-  local h = math.max(20, (track * VIEW_H) // shown)
-  local y = VIEW_Y + SBAR + ((track - h) * top) // last
+  local h = math.max(16, (track * VIEW_H) // shown)
+  local y = VIEW_Y + 2 + ((track - h) * top) // last
 
   return y, h
 end
 
+--
+-- **The kit's pill**, in the kit's colour, over the list's own ground - one
+-- scrollbar in every application (`roadmap.md` 6u: "Let's just have 1
+-- scrollbars style go all the os", "pill"). This page is drawn into a
+-- surface of the browser's own, so it cannot call the kit's; it draws the
+-- same thing, and the arrow buttons it had went with every other one.
+--
 local function draw_scrollbar(s)
-  local x = W - SBAR
   local ty, th = thumb()
 
-  s:fill(x, VIEW_Y, SBAR, VIEW_H, theme.sunken)
+  s:fill(W - SBAR, VIEW_Y, SBAR, VIEW_H, theme.sunken)
 
-  -- An arrow button at each end, which is where the eye looks for one.
-  for _, a in ipairs { { y = VIEW_Y, dir = "up" },
-                       { y = VIEW_Y + VIEW_H - SBAR, dir = "down" } } do
-    s:fill(x, a.y, SBAR, SBAR, theme.raised)
-    bevel(s, x, a.y, SBAR, SBAR, false)
-    arrow(s, x + SBAR // 2, a.y + SBAR // 2 + (a.dir == "up" and -2 or 2),
-          4, a.dir, theme.text)
-  end
-
-  --
-  -- The thumb in the controls' face with a grip across it, as the kit draws
-  -- every other one (`ui.lua`'s `draw_scrollbar`). It wore the tab's colour
-  -- from 22 September until Diego took that back on 24 September: "We
-  -- should go back to scrollbars and handle with the same color".
-  --
-  s:fill(x, ty, SBAR, th, theme.raised)
-  bevel(s, x, ty, SBAR, th, false)
-
-  if th >= 14 then
-    local gx, gy = x + (SBAR - 8) // 2, ty + (th - 8) // 2
-    local lit, dark = theme.edge_light, theme.edge_dark
-
-    for i = 0, 3 do
-      s:fill(gx, gy + 2 * i, 8, 1, lit)
-      s:fill(gx, gy + 2 * i + 1, 8, 1, dark)
-    end
+  if ty then
+    s:fill_round(W - 5 - 6, ty, 6, th, theme.mix(theme.sunken, theme.text_dim, 450), 3)
   end
 end
 
@@ -1292,10 +1276,8 @@ end
 local function scrollbar_press(y)
   local ty, th = thumb()
 
-  if y < VIEW_Y + SBAR then
-    scroll_by(-40)
-  elseif y >= VIEW_Y + VIEW_H - SBAR then
-    scroll_by(40)
+  if not ty then
+    return
   elseif y < ty then
     scroll_by(-(VIEW_H - gfx.height() * 2))
   elseif y >= ty + th then
@@ -1313,13 +1295,13 @@ end
 -- stays under it, which is the one thing a scrollbar has to get right.
 --
 local function scrollbar_drag(y)
-  local track = VIEW_H - SBAR * 2
+  local track = VIEW_H - 4
   local _, th = thumb()
   local room = track - th
 
   if room <= 0 then return end
 
-  scroll_to(((y - dragging - VIEW_Y - SBAR) * reach()) // room)
+  scroll_to(((y - dragging - VIEW_Y - 2) * reach()) // room)
 end
 
 --

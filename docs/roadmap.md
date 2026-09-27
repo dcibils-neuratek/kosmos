@@ -2228,6 +2228,8 @@ processors, and still what follows USB:
    which draws its own. So one scrollbar in every look, at every height and
    in every application, the browser's through the kit. Asked: the pill or
    the trough with arrows. **Diego: "pill"** - the flat one, in every look.
+   **DONE the same day** (`testing.md` 18.225): the kit draws the pill and
+   nothing else, the browser the same, and the arrows went with the trough.
 
 6t. **AGREED on 27 September - the ELF loader: a program loaded from a
    file.** Diego: "i want to go ahead and make the elf loader so we can
