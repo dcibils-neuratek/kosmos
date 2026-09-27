@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 ---
 
@@ -17,6 +17,65 @@ Last updated: 2026-09-26
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 27 September: what the 0.10.172 stick asked for, and programs from a file
+
+Diego on the stick: "The stick do present the correct app icons on the
+deskbar!" - and, using the IDE there, what it was missing. **Nothing is
+pushed since 0.10.172 (9d6c204)**; a push takes his word, a bump and
+`make prepush`.
+
+**From the stick, each built the same day**: the Deskbar's icons, each
+window's own (18.217 - the window manager took the program's name from the
+last `run`, not from the window); the IDE's scrollbar and text size
+(18.220); a Run through `/ramfs`, whose files hold 16 KB, gone - an
+unchanged file runs where it is, a changed one's copy in `/home/.ide-run`
+(18.218); a library saying it is one before it runs (`/lib/clock.lua` is
+the local time, not the Clock); **one scrollbar, the pill, in every look
+and application** (18.225, 6u); **Duplicate** in Cafesa3D's header and in
+the selection's menu on a right click, and **every key on one sheet**
+drawn from the table that handles them (18.226, 4l 5h); and **Find a
+file** in the IDE, Ctrl P (18.227).
+
+**Where things live is drawn** - `docs/layout.html`, published, and part of
+the documentation: `/Kosmos` all the system ships, `/Home` all the person
+has and carries to another machine, names with capitals, the games in
+`/Home/Apps` - each one folder holding everything of it, see below - the
+browser and Video shipped. Changing the shipped system from `/Home` is **not decided** and
+skipped for now. Not yet answered: the four names outside the two trees
+(`/Dev`, `/Drives`, `/App`, `/Temporary`).
+
+**Names are to be case-insensitive and case-preserving** (Diego: "it
+doesnt make sense to have case sensitiveness in this day and age"). Not
+built: kfs compares names exactly, the namespace matches prefixes exactly,
+ramfs likewise; the FAT reader already folds case.
+
+**Programs from a file, `docs/elf.md`, steps 1 to 4 DONE**: `SYS_SPAWN_IMAGE`
+(18.221) - the kernel copies an image from a region into its own memory
+object and checks the header on its copy; the ELF reader in userland, on
+the Mac too (18.223), and the system's ELF says which part is code; an
+image of its own built by `make apps` (18.222); and `-- kosmos: image
+X.elf` (18.224) - `run`, the shell and the launcher read the file a window
+at a time, check it and start the runner in it, keeping what they made
+for the next start. **Step 5 is Doom leaving the image** for
+`/Home/Apps/Doom`, its WAD beside it; then Quake and the Super Nintendo.
+
+**What an application is, decided that night** (`elf.md`, README): one
+folder holding everything of it - Lua, ELF, what it plays (the WAD),
+settings and saves; no `/Home/Games`; its C is not a kit, so no
+`/kits/doom`; self-contained on Kosmos's kits, servers and drivers; and it
+leaves nothing anywhere else - "i want to be able to delete an app and all
+that the app brought,its gone". Today every program is handed the whole
+disk at `/home`, so step 5 grows a capability to one folder from the
+disk's server. **Asked and waiting**: how an application's Lua reaches its
+own C (proposed `use("doom.elf")`) and its own Lua files; the header as the
+manifest and the program named after its folder; and where the shipped
+applications keep their settings (proposed `/Home/Preferences`).
+
+**Next**, in his order: case-insensitive names, then ELF step 5 once the
+app's anatomy is agreed, then 6e's lesson plan drawn (the tutorial, with
+the bundled apps as lessons). 6q, the flaky Deskbar focus and Large icons
+checks, stands.
 
 ## 26 September: Cafesa3D reads and writes other formats, and renders to a file
 

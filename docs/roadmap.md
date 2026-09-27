@@ -2209,7 +2209,8 @@ processors, and still what follows USB:
 
    **Drawn as `docs/layout.html`, and answered**: "browser and video are
    system shipped, not user apps"; a game's files in **`/Home/Games`**, apart
-   from the game; "proposed names ok but should start with Uppercase (Kits,
+   from the game - **replaced the same night**: everything of a game is in
+   its own folder (6t); "proposed names ok but should start with Uppercase (Kits,
    Libraries, Home, Deskbar)"; and "/home and /kosmos could live in
    different drives in the future ... for now assume the /home is in the
    boot drive as /kosmos". He added "Our fs is not case sensitive so it wont
@@ -2261,6 +2262,19 @@ processors, and still what follows USB:
    both boards - once the ELF said which segment is code, which it did not.
    **Step 4 DONE** (18.224): a program naming `-- kosmos: image` runs in
    that image, from the prompt and from anything that launches it.
+   **What an application is, AGREED the same night** (`elf.md`, "Decided";
+   README): one folder holding everything of it - its Lua, its ELF, what
+   it plays, its settings and saves; there is no `/Home/Games`, which
+   replaces the answer above that a game's files live apart from it; its C
+   is not a kit, so there is no `/kits/doom`; and it leaves nothing
+   anywhere else - "i want to be able to delete an app and all that the app
+   brought,its gone". So step 5 grows **a capability to one folder** from
+   the disk's server: an installed application is handed its own folder,
+   not `/Home`, and cannot name anything outside it. **Open, and asked**:
+   how its Lua reaches its own C (proposed `use("doom.elf")`) and its own
+   Lua files; the header as the manifest, and the program named after its
+   folder; and where the applications Kosmos ships keep their settings
+   (proposed `/Home/Preferences`).
 
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the

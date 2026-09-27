@@ -95,10 +95,11 @@ what every Lua program already has.
 
 ### An installed program is an image of its own, next to its Lua
 
-A game is a folder: `/Home/Apps/Doom/doom.lua`, the application as it is
-today, and beside it **`doom.elf`** - the userland linked as `init.elf` is,
-runtime and Lua and the kits it uses, with Doom's kit in it. The Lua names
-it, the way it names its icon:
+A game is a folder, and **everything of it is in the folder**:
+`/Home/Apps/Doom/doom.lua`, the application as it is today; beside it
+**`doom.elf`** - the userland linked as `init.elf` is, runtime and Lua and
+the kits it uses, with Doom's engine in it; and the WAD it plays, its saves
+and its settings. The Lua names its image the way it names its icon:
 
 ```lua
 -- kosmos: application
@@ -145,8 +146,10 @@ needs the region sealed first.
 The child is otherwise every other process: the caps and powers it was
 handed, a role word, a heap and a stack - so `run` starts a runner in the
 game's image exactly as it starts one in the system's, and the runner
-loads `doom.lua` and `use("/kits/doom")` finds Doom, because this image
-has it.
+loads `doom.lua`, which reaches the engine this image carries. **Not as a
+kit**: Doom's C is Doom's, and a kit is what Kosmos ships for every program
+(Diego: "there is no /kits/doom folder and wont be"). How the Lua names
+its own C is below, under what is open.
 
 ### The bytes are the ones the build wrote
 
@@ -165,7 +168,8 @@ anything is spawned, and names the page that differs.
   uses; a kit fixed in the system is fixed in a game when the game is
   built again. That is the price, and `layout.md` §4 already paid it.
 - **Capabilities.** An installed program gets what its launcher hands it
-  and nothing more - its folder, its games' files, the screen, sound and
+  and nothing more - its own folder, read and write, where its WAD, its
+  saves and its settings are; the screen, sound and
   keys through the window manager - and never `/Home/Documents` unless it
   is given it. What a person grants a program they installed is
   per-launcher permissions' ground, and is not decided here.
@@ -197,7 +201,9 @@ anything is spawned, and names the page that differs.
    only in its own image, and one whose image is broken, which is refused
    with a sentence rather than a crash.
 5. **Doom leaves the image**: `/Home/Apps/Doom` with `doom.lua` and
-   `doom.elf`, its WAD in `/Home/Games/Doom`, the stick built that way,
+   `doom.elf` and its WAD in one folder, handed that folder and nothing
+   else of `/Home` - a capability to one folder, from the disk's server,
+   which is new - the stick built that way,
    and `KOSMOS_DOOM` out of the system's build. Then Quake and the Super
    Nintendo.
 
@@ -213,3 +219,60 @@ anything is spawned, and names the page that differs.
 - **Copied, not shared**, until regions can be sealed - a game started
   twice holds its code twice.
 - **`-- kosmos: image doom.elf`** as the way a program names its image.
+
+**And the same evening, what an application is**: "doom is a simple app
+that happens to be a game that holds lua and binaries in the same folder";
+"just hold all doom related into the doom app folder. I dont want settings
+and savedata from many programs to start living in othjer places"; "WAD
+files are inherent parts of the game, not savedata that you generate". So:
+
+- **An application is one folder holding everything that is it** - its
+  Lua, its ELF, what it plays, its settings, its saves. There is no
+  `/Home/Games`; deleting the folder removes the application entirely, and
+  copying it copies all of it.
+- **An application's C is not a kit.** There is no `/kits/doom` and there
+  will not be: kits are what the system ships for any program to use, and
+  Doom's engine belongs to Doom.
+- **Self-contained, on the system's parts**: "i like the idea that most
+  apps are self contained, whule using reusable components from Kosmos
+  Kits, Servers, Drivers, etc". An application brings what is only its
+  own and asks Kosmos for everything shared.
+- **It leaves nothing anywhere else, and deleting it is removing its
+  folder**: "i dont want to be like windows apps that polluted the system
+  with files", and "i want to be able to delete an app and all that the app
+  brought,its gone". No registry, no files in the system's folders, no
+  settings or saves elsewhere; the Deskbar lists the folders in
+  `/Home/Apps`, so there is nothing to unregister either.
+
+**What that asks of the system, because today it is a convention and it
+has to be a fact.** Every program started today is handed the whole disk at
+`/home`, read and write (`init.lua`, the runner's mounts), so an installed
+game could write anywhere in it. An installed application has to be handed
+**its own folder and not `/Home`** - and not as a mount with a `root`,
+which lives in the application's own mount table and so binds only a
+program that keeps to it, but as a capability the disk's server holds to
+that folder: asked for a path outside it, the server has no such path.
+Then leaving files elsewhere is not bad manners but impossible, which is
+the capability argument doing what it is for.
+
+What a person saves *through* an application - a scene Cafesa3D writes into
+`/Home/Documents` because they chose Save there - is theirs and stays when
+the application goes. That needs the Open and Save window to hand the
+application the one file chosen rather than the folder; today the panel
+runs inside the application, so that is later work, written here so it is
+not forgotten.
+
+## Open
+
+- **How an application's Lua reaches its own C.** Proposed: by the file,
+  as it names its image - `use("doom.elf")` returns the table the engine
+  in that image builds, and `/kits` keeps only the system's kits. The same
+  rule then gives an application's own Lua files: `use("menu.lua")` is the
+  file beside the program.
+- **The manifest.** Proposed: the program's `-- kosmos:` header, which
+  `binfs`, the Deskbar and the launcher already read, rather than a second
+  file saying the same things; and the program is the Lua file named after
+  its folder, `Doom/doom.lua`.
+- **Where the applications Kosmos ships keep their settings**, since their
+  folders are the system's: proposed, `/Home/Preferences`, one entry each -
+  today they are dotfiles at the top of `/home`.

@@ -172,11 +172,10 @@
       <p>What you have. Yours to change, and it goes wherever you take it. On the drive Kosmos started from, for now; one day perhaps a stick of its own on a machine whose <code>/Kosmos</code> is inside it.</p>
     </header>
     <ul>
-      <li><span class="name">Apps/</span><span class="what">Applications you installed or wrote, the games among them<small>Each in a folder of its own, holding its program</small></span></li>
-      <li class="sub"><span class="name">Doom/ Quake/ Super Nintendo/</span><span class="what">The games <span class="tag later">after the loader</span><small>Their engines are C, so they leave the image once a program can be loaded from a file</small></span></li>
-      <li><span class="name">Games/</span><span class="what">What the games play: Doom's WAD, Quake's <code>id1</code>, your ROMs<small>Apart from the games themselves, so installing one again never touches them</small></span></li>
+      <li><span class="name">Apps/</span><span class="what">Applications you installed or wrote, the games among them<small>Each one folder holding everything that is it: its Lua, its ELF, what it plays, its settings and its saves</small></span></li>
+      <li class="sub"><span class="name">Doom/ Quake/ Super Nintendo/</span><span class="what">The games <span class="tag later">after the loader</span><small>Their engines are C, so they leave the image once a program can be loaded from a file - Doom's folder holds <code>doom.lua</code>, <code>doom.elf</code> and its WAD</small></span></li>
       <li><span class="name">Development/</span><span class="what">Your projects: what the IDE opens, and the tutorial's lessons to start from</span></li>
-      <li><span class="name">Preferences/</span><span class="what">Your choices: the look, the keyboard, the Deskbar, what starts at login, each application's own<small>Today dotfiles at the top of <code>/home</code>: <code>.appearance</code>, <code>.keyboard</code>, <code>.terminal</code>, <code>.clock</code>, <code>.ide</code> ...</small></span></li>
+      <li><span class="name">Preferences/</span><span class="what">Your choices: the look, the keyboard, the Deskbar, what starts at login, and the settings of the applications Kosmos ships <span class="tag prop">proposed</span> - an application you installed keeps its own in its folder<small>Today dotfiles at the top of <code>/home</code>: <code>.appearance</code>, <code>.keyboard</code>, <code>.terminal</code>, <code>.clock</code>, <code>.ide</code> ...</small></span></li>
       <li><span class="name">Documents/</span><span class="what">What you write and keep - and Cafesa3D's scenes and renders</span></li>
       <li><span class="name">Music/ Photos/ Videos/</span><span class="what">What Music, Photo and Video open first</span></li>
       <li><span class="name">Desktop/</span><span class="what">What is on the desktop</span></li>
@@ -214,8 +213,7 @@
     <p class="kind">An installed game <span class="tag later">after the loader</span></p>
     <ul>
       <li class="s">/Kosmos/Libraries <span class="rw">read</span></li>
-      <li class="h">/Home/Apps/Doom <span class="rw">read</span></li>
-      <li class="h">/Home/Games/Doom <span class="rw">its WAD, its saves</span></li>
+      <li class="h">/Home/Apps/Doom <span class="rw">read and write: its program, its WAD, its saves</span></li>
       <li>/Dev/screen, audio, keys <span class="rw">to play</span></li>
     </ul>
     <p class="not">Not your photos or your documents: they were never handed to it, so it cannot name them.</p>
@@ -246,7 +244,7 @@
   <tr><td class="path">/ramfs</td><td class="path">/Temporary</td><td>Memory <span class="tag prop">proposed</span></td></tr>
   <tr><td class="path">/home/log.txt</td><td class="path s">/Kosmos/Logs</td><td>The system's log</td></tr>
   <tr><td class="path">Doom, Quake, the Super Nintendo, in the image</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>Vendored engines in C: installed, not shipped <span class="tag later">after the loader</span></td></tr>
-  <tr><td class="path">/home/doom1.wad, /home/id1, /home/roms</td><td class="path h">/Home/Games/Doom, Quake, Super Nintendo</td><td>What the games play, apart from the games</td></tr>
+  <tr><td class="path">/home/doom1.wad, /home/id1, /home/roms</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>What each game plays, in the game's own folder</td></tr>
 </table>
 </div>
 
@@ -257,7 +255,10 @@
     <ul class="list">
       <li><code>/Home</code> is everything a person has - installed applications, games, documents, photos - and travels to another Kosmos machine.</li>
       <li><code>/Kosmos</code> is everything the system ships - the browser and Video among it.</li>
-      <li>Doom, Quake and the Super Nintendo are home things, not bundled - which needs the ELF loader, agreed as 6t - and what they play is in <code>/Home/Games</code>.</li>
+      <li>Doom, Quake and the Super Nintendo are home things, not bundled - which needs the ELF loader, agreed as 6t.</li>
+      <li><b>An application is one folder, and everything of it is in it</b>: its Lua, its ELF, what it plays, its settings and its saves. There is no <code>/Home/Games</code> - "WAD files are inherent parts of the game", and "I dont want settings and savedata from many programs to start living in other places".</li>
+      <li>An application's C is not a kit: Doom's engine is in <code>doom.elf</code> in Doom's folder, and there is no <code>/Kosmos/Kits/Doom</code>. Kits are what Kosmos ships for every program to use.</li>
+      <li>Applications are self-contained, on Kosmos's shared parts - its Kits, Servers and Drivers - and <b>leave nothing anywhere else</b>: "i want to be able to delete an app and all that the app brought,its gone". So an installed application is handed its own folder and not <code>/Home</code>, and deleting the folder removes it entirely. <span class="tag later">after the loader</span></li>
       <li>Every name begins with a capital: <code>Kits</code>, <code>Libraries</code>, <code>Home</code>, <code>Deskbar</code>.</li>
       <li><code>/Home</code> is on the drive Kosmos started from, for now; on a drive of its own is for later.</li>
       <li>This drawing is part of Kosmos's documentation, kept true as the layout changes.</li>
