@@ -940,9 +940,13 @@ local function new_namespace()
                   or ("the drive server refused it, error " .. tostring(err))
     end
 
+    -- In `attrs`, as every other protocol answers: `ns.getattr` reads that
+    -- field, and this answered beside it - so every folder on a USB drive
+    -- came back as nothing, and Tracker drew it as a file of 0 B it would
+    -- not open (Diego, on the M700, 27 September).
     if op == "getattr" then
-      return { ok = true, size = size,
-               kind = (directory ~= 0) and "directory" or "file" }
+      return { ok = true, attrs = { size = size,
+                                    kind = (directory ~= 0) and "directory" or "file" } }
     end
 
     if op == "read" then

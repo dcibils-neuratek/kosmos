@@ -129,7 +129,7 @@ local map = ui.view{
     local pieces = {}
 
     for i, v in ipairs(d.volumes) do
-      pieces[#pieces + 1] = { text = v.name, sub = v.filesystem .. " · "
+      pieces[#pieces + 1] = { text = drivelist.label(v), sub = v.filesystem .. " · "
                               .. drivelist.size(v.bytes), volume = i }
     end
 
@@ -214,13 +214,13 @@ local part_rows = ui.view{
       if i == part then g:fill(1, y, self.w - 2, ROW, "line_soft") end
 
       cell(g, PART_COLS[1][2], y, tostring((v.partition or 0) + 1), "text_dim")
-      cell(g, PART_COLS[2][2], y, v.name)
+      cell(g, PART_COLS[2][2], y, drivelist.label(v))
       cell(g, PART_COLS[3][2], y, v.filesystem, "text_dim")
       cell(g, PART_COLS[4][2], y, drivelist.size(v.bytes))
       cell(g, PART_COLS[5][2], y, v.free_exact and drivelist.size(used) or "-")
       cell(g, PART_COLS[6][2], y,
-           v.readable and drivelist.path(v) or "not opened",
-           v.readable and "text" or "text_dim")
+           drivelist.opens(v) and drivelist.path(v) or "not opened",
+           drivelist.opens(v) and "text" or "text_dim")
     end
   end,
 
@@ -243,7 +243,7 @@ local function open_in_tracker()
   local d = drive_of()
   local v = d and d.volumes[part]
 
-  if not v or not v.readable then
+  if not v or not drivelist.opens(v) then
     status.text = "Choose a filesystem Kosmos reads first."
     win:paint()
     return

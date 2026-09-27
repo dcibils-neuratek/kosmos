@@ -1034,6 +1034,7 @@ def usb_drives(image, check):
         'print("drives" .. ": roma " .. tostring(roma)) '
         'local big = fs.read("/Drives/PHOTOS/A Long File Name.txt") '
         'print("drives" .. ": big " .. tostring(big and #big or -1)) '
+
         'local second = fs.list("/Drives/BACKUP") '
         'print("drives" .. ": second " .. table.concat(second or {}, "|")) '
         'local notes = fs.read("/Drives/BACKUP/notes.txt") '
@@ -1043,6 +1044,15 @@ def usb_drives(image, check):
         'ids[#ids + 1] = v.name .. "=" .. tostring(v.id) end '
         'print("drives" .. ": ids " .. table.concat(ids, ",")) '
         'print("drives" .. ": done")'
+    )
+
+    # What a folder and a file are, asked as Tracker asks: a program of its
+    # own too, for the same reason.
+    kinds = (
+        'local it = fs.getattr("/Drives/PHOTOS/Italy") '
+        'local hi = fs.getattr("/Drives/PHOTOS/hello.txt") '
+        'print("drives" .. ": kinds " .. tostring(it and it.kind) .. " " '
+        '.. tostring(hi and hi.kind) .. " " .. tostring(hi and hi.size))'
     )
 
     # The Drives app's model, as a program of its own: the one above is
@@ -1064,7 +1074,9 @@ def usb_drives(image, check):
                typed=("fs.write('/Temporary/d.lua', %r)" % program,
                       "/Temporary/d.lua",
                       "fs.write('/Temporary/m.lua', %r)" % model,
-                      "/Temporary/m.lua"),
+                      "/Temporary/m.lua",
+                      "fs.write('/Temporary/k.lua', %r)" % kinds,
+                      "/Temporary/k.lua"),
                extra=extra, after="watching for devices")
 
     if out is None:
@@ -1102,6 +1114,16 @@ def usb_drives(image, check):
 
     check("roma" in said("roma"),
           "Italy/roma.txt did not resolve one directory down:\n    " + shown)
+
+    # **What a folder is, asked as Tracker asks it.** Every entry Tracker
+    # draws is a `getattr`, and the namespace passed the drive server's
+    # answer on beside `attrs` rather than in it - so every folder on a USB
+    # drive was nothing, drawn as a file of 0 B that would not open (Diego,
+    # on the M700, 27 September). Listing and reading never asked.
+    check(said("kinds") == "drives: kinds directory file %d"
+          % len(b"Kosmos reads a drive.\n"),
+          "Italy was not a directory and hello.txt a file of its size, asked "
+          "with getattr:\n    " + shown)
 
     # **Each volume's own identity, as the whole set.** A shortcut in Places
     # is remembered by this, because a unit number is handed out afresh on
@@ -1667,13 +1689,35 @@ def usb_home_named(image, check):
              "-device", "usb-storage,bus=usb1.0,drive=named",
              "-fw_cfg", "name=opt/kosmos/home,string=%s" % named.lower())
 
+    # And what the Drives window and Tracker's sidebar say of each volume,
+    # through the one library both read: the partition that is `/Home` by
+    # that name and opening there, and the other stick's by its own.
+    labels = ('local dl = use("/lib/drivelist.lua") '
+              'for _, d in ipairs(dl.drives()) do for _, v in ipairs(d.volumes) do '
+              'print("drives" .. ": volume " .. dl.label(v) .. " at " .. dl.path(v) '
+              '.. " opens " .. tostring(dl.opens(v))) end end')
+
     out = boot(image, None, 150.0,
-               typed=("diskinfo", "save named.txt on the named stick"),
+               typed=("diskinfo", "save named.txt on the named stick",
+                      "fs.write('/Temporary/dl.lua', %r)" % labels,
+                      "/Temporary/dl.lua"),
                extra=extra, after="its backup")
 
     if out is None:
         check(False, "the machine would not boot with two Kosmos sticks")
         return
+
+    volumes = [l.strip() for l in out.splitlines() if "drives: volume " in l]
+    homes = [l for l in volumes if l.startswith("drives: volume Home at /Home opens true")]
+
+    # Each stick has an EFI partition too, so four volumes: one of them Home.
+    others = [l for l in volumes if l not in homes]
+
+    check(len(homes) == 1 and len(volumes) == 4
+          and not any(" at /Home " in l for l in others),
+          "the partition named as /Home was not called Home and opened at /Home, "
+          "once, beside the other stick's (Diego on the M700: it read Untitled, "
+          "not opened):\n    %s" % ("\n    ".join(volumes) or "(nothing listed)"))
 
     shown = "\n    ".join(l.strip() for l in out.splitlines()
                            if "disk:" in l or "Kosmos partition" in l

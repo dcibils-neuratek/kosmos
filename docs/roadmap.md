@@ -2126,6 +2126,22 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6y. **FOUND on 27 September, on the M700 with 0.10.173 - a USB drive's
+   folders would not open, and `/Home`'s partition read "Untitled".** Diego,
+   with photographs: "I can't browse kosmos in tracker" - the stick's
+   `KOSMOS` volume showed `EFI` and `boot` as grey files of 0 B - and the
+   Drives window listed the 512 MB kfs partition as "Untitled", "not
+   opened". **DONE the same evening** (`testing.md` 18.231). The first was
+   the namespace: every protocol answers `getattr` with its attributes in
+   `attrs`, and the drive protocol answered beside it, so `fs.getattr` gave
+   nothing for anything on a USB drive and Tracker, which asks it of every
+   entry, drew each as a file of 0 B - since `/Drives` arrived, and no test
+   asked, because listing and reading were what they checked. The second:
+   the drive server lists every partition and does not read kfs, and the
+   one that is `/Home` is known by the GUID the machine was started with
+   (`opt/kosmos/home`) - so the Drives window and Tracker's sidebar call it
+   Home and open `/Home`.
+
 6x. **WANTED, for later, on 27 September - recording the screen.** Diego:
    "in the future I want screen recording capabilities in kosmos that will
    store mp4 video files in captures". A recording of what is on the screen,
@@ -2410,6 +2426,9 @@ processors, and still what follows USB:
    press landed on the bare desktop and chose nothing - twice in three gates
    after the renames. It waits for the menu to be on the screen now. The
    Control-W Tab reading is the one still open.
+   **And once more, differently**: the column had grown and a name was read
+   mid-drawing, because "still" was two identical pictures a third of a
+   second apart; it is the same picture for a second and a half now.
 
 6p. **DONE on 26 September - Monitor updates every half second, second or
    two.** Diego, with a photograph of the window: "monitor needs an option

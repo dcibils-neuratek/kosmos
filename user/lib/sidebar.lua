@@ -21,6 +21,7 @@
 
 local files    = use("/lib/files.lua")
 local placelib = use("/lib/places.lua")
+local drivelist = use("/lib/drivelist.lua")
 
 local sidebar = {}
 
@@ -179,9 +180,10 @@ function sidebar.new()
       --
       local note = v.filesystem or "unknown"
 
-      if not v.readable then note = note .. ", not opened" end
+      if not drivelist.opens(v) then note = note .. ", not opened" end
 
-      out[#out + 1] = { text = v.name, path = files.join("/Drives", v.name),
+      -- The partition that is `/Home` by its own name, opening there.
+      out[#out + 1] = { text = drivelist.label(v), path = drivelist.path(v),
                         note = note, children = subdirs }
     end
 

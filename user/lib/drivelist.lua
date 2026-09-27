@@ -94,8 +94,34 @@ function drivelist.drives()
   return out
 end
 
+--
+-- **The partition that is `/Home`**, known by the GUID the machine was
+-- started with (`opt/kosmos/home`, on every stick since 0.10.62). The drive
+-- server lists it as it lists any partition - it does not read kfs, and the
+-- disk server has it open - so it read "Untitled" and "not opened", the one
+-- volume on the machine that is open (Diego, on the M700, 27 September).
+--
+function drivelist.is_home(volume)
+  local want = sys.boot and sys.boot("opt/kosmos/home")
+
+  return type(want) == "string" and type(volume.id) == "string"
+         and volume.id:upper() == ("gpt:" .. want):upper()
+end
+
+-- What a volume is called: its label, or Home for the one that is `/Home`.
+function drivelist.label(volume)
+  return drivelist.is_home(volume) and "Home" or volume.name
+end
+
+-- Whether it opens: one the drive server reads, or `/Home`.
+function drivelist.opens(volume)
+  return volume.readable or drivelist.is_home(volume)
+end
+
 -- Where a volume opens in Tracker.
 function drivelist.path(volume)
+  if drivelist.is_home(volume) then return "/Home" end
+
   return "/Drives/" .. volume.name
 end
 

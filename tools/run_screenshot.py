@@ -8839,12 +8839,22 @@ def check_icon_sizes(guest):
     # after the harness stopped pausing after each event (`testing.md`
     # 18.219). So the one measured is the first that is the same twice.
     #
-    last = [px]
+    #
+    # **And still for a second and a half, not for two pictures.** The same
+    # picture twice was the first rule, and on 27 September it caught the
+    # desktop between two stages of drawing the larger icons - the name at
+    # 220 again, in a gate: pictures come every third of a second, and a
+    # desktop under the gate's load can pause that long mid-change. What
+    # nothing is still drawing looks like is the same picture for a while.
+    #
+    last = [px, time.monotonic()]
 
     def still(w, h, pixels):
-        same = pixels == last[0]
-        last[0] = pixels
-        return (w, h, pixels) if same else None
+        if pixels != last[0]:
+            last[0], last[1] = pixels, time.monotonic()
+            return None
+
+        return (w, h, pixels) if time.monotonic() - last[1] >= 1.5 else None
 
     _, _, px = settle(
         guest, still,

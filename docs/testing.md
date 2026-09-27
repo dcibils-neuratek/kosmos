@@ -11345,3 +11345,31 @@ landed on the bare desktop, chose nothing, and the check said the icons
 had not grown. `choose` in the harness waits for the menu on the screen.
 
 The gate with `/Home`: 50 of 50 in 8:56.
+
+## 18.231 A USB drive's folders, and the partition that is `/Home`
+
+`roadmap.md` 6y - found by Diego on the M700 with 0.10.173: "I can't browse
+kosmos in tracker", the stick's `KOSMOS` volume showing `EFI` and `boot` as
+files of 0 B, and the Drives window calling the 512 MB kfs partition
+"Untitled", "not opened". **The namespace passed the drive server's
+`getattr` beside `attrs` rather than in it** - every other protocol puts it
+there, and `fs.getattr` reads nothing else - so every folder on a USB drive
+was nothing, and Tracker drew it as a file. **And the partition that is
+`/Home`** is named by the GUID the machine was started with; `drivelist`
+knows it now (`is_home`, `label`, `opens`, `path`), and the Drives window
+and Tracker's sidebar both read it from there.
+
+**In the x86 suite, two checks.** The FAT stick phase asks `getattr` of a
+folder and a file, as Tracker does - `directory`, and `file` of its size -
+in a program of its own, since the phase's first one is typed at the
+prompt and a line there is cut at about a kilobyte. The phase with two
+Kosmos sticks and the second one's GUID named asks the drive list what each
+of its four volumes is called: exactly one is `Home`, at `/Home`, opening.
+**Controls**: the old answer - the folder check fails; `is_home` false -
+the Home check fails.
+
+The gate: 49 of 50 - `x86-display-4`, the Large icons phase once more,
+reading the name before the last at row 220 where the finished picture has
+it at 241: "the same picture twice" had caught the desktop between two
+stages of drawing. Still means the same picture for a second and a half now
+(`roadmap.md` 6q); the part alone, 79 checks.
