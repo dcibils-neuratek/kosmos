@@ -1,24 +1,27 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""The line icons, rendered from the mockups' own vectors.
+"""The line icons, rendered from Lucide's vectors.
 
     python3 tools/lineicons.py            # writes assets/icons/line/
 
-`docs/preferences.html` draws a sidebar whose categories each have a small
-line icon - grey, and the accent for the one that is chosen - and a header
-with a search, a menu and a close. Diego, 24 September 2026: "pixel perfect
-as the html mockups" (`roadmap.md` 5zp).
+Every small grey icon in Kosmos - a category in Preferences' sidebar, the
+search and the menu in a header, a place in Tracker, and the button bars -
+is one of these. Diego, 26 September 2026, choosing Lucide from three sets
+laid side by side in the IDE's bar (`docs/icon-sets.html`, `roadmap.md` 6o):
+"Lucide it is". Until then they were 26 drawn by hand from the mockups.
 
 **The vectors are the source, and the pictures are what the build carries.**
-Each icon here is the exact SVG the page draws, and each is rendered by a
-real browser at every size the desktop's scale can ask for - 15 at 100 per
-cent, 19 at 125, 23 at 150, 30 at 200 - rather than rendered once and
-resampled, because a resampled one-pixel line is a grey smear. The kit
-paints a look's colour through each one's coverage (`gfx.c`'s `tint`), so
-one picture per size serves five looks.
+Lucide's SVGs are vendored unmodified in `assets/icons/lucide/`, with their
+licence; each one Kosmos uses is named below and rendered by a real browser
+at every size the desktop's scale can ask for - 15 at 100 per cent, 19 at
+125, 23 at 150, 30 at 200 - rather than rendered once and resampled, because
+a resampled one-pixel line is a grey smear. The kit paints a look's colour
+through each one's coverage (`gfx.c`'s `tint`), so one picture per size
+serves every look, light or dark.
 
-**Run by hand when an icon changes, not by the build**, because it needs a
-browser and the build must not. What it writes is committed, as a font's
-BDF is: an input the build converts, and whose origin is written down here.
+**An icon more is a line below and a run of this**, which is by hand, not
+by the build, because it needs a browser and the build must not. What it
+writes is committed, as a font's BDF is: an input the build converts, and
+whose origin is written down here.
 
 Each PNG is white with the icon's coverage as its alpha - the colour is
 never in the file, which is the point.
@@ -40,65 +43,79 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 # at 100, 125, 150 and 200 per cent.
 SIZES = (15, 19, 23, 30)
 
-# name -> (stroke width in the 16-unit box, the SVG body), exactly as
-# `docs/preferences.html` has them. Categories are stroked at 1.4 with round
-# joins; the header's icons at 1.6.
-CAT = ('1.4', 'stroke-linejoin="round"')
-HEAD = ('1.6', '')
-PLACE = ('1.5', '')
+LUCIDE = os.path.join(ROOT, "assets", "icons", "lucide")
 
+#
+# Kosmos's name -> Lucide's, and the width of its line in Lucide's 24-unit
+# box when it is not Lucide's own 2. The names on the left are what callers
+# of `gc:line_icon` and `ui.iconbutton` say, and they were the hand-drawn
+# icons' names first, so none of those calls changed when the drawings did.
+#
 ICONS = {
-    "appearance": CAT + ('<path d="M8 2a6 6 0 100 12c1 0 1.5-.6 1.5-1.3 0-.8'
-                         '-.7-1.1-.7-1.8 0-.5.4-.9 1-.9H11a3 3 0 003-3c0-2.8'
-                         '-2.7-5-6-5z"/>',),
-    "display":    CAT + ('<path d="M2 3h12v9H2zM6 14h4"/>',),
-    "sound":      CAT + ('<path d="M3 6v4h2.5L9 13V3L5.5 6zM11.5 6a3 3 0 010 4"/>',),
-    "power":      CAT + ('<path d="M8 2v6M5 4a5 5 0 106 0"/>',),
-    "network":    CAT + ('<path d="M2 6a9 9 0 0112 0M4.5 8.5a5.5 5.5 0 017 0'
-                         'M8 12h.01"/>',),
-    "keyboard":   CAT + ('<path d="M2 4h12v8H2zM4.5 6.5h.01M7 6.5h.01'
-                         'M9.5 6.5h.01M12 6.5h.01M5 9.5h6"/>',),
-    "startup":    CAT + ('<path d="M8 2l5 3v6l-5 3-5-3V5z"/>',),
-    "datetime":   CAT + ('<path d="M8 2a6 6 0 100 12A6 6 0 008 2zM8 5v3.2'
-                         'l2 1.2"/>',),
-    "system":     CAT + ('<path d="M5 5h6v6H5zM8 2v2M8 12v2M2 8h2M12 8h2"/>',),
-    "search":     HEAD + ('<circle cx="7" cy="7" r="4.5"/>'
-                          '<path d="M10.5 10.5 14 14"/>',),
-    "menu":       HEAD + ('<path d="M2 4h12M2 8h12M2 12h12"/>',),
-    "close":      HEAD + ('<path d="M4 4l8 8M12 4l-8 8"/>',),
+    # Preferences' categories.
+    "appearance": ("palette", None),
+    "display":    ("monitor", None),
+    "sound":      ("volume-2", None),
+    "power":      ("power", None),
+    "network":    ("wifi", None),
+    "keyboard":   ("keyboard", None),
+    "startup":    ("rocket", None),
+    "datetime":   ("clock", None),
+    "system":     ("cpu", None),
 
-    # `docs/tracker2.html`: the header's arrows at 1.7, the places and the
-    # new folder at 1.5, and the three dots filled rather than stroked.
-    "back":       ('1.7', '') + ('<path d="M10 3L5 8l5 5"/>',),
-    "forward":    ('1.7', '') + ('<path d="M6 3l5 5-5 5"/>',),
-    "more":       ('0', '') + ('<g fill="#000" stroke="none"><circle cx="8" '
-                               'cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/>'
-                               '<circle cx="8" cy="13" r="1.3"/></g>',),
-    "home":       PLACE + ('<path d="M2 7l6-5 6 5v7H2z"/>',),
-    "newfolder":  PLACE + ('<path d="M2 4h4l1.5 2H14v7H2z"/>'
-                           '<path d="M8 8.5v3M6.5 10h3"/>',),
-    # The browser's reload: a circle nearly closed, and the arrow's head.
-    "reload":     HEAD + ('<path d="M13.2 8.6A5.3 5.3 0 1 1 11.8 4.1"/>'
-                          '<path d="M12.6 1.8v3h-3"/>',),
-    # The new folder's folder without its plus: Tracker's place button,
-    # anywhere that is not Home, the Trash or a drive.
-    "folder":     PLACE + ('<path d="M2 4h4l1.5 2H14v7H2z"/>',),
-    "recent":     PLACE + ('<circle cx="8" cy="8" r="6"/>'
-                           '<path d="M8 5v3.2l2 1.2"/>',),
-    "trash":      PLACE + ('<path d="M3 5h10v9H3zM6 5V3h4v2"/>',),
-    "document":   PLACE + ('<path d="M3 2h7l3 3v9H3z"/>',),
-    "music":      PLACE + ('<path d="M6 12V4l7-1v8"/><circle cx="4" cy="12" '
-                           'r="2"/><circle cx="11" cy="11" r="2"/>',),
-    "pictures":   PLACE + ('<path d="M2 3h12v10H2z"/>'
-                           '<path d="M2 11l4-4 3 3 2-2 3 3"/>',),
-    "drive":      PLACE + ('<path d="M2 4h12v8H2z"/><path d="M4 7h3"/>',),
+    # Headers: search, the menu, close, the arrows, the dots, reload.
+    "search":     ("search", None),
+    "menu":       ("menu", None),
+    "close":      ("x", None),
+    "back":       ("chevron-left", None),
+    "forward":    ("chevron-right", None),
+    "more":       ("ellipsis-vertical", None),
+    "reload":     ("rotate-cw", None),
+
+    # Tracker's places.
+    "home":       ("house", None),
+    "folder":     ("folder", None),
+    "newfolder":  ("folder-plus", None),
+    "recent":     ("rotate-ccw-clock", None),
+    "trash":      ("trash", None),
+    "document":   ("file", None),
+    "music":      ("music", None),
+    "pictures":   ("image", None),
+    "drive":      ("hard-drive", None),
 
     # The kit's checkbox, ticked: white on the accent, so heavier than the
-    # rest and with round ends - at 15 pixels a 1.5 stroke on a filled box
-    # reads as a scratch rather than a mark.
-    "check":      ('2', 'stroke-linecap="round" stroke-linejoin="round"')
-                  + ('<path d="M4 8.5l2.6 2.6L12 5.2"/>',),
+    # rest - at 15 pixels Lucide's own 2 on a filled box reads as a scratch.
+    "check":      ("check", "3"),
+
+    # Button bars: the Kosmos IDE's first (`docs/kosmos-ide.html`), and any
+    # application's that wants the same words.
+    "new":        ("file-plus", None),
+    "open":       ("folder-open", None),
+    "save":       ("save", None),
+    "saveall":    ("save-all", None),
+    "undo":       ("undo-2", None),
+    "redo":       ("redo-2", None),
+    "run":        ("play", None),
+    "stop":       ("square", None),
+    "debug":      ("bug", None),
+    "copy":       ("copy", None),
+    "paste":      ("clipboard-paste", None),
+    "cut":        ("scissors", None),
+    "settings":   ("settings", None),
 }
+
+
+def body(lucide):
+    """What is inside Lucide's `<svg>`, as its file has it."""
+    path = os.path.join(LUCIDE, lucide + ".svg")
+
+    if not os.path.exists(path):
+        sys.exit("lineicons: Lucide has no %s - `assets/icons/lucide/` is "
+                 "release %s's" % (lucide, "1.48.0"))
+
+    text = open(path).read()
+    return text[text.index(">", text.index("<svg")) + 1:text.rindex("</svg>")]
+
 
 STEP = 40          # one cell per icon on the sheet, wider than the largest
 
@@ -107,12 +124,15 @@ def sheet(size):
     """One page with every icon at `size`, in a row, black on nothing."""
     cells = []
 
-    for i, (name, (width, extra, body)) in enumerate(sorted(ICONS.items())):
+    # Lucide's own attributes - a 24 box, lines of 2 with round ends and
+    # joins - in black, since only the coverage is kept.
+    for i, (name, (lucide, width)) in enumerate(sorted(ICONS.items())):
         cells.append(
             '<svg style="position:absolute;left:%dpx;top:0" width="%d" '
-            'height="%d" viewBox="0 0 16 16" fill="none" stroke="#000" '
-            'stroke-width="%s" %s>%s</svg>'
-            % (i * STEP, size, size, width, extra, body))
+            'height="%d" viewBox="0 0 24 24" fill="none" stroke="#000" '
+            'stroke-width="%s" stroke-linecap="round" '
+            'stroke-linejoin="round">%s</svg>'
+            % (i * STEP, size, size, width or "2", body(lucide)))
 
     return ('<!doctype html><html><head><style>html,body{margin:0;'
             'background:transparent}</style></head><body>%s</body></html>'

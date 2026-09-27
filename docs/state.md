@@ -93,6 +93,11 @@ window, so built on the kit; the Preferences look; the last project;
 debugging later. And the ten-lesson tutorial, wanted again in its order as
 the IDE's first project (roadmap 7).
 
+**And its icons**: three sets laid side by side in the IDE's bar
+(`docs/icon-sets.html`), and Diego: "Lucide it is". Every small grey icon in
+Kosmos is Lucide's now, 39 of them, held by `tools/test_lineicons.py` (6o,
+18.205); the mockups that drew the old ones still show them.
+
 **Next, in order**: Processes' Threads column (6m); the IDE in its six
 steps (6n) - the editor component first; Cafesa3D's scripting on it; the
 tutorial's lessons.

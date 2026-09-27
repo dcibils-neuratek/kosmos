@@ -10347,3 +10347,27 @@ translators use it now.
 `MEGA=1` is `FULL=1` plus Quake. `LICENSE` names 17 entries and 14 vendored
 trees (`tools/test_licences.lua`). The editor of Kosmos's own is
 `roadmap.md` 6n, drawn before it is written.
+
+## 18.205 The line icons are Lucide's, and held to their list
+
+Diego chose Lucide for every small grey icon ("Lucide it is", roadmap 6o):
+release 1.48.0's 1,854 SVGs vendored unmodified in `assets/icons/lucide/`,
+and `tools/lineicons.py` rendering the 39 Kosmos uses - the 26 it had, under
+their old names, and thirteen for button bars - at 15, 19, 23 and 30 pixels.
+
+**`tools/test_lineicons.py`, in `make test`, 679 checks**: every icon in the
+list has its Lucide file; every one has its four pictures, each an 8-bit
+white RGBA square of its size with something in it, since the kit paints
+the colour through the coverage; nothing is in `assets/icons/line/` that the
+list does not name; and every icon name written in Kosmos's Lua - a literal
+to `line_icon`, or an `icon = "..."` in lower case - is in the list. The
+renderer needs a browser and is run by hand, so without this an icon named
+and never drawn would be a blank square and nothing would say so.
+
+**Controls, each run**: a picture moved away fails as "no 19-pixel picture";
+a copy under a name the list does not have fails as stray; and `more` taken
+out of the list fails five times - its four pictures stray, and the name the
+Lua uses twelve times not rendered.
+
+The gate with the new icons: 40 of 40 in 8:57.
+

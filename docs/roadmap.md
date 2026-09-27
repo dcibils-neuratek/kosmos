@@ -2090,7 +2090,7 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
-6o. **AGREED on 26 September - one set of line icons for every button bar.**
+6o. **DONE on 26 September - one set of line icons for every button bar: Lucide.**
    Diego, looking at the IDE's drawing: "we should look for a set of icons
    that match that of the mockup in the save, open, copy, etc button bar",
    "in gray with transparent background that can be used in many apps in
@@ -2103,6 +2103,15 @@ processors, and still what follows USB:
    `docs/icon-sets.html`, Lucide proposed; the chosen one is vendored at a
    pinned commit, its licence beside it, and replaces the 26 so no window
    mixes two hands. Before the IDE's button bar is built (6n step 2).
+   **Diego: "Lucide it is."** Built the same night (`testing.md` 18.205):
+   Lucide 1.48.0's 1,854 SVGs vendored unmodified in `assets/icons/lucide/`
+   with its licence; `tools/lineicons.py` renders the 39 Kosmos uses - the 26
+   under their old names, so no caller changed, and New, Open, Save, Save
+   all, Undo, Redo, Run, Stop, Debug, Copy, Paste, Cut and Settings for
+   button bars - at 15, 19, 23 and 30 pixels. An icon more is a line in its
+   list. **Still drawn by hand**: the mockups that set the old ones -
+   `apps.html`, `preferences.html`, `tracker2.html` - which show them until
+   each window is next drawn.
 
 6n. **AGREED on 26 September - a Lua editor and IDE of Kosmos's own.** Diego:
    "i want to remove lxedit as we are going to crate our own LUA development
@@ -2147,6 +2156,8 @@ processors, and still what follows USB:
       protocol; its end and its exit code said.
    4. **Checking** - Lua's own parser as you type, then luacheck, vendored,
       given the names a Kosmos program has (`tools/luaglobals.py`'s list).
+      The host already has a `tools/luacheck.c`, which only parses: one of
+      the two names has to change when luacheck arrives.
    5. **Suggestions** - names read from the libraries `use` returned, with
       the comment above each as its documentation.
    6. **Cafesa3D's Script panel**, on the same component (4l).

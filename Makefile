@@ -3280,6 +3280,11 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# it, and every vendored tree named in it - so a library added without
 	@# an entry fails here, by name.
 	$(HOSTDIR)/lua tools/test_licences.lua LICENSE $(wildcard runtime/upstream/*/) lua/upstream/
+	@# And the line icons: every one the list names rendered at every size,
+	@# white with its coverage, nothing stray, and every name the Lua uses
+	@# among them - `tools/lineicons.py` is run by hand, so nothing else
+	@# would notice an icon named and never drawn.
+	python3 tools/test_lineicons.py
 	@# And every syscall's arguments: what the kernel reads from each case,
 	@# against what userland passes. A wrapper that passes fewer hands the
 	@# kernel whatever the register last held - SYS_MEM_CREATE's flags did.

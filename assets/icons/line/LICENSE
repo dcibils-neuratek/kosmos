@@ -1,0 +1,10 @@
+These line icons are Lucide's (https://lucide.dev), release 1.48.0: each is
+rendered from the SVG vendored unmodified in assets/icons/lucide/, by
+tools/lineicons.py, at 15, 19, 23 and 30 pixels, keeping only its coverage.
+Their terms are Lucide's - ISC, and MIT for the icons Lucide derived from
+Feather - in assets/icons/lucide/LICENSE, which applies to these pictures as
+it does to the vectors they were made from.
+
+Until 26 September 2026 this folder held 26 icons drawn for Kosmos by hand,
+Kosmos. Copyright (c) 2026 Diego Cibils, MIT; they are in the repository's
+history.
