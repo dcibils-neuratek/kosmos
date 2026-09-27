@@ -2100,6 +2100,11 @@ processors, and still what follows USB:
    check reading a frame a moment early. Which one, found by measuring - the
    Deskbar's own log of the list it drew from, beside the focus line - and
    then fixed where it is, so the gate stops depending on a rerun.
+   **And a second, the same night**: `arm-display-4`'s "Large icons was
+   chosen from the desktop's menu and the first column did not get taller"
+   - waiting 20 s with the gate's 46 suites running beside it, and passing
+   alone, 79 checks. The same question: the desktop slow to answer a menu
+   under load, or the check deciding before it could.
 
 6p. **DONE on 26 September - Monitor updates every half second, second or
    two.** Diego, with a photograph of the window: "monitor needs an option
@@ -2224,8 +2229,15 @@ processors, and still what follows USB:
       parse-only `tools/luacheck.c` is `tools/luaparse.c`. **Left for
       step 5**: the drawing's third kind, a name a library does not have -
       `ui.slidr` - which is asked of the library the way suggestions are.
-   5. **Suggestions** - names read from the libraries `use` returned, with
-      the comment above each as its documentation.
+   5. **DONE on 27 September - suggestions** - names read from the
+      libraries `use` returned, with the comment above each as its
+      documentation (`testing.md` 18.212). `/lib/libdoc.lua` reads a
+      library's source, never runs it: after `ui.` the names `ui.lua`
+      defines, after `win:` a window's methods, `sys`, `fs` and `gfx` from
+      the running tables, a kit's names from its table; Ctrl+Space for a
+      plain word. And the drawing's third check, left from step 4: a name a
+      library has not got, `ui.slidr`, an error "ui has no slidr - did you
+      mean slider?", asked of the library.
    6. **Cafesa3D's Script panel**, on the same component (4l).
    Later: debugging.
 

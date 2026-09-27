@@ -10632,3 +10632,48 @@ listed in their colours, "It parses" in green, and the foot's count - the
 drawing's "A mistake".
 
 The gate with step 4: 46 of 46 in 9:15.
+
+## 18.212 The IDE's suggestions, and a name a library has not got
+
+Step 5 of the IDE (roadmap 6n). `/lib/libdoc.lua` reads a library's source
+and never runs it: the table it returns, each name defined on it -
+`function ui.slider(spec)`, `ui.UP = -1` - and the methods of its local
+tables, `function window:add(child)`; how each is called, preferring an
+example written in its comment; and the comment above it - or, for a
+function whose words open its body, inside it - as what it is, a section's
+banner and title left out. In the IDE: after `ui.` the names of the library
+`ui` is bound to by `local ui = use(...)`, after `win:` a window's methods
+when `win` is made by `ui.window`, `sys`, `fs` and `gfx` from the running
+tables, a kit's from its table; narrowing as you type, Up and Down, Tab or
+Enter to take, Escape to close, and Ctrl+Space for a plain word - the
+file's locals and what a program is born with. Beside the list, how the
+chosen one is called and its comment.
+
+And the drawing's third check: a name the file asks a library for that it
+has not got - `ui.slidr` - which Lua would run as a nil, is an error "ui has
+no slidr - did you mean slider? It would be nil when the line runs.",
+asked of `ui.lua`. Not inside a string or comment (`lualex`), and not a name
+the file gives the library itself.
+
+**`tools/test_libdoc.lua`, in `make test`, 14 checks**: a small library
+with every way a name and its comment are placed - a function, a value, a
+method on a local table, an example as the signature, a banner and a title
+skipped, a comment inside a body, a local function not offered - and
+`ui.lua` itself: more than thirty names, `ui.slider`'s summary, a window's
+`run` and `add`, `sl` narrowing to `slider`, `slidr` nearest `slider` and
+`wndow` nearest `window`, and nothing near `frobnicate`.
+
+**`tools/run_ide.py`, now 20 checks a board**: a file asking for `ui.slidr`
+checked as one error; `ui.` offering more than twenty names, `sl` and Tab
+taking `slider`; `win:` offering a window's methods; and the file saved with
+`ui.slider` on its last line. **Control**: a reader that sees no functions
+fails five of them, and the Mac test with them.
+
+Looked at once under QEMU: `slider` in the list with `sl` in the accent, and
+beside it `ui.slider(spec)` and "A slider: the drawings' level - a rail 4
+high in `track`...", from the comment above it in `ui.lua`.
+
+The gate with step 5: 45 of 46 in 8:50 - `arm-display-4`'s Large icons
+check, waiting 20 s under the gate's load, and passing alone (79 checks).
+Beside the Deskbar's in `roadmap.md` 6q, to be found out rather than rerun.
+

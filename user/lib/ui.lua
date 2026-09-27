@@ -4085,6 +4085,15 @@ function ui.editor(spec)
     return 2 + math.max(3, #tostring(#buf.lines)) + 2
   end
 
+  -- Where the caret is drawn, in the view's own pixels, and a line's
+  -- height: for whatever opens beside it - the IDE's suggestions.
+  function v:caret_at()
+    local GW, GH = cell()
+
+    return IN_X + (gutter_cells(self) + buf.cx - 1) * GW,
+           IN_Y + (buf.cy - self.top) * GH, GH
+  end
+
   --
   -- **The cursor is followed when it moves, not on every paint** - or a
   -- wheel that scrolled the page would be pulled back to the cursor by the

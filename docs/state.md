@@ -156,10 +156,16 @@ its own - fixed and rerun on both boards (18.206).
   says "1 error, 4 warnings". The host's `tools/luacheck.c` is
   `tools/luaparse.c`.
 
-**Next, in order**: suggestions (6n step 5), with the drawing's third kind of
-check - a name a library does not have; Cafesa3D's Script panel on the
-component (6); the tutorial's lessons (7). And 6q, the Deskbar focus check
-that fails now and then. Nine commits unpushed since 0.10.171.
+- **Step 5, suggestions** (18.212). After `ui.` the names `ui.lua` defines,
+  after `win:` a window's methods, each with the comment above it in its
+  source as what it is - `/lib/libdoc.lua` reads a library, never runs it.
+  Tab or Enter takes one, Escape closes, Ctrl+Space asks for a plain word.
+  And `ui.slidr` is an error, "ui has no slidr - did you mean slider?".
+
+**Next, in order**: Cafesa3D's Script panel on the component (6n step 6);
+the tutorial's lessons (7), the IDE's first project. And 6q, the Deskbar
+focus check that fails now and then. Commits unpushed since 0.10.171: the
+IDE's steps 0 to 5.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor

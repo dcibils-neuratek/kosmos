@@ -3179,6 +3179,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# And its checking: Lua's own parser, and the vendored luacheck loaded
 	@# as the machine loads it (6n, step 4).
 	$(HOSTDIR)/lua tools/test_lint.lua
+	@# And what a library offers, read from its source - the IDE's
+	@# suggestions and its check of a name a library has not got (6n, step 5).
+	$(HOSTDIR)/lua tools/test_libdoc.lua
 	@# And an MP4's index, for the video player (roadmap 4e).
 	$(HOSTDIR)/lua tools/test_mp4.lua
 	@# JSON, and Cafesa3D's scenes read out of glTF: the samples written

@@ -236,7 +236,51 @@ def main():
         check(said("ide: closed ", mark, 10) == "p.lua",
               "Control-W twice, again, did not close the tab in front, p.lua")
 
+        # **Suggestions** (step 5): a file that asks ui.lua for a name it has
+        # not got - checked as one error, asked of the library - and then,
+        # typed on a new line, `ui.` offering ui.lua's names, `sl` and Tab
+        # taking `slider`, and `win:` offering a window's methods.
         stop_desktop()
+        guest.type('fs.write("/home/development/u.lua", "local ui = use(\\"/lib/ui.lua\\")\\n'
+                   'local win = ui.window{}\\nlocal s = ui.slidr{}\\nprint(s, win)\\n")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("wm ide:/home/development/u.lua")
+        checked = said("ide: checked u.lua: ", mark, 120)
+        check(checked == "1 errors, 0 warnings",
+              "ui.slidr was not the one error, asked of ui.lua: %r" % checked)
+        time.sleep(1.5)
+
+        mark = len(guest.seen)
+        press("ctrl-end", "ret", "u", "i", "dot")
+        offered = said("ide: suggesting ", mark, 20)
+        many = re.match(r"(\d+) names after ui\.$", offered or "")
+        check(many is not None and int(many.group(1)) > 20,
+              "ui. did not offer ui.lua's names: %r" % offered)
+
+        mark = len(guest.seen)
+        press("s", "l", "tab")
+        check(said("ide: took ", mark, 20) == "slider",
+              "sl and Tab did not take slider")
+
+        mark = len(guest.seen)
+        press("ret", "w", "i", "n", "shift-semicolon")
+        offered = said("ide: suggesting ", mark, 20)
+        many = re.match(r"(\d+) names after win:$", offered or "")
+        check(many is not None and int(many.group(1)) > 10,
+              "win: did not offer a window's methods: %r" % offered)
+
+        press("esc", "backspace", "backspace", "backspace", "backspace", "backspace")
+        mark = len(guest.seen)
+        press("ctrl-s")
+        check(said("ide: saved u.lua, ", mark, 20) == "5 lines",
+              "the file with ui.slider taken was not saved")
+
+        stop_desktop()
+        mark = len(guest.seen)
+        guest.type('print("last" .. "-line:" .. fs.read("/home/development/u.lua"):match("([^\\n]*)\\n$"))')
+        check(said("last-line:", mark, 20) == "ui.slider",
+              "the name taken did not reach the file")
     finally:
         guest.close()
 
@@ -250,7 +294,7 @@ def main():
           "project, in the code look; Tab kept to indent, Ctrl+/ and undo, a new "
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
           "its file remembered; a program run to its error with Ctrl+Enter, "
-          "another started with F5 and stopped with Shift+F5; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice)" % checks)
+          "another started with F5 and stopped with Shift+F5; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab)" % checks)
     return 0
 
 

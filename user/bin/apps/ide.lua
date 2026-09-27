@@ -20,6 +20,12 @@
 -- it is saved and on F7 (`/lib/lint.lua`). Each problem is marked on its
 -- line and listed in Problems, a click from the line.
 --
+-- **Step 5, suggestions**: after `ui.` the names `ui.lua` defines, after
+-- `win:` a window's methods, each with the comment above it in its source
+-- as what it is (`/lib/libdoc.lua`) - read, never run. And the drawing's
+-- third check: a name a library does not have, `ui.slidr`, asked of the
+-- library and answered with the nearest name it does have.
+--
 -- `docs/kosmos-ide.html` is the drawing, agreed as drawn ("the mockup is
 -- perfect!!!"), and `roadmap.md` 6n the steps. This is step 2, the window:
 -- the project as a tree with Kosmos itself under it to read, a tab a file,
@@ -42,6 +48,8 @@
 local ui = use("/lib/ui.lua")
 local files = use("/lib/files.lua")
 local lint = use("/lib/lint.lua")
+local libdoc = use("/lib/libdoc.lua")
+local lualex = use("/lib/lualex.lua")
 local panel = use("/lib/panel.lua")
 local theme = ui.theme
 local L = ui.layout
@@ -128,6 +136,9 @@ local current = nil
 
 -- Checking, which opening and saving ask for and which is written below.
 local check_now
+
+-- And suggestions, which each editor is given as it opens.
+local wire_suggestions
 
 -- Said in the Output panel, and in the log for whoever drives this.
 local output
@@ -239,6 +250,8 @@ local function open_file(path)
   -- has its text 6 in from the top.
   editor.hidden = true
   win:add(editor)
+
+  if wire_suggestions then wire_suggestions(editor) end
 
   local f = { path = path, editor = editor }
 
@@ -719,6 +732,180 @@ run_button.on_click = function() start() end
 stop.on_click = function() stop_run() end
 
 --------------------------------------------------------------------------
+-- What a file's names are bound to (step 5): `local ui = use("/lib/ui.lua")`
+-- makes `ui` that library, and `local win = ui.window{ ... }` makes `win` a
+-- window - the one kind of object the drawing asks methods of.
+--------------------------------------------------------------------------
+
+-- A library's names and comments, read once a library.
+local docs = {}
+
+local function doc_of(path)
+  if docs[path] == nil then
+    local source = path:match("%.lua$") and fs.read(path)
+
+    if type(source) == "string" then
+      docs[path] = libdoc.read(source)
+    elseif path:match("^/kits/") then
+      -- A kit is C and has no source to read: its names are the table's,
+      -- which the kit gives anyone who asks, without comments.
+      local ok, kit = pcall(use, path)
+      local set = { owner = path:match("([^/]+)$"), names = {}, list = {}, tables = {} }
+
+      if ok and type(kit) == "table" then
+        local names = {}
+
+        for k in pairs(kit) do
+          if type(k) == "string" then names[#names + 1] = k end
+        end
+
+        table.sort(names)
+
+        for _, k in ipairs(names) do
+          local e = { name = k, signature = set.owner .. "." .. k, summary = "",
+                      doc = "", kind = type(kit[k]) == "function" and "function" or "value" }
+
+          set.names[k] = e
+          set.list[#set.list + 1] = e
+        end
+      end
+
+      docs[path] = set
+    else
+      docs[path] = false
+    end
+  end
+
+  return docs[path] or nil
+end
+
+-- A table's own names, from the running system, as `sys`, `fs` and `gfx`
+-- are - the C bindings every program is born with, which have no source.
+local born = {}
+
+local function born_with(name)
+  if born[name] == nil then
+    local t = ({ sys = sys, fs = fs, gfx = gfx })[name]
+    local set = false
+
+    if type(t) == "table" then
+      set = { owner = name, names = {}, list = {}, tables = {} }
+
+      local names = {}
+
+      for k in pairs(t) do
+        if type(k) == "string" then names[#names + 1] = k end
+      end
+
+      table.sort(names)
+
+      for _, k in ipairs(names) do
+        local e = { name = k, signature = name .. "." .. k, summary = "", doc = "",
+                    kind = type(t[k]) == "function" and "function" or "value" }
+
+        set.names[k] = e
+        set.list[#set.list + 1] = e
+      end
+    end
+
+    born[name] = set
+  end
+
+  return born[name] or nil
+end
+
+-- The file's bindings: name to library path, and name to object kind.
+local function bindings(lines)
+  local libs, objects = {}, {}
+
+  for _, line in ipairs(lines) do
+    local name, path = line:match("^%s*local%s+([%a_][%w_]*)%s*=%s*use%s*%(?%s*[\"']([^\"']+)[\"']")
+
+    if name then libs[name] = path end
+  end
+
+  for _, line in ipairs(lines) do
+    local name, owner, made = line:match("^%s*local%s+([%a_][%w_]*)%s*=%s*([%a_][%w_]*)%.([%a_][%w_]*)%s*[%({]")
+
+    if name and libs[owner] and made == "window" then
+      objects[name] = { path = libs[owner], kind = "window" }
+    end
+  end
+
+  return libs, objects
+end
+
+-- What `owner` followed by `sep` offers, in this file: a library's names, a
+-- window's methods, or what a program is born with.
+local function members(lines, owner, sep)
+  local libs, objects = bindings(lines)
+
+  if sep == "." then
+    if libs[owner] then return doc_of(libs[owner]) end
+    return born_with(owner)
+  end
+
+  local object = objects[owner]
+  local doc = object and doc_of(object.path)
+
+  return doc and doc.tables[object.kind] or nil
+end
+
+--
+-- **The drawing's third check**: a name the file asks a library for that
+-- the library has not got - `ui.slidr` - which Lua would take and run as a
+-- nil. Asked of the library, answered with the nearest name it does have.
+-- Not inside a string or a comment, and not a name the file gives the
+-- library itself (`ui.mine = ...`).
+--
+local function library_problems(f)
+  local out = {}
+  local lines = f.editor.lines
+  local libs = bindings(lines)
+  local given = {}
+  local state = nil
+
+  for _, line in ipairs(lines) do
+    for owner, name in line:gmatch("([%a_][%w_]*)%.([%a_][%w_]*)%s*=[^=]") do
+      given[owner .. "." .. name] = true
+    end
+  end
+
+  for n, line in ipairs(lines) do
+    local spans, after = lualex.line(line, state)
+    local quiet = {}
+
+    for _, sp in ipairs(spans) do
+      if sp[3] == "string" or sp[3] == "comment" then
+        for i = sp[1], sp[2] do quiet[i] = true end
+      end
+    end
+
+    state = after
+
+    for at, owner, name in line:gmatch("()([%a_][%w_]*)%.([%a_][%w_]*)") do
+      local path = libs[owner]
+      local doc = path and not quiet[at] and doc_of(path)
+
+      if doc and doc.owner and not doc.names[name] and not given[owner .. "." .. name]
+         and (at == 1 or line:sub(at - 1, at - 1) ~= ".") then
+        local near = libdoc.nearest(doc, name)
+        local column = at + #owner + 1
+
+        out[#out + 1] = {
+          line = n, column = column, last = column + #name - 1, kind = "error",
+          text = ("%s has no %s%s It would be nil when the line runs."):format(owner, name,
+                 near and (" - did you mean " .. near .. "?") or "."),
+          by = "asked of " .. base(path),
+        }
+      end
+    end
+  end
+
+  return out
+end
+
+--------------------------------------------------------------------------
 -- Checking (step 4).
 --
 -- **Two parts, as the drawing has them.** What would stop it running is Lua's
@@ -813,6 +1000,14 @@ function check_now(f, open_panel)
       list = {}
     end
 
+    -- And the names the file asks its libraries for that they have not got.
+    for _, p in ipairs(library_problems(f)) do list[#list + 1] = p end
+
+    table.sort(list, function(a, b)
+      if a.line ~= b.line then return a.line < b.line end
+      return (a.column or 0) < (b.column or 0)
+    end)
+
     f.lint = list
     show_problems(f)
   end
@@ -844,6 +1039,261 @@ function problems:mouse(action, x, y)
   end
 
   return handled
+end
+
+--------------------------------------------------------------------------
+-- Suggestions (step 5): a list beside the caret of what the name before it
+-- offers, narrowing as you type, and beside the list what the chosen one is,
+-- from the comment above it in its library. Up and Down choose, Tab or Enter
+-- takes it, Escape closes; Ctrl+Space asks where nothing was offered.
+--------------------------------------------------------------------------
+
+local SUGGEST_ROWS, SUGGEST_ROW = 8, 25
+
+-- The pane beside the list is never shorter than this many rows, so one
+-- name narrowed to still has room for what it is.
+local SUGGEST_LEAST = 5
+
+local function suggest_height(n)
+  return math.max(SUGGEST_LEAST, math.min(n, SUGGEST_ROWS)) * SUGGEST_ROW + 8
+end
+local LIST_W, DOC_W = 300, 360
+
+local suggest = ui.view{ x = 0, y = 0, w = LIST_W + DOC_W, h = SUGGEST_ROWS * SUGGEST_ROW + 8 }
+
+suggest.hidden = true
+suggest.items, suggest.on, suggest.first, suggest.prefix = {}, 1, 1, ""
+
+-- Words that fit `w` pixels a line, as many lines as there are.
+local function wrap(text, w, face)
+  local lines, line = {}, ""
+
+  for word in text:gmatch("%S+") do
+    local try = (line == "") and word or (line .. " " .. word)
+
+    if gfx.measure(try, face) <= w or line == "" then
+      line = try
+    else
+      lines[#lines + 1] = line
+      line = word
+    end
+  end
+
+  if line ~= "" then lines[#lines + 1] = line end
+
+  return lines
+end
+
+function suggest:draw(g)
+  local colours = ui.code_colours()
+  local rows = math.min(#self.items, SUGGEST_ROWS)
+  local h = suggest_height(#self.items)
+  local fh = gfx.height("ui")
+
+  g:fill_round(0, 0, self.w, h, theme.line, 8)
+  g:fill_round(1, 1, self.w - 2, h - 2, theme.sunken, 7)
+  g:fill(LIST_W, 1, DOC_W - 1, h - 2, theme.window)
+  g:fill(LIST_W, 1, 1, h - 2, theme.line_soft)
+
+  for i = 1, rows do
+    local e = self.items[self.first + i - 1]
+    local y = 4 + (i - 1) * SUGGEST_ROW
+
+    if self.first + i - 1 == self.on then
+      g:fill(2, y, LIST_W - 3, SUGGEST_ROW, colours.selection)
+    end
+
+    local badge = (e.kind == "method") and "m" or (e.kind == "value") and "v" or "fn"
+    local bw = gfx.measure(badge, "ui") + 8
+
+    g:frame_round(10, y + (SUGGEST_ROW - 16) // 2, bw, 16, colours.call, 4)
+    g:text(14, y + (SUGGEST_ROW - fh) // 2, badge, colours.call, nil, "ui")
+
+    local nx = 10 + bw + 8
+    local my = y + (SUGGEST_ROW - gfx.height("mono")) // 2
+
+    g:text(nx, my, self.prefix, theme.accent, nil, "mono")
+    g:text(nx + gfx.measure(self.prefix, "mono"), my, e.name:sub(#self.prefix + 1),
+           theme.text, nil, "mono")
+  end
+
+  -- What the chosen one is: how it is called, and the words above it.
+  local e = self.items[self.on]
+
+  if e then
+    local x, y = LIST_W + 12, 8
+    local sig = wrap(e.signature or e.name, DOC_W - 24, "mono")
+
+    for i = 1, math.min(2, #sig) do
+      g:text(x, y, sig[i], theme.text, nil, "mono")
+      y = y + gfx.height("mono")
+    end
+
+    y = y + 6
+
+    local words = (e.doc and e.doc ~= "") and e.doc:gsub("\n%s*\n", "\n\n")
+                  or "Nothing is written above it in its source."
+
+    for _, para in ipairs({ words:match("^(.-)\n\n") or words }) do
+      for _, line in ipairs(wrap(para:gsub("\n", " "), DOC_W - 24, "ui")) do
+        if y + fh > h - 4 then break end
+        g:text(x, y, line, theme.text_dim, nil, "ui")
+        y = y + fh + 2
+      end
+    end
+  end
+end
+
+local function close_suggestions()
+  suggest.hidden = true
+  suggest.items = {}
+end
+
+-- Shown beside the caret of `editor`: below its line, or above it where
+-- there is no room below, and inside the window.
+local function open_suggestions(editor, items, prefix, what)
+  local was_hidden = suggest.hidden
+
+  suggest.items, suggest.prefix, suggest.on, suggest.first = items, prefix, 1, 1
+
+  local cx, cy, lh = editor:caret_at()
+  local x = editor.x + cx - 10 - gfx.measure(prefix, "mono")
+  local y = editor.y + cy + lh + 2
+  local h = suggest_height(#items)
+
+  if y + h > win.root.h - FOOT then y = editor.y + cy - h - 2 end
+  if x + suggest.w > win.root.w then x = win.root.w - suggest.w end
+
+  suggest.x, suggest.y, suggest.h = math.max(0, x), math.max(0, y), h
+  suggest.hidden = false
+
+  -- On top of every editor, which were added after it.
+  win:remove(suggest)
+  win:add(suggest)
+
+  if was_hidden then
+    print(("ide: suggesting %d names after %s"):format(#items, what))
+  end
+end
+
+-- The rest of the chosen name, put in at the caret.
+local function take_suggestion(editor)
+  local e = suggest.items[suggest.on]
+
+  if e then
+    editor:insert(e.name:sub(#suggest.prefix + 1))
+    print(("ide: took %s"):format(e.name))
+  end
+
+  close_suggestions()
+end
+
+-- What the caret is after, asked again after every key: opened by a `.` or
+-- a `:` typed, or by Ctrl+Space, and narrowed by typing while it is open.
+local function refresh_suggestions(editor, c, forced)
+  if not editor.code or editor.read_only then return close_suggestions() end
+
+  local b = editor.buf
+  local before = b.lines[b.cy]:sub(1, b.cx - 1)
+  local owner, sep, prefix = before:match("([%a_][%w_]*)([%.:])([%w_]*)$")
+  local set = owner and members(b.lines, owner, sep)
+  local what = owner and (owner .. sep)
+
+  if not set and forced then
+    -- A plain word, Ctrl+Space: the file's own locals and what a program
+    -- is born with.
+    prefix = before:match("([%a_][%w_]*)$") or ""
+    set = { list = {} }
+
+    local seen = {}
+
+    for _, line in ipairs(b.lines) do
+      for name in line:gmatch("local%s+function%s+([%a_][%w_]*)") do seen[name] = "function" end
+      for names in line:gmatch("local%s+([%a_][%w_,%s]*)=") do
+        for name in names:gmatch("[%a_][%w_]*") do seen[name] = seen[name] or "value" end
+      end
+    end
+
+    for _, name in ipairs(lint.KOSMOS) do seen[name] = seen[name] or "value" end
+
+    local names = {}
+
+    for name in pairs(seen) do names[#names + 1] = name end
+
+    table.sort(names)
+
+    for _, name in ipairs(names) do
+      set.list[#set.list + 1] = { name = name, kind = seen[name], signature = name,
+                                  doc = "", summary = "" }
+    end
+
+    what = "a word"
+  end
+
+  if not set then return close_suggestions() end
+
+  local opening = forced or c == 46 or c == 58
+  if suggest.hidden and not opening then return end
+
+  local items = libdoc.matching(set, prefix)
+
+  if #items == 0 or (#items == 1 and items[1].name == prefix) then
+    return close_suggestions()
+  end
+
+  open_suggestions(editor, items, prefix, what)
+end
+
+-- The keys the list takes while it is open, before the editor sees them.
+local function suggestion_key(editor, c)
+  if suggest.hidden then return false end
+
+  if c == ui.UP or c == ui.DOWN then
+    local n = #suggest.items
+
+    suggest.on = math.max(1, math.min(n, suggest.on + ((c == ui.UP) and -1 or 1)))
+
+    if suggest.on < suggest.first then suggest.first = suggest.on end
+    if suggest.on > suggest.first + SUGGEST_ROWS - 1 then
+      suggest.first = suggest.on - SUGGEST_ROWS + 1
+    end
+
+    return true
+  end
+
+  if c == 9 or c == 13 then
+    take_suggestion(editor)
+    return true
+  end
+
+  if c == 27 then
+    close_suggestions()
+    return true
+  end
+
+  return false
+end
+
+function wire_suggestions(editor)
+  local editor_key = editor.key
+
+  function editor:key(c)
+    if suggestion_key(self, c) then return true end
+
+    local forced = (c == ui.keywith(32, ui.CTRL))
+    local done = editor_key(self, c)
+
+    refresh_suggestions(self, c, forced)
+    return done or forced
+  end
+
+  -- A click anywhere in the editor closes the list.
+  local editor_mouse = editor.mouse
+
+  function editor:mouse(action, x, y)
+    if action == "press" then close_suggestions() end
+    return editor_mouse(self, action, x, y)
+  end
 end
 
 --
