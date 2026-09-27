@@ -4067,7 +4067,7 @@ static bool test_the_table_says_threads_and_file(void)
 {
     extern const unsigned char init_image[];
     extern const unsigned long init_image_len;
-    static const char file[] = "/bin/t-table.lua";
+    static const char file[] = "/Kosmos/Programs/t-table.lua";
     unsigned before = process_count();
     size_t pages_before = pmm_free_pages();
     struct process *p;
