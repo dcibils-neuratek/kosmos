@@ -2147,7 +2147,9 @@ processors, and still what follows USB:
    kind, where it is, its size - a folder's counted through everything in
    it, with how many files and folders - when it was made and last changed,
    and what opens it. **Drawn first**, in one page with 6z's File types and
-   6v's Compress and Extract, since they are the same menu.
+   6v's Compress and Extract, since they are the same menu - **DRAWN on 27
+   September as `docs/rightclick.html`**, with seven questions for Diego
+   under it, and nothing built until he has answered them.
 
 6z. **WANTED on 27 September - what opens what, and a Preferences page for
    it.** Diego, on the M700 with 0.10.174, a film in his home refused -
@@ -2167,7 +2169,8 @@ processors, and still what follows USB:
    in `/Home/Preferences`. **A Preferences page, "File types"**: every type
    something opens, the application that opens it, and the others that
    could. **Drawn first** (`CLAUDE.md`: an app is drawn before it is
-   written) - the page, and Tracker's right-click "Open with" beside it. The
+   written) - the page, and Tracker's right-click "Open with" beside it
+   (**drawn**, `docs/rightclick.html`, 6za). The
    first step while it is drawn: `mp4` to Video and `jpg` to Photo in the
    table, so a film and a photograph open today - **DONE** (18.235).
 
@@ -2242,7 +2245,9 @@ processors, and still what follows USB:
    name and its calls; what Tracker shows while a large file is being
    compressed, and where a name that is already taken goes. **Drawn before
    it is built**, as the menu and that progress are windows: the context
-   menu with Compress and Extract, and the file that appears.
+   menu with Compress and Extract, and the file that appears - **drawn**,
+   `docs/rightclick.html` (6za), which proposes miniz, a program of its own
+   for the work, and `Archive.zip` for several; Diego's to answer.
 
 6s. **ASKED on 27 September, for Diego to decide - applications in `/apps`.**
    Diego, reading `/lib/clock.lua` in the IDE: "I don't understand why

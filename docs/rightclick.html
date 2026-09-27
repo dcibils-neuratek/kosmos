@@ -1,0 +1,673 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Tracker's right click: what it offers on each kind of thing, and the four
+  pieces it leads to - Pin to sidebar, Compress and Extract, Info, and Open
+  with with Preferences' File types page behind it. Drawn on 27 September
+  2026, before any of it is built, after Diego on the M700 with 0.10.174:
+  "A context menu on right click should appear on the folder and give me
+  options - pin to sidebar - compress - info". roadmap.md 6za, 6z and 6v,
+  in one page because they are one menu.
+
+  Everything a menu here offers either exists in Tracker today or is marked
+  new. The facts under the drawings - where a place is kept, how a taken
+  name is avoided, what a file's date is - are read from the tree as it is
+  at 0.10.175.
+-->
+<title>Tracker's Right Click</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff; --chip: #e7eaf1;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The windows are pictures of Kosmos, and stay as Kosmos draws them
+       whatever the page's theme. */
+    --w-side: #f1f2f4; --w-body: #ffffff; --w-card: #ffffff; --w-soft: #fafafb;
+    --w-line: #e0e2e6; --w-ink: #1d1f24; --w-dim: #74787f;
+    --w-sel: #dfe3ea; --w-accent: #2a55c9; --w-head: #ffffff;
+    --folder: #4f7fe0; --folder-dark: #2f5bb5; --new: #1f8a5b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14171c; --ink: #e8eaee; --muted: #9aa2ae; --rule: #2a2f38;
+      --card: #1b1f26; --accent: #7d9cf0; --chip: #232833;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #14171c; --ink: #e8eaee; --muted: #9aa2ae; --rule: #2a2f38;
+    --card: #1b1f26; --accent: #7d9cf0; --chip: #232833;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 28px; max-width: 72ch; }
+  h2 { font-family: var(--display); font-size: 20px; margin: 46px 0 10px;
+       padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  h3 { font-family: var(--display); font-size: 16px; margin: 24px 0 8px; }
+  p { max-width: 74ch; }
+  code, .k { font-family: var(--mono); font-size: .88em; }
+  .note { background: var(--card); border: 1px solid var(--rule);
+          border-left: 3px solid var(--accent); border-radius: 8px;
+          padding: 14px 18px; margin: 18px 0; }
+  .note p:first-child { margin-top: 0; } .note p:last-child { margin-bottom: 0; }
+  .cap { color: var(--muted); font-size: 13.5px; margin: 10px 2px 0; max-width: 80ch; }
+
+  /* ---- what was clicked ---- */
+  .targets { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 14px; }
+  .targets button {
+    font: 500 13.5px var(--body); color: var(--ink); background: var(--chip);
+    border: 1px solid transparent; border-radius: 999px; padding: 5px 13px; cursor: pointer;
+  }
+  .targets button:hover { border-color: var(--rule); }
+  .targets button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .targets button:focus-visible, .sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- the desktop the windows sit on ---- */
+  .stage { background: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+           padding: 28px 22px; border-radius: 12px; overflow-x: auto;
+           display: flex; justify-content: center; gap: 22px; align-items: flex-start; }
+  .stage.wrapok { flex-wrap: wrap; }
+  .win { background: var(--w-body); border-radius: 12px; overflow: hidden; flex: none;
+         box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+         font-size: 13.5px; color: var(--w-ink); position: relative; }
+  .tracker { width: 820px; display: grid; grid-template-columns: 196px 1fr; }
+
+  .side { background: var(--w-side); border-right: 1px solid var(--w-line); min-height: 400px; }
+  .side-head { display: flex; align-items: center; gap: 6px; padding: 9px 8px 9px 10px; height: 46px; }
+  .side-title { font-weight: 600; font-size: 14px; flex: 1; text-align: center; }
+  .ico { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
+         color: var(--w-dim); flex: none; }
+  .ico svg { width: 15px; height: 15px; }
+  .places { padding: 2px 8px 10px; }
+  .heading { color: var(--w-dim); font-size: 11.5px; font-weight: 600; padding: 8px 10px 3px;
+             letter-spacing: .3px; }
+  .place { display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 7px; }
+  .place.on { background: var(--w-sel); font-weight: 500; }
+  .place.hot { box-shadow: inset 0 0 0 1.5px var(--w-accent); }
+  .place.fresh { background: #e3f3ea; }
+  .place svg { width: 15px; height: 15px; flex: none; color: var(--w-dim); }
+  .place.on svg { color: var(--w-accent); }
+
+  .pane { display: flex; flex-direction: column; min-width: 0; }
+  .head { height: 46px; background: var(--w-head); border-bottom: 1px solid var(--w-line);
+          display: flex; align-items: center; padding: 0 8px 0 6px; gap: 4px; }
+  .crumb { display: flex; align-items: center; gap: 7px; padding: 5px 11px;
+           border: 1px solid var(--w-line); border-radius: 8px; background: #fff;
+           font-weight: 500; margin: 0 6px; }
+  .crumb svg { width: 14px; height: 14px; color: var(--w-dim); }
+  .grow { flex: 1; }
+  .body { padding: 16px; position: relative; flex: 1; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 7px;
+          padding: 12px 4px 10px; border-radius: 9px; }
+  .item.on { background: var(--w-sel); }
+  .item .nm { font-size: 12.5px; text-align: center; overflow-wrap: anywhere; }
+  .item.fresh { background: #e3f3ea; }
+
+  .fold { width: 56px; height: 44px; position: relative; margin-top: 6px; }
+  .fold i { position: absolute; inset: 0; border-radius: 5px;
+            background: linear-gradient(180deg, var(--folder) 0%, var(--folder-dark) 100%); }
+  .fold b { position: absolute; left: 0; top: -6px; width: 24px; height: 8px;
+            border-radius: 3px 3px 0 0; background: var(--folder); }
+  .fold svg { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%);
+              width: 17px; height: 17px; color: #dbe6ff; }
+  .doc { width: 42px; height: 52px; position: relative; background: #fff;
+         border: 1px solid #c9ced6; border-radius: 3px 12px 3px 3px; }
+  .doc span { position: absolute; left: -5px; bottom: 7px; padding: 1px 5px; border-radius: 3px;
+              font: 600 9.5px var(--mono); color: #fff; letter-spacing: .3px; }
+  .trash { width: 40px; height: 48px; position: relative; }
+  .trash i { position: absolute; left: 5px; right: 5px; top: 10px; bottom: 0;
+             border-radius: 0 0 6px 6px; background: #b8bec9; }
+  .trash b { position: absolute; left: 0; right: 0; top: 3px; height: 5px; border-radius: 3px; background: #9aa2af; }
+
+  .foot { border-top: 1px solid var(--w-line); padding: 7px 14px; font-size: 12.5px;
+          color: var(--w-dim); display: flex; align-items: center; gap: 12px; min-height: 36px; }
+  .bar { flex: 1; max-width: 240px; height: 6px; border-radius: 3px; background: #e3e6ec; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--w-accent); }
+  .btn { border: 1px solid var(--w-line); border-radius: 7px; padding: 3px 11px; background: #fff;
+         color: var(--w-ink); font-size: 12.5px; }
+
+  /* ---- a menu, as ui.lua draws one ---- */
+  .menu { position: absolute; z-index: 5; min-width: 212px; background: #fff;
+          border: 1px solid #d5d9e0; border-radius: 9px; padding: 5px;
+          box-shadow: 0 10px 28px rgba(15,25,45,.22), 0 1px 3px rgba(0,0,0,.12); }
+  .mi { display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 6px;
+        white-space: nowrap; }
+  .mi .t { flex: 1; }
+  .mi .h { color: var(--w-dim); font-size: 12px; }
+  .mi .new { color: var(--new); font: 600 10.5px var(--mono); letter-spacing: .4px; text-transform: uppercase; }
+  .mi .arr { color: var(--w-dim); }
+  .mi.hi { background: var(--w-accent); color: #fff; }
+  .mi.hi .h, .mi.hi .arr, .mi.hi .new { color: #dfe7ff; }
+  .mi.off { color: #aeb3bb; }
+  .ms { height: 1px; background: var(--w-line); margin: 4px 6px; }
+
+  /* ---- Info ---- */
+  .info { width: 348px; }
+  .whead { height: 42px; border-bottom: 1px solid var(--w-line); display: flex;
+           align-items: center; padding: 0 8px 0 16px; font-weight: 600; font-size: 13.5px; }
+  .whead .t { flex: 1; }
+  .ibody { padding: 18px 18px 20px; background: var(--w-soft); }
+  .ident { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .ident .n { font-weight: 600; font-size: 15px; }
+  .ident .kd { color: var(--w-dim); font-size: 12.5px; }
+  .group { background: var(--w-card); border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 9px 13px;
+         border-bottom: 1px solid var(--w-line); min-height: 40px; }
+  .row:last-child { border-bottom: 0; }
+  .row .l { width: 82px; flex: none; color: var(--w-dim); font-size: 12.5px; }
+  .row .v { flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
+  .row .v small { display: block; color: var(--w-dim); font-size: 11.5px; }
+  .drop { display: inline-flex; align-items: center; gap: 7px; padding: 4px 9px;
+          border: 1px solid var(--w-line); border-radius: 7px; background: #fff;
+          font-size: 12.5px; flex: none; }
+  .drop svg { width: 11px; height: 11px; color: var(--w-dim); }
+  .flag { color: #a15c00; }
+
+  /* ---- Preferences ---- */
+  .prefs { width: 820px; display: grid; grid-template-columns: 196px 1fr; }
+  .prefs .body { padding: 20px 24px 26px; background: var(--w-soft); }
+  .inner { max-width: 500px; margin: 0 auto; }
+  .gl { font-weight: 600; font-size: 12.5px; margin: 18px 0 7px 3px; }
+  .gl:first-child { margin-top: 0; }
+  .ext { font: 500 12.5px var(--mono); width: 62px; flex: none; }
+  .row .what { flex: 1; min-width: 0; }
+  .row .what span { display: block; color: var(--w-dim); font-size: 11.5px; line-height: 1.35; }
+  .val { color: var(--w-dim); font-size: 12.5px; flex: none; }
+  .search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--w-line);
+            border-radius: 8px; background: #fff; padding: 6px 10px; color: var(--w-dim);
+            font-size: 12.5px; margin-bottom: 16px; }
+  .search svg { width: 13px; height: 13px; }
+  .lives { font-family: var(--mono); font-size: 10.5px; color: #9aa0ab; padding: 6px 4px 0; }
+
+  pre.hdr { background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+            padding: 12px 16px; font: 13px/1.6 var(--mono); overflow-x: auto; margin: 14px 0; }
+  pre.hdr b { color: var(--accent); font-weight: 500; }
+
+  /* ---- the questions ---- */
+  ol.ask { padding-left: 0; list-style: none; counter-reset: q; margin: 16px 0; display: grid; gap: 12px; }
+  ol.ask li { counter-increment: q; background: var(--card); border: 1px solid var(--rule);
+              border-radius: 10px; padding: 13px 16px 13px 52px; position: relative; max-width: 86ch; }
+  ol.ask li::before { content: counter(q); position: absolute; left: 16px; top: 12px;
+                      width: 24px; height: 24px; border-radius: 50%; background: var(--chip);
+                      font: 600 13px/24px var(--display); text-align: center; color: var(--ink); }
+  ol.ask li p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+
+  table.t { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  table.t th, table.t td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.t th { font-family: var(--display); font-weight: 600; }
+  .tw { overflow-x: auto; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Tracker's right click</h1>
+<p class="sub">Drawn on 27 September 2026, before any of it is built &mdash; <code>roadmap.md</code>
+6za, 6z and 6v, on one page because they are one menu. Diego, on the M700 with 0.10.174:
+&ldquo;A context menu on right click should appear on the folder and give me options&rdquo; &mdash;
+pin to sidebar, compress, info. Today the right button opens the same eleven items whatever it was
+pressed on, which is how a folder in Home came to offer <b>Edit</b> and <b>Empty Trash</b>.</p>
+
+<h2>What the right button offers, by what it was pressed on</h2>
+<p>The menu offers what applies to what was clicked and nothing else. Items marked
+<b style="color:var(--new);font:600 12px var(--mono)">NEW</b> are new; everything else is in Tracker
+now. The <b>&#8942;</b> menu in the header is unchanged and still holds all of them.</p>
+
+<div class="targets" id="targets" role="group" aria-label="What was clicked"></div>
+
+<div class="stage">
+<div class="win tracker">
+  <div class="side">
+    <div class="side-head">
+      <div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></div>
+      <div class="side-title">Files</div>
+      <div class="ico"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M2 4h12M2 8h12M2 12h12"/></svg></div>
+    </div>
+    <div class="places" id="side1"></div>
+  </div>
+  <div class="pane">
+    <div class="head">
+      <div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3L5 8l5 5"/></svg></div>
+      <div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3l5 5-5 5"/></svg></div>
+      <div class="crumb"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6l4 4 4-4"/></svg></div>
+      <div class="grow"></div>
+      <div class="ico"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/></svg></div>
+    </div>
+    <div class="body" id="body1"><div class="grid" id="grid1"></div></div>
+  </div>
+</div>
+</div>
+<p class="cap" id="why"></p>
+
+<h2>Pin to sidebar</h2>
+<p>A pinned folder is a <b>place</b>, and places already exist: one small file each in
+<code>/Home/Places</code>, drawn in the sidebar after Home and Desktop, made today by dragging a
+folder or a drive there (<code>/Kosmos/Libraries/places.lua</code>). <b>Pin to sidebar</b> is that
+same file made from the menu, so the two ways agree by construction. <b>Unpin</b> removes the place
+and never the folder.</p>
+
+<div class="stage wrapok">
+  <div class="win" style="width:250px">
+    <div class="side" style="min-height:0;border-right:0">
+      <div class="side-head"><div class="side-title">Before</div></div>
+      <div class="places" id="sideA"></div>
+    </div>
+  </div>
+  <div class="win" style="width:250px">
+    <div class="side" style="min-height:0;border-right:0;position:relative">
+      <div class="side-head"><div class="side-title">After Pin to sidebar on roms</div></div>
+      <div class="places" id="sideB"></div>
+    </div>
+  </div>
+  <div class="win" style="width:250px;overflow:visible">
+    <div class="side" style="min-height:0;border-right:0;position:relative;border-radius:12px">
+      <div class="side-head"><div class="side-title">Right click on a place</div></div>
+      <div class="places" id="sideC"></div>
+      <div class="menu" style="left:96px;top:250px;min-width:176px" id="menuC"></div>
+    </div>
+  </div>
+</div>
+<p class="cap">Pins come after the places every home has &mdash; Documents, Photos, Movies, Captures
+and Music (6w) &mdash; in the order they were pinned, so the standard ones stay where the hand
+expects them.</p>
+
+<h2>Compress and Extract</h2>
+<p><b>Compress</b> makes a <code>.zip</code> beside what was clicked, named after it:
+<code>roms</code> becomes <code>roms.zip</code>. Several things at once make <code>Archive.zip</code>.
+A name already taken gets a number, <code>roms 2.zip</code>, the way <b>New folder</b> already picks
+<code>new folder 2</code>. <b>Extract</b> does the reverse into a folder named after the zip.</p>
+
+<div class="stage">
+<div class="win tracker">
+  <div class="side"><div class="side-head"><div class="side-title">Files</div></div><div class="places" id="side2"></div></div>
+  <div class="pane">
+    <div class="head">
+      <div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3L5 8l5 5"/></svg></div>
+      <div class="ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3l5 5-5 5"/></svg></div>
+      <div class="crumb"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home</div>
+      <div class="grow"></div>
+    </div>
+    <div class="body"><div class="grid" id="grid2"></div></div>
+    <div class="foot">
+      <span style="color:var(--w-ink)">Compressing <b>roms</b></span>
+      <div class="bar"><i style="width:38%"></i></div>
+      <span>462 of 1,204 files &middot; 0.71 of 1.87 GB</span>
+      <span class="grow"></span>
+      <span class="btn">Stop</span>
+    </div>
+  </div>
+</div>
+</div>
+<p class="cap">The zip is drawn as it is being written, shaded until it is finished, so the window says
+where it will be before it is done. The progress sits in the window's foot, where Tracker already
+writes what it did. The window keeps working while it runs: the work is a program of its own
+(question 3). <b>Stop</b> removes the half-written zip.</p>
+
+<h2>Info</h2>
+<p>A small window of its own, one per thing asked about, which opens at once with what Tracker already
+knows and fills in what has to be counted. A folder's size is everything inside it, counted by walking
+it, with how many files and folders that was.</p>
+
+<div class="stage wrapok">
+  <div class="win info">
+    <div class="whead"><span class="t">roms</span><div class="ico"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></div></div>
+    <div class="ibody">
+      <div class="ident"><div class="fold" style="margin:6px 0 0"><b></b><i></i></div>
+        <div><div class="n">roms</div><div class="kd">Folder</div></div></div>
+      <div class="group">
+        <div class="row"><span class="l">Where</span><span class="v">/Home</span></div>
+        <div class="row"><span class="l">Size</span><span class="v">1.87 GB<small>2,007,961,344 bytes</small></span></div>
+        <div class="row"><span class="l">Contains</span><span class="v">1,204 files in 37 folders</span></div>
+        <div class="row"><span class="l">Modified</span><span class="v">27 September 2026, 18:42 <span class="flag">*</span></span></div>
+        <div class="row"><span class="l">Sidebar</span><span class="v">Pinned</span><span class="drop">Unpin</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="win info">
+    <div class="whead"><span class="t">magicword-clip.mp4</span><div class="ico"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></div></div>
+    <div class="ibody">
+      <div class="ident"><div class="doc"><span style="background:#b0443a">MP4</span></div>
+        <div><div class="n">magicword-clip.mp4</div><div class="kd">Film, MP4</div></div></div>
+      <div class="group">
+        <div class="row"><span class="l">Where</span><span class="v">/Home</span></div>
+        <div class="row"><span class="l">Size</span><span class="v">4.2 MB<small>4,398,122 bytes</small></span></div>
+        <div class="row"><span class="l">Modified</span><span class="v">26 September 2026, 21:07 <span class="flag">*</span></span></div>
+        <div class="row"><span class="l">Opens with</span><span class="v"><small style="margin:0">for every .mp4</small></span>
+          <span class="drop">Video<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+<p><span class="flag">*</span> <b>Modified is not free, and this is the part of Info that is real
+work.</b> A file in <code>/Home</code> is stamped with the counter since the machine started, not a
+date &mdash; so after a restart the number means nothing, and that is why Tracker has no Modified
+column today (the comment at the top of <code>tracker.lua</code> says so). The clock exists,
+<code>/Devices/clock</code>. The disk server was never given it. Giving it that, and stamping real
+dates, is a step of its own before Info. Files written before then show no date rather than a wrong
+one. There is no Created line: kfs keeps one time for a file, and a second is a format change that
+nothing else needs.</p>
+</div>
+
+<h2>Open with, and File types in Preferences</h2>
+<p>Which application opens a type is <b>one setting</b>, shown where it is looked for: in
+Preferences' new <b>File types</b> page, and on every file's Info. Both change the same thing.
+<b>Open with &#9656;</b> in the right click is for <em>this once</em> and changes nothing.</p>
+
+<div class="stage">
+<div class="win prefs">
+  <div class="side">
+    <div class="side-head"><div class="ico"></div><div class="side-title">Preferences</div><div class="ico"></div></div>
+    <div class="places" id="cats"></div>
+  </div>
+  <div class="pane">
+    <div class="head" style="padding-left:18px"><span style="flex:1;font-weight:600;font-size:14px">File types</span>
+      <div class="ico"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></div></div>
+    <div class="body"><div class="inner" id="types"></div></div>
+  </div>
+</div>
+</div>
+<p class="cap">A type only one application opens shows its name, not a choice. The rows come from the
+applications themselves, below. What is written to <code>/Home/Preferences</code> is only a choice
+that differs from the default, so a home carried to another machine takes its choices with it and
+nothing else.</p>
+
+<h3>Where the list comes from</h3>
+<p>An application says what it opens in its own header, as it already says its icon. The header is
+the manifest (6t). <code>binfs</code> reports it as it reports <code>needs</code>, and
+<code>filetypes</code> gathers the answer from <code>/Kosmos/Apps</code>, and from
+<code>/Home/Apps</code> once applications live there. The table written by hand in
+<code>filetypes.lua</code> goes. Installing an application adds its types, and deleting it
+takes them away.</p>
+<pre class="hdr">-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- kosmos: application
+-- kosmos: icon App_MediaPlayer
+<b>-- kosmos: opens mp4</b></pre>
+<p>Where two applications open a type and nobody has chosen, the one in <code>/Kosmos/Apps</code>
+is the default. After that, it is the first by name, so the answer never depends on the order in
+which things were found.</p>
+
+<h2>Seven things to decide</h2>
+<p>Each one is drawn above as recommended. Answer by number, as before.</p>
+<ol class="ask">
+  <li><b>A zip opens by extracting.</b> Double-click and Extract both put its contents in a folder
+    beside it, named after it, and open that folder.
+    <p>Looking inside a zip without extracting it, as a folder you can browse, is a bigger thing (a
+    zip served as a mount) and can come later if it is wanted.</p></li>
+  <li><b>Several things compress into <code>Archive.zip</code></b>, and a taken name gets a number.
+    <p>The alternative is naming it after the folder they are in. <code>Archive</code> says what it
+    is when it turns up somewhere else.</p></li>
+  <li><b>The work runs as a program of its own</b>, <code>zip</code> and <code>unzip</code>, which Tracker
+    starts and watches.
+    <p>Tracker is one Lua loop. Compressing two gigabytes inside it would freeze the window until it
+    finished, and threads in a process are not built yet. As a program, the window keeps answering,
+    Stop is ending a process, and the prompt gets the same two programs for free.</p></li>
+  <li><b>DEFLATE from miniz, vendored into the compress kit</b> beside the inflater it already has.
+    <p>miniz is one C file that compresses, inflates, and reads and writes zips. The kit gains
+    <code>deflate</code> and zip reading and writing. Writing our own compressor is the alternative,
+    and a project in its own right.</p></li>
+  <li><b>The disk server gets the clock</b>, and files get real dates, as a step before Info.
+    <p>Without it, Info has no Modified line and Tracker can never have a Modified column. The
+    stamp moves from <code>sys.ticks()</code> to <code>/Devices/clock</code>'s time; the format has
+    room for it already.</p></li>
+  <li><b>Pins go after Documents, Photos, Movies, Captures and Music</b>, in the order pinned.
+    <p>Or straight after Desktop, above the standard ones, if a pin should come first.</p></li>
+  <li><b>Applications declare what they open in their header</b> (<code>-- kosmos: opens mp4</code>),
+    and the default for a type is one setting, shown in Preferences and in Info.
+    <p>Open with in the menu picks for this once only. Asking &ldquo;always?&rdquo; there would be a
+    third place to change it.</p></li>
+</ol>
+
+<h2>What the menus are made of</h2>
+<div class="tw">
+<table class="t">
+<tr><th>Pressed on</th><th>Offers</th><th>Unlike today</th></tr>
+<tr><td>A folder</td><td>Open &middot; Pin to sidebar &middot; Compress &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>No Edit, no Empty Trash, no Paste</td></tr>
+<tr><td>A file</td><td>Open <span class="k">with its application named</span> &middot; Open with &#9656; &middot; Compress &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>Open says what it will open it in</td></tr>
+<tr><td>A Lua file</td><td>Run &middot; Edit &middot; Open with &#9656; &middot; Compress &middot; &hellip;</td><td>Open is called Run, which is what it does; Edit stays, since it is the only way to change one</td></tr>
+<tr><td>A zip</td><td>Extract &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>New</td></tr>
+<tr><td>A launcher</td><td>Open &middot; Edit <span class="k">in the launcher editor</span> &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>Edit works on a launcher; today it says &ldquo;not a file to edit&rdquo;</td></tr>
+<tr><td>Several</td><td>Compress 3 items &middot; Cut, Copy &middot; Delete 3 items &middot; Info</td><td>The count is in the words</td></tr>
+<tr><td>The Trash</td><td>Open &middot; Empty Trash &middot; Info</td><td>Empty Trash only here, and in the sidebar's menu</td></tr>
+<tr><td>Empty space</td><td>New folder &middot; Paste &middot; Select all &middot; Refresh &middot; Info on this folder</td><td>Paste is dim when there is nothing to paste</td></tr>
+<tr><td>A place in the sidebar</td><td>Open &middot; Unpin from sidebar &middot; Info</td><td>New</td></tr>
+</table>
+</div>
+
+</div>
+
+<script>
+const S = (d, w) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="${w||1.5}" stroke-linejoin="round">${d}</svg>`;
+const I = {
+  home: '<path d="M2 7l6-5 6 5v7H2z"/>', desk: '<path d="M2 3h12v8H2zM6 14h4M8 11v3"/>',
+  doc: '<path d="M4 2h5l3 3v9H4z"/>', pic: '<path d="M2 3h12v10H2z"/><path d="M2 11l4-4 3 3 2-2 3 3"/>',
+  film: '<path d="M2 3h12v10H2zM5 3v10M11 3v10M2 6h3M2 10h3M11 6h3M11 10h3"/>',
+  cam: '<path d="M2 5h8v7H2zM10 8l4-2.5v6L10 9"/>',
+  music: '<path d="M6 12V4l7-1v8"/><circle cx="4" cy="12" r="2"/><circle cx="11" cy="11" r="2"/>',
+  fold: '<path d="M2 4h4l1.5 2H14v7H2z"/>', trash: '<path d="M3 5h10v9H3zM6 5V3h4v2M2 5h12"/>',
+  drive: '<path d="M2 5h12v6H2z"/><path d="M4 8h3"/>', game: '<path d="M3 6h10v6H3z"/><path d="M6 9h2M11 8v2"/>',
+  code: '<path d="M6 4L2 8l4 4M10 4l4 4-4 4"/>', kosmos: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11"/>',
+};
+
+const place = (icon, name, cls) => `<div class="place ${cls||""}">${S(I[icon])}${name}</div>`;
+const head  = t => `<div class="heading">${t}</div>`;
+const STANDARD = [["doc","Documents"],["pic","Photos"],["film","Movies"],["cam","Captures"],["music","Music"]];
+
+function sidebar(opts) {
+  opts = opts || {};
+  let h = head("PLACES") + place("home", "Home", opts.here === "home" ? "on" : "") + place("desk", "Desktop");
+  if (opts.standard !== false) h += STANDARD.map(([i, n]) => place(i, n)).join("");
+  (opts.pins || []).forEach(p => h += place("fold", p.name, p.cls));
+  h += place("trash", "Trash", opts.trashHot ? "hot" : "");
+  if (opts.more !== false) {
+    h += head("SYSTEM") + place("kosmos", "Kosmos");
+    h += head("DRIVES") + place("drive", "Kingston, 115 GB");
+  }
+  return h;
+}
+
+/* The window's contents: one of each kind of thing a right click can land on. */
+const ITEMS = [
+  { id: "folder", name: "roms",               icon: "fold",  glyph: "game" },
+  { id: "dev",    name: "development",        icon: "fold",  glyph: "code" },
+  { id: "file",   name: "magicword-clip.mp4", icon: "doc",   ext: "MP4", col: "#b0443a" },
+  { id: "zip",    name: "renders.zip",        icon: "doc",   ext: "ZIP", col: "#7a5a1e" },
+  { id: "lua",    name: "sketch.lua",         icon: "doc",   ext: "LUA", col: "#2f4fa8" },
+  { id: "notes",  name: "notes.md",           icon: "doc",   ext: "MD",  col: "#4b5563" },
+  { id: "launcher", name: "Doom",             icon: "launch" },
+  { id: "photo",  name: "m700.jpg",           icon: "doc",   ext: "JPG", col: "#2f7d5b" },
+];
+
+function iconOf(it) {
+  if (it.icon === "fold") return `<div class="fold"><b></b><i></i>${S(I[it.glyph])}</div>`;
+  if (it.icon === "launch") return `<div class="doc" style="border-radius:10px;background:#2a2f38;border-color:#2a2f38">
+      <span style="background:#c0392b;left:auto;right:-4px;bottom:auto;top:-4px">RUN</span>
+      <svg viewBox="0 0 16 16" fill="none" stroke="#e5e7eb" stroke-width="1.4" style="position:absolute;inset:12px 9px">${I.game}</svg></div>`;
+  return `<div class="doc"><span style="background:${it.col}">${it.ext}</span></div>`;
+}
+
+function grid(el, items, opts) {
+  opts = opts || {};
+  el.innerHTML = items.map(it => `
+    <div class="item${(opts.sel || []).includes(it.id) ? " on" : ""}${opts.fresh === it.id ? " fresh" : ""}" data-id="${it.id}"
+         ${opts.fresh === it.id ? 'style="opacity:.62"' : ""}>
+      ${iconOf(it)}<div class="nm">${it.name}</div></div>`).join("");
+}
+
+/* ---- the menus ---- */
+const mi = (t, o) => ({ t, ...(o || {}) });
+const SEP = { sep: true };
+const COMMON = [SEP, mi("Rename"), mi("Cut"), mi("Copy"), SEP, mi("Delete", { h: "to the Trash" }), SEP, mi("Info", { n: 1 })];
+
+const MENUS = {
+  folder: { label: "A folder", at: "folder", sel: ["folder"],
+    why: "On a folder: the three Diego asked for, and no Edit or Empty Trash. Paste is not here - it pastes into the window, and belongs to the empty space.",
+    items: [mi("Open", { hi: 1 }), SEP, mi("Pin to sidebar", { n: 1 }), mi("Compress", { n: 1 }), ...COMMON] },
+  file: { label: "A file", at: "file", sel: ["file"],
+    why: "Open names what it will open the file in, so there is no guessing. Open with lists every application that says it opens .mp4, the default first.",
+    items: [mi("Open", { h: "Video" }), mi("Open with", { n: 1, sub: 1, hi: 1 }), SEP, mi("Compress", { n: 1 }), ...COMMON],
+    sub: [mi("Video", { h: "default" }), mi("Play")] },
+  lua: { label: "A Lua file", at: "lua", sel: ["lua"],
+    why: "Opening a Lua file runs it, so the menu says Run. Edit stays beside it, because it is the only way to change one; it is not offered where it would do what Open does.",
+    items: [mi("Run", { hi: 1 }), mi("Edit", { h: "Editor" }), mi("Open with", { n: 1, sub: 1 }), SEP, mi("Compress", { n: 1 }), ...COMMON] },
+  zip: { label: "A zip", at: "zip", sel: ["zip"],
+    why: "Extract puts renders.zip's contents in a folder called renders beside it, and opens it. A zip is not compressed again.",
+    items: [mi("Extract", { n: 1, h: "into renders", hi: 1 }), ...COMMON] },
+  launcher: { label: "A launcher", at: "launcher", sel: ["launcher"],
+    why: "Edit on a launcher opens it in the launcher editor. Today it answers “not a file to edit”, which is the one thing Edit was ever for on a folder of launchers.",
+    items: [mi("Open", { h: "starts Doom" }), mi("Edit", { h: "Launcher editor", hi: 1 }), ...COMMON] },
+  several: { label: "Several", at: "notes", sel: ["notes", "photo", "file"],
+    why: "Three things selected: the count is in the words, so what is about to happen is on the item itself. Info on several shows them added up.",
+    items: [mi("Compress 3 items", { n: 1, hi: 1 }), SEP, mi("Cut"), mi("Copy"), SEP, mi("Delete 3 items", { h: "to the Trash" }), SEP, mi("Info", { n: 1 })] },
+  space: { label: "Empty space", at: null, sel: [],
+    why: "Pressed where there is nothing: what acts on the window itself. Info here is Info on Home. Paste is dim because nothing has been cut or copied.",
+    items: [mi("New folder", { hi: 1 }), mi("Paste", { off: 1 }), SEP, mi("Select all"), SEP, mi("Refresh"), SEP, mi("Info on Home", { n: 1 })] },
+  trash: { label: "The Trash", at: "trash", sel: [],
+    why: "Empty Trash is offered on the Trash and nowhere else in the right click, since it is the one thing here that cannot be taken back.",
+    items: [mi("Open"), mi("Empty Trash", { hi: 1 }), SEP, mi("Info", { n: 1, h: "12 items" })] },
+};
+
+function menuHTML(items) {
+  return items.map(x => x.sep ? '<div class="ms"></div>' :
+    `<div class="mi${x.hi ? " hi" : ""}${x.off ? " off" : ""}"><span class="t">${x.t}</span>` +
+    (x.h ? `<span class="h">${x.h}</span>` : "") +
+    (x.n ? '<span class="new">new</span>' : "") +
+    (x.sub ? '<span class="arr">&#9656;</span>' : "") + "</div>").join("");
+}
+
+const targets = document.getElementById("targets");
+const body1 = document.getElementById("body1");
+const grid1 = document.getElementById("grid1");
+const side1 = document.getElementById("side1");
+const why = document.getElementById("why");
+
+targets.innerHTML = Object.entries(MENUS).map(([k, m]) =>
+  `<button type="button" data-k="${k}" aria-pressed="false">${m.label}</button>`).join("");
+
+function show(k) {
+  const m = MENUS[k];
+  targets.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k));
+  side1.innerHTML = sidebar({ here: "home", trashHot: k === "trash" });
+  grid(grid1, ITEMS, { sel: m.sel });
+  body1.querySelectorAll(".menu").forEach(e => e.remove());
+  why.textContent = m.why;
+
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.innerHTML = menuHTML(m.items);
+  body1.appendChild(menu);
+
+  // Where the button was pressed: over the item, or low in the empty space,
+  // or - for the Trash - just right of the sidebar, level with its row.
+  let x = 330, y = 190;
+  if (k === "trash") {
+    const row = [...side1.querySelectorAll(".place")].find(p => p.textContent === "Trash");
+    x = 4; y = row.offsetTop - 46 - 8;
+  } else if (m.at) {
+    const it = grid1.querySelector(`[data-id="${m.at}"]`);
+    x = it.offsetLeft + it.offsetWidth * 0.62; y = it.offsetTop + it.offsetHeight * 0.55;
+  }
+  x = Math.min(x, body1.clientWidth - 224);
+  menu.style.left = x + "px"; menu.style.top = y + "px";
+  if (y + menu.offsetHeight > body1.clientHeight - 4) {
+    menu.style.top = Math.max(4, body1.clientHeight - menu.offsetHeight - 4) + "px";
+  }
+
+  if (m.sub) {
+    const sub = document.createElement("div");
+    sub.className = "menu"; sub.style.minWidth = "150px";
+    sub.innerHTML = menuHTML(m.sub);
+    body1.appendChild(sub);
+    const hot = menu.querySelector(".mi.hi");
+    let sx = menu.offsetLeft + menu.offsetWidth - 4;
+    if (sx + sub.offsetWidth > body1.clientWidth) sx = menu.offsetLeft - sub.offsetWidth + 4;
+    sub.style.left = sx + "px";
+    sub.style.top = (menu.offsetTop + hot.offsetTop - 5) + "px";
+  }
+}
+
+targets.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (b) show(b.dataset.k);
+});
+
+/* ---- Pin to sidebar ---- */
+document.getElementById("sideA").innerHTML = sidebar({ here: "home", more: false });
+document.getElementById("sideB").innerHTML = sidebar({ here: "home", more: false, pins: [{ name: "roms", cls: "fresh" }] });
+document.getElementById("sideC").innerHTML = sidebar({ here: "home", more: false, pins: [{ name: "roms", cls: "hot" }] });
+document.getElementById("menuC").innerHTML = menuHTML([mi("Open"), SEP, mi("Unpin from sidebar", { n: 1, hi: 1 }), SEP, mi("Info", { n: 1 })]);
+
+/* ---- Compress, under way ---- */
+document.getElementById("side2").innerHTML = sidebar({ here: "home", more: false });
+const WITH_ZIP = ITEMS.slice(0, 1).concat([{ id: "romszip", name: "roms.zip", icon: "doc", ext: "ZIP", col: "#7a5a1e" }], ITEMS.slice(1, 7));
+grid(document.getElementById("grid2"), WITH_ZIP, { sel: ["folder"], fresh: "romszip" });
+
+/* ---- Preferences: File types ---- */
+const CATS = [
+  ["Appearance", '<path d="M8 2a6 6 0 100 12c1 0 1.5-.6 1.5-1.3 0-.8-.7-1.1-.7-1.8 0-.5.4-.9 1-.9H11a3 3 0 003-3c0-2.8-2.7-5-6-5z"/>'],
+  ["Displays", '<path d="M2 3h12v9H2zM6 14h4"/>'], ["Sound", '<path d="M3 6v4h2.5L9 13V3L5.5 6zM11.5 6a3 3 0 010 4"/>'],
+  ["Power", '<path d="M8 2v6M5 4a5 5 0 106 0"/>'], null,
+  ["Network", '<path d="M2 6a9 9 0 0112 0M4.5 8.5a5.5 5.5 0 017 0M8 12h.01"/>'],
+  ["Keyboard", '<path d="M2 4h12v8H2zM4.5 6.5h.01M7 6.5h.01M9.5 6.5h.01M12 6.5h.01M5 9.5h6"/>'],
+  ["Startup", '<path d="M8 2l5 3v6l-5 3-5-3V5z"/>'], ["File types", I.doc, 1],
+  ["Date &amp; Time", '<path d="M8 2a6 6 0 100 12A6 6 0 008 2zM8 5v3.2l2 1.2"/>'], null,
+  ["System", '<path d="M5 5h6v6H5zM8 2v2M8 12v2M2 8h2M12 8h2"/>'],
+];
+document.getElementById("cats").innerHTML = CATS.map(c => c === null ? '<div style="height:10px"></div>' :
+  `<div class="place${c[2] ? " on" : ""}">${S(c[1], 1.4)}${c[0]}${c[2] ? '<span class="mi" style="padding:0;margin-left:auto"><span class="new">new</span></span>' : ""}</div>`).join("");
+
+const dd = v => `<span class="drop">${v}<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></span>`;
+const trow = (ext, what, sub, ctl) => `<div class="row"><span class="ext">${ext}</span><span class="what">${what}${sub ? `<span>${sub}</span>` : ""}</span>${ctl}</div>`;
+const one = n => `<span class="val">${n}</span>`;
+const group = (t, rows) => `<div class="gl">${t}</div><div class="group">${rows.join("")}</div>`;
+
+document.getElementById("types").innerHTML =
+  `<div class="search">${S('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>', 1.6)}Find a type &mdash; mp4, photo, zip</div>` +
+  group("Documents", [
+    trow(".txt", "Text", "", dd("Editor")),
+    trow(".md", "Note", "Editor can open it too", dd("Reader")),
+    trow(".pdf", "PDF document", "", one("PDF")),
+    trow(".html", "Web page", "", dd("Browser")),
+    trow(".lua", "Lua source", "Opening runs it; this is what Edit uses", dd("Editor")),
+  ]) +
+  group("Pictures", [
+    trow(".png", "Picture", "", one("Photo")),
+    trow(".jpg", "Photograph", ".jpeg the same", one("Photo")),
+  ]) +
+  group("Sound and film", [
+    trow(".mp3", "Song", "", one("Music")),
+    trow(".wav", "Sound", "", one("Play")),
+    trow(".mp4", "Film", "Play can open it too", dd("Video")),
+  ]) +
+  group("Games", [
+    trow(".wad", "Doom level", "", one("Doom")),
+    trow(".sfc", "Super Nintendo cartridge", ".smc the same", one("Super Nintendo")),
+  ]) +
+  group("Kosmos", [
+    trow(".zip", "Archive", "Opening extracts it", one("Tracker")),
+    trow(".launcher", "Launcher", "Opening starts it; Edit uses this", one("Launcher editor")),
+  ]) +
+  '<div class="lives">/Home/Preferences/filetypes &middot; only the choices that differ from the default</div>';
+
+show("folder");
+</script>
+</body>
+</html>
