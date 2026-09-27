@@ -10677,3 +10677,19 @@ The gate with step 5: 45 of 46 in 8:50 - `arm-display-4`'s Large icons
 check, waiting 20 s under the gate's load, and passing alone (79 checks).
 Beside the Deskbar's in `roadmap.md` 6q, to be found out rather than rerun.
 
+## 18.213 The drawing commands, shared
+
+Step 6a of the IDE (roadmap 6n): the window manager drew a kit window's
+commands with a table inside `wm.lua`, and a window that owns its pixels
+could not draw a kit widget at all - so Cafesa3D could not hold the IDE's
+editor. The table is `/lib/paint.lua` now, made with each process's own
+picture loader and face lookup (`paint.new`), and `ui.paint_view(view,
+surface, x, y)` draws a view into a surface through it. `wm.lua` is at
+Lua's two hundred locals, so it calls the library where it makes the table.
+
+Every kit window on the screen is drawn through it from now on, which is
+what the display suites and `run_ide.py` (20 checks, passing) check; the
+first to draw into its own pixels with it is Cafesa3D's Script panel, 6b,
+and its suite will check that.
+
+The gate with 6a: 46 of 46 in 8:57.

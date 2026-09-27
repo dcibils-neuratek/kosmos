@@ -2238,7 +2238,15 @@ processors, and still what follows USB:
       plain word. And the drawing's third check, left from step 4: a name a
       library has not got, `ui.slidr`, an error "ui has no slidr - did you
       mean slider?", asked of the library.
-   6. **Cafesa3D's Script panel**, on the same component (4l).
+   6. **Cafesa3D's Script panel**, on the same component (4l) - which is
+      most of 4l's scripting, in parts, each gated: **6a DONE on 27
+      September** - the window manager's drawing commands in `/lib/paint.lua`,
+      and `ui.paint_view`, so a window that owns its pixels can draw a kit
+      widget - the IDE's editor - into them; 6b the panel, Shift F4, beside
+      the view, the keys and the pointer to the editor; 6c the sandbox - the
+      scene and nothing else, one undo step a Run, errors with their line,
+      and a count of instructions that stops a loop without end; 6d scripts
+      saved with the scene; 6e the three samples as scripts.
    Later: debugging.
 
 6m. **DONE on 26 September - Processes shows each process's threads.** Diego,

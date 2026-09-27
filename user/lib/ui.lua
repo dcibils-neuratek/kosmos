@@ -5221,6 +5221,54 @@ end
 -- desktop's size rather than in the bitmap font. Remembered per role and
 -- size, and forgotten when the fonts change.
 --
+--
+-- **A view drawn into a surface**, for a window whose pixels its program
+-- draws: the same commands a kit window sends the window manager, made the
+-- same way and replayed by `/lib/paint.lua`, which is the window manager's
+-- own - so a widget looks the same in either kind of window. Cafesa3D's
+-- Script panel is the first to want it, for the IDE's editor (`roadmap.md`
+-- 6n, step 6). `x`, `y` is where the view's own corner lands in the surface,
+-- and nothing is drawn outside the view.
+--
+do
+  local painter = nil
+  local pictures = {}
+  local DECODE = { png = "png", jpg = "jpeg", jpeg = "jpeg" }
+
+  -- A picture carried in the image, decoded once: a line icon, an icon.
+  local function picture(name)
+    local got = pictures[name]
+
+    if got ~= nil then return got or nil end
+
+    got = false
+
+    local kind = DECODE[tostring(name):lower():match("%.(%a+)$") or ""]
+    local bytes = kind and sys.asset(name)
+
+    if bytes then
+      local ok, made = pcall(gfx[kind], bytes)
+
+      if ok and made then got = made end
+    end
+
+    pictures[name] = got
+    return got or nil
+  end
+
+  function ui.paint_view(view, surface, x, y)
+    painter = painter or use("/lib/paint.lua").new(picture, ui.sized)
+
+    local g = new_gc()
+
+    g.ox, g.oy = (x or 0) - view.x, (y or 0) - view.y
+    g.cx, g.cy, g.cw, g.ch = x or 0, y or 0, view.w, view.h
+
+    view:paint(g)
+    use("/lib/paint.lua").run(surface, g.ops, painter)
+  end
+end
+
 function ui.sized(role, px)
   role = role or "ui"
 
