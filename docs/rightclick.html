@@ -218,11 +218,14 @@
 <div class="wrap">
 
 <h1>Tracker's right click</h1>
-<p class="sub">Drawn on 27 September 2026, before any of it is built &mdash; <code>roadmap.md</code>
+<p class="sub">Drawn on 27 September 2026, before any of it was built, and agreed the same
+evening &mdash; <code>roadmap.md</code>
 6za, 6z and 6v, on one page because they are one menu. Diego, on the M700 with 0.10.174:
 &ldquo;A context menu on right click should appear on the folder and give me options&rdquo; &mdash;
-pin to sidebar, compress, info. Today the right button opens the same eleven items whatever it was
-pressed on, which is how a folder in Home came to offer <b>Edit</b> and <b>Empty Trash</b>.</p>
+pin to sidebar, compress, info. Today a right click does one thing where it does anything: on a
+launcher it opens the launcher editor, on the empty space it offers the icon sizes, on a place it
+takes the place out of the sidebar at once, and on anything else it says
+&ldquo;roms is not a launcher&rdquo;. Everything else lives in the <b>&#8942;</b> menu.</p>
 
 <h2>What the right button offers, by what it was pressed on</h2>
 <p>The menu offers what applies to what was clicked and nothing else. Items marked
@@ -405,8 +408,11 @@ takes them away.</p>
 is the default. After that, it is the first by name, so the answer never depends on the order in
 which things were found.</p>
 
-<h2>Seven things to decide</h2>
-<p>Each one is drawn above as recommended. Answer by number, as before.</p>
+<h2>Seven things decided</h2>
+<div class="note"><p><b>Agreed on 27 September, every one as recommended</b> &mdash; Diego:
+&ldquo;1.yes, 2, yes, 3. yes, 4. yes, 5. ok, 6. yes, 7 ok&rdquo;. Built in four steps
+(<code>roadmap.md</code> 6za): the right click with Pin, Unpin and Info; the disk server's clock
+and Modified; what opens what; and Compress and Extract.</p></div>
 <ol class="ask">
   <li><b>A zip opens by extracting.</b> Double-click and Extract both put its contents in a folder
     beside it, named after it, and open that folder.
@@ -439,16 +445,16 @@ which things were found.</p>
 <h2>What the menus are made of</h2>
 <div class="tw">
 <table class="t">
-<tr><th>Pressed on</th><th>Offers</th><th>Unlike today</th></tr>
-<tr><td>A folder</td><td>Open &middot; Pin to sidebar &middot; Compress &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>No Edit, no Empty Trash, no Paste</td></tr>
-<tr><td>A file</td><td>Open <span class="k">with its application named</span> &middot; Open with &#9656; &middot; Compress &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>Open says what it will open it in</td></tr>
-<tr><td>A Lua file</td><td>Run &middot; Edit &middot; Open with &#9656; &middot; Compress &middot; &hellip;</td><td>Open is called Run, which is what it does; Edit stays, since it is the only way to change one</td></tr>
-<tr><td>A zip</td><td>Extract &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>New</td></tr>
-<tr><td>A launcher</td><td>Open &middot; Edit <span class="k">in the launcher editor</span> &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>Edit works on a launcher; today it says &ldquo;not a file to edit&rdquo;</td></tr>
-<tr><td>Several</td><td>Compress 3 items &middot; Cut, Copy &middot; Delete 3 items &middot; Info</td><td>The count is in the words</td></tr>
-<tr><td>The Trash</td><td>Open &middot; Empty Trash &middot; Info</td><td>Empty Trash only here, and in the sidebar's menu</td></tr>
-<tr><td>Empty space</td><td>New folder &middot; Paste &middot; Select all &middot; Refresh &middot; Info on this folder</td><td>Paste is dim when there is nothing to paste</td></tr>
-<tr><td>A place in the sidebar</td><td>Open &middot; Unpin from sidebar &middot; Info</td><td>New</td></tr>
+<tr><th>Pressed on</th><th>Offers</th><th>Today</th></tr>
+<tr><td>A folder</td><td>Open &middot; Pin to sidebar &middot; Compress &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>&ldquo;roms is not a launcher&rdquo;</td></tr>
+<tr><td>A file</td><td>Open <span class="k">with its application named</span> &middot; Open with &#9656; &middot; Compress &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>The same sentence; Open is in the <b>&#8942;</b> menu and names nothing</td></tr>
+<tr><td>A Lua file</td><td>Run &middot; Edit &middot; Open with &#9656; &middot; Compress &middot; &hellip;</td><td>The same sentence. Open is called Run here, which is what it does</td></tr>
+<tr><td>A zip</td><td>Extract &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>Nothing opens a zip</td></tr>
+<tr><td>A launcher</td><td>Open &middot; Edit <span class="k">in the launcher editor</span> &middot; Rename, Cut, Copy &middot; Delete &middot; Info</td><td>Opens the launcher editor at once, with no menu - so Open was the left button's only</td></tr>
+<tr><td>Several</td><td>Compress 3 items &middot; Cut, Copy &middot; Delete 3 items &middot; Info</td><td>Answers for the one under the pointer</td></tr>
+<tr><td>The Trash</td><td>Open &middot; Empty Trash &middot; Info</td><td>Empty Trash is in the <b>&#8942;</b> menu and the sidebar's, wherever you are</td></tr>
+<tr><td>Empty space</td><td>New folder &middot; Paste &middot; Select all &middot; the icon sizes &middot; Refresh &middot; Info on this folder</td><td>The icon sizes alone - on the desktop the only way to them, so they stay</td></tr>
+<tr><td>A place in the sidebar</td><td>Open &middot; Unpin from sidebar &middot; Info</td><td>Takes the place out at once, into the Trash - a menu asks first now</td></tr>
 </table>
 </div>
 
@@ -538,8 +544,8 @@ const MENUS = {
     why: "Three things selected: the count is in the words, so what is about to happen is on the item itself. Info on several shows them added up.",
     items: [mi("Compress 3 items", { n: 1, hi: 1 }), SEP, mi("Cut"), mi("Copy"), SEP, mi("Delete 3 items", { h: "to the Trash" }), SEP, mi("Info", { n: 1 })] },
   space: { label: "Empty space", at: null, sel: [],
-    why: "Pressed where there is nothing: what acts on the window itself. Info here is Info on Home. Paste is dim because nothing has been cut or copied.",
-    items: [mi("New folder", { hi: 1 }), mi("Paste", { off: 1 }), SEP, mi("Select all"), SEP, mi("Refresh"), SEP, mi("Info on Home", { n: 1 })] },
+    why: "Pressed where there is nothing: what acts on the window itself. The icon sizes stay, marked as today - on the desktop, which has no header, this is the only way to them. Info here is Info on Home. Paste is dim because nothing has been cut or copied.",
+    items: [mi("New folder", { hi: 1 }), mi("Paste", { off: 1 }), SEP, mi("Select all"), SEP, mi("Small icons"), mi("Normal icons", { mk: 1 }), mi("Large icons"), SEP, mi("Refresh"), SEP, mi("Info on Home", { n: 1 })] },
   trash: { label: "The Trash", at: "trash", sel: [],
     why: "Empty Trash is offered on the Trash and nowhere else in the right click, since it is the one thing here that cannot be taken back.",
     items: [mi("Open"), mi("Empty Trash", { hi: 1 }), SEP, mi("Info", { n: 1, h: "12 items" })] },
@@ -548,6 +554,7 @@ const MENUS = {
 function menuHTML(items) {
   return items.map(x => x.sep ? '<div class="ms"></div>' :
     `<div class="mi${x.hi ? " hi" : ""}${x.off ? " off" : ""}"><span class="t">${x.t}</span>` +
+    (x.mk ? '<span class="h">&#10003;</span>' : "") +
     (x.h ? `<span class="h">${x.h}</span>` : "") +
     (x.n ? '<span class="new">new</span>' : "") +
     (x.sub ? '<span class="arr">&#9656;</span>' : "") + "</div>").join("");

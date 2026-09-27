@@ -2126,6 +2126,32 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6zc. **FOUND on 27 September, on the M700 with 0.10.175 - a menu's
+   separator is as tall as an item.** Diego, with a photograph of Tracker's
+   `...` menu: "the spacing on this menu is off. it shouldnt occupy all
+   this vertical space". `ui.lua` lays a menu out as equal rows - `y = 2 +
+   (i - 1) * m.row` in the drawing, the hit test, the height and a
+   submenu's placement - and a separator is an item, so each of the five
+   in that menu was a 32-pixel band of nothing. **To do**: a separator a
+   third of a row, and those four places asking one function where an
+   item starts; the display harness, which clicks items by their row,
+   told where the separators are.
+
+6zb. **FOUND on 27 September, on the M700 with 0.10.175 - opening
+   `/Running` in Tracker hangs Tracker.** Diego: "trying to open the folder
+   'running' will hang tracker.. what is the use of that folder from a user
+   perspective?". Listing it is the registry's answer, and fine; Tracker
+   then asks what each name is, and the namespace mounts `/Running/<name>`
+   on that program's own endpoint and asks *it* - and every window
+   registers its title there (`ui.lua`), so `/Running/Tracker` is Tracker,
+   waiting for an answer from itself. Any program that did not answer would
+   hang the asker the same way. **To do**: a name directly under a registry
+   is answered by the registry - what it is, from the list - and never by
+   the program it names; only a path *below* the name reaches the program.
+   What `/Running` is for, as Diego asked: how one program finds another -
+   `/Running/wm` is the window manager - and a person's view of what is
+   running is Processes.
+
 6za. **WANTED on 27 September - a folder pinned to the sidebar, and a right
    click that offers what applies.** Diego, on the M700 with 0.10.174: "I
    should be able to pin home folders to the side panel below desktop as
@@ -2136,10 +2162,13 @@ processors, and still what follows USB:
    holds a person's shortcuts, one file each in `/Home/Places`, drawn after
    Home and Desktop in the sidebar and in Tracker's pane - made by dragging a
    drive or a folder there (`/Kosmos/Libraries/places.lua`); a right click
-   in Tracker opens one menu whatever it was on - Open, Edit, Rename, Cut,
-   Copy, Paste, Select all and none, Delete, Empty Trash, Refresh - so on a
-   folder in Home it offered Edit, which is a launcher's ("roms is not a
-   launcher"), and Empty Trash. **So**: the menu offers what applies to what
+   in Tracker does one thing where it does anything - the launcher editor on
+   a launcher, the icon sizes on the empty space, a place taken out of the
+   sidebar at once - and on a folder says "roms is not a launcher", the
+   whole of Open, Edit, Rename, Cut, Copy, Paste, Select, Delete, Empty
+   Trash and Refresh being in the `...` menu, the same whatever is
+   selected. (This said the right click opened that menu; it was the `...`
+   menu Diego had open, and the code says otherwise.) **So**: the menu offers what applies to what
    was clicked - a folder, a file, a launcher, the Trash, the empty space of
    a window - with, on a folder, **Pin to sidebar** (a place, below Desktop,
    and Unpin on one already there), **Compress** (6v) and **Info**; on a
@@ -2150,6 +2179,32 @@ processors, and still what follows USB:
    6v's Compress and Extract, since they are the same menu - **DRAWN on 27
    September as `docs/rightclick.html`**, with seven questions for Diego
    under it, and nothing built until he has answered them.
+
+   **AGREED the same evening - "1.yes, 2, yes, 3. yes, 4. yes, 5. ok, 6.
+   yes, 7 ok"**, every one as the page recommends:
+   1. a zip opens by extracting - beside it, into a folder named after it,
+      which then opens; browsing inside a zip is later, if wanted;
+   2. several things compress into `Archive.zip`, a taken name numbered as
+      New folder numbers one;
+   3. the work is a program of its own, `zip` and `unzip`, which Tracker
+      starts and watches, with its progress and Stop in the window's foot;
+   4. DEFLATE from miniz, vendored into the compress kit beside its
+      inflater;
+   5. the disk server is given the clock and stamps real dates, a step of
+      its own before Info's Modified - no Created line;
+   6. pins after Documents, Photos, Movies, Captures and Music (6w), in
+      the order pinned - after Desktop until 6w makes those;
+   7. an application declares what it opens in its header, `-- kosmos:
+      opens mp4`; the default for a type is one setting, in Preferences'
+      File types and in Info; Open with picks for that once only.
+
+   **The order it is built in**, each step with its suite and control
+   before the next: (a) the right click by what was pressed on, with Pin
+   and Unpin, and Info without Modified - Tracker alone, Lua; (b) the disk
+   server's clock, and Modified in Info; (c) 6z - the header, `binfs`
+   reporting it, `filetypes` from the applications, Open with, File types
+   in Preferences, Info's Opens with; (d) 6v - miniz, `zip` and `unzip`,
+   Compress and Extract.
 
 6z. **WANTED on 27 September - what opens what, and a Preferences page for
    it.** Diego, on the M700 with 0.10.174, a film in his home refused -
@@ -2170,7 +2225,8 @@ processors, and still what follows USB:
    something opens, the application that opens it, and the others that
    could. **Drawn first** (`CLAUDE.md`: an app is drawn before it is
    written) - the page, and Tracker's right-click "Open with" beside it
-   (**drawn**, `docs/rightclick.html`, 6za). The
+   (**drawn**, `docs/rightclick.html`, 6za; **agreed**, 6za's 7, built
+   as its step c). The
    first step while it is drawn: `mp4` to Video and `jpg` to Photo in the
    table, so a film and a photograph open today - **DONE** (18.235).
 
@@ -2247,7 +2303,8 @@ processors, and still what follows USB:
    it is built**, as the menu and that progress are windows: the context
    menu with Compress and Extract, and the file that appears - **drawn**,
    `docs/rightclick.html` (6za), which proposes miniz, a program of its own
-   for the work, and `Archive.zip` for several; Diego's to answer.
+   for the work, and `Archive.zip` for several - **agreed on 27
+   September** (6za's 1 to 4), and built as its step d.
 
 6s. **ASKED on 27 September, for Diego to decide - applications in `/apps`.**
    Diego, reading `/lib/clock.lua` in the IDE: "I don't understand why
