@@ -2147,6 +2147,29 @@ processors, and still what follows USB:
    to: the layer inside `/home`) or stay with the machine; `/kosmos/apps`;
    how "the system as shipped" is chosen at boot; and a drawing first.
 
+   **Diego again**: "things like doom, quake, snes, etc should all be
+   'home' things, nothing of that should be a kosmos bundled app as they
+   are vendored in"; "/home is all that the user has", "/kosmos is all the
+   system ships", "the /home folder contains installed apps, games,
+   documents, photos, etc", "so it should travel with the user"; and "i am
+   not sure about the paradigm of changing the wm.lua for instance and the
+   system loading the user one instead of the system bundled. it might
+   create confussino on which one is being loaded?" - "help me decide by
+   reasoning pros and cons". Put to him: **the games are C** compiled into
+   the image, and Kosmos cannot load a program from a file (the ELF loader
+   is on the wishlist), so a Lua application can live in `/home` today and
+   one with C in it only once there is a loader - until then they stay in
+   a MEGA image or wait. And three ways to change the system: **a copy
+   that hides the shipped one** (no extra step; two files answer to one
+   name and a stale copy hides an update - his worry); **editing `/kosmos`
+   itself** (one file a name; the shipped one lost, updates clash, no
+   "as shipped"); and **choosing** - `/kosmos` exactly what shipped and
+   read only, a copy in `/home` with its own path, named in one place ("the
+   desktop is `/home/system/wm.lua`"), what runs always the file named and
+   shown in Processes' file column, "as shipped" one entry removed, and init
+   taking it out itself when a replacement fails. **Recommended: choosing.**
+   Asked: that; the games until the loader; and a drawing of the two trees.
+
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the
    deskbar", "all the app icons look the same, not the real app icon as it
