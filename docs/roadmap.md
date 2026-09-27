@@ -2196,6 +2196,18 @@ processors, and still what follows USB:
    page in `docs/` kept true as the layout changes; and changing the
    shipped system **set aside**, undecided.
 
+   **Drawn as `docs/layout.html`, and answered**: "browser and video are
+   system shipped, not user apps"; a game's files in **`/Home/Games`**, apart
+   from the game; "proposed names ok but should start with Uppercase (Kits,
+   Libraries, Home, Deskbar)"; and "/home and /kosmos could live in
+   different drives in the future ... for now assume the /home is in the
+   boot drive as /kosmos". He added "Our fs is not case sensitive so it wont
+   affect anything" - **it is**: `kfs` compares a name exactly
+   (`e.name == name`) and so does the namespace's prefix match, and only
+   the FAT and exFAT reader ignores case. Asked: case-insensitive and
+   case-preserving, as a Mac is, or every path typed as it is named; and
+   `/Dev`, `/Drives`, `/App` and `/Temporary` for what is outside both.
+
 6t. **AGREED on 27 September - the ELF loader: a program loaded from a
    file.** Diego: "i want to go ahead and make the elf loader so we can
    start shipping a really usable system with games on /home". Every

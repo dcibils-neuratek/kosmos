@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  Where things live in Kosmos: two trees, /kosmos for everything the system
+  Where things live in Kosmos: two trees, /Kosmos for everything the system
   ships and /home for everything a person has. Agreed with Diego on 27
   September 2026 (roadmap.md 6s), drawn before anything moves, and kept as
   the documentation of the layout from then on - "the tree drawn of the
@@ -25,7 +25,7 @@
     --faint: #8d96a4;
     --rule: #dde2ea;
     --accent: #2a55c9;
-    --sys: #2a55c9;          /* /kosmos: what ships */
+    --sys: #2a55c9;          /* /Kosmos: what ships */
     --sys-soft: #e7edfb;
     --home: #b8630f;         /* /home: what you have */
     --home-soft: #fbefe2;
@@ -136,7 +136,7 @@
 <main>
 
 <h1>Where things live</h1>
-<p class="lede">Kosmos has two trees. <code>/kosmos</code> is everything the system ships. <code>/home</code> is everything you have, and it travels: copy it to another Kosmos machine and you arrive with your applications, your games, your work and your preferences.</p>
+<p class="lede">Kosmos has two trees. <code>/Kosmos</code> is everything the system ships. <code>/Home</code> is everything you have, and it travels: copy it to another Kosmos machine and you arrive with your applications, your games, your work and your preferences.</p>
 <p class="note">Agreed with Diego on 27 September 2026 (<code>roadmap.md</code> 6s), drawn before anything moves, and the documentation of the layout from then on. It is BeOS's hard line between what the system ships and what a person makes, with your own applications on your side of it. Nothing here is built yet; <a href="#today">From today</a> says what moves where.</p>
 <div class="legend">
   <span><span class="tag prop">proposed</span> a name or a place not yet agreed</span>
@@ -146,55 +146,54 @@
 
 <div class="trees">
 
-  <section class="tree sys" aria-label="The /kosmos tree">
+  <section class="tree sys" aria-label="The /Kosmos tree">
     <header>
-      <div class="root">/kosmos</div>
+      <div class="root">/Kosmos</div>
       <p>What the system ships. The same on every Kosmos machine of a version, and read only while it runs.</p>
     </header>
     <ul>
-      <li><span class="name">apps/</span><span class="what">The applications that come with Kosmos: Tracker, Terminal, the IDE, Cafesa3D, Music, Camera, Processes, Monitor, Preferences, the Deskbar, the demos<small>Each a window, <code>-- kosmos: application</code>; the Deskbar's menu sections come from each one's own header</small></span></li>
-      <li><span class="name">programs/</span><span class="what">The console programs: <code>ls</code>, <code>cat</code>, <code>ping</code>, <code>neofetch</code> and 60 more<small>Each prints and reads lines, and is run by its name at a prompt</small></span></li>
-      <li><span class="name">libraries/</span><span class="what">The Lua libraries: <code>ui.lua</code>, <code>theme.lua</code>, <code>json.lua</code> and the rest<small><code>use("/kosmos/libraries/ui.lua")</code> - today <code>/lib</code></small></span></li>
-      <li><span class="name">kits/</span><span class="what">The C kits a Lua program calls into: 3D, GL, PDF, compress, network, console, MP3, record, game<small><code>use("/kosmos/kits/pdf")</code> - today <code>/kits</code></small></span></li>
-      <li><span class="name">servers/</span><span class="what">The processes the system asks: console, ramfs, audio, network, devices, drives <span class="tag prop">proposed</span><small>Running, not files you run; listed with their source to read</small></span></li>
-      <li><span class="name">drivers/</span><span class="what">The processes that drive hardware: USB, network cards, the display, the power button <span class="tag prop">proposed</span><small>By the kind of device, as <code>user/drivers/</code> keeps them</small></span></li>
-      <li><span class="name">kernel</span><span class="what">Nebula, the microkernel, as the loader started it</span></li>
-      <li><span class="name">fonts/ icons/ wallpapers/</span><span class="what">What the system draws with <span class="tag prop">proposed</span><small>IBM Plex, the Spleen faces, Haiku's icons - each with its licence beside it</small></span></li>
-      <li><span class="name">documentation/</span><span class="what">The tutorials and the cheat sheet, opened in the browser <span class="tag prop">proposed</span></span></li>
-      <li><span class="name">settings/</span><span class="what">This machine's settings - its screen's scale, its network card, what its power button does, its sound card <span class="tag prop">proposed</span><small>The machine's, not yours: a home carried from the ThinkPad does not bring its 14-inch scale to the M700</small></span></li>
-      <li><span class="name">logs/</span><span class="what">What the system has said, kept<small>Today <code>log save</code> writes <code>/home/log.txt</code></small></span></li>
+      <li><span class="name">Apps/</span><span class="what">The applications that come with Kosmos: Tracker, Terminal, the IDE, Cafesa3D, the browser, Video, Music, Camera, Processes, Monitor, Preferences, the Deskbar, the demos<small>Each a window, <code>-- kosmos: application</code>; the Deskbar's menu sections come from each one's own header</small></span></li>
+      <li><span class="name">Programs/</span><span class="what">The console programs: <code>ls</code>, <code>cat</code>, <code>ping</code>, <code>neofetch</code> and 60 more<small>Each prints and reads lines, and is run by its name at a prompt</small></span></li>
+      <li><span class="name">Libraries/</span><span class="what">The Lua libraries: <code>ui.lua</code>, <code>theme.lua</code>, <code>json.lua</code> and the rest<small><code>use("/Kosmos/Libraries/ui.lua")</code> - today <code>/lib</code></small></span></li>
+      <li><span class="name">Kits/</span><span class="what">The C kits a Lua program calls into: 3D, GL, PDF, compress, network, console, MP3, record, game, FFmpeg<small><code>use("/Kosmos/Kits/pdf")</code> - today <code>/kits</code></small></span></li>
+      <li><span class="name">Servers/</span><span class="what">The processes the system asks: console, ramfs, audio, network, devices, drives<small>Running, not files you run; listed with their source to read</small></span></li>
+      <li><span class="name">Drivers/</span><span class="what">The processes that drive hardware: USB, network cards, the display, the power button<small>By the kind of device, as <code>user/drivers/</code> keeps them</small></span></li>
+      <li><span class="name">Kernel</span><span class="what">Nebula, the microkernel, as the loader started it</span></li>
+      <li><span class="name">Fonts/ Icons/ Wallpapers/</span><span class="what">What the system draws with<small>IBM Plex, the Spleen faces, Haiku's icons - each with its licence beside it</small></span></li>
+      <li><span class="name">Documentation/</span><span class="what">The tutorials and the cheat sheet, opened in the browser - and this page</span></li>
+      <li><span class="name">Settings/</span><span class="what">This machine's settings - its screen's scale, its network card, what its power button does, its sound card<small>The machine's, not yours: a home carried from the ThinkPad does not bring its 14-inch scale to the M700</small></span></li>
+      <li><span class="name">Logs/</span><span class="what">What the system has said, kept<small>Today <code>log save</code> writes <code>/home/log.txt</code></small></span></li>
     </ul>
   </section>
 
-  <section class="tree home" aria-label="The /home tree">
+  <section class="tree home" aria-label="The /Home tree">
     <header>
-      <div class="root">/home</div>
-      <p>What you have. Yours to change, and it goes wherever you take it.</p>
+      <div class="root">/Home</div>
+      <p>What you have. Yours to change, and it goes wherever you take it. On the drive Kosmos started from, for now; one day perhaps a stick of its own on a machine whose <code>/Kosmos</code> is inside it.</p>
     </header>
     <ul>
-      <li><span class="name">apps/</span><span class="what">Applications you installed or wrote, and the games<small>Each in a folder of its own: its program, and whatever it came with</small></span></li>
-      <li class="sub"><span class="name">doom/</span><span class="what">Doom, with its WAD <span class="tag later">after the loader</span><small>Its engine is C, so it leaves the image once a program can be loaded from a file</small></span></li>
-      <li class="sub"><span class="name">quake/</span><span class="what">Quake, with <code>id1</code> <span class="tag later">after the loader</span></span></li>
-      <li class="sub"><span class="name">super-nintendo/</span><span class="what">The Super Nintendo, with your ROMs <span class="tag later">after the loader</span></span></li>
-      <li><span class="name">development/</span><span class="what">Your projects: what the IDE opens, and the tutorial's lessons to start from</span></li>
-      <li><span class="name">preferences/</span><span class="what">Your choices: the look, the keyboard, the Deskbar, what starts at login, each application's own<small>Today dotfiles at the top of <code>/home</code>: <code>.appearance</code>, <code>.keyboard</code>, <code>.terminal</code>, <code>.clock</code>, <code>.ide</code> ...</small></span></li>
-      <li><span class="name">documents/</span><span class="what">What you write and keep - and Cafesa3D's scenes and renders <span class="tag prop">proposed</span></span></li>
-      <li><span class="name">music/ photos/ videos/</span><span class="what">What Music, Photo and Video open first <span class="tag prop">proposed</span></span></li>
-      <li><span class="name">desktop/</span><span class="what">What is on the desktop <span class="tag prop">proposed</span><small>Today <code>/home/Desktop</code></small></span></li>
-      <li><span class="name">deskbar/</span><span class="what">The launchers in the Deskbar's menu <span class="tag prop">proposed</span><small>Today <code>/home/Deskbar</code></small></span></li>
-      <li><span class="name">trash/</span><span class="what">What you threw away, until you empty it <span class="tag prop">proposed</span></span></li>
+      <li><span class="name">Apps/</span><span class="what">Applications you installed or wrote, the games among them<small>Each in a folder of its own, holding its program</small></span></li>
+      <li class="sub"><span class="name">Doom/ Quake/ Super Nintendo/</span><span class="what">The games <span class="tag later">after the loader</span><small>Their engines are C, so they leave the image once a program can be loaded from a file</small></span></li>
+      <li><span class="name">Games/</span><span class="what">What the games play: Doom's WAD, Quake's <code>id1</code>, your ROMs<small>Apart from the games themselves, so installing one again never touches them</small></span></li>
+      <li><span class="name">Development/</span><span class="what">Your projects: what the IDE opens, and the tutorial's lessons to start from</span></li>
+      <li><span class="name">Preferences/</span><span class="what">Your choices: the look, the keyboard, the Deskbar, what starts at login, each application's own<small>Today dotfiles at the top of <code>/home</code>: <code>.appearance</code>, <code>.keyboard</code>, <code>.terminal</code>, <code>.clock</code>, <code>.ide</code> ...</small></span></li>
+      <li><span class="name">Documents/</span><span class="what">What you write and keep - and Cafesa3D's scenes and renders</span></li>
+      <li><span class="name">Music/ Photos/ Videos/</span><span class="what">What Music, Photo and Video open first</span></li>
+      <li><span class="name">Desktop/</span><span class="what">What is on the desktop</span></li>
+      <li><span class="name">Deskbar/</span><span class="what">The launchers in the Deskbar's menu</span></li>
+      <li><span class="name">Trash/</span><span class="what">What you threw away, until you empty it</span></li>
     </ul>
   </section>
 
 </div>
 
 <h2>Outside both</h2>
-<p>Three things belong to neither tree, because they are not files anybody keeps.</p>
+<p>Four things belong to neither tree, because they are not files anybody keeps. <span class="tag prop">proposed</span> the capitals here too.</p>
 <div class="others">
-  <div class="other"><div class="name">/dev</div><p>The devices: the screen, the keyboard, the audio ring, the processors, a stick's blocks.</p></div>
-  <div class="other"><div class="name">/drives</div><p>Other drives by name - a USB stick, an SD card - as <code>drives.html</code> draws them.</p></div>
-  <div class="other"><div class="name">/tmp</div><p>Memory, gone at the next start. Today <code>/ramfs</code>.</p></div>
-  <div class="other"><div class="name">/app</div><p>The servers running now, by name, for whoever may ask them.</p></div>
+  <div class="other"><div class="name">/Dev</div><p>The devices: the screen, the keyboard, the audio ring, the processors, a stick's blocks.</p></div>
+  <div class="other"><div class="name">/Drives</div><p>Other drives by name - a USB stick, an SD card - as <code>drives.html</code> draws them.</p></div>
+  <div class="other"><div class="name">/Temporary</div><p>Memory, gone at the next start. Today <code>/ramfs</code>.</p></div>
+  <div class="other"><div class="name">/App</div><p>The servers running now, by name, for whoever may ask them.</p></div>
 </div>
 
 <h2>What a program sees</h2>
@@ -204,19 +203,20 @@
     <h3>Terminal</h3>
     <p class="kind">You, at a prompt</p>
     <ul>
-      <li class="s">/kosmos <span class="rw">read</span></li>
-      <li class="h">/home <span class="rw">read and write</span></li>
-      <li>/dev <span class="rw">the console</span></li>
-      <li>/drives, /tmp <span class="rw">read and write</span></li>
+      <li class="s">/Kosmos <span class="rw">read</span></li>
+      <li class="h">/Home <span class="rw">read and write</span></li>
+      <li>/Dev <span class="rw">the console</span></li>
+      <li>/Drives, /Temporary <span class="rw">read and write</span></li>
     </ul>
   </div>
   <div class="ns">
     <h3>Doom</h3>
     <p class="kind">An installed game <span class="tag later">after the loader</span></p>
     <ul>
-      <li class="s">/kosmos/libraries <span class="rw">read</span></li>
-      <li class="h">/home/apps/doom <span class="rw">its own folder</span></li>
-      <li>/dev/screen, audio, keys <span class="rw">to play</span></li>
+      <li class="s">/Kosmos/Libraries <span class="rw">read</span></li>
+      <li class="h">/Home/Apps/Doom <span class="rw">read</span></li>
+      <li class="h">/Home/Games/Doom <span class="rw">its WAD, its saves</span></li>
+      <li>/Dev/screen, audio, keys <span class="rw">to play</span></li>
     </ul>
     <p class="not">Not your photos or your documents: they were never handed to it, so it cannot name them.</p>
   </div>
@@ -224,9 +224,9 @@
     <h3>Kosmos IDE</h3>
     <p class="kind">What you build with</p>
     <ul>
-      <li class="s">/kosmos <span class="rw">read, to learn from</span></li>
-      <li class="h">/home/development <span class="rw">read and write</span></li>
-      <li class="h">/home/apps <span class="rw">read and write</span></li>
+      <li class="s">/Kosmos <span class="rw">read, to learn from</span></li>
+      <li class="h">/Home/Development <span class="rw">read and write</span></li>
+      <li class="h">/Home/Apps <span class="rw">read and write</span></li>
       <li>its own console <span class="rw">for what it runs</span></li>
     </ul>
   </div>
@@ -237,15 +237,16 @@
 <div class="tablewrap">
 <table>
   <tr><th>Today</th><th>Then</th><th>What it is</th></tr>
-  <tr><td class="path">/bin</td><td class="path s">/kosmos/apps, /kosmos/programs</td><td>55 applications and 64 programs, served flat in one folder; the source tree already keeps them apart</td></tr>
-  <tr><td class="path">/lib</td><td class="path s">/kosmos/libraries</td><td>51 Lua libraries; every <code>use("/lib/...")</code> changes once</td></tr>
-  <tr><td class="path">/kits</td><td class="path s">/kosmos/kits</td><td>11 kits, C, compiled into every process</td></tr>
-  <tr><td class="path">/lib/clock.lua, /lib/blocks.lua</td><td class="path s">/kosmos/libraries/localtime.lua, blockdev.lua</td><td>Names that clash with the Clock and Blocks applications and are not them <span class="tag prop">proposed</span></td></tr>
-  <tr><td class="path">/home/.appearance, .clock, .terminal ...</td><td class="path h">/home/preferences/...</td><td>Your preferences, out of the way at the top of your home</td></tr>
-  <tr><td class="path">/home/Desktop, Deskbar</td><td class="path h">/home/desktop, deskbar</td><td>Lower case, as everything else <span class="tag prop">proposed</span></td></tr>
-  <tr><td class="path">/ramfs</td><td class="path">/tmp</td><td>Memory</td></tr>
-  <tr><td class="path">/home/log.txt</td><td class="path s">/kosmos/logs</td><td>The system's log</td></tr>
-  <tr><td class="path">Doom, Quake, the Super Nintendo, in the image</td><td class="path h">/home/apps/doom, quake, super-nintendo</td><td>Vendored engines in C: installed, not shipped <span class="tag later">after the loader</span></td></tr>
+  <tr><td class="path">/bin</td><td class="path s">/Kosmos/Apps, /Kosmos/Programs</td><td>55 applications and 64 programs, served flat in one folder; the source tree already keeps them apart</td></tr>
+  <tr><td class="path">/lib</td><td class="path s">/Kosmos/Libraries</td><td>51 Lua libraries; every <code>use("/lib/...")</code> changes once</td></tr>
+  <tr><td class="path">/kits</td><td class="path s">/Kosmos/Kits</td><td>11 kits, C, compiled into every process</td></tr>
+  <tr><td class="path">/lib/clock.lua, /lib/blocks.lua</td><td class="path s">/Kosmos/Libraries/localtime.lua, blockdev.lua</td><td>Names that clash with the Clock and Blocks applications and are not them <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/home/.appearance, .clock, .terminal ...</td><td class="path h">/Home/Preferences/...</td><td>Your preferences, out of the way at the top of your home</td></tr>
+  <tr><td class="path">/home</td><td class="path h">/Home</td><td>A capital, as every name here</td></tr>
+  <tr><td class="path">/ramfs</td><td class="path">/Temporary</td><td>Memory <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/home/log.txt</td><td class="path s">/Kosmos/Logs</td><td>The system's log</td></tr>
+  <tr><td class="path">Doom, Quake, the Super Nintendo, in the image</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>Vendored engines in C: installed, not shipped <span class="tag later">after the loader</span></td></tr>
+  <tr><td class="path">/home/doom1.wad, /home/id1, /home/roms</td><td class="path h">/Home/Games/Doom, Quake, Super Nintendo</td><td>What the games play, apart from the games</td></tr>
 </table>
 </div>
 
@@ -254,9 +255,11 @@
   <div>
     <p><b>Decided</b> - Diego, 27 September:</p>
     <ul class="list">
-      <li><code>/home</code> is everything a person has - installed applications, games, documents, photos - and travels to another Kosmos machine.</li>
-      <li><code>/kosmos</code> is everything the system ships.</li>
-      <li>Doom, Quake and the Super Nintendo are home things, not bundled - which needs the ELF loader, agreed as 6t.</li>
+      <li><code>/Home</code> is everything a person has - installed applications, games, documents, photos - and travels to another Kosmos machine.</li>
+      <li><code>/Kosmos</code> is everything the system ships - the browser and Video among it.</li>
+      <li>Doom, Quake and the Super Nintendo are home things, not bundled - which needs the ELF loader, agreed as 6t - and what they play is in <code>/Home/Games</code>.</li>
+      <li>Every name begins with a capital: <code>Kits</code>, <code>Libraries</code>, <code>Home</code>, <code>Deskbar</code>.</li>
+      <li><code>/Home</code> is on the drive Kosmos started from, for now; on a drive of its own is for later.</li>
       <li>This drawing is part of Kosmos's documentation, kept true as the layout changes.</li>
       <li>Changing the shipped system - your own window manager in place of ours - is set aside, undecided.</li>
     </ul>
@@ -264,10 +267,8 @@
   <div>
     <p><b>Open</b> - for Diego:</p>
     <ul class="list ask">
-      <li><b>The browser and Video.</b> The browser is NetSurf and Video decodes with FFmpeg, both vendored as the games are. Home things too, once they can be installed?</li>
-      <li><b>A game's own files</b> - Doom's WAD, your ROMs: in the game's folder as drawn, or in <code>/home/documents</code> or a <code>/home/games</code> of their own, so reinstalling a game never touches them?</li>
-      <li><b>The proposed names</b> above: <code>servers</code>, <code>drivers</code>, <code>fonts</code>, <code>documentation</code>, <code>settings</code>, <code>documents</code>, <code>music</code>, and lower case for <code>desktop</code> and <code>deskbar</code>.</li>
-      <li><b>How a home is found at boot</b> - today by its partition's GUID on the kernel's command line, so it belongs to one stick; to travel, found by what it is on any drive plugged in.</li>
+      <li><b>Capitals, and whether case matters.</b> Kosmos is case-sensitive today: the disk's filesystem and the namespace compare names exactly, so <code>/home/notes.txt</code> would not find <code>/Home/notes.txt</code> - only the FAT and exFAT reader ignores case. Either every path is typed as it is named, or Kosmos becomes case-insensitive and case-preserving, as a Mac is: a name keeps the capitals it was given, and <code>/home</code> finds <code>/Home</code>. The second is what capitals are kind with.</li>
+      <li><b>The four outside both trees</b>: <code>/Dev</code>, <code>/Drives</code>, <code>/App</code>, and <code>/Temporary</code> for <code>/ramfs</code>?</li>
     </ul>
   </div>
 </div>
