@@ -86,8 +86,16 @@ Shift F4); one editor component for the script panel and the IDE, so the
 IDE is drawn first (6n); the render farm agreed as written (5d). Pushed as
 0.10.170.
 
-**Next, in order**: Processes' Threads column (6m); the IDE's drawing
-(6n); the editor component; Cafesa3D's scripting on it.
+**The Kosmos IDE was drawn the same night** (`docs/kosmos-ide.html`), after
+Diego's screenshot of ZeroBrane Studio, and agreed as drawn: "the mockup is
+perfect!!!". His answers: luacheck; Output panel; an ordinary resizable
+window, so built on the kit; the Preferences look; the last project;
+debugging later. And the ten-lesson tutorial, wanted again in its order as
+the IDE's first project (roadmap 7).
+
+**Next, in order**: Processes' Threads column (6m); the IDE in its six
+steps (6n) - the editor component first; Cafesa3D's scripting on it; the
+tutorial's lessons.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor

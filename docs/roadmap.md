@@ -2114,6 +2114,29 @@ processors, and still what follows USB:
    editor that suggests and completes, a button bar with Run and Stop at its
    centre, Lua coloured and checked as it is written, and any script run
    from it. **Drawn first**: `docs/kosmos-ide.html`.
+   **Diego, the same night: "the mockup is perfect!!!"**, and the page's six
+   questions answered: **luacheck**, taught Kosmos's names, checks it; a
+   run's output goes to the **Output panel**; the window is **an ordinary
+   one - resized, minimised, maximised as needed**, not opened maximised,
+   which settles that it is built from the kit's widgets, since only a kit
+   window can be resized; it **follows the look chosen in Preferences**; it
+   opens on **the last project opened**; and **debugging is a later step of
+   its own**.
+   **The steps, each used and tested before the next**:
+   1. **The editor component** - the kit's `ui.editor` grown: selection,
+      undo, Lua coloured by a tokenizer, line numbers, the current line and
+      marked lines. Tested on the Mac, where the kit's Lua runs.
+   2. **The window** - the tree (`ui.tree`), the file tabs, the editor, the
+      panel below and the button bar; opening, saving, the last project.
+   3. **Run and Stop** - the file as its own process, whose `print` the
+      Output panel receives as a Terminal does, by serving the console's
+      protocol; its end and its exit code said.
+   4. **Checking** - Lua's own parser as you type, then luacheck, vendored,
+      given the names a Kosmos program has (`tools/luaglobals.py`'s list).
+   5. **Suggestions** - names read from the libraries `use` returned, with
+      the comment above each as its documentation.
+   6. **Cafesa3D's Script panel**, on the same component (4l).
+   Later: debugging.
 
 6m. **AGREED on 26 September - Processes shows each process's threads.** Diego,
    with a photograph of the window: "processes need a threads column to
@@ -3608,7 +3631,7 @@ processors, and still what follows USB:
    screen, the processors - each showing the few lines of Lua that reach it,
    so the page is the demonstration and the code is the lesson. **Drawn
    first**, as every app is, and a natural companion to the tutorial below.
-7. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
+7. **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no
    distinction between writing an app and modifying the system. Ten lessons,
@@ -3636,6 +3659,15 @@ processors, and still what follows USB:
    line, English, and a check in the display harness that opens it and sees
    the one thing its lesson is about - the label that changed, the file that
    was saved, the note that played.
+
+   **Diego again, 26 September**, seeing the lessons in the Kosmos IDE's
+   drawing (`docs/kosmos-ide.html`, 6n): "i love the development tutorial
+   being shown there from 1 to 10 lessons. i want that as well in that order
+   so we can teach the user to build apps using all available things from
+   kosmos, from a simple hello button to a 3d app." So the ten lessons are
+   the IDE's first project: opened in its tree, read in it, run from it, in
+   the order above. The PNG writer it needed exists now (`gfx.encode_png`,
+   `testing.md` 18.201).
 
    **What it needs first, or will find out:** a PNG writer for `paint` to save
    with, which the screenshot shortcut wants as well; that an application run

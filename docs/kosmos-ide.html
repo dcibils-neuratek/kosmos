@@ -194,7 +194,7 @@
 <div class="wrap">
 
 <h1>Kosmos IDE</h1>
-<p class="sub">Where Lua for Kosmos is written and run: a tree of the project, an editor that knows the system it is on - what <code>ui</code>, <code>fs</code> and <code>gfx</code> offer, read from the libraries themselves - a button bar with Run and Stop at its middle, and every line checked as it is written. The editor is Cafesa3D's Script panel's, grown into a window of its own. Drawn before it is written, for you to change before any of it is built.</p>
+<p class="sub">Where Lua for Kosmos is written and run: a tree of the project, an editor that knows the system it is on - what <code>ui</code>, <code>fs</code> and <code>gfx</code> offer, read from the libraries themselves - a button bar with Run and Stop at its middle, and every line checked as it is written. The editor is Cafesa3D's Script panel's, grown into a window of its own. Drawn before it is written, and agreed as drawn.</p>
 
 <div class="toggles" role="group" aria-label="What the drawing shows">
   <span class="lab">Show</span>
@@ -284,15 +284,17 @@
 </table>
 </div>
 
-<h2>Yours to decide</h2>
+<h2>Decided</h2>
+<p class="why">Diego, 26 September: "the mockup is perfect!!!" - and the six questions this page asked, answered:</p>
 <ul class="ask">
-  <li><b>The checker</b>: luacheck, vendored, taught Kosmos's names (proposed); or one of Kosmos's own, which would start as the globals check <code>luaglobals.py</code> already does and grow.</li>
-  <li><b>Where a run's output goes</b>: the Output panel, as drawn; or a Terminal window of its own, which a program that asks for input would want. The panel could offer both.</li>
-  <li><b>Opening maximised</b>, as Cafesa3D does now - an IDE is used the same way.</li>
-  <li><b>Light or dark</b>, or following the look chosen in Preferences - the toggle above shows both.</li>
-  <li><b>The project it opens on</b>: <code>/home/development</code>, the tutorial's lessons, as drawn; or whatever folder was open last.</li>
-  <li><b>Debugging</b> - breakpoints, stepping, the values of variables, ZeroBrane's other half - drawn as a greyed button and proposed for later, as a step of its own: it needs a running program's Lua to be stopped and questioned from another process, which is a protocol to design.</li>
+  <li><b>The checker is luacheck</b>, vendored and taught Kosmos's names, with Lua's own parser before it.</li>
+  <li><b>A run's output goes to the Output panel.</b></li>
+  <li><b>An ordinary window</b> - resized, minimised and maximised as needed, not opened maximised. Which settles how it is built: from the kit's widgets, because the window manager resizes a window that sends it drawing and never one with a surface of its own.</li>
+  <li><b>It follows the look chosen in Preferences</b>, light or dark; the toggle above only shows both.</li>
+  <li><b>It opens on the last project opened</b> - the tutorial's lessons the first time.</li>
+  <li><b>Debugging is a later step of its own.</b></li>
 </ul>
+<p class="why">And the lessons in its tree are wanted as drawn, one to ten, from a window with a button to a 3D app (<code>roadmap.md</code> 7) - the IDE's first project.</p>
 
 </div>
 
