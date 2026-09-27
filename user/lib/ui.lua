@@ -1409,6 +1409,23 @@ function ui.view(spec)
   return v
 end
 
+--
+-- **A child taken out**, which a closed tab is the first to need: gone from
+-- the drawing, from the pointer and from Tab, as a hidden one is, and gone
+-- for good. Returns whether it was there.
+--
+function view:remove(child)
+  for i, c in ipairs(self.children) do
+    if c == child then
+      table.remove(self.children, i)
+      child.parent = nil
+      return true
+    end
+  end
+
+  return false
+end
+
 function view:add(child)
   self.children[#self.children + 1] = child
   child.parent = self
@@ -1657,10 +1674,18 @@ function ui.button(spec)
   --
   local PAD, GAP, ICON, CHEV = 11, 7, 15, 11
 
+  --
+  -- `hint` is the key that does the same, after the words and quieter -
+  -- the IDE's "Run  Ctrl Enter" (`docs/kosmos-ide.html`).
+  --
+  local function hint_w(self)
+    return self.hint and (GAP + gfx.measure(tostring(self.hint), self.role)) or 0
+  end
+
   function v:fit()
     if self.fixed_width then return end
 
-    local words = gfx.measure(tostring(self.text or ""), self.role)
+    local words = gfx.measure(tostring(self.text or ""), self.role) + hint_w(self)
 
     if self.icon or self.chevron then
       self.w = 1 + PAD + (self.icon and ICON + GAP or 0) + words
@@ -1691,9 +1716,19 @@ function ui.button(spec)
       end
 
       local label = tostring(self.text or "")
+      local lx = (self.w - gfx.measure(label) - hint_w(self)) // 2
 
-      g:text((self.w - gfx.measure(label)) // 2, centred(self.h), label,
-             theme.text_on, fill)
+      if self.icon then
+        lx = 1 + PAD + ICON + GAP
+        g:line_icon(1 + PAD, (self.h - ICON) // 2, self.icon, theme.text_on)
+      end
+
+      g:text(lx, centred(self.h), label, theme.text_on, fill)
+
+      if self.hint then
+        g:text(lx + gfx.measure(label) + GAP, centred(self.h), tostring(self.hint),
+               theme.mix(theme.text_on, fill, 300), fill)
+      end
       return
     end
 
@@ -1735,10 +1770,19 @@ function ui.button(spec)
 
     -- And the label moves with it, a pixel down and right, because a
     -- control that goes in takes its label with it.
+    if self.hint and not (self.icon or self.chevron) then
+      tx = (self.w - gfx.measure(label, self.role) - hint_w(self)) // 2
+    end
+
     g:text(tx + press, ty + press, label,
            self.disabled and theme.text_dim
            or (self.pressed and theme.text_on or theme.text), face,
            self.role)
+
+    if self.hint then
+      g:text(tx + press + gfx.measure(label, self.role) + GAP, ty + press,
+             tostring(self.hint), theme.text_dim, face, self.role)
+    end
   end
 
   function v:key(c)
@@ -2727,10 +2771,10 @@ function ui.iconbutton(spec)
 
   v.w = v.w > 0 and v.w or 26
   v.h = v.h > 0 and v.h or 26
-  v.focusable = true
+  v.focusable = not v.disabled
 
   function v:draw(g)
-    if self.pressed then
+    if self.pressed and not self.disabled then
       g:fill_round(0, 0, self.w, self.h, theme.line_soft, 6)
     end
 
@@ -2738,11 +2782,16 @@ function ui.iconbutton(spec)
       g:frame_round(0, 0, self.w, self.h, theme.ring, 6)
     end
 
+    -- `disabled`, as a button's: shown, so a person can see it will be
+    -- there, and fainter, and answering nothing - the IDE's Debug.
     g:line_icon((self.w - 15) // 2, (self.h - 15) // 2, self.icon or "more",
-                self.pressed and theme.text or theme.text_dim)
+                self.disabled and theme.line
+                or (self.pressed and theme.text or theme.text_dim))
   end
 
   function v:key(c)
+    if self.disabled then return false end
+
     if c == 10 or c == 13 or c == 32 then
       if self.on_click then self.on_click(self) end
       return true
@@ -2771,11 +2820,165 @@ function ui.iconbutton(spec)
   return v
 end
 
+--------------------------------------------------------------------------
+-- Tabs.
+--
+--   ui.tabs{ x =, y =, w =, items = { { text = "a.lua", close = true,
+--                                       changed = true }, ... },
+--            on = 1, on_choose = function(self, i, item) end,
+--            on_close = function(self, i, item) end }
+--
+-- A strip of names, one of them chosen: the IDE's files, its Project and
+-- Outline, its Output and Problems (`docs/kosmos-ide.html`). Arrived with
+-- the IDE (`roadmap.md` 6n, step 2), the first window with three of them.
+--
+-- As the drawing has it: 32 tall with a rule along the bottom, each tab its
+-- words with a rule after it, the chosen one on the panel's colour with the
+-- accent two pixels deep along its foot. A tab may carry a dot for a file
+-- not saved (`changed`), a count in the error colour (`count`), and a
+-- cross that closes it (`close`) - pressed on the cross, it asks
+-- `on_close`; anywhere else, `on_choose`.
+--
+-- **The items are the caller's table, read at every draw**, so a tab's dot
+-- appearing is a field set, not a message sent: the IDE marks a file
+-- changed and the next repaint shows it.
+--------------------------------------------------------------------------
+
+local TAB_H = 32
+local TAB_PAD = 12
+local TAB_DOT = 7
+
+function ui.tabs(spec)
+  spec.follow = spec.follow or { "left", "right", "top" }
+
+  local v = ui.view(spec)
+
+  v.h = v.h > 0 and v.h or TAB_H
+  v.items = v.items or {}
+  v.on = v.on or 1
+
+  -- Each tab's extent, worked out by the last draw and read by the mouse.
+  local placed = {}
+
+  local function width(item)
+    local w = TAB_PAD + gfx.measure(tostring(item.text or ""), "ui") + TAB_PAD
+
+    if item.changed then w = w + TAB_DOT + 6 end
+    if item.count then w = w + gfx.measure(tostring(item.count), "ui") + 18 end
+    if item.close then w = w + 14 end
+
+    return w
+  end
+
+  function v:draw(g)
+    local ground = self.ground or theme.window
+    local ty = (self.h - 1 - gfx.height("ui")) // 2
+
+    g:fill(0, 0, self.w, self.h, ground)
+    g:fill(0, self.h - 1, self.w, 1, theme.line_soft)
+
+    placed = {}
+
+    local x = 0
+
+    for i, item in ipairs(self.items) do
+      local w = width(item)
+      local on = (i == self.on)
+
+      if on then
+        g:fill(x, 0, w, self.h - 1, theme.sunken)
+        g:fill(x, self.h - 3, w, 2, theme.accent)
+      end
+
+      local tx = x + TAB_PAD
+      local fg = on and theme.text or theme.text_dim
+
+      g:text(tx, ty, tostring(item.text or ""), fg, nil, "ui")
+      tx = tx + gfx.measure(tostring(item.text or ""), "ui")
+
+      if item.changed then
+        g:fill_round(tx + 6, (self.h - 1 - TAB_DOT) // 2, TAB_DOT, TAB_DOT,
+                     theme.text_dim, 3)
+        tx = tx + 6 + TAB_DOT
+      end
+
+      if item.count then
+        local n = tostring(item.count)
+        local cw = gfx.measure(n, "ui") + 12
+        local colours = ui.code_colours()
+
+        g:fill_round(tx + 6, (self.h - 1 - 18) // 2, cw, 18,
+                     colours.error_ground, 9)
+        g:text(tx + 12, ty, n, colours.error, nil, "ui")
+        tx = tx + 6 + cw
+      end
+
+      local cross
+
+      if item.close then
+        cross = tx + 4
+        local cy = (self.h - 1) // 2
+
+        -- A small cross, two diagonals of fills: faint, as the drawing's.
+        for d = -3, 3 do
+          g:fill(cross + 4 + d, cy + d, 1, 1, theme.text_dim)
+          g:fill(cross + 4 + d, cy - d, 1, 1, theme.text_dim)
+        end
+      end
+
+      g:fill(x + w - 1, 0, 1, self.h - 1, theme.line_soft)
+      placed[i] = { x = x, w = w, cross = cross }
+      x = x + w
+    end
+  end
+
+  function v:mouse(action, x, y)
+    if action ~= "press" then return true end
+
+    for i, p in ipairs(placed) do
+      if x >= p.x and x < p.x + p.w then
+        local item = self.items[i]
+
+        if p.cross and x >= p.cross - 2 and x < p.cross + 12 then
+          if self.on_close then self.on_close(self, i, item) end
+        else
+          self.on = i
+          if self.on_choose then self.on_choose(self, i, item) end
+        end
+
+        return true
+      end
+    end
+
+    return true
+  end
+
+  -- Where each tab is, for whoever drives a window from outside.
+  function v:places()
+    local out = {}
+
+    for i, p in ipairs(placed) do
+      out[i] = { x = self.x + p.x + p.w // 2, y = self.y + self.h // 2,
+                 cross = p.cross and (self.x + p.cross + 4) or nil }
+    end
+
+    return out
+  end
+
+  return v
+end
+
 --
 -- **A header**: 46 with its rule, the subject in the title's face 18 in,
 -- what the window is looking at beside it in the dim `ui` face, and the
--- controls - `left` before the subject, `right` against the far edge - 10
--- in from the edges and 4 apart, each centred in the band.
+-- controls - `left` before the subject, `after` following it, `right`
+-- against the far edge - 10 in from the edges and 4 apart, each centred in
+-- the band.
+--
+-- `after` is the IDE's button bar (`docs/kosmos-ide.html`): the verbs right
+-- after what the window is looking at. `sub_room` is how much of the band
+-- those words may have, so the bar stays where it is as they change - a
+-- longer path is cut rather than pushing every button along.
 --
 --   ui.header{ x = 0, y = 0, w = W, title = "Processes",
 --              sub = "21 processes . 28 threads",
@@ -2799,9 +3002,11 @@ function ui.header(spec)
 
   v.h = L.head
   v.left = v.left or {}
+  v.after = v.after or {}
   v.right = v.right or {}
 
   for _, c in ipairs(v.left) do v:add(c) end
+  for _, c in ipairs(v.after) do v:add(c) end
   for _, c in ipairs(v.right) do v:add(c) end
 
   local function centre(c) return (L.head - 1 - c.h) // 2 end
@@ -2844,6 +3049,31 @@ function ui.header(spec)
     end
 
     self.room = r - L.head_edge
+
+    --
+    -- After the subject and its words, or after the room kept for them: the
+    -- words are cut to fit before the bar, never the bar to fit the words.
+    --
+    if #self.after > 0 then
+      local title = tostring(self.title or "")
+      local x = self.title_x
+
+      if title ~= "" then x = x + gfx.measure(title, "title") + 8 end
+
+      local sub = tostring(self.sub or "")
+      local words = self.sub_room or (sub ~= "" and gfx.measure(sub) or 0)
+
+      self.room = x + words
+      x = x + words + L.head_edge
+
+      for _, c in ipairs(self.after) do
+        if not c.hidden then
+          x = x + (c.space or 0)
+          c.x, c.y = x, centre(c)
+          x = x + c.w + L.head_gap
+        end
+      end
+    end
   end
 
   function v:draw(g)
@@ -5345,6 +5575,21 @@ local function serve_properties(self)
 
     pcall(sys.reply, who, reply)
   end
+end
+
+-- Out of the window, with the keyboard kept on whatever it was on - or on
+-- the first thing that takes it, when it was on what went.
+function window:remove(child)
+  local had = self.root:focusables()[self.focus]
+  local gone = self.root:remove(child)
+
+  for i, t in ipairs(self.ticking or {}) do
+    if t == child then table.remove(self.ticking, i) break end
+  end
+
+  if not (had and had ~= child and self:focus_on(had)) then self.focus = 1 end
+
+  return gone
 end
 
 function window:add(child)

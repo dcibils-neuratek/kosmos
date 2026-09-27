@@ -856,6 +856,15 @@ an indent of forty lines into one. The text model is pure Lua and tested on
 the Mac (`tools/test_textbuf.lua`); the widget draws it and turns keys and
 the pointer into its calls.
 
+**What the IDE's window added to the kit** (27 September, step 2), each
+arriving with the thing that needed it: `ui.tabs`, a strip of names with a
+dot for a file not saved, a count, and a cross that closes - three of them
+in one window; a header's `after` controls, the button bar right after the
+subject, with `sub_room` keeping the bar still as the words beside the
+subject change; a button's `hint`, the key that does the same beside its
+words, and an icon on the filled one; a disabled icon button; and
+`window:remove`, which a closed tab needs, keeping the focus where it was.
+
 **Two looks.** Plain, for the Editor app and the Machine report: a block
 caret on the character and a selection in the caret's colours, as ever.
 And `code = "lua"`, as `docs/kosmos-ide.html` draws it: Lua coloured by

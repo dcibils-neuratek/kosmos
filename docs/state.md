@@ -137,10 +137,16 @@ its own - fixed and rerun on both boards (18.206).
   Shift+Tab, Ctrl+/. `tools/run_editor.py` types at the Editor app through
   QEMU's keyboard on both boards and reads the file back.
 
-**Next, in order**: the IDE's window (6n step 2) - the tree, file tabs, the
-editor, the Output panel, the button bar, opening, saving, the last
-project; then Run and Stop (3), checking (4), suggestions (5), Cafesa3D's
-Script panel (6); the tutorial's lessons (7).
+- **Step 2, the window** (18.209). `wm ide` - the project as a tree with
+  Kosmos to read under it, a tab a file, the code editor, Output, the
+  button bar, the foot; `/home/.ide` remembers. The kit gained `ui.tabs`,
+  a header's `after` bar, a button's `hint`, disabled icon buttons and
+  `window:remove`. In the dated screenshot from now on.
+
+**Next, in order**: Run and Stop (6n step 3) - the file as its own process,
+its `print` in Output by serving the console's protocol; then checking (4),
+suggestions (5), Cafesa3D's Script panel (6); the tutorial's lessons (7).
+And 6q, the Deskbar focus check that fails now and then.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor

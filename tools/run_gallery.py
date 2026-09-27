@@ -76,9 +76,14 @@ ABS = 32767
 # improve the screenshots". Cafesa3D opens on its Rendered view - the scene
 # ray traced - and `tile` gives a window that size two cells by two.
 #
+#
+# **And Kosmos IDE, the day it opened** (`roadmap.md` 6n): on `/lib/files.lua`,
+# whose code starts on its thirteenth line, so the picture shows Lua in the
+# IDE's colours rather than a page of comments.
+#
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "cube3d",
-        "cafesa3d:--rendered", "tile"]
+        "cafesa3d:--rendered", "ide:/lib/files.lua", "tile"]
 
 
 def png(width, height, rgb):

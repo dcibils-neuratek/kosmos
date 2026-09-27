@@ -10538,3 +10538,28 @@ to catch the Deskbar painting from a list asked for before the focus
 moved, so a failure that comes and goes may be that fault happening now
 and then.
 
+## 18.209 Kosmos IDE's window
+
+Step 2 of the IDE (roadmap 6n): `user/bin/apps/ide.lua`, built from the
+kit's widgets as `docs/kosmos-ide.html` draws it - the project as a tree
+with Kosmos's `/bin`, `/lib` and kits under it, read only; a tab an open
+file, each its own `ui.editor` in the code look so each keeps its own undo;
+Output below; the button bar after the subject; the caret's line and
+column in the foot. It remembers the project, its files and the one in
+front in `/home/.ide`.
+
+**`tools/run_ide.py`, in `make test` as `arm-ide` and `x86-ide`, 13
+seconds a board, 7 checks**: a file made at the prompt and opened with
+`wm ide:` it, its folder the project; the keyword colour of either of the
+drawing's palettes where the editor is; then with QEMU's keyboard, Tab on
+the third line indenting it - a code editor keeps Tab where every other
+widget passes it on - Ctrl+/ and Ctrl+Z, a new last line, Ctrl+S, and the
+file read back exactly; `wm ide` alone coming back to the same project
+and file; and Ctrl+W twice closing the tab. **Control**: an editor that
+gives Tab away fails two - the indent never happens, and every key after
+it lands elsewhere.
+
+The dated screenshot has the IDE in it from now on, on `/lib/files.lua`
+(`tools/run_gallery.py`).
+
+The gate with step 2: 46 of 46 in 9:02.

@@ -2198,8 +2198,14 @@ processors, and still what follows USB:
       the kit's Lua runs (`testing.md` 18.208): `/lib/textbuf.lua` holds the
       text and its undo, `/lib/lualex.lua` colours it, and `ui.editor` is
       the view, plain or `code = "lua"`.
-   2. **The window** - the tree (`ui.tree`), the file tabs, the editor, the
-      panel below and the button bar; opening, saving, the last project.
+   2. **DONE on 27 September - the window** - the tree (`ui.tree`), the
+      file tabs, the editor, the panel below and the button bar; opening,
+      saving, the last project (`testing.md` 18.209). `wm ide`, `wm
+      ide:<folder>` or `wm ide:<file>`; `/home/.ide` remembers the project,
+      its files and the one in front. Kosmos's `/bin`, `/lib` and kits are
+      in the tree, read only. Run, Stop and Check are drawn and disabled
+      until steps 3 and 4; Ctrl+W twice closes a tab, the window manager
+      keeping the first.
    3. **Run and Stop** - the file as its own process, whose `print` the
       Output panel receives as a Terminal does, by serving the console's
       protocol; its end and its exit code said.

@@ -130,6 +130,12 @@ SUITES = [
     Suite("arm-editor", ["python3", "tools/run_editor.py", ARM]),
     Suite("x86-editor", ["python3", "tools/run_editor.py", X86], x86=True),
 
+    # **Kosmos IDE's window** (`roadmap.md` 6n, step 2): a file opened in
+    # the code look, Tab kept to indent, saved, the project remembered and a
+    # tab closed - typed at through QEMU's keyboard, on both boards.
+    Suite("arm-ide", ["python3", "tools/run_ide.py", ARM]),
+    Suite("x86-ide", ["python3", "tools/run_ide.py", X86], x86=True),
+
     # **A film's sound, heard** (`roadmap.md` 4e): a film whose sound is an
     # AAC conformance stream's first three seconds, played through
     # `/lib/video.lua` with QEMU recording what came out - every sample
