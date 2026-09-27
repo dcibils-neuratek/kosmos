@@ -2208,6 +2208,16 @@ processors, and still what follows USB:
    case-preserving, as a Mac is, or every path typed as it is named; and
    `/Dev`, `/Drives`, `/App` and `/Temporary` for what is outside both.
 
+6u. **AGREED on 27 September - one scrollbar, everywhere.** Diego, seeing
+   the IDE's thin one: "Why scrollbars here look flat and in other apps look
+   different?", and then "Let's just have 1 scrollbars style go all the os".
+   Three things made them differ: the look (a pill in Plex and Endeavour, a
+   trough with a raised thumb and arrows in Classic and Studio), the height
+   (in those two a bar under 60 pixels drops its arrows), and the browser,
+   which draws its own. So one scrollbar in every look, at every height and
+   in every application, the browser's through the kit. Asked: the pill or
+   the trough with arrows.
+
 6t. **AGREED on 27 September - the ELF loader: a program loaded from a
    file.** Diego: "i want to go ahead and make the elf loader so we can
    start shipping a really usable system with games on /home". Every
