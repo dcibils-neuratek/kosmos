@@ -1240,6 +1240,15 @@ processors, and still what follows USB:
        - become scripts Cafesa3D runs itself.
      Diego, the same afternoon: "Scripting proposal suits perfectly". It
      comes after saving, since a script wants to be saved with its scene.
+     **Drawn the same day** (`docs/cafesa3d-scripting.html`), and **its five
+     choices answered that night**, each as the page drew it: the panel
+     **beside the view**; a Run **replaces** what the last one made, so
+     changing a number and running again turns a knob; **one script a
+     scene**; it runs **on Ctrl Enter only**, never by itself while typing;
+     and **Shift F4** opens it. And a sixth: **the editor in the panel is
+     the IDE's** (6n) - one component for text, the cursor, selection,
+     undo and colouring Lua, used by both - so the IDE is drawn first and
+     scripting is built on what it makes.
    5. **DONE on 26 September - saving and opening glTF** (`testing.md`
       18.199). Diego, 26 September: "We need a way
       to save scenes in cafesa", "If not the app is useless". The format is
@@ -1297,7 +1306,7 @@ processors, and still what follows USB:
       counted and said, not read yet. **Next here**: pictures on materials
       (image textures), which is what most downloaded models wear and none
       of this reads yet - an FBX's embedded ones included.
-   5d. **TO DESIGN - rendering on several machines.** Diego, 26 September:
+   5d. **AGREED on 26 September, as `docs/renderfarm.md` has it - rendering on several machines.** Diego, 26 September:
       "What if we have a cluster of kosmos machines with cafesa installed
       and we could use these machines as a rendering node", "a main node and
       slave nodes that act as rendering nodes so we can use not only the
@@ -1332,7 +1341,8 @@ processors, and still what follows USB:
       built. **Written up on 26 September: `docs/renderfarm.md`** - split by
       passes rather than tiles, a `rendernode` program with the kit and the
       network and nothing else, a declared protocol, a farm's key, and five
-      steps, the first tested with two QEMU machines on a socket network.
+      steps, the first tested with two QEMU machines on a socket network. **Agreed as
+      written** by Diego that night, to be built after scripting and the IDE.
    5e. **DONE on 26 September - the Render tab's settings, and Save as PNG**
       (`testing.md` 18.201): Final or Preview, samples, the view's
       samples, bounces and the size - four chips up to 3440 by 1440, or
@@ -2090,8 +2100,9 @@ processors, and still what follows USB:
    app is (`docs/`), and **built as a component first**: Cafesa3D's script
    panel (4l, AGREED) wants the same editor inside a window of its own, so
    the editing - text, the cursor, selection, undo, colouring Lua - is one
-   piece both use rather than two with two sets of bugs. Proposed to Diego
-   on 26 September and his to agree.
+   piece both use rather than two with two sets of bugs. **Agreed by Diego
+   the same night**, component and all; the IDE's drawing comes before
+   Cafesa3D's scripting is built.
 
 6m. **AGREED on 26 September - Processes shows each process's threads.** Diego,
    with a photograph of the window: "processes need a threads column to

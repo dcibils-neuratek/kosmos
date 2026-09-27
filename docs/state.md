@@ -76,8 +76,18 @@ port, its four tests, `docs/litexl.md`, `LITEXL` and `litexl-check`;
 `MEGA=1` is FULL plus Quake (18.204). The IDE is 6n: drawn first, and built
 as the editor component Cafesa3D's script panel will share. Gate 39 of 40
 - `x86-film` lost a period of sound under load and passed alone - and MEGA
-links on both boards. The scripting mockup's five choices are still his,
-listed to him again that night.
+links on both boards.
+
+**The M700 stick works** - "stick works great on m700!", "cafesa is
+incredibly fast!" - and Diego called it stable: `kosmos-usb-0.10.169-stable.img`
+beside the ThinkPad's 0.10.88. **And his answers, that night**: scripting as
+the mockup drew it (beside the view, Run replaces, one script, Ctrl Enter,
+Shift F4); one editor component for the script panel and the IDE, so the
+IDE is drawn first (6n); the render farm agreed as written (5d). Pushed as
+0.10.170.
+
+**Next, in order**: Processes' Threads column (6m); the IDE's drawing
+(6n); the editor component; Cafesa3D's scripting on it.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor

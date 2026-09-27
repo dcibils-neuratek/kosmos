@@ -8,7 +8,8 @@ the current machine but remote nodes of other machines", "This might need a
 good architecture behind the ray tracer rendering plugin so it can leverage
 multiple nodes as well as multiple cores".
 
-This page is for agreeing the shape. Nothing in it is built.
+**Agreed as written**, Diego, 26 September; to be built after Cafesa3D's
+scripting and the Lua IDE (`roadmap.md` 4l, 5d). Nothing in it is built yet.
 
 ---
 
