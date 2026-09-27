@@ -1002,6 +1002,18 @@ processors, and still what follows USB:
    has no such engine, so every step of it would be tried on the machines;
    and the Raspberry Pi 5 has no H.264 in hardware at all - only an HEVC
    decoder - so on the target, H.264 stays software either way.
+   **A study of the effort on the M700, asked on 27 September** - Diego:
+   "study the effort to integrate gpu decoding and encoding capabilities on
+   m700 using intel hd graphics driver *might take it from linux*". The
+   M700 is Skylake, and its graphics - HD 510 or HD 530, by which processor
+   it has, which `neofetch` on it will say - has a media engine that
+   decodes and encodes H.264. The study says, with numbers, what a port from
+   Linux would be: which parts of i915 are needed to reach the video
+   engine alone (no display, no 3D), how much of Intel's media driver sits
+   above them, what Kosmos's driver model gives it and lacks - a GPU's
+   memory, its firmware, interrupts from a process - and what is gained
+   against the software decoder on that machine, measured. A document for
+   Diego to decide from, not a start on the driver.
 4i. **WANTED since 19 September, not scheduled - low-latency audio.** Diego:
    "I plan kosmos to be a multimedia monster so we need to have low latency
    audio". An audio editor and composer (4f) is the program that asks it: a
@@ -2126,6 +2138,76 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6zi. **WANTED on 27 September - a Mouse page in Preferences.** Diego:
+   "preferences app need a mouse setting panel (pointer speed, mouse click
+   speed)". **Pointer speed**: the board adds every relative device into one
+   position (`hal/pc/pointer.c`) and the window manager moves the arrow by
+   it, so the speed is a factor the window manager applies - and on a
+   tablet, which says where it is rather than how far it went, it does not
+   apply at all, which the page has to say rather than offer a slider that
+   does nothing. **Click speed**: what counts as a double click is a second
+   by the counter today (`ui.md` 16.8c), a number in the kit, so it becomes
+   a setting every window reads. Both kept in `/Home/Preferences` (6s d).
+   **Drawn first**, as a page beside the others in `docs/preferences.html`.
+
+6zh. **WANTED on 27 September - "Grooves", Diego's LÖVE audio production
+   app, brought to Kosmos.** Diego: "i have a lua love2d audio production
+   app that i want to convert into kosmos music production app called
+   'Grooves'. It needs love2d library so we need to think if we just
+   convert the app to use our current kits for audio, drawing, etc. It
+   does support USB MIDI for ableton keyboard mini as of now". **The
+   question to answer first, with the source in front of us**: a LÖVE
+   layer - `love.graphics`, `love.audio`, `love.timer` written over the
+   Graphics, Audio and Game Kits, inside Grooves' own process, which
+   `CLAUDE.md` allows ("compatibility inside a process yes") - against
+   rewriting its drawing and sound onto the kits directly. The layer is
+   quicker to a running Grooves and keeps it running under LÖVE on the Mac;
+   the rewrite is what makes it a Kosmos application rather than a guest
+   in one, and is what 4i's low-latency audio is for. Which, depends on how
+   much of LÖVE it uses - a count, not a guess. **Needs** 6zg for its
+   keyboard, and 4i for sound that answers a key. Drawn first, as every
+   app is. The source is Diego's to hand over when it starts.
+
+6zg. **WANTED on 27 September - a USB MIDI keyboard.** Diego: "usb midi
+   keyboard support", and Grooves plays from one (6zh). A USB MIDI device
+   is USB's Audio class, MIDIStreaming subclass: bulk endpoints carrying
+   four-byte event packets - note on, note off, a controller - which is
+   the class driver's whole job, on the xHCI stack that already drives a
+   mouse, a camera and sticks (`docs/usb.md`). What it hands on is a
+   stream of events with the counter's time on each, so a program hears
+   *when* a key went down and not only that it did; a shape in a header,
+   as `/Devices/audio`'s is. Tested under QEMU as the camera was, with the
+   real keyboard passed through from the Mac (`usb-host`).
+
+6zf. **WANTED on 27 September - a PlayStation emulator.** Diego:
+   "playstation emulator psx". As the Super Nintendo was: an emulator in C,
+   vendored whole, a window that draws its own pixels and the Game Kit's
+   pads. The candidates are PCSX-ReARMed (C, fast on ARM, the Pi's usual
+   choice) and Beetle PSX (Mednafen's, exact and slower); chosen on how
+   well it runs here, not on its terms. It needs a PlayStation BIOS, which
+   is Diego's to put in `/Home` beside his games and is never in the tree
+   or a release, as his ROMs are not.
+
+6ze. **WANTED on 27 September - a Discord client.** Diego: "discord client
+   (might use discordia lua library)". Discord is a WebSocket gateway for
+   what happens and HTTPS for what is asked, both over TLS, with JSON on
+   both. Discordia is Lua, which is the attraction, and it is written on
+   luvit - libuv's event loop and its coroutine style - so it would need
+   that shape underneath or its gateway rewritten on the Network Kit. What
+   Kosmos needs either way and has not got: TLS a program can use, and
+   WebSocket framing. A window, drawn first.
+
+**Also asked on 27 September, for items already here**:
+- **The Kosmos IDE tutorial** - "still pending": 6n's step 6e, the lessons
+  from a button to 3D, drawn and agreed before it is written.
+- **A screen recording application** - "screen recording app that stores
+  videos as mp4": 6x, an application of its own rather than only a key,
+  saving into `/Home/Captures`.
+- **What GPU video would cost on the M700** - "study the effort to
+  integrate gpu decoding and encoding capabilities on m700 using intel hd
+  graphics driver *might take it from linux*": a study, in 4h, before any
+  of it is decided.
+
 6zd. **AGREED on 27 September - the Deskbar's menu in two layers:
    `/Kosmos/Deskbar` shipped, `/Home/Deskbar` the person's.** Diego: "the
    deskbar launchers are on /home while they really are delivered with
@@ -2286,7 +2368,9 @@ processors, and still what follows USB:
    (`opt/kosmos/home`) - so the Drives window and Tracker's sidebar call it
    Home and open `/Home`.
 
-6x. **WANTED, for later, on 27 September - recording the screen.** Diego:
+6x. **WANTED, for later, on 27 September - recording the screen, as an
+   application of its own** (Diego, the same evening: "screen recording app
+   that stores videos as mp4"). Diego:
    "in the future I want screen recording capabilities in kosmos that will
    store mp4 video files in captures". A recording of what is on the screen,
    saved as an MP4 in `/Home/Captures` beside the camera's (6w). **What
