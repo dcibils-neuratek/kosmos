@@ -183,8 +183,10 @@ changes in the IDE; a showcase of the system from a developer's side. The
 lesson plan with the bundled apps in it is drawn and agreed first. The
 house, car and plane stay glTF files ("not for now"). And 6q, the Deskbar
 focus check and the Large icons check, which each fail now and then under
-the whole gate and pass alone. Commits unpushed since 0.10.171: the IDE's
-steps 0 to 5 and 6a to 6c.
+the whole gate and pass alone. **0.10.172 carries the IDE's steps 0 to 5
+and 6a to 6d**, pushed at Diego's word ("I will make a stick when 6d is
+completed and pushed and try the new stuff myself"), with a stick for him
+to try it on.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor
