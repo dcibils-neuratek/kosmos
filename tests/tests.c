@@ -1312,7 +1312,7 @@ static void waits_for_children(void *arg)
         child->thread->sched.cpu = 1 + round % (cores - 1);
         process_start(child);
 
-        (void)process_wait(wait_parent, &id, false);
+        (void)process_wait(wait_parent, &id, NULL, false);
 
         if (id != want) {
             wait_ok = false;

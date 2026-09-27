@@ -1489,10 +1489,15 @@ if role == R_OWNED_MAIN then
 
   check(sys.kill(server), "the server could not be killed")
 
-  -- Nothing else can end first: the client is blocked. Not checked by id,
-  -- because a killed process ends with -1 and `sys.wait` reports any
-  -- negative code as "no children".
-  sys.wait()
+  -- Nothing else can end first: the client is blocked. **Checked by id and
+  -- code now**: a killed process ends with -1, and `sys.wait` read any
+  -- negative code as "no children" - after the kernel had reaped it, so
+  -- its end was lost. This said so and waited without looking, until the
+  -- IDE's Stop needed the answer (27 September).
+  local killed, killed_code = sys.wait()
+  check(killed == server and killed_code == -1,
+        ("the killed server was collected as %s, code %s - not %s, -1")
+        :format(tostring(killed), tostring(killed_code), tostring(server)))
 
   -- Counted before the client's report is waited for, because the count
   -- needs no waiting: `process_exit` gives the endpoints back before a wait
@@ -1581,7 +1586,11 @@ if role == R_NAMES_MAIN then
                       .. "name: the next was registered as " .. tostring(name))
 
   check(sys.kill(second), "the second holder could not be killed")
-  sys.wait()                      -- not by id: see R_OWNED_MAIN
+
+  -- By id, which a killed child's -1 used to make impossible (R_OWNED_MAIN).
+  local gone, code = sys.wait()
+  check(gone == second and code == -1, "the second holder was not collected "
+        .. "as killed: " .. tostring(gone) .. ", " .. tostring(code))
 
   local third
   third, name = hold("serve", "third")
@@ -1599,8 +1608,18 @@ if role == R_NAMES_MAIN then
   -- The registry serves until it is stopped, and so does the last holder.
   check(sys.kill(third), "the third holder could not be killed")
   check(sys.kill(registry), "the registry could not be stopped")
-  sys.wait()
-  sys.wait()
+
+  -- Both collected, in whichever order they ended, each as killed.
+  local ended = {}
+
+  for _ = 1, 2 do
+    local id, killed = sys.wait()
+
+    if id then ended[id] = killed end
+  end
+
+  check(ended[third] == -1 and ended[registry] == -1,
+        "the third holder and the registry were not both collected as killed")
   sys.exit(0)
 end
 

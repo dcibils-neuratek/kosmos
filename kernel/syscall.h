@@ -47,7 +47,7 @@
 #define SYS_REPLY       6   /* (sender, msg)          -> 0 or error    */
 #define SYS_GETCHAR     7   /* ()                     -> byte, or -1    */
 #define SYS_SPAWN       8   /* (arg, caps, ncaps, flags) -> child id     */
-#define SYS_WAIT        9   /* (&id)                  -> exit code       */
+#define SYS_WAIT        9   /* (&wait_result, flags)  -> 0 or error      */
 #define SYS_TICKS      10   /* ()                     -> monotonic ticks  */
 #define SYS_SCREEN     11   /* (&info)                -> 0 or error       */
 #define SYS_SYSINFO    12   /* (&info)                -> 0 or error       */
@@ -678,6 +678,19 @@ struct screen_info {
  * whether it is a server or an app - is decided in Lua, where the tables
  * that decide such things belong.
  */
+/*
+ * **What SYS_WAIT says about the child it collected**: its id and its exit
+ * code, written here, while the call itself answers only whether there was
+ * one - 0, `SYS_NO_CHILD_READY` or `SYS_ERR_NO_CHILD`. The code was the
+ * call's return, and a child is free to end with any number: -1, which is
+ * what a killed one ends with, read as "no children", and the child had
+ * already been reaped (`process_wait`).
+ */
+struct wait_result {
+    uint64_t id;
+    int64_t  code;
+};
+
 struct proc_info {
     uint32_t id;
     uint32_t state;             /* the thread's: ready, running, blocked */

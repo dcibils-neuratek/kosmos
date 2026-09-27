@@ -163,9 +163,11 @@ static inline long kosmos_spawn(unsigned long arg, const int *caps,
  * `nonblocking` returns SYS_NO_CHILD_READY instead of waiting when children
  * exist but none has exited - which is what draining them looks like.
  */
-static inline long kosmos_wait(uint64_t *id, int nonblocking)
+/* A child that has ended: its id and exit code into `out`, and 0 - or
+ * `SYS_NO_CHILD_READY`, or `SYS_ERR_NO_CHILD`. See `struct wait_result`. */
+static inline long kosmos_wait(struct wait_result *out, int nonblocking)
 {
-    return sys2(SYS_WAIT, (long)(uintptr_t)id, nonblocking ? 1 : 0);
+    return sys2(SYS_WAIT, (long)(uintptr_t)out, nonblocking ? 1 : 0);
 }
 
 static inline void kosmos_yield(void)

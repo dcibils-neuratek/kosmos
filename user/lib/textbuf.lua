@@ -371,6 +371,17 @@ function textbuf:newline(indent)
   self:insert("\n" .. lead)
 end
 
+--
+-- **Text put on the end, and nothing recorded**: an Output panel's, which a
+-- program writes to and nobody edits, and which would otherwise keep every
+-- line it was ever sent twice - once in the text and once in the undo.
+--
+function textbuf:append(text)
+  local y = #self.lines
+
+  splice(self, y, #self.lines[y] + 1, y, #self.lines[y] + 1, tostring(text or ""))
+end
+
 function textbuf:select_all()
   self.anchor = { 1, 1 }
   self.cy = #self.lines

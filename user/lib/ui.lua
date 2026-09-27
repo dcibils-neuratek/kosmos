@@ -3870,6 +3870,7 @@ function ui.editor(spec)
     buf:set(body)
     self.top = 1
     self.marks = {}
+    self.colours = nil
     known = 0
     after_edit(self)
   end
@@ -3897,6 +3898,35 @@ function ui.editor(spec)
     buf:insert(text)
     after_edit(self)
     return true
+  end
+
+  --
+  -- Text on the end, past `read_only` and not undoable: what a program
+  -- printed, arriving in the IDE's Output panel. The caret follows when it
+  -- was already on the last line, so a panel somebody scrolled up to read is
+  -- not pulled away from what they were reading.
+  --
+  function v:append(text, colour)
+    local following = (buf.cy == #buf.lines)
+    local from = #buf.lines
+
+    buf:append(text)
+
+    if colour then
+      self.colours = self.colours or {}
+
+      for n = from, #buf.lines do
+        if n < #buf.lines or buf.lines[n] ~= "" then self.colours[n] = colour end
+      end
+    end
+
+    if following then
+      buf.cy = #buf.lines
+      buf.cx = #buf.lines[buf.cy] + 1
+      self.followed = nil
+    end
+
+    after_edit(self)
   end
 
   function v:undo()
@@ -4223,7 +4253,10 @@ function ui.editor(spec)
         end
 
         if not from then
-          g:text(x0, y, vis, theme.text, theme.sunken, "mono")
+          -- A line may have a colour of its own - the Output panel's run
+          -- and end lines - and every other is the text's.
+          g:text(x0, y, vis, self.colours and self.colours[n] or theme.text,
+                 theme.sunken, "mono")
         else
           --
           -- Three pieces, and the middle one is the caret's own colours.

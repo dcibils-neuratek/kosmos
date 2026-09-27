@@ -311,6 +311,20 @@ do
 end
 
 --
+-- Appended: an Output panel's text, put on the end and never undone.
+--
+do
+  local b = textbuf.new("")
+
+  b:append("one")
+  b:append(" two\nthree\n")
+  b:append("four")
+  is(b, "one two\nthree\nfour\n", "appending did not put the text on the end")
+  check(#b.undos == 0 and not b.dirty, "appending made something to undo")
+  check(not b:undo(), "an append was undone")
+end
+
+--
 -- `changed_from`: the first line an edit touched, which is where the
 -- colourer starts again.
 --

@@ -672,23 +672,25 @@ void process_exit(struct process *p, int code);
 struct process *process_spawn(struct process *parent, unsigned long arg);
 
 /*
- * Waits for any exited child. Blocks until one has.
+ * Waits for any exited child, reaping it, so a supervisor that waits in a
+ * loop does not have to remember to.
  *
- * Returns its exit code and fills `*id`, or a negative result when the
- * caller has no children at all. The child is reaped, so a supervisor that
- * waits in a loop does not have to remember to.
- */
-/*
- * Waits for a child and returns its exit code, reaping it.
+ * Returns 0 with the child's id in `*id` and its exit code in `*code`; -1
+ * when the caller has no children at all; and, when `nonblocking`, -2 when
+ * children exist but none has exited - a shell draining the processes it
+ * spawned needs to stop without being told it has none.
  *
- * `nonblocking` makes it return -2 when children exist but none has exited,
- * which is distinct from -1 for no children at all. A shell draining the
- * processes it spawned needs to stop without being told it has none.
+ * **The code is never the return value.** It was, and a child's own code
+ * is any number at all: one killed ends with -1, which read as "no
+ * children" - and the child had been reaped already, so its end was lost,
+ * id and all. The IDE's Stop found it (`roadmap.md` 6n, step 3), and the
+ * Lua suite had been stepping round it for a month.
  *
  * The look and the sleep are one step under `processes_lock`, so a child
  * ending on another core cannot land its wake between them.
  */
-int process_wait(struct process *parent, unsigned *id, bool nonblocking);
+int process_wait(struct process *parent, unsigned *id, int *code,
+                 bool nonblocking);
 
 /*
  * Ends a child. Returns 0, or an error when `id` is not this process's

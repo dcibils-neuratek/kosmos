@@ -149,13 +149,55 @@ def main():
         check(said("ide: opened ", mark, 5) == FILE,
               "the file it came back with was not the one open before")
 
+        # **Run** (step 3): a program that prints and then fails on its
+        # second line, run with Ctrl+Enter as it is on the screen, and the
+        # IDE saying how it ended - the error's line found in what it wrote.
+        stop_desktop()
+        guest.type('fs.write("/home/development/r.lua", '
+                   '"print(\\"ran\\")\\nerror(\\"boom\\")\\n")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("wm ide:/home/development/r.lua")
+        said("ide: project ", mark, 90)
+        time.sleep(1.5)
+
+        mark = len(guest.seen)
+        press("ctrl-ret")
+        ended = said("ide: r.lua ", mark, 30)
+        printed = re.search(r"(\d+) lines printed$", ended or "")
+        check(ended is not None and ended.startswith("ended with an error at line 2")
+              and "boom" in ended and printed and int(printed.group(1)) >= 2,
+              "Ctrl+Enter did not run r.lua to its error on line 2, with what "
+              "it printed: %r" % ended)
+
+        # **Stop**: a program that never ends, run with F5 and stopped with
+        # Shift+F5.
+        stop_desktop()
+        guest.type('fs.write("/home/development/s.lua", "while true do end\\n")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("wm ide:/home/development/s.lua")
+        said("ide: project ", mark, 90)
+        time.sleep(1.5)
+
+        mark = len(guest.seen)
+        press("f5")
+        check(said("ide: s.lua, as process ", mark, 20) is not None,
+              "F5 did not start s.lua")
+        time.sleep(2)
+        mark = len(guest.seen)
+        press("shift-f5")
+        stopped = said("ide: s.lua ", mark, 20)
+        check(stopped is not None and stopped.startswith("stopped"),
+              "Shift+F5 did not stop s.lua: %r" % stopped)
+
         # Control-W twice: the prefix, then itself to the window - the tab closed.
         time.sleep(1.5)
         mark = len(guest.seen)
         guest.proc.stdin.write(b"\x17\x17")
         guest.proc.stdin.flush()
-        check(said("ide: closed ", mark, 10) == "c.lua",
-              "Control-W twice did not close the tab in front")
+        check(said("ide: closed ", mark, 10) == "s.lua",
+              "Control-W twice did not close the tab in front, s.lua")
 
         stop_desktop()
     finally:
@@ -167,10 +209,11 @@ def main():
             print("  " + f)
         return 1
 
-    print("PASS: %d checks on the IDE's window (a file opened with its folder "
-          "as the project, in the code look; Tab kept to indent, Ctrl+/ and "
-          "undo, a new line, Ctrl+S, the file exactly what the keys meant; the "
-          "project and its file remembered; a tab closed)" % checks)
+    print("PASS: %d checks on the IDE (a file opened with its folder as the "
+          "project, in the code look; Tab kept to indent, Ctrl+/ and undo, a new "
+          "line, Ctrl+S, the file exactly what the keys meant; the project and "
+          "its file remembered; a program run to its error with Ctrl+Enter, "
+          "another started with F5 and stopped with Shift+F5; a tab closed)" % checks)
     return 0
 
 

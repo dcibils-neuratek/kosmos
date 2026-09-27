@@ -9,6 +9,12 @@
 --   wm ide:/home/development      that folder as the project
 --   wm ide:/home/development/a.lua    that file, and its folder as the project
 --
+-- **Step 3, Run and Stop**: the file runs as its own process, as it is on
+-- the screen, with this window as its console - a program's `print` comes
+-- to the Output panel as it would to a Terminal, an application's window
+-- opens on the desktop - and how it ended is said, with the line of an
+-- error marked and a click away.
+--
 -- `docs/kosmos-ide.html` is the drawing, agreed as drawn ("the mockup is
 -- perfect!!!"), and `roadmap.md` 6n the steps. This is step 2, the window:
 -- the project as a tree with Kosmos itself under it to read, a tab a file,
@@ -117,14 +123,24 @@ local current = nil
 -- Said in the Output panel, and in the log for whoever drives this.
 local output
 
-local function say(text)
-  if output then
-    local was = output:content()
+-- The Output panel keeps this many lines, and then starts again with a
+-- line saying so, rather than growing as long as a program talks.
+local OUTPUT_MOST = 5000
 
-    output:set(((was == "\n") and "" or was) .. text .. "\n")
-    output:go_to(#output.lines, 1)
+local function out(text, colour)
+  if not output then return end
+
+  if #output.lines > OUTPUT_MOST then
+    output:set("")
+    output:append(("(the Output was cleared at %d lines)\n"):format(OUTPUT_MOST),
+                  theme.text_dim)
   end
 
+  output:append(text, colour)
+end
+
+local function say(text, colour)
+  out(text .. "\n", colour)
   print("ide: " .. text)
 end
 
@@ -447,7 +463,7 @@ function foot:draw(g)
 
   g:text(14, ty, words, theme.text_dim, nil, "ui")
 
-  local keys = "Ctrl S save    Ctrl N new    Ctrl O open    Ctrl / comment"
+  local keys = "Ctrl Enter run    Shift F5 stop    Ctrl S save    Ctrl / comment"
 
   g:text(self.w - 14 - gfx.measure(keys, "ui"), ty, keys, theme.text_dim, nil, "ui")
 end
@@ -495,16 +511,19 @@ local pill = ui.view{ w = gfx.measure("not running", "ui") + 18, h = 22 }
 pill.words = "not running"
 
 function pill:draw(g)
-  g:frame_round(0, 0, self.w, self.h, theme.line_soft, 11)
-  g:text(9, (self.h - gfx.height("ui")) // 2, self.words, theme.text_dim, nil, "ui")
+  local colour = self.live and theme.good or theme.text_dim
+
+  g:frame_round(0, 0, self.w, self.h, self.live and theme.good or theme.line_soft, 11)
+  g:text(9, (self.h - gfx.height("ui")) // 2, self.words, colour, nil, "ui")
 end
 
 local function icon(name, action)
   return ui.iconbutton{ icon = name, w = 30, h = 30, on_click = action }
 end
 
-local run = ui.button{ text = "Run", go = true, icon = "run", hint = "Ctrl Enter",
-                       disabled = true }
+-- Not `run`: that is the function a program starts another with.
+local run_button = ui.button{ text = "Run", go = true, icon = "run",
+                              hint = "Ctrl Enter" }
 local stop = ui.button{ text = "Stop", icon = "stop", hint = "Shift F5",
                         disabled = true }
 local check = ui.button{ text = "Check", icon = "check", hint = "F7",
@@ -522,10 +541,219 @@ local header = ui.header{
     icon("undo", function() if current then current.editor:undo() end end),
     icon("redo", function() if current then current.editor:redo() end end),
     divider(),
-    run, stop, check, pill,
+    run_button, stop, check, pill,
   },
-  right = { icon("more", function() say("Run is " .. later) end) },
+  right = { icon("more", function() say("the dots' menu is " .. later) end) },
 }
+
+--------------------------------------------------------------------------
+-- Running (step 3).
+--
+-- **This window is the console of what it runs**, as a Terminal is: its
+-- own endpoint, mounted as the child's `/dev/console` and speaking the
+-- console's protocol through the Console Kit - so a program cannot tell it
+-- is printing to an IDE, which is the namespace working as intended.
+--
+-- **The file as it is on the screen**, not as it was last saved: written to
+-- `/ramfs/.ide` under its own name and run from there, in its own folder,
+-- with the scratch path turned back into the file's in everything it says -
+-- so an error names the line in the file you are looking at.
+--------------------------------------------------------------------------
+
+local con = use("/kits/console")
+local console = sys.endpoint()
+
+local RUN_DIR = "/ramfs/.ide"
+local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+
+-- What is running: `{ id, path, scratch, started, printed, line, error }`.
+local running = nil
+
+local function literally(text)
+  return (text:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"))
+end
+
+local function start()
+  local f = current
+
+  if not f or not f.editor.code then
+    say("Run runs a Lua file - open one first")
+    return
+  end
+
+  if running then
+    running.stopped = true
+    sys.kill(running.id)
+    running = nil
+  end
+
+  fs.send(RUN_DIR, { type = "mkdir" })
+
+  local scratch = RUN_DIR .. "/" .. base(f.path)
+  local body = f.editor:content()
+  local ok, why = fs.write(scratch, body)
+
+  if not ok then
+    say(("could not run %s: %s"):format(base(f.path), tostring(why)), theme.bad)
+    return
+  end
+
+  local app = body:find("%-%- kosmos: application") ~= nil
+  local started, err, id = run(scratch, "", true,
+                               { ["/dev/console"] = { cap = console,
+                                                      proto = "console" } },
+                               f.path:match("^(.*)/") or "/")
+
+  if not started then
+    say(("could not run %s: %s"):format(base(f.path), tostring(err)), theme.bad)
+    return
+  end
+
+  f.editor:clear_marks()
+  running = { id = id, path = f.path, scratch = scratch, started = sys.ticks(),
+              printed = 0 }
+  say(("%s, as process %s - %s"):format(base(f.path), tostring(id),
+      app and "an application: its window opens on the desktop"
+          or "a program: what it prints is below"), theme.accent)
+end
+
+local function stop_run()
+  if not running then return end
+
+  running.stopped = true
+
+  local ok, why = sys.kill(running.id)
+
+  if not ok then say("could not stop it: " .. tostring(why), theme.bad) end
+end
+
+-- How it ended, said, and an error's line marked in its file.
+local function finish(r, code)
+  local seconds = (sys.ticks() - r.started) // counter_hz
+  local words, colour
+
+  if r.stopped then
+    words, colour = ("stopped, after %d s"):format(seconds), theme.text_dim
+  elseif r.line then
+    words, colour = ("ended with an error at line %d, after %d s: %s")
+                      :format(r.line, seconds, r.error), theme.bad
+  else
+    words = ("ended, code %s, after %d s"):format(tostring(code), seconds)
+    colour = (code == 0) and theme.good or theme.bad
+  end
+
+  say(("%s %s, %d lines printed"):format(base(r.path), words, r.printed), colour)
+
+  local f = r.line and find_open(r.path)
+
+  if f then
+    f.editor:mark(r.line, "error")
+    f.editor:go_to(r.line, 1)
+  end
+end
+
+-- The console's protocol, as far as a program can tell.
+local function serve()
+  local changed = false
+
+  while true do
+    local bytes, who = sys.receive_raw(console, true)
+
+    if not bytes then return changed end
+
+    local req = con.decode_request(bytes)
+    local reply = {}
+
+    if not req then
+      reply = { error = con.ERR_BAD_OP }
+    elseif req.op == con.WRITE then
+      local text = tostring(req.text or "")
+      local colour = nil
+
+      if running then
+        text = text:gsub(literally(running.scratch), running.path)
+        running.printed = running.printed + select(2, text:gsub("\n", ""))
+
+        local line, why = text:match(literally(running.path) .. ":(%d+): ([^\n]*)")
+
+        if line then
+          running.line, running.error = tonumber(line), why
+          colour = theme.bad
+        end
+      end
+
+      out(text, colour)
+    elseif req.op == con.READ then
+      -- Nothing typed in the IDE reaches a program yet: said, not hung.
+      reply = { error = con.ERR_NO_READER }
+    elseif req.op ~= con.POLL and req.op ~= con.KEYS then
+      reply = { error = con.ERR_BAD_OP }
+    end
+
+    pcall(sys.reply_raw, who, con.encode_reply(reply))
+    changed = true
+  end
+end
+
+run_button.on_click = function() start() end
+stop.on_click = function() stop_run() end
+
+--
+-- Every pass: the console served, the child collected when it ends, and
+-- the pill's seconds - awake while something runs, asleep otherwise.
+--
+function win:on_frame()
+  local changed = serve()
+
+  if running then
+    local id, code = sys.wait(true)
+
+    if id and running and id == running.id then
+      local r = running
+
+      running = nil
+      finish(r, code)
+      changed = true
+    end
+  end
+
+  local shown = running and ((sys.ticks() - running.started) // counter_hz)
+
+  if shown ~= self.shown_seconds then
+    self.shown_seconds = shown
+    changed = true
+  end
+
+  self.poll_wait_ticks = running and 1 or nil
+  return changed
+end
+
+-- A click on a line of Output that names a line of an open file goes there.
+local output_mouse = output.mouse
+
+function output:mouse(action, x, y)
+  local handled = output_mouse(self, action, x, y)
+
+  if action == "press" then
+    local line = self.buf.lines[self.buf.cy] or ""
+
+    for _, f in ipairs(open) do
+      local n = line:match(literally(f.path) .. ":(%d+):")
+
+      if not n and line:find(base(f.path), 1, true) then
+        n = line:match("error at line (%d+)")
+      end
+
+      if n then
+        show(f)
+        f.editor:go_to(tonumber(n), 1)
+        break
+      end
+    end
+  end
+
+  return handled
+end
 
 --------------------------------------------------------------------------
 -- What changes with every key: a tab's dot, the header's words. Read at
@@ -548,6 +776,22 @@ local header_measure = header.measure
 function header:measure()
   self.sub = base(project)
              .. (current and ("  \u{b7}  " .. relative(current.path)) or "")
+
+  -- Run again while something runs, Stop offered only then, and the pill
+  -- saying for how long - as the drawing's running state has them.
+  local text = running and "Run again" or "Run"
+
+  if run_button.text ~= text then
+    run_button.text = text
+    run_button:fit()
+  end
+
+  stop.disabled = (running == nil)
+  pill.words = running and ("running, %d s"):format(win.shown_seconds or 0)
+               or "not running"
+  pill.live = running ~= nil
+  pill.w = gfx.measure(pill.words, "ui") + 18
+
   header_measure(self)
 end
 
@@ -556,6 +800,13 @@ end
 --------------------------------------------------------------------------
 
 function win:on_key(c)
+  local k, mods = ui.keyparts(c)
+
+  -- Ctrl+Enter or F5 runs, Shift+F5 stops: the drawing's keys, and the
+  -- same as Cafesa3D's Script panel will have.
+  if (k == 13 and mods == ui.CTRL) or c == ui.F[5] then start() return true end
+  if k == ui.F[5] and mods == ui.SHIFT then stop_run() return true end
+
   if c == 19 then save() return true end                    -- Ctrl S
   if c == 14 then new_file() return true end                -- Ctrl N
   if c == 15 then open_chosen() return true end             -- Ctrl O

@@ -10563,3 +10563,36 @@ The dated screenshot has the IDE in it from now on, on `/lib/files.lua`
 (`tools/run_gallery.py`).
 
 The gate with step 2: 46 of 46 in 9:02.
+
+## 18.210 Run and Stop in the IDE, and a killed child's end no longer lost
+
+Step 3 of the IDE (roadmap 6n): Ctrl+Enter or F5 runs the file in front as
+its own process, as it is on the screen - written to `/ramfs/.ide` under its
+own name and run from its own folder - with the IDE's endpoint mounted as
+its `/dev/console`, served through the Console Kit as a Terminal serves it.
+Output says it started and as what, shows what it printed, and says how it
+ended: its code, or its error and the line, which is marked red in the file
+and a click away. Shift+F5 stops it. The scratch path is turned back into
+the file's in everything it says.
+
+**Stop found a kernel fault.** `process_wait` returned the child's exit code
+as its own result, and SYS_WAIT read -2 as "none ready" and every other
+negative as "no children" - so a killed child, which ends with -1, was
+reaped and then reported as nothing: its end lost, id and all. The Lua
+suite had been waiting for killed children "not by id" because of it since
+August. SYS_WAIT writes a `struct wait_result` - id and code - and returns
+only 0, `SYS_NO_CHILD_READY` or `SYS_ERR_NO_CHILD`.
+
+**`luatest.lua`, roles 41 and 44, in the kernel suite on both boards**: the
+killed server collected by id with -1, the second holder the same, and the
+third holder and the registry both, in whichever order they end - where each
+used to wait without looking. **Control**: a binding that reads a negative
+code as "no children" again fails both, and two tests after them.
+
+**`tools/run_ide.py`, now 10 checks a board**: a program that prints and then
+fails on its second line, run with Ctrl+Enter, ends "with an error at line
+2" and "boom", with what it printed counted; another that never ends,
+started with F5 and stopped with Shift+F5. **Control**: without the wait fix,
+the stop is never said.
+
+The gate with step 3: 46 of 46 in 8:47.

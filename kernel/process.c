@@ -1029,7 +1029,8 @@ struct process *process_spawn(struct process *parent, unsigned long arg)
     return child;
 }
 
-int process_wait(struct process *parent, unsigned *id, bool nonblocking)
+int process_wait(struct process *parent, unsigned *id, int *code,
+                 bool nonblocking)
 {
     unsigned i;
 
@@ -1059,10 +1060,12 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
             }
 
             if (c->exited) {
-                int code = c->exit_code;
-
                 if (id != NULL) {
                     *id = c->id;
+                }
+
+                if (code != NULL) {
+                    *code = c->exit_code;
                 }
 
                 /* Reaped here, so a supervisor looping on wait does not have
@@ -1072,7 +1075,7 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
                  * is still writing to. */
                 c->in_use = false;
                 spin_unlock(&processes_lock, flags);
-                return code;
+                return 0;
             }
 
             any = true;

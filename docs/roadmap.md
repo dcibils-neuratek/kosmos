@@ -2206,9 +2206,13 @@ processors, and still what follows USB:
       in the tree, read only. Run, Stop and Check are drawn and disabled
       until steps 3 and 4; Ctrl+W twice closes a tab, the window manager
       keeping the first.
-   3. **Run and Stop** - the file as its own process, whose `print` the
-      Output panel receives as a Terminal does, by serving the console's
-      protocol; its end and its exit code said.
+   3. **DONE on 27 September - Run and Stop** - the file as its own
+      process, whose `print` the Output panel receives as a Terminal does,
+      by serving the console's protocol; its end and its exit code said
+      (`testing.md` 18.210). Run as it is on the screen, from `/ramfs/.ide`,
+      the scratch path turned back into the file's in what it says; an
+      error's line marked and a click away. Stop found `SYS_WAIT` losing a
+      killed child's end; fixed in the kernel.
    4. **Checking** - Lua's own parser as you type, then luacheck, vendored,
       given the names a Kosmos program has (`tools/luaglobals.py`'s list).
       The host already has a `tools/luacheck.c`, which only parses: one of

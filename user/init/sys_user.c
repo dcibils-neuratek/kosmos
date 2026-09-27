@@ -1063,26 +1063,28 @@ static int l_spawn(lua_State *L)
     return 1;
 }
 
+/* The id and exit code of a child that has ended - any code, a killed
+ * child's -1 included, which read as "no children" until 27 September. */
 static int l_wait(lua_State *L)
 {
-    uint64_t id = 0;
+    struct wait_result got = { 0, 0 };
     int nonblocking = lua_toboolean(L, 1);
-    long code = kosmos_wait(&id, nonblocking);
+    long status = kosmos_wait(&got, nonblocking);
 
-    if (code == SYS_NO_CHILD_READY) {
+    if (status == SYS_NO_CHILD_READY) {
         lua_pushnil(L);
         lua_pushstring(L, "no child ready");
         return 2;
     }
 
-    if (code < 0) {
+    if (status < 0) {
         lua_pushnil(L);
         lua_pushstring(L, "no children");
         return 2;
     }
 
-    lua_pushinteger(L, (lua_Integer)id);
-    lua_pushinteger(L, (lua_Integer)code);
+    lua_pushinteger(L, (lua_Integer)got.id);
+    lua_pushinteger(L, (lua_Integer)got.code);
     return 2;
 }
 

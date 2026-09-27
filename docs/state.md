@@ -143,10 +143,15 @@ its own - fixed and rerun on both boards (18.206).
   a header's `after` bar, a button's `hint`, disabled icon buttons and
   `window:remove`. In the dated screenshot from now on.
 
-**Next, in order**: Run and Stop (6n step 3) - the file as its own process,
-its `print` in Output by serving the console's protocol; then checking (4),
-suggestions (5), Cafesa3D's Script panel (6); the tutorial's lessons (7).
-And 6q, the Deskbar focus check that fails now and then.
+- **Step 3, Run and Stop** (18.210). Ctrl+Enter or F5 runs the file as it
+  is on the screen, as its own process with the IDE as its console; Output
+  says it started, what it printed, and how it ended - an error's line
+  marked red and a click away; Shift+F5 stops it. Stop found a kernel fault:
+  a killed child's end was lost by `SYS_WAIT` - fixed, see above.
+
+**Next, in order**: checking (6n step 4) - Lua's own parser as you type,
+then luacheck; suggestions (5), Cafesa3D's Script panel (6); the tutorial's
+lessons (7). And 6q, the Deskbar focus check that fails now and then.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor
@@ -3770,6 +3775,11 @@ Open, each a task of its own:
 - **`sys.wait` reports a killed child as "no children".** A killed or faulted
   process ends with -1 and `l_wait` treats every negative code as an error,
   so the new tests wait for killed children without checking the id.
+  **Fixed on 27 September**, when the IDE's Stop needed the answer: it was
+  the kernel too, which reaped the child and then returned its -1 as "no
+  children", so the end was lost. SYS_WAIT writes the id and code into a
+  `struct wait_result` and returns only whether there was a child
+  (`testing.md` 18.210).
 - **Any program can end any application's endpoint with `unregister`.** The
   request is a name, and `appfs` destroys whatever is registered under it -
   the window manager's included.
