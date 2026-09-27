@@ -1388,6 +1388,12 @@ processors, and still what follows USB:
       Blender's sheet groups them - the view, selecting, the objects, the
       files, the panels - read from the same table the keys are handled
       from, so the sheet cannot fall behind them. The window is drawn first.
+      **Found on reading the keys: Shift D was already there**, the copy
+      following the pointer as Blender's does - in no menu and not in the
+      foot, so nobody could know. **Drawn the same day** in
+      `docs/cafesa3d.html`: Duplicate beside Add in the header, and a Keys
+      button (and `?`) opening every key in six groups; asked whether
+      Duplicate belongs in the header or a menu for the selection.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
    - **Sample scenes: a house, a car, a plane** - Diego, 25 September:
