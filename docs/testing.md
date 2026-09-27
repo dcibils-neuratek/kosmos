@@ -11453,3 +11453,26 @@ samples of silence 1.15 s into the film, once - FFmpeg's reference had a
 frame there. The same image passed alone, 13 checks, as did the four
 rerun side by side; it is written down (`roadmap.md`, known and
 unexplained) rather than rerun until it went away.
+
+## 18.234 No `/system` and no `/user`
+
+`roadmap.md` 6s (c3a). The disk was mounted three times - `/system`,
+`/user`, `/Home` - and the first two held almost nothing: what the system
+ships is in the image, `/Kosmos`, and what somebody installs goes in
+`/Home/Apps`. Only `/Home` is mounted now, in the shell and in every
+program; a new disk is made with `Home` alone, and one made before keeps
+its two folders where nothing reaches them. Their one reader, the window
+manager's search for a look somebody added, looks in `/Home/Themes`.
+
+**The queries suite's scope check moved rather than went.** It holds that
+a query asked of one part of a disk answers only from that part, and did
+it with `/system` against `/Home`. The guest cannot write outside `/Home`
+now, and the host tool will not set an attribute - that would need a
+second serialiser, which this repository keeps refusing to write - so the
+second part is a folder: `/Home/other/b.txt` tagged beside `/Home/a.txt`,
+and a query at `/Home/other` answering with that one alone (`Q-SUB`); the
+root has neither `system` nor `user`. 32 checks, still on a disk made the
+old way. **Controls**: the query's scope ignored - `Q-SUB` answers with
+both; `/system` mounted again - the root lists it.
+
+The gate for (c3a): 50 of 50 in 9:33.

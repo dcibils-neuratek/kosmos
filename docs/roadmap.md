@@ -2331,7 +2331,7 @@ processors, and still what follows USB:
    working; **DONE the same evening** (18.230), **(c)** the `/Kosmos` tree - (c1) `/lib` to `/Kosmos/Libraries`,
    `/kits` to `/Kosmos/Kits` - **DONE** (18.232) - (c2) `/bin` split into `/Kosmos/Apps` and
    `/Kosmos/Programs` - **DONE** (18.233), `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
-   in /Kosmos/Themes, yes"), `/system` and `/user` gone; **(d)** the dotfiles at
+   in /Kosmos/Themes, yes"), `/system` and `/user` gone - **DONE** (18.234), a look somebody adds in `/Home/Themes`; **(d)** the dotfiles at
    the top of `/home` into `/Home/Preferences`; **(e)** `layout.md`, the
    layout in words, rewritten to the agreed root - it still describes the
    plan before it, with `/tmp` and `/system/libraries`.

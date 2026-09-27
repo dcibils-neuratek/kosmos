@@ -1772,13 +1772,14 @@ end
 
 -- The directories a Kosmos disk has, made at format time.
 --
--- `layout.md` describes them: what the system ships, what somebody
--- installed, what somebody made. They are made here rather than by
+-- One, since 27 September: `/Home`, what somebody has - what the system
+-- ships is in the image (`layout.html`), and `/system` and `/user`, which
+-- this made as well, held almost nothing. They are made here rather than by
 -- whoever mounts the disk because a formatted disk should *be* a Kosmos
 -- disk - the first thing that happened without this was `save notes.txt`
 -- failing on a freshly formatted drive, because `/Home` was a mount point
 -- with nothing behind it.
-kfs.LAYOUT = { "/system", "/user", "/Home" }
+kfs.LAYOUT = { "/Home" }
 
 function kfs.mkfs(sectors, now)
   local blocks = sectors // kfs.PER_BLOCK

@@ -50,7 +50,7 @@ def main():
         # only because the namespace takes the disk's own name for its root
         # off whatever case it is in.
         #
-        os.environ["KFS_LAYOUT"] = "/system,/user,/home"
+        os.environ["KFS_LAYOUT"] = "/system,/user,/home"   # as a stick before 27 September
         run_interchange.kfs("create", disk, "32")
         del os.environ["KFS_LAYOUT"]
 
@@ -62,20 +62,24 @@ def main():
         # would differ between runs.
         #
         out = run_disk.boot(image, disk, [
-            # Two files on the disk and one in memory, so both kinds of
-            # mount are exercised by the same run.
+            # Two files on the disk, one a folder down, and one in memory, so
+            # both kinds of mount are exercised by the same run. The folder
+            # stands where `/system` did (`roadmap.md` 6s c3): a second part
+            # of the same disk, which a question asked of one part must
+            # leave out.
+            'fs.send("/Home/other", { type = "mkdir" }) '
             'fs.write("/Home/a.txt", "one") '
-            'fs.write("/system/b.txt", "two") '
+            'fs.write("/Home/other/b.txt", "two") '
             'fs.write("/Temporary/c.txt", "three")',
 
             'fs.setattr("/Home/a.txt", { kind = "book" }) '
-            'fs.setattr("/system/b.txt", { kind = "book" }) '
+            'fs.setattr("/Home/other/b.txt", { kind = "book" }) '
             'fs.setattr("/Temporary/c.txt", { kind = "book", size = "small" })',
 
             'print("Q-HOME", table.concat(fs.query("/Home", '
             '{ kind = "book" }) or {}, ","))',
 
-            'print("Q-SYSTEM", table.concat(fs.query("/system", '
+            'print("Q-SUB", table.concat(fs.query("/Home/other", '
             '{ kind = "book" }) or {}, ","))',
 
             'print("Q-DATA", table.concat(fs.query("/Temporary", '
@@ -212,11 +216,11 @@ def main():
         flat = out.replace("\t", " ")
 
         expected = [
-            ("Q-HOME /Home/a.txt",
-             "a query on a mount that names a subtree returns the path the "
+            ("Q-HOME /Home/a.txt,/Home/other/b.txt",
+             "a query on a mount that names a subtree returns the paths the "
              "caller can use - not the mount prefix twice over"),
-            ("Q-SYSTEM /system/b.txt",
-             "and the same disk answers a different mount with that mount's "
+            ("Q-SUB /Home/other/b.txt",
+             "and a query asked a folder down answers with that folder's "
              "files"),
             ("Q-DATA /Temporary/c.txt",
              "a mount with no root still works, which is the case that used "
@@ -289,7 +293,8 @@ def main():
         lines = [l for l in flat.splitlines() if l.startswith("R-ROOT ")]
         root = set(lines[-1][len("R-ROOT "):].strip().split(",")) if lines else set()
         want_there = {"Home", "Devices", "Running", "Temporary", "Kosmos"}
-        gone = {"home", "dev", "app", "ramfs", "net", "drives", "lib", "kits", "bin"}
+        gone = {"home", "dev", "app", "ramfs", "net", "drives", "lib", "kits", "bin",
+                "system", "user"}
 
         if not want_there <= root or root & gone:
             missed.append("the root did not list %s and none of %s: got %s"
@@ -359,15 +364,16 @@ def main():
 
         #
         # And the one that would have caught the original bug on its own: a
-        # query asked about `/Home` must not answer with what is under
-        # `/system`, even though one server holds both.
+        # query asked about one part of a disk must not answer with another
+        # part, though one server holds both - `/system` against `/Home` when
+        # the disk was mounted three times, a folder against its parent now.
         #
         for line in flat.splitlines():
-            if line.startswith("Q-HOME") and "/system" in line:
+            if line.startswith("Q-SUB") and "/Home/a.txt" in line:
                 raise Failure(
-                    "a query asked about /Home answered with files under "
-                    "/system. One disk is mounted three times and a question "
-                    "asked at one of them is about that subtree.\n" + line)
+                    "a query asked about /Home/other answered with a file "
+                    "beside it. A question asked of a folder is about that "
+                    "folder.\n" + line)
 
         checks += 1
 

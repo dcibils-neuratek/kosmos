@@ -555,9 +555,11 @@ local function load_appearance()
       return theme.install(name, (theme.read(shipped[name], "dark")))
     end
 
-    for _, file in ipairs(fs.list("/system/themes") or {}) do
+    -- A look somebody added is theirs, so it is in `/Home/Themes`; `/system`
+    -- held them until it went (`roadmap.md` 6s c3).
+    for _, file in ipairs(fs.list("/Home/Themes") or {}) do
       if file:match("%.theme$") then
-        local p = theme.load("/system/themes/" .. file, "dark")
+        local p = theme.load("/Home/Themes/" .. file, "dark")
 
         if p and (p.name or file:gsub("%.theme$", "")) == name then
           return theme.install(name, p)
@@ -566,7 +568,7 @@ local function load_appearance()
     end
 
     return nil, "no theme called " .. name .. " in /Kosmos/Libraries/themes.lua or "
-                .. "/system/themes"
+                .. "/Home/Themes"
   end
 
   if saved.palette then

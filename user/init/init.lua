@@ -4271,19 +4271,16 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- `.super` and `.format` - are how the disk underneath it is asked about
   -- and laid down.
   --
-  -- One disk, three names, which is what `layout.md` describes.
-  --
-  --   /system   what the operating system ships
-  --   /user     what somebody installed
-  --   /Home     what somebody made
-  --
-  -- All three are the same filesystem and the same server; the mount says
-  -- which part of it appears where. Before subtree mounts this had to be
-  -- the whole disk at one name, and a file written by `mkimage` at
-  -- `/Home/notes` arrived as `/Home/home/notes`.
-  ns.mount("/system", disk_cap, "/system")
-  ns.mount("/user",   disk_cap, "/user")
-  ns.mount("/Home",   disk_cap, "/Home")
+  -- **One name now, which is `layout.html`'s root.** The disk was mounted
+  -- three times - `/system` for what the operating system ships, `/user`
+  -- for what somebody installed, `/Home` for what somebody made - and the
+  -- first two held almost nothing: what the system ships is in the image,
+  -- `/Kosmos`, and what somebody installs goes in `/Home/Apps` (`roadmap.md`
+  -- 6s c3). A disk made before keeps its two folders, and nothing mounts
+  -- them. The mount names a part of the disk still: before subtree mounts
+  -- it had to be the whole disk at one name, and a file written by
+  -- `mkimage` at `/Home/notes` arrived as `/Home/home/notes`.
+  ns.mount("/Home", disk_cap, "/Home")
 
   --
   -- ...and `/Home` moves into memory when there is no disk under it.
@@ -4447,7 +4444,7 @@ WHERE THINGS LIVE
   /bin                 the programs, in the image
   /Kosmos/Libraries    the libraries, in the image
   /Kosmos/Kits         the kits: C, in every program's own image
-  /Home /user /system  the disk; these survive a reboot
+  /Home                what you have, on the disk; it survives a reboot
   /Temporary           memory; this does not
   /Devices             the hardware
   /Drives              other drives, by their names
@@ -6149,11 +6146,7 @@ if role == ROLE_RUNNER then
   -- that lists them, answered in-process (`kits_request`).
   ns.mount("/Kosmos/Kits", true, nil, "kits")
   if req.app     then ns.mount_registry("/Running", req.app, "app") end
-  if req.disk    then
-    ns.mount("/system", req.disk, "/system")
-    ns.mount("/user",   req.disk, "/user")
-    ns.mount("/Home",   req.disk, "/Home")
-  end
+  if req.disk    then ns.mount("/Home", req.disk, "/Home") end
 
   -- After the disk, because this replaces what that mounted. The shell
   -- decided once, at boot, whether there is a filesystem to put `/Home` on;

@@ -919,9 +919,12 @@ That is a scale judgement and it is written down as one, so it can be revisited 
 
 ### 8.3a `/Home` always exists, and says which kind it is
 
-`/system`, `/user` and `/Home` are three subtrees of one disk filesystem -
-what the operating system ships, what somebody installed, and what somebody
-made. `/Home` is the persistent one by definition.
+`/Home` is the disk - what somebody has, their applications among it - and
+it is the persistent one by definition. It was one of three subtrees of the
+disk, beside `/system` and `/user`, until 27 September: what the system
+ships is in the image, `/Kosmos`, and what somebody installs goes in
+`/Home/Apps` (`roadmap.md` 6s c3), so those two held almost nothing and are
+no longer mounted; a disk made before keeps them, unseen.
 
 **On a machine with no disk it is backed by memory instead**, and that is a
 decision rather than a fallback that crept in. The alternative was `/Home`
