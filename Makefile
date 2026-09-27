@@ -60,7 +60,9 @@ SIZE    := $(CROSS)size
 # so, and the About window reads it out of the image.
 #
 # **`MEGA=1` is everything this tree can put in one image**: what `FULL=1`
-# turns on, and the two it does not carry - Lite XL and Quake. It is for
+# turns on, and the one it does not carry - Quake. It carried Lite XL too,
+# until Lite XL left the tree on 26 September for an editor of Kosmos's own
+# (`roadmap.md` 6n). It is for
 # running the whole of it at once, not for the suites: the test and bench
 # images ignore it as they ignore `FULL`, and the checks that build a variant
 # of their own say `MEGA=` so an inherited one cannot change what they check.
@@ -71,7 +73,6 @@ ifeq ($(MEGA),1)
 ifndef TEST
 ifndef BENCH
 FULL   := 1
-LITEXL := 1
 QUAKE  := 1
 endif
 endif
@@ -114,7 +115,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)$(if $(QUAKE),-quake)$(if $(SNES),-snes)$(if $(FFMPEG),-ffmpeg)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(QUAKE),-quake)$(if $(SNES),-snes)$(if $(FFMPEG),-ffmpeg)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -218,8 +219,8 @@ LUA_HOST_SRCS := $(filter-out lua/upstream/lua.c lua/upstream/luac.c \
 # `progs2c.py` serves each file under its basename.
 #
 # **An app is one file or a directory, and both are gathered here.** Most
-# are a single `.lua`. The five with a vendored engine under them - Doom,
-# Quake, the Super Nintendo, Lite XL and the browser - own a directory with
+# are a single `.lua`. The four with a vendored engine under them - Doom,
+# Quake, the Super Nintendo and the browser - own a directory with
 # their own C in it, because that C is not reusable and never was: it is
 # the binding to one engine, for one app. Diego, 23 September: "a kit is a
 # reusable piece of code that an app, service, or server can leverage and
@@ -562,67 +563,6 @@ USER_LIBC := runtime/libc/string.c \
              user/init/panic_user.c
 
 #
-# Lite XL, vendored, and this is step one of a port rather than a finished
-# one. `runtime/upstream/lite-xl/README.kosmos.md` is the account.
-#
-# **What is built here is only what needs nothing that does not exist.**
-# `api/utf8.c` and `arena_allocator.c` call no SDL function and include no
-# SDL header, and they compile against this toolchain unmodified - which is
-# the fact that said the port was worth starting, and is worth having in the
-# build so that it stays true rather than being remembered.
-#
-# Everything else in `src/` stops at one line, `#include <SDL.h>`, and waits
-# for the shim. `rencache.c`, `api/renderer.c` and `renderer.c` join this
-# list when it exists; `api/process.c`, `api/dirmonitor/` and
-# `src/bundle_open.m` never will, for the reasons the README gives.
-#
-# `-w -Wno-error` for the reason every vendored thing here gets it: these
-# are somebody else's warnings and this build has no business failing on
-# them.
-#
-# **`-Iuser/bin/apps/litexl` is the whole mechanism of this port.** The shim
-# directory is on the include path, so the vendored `#include <SDL.h>` -
-# which appears in three of upstream's headers and reaches every source
-# file through them - resolves to `user/bin/apps/litexl/SDL.h`, and not one line
-# of what upstream released has to be touched.
-LITEXL_CFLAGS := -w -Wno-error \
-                 -Iruntime/upstream/lite-xl/src \
-                 -Iuser/bin/apps/litexl \
-                 -Iuser
-
-#
-# **Two lists, because a port has a front edge.**
-#
-# `LITEXL_SRCS` goes into the image, and everything in it links: the shim,
-# and the upstream files that call nothing which does not exist yet.
-#
-# `LITEXL_STAGED` compiles and does not link. `rencache.c` and
-# `api/renderer.c` are *finished* as far as compiling goes - they have no
-# SDL in them at all and never needed a line changed - but they call the
-# `ren_*` and `renwin_*` functions that steps three and four will write, so
-# putting them in the image would break the link for everybody.
-#
-# `make litexl` compiles both lists and says where the edge is. That is the
-# difference between a port that is progressing and one that is asserted to
-# be: the compiler says which files are done, every time, rather than a
-# checklist in a document saying so once.
-#
-LITEXL_SRCS := user/bin/apps/litexl/litexl_sdl.c \
-               user/bin/apps/litexl/litexl_render.c \
-               runtime/upstream/lite-xl/src/api/utf8.c \
-               runtime/upstream/lite-xl/src/arena_allocator.c \
-               runtime/upstream/lite-xl/src/renwindow.c \
-               runtime/upstream/lite-xl/src/rencache.c \
-               runtime/upstream/lite-xl/src/api/renderer.c \
-               runtime/upstream/lite-xl/src/api/api.c \
-               user/bin/apps/litexl/litexl_system.c \
-               user/bin/apps/litexl/litexl_match.c
-
-# Nothing is waiting on the renderer any more. `api/system.c` and `main.c`
-# join this when step five writes their half of the shim.
-LITEXL_STAGED :=
-
-#
 # `make QUAKE=1` - Quake, from Chocolate Quake, GPL like Doom and outside
 # `FULL=1` for the same reasons.
 #
@@ -889,10 +829,6 @@ endif
 # are compiled with different flags and `make` compares timestamps, not
 # command lines.
 #
-ifdef LITEXL
-USER_SRCS += $(LITEXL_SRCS) $(GEN)/litexl_fonts.c
-endif
-
 ifdef QUAKE
 USER_SRCS += $(QUAKE_SRCS)
 endif
@@ -1136,7 +1072,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
            -Iruntime/upstream/minih264 -Iruntime/upstream/minimp4 \
@@ -1178,13 +1114,13 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 #
 # There was one, `$(BUILD)/flags`, carrying every flag in the build - and
 # `BUILD` is only ever `build`, `build/test` or `build/bench`. It does *not*
-# vary with `DOOM`, `WEB`, `LITEXL` or `QUAKE`; `UBUILD` does. So the
+# vary with `DOOM`, `WEB` or `QUAKE`; `UBUILD` does. So the
 # userland flags were recorded in a file the kernel's objects also depended
 # on, and every switch between variants rewrote it.
 #
 # What that cost was the gate. `make prepush` builds plain, then `MEGA=1`,
 # then plain again for the screenshot, and each switch changed
-# `$(LITEXL_CFLAGS)` or `$(QUAKE_CFLAGS)` in the stamp - so **the whole
+# `$(QUAKE_CFLAGS)` in the stamp - so **the whole
 # kernel was recompiled three times for flags no kernel object uses.**
 #
 # Now each stamp covers exactly the flags its own objects are compiled with,
@@ -1195,7 +1131,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1311,40 +1247,6 @@ $(addprefix $(UBUILD)/,$(addsuffix .o,$(FFMPEG_KOSMOS))): $(UBUILD)/%.c.o: %.c $
 $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) -MMD -MP -c $< -o $@
-
-#
-# Kosmos's own half of the Lite XL port, which needs upstream's headers on
-# the path: `litexl_render.c` implements `renderer.h`, so it has to see it.
-# An explicit rule each, because the generic userland rule carries only
-# `UCFLAGS` and this is the one kit that needs more.
-#
-$(UBUILD)/user/bin/apps/litexl/litexl_sdl.c.o: user/bin/apps/litexl/litexl_sdl.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
-
-$(UBUILD)/user/bin/apps/litexl/litexl_render.c.o: user/bin/apps/litexl/litexl_render.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
-
-$(UBUILD)/user/bin/apps/litexl/litexl_system.c.o: user/bin/apps/litexl/litexl_system.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
-
-$(UBUILD)/user/bin/apps/litexl/litexl_match.c.o: user/bin/apps/litexl/litexl_match.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
-
-#
-# Lite XL. Two patterns because its sources are one directory deep in
-# places - `src/api/utf8.c` - and a single `%` does not cross a slash.
-#
-$(UBUILD)/runtime/upstream/lite-xl/src/%.c.o: runtime/upstream/lite-xl/src/%.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
-
-$(UBUILD)/runtime/upstream/lite-xl/src/api/%.c.o: runtime/upstream/lite-xl/src/api/%.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
 #
 # musl's maths.
@@ -1590,29 +1492,6 @@ $(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
 # deliberately leave it out - it opens every standard library, including the
 # ones the guest does not have - but an interpreter that cannot `require`
 # its own standard library cannot run a test.
-#
-# The Lite XL surface shim, built for *this* machine.
-#
-# It depends on `stdlib.h` and `string.h` and nothing else - no syscalls, no
-# Kosmos headers, no framebuffer - so the host compiler builds it exactly as
-# the cross one does. That is worth keeping rather than being a coincidence:
-# it is what lets the shim be tested in a second instead of in an emulator,
-# and `-Wall -Wextra -Werror` here is a second compiler's opinion of code the
-# vendored build compiles with `-w`.
-#
-$(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/bin/apps/litexl/litexl_sdl.c \
-                        user/bin/apps/litexl/litexl_render.c user/bin/apps/litexl/litexl_match.c \
-                        user/bin/apps/litexl/SDL.h \
-                        runtime/upstream/lite-xl/src/renwindow.c
-	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -O1 -o $@ \
-	    -Iuser/bin/apps/litexl -Iruntime/upstream/lite-xl/src \
-	    -Iruntime/upstream/stb \
-	    tools/test_litexl_surface.c user/bin/apps/litexl/litexl_sdl.c \
-	    user/bin/apps/litexl/litexl_render.c user/bin/apps/litexl/litexl_match.c \
-	    runtime/upstream/stb/stb_impl.c \
-	    runtime/upstream/lite-xl/src/renwindow.c -lm
-
 #
 # The scanf family's scanner, on this machine.
 #
@@ -2225,23 +2104,6 @@ $(GEN)/fonts.c: $(FONT_FILES) $(FONT_LIST) tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py fonts_table $@ $(FONT_FILES)
 
-#
-# Lite XL's own faces, in a `LITEXL=1` image only, and in a table of their own.
-#
-# Not in `fonts_table`, because that table is also what `gfx.fonts()` offers:
-# Appearance would list `icons` as a face for the desktop, and every other
-# image would carry 300 KB it never draws. The editor is the one reader -
-# `provide_image_font` looks here after `fonts_table`. Their terms are
-# recorded beside them, in `LICENSE.FiraSans` and `LICENSE.icons`, and
-# `runtime/upstream/lite-xl/README.kosmos.md` says where those came from.
-#
-LITEXL_FONT_FILES := runtime/upstream/lite-xl/data/fonts/FiraSans-Regular.ttf \
-                     runtime/upstream/lite-xl/data/fonts/icons.ttf
-
-$(GEN)/litexl_fonts.c: $(LITEXL_FONT_FILES) tools/assets2c.py
-	@mkdir -p $(dir $@)
-	python3 tools/assets2c.py litexl_fonts_table $@ $(LITEXL_FONT_FILES)
-
 $(GEN)/version.c: FORCE
 	@mkdir -p $(dir $@)
 	@printf '/* Generated by the Makefile. Do not edit. */\n\nconst char kosmos_name[] = "$(OS_NAME)";\nconst char kernel_name[] = "$(KERNEL_NAME)";\nconst char kosmos_version[] = "$(VERSION)";\nconst char kosmos_build[] = "$(KOSMOS_BUILD)";\nconst char kosmos_date[] = "$(KOSMOS_DATE)";\nconst char kosmos_platform[] = "$(PLATFORM)";\n' > $@.tmp
@@ -2260,24 +2122,14 @@ $(GEN)/programs.c: $(BIN_LUA) tools/progs2c.py $(HOSTDIR)/lua.ok
 # something you run and a library is something you load, and a `/bin` that
 # lists both is a `/bin` where `ls` lies about what you can type.
 #
-# Lite XL's Lua, when it is being built: 78 files that are the editor.
-#
-# They go into the *library* store rather than a store of their own, and
-# that is the honest place for them - they are libraries carried in the
-# image, which is what `/lib` is. It also costs nothing: `binfs.c` finds an
-# entry with `strcmp`, so a key with slashes reads straight out, and no
-# server, role or capability had to be invented to serve them.
-#
-LITEXL_DATA := $(if $(LITEXL),$(shell find runtime/upstream/lite-xl/data \
-                                   -name '*.lua' 2>/dev/null))
-
-LITEXL_ROOTED := $(if $(LITEXL),--rooted runtime/upstream/lite-xl/data litexl/)
-
-#
-# The solar system's portable core, by the same mechanism and for the same
-# reason: nine Lua files that are a program's library rather than a program,
-# carried under `solar/` so `use("/lib/solar/app.lua")` reads them straight
-# out. They live in a directory of their own because they arrive from
+# The solar system's portable core: nine Lua files that are a program's
+# library rather than a program, carried under `solar/` so
+# `use("/lib/solar/app.lua")` reads them straight out. The library store is
+# the honest place for them - they are libraries carried in the image, which
+# is what `/lib` is - and it costs nothing: `binfs.c` finds an entry with
+# `strcmp`, so a key with slashes reads straight out, and no server, role or
+# capability had to be invented to serve them. Lite XL's 78 files were the
+# first to be carried this way, until it left the tree on 26 September. They live in a directory of their own because they arrive from
 # another repository unmodified - `user/lib/solar/README.kosmos.md` - and a
 # wildcard over `user/lib/*.lua` deliberately does not reach into it.
 #
@@ -2292,11 +2144,10 @@ SOLAR_ROOTED := --rooted user/lib/solar solar/
 TRANSLATORS := $(wildcard user/lib/translators/*.lua)
 TRANSLATORS_ROOTED := --rooted user/lib/translators translators/
 
-$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(LITEXL_DATA) $(SOLAR_DATA) $(TRANSLATORS) \
+$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(SOLAR_DATA) $(TRANSLATORS) \
                     tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
-	    $(LITEXL_ROOTED) $(LITEXL_DATA) \
 	    $(SOLAR_ROOTED) $(SOLAR_DATA) \
 	    $(TRANSLATORS_ROOTED) $(TRANSLATORS)
 
@@ -3277,7 +3128,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3425,15 +3276,6 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.
 	$(HOSTDIR)/test_imagesum
-	@# And the Lite XL surface shim, which is C and still needs no machine:
-	@# `make litexl` says the port's sources compile, and this says the part
-	@# of them Kosmos wrote is correct. Different claims.
-	$(HOSTDIR)/test_litexl
-	@# And the port's Lua half - nineteen thousand lines of somebody else's
-	@# code - loaded and initialised with the C modules stubbed. It is the
-	@# same interpreter either way, so this needs no machine either.
-	$(HOSTDIR)/lua tools/test_litexl_lua.lua
-	$(HOSTDIR)/lua tools/test_litexl_host.lua
 	@# And LICENSE, read the way the About window reads it: every line of
 	@# it, and every vendored tree named in it - so a library added without
 	@# an entry fails here, by name.
@@ -3602,11 +3444,12 @@ mega:
 # **The stages in order, each compiled in parallel.**
 #
 # They were prerequisites - `prepush: test screenshot litexl-check mega
-# shot` - which is correct and slow. Make builds a prerequisite's own
-# dependencies one at a time unless told otherwise, so every object in every
-# variant was compiled serially on a machine with ten cores.
+# shot`, when Lite XL was in the tree - which is correct and slow. Make
+# builds a prerequisite's own dependencies one at a time unless told
+# otherwise, so every object in every variant was compiled serially on a
+# machine with ten cores.
 #
-# `-j` on the whole thing is not the answer: the five stages would run at
+# `-j` on the whole thing is not the answer: the stages would run at
 # once, which means several QEMUs racing for the same build directories and
 # a screenshot taken of whichever image happened to be linked last. The
 # stages are *ordered* on purpose.
@@ -3617,7 +3460,6 @@ mega:
 #
 prepush:
 	@$(MAKE) --no-print-directory -j$(J) test
-	@$(MAKE) --no-print-directory -j$(J) litexl-check
 	@$(MAKE) --no-print-directory -j$(J) mega
 	@$(MAKE) --no-print-directory -j$(J) shot
 	@echo
@@ -3656,37 +3498,6 @@ bench-record:
 	python3 tools/run_bench.py build/bench/kosmos.elf --record
 
 #
-# How far Lite XL has got: every file that compiles, and every one that
-# does not yet.
-#
-# Compiles rather than links, deliberately. The staged files call functions
-# steps three and four have not written, so a link would fail for a reason
-# that says nothing about whether the *porting* is working. What this
-# answers is the one question worth asking between steps: does upstream's C
-# still build against the shim as it stands.
-#
-.PHONY: litexl
-litexl:
-	@mkdir -p build/litexl
-	@ok=0; fail=0; \
-	for f in $(LITEXL_SRCS) $(LITEXL_STAGED); do \
-	    if $(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -c $$f \
-	         -o build/litexl/$$(basename $$f).o 2>build/litexl/err; then \
-	        printf "  ok    %-52s %s bytes\n" "$$f" \
-	               "$$(wc -c < build/litexl/$$(basename $$f).o | tr -d ' ')"; \
-	        ok=$$((ok + 1)); \
-	    else \
-	        printf "  FAIL  %s\n" "$$f"; \
-	        head -3 build/litexl/err | sed 's/^/        /'; \
-	        fail=$$((fail + 1)); \
-	    fi; \
-	done; \
-	echo; \
-	echo "  $$ok of $$((ok + fail)) Lite XL translation units compile."; \
-	echo "  In the image: $(words $(LITEXL_SRCS)).  Waiting on ren_*/renwin_*: $(words $(LITEXL_STAGED))."; \
-	test $$fail -eq 0
-
-#
 # Whether upstream's engine still compiles against the shim, file by file,
 # without building an image. The question worth asking after moving the
 # vendored tree forward, and the one a link failure answers badly.
@@ -3711,19 +3522,6 @@ quake:
 	echo "  A QUAKE=1 image carries them and user/bin/apps/quake/quake_kosmos.c."; \
 	test $$fail -eq 0
 
-# Lite XL on the machine: a window, a title that follows its file, a file
-# edited and saved, Control-N, and a new document saved under a name - each
-# file read back at the prompt afterwards, so a pass is the file saying what
-# was typed rather than a picture of text.
-#
-# Not part of `make test`: it needs an image built with `LITEXL=1`, which the
-# ordinary image is not, and it boots that image twice. `make prepush` runs
-# it before `shot`: this leaves a lean `LITEXL=1` image in `build/kosmos.elf`,
-# and `shot` builds the ordinary one again before it takes its picture.
-.PHONY: litexl-check
-litexl-check:
-	@$(MAKE) --no-print-directory MEGA= FULL=0 LITEXL=1
-	python3 tools/run_litexl.py build/kosmos.elf
 
 # Quake on the machine: a window, the engine started, the demo and its map,
 # the game drawn, a command typed at Quake's console and answered, and

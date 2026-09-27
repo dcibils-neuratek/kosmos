@@ -580,9 +580,12 @@ processors, and still what follows USB:
    display driver for the laptop's Intel GPU, which is to be confirmed before
    it is planned.
 
-1. **DONE - Lite XL, until it is an editor.** It is one now: it opens, edits and
-   saves (`docs/litexl.md`), in its own faces. What is left is the wheel,
-   resizing and the title.
+1. **DONE, and REMOVED on 26 September - Lite XL, until it is an editor.** It
+   became one: it opened, edited and saved, in its own faces. Then Diego: "i
+   want to remove lxedit as we are going to crate our own LUA development
+   editor and ide" - so the port, its tests and `docs/litexl.md` left the
+   tree (`testing.md` 18.204), and the editor of Kosmos's own is 6n. The
+   whole account is in git, in the commits before its removal.
 2. **DONE - Quake, running.** From Chocolate Quake rather than quakegeneric, which
    builds only for 32-bit machines; the shareware attract loop plays and the
    menus answer (`runtime/upstream/quake/README.kosmos.md`). What is left:
@@ -2077,6 +2080,27 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6n. **AGREED on 26 September - a Lua editor and IDE of Kosmos's own.** Diego:
+   "i want to remove lxedit as we are going to crate our own LUA development
+   editor and ide". Lite XL, the ported editor, left the tree the same day
+   (1 above, `testing.md` 18.204). The IDE is the place Lua for Kosmos is
+   written: programs, apps and libraries, with what the system already
+   knows about them - `/lib`, the kits, `use` and `sys` - at hand, and
+   running what is being written. **Drawn before it is written**, as every
+   app is (`docs/`), and **built as a component first**: Cafesa3D's script
+   panel (4l, AGREED) wants the same editor inside a window of its own, so
+   the editing - text, the cursor, selection, undo, colouring Lua - is one
+   piece both use rather than two with two sets of bugs. Proposed to Diego
+   on 26 September and his to agree.
+
+6m. **AGREED on 26 September - Processes shows each process's threads.** Diego,
+   with a photograph of the window: "processes need a threads column to
+   tell how many threads a process is running". The header already says
+   "30 threads (7 in the kernel)" for the machine; a column says it for each
+   row, beside priority and core - so a program with workers (Cafesa3D
+   rendering on four) is visible as one. The kernel's `proc_info` is where
+   the count comes from; drawn in `docs/apps.html` first, as the window was.
+
 6l. **ASKED on 25 September - SIMD wherever it pays.** Diego: "are you
    using simd and vector instructions where possible?" Not yet where it
    matters most: Kosmos's own pixel loops are NEON and SSE2 (`yuv.c`,
@@ -2142,14 +2166,6 @@ processors, and still what follows USB:
    The proposal, to be drawn in `docs/apps.html` first: the list in two
    columns above four cores, the window never taller than the screen, and
    past about sixteen a choice of one graph a core or one for all.
-
-6h. **AGREED on 26 September - Processes shows each process's threads.** Diego,
-   with a photograph of the window: "processes need a threads column to
-   tell how many threads a process is running". The header already says
-   "30 threads (7 in the kernel)" for the machine; a column says it for each
-   row, beside priority and core - so a program with workers (Cafesa3D
-   rendering on four) is visible as one. The kernel's `proc_info` is where
-   the count comes from; drawn in `docs/apps.html` first, as the window was.
 
 6g. **DONE on 24 September (0.10.161) - Processes says what a process is.** Diego:
    "isnt the e1000 a driver, not a server? i see it as a server in the

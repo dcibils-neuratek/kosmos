@@ -4044,10 +4044,10 @@ handlers.open = function(req, who, cap)
   -- Off unless asked for, and that is the whole design. Every other event
   -- this process posts is one an application may ignore safely; a right
   -- press is not, because an application that has never heard of one reads
-  -- it as a left press and acts on it. Paint would draw with it, Quake
-  -- would fire, Lite XL would move its cursor - three programs that handle
-  -- `mouse` themselves rather than through the kit, and none of them wrong
-  -- to.
+  -- it as a left press and acts on it. Paint would draw with it and Quake
+  -- would fire - programs that handle `mouse` themselves rather than
+  -- through the kit, and neither wrong to. (Lite XL would have moved its
+  -- cursor, when it was in the tree.)
   --
   -- The alternative was a guard in each of them, and CLAUDE.md has already
   -- paid for that lesson: a rule that requires you to recognise a third
@@ -7054,8 +7054,8 @@ local function key(c)
   -- **What crosses is the intent, not the key.** This process does not know
   -- what a selection is; a text field does. So it posts `{type = "copy"}`
   -- and the application answers with whatever it decided that meant - which
-  -- is why Lite XL, which is not built on the widget kit at all, gets these
-  -- without a line of its own: it already reads the intent.
+  -- is why an application not built on the widget kit at all gets these
+  -- without a line of its own, if it reads the intent - as Lite XL did.
   --
   local edit = EDIT_KEYS[c]
 

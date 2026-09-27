@@ -70,27 +70,6 @@ ENVIRONMENTS = {
     # program and not to what it loaded.
     "user/lib/": {"sys", "gfx", "fs", "cwd", "run", "interrupted", "use",
                   "write"},
-
-    #
-    # `litexl.lua` builds an environment for somebody else's program, which
-    # no other file here does.
-    #
-    # Lite XL is nineteen thousand lines of vendored Lua that expects a
-    # hosted interpreter: `os`, `debug`, `package`, `require`, `dofile`, and
-    # the globals `main.c` would have set. This program provides all of
-    # them, deliberately, so that the vendored tree needs no patch - which
-    # means it assigns names that would be a mistake anywhere else.
-    #
-    # Listed rather than exempted, so that the check still does its job on
-    # everything not in this list. `docs/litexl.md` explains why each one is
-    # here.
-    #
-    "litexl.lua": {"io", "os", "debug", "package", "require", "dofile",
-                   "ARGS", "PLATFORM", "ARCH", "EXEFILE", "HOME", "SCALE",
-                   "VERSION", "MOD_VERSION", "PATHSEP", "EXEDIR",
-                   "DATADIR", "USERDIR", "MACOS_RESOURCES",
-                   "system", "renderer", "regex", "process", "dirmonitor",
-                   "utf8extra"},
 }
 
 

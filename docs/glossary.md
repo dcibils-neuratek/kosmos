@@ -88,8 +88,7 @@ process, no message, no ownership: calling it is a function call. `kits` at
 the prompt lists what a machine has: `/kits/compress` to inflate, `/kits/pdf`
 to scan a content stream, `/kits/gl` for TinyGL, `/kits/console` for the
 console's wire format, `/kits/mp3`, `/kits/network`, and in the images that
-compile them `/kits/web`, `/kits/litexl`, `/kits/doom`, `/kits/quake` and
-`/kits/snes`. **A kit is never a global as well**: one named after a program
+compile them `/kits/web`, `/kits/doom`, `/kits/quake` and `/kits/snes`. **A kit is never a global as well**: one named after a program
 hides that program from the prompt, which is what the last three did until
 they moved here (`design.md` §6).
 

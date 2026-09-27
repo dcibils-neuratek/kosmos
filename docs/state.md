@@ -67,8 +67,17 @@ for **a stick for the M700**, to try all of it there:
 OVMF and the gate 40 of 40, handed over the same evening - see `boot.md`.
 Building it found that a MEGA x86-64 image had outgrown 32 MB (the heap
 starts at 40 now) and that four x86-64 kernel objects never saw their
-headers change (18.202). **Next**: Processes' Threads column (6h), then
+headers change (18.202). **Next**: Processes' Threads column (6m), then
 the tutorial's pages for F, Stop and maximised.
+
+**Later that night, Lite XL left the tree** (Diego: "i want to remove lxedit
+as we are going to crate our own LUA development editor and ide") - the
+port, its four tests, `docs/litexl.md`, `LITEXL` and `litexl-check`;
+`MEGA=1` is FULL plus Quake (18.204). The IDE is 6n: drawn first, and built
+as the editor component Cafesa3D's script panel will share. Gate 39 of 40
+- `x86-film` lost a period of sound under load and passed alone - and MEGA
+links on both boards. The scripting mockup's five choices are still his,
+listed to him again that night.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor

@@ -88,14 +88,15 @@ def main():
     #
     # A Kosmos library is one file and is keyed by its basename, because
     # `/lib` is flat and every name in it is distinct. A vendored tree is
-    # not: Lite XL has `core/init.lua`, `core/doc/init.lua` and
-    # `core/ime.lua`, and three of its files are called `init.lua`. So the
-    # key has to be the path *relative to the tree's root*, with a prefix
-    # saying which tree it came from.
+    # not: Lite XL, the first carried this way, had `core/init.lua`,
+    # `core/doc/init.lua` and `core/ime.lua`, three files called `init.lua`.
+    # So the key has to be the path *relative to the tree's root*, with a
+    # prefix saying which tree it came from - `solar/` and `translators/`
+    # now that Lite XL has left the tree.
     #
     # `binfs.c` looks entries up with `strcmp`, so a key with slashes in it
-    # needs nothing from the server at all - `/lib/litexl/core/init.lua`
-    # simply reads.
+    # needs nothing from the server at all - `/lib/solar/app.lua` simply
+    # reads.
     #
     rooted = None
     files  = []

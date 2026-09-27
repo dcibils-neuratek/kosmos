@@ -11,8 +11,9 @@
  * fourteen functions that are libc under another name.
  *
  * The functions are macros for the libc name, not wrappers, so a function
- * this libc lacks fails the link under its own name. The same reason
- * `user/lib/litexl/SDL.h` exists: the vendored tree is not edited.
+ * this libc lacks fails the link under its own name. The same reason Lite
+ * XL's `SDL.h` existed, while it was in the tree: the vendored tree is not
+ * edited.
  */
 #ifndef KOSMOS_QUAKE_SDL_STDINC_H
 #define KOSMOS_QUAKE_SDL_STDINC_H

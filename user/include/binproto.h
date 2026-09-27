@@ -46,8 +46,10 @@
  *
  * Twenty-four was generous for `/bin`, where every entry is one file with
  * a flat name - `tracker.lua` is twelve. It stopped being enough when the
- * library store started carrying a *tree*: Lite XL's Lua is 78 files with
- * paths like `litexl/core/commands/findreplace.lua`, which is thirty-six.
+ * library store started carrying a *tree*: Lite XL's Lua was 78 files with
+ * paths like `litexl/core/commands/findreplace.lua`, which is thirty-six,
+ * until it left the tree on 26 September. The solar system and Cafesa3D's
+ * translators are trees now.
  *
  * The failure was not a truncated name, which would have been the good
  * outcome. `string.pack` in `init.lua` refused the field outright - "bad

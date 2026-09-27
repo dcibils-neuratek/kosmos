@@ -1493,8 +1493,8 @@ def check_context(guest):
     carried no button at all.
 
     **The danger in delivering it is that a program which has never heard of
-    one reads it as a left press and acts on it.** Paint would draw with it,
-    Quake would fire, Lite XL would move its cursor. So a right press goes
+    one reads it as a left press and acts on it.** Paint would draw with it
+    and Quake would fire. So a right press goes
     only to a window that said it understands `button`, `ui.lua` says so for
     every window it opens, and the kit drops what no view claimed - see
     `handlers.open` in `wm.lua`.

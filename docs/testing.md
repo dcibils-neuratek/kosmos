@@ -661,6 +661,10 @@ found the commit wait.
 
 ## 18.14 An editor, checked through the files it saved
 
+**Removed on 26 September 2026, with Lite XL** (18.204): the four checks
+below left the tree with the editor they checked. What follows is the
+record of how it was tested while it was here.
+
 ```
 make test            # three of the four, on this machine
 make litexl-check    # the fourth: a LITEXL=1 image, booted twice
@@ -10319,3 +10323,27 @@ kernel mapped the heap at 40 MB and the suite looked for it at 32. The
 Makefile includes them now, and a touched `kernel/process.h` makes
 `tests.c` again - the control. The gate after: 40 of 40 in 9:51.
 
+## 18.204 Lite XL removed, and its tests with it
+
+Diego, 26 September: "i want to remove lxedit as we are going to crate our
+own LUA development editor and ide. so remove it from the source tree." The
+vendored editor, Kosmos's half of the port, `user/lib/litexl_host.lua`,
+`docs/litexl.md` and its four checks are gone: `test_litexl_surface.c` (58),
+`test_litexl_lua.lua` (9), `test_litexl_host.lua` (34) in `make test`, and
+`run_litexl.py` (7), which `make prepush` ran as `make litexl-check`.
+
+**This deletes permanent tests, and says so rather than doing it
+quietly.** The rule is that what proved a thing works stays and is never
+deleted (`CLAUDE.md`), and what it protects is the thing staying true. A
+test of a program the tree no longer carries protects nothing - it cannot
+run, because what it would run is gone. So the tests go with the program
+and not before it, and the rule is kept for everything that stays. What
+the checks found is kept too: the queue that consumed events by clearing
+slots, the title the window manager could not set, a stack too small for
+somebody else's program (`kernel/process.h` still says so), and a library
+store that learnt to carry a tree - the solar system's and Cafesa3D's
+translators use it now.
+
+`MEGA=1` is `FULL=1` plus Quake. `LICENSE` names 17 entries and 14 vendored
+trees (`tools/test_licences.lua`). The editor of Kosmos's own is
+`roadmap.md` 6n, drawn before it is written.

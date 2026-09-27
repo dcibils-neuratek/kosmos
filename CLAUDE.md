@@ -86,7 +86,6 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Measurement and regressions: `docs/testing.md`
 - BeOS lineage: `docs/beos.md`
 - Toolchain and build: `docs/setup.md`
-- Porting Lite XL, a real editor: `docs/litexl.md`
 - The first real machine, a ThinkPad T14: `docs/thinkpad.md`
 - How a PC boots, and why the loader is Kosmos's own: `docs/boot.md`
 - Threads in a process, written before they are built: `docs/threads.md`
@@ -156,7 +155,7 @@ make qemu        # build and run under QEMU virt, in a window
 make fast        # the same, on this Mac's own cores (hvf); 4-14x
 make FB=1280x800 qemu    # the same, at that display size
 make FULL=0 qemu         # without the browser and Doom, and quicker to link
-make MEGA=1 qemu         # everything: FULL, plus Lite XL and Quake
+make MEGA=1 qemu         # everything: FULL, plus Quake
 make serial      # the same, serial only, no window
 make test        # every suite, side by side, in about five minutes; 0 or 1
 make screenshot  # boot, screendump, and check the picture QEMU scans out
@@ -886,7 +885,7 @@ by writing more code.
 that arrives on its own.
 
 **A push carries a picture. `make prepush`** runs the suites, the display
-harness, `make litexl-check`, a MEGA link and `make shot`, which puts a
+harness, a MEGA link and `make shot`, which puts a
 1920x1080 screenshot of the desktop into `docs/screenshots/` under the date
 and the revision - every application that draws something of its own with
 nothing on a disk, tiled, and the newest one given room (`OPEN` in
@@ -928,8 +927,9 @@ user/           everything at EL0:
   drivers/        C. A process that drives hardware, by device kind:
                   net/ usb/ display/ power/
   kits/           C that runs inside your own process, one directory per
-                  kit: gfx/ gl/ pdf/ compress/ web/ game/ network/
-                  console/ mp3/ doom/ quake/ snes/ litexl/
+                  kit: gfx/ gl/ pdf/ compress/ game/ network/ console/
+                  mp3/ record/ 3d/ ffmpeg/ - an app's own engine C lives
+                  with the app, in bin/apps/browser/, doom/, quake/, snes/
   lib/            the same position, in Lua. All .lua and nothing else
   include/        the protocol headers both sides compile against
   bin/            apps/ and programs/, in Lua, both served flat at /bin.

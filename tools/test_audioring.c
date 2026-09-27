@@ -2,9 +2,9 @@
 /*
  * The audio ring's arithmetic, checked on this machine rather than the target.
  *
- * `tools/test_kfs.lua`, `tools/test_wav.lua` and `tools/test_litexl_surface.c`
- * are here for the same reason: a thing that depends on nothing but C should
- * be tested without booting a machine, because a test that costs thirty
+ * `tools/test_kfs.lua` and `tools/test_wav.lua` are here for the same
+ * reason: a thing that depends on nothing but C should be tested without
+ * booting a machine, because a test that costs thirty
  * seconds and an emulator is a test somebody runs less often.
  *
  * **This one earns it more than most, because its failures are silent.** A
