@@ -2240,7 +2240,10 @@ processors, and still what follows USB:
    day: an installed program is an image of its own beside its Lua, named
    by `-- kosmos: image`, an ELF read and checked in userland, copied by the
    kernel. **Step 1 DONE** (`testing.md` 18.221): `SYS_SPAWN_IMAGE`, a
-   process from an image in a region, the kernel's own copy of it.
+   process from an image in a region, the kernel's own copy of it. **Step 3
+   DONE** (18.222), ahead of 2, which waits for Diego's word on ELF: a
+   program's image is the system's objects and its kit, a link and not a
+   build - the kits leaving the system are weak in `sys_user.c`.
 
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the

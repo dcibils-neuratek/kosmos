@@ -186,7 +186,8 @@ anything is spawned, and names the page that differs.
 2. **The ELF reader**, in C, tested on the Mac: a real image read into the
    same bytes `objcopy` makes, and each malformed case refused with its
    sentence.
-3. **An image of its own, built**: a make target linking the runtime with
+3. **DONE on 27 September** (`testing.md` 18.222) - **An image of its own,
+   built**: a make target linking the runtime with
    one kit - a small test kit first, then Doom's - into `build/apps/`, with
    its sums.
 4. **`run` learns `-- kosmos: image`**: reads the file into a region,

@@ -32,6 +32,7 @@ CROSS   := $(if $(filter x86_64,$(ARCH)),x86_64-elf-,aarch64-none-elf-)
 CC      := $(CROSS)gcc
 OBJDUMP := $(CROSS)objdump
 OBJCOPY := $(CROSS)objcopy
+NM      := $(CROSS)nm
 
 SIZE    := $(CROSS)size
 
@@ -2181,6 +2182,28 @@ $(UBUILD)/init.elf: $(USER_OBJS) user/user.ld
 $(UBUILD)/init.bin: $(UBUILD)/init.elf
 	$(OBJCOPY) -O binary $< $@
 
+#
+# **A program's own image** (`docs/elf.md` step 3): the system's objects and
+# the kit it brings, linked as `init.elf` is. Nothing is compiled twice - a
+# kit it brings is declared weak in `sys_user.c`, so that file is the same
+# in every image - and an image costs a link. `apptest` is the loader's test
+# kit, in no image but this one; the build says so every time it links it,
+# because a kit that leaked into the system's image would make the loader's
+# test pass without the loader.
+#
+APPTEST_OBJS := $(UBUILD)/user/kits/apptest/apptest.c.o
+
+$(UBUILD)/apps/apptest.elf: $(USER_OBJS) $(APPTEST_OBJS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(APPTEST_OBJS) -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_apptest_kit$$' \
+	    || { echo "apps: apptest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_apptest_kit$$' \
+	    || { echo "apps: the system's image has the loader's test kit in it"; rm -f $@; exit 1; }
+
+.PHONY: apps
+apps: $(UBUILD)/apps/apptest.elf
+
 $(GEN)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< init_image $@
@@ -3330,8 +3353,10 @@ J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 gate-images: $(TARGET) $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf
+	@$(MAKE) --no-print-directory -j$(J) apps
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory -j$(J) x86-build >/dev/null && \
+	    $(MAKE) --no-print-directory -j$(J) ARCH=x86_64 FULL=$(FULL) apps >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) TEST=1 x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \
 	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \

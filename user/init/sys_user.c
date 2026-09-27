@@ -2716,15 +2716,17 @@ void kosmos_net_kit(lua_State *L);
 #ifdef KOSMOS_WEB
 void kosmos_web_kit(lua_State *L);
 #endif
-#ifdef KOSMOS_DOOM
-void kosmos_doom_kit(lua_State *L);
-#endif
-#ifdef KOSMOS_QUAKE
-void kosmos_quake_kit(lua_State *L);
-#endif
-#ifdef KOSMOS_SNES
-void kosmos_snes_kit(lua_State *L);
-#endif
+/*
+ * **The kits a program brings in an image of its own** (`docs/elf.md`):
+ * declared weak, so an image that does not link one has a null here and
+ * `sys.kit` says there is no such kit - and this file is compiled once for
+ * every image, the system's and each program's, rather than once a set of
+ * kits. Linked in, they are what they always were.
+ */
+void kosmos_doom_kit(lua_State *L) __attribute__((weak));
+void kosmos_quake_kit(lua_State *L) __attribute__((weak));
+void kosmos_snes_kit(lua_State *L) __attribute__((weak));
+void kosmos_apptest_kit(lua_State *L) __attribute__((weak));
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
 void kosmos_aac_kit(lua_State *L);
@@ -2746,19 +2748,14 @@ static const struct {
 #ifdef KOSMOS_WEB
     { "web",      kosmos_web_kit },
 #endif
-#ifdef KOSMOS_DOOM
-    /* `FULL=1`, the default, or `DOOM=1`; runtime/upstream/doom/README.md
-     * says what that makes of the image's licence. */
+    /* Linked where `FULL=1` (Doom, the Super Nintendo) or `MEGA=1` (Quake)
+     * puts them, or into a program's own image; runtime/upstream/doom's
+     * README says what Doom makes of an image's licence. */
     { "doom",     kosmos_doom_kit },
-#endif
-#ifdef KOSMOS_QUAKE
-    /* `QUAKE=1` or `MEGA=1`, which `FULL=1` does not turn on. */
     { "quake",    kosmos_quake_kit },
-#endif
-#ifdef KOSMOS_SNES
-    /* `FULL=1`, the default, or `SNES=1`. */
     { "snes",     kosmos_snes_kit },
-#endif
+    /* In no image but its own: the loader's test (`docs/elf.md`). */
+    { "apptest",  kosmos_apptest_kit },
 #ifdef KOSMOS_FFMPEG
     /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
     { "h264",     kosmos_h264_kit },
@@ -2773,7 +2770,8 @@ static int l_kit(lua_State *L)
     unsigned i;
 
     for (i = 0; kits[i].name != NULL; i++) {
-        if (strcmp(kits[i].name, want) == 0) {
+        /* A weak kit this image did not link is not here at all. */
+        if (kits[i].build != NULL && strcmp(kits[i].name, want) == 0) {
             kits[i].build(L);
             return 1;
         }
@@ -2789,11 +2787,15 @@ static int l_kit_names(lua_State *L)
 {
     unsigned i;
 
+    lua_Integer n = 0;
+
     lua_newtable(L);
 
     for (i = 0; kits[i].name != NULL; i++) {
-        lua_pushstring(L, kits[i].name);
-        lua_rawseti(L, -2, (lua_Integer)i + 1);
+        if (kits[i].build != NULL) {
+            lua_pushstring(L, kits[i].name);
+            lua_rawseti(L, -2, ++n);
+        }
     }
 
     return 1;

@@ -11031,3 +11031,38 @@ place, which stopped being true long ago; corrected.
 
 The gate with step 1: 48 of 48 in 8:48 - the order kept from passing runs
 (18.220) doing what it should.
+
+## 18.222 A program's own image, built as a link
+
+Step 3 of the loader (`docs/elf.md`), done before step 2 because it is the
+same whichever form the file takes, and step 2 waits for Diego's word on
+ELF. **A kit a program brings is declared weak** in `sys_user.c`: Doom's,
+Quake's and the Super Nintendo's, which are leaving the system, and
+`apptest`, the loader's test kit. An image that does not link one has a
+null there, and `sys.kit` says there is no such kit; `kits` lists only the
+ones linked. So that file compiles once for every image, and **a program's
+image is the system's objects and its kit's, linked as `init.elf` is** -
+`make apps` - a link rather than a build of its own: the compile flags that
+chose kits (`KOSMOS_DOOM` and the rest) were used by that table and nothing
+else, and a variant of their own would have compiled the whole userland
+again in a directory of its own, a minute of the gate for one test image.
+The images that have Doom today have it exactly as before.
+
+`apptest` answers 42 and is in no image but `apps/apptest.elf`, so a 42
+from it (step 4) is a program in an image loaded from a file. **The build
+checks that every time it links the image**, with `nm`: the kit defined in
+the program's image, and not defined in the system's - a kit that leaked
+into the system's image would make step 4's test pass without the loader.
+Built on both boards, from the gate's own images. **Control**: the test kit
+in the system's image as well - the check fires, "the system's image has
+the loader's test kit in it". (A first control did not reach it: `make`
+compares times, the system's image was newer than every object it named,
+and nothing was linked again - so nothing was checked. Forced, it was.)
+
+The file is 54 MB because the link keeps its debugging information; what
+goes on a disk will be stripped, and how much of the userland a program's
+image needs - its wallpapers, say - is step 5's question.
+
+The gate with step 3: 48 of 48 in 9:34 - the images step builds the program
+image on both boards now, and took longer for recompiling everything after
+`sys_user.c` changed.
