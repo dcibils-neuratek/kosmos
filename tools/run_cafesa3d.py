@@ -757,7 +757,12 @@ def main():
         m = re.match(r"Gold, ([\d.]+) m across, from ([\d.]+) m$", got)
         check(m is not None and abs(float(m.group(1)) - 2.08) < 0.02 and float(m.group(2)) < 4,
               "F did not frame the gold ball, a 0.6 m sphere, from close by: %r" % got)
-        now = where(mark).get("Gold")
+        # Where things are *after* the framing, not after the mark: Ctrl Z
+        # above says where things are too, and with keys 0.12 s apart its
+        # line can land after the mark - the ball read where it was before
+        # F (`testing.md` 18.219).
+        framed_at = guest.seen.find("cafesa3d: framed ", mark)
+        now = where(framed_at if framed_at >= 0 else mark).get("Gold")
         middle = (ox + 46 + view0[0] // 2, oy + 46 + view0[1] // 2)
         check(now is not None and abs(now[0] - middle[0]) <= 3 and abs(now[1] - middle[1]) <= 3,
               "after F the gold ball is at %r, not the view's middle %r" % (now, middle))

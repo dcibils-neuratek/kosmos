@@ -1376,6 +1376,18 @@ processors, and still what follows USB:
       console writes nowhere - the kernel refuses the write - so every
       application's panic is `ended, code 70` and nothing else. It should
       reach the console the way `print` does, or the log.
+   5h. **WANTED on 27 September - Duplicate, and every key in one place.**
+      Diego, with a photograph of Cafesa3D and Blender's keyboard sheet:
+      "We need a shortcut and menu option to duplicate objects like
+      blender", and "Also I want a button that pops up all key commands and
+      shortcuts". So **Shift D**, as Blender's - a copy of the selection,
+      named as Blender names one (`Cube.001`), taken up to be moved at once
+      until a click puts it down or Escape leaves it where the original is -
+      and **Duplicate** in a menu beside Delete; one undo step. And a button
+      in the header that opens **every key Cafesa3D has**, grouped as
+      Blender's sheet groups them - the view, selecting, the objects, the
+      files, the panels - read from the same table the keys are handled
+      from, so the sheet cannot fall behind them. The window is drawn first.
    6. The vector units in the kit, measured.
    Then Edit mode, and animation last.
    - **Sample scenes: a house, a car, a plane** - Diego, 25 September:
@@ -2170,6 +2182,34 @@ processors, and still what follows USB:
    taking it out itself when a replacement fails. **Recommended: choosing.**
    Asked: that; the games until the loader; and a drawing of the two trees.
 
+   **Diego's answers, the same evening**: "no decision made yet on this,
+   lets skip for now being able to change the shiped system"; "i want to go
+   ahead and make the elf loader so we can start shipping a really usable
+   system with games on /home"; and yes to the drawing. So: **AGREED** -
+   `/home` is everything a person has and travels, `/kosmos` everything the
+   system ships; **AGREED - the ELF loader** (below, 6t), so an application
+   with C in it is installed into `/home` rather than compiled into the
+   image, and Doom, Quake and the Super Nintendo leave the image for
+   `/home`; **the two trees drawn first**, before anything moves - and the
+   drawing is not a mockup to throw away: "the tree drawn of the
+   directoryes serve as part of the documentation for kosmos", so it is a
+   page in `docs/` kept true as the layout changes; and changing the
+   shipped system **set aside**, undecided.
+
+6t. **AGREED on 27 September - the ELF loader: a program loaded from a
+   file.** Diego: "i want to go ahead and make the elf loader so we can
+   start shipping a really usable system with games on /home". Every
+   process is the one image today, entered at a role (`layout.md` §4), so a
+   program with C in it has to be compiled in: that is why Doom, Quake and
+   the Super Nintendo are in the MEGA image and why nobody else's
+   application could be installed at all. A loader lets a program be a file
+   - an ELF of its own, statically linked against the runtime, read from
+   `/home` and spawned as a process - and it arrives with the question
+   `per-launcher-permissions` is waiting on: what a program may reach, when
+   the build no longer vouched for it. Written as a document before it is
+   built, as `threads.md` was, in steps each with its suite; the layout it
+   installs into is 6s's drawing.
+
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the
    deskbar", "all the app icons look the same, not the real app icon as it
@@ -2182,6 +2222,10 @@ processors, and still what follows USB:
    Each window says the file it runs now.
 
 6q. **FOUND on 27 September - the Deskbar's focus check fails now and then.**
+   **Two of the three DONE the same day** (`testing.md` 18.219): the
+   minimised window read from the frame the press drew, and Large icons
+   from a picture still being drawn - both now wait for what they check.
+   The Control-W Tab reading below is the one still open.
    `arm-display-3` stopped a gate on "after Control-W Tab moved the focus to
    clock, the Deskbar's buttons ... show the focus where it was", and passed
    when run alone - as it has at least twice before (26 September, and the

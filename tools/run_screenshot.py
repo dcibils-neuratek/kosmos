@@ -586,15 +586,33 @@ class Guest:
             (json.dumps({"execute": command, "arguments": arguments}) + "\n")
             .encode())
 
-        # The reply, plus whatever asynchronous events arrive with it. Not
+        # The reply, plus whatever asynchronous events arrive before it. Not
         # parsed: this is a test harness and the only interesting failure -
         # QEMU refusing the command - shows up as the guest not moving.
-        time.sleep(0.15)
+        #
+        # **Read until the reply is there**, rather than for a fixed 0.15 s
+        # and whatever had come: the reply arrives in well under a
+        # millisecond, and the sleep was 48 of Cafesa3D's 366 seconds on its
+        # own - 324 tablet moves and clicks - and a sixth of every suite that
+        # uses the pointer (`testing.md` 18.219). The events a command sets
+        # off reach the guest in order either way; a short pace after it
+        # keeps a burst of moves from arriving as one.
+        got = b""
+        deadline = time.monotonic() + 5
 
-        try:
-            self.qmp.recv(65536)
-        except socket.timeout:
-            pass
+        while (b'"return"' not in got and b'"error"' not in got
+               and time.monotonic() < deadline):
+            try:
+                chunk = self.qmp.recv(65536)
+            except socket.timeout:
+                break
+
+            if not chunk:
+                break
+
+            got += chunk
+
+        time.sleep(0.02)
 
     def mouse_to(self, x, y):
         """Absolute position, in the tablet's own 0..32767 range."""
@@ -621,7 +639,17 @@ class Guest:
         self._connect_monitor()
         self._drain_monitor()
         self.monitor.sendall(f"sendkey {key}\n".encode())
-        time.sleep(0.35)
+        #
+        # **As long as QEMU holds the key, and a little more.** `sendkey`
+        # holds a key down 100 ms and plays the next one after it, so keys
+        # arrive in order at that pace whatever this does; the wait is for
+        # this side to stay in step, so a click sent next is not played
+        # before the last key's release. It was 0.35 s - fifty-five of the
+        # Script suite's 114 seconds were this line (`testing.md` 18.219).
+        # Not less: a window keeps 64 events, a key is up to three of them,
+        # and a busy application has to read them before they are dropped.
+        #
+        time.sleep(0.12)
         self._drain_monitor()
 
     def _drain_monitor(self):
@@ -8086,6 +8114,20 @@ def check_focus_shown(guest):
                           "in 6 s.")
         time.sleep(0.05)
 
+    #
+    # **Until the button lets go, or six seconds.** The press alone raises
+    # the window and draws the bar, before the release minimises it, and the
+    # window manager says nothing when it minimises - so the first frame
+    # after the click could be the one from before. Read once, that was a
+    # check that failed now and then (`roadmap.md` 6q), and every time once
+    # the harness stopped pausing 0.15 s after each pointer event
+    # (`testing.md` 18.219). A bar that draws a minimised window as the one
+    # you are in never lets go, and still fails.
+    #
+    while (buttons_now()[apps.index(current)] == pressed
+           and time.monotonic() < limit + 6):
+        time.sleep(0.3)
+
     if buttons_now()[apps.index(current)] == pressed:
         raise Failure(
             f"{current}, minimised by its own box, is drawn pressed on the "
@@ -8771,6 +8813,24 @@ def check_icon_sizes(guest):
         guest, grew,
         "Large icons was chosen from the desktop's menu and the first column "
         f"did not get taller - its last row of ink is still about {before}.")
+
+    #
+    # **And then still**: the first picture in which the column had grown
+    # can be one the desktop was still drawing - the name before the last
+    # read at row 220 where the finished one has it at 241, once in a gate,
+    # after the harness stopped pausing after each event (`testing.md`
+    # 18.219). So the one measured is the first that is the same twice.
+    #
+    last = [px]
+
+    def still(w, h, pixels):
+        same = pixels == last[0]
+        last[0] = pixels
+        return (w, h, pixels) if same else None
+
+    _, _, px = settle(
+        guest, still,
+        "Large icons was chosen and the desktop never stopped changing.")
 
     px_large = px
     checks += 1

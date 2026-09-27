@@ -10901,3 +10901,45 @@ a copy in `/ramfs` again - bench.lua is said to be a library and never runs.
 
 The gate with 18.217 and 18.218: 48 of 48 in 10:09 - over the ten minutes,
 and the next thing is the suites' fixed pauses (`state.md`).
+
+## 18.219 The gate back under ten minutes: fixed pauses out of the harness
+
+`make prepush` for 0.10.172 took 10:16 and the gate after it 10:09, over the
+ten minutes Diego set. The gate starts the longest suites first by what
+each took last time, and at six at once the 3,050 seconds of work cannot
+finish much before 509 - it was finishing at about 520. So the time was in
+the work, and a profile of the five slowest suites - every `time.sleep`
+counted by the line that called it - said where: **fixed pauses, not
+waiting for the guest**. The Script suite spent 55 of its 114 seconds in
+`sendkey`'s 0.35 s after each key; Cafesa3D on x86-64, 48 of its 366 in
+`_qmp`'s 0.15 s after each of 324 pointer events.
+
+- **`_qmp` reads until its reply is there** - `"return"` or `"error"`, well
+  under a millisecond - then paces 0.02 s so a burst of moves does not
+  arrive as one.
+- **`sendkey` waits 0.12 s**: QEMU holds a key 100 ms and plays the next one
+  after it, so keys stay in order whatever the harness does; the wait keeps
+  the harness in step, so a click sent next is not played before the last
+  release. Not less: a window keeps 64 events, a key is up to three, and a
+  busy application must read them before they are dropped.
+
+**What the faster pace found**, three checks that had read a moment too
+early, each now waiting for the thing it checks:
+
+- Cafesa3D's "after F the gold ball is at the view's middle" read the first
+  "where things are" line after its mark, and Ctrl Z before F says one too
+  - with keys 0.12 s apart it landed after the mark, and the ball was read
+  where it had been. It reads the line after "framed" now.
+- The Deskbar's "a minimised window is not drawn pressed" read the first
+  frame after the click, which the press alone draws, before the release
+  minimises; the window manager says nothing when it minimises. It reads
+  the bar until the button lets go, six seconds at most. **Control**: a
+  Deskbar that draws a minimised window pressed fails it (`roadmap.md` 6q:
+  this was one of the two checks that failed now and then).
+- The desktop's Large icons measured the first picture in which the column
+  had grown, which can be one still being drawn - row 220 where the finished
+  picture has 241. It measures the first picture that is the same twice
+  (6q's other one).
+
+The gate, twice after the helpers changed: 48 of 48 in **8:43**, then the
+Large icons check once, fixed above; both phases pass on both boards.
