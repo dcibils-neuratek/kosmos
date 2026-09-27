@@ -3154,6 +3154,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# INFO - read through the same tags.lua Music uses, on this machine.
 	$(HOSTDIR)/lua tools/test_tags.lua
 	$(HOSTDIR)/lua tools/test_procshare.lua
+	@# The kit's keys: every sequence the board makes read back whole, as
+	@# its key and its modifiers, and nothing typed that was not (6n, step 0).
+	$(HOSTDIR)/lua tools/test_keys.lua
 	@# And an MP4's index, for the video player (roadmap 4e).
 	$(HOSTDIR)/lua tools/test_mp4.lua
 	@# JSON, and Cafesa3D's scenes read out of glTF: the samples written

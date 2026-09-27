@@ -117,6 +117,7 @@ static void pushed_string(const char *s)
  * cannot be interleaved with another core's. */
 static void pushed_typed(unsigned code, bool down)
 {
+    char buffer[KEY_SEQUENCE_MAX];
     const char *sequence;
     int c;
 
@@ -135,7 +136,7 @@ static void pushed_typed(unsigned code, bool down)
         return;
     }
 
-    sequence = hal_key_sequence(code);
+    sequence = hal_key_sequence(code, pushed_shift, pushed_ctrl, buffer);
 
     if (sequence != NULL) {
         pushed_string(sequence);
@@ -149,7 +150,7 @@ static void pushed_typed(unsigned code, bool down)
     }
 
     if (pushed_super) {
-        pushed_string(hal_key_super(c));
+        pushed_string(hal_key_super(c, buffer));
         return;
     }
 
@@ -278,21 +279,140 @@ static const unsigned char keymap_shift[128] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 120 */
 };
 
-/* The escape sequence for a key that is not a character, or NULL. */
-const char *hal_key_sequence(unsigned code)
+/*
+ * **The sequence for a key, with Shift and Control inside it**, or NULL for
+ * a key that is a character.
+ *
+ * A modifier held with a key that is not a character used to be dropped
+ * here: Shift with an arrow was an arrow, and Control with anything but a
+ * letter said nothing at all (`hal_key_char`). So no program could select
+ * from the keyboard, and the IDE's Ctrl+/, Ctrl+Space and Ctrl+Enter
+ * (`roadmap.md` 6n, step 0) had no way to be typed.
+ *
+ * **The modifier travels inside the sequence**, which is how Super already
+ * does it and for the same reason: this system's input language is a byte
+ * stream, and a held key has nowhere else to go. Carried in the key's own
+ * bytes it cannot arrive out of order with the key, which a separate event
+ * could - the window manager posts a pass's characters before its key
+ * transitions.
+ *
+ * The shapes are xterm's, so a terminal at the far end of a cable would
+ * read them too, and `m` is its modifier number, 1 plus 1 for Shift, 2 for
+ * Alt and 4 for Control:
+ *
+ *   an arrow, Home, End            ESC [ A        ESC [ 1 ; m A
+ *   Insert, Delete, the page keys  ESC [ 5 ~      ESC [ 5 ; m ~
+ *   F1 to F4                       ESC O P        ESC [ 1 ; m P
+ *   F5 to F12                      ESC [ 15 ~     ESC [ 15 ; m ~
+ *   Shift+Tab                      ESC [ Z
+ *   Control with a key that is     ESC [ c ; m u, `c` the key's own
+ *   not a letter                   character unshifted - 47 for /
+ *
+ * The last is the "CSI u" form xterm and kitty agree on, for keys the
+ * older forms never had room for. Control with a letter is still the
+ * control character it names, so every program that reads Control-S as 19
+ * goes on doing so.
+ */
+static const char *sequence_of(char out[KEY_SEQUENCE_MAX], unsigned number,
+                               unsigned m, char final, bool ss3)
 {
-    switch (code) {
-    case KEY_UP:       return "\x1b[A";
-    case KEY_DOWN:     return "\x1b[B";
-    case KEY_RIGHT:    return "\x1b[C";
-    case KEY_LEFT:     return "\x1b[D";
-    case KEY_HOME:     return "\x1b[H";
-    case KEY_END:      return "\x1b[F";
-    case KEY_PAGEUP:   return "\x1b[5~";
-    case KEY_PAGEDOWN: return "\x1b[6~";
-    case KEY_DELETE:   return "\x1b[3~";
-    default:           return NULL;
+    unsigned at = 0;
+    char digits[4];
+    unsigned n = 0;
+
+    out[at++] = 0x1b;
+
+    if (ss3 && m == 1) {                 /* F1 to F4, unmodified: ESC O P */
+        out[at++] = 'O';
+        out[at++] = final;
+        out[at] = '\0';
+        return out;
     }
+
+    out[at++] = '[';
+
+    /* The key's number, when it has one, or 1 when a modifier needs a
+     * first parameter to follow. */
+    if (number == 0 && m > 1) {
+        number = 1;
+    }
+
+    if (number > 0) {
+        do {
+            digits[n++] = (char)('0' + number % 10u);
+            number /= 10u;
+        } while (number > 0 && n < sizeof(digits));
+
+        while (n > 0) {
+            out[at++] = digits[--n];
+        }
+    }
+
+    if (m > 1) {
+        out[at++] = ';';
+        out[at++] = (char)('0' + m);
+    }
+
+    out[at++] = final;
+    out[at] = '\0';
+    return out;
+}
+
+const char *hal_key_sequence(unsigned code, bool shift, bool ctrl,
+                             char out[KEY_SEQUENCE_MAX])
+{
+    unsigned m = 1u + (shift ? 1u : 0u) + (ctrl ? 4u : 0u);
+    unsigned char plain;
+
+    switch (code) {
+    case KEY_UP:       return sequence_of(out, 0, m, 'A', false);
+    case KEY_DOWN:     return sequence_of(out, 0, m, 'B', false);
+    case KEY_RIGHT:    return sequence_of(out, 0, m, 'C', false);
+    case KEY_LEFT:     return sequence_of(out, 0, m, 'D', false);
+    case KEY_HOME:     return sequence_of(out, 0, m, 'H', false);
+    case KEY_END:      return sequence_of(out, 0, m, 'F', false);
+    case KEY_INSERT:   return sequence_of(out, 2, m, '~', false);
+    case KEY_DELETE:   return sequence_of(out, 3, m, '~', false);
+    case KEY_PAGEUP:   return sequence_of(out, 5, m, '~', false);
+    case KEY_PAGEDOWN: return sequence_of(out, 6, m, '~', false);
+    case KEY_F11:      return sequence_of(out, 23, m, '~', false);
+    case KEY_F12:      return sequence_of(out, 24, m, '~', false);
+    default:           break;
+    }
+
+    /*
+     * F1 to F10, which are consecutive codes and not consecutive numbers:
+     * xterm skipped 16 and 22, as the VT220 did, so F6 is 17 and F10 is 21.
+     */
+    if (code >= KEY_F1 && code <= KEY_F10) {
+        static const unsigned char numbers[] = { 0, 0, 0, 0, 15, 17, 18, 19, 20, 21 };
+        unsigned i = code - KEY_F1;
+
+        if (i < 4u) {
+            return sequence_of(out, 0, m, (char)('P' + i), true);
+        }
+
+        return sequence_of(out, numbers[i], m, '~', false);
+    }
+
+    if (code == KEY_TAB && shift && !ctrl) {
+        return sequence_of(out, 0, 1, 'Z', false);
+    }
+
+    /*
+     * Control with a key whose character is not a letter: Space, Enter,
+     * Tab, a digit, a mark. Enter is 13 here as it is to every terminal
+     * that sends this, whatever the table below makes of the key.
+     */
+    if (ctrl && code < 128u) {
+        plain = keymap_plain[code];
+
+        if (plain != 0 && !(plain >= 'a' && plain <= 'z')) {
+            return sequence_of(out, (plain == '\n') ? 13u : plain, m, 'u', false);
+        }
+    }
+
+    return NULL;
 }
 
 /*
@@ -317,22 +437,21 @@ const char *hal_key_sequence(unsigned code)
  * is the difference between tapping the key and using it to hold a
  * combination.
  *
- * The buffer is static and the caller copies before asking again, which is
- * what `hal_key_sequence` above already promises by returning a literal.
+ * Written into the caller's buffer. It was one static buffer, shared by the
+ * PS/2 keyboard's interrupt and a USB keyboard's pushed keys, which on a PC
+ * run on whichever cores they like.
  */
-static char super_seq[8];
-
-const char *hal_key_super(int c)
+const char *hal_key_super(int c, char out[KEY_SEQUENCE_MAX])
 {
-    super_seq[0] = 0x1b;
-    super_seq[1] = '[';
-    super_seq[2] = '1';
-    super_seq[3] = ';';
-    super_seq[4] = '9';
-    super_seq[5] = (char)((c > 0) ? c : '~');
-    super_seq[6] = 0;
+    out[0] = 0x1b;
+    out[1] = '[';
+    out[2] = '1';
+    out[3] = ';';
+    out[4] = '9';
+    out[5] = (char)((c > 0) ? c : '~');
+    out[6] = 0;
 
-    return super_seq;
+    return out;
 }
 
 /*

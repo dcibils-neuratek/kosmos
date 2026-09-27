@@ -2160,8 +2160,9 @@ processors, and still what follows USB:
    opens on **the last project opened**; and **debugging is a later step of
    its own**.
    **The steps, each used and tested before the next**:
-   0. **The keys the editor needs, which a kit window has never had**
-      (found reading for step 1, 26 September). The board turns a key that
+   0. **DONE on 26 September - the keys the editor needs, which a kit
+      window has never had** (found reading for step 1; `testing.md`
+      18.207). The board turns a key that
       is not a character into an escape sequence and every reader of the
       stream - the kit's decoder, the console's line editor, `edit.lua` -
       takes a sequence to be three bytes, so `ESC [ 5 ~` (Page Up, Page

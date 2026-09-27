@@ -25,7 +25,8 @@ what they should be:
   row with something whichever way, and ties go by id. The expected order
   is worked out here from the rows the window printed, not written down.
 
-**Monitor**: each pace in its dots' menu chosen in turn.
+**Monitor**: each pace in its dots' menu chosen in turn, and then moved
+by the keyboard - Control-W and Right - which the window manager says.
 What is held to the pace is the clock rather than the words: each time the
 menu opens, Monitor says how many samples it has taken since the pace was
 set and in how many seconds by the counter, and those have to agree with
@@ -298,6 +299,23 @@ def main():
                 at = menu(pace)
 
             guest.sendkey("esc")
+            time.sleep(0.5)
+
+            # **Control-W then an arrow moves the window in front** - the
+            # window manager's own keys, which read an arrow as three bytes
+            # and let Super's collecting take its Escape first, so it moved
+            # nothing and nothing had tested it (`roadmap.md` 6n, step 0).
+            # Monitor is in front, from the clicks above.
+            mark = len(guest.seen)
+            guest.proc.stdin.write(b"\x17\x1b[C")
+            guest.proc.stdin.flush()
+            got = said("wm: moved ", mark, 10)
+            moved = re.match(r"Monitor to (\d+),(\d+)", got or "")
+            check(moved is not None and mon is not None
+                  and (int(moved.group(1)), int(moved.group(2)))
+                  == (mon[0] + 16, mon[1]),
+                  "Control-W then Right did not move Monitor 16 to the right "
+                  "of %r: %r" % (mon and mon[:2], got))
     finally:
         guest.close()
 

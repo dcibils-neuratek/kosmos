@@ -178,9 +178,11 @@ interface moves between controls and the arrows are how every list is used,
 so a manager holding them has decided no application may have a second
 control.
 
-Control-arrow is a terminal escape sequence this system does not speak, so
-it takes the approach `screen` and `tmux` took for the same reason: one key
-is reserved and it *introduces* a command rather than being one.
+It takes the approach `screen` and `tmux` took: one key is reserved and it
+*introduces* a command rather than being one. (This said Control-arrow was
+a sequence the system did not speak; since 26 September it does - see
+*Keys with their modifiers* below - and the prefix stays, because a key an
+application might want is not the window manager's to take.)
 
     Control-W then an arrow    move the focused window
     Control-W then Tab         focus the next window
@@ -194,6 +196,30 @@ key on a PC keyboard and the Command key on an Apple one - the same HID usage
 - and carries it up as an escape sequence, so there is a modifier now and
 Super owns the desktop commands. What is left behind the prefix is the small
 set that has to work on a keyboard with no Super key at all.
+
+**Keys with their modifiers** (26 September, `roadmap.md` 6n step 0). The
+input language is a byte stream, and until the IDE needed them Shift and
+Control were consumed at the board: Shift with an arrow was an arrow, and
+Control with anything but a letter said nothing. They travel inside the
+key's own sequence now, in xterm's shapes - `ESC [ 1 ; 2 A` for Shift+Up,
+`ESC [ 15 ; 2 ~` for Shift+F5, `ESC [ Z` for Shift+Tab, `ESC [ 47 ; 5 u`
+for Ctrl+/ - so a modifier cannot arrive out of order with its key, as a
+separate `rawkey` could: the window manager posts a pass's characters before
+its transitions. **Every reader takes a sequence whole** - the kit, the
+console's line editor, `edit.lua`, the window manager's prefix - and drops
+what it does not know rather than typing it; each took a sequence to be
+three bytes, so Page Up typed a `~`.
+
+A widget's `key(c)` is handed one number: a character is itself, a key that
+is not one is a small negative number (`ui.UP` -1 to `ui.LEFT` -4 as ever,
+then `ui.HOME`, `ui.END`, `ui.PAGEUP`, `ui.PAGEDOWN`, `ui.INSERT`,
+`ui.DELETE`, `ui.F[1]` to `ui.F[12]`), and a modified key is that less 1024
+for each step of `ui.SHIFT`, `ui.ALT` and `ui.CTRL` - always negative, so a
+widget that types what it is given never types Ctrl+/. `ui.keyparts(c)` is
+the key and its modifiers; `/lib/keys.lua` does the arithmetic and nothing
+else should. **Tab is the window's** and Shift+Tab steps back; a widget that
+says `takes_tab` - a code editor - keeps both, and **Control with Tab always
+moves the focus**, so nothing can trap it.
 
 The pointer divides the same way. A press on a title bar is the window
 manager's - raise and drag. A press anywhere else is the application's, and

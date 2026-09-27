@@ -25,6 +25,7 @@
 #include "boot.h"
 #include "syscall.h"
 #include "irq.h"
+#include "keys.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -6325,6 +6326,79 @@ static bool test_a_driver_key_comes_out_and_is_let_go(void)
     return ok && !hal_key_release_all();
 }
 
+/*
+ * **A key with its modifiers, as one sequence** (`roadmap.md` 6n, step 0).
+ *
+ * Shift with an arrow was an arrow and Control with anything but a letter
+ * said nothing, so nothing could select from the keyboard and the IDE's
+ * Ctrl+/, Ctrl+Space and Ctrl+Enter could not be typed. The board puts the
+ * modifier inside the key's own sequence now, in xterm's shapes, and these
+ * are the strings each key has to make - `tools/test_keys.lua` holds the
+ * kit's decoder to reading the same ones back. And what must stay a
+ * character stays one: a letter, with Control or without, and Tab, Space
+ * and Enter alone.
+ */
+static bool test_a_modified_key_is_one_sequence(void)
+{
+    static const struct {
+        unsigned code;
+        bool shift, ctrl;
+        const char *want;
+    } cases[] = {
+        { KEY_UP,       false, false, "\x1b[A" },
+        { KEY_UP,       true,  false, "\x1b[1;2A" },
+        { KEY_LEFT,     false, true,  "\x1b[1;5D" },
+        { KEY_RIGHT,    true,  true,  "\x1b[1;6C" },
+        { KEY_HOME,     false, false, "\x1b[H" },
+        { KEY_END,      true,  false, "\x1b[1;2F" },
+        { KEY_PAGEUP,   false, false, "\x1b[5~" },
+        { KEY_PAGEDOWN, true,  false, "\x1b[6;2~" },
+        { KEY_DELETE,   false, true,  "\x1b[3;5~" },
+        { KEY_INSERT,   false, false, "\x1b[2~" },
+        { KEY_F1,       false, false, "\x1bOP" },
+        { KEY_F1 + 3,   true,  false, "\x1b[1;2S" },     /* Shift+F4 */
+        { KEY_F1 + 4,   false, false, "\x1b[15~" },      /* F5, Run */
+        { KEY_F1 + 4,   true,  false, "\x1b[15;2~" },    /* Shift+F5, Stop */
+        { KEY_F1 + 5,   false, false, "\x1b[17~" },      /* F6: no 16 */
+        { KEY_F1 + 6,   false, false, "\x1b[18~" },      /* F7, check */
+        { KEY_F10,      false, false, "\x1b[21~" },
+        { KEY_F11,      false, false, "\x1b[23~" },
+        { KEY_F12,      true,  true,  "\x1b[24;6~" },
+        { KEY_TAB,      true,  false, "\x1b[Z" },
+        { KEY_TAB,      false, true,  "\x1b[9;5u" },
+        { 57,           false, true,  "\x1b[32;5u" },    /* Ctrl+Space */
+        { 28,           false, true,  "\x1b[13;5u" },    /* Ctrl+Enter */
+        { 53,           false, true,  "\x1b[47;5u" },    /* Ctrl+/ */
+        { 41,           true,  true,  "\x1b[96;6u" },    /* the longest */
+    };
+    char buffer[KEY_SEQUENCE_MAX];
+    bool ok = true;
+    unsigned i;
+
+    for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        const char *got = hal_key_sequence(cases[i].code, cases[i].shift,
+                                           cases[i].ctrl, buffer);
+
+        if (got == NULL || strcmp(got, cases[i].want) != 0) {
+            kputs("\n   (key ");
+            kputu(cases[i].code);
+            kputs(cases[i].shift ? " with Shift" : "");
+            kputs(cases[i].ctrl ? " with Control" : "");
+            kputs(got == NULL ? " made no sequence)" : " made another sequence)");
+            ok = false;
+        }
+    }
+
+    return ok
+        && hal_key_sequence(30, false, false, buffer) == NULL        /* a */
+        && hal_key_sequence(30, true, true, buffer) == NULL
+        && hal_key_char(30, false, true, false) == 1                 /* ^A */
+        && hal_key_sequence(KEY_TAB, false, false, buffer) == NULL
+        && hal_key_sequence(57, true, false, buffer) == NULL         /* Space */
+        && hal_key_sequence(28, false, false, buffer) == NULL        /* Enter */
+        && strcmp(hal_key_super(0, buffer), "\x1b[1;9~") == 0;
+}
+
 static bool test_the_boot_announced_every_stage(void)
 {
     /*
@@ -8886,6 +8960,8 @@ static const struct test tests[] = {
                                           test_a_click_between_two_looks_is_not_lost },
     { "input: a driver's wheel adds up, and a look takes it",
                                           test_a_driver_wheel_adds_up },
+    { "input: a key with its modifiers is one sequence",
+                                          test_a_modified_key_is_one_sequence },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },
     { "console: a write carries its colour, and UTF-8",

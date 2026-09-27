@@ -176,7 +176,7 @@ static volatile bool input_arrived;
  * alternative is a second set of key codes that only exist on a real
  * keyboard, and then every consumer has to know about both.
  */
-static char     pending[8];
+static char     pending[KEY_SEQUENCE_MAX];
 static unsigned pending_len;
 static unsigned pending_at;
 
@@ -802,7 +802,9 @@ static int keyboard_getchar_locked(void)
                 super = false;
 
                 if (tapped) {
-                    queue(hal_key_super(0));
+                    char buffer[KEY_SEQUENCE_MAX];
+
+                    queue(hal_key_super(0, buffer));
                     return (unsigned char)pending[pending_at++];
                 }
             }
@@ -819,7 +821,9 @@ static int keyboard_getchar_locked(void)
          * terminal would have sent, and handed out a byte at a time.
          */
         {
-            const char *sequence = hal_key_sequence(event.code);
+            char buffer[KEY_SEQUENCE_MAX];
+            const char *sequence = hal_key_sequence(event.code, shift, ctrl,
+                                                    buffer);
 
             if (sequence != NULL) {
                 queue(sequence);
@@ -841,8 +845,10 @@ static int keyboard_getchar_locked(void)
 
         /* Held with Super: a command rather than a character. */
         if (super) {
+            char buffer[KEY_SEQUENCE_MAX];
+
             super_used = true;
-            queue(hal_key_super(c));
+            queue(hal_key_super(c, buffer));
             return (unsigned char)pending[pending_at++];
         }
 

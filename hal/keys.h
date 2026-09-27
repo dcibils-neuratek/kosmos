@@ -29,7 +29,17 @@
 #define KEY_END         107
 #define KEY_DOWN        108
 #define KEY_PAGEDOWN    109
+#define KEY_INSERT      110
 #define KEY_DELETE      111
+
+/* The function keys and Tab, which a sequence carries once a modifier is
+ * held (`hal_key_sequence`). F1 to F10 run on from 59; F11 and F12 were
+ * added to the PC keyboard later and are numbered after the keypad. */
+#define KEY_TAB         15
+#define KEY_F1          59
+#define KEY_F10         68
+#define KEY_F11         87
+#define KEY_F12         88
 
 #define KEY_LEFTCTRL    29
 #define KEY_LEFTSHIFT   42
@@ -90,17 +100,33 @@ bool keys_pushed_pending(void);
 int keys_pushed_char(void);
 bool keys_pushed_char_pending(void);
 
-/* The escape sequence a terminal would have sent for a key that is not a
- * character, or NULL. */
-const char *hal_key_sequence(unsigned code);
+/*
+ * Room for the longest sequence a key can make, and its terminator:
+ * `ESC [ 126 ; 6 u` is eight bytes. A driver's queue and the buffer handed
+ * to the two functions below are this size, so no sequence is cut short -
+ * the queues were eight, and cut `ESC [ 126 ; 6 u` to nothing but its
+ * start without a word.
+ */
+#define KEY_SEQUENCE_MAX 16
+
+/*
+ * The escape sequence a terminal would have sent for a key, with Shift and
+ * Control where they were held, or NULL for a key that is a character.
+ * Written into `out`, which the caller owns, so that two keyboards on two
+ * cores cannot write one buffer; `keys.c` has the shapes and why they are
+ * xterm's.
+ */
+const char *hal_key_sequence(unsigned code, bool shift, bool ctrl,
+                             char out[KEY_SEQUENCE_MAX]);
 
 /* The character a key produces, or -1 for a key that says nothing. */
 int hal_key_char(unsigned code, bool shift, bool ctrl, bool caps);
 
 /*
  * A key held with Super as one escape sequence, or Super tapped alone when
- * `c` is not positive. `keys.c` has the shape and why it is xterm's.
+ * `c` is not positive, written into `out`. `keys.c` has the shape and why
+ * it is xterm's.
  */
-const char *hal_key_super(int c);
+const char *hal_key_super(int c, char out[KEY_SEQUENCE_MAX]);
 
 #endif

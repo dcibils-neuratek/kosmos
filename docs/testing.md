@@ -10434,3 +10434,49 @@ only what came after the echo. The other twenty prompt waits follow a
 stopped desktop, whose prompt came long before, and cannot race the same
 way. `display-1` on both boards passed again, 68 checks each.
 
+## 18.207 Keys with their modifiers, and every sequence read whole
+
+The IDE's editor (roadmap 6n, step 0) needs Shift with the arrows, Ctrl+/,
+Ctrl+Space, Ctrl+Enter and Shift+F5, and none of them could reach a window:
+the board consumed Shift and Control, so Shift with an arrow was an arrow
+and Control with anything but a letter said nothing. Reading for it found
+the older fault underneath - every reader of the key stream took an escape
+sequence to be three bytes, and the board already sent four-byte ones, so
+Page Up, Page Down and Delete typed a `~` at the shell's prompt and in any
+kit text field. The modifier now travels inside the key's sequence, in
+xterm's shapes, and every reader takes a sequence to its final byte.
+
+**`input: a key with its modifiers is one sequence`, in the kernel's suite
+on both boards**: twenty-five keys with and without Shift and Control, each
+held to the exact bytes it must make - `ESC [ 1 ; 2 A`, `ESC [ 15 ; 2 ~`,
+`ESC [ Z`, `ESC [ 47 ; 5 u` and the rest, and `ESC [ 96 ; 6 u`, the longest,
+eight bytes - and what must stay a character staying one: a letter with or
+without Control, Tab, Space and Enter alone. The two drivers' queues were
+eight bytes and truncated without a word; they are `KEY_SEQUENCE_MAX`, and
+both helpers write into the caller's buffer rather than a static one two
+keyboards on two cores could share.
+
+**`tools/test_keys.lua`, in `make test`, 56 checks**: the same sequences
+read back by the kit's decoder, `/lib/keys.lua`, as the key and modifiers
+they were made from; Page Up and Shift+Up between two letters typing
+nothing; a sequence it does not know, and Super's - even with a digit last
+- dropped whole; Escape alone, doubled and cut short; every modified key
+negative, so no widget can type one; and `keys.parts` undoing `keys.with`
+for every key and modifier. **Control**: a decoder that ends a sequence at
+its first byte fails 30 of the 56, the typed `~` among them.
+
+**The shell** (`arm-shell`, 27 checks): a line typed with Page Up, Shift+Up,
+Control+Left and Shift+F5 in the middle of it runs as though they were not
+there. **Control**: the old line editor - `keys-pa~ge;2A;5Dup5;2~` - fails.
+
+**The window manager** (`run_sysapps.py`, 24 checks): Control-W then Right
+moves the window in front sixteen to the right, which the window manager
+now says. It had moved nothing since Super arrived - Super's collector took
+the Escape first - and nothing tested it. **Control**: Super's collector put
+back ahead of the prefix fails the check.
+
+A key pressed on a keyboard in QEMU, through the window manager to a widget
+with its modifiers, is the editor's suite's to check, in step 1: Shift and
+the arrows have to select there.
+
+The gate with step 0: 42 of 42 in 8:41.

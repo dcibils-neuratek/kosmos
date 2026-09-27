@@ -244,7 +244,7 @@ static bool super_used;
  * terminal would have sent, which is the same choice `hal/virtio/input.c`
  * makes and for the same reason - one input language above this layer.
  */
-static char     pending[8];
+static char     pending[KEY_SEQUENCE_MAX];
 static unsigned pending_len;
 static unsigned pending_at;
 
@@ -510,6 +510,7 @@ static void kbd_byte(uint8_t b)
     static bool escaped;
     unsigned code;
     bool down;
+    char buffer[KEY_SEQUENCE_MAX];
     const char *sequence;
     int c;
 
@@ -555,7 +556,7 @@ static void kbd_byte(uint8_t b)
              * combination has already been sent and this release says
              * nothing. */
             if (super && !super_used) {
-                queue_sequence(hal_key_super(0));
+                queue_sequence(hal_key_super(0, buffer));
 
                 for (c = 0; c < (int)pending_len; c++) {
                     put_char((unsigned char)pending[c]);
@@ -575,7 +576,7 @@ static void kbd_byte(uint8_t b)
         return;
     }
 
-    sequence = hal_key_sequence(code);
+    sequence = hal_key_sequence(code, shift, ctrl, buffer);
 
     if (sequence != NULL) {
         unsigned i;
@@ -605,7 +606,7 @@ static void kbd_byte(uint8_t b)
         unsigned i;
 
         super_used = true;
-        queue_sequence(hal_key_super(c));
+        queue_sequence(hal_key_super(c, buffer));
 
         for (i = 0; i < pending_len; i++) {
             put_char((unsigned char)pending[i]);

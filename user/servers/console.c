@@ -277,13 +277,22 @@ static void deliver(void)
 static void edit(void)
 {
     /*
-     * Where an arrow key has got to. Three bytes arrive one at a time
+     * Where an escape sequence has got to. Its bytes arrive one at a time
      * through `next_byte`, so the sequence is a state rather than a peek:
-     * ESC, then `[` or `O` - terminals disagree about which - then a
-     * letter. Anything else abandons it, which is what makes a lone ESC
-     * harmless instead of swallowing the character after it.
+     * ESC, then `[` or `O` - terminals disagree about which - then, after
+     * `[`, any number of parameter bytes, and one final byte that ends it.
+     *
+     * **Read whole, however long.** This took a sequence to be three bytes,
+     * so Page Up's `ESC [ 5 ~` lost its `5` and put its `~` in the line, and
+     * Shift+Up's `ESC [ 1 ; 2 A` put `;2A` there (`roadmap.md` 6n, step 0).
+     * Only an unmodified Up or Down means anything here; every other
+     * sequence is taken and dropped. Anything that is not part of one
+     * abandons it, which is what makes a lone ESC harmless instead of
+     * swallowing the character after it.
      */
-    static unsigned esc;
+    enum { PLAIN, ESCAPED, CSI, SS3 };
+    static unsigned esc = PLAIN;
+    static unsigned params;
 
     for (;;) {
         int c = next_byte();
@@ -292,28 +301,42 @@ static void edit(void)
             return;
         }
 
-        if (esc == 1) {
-            esc = (c == '[' || c == 'O') ? 2u : 0u;
+        if (esc == ESCAPED) {
+            esc = (c == '[') ? CSI : (c == 'O') ? SS3 : PLAIN;
+            params = 0;
             continue;
         }
 
-        if (esc == 2) {
-            esc = 0;
-
-            if (c == 'A') {
-                recall_to(recall + 1);
-            } else if (c == 'B') {
-                recall_to(recall > 0 ? recall - 1 : 0);
-            }
-
-            /* Left and right arrive here too and are ignored: this editor
-             * has no cursor to move, and a line that jumped when you
-             * pressed one would be worse than one that did nothing. */
+        if (esc == CSI && c >= 0x20 && c <= 0x3f) {
+            params++;                   /* a parameter or intermediate byte */
             continue;
+        }
+
+        if (esc == CSI || esc == SS3) {
+            bool plain = (params == 0);
+
+            esc = PLAIN;
+
+            if (c < 0x40 || c > 0x7e) {
+                /* Cut short by a byte that ends no sequence: that byte is
+                 * a key of its own, handled below. */
+            } else {
+                if (plain && c == 'A') {
+                    recall_to(recall + 1);
+                } else if (plain && c == 'B') {
+                    recall_to(recall > 0 ? recall - 1 : 0);
+                }
+
+                /* Left and right arrive here too and are ignored: this
+                 * editor has no cursor to move, and a line that jumped
+                 * when you pressed one would be worse than one that did
+                 * nothing. */
+                continue;
+            }
         }
 
         if (c == 27) {
-            esc = 1;
+            esc = ESCAPED;
             continue;
         }
 

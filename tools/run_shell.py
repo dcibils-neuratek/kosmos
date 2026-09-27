@@ -162,6 +162,9 @@ def main():
             "touch two.txt",
             "\x1b[A\x1b[A",              # up up: touch one.txt
             "\x1b[A\x1b[A\x1b[A\x1b[B",  # up up up down: touch two.txt
+            # Page Up, Shift+Up, Control+Left and Shift+F5 in the middle of
+            # a line: each a whole sequence, and none of it typed.
+            'print("keys-" .. "pa\x1b[5~ge\x1b[1;2A\x1b[1;5Dup\x1b[15;2~")',
         ])
 
         if "/ramfs/one.txt is already there" not in history:
@@ -173,6 +176,19 @@ def main():
         if "/ramfs/two.txt is already there" not in history:
             raise Failure("the down-arrow did not walk back towards the line "
                           "being typed.\n" + history[-1500:])
+
+        checks += 1
+
+        #
+        # **A sequence is read whole** (`roadmap.md` 6n, step 0). The line
+        # editor took one to be three bytes, so Page Up's `ESC [ 5 ~` put a
+        # `~` in the line and Shift+Up's `ESC [ 1 ; 2 A` put `;2A` there -
+        # and the board sends both, and more, from a real keyboard.
+        #
+        if "keys-pageup" not in history:
+            raise Failure("keys that are not characters were typed into the "
+                          "line - Page Up, Shift+Up, Control+Left or "
+                          "Shift+F5 left bytes behind.\n" + history[-1500:])
 
         checks += 1
 

@@ -1011,90 +1011,28 @@ ui.leds = leds
 --------------------------------------------------------------------------
 -- Keys, decoded.
 --
--- The window manager forwards *bytes*, so an arrow arrives as the three of
--- an ANSI escape sequence - 27, 91, then 65 to 68 - and a widget that wants
--- to know "up" has to reassemble them. `win:run()` has always done that
--- inline, which was fine while it was the only reader.
+-- The window manager forwards *bytes*, so an arrow arrives as an escape
+-- sequence and a widget that wants to know "up" has to reassemble it. One
+-- decoder does that for every reader - `win:run()` and any application with
+-- a direct window that drives its own loop - and it lives in
+-- `/lib/keys.lua`, which says what a key's number is made of and is tested
+-- on the Mac (`tools/test_keys.lua`).
 --
--- It is not any more. An application with a direct window drives its own
--- loop and reads the poll reply itself: cube3d, plasma, Doom. Doom is what
--- found this - every arrow key arrived as an Escape followed by two
--- characters, so the menus jumped out instead of moving.
---
--- One decoder, then, and both loops use it. Negative codes so they can
--- never collide with a character: -1 up, -2 down, -3 right, -4 left, which
--- is A B C D and therefore the order the terminal sends rather than the
--- order anybody would choose.
+-- The names are here too, so a widget writes `ui.HOME` and `ui.CTRL`
+-- without a second `use`. `ui.keyparts(c)` is the key and its modifiers;
+-- an unmodified key is the number it always was, so a widget that knows
+-- nothing of modifiers goes on working and simply does not answer Ctrl+Up.
 --------------------------------------------------------------------------
 
-ui.UP, ui.DOWN, ui.RIGHT, ui.LEFT = -1, -2, -3, -4
+local keys = use("/lib/keys.lua")
 
-local ARROWS = { [65] = -1, [66] = -2, [67] = -3, [68] = -4 }
-
---
--- Returns a function: give it one byte, get back nought, one or two codes.
---
--- Two, and that is the part worth being careful about. A byte can resolve
--- more than one key, because 27 is ambiguous until the byte after it: if
--- that byte is not 91 then the 27 was a real Escape *and* the byte is a key
--- of its own, and both have to come out. Returning one and remembering the
--- other for next time sounds equivalent and is not - the next call arrives
--- with its own byte, and the remembered one has to displace it. That was
--- the first attempt, and it ate two bytes out of every three: three presses
--- of Down moved a Doom menu once.
---
--- Lua returns two values as easily as one, so it returns two.
---
--- Stateful, because three bytes make one arrow, so each reader needs its
--- own decoder.
---
-function ui.key_decoder()
-  local escape = 0
-
-  return function(c)
-    if escape == 1 then
-      if c == 91 then
-        escape = 2
-
-        return nil
-      end
-
-      --
-      -- An Escape that was not the start of a sequence.
-      --
-      -- Both bytes used to be dropped here, so a real Escape did nothing
-      -- and took the next key with it. Invisible in a widget kit, where
-      -- little is bound to Escape; very visible in a game, where it is the
-      -- menu.
-      --
-      escape = 0
-
-      -- The byte after it may itself be an Escape, and then the guessing
-      -- starts again on that one.
-      if c == 27 then
-        escape = 1
-
-        return 27
-      end
-
-      return 27, c
-    end
-
-    if escape == 2 then
-      escape = 0
-
-      return ARROWS[c]
-    end
-
-    if c == 27 then
-      escape = 1
-
-      return nil
-    end
-
-    return c
-  end
-end
+ui.UP, ui.DOWN, ui.RIGHT, ui.LEFT = keys.UP, keys.DOWN, keys.RIGHT, keys.LEFT
+ui.HOME, ui.END, ui.PAGEUP, ui.PAGEDOWN = keys.HOME, keys.END,
+                                          keys.PAGEUP, keys.PAGEDOWN
+ui.INSERT, ui.DELETE, ui.F = keys.INSERT, keys.DELETE, keys.F
+ui.SHIFT, ui.ALT, ui.CTRL = keys.SHIFT, keys.ALT, keys.CTRL
+ui.keyparts, ui.keywith = keys.parts, keys.with
+ui.key_decoder = keys.decoder
 
 --------------------------------------------------------------------------
 -- Trees.
@@ -6015,25 +5953,33 @@ end
 --
 -- One key, to whoever should have it.
 --
--- Tab is the window's and never the widget's: a control that could swallow
--- Tab is a control you can get stuck in. Everything else is offered to the
--- focused widget first, and what it does not want falls back to the window.
+-- Tab is the window's, and Shift+Tab goes back the other way: a control
+-- that could swallow Tab is a control you can get stuck in. **The one
+-- exception is a widget that says `takes_tab`** - a code editor, which
+-- indents with Tab and outdents with Shift+Tab - and it still cannot trap
+-- anybody, because **Control with Tab always moves the focus**, whoever has
+-- it. Everything else is offered to the focused widget first, and what it
+-- does not want falls back to the window.
 --
 local function dispatch(self, c)
   self.keyed = true
 
-  if c == 9 then                                  -- Tab
-    local list = self.root:focusables()
+  local key, mods = keys.parts(c)
+  local list = apply_focus(self)
+  local target = list[self.focus]
 
+  if key == 9 and not (target and target.takes_tab
+                       and mods & keys.CTRL == 0) then
     if #list > 0 then
-      self.focus = (self.focus % #list) + 1
+      if mods & keys.SHIFT ~= 0 then
+        self.focus = (self.focus - 2) % #list + 1
+      else
+        self.focus = self.focus % #list + 1
+      end
     end
 
     return true
   end
-
-  local list = apply_focus(self)
-  local target = list[self.focus]
 
   if target and target.key and target:key(c) then
     return true

@@ -208,42 +208,78 @@ end
 --------------------------------------------------------------------------
 -- Keys.
 --
--- Arrows arrive as escape, '[', then a letter. Collected across calls,
--- because the three bytes do not have to turn up in the same drain.
+-- A key that is not a character arrives as an escape sequence, collected
+-- across calls because its bytes do not have to turn up in the same drain.
+-- **Read whole**: ESC, `[` or `O`, any parameters, and a final byte. This
+-- took a sequence to be three bytes, so Page Up's `ESC [ 5 ~` typed a `~`
+-- and Shift+Up's `ESC [ 1 ; 2 A` typed `;2A` (`roadmap.md` 6n, step 0).
+-- The arrows, Home and End mean something here, and Delete; the rest are
+-- taken and dropped.
 --------------------------------------------------------------------------
 
-local escape = 0
+local escape = 0             -- 1 after ESC, 2 inside `[`, 3 after `O`
+local params = ""
 local running = true
 
-local function key(c)
-  if escape == 1 then
-    escape = (c == 91) and 2 or 0        -- '['
+local function sequence(final)
+  local first = tonumber(params:match("^(%d+)")) or 1
+
+  if final == 126 then                                             -- ~
+    if first == 3 then                                             -- Delete
+      if cx <= #lines[cy] then
+        lines[cy] = lines[cy]:sub(1, cx - 1) .. lines[cy]:sub(cx + 1)
+        dirty = true
+      elseif cy < #lines then
+        lines[cy] = lines[cy] .. table.remove(lines, cy + 1)
+        dirty = true
+      end
+    end
     return
   end
 
-  if escape == 2 then
+  if first ~= 1 then return end
+
+  if final == 65 then cy = cy - 1                                  -- up
+  elseif final == 66 then cy = cy + 1                              -- down
+  elseif final == 67 then                                          -- right
+    if cx > #lines[cy] then
+      if cy < #lines then cy = cy + 1; cx = 1 end
+    else
+      cx = cx + 1
+    end
+  elseif final == 68 then                                          -- left
+    if cx == 1 then
+      if cy > 1 then cy = cy - 1; cx = #lines[cy] + 1 end
+    else
+      cx = cx - 1
+    end
+  elseif final == 72 then cx = 1                                   -- Home
+  elseif final == 70 then cx = #lines[cy] + 1                      -- End
+  end
+
+  clamp()
+end
+
+local function key(c)
+  if escape == 1 then
+    escape = (c == 91) and 2 or (c == 79) and 3 or 0             -- [ or O
+    params = ""
+    return
+  end
+
+  if escape == 2 and c >= 0x20 and c <= 0x3f then
+    params = params .. string.char(c)
+    return
+  end
+
+  if escape == 2 or escape == 3 then
     escape = 0
 
-    if c == 65 then cy = cy - 1                                    -- up
-    elseif c == 66 then cy = cy + 1                                -- down
-    elseif c == 67 then                                            -- right
-      if cx > #lines[cy] then
-        if cy < #lines then cy = cy + 1; cx = 1 end
-      else
-        cx = cx + 1
-      end
-    elseif c == 68 then                                            -- left
-      if cx == 1 then
-        if cy > 1 then cy = cy - 1; cx = #lines[cy] + 1 end
-      else
-        cx = cx - 1
-      end
-    elseif c == 72 then cx = 1                                     -- Home
-    elseif c == 70 then cx = #lines[cy] + 1                        -- End
+    if c >= 0x40 and c <= 0x7e then
+      sequence(c)
+      return
     end
-
-    clamp()
-    return
+    -- cut short by a byte that ends no sequence: it is a key of its own
   end
 
   if c == 27 then escape = 1 return end

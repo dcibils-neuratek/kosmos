@@ -6615,6 +6615,10 @@ local function move_focused(dx, dy)
   local win = focused_window()
   if not win then return end
   move_window(win, win.x + dx, win.y + dy)
+
+  -- Said, because a keyboard's move is otherwise visible only as pixels,
+  -- and `tools/run_sysapps.py` holds it to where the window went.
+  print(("wm: moved %s to %d,%d"):format(tostring(win.title), win.x, win.y))
 end
 
 --
@@ -7008,12 +7012,18 @@ local function key(c)
     -- fall through, so this byte is dispatched normally
   end
 
-  if c == SUPER_HEAD[1] and super_at == 0 then
-    super_at = 1
-    return
-  end
-
-  -- Halfway through an escape sequence that began after the prefix.
+  --
+  -- Halfway through an escape sequence that began after the prefix: an
+  -- arrow, to move the window in front. **Before Super's collecting**, and
+  -- that order is the fix: Super's begins with the same Escape and took it
+  -- first, so `Control-W` then an arrow handed the arrow to the application
+  -- and moved nothing, from the day Super arrived - nothing tested it.
+  --
+  -- **Read whole**, parameters and all: an arrow held with Shift is
+  -- `ESC [ 1 ; 2 C` since the board carries modifiers (`roadmap.md` 6n,
+  -- step 0), and a sequence read as three bytes left `;2C` behind to be
+  -- typed. Only a plain arrow moves the window; any other is dropped.
+  --
   if #pending_escape > 0 then
     if #pending_escape == 1 then
       if c == 91 then                                   -- '['
@@ -7027,8 +7037,17 @@ local function key(c)
       return
     end
 
+    if c >= 0x20 and c <= 0x3f and #pending_escape < 16 then
+      pending_escape[#pending_escape + 1] = c           -- a parameter
+      return
+    end
+
+    local plain = (#pending_escape == 2)
+
     pending_escape = {}
     prefix = false
+
+    if not plain then return end
 
     if c == 65 then move_focused(0, -STEP) return end   -- A, up
     if c == 66 then move_focused(0,  STEP) return end   -- B, down
@@ -7039,6 +7058,11 @@ local function key(c)
 
   if prefix then
     prefixed(c)
+    return
+  end
+
+  if c == SUPER_HEAD[1] and super_at == 0 then
+    super_at = 1
     return
   end
 
