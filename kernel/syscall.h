@@ -53,7 +53,7 @@
 #define SYS_SYSINFO    12   /* (&info)                -> 0 or error       */
 #define SYS_MAP        13   /* (pages)                -> address or error  */
 #define SYS_UNMAP      14   /* (address, pages)       -> 0 or error       */
-#define SYS_SETNAME    15   /* (ptr, len)             -> 0 or error       */
+#define SYS_SETNAME    15   /* (ptr, len, from, from_len) -> 0 or error   */
 #define SYS_PROCTABLE  16   /* (&entries, max)        -> count or error   */
 #define SYS_ENDPOINT_DESTROY 17 /* (cap)              -> 0 or error       */
 #define SYS_POINTER    18   /* (&state)               -> 0 or error       */
@@ -734,7 +734,25 @@ struct proc_info {
      */
     uint32_t parent;
 
+    /*
+     * **How many threads it has running**, the first among them: 1 for a
+     * process that never asked for another, 5 for Cafesa3D rendering on
+     * four workers, 0 once it has ended (`roadmap.md` 6m). The machine's
+     * total less the sum of these is the kernel's own - one idle thread a
+     * core and the workers it keeps - which is what Processes says it is
+     * rather than taking one thread a process for granted.
+     */
+    uint32_t threads;
+
     char     name[16];
+
+    /*
+     * The file it runs, whole - `/bin/doom.lua` - as the process said it
+     * with SYS_SETNAME, and empty for one built into the image, which runs
+     * no file (`roadmap.md` 6m). A label like the name, kept and never read:
+     * the kernel does not know what a file is.
+     */
+    char     from[128];
 };
 
 /*

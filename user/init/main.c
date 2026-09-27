@@ -253,6 +253,137 @@ static int first_leaves_role(void)
 
     return 5;                               /* the process's code, at once */
 }
+
+/*
+ * **What the process table says about a process with a file and a worker**
+ * (`roadmap.md` 6m). Processes shows each one's threads and the file it
+ * runs, and both come from `struct proc_info`: this names itself with a
+ * file through SYS_SETNAME's four arguments, reads its own row back while a
+ * worker lives and after it has gone, and exits with the number of the
+ * first thing that was not as it should be.
+ */
+#define CTEST_TABLE             904UL
+#define TABLE_FILE              "/bin/t-table.lua"
+
+static struct proc_info table[64];
+static volatile unsigned long released;
+
+static void waits_to_be_released(unsigned long arg)
+{
+    (void)arg;
+
+    while (!released) {
+        kosmos_sleep(1);
+    }
+
+    kosmos_thread_exit(0);
+}
+
+/* This process's own row, found by the name it gave itself, or NULL. */
+static const struct proc_info *own_row(const char *name)
+{
+    long n = kosmos_proctable(table, 64);
+    long i;
+
+    for (i = 0; i < n && i < 64; i++) {
+        if (strcmp(table[i].name, name) == 0) {
+            return &table[i];
+        }
+    }
+
+    return NULL;
+}
+
+static int table_role(void)
+{
+    const struct proc_info *row;
+    long worker;
+
+    if (kosmos_setname("t-table", 7) != 0) {
+        return 1;
+    }
+
+    /* Born with no file: a child does not run its parent's. */
+    row = own_row("t-table");
+
+    if (row == NULL || row->from[0] != '\0' || row->threads != 1) {
+        return 2;
+    }
+
+    if (kosmos_setname_from("t-table", 7, TABLE_FILE,
+                            strlen(TABLE_FILE)) != 0) {
+        return 3;
+    }
+
+    row = own_row("t-table");
+
+    if (row == NULL || strcmp(row->from, TABLE_FILE) != 0) {
+        return 4;
+    }
+
+    worker = kosmos_thread_start(waits_to_be_released, 0);
+
+    if (worker < 0) {
+        return 5;
+    }
+
+    row = own_row("t-table");
+
+    if (row == NULL || row->threads != 2) {
+        return 6;
+    }
+
+    released = 1;
+
+    if (kosmos_thread_wait((unsigned long)worker) != 0) {
+        return 7;
+    }
+
+    row = own_row("t-table");
+
+    if (row == NULL || row->threads != 1) {
+        return 8;
+    }
+
+    /* A name alone leaves the file where it was. */
+    if (kosmos_setname("t-table2", 8) != 0) {
+        return 9;
+    }
+
+    row = own_row("t-table2");
+
+    if (row == NULL || strcmp(row->from, TABLE_FILE) != 0) {
+        return 10;
+    }
+
+    /* A file the kernel cannot read changes nothing, the name included. */
+    if (kosmos_setname_from("t-bad", 5, (const char *)8, 4) >= 0) {
+        return 11;
+    }
+
+    if (own_row("t-table2") == NULL) {
+        return 12;
+    }
+
+    /* And what reaches a screen is printable. */
+    if (kosmos_setname_from("t-table2", 8, "/bin/a\tb.lua", 12) != 0) {
+        return 13;
+    }
+
+    row = own_row("t-table2");
+
+    if (row == NULL || strcmp(row->from, "/bin/a?b.lua") != 0) {
+        return 14;
+    }
+
+    /* The file the kernel's suite reads back, once this has ended. */
+    if (kosmos_setname_from("t-table", 7, TABLE_FILE,
+                            strlen(TABLE_FILE)) != 0) {
+        return 15;
+    }
+
+    return 0;
+}
 #endif
 
 /* What this process calls itself, which is what `procs` and `kill` show. */
@@ -289,6 +420,10 @@ int main(unsigned long arg)
 
     if (arg == CTEST_FIRST_LEAVES) {
         return first_leaves_role();
+    }
+
+    if (arg == CTEST_TABLE) {
+        return table_role();
     }
 #endif
 

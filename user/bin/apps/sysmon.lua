@@ -13,7 +13,13 @@
 --
 -- So: a row a core, its bar the kernel's time in red under the thread's own
 -- in green; and under the card a panel a core on a dark ground, a column a
--- second, newest at the right, the same two colours stacked the same way.
+-- sample, newest at the right, the same two colours stacked the same way.
+--
+-- **How often it samples is chosen in the dots' menu** (`roadmap.md` 6p):
+-- Diego, 26 September, "monitor needs an option to update every 0.5 sec, 1
+-- sec and 2 sec". The rows and the history move together, so the history's
+-- sixty columns are the last thirty seconds, minute or two minutes, and the
+-- words above and below it say which.
 --
 -- **Busy is ticks; the split is counters.** `sys.cpuload` says a core's
 -- busy and idle in scheduler ticks, and its busy time split into user and
@@ -39,6 +45,25 @@ local L = ui.layout
 local load0 = sys.cpuload() or {}
 local CORES = math.max(1, #load0)
 
+-- The counter's rate, for the window's clock, read where it is used as
+-- every piece of counter arithmetic here does (`architecture.md` §5).
+local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+
+--
+-- The three paces, and what sixty columns of each come to. A second to
+-- start with, every time a Monitor opens: how often one window looks is
+-- that window's to say, as a Terminal's text size is (`settings.lua`).
+--
+local PACES = {
+  { half = 1, menu = "Update every 0.5 s", heading = "The last 30 seconds",
+    foot = "A column every half second; the newest at the right." },
+  { half = 2, menu = "Update every 1 s",   heading = "The last minute",
+    foot = "A column a second; the newest at the right." },
+  { half = 4, menu = "Update every 2 s",   heading = "The last 2 minutes",
+    foot = "A column every two seconds; the newest at the right." },
+}
+local pace = PACES[2]
+
 --
 -- The drawing's measures. A row is the kit's least, 48, for two lines of
 -- words; the history is two panels across, 84 tall, with 10 between rows of
@@ -52,7 +77,7 @@ local W        = 560
 local ROW      = L.row_min
 local NAME_W   = gfx.measure("100% user \u{b7} 100% kernel") + L.row_in
 local PCT_W    = 40
-local COLUMNS  = 60          -- a minute, a column a second
+local COLUMNS  = 60          -- a column a sample; a minute, at a second
 local PANEL_H  = 84
 local PANEL_GAP_X = 12
 local PANEL_GAP_Y = 10
@@ -82,8 +107,8 @@ if not win then
 end
 
 --
--- What each core did in the last half second, for its row, and in each of
--- the last sixty seconds, for its panel: `{ user, kernel }` in per cent.
+-- What each core did since the last sample, for its row, and in each of the
+-- last sixty, for its panel: `{ user, kernel }` in per cent.
 --
 local now = {}
 local history = {}
@@ -121,8 +146,36 @@ function legend:draw(g)
   end
 end
 
+-- Declared here and defined with the sampling, which is what it changes.
+local set_pace
+local samples, paced_at = 0, sys.ticks()
+
+local more = ui.iconbutton{ icon = "more" }
+
+-- Rebuilt on every press, so the mark is on the pace in use.
+more.on_click = function()
+  local items = {}
+
+  for _, p in ipairs(PACES) do
+    items[#items + 1] = { text = p.menu, mark = (p == pace),
+                          on_choose = function() set_pace(p) end }
+  end
+
+  local m = win:open_menu(win.origin_x + more.x, win.origin_y + L.head, items)
+
+  -- Where the menu is, and how many samples the pace in use has taken in
+  -- how long by the counter - which is what `tools/run_sysapps.py` holds
+  -- to the pace, since the words above the history could say a second
+  -- while the clock kept another.
+  if m then
+    print(("sysmon: more menu at %d,%d, %d wide, rows of %d; %d samples in %.1f s")
+          :format(m.x, m.y, m.w, m.row, samples,
+                  (sys.ticks() - paced_at) / counter_hz))
+  end
+end
+
 win:add(ui.header{ x = 0, y = 0, w = W, title = "Monitor", sub = sub,
-                   right = { legend } })
+                   right = { legend, more } })
 
 --------------------------------------------------------------------------
 -- The card: a row a core.
@@ -181,13 +234,15 @@ end
 
 win:add(rows)
 
-win:add(ui.label{ x = L.page_side + 3,
-                  y = hist_top + (L.group - gfx.height("heading")) // 2,
-                  w = W - 2 * L.page_side, text = "The last minute",
-                  role = "heading" })
+local heading = ui.label{ x = L.page_side + 3,
+                          y = hist_top + (L.group - gfx.height("heading")) // 2,
+                          w = W - 2 * L.page_side, text = pace.heading,
+                          role = "heading" }
+
+win:add(heading)
 
 --------------------------------------------------------------------------
--- The history: a panel a core, a column a second.
+-- The history: a panel a core, a column a sample.
 --------------------------------------------------------------------------
 
 local panels = ui.view{ x = L.page_side, y = hist_top + L.to_card,
@@ -195,6 +250,15 @@ local panels = ui.view{ x = L.page_side, y = hist_top + L.to_card,
 
 function panels:draw(g)
   local pw = (self.w - (ACROSS - 1) * PANEL_GAP_X) // ACROSS
+
+  -- Where the window and its dots are, for whoever drives Monitor from
+  -- outside: once, at the first paint, when the header has placed them.
+  if not self.told and more.x then
+    print(("sysmon: window at %d,%d; more at %d,%d"):format(
+          win.origin_x or 0, win.origin_y or 0,
+          more.x + more.w // 2, more.y + more.h // 2))
+    self.told = true
+  end
   local nh = gfx.height()
 
   for c = 1, CORES do
@@ -232,15 +296,22 @@ end
 
 win:add(panels)
 
-win:add(ui.label{ x = L.page_side + 3, y = hist_top + L.to_card + hist_h + 10,
-                  w = W - 2 * L.page_side,
-                  text = "A column a second; the newest at the right.",
-                  color = "text_dim", role = "ui" })
+local foot = ui.label{ x = L.page_side + 3, y = hist_top + L.to_card + hist_h + 10,
+                       w = W - 2 * L.page_side, text = pace.foot,
+                       color = "text_dim", role = "ui" }
+
+win:add(foot)
 
 --------------------------------------------------------------------------
--- The sampling, on the window kit's own clock: twice a second for the rows,
--- and every second tick a column for the history. A tick repaints the
+-- The sampling, on the window kit's own clock set to the pace: a sample a
+-- tick, for the rows and a column of the history both. A tick repaints the
 -- window by itself (`window:run`), so nothing here asks for it.
+--
+-- **It counted two ticks to a column**, from when the kit ticked twice a
+-- second. The kit has ticked once a second since (`ui.lua`, `tick_every`),
+-- so the history drew a column every two seconds under a caption saying one
+-- a second, and its "last minute" was two. A column a tick, on a clock this
+-- window sets, cannot drift from what the words say.
 --------------------------------------------------------------------------
 
 --
@@ -266,8 +337,6 @@ local function split(a, b)
 end
 
 local last = load0
-local second = load0
-local halves = 0
 
 local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
@@ -278,29 +347,42 @@ function sampler:tick()
 
   for c = 1, CORES do
     if load[c] and last[c] then
-      now[c][1], now[c][2] = split(last[c], load[c])
+      local u, k = split(last[c], load[c])
+      local h = history[c]
+
+      now[c][1], now[c][2] = u, k
+      h[#h + 1] = { u, k }
+
+      if #h > COLUMNS then table.remove(h, 1) end
     end
   end
 
   last = load
-  halves = halves + 1
-
-  if halves >= 2 then
-    halves = 0
-
-    for c = 1, CORES do
-      if load[c] and second[c] then
-        local h = history[c]
-
-        h[#h + 1] = { split(second[c], load[c]) }
-
-        if #h > COLUMNS then table.remove(h, 1) end
-      end
-    end
-
-    second = load
-  end
+  samples = samples + 1
 end
 
 win:add(sampler)
+
+--
+-- A pace chosen: the window's clock set to it, and the history begun
+-- again, since columns taken at one pace drawn beside columns at another
+-- would be a time axis that lies. The words change at once; the first
+-- column arrives a pace later, from a reading taken now.
+--
+function set_pace(p)
+  pace = p
+  win.tick_every = counter_hz * p.half // 2
+  win.last_tick = sys.ticks()
+  last = sys.cpuload() or last
+  samples, paced_at = 0, win.last_tick
+
+  for c = 1, CORES do history[c] = {} end
+
+  heading.text = p.heading
+  foot.text = p.foot
+  print(("sysmon: %s, %s"):format(p.menu:lower(), p.heading:lower()))
+end
+
+-- After the sampler, which is what makes the kit read a clock at all.
+win.tick_every = counter_hz * pace.half // 2
 win:run()

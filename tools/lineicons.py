@@ -72,6 +72,10 @@ ICONS = {
     "more":       ("ellipsis-vertical", None),
     "reload":     ("rotate-cw", None),
 
+    # A table's heading, beside the column it is sorted by (Processes).
+    "ascending":  ("chevron-up", None),
+    "descending": ("chevron-down", None),
+
     # Tracker's places.
     "home":       ("house", None),
     "folder":     ("folder", None),

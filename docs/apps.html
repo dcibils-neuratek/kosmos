@@ -54,7 +54,7 @@
            background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
            padding: 30px 24px; border-radius: 12px; overflow-x: auto;
            display: flex; gap: 24px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
-  .win { background: var(--w-body); border-radius: 10px; overflow: hidden;
+  .win { background: var(--w-body); border-radius: 10px; overflow: hidden; position: relative;
          box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
          font-size: 13.5px; color: var(--w-ink); flex: none; display: flex; flex-direction: column; }
 
@@ -260,16 +260,36 @@ const cpuRows = (n, across) => {
 
 const APPS = [
 
-["Processes", "A table: what the machine is doing on the left, the one verb on the right.",
- win(850, 482,
-   head("Processes", "21 processes &middot; 28 threads &middot; up 0:42", btn("End") + MORE) +
+["Processes", "A table: what the machine is doing on the left, the one verb on the right. Its threads, the file each runs and the privilege it runs at (roadmap.md 6m), and every heading sorts: pressed, by its column, and again, the other way, with an arrow beside the one in use. Busiest first to start with.",
+ win(1080, 482,
+   head("Processes", "22 processes &middot; 33 threads (8 in the kernel) &middot; up 0:42", btn("End") + MORE) +
    `<div style="padding:14px 18px 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px">` +
-   [["Memory","89 of 512 MB",17],["Threads","28 of 2048",2],["Processes","20 of 512",4],["Endpoints","21 of 8232",1]]
+   [["Memory","89 of 512 MB",17],["Threads","33 of 2048",2],["Processes","22 of 512",4],["Endpoints","21 of 8232",1]]
      .map(([a,b,p])=>`<div><div style="display:flex;font-size:12px"><span style="color:var(--w-dim);flex:1">${a}</span><span class="num">${b}</span></div><div class="bar" style="margin-top:6px"><i style="width:${p}%"></i></div></div>`).join("") +
    `</div><div class="view" style="border-top:1px solid var(--w-line)">` +
-   `<div class="th"><span style="width:36px">id</span><span style="flex:1">name</span><span style="width:70px">kind</span><span style="width:76px">draws</span><span style="width:70px">priority</span><span style="width:40px">core</span><span style="width:80px;text-align:right">memory</span><span style="width:120px">processor</span></div>` +
-   [["18","wm","program","display","1","14508 KB",1],["1","init","server","display","1","2668 KB",0],["2","console","server","display","2","2668 KB",0],["3","ramfs","server","normal","3","4836 KB",0],["8","diskfs","server","normal","3","4292 KB",0],["10","e1000","driver","normal","2","2668 KB",0],["11","xhci","driver","normal","0","2668 KB",0]]
-     .map((r,i)=>`<div class="tr${i===1?" on":""}"><span class="num" style="width:36px;color:var(--w-dim)">${r[0]}</span><span style="flex:1">${r[1]}</span><span style="width:70px;color:var(--w-dim)">${r[2]}</span><span style="width:76px;color:var(--w-dim)">${r[1]==="wm"?"commands":""}</span><span style="width:70px">${r[3]}</span><span class="num" style="width:40px">${r[4]}</span><span class="num" style="width:80px;text-align:right">${r[5]}</span><span style="width:120px;display:flex;gap:8px;align-items:center"><span class="bar"><i style="width:${r[6]*8}%"></i></span><span class="num" style="width:26px;text-align:right;color:var(--w-dim)">${r[6]}%</span></span></div>`).join("") +
+   (() => {
+     const ARROW = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-left:3px;color:var(--w-dim)"><path d="M4 6l4 4 4-4"/></svg>`;
+     const cols = [["id",36],["name",120],["file",0],["kind",70],["privilege",64],["draws",76],["priority",70],["core",40],["threads",60,1],["memory",80,1],["processor",120]];
+     const cell = (c, v, st) => `<span style="${c[1] ? `width:${c[1]}px;flex:none` : "flex:1;min-width:0;overflow:hidden;white-space:nowrap"}${c[2] ? ";text-align:right" : ""}${st || ""}">${v}</span>`;
+     const th = `<div class="th">` + cols.map(c => cell(c, c[0] + (c[0] === "processor" ? ARROW : ""), c[0] === "processor" ? ";color:var(--w-ink)" : "")).join("") + `</div>`;
+     // id, name, file, kind, privilege, draws, priority, core, threads, memory, processor
+     const rows = [
+       [31,"cafesa3d","/bin/cafesa3d.lua","app","EL0","direct","normal",4,5,"61240 KB",11],
+       [18,"wm","/bin/wm.lua","program","EL0","commands","display",1,1,"14508 KB",1],
+       [0,"kernel","","threads","EL1","","","",8,"",1],
+       [27,"doom","/home/games/doom.lua","app","EL0","direct","normal",2,1,"9836 KB",0],
+       [1,"init","built in","server","EL0","","display",1,1,"2668 KB",0],
+       [2,"console","built in","server","EL0","","display",2,1,"2668 KB",0],
+       [3,"ramfs","built in","server","EL0","","normal",3,1,"4836 KB",0]];
+     const dim = ";color:var(--w-dim)";
+     return th + rows.map((r, i) => `<div class="tr${i === 2 ? " on" : ""}">` +
+       cell(cols[0], r[0], dim) + cell(cols[1], r[1]) + cell(cols[2], r[2], dim) + cell(cols[3], r[3], dim) +
+       cell(cols[4], r[4], r[4] === "EL1" ? "" : dim) + cell(cols[5], r[5], dim) + cell(cols[6], r[6]) +
+       `<span class="num" style="width:40px;flex:none">${r[7]}</span>` +
+       `<span class="num" style="width:60px;flex:none;text-align:right">${r[8]}</span>` +
+       `<span class="num" style="width:80px;flex:none;text-align:right">${r[9]}</span>` +
+       `<span style="width:120px;flex:none;display:flex;gap:8px;align-items:center"><span class="bar"><i style="width:${r[10]*8}%"></i></span><span class="num" style="width:26px;text-align:right;color:var(--w-dim)">${r[10]}%</span></span></div>`).join("");
+   })() +
    `</div>`)],
 
 ["Terminal", "A page of text. The header says where you are; the console is the window.",
@@ -422,9 +442,13 @@ kosmos&gt; <span style="display:inline-block;width:8px;height:15px;background:#e
    `<div class="gl">Requests</div></div>` +
    `<div class="view" style="margin:0 26px 26px;border:1px solid var(--w-line);border-radius:10px;flex:1"><div class="empty">Nothing yet</div></div>`)],
 
-["Monitor", "What every processor is doing now, and for the last minute (roadmap.md 5zx). A row a core with its kernel time in red under its user time in green; under the card a history a core, a column a second, on a dark panel as macOS draws CPU History. The numbers are the row's; the history has none but the scale it implies.",
+["Monitor", "What every processor is doing now, and for the last minute (roadmap.md 5zx). A row a core with its kernel time in red under its user time in green; under the card a history a core, a column a second, on a dark panel as macOS draws CPU History. The numbers are the row's; the history has none but the scale it implies. The dots choose how often it looks (roadmap.md 6p): every half second, second or two, the rows and a column of the history each time - so the history is the last thirty seconds, minute or two minutes, and its heading says which. A second, whenever a Monitor opens.",
  win(560, 590,
-   head("Monitor", "4 cores &middot; ARM Cortex-A72 r0p3", `<span class="lg"><i class="u"></i>User<i class="k"></i>Kernel</span>`) +
+   head("Monitor", "4 cores &middot; ARM Cortex-A72 r0p3", `<span class="lg"><i class="u"></i>User<i class="k"></i>Kernel</span>` + MORE) +
+   `<div style="position:absolute;top:42px;right:10px;background:#fff;border:1px solid var(--w-line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:5px 0;font-size:13px;min-width:190px;z-index:2">` +
+   [["Update every 0.5 s",0],["Update every 1 s",1],["Update every 2 s",0]]
+     .map(([t,on])=>`<div style="display:flex;align-items:center;height:28px;padding:0 14px 0 10px;gap:8px"><span style="width:14px;color:var(--w-accent)">${on ? "&#10003;" : ""}</span>${t}</div>`).join("") +
+   `</div>` +
    `<div class="body" style="padding-top:18px"><div class="group">` +
    [["Core 1",2,1],["Core 2",8,4],["Core 3",0,0],["Core 4",32,9]]
      .map(([n,u,k])=>`<div class="row" style="min-height:48px;padding:6px 14px"><div class="l" style="flex:none;width:150px"><b>${n}</b><span class="num">${u}% user &middot; ${k}% kernel</span></div><span class="bar"><i class="k" style="width:${k}%"></i><i class="u" style="left:${k}%;width:${u}%"></i></span><span class="num v" style="width:40px;text-align:right">${u+k}%</span></div>`).join("") +

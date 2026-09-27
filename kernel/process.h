@@ -68,6 +68,16 @@ struct thread;
 #define PROCESS_NAME_MAX    16
 
 /*
+ * **The file a process says it runs**, as a label beside its name: the whole
+ * path, `/bin/doom.lua`, so Processes can tell two of the same name apart
+ * by where they came from. The kernel does not know what a file is and does
+ * not read this - it keeps it, as it keeps the name, for whoever asks. 128
+ * because a path is longer than a name and a longer one is cut rather than
+ * refused.
+ */
+#define PROCESS_FROM_MAX    128
+
+/*
  * Where a process's own memory sits. Has to agree with user/include/kosmos.h
  * and user/user.ld; they are two halves of one contract.
  *
@@ -349,6 +359,7 @@ struct process {
     bool              in_use;
     unsigned          id;
     char              name[PROCESS_NAME_MAX];
+    char              from[PROCESS_FROM_MAX];   /* empty: built into the image */
 
     struct addrspace *space;
     struct thread    *thread;
@@ -740,6 +751,7 @@ unsigned process_table(struct proc_info *out, unsigned max);
 /* A process says what it is. Truncated to fit and stripped of anything
  * unprintable. */
 void process_set_name(struct process *p, const char *name, size_t len);
+void process_set_from(struct process *p, const char *from, size_t len);
 
 /*
  * Whether a process may read, or write, `len` bytes at `va`.

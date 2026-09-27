@@ -168,6 +168,16 @@ unsigned process_table(struct proc_info *out, unsigned max)
 
         memcpy(out[n].name, p->name, sizeof(out[n].name) - 1);
         out[n].name[sizeof(out[n].name) - 1] = '\0';
+        memcpy(out[n].from, p->from, sizeof(out[n].from) - 1);
+        out[n].from[sizeof(out[n].from) - 1] = '\0';
+
+        /*
+         * Its threads: the first, while it has not ended, and the rest,
+         * which `live_threads` counts and the first is not among. See
+         * `struct proc_info`.
+         */
+        out[n].threads   = ((p->thread != NULL && !p->exited) ? 1u : 0u)
+                         + p->live_threads;
 
         n++;
     }
@@ -198,6 +208,29 @@ void process_set_name(struct process *p, const char *name, size_t len)
     }
 
     p->name[len] = '\0';
+}
+
+/* And what it runs, with the same rule: printable, cut to fit, and only
+ * ever what the process said. An empty one says it runs nothing but the
+ * image it was born with. */
+void process_set_from(struct process *p, const char *from, size_t len)
+{
+    size_t i;
+
+    if (p == NULL) {
+        return;
+    }
+
+    if (len > sizeof(p->from) - 1) {
+        len = sizeof(p->from) - 1;
+    }
+
+    for (i = 0; i < len; i++) {
+        char c = from[i];
+        p->from[i] = (c >= 0x20 && c < 0x7f) ? c : '?';
+    }
+
+    p->from[len] = '\0';
 }
 
 unsigned process_slots_used(void)
@@ -935,6 +968,11 @@ struct process *process_create(const char *name, const void *image,
         p->name[i] = name[i];
     }
     p->name[i] = '\0';
+
+    /* Not inherited, unlike the name: a child runs the image until it says
+     * otherwise, and a runner that has not yet been told which file it runs
+     * is not its parent's file. */
+    p->from[0] = '\0';
 
     p->thread = thread_create_suspended(p->name, process_main, p);
 

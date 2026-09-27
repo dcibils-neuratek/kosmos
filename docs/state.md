@@ -98,9 +98,22 @@ the IDE's first project (roadmap 7).
 Kosmos is Lucide's now, 39 of them, held by `tools/test_lineicons.py` (6o,
 18.205); the mockups that drew the old ones still show them.
 
-**Next, in order**: Processes' Threads column (6m); the IDE in its six
-steps (6n) - the editor component first; Cafesa3D's scripting on it; the
-tutorial's lessons.
+**Processes and Monitor, the same night** (6m, 6p, 18.206). Processes
+has three new columns - **threads**, the **file** a process runs, whole
+(`/bin/wm.lua`; "built in" for a server in the image), and the
+**privilege** it runs at (EL0 for every process, EL1 for the kernel; ring 3
+and ring 0 on x86-64) - and **every heading sorts**, pressed again the other
+way, with an arrow beside it. The file is a label the kernel keeps beside
+the name: SYS_SETNAME takes it, `proc_info` reports it with the thread
+count. **Monitor** has a dots menu, 0.5, 1 or 2 s, a second each time it
+opens, and its history is a column a sample under a heading that says the
+span. Checking the pace against the counter found that Monitor had been
+drawing a column every *two* seconds under "a column a second" since the
+kit's clock went to once a second. `tools/run_sysapps.py`, both boards, in
+the gate.
+
+**Next, in order**: the IDE in its six steps (6n) - the editor component
+first; Cafesa3D's scripting on it; the tutorial's lessons.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor
@@ -112,11 +125,7 @@ missing init image. The scratchpad's copies of images, 850 MB, were the
 part that was mine; with them gone and whatever else the system let go,
 11 GB.
 
-**Waiting on Diego**: the scripting mockup's five choices (where the panel
-sits, whether Run replaces or adds, one script or several, running as he
-types, Shift F4), and the render farm page.
-
-**Next**: FBX through `ufbx`; image textures; a denoiser; the Rendered view
+**Next for Cafesa3D**: image textures; a denoiser; the Rendered view
 drawn at a fraction of its size while it settles; the Outliner scrolling
 (it shows seven names); a link's gap clickable in the browser.
 What is stashed and queued behind the 3D tool is at the end of 25

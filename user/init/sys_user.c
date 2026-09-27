@@ -1616,10 +1616,18 @@ static int l_info(lua_State *L)
 
 static int l_setname(lua_State *L)
 {
-    size_t len;
+    size_t len, from_len = 0;
     const char *name = luaL_checklstring(L, 1, &len);
+    const char *from = luaL_optlstring(L, 2, NULL, &from_len);
 
-    lua_pushboolean(L, kosmos_setname(name, len) == 0);
+    /* `sys.name(name, file)`: the file is what Processes shows beside the
+     * name, and a runner is the one process that knows it. */
+    if (from != NULL && from_len > 0) {
+        lua_pushboolean(L, kosmos_setname_from(name, len, from, from_len) == 0);
+    } else {
+        lua_pushboolean(L, kosmos_setname(name, len) == 0);
+    }
+
     return 1;
 }
 
@@ -1667,7 +1675,7 @@ static int l_processes(lua_State *L)
     lua_createtable(L, (int)n, 0);
 
     for (i = 0; i < n; i++) {
-        lua_createtable(L, 0, 9);
+        lua_createtable(L, 0, 16);
 
 #define SETI(k, v) do { lua_pushinteger(L, (lua_Integer)(v)); \
                         lua_setfield(L, -2, k); } while (0)
@@ -1681,6 +1689,7 @@ static int l_processes(lua_State *L)
         SETI("owns",      table[i].owns);
         SETI("priority",  table[i].priority);
         SETI("parent",    table[i].parent);
+        SETI("threads",   table[i].threads);
 
         /*
          * Which processor, counted from zero, and absent rather than wrong
@@ -1699,6 +1708,13 @@ static int l_processes(lua_State *L)
 
         lua_pushstring(L, table[i].name);
         lua_setfield(L, -2, "name");
+
+        /* Absent for a process built into the image, which runs no file:
+         * the same "missing rather than wrong" as `cpu` above. */
+        if (table[i].from[0] != '\0') {
+            lua_pushstring(L, table[i].from);
+            lua_setfield(L, -2, "from");
+        }
 
         lua_rawseti(L, -2, (lua_Integer)(i + 1));
     }

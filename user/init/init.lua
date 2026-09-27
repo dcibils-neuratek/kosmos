@@ -6189,9 +6189,11 @@ if role == ROLE_RUNNER then
   -- Every one of these called itself "run", so `ps` and the process app
   -- showed a column of identical names and the only way to tell two
   -- applications apart was their id. The name is what a process table is
-  -- for.
+  -- for. And the whole path beside it, which Processes shows: two of the
+  -- same name are told apart by where they came from (`roadmap.md` 6m).
   --
-  sys.name((path:match("([^/]+)%.lua$") or path:match("([^/]+)$") or "run"))
+  sys.name((path:match("([^/]+)%.lua$") or path:match("([^/]+)$") or "run"),
+           path)
 
   local source, read_err = ns.read(path)
 

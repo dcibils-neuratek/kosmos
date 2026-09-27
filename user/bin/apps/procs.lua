@@ -34,9 +34,30 @@ local theme = ui.theme
 -- counter arithmetic in this system reads the rate three lines above the
 -- sum. `architecture.md` §5 is the whole account.
 --
-local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local cpu = fs.read("/dev/cpu") or {}
+local counter_hz = cpu.counter_hz or 62500000
 
-local W, H = 850, 482
+--
+-- **The privilege each row runs at** (`roadmap.md` 6m): the processor's own
+-- word for it, which is an exception level on AArch64 and a ring on
+-- x86-64. Every process is at the least privileged - EL0, ring 3 - and the
+-- kernel at what `/dev/cpu` says it runs at, which is the whole of the
+-- microkernel's shape in one column: the filesystem, the console and the
+-- desktop all read EL0, and only the kernel's row does not.
+--
+-- `el` is reported in AArch64's units on both machines, the kernel the
+-- larger number (`arch/x86_64/cpu.h`), so ring 0 is `el` 1.
+--
+local X86 = (cpu.arch == "x86-64")
+local KERNEL_LEVEL = cpu.el or 1
+
+local function privilege(level)
+  if X86 then return (level >= 1) and "ring 0" or "ring 3" end
+
+  return "EL" .. level
+end
+
+local W, H = 1080, 482
 
 -- **As `docs/apps.html` draws it** (`roadmap.md` 5zp): the kit's header
 -- with what the machine is doing beside the title and End and the dots at
@@ -122,15 +143,23 @@ local video = {}
 local BANDS = { [0] = "idle", "low", "normal", "display", "input" }
 -- The *process* that is selected, not the row.
 --
--- The list is sorted by processor share and that order changes every
--- second, so a selected row number selects a different process each time it
--- is redrawn - you aim at one and end another. Following the id means the
--- highlight moves with the process as the list reorders around it.
+-- The list is sorted, busiest first unless somebody chose otherwise, and
+-- that order changes every second, so a selected row number selects a
+-- different process each time it is redrawn - you aim at one and end
+-- another. Following the id means the highlight moves with the process as
+-- the list reorders around it.
 local selected_id = nil
 local selected = 1
 
--- Which order the list is in: "busy" or "id". The `...` menu sets it.
-local order = "busy"
+--
+-- **Which column the list is sorted by, and which way** (`roadmap.md` 6m).
+-- Diego, 26 September: "i want to be able to sort by any of the columns",
+-- "right now is just by busiest and id" - which were two items in the
+-- `...` menu. A heading is the control now: pressed, it sorts by its column,
+-- and pressed again it turns the order round. Busiest first is where it
+-- starts, which is what a list like this is opened for.
+--
+local sort_key, sort_down = "processor", true
 local followed = nil     -- the selection the view last scrolled to
 local top = 1            -- the first row drawn, for a list taller than the view
 
@@ -159,8 +188,18 @@ local GAP = 12
 
 local COLUMNS = {
   { key = "id",        text = "id",        w = 36 },
-  { key = "name",      text = "name",      w = 0 },
+  { key = "name",      text = "name",      w = 120 },
+  --
+  -- **The file it runs, whole** (`roadmap.md` 6m): Diego, "so i can tell if
+  -- doom is running where is running from", "like the whole path and file
+  -- name". What the process said as it named itself, kept by the kernel
+  -- beside the name; a process built into the image runs no file and says
+  -- so. The one column that takes what is left, since a path is the one
+  -- thing here whose length is not known.
+  --
+  { key = "file",      text = "file",      w = 0 },
   { key = "kind",      text = "kind",      w = 70 },
+  { key = "privilege", text = "privilege", w = 64 },
   { key = "draws",     text = "draws",     w = 76 },
   { key = "priority",  text = "priority",  w = 70 },
   --
@@ -175,22 +214,37 @@ local COLUMNS = {
   -- that way and what it buys.
   --
   { key = "core",      text = "core",      w = 40 },
+  --
+  -- **Its threads** (`roadmap.md` 6m), the first among them: a program with
+  -- workers - Cafesa3D rendering on four - reads 5 rather than being one
+  -- line among many that look alike.
+  --
+  { key = "threads",   text = "threads",   w = 56, right = true },
   { key = "memory",    text = "memory",    w = 80, right = true },
   { key = "processor", text = "processor", w = 120 },
 }
 
--- Where each column starts for a row `room` wide.
+-- The sort arrow beside a heading: a line icon, and a pixel on each side.
+local ARROW = 15
+
+-- Where each column starts for a row `room` wide. A column is never
+-- narrower than its heading with the arrow beside it, whatever face the
+-- look draws headings in, so choosing one never pushes its arrow into its
+-- neighbour's word.
 local function columns(room)
   local fixed = 0
 
-  for _, c in ipairs(COLUMNS) do fixed = fixed + c.w end
+  for _, c in ipairs(COLUMNS) do
+    c.cw = (c.w > 0) and math.max(c.w, gfx.measure(c.text) + ARROW + 2) or 0
+    fixed = fixed + c.cw
+  end
 
   local x = PAD
-  local name_w = math.max(60, room - 2 * PAD - fixed - GAP * (#COLUMNS - 1))
+  local rest = math.max(60, room - 2 * PAD - fixed - GAP * (#COLUMNS - 1))
 
   for _, c in ipairs(COLUMNS) do
     c.x = x
-    c.cw = (c.key == "name") and name_w or c.w
+    if c.w == 0 then c.cw = rest end
     x = x + c.cw + GAP
   end
 end
@@ -201,6 +255,93 @@ local function fitted(text, w)
   while #text > 1 and gfx.measure(text) > w do text = text:sub(1, -2) end
 
   return text
+end
+
+-- The same, cut from the front: the end of a path is the file's own name,
+-- which is the part somebody is reading the column for.
+local function fitted_tail(text, w)
+  if gfx.measure(text) <= w then return text end
+
+  while #text > 1 and gfx.measure("..." .. text) > w do text = text:sub(2) end
+
+  return "..." .. text
+end
+
+--
+-- What each column sorts by, and nil for a row with nothing there - an
+-- application without a window has no `draws`, the kernel no memory of its
+-- own - which goes after every row that has something, whichever way the
+-- order runs: a column sorted is a question about the rows it has an answer
+-- for. Ties go by id, so rows that are equal do not trade places every
+-- second.
+--
+local SORT_BY = {
+  id        = function(r) return r.id end,
+  name      = function(r) return r.name:lower() end,
+  file      = function(r) return r.from end,
+  kind      = function(r) return r.kind end,
+  privilege = function(r) return r.level end,
+  draws     = function(r) return r.video end,
+  priority  = function(r) return r.priority end,
+  core      = function(r) return r.cpu end,
+  threads   = function(r) return r.threads end,
+  memory    = function(r) return (not r.synthetic) and r.kb or nil end,
+  processor = function(r) return r.pct end,
+}
+
+-- Which way a column runs when it is first chosen. What costs something,
+-- the most first, since the question is what is using the machine; the
+-- highest band and the most privileged first, for the same reason; and
+-- everything else as it reads, from the top of the alphabet or the count.
+local DOWN_FIRST = { threads = true, memory = true, processor = true,
+                     priority = true, privilege = true }
+
+local function in_order(a, b)
+  local get = SORT_BY[sort_key]
+  local x, y = get(a), get(b)
+
+  if x ~= y then
+    if x == nil then return false end
+    if y == nil then return true end
+    if sort_down then return x > y end
+    return x < y
+  end
+
+  return a.id < b.id
+end
+
+-- What the rows say, for whoever drives Processes from outside -
+-- `tools/run_sysapps.py` reads them back after pressing a heading - as
+-- `id:name:threads:privilege:file`, with `-` where there is nothing, and
+-- `; ` between two, since x86-64's privilege is two words.
+local function say_rows(what)
+  local out = {}
+
+  for _, r in ipairs(rows) do
+    out[#out + 1] = ("%d:%s:%s:%s:%s"):format(r.id, r.name, r.threads or "-",
+                                              privilege(r.level), r.from or "-")
+  end
+
+  print(("procs: %s: %s"):format(what, table.concat(out, "; ")))
+end
+
+-- The list in its order, and the selection found again in it. It may have
+-- exited, in which case the row number is kept and whatever is there now
+-- becomes the selection - which is the least surprising thing available.
+local function sort_rows()
+  table.sort(rows, in_order)
+
+  if selected_id then
+    for i, r in ipairs(rows) do
+      if r.id == selected_id then selected = i break end
+    end
+  end
+
+  if selected > #rows then selected = #rows > 0 and #rows or 1 end
+
+  if not selected_id then
+    selected_id = rows[selected] and rows[selected].id or nil
+  end
 end
 
 function table_view:draw(g)
@@ -250,12 +391,43 @@ function table_view:draw(g)
 
   columns(room)
 
+  -- Where the window and its headings are, once there are rows to say:
+  -- `tools/run_sysapps.py` presses where these say rather than holding pixel
+  -- numbers of its own, so it follows the layout when the layout changes.
+  if not self.told and #rows > 0 then
+    local at = {}
+
+    for _, c in ipairs(COLUMNS) do
+      at[#at + 1] = ("%s %d,%d"):format(c.key, self.x + c.x + c.cw // 2,
+                                        self.y + 1 + ROW // 2)
+    end
+
+    print(("procs: window at %d,%d"):format(win.origin_x or 0, win.origin_y or 0))
+    print("procs: headings " .. table.concat(at, "; "))
+    say_rows("rows")
+    self.told = true
+  end
+
   local ty = 1 + (ROW - gfx.height()) // 2
 
+  --
+  -- The column the list is sorted by has its heading in the text's colour
+  -- and an arrow saying which way: an order you cannot see is an order you
+  -- cannot trust. The arrow goes on the side the column's words start from,
+  -- so a column of numbers keeps its heading over its last digit.
+  --
   for _, c in ipairs(COLUMNS) do
-    local x = c.right and (c.x + c.cw - gfx.measure(c.text)) or c.x
+    local on = (c.key == sort_key)
+    local tw = gfx.measure(c.text)
+    local x = c.right and (c.x + c.cw - tw) or c.x
 
-    g:text(x, ty, c.text, theme.text_dim, nil, "ui")
+    g:text(x, ty, c.text, on and theme.text or theme.text_dim, nil, "ui")
+
+    if on then
+      g:line_icon(c.right and (x - ARROW - 1) or (x + tw + 1),
+                  1 + (ROW - ARROW) // 2,
+                  sort_down and "descending" or "ascending", theme.text_dim)
+    end
   end
 
   g:fill(0, ROW, self.w, 1, theme.line_soft)
@@ -288,9 +460,22 @@ function table_view:draw(g)
     g:text(col.name.x, wy, fitted(r.name, col.name.cw),
            r.exited and theme.text_dim or fg, bg)
 
+    -- Where it came from, or that it came with the image. The kernel's own
+    -- row is neither and says nothing.
+    if r.from then
+      g:text(col.file.x, wy, fitted_tail(r.from, col.file.cw), dim, bg)
+    elseif not r.synthetic then
+      g:text(col.file.x, wy, "built in", dim, bg)
+    end
+
     -- What the row *is*, dimmer than what it is called, since the name is
     -- what you are looking for; how it draws, and its band, the same.
     g:text(col.kind.x, wy, r.kind or "", dim, bg)
+
+    -- The kernel's in the text's colour and every process's dimmer, so the
+    -- one row that is not like the others reads as not like them.
+    g:text(col.privilege.x, wy, privilege(r.level),
+           (r.level > 0) and fg or dim, bg)
     g:text(col.draws.x, wy, r.video or "", dim, bg)
     g:text(col.priority.x, wy, r.band or "", fg, bg)
 
@@ -302,6 +487,14 @@ function table_view:draw(g)
     --
     -- From one, as Monitor names them; `t->sched.cpu` counts from zero.
     g:text(col.core.x, wy, r.cpu and tostring(r.cpu + 1) or "", fg, bg)
+
+    -- Its threads, and nothing for one that has ended: it has none, and a
+    -- 0 down a column of ones reads as a fault rather than as gone.
+    if r.threads and not r.exited then
+      local n = tostring(r.threads)
+
+      g:text(col.threads.x + col.threads.cw - gfx.measure(n), wy, n, fg, bg)
+    end
 
     -- What it holds: the image, the heap, the stacks and any surface it
     -- asked for.
@@ -352,6 +545,34 @@ function table_view:mouse(action, x, y)
 
   if to then
     top = to
+
+    return true
+  end
+
+  --
+  -- A heading sorts by its column, and the one already sorting turns
+  -- round. At once, from the rows already here, rather than at the next
+  -- sample a second away - and the view goes to the selection, which has
+  -- just moved somewhere else in the list.
+  --
+  if y < 1 + ROW then
+    if action == "press" then
+      for _, c in ipairs(COLUMNS) do
+        if x >= c.x - GAP // 2 and x < c.x + c.cw + GAP // 2 then
+          if sort_key == c.key then
+            sort_down = not sort_down
+          else
+            sort_key, sort_down = c.key, DOWN_FIRST[c.key] or false
+          end
+
+          sort_rows()
+          followed = nil
+          say_rows(("sorted by %s, %s"):format(sort_key,
+                   sort_down and "descending" or "ascending"))
+          break
+        end
+      end
+    end
 
     return true
   end
@@ -416,22 +637,15 @@ local sampler
 -- when it is open. Everything else a person does here is *looking*, and
 -- looking needs no control at all.
 --
--- **The two order items used to be in a `View` menu and did nothing** -
--- `on_choose = function() end`, both of them, since the menu bar was
--- written. They sort now, and they carry a mark saying which is on, which
--- is the thing that makes an order worth offering: an order you cannot see
--- is an order you cannot trust.
+-- **The order is chosen at the headings now**, and no longer here. This
+-- menu held "Busiest first" and "By id", and before that a `View` menu held
+-- the same two doing nothing at all; two orders out of eleven columns was
+-- what Diego asked to be rid of (`roadmap.md` 6m).
 --------------------------------------------------------------------------
 
--- Rebuilt on every press, because the marks are read at that moment.
 local function more_menu()
   return {
     { text = "Refresh", on_choose = function() sampler:tick() end },
-    { separator = true },
-    { text = "Busiest first", mark = (order == "busy"),
-      on_choose = function() order = "busy" sampler:tick() end },
-    { text = "By id", mark = (order == "id"),
-      on_choose = function() order = "id" sampler:tick() end },
   }
 end
 
@@ -683,8 +897,8 @@ function sampler:tick()
 
     if r.kernel then
       fresh[#fresh + 1] = { id = 0, name = "kernel", kind = "threads",
-                            band = "", video = "", kb = 0, pct = r.pct,
-                            synthetic = true }
+                            band = "", kb = 0, pct = r.pct,
+                            level = KERNEL_LEVEL, synthetic = true }
     else
       fresh[#fresh + 1] = {
         id = p.id, name = p.name, pages = p.pages, caps = p.caps,
@@ -694,38 +908,48 @@ function sampler:tick()
         exited = p.exited,
         cpu    = p.cpu,
         pct = r.pct,
+        priority = p.priority,
+        threads  = p.threads,
+        from     = p.from,
+        level    = 0,
       }
     end
   end
 
-  -- Busiest first by default, which is what a list like this is for; by id
-  -- when somebody asked for it, which is the order a machine grew in and
-  -- the one to read when you are looking for a particular process rather
-  -- than for whatever is eating the processor.
-  table.sort(fresh, function(a, b)
-    if order == "busy" and a.pct ~= b.pct then return a.pct > b.pct end
-    return a.id < b.id
-  end)
+  --
+  -- **The kernel's own threads are what is left** when every process's are
+  -- taken from the machine's: one idle thread a core and the workers it
+  -- keeps. The header said "in the kernel" by taking one thread a process
+  -- for granted, which a process with workers made wrong.
+  --
+  local theirs, kernel_row = 0, nil
 
-  rows = fresh
-
-  -- Find where the selected process ended up in the new order. It may have
-  -- exited, in which case the row number is kept and whatever is there now
-  -- becomes the selection - which is the least surprising thing available.
-  if selected_id then
-    for i, r in ipairs(rows) do
-      if r.id == selected_id then selected = i break end
+  for _, r in ipairs(fresh) do
+    if r.synthetic then
+      kernel_row = r
+    elseif not r.exited then
+      theirs = theirs + (r.threads or 1)
     end
   end
 
-  if selected > #rows then selected = #rows > 0 and #rows or 1 end
-
-  if not selected_id then
-    selected_id = rows[selected] and rows[selected].id or nil
+  -- **The kernel's row from the first sample**, at nothing until there are
+  -- two to take a share between: `procshare` has none to give on the first,
+  -- and a row that arrived a second after the window opened moved every
+  -- row under it while somebody was reading them.
+  if not kernel_row then
+    kernel_row = { id = 0, name = "kernel", kind = "threads", band = "",
+                   kb = 0, pct = 0, level = KERNEL_LEVEL, synthetic = true }
+    fresh[#fresh + 1] = kernel_row
   end
 
-  totals.procs = #rows
+  totals.procs = #fresh - (kernel_row and 1 or 0)
   totals.threads = k and k.threads or 0
+  totals.kernel = math.max(0, totals.threads - theirs)
+
+  if kernel_row then kernel_row.threads = totals.kernel end
+
+  rows = fresh
+  sort_rows()
 
   -- What is in this list and what is not.
   --
@@ -770,8 +994,7 @@ function sampler:tick()
   --
   summary = ("%d processes · %d threads (%d in the kernel) · "
              .. "%d space%s · up %d:%02d")
-            :format(totals.procs, totals.threads,
-                    math.max(0, totals.threads - totals.procs),
+            :format(totals.procs, totals.threads, totals.kernel,
                     totals_state.spaces,
                     (totals_state.spaces == 1) and "" or "s",
                     up // 60, up % 60)

@@ -930,17 +930,37 @@ static long sys_unmap(struct process *p, uintptr_t va, size_t pages)
     return 0;
 }
 
-static long sys_setname(struct process *p, uintptr_t ptr, size_t len)
+/*
+ * A name, and the file it runs beside it (`struct proc_info.from`). A
+ * `from_len` of zero leaves the file as it was, so a process that only
+ * renames itself does not forget where it came from; both are checked
+ * before either is written, so a bad pointer changes nothing.
+ */
+static long sys_setname(struct process *p, uintptr_t ptr, size_t len,
+                        uintptr_t from_ptr, size_t from_len)
 {
     if (len > 64) {
         len = 64;
+    }
+
+    if (from_len > PROCESS_FROM_MAX) {
+        from_len = PROCESS_FROM_MAX;
     }
 
     if (len > 0 && !process_may_read(p, ptr, len)) {
         return SYS_ERR_FAULT;
     }
 
+    if (from_len > 0 && !process_may_read(p, from_ptr, from_len)) {
+        return SYS_ERR_FAULT;
+    }
+
     process_set_name(p, (const char *)ptr, len);
+
+    if (from_len > 0) {
+        process_set_from(p, (const char *)from_ptr, from_len);
+    }
+
     return 0;
 }
 
@@ -2395,7 +2415,8 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
 
     case SYS_SETNAME:
-        result = sys_setname(p, sc->arg[0], (size_t)sc->arg[1]);
+        result = sys_setname(p, sc->arg[0], (size_t)sc->arg[1],
+                             sc->arg[2], (size_t)sc->arg[3]);
         break;
 
     case SYS_PROCTABLE:

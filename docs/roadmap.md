@@ -2090,6 +2090,20 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6p. **DONE on 26 September - Monitor updates every half second, second or
+   two.** Diego, with a photograph of the window: "monitor needs an option
+   to update every 0.5 sec, 1 sec and 2 sec", "you can add the 3 dot menu
+   option and add those options". So a `...` in Monitor's header, after the
+   legend, with the three and a mark on the one in use; the rows and the
+   history both move at it - a column a sample - and the heading over the
+   history says the span that makes, the last thirty seconds, minute or two
+   minutes, with the caption under it saying the pace. A second a sample to
+   start with, every time: a choice about one window is that window's, as a
+   Terminal's text size is (`settings.lua`). **And a fault found on the way**:
+   the window kit ticks once a second since the clock's comment was
+   corrected, and Monitor still counted two ticks to a column - so its "last
+   minute" was two, under a caption saying a column a second.
+
 6o. **DONE on 26 September - one set of line icons for every button bar: Lucide.**
    Diego, looking at the IDE's drawing: "we should look for a set of icons
    that match that of the mockup in the save, open, copy, etc button bar",
@@ -2163,13 +2177,32 @@ processors, and still what follows USB:
    6. **Cafesa3D's Script panel**, on the same component (4l).
    Later: debugging.
 
-6m. **AGREED on 26 September - Processes shows each process's threads.** Diego,
+6m. **DONE on 26 September - Processes shows each process's threads.** Diego,
    with a photograph of the window: "processes need a threads column to
    tell how many threads a process is running". The header already says
    "30 threads (7 in the kernel)" for the machine; a column says it for each
    row, beside priority and core - so a program with workers (Cafesa3D
    rendering on four) is visible as one. The kernel's `proc_info` is where
    the count comes from; drawn in `docs/apps.html` first, as the window was.
+   **And two more columns, the same night**: "a column that shows what is
+   the process executable file with its path if available", "so i can tell
+   if doom is running where is running from", "like the whole path and file
+   name"; and "what privilege is running in", "like EL0, EL1", "that helps
+   identify kernel and user ring privileges". So: **file** - the whole path
+   of the Lua file a process runs, `/bin/doom.lua`, said by the process as
+   it names itself and kept by the kernel as a label it does not read, as
+   it keeps the name; a process built into the image has no file and says
+   so - and **privilege**, the processor's level: EL0 for every process and
+   EL1 for the kernel on AArch64, ring 3 and ring 0 on x86-64, from what
+   `/dev/cpu` says the kernel runs at. And the header's "in the kernel"
+   count, which took one thread a process for granted, from the real ones.
+   **And sorted by any of them**: "i want to be able to sort by any of the
+   columns", "right now is just by busiest and id" - the two orders the
+   `...` menu held. A heading is the control: pressed, the list sorts by
+   its column, the way the column starts - a cost the most first, a word
+   from the top - and pressed again it turns round, with an arrow beside
+   the heading in use. A row with nothing in the column goes last either
+   way, and ties go by id so equal rows keep still.
 
 6l. **ASKED on 25 September - SIMD wherever it pays.** Diego: "are you
    using simd and vector instructions where possible?" Not yet where it

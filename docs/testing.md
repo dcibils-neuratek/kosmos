@@ -10371,3 +10371,55 @@ Lua uses twelve times not rendered.
 
 The gate with the new icons: 40 of 40 in 8:57.
 
+## 18.206 Processes' threads, file and privilege, every heading sorting, and Monitor's pace
+
+Diego wanted three columns in Processes - how many threads each process
+runs, "the whole path and file name" it runs, and "what privilege is running
+in, like EL0, EL1" - then every column sortable, "right now is just by
+busiest and id", and Monitor updating every 0.5, 1 or 2 seconds from its
+dots (roadmap 6m, 6p).
+
+**`proc: the table says its threads and its file`, in the kernel's suite on
+both boards.** A C role, `CTEST_TABLE` in `user/init/main.c`, reads its own
+row back through SYS_PROCTABLE: born with no file and one thread; a file
+given through SYS_SETNAME's four arguments; two threads while a worker
+lives and one after it is waited for; the file kept when only the name
+changes; a file the kernel cannot read refused before the name is touched;
+and a tab in a path turned into `?`. Its exit code names the first check
+that failed, and the kernel's side checks the file it kept after the
+process ended and that nothing was left behind. **Control**: the table
+counting no workers - the role stops at check 6, and the suite says so.
+
+**`tools/run_sysapps.py`, in `make test` as `arm-sysapps` and
+`x86-sysapps`, 23 checks, a minute a board.** `wm sysmon,procs`, since the
+desktop holds the prompt: Processes in front says where its headings are and
+what its rows hold, and the rows are held to the file (`/bin/procs.lua` for
+itself, none for the console), the threads (one for itself, the kernel's own
+on its row) and the privilege (EL0 and EL1, ring 3 and ring 0). Then five
+headings pressed, one twice, and each order checked against the order the
+suite works out from the same rows - so a process that came or went between
+presses cannot fail it. Then Monitor, brought forward by a click on the part
+of it Processes does not cover, found from the desktop's log of where each
+window is; each of its three paces chosen, and the samples Monitor says it
+took and the counter's seconds held to the pace. **Controls**: a second
+press that does not turn the order round fails at "id, descending"; a clock
+at twice the pace fails all four pace checks, with the numbers.
+
+**What the pace check found**: the window kit ticks once a second, and
+Monitor still counted two ticks to a column from when it ticked twice - its
+"last minute" was two, under a caption saying a column a second. A column a
+tick on a clock Monitor sets itself cannot drift from the words.
+
+**And the kernel's row from the first sample.** `procshare` gives the
+kernel's share only between two samples, so the row arrived a second after
+the window opened and moved every row under it; Processes shows it at 0%
+until there is a share. The header's "in the kernel" is the machine's
+threads less every process's, where it took one thread a process for
+granted.
+
+`tools/lineicons.py` has `ascending` and `descending`, Lucide's chevrons,
+for the heading's arrow: 713 checks in `test_lineicons.py`. Rendering again
+moved a pixel of antialiasing in ten existing pictures, which were put back
+as they were rather than committed as a change nobody made.
+
+The gate with both: 42 of 42 in 8:24.

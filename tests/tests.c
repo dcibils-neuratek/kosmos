@@ -4049,6 +4049,63 @@ static bool test_the_first_thread_leaves(void)
     return ends_from_anywhere(CTEST_FIRST_LEAVES, 5);
 }
 
+/*
+ * **Its threads and its file, in the process table** (`roadmap.md` 6m).
+ *
+ * Has to match `user/init/main.c`, `CTEST_TABLE`, which reads its own row
+ * back through SYS_PROCTABLE: born with no file, given one by SYS_SETNAME,
+ * two threads while a worker lives and one after, the file kept when only
+ * the name changes, a bad pointer refused before anything is written, and a
+ * control character made printable. Its exit code names the first check
+ * that failed. Here, after it has ended: the file it gave last is the one
+ * the kernel kept, and nothing is left behind.
+ */
+#define CTEST_TABLE 904UL
+
+static bool test_the_table_says_threads_and_file(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    static const char file[] = "/bin/t-table.lua";
+    unsigned before = process_count();
+    size_t pages_before = pmm_free_pages();
+    struct process *p;
+    unsigned i;
+    bool kept;
+    int code;
+
+    p = process_create("t-table", init_image, (size_t)init_image_len,
+                       CTEST_TABLE);
+
+    if (p == NULL) {
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
+    for (i = 0; i < LUATEST_SLICES && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    kept = memcmp(p->from, file, sizeof file) == 0;
+    process_reap(p);
+
+    if (code != 0) {
+        kputs("\n   (the table role stopped at check ");
+        kputu((unsigned)code);
+        kputs(")\n");
+    }
+
+    return code == 0 && kept && process_count() == before
+        && pmm_free_pages() == pages_before;
+}
+
 static bool test_lua_arithmetic(void)          { return luatest_role(0); }
 static bool test_lua_floats(void)              { return luatest_role(1); }
 static bool test_lua_strings_and_tables(void)  { return luatest_role(2); }
@@ -8709,6 +8766,7 @@ static const struct test tests[] = {
     { "thread: a worker faults while the first sleeps", test_a_worker_faults },
     { "thread: a worker faults while the first waits", test_a_fault_while_joined },
     { "thread: the first returns, a worker asleep", test_the_first_thread_leaves },
+    { "proc: the table says its threads and its file", test_the_table_says_threads_and_file },
     { "ipc: endpoints and regions grow past their old pools", test_endpoints_and_regions_grow },
     { "cap: a table holds more than it has room for", test_a_table_holds_more_than_it_has_room_for },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },

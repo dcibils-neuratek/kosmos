@@ -114,6 +114,14 @@ SUITES = [
     Suite("arm-record", ["python3", "tools/run_record.py", ARM]),
     Suite("x86-record", ["python3", "tools/run_record.py", X86], x86=True),
 
+    # **Processes and Monitor** (`roadmap.md` 6m, 6p): every row's file,
+    # threads and privilege, every heading's order worked out from the rows
+    # it printed, and each of Monitor's paces held to the counter rather
+    # than to its words. Both boards, because the privilege is an exception
+    # level on one and a ring on the other.
+    Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
+    Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
+
     # **A film's sound, heard** (`roadmap.md` 4e): a film whose sound is an
     # AAC conformance stream's first three seconds, played through
     # `/lib/video.lua` with QEMU recording what came out - every sample

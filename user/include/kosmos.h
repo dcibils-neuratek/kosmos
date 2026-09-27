@@ -321,10 +321,21 @@ static inline long kosmos_unmap(unsigned long address, unsigned long pages)
 }
 
 /* A process says what it is. The kernel names nothing: a spawned child
- * inherits its parent's name, so without this every process is "init". */
+ * inherits its parent's name, so without this every process is "init".
+ * Four arguments with the file's two zero, which leaves the file as it was:
+ * the call is SYS_SETNAME's whole shape, and registers the kernel reads are
+ * never left holding whatever was in them. */
 static inline long kosmos_setname(const char *name, unsigned long len)
 {
-    return sys2(SYS_SETNAME, (long)(uintptr_t)name, (long)len);
+    return sys4(SYS_SETNAME, (long)(uintptr_t)name, (long)len, 0, 0);
+}
+
+/* And the file it runs, whole (`struct proc_info.from`). */
+static inline long kosmos_setname_from(const char *name, unsigned long len,
+                                       const char *from, unsigned long from_len)
+{
+    return sys4(SYS_SETNAME, (long)(uintptr_t)name, (long)len,
+                (long)(uintptr_t)from, (long)from_len);
 }
 
 /*
