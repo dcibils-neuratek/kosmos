@@ -93,6 +93,19 @@
   .tree li.sub .name { padding-left: 18px; }
   .tree li.sub .name::before { content: "\2514\2500 "; color: var(--faint); }
 
+  /* The root, whole: seven names and a line each. */
+  .root-list { list-style: none; margin: 18px 0 0; padding: 6px 0; background: var(--card);
+               border: 1px solid var(--rule); border-radius: 12px; max-width: 780px; }
+  .root-list li { display: grid; grid-template-columns: 150px 1fr; gap: 16px; padding: 8px 20px; align-items: baseline; }
+  .root-list li + li { border-top: 1px solid var(--rule); }
+  .root-list .name { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+  .root-list li.s .name { color: var(--sys); }
+  .root-list li.h .name { color: var(--home); }
+  .root-list .what { font-size: 14px; }
+  .root-list .what small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .root-list .tag { margin-left: 6px; vertical-align: 1px; }
+  @media (max-width: 520px) { .root-list li { grid-template-columns: 1fr; gap: 2px; } }
+
   /* Outside both trees. */
   .others { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 16px; }
   .other { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
@@ -144,12 +157,25 @@
   <span><span class="tag later">after the loader</span> needs the ELF loader (6t)</span>
 </div>
 
+<h2 id="root">The root, whole</h2>
+<p>Everything a program can be handed hangs from <code>/</code>, and there are seven names there, each a plain word that says what it is - no abbreviations, nothing left from before. <span class="tag prop">proposed</span> the five outside the two trees: Diego, 27 September, "systems should be self explanatory in their structure of files and directorues".</p>
+<ul class="root-list">
+  <li class="s"><span class="name">/Kosmos</span><span class="what">What the system ships<small>Applications, programs, libraries, kits, servers, drivers, the kernel - and this machine's settings and logs</small></span></li>
+  <li class="h"><span class="name">/Home</span><span class="what">What you have, and take with you<small>Your applications and games, each one folder; your work; your preferences</small></span></li>
+  <li><span class="name">/Devices</span><span class="what">The hardware, as Kosmos presents it <span class="tag prop">proposed</span><small>The console, sound, the camera, the processors, a drive's blocks, the backlight - today <code>/dev</code></small></span></li>
+  <li><span class="name">/Drives</span><span class="what">Other drives, by their names<small>A USB stick, an SD card, as <code>drives.html</code> draws them - today <code>/drives</code></small></span></li>
+  <li><span class="name">/Network</span><span class="what">The network <span class="tag prop">proposed</span><small>Addresses, names and connections - today <code>/net</code></small></span></li>
+  <li><span class="name">/Running</span><span class="what">What is running now, by name, for whoever may ask it <span class="tag prop">proposed</span><small>The window manager, and every window with what it lets you change - today <code>/app</code>, a name that reads as applications and is not them</small></span></li>
+  <li><span class="name">/Temporary</span><span class="what">Memory, gone at the next start <span class="tag prop">proposed</span><small>Today <code>/ramfs</code>, named after the server rather than what it is for</small></span></li>
+</ul>
+<p class="note">And nothing else. <code>/bin</code>, <code>/lib</code> and <code>/kits</code> become parts of <code>/Kosmos</code>; <code>/system</code> and <code>/user</code>, two folders the disk is made with that almost nothing uses, go - what the system ships is <code>/Kosmos</code> and what a person installs is <code>/Home/Apps</code>. A program sees only the names it was handed, so a game may have three of these seven and a terminal all of them.</p>
+
 <div class="trees">
 
   <section class="tree sys" aria-label="The /Kosmos tree">
     <header>
       <div class="root">/Kosmos</div>
-      <p>What the system ships. The same on every Kosmos machine of a version, and read only while it runs.</p>
+      <p>What the system ships - the same on every Kosmos machine of a version - and, in <code>Settings</code> and <code>Logs</code>, what this machine keeps about itself.</p>
     </header>
     <ul>
       <li><span class="name">Apps/</span><span class="what">The applications that come with Kosmos: Tracker, Terminal, the IDE, Cafesa3D, the browser, Video, Music, Camera, Processes, Monitor, Preferences, the Deskbar, the demos<small>Each a window, <code>-- kosmos: application</code>; the Deskbar's menu sections come from each one's own header</small></span></li>
@@ -186,15 +212,6 @@
 
 </div>
 
-<h2>Outside both</h2>
-<p>Four things belong to neither tree, because they are not files anybody keeps. <span class="tag prop">proposed</span> the capitals here too.</p>
-<div class="others">
-  <div class="other"><div class="name">/Dev</div><p>The devices: the screen, the keyboard, the audio ring, the processors, a stick's blocks.</p></div>
-  <div class="other"><div class="name">/Drives</div><p>Other drives by name - a USB stick, an SD card - as <code>drives.html</code> draws them.</p></div>
-  <div class="other"><div class="name">/Temporary</div><p>Memory, gone at the next start. Today <code>/ramfs</code>.</p></div>
-  <div class="other"><div class="name">/App</div><p>The servers running now, by name, for whoever may ask them.</p></div>
-</div>
-
 <h2>What a program sees</h2>
 <p>There is no global tree. A process sees what it was handed, and a path that was not handed to it does not exist for it - not forbidden, absent (<code>layout.md</code> §3). So the two trees are a convention every program can rely on, and each program gets the part of them it needs.</p>
 <div class="sees">
@@ -204,8 +221,9 @@
     <ul>
       <li class="s">/Kosmos <span class="rw">read</span></li>
       <li class="h">/Home <span class="rw">read and write</span></li>
-      <li>/Dev <span class="rw">the console</span></li>
+      <li>/Devices <span class="rw">the console, sound</span></li>
       <li>/Drives, /Temporary <span class="rw">read and write</span></li>
+      <li>/Network, /Running <span class="rw">to ask them</span></li>
     </ul>
   </div>
   <div class="ns">
@@ -214,7 +232,8 @@
     <ul>
       <li class="s">/Kosmos/Libraries <span class="rw">read</span></li>
       <li class="h">/Home/Apps/Doom <span class="rw">read and write: its program, its WAD, its saves</span></li>
-      <li>/Dev/screen, audio, keys <span class="rw">to play</span></li>
+      <li>/Devices/Audio <span class="rw">its sound</span></li>
+      <li>/Running/wm <span class="rw">its window and its keys</span></li>
     </ul>
     <p class="not">Not your photos or your documents: they were never handed to it, so it cannot name them.</p>
   </div>
@@ -242,6 +261,11 @@
   <tr><td class="path">/home/.appearance, .clock, .terminal ...</td><td class="path h">/Home/Preferences/...</td><td>Your preferences, out of the way at the top of your home</td></tr>
   <tr><td class="path">/home</td><td class="path h">/Home</td><td>A capital, as every name here</td></tr>
   <tr><td class="path">/ramfs</td><td class="path">/Temporary</td><td>Memory <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/dev, /dev/audio, /dev/camera ...</td><td class="path">/Devices, /Devices/Audio, /Devices/Camera ...</td><td>The hardware <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/net</td><td class="path">/Network</td><td>The network <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/app</td><td class="path">/Running</td><td>What is running, by name <span class="tag prop">proposed</span></td></tr>
+  <tr><td class="path">/drives</td><td class="path">/Drives</td><td>Other drives</td></tr>
+  <tr><td class="path">/system, /user</td><td class="path">-</td><td>Gone: <code>/system/themes</code>, the one thing read from them, is <code>/Kosmos</code>'s</td></tr>
   <tr><td class="path">/home/log.txt</td><td class="path s">/Kosmos/Logs</td><td>The system's log</td></tr>
   <tr><td class="path">Doom, Quake, the Super Nintendo, in the image</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>Vendored engines in C: installed, not shipped <span class="tag later">after the loader</span></td></tr>
   <tr><td class="path">/home/doom1.wad, /home/id1, /home/roms</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>What each game plays, in the game's own folder</td></tr>
@@ -261,6 +285,8 @@
       <li>Applications are self-contained, on Kosmos's shared parts - its Kits, Servers and Drivers - and <b>leave nothing anywhere else</b>: "i want to be able to delete an app and all that the app brought,its gone". So an application keeps what it brings in its folder, and deleting the folder removes it entirely - a convention for now, not enforced: "we need to use the systme first before enforcing things that limit the usage".</li>
       <li>An application's Lua reaches its own C as <code>use("doom.elf")</code>; its manifest is the <code>-- kosmos:</code> header of the program, the Lua file named after its folder; the applications Kosmos ships keep their settings in <code>/Home/Preferences</code>.</li>
       <li>Every name begins with a capital: <code>Kits</code>, <code>Libraries</code>, <code>Home</code>, <code>Deskbar</code>.</li>
+      <li><b>Names are found whatever their case</b> and keep the case they were given: <code>/home</code> finds <code>/Home</code> - "it doesnet make sense to have case sensitiveness in this day and age".</li>
+      <li>The structure explains itself: "i do want to focus on having an elegant and easy way to understand where things go and are placed in as sytem".</li>
       <li><code>/Home</code> is on the drive Kosmos started from, for now; on a drive of its own is for later.</li>
       <li>This drawing is part of Kosmos's documentation, kept true as the layout changes.</li>
       <li>Changing the shipped system - your own window manager in place of ours - is set aside, undecided.</li>
@@ -269,8 +295,7 @@
   <div>
     <p><b>Open</b> - for Diego:</p>
     <ul class="list ask">
-      <li><b>Capitals, and whether case matters.</b> Kosmos is case-sensitive today: the disk's filesystem and the namespace compare names exactly, so <code>/home/notes.txt</code> would not find <code>/Home/notes.txt</code> - only the FAT and exFAT reader ignores case. Either every path is typed as it is named, or Kosmos becomes case-insensitive and case-preserving, as a Mac is: a name keeps the capitals it was given, and <code>/home</code> finds <code>/Home</code>. The second is what capitals are kind with.</li>
-      <li><b>The four outside both trees</b>: <code>/Dev</code>, <code>/Drives</code>, <code>/App</code>, and <code>/Temporary</code> for <code>/ramfs</code>?</li>
+      <li><b>The five names beside the two trees</b> (<a href="#root">the root, whole</a>): <code>/Devices</code>, <code>/Drives</code>, <code>/Network</code>, <code>/Running</code> and <code>/Temporary</code> - words rather than <code>/dev</code>, <code>/net</code> and <code>/ramfs</code>, and <code>/Running</code> for <code>/app</code>, which beside two folders called <code>Apps</code> would read as applications.</li>
     </ul>
   </div>
 </div>

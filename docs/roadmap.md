@@ -2223,6 +2223,16 @@ processors, and still what follows USB:
    sensitiveness in this day and age"** - so every name is found whatever
    its case and keeps the case it was given, in `kfs`, the namespace and
    every server that holds names. The four outside both, not yet answered.
+   **And his focus, the same night**: "i do want to focus on having an
+   elegant and easy way to understand where things go and are placed in as
+   sytem, as i believes systems should be self explanatory in their
+   structure of files and directorues". So the layout page opens with
+   **the root, whole** - seven names, each a plain word: `/Kosmos`,
+   `/Home`, and proposed for the rest `/Devices` (`/dev`), `/Drives`,
+   `/Network` (`/net`), `/Running` (`/app`, which beside two `Apps`
+   folders reads as applications) and `/Temporary` (`/ramfs`); `/system`
+   and `/user`, which the disk is made with and almost nothing reads, go.
+   Asked.
 
 6u. **AGREED on 27 September - one scrollbar, everywhere.** Diego, seeing
    the IDE's thin one: "Why scrollbars here look flat and in other apps look
