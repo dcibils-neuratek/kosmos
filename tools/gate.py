@@ -122,6 +122,14 @@ SUITES = [
     Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
     Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
 
+    # **The editor, typed at through a keyboard** (`roadmap.md` 6n, steps 0
+    # and 1): QEMU's own keys - the virtio keyboard on one board, the PS/2
+    # controller on the other - through the board's sequences with their
+    # modifiers, the window manager and the kit, to `ui.editor` selecting,
+    # undoing and saving. The file has to be exactly what the keys meant.
+    Suite("arm-editor", ["python3", "tools/run_editor.py", ARM]),
+    Suite("x86-editor", ["python3", "tools/run_editor.py", X86], x86=True),
+
     # **A film's sound, heard** (`roadmap.md` 4e): a film whose sound is an
     # AAC conformance stream's first three seconds, played through
     # `/lib/video.lua` with QEMU recording what came out - every sample

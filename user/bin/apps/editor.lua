@@ -68,8 +68,10 @@ local function save()
   local ok, why = fs.write(path, text:content())
 
   if ok then
-    text.dirty = false
+    -- Saved: the text on disk, so undoing back to it is unchanged again.
+    text:saved()
     header.sub = ("saved %d lines to %s"):format(#text.lines, path)
+    print(("editor: saved %d lines to %s"):format(#text.lines, path))
   else
     header.sub = "could not save: " .. tostring(why)
   end

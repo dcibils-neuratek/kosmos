@@ -112,8 +112,35 @@ drawing a column every *two* seconds under "a column a second" since the
 kit's clock went to once a second. `tools/run_sysapps.py`, both boards, in
 the gate.
 
-**Next, in order**: the IDE in its six steps (6n) - the editor component
-first; Cafesa3D's scripting on it; the tutorial's lessons.
+**Pushed as 0.10.171** (a5881fd..4c0caeb) at Diego's "Push it and continue
+with the ide". The prepush's display suite failed once on a race in the
+harness itself - the program check took the previous command's prompt for
+its own - fixed and rerun on both boards (18.206).
+
+**The IDE, steps 0 and 1, the night of the 26th into the 27th** (6n):
+
+- **Step 0, the keys** (cea3ae0, 18.207). Shift and Control never reached a
+  window - the board consumed them - and every reader of the key stream
+  took an escape sequence to be three bytes, so Page Up typed a `~` at the
+  prompt and in any text field. The board now puts the modifier inside the
+  key's sequence, xterm's shapes; the kit (`/lib/keys.lua`), the console's
+  line editor, `edit.lua` and the window manager read a sequence whole. A
+  widget gets one number a key, a modified one always negative. Shift+Tab
+  steps focus back; a widget may keep Tab, and Ctrl+Tab always leaves it.
+  Control-W then an arrow had moved no window since Super arrived; it does.
+- **Step 1, the editor component** (18.208). `/lib/textbuf.lua` holds the
+  text, caret, selection and undo - every edit one `replace` - and
+  `/lib/lualex.lua` colours Lua a line at a time; `ui.editor` is their view,
+  plain as before or `code = "lua"` as the IDE's drawing has it (colours,
+  gutter marks, the current line's band, a thin caret). Undo a word at a
+  time, Shift and Ctrl selections, Home, End, the page keys, Delete, Tab and
+  Shift+Tab, Ctrl+/. `tools/run_editor.py` types at the Editor app through
+  QEMU's keyboard on both boards and reads the file back.
+
+**Next, in order**: the IDE's window (6n step 2) - the tree, file tabs, the
+editor, the Output panel, the button bar, opening, saving, the last
+project; then Run and Stop (3), checking (4), suggestions (5), Cafesa3D's
+Script panel (6); the tutorial's lessons (7).
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor

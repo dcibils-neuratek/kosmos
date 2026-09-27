@@ -2090,6 +2090,17 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6q. **FOUND on 27 September - the Deskbar's focus check fails now and then.**
+   `arm-display-3` stopped a gate on "after Control-W Tab moved the focus to
+   clock, the Deskbar's buttons ... show the focus where it was", and passed
+   when run alone - as it has at least twice before (26 September, and the
+   gate after the Lucide icons). The check exists to catch the Deskbar
+   painting from a window list asked for before the move, so a failure that
+   comes and goes is either that fault still happening now and then or the
+   check reading a frame a moment early. Which one, found by measuring - the
+   Deskbar's own log of the list it drew from, beside the focus line - and
+   then fixed where it is, so the gate stops depending on a rerun.
+
 6p. **DONE on 26 September - Monitor updates every half second, second or
    two.** Diego, with a photograph of the window: "monitor needs an option
    to update every 0.5 sec, 1 sec and 2 sec", "you can add the 3 dot menu
@@ -2181,9 +2192,12 @@ processors, and still what follows USB:
       rather than typing it. The kit hands a widget one number per key:
       the key's own code, with Shift, Alt and Control added as named
       multiples, read back with `ui.keyparts`.
-   1. **The editor component** - the kit's `ui.editor` grown: selection,
-      undo, Lua coloured by a tokenizer, line numbers, the current line and
-      marked lines. Tested on the Mac, where the kit's Lua runs.
+   1. **DONE on 27 September - the editor component** - the kit's
+      `ui.editor` grown: selection, undo, Lua coloured by a tokenizer, line
+      numbers, the current line and marked lines. Tested on the Mac, where
+      the kit's Lua runs (`testing.md` 18.208): `/lib/textbuf.lua` holds the
+      text and its undo, `/lib/lualex.lua` colours it, and `ui.editor` is
+      the view, plain or `code = "lua"`.
    2. **The window** - the tree (`ui.tree`), the file tabs, the editor, the
       panel below and the button bar; opening, saving, the last project.
    3. **Run and Stop** - the file as its own process, whose `print` the

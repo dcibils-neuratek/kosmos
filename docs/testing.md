@@ -10480,3 +10480,61 @@ with its modifiers, is the editor's suite's to check, in step 1: Shift and
 the arrows have to select there.
 
 The gate with step 0: 42 of 42 in 8:41.
+
+## 18.208 The editor component: the text and its undo, Lua's colours, and a keyboard
+
+Step 1 of the IDE (roadmap 6n): `ui.editor` grown into the component the
+IDE and Cafesa3D's script panel will share. Its text, caret, selection and
+undo are `/lib/textbuf.lua`, where every edit is one `replace`; its colours
+are `/lib/lualex.lua`, a line at a time with what carries across lines; and
+the widget draws them, plain as before or in the code look the IDE's
+drawing has.
+
+**`tools/test_textbuf.lua`, in `make test`, 81 checks**: text in and out,
+a file's last newline ending its last line; typing, and undo taking it back
+a word at a time, and redo; a new edit ending the redo trail; Enter keeping
+the indent, one step; Backspace and Delete across a line join, a run of
+each one step; a selection made by Shift and by words, replaced by typing
+as one step, collapsed by Left and Right to its own ends; Up and Down
+keeping their column across a short line; Home to the first thing on the
+line and then its start; Ctrl+Left and Ctrl+Right stopping at words and at
+punctuation; indent and outdent of a selection's lines, one step each and
+the same lines still selected; Tab to the next stop; comments on and off at
+the least indent, a blank line left alone; saved, and undone back to the
+saved text reading as unchanged; and the first line an edit touched, where
+colouring starts again. **Control**: an undo that loses what it removed
+fails 12.
+
+**`tools/test_lualex.lua`, in `make test`, 24 checks**: the drawing's own
+lines coloured as it colours them - a library's names, a call, a method, a
+number, a comment - every keyword and a name that only begins with one,
+every shape of number Lua has, strings with both quotes and escapes, a long
+string holding `]]` inside a higher level, a call without brackets; long
+strings and comments carried across lines at their level and ended only by
+their own closer, a short string carried by a backslash; and spans in order,
+inside the line, never overlapping. **Control**: a tokenizer that does not
+know a long comment fails 3.
+
+**`tools/run_editor.py`, in `make test` as `arm-editor` and `x86-editor`,
+20 seconds a board**: `wm editor:/ramfs/keys.txt` typed at with QEMU's own
+keyboard - the virtio keyboard on one board and the PS/2 controller on the
+other, so both drivers' new sequences - Shift+Left five times selecting a
+word, typing over it, Ctrl+Z twice, End, Home, Ctrl+Right, Delete and Ctrl+Z,
+Page Up and Page Down, a new line, Ctrl+Shift+Left selecting by words,
+Backspace, Ctrl+Z and Ctrl+Y, then Ctrl+S; the file read back at the prompt
+as hex has to be exactly `hello world!\ntwo\n`. It is step 0's end to end as
+well: every link from the key to the widget. **Control**: a board that drops
+the modifiers again writes `hello !\nsecotwod\n`.
+
+The code look was looked at once, under QEMU, on `/lib/procshare.lua` with an
+error and a warning marked: the drawing's colours, marks, band, caret and a
+selection across an empty line. The IDE's window (step 2) is where it is
+used, and its suite is where it is checked.
+
+The gate with step 1: 43 of 44 in 9:16, `arm-display-3`'s Deskbar focus
+check the one - and passing alone, 65 checks, as it has before. It is
+`roadmap.md` 6q now, to be found out rather than rerun: the check exists
+to catch the Deskbar painting from a list asked for before the focus
+moved, so a failure that comes and goes may be that fault happening now
+and then.
+

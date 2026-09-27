@@ -837,12 +837,35 @@ That is the whole of the change: §16.6's argument for one reserved key rather
 than five is intact, and what sits behind that key is now only the things
 that could not sit anywhere else.
 
-**A selection is made with the pointer, not with shift.** `ui.editor` holds
-an *anchor* and a *cursor* and nothing else: the press sets the anchor, the
-drag moves the cursor, and any key that moves the cursor on its own drops
-the anchor. That is why a click deselects without anything having to say
-so, and it is the whole model - there is no separate selecting flag and no
-state where a selection exists with the caret somewhere else.
+**A selection is an anchor and a cursor, and nothing else.** The press sets
+the anchor and the drag moves the cursor; a key that moves the cursor with
+Shift keeps the anchor, and one without drops it. That is why a click
+deselects without anything having to say so, and it is the whole model -
+there is no separate selecting flag and no state where a selection exists
+with the caret somewhere else. This paragraph said a selection was made
+with the pointer, *not* with Shift, because Shift never reached a window;
+since 26 September it does (*Keys with their modifiers*, above), and the
+model did not have to change to take it.
+
+**`ui.editor` is the view over a `/lib/textbuf.lua`** (`roadmap.md` 6n,
+step 1): the lines, the caret, the selection and the undo live there, and
+**every edit is one `replace`** - bytes out between two places, a string
+in - which is exactly what undo records and plays back the other way.
+Typing gathers into a step a word at a time, a run of Backspace into one,
+an indent of forty lines into one. The text model is pure Lua and tested on
+the Mac (`tools/test_textbuf.lua`); the widget draws it and turns keys and
+the pointer into its calls.
+
+**Two looks.** Plain, for the Editor app and the Machine report: a block
+caret on the character and a selection in the caret's colours, as ever.
+And `code = "lua"`, as `docs/kosmos-ide.html` draws it: Lua coloured by
+`/lib/lualex.lua` a line at a time, a gutter with a column for marks and the
+numbers right-aligned and faint, the current line on a band, a line with
+something wrong tinted, marked with its dot or triangle and underlined, and
+a thin caret in the accent. The colours are the drawing's two palettes,
+chosen by how light the editor's ground is; a look may name its own with
+`code_keyword` and the rest, and none does yet. A code editor keeps Tab
+(`takes_tab`) to indent, with Shift+Tab to outdent and Ctrl+/ to comment.
 
 `ui.field` gets select-all and not a dragged range, and that is a decision
 rather than an unfinished job. A single line of text has one selection

@@ -3157,6 +3157,10 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# The kit's keys: every sequence the board makes read back whole, as
 	@# its key and its modifiers, and nothing typed that was not (6n, step 0).
 	$(HOSTDIR)/lua tools/test_keys.lua
+	@# The IDE's editor: the text it edits, every edit undoable, and Lua
+	@# coloured a line at a time with what carries across lines (6n, step 1).
+	$(HOSTDIR)/lua tools/test_textbuf.lua
+	$(HOSTDIR)/lua tools/test_lualex.lua
 	@# And an MP4's index, for the video player (roadmap 4e).
 	$(HOSTDIR)/lua tools/test_mp4.lua
 	@# JSON, and Cafesa3D's scenes read out of glTF: the samples written

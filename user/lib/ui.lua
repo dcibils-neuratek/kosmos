@@ -3495,55 +3495,108 @@ end
 -- Editable text, over several lines.
 --
 --   ui.editor{ x =, y =, w =, h =, text = "..." }
+--   ui.editor{ ..., code = "lua" }       the IDE's: coloured, marked, Tab kept
 --
--- An array of lines and a cursor, which is what a text editor is until it
--- is a good one. No undo, no selection, no syntax colouring: each is worth
--- having and none is worth delaying the thing that lets the machine change
--- itself without a rebuild.
+-- **The view over a `/lib/textbuf.lua`**, which holds the lines, the caret,
+-- the selection and the undo, and is tested on the Mac. This file draws it
+-- and turns keys and the pointer into its calls. It was an array of lines
+-- and a cursor with every edit written out where its key was handled - "no
+-- undo, no selection, no syntax colouring: each is worth having" - and the
+-- IDE (`roadmap.md` 6n, step 1) is where each became worth it.
+--
+-- **Two looks, one editor.** Plain, which the Editor app and the Machine
+-- report use and the display harness checks the colours of: a block caret
+-- on the character, a selection in the caret's colours, `%4d ` numbers.
+-- And `code`, as `docs/kosmos-ide.html` draws it: Lua coloured by
+-- `/lib/lualex.lua`, a gutter with a column for marks and the numbers
+-- right-aligned and faint, the current line on a band, a line with
+-- something wrong tinted and marked with its dot or triangle and the words
+-- underlined, and a thin caret in the accent. Editing is the same in both:
+-- undo and redo, selecting with Shift and by words, Home, End and the page
+-- keys, Delete, Enter keeping the indent in code.
 --
 -- The full-screen `edit` came first and is still there; this is the same
 -- idea as a view, so it can sit in a window beside anything else. What it
 -- gains by being a widget is that the window manager owns its pixels, so
 -- an editor that hangs is a window you can still move.
 --
+
+local textbuf = use("/lib/textbuf.lua")
+local lualex = use("/lib/lualex.lua")
+
+--
+-- **The code look's colours: the drawing's two palettes, light and dark,
+-- chosen by the ground they sit on.** A look may name its own - `code_keyword`
+-- and the rest - and then those are used; none does yet, and a palette of
+-- eighteen colours in every look to get what the drawing already decided
+-- would be eighteen chances for a look to be unreadable.
+--
+local CODE_LIGHT = {
+  keyword = 0xff7a3fb8, number = 0xffb3541e, string = 0xff2f7a32,
+  comment = 0xff8b919a, call = 0xff1f5fbf, library = 0xff0f7d86,
+  band = 0xfff4f6fb, selection = 0xffd3defa,
+  number_dim = 0xffb3b7be, number_here = 0xff74787f,
+  error = 0xffc0392b, error_ground = 0xfffde8e6,
+  warning = 0xffb7791f, warning_ground = 0xfffdf3dc,
+}
+
+local CODE_DARK = {
+  keyword = 0xffc792ea, number = 0xfff0a36b, string = 0xff9ccc7b,
+  comment = 0xff6f7885, call = 0xff82aaff, library = 0xff5fd3d9,
+  band = 0xff22262d, selection = 0xff2e4570,
+  number_dim = 0xff5a616d, number_here = 0xff8d95a3,
+  error = 0xffff7b72, error_ground = 0xff3a2224,
+  warning = 0xffe0b060, warning_ground = 0xff36301f,
+}
+
+local function code_colours()
+  local ground = theme.sunken or 0xffffffff
+  local r = (ground >> 16) & 0xff
+  local g = (ground >> 8) & 0xff
+  local b = ground & 0xff
+  local base = (r * 299 + g * 587 + b * 114) // 1000 > 128 and CODE_LIGHT
+               or CODE_DARK
+
+  if not theme.code_keyword then return base end
+
+  local own = {}
+
+  for k, v in pairs(base) do own[k] = theme["code_" .. k] or v end
+
+  return own
+end
+
+ui.code_colours = code_colours
+
 function ui.editor(spec)
   local v = ui.view(spec)
+  local buf = textbuf.new(spec.text)
 
+  v.buf = buf
   v.focusable = true
   v.read_only = spec.read_only or false
-  v.lines = {}
-  v.cy = 1
-  v.cx = 1
+  v.code = spec.code
   v.top = 1
+
+  -- The same table the buffer holds, so `#editor.lines` is the line count
+  -- as it always was; `set` replaces it and says so again.
+  v.lines = buf.lines
   v.dirty = false
 
-  --
-  -- Where a selection began, as `{y, x}`, or nil for none.
-  --
-  -- **A selection is two carets, and the second one is the cursor.** That
-  -- is the whole model: no separate "selecting" flag, no start-and-length,
-  -- and no third state where a selection exists but the caret is somewhere
-  -- else. Dragging moves the cursor and leaves the anchor; every key that
-  -- moves the cursor on its own drops the anchor, which is why clicking or
-  -- arrowing deselects without anything having to say so.
-  --
-  -- Nothing here reads the shift key, because there is no shift key to
-  -- read: keys arrive as a byte stream with the arrows decoded out of
-  -- `ESC [ A`-`D`, and shift-plus-arrow produces the same four bytes as an
-  -- arrow. So selection is made with the pointer or with select-all, which
-  -- is what the two of them can express.
-  --
-  v.anchor = nil
+  -- A code editor indents with Tab, and Control with Tab still leaves it
+  -- (`dispatch`).
+  v.takes_tab = (v.code ~= nil)
 
-  for line in ((spec.text or "") .. "\n"):gmatch("([^\n]*)\n") do
-    v.lines[#v.lines + 1] = line
-  end
+  --
+  -- Marks, a line each: `{ kind = "error" | "warning", from =, to = }`, the
+  -- bytes of the line to underline. The checker (step 4) sets them; the
+  -- editor only draws them.
+  --
+  v.marks = {}
 
-  if #v.lines > 1 and v.lines[#v.lines] == "" then
-    v.lines[#v.lines] = nil
-  end
-
-  if #v.lines == 0 then v.lines[1] = "" end
+  -- Colouring, a line at a time: the state each line starts in, its spans,
+  -- and how far down both are known. An edit forgets from its first line.
+  local starts, spans, known = { [1] = false }, {}, 0
 
   --
   -- Four digits and a space, unless the caller says not to.
@@ -3566,78 +3619,86 @@ function ui.editor(spec)
   local IN_X = spec.inset and spec.inset[1] or 2
   local IN_Y = spec.inset and spec.inset[2] or 2
 
+  -- What the buffer did, told to the view: how changed it is, and which
+  -- lines the colouring has to see again.
+  local function after_edit(self)
+    self.dirty = buf.dirty
+    self.lines = buf.lines
+
+    if buf.changed_from <= known then known = buf.changed_from - 1 end
+
+    buf.changed_from = math.huge
+  end
+
   function v:content()
-    return table.concat(self.lines, "\n") .. "\n"
+    return buf:content()
   end
 
   -- The other direction, so an editor can be given a different file without
-  -- being rebuilt. Splitting is the same three lines the constructor uses,
-  -- and having them in one place is why this is a method rather than
-  -- something every caller writes out.
+  -- being rebuilt - back to its top, with nothing to undo into the last one.
   function v:set(body)
-    self.lines = {}
+    buf:set(body)
+    self.top = 1
+    self.marks = {}
+    known = 0
+    after_edit(self)
+  end
 
-    for line in (tostring(body or "") .. "\n"):gmatch("([^\n]*)\n") do
-      self.lines[#self.lines + 1] = line
-    end
-
-    if #self.lines > 1 and self.lines[#self.lines] == "" then
-      self.lines[#self.lines] = nil
-    end
-
-    if #self.lines == 0 then self.lines[1] = "" end
-
-    -- Back to the top, because the cursor was somewhere in a file that is
-    -- no longer open and would otherwise sit past the end of this one.
-    self.cy, self.cx, self.top = 1, 1, 1
+  -- The text as it is on disk now: undoing back to here is unchanged again.
+  function v:saved()
+    buf:saved()
     self.dirty = false
   end
 
-  --
-  -- The selection in reading order, or nil when there is none.
-  --
-  -- Anchor and cursor can be either way round - dragging upwards is as
-  -- ordinary as dragging down - so every reader wants them sorted, and
-  -- sorting them in one place is why this exists. An anchor sitting exactly
-  -- on the cursor is *not* a selection: that is what a plain click leaves
-  -- behind, and reporting it as an empty one would make copy send nothing
-  -- rather than do nothing.
-  --
-  local function selection(self)
-    local a = self.anchor
+  function v:selected() return buf:selected() end
 
-    if not a then return nil end
+  function v:delete_selected()
+    if self.read_only then return false end
 
-    local y1, x1, y2, x2 = a[1], a[2], self.cy, self.cx
+    local done = buf:delete_selected()
 
-    if y1 > y2 or (y1 == y2 and x1 > x2) then
-      y1, x1, y2, x2 = y2, x2, y1, x1
-    end
-
-    if y1 == y2 and x1 == x2 then return nil end
-
-    return y1, x1, y2, x2
+    after_edit(self)
+    return done
   end
 
-  --
-  -- Which characters of line `n` the selection covers, as an inclusive
-  -- pair, plus whether the newline at the end of it is in there too.
-  --
-  -- The newline matters for drawing and only for drawing: a selection that
-  -- runs through three lines should not look like three separate
-  -- selections, so a line whose end is inside the range gets one extra
-  -- highlighted cell standing for the break. Nothing about the text itself
-  -- depends on it.
-  --
-  local function span(self, n)
-    local y1, x1, y2, x2 = selection(self)
+  function v:insert(text)
+    if self.read_only then return false end
 
-    if not y1 or n < y1 or n > y2 then return nil end
+    buf:insert(text)
+    after_edit(self)
+    return true
+  end
 
-    local from = (n == y1) and x1 or 1
-    local to   = (n == y2) and (x2 - 1) or #self.lines[n]
+  function v:undo()
+    if self.read_only then return false end
 
-    return from, to, n < y2
+    local done = buf:undo()
+
+    after_edit(self)
+    return done
+  end
+
+  function v:redo()
+    if self.read_only then return false end
+
+    local done = buf:redo()
+
+    after_edit(self)
+    return done
+  end
+
+  -- Put the caret on a line - a click in the Output panel, a mark's line.
+  function v:go_to(line, x)
+    buf:place(line, x or 1)
+    self.followed = nil
+  end
+
+  function v:mark(line, kind, from, to)
+    self.marks[line] = { kind = kind, from = from, to = to }
+  end
+
+  function v:clear_marks()
+    self.marks = {}
   end
 
   --
@@ -3648,115 +3709,22 @@ function ui.editor(spec)
   -- mentioned. Counting the break is what makes the answer agree with what
   -- `v:selected` produced, which joined its lines with one.
   --
-  local function advance(self, y, x, n)
+  local function advance(y, x, n)
+    local lines = buf.lines
+
     while true do
-      local room = #self.lines[y] - (x - 1)
+      local room = #lines[y] - (x - 1)
 
       if n <= room then return y, x + n end
 
       n = n - room - 1
 
-      if n < 0 or y >= #self.lines then
-        return y, #self.lines[y] + 1
+      if n < 0 or y >= #lines then
+        return y, #lines[y] + 1
       end
 
       y, x = y + 1, 1
     end
-  end
-
-  --
-  -- The selected text, or nil when nothing is selected.
-  --
-  -- Joined with "\n" and never with a trailing one, because a selection is
-  -- a run of characters rather than a set of lines - copying the middle of
-  -- a paragraph and pasting it should not introduce a break that was not
-  -- in it.
-  --
-  function v:selected()
-    local y1, x1, y2, x2 = selection(self)
-
-    if not y1 then return nil end
-
-    if y1 == y2 then
-      return self.lines[y1]:sub(x1, x2 - 1)
-    end
-
-    local out = { self.lines[y1]:sub(x1) }
-
-    for n = y1 + 1, y2 - 1 do
-      out[#out + 1] = self.lines[n]
-    end
-
-    out[#out + 1] = self.lines[y2]:sub(1, x2 - 1)
-
-    return table.concat(out, "\n")
-  end
-
-  --
-  -- Take it out, leaving the caret where it was.
-  --
-  -- The two ends join into one line, which is what makes a multi-line
-  -- delete a single edit rather than a loop that has to get its indices
-  -- right as the table shrinks underneath it.
-  --
-  function v:delete_selected()
-    local y1, x1, y2, x2 = selection(self)
-
-    if not y1 or self.read_only then return false end
-
-    self.lines[y1] = self.lines[y1]:sub(1, x1 - 1)
-                     .. self.lines[y2]:sub(x2)
-
-    for _ = y1 + 1, y2 do
-      table.remove(self.lines, y1 + 1)
-    end
-
-    self.cy, self.cx = y1, x1
-    self.anchor = nil
-    self.dirty = true
-
-    return true
-  end
-
-  --
-  -- Put text in at the caret, however many lines it is.
-  --
-  -- One path for a word and for a paragraph, because a paste is a paste.
-  -- The caret lands after what was inserted, which is where the next thing
-  -- typed belongs.
-  --
-  function v:insert(text)
-    if self.read_only then return false end
-
-    local parts = {}
-
-    for part in (tostring(text or "") .. "\n"):gmatch("([^\n]*)\n") do
-      parts[#parts + 1] = part
-    end
-
-    if #parts == 0 then return false end
-
-    local line = self.lines[self.cy]
-    local head, tail = line:sub(1, self.cx - 1), line:sub(self.cx)
-
-    if #parts == 1 then
-      self.lines[self.cy] = head .. parts[1] .. tail
-      self.cx = self.cx + #parts[1]
-    else
-      self.lines[self.cy] = head .. parts[1]
-
-      for i = 2, #parts do
-        table.insert(self.lines, self.cy + i - 1, parts[i])
-      end
-
-      self.cy = self.cy + #parts - 1
-      self.cx = #parts[#parts] + 1
-      self.lines[self.cy] = self.lines[self.cy] .. tail
-    end
-
-    self.dirty = true
-
-    return true
   end
 
   --
@@ -3772,14 +3740,12 @@ function ui.editor(spec)
   --
   function v:edit(kind)
     if kind == "selectall" then
-      self.anchor = { 1, 1 }
-      self.cy = #self.lines
-      self.cx = #self.lines[self.cy] + 1
+      buf:select_all()
       return true
     end
 
     if kind == "copy" or kind == "cut" then
-      local text = self:selected()
+      local text = buf:selected()
 
       if not text then return false end
 
@@ -3794,17 +3760,16 @@ function ui.editor(spec)
       -- **The screen says it rather than a message box.** A selection is
       -- already a picture of a range of text; shrinking it to the range
       -- that was copied makes the limit something you can see, in the one
-      -- place you were already looking. A dialog saying "1900 of 4212
-      -- bytes" would be the same fact, later, and in the way.
+      -- place you were already looking.
       --
       -- A cut then removes exactly the shortened run, which is why this
       -- happens before the delete rather than after it.
       --
       if dropped > 0 then
-        local y1, x1 = selection(self)
+        local y1, x1 = buf:selection()
 
-        self.anchor = { y1, x1 }
-        self.cy, self.cx = advance(self, y1, x1, bytes)
+        buf.anchor = { y1, x1 }
+        buf.cy, buf.cx = advance(y1, x1, bytes)
       end
 
       if kind == "cut" then return self:delete_selected() end
@@ -3819,8 +3784,6 @@ function ui.editor(spec)
 
       if not text or text == "" then return false end
 
-      self:delete_selected()
-
       return self:insert(text)
     end
 
@@ -3830,17 +3793,12 @@ function ui.editor(spec)
   --
   -- The monospace cell, read fresh each time rather than captured.
   --
-  -- This widget numbers its lines in a gutter, puts a block caret *on* a
+  -- This widget numbers its lines in a gutter, puts a caret *on* a
   -- character and clips to a column count. All three are arithmetic on a
   -- cell that is the same width for every glyph, so in a proportional face
-  -- none of it lands: the caret sits beside the character it is on and the
-  -- gutter walks away from the text. An editor is monospace by
-  -- construction, not by preference.
-  --
-  -- `GW`/`GH` are the *interface* font's and answer for that one only,
-  -- which is the same thing the terminal had wrong. Read per repaint
-  -- because the font is a setting and a window open while it changes has
-  -- to follow it.
+  -- none of it lands. An editor is monospace by construction, not by
+  -- preference. Read per repaint because the font is a setting and a window
+  -- open while it changes has to follow it.
   --
   local function cell()
     return math.max(1, gfx.measure("0", "mono")), gfx.height("mono")
@@ -3849,7 +3807,18 @@ function ui.editor(spec)
   local function rows(self)
     local _, ch = cell()
 
-    return (self.h - 2 * IN_Y) // ch
+    return math.max(1, (self.h - 2 * IN_Y) // ch)
+  end
+
+  --
+  -- The gutter, in cells: the plain look's `%4d `, and the code look's
+  -- column for a mark, then the numbers as wide as the last one needs, and
+  -- two cells of room before the text.
+  --
+  local function gutter_cells(self)
+    if not self.code then return GUTTER end
+
+    return 2 + math.max(3, #tostring(#buf.lines)) + 2
   end
 
   --
@@ -3859,17 +3828,16 @@ function ui.editor(spec)
   -- follows it again (`key` clears `followed`).
   --
   local function scroll_into_view(self)
-    if self.cy ~= self.followed then
-      if self.cy < self.top then self.top = self.cy end
+    local n = rows(self)
 
-      if self.cy > self.top + rows(self) - 1 then
-        self.top = self.cy - rows(self) + 1
-      end
+    if buf.cy ~= self.followed then
+      if buf.cy < self.top then self.top = buf.cy end
+      if buf.cy > self.top + n - 1 then self.top = buf.cy - n + 1 end
 
-      self.followed = self.cy
+      self.followed = buf.cy
     end
 
-    local most = math.max(1, #self.lines - rows(self) + 1)
+    local most = math.max(1, #buf.lines - n + 1)
 
     if self.top > most then self.top = most end
     if self.top < 1 then self.top = 1 end
@@ -3878,27 +3846,70 @@ function ui.editor(spec)
   function v:wheel(n)
     self.top = self.top - n * ui.WHEEL_ROWS
     if self.top < 1 then self.top = 1 end
+    self.followed = buf.cy
     return true
   end
 
-  local function clamp(self)
-    if self.cy < 1 then self.cy = 1 end
-    if self.cy > #self.lines then self.cy = #self.lines end
-    if self.cx < 1 then self.cx = 1 end
-    if self.cx > #self.lines[self.cy] + 1 then
-      self.cx = #self.lines[self.cy] + 1
+  -- The spans of line `n`, lexing down to it from the last line known.
+  local function spans_of(n)
+    while known < n do
+      local i = known + 1
+      local got, after = lualex.line(buf.lines[i] or "", starts[i] or nil)
+
+      spans[i] = got
+      starts[i + 1] = after or false
+      known = i
+    end
+
+    return spans[n]
+  end
+
+  -- A run of a line in its colours, clipped to `columns`.
+  local function draw_code_line(g, line, n, x0, y, columns, colours)
+    local GW = cell()
+    local at = 1
+
+    local function run(from, to, colour)
+      if from > columns then return end
+      if to > columns then to = columns end
+      if to < from then return end
+
+      g:text(x0 + (from - 1) * GW, y, line:sub(from, to), colour, nil, "mono")
+    end
+
+    for _, s in ipairs(spans_of(n)) do
+      if s[1] > at then run(at, s[1] - 1, theme.text) end
+
+      run(s[1], s[2], colours[s[3]] or theme.text)
+      at = s[2] + 1
+    end
+
+    if at <= #line then run(at, #line, theme.text) end
+  end
+
+  -- A wave under bytes `from` to `to` of a row: two pixels up, two down.
+  local function squiggle(g, x0, y, from, to, colour)
+    local GW, GH = cell()
+    local x1 = x0 + (from - 1) * GW
+    local x2 = x0 + to * GW
+    local base = y + GH - 3
+
+    for x = x1, x2 - 2, 2 do
+      g:fill(x, base + ((x - x1) // 2) % 2, 2, 1, colour)
     end
   end
 
   function v:draw(g)
     local GW, GH = cell()
+    local code = self.code
+    local colours = code and code_colours()
 
     scroll_into_view(self)
 
     -- A well: content lives in here, and the bevel says so. The focus
     -- ring goes inside it rather than over it, so a focused field is
     -- still visibly a field.
-    if self.plain then
+    if self.plain or code then
       g:fill(0, 0, self.w, self.h, theme.sunken)
     else
       g:sunken(0, 0, self.w, self.h, "sunken")
@@ -3908,23 +3919,78 @@ function ui.editor(spec)
       end
     end
 
-    local columns = (self.w - 2 * IN_X) // GW - GUTTER
+    local gutter = gutter_cells(self)
+    local columns = (self.w - 2 * IN_X) // GW - gutter
+    local x0 = IN_X + gutter * GW
+    local sy1, sx1, sy2, sx2 = buf:selection()
 
     for row = 0, rows(self) - 1 do
       local n = self.top + row
-      local line = self.lines[n]
+      local line = buf.lines[n]
 
-      if line then
-        local y = IN_Y + row * GH
-        local x0 = IN_X + GUTTER * GW
+      if not line then break end
 
+      local y = IN_Y + row * GH
+
+      if code then
+        --
+        -- The drawing's line: its band - the current one, or tinted for a
+        -- mark - then the mark, the number, the selection, the text.
+        --
+        local mark = self.marks[n]
+        local here = (n == buf.cy)
+        local band = mark and (mark.kind == "error" and colours.error_ground
+                               or colours.warning_ground)
+                     or (here and self.focused and colours.band) or nil
+
+        if band then g:fill(0, y, self.w, GH, band) end
+
+        if mark then
+          local mc = (mark.kind == "error") and colours.error or colours.warning
+          local cx, cy = IN_X + GW, y + GH // 2
+
+          if mark.kind == "error" then
+            g:fill_round(cx - 3, cy - 3, 7, 7, mc, 3)
+          else
+            g:triangle(cx, cy - 4, cx + 4, cy + 3, cx - 4, cy + 3, mc)
+          end
+        end
+
+        local number = tostring(n)
+
+        g:text(x0 - 2 * GW - #number * GW, y, number,
+               here and colours.number_here or colours.number_dim, nil, "mono")
+
+        if sy1 and n >= sy1 and n <= sy2 then
+          local from = (n == sy1) and sx1 or 1
+          local to = (n == sy2) and (sx2 - 1) or (#line + 1)
+
+          if from <= columns then
+            to = math.min(to, columns)
+            g:fill(x0 + (from - 1) * GW, y, math.max(1, to - from + 1) * GW, GH,
+                   colours.selection)
+          end
+        end
+
+        draw_code_line(g, line, n, x0, y, columns, colours)
+
+        if mark and mark.from then
+          squiggle(g, x0, y, mark.from, math.min(mark.to or #line, columns),
+                   (mark.kind == "error") and colours.error or colours.warning)
+        end
+      else
         if GUTTER > 0 then
-          g:text(IN_X, y, ("%4d "):format(n), theme.line, theme.sunken,
-                 "mono")
+          g:text(IN_X, y, ("%4d "):format(n), theme.line, theme.sunken, "mono")
         end
 
         local vis = line:sub(1, columns)
-        local from, to, eol = span(self, n)
+        local from, to, eol
+
+        if sy1 and n >= sy1 and n <= sy2 then
+          from = (n == sy1) and sx1 or 1
+          to = (n == sy2) and (sx2 - 1) or #line
+          eol = n < sy2
+        end
 
         if not from then
           g:text(x0, y, vis, theme.text, theme.sunken, "mono")
@@ -3962,138 +4028,128 @@ function ui.editor(spec)
       end
     end
 
-    -- The cursor as a block on the character it is on, which is what makes
-    -- the column obvious in indented code.
-    if self.focused and not selection(self) and self.cy >= self.top
-       and self.cy <= self.top + rows(self) - 1 then
-      local px = IN_X + (GUTTER + math.min(self.cx, columns + 1) - 1) * GW
-      local py = IN_Y + (self.cy - self.top) * GH
-      local under = self.lines[self.cy]:sub(self.cx, self.cx)
+    -- The caret: the code look's thin one in the accent, between two
+    -- characters; the plain look's block *on* the character, which is what
+    -- makes the column obvious in indented text.
+    if self.focused and (code or not sy1) and buf.cy >= self.top
+       and buf.cy <= self.top + rows(self) - 1 then
+      local px = x0 + (math.min(buf.cx, columns + 1) - 1) * GW
+      local py = IN_Y + (buf.cy - self.top) * GH
 
-      g:fill(px, py, GW, GH, theme.ring)
+      if code then
+        g:fill(px - 1, py, 2, GH, theme.accent)
+      else
+        local under = buf.lines[buf.cy]:sub(buf.cx, buf.cx)
 
-      if under ~= "" then
-        g:text(px, py, under, theme.sunken, theme.ring, "mono")
+        g:fill(px, py, GW, GH, theme.ring)
+
+        if under ~= "" then
+          g:text(px, py, under, theme.sunken, theme.ring, "mono")
+        end
       end
     end
   end
+
+  local SHIFT, CTRL = keys.SHIFT, keys.CTRL
 
   function v:key(c)
     -- A key brings the cursor back into view, wherever the wheel left it.
     self.followed = nil
 
-    --
-    -- A key that moves the caret drops the selection, and a key that
-    -- changes text replaces it. Both before anything else looks at the
-    -- line, because a delete moves the caret and the line under it.
-    --
-    local moving = (c == -1 or c == -2 or c == -3 or c == -4
-                    or c == 1 or c == 5)
-    local typing = (c == 10 or c == 13 or c >= 32)
-    local erasing = (c == 8 or c == 127)
+    local k, mods = keys.parts(c)
+    local shift = (mods & SHIFT) ~= 0
+    local ctrl = (mods & CTRL) ~= 0
+    local extra = mods & ~(SHIFT | CTRL)
 
-    if self.anchor and not self.read_only then
-      if typing or erasing then
-        local had = self:delete_selected()
-
-        -- Backspace and Delete are *done* once the selection is gone -
-        -- taking a further character would eat one nobody selected.
-        if had and erasing then return true end
-      end
-    end
-
-    if moving or typing or erasing then self.anchor = nil end
-
-    local line = self.lines[self.cy]
+    if extra ~= 0 then return false end           -- Alt: nothing here
 
     --
-    -- **A read-only editor is still an editor**, and that is the point: it
-    -- scrolls, it has a caret you can put on a character, and the text is
-    -- text rather than a laid-out picture of text. What it will not do is
-    -- change under a keystroke meant to navigate it - which for a pane
-    -- reporting what the machine *is* would be a lie the moment somebody
-    -- leaned on the keyboard.
+    -- Moving, which a read-only editor does too: it scrolls, it has a caret
+    -- you can put on a character, and Shift selects what you can copy.
     --
-    -- Movement is handled below either way; only the keys that would
-    -- insert, split or delete are refused here.
-    --
-    local editing = (c == 10 or c == 13 or c == 8 or c == 127 or c >= 32)
-
-    if self.read_only and editing then
-      return true                       -- swallowed, so the window keeps it
-    end
-
-    if c == -1 then self.cy = self.cy - 1; clamp(self); return true end
-    if c == -2 then self.cy = self.cy + 1; clamp(self); return true end
-
-    if c == -4 then                                     -- left
-      if self.cx == 1 then
-        if self.cy > 1 then
-          self.cy = self.cy - 1
-          self.cx = #self.lines[self.cy] + 1
-        end
+    if k == keys.UP or k == keys.DOWN then
+      if ctrl then
+        -- The view by a line, the caret where it is.
+        self.top = math.max(1, self.top + ((k == keys.UP) and -1 or 1))
+        self.followed = buf.cy
+      elseif k == keys.UP then
+        buf:up(shift)
       else
-        self.cx = self.cx - 1
+        buf:down(shift)
       end
       return true
     end
 
-    if c == -3 then                                     -- right
-      if self.cx > #line then
-        if self.cy < #self.lines then
-          self.cy = self.cy + 1
-          self.cx = 1
-        end
-      else
-        self.cx = self.cx + 1
-      end
+    if k == keys.LEFT then
+      if ctrl then buf:word_left(shift) else buf:left(shift) end
       return true
     end
 
-    if c == 1 then self.cx = 1 return true end          -- ^A
-    if c == 5 then self.cx = #line + 1 return true end  -- ^E
-
-    if c == 10 or c == 13 then                          -- Enter
-      local rest = line:sub(self.cx)
-
-      self.lines[self.cy] = line:sub(1, self.cx - 1)
-      table.insert(self.lines, self.cy + 1, rest)
-      self.cy = self.cy + 1
-      self.cx = 1
-      self.dirty = true
+    if k == keys.RIGHT then
+      if ctrl then buf:word_right(shift) else buf:right(shift) end
       return true
     end
 
-    if c == 8 or c == 127 then                          -- Backspace
-      if self.cx > 1 then
-        self.lines[self.cy] = line:sub(1, self.cx - 2) .. line:sub(self.cx)
-        self.cx = self.cx - 1
-        self.dirty = true
-      elseif self.cy > 1 then
-        -- Joining onto the end of the line above, which is where the
-        -- cursor has to land or the join is invisible.
-        local above = self.lines[self.cy - 1]
-
-        self.cx = #above + 1
-        self.lines[self.cy - 1] = above .. line
-        table.remove(self.lines, self.cy)
-        self.cy = self.cy - 1
-        self.dirty = true
-      end
+    if k == keys.HOME then
+      if ctrl then buf:text_start(shift) else buf:home(shift) end
       return true
     end
 
-    if c == 9 then c = 32 end                           -- Tab: a space
-
-    if c >= 32 and c < 127 then
-      self.lines[self.cy] = line:sub(1, self.cx - 1) .. string.char(c)
-                            .. line:sub(self.cx)
-      self.cx = self.cx + 1
-      self.dirty = true
+    if k == keys.END then
+      if ctrl then buf:text_end(shift) else buf:line_end(shift) end
       return true
     end
 
-    return false
+    if k == keys.PAGEUP or k == keys.PAGEDOWN then
+      local n = rows(self) - 1
+
+      if k == keys.PAGEUP then n = -n end
+
+      self.top = math.max(1, self.top + n)
+      buf:vertical(n, shift)
+      self.followed = buf.cy
+      return true
+    end
+
+    if c == 5 then buf:line_end(false) return true end        -- ^E
+
+    --
+    -- **A read-only editor is still an editor**, and that is the point: what
+    -- it will not do is change under a keystroke meant to navigate it -
+    -- which for a pane reporting what the machine *is* would be a lie the
+    -- moment somebody leaned on the keyboard. The keys that would change it
+    -- are swallowed, so the window keeps them.
+    --
+    local editing = (c == 10 or c == 13 or c == 8 or c == 127 or c == 26
+                     or c == 25 or k == keys.DELETE or c >= 32
+                     or (k == 9 and self.code))
+
+    if self.read_only then return editing end
+
+    local done = true
+
+    if c == 26 then                                           -- ^Z
+      buf:undo()
+    elseif c == 25 then                                       -- ^Y
+      buf:redo()
+    elseif c == 10 or c == 13 then                            -- Enter
+      buf:newline(self.code ~= nil)
+    elseif c == 8 or c == 127 then                            -- Backspace
+      buf:backspace()
+    elseif k == keys.DELETE and mods == 0 then
+      buf:delete_forward()
+    elseif k == 9 and self.code then                          -- Tab
+      if shift then buf:outdent() else buf:tab() end
+    elseif k == 47 and ctrl and self.code then                -- Ctrl+/
+      buf:toggle_comment()
+    elseif c >= 32 and c < 127 then
+      buf:insert(string.char(c), "type")
+    else
+      done = false
+    end
+
+    after_edit(self)
+    return done
   end
 
   --
@@ -4109,28 +4165,28 @@ function ui.editor(spec)
 
     if action == "press" or action == "move" then
       local row = (y - IN_Y) // GH
-
-      self.cy = self.top + row
-      clamp(self)
-
-      local col = (x - IN_X) // GW - GUTTER
+      local col = (x - IN_X) // GW - gutter_cells(self)
 
       if col < 0 then col = 0 end
-      self.cx = math.min(col + 1, #self.lines[self.cy] + 1)
 
       --
       -- The press is the anchor; the drag is the cursor.
       --
-      -- Which is why this is two lines rather than a selecting flag: the
-      -- window holds the grab from press to release - see `dispatch_mouse`
-      -- - so a `move` reaching this widget at all *means* the button is
-      -- down, and there is nothing to remember. A press that goes nowhere
-      -- leaves anchor and cursor equal, which `selection` reports as no
-      -- selection, so a plain click deselects for free.
+      -- The window holds the grab from press to release - see
+      -- `dispatch_mouse` - so a `move` reaching this widget at all *means*
+      -- the button is down, and there is nothing to remember. A press that
+      -- goes nowhere leaves anchor and cursor equal, which `selection`
+      -- reports as no selection, so a plain click deselects for free.
       --
       if action == "press" then
-        self.anchor = { self.cy, self.cx }
+        buf:place(self.top + row, col + 1, false)
+        buf.anchor = { buf.cy, buf.cx }
+      else
+        buf.cy, buf.cx = buf:clamp(self.top + row, col + 1)
+        buf.want = nil
       end
+
+      self.followed = buf.cy
     end
 
     return true
