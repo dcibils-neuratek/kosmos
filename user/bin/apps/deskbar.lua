@@ -51,7 +51,7 @@
 -- application that died leaves the list by itself, because its window went
 -- with it.
 --
--- **What can be run** is `/home/Deskbar`: a folder per section, holding
+-- **What can be run** is `/Home/Deskbar`: a folder per section, holding
 -- launcher files. A thing is in the menu because somebody made a launcher
 -- for it, and moving, renaming or giving one arguments is moving, renaming
 -- or setting an attribute on a file - Tracker's job, not this program's.
@@ -93,7 +93,7 @@ if screen then sw, sh = screen:size() end
 -- What can be started, and where the menu comes from.
 --
 -- **The Deskbar is a menu of launchers, and a thing appears in it because a
--- launcher file exists.** `/home/Deskbar` holds a folder per section, each
+-- launcher file exists.** `/Home/Deskbar` holds a folder per section, each
 -- holding launchers; a folder inside one of those is a submenu. Moving an
 -- item between sections is moving the file, renaming it is renaming the
 -- file, and giving it arguments - Doom at a different size - is an
@@ -122,7 +122,7 @@ if screen then sw, sh = screen:size() end
 -- Tracker can open it and a launcher can be made from there.
 --------------------------------------------------------------------------
 
-local DESKBAR = "/home/Deskbar"
+local DESKBAR = "/Home/Deskbar"
 
 --
 -- What `/bin` can start, which is a different question from what the menu
@@ -162,11 +162,11 @@ end
 -- to one that exists. So a launcher deliberately thrown away stays thrown
 -- away, which a per-item fallback could not promise.
 --
--- Tracker does the same for `/home/Desktop`, Drive, the Trash and the cheat
+-- Tracker does the same for `/Home/Desktop`, Drive, the Trash and the cheat
 -- sheet, and for the same reason it gives: a folder that only exists once
 -- you think to make one is a folder nobody makes.
 --
--- `/home` is always there to put it in - on the disk when there is one, and
+-- `/Home` is always there to put it in - on the disk when there is one, and
 -- moved into memory by `init.lua` when there is not - so a machine with no
 -- drive gets a menu too, and loses it at the power switch along with
 -- everything else it wrote.
@@ -251,7 +251,7 @@ local function seed()
     --
     -- **And every start after that, what arrived since.** The folder was
     -- made once and never again, so an application newer than a person's
-    -- `/home` was not in their menu - Preferences, on 24 September.
+    -- `/Home` was not in their menu - Preferences, on 24 September.
     --
     local record = fs.read(SEEDED)
     local seeded = nil
@@ -842,7 +842,7 @@ end
 --
 -- Two items, and the second is the important one. The menu being a folder
 -- of launchers is the whole design, and nothing on the screen said so -
--- somebody would have had to be told that `/home/Deskbar` exists before
+-- somebody would have had to be told that `/Home/Deskbar` exists before
 -- they could move anything. Opening it puts the answer one right-click from
 -- the thing it is about, which is where a person looks.
 --

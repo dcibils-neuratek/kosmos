@@ -4,7 +4,7 @@
 -- kosmos: icon App_Generic
 -- kosmos: section demos
 --
---   wm doom                        /home/doom1.wad
+--   wm doom                        /Home/doom1.wad
 --   wm doom:/Temporary/other.wad   somewhere else
 --
 -- Only in an image with Doom compiled in: `make` and `make qemu` build one
@@ -35,13 +35,13 @@ if not have or type(doom) ~= "table" then
   return
 end
 
-local path = (args or ""):match("^%s*(%S+)") or "/home/doom1.wad"
+local path = (args or ""):match("^%s*(%S+)") or "/Home/doom1.wad"
 
 local attrs, why = fs.getattr(path)
 
 if not attrs then
   print("doom: no " .. path .. ": " .. tostring(why))
-  print("      put one on the disk: make image FILES=\"doom1.wad:/home/doom1.wad\"")
+  print("      put one on the disk: make image FILES=\"doom1.wad:/Home/doom1.wad\"")
   return
 end
 

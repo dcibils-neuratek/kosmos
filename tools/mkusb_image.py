@@ -32,7 +32,7 @@ hands it over as a module, and `hal/pc/memdisk.c` presents that memory as the
 machine's disk - which is how a ThinkPad Kosmos cannot yet read a USB stick
 on gets its game data.
 
-**Or `/home` in a partition of its own** (USB step 5f). `--home PATH` writes
+**Or `/Home` in a partition of its own** (USB step 5f). `--home PATH` writes
 the kfs image into a second partition, of Kosmos's type, right after the ESP
 rather than onto it, and puts `opt/kosmos/home=` and that partition's unique
 GUID on the kernel's command line. The loader reads nothing new - it passes
@@ -94,7 +94,7 @@ ESP_MB = 192
 STICK_DISK_MAX_MB = 32
 
 #
-# **A `/home` partition is not that disk, and has its own ceiling.** The
+# **A `/Home` partition is not that disk, and has its own ceiling.** The
 # loader never reads it - Kosmos's USB driver does, a block at a time, from
 # the stick - so the reason for the 32 above does not reach it. Diego, 19
 # September: "from now on we need to make the drive image at least 512mb".
@@ -376,13 +376,13 @@ def main():
                      "booted a disk over %d MB that the loader carries "
                      "(docs/boot.md). Make one that size, or give it as "
                      "--home, in a partition of its own:\n  build/host/lua "
-                     "tools/kfs.lua create %s %d host-file:/home/name ..."
+                     "tools/kfs.lua create %s %d host-file:/Home/name ..."
                      % (image, os.path.getsize(image) / 1048576.0,
                         STICK_DISK_MAX_MB, image, STICK_DISK_MAX_MB))
 
         if image is home \
                 and os.path.getsize(image) > STICK_HOME_MAX_MB * 1024 * 1024:
-            sys.exit("mkusb_image: %s is %.0f MB, past the %d MB a /home "
+            sys.exit("mkusb_image: %s is %.0f MB, past the %d MB a /Home "
                      "partition may be - which is how much mkusb.sh writes "
                      "and reads back before a stick is booted"
                      % (image, os.path.getsize(image) / 1048576.0,
@@ -424,7 +424,7 @@ def main():
              "; the kernel is told: " + args if args else "",
              "; with %s as its disk, %.1f MB" % (disk, os.path.getsize(disk) / 1e6)
              if disk else "",
-             "; with %s as /home, in a partition of its own, %.1f MB"
+             "; with %s as /Home, in a partition of its own, %.1f MB"
              % (home, os.path.getsize(home) / 1e6) if home else ""))
 
 

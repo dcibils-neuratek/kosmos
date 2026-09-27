@@ -115,7 +115,7 @@ def boot(image, disk, commands, kill_after=None, each=30.0):
     return out.decode("utf-8", "replace")
 
 
-WRITER = ('for i = 1, %d do fs.write("/home/t" .. i, '
+WRITER = ('for i = 1, %d do fs.write("/Home/t" .. i, '
           'string.rep(tostring(i %% 10), %d)) end print("WRITER DONE")'
           % (COUNT, LENGTH))
 
@@ -128,7 +128,7 @@ VERIFY = (
     # files could not be listed at all, and the check read "0 names, all
     # readable" and passed. A test that turns an error into an empty
     # answer is a test that reports success for a broken machine.
-    'local names, lerr = fs.list("/home") '
+    'local names, lerr = fs.list("/Home") '
     # The marker is split in the source so it does not appear in the line
     # the shell echoes back. Searching the transcript for a word that is
     # also in the command that produced it finds the command every time,
@@ -136,11 +136,11 @@ VERIFY = (
     'if not names then print("LIST" .. "-FAILED", lerr) names = {} end '
     'for _, name in ipairs(names) do '
     '  listed = listed + 1 '
-    '  local v = fs.read("/home/" .. name) '
+    '  local v = fs.read("/Home/" .. name) '
     '  if v == nil then unreadable = unreadable + 1 end '
     'end '
     'for i = 1, %d do '
-    '  local v = fs.read("/home/t" .. i) '
+    '  local v = fs.read("/Home/t" .. i) '
     '  if v ~= nil then '
     '    present = present + 1 '
     '    if v ~= string.rep(tostring(i %% 10), %d) then torn = torn + 1 end '

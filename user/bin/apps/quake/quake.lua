@@ -4,7 +4,7 @@
 -- kosmos: icon App_Generic
 -- kosmos: section demos
 --
---   wm quake                       /home/id1/pak0.pak
+--   wm quake                       /Home/id1/pak0.pak
 --   wm quake:/Temporary/pak0.pak   somewhere else
 --
 -- Only in an image built with `make QUAKE=1`; see
@@ -31,13 +31,13 @@ if not have or type(quake) ~= "table" then
   return
 end
 
-local path = (args or ""):match("^%s*(%S+)") or "/home/id1/pak0.pak"
+local path = (args or ""):match("^%s*(%S+)") or "/Home/id1/pak0.pak"
 
 local attrs, why = fs.getattr(path)
 
 if not attrs then
   print("quake: no " .. path .. ": " .. tostring(why))
-  print("       put one on the disk: make image FILES=\"pak0.pak:/home/id1/pak0.pak\"")
+  print("       put one on the disk: make image FILES=\"pak0.pak:/Home/id1/pak0.pak\"")
   return
 end
 

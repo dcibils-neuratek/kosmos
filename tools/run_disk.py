@@ -167,28 +167,28 @@ def main():
             "diskinfo",
             "mkfs --yes",
             "save notes.txt written before the reboot",
-            "mkdir /home/papers",
+            "mkdir /Home/papers",
             "save papers/deep.txt inside a directory",
-            'fs.write("/home/kept", { palette = "light", n = 42 })',
+            'fs.write("/Home/kept", { palette = "light", n = 42 })',
             # Attributes, which is the half of this filesystem that is not
             # ext2. Set on the first boot and asked for on the second: the
             # whole question is whether a thing said *about* a file lasts
             # as long as the file does.
-            "attr /home/notes.txt kind=note author=diego",
-            "attr /home/notes.txt size=999",
-            "attr /home/papers/deep.txt kind=note",
+            "attr /Home/notes.txt kind=note author=diego",
+            "attr /Home/notes.txt size=999",
+            "attr /Home/papers/deep.txt kind=note",
             # A directory larger than one message. `list` answers in
             # pieces the way `read` does, and before it did, `ls` on a
             # directory like this showed nothing at all.
-            # In a directory of their own. They were in /home first, and
-            # that made `ls /home` three hundred lines long - which the
+            # In a directory of their own. They were in /Home first, and
+            # that made `ls /Home` three hundred lines long - which the
             # harness waits on over a serial line, and gave up on. A test
             # that changes the thing another test measures is a test that
             # breaks its neighbours.
-            'fs.send("/home/many", { type = "mkdir" }) '
-            'for i = 1, 300 do fs.write("/home/many/f" .. i, "x") end '
+            'fs.send("/Home/many", { type = "mkdir" }) '
+            'for i = 1, 300 do fs.write("/Home/many/f" .. i, "x") end '
             'print("MADE MANY")',
-            'local l, e = fs.list("/home/many") '
+            'local l, e = fs.list("/Home/many") '
             'print("LISTED", l and #l or -1, tostring(e))',
             # A file a hundred times larger than a message, out and back
             # through pages the caller owns. This is `read(fd, buf, n)`
@@ -197,8 +197,8 @@ def main():
             'local buf = sys.memory(64) '
             'for i = 0, 49 do sys.region_write(buf, i * 4096, '
             'string.rep(string.char(65 + i % 26), 4096)) end '
-            'print("BIGWROTE", fs.write_from("/home/big", buf, 200 * 1024))',
-            "ls /home",
+            'print("BIGWROTE", fs.write_from("/Home/big", buf, 200 * 1024))',
+            "ls /Home",
         ], trace=started)
 
         #
@@ -262,7 +262,7 @@ def main():
 
         checks += 1
 
-        if "notes.txt" not in first.split("ls /home")[-1]:
+        if "notes.txt" not in first.split("ls /Home")[-1]:
             raise Failure("the file is not in the directory listing.\n" + first)
 
         checks += 1
@@ -315,11 +315,11 @@ def main():
         #
         # Relative to `cwd` throughout, deliberately. Every one of these took
         # a path as typed and resolved it against where you are, and `mkdir`
-        # did not - `cd /home` then `mkdir box` asked for `box` and was told
+        # did not - `cd /Home` then `mkdir box` asked for `box` and was told
         # there was no such path.
         #
         verbs = boot(image, disk, [
-            "cd /home",
+            "cd /Home",
             "touch alpha.txt",
             "mkdir box",
             "cp alpha.txt beta.txt",
@@ -331,12 +331,12 @@ def main():
             "ls",
         ])
 
-        if "made /home/alpha.txt" not in verbs:
+        if "made /Home/alpha.txt" not in verbs:
             raise Failure("touch did not make the file.\n" + verbs)
 
         checks += 1
 
-        if "made /home/box" not in verbs:
+        if "made /Home/box" not in verbs:
             raise Failure(
                 "mkdir did not resolve a name against the working "
                 "directory.\n" + verbs
@@ -346,12 +346,12 @@ def main():
 
         # Into the directory rather than onto it: the destination exists and
         # is a directory, so the name comes along.
-        if "copied to /home/box/alpha.txt" not in verbs:
+        if "copied to /Home/box/alpha.txt" not in verbs:
             raise Failure("cp did not copy into the directory.\n" + verbs)
 
         checks += 1
 
-        if "moved to /home/gamma.txt" not in verbs:
+        if "moved to /Home/gamma.txt" not in verbs:
             raise Failure("mv did not rename the file.\n" + verbs)
 
         checks += 1
@@ -384,13 +384,13 @@ def main():
         checks += 1
 
         # ---- second boot: a machine that has never seen this disk --------
-        second = boot(image, disk, ["diskinfo", "ls /home", "ls /home/papers",
-                                    "cat /home/notes.txt",
-                                    "cat /home/papers/deep.txt",
-                                    'local t = fs.read("/home/kept"); '
+        second = boot(image, disk, ["diskinfo", "ls /Home", "ls /Home/papers",
+                                    "cat /Home/notes.txt",
+                                    "cat /Home/papers/deep.txt",
+                                    'local t = fs.read("/Home/kept"); '
                                     'print("kept:", type(t), t and t.palette, '
                                     't and t.n)',
-                                    "attr /home/notes.txt",
+                                    "attr /Home/notes.txt",
                                     # The index is not on the disk. These
                                     # answers can only come from a scan of
                                     # the attributes done on this boot.
@@ -398,7 +398,7 @@ def main():
                                     "find name=deep.txt",
                                     'local b = sys.memory(64) '
                                     'local got, size = fs.read_into('
-                                    '"/home/big", b, 0, 200 * 1024) '
+                                    '"/Home/big", b, 0, 200 * 1024) '
                                     'print("BIGREAD", got, size, '
                                     'sys.region_read(b, 0, 3), '
                                     'sys.region_read(b, 8192, 3))'])
@@ -423,12 +423,12 @@ def main():
 
             checks += 1
 
-        # The output of `ls /home` and nothing else. Splitting on the
+        # The output of `ls /Home` and nothing else. Splitting on the
         # command and taking the last piece used to work by accident: it
-        # landed after `ls /home/papers`, which also contains "ls /home",
+        # landed after `ls /Home/papers`, which also contains "ls /Home",
         # and found the name in a later `cat` line instead of in the
         # listing. It stopped working the moment the directory grew.
-        home_listing = second.split("ls /home/papers")[0].split("ls /home")[-1]
+        home_listing = second.split("ls /Home/papers")[0].split("ls /Home")[-1]
 
         if "notes.txt" not in home_listing:
             raise Failure(
@@ -440,7 +440,7 @@ def main():
 
         checks += 1
 
-        if "papers" not in second.split("ls /home")[1]:
+        if "papers" not in second.split("ls /Home")[1]:
             raise Failure(
                 "the directory is gone after the reboot.\n" + second
             )
@@ -486,7 +486,7 @@ def main():
         # A file's contents surviving and the things said about it not
         # surviving would be a filesystem that is ext2 and nothing more.
         # This is the part that makes it worth having written.
-        after = second.split("attr /home/notes.txt")[-1]
+        after = second.split("attr /Home/notes.txt")[-1]
 
         for name, value in (("kind", "note"), ("author", "diego")):
             if name not in after or value not in after:
@@ -560,7 +560,7 @@ def main():
         # is not there.
         matched = second.split("find kind=note")[-1]
 
-        for path in ("/home/notes.txt", "/home/papers/deep.txt"):
+        for path in ("/Home/notes.txt", "/Home/papers/deep.txt"):
             if path not in matched:
                 raise Failure(
                     f"a query after the reboot did not find {path}. The "
@@ -572,7 +572,7 @@ def main():
             checks += 1
 
         # And it is a query, not a walk that returns everything.
-        if "/home/kept" in matched.split("find name=deep.txt")[0]:
+        if "/Home/kept" in matched.split("find name=deep.txt")[0]:
             raise Failure(
                 "the query returned a file that does not match it. That "
                 "is a walk wearing a query's name, and it means the "
@@ -583,7 +583,7 @@ def main():
 
         # `name` is indexed without anyone having declared it, which is
         # what makes a query by name fast however many files there are.
-        if "/home/papers/deep.txt" not in second.split("find name=deep.txt")[-1]:
+        if "/Home/papers/deep.txt" not in second.split("find name=deep.txt")[-1]:
             raise Failure(
                 "a query by name found nothing. Name is supposed to be "
                 "indexed for every file without being declared - it is "

@@ -5,8 +5,8 @@
 --
 -- Video: a window that plays a film.
 --
---   wm video:/home/magicword-mjpeg.mp4
---   video /home/magicword-mjpeg.mp4          (from a Terminal)
+--   wm video:/Home/magicword-mjpeg.mp4
+--   video /Home/magicword-mjpeg.mp4          (from a Terminal)
 --
 -- Drawn before it was written (`docs/video.html`, `roadmap.md` 4e) and
 -- built to that drawing: the picture at its own size with **the controls
@@ -102,7 +102,7 @@ local function say_instead(lines, title)
   --
   local function open_one()
     local chooser = panel.open{
-      start = "/home", title = "Open a film", filter = is_film,
+      start = "/Home", title = "Open a film", filter = is_film,
       on_choose = function(chosen)
         fs.send("/Running/wm", { type = "launch", program = "video",
                              args = chosen })
@@ -147,7 +147,7 @@ if not path then
   say_instead({
     "Nothing open",
     "Open a film, or start this with one:",
-    "video /home/magicword-clip.mp4",
+    "video /Home/magicword-clip.mp4",
   })
   return
 end
@@ -278,7 +278,7 @@ end
 
 local function open_another()
   local chooser = panel.open{
-    start = "/home", title = "Open a film", filter = is_film,
+    start = "/Home", title = "Open a film", filter = is_film,
     on_choose = function(chosen)
       local reply = fs.send("/Running/wm", { type = "launch", program = "video",
                                          args = chosen })

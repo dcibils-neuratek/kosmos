@@ -4,7 +4,7 @@ How a program that is not in the image is started: an ELF file, read from
 `/Home`, made into a process. Written before it is built, as
 `threads.md` was, and agreed with Diego on 27 September 2026:
 "i want to go ahead and make the elf loader so we can start shipping a
-really usable system with games on /home" (`roadmap.md` 6t). The layout it
+really usable system with games on /Home" (`roadmap.md` 6t). The layout it
 installs into is `layout.html`.
 
 ---
@@ -74,7 +74,7 @@ Mapped on 27 September, with every claim against the code:
 - **A Lua program already comes from a file.** `run` spawns a *runner*
   (role 12) and sends it the path; the runner reads the source through its
   own namespace and loads it (`init.lua` 5997, 6195-6210). A Lua program
-  in `/home` runs today - which is how the IDE runs one.
+  in `/Home` runs today - which is how the IDE runs one.
 - **Doom, Quake and the Super Nintendo are kits** in that one image:
   `doom.lua` does `use("/kits/doom")`, and `sys.kit` finds `doom` compiled
   in under `KOSMOS_DOOM` (`sys_user.c` 2720-2760). Their Lua is a file
@@ -244,7 +244,7 @@ files are inherent parts of the game, not savedata that you generate". So:
   `/Home/Apps`, so there is nothing to unregister either.
 
 **Kept by convention for now, and not enforced.** Every program started
-today is handed the whole disk at `/home`, read and write, so an installed
+today is handed the whole disk at `/Home`, read and write, so an installed
 application could write anywhere in it; making that impossible would mean
 handing it only its own folder, as a capability the disk's server holds.
 **Diego set that aside**: "lets not do this yet, we need to use the systme
@@ -269,4 +269,4 @@ the application goes.
   named after its folder: `Doom/doom.lua`.
 - **The applications Kosmos ships keep their settings in
   `/Home/Preferences`**, one entry each, since their folders are the
-  system's - today they are dotfiles at the top of `/home`.
+  system's - today they are dotfiles at the top of `/Home`.

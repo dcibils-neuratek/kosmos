@@ -3,7 +3,7 @@
 --
 --   acpi          each table: its name, its size, who wrote it, and whether
 --                 its bytes sum to zero
---   acpi save     each one into /home/acpi, as DSDT.aml, SSDT1.aml, ...
+--   acpi save     each one into /Home/acpi, as DSDT.aml, SSDT1.aml, ...
 --
 -- **Why a laptop's brightness starts here.** Nothing in Kosmos sets a
 -- brightness, and the ThinkPad says how it is set in AML: an embedded
@@ -11,15 +11,15 @@
 -- AML and is not going to learn to for this. It hands the bytes over, and on
 -- the Mac
 --
---   make stick-log FILE=/home/acpi/
+--   make stick-log FILE=/Home/acpi/
 --   iasl -e build/stick-acpi/SSDT*.aml -d build/stick-acpi/DSDT.aml
 --
 -- turns them into something a person can read, with ACPICA's own tools.
 --
 -- One file a table, because a DSDT on its own is a few hundred kilobytes and
--- `/home` takes a megabyte at most in one write.
+-- `/Home` takes a megabyte at most in one write.
 
-local DIR = "/home/acpi"
+local DIR = "/Home/acpi"
 
 local function tables_word(n)
   return n == 1 and "1 table" or (n .. " tables")

@@ -14,8 +14,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 LUA = os.path.join(ROOT, "build", "host", "lua")
 
-# The colon said, the size, three names in /home, the nested file, two
-# names kept out of /home, the `._` file kept out, and the bytes back.
+# The colon said, the size, three names in /Home, the nested file, two
+# names kept out of /Home, the `._` file kept out, and the bytes back.
 CHECKS = 10
 
 
@@ -29,7 +29,7 @@ def main():
         os.makedirs(os.path.join(folder, "roms", "snes"))
         files = {
             "song.mp3": b"not a song" * 100,
-            ".music": b"/home",
+            ".music": b"/Home",
             "roms/snes/game one.sfc": bytes(range(256)) * 128,
             ".DS_Store": b"litter",
             "roms/._game one.sfc": b"litter",
@@ -62,25 +62,25 @@ def main():
                                    image, path],
                                   capture_output=True, text=True).stdout
 
-        top, snes = ls("/home"), ls("/home/roms/snes")
+        top, snes = ls("/Home"), ls("/Home/roms/snes")
 
         for name in ("song.mp3", ".music", "roms"):
             if name not in top:
-                fails.append("/home has no %s:\n%s" % (name, top))
+                fails.append("/Home has no %s:\n%s" % (name, top))
 
         if "game one.sfc" not in snes:
             fails.append("the nested folder lost its file:\n" + snes)
 
         for name in (".DS_Store", "a:b.txt"):
             if name in top:
-                fails.append("/home holds %s, which should be left out" % name)
+                fails.append("/Home holds %s, which should be left out" % name)
 
-        if "._game" in ls("/home/roms"):
+        if "._game" in ls("/Home/roms"):
             fails.append("macOS's ._ file went in")
 
         back = os.path.join(work, "back.sfc")
         subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", image,
-                        "/home/roms/snes/game one.sfc", back],
+                        "/Home/roms/snes/game one.sfc", back],
                        capture_output=True, check=False)
 
         if not os.path.exists(back) or \

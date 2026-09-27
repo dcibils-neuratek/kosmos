@@ -21,7 +21,7 @@ wrong place is the failure worth catching.
 
 Given a third image, one `mkusb_image.py --home` made, it asks about that
 one too: the image itself, and a byte of its Kosmos partition changed - which
-has to be damage, named as `/home`'s partition rather than as the backup GPT.
+has to be damage, named as `/Home`'s partition rather than as the backup GPT.
 
 Usage: test_stickcheck.py IMAGE [KERNEL.ELF [HOME-IMAGE]]
 """
@@ -261,9 +261,9 @@ def main():
 
         expect("the home stick itself", ask(home, None), 0,
                "the stick holds the image")
-        expect("a byte of /home's partition",
+        expect("a byte of /Home's partition",
                ask(home, None, [(start + 5000, b"\xA5")]), 1,
-               "the Kosmos partition, /home")
+               "the Kosmos partition, /Home")
 
     if fails:
         print("FAIL: %d of %d stickcheck checks:" % (len(fails),

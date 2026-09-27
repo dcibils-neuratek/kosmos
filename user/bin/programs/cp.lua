@@ -2,11 +2,11 @@
 -- cp: copies a file.
 --
 --   cp notes.txt notes.bak      beside it
---   cp notes.txt /home/archive  into a directory
+--   cp notes.txt /Home/archive  into a directory
 --
 -- A directory as the destination means "into it", which is the one piece of
--- shell behaviour worth keeping: `cp a /home/archive` and
--- `cp a /home/archive/a` name the same result, and not having to type the
+-- shell behaviour worth keeping: `cp a /Home/archive` and
+-- `cp a /Home/archive/a` name the same result, and not having to type the
 -- name twice is most of what a shell is for.
 --
 -- No `-r`, and the refusal is `files.copy`'s rather than this program's. A

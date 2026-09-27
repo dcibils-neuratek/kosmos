@@ -3,9 +3,9 @@
 -- kosmos: application
 -- kosmos: icon App_MediaPlayer
 --
---   wm music                      everything in /home
---   wm music:/home/Music          everything in there
---   wm music:/home/groove.mp3     that folder, with that track picked
+--   wm music                      everything in /Home
+--   wm music:/Home/Music          everything in there
+--   wm music:/Home/groove.mp3     that folder, with that track picked
 --
 -- **The window drawn in `docs/music.html`**, which Diego approved on 14
 -- September and which is the pilot of a second look for the whole system: flat
@@ -88,7 +88,7 @@ local FOOT_H    = 24
 -- is what Tracker sends when somebody opens an MP3.
 --------------------------------------------------------------------------
 
-local FOLDER = "/home"
+local FOLDER = "/Home"
 local START
 
 do
@@ -100,7 +100,7 @@ do
     if attrs and attrs.kind == "directory" then
       FOLDER = given
     else
-      FOLDER = given:match("^(.*)/") or "/home"
+      FOLDER = given:match("^(.*)/") or "/Home"
       START = given:match("([^/]+)$")
     end
   end
@@ -342,7 +342,7 @@ end
 -- loses its last characters to the clip - which is why the footer read
 -- `on /hom` through three attempts at fixing it, while the shorter strings
 -- above it looked fine. Measured, not guessed: the client area really is 380
--- wide and `on /home` really is 64 pixels.
+-- wide and `on /Home` really is 64 pixels.
 --
 -- So the room left is rounded up to whole cells, and one more for the edge.
 --
@@ -777,18 +777,18 @@ end
 -- **Dark and light, both**, which is the first thing Diego decided about this
 -- window (`docs/music.html`). The palette is this application's rather than
 -- the desktop's - that is what makes it a pilot - so the switch is here, in a
--- menu of its own, and the choice is kept in `/home/.music`.
+-- menu of its own, and the choice is kept in `/Home/.music`.
 --
 local function use_look(name)
   look = LOOKS[name] and name or "dark"
   P = LOOKS[look]
 
-  fs.write("/home/.music", { look = look })
+  fs.write("/Home/.music", { look = look })
   win:paint()
 end
 
 do
-  local saved = fs.read("/home/.music")
+  local saved = fs.read("/Home/.music")
 
   if type(saved) == "table" and LOOKS[saved.look] then
     look = saved.look

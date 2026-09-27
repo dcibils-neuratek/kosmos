@@ -2,9 +2,9 @@
 -- kosmos: needs network
 -- Serves files over HTTP.
 --
---   httpd                  /home/www on port 80
+--   httpd                  /Home/www on port 80
 --   httpd 8080             the same, on port 8080
---   httpd 8080 /home/site  and from there
+--   httpd 8080 /Home/site  and from there
 --
 -- **The thing this machine has been building towards without saying so.**
 -- `roadmap.md` records an HTTP server as the goal that would settle an
@@ -40,7 +40,7 @@ local words = {}
 for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
 local port = tonumber(words[1]) or 80
-local root = words[2] or "/home/www"
+local root = words[2] or "/Home/www"
 
 local function dotted(bytes)
   if type(bytes) ~= "string" or #bytes ~= 4 then return "?" end
@@ -65,7 +65,7 @@ end
 -- same arrangement any service manager has with any service, and the reason
 -- daemons have log files rather than shouting.
 --
--- `/Temporary` and not `/home`: ramfs is always there, a disk is not, and a log
+-- `/Temporary` and not `/Home`: ramfs is always there, a disk is not, and a log
 -- that vanishes when the machine stops is the right lifetime for a log
 -- about what the machine did while it was running.
 --------------------------------------------------------------------------

@@ -35,14 +35,14 @@ end
 --
 -- What the disk server says its device has cost so far, in counter ticks:
 -- the time inside its block reads and writes (`diskfs_main` in `init.lua`).
--- `/home/.device` touches no disk, so asking adds nothing to the answer. Nil
+-- `/Home/.device` touches no disk, so asking adds nothing to the answer. Nil
 -- from a server that does not count, and then no share is claimed.
 --
 -- Every request the server answered in the meantime is in it - the desktop's
 -- as well as this benchmark's - so a share is honest on a quiet machine.
 --
 local function device_ticks()
-  local d = fs.read("/home/.device")
+  local d = fs.read("/Home/.device")
 
   if type(d) ~= "table" or not d.read_counter_ticks then return nil end
 
@@ -70,7 +70,7 @@ local QUEUED = "not yet: one command at a time"
 --
 local kfs = use("/lib/kfs.lua")
 local FILE_BYTES = 1024 * 1024
-local FILE_DIR = "/home/.diskbench"
+local FILE_DIR = "/Home/.diskbench"
 
 -- Positions that do not repeat in a pattern a cache could learn, and the same
 -- ones every run, so two runs ask the drive for the same work.
@@ -84,15 +84,15 @@ local function positions(seed)
 end
 
 --
--- What can be measured here: `/home`, and every USB stick the driver holds.
+-- What can be measured here: `/Home`, and every USB stick the driver holds.
 -- The kernel's disk - the NVMe - is not on the list, because only the disk
 -- server may read it (`sys_disk` in `kernel/syscall.c`).
 --
 function diskbench.targets()
   local out = {}
 
-  if fs.getattr("/home") then
-    out[#out + 1] = { kind = "file", path = "/home", name = "/home" }
+  if fs.getattr("/Home") then
+    out[#out + 1] = { kind = "file", path = "/Home", name = "/Home" }
   end
 
   local units = blocks.units()
@@ -355,12 +355,12 @@ function diskbench.measure(target, seconds, runs)
 end
 
 --
--- A run kept as a file in `/home/benchmarks`, named by when it was taken and
+-- A run kept as a file in `/Home/benchmarks`, named by when it was taken and
 -- tagged with what it measured, so Tracker can list them and two can be
 -- compared.
 --
 function diskbench.save(result)
-  local DIR = "/home/benchmarks"
+  local DIR = "/Home/benchmarks"
   local clock = use("/lib/clock.lua")
   local t = clock.now()
   local name

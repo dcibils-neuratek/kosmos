@@ -2399,7 +2399,7 @@ end
 -- faces are proportional and counting characters misplaces every span after
 -- the first.
 --
---   ui.trail{ x =, y =, w =, text = "/home", on_visit = function(path) end }
+--   ui.trail{ x =, y =, w =, text = "/Home", on_visit = function(path) end }
 --
 function ui.trail(spec)
   local v = ui.view(spec)
@@ -4420,7 +4420,7 @@ end
 -- A picture.
 --
 --   ui.image{ x =, y =, w =, h =, asset = "test-pattern.png" }
---   ui.image{ x =, y =, w =, h =, asset = "/home/holiday.png" }
+--   ui.image{ x =, y =, w =, h =, asset = "/Home/holiday.png" }
 --
 -- The picture is *named*, not carried. A decoded image is megabytes and a
 -- message is two kilobytes, so the window manager loads it and this asks

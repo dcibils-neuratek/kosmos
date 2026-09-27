@@ -991,6 +991,17 @@ processors, and still what follows USB:
    but no blit. A native driver for the ThinkPad's Intel GPU after that, for
    its own sake. The Game Kit (4f) is the first program-facing user, and its
    renderer interface is where the switch happens.
+   **And video in hardware, on the wishlist since 27 September** - Diego:
+   "Can't we use the gpu for hardware encoding and decoding video?", and yes
+   to keeping it here. The ThinkPad's and the M700's Intel graphics encode
+   and decode H.264 in their media engine (Quick Sync), and reaching it is
+   the native Intel driver above - firmware, the GPU's memory, command
+   buffers to the video engines - and then the encode pipeline itself: in
+   Linux, i915 and Intel's media driver, hundreds of thousands of lines
+   together. It waits for that driver to exist for its own reasons. QEMU
+   has no such engine, so every step of it would be tried on the machines;
+   and the Raspberry Pi 5 has no H.264 in hardware at all - only an HEVC
+   decoder - so on the target, H.264 stays software either way.
 4i. **WANTED since 19 September, not scheduled - low-latency audio.** Diego:
    "I plan kosmos to be a multimedia monster so we need to have low latency
    audio". An audio editor and composer (4f) is the program that asks it: a
@@ -2127,7 +2138,16 @@ processors, and still what follows USB:
    that is software. **To decide when it comes**: how it is started and
    stopped (a key, as the screenshot shortcut will have, and something in
    the Deskbar that says it is recording), whether the whole screen or one
-   window, and sound. Not before the renames and 6w.
+   window, and sound. Not before the renames and 6w. **The plan for the
+   cost, agreed** ("Yes", 27 September, after asking whether the GPU could
+   encode - not on these machines without a driver that does not exist,
+   and not at all on a Pi 5; 4h): **encode only what changed.** The window
+   manager already knows, every frame, which rectangles of the screen it
+   drew; everything else is a block the encoder can mark as the same as
+   before, which costs almost nothing - so a desktop with a moving pointer
+   and one busy window records for the price of that window. SIMD in the
+   encoder's inner loops (6l) and a smaller size or rate when the whole
+   screen is not needed come after.
 
 6w. **WANTED on 27 September - Tracker's places for what a person keeps.**
    Diego: "tracker needs places like photos, documents, movies, captures,
@@ -2292,7 +2312,7 @@ processors, and still what follows USB:
    `/ramfs` to `/Temporary` - **DONE the same evening** (`testing.md`
    18.229), and `sys.pack` no longer bounded by a message; **(b)** `/home` to `/Home` - only its case, so
    every `/home/...` already written, and the partition on a stick, go on
-   working; **(c)** the `/Kosmos` tree - `/lib` to `/Kosmos/Libraries`,
+   working; **DONE the same evening** (18.230), **(c)** the `/Kosmos` tree - `/lib` to `/Kosmos/Libraries`,
    `/kits` to `/Kosmos/Kits`, `/bin` split into `/Kosmos/Apps` and
    `/Kosmos/Programs`, `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
    in /Kosmos/Themes, yes"), `/system` and `/user` gone; **(d)** the dotfiles at
@@ -2384,6 +2404,12 @@ processors, and still what follows USB:
    - waiting 20 s with the gate's 46 suites running beside it, and passing
    alone, 79 checks. The same question: the desktop slow to answer a menu
    under load, or the check deciding before it could.
+   **Answered and DONE the same night** (`testing.md` 18.230): the check.
+   It pressed the menu's row a fixed second after the right press that
+   opens the menu, and under the gate Tracker took longer to open it, so the
+   press landed on the bare desktop and chose nothing - twice in three gates
+   after the renames. It waits for the menu to be on the screen now. The
+   Control-W Tab reading is the one still open.
 
 6p. **DONE on 26 September - Monitor updates every half second, second or
    two.** Diego, with a photograph of the window: "monitor needs an option

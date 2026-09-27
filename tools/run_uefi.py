@@ -629,7 +629,7 @@ def video_boot(image, check):
 
 
 def home_boot(image, check):
-    """**USB step 5f: `/home` on a partition of the stick the machine started
+    """**USB step 5f: `/Home` on a partition of the stick the machine started
     from.**
 
     A stick `mkusb_image.py --home` made carries no disk for the loader to
@@ -638,7 +638,7 @@ def home_boot(image, check):
     QEMU's but the machine: the firmware finds the stick over xHCI, the loader
     passes the stick's words on as it always has, and Kosmos's own USB driver
     has to find the partition named on that same stick for `diskinfo` to say
-    it is `/home`, and for a file saved there to have extents on a disk.
+    it is `/Home`, and for a file saved there to have extents on a disk.
 
     **With no screen**, which the loader allows - Kosmos starts without one -
     so the prompt stays on the serial line to be typed at. **And on a snapshot
@@ -730,12 +730,12 @@ def home_boot(image, check):
     check(("disk: %d sectors of 512 bytes" % (last - first + 1)) in said
           and ("on the Kosmos partition on USB unit 0, blocks %d to %d"
                % (first, last)) in said,
-          "/home was not the partition the stick names, blocks %d to %d:"
+          "/Home was not the partition the stick names, blocks %d to %d:"
           "\n    %s" % (first, last, shown))
 
     check(re.search(r"saved home\.txt: \d+ bytes, [1-9]\d* extent", said)
           is not None,
-          "a file saved to /home on the stick did not land on a disk:\n    "
+          "a file saved to /Home on the stick did not land on a disk:\n    "
           + shown)
 
 
@@ -1277,7 +1277,7 @@ def main():
           "Kosmos drawing its own %dx%d screen, and the ThinkPad's 1920x1080 "
           "at 0x4000000000 from stage two%s)."
           % (checks, width, height,
-             "; and /home on a partition of the stick it started from"
+             "; and /Home on a partition of the stick it started from"
              if home is not None else ""))
     return 0
 

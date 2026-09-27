@@ -749,7 +749,7 @@ def find_colour(at, want, x0, y0, x1, y1):
 # The default faces are IBM Plex since 19 September (`docs/styleguide.html`),
 # and nearly every check below finds a row, a baseline or a column by the 8
 # by 16 bitmap it was written for. So the harness writes its own faces into
-# `/home/.appearance` - and *every* phase that rewrites that file has to
+# `/Home/.appearance` - and *every* phase that rewrites that file has to
 # write them too, because a write with the palette alone drops them and the
 # next desktop to start comes up in Plex. That is exactly what happened: the
 # wallpapers phase rewrote the file, and the Deskbar check three phases later
@@ -762,10 +762,10 @@ PINNED_FONTS = ('fonts = { ui = { font = "spleen", px = 16 }, '
 
 
 def appearance(extra=""):
-    """The `/home/.appearance` the harness runs with: the dark palette its
+    """The `/Home/.appearance` the harness runs with: the dark palette its
     colours were written against, the bitmap faces its rows were measured
     with, and whatever a phase adds."""
-    return ('fs.write("/home/.appearance", { palette = "dark", %s%s })'
+    return ('fs.write("/Home/.appearance", { palette = "dark", %s%s })'
             % (PINNED_FONTS, (", " + extra) if extra else ""))
 
 
@@ -1805,7 +1805,7 @@ def check_preferences(guest):
     # changes when the category does, which was always true. Every *choice*
     # in the window stored a value and returned - `control_for`'s dropdown
     # never called `live` at all - so the look was written to
-    # `/home/.appearance` and the desktop went on wearing the old one until
+    # `/Home/.appearance` and the desktop went on wearing the old one until
     # the next boot.
     #
     # The look is the right one to drive, because it is the loudest: a
@@ -1894,7 +1894,7 @@ def check_preferences(guest):
     #
     # **The look this phase chose is this phase's, not the next one's.**
     #
-    # It writes `/home/.appearance` through Preferences, exactly as a person
+    # It writes `/Home/.appearance` through Preferences, exactly as a person
     # would, so the desktop that starts after this one wears Endeavour - and
     # every phase after it counts windows by the tab colour it was written
     # against and finds none. Two suites failed that way on the first full
@@ -2384,7 +2384,7 @@ def check_text_size(guest):
     process - which is what sending a face number rather than a size would
     have done - draws both the same and fails here.
     """
-    guest.type('fs.write("/home/.appearance", { fonts = { '
+    guest.type('fs.write("/Home/.appearance", { fonts = { '
                'ui = { font = "ibmplexmono", px = 20 }, '
                'mono = { font = "ibmplexmono", px = 20 } } }) '
                'print("sized-font" .. "-ready")')
@@ -3818,7 +3818,7 @@ def check_wallpapers(guest):
     asking, carried in a `FULL=1` image as `wallpaper/<file>`
     (`assets/wallpapers/README.md`) - the image this harness boots. A program
     at the prompt counts them, decodes the first and says three of its
-    pixels, and names it the wallpaper in `/home/.appearance`, which is where
+    pixels, and names it the wallpaper in `/Home/.appearance`, which is where
     Appearance saves a choice. Then the desktop starts, and the screen at
     those three points has to be exactly the decoded pixels: the window
     manager draws a picture the size of the screen one to one, with the same
@@ -4172,8 +4172,8 @@ def check_deskbar_fixed(guest):
     """**The Deskbar is 32 pixels, whatever was saved** (`roadmap.md` 5v).
 
     For an afternoon it was 36, 44 or 52, chosen in Appearance and kept in
-    `/home/.appearance`; then Diego, on the ThinkPad on 22 September: "Taskbar
-    size should not be changeable let's make it fixed at 32". A `/home`
+    `/Home/.appearance`; then Diego, on the ThinkPad on 22 September: "Taskbar
+    size should not be changeable let's make it fixed at 32". A `/Home`
     written by 0.10.111 still says `bar_h = 52`, so that is what is saved
     here, and a desktop started over it has to paint the bar to its 32nd
     row and leave the 35th to the desk.
@@ -4312,7 +4312,7 @@ def check_theme_plex(guest):
     says it *holds*, which is what was loaded rather than what was asked
     for: a face the image lacks would show there as the previous one.
 
-    Then `/home/.appearance` is read back for the palette's name and a face;
+    Then `/Home/.appearance` is read back for the palette's name and a face;
     a fresh desktop is asked what it wears, since a theme that does not
     survive a restart is not a setting; and the harness's own appearance is
     put back, since every phase after this one measured its rows in the
@@ -4351,7 +4351,7 @@ def check_theme_plex(guest):
             time.sleep(0.3)
 
     mark = len(guest.seen)
-    guest.type('local a = fs.read("/home/.appearance") '
+    guest.type('local a = fs.read("/Home/.appearance") '
                 'print("saved" .. ": " .. tostring(a and a.palette) .. " " '
                 '.. tostring(a and a.fonts ~= nil))')
     saved = guest.wait_for_line("saved: ",
@@ -4414,7 +4414,7 @@ def check_theme_plex(guest):
     # The look and nothing of its parts: faces come with the look, so
     # none are written down to outlive it.
     if saved != "plex false":
-        raise Failure("/home/.appearance holds %r after choosing Plex - "
+        raise Failure("/Home/.appearance holds %r after choosing Plex - "
                       "wanted the look's name and no faces of its own" % saved)
 
     if now != "plex ibmplexsans-semibold/18":
@@ -4439,7 +4439,7 @@ def check_tabs(guest):
     the button we should just gray it out and disable it". Two windows of
     one program that draw their own pixels - so neither can be maximised -
     Behind (blue) and Front (green) on top of it, placed so the row of
-    Front's title bar lies across Behind's body; and a `/home/.appearance`
+    Front's title bar lies across Behind's body; and a `/Home/.appearance`
     that still says `tabs = "beos"`, as the old panel wrote it:
 
       the point where a BeOS tab would have ended, in Front's title row, is
@@ -4519,7 +4519,7 @@ def check_tabs(guest):
         if bar != fw + 2 * FRAME:
             raise Failure("Front's title bar is %d wide and its frame %d - a "
                           "bar across is the frame's width, whatever "
-                          "/home/.appearance says" % (bar, fw + 2 * FRAME))
+                          "/Home/.appearance says" % (bar, fw + 2 * FRAME))
 
         # Where a BeOS tab on "Front" would have ended long before: over
         # Behind's body, in Front's title row, left of the boxes.
@@ -4858,7 +4858,7 @@ def check_scale(guest):
     """**Everything at 150 per cent** (`roadmap.md` 5z, `ui.md` 16.18).
 
     Diego, 22 September: "a factor multiplier of all the things in the UI".
-    With `scale = 150` in `/home/.appearance`, the gallery - a kit window
+    With `scale = 150` in `/Home/.appearance`, the gallery - a kit window
     asking for the size it says - and a window drawing its own pixels, 200
     by 100 of green:
 
@@ -5141,12 +5141,12 @@ def check_scale_live(guest):
         stop_desktop(guest)
 
     mark = len(guest.seen)
-    guest.type('local a = fs.read("/home/.appearance") '
+    guest.type('local a = fs.read("/Home/.appearance") '
                'print("saved" .. "-scale " .. tostring(a and a.scale))')
     kept = said(r"saved-scale (\S+)", mark)
 
     if not kept or kept.group(1) != "150":
-        raise Failure("/home/.appearance holds scale %r after 150 was chosen"
+        raise Failure("/Home/.appearance holds scale %r after 150 was chosen"
                       % (kept and kept.group(1)))
 
     mark = len(guest.seen)
@@ -5286,7 +5286,7 @@ def check_snes_scale(guest):
             + repr(answer[-300:])
         )
 
-    looked = "snes: no /home/roms/snes/nosuch.sfc"
+    looked = "snes: no /Home/roms/snes/nosuch.sfc"
     heard, answer = ask("wm snes:--scale 2 nosuch.sfc", looked)
 
     if heard != looked:
@@ -5381,7 +5381,7 @@ def check_power_setting(guest):
     """**The power button does what Preferences says** (`roadmap.md` 5zp).
 
     Power's row - Shut down, Open the menu, Do nothing - wrote
-    `/home/.power` and nothing read it: the window manager shut the machine
+    `/Home/.power` and nothing read it: the window manager shut the machine
     down on every press. Diego, 24 September: "go thrpugh all the settings
     options and make sure they do something useful".
 
@@ -5395,7 +5395,7 @@ def check_power_setting(guest):
     x86-64 only: on the ARM board the button reaches its driver, which
     reports it and nothing else.
     """
-    guest.type('fs.write("/home/.power", { button = "nothing" }) '
+    guest.type('fs.write("/Home/.power", { button = "nothing" }) '
                'print("power" .. "-set")')
     guest.wait_for("power-set", "write the power button's setting")
     mark = len(guest.seen)
@@ -5433,7 +5433,7 @@ def check_power_setting(guest):
         # has said why above, and a write to its pipe would bury that.
         if guest.proc.poll() is None:
             stop_desktop(guest)
-            guest.type('fs.write("/home/.power", {}) '
+            guest.type('fs.write("/Home/.power", {}) '
                        'print("power" .. "-reset")')
             guest.wait_for("power-reset", "put the power button back")
 
@@ -6193,7 +6193,7 @@ def check_log_view(guest):
     # phase failed on both boards. A phase that depends on the default
     # breaks whenever the default is changed; Classic is BeOS's palette.
     #
-    guest.type('fs.write("/home/.appearance", { palette = "classic", '
+    guest.type('fs.write("/Home/.appearance", { palette = "classic", '
                'fonts = { '
                'ui = { font = "ibmplexmono", px = %d }, '
                'mono = { font = "ibmplexmono", px = %d } } }) '
@@ -6528,7 +6528,7 @@ def check_log_view(guest):
         failures.append("Control-W Q did not get the screen back.")
 
     # The size chosen above is this phase's, not the next one's.
-    guest.type('fs.write("/home/.logview", {}) print("log-view" .. "-done")')
+    guest.type('fs.write("/Home/.logview", {}) print("log-view" .. "-done")')
     guest.wait_for("log-view-done", "put Log View's text size back")
 
     # The palette and faces every other phase was written against.
@@ -8167,7 +8167,7 @@ def check_panel(guest):
     the filter and `b.sfc` with it: the path the application is handed is
     the filter's evidence. One click on that row must hand over nothing - the
     window used to choose a file the moment it was clicked - and a second one
-    must hand over `/home/picktest/b.sfc`, whole.
+    must hand over `/Home/picktest/b.sfc`, whole.
 
     Two seconds between the lone click and the pair, because a second click
     is anything within a second of the counter, and under emulation the
@@ -8176,16 +8176,16 @@ def check_panel(guest):
     one click chooses nothing would pass without proving it.
     """
     guest.type(appearance())
-    guest.type('fs.send("/home/picktest", { type = "mkdir" })')
-    guest.type('fs.send("/home/picktest/sub", { type = "mkdir" })')
-    guest.type('fs.write("/home/picktest/a.txt", "a")')
-    guest.type('fs.write("/home/picktest/b.sfc", "b")')
+    guest.type('fs.send("/Home/picktest", { type = "mkdir" })')
+    guest.type('fs.send("/Home/picktest/sub", { type = "mkdir" })')
+    guest.type('fs.write("/Home/picktest/a.txt", "a")')
+    guest.type('fs.write("/Home/picktest/b.sfc", "b")')
 
     # No comments inside: fs.write puts it on one line. The marker is joined
     # by Lua so it never appears in the echo of the line that writes it.
     program = (
         "local panel = use('/lib/panel.lua') "
-        "local w = panel.open{ title = 'Pick', start = '/home/picktest', "
+        "local w = panel.open{ title = 'Pick', start = '/Home/picktest', "
         "x = 300, y = 200, "
         "filter = function(n) return n:match('%.sfc$') ~= nil end, "
         "on_choose = function(p) print('pick' .. 'ed ' .. p) end } "
@@ -8267,15 +8267,15 @@ def check_panel(guest):
             "a second click on a file in the Open window handed the "
             "application nothing:\n" + guest.seen[mark:][-600:])
 
-    if chose.group(1) == "/home/picktest/a.txt":
+    if chose.group(1) == "/Home/picktest/a.txt":
         raise Failure(
             "the Open window's filter did not hide a.txt - the second row was "
             "a.txt, which the filter keeps out: " + chose.group(0))
 
-    if chose.group(1) != "/home/picktest/b.sfc":
+    if chose.group(1) != "/Home/picktest/b.sfc":
         raise Failure(
             "the Open window handed over the wrong path, wanted "
-            "/home/picktest/b.sfc: " + chose.group(0))
+            "/Home/picktest/b.sfc: " + chose.group(0))
 
     return 3
 
@@ -8293,8 +8293,8 @@ def check_places(guest):
     is exactly the kind of catch a test is for next time.
 
     **Checked on the files, not the pixels, wherever a file can say it**,
-    because the look can change and `/home/Places` cannot lie. The harness
-    is diskless, so `/home` starts empty every boot and nothing here can
+    because the look can change and `/Home/Places` cannot lie. The harness
+    is diskless, so `/Home` starts empty every boot and nothing here can
     pass on a place a previous run left behind.
 
       - dropped and named, it is a place - found afterwards in the Trash with
@@ -8308,12 +8308,12 @@ def check_places(guest):
     ROW = LAYOUT_ROW                    # a tree's row, the fixed layout's
 
     guest.type(appearance())
-    guest.type('fs.send("/home/placetest", { type = "mkdir" })')
-    guest.type('fs.send("/home/placetest/%s", { type = "mkdir" })' % NAME)
+    guest.type('fs.send("/Home/placetest", { type = "mkdir" })')
+    guest.type('fs.send("/Home/placetest/%s", { type = "mkdir" })' % NAME)
     time.sleep(1.0)
 
     mark = len(guest.seen)
-    guest.type("wm tracker:/home/placetest")
+    guest.type("wm tracker:/Home/placetest")
 
     placed, deadline = None, time.monotonic() + 60
     while placed is None and time.monotonic() < deadline:
@@ -8324,7 +8324,7 @@ def check_places(guest):
         time.sleep(0.3)
 
     if placed is None:
-        raise Failure("Tracker never opened on /home/placetest:\n"
+        raise Failure("Tracker never opened on /Home/placetest:\n"
                       + guest.seen[mark:][-900:])
 
     wx, wy = placed[0], placed[1]
@@ -8449,8 +8449,8 @@ def check_places(guest):
     # this reason, and this is that.
     #
     asked = len(guest.seen)
-    guest.type('local p = fs.getattr("/home/Places/%s") '
-               'local t = fs.getattr("/home/Desktop/Trash/%s") or {} '
+    guest.type('local p = fs.getattr("/Home/Places/%s") '
+               'local t = fs.getattr("/Home/Desktop/Trash/%s") or {} '
                'print("place" .. "check " .. tostring(p ~= nil) .. " " '
                '.. tostring(t.kind) .. " " .. tostring(t.path))'
                % (NAME, NAME))
@@ -8460,7 +8460,7 @@ def check_places(guest):
     said = re.search(r"placecheck (\S+) (\S+) (\S+)", guest.seen[asked:])
 
     if not said:
-        raise Failure("the places phase could not read /home/Places back:\n"
+        raise Failure("the places phase could not read /Home/Places back:\n"
                       + guest.seen[asked:][-600:])
 
     still_there, kind, path = said.groups()
@@ -8468,18 +8468,18 @@ def check_places(guest):
     if kind != "place" and still_there != "true":
         raise Failure(
             "a folder dropped on the sidebar and named did not become a "
-            "place - nothing in /home/Places and nothing in the Trash, so the "
+            "place - nothing in /Home/Places and nothing in the Trash, so the "
             "drop or the name box never wrote it: " + said.group(0))
 
     if still_there == "true":
         raise Failure(
             "a right-click on a place did not take it out of Places - "
-            "/home/Places/%s is still there: %s" % (NAME, said.group(0)))
+            "/Home/Places/%s is still there: %s" % (NAME, said.group(0)))
 
-    if kind != "place" or path != "/home/placetest/" + NAME:
+    if kind != "place" or path != "/Home/placetest/" + NAME:
         raise Failure(
             "the place in the Trash is not what was dropped - wanted a place "
-            "pointing at /home/placetest/%s: %s" % (NAME, said.group(0)))
+            "pointing at /Home/placetest/%s: %s" % (NAME, said.group(0)))
 
     if not (held > 15 and emptied < 5):
         raise Failure(
@@ -8526,7 +8526,7 @@ def check_icon_sizes(guest):
     **Two desktops, and the second one is the point.** The size is chosen in
     the first, which is then quit; the second has to come up already large,
     which is the claim a settings file is for and the one a phase that never
-    restarted anything could not make. `/home/.tracker` is read between them
+    restarted anything could not make. `/Home/.tracker` is read between them
     and has to say 64.
 
     **Put back to Medium in the second**, and the lowest row has to come back
@@ -8563,12 +8563,12 @@ def check_icon_sizes(guest):
 
     # Nothing opened at login, so the first column of the desktop is the
     # desktop's own icons and nothing that landed on top of them.
-    guest.type('fs.write("/home/.startup", { items = {} })')
+    guest.type('fs.write("/Home/.startup", { items = {} })')
     time.sleep(2)
 
     # And no size chosen by an earlier boot: this one starts at the default
     # and says so.
-    guest.type('fs.write("/home/.tracker", {})')
+    guest.type('fs.write("/Home/.tracker", {})')
     time.sleep(1)
 
     def lowest_ink(w, h, px, above=None):
@@ -8694,8 +8694,20 @@ def check_icon_sizes(guest):
 
         A menu window opens at the press, with two pixels of edge above its
         first row and `MENU_ROW` for each - `menu_metrics` in `ui.lua`.
+
+        **The row is pressed once the menu is on the screen, not a second
+        after the right press.** The menu is a window Tracker opens when the
+        press reaches it, and under the whole gate that took longer than the
+        pauses in `press`: the left press landed on the bare desktop, chose
+        nothing, and twenty seconds later the check said the icons had not
+        grown - the Large icons failure `roadmap.md` 6q carried as a flake,
+        twice in three gates on 27 September. Waiting for the thing is the
+        rule the gate is written to (`CLAUDE.md`).
         """
         press("right", at_x, at_y)
+        settle(guest, menu_over,
+               "a right press on the bare desktop opened no menu to choose "
+               f"row {row} from")
         press("left", at_x + 24,
               at_y + 2 + (row - 1) * MENU_ROW + MENU_ROW // 2)
 
@@ -8853,8 +8865,8 @@ def check_icon_sizes(guest):
     # line may still be on its way - which is how this read "ICON-KEPT" with
     # nothing after it once and said the size had not been written down.
     #
-    guest.type('local t = fs.read("/home/.tracker") or {} '
-               'print("ICON" .. "-KEPT", #(fs.list("/home/Desktop") or {}), '
+    guest.type('local t = fs.read("/Home/.tracker") or {} '
+               'print("ICON" .. "-KEPT", #(fs.list("/Home/Desktop") or {}), '
                't.desktop_icon_px, t.window_icon_px) print("ICON" .. "-READ-1")')
     guest.wait_for("ICON-READ-1", "the desktop's listing and the size it kept")
 
@@ -8898,7 +8910,7 @@ def check_icon_sizes(guest):
     checks += 1
 
     if fields[2:3] != ["64"]:
-        raise Failure("the desktop's icon size was chosen and /home/.tracker "
+        raise Failure("the desktop's icon size was chosen and /Home/.tracker "
                       "does not say 64, so it would not survive a restart. "
                       "`iconsize.lua` writes the key the place names:\n" + said)
 
@@ -8913,7 +8925,7 @@ def check_icon_sizes(guest):
     settle(guest, look,
            "the desktop was started again after Large icons was chosen and "
            f"came up with its first column ending at some other row than "
-           f"{want}. A size is kept per place in /home/.tracker and read when "
+           f"{want}. A size is kept per place in /Home/.tracker and read when "
            "the place opens.")
     checks += 1
 
@@ -8946,7 +8958,7 @@ def check_icon_sizes(guest):
 
     stop_desktop(guest)
 
-    guest.type('local t = fs.read("/home/.tracker") or {} '
+    guest.type('local t = fs.read("/Home/.tracker") or {} '
                'print("ICON" .. "-DEFAULT", t.desktop_icon_px == nil) '
                'print("ICON" .. "-READ-2")')
     guest.wait_for("ICON-READ-2", "what Tracker kept for the default size")
@@ -8954,7 +8966,7 @@ def check_icon_sizes(guest):
     line = [ln for ln in guest.seen.splitlines() if "ICON-DEFAULT" in ln][-1]
 
     if "true" not in line:
-        raise Failure("Medium was chosen again and /home/.tracker still holds "
+        raise Failure("Medium was chosen again and /Home/.tracker still holds "
                       "a size for the desktop. The default is kept as nothing, "
                       "so a place that never chose follows a default that "
                       "changes rather than freezing one.\n" + line)
@@ -9104,7 +9116,7 @@ def check_desktop(guest):
     Drive has to be inside it afterwards with its place still on it.
 
     **What it always has.** The same listing says the Trash and the cheat
-    sheet are in `/home/Desktop`, and Drive's attributes say it is a
+    sheet are in `/Home/Desktop`, and Drive's attributes say it is a
     launcher for Tracker at `/`.
     """
     checks = 0
@@ -9125,7 +9137,7 @@ def check_desktop(guest):
     # an absent file and an empty list as different things on purpose, and
     # this is the empty one.
     #
-    guest.type('fs.write("/home/.startup", { items = {} })')
+    guest.type('fs.write("/Home/.startup", { items = {} })')
     time.sleep(2)
 
     guest.type("wm desktop,deskbar")
@@ -9283,7 +9295,7 @@ def check_desktop(guest):
     width, height, px = settle(
         guest, drawn(left, strip + cell_y + 2),
         "Drive never appeared in the second cell under the strip. Either the "
-        "desktop did not put the Trash and Drive in /home/Desktop, or it is "
+        "desktop did not put the Trash and Drive in /Home/Desktop, or it is "
         "not drawing from the desktop's own top-left corner.")
 
     def bare(x0, y0, size=96):
@@ -9376,13 +9388,13 @@ def check_desktop(guest):
     else:
         raise Failure("Control-C did not get the screen back from the desktop.")
 
-    guest.type('local a = fs.getattr("/home/Desktop/Trash/Drive") or {} '
+    guest.type('local a = fs.getattr("/Home/Desktop/Trash/Drive") or {} '
                'print("DESK" .. "-AT", a.desktop_x, a.desktop_y, a.kind, '
                'a.program, a.args) '
-               'print("DESK" .. "-HAS", table.concat(fs.list("/home/Desktop") '
+               'print("DESK" .. "-HAS", table.concat(fs.list("/Home/Desktop") '
                'or {}, ",")) '
                'print("DESK" .. "-TRASH", '
-               'table.concat(fs.list("/home/Desktop/Trash") or {}, ",")) '
+               'table.concat(fs.list("/Home/Desktop/Trash") or {}, ",")) '
                'print("DESK" .. "-READ")')
 
     # Waited for by a marker on the *next* line, as `ICON-READ-1` is: on 24
@@ -10203,7 +10215,7 @@ def main():
         # through forty phases - and the default itself is checked in
         # `default_look`, on a machine with nothing saved, which is the only
         # place it can be.
-        guest.type('fs.write("/home/.startup", { items = {} }) '
+        guest.type('fs.write("/Home/.startup", { items = {} }) '
                    + appearance() + ' '
                    'print("harness-set" .. "-up")')
         guest.wait_for("harness-set-up",

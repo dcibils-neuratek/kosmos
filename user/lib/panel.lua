@@ -18,10 +18,10 @@
 -- entered and a file chosen - as in Tracker and its sidebar (`ui.md`
 -- 16.8c). The button at the bottom right does the same to the selection.
 --
---   panel.open{ start = "/home/roms/snes", title = "Open ROM",
+--   panel.open{ start = "/Home/roms/snes", title = "Open ROM",
 --               filter = function(name) return name:match("%.sfc$") end,
 --               on_choose = function(path) ... end }
---   panel.save{ start = "/home", name = "untitled.lua",
+--   panel.save{ start = "/Home", name = "untitled.lua",
 --               on_choose = function(path) ... end }
 --
 -- The callback gets a whole path or is never called: Cancel closes the
@@ -73,7 +73,7 @@ local function open(spec, mode)
 
   if not win then return nil, err end
 
-  local where   = spec.start or "/home"
+  local where   = spec.start or "/Home"
   local entries = {}
   local pane_h  = H - TOP - FOOT
   local name

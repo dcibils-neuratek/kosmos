@@ -418,7 +418,7 @@ choice in Appearance, with the pointer reaching what was behind beside the
 tab as the eye saw it. The choice left with the looks, and on 22 September
 Diego again: "i want to switch back the tabs from be os style to full
 width". So every title bar is the window's width, and a shape an older
-`/home/.appearance` saved is read by nothing (`tabs` in `wm.lua`, the
+`/Home/.appearance` saved is read by nothing (`tabs` in `wm.lua`, the
 display harness's `tabs` phase). 0.10.113 has the tab, if it is wanted
 back.
 
@@ -511,7 +511,7 @@ clicks meant as two.
 ## 16.8d A path is a row of targets, and the punctuation belongs to a name
 
 **Tracker's path line was a label and is now a trail**: each name in
-`/home/Desktop` is drawn separately and clicking one goes there. The last
+`/Home/Desktop` is drawn separately and clicking one goes there. The last
 segment is deliberately not a target - it is where you already are, and a
 control that does nothing when pressed is worse than no control.
 
@@ -550,8 +550,8 @@ Desktop are built in and say so.
 trail taught that the pixels between targets should not be dead (16.8d), and
 there is nothing else a drop there could mean.
 
-**A place is a file in `/home/Places`**, named what the person called it, and
-its attributes say what it points at in words - `path = "/home/Music"`, or
+**A place is a file in `/Home/Places`**, named what the person called it, and
+its attributes say what it points at in words - `path = "/Home/Music"`, or
 for one on a drive `volume = "fat:1A2B-3C4D"` and `within = "/Italy"`. A
 stored value has to read as itself, so nothing about it depends on knowing
 `drivesproto.h`.
@@ -689,7 +689,7 @@ window owns.
 (`roadmap.md` 5y): Plex, Plex Night, Classic and Studio, in `themes.lua`,
 each a whole designed in `docs/looks.html`, all four naming the same faces.
 The Appearance panel offers a look and a wallpaper, and
-`/home/.appearance` holds those two. What follows is how a theme came
+`/Home/.appearance` holds those two. What follows is how a theme came
 to carry its faces at all, and the per-role choices the panel no longer has.
 
 **A theme is its colours and its faces.** There were two palettes - `dark`,
@@ -719,7 +719,7 @@ with (`theme.default_fonts`) - the rule colours already followed.
 `appearance` lists every theme, and **choosing one sets its colours and its
 five faces**; a face changed afterwards is the person's own, and the panel
 says so beside it (", yours"). `Back to this theme` puts both back. The
-choice is written to `/home/.appearance` - the theme's name, the desktop
+choice is written to `/Home/.appearance` - the theme's name, the desktop
 colour, and all five faces spelled out - and read back at startup, where
 the window manager finds the theme by name in `themes.lua` or
 `/system/themes` and says `wm: theme <name>`. It knew only `dark` and
@@ -747,7 +747,7 @@ from `theme.metrics` rather than keeping a copy.
 
 **The Deskbar is the look's tab colour, and 32 pixels tall.** For an
 afternoon its colour and its height were each a choice in Appearance -
-eight colours, and 36, 44 or 52 pixels - kept in `/home/.appearance` over
+eight colours, and 36, 44 or 52 pixels - kept in `/Home/.appearance` over
 the theme. The looks took the colour back (`roadmap.md` 5u), and a look
 named its Deskbar's colours, `bar` and `bar_text`, apart from its tab's -
 Plex's stone, as the mockups drew it - until Diego: "the deskbar tab color
@@ -930,7 +930,7 @@ the same fact, later, and in the way.
 
 ## 16.12 The desktop: icons where they are put, launchers, and pictures
 
-The desktop is Tracker in backdrop mode, showing `/home/Desktop` and
+The desktop is Tracker in backdrop mode, showing `/Home/Desktop` and
 nothing else. Several things arrived together in September 2026, and they
 belong together because each one is a decision about what that folder is.
 
@@ -1013,7 +1013,7 @@ edited, sitting beside a menu that can.
 It is one strip now, 32 pixels tall (36 until 22 September), and
 `topbar.lua` is deleted:
 
-- **The Kosmos menu at the left**, which is `/home/Deskbar` read off the
+- **The Kosmos menu at the left**, which is `/Home/Deskbar` read off the
   disk. Right-clicking it offers **Reload Menus** and **Open Deskbar
   Folder**, the second because nothing on the screen said the folder
   existed.
@@ -1208,11 +1208,11 @@ View no longer asks the kit for a cell; the kit's own widgets do.
 Diego, on 14 September 2026, having written a console program called
 `diego.lua` in his home folder: "we need to have an easy way to run programs
 from the command line and from the tracker". It could be run - `run
-/home/diego.lua` - and none of the things he tried first did it.
+/Home/diego.lua` - and none of the things he tried first did it.
 
 **A file is named from where you are.** At the prompt a first word that ends
 in `.lua` is a file, and in a Terminal and after `run` so is a word with a
-`/` in it: `./diego.lua`, `diego.lua`, `../diego.lua`, `/home/diego.lua`. The
+`/` in it: `./diego.lua`, `diego.lua`, `../diego.lua`, `/Home/diego.lua`. The
 prompt keeps a leading `/` without `.lua` for commands, as it always has.
 `.` and `..` are taken out of the path before anything is asked, because no
 server has a directory called `..`.
@@ -1294,7 +1294,7 @@ only works while both hold the same face, which makes the font table the
 window manager sends its clients a promise about its own state rather than a
 preference it passes on.
 
-It was not one. `load_appearance` applied the fonts in `/home/.appearance`
+It was not one. `load_appearance` applied the fonts in `/Home/.appearance`
 and no others, so on a machine with nothing saved the window manager loaded
 no face at all, while still sending applications the defaults - which they
 loaded. The desktop then laid itself out in IBM Plex and painted in the 8 by
@@ -1335,7 +1335,7 @@ everything read small: "add a setting like Windows does", "a factor
 multiplier of all the things in the UI", "instead of choosing independent
 font sizes", "Something like that slider of iOS". Seven steps - 100, 110,
 120, 135, 150, 175 and 200 per cent - on a slider in Appearance, with the
-percentage beside it, kept in `/home/.appearance` as `scale`.
+percentage beside it, kept in `/Home/.appearance` as `scale`.
 
 **Applications do not change.** Every size and position an application
 gives - a window's width, a widget's place, the fixed layout's 24-pixel
@@ -1421,7 +1421,7 @@ there is of it.
 icon's asset for the 64 when it is about to be stretched. Nothing in
 `iconsize.lua` or in Tracker knows there is a scale at all.
 
-**Kept per place**, in `/home/.tracker`, under a key for each -
+**Kept per place**, in `/Home/.tracker`, under a key for each -
 `desktop_icon_px`, `window_icon_px`. The desktop and a Tracker window are
 the same program with the frame taken off, and they are not the same
 place: a desktop of large pictures over a photograph and a window of small

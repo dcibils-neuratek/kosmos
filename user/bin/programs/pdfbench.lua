@@ -1,8 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Where a second goes, when a page of PDF takes one.
 --
---   pdfbench                      page 3 of /home/odyssey.pdf
---   pdfbench /home/odyssey.pdf 40
+--   pdfbench                      page 3 of /Home/odyssey.pdf
+--   pdfbench /Home/odyssey.pdf 40
 --
 -- A page came out in about 1.1 seconds and the obvious suspect was the
 -- tokenizer, which reads a byte at a time through Lua string.sub. Obvious
@@ -22,7 +22,7 @@ local pdfpage  = use("/lib/pdfpage.lua")
 local compress = use("/kits/compress")
 local pdfkit   = use("/kits/pdf")
 
-local path   = args[1] or "/home/odyssey.pdf"
+local path   = args[1] or "/Home/odyssey.pdf"
 local wanted = tonumber(args[2]) or 3
 
 local attrs = fs.getattr(path)

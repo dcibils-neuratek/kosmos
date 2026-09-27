@@ -342,7 +342,7 @@ do
   check(s and #s.things == 1 and s.buffers[1] and s.buffers[1].file == "mesh.bin",
         "a mesh whose buffer is a file beside it is read, naming the file for the caller")
 
-  for _, far in ipairs({ "http://example.com/mesh.bin", "/home/mesh.bin", "../mesh.bin" }) do
+  for _, far in ipairs({ "http://example.com/mesh.bin", "/Home/mesh.bin", "../mesh.bin" }) do
     s = scenefile.from_gltf(doc_with(3, far))
     check(s and #s.things == 0 and s.why[1]:find("somewhere else"),
           "a mesh whose buffer is " .. far .. " is skipped: opening fetches nothing")

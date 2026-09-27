@@ -1,9 +1,9 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Make a launcher: an empty node whose attributes say what to start.
 --
---   launcher /home/Desktop/Drive tracker /
---   launcher /home/Desktop/Doom doom
---   launcher --icon App_StyledEdit /home/Desktop/Notes editor /home/notes.txt
+--   launcher /Home/Desktop/Drive tracker /
+--   launcher /Home/Desktop/Doom doom
+--   launcher --icon App_StyledEdit /Home/Desktop/Notes editor /Home/notes.txt
 --
 -- The first word after the path is what to start - a whole path like
 -- `/bin/tracker.lua`, or a short name like `tracker`, which is stored as
@@ -46,7 +46,7 @@ end
 -- without anybody having to know a rule the file cannot state. So the
 -- convenience stays in the typing and the attribute is explicit.
 --
--- This is also what makes `/home/mine.lua` and `/bin/doom.lua` look like
+-- This is also what makes `/Home/mine.lua` and `/bin/doom.lua` look like
 -- the same kind of thing in the editor, which they are.
 --
 if not program:find("/") then

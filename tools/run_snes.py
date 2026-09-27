@@ -2,7 +2,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """The Super Nintendo on the machine: a ROM from the drive, a picture, sound.
 
-A ROM read from `/home/roms/snes` into a region, the core loaded, a window
+A ROM read from `/Home/roms/snes` into a region, the core loaded, a window
 drawing the game, and its sound going through the audio server to a device.
 And the number this port was started to find out: how many frames a second
 the core manages under QEMU's TCG, which `snes.lua` reports every ten
@@ -139,7 +139,7 @@ def main():
 
     name = os.path.basename(rom)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", DISK, "64",
-                    rom + ":/home/roms/snes/" + name], check=True)
+                    rom + ":/Home/roms/snes/" + name], check=True)
 
     # Both read by run_screenshot when it is imported, so they are set first.
     os.environ["KOSMOS_DISK"] = DISK
@@ -157,7 +157,7 @@ def main():
         mark = len(guest.seen)
         guest.type("wm snes")
 
-        if not said_after(guest, mark, "snes: /home/roms/snes/", 120):
+        if not said_after(guest, mark, "snes: /Home/roms/snes/", 120):
             raise Failure("the ROM did not start:\n" + guest.seen[mark:][-1500:])
         checks += 1
 

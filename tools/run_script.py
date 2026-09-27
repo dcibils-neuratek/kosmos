@@ -2,7 +2,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """Cafesa3D's Script panel (`roadmap.md` 4l, 6n step 6).
 
-Booted with a /home of its own, `wm cafesa3d`, and then with QEMU's own
+Booted with a /Home of its own, `wm cafesa3d`, and then with QEMU's own
 keyboard and tablet:
 
   Shift F4        the panel opens beside the view, and the view narrows by
@@ -50,7 +50,7 @@ sys.path.insert(0, HERE)
 
 import scratch                                               # noqa: E402
 
-# **A disk for /home**, made before the harness is imported, since that is
+# **A disk for /Home**, made before the harness is imported, since that is
 # when it reads `KOSMOS_DISK`: the scene and the script are saved to it and
 # opened again, and it carries a second script for Open .lua... to find -
 # named to come first in the Open panel, which selects the first file.
@@ -64,7 +64,7 @@ with open(TOWER, "w") as f:
             'print("tower")\n')
 
 subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "64",
-                TOWER + ":/home/Scenes/a-tower.lua"],
+                TOWER + ":/Home/Scenes/a-tower.lua"],
                check=True, capture_output=True, cwd=os.path.dirname(HERE))
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -80,7 +80,7 @@ def keys_for(text):
 
 
 def from_disk(path):
-    """A file off the /home disk, with the machine stopped, or None."""
+    """A file off the /Home disk, with the machine stopped, or None."""
     got = os.path.join(WORK, os.path.basename(path))
     done = subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK, path, got],
                           capture_output=True, cwd=os.path.dirname(HERE))
@@ -354,7 +354,7 @@ def main():
             click(*button)
 
         saved = said("cafesa3d: saved ", mark, 60) or ""
-        check(re.match(r"/home/Scenes/still-life\.gltf, 33 objects, \d+ bytes$", saved),
+        check(re.match(r"/Home/Scenes/still-life\.gltf, 33 objects, \d+ bytes$", saved),
               "Ctrl S did not save the scene with the staircase in it: %r" % saved)
 
         # Changed after saving, and the saved scene opened again: its script
@@ -401,7 +401,7 @@ def main():
             click(*button)
 
         lua_saved = said("cafesa3d: script saved ", mark, 30) or ""
-        check(re.match(r"/home/Scenes/staircase\.lua, \d+ bytes$", lua_saved),
+        check(re.match(r"/Home/Scenes/staircase\.lua, \d+ bytes$", lua_saved),
               "Save .lua... did not write staircase.lua: %r" % lua_saved)
 
         # Open .lua...: another script, run beside the staircase.
@@ -423,7 +423,7 @@ def main():
 
         tower = said("cafesa3d: script ran in ", mark, 60)
         listed = last_said("cafesa3d: outliner ", mark)
-        check(lua_opened == "/home/Scenes/a-tower.lua, 2 lines"
+        check(lua_opened == "/Home/Scenes/a-tower.lua, 2 lines"
               and said("cafesa3d: script tower", mark, 5) is not None
               and tower is not None and tower.endswith(": 1 object")
               and listed is not None
@@ -453,11 +453,11 @@ def main():
 
     # **Off the disk**, with the machine stopped: the script on its own, and
     # the scene with the script and its 26 objects marked as its own.
-    lua = from_disk("/home/Scenes/staircase.lua") or ""
+    lua = from_disk("/Home/Scenes/staircase.lua") or ""
     check(lua.startswith("-- A spiral staircase") and 'print("from the file")\n' in lua,
           "staircase.lua on the disk is not the script: %r" % lua[:80])
 
-    scene = from_disk("/home/Scenes/still-life.gltf")
+    scene = from_disk("/Home/Scenes/still-life.gltf")
     doc = json.loads(scene) if scene else {}
     own = doc.get("extras", {}).get("cafesa3d", {}).get("script", {})
     made = [n for n in doc.get("nodes", [])

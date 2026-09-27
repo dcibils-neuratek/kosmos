@@ -147,7 +147,7 @@ end
 -- chosen; `save_as` below is the same panel taking a name instead.
 function open_file()
   local chooser = panel.open{
-    start = path:match("^(.*)/") or "/home",
+    start = path:match("^(.*)/") or "/Home",
     on_choose = function(chosen)
       local body, why = fs.read(chosen)
 
@@ -168,7 +168,7 @@ end
 -- The same panel, writing: a directory and a name rather than a file.
 function save_as()
   local chooser = panel.save{
-    start = path:match("^(.*)/") or "/home",
+    start = path:match("^(.*)/") or "/Home",
     name  = base(path),
     on_choose = function(chosen)
       opened(chosen)

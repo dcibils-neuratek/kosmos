@@ -4,7 +4,7 @@
 -- the monospace face: the Terminal and Log View.
 --
 --   local textsize = use("/lib/textsize.lua")
---   local size = textsize.new(ui, "/home/.terminal")
+--   local size = textsize.new(ui, "/Home/.terminal")
 --   size:face()                   -- the face to measure and draw with
 --   size:size()                   -- its size, to hand `g:text`
 --   size:items()                  -- the menu, built at the press
@@ -13,7 +13,7 @@
 -- and log view needs to be 16px at least", and then "a way to increase font
 -- size in the menu of the log viewer and terminal". The first is the looks'
 -- `mono` at 16. This is the second: Larger, Smaller and Actual size, kept
--- per window in a settings file of its own like `/home/.music`, so a
+-- per window in a settings file of its own like `/Home/.music`, so a
 -- Terminal made larger is still larger tomorrow.
 --
 -- **A size of its own, not the desktop's `mono`.** Changing the role would

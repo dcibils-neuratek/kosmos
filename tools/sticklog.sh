@@ -1,16 +1,16 @@
 #!/bin/bash
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 #
-#  A file from `/home` on a Kosmos stick, onto this Mac: `make stick-log`.
+#  A file from `/Home` on a Kosmos stick, onto this Mac: `make stick-log`.
 #
 #  **Why.** On the ThinkPad a log reached this Mac as photographs of forty
 #  lines of a screen. `diagnose` writes what a diagnosis needs - the whole log
-#  among it - to `/home/diagnose.txt`, and this takes it off the stick into
+#  among it - to `/Home/diagnose.txt`, and this takes it off the stick into
 #  `build/stick-diagnose.txt`, as text somebody can search.
-#  `make stick-log FILE=/home/log.txt` takes what `log save` wrote instead, and
+#  `make stick-log FILE=/Home/log.txt` takes what `log save` wrote instead, and
 #  any other file the same way. **A name ending in `/` is a folder**, and
 #  every file in it comes back into `build/stick-<folder>/`: `acpi save`
-#  leaves one file a table in `/home/acpi/`.
+#  leaves one file a table in `/Home/acpi/`.
 #
 #  **It reads the stick and never writes it.** Nothing is unmounted, nothing
 #  is ejected, and the one thing opened on the drive is `sticklog.py`'s read of

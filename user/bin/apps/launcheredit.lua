@@ -4,8 +4,8 @@
 -- kosmos: needs screen
 -- Edit a launcher: what it starts, with what arguments, under what picture.
 --
---   launcheredit /home/Deskbar/Demos/doom
---   launcheredit /home/Desktop/Drive
+--   launcheredit /Home/Deskbar/Demos/doom
+--   launcheredit /Home/Desktop/Drive
 --
 -- Opened by right-clicking an item in the Deskbar's menu, and by
 -- right-clicking an icon on the desktop. Both are the same kind of file - an
@@ -88,7 +88,7 @@ local L = ui.layout
 
 --
 -- **What the field holds, said in the row's note**: the Lua file to run,
--- and it does not have to be in `/bin` - `/home/mine.lua` is as ordinary as
+-- and it does not have to be in `/bin` - `/Home/mine.lua` is as ordinary as
 -- `/bin/doom.lua`. The window manager would complete a bare name, and this
 -- stores the completed one on save rather than the short one, so what is in
 -- the file is what runs.

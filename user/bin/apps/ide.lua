@@ -6,8 +6,8 @@
 -- **Kosmos IDE**: where Lua for Kosmos is written and run.
 --
 --   wm ide                        the last project, or the first one
---   wm ide:/home/development      that folder as the project
---   wm ide:/home/development/a.lua    that file, and its folder as the project
+--   wm ide:/Home/development      that folder as the project
+--   wm ide:/Home/development/a.lua    that file, and its folder as the project
 --
 -- **Step 3, Run and Stop**: the file runs as its own process, as it is on
 -- the screen, with this window as its console - a program's `print` comes
@@ -63,25 +63,25 @@ local L = ui.layout
 -- A Lua table written with `fs.write`, like every settings file here.
 --------------------------------------------------------------------------
 
-local SETTINGS = "/home/.ide"
+local SETTINGS = "/Home/.ide"
 
 --
 -- **Its text larger and smaller**, as Terminal's and Log View's is: Diego,
 -- 27 September, "we need a way to increase font size like we have in the
 -- terminal app". `/lib/textsize.lua`'s steps and its menu, in the dots, and
--- Ctrl = and Ctrl - besides; kept in a file of its own, since `/home/.ide`
+-- Ctrl = and Ctrl - besides; kept in a file of its own, since `/Home/.ide`
 -- is the project's memory. Every editor asks for the face as it draws.
 --
 local textsize = use("/lib/textsize.lua")
 local text                    -- declared first: the callback below names it
 
-text = textsize.new(ui, "/home/.ide-text", function()
+text = textsize.new(ui, "/Home/.ide-text", function()
   print(("ide: text %d px"):format(text:size()))
 end)
 
 -- The first project: where the tutorial's lessons will be (`roadmap.md` 7),
 -- made if it is not there, so the tree has somewhere to stand.
-local FIRST = "/home/development"
+local FIRST = "/Home/development"
 
 local remembered = fs.read(SETTINGS)
 if type(remembered) ~= "table" then remembered = {} end
@@ -619,19 +619,19 @@ local header = ui.header{
 --
 -- **The file as it is on the screen**, not as it was last saved. Unchanged,
 -- it runs from where it is, so Processes names its real file; changed, a
--- copy is written to `/home/.ide-run` under its own name and run from
+-- copy is written to `/Home/.ide-run` under its own name and run from
 -- there, in its own folder, with the copy's path turned back into the
 -- file's in everything it says - so an error names the line in the file
 -- you are looking at. The copy was in `/Temporary`, whose files hold 16 KB -
 -- it keeps replicants' state, not programs - and `bench.lua` would not run
--- at all: "ramfs is full" (Diego, 27 September). `/home` is the disk on a
+-- at all: "ramfs is full" (Diego, 27 September). `/Home` is the disk on a
 -- real machine, and memory only on one that has none.
 --------------------------------------------------------------------------
 
 local con = use("/kits/console")
 local console = sys.endpoint()
 
-local RUN_DIR = "/home/.ide-run"
+local RUN_DIR = "/Home/.ide-run"
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 -- What is running: `{ id, path, scratch, started, printed, line, error }`.

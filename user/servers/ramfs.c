@@ -410,7 +410,7 @@ static unsigned evaluate(const char *under,
      * below here". The root asks about everything, which is what a query at
      * the mount point does. The same fix as the disk's, which is where the
      * bug actually bit: one filesystem mounted at three places was answering
-     * a question about `/home` with what is under `/system`.
+     * a question about `/Home` with what is under `/system`.
      */
     size_t under_len = (under != NULL) ? strlen(under) : 0;
     bool whole = (under_len == 0) || (under_len == 1 && under[0] == '/');

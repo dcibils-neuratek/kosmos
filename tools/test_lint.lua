@@ -71,7 +71,7 @@ do
     'local win = ui.window{ title = "x" }',         -- 2
     'local unused = 1',                             -- 3: unused
     'function f(a, b) return a end',                -- 4: global set, b unused
-    'print(fs.read("/home/x"), sys.ticks())',       -- 5: Kosmos's, known
+    'print(fs.read("/Home/x"), sys.ticks())',       -- 5: Kosmos's, known
     'io.write("x")',                                -- 6: no io here
     'print(undefined_thing)',                       -- 7: never set
     'win:run()',                                    -- 8

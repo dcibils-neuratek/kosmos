@@ -220,7 +220,7 @@ else.
 
 **9P** — Plan 9's protocol. Every resource, local or remote, is spoken to the same way. The Kosmos protocol is 9P with typed records instead of byte streams.
 
-**Mount** — Placing a server at a point in a process's namespace. `/proc`, `/Devices/temp` and `/home` can be three different servers mounted in the same tree.
+**Mount** — Placing a server at a point in a process's namespace. `/proc`, `/Devices/temp` and `/Home` can be three different servers mounted in the same tree.
 
 ---
 

@@ -25,7 +25,7 @@ local theme = ui.theme
 
 local W, H = 500, 490
 
-local SETTINGS = "/home/.network"
+local SETTINGS = "/Home/.network"
 
 local win, err = ui.window{ title = "Network", w = W, h = H, x = 140, y = 90 }
 

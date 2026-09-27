@@ -9,7 +9,7 @@
 -- Its real job is to be what proves a format survived a reboot: run
 -- `mkfs --yes`, restart the machine, run this.
 
-local sb, err = fs.read("/home/.super")
+local sb, err = fs.read("/Home/.super")
 
 if not sb then
   print("diskinfo: " .. tostring(err))
@@ -24,7 +24,7 @@ end
 print(("disk: %d sectors of %d bytes, %d MB")
       :format(sb.sectors, sb.sector_size, sb.bytes // (1024 * 1024)))
 
--- Only for `/home` on a USB stick (`usb.md` §7, 5e): the kernel's disk has
+-- Only for `/Home` on a USB stick (`usb.md` §7, 5e): the kernel's disk has
 -- no partition to name, and nothing to refuse a flush.
 if sb.where then
   print("  on " .. sb.where)

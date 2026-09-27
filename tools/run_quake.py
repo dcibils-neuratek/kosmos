@@ -85,7 +85,7 @@ def disk_with(pak):
     if os.path.exists(DISK):
         os.remove(DISK)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", DISK, "64",
-                    pak + ":/home/id1/pak0.pak"], check=True)
+                    pak + ":/Home/id1/pak0.pak"], check=True)
 
 
 def main():

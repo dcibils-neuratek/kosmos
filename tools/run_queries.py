@@ -9,10 +9,10 @@ query returning the wrong paths - which is what it had been doing on the
 disk for as long as the disk could answer.
 
 The bug this exists to keep out: one disk is mounted three times, at
-`/system`, `/user` and `/home`, each naming a subtree of itself. The
-namespace maps `/home/doc.pdf` onto `/home/doc.pdf` in the server and put
-the mount prefix back on the way out, giving `/home/home/doc.pdf`; and the
-server answered a question asked about `/home` with everything on the disk,
+`/system`, `/user` and `/Home`, each naming a subtree of itself. The
+namespace maps `/Home/doc.pdf` onto `/Home/doc.pdf` in the server and put
+the mount prefix back on the way out, giving `/Home/home/doc.pdf`; and the
+server answered a question asked about `/Home` with everything on the disk,
 `/system` included. Both were invisible because every query test used
 `/Temporary`, which is the one mount with no root - so the two paths through
 that code had never both been walked.
@@ -43,7 +43,16 @@ def main():
     disk = os.path.join(work, "queries.img")
 
     try:
+        #
+        # **A disk made before `/home` was `/Home`**, spelled as every stick
+        # before 27 September is: its home folder is `home`. Mounted at
+        # `/Home`, it has to answer in the new spelling - which a query does
+        # only because the namespace takes the disk's own name for its root
+        # off whatever case it is in.
+        #
+        os.environ["KFS_LAYOUT"] = "/system,/user,/home"
         run_interchange.kfs("create", disk, "32")
+        del os.environ["KFS_LAYOUT"]
 
         #
         # Every answer is printed as one line with a marker, so a check is a
@@ -55,15 +64,15 @@ def main():
         out = run_disk.boot(image, disk, [
             # Two files on the disk and one in memory, so both kinds of
             # mount are exercised by the same run.
-            'fs.write("/home/a.txt", "one") '
+            'fs.write("/Home/a.txt", "one") '
             'fs.write("/system/b.txt", "two") '
             'fs.write("/Temporary/c.txt", "three")',
 
-            'fs.setattr("/home/a.txt", { kind = "book" }) '
+            'fs.setattr("/Home/a.txt", { kind = "book" }) '
             'fs.setattr("/system/b.txt", { kind = "book" }) '
             'fs.setattr("/Temporary/c.txt", { kind = "book", size = "small" })',
 
-            'print("Q-HOME", table.concat(fs.query("/home", '
+            'print("Q-HOME", table.concat(fs.query("/Home", '
             '{ kind = "book" }) or {}, ","))',
 
             'print("Q-SYSTEM", table.concat(fs.query("/system", '
@@ -76,13 +85,13 @@ def main():
             'print("Q-TWO", table.concat(fs.query("/Temporary", '
             '{ kind = "book", size = "small" }) or {}, ","))',
 
-            'print("Q-NONE", table.concat(fs.query("/home", '
+            'print("Q-NONE", table.concat(fs.query("/Home", '
             '{ kind = "nothing-has-this" }) or {}, ","))',
 
             # The path a query returns has to be one that can be read back.
             # A doubled prefix is still a string and still looks like an
             # answer; only reading it says whether it names anything.
-            'local hit = (fs.query("/home", { kind = "book" }) or {})[1] '
+            'local hit = (fs.query("/Home", { kind = "book" }) or {})[1] '
             'print("Q-READ", hit and (fs.read(hit) or "unreadable") or "none")',
 
             # A sixty-four character name, on both kinds of mount, and in
@@ -92,11 +101,11 @@ def main():
             'D, N = string.rep("d", 64), string.rep("n", 60) .. ".txt" '
             'fs.send("/Temporary/" .. D, { type = "mkdir" }) '
             'fs.write("/Temporary/" .. D .. "/" .. N, "deep") '
-            'fs.write("/home/" .. N, "long")',
+            'fs.write("/Home/" .. N, "long")',
 
             'print("L-RAMFS", fs.read("/Temporary/" .. D .. "/" .. N) or "none", '
             'table.concat(fs.list("/Temporary/" .. D) or {}, ",")) '
-            'print("L-HOME", fs.read("/home/" .. N) or "none")',
+            'print("L-HOME", fs.read("/Home/" .. N) or "none")',
 
             # A name longer tha /Running keeps, registered the way `ui.window`
             # registers a window under its title. The namespace kit used to
@@ -122,9 +131,9 @@ def main():
             'fs.write("/Home/Case.txt", "disk") fs.write("/TEMPORARY/Case.txt", "memory") '
             'fs.write("/HOME/CASE.TXT", "disk again")',
 
-            'print("C-READ", fs.read("/home/case.txt"), fs.read("/Temporary/CASE.TXT"))',
+            'print("C-READ", fs.read("/home/case.txt"), fs.read("/temporary/CASE.TXT"))',
 
-            'local n, c = 0, nil for _, x in ipairs(fs.list("/home") or {}) do '
+            'local n, c = 0, nil for _, x in ipairs(fs.list("/Home") or {}) do '
             'if x:lower() == "case.txt" then n, c = n + 1, x end end '
             'print("C-LIST", n, c)',
 
@@ -132,7 +141,7 @@ def main():
             # above - so an attribute set through another case has to land
             # under the file's own spelling, once.
             'fs.setattr("/HOME/case.TXT", { kind = "cased" }) '
-            'print("C-QUERY", table.concat(fs.query("/Home", { kind = "cased" }) or {}, ","))',
+            'print("C-QUERY", table.concat(fs.query("/home", { kind = "cased" }) or {}, ","))',
 
             # The programs, the devices, the registry and a library.
             'print("C-BIN", (fs.getattr("/BIN/CLOCK.lua") or {}).kind, type(fs.read("/devices/CPU")))',
@@ -152,6 +161,12 @@ def main():
             'local ok = fs.write("/Temporary/big.tbl", t) local back = fs.read("/Temporary/big.tbl") '
             'print("T-BIG", ok and true, type(back) == "table" and #back, back and back[200] == ("r"):rep(40))',
 
+            # **The root as agreed** (`roadmap.md` 6s): what `/` lists, and
+            # a directory changed to in the old spelling answering in the new.
+            'local r = fs.list("/") or {} table.sort(r) print("R-ROOT", table.concat(r, ","))',
+
+            'cd /home',
+
             # `use` is a program's, not the prompt's: a program that asks
             # for one library by two spellings.
             'fs.write("/Temporary/usetwice.lua", "print(\\"C-USE\\", '
@@ -161,9 +176,9 @@ def main():
 
             # And a name's spelling changed by a rename to itself in another
             # case, on both kinds of mount.
-            'print("C-RENAME", fs.send("/home/case.txt", { type = "rename", to = "/home/CASE.txt" }) and true, '
+            'print("C-RENAME", fs.send("/Home/case.txt", { type = "rename", to = "/Home/CASE.txt" }) and true, '
             'fs.send("/Temporary/case.txt", { type = "rename", to = "/Temporary/CASE.txt" }) and true) '
-            'local seen = {} for _, m in ipairs({ "/home", "/Temporary" }) do '
+            'local seen = {} for _, m in ipairs({ "/Home", "/Temporary" }) do '
             'for _, x in ipairs(fs.list(m) or {}) do if x:lower() == "case.txt" then '
             'seen[#seen + 1] = x end end end print("C-NAMES", table.concat(seen, ","))',
         #
@@ -176,7 +191,7 @@ def main():
         flat = out.replace("\t", " ")
 
         expected = [
-            ("Q-HOME /home/a.txt",
+            ("Q-HOME /Home/a.txt",
              "a query on a mount that names a subtree returns the path the "
              "caller can use - not the mount prefix twice over"),
             ("Q-SYSTEM /system/b.txt",
@@ -210,7 +225,7 @@ def main():
              "and in memory - or a write in another case did not replace it"),
             ("C-LIST", "1 Case.txt",
              "the disk did not keep one file under the name it was made with"),
-            ("C-QUERY", "/home/Case.txt",
+            ("C-QUERY", "/Home/Case.txt",
              "an attribute set through another case was not indexed under the "
              "file's own spelling, once"),
             ("C-BIN", "application table",
@@ -235,6 +250,29 @@ def main():
                 missed.append(f"{what}: wanted {marker} {want!r}, got "
                               + (repr(lines[-1]) if lines else "nothing"))
             checks += 1
+
+        #
+        # The root: every name the agreed layout gives it that this machine
+        # mounts, and none of the ones it replaced.
+        #
+        lines = [l for l in flat.splitlines() if l.startswith("R-ROOT ")]
+        root = set(lines[-1][len("R-ROOT "):].strip().split(",")) if lines else set()
+        want_there = {"Home", "Devices", "Running", "Temporary"}
+        gone = {"home", "dev", "app", "ramfs", "net", "drives"}
+
+        if not want_there <= root or root & gone:
+            missed.append("the root did not list %s and none of %s: got %s"
+                          % (sorted(want_there), sorted(gone), sorted(root)))
+        checks += 1
+
+        # `cd /home` answers with where it went: the line after the command.
+        after = flat.split("kosmos> cd /home", 1)
+        went = after[1].split("\n")[1].strip() if len(after) == 2 else None
+
+        if went != "/Home":
+            missed.append("cd /home did not answer in the mount's own spelling, "
+                          "/Home: got %r" % went)
+        checks += 1
 
         if missed:
             raise Failure(f"{len(missed)} of the checks on names whatever their "
@@ -290,13 +328,13 @@ def main():
 
         #
         # And the one that would have caught the original bug on its own: a
-        # query asked about `/home` must not answer with what is under
+        # query asked about `/Home` must not answer with what is under
         # `/system`, even though one server holds both.
         #
         for line in flat.splitlines():
             if line.startswith("Q-HOME") and "/system" in line:
                 raise Failure(
-                    "a query asked about /home answered with files under "
+                    "a query asked about /Home answered with files under "
                     "/system. One disk is mounted three times and a question "
                     "asked at one of them is about that subtree.\n" + line)
 

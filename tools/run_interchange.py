@@ -70,9 +70,9 @@ def main():
 
     try:
         kfs("create", disk, "32")
-        kfs("put", disk, put_me, "/home/books/manual.txt")
+        kfs("put", disk, put_me, "/Home/books/manual.txt")
 
-        listing = kfs("ls", disk, "/home/books")
+        listing = kfs("ls", disk, "/Home/books")
 
         if "manual.txt" not in listing:
             raise Failure("the file is not in the image after `put`:\n"
@@ -94,9 +94,9 @@ def main():
         # ---- the machine reads what this computer wrote ----
         out = run_disk.boot(image, disk, [
             "df",
-            'local v = fs.read("/home/books/manual.txt") '
+            'local v = fs.read("/Home/books/manual.txt") '
             'print("GUEST" .. "-READ", v and #v or -1)',
-            'fs.write("/home/books/reply.txt", '
+            'fs.write("/Home/books/reply.txt", '
             '"written inside the machine, read outside it")',
             #
             # A file the machine writes that is bigger than a message.
@@ -114,8 +114,8 @@ def main():
             # write that lands at the wrong offset gets the length right.
             #
             'local big = string.rep("kosmos-0123456789", 6000) '
-            'local ok, err = fs.write("/home/books/big.bin", big) '
-            'local back = fs.read("/home/books/big.bin") '
+            'local ok, err = fs.write("/Home/books/big.bin", big) '
+            'local back = fs.read("/Home/books/big.bin") '
             'print("GUEST" .. "-BIG", ok, tostring(err), '
             '#(back or ""), back == big)',
             #
@@ -144,7 +144,7 @@ def main():
             'local piece = string.rep("z", 5000) '
             'local worked = 0 '
             'for i = 1, 40 do '
-            '  local ok = fs.write("/home/books/many" .. i .. ".bin", piece) '
+            '  local ok = fs.write("/Home/books/many" .. i .. ".bin", piece) '
             '  if not ok then break end '
             '  worked = worked + 1 '
             'end '
@@ -176,7 +176,7 @@ def main():
         checks += 1
 
         # ---- and this computer reads what the machine wrote ----
-        kfs("get", disk, "/home/books/reply.txt", got_back)
+        kfs("get", disk, "/Home/books/reply.txt", got_back)
 
         with open(got_back) as f:
             back = f.read()
@@ -205,7 +205,7 @@ def main():
         # And it is really on the disk, not only in something's memory:
         # this computer takes it back out of the image.
         big_back = os.path.join(work, "big-from-the-machine.bin")
-        kfs("get", disk, "/home/books/big.bin", big_back)
+        kfs("get", disk, "/Home/books/big.bin", big_back)
 
         with open(big_back) as f:
             if f.read() != big_body:
@@ -236,9 +236,9 @@ def main():
         checks += 1
 
         # And removing it from here really removes it.
-        kfs("rm", disk, "/home/books/manual.txt")
+        kfs("rm", disk, "/Home/books/manual.txt")
 
-        if "manual.txt" in kfs("ls", disk, "/home/books"):
+        if "manual.txt" in kfs("ls", disk, "/Home/books"):
             raise Failure("`rm` did not remove the file from the image.")
 
         checks += 1

@@ -31,9 +31,9 @@ local DESK, WIN = "desktop_icon_px", "window_icon_px"
 
 -- 1. Nothing saved: 32, which is what every icon was before this existed.
 do
-  files["/home/.tracker"] = nil
+  files["/Home/.tracker"] = nil
 
-  local icons = iconsize.new("/home/.tracker", DESK)
+  local icons = iconsize.new("/Home/.tracker", DESK)
 
   check(icons:size() == 32, "with nothing saved the size is " .. icons:size())
   check(icons.px == nil, "with nothing saved a size of its own was kept")
@@ -41,21 +41,21 @@ end
 
 -- 2. Each of the three chosen, and written down under its own key.
 do
-  files["/home/.tracker"] = nil
+  files["/Home/.tracker"] = nil
 
-  local icons = iconsize.new("/home/.tracker", DESK)
+  local icons = iconsize.new("/Home/.tracker", DESK)
 
   check(icons:set(64) == true and icons:size() == 64,
         "64 chosen gave " .. icons:size())
-  check(files["/home/.tracker"][DESK] == 64, "64 was not saved")
+  check(files["/Home/.tracker"][DESK] == 64, "64 was not saved")
 
   check(icons:set(16) == true and icons:size() == 16,
         "16 chosen gave " .. icons:size())
-  check(files["/home/.tracker"][DESK] == 16, "16 was not saved")
+  check(files["/Home/.tracker"][DESK] == 16, "16 was not saved")
 
   check(icons:set(32) == true and icons:size() == 32,
         "32 chosen gave " .. icons:size())
-  check(files["/home/.tracker"][DESK] == nil,
+  check(files["/Home/.tracker"][DESK] == nil,
         "back at the default, a size of its own was still saved")
 
   check(icons:set(32) == false, "choosing the size already in force changed it")
@@ -64,35 +64,35 @@ end
 -- 3. Two places in one file, and neither wipes the other - the desktop and
 -- a Tracker window are the same program.
 do
-  files["/home/.tracker"] = nil
+  files["/Home/.tracker"] = nil
 
-  local desk = iconsize.new("/home/.tracker", DESK)
-  local win  = iconsize.new("/home/.tracker", WIN)
+  local desk = iconsize.new("/Home/.tracker", DESK)
+  local win  = iconsize.new("/Home/.tracker", WIN)
 
   desk:set(64)
   win:set(16)
 
-  check(files["/home/.tracker"][DESK] == 64 and files["/home/.tracker"][WIN] == 16,
+  check(files["/Home/.tracker"][DESK] == 64 and files["/Home/.tracker"][WIN] == 16,
         "one place's choice wiped the other's: "
-        .. tostring(files["/home/.tracker"][DESK]) .. " and "
-        .. tostring(files["/home/.tracker"][WIN]))
+        .. tostring(files["/Home/.tracker"][DESK]) .. " and "
+        .. tostring(files["/Home/.tracker"][WIN]))
 
   -- And read back, which is the claim that survives a restart.
-  check(iconsize.new("/home/.tracker", DESK):size() == 64
-        and iconsize.new("/home/.tracker", WIN):size() == 16,
+  check(iconsize.new("/Home/.tracker", DESK):size() == 64
+        and iconsize.new("/Home/.tracker", WIN):size() == 16,
         "the sizes did not come back")
 end
 
 -- 4. A size no export exists for - a file edited by hand, or a number from
 -- a menu that no longer exists - is the default rather than a stretch.
 do
-  files["/home/.tracker"] = { [DESK] = 48 }
+  files["/Home/.tracker"] = { [DESK] = 48 }
 
-  check(iconsize.new("/home/.tracker", DESK):size() == 32,
+  check(iconsize.new("/Home/.tracker", DESK):size() == 32,
         "48 saved came back as "
-        .. iconsize.new("/home/.tracker", DESK):size())
+        .. iconsize.new("/Home/.tracker", DESK):size())
 
-  local icons = iconsize.new("/home/.tracker", DESK)
+  local icons = iconsize.new("/Home/.tracker", DESK)
 
   check(icons:set(48) == false and icons:size() == 32,
         "48 was accepted from the outside")
@@ -100,9 +100,9 @@ end
 
 -- 5. The menu: three items, exactly one marked, and choosing one takes.
 do
-  files["/home/.tracker"] = nil
+  files["/Home/.tracker"] = nil
 
-  local icons = iconsize.new("/home/.tracker", DESK)
+  local icons = iconsize.new("/Home/.tracker", DESK)
   local items = icons:items()
   local marked = 0
 
@@ -163,10 +163,10 @@ end
 
 -- 7. The changed hook, which is what recomputes a caller's cells.
 do
-  files["/home/.tracker"] = nil
+  files["/Home/.tracker"] = nil
 
   local told = 0
-  local icons = iconsize.new("/home/.tracker", DESK,
+  local icons = iconsize.new("/Home/.tracker", DESK,
                              function() told = told + 1 end)
 
   icons:set(64)

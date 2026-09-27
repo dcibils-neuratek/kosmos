@@ -660,7 +660,7 @@ check(kfs.free_blocks(odd) == counted,
 
 sb = fresh()
 
--- Not `/Home`: a fresh disk has `/home`, and so, now, has that too.
+-- Not `/Home`: a fresh disk has `/Home`, and so, now, has that too.
 
 kfs.mkdir(sb, "/Work", 1)
 kfs.store(sb, "/Work/Notes.txt", "first", 1)

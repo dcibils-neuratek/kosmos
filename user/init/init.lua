@@ -542,7 +542,7 @@ local function new_namespace()
 
   --
   -- **A name is found whatever its case, and keeps the case it was given**
-  -- (`roadmap.md` 6s): `/HOME/notes.txt` reaches the mount at `/home`, and
+  -- (`roadmap.md` 6s): `/HOME/notes.txt` reaches the mount at `/Home`, and
   -- what is left of the path goes to the server as it was typed, for the
   -- server to fold in its own way. `key` is a mount's prefix folded once,
   -- when it is mounted, so a lookup folds only the path it is asked about.
@@ -644,8 +644,8 @@ local function new_namespace()
 
         -- A mount may name a *subtree* of what the server holds, so one
         -- disk can appear at three places without three servers. `/system`
-        -- and `/home` are both the same filesystem, at `/system` and
-        -- `/home` inside it - which is what makes the layout in
+        -- and `/Home` are both the same filesystem, at `/system` and
+        -- `/Home` inside it - which is what makes the layout in
         -- `layout.md` possible with one disk and one server.
         --
         -- Prepended here rather than by the server, because the server has
@@ -724,6 +724,26 @@ local function new_namespace()
   -- Mounts `capability` at `prefix`, and says that names under it are to be
   -- looked up rather than known in advance.
   --
+  --
+  -- **A path in its mount's own spelling** (`roadmap.md` 6s): `/home/x` is
+  -- `/Home/x`, answered from the mount table without asking a server. What
+  -- follows the mount keeps the case it was typed in - that part is the
+  -- server's, and spelling it would be a walk. A path a person types comes
+  -- through here (`files.abs`, `cd`), so one compared with the system's own
+  -- - the Trash, the Desktop - is written the way they are.
+  --
+  function ns.canonical(path)
+    path = tostring(path or "")
+
+    for _, m in ipairs(mounts) do
+      if within(path, m.key) then
+        return m.prefix .. path:sub(#m.prefix + 1)
+      end
+    end
+
+    return path
+  end
+
   function ns.mount_registry(prefix, capability, proto)
     ns.mount(prefix, capability, nil, proto)
     autos[#autos + 1] = { prefix = prefix, cap = capability }
@@ -835,7 +855,7 @@ local function new_namespace()
   -- the reader knowing `drivesproto.h`, so the kind is written into it:
   -- `fat:1A2B-3C4D`, the serial as Windows' `vol` prints it, or
   -- `gpt:BA231D95-9576-4349-A359-1D3FD2B045D8`, the same form a stick's own
-  -- command line already names its `/home` partition by. A GUID's first
+  -- command line already names its `/Home` partition by. A GUID's first
   -- three fields are little-endian on disk and its last two are not.
   --
   local function hex(bytes)
@@ -2042,7 +2062,7 @@ local function new_namespace()
   --
   -- The same read, without ever holding the whole thing.
   --
-  --   for piece in fs.chunks("/home/song.mp3") do decode(piece) end
+  --   for piece in fs.chunks("/Home/song.mp3") do decode(piece) end
   --
   -- `ns.read` streams correctly and then undoes the benefit on its last
   -- line: it concatenates the pieces, so a four-megabyte file is fetched
@@ -2063,7 +2083,7 @@ local function new_namespace()
   -- `read(fd, buf, n)`. The file may be any size; the buffer is yours.
   --
   --   local buf = sys.memory(16)                    -- 64 KB of pages
-  --   local n = fs.read_into("/home/big.img", buf, 0, 65536)
+  --   local n = fs.read_into("/Home/big.img", buf, 0, 65536)
   --
   -- Returns how many bytes arrived, and the file's total size, so a caller
   -- can walk a large file a window at a time without asking twice.
@@ -2177,19 +2197,19 @@ local function new_namespace()
   --
   --
   -- **A mount may name a subtree, and then the prefix is not the whole of
-  -- it.** `match` maps `/home/doc.pdf` onto `/home/doc.pdf` in the server -
-  -- prefix `/home`, root `/home` - because one disk appears at `/system`,
-  -- `/user` and `/home` with one server behind all three. Coming back, the
+  -- it.** `match` maps `/Home/doc.pdf` onto `/Home/doc.pdf` in the server -
+  -- prefix `/Home`, root `/Home` - because one disk appears at `/system`,
+  -- `/user` and `/Home` with one server behind all three. Coming back, the
   -- root has to come off before the prefix goes on, or the answer is
-  -- `/home/home/doc.pdf`.
+  -- `/Home/home/doc.pdf`.
   --
-  -- Which is exactly what `find /home kind=book` returned, for as long as
+  -- Which is exactly what `find /Home kind=book` returned, for as long as
   -- the disk has been able to answer a query. It went unnoticed because
   -- every test of queries used `/Temporary`, and `/Temporary` is mounted with no root
   -- - so the two paths through this function had never both been walked.
   --
   local function to_local(p, prefix, root)
-    if root and p:sub(1, #root) == root then
+    if root and fold(p:sub(1, #root)) == fold(root) then
       p = p:sub(#root + 1)
 
       if p == "" then p = "/" end
@@ -2199,7 +2219,7 @@ local function new_namespace()
   end
 
   local function to_server(p, prefix, root)
-    if p:sub(1, #prefix) == prefix then
+    if fold(p:sub(1, #prefix)) == fold(prefix) then
       p = p:sub(#prefix + 1)
 
       if p == "" then p = "/" end
@@ -2561,7 +2581,7 @@ end
 -- be the better arrangement rather than the temporary one: the loader
 -- reads a single file and jumps, there is no root filesystem to mount, and
 -- starting a program never touches storage at all. `design.md` 8.3a is
--- where `/home` picks up the other half of that - the one place that is
+-- where `/Home` picks up the other half of that - the one place that is
 -- writable, on a disk when there is one and in memory when there is not.
 --
 -- It is an ordinary server answering the ordinary protocol. `ls /bin` and
@@ -3341,7 +3361,7 @@ local function diskfs_handlers(state)
         return { ok = false, error = "a rename needs a name" }
       end
 
-      -- The last component either way, so `/home/x` is refused for exactly
+      -- The last component either way, so `/Home/x` is refused for exactly
       -- the names `x` is.
       local to_name = req.to:match("([^/]+)$")
 
@@ -3539,11 +3559,11 @@ local function diskfs_handlers(state)
       --
       -- **Under `req.path`, and not the whole disk.**
       --
-      -- One disk is mounted three times - at `/system`, `/user` and `/home`,
+      -- One disk is mounted three times - at `/system`, `/user` and `/Home`,
       -- each naming a subtree of itself - so "everything that matches" is
-      -- the wrong answer to a question asked about one of them: `find /home
+      -- the wrong answer to a question asked about one of them: `find /Home
       -- kind=book` was returning what is under `/system` too, and the
-      -- namespace then put `/home` in front of it.
+      -- namespace then put `/Home` in front of it.
       --
       -- BeOS's queries were volume-wide and this one is not, deliberately.
       -- A namespace hands you a *path*, and the honest reading of a question
@@ -3584,7 +3604,7 @@ local function diskfs_handlers(state)
   -- **Paths in the disk's own spelling, while anything is kept by path.**
   -- A name is found whatever its case (`kfs.same_name`), so the handlers
   -- need nothing - except that the index and the attributes beside it are
-  -- keyed by path, and `/Home/x` and `/home/x` would be two keys for one
+  -- keyed by path, and `/Home/x` and `/Home/x` would be two keys for one
   -- file: a query answering it twice, a delete leaving the other behind. So
   -- while an index exists every path is turned into the disk's spelling as
   -- it arrives (`kfs.spelled`) - a walk of its directories, which is why not
@@ -3658,7 +3678,7 @@ local DIED_KFS       = 12    -- kfs.lua would not load or run
 local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 
 --------------------------------------------------------------------------
--- **`/home` on a USB stick's Kosmos partition** (USB step 5e, `usb.md` §7).
+-- **`/Home` on a USB stick's Kosmos partition** (USB step 5e, `usb.md` §7).
 --
 -- Asked for with `opt/kosmos/home`. `usb` takes the first Kosmos partition on
 -- a stick the USB driver has ready; a partition's unique GUID - which the
@@ -3678,7 +3698,7 @@ local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 -- **Kept by its unit, and a unit is a name.** Once found, the partition's
 -- stick is asked for by the number the driver gave it, which no other stick
 -- is ever given: a stick plugged in later never takes its place, and one that
--- leaves takes `/home` with it until the machine starts again, rather than
+-- leaves takes `/Home` with it until the machine starts again, rather than
 -- another stick's blocks being written.
 --
 -- **Not there yet is not blank, and it is waited for.** Until the partition is found, the disk and
@@ -3694,9 +3714,9 @@ local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 --
 -- **Said through `diskinfo`, not printed.** This server owns no console, and
 -- the kernel refuses a write from a process that does not, so a `print` here
--- reaches nobody. Where `/home` is, why a stick's cache is not written out,
+-- reaches nobody. Where `/Home` is, why a stick's cache is not written out,
 -- and what finding the stick took go in `sys.disk()`'s answer, and from there
--- into `/home/.super`.
+-- into `/Home/.super`.
 --------------------------------------------------------------------------
 local KOSMOS_PARTITION = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A"
 
@@ -3886,13 +3906,13 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
 
   --
   -- **Looked for on each request until it is found, and waited for once.**
-  -- The shell decides where `/home` is as it builds its namespace, from one
-  -- read of `/home/.super`: a filesystem, or memory for the life of the
+  -- The shell decides where `/Home` is as it builds its namespace, from one
+  -- read of `/Home/.super`: a filesystem, or memory for the life of the
   -- machine. Nothing makes init wait for the USB driver, and on the ThinkPad
   -- naming a stick takes seconds. So the first look that fails keeps looking,
   -- a tenth of a second apart, for at least WAIT_SECONDS, and every request
   -- after that looks once. This server answers nothing meanwhile, and what it
-  -- would have answered is only where `/home` is.
+  -- would have answered is only where `/Home` is.
   --
   local WAIT_SECONDS = 20
   local waited = false
@@ -4027,7 +4047,7 @@ local function diskfs_main(endpoint, read_cap, write_cap)
 
   if not ok then sys.exit(DIED_KFS) end
 
-  -- `/home` on a USB stick, when the machine was started asking for one:
+  -- `/Home` on a USB stick, when the machine was started asking for one:
   -- `usb` for the first Kosmos partition, or one partition by its GUID.
   local home = sys.boot("opt/kosmos/home")
 
@@ -4048,7 +4068,7 @@ local function diskfs_main(endpoint, read_cap, write_cap)
   -- **Counter ticks, and named so.** This process cannot read `counter_hz`,
   -- and a number mailed to another process arrives naked (`CLAUDE.md`, two
   -- clocks): whoever reads these divides by its own. They are answered from
-  -- `/home/.device`, which touches no disk, so asking what the device cost
+  -- `/Home/.device`, which touches no disk, so asking what the device cost
   -- adds nothing to it.
   --
   local device = { reads = 0, writes = 0, read_bytes = 0, write_bytes = 0,
@@ -4176,23 +4196,23 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   --
   --   /system   what the operating system ships
   --   /user     what somebody installed
-  --   /home     what somebody made
+  --   /Home     what somebody made
   --
   -- All three are the same filesystem and the same server; the mount says
   -- which part of it appears where. Before subtree mounts this had to be
   -- the whole disk at one name, and a file written by `mkimage` at
-  -- `/home/notes` arrived as `/home/home/notes`.
+  -- `/Home/notes` arrived as `/Home/home/notes`.
   ns.mount("/system", disk_cap, "/system")
   ns.mount("/user",   disk_cap, "/user")
-  ns.mount("/home",   disk_cap, "/home")
+  ns.mount("/Home",   disk_cap, "/Home")
 
   --
-  -- ...and `/home` moves into memory when there is no disk under it.
+  -- ...and `/Home` moves into memory when there is no disk under it.
   --
   -- **Three programs told you it already worked this way.** `neofetch`,
-  -- `machine` and `df` all printed "/home is in memory and will not
+  -- `machine` and `df` all printed "/Home is in memory and will not
   -- survive" on a machine with no disk, and it was an intention written in
-  -- the present tense: `/home` was mounted on the disk server whatever
+  -- the present tense: `/Home` was mounted on the disk server whatever
   -- happened, and that server answers every request with "there is no
   -- filesystem here". The sentence was true about what somebody meant and
   -- false about what the machine did.
@@ -4200,22 +4220,22 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- What found it was the machine it matters on. `make x86-uefi` is a
   -- ThinkPad-shaped QEMU - firmware, a loader, an i8042, no virtio
   -- anything - and on that machine the desktop does not come up at all:
-  -- Tracker makes `/home/Desktop` if it is missing, the disk refuses, and
+  -- Tracker makes `/Home/Desktop` if it is missing, the disk refuses, and
   -- there is no backdrop. A laptop with no NVMe driver is exactly that
   -- machine, so this was the first real boot arriving without a desktop.
   --
   -- The same server that serves `/Temporary`, at a different root - so a file
-  -- written to `/home/notes` is `/Temporary/home/notes` as well, which is
+  -- written to `/Home/notes` is `/Temporary/home/notes` as well, which is
   -- honest rather than a coincidence: it *is* the same memory, and it goes
   -- away for the same reason.
   --
   local home_in_memory = false
 
   do
-    local sb = ns.read("/home/.super")
+    local sb = ns.read("/Home/.super")
 
     if type(sb) ~= "table" or not sb.formatted then
-      ns.mount("/home", ramfs_cap, "/home", "ram")
+      ns.mount("/Home", ramfs_cap, "/Home", "ram")
       home_in_memory = true
 
       --
@@ -4223,14 +4243,14 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
       -- mount not working.
       --
       -- `/Temporary` is mounted with no root, so its prefix names the server's
-      -- own root and that always exists. This one is a *subtree*: `/home`
-      -- resolves to the path `/home` inside the same server, and a path
+      -- own root and that always exists. This one is a *subtree*: `/Home`
+      -- resolves to the path `/Home` inside the same server, and a path
       -- inside `ramfs` exists only once something has made it. So the mount
-      -- was there and correct, and `ls /home` answered `no such path`
+      -- was there and correct, and `ls /Home` answered `no such path`
       -- because there was no such node - which reads exactly like a mount
       -- that did not happen.
       --
-      ns.send("/home", { type = "mkdir" })
+      ns.send("/Home", { type = "mkdir" })
     end
   end
 
@@ -4273,7 +4293,7 @@ The prompt takes commands as well as Lua. `/commands` lists them.
   fs.list("/Devices")  the same thing, as a program
 
 **A leading slash means a command**, unless the word is a file ending in
-`.lua`, which runs: `/home/hello.lua`. Without one, a bare word is
+`.lua`, which runs: `/Home/hello.lua`. Without one, a bare word is
 only treated as a command when it does not also name something in Lua -
 so `devices` works, and if you ever alias `print` or `type` you will have
 to say `/print`. A shell where `type` sometimes means a command and
@@ -4346,7 +4366,7 @@ THE MACHINE
 
 WHERE THINGS LIVE
   /bin /lib            the programs and libraries in the image
-  /home /user /system  the disk; these survive a reboot
+  /Home /user /system  the disk; these survive a reboot
   /Temporary           memory; this does not
   /Devices             the hardware
   /Drives              other drives, by their names
@@ -4728,7 +4748,8 @@ query. `find` and `watch` are built on exactly these two calls.
       return
     end
 
-    cwd = target
+    -- `cd /home` is `/Home`, as its mount spells it.
+    cwd = ns.canonical(target)
     out(cwd .. "\n")
   end
 
@@ -5140,7 +5161,7 @@ query. `find` and `watch` are built on exactly these two calls.
     out("\nAnything that is not one of these is evaluated as Lua. A leading\n")
     out("slash means a command: /ps runs the command even if `ps`\n")
     out("has been given a meaning in Lua. A word ending in .lua is a file,\n")
-    out("and runs: ./hello.lua, /home/hello.lua.\n")
+    out("and runs: ./hello.lua, /Home/hello.lua.\n")
     out("`alias` on its own lists the aliases; `alias <name> <command>`\n")
     out("makes one.\n")
   end
@@ -5274,13 +5295,13 @@ query. `find` and `watch` are built on exactly these two calls.
       --------------------------------------------------------------------
       --------------------------------------------------------------------
       -- A program by its file: `./hello.lua`, `notes/hello.lua`,
-      -- `/home/hello.lua`, or `hello.lua` - found from where you are.
+      -- `/Home/hello.lua`, or `hello.lua` - found from where you are.
       --
       -- A first word ending in `.lua` is none of the other things a line can
       -- be: not a command's name, and not Lua unless its stem already names
       -- something in Lua, in which case `hello.lua` is a field and stays one.
       -- It was: `hello.lua` went to Lua and failed on a table called `hello`,
-      -- and `/home/hello.lua` was taken for a command called `home`.
+      -- and `/Home/hello.lua` was taken for a command called `home`.
       --
       -- **A bare name still means `/bin` and nothing else.** The current
       -- directory is never searched for a word, so a file that happens to be
@@ -5566,7 +5587,7 @@ if role == ROLE_INIT then
   --
   -- And the USB driver's two block endpoints (USB step 5e): `/Devices/blocks`, to
   -- find a stick's Kosmos partition, and the write endpoint, which nothing
-  -- else is given - so `/home` on a stick is this process's to write and
+  -- else is given - so `/Home` on a stick is this process's to write and
   -- nobody else's, as the kernel's disk is.
   --
   local diskfs  = start("the disk server", ROLE_DISKFS,
@@ -5747,7 +5768,7 @@ if role == ROLE_INIT then
   -- **Static, because DHCP needs UDP** and there is none yet. The defaults
   -- are QEMU's user-mode network, which is what this machine boots on:
   -- 10.0.2.15 behind a NAT with the router and the DNS at 10.0.2.2 and
-  -- 10.0.2.3. `/home/.network` overrides them, so a real board is a file
+  -- 10.0.2.3. `/Home/.network` overrides them, so a real board is a file
   -- rather than a rebuild - the same arrangement `.appearance` has.
   --
   -- **Given whether or not the kernel found a card**, which it was not until
@@ -5769,7 +5790,7 @@ if role == ROLE_INIT then
 
     mine.mount("/Network", NET_EP, nil, "net")
 
-    if DISKFS_EP then mine.mount("/home", DISKFS_EP, "/home") end
+    if DISKFS_EP then mine.mount("/Home", DISKFS_EP, "/Home") end
 
     --
     -- 10.0.2.3 is where QEMU's own NAT puts a resolver, the way 10.0.2.2 is
@@ -5780,7 +5801,7 @@ if role == ROLE_INIT then
     --
     local address, netmask, gateway = "10.0.2.15", "255.255.255.0", "10.0.2.2"
     local dns = "10.0.2.3"
-    local ok_read, saved = pcall(mine.read, "/home/.network")
+    local ok_read, saved = pcall(mine.read, "/Home/.network")
 
     if ok_read and type(saved) == "table" then
       address = saved.address or address
@@ -6045,15 +6066,15 @@ if role == ROLE_RUNNER then
   if req.disk    then
     ns.mount("/system", req.disk, "/system")
     ns.mount("/user",   req.disk, "/user")
-    ns.mount("/home",   req.disk, "/home")
+    ns.mount("/Home",   req.disk, "/Home")
   end
 
   -- After the disk, because this replaces what that mounted. The shell
-  -- decided once, at boot, whether there is a filesystem to put `/home` on;
+  -- decided once, at boot, whether there is a filesystem to put `/Home` on;
   -- a program that decided for itself could disagree with the shell that
-  -- started it, and then `ls /home` would depend on who was asking.
+  -- started it, and then `ls /Home` would depend on who was asking.
   if req.home_in_memory and req.data then
-    ns.mount("/home", req.data, "/home", "ram")
+    ns.mount("/Home", req.data, "/Home", "ram")
   end
 
   -- After `/Devices`, because longest prefix wins and this is a different
@@ -6233,8 +6254,8 @@ if role == ROLE_RUNNER then
 
       -- Inherited rather than decided again. This is a program starting a
       -- program - the window manager starting Tracker is the case that
-      -- matters - and a child that worked out for itself where `/home` is
-      -- could disagree with its parent, which would mean `ls /home`
+      -- matters - and a child that worked out for itself where `/Home` is
+      -- could disagree with its parent, which would mean `ls /Home`
       -- answering differently depending on who asked.
       home_in_memory = req.home_in_memory or nil,
     })

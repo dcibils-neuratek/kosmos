@@ -33,7 +33,7 @@
 #  Eight is 32 ms, room for an emulated machine's slower moments.
 #
 #  **And a disk, kept between runs**, build/camera-home.img, so a recording
-#  - Record, or R - is kept in /home/videos (`roadmap.md` 6d 8f). A blank
+#  - Record, or R - is kept in /Home/videos (`roadmap.md` 6d 8f). A blank
 #  one is formatted by the machine itself. When QEMU ends, every recording on
 #  it is copied out to build/camera-videos/, which QuickTime opens.
 
@@ -79,11 +79,11 @@ head -30 "$QLOG" 2>/dev/null || echo "(nothing)"
 # The recordings, out of the disk and onto the Mac.
 if [ -x "$HERE/build/host/lua" ]; then
     mkdir -p "$OUT"
-    ( cd "$HERE" && build/host/lua tools/kfs.lua ls "$DISK" /home/videos 2>/dev/null ) \
+    ( cd "$HERE" && build/host/lua tools/kfs.lua ls "$DISK" /Home/videos 2>/dev/null ) \
         | sed -n 's/^  \(.*\.mp4\)  *[0-9][0-9]*$/\1/p' \
         | while IFS= read -r name; do
             ( cd "$HERE" && build/host/lua tools/kfs.lua get "$DISK" \
-                  "/home/videos/$name" "$OUT/$name" ) >/dev/null 2>&1 \
+                  "/Home/videos/$name" "$OUT/$name" ) >/dev/null 2>&1 \
                 && echo "Recorded: $OUT/$name"
           done
     chmod -R a+rw "$OUT" 2>/dev/null || true

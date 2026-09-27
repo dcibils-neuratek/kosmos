@@ -2213,7 +2213,7 @@ end
 -- file. The scene's script is then that one, a change to save.
 function SCRIPT.open_file()
   local start = SCRIPT.path and FILE.dir(SCRIPT.path)
-                or (fs.getattr(FILE.DIR) and FILE.DIR) or "/home"
+                or (fs.getattr(FILE.DIR) and FILE.DIR) or "/Home"
 
   return FILE.panel("open", {
     title = "Open a script", start = start,
@@ -2665,9 +2665,9 @@ function final.tend()
   end
 end
 
--- The picture as it stands, at its own size, as a PNG in /home/Renders.
+-- The picture as it stands, at its own size, as a PNG in /Home/Renders.
 function final.save()
-  local dir = "/home/Renders"
+  local dir = "/Home/Renders"
 
   fs.send(dir, { type = "mkdir" })
   FILE.panel("save", {
@@ -3579,10 +3579,10 @@ end
 -- the samples are, written by `/lib/scenefile.lua` - so the reader that
 -- opens a sample opens a saved scene, and any other program's glTF reader
 -- opens it too. Through the Open and Save panel every application has,
--- into /home/Scenes unless the scene came from somewhere else.
+-- into /Home/Scenes unless the scene came from somewhere else.
 --------------------------------------------------------------------------
 
-FILE.DIR = "/home/Scenes"
+FILE.DIR = "/Home/Scenes"
 
 function FILE.base(path) return path:match("([^/]+)$") or path end
 function FILE.dir(path) return path:match("^(.*)/[^/]*$") end
@@ -3646,7 +3646,7 @@ end
 
 function FILE.open()
   local start = FILE.path and FILE.dir(FILE.path)
-                or (fs.getattr(FILE.DIR) and FILE.DIR) or "/home"
+                or (fs.getattr(FILE.DIR) and FILE.DIR) or "/Home"
 
   return FILE.panel("open", {
     title = "Open a scene", start = start,
@@ -3675,7 +3675,7 @@ function FILE.ext(name) return (name:match("%.(%w+)$") or ""):lower() end
 --------------------------------------------------------------------------
 -- Other programs' formats: translators (`roadmap.md` 4l, 5c), as BeOS's
 -- Translation Kit had them - one Lua file a format, in /lib/translators/
--- and in /home/Translators for those a person adds, each saying what it
+-- and in /Home/Translators for those a person adds, each saying what it
 -- reads and writes. Found once, the first time one is wanted. Each is
 -- handed the 3D Kit's readers and writers, a way to make a material, and
 -- glTF's arithmetic for a world matrix and a linear colour - and nothing of
@@ -3697,8 +3697,8 @@ function FILE.translators()
     if name:match("^translators/[%w_%-]+%.lua$") then where[#where + 1] = "/lib/" .. name end
   end
 
-  for _, name in ipairs(fs.list("/home/Translators") or {}) do
-    if name:match("^[%w_%-]+%.lua$") then where[#where + 1] = "/home/Translators/" .. name end
+  for _, name in ipairs(fs.list("/Home/Translators") or {}) do
+    if name:match("^[%w_%-]+%.lua$") then where[#where + 1] = "/Home/Translators/" .. name end
   end
 
   for _, path in ipairs(where) do
@@ -3730,7 +3730,7 @@ end
 -- Objects out of a file, beside what is there: glTF by Cafesa3D's own
 -- reader, anything else by the translator that reads it.
 function FILE.import()
-  local start = FILE.path and FILE.dir(FILE.path) or "/home"
+  local start = FILE.path and FILE.dir(FILE.path) or "/Home"
 
   return FILE.panel("open", {
     title = "Import", start = start,
@@ -3832,7 +3832,7 @@ end
 -- The tutorial, `docs/cafesa3d-tutorial/`: pages and pictures the image
 -- carries, which the browser reads where they lie (`asset:` addresses), so
 -- it is always the tutorial for the Cafesa3D it came with. It used to be
--- copied out into /home first, and a screenshot is more than one file of
+-- copied out into /Home first, and a screenshot is more than one file of
 -- the RAM filesystem holds.
 local TUTORIAL = { index = "asset:tutorial/cafesa3d/index.html" }
 

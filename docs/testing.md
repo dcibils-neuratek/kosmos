@@ -11309,3 +11309,39 @@ And two paths the rewrite could not see, because an escape followed them:
 The first gate with the names failed six display suites - the Clock, the
 Terminal's `cd`, and the Large icons check, which passed alone (6q, the
 flake it is known for). With the two fixed: 50 of 50 in 9:37.
+
+## 18.230 `/Home`
+
+`roadmap.md` 6s (b). `/home` is `/Home` - 713 paths in the code and the
+suites, 96 in the documents, the Makefile's and the shell scripts' by hand.
+The same length, so no column moved. **Only its case changed**, so every
+`/home/...` already written, on a disk or typed, still reaches it; and a
+disk made before today keeps its folder `home`, found whatever its case.
+New disks are made with `Home`.
+
+**Two places that were not folding, found by asking what an old disk
+does.** The namespace takes a mount's root off the paths a query answers
+with, and put a watch's known answers back into the server's spelling, each
+comparing exactly - so a disk whose folder is `home`, mounted at `/Home`,
+would have answered `/Home/home/a.txt`. Both fold now. And a path typed in
+the old spelling is given its mount's own (`ns.canonical`, used by
+`files.abs`, the shell's `cd` and the Terminal's), so `cd /home` answers
+`/Home` and a path somebody typed compares equal to the Trash's.
+
+**In the queries suite, 29 checks, on a disk made the old way**: the host
+tool takes `KFS_LAYOUT`, and the suite's disk is made with `home`, as a stick
+before 27 September is - every query, listing and read on it answering in
+`/Home`. New: the root lists `Home`, `Devices`, `Running` and `Temporary`
+and none of `home`, `dev`, `app`, `ramfs`, `net`, `drives`; and `cd /home`
+answers `/Home`. Two of the case checks spell `/home` and `/temporary`
+again, so the fold at a mount is still what they test. **Control**: the
+query mapping exact and `ns.canonical` doing nothing - `Q-HOME` answers
+`/Home/home/a.txt`, and `cd /home` answers `/home`.
+
+**And the Large icons check stopped being a flake** (`roadmap.md` 6q). It
+pressed the desktop menu's row a fixed second after the right press, and
+under the gate the menu was not open yet: twice in three gates the press
+landed on the bare desktop, chose nothing, and the check said the icons
+had not grown. `choose` in the harness waits for the menu on the screen.
+
+The gate with `/Home`: 50 of 50 in 8:56.

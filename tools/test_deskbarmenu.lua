@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The Deskbar's menu, checked on this computer with no machine booted.
 --
--- `user/lib/deskbarmenu.lua` turns `/home/Deskbar` into the rows the menu
+-- `user/lib/deskbarmenu.lua` turns `/Home/Deskbar` into the rows the menu
 -- draws, and every decision in it is one a person would notice being wrong:
 -- what counts as an item, which order things come in, how deep a folder may
 -- go. None of that needs a screen to be checked, and the store it reads
@@ -69,7 +69,7 @@ local tree = {
   ["/D/Demos/readme.txt"] = { kind = "file" },
 
   ["/D/Applications/calc"] = launcher("calc", "", "App_Calc"),
-  ["/D/Applications/editor"] = launcher("editor", "/home/notes.txt"),
+  ["/D/Applications/editor"] = launcher("editor", "/Home/notes.txt"),
 
   ["/D/Demos/quake"] = launcher("quake"),
   ["/D/Demos/doom"] = launcher("doom", "--scale 2"),

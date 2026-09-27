@@ -13,7 +13,7 @@
 --
 local M = {}
 
-M.SETTINGS = "/home/.startup"
+M.SETTINGS = "/Home/.startup"
 
 --
 -- What a machine that has never been told opens.

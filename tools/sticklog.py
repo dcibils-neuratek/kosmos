@@ -2,7 +2,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """The Kosmos partition of a stick, or of a stick's image, on standard output.
 
-**Why.** `/home` on a stick is its Kosmos partition, which macOS does not
+**Why.** `/Home` on a stick is its Kosmos partition, which macOS does not
 mount, and `tools/kfs.lua` reads a filesystem out of an image file. So this
 finds that partition in the stick's GPT and copies its bytes out, and
 `kfs.lua get` takes a file from the copy - `make stick-log`, through

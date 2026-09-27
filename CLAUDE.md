@@ -70,7 +70,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 
 - The layers and how a command crosses them: `docs/architecture.md`
 - What lives where, in the tree and at runtime: `docs/layout.md`
-- Where things live, drawn - `/kosmos` and `/home`, agreed 27 September and kept as documentation: `docs/layout.html`
+- Where things live, drawn - `/Kosmos` and `/Home`, agreed 27 September and kept as documentation: `docs/layout.html`
 - Design and the reasoning behind every decision: `docs/design.md`
 - Current state and next step: `docs/state.md` — **read it before proposing anything**
 - Milestones: `docs/roadmap.md`
@@ -750,9 +750,9 @@ every check under OVMF, which is necessary and not sufficient. So:
   that is the 0.10.60 kernel with a disk of 32 MB or less: 0.10.61 stopped
   after the loader's last line with both disks, and a disk's size is not what
   decides it (`docs/boot.md`).
-- **The stick is built by `make MEGA=1 x86-usb-image`**, with `/home` in a
+- **The stick is built by `make MEGA=1 x86-usb-image`**, with `/Home` in a
   partition of its own - the default since 19 September, and the layout
-  every stick since 0.10.62 has had. That `/home` is made fresh from
+  every stick since 0.10.62 has had. That `/Home` is made fresh from
   `~/Kosmos/home` at 512 MB (`HOME_DIR`, `STICK_HOME_MB`; Diego, 19
   September: "from now on we need to make the drive image at least 512mb"),
   and never from the repository. `USB_HOME=disk` is the old layout, whose

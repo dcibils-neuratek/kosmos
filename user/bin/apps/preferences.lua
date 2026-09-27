@@ -475,7 +475,7 @@ local now_label = nil               -- the clock's row, which keeps time
 local function control_for(it, x, y, changed)
   if it.key == "palette" then return swatches(it) end
 
-  -- The wallpapers are whatever `/home` and the image hold at the moment the
+  -- The wallpapers are whatever `/Home` and the image hold at the moment the
   -- page is drawn, so the list is made here rather than in the schema.
   if it.key == "wallpaper" then
     it = setmetatable({ choices = settings.wallpapers() }, { __index = it })

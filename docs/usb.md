@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/Home` on the stick it booted from (`roadmap.md`) |
 | 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | 7a built: an adapter named, its MAC read, under QEMU and on Diego's RTL8153 through the Mac |
 | 8. a camera | a USB Video Class camera's live picture in a window, and recorded (`roadmap.md` 6d) | 8a-8f built: live on the C920 as root on 24 September at 30 frames a second, and recording to H.264 in an MP4 (8f, 0.10.163). Before that: the app on the test pattern, both boards; the real C920 found and refused without root, waiting for `sudo sh tools/camera.sh`; 8f, recording, next |
@@ -30,7 +30,7 @@ own loader (`boot.md`). Reading the stick directly removes the copy in
 memory, and with it the limit. Decided on 14 September, in five calls Diego
 approved together: the driver hears requests through the kernel's interrupt
 wait, a Kosmos stick carries kfs in a partition of its own, only that
-partition is mounted, as `/home`, it is written as well as read, and bytes
+partition is mounted, as `/Home`, it is written as well as read, and bytes
 cross between processes through a copy - `README.md` has each and why.
 
 **And step 6 is Diego's too**, the same week: "we need fat32 driver so we can
@@ -1406,9 +1406,9 @@ unit 0: 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK"
   partition 1: "KOSMOS", blocks 34 to 32734, type C12A7328-F81F-11D2-BA4B-00A0C93EC93B
 ```
 
-### 5e: `/home` on a stick's Kosmos partition, read and written
+### 5e: `/Home` on a stick's Kosmos partition, read and written
 
-**A machine started with `opt/kosmos/home=usb` keeps `/home` on a USB stick**:
+**A machine started with `opt/kosmos/home=usb` keeps `/Home` on a USB stick**:
 the first partition of Kosmos's own type,
 `8A9DC8A8-83CF-4F7F-962B-43157A68F14A`, on the first stick that has one.
 Without the option nothing changes - the disk server's disk is the kernel's,
@@ -1440,7 +1440,7 @@ was the busy client, and `sticks` reads a handful of blocks when somebody types
 it, so a read on `/Devices/blocks` waiting for the watch's next deadline, 50 ms,
 looked affordable. Disk Benchmark reads `/Devices/blocks` continuously, and on the
 ThinkPad `diskbench usb 0` gave 2.1 MB/s and 17 IOPS - 58 ms a request. QEMU
-gave the same 17 on a stick whose `/home` read at 938, and that is what said
+gave the same 17 on a stick whose `/Home` read at 938, and that is what said
 the stick was not the cost. The disk server's search for its partition asks
 `/Devices/blocks` too, four or five requests a look, and every one of them waited
 the same way.
@@ -1463,7 +1463,7 @@ never happens.
 **Not there yet is not blank, and it is waited for.** The disk server starts
 before the driver has named any stick, and init does not wait for the driver -
 on the ThinkPad naming a stick takes seconds. The shell, meanwhile, decides
-where `/home` is from one read of `/home/.super` as it builds its namespace: a
+where `/Home` is from one read of `/Home/.super` as it builds its namespace: a
 filesystem, or memory for the life of the machine. So the first time the disk
 server looks for its partition and does not find it, it keeps looking, a
 tenth of a second apart, for at least twenty seconds, and after that each
@@ -1484,9 +1484,9 @@ transaction, and none for the blocks between, which the journal covers.
 
 **Said through `diskinfo`, because the disk server cannot print.** It owns no
 console, and the kernel refuses a write from a process that does not -
-`run_disk.py` says the same of its format line. So where `/home` is, why a
+`run_disk.py` says the same of its format line. So where `/Home` is, why a
 stick's cache is not written out, and what finding the stick took come back in
-`sys.disk()`'s answer and through `/home/.super`; and the driver, which can
+`sys.disk()`'s answer and through `/Home/.super`; and the driver, which can
 print, says a stick's first flush that it kept, because nothing else shows one
 was ever sent:
 
@@ -1552,20 +1552,20 @@ disk: 28639 sectors of 512 bytes, 13 MB
 not power-on and not necessarily the kernel's first line: lines before it are
 stamped from the scheduler tick, which has not started, so they read `0.000`.
 Under QEMU on x86 the rate is measured rather than stated, and a first look at
-0.10 s says that happened shortly before init first asked for `/home`.
+0.10 s says that happened shortly before init first asked for `/Home`.
 
 **And a diagnosis off the stick, on the Mac.** A photograph of the screen
 was the only way anything reached this Mac from the ThinkPad. `diagnose`
 writes the build, the machine as `sys.info()` has it, the device server's
-nodes, `/home/.super` and `/home/.device`, `/home`, the sticks, the processes
-and the whole log to `/home/diagnose.txt`, the log last so that a file cut
-short shows it; `log save` writes the log alone to `/home/log.txt`. Both go
+nodes, `/Home/.super` and `/Home/.device`, `/Home`, the sticks, the processes
+and the whole log to `/Home/diagnose.txt`, the log last so that a file cut
+short shows it; `log save` writes the log alone to `/Home/log.txt`. Both go
 through pages (`fs.write_from`), since the log is a quarter of a megabyte and
 a message is two kilobytes. Then, with the stick in the Mac:
 
 ```
-make stick-log                          # /home/diagnose.txt -> build/stick-diagnose.txt
-make stick-log FILE=/home/log.txt       # what `log save` wrote
+make stick-log                          # /Home/diagnose.txt -> build/stick-diagnose.txt
+make stick-log FILE=/Home/log.txt       # what `log save` wrote
 ```
 
 `tools/sticklog.sh` offers only external physical drives, as `mkusb.sh` does,
@@ -1583,23 +1583,23 @@ first version found by waiting at the prompt for one and writing nothing.
 **A unit is a name, and 5d's was not.** In 5d a unit was the Nth stick ready,
 counting controllers and then slots. The disk server keeps the unit it found
 its partition on, so a stick plugged into an earlier controller would have
-made itself unit 0, moved `/home`'s stick to 1, and taken `/home`'s next
+made itself unit 0, moved `/Home`'s stick to 1, and taken `/Home`'s next
 requests. It was found by reading 5d's own paragraph on units, before any
 stick was written, and `usb_second_stick` is the check. Now a stick is given
 the next number never given out as it becomes ready and keeps it until it
 leaves; `BLOCK_OP_INFO` answers how many have been given, so `sticks` and the
 disk server walk up to it and step over the gaps. A stick that leaves takes
-`/home` with it until the machine starts again, rather than another stick's
+`/Home` with it until the machine starts again, rather than another stick's
 blocks being written.
 
-### 5f: a stick whose `/home` is a partition of its own
+### 5f: a stick whose `/Home` is a partition of its own
 
 **`make MEGA=1 x86-usb-image USB_HOME=partition`** writes the stick's kfs disk
 into a second partition, of Kosmos's type, right after the EFI system
 partition, rather than as `\boot\disk.img` inside it; and it puts
 `opt/kosmos/home=` and that partition's unique GUID on the kernel's command
 line, in `\boot\kosmos.cmdline`. Kosmos starts with no disk in memory, and the
-disk server opens the partition through the USB driver as `/home`, on the
+disk server opens the partition through the USB driver as `/Home`, on the
 stick the machine started from. Without `USB_HOME` nothing changes: the stick
 is the layout that has booted (`boot.md` §1).
 
@@ -1649,15 +1649,15 @@ names that partition when one differs, rather than calling it the backup GPT.
   holds **no backup** table, which is the image rather than the stick:
   `mkusb_image.py` writes the backup where the image ends, 475202 blocks in,
   and the firmware boots it anyway. **And written**: the `c70d9df` stick, whose
-  `/home` is its own partition (5f), booted there with no disk in memory, and
-  a file saved to `/home` read back.
-- **A stick that leaves while `/home` is on it.** The disk server's requests
-  are refused as no stick at that unit, and `/home` stays gone until the
+  `/Home` is its own partition (5f), booted there with no disk in memory, and
+  a file saved to `/Home` read back.
+- **A stick that leaves while `/Home` is on it.** The disk server's requests
+  are refused as no stick at that unit, and `/Home` stays gone until the
   machine starts again: a stick put back is a new unit. The journal is what
   covers a write in flight. QEMU can pull a stick (`device_del`), and no check
   does it yet.
 - **A stick that never comes**: with `opt/kosmos/home=usb` and no Kosmos
-  partition anywhere, the machine waits twenty seconds for `/home` and then
+  partition anywhere, the machine waits twenty seconds for `/Home` and then
   keeps it in memory.
 - **What a flush buys** is not visible under QEMU, whose stick writes straight
   to a file: the check sees the driver say one was sent and kept, not a power
@@ -1685,19 +1685,19 @@ names that partition when one differs, rather than calling it the backup GPT.
   4096 to 32734; the first boot formats it and saves a file; the driver says the
   stick kept the save's flush; and the second boot - a machine that has never
   seen the stick - reads the file back.
-- **`usb_second_stick`**, 4 checks (5e): `/home` on a stick on the second
+- **`usb_second_stick`**, 4 checks (5e): `/Home` on a stick on the second
   controller and a file saved; then a stick with a partition of its own plugged
   into the first controller through QEMU's monitor, read by the driver, and a
   second file saved. Not one of the new stick's blocks differs from what it
-  held; both files are in `/home`; and `sticks` shows `/home`'s stick as unit 0
+  held; both files are in `/Home`; and `sticks` shows `/Home`'s stick as unit 0
   and the new one as unit 1.
 - **`usb_home_late`**, 3 checks (5e): the machine started with
   `opt/kosmos/home=usb` and no stick in, and the stick plugged in five seconds
   after the driver says it is watching. The driver reads it and a prompt comes;
-  `diskinfo` says `/home` is the Kosmos partition; and a file saved there has
+  `diskinfo` says `/Home` is the Kosmos partition; and a file saved there has
   extents on a disk. Controls in `testing.md` §18.60.
 - **`usb_home_named`**, 3 checks (5f): two sticks with a Kosmos partition each,
-  and `opt/kosmos/home` naming the second's GUID in small letters. `/home` is
+  and `opt/kosmos/home` naming the second's GUID in small letters. `/Home` is
   that stick's partition, on unit 1; a file saved there has extents; and the
   other stick's blocks are unchanged.
 - **`cmdline_long`**, 1 check (5f): a word at the end of a 335-character
@@ -1705,9 +1705,9 @@ names that partition when one differs, rather than calling it the backup GPT.
 - **`tools/run_uefi.py`'s home stick**, 4 checks (5f): the stick `mkusb_image.py
   --home` makes, booted through OVMF with no screen. The loader hands over no
   disk and a kernel that is the build's; `sys.boot` gives the partition's GUID
-  from the stick's command line; `diskinfo` says `/home` is that partition; and
+  from the stick's command line; `diskinfo` says `/Home` is that partition; and
   a file saved there has extents. `test_stickcheck.py` asks about the same
-  stick: itself, and a byte of its partition changed, named as `/home`'s
+  stick: itself, and a byte of its partition changed, named as `/Home`'s
   partition. Controls in `testing.md` §18.61.
 
 ---
@@ -1795,7 +1795,7 @@ the reply's 1024 bytes of data, so the reply is the size it was, and a
   over anything else, because it belongs to the filesystem.
 - **A GPT partition's unique GUID**, bytes 16 to 31 of its entry, for anything
   with no serial of its own - a kfs volume on a stick. It is the same GUID the
-  stick's command line already names `/home`'s partition by.
+  stick's command line already names `/Home`'s partition by.
 - **Nothing**, for a volume on an MBR drive whose filesystem carries no serial.
 
 The namespace hands it to Lua as text that says what it is -
@@ -2560,7 +2560,7 @@ it is built). Diego chose H.264, "as all modern video players are h264".
 - **Never mirrored**: the kit reads the camera's bytes; the mirror is the
   window's.
 - **All of its memory in regions**: the encoder's frames, and the file whole,
-  written with one `write_from` into `/home/videos` when it stops - which
+  written with one `write_from` into `/Home/videos` when it stops - which
   kfs takes at any size since 0.10.162 (`design.md` 8.3b). `minimp4`'s own
   allocations come from an arena at the end of the encoder's region, a stack
   that takes back the two copies of every NAL unit it makes and gives up.
@@ -2570,7 +2570,7 @@ it is built). Diego chose H.264, "as all modern video players are h264".
   minutes and seconds on the picture; the file's name and size in the foot;
   the size greyed while it records. R does it from the keyboard, as M
   mirrors. The foot says the file's name rather than its path - the folder
-  is always `/home/videos`, and at the machine's 18 the path ran into
+  is always `/Home/videos`, and at the machine's 18 the path ran into
   "Mirrored".
 
 Recorded under QEMU on the test pattern, 640 x 480: 128 frames in four

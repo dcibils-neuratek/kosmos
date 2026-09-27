@@ -2,10 +2,10 @@
 -- Media: a file played, whoever is playing it.
 --
 --   local media = use("/lib/media.lua")
---   local p, why = media.open("/home/song.mp3")
+--   local p, why = media.open("/Home/song.mp3")
 --   p:play()                     -- and p:tick() on the caller's own tick
 --   p:seek(90)   p:position()   p:volume(0.5)   p:finished()   p:close()
---   media.tags("/home/song.mp3")   -- { title, artist, album, ..., cover }
+--   media.tags("/Home/song.mp3")   -- { title, artist, album, ..., cover }
 --
 -- **The engine under Music, and under a video app later** (`docs/music.html`,
 -- decided with Diego on 14 September 2026). Playing a file is the same work

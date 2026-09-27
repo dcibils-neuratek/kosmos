@@ -27,7 +27,7 @@
 
 local ui = use("/lib/ui.lua")
 
-local SETTINGS = "/home/.startup"
+local SETTINGS = "/Home/.startup"
 
 local W, H = 320, 340
 

@@ -2,14 +2,14 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """The Camera app records, on a machine with a disk (`roadmap.md` 6d 8f).
 
-The display harness's machines have no disk - `/home` is in memory there, and
+The display harness's machines have no disk - `/Home` is in memory there, and
 a recording is kept whole in a region and written with one `write_from`,
 which only kfs takes - so this boots its own, with a scratch disk the machine
 formats itself and the driver's test pattern for a camera.
 
 The Camera app opens on the pattern; R starts a recording and R stops it,
 four seconds later; the app says how many frames and bytes it kept and where.
-Then, at the prompt, the file is asked for: that size, in `/home/videos`, and
+Then, at the prompt, the file is asked for: that size, in `/Home/videos`, and
 read by the video player's own MP4 reader - one H.264 track, the pattern's
 size, as many samples as frames, the first a key frame. And played
 (`roadmap.md` 4e): every frame decoded by FFmpeg through `/lib/video.lua`,
@@ -114,9 +114,9 @@ def main():
         guest.sendkey("r")
         started = guest.wait_for_line("camera: recording to ",
                                       "a recording to start", mark)
-        check(started.startswith("/home/videos/")
+        check(started.startswith("/Home/videos/")
               and started.endswith(".mp4"),
-              "the recording is not going into /home/videos as an MP4: %r"
+              "the recording is not going into /Home/videos as an MP4: %r"
               % started)
 
         time.sleep(4)
@@ -146,7 +146,7 @@ def main():
         got = row.groups() if row else None
 
         check(got is not None and got[0] == str(size),
-              "the file in /home/videos is not the %d bytes the app kept: %r"
+              "the file in /Home/videos is not the %d bytes the app kept: %r"
               % (size, got))
         check(got is not None and got[1:6] == ("1", "video", "avc1", "640",
                                                "480"),
@@ -196,7 +196,7 @@ def main():
         return 1
 
     print("PASS: %d checks on recording the camera (R, four seconds, R: %d "
-          "frames in %d bytes kept in /home/videos, read back as one H.264 "
+          "frames in %d bytes kept in /Home/videos, read back as one H.264 "
           "track of the pattern's size and frames, and played: every frame "
           "decoded by FFmpeg through /lib/video.lua, %.1f ms each under "
           "QEMU, and the eight bars their colours: %s)"

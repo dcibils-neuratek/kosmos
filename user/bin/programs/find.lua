@@ -2,7 +2,7 @@
 -- Everything whose attributes match.
 --
 --   find kind=note                  everywhere that can answer
---   find /home kind=note            just there
+--   find /Home kind=note            just there
 --   find kind=person city=Montevideo
 --
 -- The filesystem answers out of an index, so this costs the size of the

@@ -453,10 +453,10 @@ def main():
     mp3_with_cover(cover_in, COVER)
     snes_rom(rom_in)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
-                    wav_in + ":/home/tone.wav", vbr_in + ":/home/vbr.mp3",
-                    cover_in + ":/home/cover.mp3",
-                    rom_in + ":/home/kosmos-test.sfc",
-                    film_in + ":/home/tiny.mp4"], check=True,
+                    wav_in + ":/Home/tone.wav", vbr_in + ":/Home/vbr.mp3",
+                    cover_in + ":/Home/cover.mp3",
+                    rom_in + ":/Home/kosmos-test.sfc",
+                    film_in + ":/Home/tiny.mp4"], check=True,
                    capture_output=True, cwd=os.path.dirname(HERE))
 
     # Both read by run_screenshot when it is imported, so they are set first.
@@ -470,10 +470,10 @@ def main():
     # typed to start it - which the shell echoes - never holds the words
     # waited for.
     program = ('local media = use("/lib/media.lua") '
-               'local v = assert(media.open("/home/vbr.mp3")) '
+               'local v = assert(media.open("/Home/vbr.mp3")) '
                'print("media" .. ": vbr " .. v.info.seconds .. " s " .. v.info.bitrate '
                '.. " kbps " .. tostring(v.info.vbr)) v:close() '
-               'local p = assert(media.open("/home/tone.wav")) '
+               'local p = assert(media.open("/Home/tone.wav")) '
                'local hz = fs.read("/Devices/cpu").counter_hz '
                'local function run(s) local stop = sys.ticks() + math.floor(s * hz) '
                'while sys.ticks() < stop and not p:finished() do p:tick() sys.sleep(1) end end '
@@ -538,7 +538,7 @@ def main():
         #
         film_program = (
             'local media = use("/lib/media.lua") '
-            'local f, why = media.open("/home/tiny.mp4") '
+            'local f, why = media.open("/Home/tiny.mp4") '
             'if not f then print("film" .. ": no " .. tostring(why)) return end '
             'print("film" .. ": " .. f.codec .. " " .. f.width .. "x" .. f.height '
             '.. " " .. f.frames .. " frames " .. string.format("%.2f", f.duration) '
@@ -552,7 +552,7 @@ def main():
             'print("film" .. ": greys " .. table.concat(said, " ")) '
             'print("film" .. ": dropped " .. f.dropped) '
             'f:close() '
-            'local bad, badwhy = media.open("/home/vbr.mp3") '
+            'local bad, badwhy = media.open("/Home/vbr.mp3") '
             'print("film" .. ": an mp3 opens as " .. tostring(bad ~= nil)) '
             'print("film" .. ": done")')
 
@@ -634,7 +634,7 @@ def main():
             'local page = sys.memory(1024) '
             'local n = 0 '
             'for _ = 1, 1200 do '
-            '  local got = fs.read_into("/home/tiny.mp4", page, 0, 4096) '
+            '  local got = fs.read_into("/Home/tiny.mp4", page, 0, 4096) '
             '  if not got then break end '
             '  n = n + 1 '
             'end '
@@ -685,7 +685,7 @@ def main():
                     'local hz = fs.read("/Devices/cpu").counter_hz '
                     'local was = audio.stats() '
                     'audio.set{ master_muted = %s } '
-                    'local p = assert(media.open("/home/tone.wav")) '
+                    'local p = assert(media.open("/Home/tone.wav")) '
                     'local stop = sys.ticks() + hz '
                     'p:play() while sys.ticks() < stop and not p:finished() do '
                     'p:tick() sys.sleep(1) end p:close() '
@@ -728,7 +728,7 @@ def main():
         # The window: Music on the same tone, Play, then the bar.
         #
         mark = len(guest.seen)
-        guest.type("wm music:/home/tone.wav")
+        guest.type("wm music:/Home/tone.wav")
 
         where = None
         deadline = time.monotonic() + 60
@@ -815,7 +815,7 @@ def main():
     try:
         guest.wait_for(PROMPT, "reached a shell")
         mark = len(guest.seen)
-        guest.type("wm snes:/home/kosmos-test.sfc")
+        guest.type("wm snes:/Home/kosmos-test.sfc")
 
         def window_of(since, size, seconds=60):
             deadline = time.monotonic() + seconds
@@ -1027,7 +1027,7 @@ def main():
     def from_disk(name):
         out = scratch.path(name)
         got = subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", disk,
-                              "/home/" + name, out], capture_output=True,
+                              "/Home/" + name, out], capture_output=True,
                              cwd=os.path.dirname(HERE))
 
         if got.returncode != 0:
@@ -1040,12 +1040,12 @@ def main():
     state = from_disk("kosmos-test.state")
 
     check(srm is not None and len(srm) == 2048 and srm[0] == SAVED_BYTE,
-          "/home/kosmos-test.srm is not the cartridge's 2 KB with %02Xh "
+          "/Home/kosmos-test.srm is not the cartridge's 2 KB with %02Xh "
           "first: %r" % (SAVED_BYTE, srm[:4] if srm else srm))
     check(state is not None and len(state) > 64 * 1024
           and state[0:4] == b"LSSF"
           and struct.unpack("<I", state[8:12])[0] == len(state),
-          "/home/kosmos-test.state is not a LakeSnes state of its own "
+          "/Home/kosmos-test.state is not a LakeSnes state of its own "
           "length: %d bytes, %r" % (len(state or b""), (state or b"")[:12]))
 
     #
@@ -1069,7 +1069,7 @@ def main():
         program = (
             "local ui = use('/lib/ui.lua') "
             "local media = use('/lib/media.lua') "
-            "local name, cw, ch = media.cover('/home/cover.mp3') "
+            "local name, cw, ch = media.cover('/Home/cover.mp3') "
             "if not name then print('cover: ' .. tostring(cw)) return end "
             "print('cover: ' .. name .. ' ' .. tostring(cw) .. 'x' .. tostring(ch)) "
             "local w = ui.window{ title = 'Cover', w = 200, h = 200, "
@@ -1170,11 +1170,11 @@ def main():
 
     try:
         guest.wait_for(PROMPT, "reached a shell")
-        guest.type('fs.write("/home/.appearance", { palette = "dark", fonts = { '
+        guest.type('fs.write("/Home/.appearance", { palette = "dark", fonts = { '
                    'ui = { font = "ibmplexsans", px = 14 } } }) '
                    'print("music-face" .. "-ready")')
         guest.wait_for("music-face-ready", "chose a scalable face")
-        guest.type("wm music:/home/cover.mp3")
+        guest.type("wm music:/Home/cover.mp3")
 
         mark = len(guest.seen)
         placed, deadline = None, time.monotonic() + 60
@@ -1277,7 +1277,7 @@ def main():
 
     #
     # **And a folder Music cannot list says why.** On the ThinkPad Music said
-    # "(nothing to play in /home)" beside a Tracker window listing the MP3, and
+    # "(nothing to play in /Home)" beside a Tracker window listing the MP3, and
     # could not have said anything else: a list that failed and a folder with
     # no music in it looked the same. Pointed at a folder that is not there, it
     # has to name the folder and the reason, in the log `diagnose` keeps. A
@@ -1288,13 +1288,13 @@ def main():
     try:
         guest.wait_for(PROMPT, "reached a shell")
         mark = len(guest.seen)
-        guest.type("wm music:/home/nowhere/song.mp3")
+        guest.type("wm music:/Home/nowhere/song.mp3")
 
         said = None
         deadline = time.monotonic() + 60
 
         while said is None and time.monotonic() < deadline:
-            said = re.search(r"music: could not list /home/nowhere: \S",
+            said = re.search(r"music: could not list /Home/nowhere: \S",
                              guest.seen[mark:])
             time.sleep(0.25)
 
@@ -1329,7 +1329,7 @@ def main():
     run_screenshot.use_audiodev("none,id=snd0")
 
     clock = ('local media = use("/lib/media.lua") '
-             'local p = assert(media.open("/home/tone.wav")) '
+             'local p = assert(media.open("/Home/tone.wav")) '
              'local hz = fs.read("/Devices/cpu").counter_hz '
              'local t0 = sys.ticks() '
              'p:play() '

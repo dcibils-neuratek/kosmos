@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The Deskbar's menu, read off the disk.
 --
--- `/home/Deskbar` holds a folder per section, each holding launchers, and a
+-- `/Home/Deskbar` holds a folder per section, each holding launchers, and a
 -- folder inside one of those is a submenu. This turns that into the shape
 -- the menu draws, and it is the whole of the rule: **a thing appears in the
 -- menu because a launcher file exists.** Nothing here invents an item, so
@@ -164,9 +164,9 @@ end
 -- **What to add to the menu**: the applications `/bin` declares that the
 -- menu has never been given.
 --
--- The menu was made once, the first time `/home/Deskbar` did not exist,
+-- The menu was made once, the first time `/Home/Deskbar` did not exist,
 -- and never again - so every application that arrived after that had no
--- launcher, and on a `/home` older than Preferences there was no
+-- launcher, and on a `/Home` older than Preferences there was no
 -- Preferences in the menu at all (Diego, 24 September: "where is the
 -- preferences app in the menu? please add it").
 --

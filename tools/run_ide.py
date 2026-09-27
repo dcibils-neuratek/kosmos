@@ -16,7 +16,7 @@ The picture has Lua's keyword colour in it, from either of the drawing's
 two palettes, where the editor is.
 
 Then `wm ide` alone opens the same project with the same file, from what it
-remembered in /home/.ide; and Control-W twice - the window manager's prefix,
+remembered in /Home/.ide; and Control-W twice - the window manager's prefix,
 then itself - closes the tab, which the IDE says.
 
 Then Run and Stop, checking, suggestions, the text's size and the scrollbar,
@@ -36,7 +36,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                   # noqa: E402
 
-FILE = "/home/development/c.lua"
+FILE = "/Home/development/c.lua"
 BEFORE = "local ui = 1\\nlocal function f(c)\\nreturn c\\nend\\n"
 WANT = "local ui = 1\nlocal function f(c)\n  return c\nend\ny = 2\n"
 
@@ -86,7 +86,7 @@ def main():
 
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
-        guest.type('fs.send("/home/development", { type = "mkdir" })')
+        guest.type('fs.send("/Home/development", { type = "mkdir" })')
         time.sleep(1)
         guest.type('fs.write("%s", "%s")' % (FILE, BEFORE))
         time.sleep(1)
@@ -94,7 +94,7 @@ def main():
         mark = len(guest.seen)
         guest.type("wm ide:" + FILE)
         opened = said("ide: project ", mark, 90)
-        check(opened == "/home/development, 1 files open",
+        check(opened == "/Home/development, 1 files open",
               "the IDE did not open the file it was given, with its folder as "
               "the project: %r" % opened)
 
@@ -148,7 +148,7 @@ def main():
         mark = len(guest.seen)
         guest.type("wm ide")
         again = said("ide: project ", mark, 90)
-        check(again == "/home/development, 1 files open",
+        check(again == "/Home/development, 1 files open",
               "the IDE did not come back to the project and its file: %r" % again)
         check(said("ide: opened ", mark, 5) == FILE,
               "the file it came back with was not the one open before")
@@ -157,13 +157,13 @@ def main():
         # second line, run with Ctrl+Enter as it is on the screen, and the
         # IDE saying how it ended - the error's line found in what it wrote.
         # A line typed at its top first and not saved, so what runs is the
-        # screen's copy, in /home/.ide-run: the error is on line 3.
+        # screen's copy, in /Home/.ide-run: the error is on line 3.
         stop_desktop()
-        guest.type('fs.write("/home/development/r.lua", '
+        guest.type('fs.write("/Home/development/r.lua", '
                    '"print(\\"ran\\")\\nerror(\\"boom\\")\\n")')
         time.sleep(1)
         mark = len(guest.seen)
-        guest.type("wm ide:/home/development/r.lua")
+        guest.type("wm ide:/Home/development/r.lua")
         said("ide: project ", mark, 90)
         time.sleep(1.5)
 
@@ -238,10 +238,10 @@ def main():
         # **Stop**: a program that never ends, run with F5 and stopped with
         # Shift+F5.
         stop_desktop()
-        guest.type('fs.write("/home/development/s.lua", "while true do end\\n")')
+        guest.type('fs.write("/Home/development/s.lua", "while true do end\\n")')
         time.sleep(1)
         mark = len(guest.seen)
-        guest.type("wm ide:/home/development/s.lua")
+        guest.type("wm ide:/Home/development/s.lua")
         said("ide: project ", mark, 90)
         time.sleep(1.5)
 
@@ -261,11 +261,11 @@ def main():
         # never set - and then a stray `end` typed, which Lua's own parser
         # names a moment after the typing stops, and Ctrl+Z takes back.
         stop_desktop()
-        guest.type('fs.write("/home/development/p.lua", '
+        guest.type('fs.write("/Home/development/p.lua", '
                    '"local unused = 1\\nprint(undefined_thing)\\nio.write(1)\\n")')
         time.sleep(1)
         mark = len(guest.seen)
-        guest.type("wm ide:/home/development/p.lua")
+        guest.type("wm ide:/Home/development/p.lua")
         checked = said("ide: checked p.lua: ", mark, 120)
         check(checked == "1 errors, 2 warnings",
               "p.lua was not checked as it opened to one error and two "
@@ -306,11 +306,11 @@ def main():
         # typed on a new line, `ui.` offering ui.lua's names, `sl` and Tab
         # taking `slider`, and `win:` offering a window's methods.
         stop_desktop()
-        guest.type('fs.write("/home/development/u.lua", "local ui = use(\\"/lib/ui.lua\\")\\n'
+        guest.type('fs.write("/Home/development/u.lua", "local ui = use(\\"/lib/ui.lua\\")\\n'
                    'local win = ui.window{}\\nlocal s = ui.slidr{}\\nprint(s, win)\\n")')
         time.sleep(1)
         mark = len(guest.seen)
-        guest.type("wm ide:/home/development/u.lua")
+        guest.type("wm ide:/Home/development/u.lua")
         checked = said("ide: checked u.lua: ", mark, 120)
         check(checked == "1 errors, 0 warnings",
               "ui.slidr was not the one error, asked of ui.lua: %r" % checked)
@@ -364,13 +364,13 @@ def main():
         press("ctrl-p", "u", "dot", "l")
         listed = said("ide: find u.l: ", mark, 30)
         check(listed is not None
-              and re.match(r"\d+ files: /home/development/u\.lua yours, ", listed),
+              and re.match(r"\d+ files: /Home/development/u\.lua yours, ", listed),
               "u.l did not list the project's u.lua first, as yours: %r" % listed)
         press("esc")
 
         stop_desktop()
         mark = len(guest.seen)
-        guest.type('print("last" .. "-line:" .. fs.read("/home/development/u.lua"):match("([^\\n]*)\\n$"))')
+        guest.type('print("last" .. "-line:" .. fs.read("/Home/development/u.lua"):match("([^\\n]*)\\n$"))')
         check(said("last-line:", mark, 20) == "ui.slider",
               "the name taken did not reach the file")
     finally:

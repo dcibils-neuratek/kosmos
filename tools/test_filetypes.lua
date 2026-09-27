@@ -27,16 +27,16 @@ end
 -- The extension, for a file with nothing else to say.
 --------------------------------------------------------------------------
 
-check(types.kind_of("/home/notes.txt") == "txt",
+check(types.kind_of("/Home/notes.txt") == "txt",
       "a .txt is a txt")
 
-check(types.opener("/home/notes.txt") == "editor",
+check(types.opener("/Home/notes.txt") == "editor",
       "and the editor opens it")
 
-check(types.kind_of("/home/nothing") == nil,
+check(types.kind_of("/Home/nothing") == nil,
       "a file with no extension has no type")
 
-check(types.opener("/home/nothing") == nil,
+check(types.opener("/Home/nothing") == nil,
       "so nothing claims it")
 
 --
@@ -44,27 +44,27 @@ check(types.opener("/home/nothing") == nil,
 -- read as a file of type "appearance" and put a word in Tracker's Kind
 -- column that nothing in the system had heard of.
 --
-check(types.kind_of("/home/.appearance") == nil,
+check(types.kind_of("/Home/.appearance") == nil,
       "a name that merely starts with a dot has no extension")
 
 --------------------------------------------------------------------------
 -- The attribute wins, and that is the branch that matters.
 --------------------------------------------------------------------------
 
-check(types.kind_of("/home/notes.txt", { type = "book" }) == "book",
+check(types.kind_of("/Home/notes.txt", { type = "book" }) == "book",
       "the type attribute beats the extension")
 
-check(types.kind_of("/home/no-extension-at-all", { type = "png" }) == "png",
+check(types.kind_of("/Home/no-extension-at-all", { type = "png" }) == "png",
       "and gives a type to a file whose name could not")
 
-check(types.opener("/home/anything", { type = "pdf" }) == "pdfview",
+check(types.opener("/Home/anything", { type = "pdf" }) == "pdfview",
       "the program follows from the type, not from the name")
 
 --------------------------------------------------------------------------
 -- A launcher, which is the first real user of any of this.
 --------------------------------------------------------------------------
 
-check(types.kind_of("/home/Deskbar/Demos/doom",
+check(types.kind_of("/Home/Deskbar/Demos/doom",
                     { kind = "launcher", type = "launcher" }) == "launcher",
       "a launcher written today is of type launcher")
 
@@ -74,10 +74,10 @@ check(types.kind_of("/home/Deskbar/Demos/doom",
 -- what they carry - so reading it here is what saves a migration to teach
 -- them a word they already knew.
 --
-check(types.kind_of("/home/Desktop/Drive", { kind = "launcher" }) == "launcher",
+check(types.kind_of("/Home/Desktop/Drive", { kind = "launcher" }) == "launcher",
       "a launcher with only `kind` is still a launcher")
 
-check(types.opener("/home/Desktop/Drive", { kind = "launcher" })
+check(types.opener("/Home/Desktop/Drive", { kind = "launcher" })
       == "launcheredit",
       "and the launcher editor is what handles the type")
 
@@ -86,7 +86,7 @@ check(types.opener("/home/Desktop/Drive", { kind = "launcher" })
 -- icon would be the machinery showing through, so a launcher is never
 -- identified by its name.
 --
-check(types.kind_of("/home/Desktop/Drive") == nil,
+check(types.kind_of("/Home/Desktop/Drive") == nil,
       "a launcher is not recognised by its name, because it has no mark "
       .. "in its name to recognise")
 
@@ -96,7 +96,7 @@ check(types.kind_of("/home/Desktop/Drive") == nil,
 -- otherwise, and Tracker tests `kind == "directory"` before it ever asks.
 -- This pins the order the two are read in.
 --
-check(types.kind_of("/home/odd.txt", { kind = "directory" }) == "txt",
+check(types.kind_of("/Home/odd.txt", { kind = "directory" }) == "txt",
       "only a launcher is read out of `kind`; anything else falls through "
       .. "to the extension")
 
@@ -126,30 +126,30 @@ check(types.declares(blank, "application"),
 check(not types.declares(nil, "application"),
       "no source declares nothing")
 
-local how = types.how_to_open("/home/clock.lua", nil, app)
+local how = types.how_to_open("/Home/clock.lua", nil, app)
 
-check(how and how.program == "/home/clock.lua" and how.args == "",
+check(how and how.program == "/Home/clock.lua" and how.args == "",
       "an application opens as itself")
 
-how = types.how_to_open("/home/diego.lua", nil, console)
+how = types.how_to_open("/Home/diego.lua", nil, console)
 
-check(how and how.program == "terminal" and how.args == "/home/diego.lua",
+check(how and how.program == "terminal" and how.args == "/Home/diego.lua",
       "a console program opens in a Terminal, which is handed its path")
 
-how = types.how_to_open("/home/diego.lua", nil, nil)
+how = types.how_to_open("/Home/diego.lua", nil, nil)
 
 check(how and how.program == "terminal",
       "a Lua file whose source could not be read still runs in a Terminal")
 
-how = types.how_to_open("/home/notes.txt")
+how = types.how_to_open("/Home/notes.txt")
 
-check(how and how.program == "editor" and how.args == "/home/notes.txt",
+check(how and how.program == "editor" and how.args == "/Home/notes.txt",
       "anything else opens in what handles its type, as before")
 
-check(types.how_to_open("/home/nothing") == nil,
+check(types.how_to_open("/Home/nothing") == nil,
       "and a file nothing claims still opens in nothing")
 
-check(types.opener("/home/diego.lua") == "editor",
+check(types.opener("/Home/diego.lua") == "editor",
       "the editor is still what handles a .lua, for Edit")
 
 if failed == 0 then

@@ -249,7 +249,7 @@ def main():
     config, sound, ref = aac_frames()
     film(path, config, sound)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
-                    path + ":/home/sound.mp4"], check=True,
+                    path + ":/Home/sound.mp4"], check=True,
                    capture_output=True, cwd=ROOT)
 
     os.environ["KOSMOS_DISK"] = disk
@@ -272,7 +272,7 @@ def main():
 
         mark = os.path.getsize(wav) if os.path.exists(wav) else WAV_HEADER
         seen = len(guest.seen)
-        guest.type("/Temporary/film.lua /home/sound.mp4")
+        guest.type("/Temporary/film.lua /Home/sound.mp4")
         guest.wait_for("FILM-DONE", "the film to play through")
         said = re.search(r"^FILM (\S+) (\S+) ([\d.]+) ([\d.]+) (\d+) "
                          r"(.*?)\r?$", guest.seen[seen:], re.M)
@@ -321,7 +321,7 @@ def main():
         time.sleep(1.0)
         mark = os.path.getsize(wav)
         seen = len(guest.seen)
-        guest.type("/Temporary/seek.lua /home/sound.mp4")
+        guest.type("/Temporary/seek.lua /Home/sound.mp4")
         guest.wait_for("SEEK-DONE", "the paused and sought film")
         row = re.search(r"^SEEK ([\d.]+) ([\d.]+) ([\d.]+)",
                         guest.seen[seen:], re.M)
@@ -350,7 +350,7 @@ def main():
 
         # And the Video app, on the same film.
         seen = len(guest.seen)
-        guest.type("wm video:/home/sound.mp4")
+        guest.type("wm video:/Home/sound.mp4")
         line = guest.wait_for_line("video: sound.mp4, ", "the Video app",
                                    seen)
         check("sound AAC-LC, heard" in line,

@@ -29,7 +29,7 @@
  * the namespace of every running program, which nothing can do. A server
  * behind one prefix needs none of that: the matcher routes
  * `/Drives/PHOTOS 2024/Italy` to it with the rest of the path intact,
- * exactly as `/home` is routed today.
+ * exactly as `/Home` is routed today.
  *
  * **Nothing here writes.** There is no write, no delete, no rename, and the
  * server is given the USB driver's *read* endpoint and never the write one -

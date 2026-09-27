@@ -18,7 +18,7 @@
 -- test harnesses and benchmarks that nobody starts by name. A launcher
 -- offering all of them is a list you have to read rather than glance at.
 --
--- **`/home/Deskbar` is the menu, and the menu is the answer to "what can I
+-- **`/Home/Deskbar` is the menu, and the menu is the answer to "what can I
 -- start".** A thing is in it because somebody made a launcher for it, which
 -- is exactly the judgement this needs and one already being made. So this
 -- reads the same tree the Deskbar does, through the same library, and a
@@ -59,7 +59,7 @@ local function everything()
     end
   end
 
-  for _, section in ipairs(menu.sections(fs, "/home/Deskbar") or {}) do
+  for _, section in ipairs(menu.sections(fs, "/Home/Deskbar") or {}) do
     walk(section.items)
   end
 

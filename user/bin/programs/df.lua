@@ -83,7 +83,7 @@ for _, prefix in ipairs(storage) do
 end
 
 -- And the one mount that keeps a real total. Read through whichever disk
--- mount answers, because /home, /system and /user are three views of one
+-- mount answers, because /Home, /system and /user are three views of one
 -- filesystem.
 local sb
 
@@ -109,5 +109,5 @@ elseif sb and sb.formatted then
                 files.size(sb.blocks * sb.block_size),
                 sb.free_blocks, sb.blocks))
 else
-  print("disk: none formatted; /home is in memory and will not survive")
+  print("disk: none formatted; /Home is in memory and will not survive")
 end

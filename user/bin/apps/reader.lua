@@ -4,7 +4,7 @@
 -- A markdown viewer: manuals and tutorials, inside the system they describe.
 --
 --   wm reader                     the guide that ships in the image
---   wm reader:/home/notes.md      any file
+--   wm reader:/Home/notes.md      any file
 --
 --   arrows, PageUp/PageDown       move
 --   Open                          choose a file
@@ -134,7 +134,7 @@ end
 
 local function open_one()
   local chooser = panel.open{
-    start = path and path:match("^(.*)/") or "/home",
+    start = path and path:match("^(.*)/") or "/Home",
     on_choose = function(chosen) load(chosen) end,
   }
 
@@ -180,7 +180,7 @@ print("hello from Kosmos")
 
 ## Reading a file
 
-Press Open and choose one. `wm reader:/home/notes.md` opens it directly.
+Press Open and choose one. `wm reader:/Home/notes.md` opens it directly.
 ]])
   relayout()
   header.sub = ("the built-in page · %d blocks, %d lines")

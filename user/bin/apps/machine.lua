@@ -45,7 +45,7 @@ local timer  = fs.read("/Devices/timer")    or {}
 local info   = sys.info() or {}
 local disk   = sys.disk()
 local net    = sys.net()
-local sb     = fs.read("/home/.super")
+local sb     = fs.read("/Home/.super")
 
 --
 -- **Plain text, in a column, and that is the whole change.**
@@ -257,7 +257,7 @@ if disk then
     row("Filesystem", "none (" .. tostring(sb.why) .. ")")
   end
 else
-  absent("Disk", "none attached; /home is in memory and will not survive")
+  absent("Disk", "none attached; /Home is in memory and will not survive")
 end
 
 --------------------------------------------------------------------------

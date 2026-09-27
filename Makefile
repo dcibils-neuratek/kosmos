@@ -2009,7 +2009,7 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # the file. `licence_for` finds `LICENSE` itself as the only licence in its
 # directory, so it is not reported as unlicensed.
 #
-# And `docs/cheatsheet.html`, which the desktop writes into `/home/Desktop`
+# And `docs/cheatsheet.html`, which the desktop writes into `/Home/Desktop`
 # whenever it finds it missing or different - see `tracker.lua`. It is the
 # project's own work, so there is no licence beside it and the generated
 # file says so, which is what that line of the report is for.
@@ -2261,7 +2261,7 @@ QEMU      := qemu-system-aarch64
 # made:
 #
 #   build/host/lua tools/kfs.lua create build/play.img 32 \
-#       ~/Downloads/book.pdf:/home/book.pdf
+#       ~/Downloads/book.pdf:/Home/book.pdf
 #
 #
 # **128 MB since 21 September**, because the solar system's baked textures
@@ -2274,7 +2274,7 @@ QEMU      := qemu-system-aarch64
 # boot - `tools/mkusb_image.py` refuses one and `docs/thinkpad.md` §6a has
 # why. That refusal is still there and is now the thing that catches it, so
 # **the old stick layout needs `make usb USB_HOME=disk DISK_MB=32`**; the
-# layout every stick has had since 19 September carries `/home` in a
+# layout every stick has had since 19 September carries `/Home` in a
 # partition of its own and does not use this disk at all.
 #
 DISK      := build/kosmos.img
@@ -2465,7 +2465,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) $(SMPARG)
 
 # A disk image, built here, with whatever you want already in it.
 #
-#   make image FILES="book.pdf:/home/books/book.pdf song.mp3:/home/music/a.mp3"
+#   make image FILES="book.pdf:/Home/books/book.pdf song.mp3:/Home/music/a.mp3"
 #
 # The same kfs.lua the machine runs, over a file. `tools/kfs.lua` also does
 # ls, put, get and rm on an existing image, which is how a file gets on and
@@ -2497,7 +2497,7 @@ bump-major:
 disk: $(DISK)
 
 #
-# A Dock icon you can drop files on, and they land in the image's /home.
+# A Dock icon you can drop files on, and they land in the image's /Home.
 #
 # The tedious part of putting a song or a PDF on the machine was never the
 # copy - it was remembering where the image is and what `kfs.lua put` wants
@@ -3026,7 +3026,7 @@ OVMF_VARS := $(shell brew --prefix qemu 2>/dev/null)/share/qemu/edk2-i386-vars.f
 # i8042's auxiliary port does not deliver yet and the TrackPoint is what it
 # will be; a disk, because the T14's is NVMe and there is no driver; and a
 # network card, because the I219 is not written either. The desktop comes up
-# keyboard-only with `/home` in memory, which is exactly what the first real
+# keyboard-only with `/Home` in memory, which is exactly what the first real
 # boot will look like.
 #
 # 16 GB and 1920x1080 because that is the machine. Both were faults once:
@@ -3081,22 +3081,22 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 # pak live. The loader reads it into memory and hands it over, and Kosmos
 # mounts it at boot, ahead of the machine's own drive; `hal/pc/blk_bind.c`
 # says why. Only a disk `kfs.lua` can read goes on: `make qemu` leaves an
-# empty one behind, and carrying that would hide a ThinkPad's NVMe `/home`
+# empty one behind, and carrying that would hide a ThinkPad's NVMe `/Home`
 # for nothing.
 #
-#     make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
+#     make image FILES="doom1.wad:/Home/doom1.wad pak0.pak:/Home/id1/pak0.pak"
 #     make MEGA=1 usb
 #
-# **Or `/home` in a partition of its own - the default since 19 September**
+# **Or `/Home` in a partition of its own - the default since 19 September**
 # (USB step 5f). A second partition beside the ESP, whose GUID the kernel is
-# told: Kosmos opens `/home` on the stick it started from through its own USB
+# told: Kosmos opens `/Home` on the stick it started from through its own USB
 # driver, and nothing is loaded into memory. **The ThinkPad has booted this
 # layout four times** - `c70d9df`, `9af841c`, `895aa3f` and `b5ce4a4`, the
 # last of which Diego used and called stable. It was a flag until 0.10.86 was
 # built without it, as `CLAUDE.md` read, and came out the other layout; so it
 # is the default, and `USB_HOME=disk` asks for the old one.
 #
-# **That `/home` is made fresh for each stick, from a folder on this Mac**:
+# **That `/Home` is made fresh for each stick, from a folder on this Mac**:
 # `HOME_DIR`, `~/Kosmos/home`, at `STICK_HOME_MB`, 512 - Diego, 19 September:
 # "from now on we need to make the drive image at least 512mb", "and i will
 # be adding more images, videos, etc". `tools/homeimage.py` has the rest. The
@@ -3119,7 +3119,7 @@ STICK_HOME    := build/stick-home.img
 x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	@if [ "$(USB_HOME)" = partition ]; then \
 	    python3 tools/homeimage.py "$(HOME_DIR)" $(STICK_HOME) $(STICK_HOME_MB) && \
-	    echo "$(HOME_DIR) goes on the stick as /home, $(STICK_HOME_MB) MB, in a partition of its own" && \
+	    echo "$(HOME_DIR) goes on the stick as /Home, $(STICK_HOME_MB) MB, in a partition of its own" && \
 	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --home $(STICK_HOME) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	elif [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
 	    echo "$(DISK) goes on the stick too: the loader reads it and Kosmos mounts it"; \
@@ -3131,14 +3131,14 @@ x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 usb: x86-usb-image
 	@bash tools/mkusb.sh $(USB_IMG)
 
-# A file from `/home` on a Kosmos stick, onto this Mac: `diagnose` on the
-# machine, then `make stick-log` here, which puts `/home/diagnose.txt` in
-# `build/stick-diagnose.txt` - `FILE=/home/log.txt` for what `log save` wrote,
-# or any other file, and `FILE=/home/acpi/` for a whole folder, into
+# A file from `/Home` on a Kosmos stick, onto this Mac: `diagnose` on the
+# machine, then `make stick-log` here, which puts `/Home/diagnose.txt` in
+# `build/stick-diagnose.txt` - `FILE=/Home/log.txt` for what `log save` wrote,
+# or any other file, and `FILE=/Home/acpi/` for a whole folder, into
 # `build/stick-acpi/`. It reads the stick and never writes it; macOS asks for a
 # password, because only root may read a whole disk (`tools/sticklog.sh`).
 stick-log: $(HOSTDIR)/lua
-	@bash tools/sticklog.sh $(if $(FILE),$(FILE),/home/diagnose.txt) $(HOSTDIR)/lua
+	@bash tools/sticklog.sh $(if $(FILE),$(FILE),/Home/diagnose.txt) $(HOSTDIR)/lua
 
 x86-uefi: x86-usb-image
 	@cp $(OVMF_VARS) $(X86_BUILD)/ovmf-vars.fd
@@ -3307,7 +3307,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# builds one, its Kosmos partition copied out by `sticklog.py`, and a log
 	@# taken from the copy by `kfs.lua`.
 	python3 tools/test_sticklog.py $(HOSTDIR)/lua
-	@# And the stick's /home, made from a folder on this Mac.
+	@# And the stick's /Home, made from a folder on this Mac.
 	python3 tools/test_homeimage.py
 	@# And a released stick fetched and checked on another Mac: getstick.sh
 	@# against a release on this disk, its mkusb.sh one that writes nothing.
@@ -3608,7 +3608,7 @@ quake-check: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory MEGA= FULL=0 QUAKE=1
 	python3 tools/run_quake.py build/kosmos.elf $(PAK)
 
-# The Super Nintendo on the machine: a ROM from `/home/roms/snes`, a window
+# The Super Nintendo on the machine: a ROM from `/Home/roms/snes`, a window
 # drawing the game, its sound out of a virtio-sound device and recorded to a
 # WAV, and how many frames a second the core really manages - which is the
 # number this port was started to find. Enter is pressed to get past title

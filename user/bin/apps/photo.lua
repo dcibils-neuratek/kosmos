@@ -5,7 +5,7 @@
 --
 --   wm photo                     the test pattern
 --   wm photo:image00.png         something else in assets/images/
---   wm photo:/home/holiday.png   a file on the disk
+--   wm photo:/Home/holiday.png   a file on the disk
 --
 -- The picture is named, not carried. This program never holds a pixel of
 -- it: it tells the window manager which picture to draw and where, and the
@@ -119,7 +119,7 @@ end
 
 local function open_one()
   local chooser = panel.open{
-    start = name:find("/") and (name:match("^(.*)/") or "/home") or "/home",
+    start = name:find("/") and (name:match("^(.*)/") or "/Home") or "/Home",
     title = "Open a picture",
     on_choose = function(chosen) show(chosen) end,
   }

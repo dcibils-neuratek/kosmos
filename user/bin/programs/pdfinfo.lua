@@ -1,8 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- What is inside a PDF.
 --
---   pdfinfo                     /home/odyssey.pdf
---   pdfinfo /home/other.pdf
+--   pdfinfo                     /Home/odyssey.pdf
+--   pdfinfo /Home/other.pdf
 --
 -- The object layer running on the machine rather than on the host. Until
 -- this existed `pdf.lua` had only ever been exercised by `test_pdf.lua`,
@@ -22,7 +22,7 @@
 local pdf      = use("/lib/pdf.lua")
 local compress = use("/kits/compress")
 
-local path = args[1] or "/home/odyssey.pdf"
+local path = args[1] or "/Home/odyssey.pdf"
 
 --------------------------------------------------------------------------
 -- A source over a file in the namespace.

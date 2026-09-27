@@ -4,10 +4,10 @@
 
 `diskbench` is the instrument Kosmos's storage is being made fast with
 (`roadmap.md`, *Being built now*), so what this holds it to is honesty rather
-than speed - QEMU's numbers measure QEMU. That it finds `/home`; that every
+than speed - QEMU's numbers measure QEMU. That it finds `/Home`; that every
 row it can run comes back with a number, and every row it cannot run says
 why instead of holding a number for something else; that the run is kept in
-`/home/benchmarks`, where a later one can be compared with it; and that the
+`/Home/benchmarks`, where a later one can be compared with it; and that the
 test file it wrote is gone afterwards, since a benchmark that leaves a file
 behind is one you run once.
 
@@ -41,13 +41,13 @@ BIG_WRITE = (
     'local N = 3 * 1024 * 1024 local r = sys.memory(N // 4096) '
     'for i = 0, N // 65536 - 1 do sys.region_write(r, i * 65536, '
     'string.rep(string.char(65 + i % 26), 65536)) end '
-    'local wrote = fs.write_from("/home/big.bin", r, N) '
-    'local a = fs.getattr("/home/big.bin") or {} '
+    'local wrote = fs.write_from("/Home/big.bin", r, N) '
+    'local a = fs.getattr("/Home/big.bin") or {} '
     'local r2 = sys.memory(N // 4096) '
-    'local got = fs.read_into("/home/big.bin", r2, 0, N) '
+    'local got = fs.read_into("/Home/big.bin", r2, 0, N) '
     'print("BIG", wrote, a.size, got, sys.region_read(r2, N - 3, 3), '
     'sys.region_read(r2, 65536 * 27, 2)) '
-    'fs.send("/home/big.bin", { type = "delete" }) '
+    'fs.send("/Home/big.bin", { type = "delete" }) '
     'sys.release(r) sys.release(r2)')
 RANDOM_WRITE = "not yet: a write replaces the whole file"
 
@@ -68,9 +68,9 @@ def main():
     try:
         out = run_disk.boot(image, disk,
                             ["diskbench",
-                             "diskbench /home 1 1",
-                             "ls /home/benchmarks",
-                             "ls /home/.diskbench",
+                             "diskbench /Home 1 1",
+                             "ls /Home/benchmarks",
+                             "ls /Home/.diskbench",
                              BIG_WRITE],
                             boot_timeout=120, each=180)
     finally:
@@ -83,8 +83,8 @@ def main():
     lines = out.splitlines()
     shown = "\n    ".join(l for l in lines if l.strip())
 
-    check(any(l.strip() == "/home" for l in lines),
-          "`diskbench` with no arguments did not list /home as something it "
+    check(any(l.strip() == "/Home" for l in lines),
+          "`diskbench` with no arguments did not list /Home as something it "
           "can measure:\n    " + shown)
 
     def row(name, queue):
@@ -114,7 +114,7 @@ def main():
               % (name, queue, QUEUED, r))
 
     # Storage at full speed, step 2: the disk server counts what its device
-    # cost, and each side measured on /home says how much of its run that was.
+    # cost, and each side measured on /Home says how much of its run that was.
     # Zero is a failure, not a fast device - it is what a server that stopped
     # counting would report.
     shares = re.findall(r"^\s+(sequential|random) (read|write): the device "
@@ -126,21 +126,21 @@ def main():
           and all(0 < dev <= 100 and dev + rest == 100
                   for dev, rest in got.values()),
           "where the time went did not give the device's share, above zero, "
-          "for the three sides measured on /home: %r" % (shares,))
+          "for the three sides measured on /Home: %r" % (shares,))
 
-    saved = re.search(r"saved (/home/benchmarks/([0-9A-Za-z-]+)\.bench)", out)
+    saved = re.search(r"saved (/Home/benchmarks/([0-9A-Za-z-]+)\.bench)", out)
 
     check(saved is not None and (saved.group(2) + ".bench") in out.split(
-              "ls /home/benchmarks", 1)[-1],
-          "the run was not saved in /home/benchmarks, or `ls` did not show "
+              "ls /Home/benchmarks", 1)[-1],
+          "the run was not saved in /Home/benchmarks, or `ls` did not show "
           "it there:\n    " + shown)
 
-    after = out.split("ls /home/.diskbench", 1)[-1]
+    after = out.split("ls /Home/.diskbench", 1)[-1]
 
     # Held to the rows having run rather than to the run being saved, so a
     # run that measured and then could not save still has its file counted.
     check(seq is not None and "test" not in after,
-          "the test file was left in /home/.diskbench after the run:\n    "
+          "the test file was left in /Home/.diskbench after the run:\n    "
           + shown)
 
     big = re.search(r"^BIG\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)",
@@ -158,7 +158,7 @@ def main():
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on Disk Benchmark at the prompt (/home found, every "
+    print("PASS: %d checks on Disk Benchmark at the prompt (/Home found, every "
           "row it can run measured with the device's share of it, every row it cannot run saying why, the "
           "run kept, its test file removed, and a file three times the "
           "journal written and read back)." % checks)

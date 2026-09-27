@@ -2,7 +2,7 @@
 -- du: how much is under a path.
 --
 --   du              where you are
---   du /home        somewhere else
+--   du /Home        somewhere else
 --
 -- One line per directory directly inside it, then the total - which is the
 -- shape of the question people actually ask a `du`: not "how big is this

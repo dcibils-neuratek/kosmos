@@ -71,7 +71,7 @@ L = ui.layout
 --------------------------------------------------------------------------
 
 local port_field = ui.field{ w = 90, text = "80" }
-local root_field = ui.field{ w = 220, text = "/home/www" }
+local root_field = ui.field{ w = 220, text = "/Home/www" }
 
 local start, stop                -- the verbs, below
 local said = ""                  -- the last thing a verb said, for a moment

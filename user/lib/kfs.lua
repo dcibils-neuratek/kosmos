@@ -1433,7 +1433,7 @@ end
 -- The disk server turns every path into this as it arrives. What it keeps
 -- about a file by its path - the attributes' index - has to have one key a
 -- file and not one a way of typing it, or a query would answer `/Home/x`
--- and `/home/x` as two files.
+-- and `/Home/x` as two files.
 --
 function kfs.spelled(sb, path, keep_last)
   local parts = split(path)
@@ -1776,9 +1776,9 @@ end
 -- installed, what somebody made. They are made here rather than by
 -- whoever mounts the disk because a formatted disk should *be* a Kosmos
 -- disk - the first thing that happened without this was `save notes.txt`
--- failing on a freshly formatted drive, because `/home` was a mount point
+-- failing on a freshly formatted drive, because `/Home` was a mount point
 -- with nothing behind it.
-kfs.LAYOUT = { "/system", "/user", "/home" }
+kfs.LAYOUT = { "/system", "/user", "/Home" }
 
 function kfs.mkfs(sectors, now)
   local blocks = sectors // kfs.PER_BLOCK

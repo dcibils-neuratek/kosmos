@@ -263,7 +263,7 @@ def storage(image, check):
     #
     # **And the controller started once by the kernel**, however many times
     # the disk was asked about. Every `sys.disk()` used to start it again -
-    # `diskinfo` reads `/home/.super`, and the server answering asks the
+    # `diskinfo` reads `/Home/.super`, and the server answering asks the
     # kernel about the disk - and QEMU counted ten starts in a boot that ran
     # `diskinfo` three times. Nothing broke, because nothing was in flight
     # when it happened; the kernel now starts it at boot and keeps what it
@@ -295,7 +295,7 @@ def storage(image, check):
              "be told from the firmware's"))
 
     second = boot(image, None, 90.0, extra=extra,
-                  typed=("cat /home/notes.txt",))
+                  typed=("cat /Home/notes.txt",))
 
     if second is None:
         check(False, "the machine would not boot the second time")
@@ -880,7 +880,7 @@ def usb_diskbench(image, check):
 
     # **And no request waits for the driver's deadline.** `/Devices/blocks` was not
     # on the USB driver's wait, so every read there waited out its 50 ms: 17
-    # IOPS, the ThinkPad's own number, where `/home` on the same stick model
+    # IOPS, the ThinkPad's own number, where `/Home` on the same stick model
     # read 938. At 200 a request is answered on its own clock rather than the
     # driver's; past that, QEMU's numbers say nothing.
     check(iops is not None and int(iops.group(1)) >= 200,
@@ -903,7 +903,7 @@ def usb_diskbench(image, check):
 # The Kosmos partition's type (USB step 5e), as `user/init/init.lua` has it.
 # Three copies: this one, `tools/mkusb_image.py`'s, which `stick_with_home`
 # holds to this, and `init.lua`'s, which every check that boots a stick holds
-# to both. A stick laid out with a different one is a `/home` never found.
+# to both. A stick laid out with a different one is a `/Home` never found.
 KOSMOS_PARTITION = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A"
 
 
@@ -1173,12 +1173,12 @@ def usb_drives(image, check):
 
 
 def usb_home(image, check):
-    """**USB step 5e: `/home` on a stick's Kosmos partition, across a reboot.**
+    """**USB step 5e: `/Home` on a stick's Kosmos partition, across a reboot.**
 
     A stick with an EFI partition and a blank Kosmos partition, and a machine
     started with `opt/kosmos/home=usb`. On the first boot the disk server finds
     the partition through `/Devices/blocks`, formats it because it is blank, and
-    `save` writes a file to `/home` through the write endpoint only it holds;
+    `save` writes a file to `/Home` through the write endpoint only it holds;
     the second boot is a machine that has never seen the stick, and the file
     has to be there. What a file written and read back in one boot could not
     show: that the blocks went to the stick, and to the right blocks of it.
@@ -1204,11 +1204,11 @@ def usb_home(image, check):
                extra=extra, after="its backup")
 
     two = boot(image, None, 150.0,
-               typed=("diskinfo", "cat /home/notes.txt"),
+               typed=("diskinfo", "cat /Home/notes.txt"),
                extra=extra, after="its backup")
 
     if one is None or two is None:
-        check(False, "the machine would not boot with a stick for /home")
+        check(False, "the machine would not boot with a stick for /Home")
         return
 
     def shown(out):
@@ -1220,28 +1220,28 @@ def usb_home(image, check):
                               or "log:" in l)
 
     # The disk server owns no console, so what it found comes back through
-    # `/home/.super` and `diskinfo` says it: the partition's own size rather
+    # `/Home/.super` and `diskinfo` says it: the partition's own size rather
     # than the stick's, and which partition it is.
     said = ("disk: %d sectors of 512 bytes" % (last - first + 1),
             "on the Kosmos partition on USB unit 0, blocks %d to %d"
             % (first, last))
 
     check(all(s in one and s in two for s in said),
-          "diskinfo did not say /home is the Kosmos partition, blocks %d to "
+          "diskinfo did not say /Home is the Kosmos partition, blocks %d to "
           "%d - %d sectors - on both boots:\n    %s\n    %s"
           % (first, last, last - first + 1, shown(one), shown(two)))
 
     check("filesystem: version" in one and "saved notes.txt" in one,
           "the first boot did not format the blank partition and save a file "
-          "to /home on it:\n    %s" % shown(one))
+          "to /Home on it:\n    %s" % shown(one))
 
     check("the stick wrote out its cache when asked" in one,
           "the first boot's save did not flush the stick - the driver never "
           "said a SYNCHRONIZE CACHE (10) was kept:\n    %s" % shown(one))
 
     check("filesystem: version" in two
-          and "kept on a stick" in two.split("cat /home/notes.txt")[-1],
-          "the second boot did not find the file the first saved to /home on "
+          and "kept on a stick" in two.split("cat /Home/notes.txt")[-1],
+          "the second boot did not find the file the first saved to /Home on "
           "the stick:\n    %s" % shown(two))
 
     # **What finding the stick took**, said by `diskinfo` in the log's own
@@ -1278,7 +1278,7 @@ def usb_home(image, check):
     if copied.returncode == 0:
         subprocess.run([os.path.join("build", "host", "lua"),
                         os.path.join(tools, "kfs.lua"), "get", part,
-                        "/home/log.txt", log], capture_output=True)
+                        "/Home/log.txt", log], capture_output=True)
 
         if os.path.exists(log):
             with open(log, errors="replace") as f:
@@ -1286,13 +1286,13 @@ def usb_home(image, check):
 
         subprocess.run([os.path.join("build", "host", "lua"),
                         os.path.join(tools, "kfs.lua"), "get", part,
-                        "/home/diagnose.txt", report], capture_output=True)
+                        "/Home/diagnose.txt", report], capture_output=True)
 
         if os.path.exists(report):
             with open(report, errors="replace") as f:
                 diagnosis = f.read()
 
-    check(re.search(r"log: \d+ lines, \d+ KB, saved to /home/log\.txt", one)
+    check(re.search(r"log: \d+ lines, \d+ KB, saved to /Home/log\.txt", one)
           and "saved notes.txt" in text and "xhci:" in text
           and "log save" in text[-200:],
           "`log save` did not put the log on the stick in a form `make "
@@ -1303,11 +1303,11 @@ def usb_home(image, check):
 
     # **`diagnose`, off the same stick**: one file with what a diagnosis of
     # the ThinkPad asks for, instead of photographs - the build, the machine,
-    # its devices, the disk as `/home/.super` has it, the sticks, the
+    # its devices, the disk as `/Home/.super` has it, the sticks, the
     # processes, and the whole log last, so the file ends with the command
     # that wrote it.
     sections = ("== build", "== machine", "== devices", "== disk",
-                "== /home", "== sticks", "== processes", "== log")
+                "== /Home", "== sticks", "== processes", "== log")
     missing = [s for s in sections if ("\n%s\n" % s) not in diagnosis]
 
     check(diagnosis.startswith("Kosmos diagnosis") and not missing
@@ -1455,20 +1455,20 @@ class PluggedMachine:
 
 
 def usb_second_stick(image, check):
-    """**USB step 5e: a stick plugged in while `/home` is on another.**
+    """**USB step 5e: a stick plugged in while `/Home` is on another.**
 
-    The stick with `/home` on its Kosmos partition is on the second
+    The stick with `/Home` on its Kosmos partition is on the second
     controller. A file is saved there; then a second stick, holding a
     partition of its own, is plugged into the first controller through QEMU's
     monitor, and another file is saved.
 
     **This is the check that found a unit was a position.** A unit was the
     Nth stick ready, counting controllers and then slots, so the stick just
-    plugged in became unit 0 and moved `/home`'s stick to 1 - and the disk
+    plugged in became unit 0 and moved `/Home`'s stick to 1 - and the disk
     server, which keeps the unit it found its partition on, wrote the second
     file's blocks onto the new stick. So: not one block of the new stick may
     differ from what it held before it went in; the second file has to be in
-    `/home` beside the first; and `sticks` has to show `/home`'s stick still
+    `/Home` beside the first; and `sticks` has to show `/Home`'s stick still
     unit 0 and the new one unit 1, the next number.
     """
     home = scratch.path("x86-usb-home-first.img")
@@ -1491,7 +1491,7 @@ def usb_second_stick(image, check):
     try:
         if not (machine.wait_for(0, r"its backup[\s\S]*kosmos>", 150.0)
                 or machine.wait_for(0, r"kosmos>[\s\S]*its backup", 1.0)):
-            check(False, "the machine never had its prompt and `/home`'s stick "
+            check(False, "the machine never had its prompt and `/Home`'s stick "
                          "read:\n    " + repr(machine.since(0)[-600:]))
             return
 
@@ -1515,7 +1515,7 @@ def usb_second_stick(image, check):
         _, listing = machine.typed("sticks", r"unit|sticks:")
         _, second = machine.typed("save second.txt kept after",
                                   r"saved second\.txt|save:")
-        _, cat = machine.typed("cat /home/first.txt", r"kept before|cat:")
+        _, cat = machine.typed("cat /Home/first.txt", r"kept before|cat:")
     finally:
         machine.close()
 
@@ -1527,14 +1527,14 @@ def usb_second_stick(image, check):
 
     check(not changed,
           "%d block(s) of the stick plugged in later were written, the first "
-          "at block %s - `/home`'s writes followed a unit number to another "
+          "at block %s - `/Home`'s writes followed a unit number to another "
           "stick:\n    %s"
           % (len(changed), changed[0] if changed else "-",
              "\n    ".join(l for l in second.splitlines() if l.strip())))
 
     check("saved first.txt" in first and "saved second.txt" in second
           and "read back: kept after" in second and "kept before" in cat,
-          "the files saved to `/home` before and after the second stick went "
+          "the files saved to `/Home` before and after the second stick went "
           "in are not both there:\n    %s\n    %s\n    %s"
           % (first.strip(), second.strip(), cat.strip()))
 
@@ -1542,16 +1542,16 @@ def usb_second_stick(image, check):
 
     check("unit 0:" in zero and "\"KOSMOS HOME\"" in zero
           and "partition 1: \"KOSMOS\", blocks 34 to 32734" in one,
-          "`sticks` did not show `/home`'s stick as unit 0 and the one "
+          "`sticks` did not show `/Home`'s stick as unit 0 and the one "
           "plugged in later as unit 1:\n    %s"
           % "\n    ".join(l for l in listing.splitlines() if l.strip()))
 
 
 def usb_home_late(image, check):
-    """**USB step 5e: a stick named after the machine first asks for `/home`.**
+    """**USB step 5e: a stick named after the machine first asks for `/Home`.**
 
-    The shell decides where `/home` is once, as it builds its namespace: on the
-    disk server when `/home/.super` answers a filesystem, and in memory when it
+    The shell decides where `/Home` is once, as it builds its namespace: on the
+    disk server when `/Home/.super` answers a filesystem, and in memory when it
     does not. Under QEMU the driver names a stick before the shell starts; on
     the ThinkPad naming a stick takes seconds, and nothing makes init wait for
     the driver. So the disk server waits for the stick its option asked for,
@@ -1559,9 +1559,9 @@ def usb_home_late(image, check):
 
     Here the stick is not in at boot. The machine starts with
     `opt/kosmos/home=usb`, the driver says it is watching, and five seconds
-    later the stick goes in through QEMU's monitor. `/home` has to be the
+    later the stick goes in through QEMU's monitor. `/Home` has to be the
     stick's partition - `diskinfo` says so, and a file saved there has extents
-    on a disk - rather than memory, where `diskinfo` finds no `/home/.super`.
+    on a disk - rather than memory, where `diskinfo` finds no `/Home/.super`.
     """
     stick = scratch.path("x86-usb-home-late.img")
     first, last = stick_with_home(stick)
@@ -1605,15 +1605,15 @@ def usb_home_late(image, check):
             % (first, last))
 
     check(all(s in info for s in said),
-          "`/home` was not the Kosmos partition, blocks %d to %d, when its "
+          "`/Home` was not the Kosmos partition, blocks %d to %d, when its "
           "stick came after the shell had asked - a shell that is told no "
-          "filesystem keeps `/home` in memory:\n    %s"
+          "filesystem keeps `/Home` in memory:\n    %s"
           % (first, last,
              "\n    ".join(l for l in info.splitlines() if l.strip())))
 
     check(re.search(r"saved late\.txt: \d+ bytes, [1-9]\d* extent", saved)
           is not None,
-          "a file saved to `/home` did not land on a disk, with extents:\n    %s"
+          "a file saved to `/Home` did not land on a disk, with extents:\n    %s"
           % "\n    ".join(l for l in saved.splitlines() if l.strip()))
 
     # **The wait, counted.** The stick went in five seconds after the driver
@@ -1636,7 +1636,7 @@ def usb_home_late(image, check):
 
 
 def usb_home_named(image, check):
-    """**USB step 5f: `/home` on the partition the machine was told, and no
+    """**USB step 5f: `/Home` on the partition the machine was told, and no
     other.**
 
     Two sticks, each with a Kosmos partition, and a machine started with
@@ -1685,7 +1685,7 @@ def usb_home_named(image, check):
             % (first, last))
 
     check(all(s in out for s in said),
-          "`/home` was not the partition named, on unit 1, blocks %d to %d:"
+          "`/Home` was not the partition named, on unit 1, blocks %d to %d:"
           "\n    %s" % (first, last, shown))
 
     check(re.search(r"saved named\.txt: \d+ bytes, [1-9]\d* extent", out)
@@ -1702,10 +1702,10 @@ def usb_home_named(image, check):
 
 
 def usb_home_large(image, check):
-    """**A 512 MB `/home`, read past where the old one ended.**
+    """**A 512 MB `/Home`, read past where the old one ended.**
 
     Diego, 19 September: "from now on we need to make the drive image at
-    least 512mb". The stick's `/home` is a partition read by the USB driver,
+    least 512mb". The stick's `/Home` is a partition read by the USB driver,
     so its size should not matter to anything but the filesystem - and "should
     not" is what this checks. The image is made the way a stick's is,
     `homeimage.py` from a folder, at 512 MB: a 40 MB file first and a 256 KB
@@ -1714,7 +1714,7 @@ def usb_home_large(image, check):
     stick is `mkusb_image.write_gpt`'s, and the kernel is told the partition's
     GUID as the loader tells it.
 
-    Then `/home` has to be all 512 MB - `diskinfo`'s sector count - with the
+    Then `/Home` has to be all 512 MB - `diskinfo`'s sector count - with the
     free blocks the host's `kfs.lua df` counts in the same image, and the far
     file has to read back: its length, and bytes at its start, middle and
     end.
@@ -1747,7 +1747,7 @@ def usb_home_large(image, check):
                            folder, home, "512"], capture_output=True, text=True)
 
     if made.returncode != 0:
-        check(False, "homeimage.py would not make a 512 MB /home: "
+        check(False, "homeimage.py would not make a 512 MB /Home: "
               + made.stdout + made.stderr)
         return
 
@@ -1769,7 +1769,7 @@ def usb_home_large(image, check):
 
     out = boot(image, None, 150.0,
                typed=("diskinfo", "df",
-                      'local d = fs.read("/home/videos/far.bin") '
+                      'local d = fs.read("/Home/videos/far.bin") '
                       'print("FAR" .. "FILE", d and #d, d and d:byte(1), '
                       'd and d:byte(131073), d and d:byte(#d))'),
                extra=("-device", "qemu-xhci,id=usb0",
@@ -1779,7 +1779,7 @@ def usb_home_large(image, check):
                after="its backup")
 
     if out is None:
-        check(False, "the machine would not boot with a 512 MB /home")
+        check(False, "the machine would not boot with a 512 MB /Home")
         return
 
     shown = "\n    ".join(l.strip() for l in out.splitlines()
@@ -1787,14 +1787,14 @@ def usb_home_large(image, check):
                            or "blocks free" in l or "Kosmos partition" in l)
 
     check("disk: %d sectors of 512 bytes" % (512 * 2048) in out,
-          "/home was not the whole 512 MB partition:\n    " + shown)
+          "/Home was not the whole 512 MB partition:\n    " + shown)
 
     wanted = re.search(r"(\d+) blocks free of (\d+)", free)
     guest = re.findall(r"(\d+) blocks free of (\d+)", out)
 
     check(wanted is not None and guest
           and guest[-1] == (wanted.group(1), wanted.group(2)),
-          "the machine's df and kfs.lua's disagree about the 512 MB /home: "
+          "the machine's df and kfs.lua's disagree about the 512 MB /Home: "
           "%r and %r" % (guest[-1] if guest else None, free))
 
     expect = "FARFILE\t%d\t%d\t%d\t%d" % (len(far), far[0], far[131072],
@@ -2002,7 +2002,7 @@ def memdisk(image, check):
         handle.write("carried in by the loader, not the drive\n")
 
     made = subprocess.run([lua, os.path.join(here, "kfs.lua"), "create", disk,
-                           "8", marker + ":/home/marker.txt"],
+                           "8", marker + ":/Home/marker.txt"],
                           capture_output=True, text=True)
 
     if made.returncode != 0:
@@ -2018,7 +2018,7 @@ def memdisk(image, check):
              "-device", "nvme,drive=nvme0,serial=kosmos")
 
     out = boot(image, None, 90.0, extra=extra,
-               typed=("diskinfo", "cat /home/marker.txt"))
+               typed=("diskinfo", "cat /Home/marker.txt"))
 
     if out is None:
         check(False, "the machine would not boot with a disk from the loader")
@@ -3452,7 +3452,7 @@ def firmware(image, check):
     """The firmware's AML, off the machine and onto this one, byte for byte.
 
     **The ThinkPad's brightness is set somewhere its DSDT says**, and nobody
-    here has read it: `acpi save` puts the DSDT and the SSDTs in `/home/acpi`
+    here has read it: `acpi save` puts the DSDT and the SSDTs in `/Home/acpi`
     for `make stick-log` to bring to the Mac. This is that path under QEMU,
     with one table whose every byte is known: `-acpitable` hands the machine
     an SSDT made by `test_ssdt`, beside QEMU's own DSDT and SSDTs, and the
@@ -3518,17 +3518,17 @@ def firmware(image, check):
           % (len(given), "\n".join(l for l in out.splitlines()
                                    if l.startswith(("SSDT", "acpi:")))))
 
-    check(re.search(r"acpi: \d+ tables? saved to /home/acpi", out) is not None,
+    check(re.search(r"acpi: \d+ tables? saved to /Home/acpi", out) is not None,
           "`acpi save` did not say it saved the tables: "
           + next((l.strip() for l in out.splitlines()
                   if l.startswith("acpi:") and "saved" in l),
                  "nothing about saving"))
 
-    # And off the disk, as `make stick-log FILE=/home/acpi/` takes them.
+    # And off the disk, as `make stick-log FILE=/Home/acpi/` takes them.
     folder = os.path.join(work, "acpi")
     os.makedirs(folder)
     subprocess.run([lua, os.path.join(here, "kfs.lua"), "getdir", disk,
-                    "/home/acpi", folder], capture_output=True)
+                    "/Home/acpi", folder], capture_output=True)
 
     def read(name):
         try:
@@ -3719,7 +3719,7 @@ def core(image, check, fails):
 
     # What it prints is its own capability list, asked of the namespace - so
     # this is IPC and the servers rather than a string in the image.
-    for path in ("/bin", "/Devices", "/home", "/lib"):
+    for path in ("/bin", "/Devices", "/Home", "/lib"):
         check(path in ran, "a process could not see %s" % path)
 
     check("process died" not in ran, "the program faulted on its way out")
@@ -4343,7 +4343,7 @@ def ethernet(image, check):
               "before `pc_irq_on_apic()` had initialised the controller, so "
               "the first device probed was refused one and fell back to a "
               "line nothing routed - and on that machine the first device "
-              "was the xHCI holding the mouse, the keyboard and /home"
+              "was the xHCI holding the mouse, the keyboard and /Home"
               % msi.group(1))
 
     check("answered a No-Op command on its event ring, by interrupt" in out,

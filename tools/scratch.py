@@ -6,7 +6,7 @@
 Mac's disk filled and `make prepush` died writing a stick: the suites had
 left 1515 directories in the temporary directory, 19 GB, because each
 `tempfile.mkdtemp` was a promise somebody had to remember to keep - and the
-512 MB `/home` test, which forgot, left 595 MB a run. Some tools removed
+512 MB `/Home` test, which forgot, left 595 MB a run. Some tools removed
 theirs in a `finally`, most did not, and nothing could tell the two apart.
 
 So a process gets **one directory**, made the first time it asks, and

@@ -2,7 +2,7 @@
 -- mv: moves or renames a file or a directory.
 --
 --   mv notes.txt kept.txt       renamed where it is
---   mv notes.txt /home/archive  moved into a directory
+--   mv notes.txt /Home/archive  moved into a directory
 --
 -- Rename and move are one operation, as they are on any filesystem worth
 -- the name: the entry moves from one directory to another and the data does

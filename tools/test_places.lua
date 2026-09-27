@@ -54,9 +54,9 @@ local slashed = places.from_path("/Drives/PHOTOS/Italy/", plugged)
 check(slashed and slashed.within == "/Italy",
       "a trailing slash is not part of the place")
 
-local home = places.from_path("/home/Music", plugged)
+local home = places.from_path("/Home/Music", plugged)
 
-check(home and home.path == "/home/Music" and not home.volume,
+check(home and home.path == "/Home/Music" and not home.volume,
       "a folder not on a drive is remembered by its path")
 
 local none, none_why = places.from_path("/Drives/KOSMOS HOME/notes", plugged)
@@ -71,7 +71,7 @@ check(gone == nil and tostring(gone_why):find("not plugged in"),
 
 check(places.suggest("/Drives/PHOTOS") == "PHOTOS"
       and places.suggest("/Drives/PHOTOS/Italy") == "Italy"
-      and places.suggest("/home/Music/") == "Music",
+      and places.suggest("/Home/Music/") == "Music",
       "the offered name is the folder's, or the volume's at its root")
 
 --------------------------------------------------------------------------
@@ -120,23 +120,23 @@ now, why = places.resolve(a, {})
 
 check(now == nil and why == "unplugged", "nothing plugged in is unplugged")
 
-check(places.resolve(home, {}) == "/home/Music",
+check(places.resolve(home, {}) == "/Home/Music",
       "a place not on a drive is always there")
 
 check(places.resolve({ kind = "note" }, plugged) == nil,
       "something that is not a place resolves to nothing")
 
 --------------------------------------------------------------------------
--- Reading `/home/Places`.
+-- Reading `/Home/Places`.
 --------------------------------------------------------------------------
 
 local tree = {
-  ["/home/Places/myPhotos"] = { kind = "place", volume = "fat:1A2B-3C4D",
+  ["/Home/Places/myPhotos"] = { kind = "place", volume = "fat:1A2B-3C4D",
                                 within = "/Italy", volume_name = "PHOTOS" },
-  ["/home/Places/Backup"]   = { kind = "place", volume = "fat:0BAD-CAFE",
+  ["/Home/Places/Backup"]   = { kind = "place", volume = "fat:0BAD-CAFE",
                                 within = "/" },
-  ["/home/Places/Music"]    = { kind = "place", path = "/home/Music" },
-  ["/home/Places/readme"]   = { kind = "file" },
+  ["/Home/Places/Music"]    = { kind = "place", path = "/Home/Music" },
+  ["/Home/Places/readme"]   = { kind = "file" },
 }
 
 local store = {
@@ -164,13 +164,13 @@ check(table.concat(order, ",") == "Backup,Music,myPhotos",
       "only places are listed, sorted without regard to case: "
       .. table.concat(order, ","))
 
-check(list[3] and list[3].file == "/home/Places/myPhotos"
+check(list[3] and list[3].file == "/Home/Places/myPhotos"
       and list[3].attrs.within == "/Italy",
       "each place carries its file and what it points at")
 
 check(#places.read({ list = function() return nil end,
                      getattr = function() return nil end }) == 0,
-      "no `/home/Places` yet is no places, not an error")
+      "no `/Home/Places` yet is no places, not an error")
 
 if failed == 0 then
   print(("PASS: %d checks on Tracker's shortcut places - made, named, and "

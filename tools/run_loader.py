@@ -2,7 +2,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """Programs from a file (`docs/elf.md` step 4).
 
-Booted with a /home of its own holding `/home/apps/apptest/`:
+Booted with a /Home of its own holding `/Home/apps/apptest/`:
 
   apptest.lua    `-- kosmos: image apptest.elf`, and prints what the
                  apptest kit answers - 42, which only its own image can
@@ -86,7 +86,7 @@ for name, line in (("apptest", "-- kosmos: image apptest.elf"), ("plain", ""),
 files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "apptest.elf",
          "broken.elf", "stranger.elf"]
 subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "64"]
-               + ["%s:/home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files],
+               + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files],
                check=True, capture_output=True, cwd=ROOT)
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -109,7 +109,7 @@ def main():
         """`run` the program; the first line after it holding `want`."""
         mark = len(guest.seen)
         started = time.monotonic()
-        guest.type("run /home/apps/apptest/%s.lua" % name)
+        guest.type("run /Home/apps/apptest/%s.lua" % name)
         deadline = started + seconds
 
         while time.monotonic() < deadline:
@@ -129,7 +129,7 @@ def main():
         times.append(took)
         check(said == "apptest: 42",
               "apptest.lua, in its own image, did not say 42: %r" % said)
-        check("image: made /home/apps/apptest/apptest.elf, " in guest.seen[first:],
+        check("image: made /Home/apps/apptest/apptest.elf, " in guest.seen[first:],
               "the first start did not make the image from the file")
 
         said, _ = run("plain", "apptest", 60)

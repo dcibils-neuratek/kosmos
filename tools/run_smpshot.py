@@ -77,8 +77,8 @@ OPEN = [
     "glgears",
     "glteapot",
     "glmorph3d",
-    "browser:/home/welcome.html",
-    "pdfview:/home/odyssey.pdf",
+    "browser:/Home/welcome.html",
+    "pdfview:/Home/odyssey.pdf",
     "procs",
     "tile",
 ]

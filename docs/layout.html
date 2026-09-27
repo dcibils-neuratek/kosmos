@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
   Where things live in Kosmos: two trees, /Kosmos for everything the system
-  ships and /home for everything a person has. Agreed with Diego on 27
+  ships and /Home for everything a person has. Agreed with Diego on 27
   September 2026 (roadmap.md 6s), drawn before anything moves, and kept as
   the documentation of the layout from then on - "the tree drawn of the
   directories serve as part of the documentation for kosmos". What is
@@ -27,7 +27,7 @@
     --accent: #2a55c9;
     --sys: #2a55c9;          /* /Kosmos: what ships */
     --sys-soft: #e7edfb;
-    --home: #b8630f;         /* /home: what you have */
+    --home: #b8630f;         /* /Home: what you have */
     --home-soft: #fbefe2;
     --ask: #8a5a00;
     --ask-soft: #fff4d6;
@@ -191,7 +191,7 @@
       <li><span class="name">Fonts/ Icons/ Wallpapers/</span><span class="what">What the system draws with<small>IBM Plex, the Spleen faces, Haiku's icons - each with its licence beside it</small></span></li>
       <li><span class="name">Documentation/</span><span class="what">The tutorials and the cheat sheet, opened in the browser - and this page</span></li>
       <li><span class="name">Settings/</span><span class="what">This machine's settings - its screen's scale, its network card, what its power button does, its sound card<small>The machine's, not yours: a home carried from the ThinkPad does not bring its 14-inch scale to the M700</small></span></li>
-      <li><span class="name">Logs/</span><span class="what">What the system has said, kept<small>Today <code>log save</code> writes <code>/home/log.txt</code></small></span></li>
+      <li><span class="name">Logs/</span><span class="what">What the system has said, kept<small>Today <code>log save</code> writes <code>/Home/log.txt</code></small></span></li>
     </ul>
   </section>
 
@@ -207,7 +207,7 @@
       <li><span class="name">Preferences/</span><span class="what">Your choices: the look, the keyboard, the Deskbar, what starts at login, and the settings of the applications Kosmos ships - an application you installed keeps its own in its folder<small>Today dotfiles at the top of <code>/home</code>: <code>.appearance</code>, <code>.keyboard</code>, <code>.terminal</code>, <code>.clock</code>, <code>.ide</code> ...</small></span></li>
       <li><span class="name">Documents/</span><span class="what">What you write and keep - and Cafesa3D's scenes and renders</span></li>
       <li><span class="name">Photos/ Movies/ Music/</span><span class="what">What the photo viewer, Video and Music open first</span></li>
-      <li><span class="name">Captures/</span><span class="what">What the camera recorded<small>Today <code>/home/videos</code>. Each of these five is a place in Tracker's sidebar (<code>roadmap.md</code> 6w)</small></span></li>
+      <li><span class="name">Captures/</span><span class="what">What the camera recorded<small>Today <code>/Home/videos</code>. Each of these five is a place in Tracker's sidebar (<code>roadmap.md</code> 6w)</small></span></li>
       <li><span class="name">Desktop/</span><span class="what">What is on the desktop</span></li>
       <li><span class="name">Deskbar/</span><span class="what">The launchers in the Deskbar's menu</span></li>
       <li><span class="name">Trash/</span><span class="what">What you threw away, until you empty it</span></li>
@@ -262,8 +262,8 @@
   <tr><td class="path">/lib</td><td class="path s">/Kosmos/Libraries</td><td>51 Lua libraries; every <code>use("/lib/...")</code> changes once</td></tr>
   <tr><td class="path">/kits</td><td class="path s">/Kosmos/Kits</td><td>11 kits, C, compiled into every process</td></tr>
   <tr><td class="path">/lib/clock.lua, /lib/blocks.lua</td><td class="path s">/Kosmos/Libraries/localtime.lua, blockdev.lua</td><td>Names that clash with the Clock and Blocks applications and are not them <span class="tag prop">proposed</span></td></tr>
-  <tr><td class="path">/home/.appearance, .clock, .terminal ...</td><td class="path h">/Home/Preferences/...</td><td>Your preferences, out of the way at the top of your home</td></tr>
-  <tr><td class="path">/home</td><td class="path h">/Home</td><td>A capital, as every name here</td></tr>
+  <tr><td class="path">/Home/.appearance, .clock, .terminal ...</td><td class="path h">/Home/Preferences/...</td><td>Your preferences, out of the way at the top of your home</td></tr>
+  <tr><td class="path">/home</td><td class="path h">/Home</td><td>A capital, as every name here <span class="tag done">done</span></td></tr>
   <tr><td class="path">/ramfs</td><td class="path">/Temporary</td><td>Memory <span class="tag done">done</span></td></tr>
   <tr><td class="path">/dev, /dev/audio, /dev/camera ...</td><td class="path">/Devices, /Devices/Audio, /Devices/Camera ...</td><td>The hardware <span class="tag done">done</span></td></tr>
   <tr><td class="path">/net</td><td class="path">/Network</td><td>The network <span class="tag done">done</span></td></tr>
@@ -271,9 +271,9 @@
   <tr><td class="path">/drives</td><td class="path">/Drives</td><td>Other drives <span class="tag done">done</span></td></tr>
   <tr><td class="path">/system/themes</td><td class="path s">/Kosmos/Themes</td><td>The looks</td></tr>
   <tr><td class="path">/system, /user</td><td class="path">-</td><td>Gone, once their one reader has moved</td></tr>
-  <tr><td class="path">/home/log.txt</td><td class="path s">/Kosmos/Logs</td><td>The system's log</td></tr>
+  <tr><td class="path">/Home/log.txt</td><td class="path s">/Kosmos/Logs</td><td>The system's log</td></tr>
   <tr><td class="path">Doom, Quake, the Super Nintendo, in the image</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>Vendored engines in C: installed, not shipped <span class="tag later">after the loader</span></td></tr>
-  <tr><td class="path">/home/doom1.wad, /home/id1, /home/roms</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>What each game plays, in the game's own folder</td></tr>
+  <tr><td class="path">/Home/doom1.wad, /Home/id1, /Home/roms</td><td class="path h">/Home/Apps/Doom, Quake, Super Nintendo</td><td>What each game plays, in the game's own folder</td></tr>
 </table>
 </div>
 

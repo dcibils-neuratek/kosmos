@@ -887,7 +887,7 @@ One tree on the SD card, persistent, with real files:
 /system    binaries and config
 /lib       Lua libraries
 /apps      installed apps
-/home      user data
+/Home      user data
 ```
 
 If two processes open the same file, it is the same file. There are no copies and no divergent views.
@@ -917,36 +917,36 @@ The division M8 introduces is therefore narrower than it looks:
 
 That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while a mount scan is cheaper than the complexity it avoids, and stops holding at a file count this system is nowhere near.
 
-### 8.3a `/home` always exists, and says which kind it is
+### 8.3a `/Home` always exists, and says which kind it is
 
-`/system`, `/user` and `/home` are three subtrees of one disk filesystem -
+`/system`, `/user` and `/Home` are three subtrees of one disk filesystem -
 what the operating system ships, what somebody installed, and what somebody
-made. `/home` is the persistent one by definition.
+made. `/Home` is the persistent one by definition.
 
 **On a machine with no disk it is backed by memory instead**, and that is a
-decision rather than a fallback that crept in. The alternative was `/home`
+decision rather than a fallback that crept in. The alternative was `/Home`
 simply not existing there, and it fails on the machine this is aimed at:
 `docs/thinkpad.md`'s ThinkPad has NVMe and no NVMe driver, so it is a
-diskless machine for now - and Tracker makes `/home/Desktop` when it is
-missing, so no `/home` means no desktop at all. A first boot with no
+diskless machine for now - and Tracker makes `/Home/Desktop` when it is
+missing, so no `/Home` means no desktop at all. A first boot with no
 desktop is not a first boot worth having.
 
 **The principle it has to answer is `init.lua`'s**, written about read-only
 `/bin`: *a write that appeared to work would vanish at the next boot, which
-is worse than being told no.* That is exactly what a volatile `/home` does,
+is worse than being told no.* That is exactly what a volatile `/Home` does,
 so it is answered rather than ignored: **the failure that principle guards
 against is a silent one, and this one is announced.** The boot log, `df`,
 `machine` and `neofetch` all say "in memory and will not survive" - and they
 said it for a long time before it was true, which is how the gap was found.
 
 The shape that makes this safe is that **the decision is taken once, at
-boot, and inherited.** A process that worked out for itself where `/home`
-was could disagree with the process that started it, and then `ls /home`
+boot, and inherited.** A process that worked out for itself where `/Home`
+was could disagree with the process that started it, and then `ls /Home`
 would answer differently depending on who asked. The shell probes for a
 formatted disk, mounts accordingly, and every process it spawns is told -
 including the window manager, and the Tracker the window manager starts.
 
-When there is an NVMe driver, `/home` becomes persistent and nothing else in
+When there is an NVMe driver, `/Home` becomes persistent and nothing else in
 the system changes.
 
 ### 8.3b The journal holds the structure, and a file's bytes are written once
@@ -987,7 +987,7 @@ Decided on 27 September 2026 by Diego, once the layout gave every name a capital
 
 **Each place that holds a name folds its own**, and nothing is folded twice: the namespace matches a mount's prefix folded and hands the rest to the server as typed; `kfs` compares a directory's entries folded; `ramfs`, `binfs`, `/Running`, the devices and the drives each find a name the same way; and `use` keeps one instance of a library however its path is spelled.
 
-**The one place a spelling is kept by path is the disk's index**, the attributes a query answers from, and `/Home/x` and `/home/x` there would be two keys for one file. So while an index exists, the disk server turns each path into the disk's own spelling as it arrives (`kfs.spelled`); before there is one it does not, because that is a walk of the path's directories and kfs has no block cache - a machine that never asks a query never pays it. `ramfs` stores a new file under its directories' existing spelling for the same reason: its table holds whole paths, and a query hands them back.
+**The one place a spelling is kept by path is the disk's index**, the attributes a query answers from, and `/Home/x` and `/Home/x` there would be two keys for one file. So while an index exists, the disk server turns each path into the disk's own spelling as it arrives (`kfs.spelled`); before there is one it does not, because that is a walk of the path's directories and kfs has no block cache - a machine that never asks a query never pays it. `ramfs` stores a new file under its directories' existing spelling for the same reason: its table holds whole paths, and a query hands them back.
 
 ### 8.4 A large file is mapped, not copied
 
@@ -1023,7 +1023,7 @@ Doom's, as step 5 of `elf.md` will make it: the first three lines are its header
 
 `binfs` reads it to say whether a file is an application or a program and where the Deskbar lists it; the Deskbar draws the icon; the launcher runs the program in the image it names, and grants what it says it needs. One place for these facts, in the file they describe, so they cannot drift from it.
 
-**What `needs` does is less than this section once said, and the difference is written down rather than left.** It said the launcher builds an application's namespace from its needs and the application reaches nothing else. What is true: a need is a word - `processes`, `audio`, `network`, `camera` - and the launcher grants that power or that device only to a program that declares it (`init.lua`, `launch`); a Deskbar replicant's files are narrowed to the paths it declares (`ui.restricted`). Everything else a program is handed whatever it declares - `/home`, read and write, among it. Handing an application only what it declares, or only its own folder, was proposed on 27 September and set aside by Diego: "we need to use the systme first before enforcing things that limit the usage". It is per-launcher permissions' ground, for when using the system says it is time.
+**What `needs` does is less than this section once said, and the difference is written down rather than left.** It said the launcher builds an application's namespace from its needs and the application reaches nothing else. What is true: a need is a word - `processes`, `audio`, `network`, `camera` - and the launcher grants that power or that device only to a program that declares it (`init.lua`, `launch`); a Deskbar replicant's files are narrowed to the paths it declares (`ui.restricted`). Everything else a program is handed whatever it declares - `/Home`, read and write, among it. Handing an application only what it declares, or only its own folder, was proposed on 27 September and set aside by Diego: "we need to use the systme first before enforcing things that limit the usage". It is per-launcher permissions' ground, for when using the system says it is time.
 
 ### 9.3 Example: Monitor
 
@@ -1082,7 +1082,7 @@ A real filesystem plus attributes and live queries.
 ```lua
 return {
   name = "Notes",
-  needs = { "ui", "/home/notes", "/Devices/clock" },
+  needs = { "ui", "/Home/notes", "/Devices/clock" },
 }
 ```
 
@@ -1095,8 +1095,8 @@ local notes, current, buffer = {}, nil, ""
 
 local function save()
   if not current then return end
-  fs.write("/home/notes/" .. current, buffer)
-  fs.setattr("/home/notes/" .. current, {
+  fs.write("/Home/notes/" .. current, buffer)
+  fs.setattr("/Home/notes/" .. current, {
     modified = fs.read("/Devices/clock").epoch,
     words    = select(2, buffer:gsub("%S+", "")),
   })
@@ -1105,12 +1105,12 @@ end
 local function open(name)
   save()
   current = name
-  buffer = fs.read("/home/notes/" .. name)
+  buffer = fs.read("/Home/notes/" .. name)
   win:invalidate()
 end
 
 -- live query: the filesystem server notifies when the result changes
-fs.query("/home/notes", "words > 100", function(result)
+fs.query("/Home/notes", "words > 100", function(result)
   notes = result
   win:invalidate()
 end)

@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Makes a directory.
 --
---   mkdir /home/notes
+--   mkdir /Home/notes
 --
 -- One component at a time and no `-p`: making a whole path at once has to
 -- decide what to do when it fails halfway, and the honest answers are

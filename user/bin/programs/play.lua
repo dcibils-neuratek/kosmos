@@ -41,7 +41,7 @@ end
 
 if not path then
   print("play [--debug] <film>")
-  print("  for instance: play --debug /home/magicword-mjpeg.mp4")
+  print("  for instance: play --debug /Home/magicword-mjpeg.mp4")
   return
 end
 

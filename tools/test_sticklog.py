@@ -89,9 +89,9 @@ def main():
                 f.write(body)
 
         made = kfs("create", home, "4").returncode == 0 \
-            and kfs("put", home, log, "/home/log.txt").returncode == 0 \
+            and kfs("put", home, log, "/Home/log.txt").returncode == 0 \
             and all(kfs("put", home, os.path.join(work, name),
-                        "/home/acpi/" + name).returncode == 0
+                        "/Home/acpi/" + name).returncode == 0
                     for name in tables)
 
         if not made:
@@ -116,7 +116,7 @@ def main():
         check(digest(stick) == before, "reading the stick changed it")
 
         got = os.path.join(work, "got.txt")
-        taken = kfs("get", copy, "/home/log.txt", got)
+        taken = kfs("get", copy, "/Home/log.txt", got)
         back = None
 
         if taken.returncode == 0 and os.path.exists(got):
@@ -128,10 +128,10 @@ def main():
               "%s" % (taken.stderr.decode("utf-8", "replace").strip()
                       or "%d bytes of %d" % (len(back or ""), len(text))))
 
-        # ---- a folder, whole: `make stick-log FILE=/home/acpi/` ----
+        # ---- a folder, whole: `make stick-log FILE=/Home/acpi/` ----
         folder = os.path.join(work, "stick-acpi")
         os.makedirs(folder)
-        taken = kfs("getdir", copy, "/home/acpi", folder)
+        taken = kfs("getdir", copy, "/Home/acpi", folder)
         came = {}
 
         for name in os.listdir(folder):

@@ -3,7 +3,7 @@
 -- kosmos: icon App_Tracker
 -- Tracker: the file manager.
 --
---   wm tracker            opens at /home
+--   wm tracker            opens at /Home
 --   wm tracker:/bin       or wherever
 --
 --   click a row       select it
@@ -19,7 +19,7 @@
 -- here was a replicant host and is now `adopt`.
 --
 -- It knows nothing about disks. Every question it asks is the ordinary
--- filesystem protocol through its own namespace, so it browses `/home` on
+-- filesystem protocol through its own namespace, so it browses `/Home` on
 -- the disk, `/Temporary` in memory and `/bin` in the image with the same code,
 -- and would browse a directory served from another machine without
 -- noticing which it was.
@@ -99,7 +99,7 @@ local words = {}
 
 for w in args:gmatch("%S+") do words[#words + 1] = w end
 
-local where = "/home"
+local where = "/Home"
 
 for _, w in ipairs(words) do
   if w:sub(1, 1) == "/" then where = w end
@@ -130,19 +130,19 @@ if backdrop then
   W, H = screen.width or 1024, screen.height or 768
 
   --
-  -- The desktop shows `/home/Desktop`, and nothing else ever.
+  -- The desktop shows `/Home/Desktop`, and nothing else ever.
   --
-  -- Not `/home`: what is on the desktop should be what you put on the
+  -- Not `/Home`: what is on the desktop should be what you put on the
   -- desktop. A backdrop showing a home directory is showing you every dot
   -- file and every half-finished thing you have, which is not a desktop,
   -- it is a directory that happens to be behind your windows.
   --
   -- Created if it is not there, rather than fallen back from. A desktop
   -- folder that only exists once you think to make one is a folder nobody
-  -- makes, and the fallback this replaced put `/home` on the backdrop on
+  -- makes, and the fallback this replaced put `/Home` on the backdrop on
   -- every machine that had never had one.
   --
-  where = "/home/Desktop"
+  where = "/Home/Desktop"
 
   if not fs.getattr(where) then
     local ok, why = fs.send(where, { type = "mkdir" })
@@ -243,7 +243,7 @@ local LROW = ui.metrics.row
 --
 local resize_cells
 
-local icons = iconsize.new("/home/.tracker",
+local icons = iconsize.new("/Home/.tracker",
                            backdrop and "desktop_icon_px" or "window_icon_px",
                            function() resize_cells() end)
 
@@ -289,7 +289,7 @@ local header
 -- The place button's picture: the drawing's house for Home, the Trash's
 -- bin, a drive for anything under `/Drives`, and a folder for the rest.
 local function place_icon(path)
-  if path == "/home" then return "home" end
+  if path == "/Home" then return "home" end
   if path == files.TRASH or path:sub(1, #files.TRASH + 1) == files.TRASH .. "/"
   then
     return "trash"
@@ -639,15 +639,15 @@ local function place_items()
     by[it.id] = it
   end
 
-  add("Home", "/home", "home")
-  add("Desktop", "/home/Desktop", "folder")
+  add("Home", "/Home", "home")
+  add("Desktop", "/Home/Desktop", "folder")
   add("Trash", files.TRASH, "trash")
 
   local mine = {}
 
   for _, f in ipairs({ { "Documents", "document" }, { "Music", "music" },
                        { "Pictures", "pictures" } }) do
-    local path = "/home/" .. f[1]
+    local path = "/Home/" .. f[1]
 
     if fs.getattr(path) then mine[#mine + 1] = { f[1], path, f[2] } end
   end

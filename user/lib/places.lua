@@ -7,10 +7,10 @@
 -- window hands an application the file at its real place, so no program
 -- has to know MyPhotos exists.
 --
--- Each place is a file in `/home/Places`, named what the person called it,
+-- Each place is a file in `/Home/Places`, named what the person called it,
 -- with attributes that say what it points at in words anybody can read:
 --
---   kind = "place", path = "/home/Music"                  somewhere fixed
+--   kind = "place", path = "/Home/Music"                  somewhere fixed
 --   kind = "place", volume = "fat:1A2B-3C4D",             on a drive
 --     within = "/Italy", volume_name = "PHOTOS 2024"
 --
@@ -30,7 +30,7 @@
 
 local places = {}
 
-places.DIR = "/home/Places"
+places.DIR = "/Home/Places"
 
 --
 -- A path under `/Drives`, as its volume's name and the rest - `/` for the

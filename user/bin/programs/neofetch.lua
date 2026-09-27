@@ -229,12 +229,12 @@ end
 
 --
 -- The disk, asked about through the filesystem rather than through the
--- block device. `/home/.super` is what the one process holding the disk
+-- block device. `/Home/.super` is what the one process holding the disk
 -- answers, and it is reachable by anything the shell started - a program
 -- that went to the sectors would need a capability it has no business
 -- holding, and `diskinfo` reads the same node for the same reason.
 --
-local sb = fs.read("/home/.super")
+local sb = fs.read("/Home/.super")
 
 if sb and sb.present and sb.formatted then
   local block = sb.block_size or 4096
@@ -252,7 +252,7 @@ if sb and sb.present and sb.formatted then
 elseif sb and sb.present then
   row("Disk", "attached, no filesystem (" .. tostring(sb.why) .. ")")
 else
-  row("Disk", "none; /home is in memory and will not survive")
+  row("Disk", "none; /Home is in memory and will not survive")
 end
 
 --

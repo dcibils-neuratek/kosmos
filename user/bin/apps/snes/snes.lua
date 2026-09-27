@@ -4,14 +4,14 @@
 -- kosmos: icon App_Generic
 -- kosmos: section demos
 --
---   wm snes                        the first ROM in /home/roms/snes
+--   wm snes                        the first ROM in /Home/roms/snes
 --   wm snes:Top Gear 2.sfc         that one, from the same directory
 --   wm snes:/Temporary/other.smc   anywhere else
 --   wm snes:--scale 2              the first ROM, in a window twice the size
 --   wm snes:--scale 2 Top Gear 2.sfc
 --
 -- A launcher carries the same words, so the bigger window is a launcher of
--- its own: `launcher /home/Desktop/Mario snes --scale 2 Super Mario World.sfc`.
+-- its own: `launcher /Home/Desktop/Mario snes --scale 2 Super Mario World.sfc`.
 --
 -- In an image built with `FULL=1`, the default, or `SNES=1`. The core is
 -- LakeSnes; `runtime/upstream/lakesnes/README.kosmos.md` is the account.
@@ -21,10 +21,10 @@
 -- and what is left - which ROM, which window, when a frame happens, when to
 -- stop - is policy, so it is here.
 --
--- ROMs live on the drive, in /home/roms/snes, the way Doom's WAD lives in
--- /home. None is in the repository, and none will be:
+-- ROMs live on the drive, in /Home/roms/snes, the way Doom's WAD lives in
+-- /Home. None is in the repository, and none will be:
 --
---   make image FILES="game.sfc:/home/roms/snes/game.sfc"
+--   make image FILES="game.sfc:/Home/roms/snes/game.sfc"
 
 local ui = use("/lib/ui.lua")
 local panel = use("/lib/panel.lua")
@@ -43,7 +43,7 @@ if not have or type(snes) ~= "table" then
   return
 end
 
-local ROMS = "/home/roms/snes"
+local ROMS = "/Home/roms/snes"
 
 local function is_rom(name)
   local ext = name:lower():match("%.(%w+)$")

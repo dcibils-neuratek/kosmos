@@ -2,11 +2,11 @@
 -- How fast a drive or a filesystem is, at the prompt.
 --
 --   diskbench                        what can be measured here
---   diskbench /home [seconds] [runs] a filesystem, through a test file
+--   diskbench /Home [seconds] [runs] a filesystem, through a test file
 --   diskbench usb 0 [seconds] [runs] a USB stick's blocks, read only
 --
 -- The rows Disk Benchmark's window will draw, printed as each one finishes,
--- and the run saved in `/home/benchmarks` so a later one can be compared
+-- and the run saved in `/Home/benchmarks` so a later one can be compared
 -- with it. `/lib/diskbench.lua` has what each row measures and why some say
 -- "not yet".
 
@@ -21,7 +21,7 @@ end
 local targets = diskbench.targets()
 
 local function usage()
-  print("usage: diskbench /home [seconds] [runs]")
+  print("usage: diskbench /Home [seconds] [runs]")
   print("       diskbench usb UNIT [seconds] [runs]")
   print("")
 
@@ -38,7 +38,7 @@ end
 
 local target, rest
 
-if words[1] == "/home" then
+if words[1] == "/Home" then
   for _, t in ipairs(targets) do
     if t.kind == "file" then target = t end
   end

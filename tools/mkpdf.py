@@ -2,7 +2,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """A PDF with a font inside it, made from a text file.
 
-`pdfview`, `pdfinfo` and `pdfbench` all default to `/home/odyssey.pdf` and
+`pdfview`, `pdfinfo` and `pdfbench` all default to `/Home/odyssey.pdf` and
 that file has never been in this repository - it was always somebody's own
 document, which meant the PDF path could not be exercised by anybody who
 did not happen to have one. This makes one.

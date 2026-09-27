@@ -1,21 +1,21 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- diagnose: what a diagnosis of this machine needs, in one file.
 --
---   diagnose             to /home/diagnose.txt
---   diagnose name        to /home/name, or to a path that begins with /
+--   diagnose             to /Home/diagnose.txt
+--   diagnose name        to /Home/name, or to a path that begins with /
 --
 -- **Instead of photographs of a screen.** Diego, on the ThinkPad, 14
 -- September 2026: "a script or something I can run in the think pad like a
 -- log file of things you need so I can send it to you for a full diagnosis
 -- ... instead of photos of logs". A photograph holds forty lines of one
--- command. This holds what `devices`, `diskinfo`, `ls /home`, `sticks` and the
+-- command. This holds what `devices`, `diskinfo`, `ls /Home`, `sticks` and the
 -- process list would each have shown, and the whole log after them; on the
 -- Mac, `make stick-log` brings the file back off the stick.
 --
 -- **It asks, as those programs do, and runs none of them.** A program is a
 -- process the shell starts with the capabilities it names, and one program
 -- cannot start another. So each section reads what its program reads -
--- `sys.info()`, the nodes in `/Devices`, `/home/.super`, the USB driver through
+-- `sys.info()`, the nodes in `/Devices`, `/Home/.super`, the USB driver through
 -- `/lib/blocks.lua`, `sys.processes()` - and writes the answer whole, as a
 -- table rather than a sentence, because a diagnosis wants the field nobody
 -- thought to print.
@@ -145,13 +145,13 @@ for _, entry in ipairs(fs.list("/Devices") or {}) do
 end
 
 section("disk")
-node("/home/.super")
-node("/home/.device")
+node("/Home/.super")
+node("/Home/.device")
 
-section("/home")
+section("/Home")
 
 do
-  local names, why = fs.list("/home")
+  local names, why = fs.list("/Home")
 
   if not names then
     say("  " .. tostring(why))
@@ -159,7 +159,7 @@ do
 
   for _, entry in ipairs(names or {}) do
     local name = type(entry) == "table" and entry.name or entry
-    local attrs = fs.getattr("/home/" .. name) or {}
+    local attrs = fs.getattr("/Home/" .. name) or {}
 
     say(("  %s  %s%s"):format(name, attrs.kind or "",
         attrs.size and (", " .. attrs.size .. " bytes") or ""))
@@ -212,7 +212,7 @@ say(((sys.log(262144) or ""):gsub("\r", "")))
 -- a quarter of a megabyte, and a message holds two kilobytes.
 --
 local name = args:match("^%s*(%S+)") or "diagnose.txt"
-local path = name:sub(1, 1) == "/" and name or ("/home/" .. name)
+local path = name:sub(1, 1) == "/" and name or ("/Home/" .. name)
 local body = table.concat(lines, "\n")
 local buf = sys.memory((#body + 4095) // 4096)
 

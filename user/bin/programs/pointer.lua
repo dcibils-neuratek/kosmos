@@ -17,8 +17,8 @@
 -- the machine this was written for, and it is why the default moved.
 --
 -- **It does not survive a restart, and that is not laziness.** A setting
--- belongs in a file, `/home` is the place for one, and on a machine with no
--- disk `/home` does not outlive the power. Writing it there would be a
+-- belongs in a file, `/Home` is the place for one, and on a machine with no
+-- disk `/Home` does not outlive the power. Writing it there would be a
 -- preference that silently forgets - worse than one you type, because you
 -- would stop expecting to. When there is a disk this grows two lines.
 --

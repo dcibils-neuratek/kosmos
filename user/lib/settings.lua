@@ -60,12 +60,12 @@ settings.CATEGORIES = {
 -- The files settings live in, named once so a typo is a missing value rather
 -- than a second file nobody reads.
 --
-settings.APPEARANCE = "/home/.appearance"
-settings.TRACKER    = "/home/.tracker"
-settings.CLOCK      = "/home/.clock"
-settings.STARTUP    = "/home/.startup"
-settings.POWER      = "/home/.power"
-settings.KEYBOARD   = "/home/.keyboard"
+settings.APPEARANCE = "/Home/.appearance"
+settings.TRACKER    = "/Home/.tracker"
+settings.CLOCK      = "/Home/.clock"
+settings.STARTUP    = "/Home/.startup"
+settings.POWER      = "/Home/.power"
+settings.KEYBOARD   = "/Home/.keyboard"
 
 --
 -- One setting.
@@ -126,7 +126,7 @@ settings.ITEMS = {
         keep_default = true, clears = { "fonts" } },
 
   item{ category = "appearance", group = "Look",
-        label = "Wallpaper", note = "Carried in the image, or a picture in /home",
+        label = "Wallpaper", note = "Carried in the image, or a picture in /Home",
         kind = "choice", file = settings.APPEARANCE, key = "wallpaper",
         default = "", choices = nil },   -- filled at run time from the image
 
@@ -140,7 +140,7 @@ settings.ITEMS = {
 
   --
   -- **Two the window manager draws rather than any window.** They live in
-  -- `/home/.appearance` like the look, and like the look, the scale and the
+  -- `/Home/.appearance` like the look, and like the look, the scale and the
   -- wallpaper they have to reach the manager the moment they change - a
   -- setting that took effect at the next restart is one nobody believes in.
   --
@@ -310,8 +310,8 @@ end
 -- Set one, by reading the file, changing one key and writing it back.
 --
 -- **Read, change, write, and never a whole file composed from what this
--- process happens to know.** Two places share `/home/.appearance` and two
--- share `/home/.tracker`, so a write that rebuilt the table would drop
+-- process happens to know.** Two places share `/Home/.appearance` and two
+-- share `/Home/.tracker`, so a write that rebuilt the table would drop
 -- whatever the other one had put there - which is the mistake `iconsize.lua`
 -- documents having avoided for the same reason.
 --
@@ -365,11 +365,11 @@ end
 
 --
 -- **The wallpapers there are to choose from**, as `{ value, name }` pairs
--- for the Wallpaper row: none, then the pictures in `/home`, then the
+-- for the Wallpaper row: none, then the pictures in `/Home`, then the
 -- photographs the image carries.
 --
--- The value is what `/home/.appearance` keeps and what the window manager
--- is sent - a path in `/home`, or `wallpaper/<file>` in the image - and ""
+-- The value is what `/Home/.appearance` keeps and what the window manager
+-- is sent - a path in `/Home`, or `wallpaper/<file>` in the image - and ""
 -- for the look's own desk. The name is what a person reads.
 --
 -- A carried photograph is named after the photographer:
@@ -400,11 +400,11 @@ end
 function settings.wallpapers()
   local out, seen = { { "", "None" } }, {}
 
-  for _, name in ipairs(fs.list("/home") or {}) do
+  for _, name in ipairs(fs.list("/Home") or {}) do
     local suffix = name:lower():match("%.([%a]+)$")
 
     if suffix == "png" or suffix == "jpg" or suffix == "jpeg" then
-      out[#out + 1] = { "/home/" .. name, name }
+      out[#out + 1] = { "/Home/" .. name, name }
       seen[name] = true
     end
   end

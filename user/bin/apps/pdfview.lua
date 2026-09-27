@@ -5,7 +5,7 @@
 -- A PDF, as it was typeset.
 --
 --   wm pdfview
---   wm pdfview:/home/odyssey.pdf
+--   wm pdfview:/Home/odyssey.pdf
 --
 --   arrows / PageUp / PageDown    scroll
 --   , and .                       previous and next page
@@ -148,7 +148,7 @@ local function frame(damage_all)
     end
   else
     s:fill(0, 0, W, view_h, CHROME)
-    s:text(12, 12, "Open a document:  wm pdfview:/home/odyssey.pdf", LABEL)
+    s:text(12, 12, "Open a document:  wm pdfview:/Home/odyssey.pdf", LABEL)
     s:text(12, 32, "arrows scroll, , and . turn pages, + and - zoom", LABEL)
   end
 
@@ -313,7 +313,7 @@ local sink = ui.view{ x = 0, y = 0, w = W, h = H }
 sink.focusable = true
 
 local function chooser()
-  local start_at = path and path:match("^(.*)/") or "/home"
+  local start_at = path and path:match("^(.*)/") or "/Home"
   local picked = panel.open{
     start = start_at,
     on_choose = function (chosen) path = chosen ; open(chosen) end,

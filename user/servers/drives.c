@@ -10,7 +10,7 @@
  * appearing later would mean editing the namespace of every running program -
  * which nothing can do. A server behind one prefix needs none of that: the
  * matcher routes `/Drives/PHOTOS 2024/Italy` here with the rest of the path
- * intact, exactly as `/home` is routed to the disk server today.
+ * intact, exactly as `/Home` is routed to the disk server today.
  *
  * **It writes nothing, and that is structural rather than promised.** init
  * gives this process the USB driver's *read* endpoint and never the write
@@ -425,7 +425,7 @@ static bool identify(struct volume *v)
 
         /*
          * **Listed, and not yet opened.** kfs's reader is `user/lib/kfs.lua`
-         * and this server is C, so its contents come through `/home` where
+         * and this server is C, so its contents come through `/Home` where
          * they already are. Reading one here means kfs in C, which is its own
          * piece of work and is on the roadmap behind Disk Benchmark.
          */

@@ -2,10 +2,10 @@
 -- The disk, from this machine rather than from inside Kosmos.
 --
 --   build/host/lua tools/kfs.lua create out.img 32
---   build/host/lua tools/kfs.lua ls     out.img /home
---   build/host/lua tools/kfs.lua put    out.img book.pdf /home/book.pdf
---   build/host/lua tools/kfs.lua get    out.img /home/notes.txt notes.txt
---   build/host/lua tools/kfs.lua rm     out.img /home/notes.txt
+--   build/host/lua tools/kfs.lua ls     out.img /Home
+--   build/host/lua tools/kfs.lua put    out.img book.pdf /Home/book.pdf
+--   build/host/lua tools/kfs.lua get    out.img /Home/notes.txt notes.txt
+--   build/host/lua tools/kfs.lua rm     out.img /Home/notes.txt
 --
 -- **Why this exists.** Kosmos does not use FAT32, and `design.md` gives
 -- the reasons - no attributes, no journal, no way to say what a file *is*.
@@ -221,6 +221,17 @@ if command == "create" then
 
   open(out, "w")
 
+  -- `KFS_LAYOUT=/system,/user,/home`: the folders a disk is made with, for
+  -- a suite to hold today's system to a disk made before it - one whose
+  -- home is spelled `home`, as every stick before 27 September's is.
+  local layout = os.getenv("KFS_LAYOUT")
+
+  if layout then
+    kfs.LAYOUT = {}
+
+    for folder in layout:gmatch("[^,]+") do kfs.LAYOUT[#kfs.LAYOUT + 1] = folder end
+  end
+
   local sb, err = kfs.mkfs(megabytes * 1024 * 1024 // 512, 0)
 
   if not sb then die("formatting: " .. tostring(err)) end
@@ -295,7 +306,7 @@ elseif command == "get" then
   -- It hid a plain answer behind a Lua error for as long as it existed,
   -- and it cost an evening on 21 September: `make stick-log` crashed on a
   -- ThinkPad's stick and the message said nothing about the only thing
-  -- that was wrong, which was that `/home/diagnose.txt` was not on it.
+  -- that was wrong, which was that `/Home/diagnose.txt` was not on it.
   --
   if not number then die(guest .. ": " .. tostring(node)) end
 

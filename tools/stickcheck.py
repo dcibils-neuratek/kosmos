@@ -90,7 +90,7 @@ class Layout:
         self.esp = first * SECTOR
         self.esp_end = (last + 1) * SECTOR
 
-        # And `/home`'s partition beside it, on a stick `mkusb_image.py
+        # And `/Home`'s partition beside it, on a stick `mkusb_image.py
         # --home` made (USB step 5f): named, so what differs there is not
         # called the backup GPT. Every byte of it is still compared.
         second = self.at(entries * SECTOR + 128, 128)
@@ -193,7 +193,7 @@ class Layout:
                 return label, None if base is None else base + offset - start
 
         if self.home and self.home[0] <= offset < self.home[1]:
-            return "the Kosmos partition, /home", None
+            return "the Kosmos partition, /Home", None
 
         if offset >= self.esp_end:
             return "past the ESP, where the backup GPT is", None

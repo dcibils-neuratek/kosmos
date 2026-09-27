@@ -60,7 +60,7 @@ second without breaking the machine.
   libraries/        their own Lua libraries
   add-ons/
 
-/home/              what a person made
+/Home/              what a person made
   settings/         preferences, per person - `.appearance` lives here
   desktop/          what is on the desktop
   people/           BeOS People files: a node with attributes and no
@@ -104,14 +104,14 @@ processes get different subsets of it:
    ---------                     ------------------------------
    /system/libraries             /system/libraries
    /user/programs                /Running/wm
-   /user/applications            /home/settings
-   /home
+   /user/applications            /Home/settings
+   /Home
    /Devices
    /tmp                          (that is the whole list)
 ```
 
 The game cannot open your documents. Not because it is forbidden - because
-`/home` was never put in its namespace and it has no way to name it.
+`/Home` was never put in its namespace and it has no way to name it.
 
 This is why the layout is worth agreeing on anyway: it is the *convention*
 every program can rely on being handed, in the way POSIX programs rely on
@@ -135,7 +135,7 @@ still compiled into the image rather than read from a disk.
 | the libraries | the same position in Lua, one file each in `user/lib/`, reached as `use("/lib/<name>.lua")` | the same |
 | the apps and programs | Lua, in `user/bin/apps/` and `user/bin/programs/`, both served flat at `/bin` | write them to the disk at build time |
 | fonts and images | inside the image, ~700 KB of it | write them to the disk; the wallpaper case wants this first |
-| `/home` | a real disk, real files, journalled | done |
+| `/Home` | a real disk, real files, journalled | done |
 | `/tmp` | the ramfs, at `/Temporary` since 27 September - the agreed root's word for it (`layout.html`) | done |
 
 **A disk this Mac cannot mount is still a disk this Mac can write.**
@@ -144,10 +144,10 @@ image file:
 
 ```
 build/host/lua tools/kfs.lua create disk.img 64
-build/host/lua tools/kfs.lua put    disk.img book.pdf /home/books/book.pdf
-build/host/lua tools/kfs.lua ls     disk.img /home
-build/host/lua tools/kfs.lua get    disk.img /home/notes.txt notes.txt
-build/host/lua tools/kfs.lua rm     disk.img /home/old
+build/host/lua tools/kfs.lua put    disk.img book.pdf /Home/books/book.pdf
+build/host/lua tools/kfs.lua ls     disk.img /Home
+build/host/lua tools/kfs.lua get    disk.img /Home/notes.txt notes.txt
+build/host/lua tools/kfs.lua rm     disk.img /Home/old
 ```
 
 That is the answer to the one real cost of not using FAT32. `make test`
@@ -188,7 +188,7 @@ now.
 
 ## 5. The order this suggests
 
-1. **Rename to the convention** - `/tmp` for the ramfs, `/home` as it is.
+1. **Rename to the convention** - `/tmp` for the ramfs, `/Home` as it is.
    Costs nothing and stops the names drifting further.
 2. **A host image builder**, using `kfs.lua` on the host. Small, and it is
    the thing every later step needs.

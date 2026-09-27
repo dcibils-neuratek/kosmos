@@ -6,7 +6,7 @@
 -- A web browser.
 --
 --   wm browser                       the page inside the image
---   wm browser:/home/notes.html      a file on this machine
+--   wm browser:/Home/notes.html      a file on this machine
 --   wm browser:asset:tutorial/cafesa3d/index.html
 --                                    a page the image carries
 --   wm browser:10.0.2.2:8000/        a server on the host running QEMU
@@ -205,7 +205,7 @@ end
 -- browser ever written ships a start page for this reason.
 --
 -- A Lua string rather than a file, because a released image has no disk
--- under it: `run-kosmos.sh` passes no drive, so `/home` is an empty ramfs at
+-- under it: `run-kosmos.sh` passes no drive, so `/Home` is an empty ramfs at
 -- boot and a file put there would have to come from somewhere. This comes
 -- from nowhere. It is parsed and laid out by exactly the same engine a
 -- fetched page is, so it is also the fastest check that the renderer works
@@ -239,7 +239,7 @@ is read from the namespace rather than the network:</p>
 <pre>  example.com/              a name, looked up through /Network
   10.0.2.2:8000/            a server on the computer running QEMU
   188.184.67.127/           somewhere on the internet, by number
-  /home/notes.html          a file on this machine</pre>
+  /Home/notes.html          a file on this machine</pre>
 <p><code>host example.com</code> at a prompt asks the same resolver on its
 own, which is how to tell a name that will not resolve from a machine that
 will not answer.</p>

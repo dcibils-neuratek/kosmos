@@ -79,7 +79,7 @@ local function finish()
 
   local text = table.concat(bench.report(results), "\n") .. "\n"
 
-  saved = fs.write("/home/sysbench.txt", text) and true or false
+  saved = fs.write("/Home/sysbench.txt", text) and true or false
 
   bench.cleanup()
 end
@@ -178,7 +178,7 @@ local function draw()
     s:text(16, y, ("Kosmos Mark: %.0f"):format(score), theme.text)
     s:text(200, y, ("%d measurements, %.0f seconds")
                    :format(#TESTS, bench.now() - started), theme.text_dim)
-    s:text(200, y + 18, saved and "saved to /home/sysbench.txt"
+    s:text(200, y + 18, saved and "saved to /Home/sysbench.txt"
                         or "not saved: there is no disk", theme.text_dim)
   else
     s:text(16, y, ("%d of %d"):format(index, #TESTS), theme.text)

@@ -43,9 +43,9 @@ local ui = kit()
 
 -- 1. Nothing saved: the desktop's size, and the role's own face.
 do
-  files["/home/.terminal"] = nil
+  files["/Home/.terminal"] = nil
 
-  local size = textsize.new(ui, "/home/.terminal")
+  local size = textsize.new(ui, "/Home/.terminal")
 
   check(size:size() == 16, "with nothing saved the size is " .. size:size())
   check(size:face() == "mono", "with nothing saved the face is " .. size:face())
@@ -54,19 +54,19 @@ end
 
 -- 2. A step up and a step down, each written down.
 do
-  files["/home/.terminal"] = nil
+  files["/Home/.terminal"] = nil
 
-  local size = textsize.new(ui, "/home/.terminal")
+  local size = textsize.new(ui, "/Home/.terminal")
 
   check(size:step(1) == true and size:size() == 18,
         "a step up from 16 gave " .. size:size())
-  check(files["/home/.terminal"].text_px == 18,
+  check(files["/Home/.terminal"].text_px == 18,
         "the step up was not saved")
   check(size:face() == "mono@18", "at 18 the face is " .. size:face())
 
   check(size:step(-1) == true and size:size() == 16,
         "a step down from 18 gave " .. size:size())
-  check(files["/home/.terminal"].text_px == nil,
+  check(files["/Home/.terminal"].text_px == nil,
         "back at the desktop's size, a size of its own was still saved")
 
   check(size:step(-1) == true and size:size() == 14,
@@ -75,9 +75,9 @@ end
 
 -- 3. The ends: nothing past the smallest or the largest.
 do
-  files["/home/.log"] = { text_px = 32 }
+  files["/Home/.log"] = { text_px = 32 }
 
-  local size = textsize.new(ui, "/home/.log")
+  local size = textsize.new(ui, "/Home/.log")
 
   check(size:size() == 32, "32 saved came back as " .. size:size())
   check(size:step(1) == false, "a step past the largest was taken")
@@ -91,9 +91,9 @@ end
 -- 4. A size saved that is not a step - a file edited by hand - is the
 -- nearest step, so the menu's steps still land on themselves afterwards.
 do
-  files["/home/.log"] = { text_px = 21 }
+  files["/Home/.log"] = { text_px = 21 }
 
-  local size = textsize.new(ui, "/home/.log")
+  local size = textsize.new(ui, "/Home/.log")
 
   check(size:size() == 20, "21 saved came back as " .. size:size())
 end
@@ -101,9 +101,9 @@ end
 -- 5. A desktop whose `mono` is not a step: Actual size is that size, and a
 -- step from it is the next step either way rather than nothing.
 do
-  files["/home/.log"] = nil
+  files["/Home/.log"] = nil
 
-  local size = textsize.new(kit(17), "/home/.log")
+  local size = textsize.new(kit(17), "/Home/.log")
 
   check(size:size() == 17, "the desktop's 17 came back as " .. size:size())
   check(size:step(1) == true and size:size() == 18,
@@ -116,9 +116,9 @@ end
 
 -- 6. The menu: three choices and a separator, and they do what they say.
 do
-  files["/home/.terminal"] = nil
+  files["/Home/.terminal"] = nil
 
-  local size = textsize.new(ui, "/home/.terminal")
+  local size = textsize.new(ui, "/Home/.terminal")
   local items = size:items()
 
   check(#items == 4 and items[3].separator == true,

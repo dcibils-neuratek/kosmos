@@ -208,7 +208,7 @@ function sidebar.new()
   -- `Desktop` out.
   --
   -- **And the shortcuts a person made**, the drawing's `MyPhotos on PHOTOS
-  -- 2024`: files in `/home/Places`, each found again by what its volume *is*
+  -- 2024`: files in `/Home/Places`, each found again by what its volume *is*
   -- rather than by its name or its unit, both of which change on a replug
   -- (`/lib/places.lua` has the rule and `tools/test_places.lua` the proof).
   --
@@ -220,8 +220,8 @@ function sidebar.new()
   --
   local function place_rows()
     local out = {
-      { text = "Home", path = "/home", children = subdirs },
-      { text = "Desktop", path = "/home/Desktop", children = subdirs },
+      { text = "Home", path = "/Home", children = subdirs },
+      { text = "Desktop", path = "/Home/Desktop", children = subdirs },
     }
 
     for _, p in ipairs(placelib.read(fs)) do
@@ -251,7 +251,7 @@ function sidebar.new()
         -- The Drives group answers for it, with what each volume is.
       elseif SYSTEM_MOUNTS[m.path] then
         system[#system + 1] = m
-      elseif m.path ~= "/home" then
+      elseif m.path ~= "/Home" then
         -- Everything else the process can reach, under System as well: it is
         -- somewhere you *can* go rather than somewhere you work, and hiding a
         -- mount a program holds would be the sidebar disagreeing with the

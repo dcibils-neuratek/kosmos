@@ -38,7 +38,7 @@ local ui = use("/lib/ui.lua")
 -- Where this window is. A shell's working directory belongs to the shell,
 -- never to a server: a server is always told a whole path and knows nothing
 -- about where anybody thinks they are.
-local cwd = "/home"
+local cwd = "/Home"
 
 -- A path with its `.` and `..` taken out, so `../hello.lua` names the file a
 -- person means rather than a directory called `..` that no server has.
@@ -192,12 +192,12 @@ local view = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
 --
 -- **Its own text size**, from the View menu (`/lib/textsize.lua`): Diego,
 -- 22 September, "a way to increase font size in the menu of the log viewer
--- and terminal". Kept in `/home/.terminal`. Everything below measures and
+-- and terminal". Kept in `/Home/.terminal`. Everything below measures and
 -- draws in `size:face()` at `size:size()`, which is the desktop's `mono`
 -- until somebody chooses otherwise.
 --
 local textsize = use("/lib/textsize.lua")
-local size = textsize.new(ui, "/home/.terminal")
+local size = textsize.new(ui, "/Home/.terminal")
 
 --
 -- The header: where you are, and everything else behind the dots.
@@ -350,7 +350,8 @@ local function launch(text)
     if not entries then
       emit("cd: " .. target .. ": " .. tostring(why) .. "\n")
     else
-      go(target)
+      -- `cd /home` is `/Home`, as its mount spells it.
+      go(fs.canonical and fs.canonical(target) or target)
       emit(cwd .. "\n")
     end
 
@@ -381,7 +382,7 @@ local function launch(text)
 
   --
   -- A name is a program in /bin; a file - `./hello.lua`, `notes/x.lua`,
-  -- `/home/x.lua`, or `hello.lua` - is found from where this window is. The
+  -- `/Home/x.lua`, or `hello.lua` - is found from where this window is. The
   -- current directory is never searched for a bare name, so a file that is
   -- where you are cannot stand in for the program you meant.
   --

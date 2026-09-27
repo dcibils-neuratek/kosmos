@@ -1080,7 +1080,7 @@ do
 
   run(tonumber(w) or 960, tonumber(h) or 540, number("%-%-scale", 1),
       number("%-%-level", 2),
-      wanted:match("%-%-assets%s+(%S+)") or "/home/solar/",
+      wanted:match("%-%-assets%s+(%S+)") or "/Home/solar/",
       not wanted:match("%-%-hold"),
       { sky, math.floor(sky * 1.3) },
       { rubble, math.floor(rubble * 0.7) },

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""A stick's /home, made from a folder on this Mac.
+"""A stick's /Home, made from a folder on this Mac.
 
     python3 tools/homeimage.py ~/Kosmos/home build/stick-home.img 512
 
 **Diego, 19 September**: "from now on we need to make the drive image at
 least 512mb as we are adding more content to it", "and i will be adding more
-images, videos, etc to test in kosmos". So the stick's /home is no longer the
+images, videos, etc to test in kosmos". So the stick's /Home is no longer the
 32 MB disk files were put on by hand: it is made fresh, at the size given,
 from whatever is in the folder - `~/Kosmos/home` by default (the Makefile's
 `HOME_DIR`) - with the folders inside it kept as folders.
@@ -37,13 +37,13 @@ LITTER = {".DS_Store", ".localized"}
 
 
 def pairs_from(folder):
-    """Every file under `folder` as host:/home/path, and what was left out."""
+    """Every file under `folder` as host:/Home/path, and what was left out."""
     pairs, left_out = [], []
 
     for top, dirs, files in os.walk(folder):
         dirs.sort()
         rel = os.path.relpath(top, folder)
-        guest_dir = "/home" if rel == "." else "/home/" + rel.replace(os.sep, "/")
+        guest_dir = "/Home" if rel == "." else "/Home/" + rel.replace(os.sep, "/")
 
         for name in sorted(files):
             host = os.path.join(top, name)
@@ -68,7 +68,7 @@ def main():
 
     if not os.path.isdir(folder):
         sys.exit("homeimage: no folder %s - make it, and put in it what the "
-                 "stick's /home should hold" % folder)
+                 "stick's /Home should hold" % folder)
 
     pairs, left_out = pairs_from(folder)
 

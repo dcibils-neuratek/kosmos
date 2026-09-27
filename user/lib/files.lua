@@ -12,7 +12,7 @@
 
 local files = {}
 
--- "/home/a/b" -> "/home/a", and "/home" -> "/". The root's parent is the
+-- "/Home/a/b" -> "/Home/a", and "/Home" -> "/". The root's parent is the
 -- root, so walking up from it stops rather than producing "".
 function files.parent(path)
   local up = tostring(path):match("^(.*)/[^/]+/?$")
@@ -31,12 +31,25 @@ end
 -- idea of where you are: servers know nothing about it, which is why it
 -- travels with the request rather than being asked for.
 --
+--
+-- In its mounts' own spelling, when the namespace can say it (`roadmap.md`
+-- 6s): `/home/x` typed is `/Home/x`, so a path somebody typed compares
+-- equal to one the system made. A restricted `fs` - a replicant's - has no
+-- `canonical`, and gets the path as typed.
+--
 function files.abs(name, where)
-  if not name or name == "" then return where or "/" end
-  if name:sub(1, 1) == "/" then return name end
+  local path
 
-  where = where or "/"
-  return (where == "/" and "/" or where .. "/") .. name
+  if not name or name == "" then
+    path = where or "/"
+  elseif name:sub(1, 1) == "/" then
+    path = name
+  else
+    where = where or "/"
+    path = (where == "/" and "/" or where .. "/") .. name
+  end
+
+  return fs.canonical and fs.canonical(path) or path
 end
 
 function files.join(dir, name)
@@ -265,7 +278,7 @@ function files.move(from, to)
   --
   -- Refused here rather than by the filesystem, because only one of the
   -- two answers is right and the filesystem does not know which. A move of
-  -- `/home/a` to `/home/a/b` would either loop or orphan a subtree, and the
+  -- `/Home/a` to `/Home/a/b` would either loop or orphan a subtree, and the
   -- string test is exact: both are absolute paths through the same tree.
   --
   if to:lower():sub(1, #from + 1) == from:lower() .. "/" then
@@ -301,7 +314,7 @@ end
 -- onto and take things back out of - the Trash needs nothing else.
 --------------------------------------------------------------------------
 
-files.TRASH = "/home/Desktop/Trash"
+files.TRASH = "/Home/Desktop/Trash"
 
 -- Whether a path is the Trash or something inside it.
 function files.in_trash(path)
@@ -401,7 +414,7 @@ local ICONS = {
 -- Macintosh has drawn home and a volume differently from a folder, because
 -- they are places rather than containers, and Haiku draws both.
 local BY_PATH = {
-  ["/home"] = "Folder_home",
+  ["/Home"] = "Folder_home",
   ["/Temporary"] = "Device_Ramdisk",
 }
 

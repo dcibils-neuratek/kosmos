@@ -6,7 +6,7 @@
 --   log all          all of it
 --   log wm           every line mentioning `wm`
 --   log screen       every line mentioning `screen`
---   log save         all of it, to /home/log.txt (`log save name` for another)
+--   log save         all of it, to /Home/log.txt (`log save name` for another)
 --
 -- **The console half of `logview`, and it exists because the window half
 -- cannot be trusted to run.**
@@ -59,7 +59,7 @@ end
 --
 -- **`log save`: all of it, to a file.** Diego, on the ThinkPad: "can i
 -- export the log file on the thinkpad to a txt and send it here?" A photo of
--- a screen holds forty lines and this holds every one, in `/home` - which on
+-- a screen holds forty lines and this holds every one, in `/Home` - which on
 -- a stick is its Kosmos partition, and `make stick-log` on the Mac reads the
 -- file back off it (`usb.md` §7).
 --
@@ -69,7 +69,7 @@ end
 --
 if want == "save" then
   local name = args:match("^%s*save%s+(%S+)") or "log.txt"
-  local path = name:sub(1, 1) == "/" and name or ("/home/" .. name)
+  local path = name:sub(1, 1) == "/" and name or ("/Home/" .. name)
   local buf = sys.memory((#text + 4095) // 4096)
 
   if not buf then

@@ -359,12 +359,12 @@ end)
 -- once.
 --------------------------------------------------------------------------
 
--- **`/home`, not `/Temporary`.** `/Temporary` is the ramfs - a server keeping nodes
+-- **`/Home`, not `/Temporary`.** `/Temporary` is the ramfs - a server keeping nodes
 -- in its own heap - and timing it would produce a filesystem score that
--- said nothing about the disk. The disk is mounted at `/home`, and the
+-- said nothing about the disk. The disk is mounted at `/Home`, and the
 -- first version of this measured the wrong one and reported a thousand
 -- file reads a second, which should have been the giveaway.
-local FS_DIR   = "/home/.sysbench"
+local FS_DIR   = "/Home/.sysbench"
 local fs_ready = false
 local fs_count = 0
 

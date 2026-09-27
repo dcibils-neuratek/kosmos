@@ -3,7 +3,7 @@
 --
 --   rm notes.txt            one file
 --   rm a.txt b.txt c.txt    several
---   rm -r /home/archive     a directory and everything under it
+--   rm -r /Home/archive     a directory and everything under it
 --
 -- **The filesystem refuses a directory that is not empty**, and that refusal
 -- is worth keeping rather than working around: it is the one thing standing
