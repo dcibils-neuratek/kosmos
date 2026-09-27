@@ -11198,3 +11198,38 @@ no click on Duplicate - four fail. And the Cafesa3D suite's 122 checks,
 which press most of the keys, pass on both boards through the table.
 
 The gate with Duplicate and the keys: 50 of 50 in 9:06.
+
+## 18.227 Find a file
+
+`roadmap.md` 6n step 7 - Diego: "it also needs a ide wide search field to
+find files easily by name or part of name", and "yes" to
+`docs/kosmos-ide.html`'s drawing of it. **A field at the header's right,
+where Tracker keeps its Search, and Ctrl P to it**: every file the tree
+reaches - the project, `/bin`, `/lib` - whose name has what is typed in it,
+whatever its case, listed under the field with the part typed in the
+accent, where the file lives, and what it is - application or program from
+`binfs`, library for `/lib`, yours for the project - because two files can
+share a name and be unrelated: `/lib/clock.lua` is the local time, not the
+Clock. **The names that begin with it first, then the shorter**, so `cloc`
+puts `clock.lua` above `clock-replicant.lua`, which by name alone sorts
+first: `-` comes before `.`. The places are read at the first letter, at
+most six folders deep and three thousand files, and held until the field
+is emptied, so a letter costs only the matching and a file made since is
+found by the next search. Enter opens the one chosen, Up and Down choose,
+Escape closes and gives the editor the focus back.
+
+**Room for it was taken from the header's words**: `sub_room` from 300 to
+150, since at the size the window opens Run, Stop and Check with their keys
+leave the field about a hundred pixels otherwise. The field takes what the
+bar leaves, up to its drawn 240, and says `Ctrl P` at its end while there is
+room beside what it shows; the foot says it always.
+
+**In the IDE suite, both boards, 26 checks now**: Ctrl P and `Cloc`,
+typed with a capital, listing `/bin/clock.lua application`,
+`/lib/clock.lua library`, `/lib/clock-replicant.lua library` in that order;
+Down and Enter opening `/lib/clock.lua` read only; and `u.l` listing the
+project's `u.lua` first, as yours, above every name that only has it
+inside. **Controls**: matched with its case - `0 files`, two fail; and
+without the shorter-first rule - `clock-replicant.lua` first, two fail.
+
+The gate with Find a file: 50 of 50 in 9:43.

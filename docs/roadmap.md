@@ -2472,7 +2472,12 @@ processors, and still what follows USB:
       dots and on Ctrl = and Ctrl -. **Find a file drawn** in
       `docs/kosmos-ide.html` - a field where Tracker keeps its Search, Ctrl
       P, the matches under it with where each lives and what it is - and
-      built once Diego has seen it. **Diego: "yes"**, as drawn.
+      built once Diego has seen it. **Diego: "yes"**, as drawn. **DONE the
+      same day** (`testing.md` 18.227): every file the tree reaches - the
+      project, `/bin`, `/lib` - whose name has what is typed, whatever its
+      case; the names beginning with it first and the shorter before the
+      longer; where each lives and whether it is an application, a program,
+      a library or yours; Enter opens, Up and Down choose, Escape closes.
       **And two faults from the same evening, DONE the same day**
       (`testing.md` 18.218): "I can't run things like bench.lua from the ide
       as it says ramfs is full" - every Run went through a copy in `/ramfs`,

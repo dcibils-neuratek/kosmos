@@ -88,6 +88,25 @@
   .ib svg { width: 16px; height: 16px; }
   .ib.off { color: var(--w-faint); }
   .sep { width: 1px; height: 20px; background: var(--w-line); margin: 0 6px; flex: none; }
+  /* Finding a file by its name (27 September): the header's right end, and what it opens. */
+  .findwrap { width: 760px; margin: 18px auto 0; background: var(--w-body); border-radius: 10px; overflow: hidden;
+              box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 8px 28px rgba(0,0,0,.10); font-size: 13.5px; color: var(--w-ink); }
+  .findwrap .head { padding: 0 12px; display: flex; align-items: center; gap: 4px; }
+  .ff { display: flex; align-items: center; gap: 8px; width: 270px; height: 30px; padding: 0 10px; border-radius: 7px;
+        border: 1.5px solid var(--w-accent); background: var(--w-panel); flex: none; }
+  .ff svg { width: 15px; height: 15px; color: var(--w-dim); flex: none; }
+  .ff .typed { flex: 1; font-family: var(--mono); font-size: 13px; }
+  .ff .typed::after { content: ""; display: inline-block; width: 1px; height: 15px; background: var(--w-ink); vertical-align: -3px; margin-left: 1px; }
+  .ff kbd { color: var(--w-dim); border-color: var(--w-line); font-size: 11px; }
+  .fdrop { margin: 0 12px 14px auto; width: 430px; background: var(--w-pop); border: 1px solid var(--w-line); border-radius: 8px;
+           box-shadow: 0 6px 20px rgba(0,0,0,.14); overflow: hidden; }
+  .fdrop .row { display: grid; grid-template-columns: 1fr auto 86px; gap: 12px; align-items: baseline; padding: 7px 12px; }
+  .fdrop .row.on { background: var(--w-sel); }
+  .fdrop .nm { font-family: var(--mono); font-size: 13px; }
+  .fdrop .nm b { color: var(--w-accent); font-weight: 600; }
+  .fdrop .in { color: var(--w-dim); font-family: var(--mono); font-size: 12px; }
+  .fdrop .kind { color: var(--w-dim); font-size: 12px; text-align: right; }
+  .fdrop .foot { border-top: 1px solid var(--w-line); padding: 6px 12px; color: var(--w-dim); font-size: 12px; background: var(--w-popdoc); }
   .btn { height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px;
          border: 1px solid var(--w-line); border-radius: 7px; background: var(--w-btn);
          font-size: 12.5px; color: var(--w-ink); white-space: nowrap; flex: none; font-family: inherit; }
@@ -295,6 +314,30 @@
   <li><b>Debugging is a later step of its own.</b></li>
 </ul>
 <p class="why">And the lessons in its tree are wanted as drawn, one to ten, from a window with a button to a 3D app (<code>roadmap.md</code> 7) - the IDE's first project.</p>
+
+<h2>Asked for after using it - 27 September</h2>
+<p class="why">Diego, on the 0.10.172 stick: "the ide looks great!" - and three things it is missing. Two follow what the system already has and are built as it has them; the third is new, so it is drawn here first.</p>
+<div class="cols">
+  <p class="why"><b>A scrollbar on the editor</b> - "to see where we are on the file": the kit's own, the one every list has, so it looks like the rest of the look chosen, and dragged it goes there.</p>
+  <p class="why"><b>Text larger and smaller</b> - "like we have in the terminal app": <b>Larger text</b>, <b>Smaller text</b> and <b>Actual size</b> in the <b>&#8942;</b> menu, as Terminal and Log View have them, and <kbd>Ctrl =</kbd> and <kbd>Ctrl -</kbd>. The editor and Output both; kept for tomorrow.</p>
+  <p class="why"><b>Find a file</b> - "an ide wide search field to find files easily by name or part of name": a field at the header's right, where Tracker keeps its Search, and <kbd>Ctrl P</kbd> to it. Every file the tree reaches - the project, <code>/bin</code>, <code>/lib</code> - whose name has what is typed in it, the files whose names begin with it first; where each lives beside it, and whether it is an application, a program or a library, because two files can share a name and be unrelated (<code>/lib/clock.lua</code> is the local time, not the Clock).</p>
+</div>
+
+<div class="findwrap" role="img" aria-label="The IDE's header with the Find a file field, cloc typed in it, and the three files whose names contain it listed below">
+  <div class="head">
+    <span class="t">Kosmos IDE</span><span class="s">development &middot; /lib/clock.lua</span>
+    <span class="sp"></span>
+    <span class="pill">not running</span>
+    <span class="ff"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 4 4"/></svg><span class="typed">cloc</span><kbd>Ctrl P</kbd></span>
+    <span class="ib" title="More">&#8942;</span>
+  </div>
+  <div class="fdrop">
+    <div class="row on"><span class="nm"><b>cloc</b>k.lua</span><span class="in">/bin</span><span class="kind">application</span></div>
+    <div class="row"><span class="nm"><b>cloc</b>k.lua</span><span class="in">/lib</span><span class="kind">library</span></div>
+    <div class="row"><span class="nm"><b>cloc</b>k-replicant.lua</span><span class="in">/lib</span><span class="kind">library</span></div>
+    <div class="foot">3 files &middot; <kbd>Enter</kbd> opens &middot; <kbd>&uarr;</kbd> <kbd>&darr;</kbd> choose &middot; <kbd>Esc</kbd> closes</div>
+  </div>
+</div>
 
 </div>
 

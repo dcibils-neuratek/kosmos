@@ -26,6 +26,10 @@
 -- third check: a name a library does not have, `ui.slidr`, asked of the
 -- library and answered with the nearest name it does have.
 --
+-- **Find a file**, asked for after using it: Ctrl P and any part of a name,
+-- over the project, `/bin` and `/lib`, each found file with where it lives
+-- and what it is.
+--
 -- `docs/kosmos-ide.html` is the drawing, agreed as drawn ("the mockup is
 -- perfect!!!"), and `roadmap.md` 6n the steps. This is step 2, the window:
 -- the project as a tree with Kosmos itself under it to read, a tab a file,
@@ -516,7 +520,7 @@ function foot:draw(g)
 
   g:text(14, ty, words, theme.text_dim, nil, "ui")
 
-  local keys = "Ctrl Enter run    Shift F5 stop    Ctrl S save    Ctrl / comment"
+  local keys = "Ctrl Enter run    Shift F5 stop    Ctrl S save    Ctrl / comment    Ctrl P find"
 
   g:text(self.w - 14 - gfx.measure(keys, "ui"), ty, keys, theme.text_dim, nil, "ui")
 end
@@ -579,11 +583,18 @@ local stop = ui.button{ text = "Stop", icon = "stop", hint = "Shift F5",
                         disabled = true }
 local check = ui.button{ text = "Check", icon = "check", hint = "F7" }
 
+-- Finding a file by its name, at the header's right end where Tracker keeps
+-- its Search; what it finds and how are further down, under "Finding a file".
+local FIND_FIELD = 240
+local find = ui.field{ w = FIND_FIELD, text = "", hint = "Find a file", icon = "search" }
+
 local header = ui.header{
   x = 0, y = 0, w = W, title = "Kosmos IDE", sub = "",
   -- Room for the project and the file, so the bar after them stays where
-  -- it is as the file in front changes; a longer path is cut.
-  sub_room = 300,
+  -- it is as the file in front changes; a longer path is cut. It was 300,
+  -- and the field to find a file needed the rest: at the size the window
+  -- opens, Run, Stop and Check with their keys leave little else.
+  sub_room = 150,
   after = {
     icon("new", new_file), icon("open", open_chosen),
     icon("save", function() save() end), icon("saveall", save_all),
@@ -593,7 +604,7 @@ local header = ui.header{
     divider(),
     run_button, stop, check, pill,
   },
-  right = { icon("more", function(self)
+  right = { find, icon("more", function(self)
     win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, text:items())
   end) },
 }
@@ -1337,6 +1348,281 @@ function wire_suggestions(editor)
   end
 end
 
+--------------------------------------------------------------------------
+-- Finding a file (27 September). Diego: "an ide wide search field to find
+-- files easily by name or part of name". Every file the tree reaches - the
+-- project, `/bin`, `/lib` - whose name has what is typed in it, whatever
+-- its case; the names that begin with it first, and the shorter before the
+-- longer, so `cloc` puts `clock.lua` above `clock-replicant.lua`. Beside
+-- each, where it lives and what it is, because two files can share a name
+-- and be unrelated: `/lib/clock.lua` is the local time, not the Clock.
+--
+-- **Read when a search starts, and not kept**: the places are walked at the
+-- first letter and held until the field is emptied, so a file made since is
+-- found by the next search, and a letter typed costs only the matching.
+-- Enter opens the one chosen, Up and Down choose, Escape closes; Ctrl P
+-- goes to the field from anywhere in the window.
+--------------------------------------------------------------------------
+
+local FIND_W, FIND_ROWS, FIND_ROW = 520, 10, 28
+
+-- The columns: the name from the left, what it is against the right edge,
+-- and where it is between.
+local FIND_IN, FIND_KIND = 250, 86
+
+-- How deep into the project a search looks and how many files it holds: a
+-- project is a folder of programs, and one opened on a folder of photographs
+-- should cost a moment and not a minute.
+local FIND_DEPTH, FIND_MOST = 6, 3000
+
+local found = ui.view{ x = 0, y = 0, w = FIND_W, h = FIND_ROW }
+
+found.hidden = true
+found.items, found.on, found.first = {}, 1, 1
+
+-- Every file a search can find, while one is being typed.
+local findable = nil
+
+-- What a file is, from where it is: `/bin` says which of its files open a
+-- window, and everything in `/lib` is a library. The project's are yours.
+local function kind_of(path, e)
+  if path:sub(1, 5) == "/bin/" then
+    return (e.kind == "application") and "application" or "program"
+  end
+
+  if path:sub(1, 5) == "/lib/" then return "library" end
+
+  return "yours"
+end
+
+local function walk(dir, depth, place, seen, list)
+  if depth > FIND_DEPTH then return end
+
+  for _, e in ipairs(files.entries(dir) or {}) do
+    local path = files.join(dir, e.name)
+
+    if #list >= FIND_MOST then return end
+
+    -- Not what is hidden, as the tree does not show it; and a file once,
+    -- when the project is `/lib` itself.
+    if e.name:sub(1, 1) ~= "." and not seen[path] then
+      seen[path] = true
+
+      if e.kind == "directory" then
+        walk(path, depth + 1, place, seen, list)
+      else
+        list[#list + 1] = { name = e.name, lower = e.name:lower(), path = path,
+                            dir = dir, kind = kind_of(path, e), place = place }
+      end
+    end
+  end
+end
+
+local function read_places()
+  local list, seen = {}, {}
+
+  for place, top in ipairs({ project, "/bin", "/lib" }) do
+    walk(top, 1, place, seen, list)
+  end
+
+  print(("ide: find reads %d files"):format(#list))
+  return list
+end
+
+-- The files whose names have `typed` in them, in the order they are listed.
+local function matching(typed)
+  local want = typed:lower()
+  local items = {}
+
+  for _, f in ipairs(findable) do
+    local at = f.lower:find(want, 1, true)
+
+    if at then
+      items[#items + 1] = { name = f.name, path = f.path, dir = f.dir, kind = f.kind,
+                            place = f.place, lower = f.lower, at = at }
+    end
+  end
+
+  table.sort(items, function(a, b)
+    if (a.at == 1) ~= (b.at == 1) then return a.at == 1 end
+    if #a.name ~= #b.name then return #a.name < #b.name end
+    if a.lower ~= b.lower then return a.lower < b.lower end
+    if a.place ~= b.place then return a.place < b.place end
+    return a.path < b.path
+  end)
+
+  return items
+end
+
+-- `s`, cut at its end - or with `from_left`, its start - to `room` pixels.
+local function cut(s, room, face, from_left)
+  if gfx.measure(s, face) <= room then return s end
+
+  while #s > 1 and gfx.measure("..." .. s, face) > room do
+    s = from_left and s:sub(2) or s:sub(1, -2)
+  end
+
+  return from_left and ("..." .. s) or (s .. "...")
+end
+
+function found:draw(g)
+  local colours = ui.code_colours()
+  local fh, mh = gfx.height("ui"), gfx.height("mono")
+  local n = #self.items
+  local foot_y = self.h - FIND_ROW
+  local typed = #find.text
+
+  g:fill_round(0, 0, self.w, self.h, theme.line, 8)
+  g:fill_round(1, 1, self.w - 2, self.h - 2, theme.sunken, 7)
+
+  if n == 0 then
+    g:text(12, 4 + (FIND_ROW - fh) // 2, cut(("no file's name has %s in it"):format(find.text),
+           self.w - 24, "ui"), theme.text_dim, nil, "ui")
+  end
+
+  for i = 1, math.min(n, FIND_ROWS) do
+    local k = self.first + i - 1
+    local e = self.items[k]
+    local y = 4 + (i - 1) * FIND_ROW
+    local my = y + (FIND_ROW - mh) // 2
+
+    if not e then break end
+
+    if k == self.on then g:fill(2, y, self.w - 4, FIND_ROW, colours.selection) end
+
+    -- The name, with what was typed in it in the accent.
+    local x = 12
+    local room = FIND_IN - 12 - x
+
+    for part, piece in ipairs({ e.name:sub(1, e.at - 1), e.name:sub(e.at, e.at + typed - 1),
+                                e.name:sub(e.at + typed) }) do
+      if piece ~= "" and room > 0 then
+        local shown = cut(piece, room, "mono")
+
+        g:text(x, my, shown, (part == 2) and theme.accent or theme.text, nil, "mono")
+        x = x + gfx.measure(shown, "mono")
+        room = room - gfx.measure(shown, "mono")
+      end
+    end
+
+    g:text(FIND_IN, my, cut(e.dir, self.w - 24 - FIND_KIND - FIND_IN, "mono", true),
+           theme.text_dim, nil, "mono")
+    g:text(self.w - 12 - gfx.measure(e.kind, "ui"), y + (FIND_ROW - fh) // 2, e.kind,
+           theme.text_dim, nil, "ui")
+  end
+
+  g:fill(1, foot_y, self.w - 2, 1, theme.line_soft)
+  g:text(12, foot_y + (FIND_ROW - fh) // 2,
+         ("%d file%s  \u{b7}  Enter opens  \u{b7}  Up and Down choose  \u{b7}  Esc closes")
+           :format(n, (n == 1) and "" or "s"), theme.text_dim, nil, "ui")
+end
+
+local function close_finder()
+  find.text, find.caret, find.all = "", 1, false
+  findable = nil
+  found.items = {}
+  found.hidden = true
+end
+
+local function choose_found(d)
+  local n = #found.items
+
+  if n == 0 then return end
+
+  found.on = math.max(1, math.min(n, found.on + d))
+
+  if found.on < found.first then found.first = found.on end
+  if found.on > found.first + FIND_ROWS - 1 then found.first = found.on - FIND_ROWS + 1 end
+end
+
+-- The one chosen, opened - in front of the others, with the focus in it.
+local function open_found()
+  local e = found.items[found.on]
+
+  if not e then return end
+
+  close_finder()
+  open_file(e.path)
+end
+
+function find:on_change(typed)
+  if typed == "" then
+    findable, found.items = nil, {}
+    return
+  end
+
+  findable = findable or read_places()
+  found.items, found.on, found.first = matching(typed), 1, 1
+  found.h = math.max(1, math.min(#found.items, FIND_ROWS)) * FIND_ROW + 8 + FIND_ROW
+
+  -- On top of every editor, some of which were opened after it was added.
+  win:remove(found)
+  win:add(found)
+
+  local first = {}
+
+  for i = 1, math.min(3, #found.items) do
+    first[i] = found.items[i].path .. " " .. found.items[i].kind
+  end
+
+  print(("ide: find %s: %d files%s"):format(typed, #found.items,
+        (#first > 0) and (": " .. table.concat(first, ", ")) or ""))
+end
+
+function find:on_enter() open_found() end
+
+local find_key = find.key
+
+function find:key(c)
+  if c == ui.UP or c == ui.DOWN then
+    choose_found((c == ui.UP) and -1 or 1)
+    return true
+  end
+
+  if c == 27 then
+    close_finder()
+    if current then win:focus_on(current.editor) end
+    return true
+  end
+
+  return find_key(self, c)
+end
+
+-- The drawing's `Ctrl P`, at the field's far end while there is room for it
+-- beside what the field shows - at the size the window opens there is not,
+-- and the foot says it instead.
+local find_draw = find.draw
+
+function find:draw(g)
+  find_draw(self, g)
+
+  local keys = "Ctrl P"
+  local kw = gfx.measure(keys, "ui")
+  local shown = (self.text == "" and not self.focused) and self.hint or self.text
+
+  if not self.all and self:text_inset() + gfx.measure(shown) + 16 < self.w - kw - 10 then
+    g:text(self.w - kw - 10, (self.h - gfx.height("ui")) // 2, keys, theme.text_dim, nil, "ui")
+  end
+end
+
+function found:mouse(action, _, y)
+  local k = self.first + (y - 4) // FIND_ROW
+
+  if action == "press" and y >= 4 and y < self.h - FIND_ROW and self.items[k] then
+    self.on = k
+    open_found()
+  end
+
+  return true
+end
+
+function found:wheel(n)
+  local most = math.max(1, #self.items - FIND_ROWS + 1)
+
+  self.first = math.max(1, math.min(most, self.first - n))
+  return true
+end
+
 --
 -- Every pass: the console served, the child collected when it ends, and
 -- the pill's seconds - awake while something runs, asleep otherwise.
@@ -1458,6 +1744,20 @@ function header:measure()
   pill.w = gfx.measure(pill.words, "ui") + 18
 
   header_measure(self)
+
+  -- The field to find a file takes what the bar leaves it, up to its drawn
+  -- width, so a narrower window has a shorter field rather than one over
+  -- Check; its right end stays against the dots.
+  local last = self.after[#self.after]
+  local right = find.x + find.w
+  local w = math.max(80, math.min(FIND_FIELD, right - (last.x + last.w + 12)))
+
+  find.x, find.w = right - w, w
+
+  -- And what it found, under it while it has the focus and something typed.
+  found.hidden = not (find.focused and find.text ~= "")
+  found.x = math.max(0, right - FIND_W)
+  found.y = L.head + 2
 end
 
 --------------------------------------------------------------------------
@@ -1475,6 +1775,14 @@ function win:on_key(c)
 
   if c == ui.keywith(61, ui.CTRL) then text:step(1) return true end    -- Ctrl =
   if c == ui.keywith(45, ui.CTRL) then text:step(-1) return true end   -- Ctrl -
+
+  -- Ctrl P, to the field that finds a file, with what was in it chosen so a
+  -- letter typed starts again.
+  if c == 16 then
+    win:focus_on(find)
+    find.all = find.text ~= ""
+    return true
+  end
 
   if c == 19 then save() return true end                    -- Ctrl S
   if c == 14 then new_file() return true end                -- Ctrl N

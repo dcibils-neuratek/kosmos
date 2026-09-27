@@ -19,6 +19,10 @@ Then `wm ide` alone opens the same project with the same file, from what it
 remembered in /home/.ide; and Control-W twice - the window manager's prefix,
 then itself - closes the tab, which the IDE says.
 
+Then Run and Stop, checking, suggestions, the text's size and the scrollbar,
+each below where it is done; and last, Find a file: Ctrl P and part of a
+name, in any case, listing the files the tree reaches in the order drawn.
+
 Usage: run_ide.py IMAGE
 """
 
@@ -337,6 +341,33 @@ def main():
         check(said("ide: saved u.lua, ", mark, 20) == "5 lines",
               "the file with ui.slider taken was not saved")
 
+        # **Find a file** (Diego, 27 September: "an ide wide search field to
+        # find files easily by name or part of name"): Ctrl P, and `Cloc` -
+        # whatever its case - lists the Clock before the library of the same
+        # name and the longer name after both, each with what it is; Down and
+        # Enter open the library. Then `u.l`: the project's own file, which
+        # begins with it, above every name that only has it inside.
+        mark = len(guest.seen)
+        press("ctrl-p", "shift-c", "l", "o", "c")
+        listed = said("ide: find Cloc: ", mark, 30)
+        check(listed == "3 files: /bin/clock.lua application, /lib/clock.lua library, "
+                        "/lib/clock-replicant.lua library",
+              "Cloc did not find the Clock, then the library, then the longer name, "
+              "whatever the case: %r" % listed)
+
+        mark = len(guest.seen)
+        press("down", "ret")
+        check(said("ide: opened ", mark, 20) == "/lib/clock.lua, read only",
+              "Down and Enter did not open the second file found, /lib/clock.lua")
+
+        mark = len(guest.seen)
+        press("ctrl-p", "u", "dot", "l")
+        listed = said("ide: find u.l: ", mark, 30)
+        check(listed is not None
+              and re.match(r"\d+ files: /home/development/u\.lua yours, ", listed),
+              "u.l did not list the project's u.lua first, as yours: %r" % listed)
+        press("esc")
+
         stop_desktop()
         mark = len(guest.seen)
         guest.type('print("last" .. "-line:" .. fs.read("/home/development/u.lua"):match("([^\\n]*)\\n$"))')
@@ -356,7 +387,7 @@ def main():
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
           "its file remembered; a program changed and not saved run to its error "
           "with Ctrl+Enter, a 21 KB library run as it is and said to be one, "
-          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab)" % checks)
+          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab; Ctrl P finding the Clock, its library and the longer name in that order whatever the case, the library opened with Down and Enter, and the project's own file first)" % checks)
     return 0
 
 
