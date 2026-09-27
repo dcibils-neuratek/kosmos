@@ -478,7 +478,21 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_NET_WAKE   59   /* ()                     -> 0 or error         */
 
-#define SYS_MAX         60
+/*
+ * **A process from an image that is not its parent's** (`docs/elf.md`): the
+ * first `length` bytes of a region the caller holds, which the kernel
+ * copies into pages of its own and makes a process of - as `SYS_SPAWN` does
+ * from the parent's image, with the same role word, capabilities and
+ * powers. Six arguments, which is more than x86-64 carries in registers, so
+ * they arrive as one `struct spawn_image` with a fixed shape.
+ *
+ * `SYS_ERR_NOT_IMAGE` when the bytes do not begin a Kosmos image or run past
+ * the region - said apart from `SYS_ERR_NO_ROOM`, because "this file is
+ * broken" and "the machine is full" are different things to tell a person.
+ */
+#define SYS_SPAWN_IMAGE 60  /* (struct spawn_image *) -> child id or error */
+
+#define SYS_MAX         61
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -686,6 +700,20 @@ struct screen_info {
  * what a killed one ends with, read as "no children", and the child had
  * already been reaped (`process_wait`).
  */
+/*
+ * What `SYS_SPAWN_IMAGE` is handed: `SYS_SPAWN`'s four, and the region
+ * holding the image and how much of it is. Fixed fields, both sides
+ * compiled against this, so a caller cannot say what it has no field for.
+ */
+struct spawn_image {
+    uint64_t arg;           /* the child's role word, as SYS_SPAWN's */
+    uint64_t caps;          /* an array of int32 capability indices */
+    uint64_t ncaps;
+    uint64_t flags;         /* SPAWN_*, each only if the caller holds it */
+    int64_t  region;        /* the region the image is in */
+    uint64_t length;        /* its bytes, from the region's start */
+};
+
 struct wait_result {
     uint64_t id;
     int64_t  code;
@@ -1184,6 +1212,7 @@ struct diskinfo {
 #define SYS_ERR_NO_CAPS   (-109)    /* this thread's capability table is full */
 #define SYS_ERR_NO_DEVICE (-108)    /* this machine has nothing of that kind */
 #define SYS_NO_INTERRUPT  (-110)    /* a timed interrupt wait ran out; not an error */
+#define SYS_ERR_NOT_IMAGE (-111)    /* SYS_SPAWN_IMAGE's bytes are not an image */
 
 /*
  * Everything above is plain preprocessor because user programs written in
@@ -1224,6 +1253,7 @@ static inline void sys_result_codes_are_distinct(long result)
     case SYS_ERR_NO_CAPS:
     case SYS_ERR_NO_DEVICE:
     case SYS_NO_INTERRUPT:
+    case SYS_ERR_NOT_IMAGE:
     default:
         break;
     }

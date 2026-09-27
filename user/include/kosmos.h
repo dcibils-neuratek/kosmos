@@ -157,6 +157,17 @@ static inline long kosmos_spawn(unsigned long arg, const int *caps,
 }
 
 /*
+ * A child from an image that is not this process's own: the first
+ * `req->length` bytes of a region this process holds (`docs/elf.md`). The
+ * child's id, or negative - `SYS_ERR_NOT_IMAGE` when the bytes are not an
+ * image, which is the file's fault rather than the machine's.
+ */
+static inline long kosmos_spawn_image(const struct spawn_image *req)
+{
+    return sys1(SYS_SPAWN_IMAGE, (long)(uintptr_t)req);
+}
+
+/*
  * Blocks until any child ends, and returns its exit code. Negative when
  * there are no children left to wait for.
  *

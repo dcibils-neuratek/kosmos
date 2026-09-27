@@ -10981,3 +10981,53 @@ longest suites first by what each took last time, and x86-display-4 had
 failed at 32 of its 171 seconds in the run before, so it was started at 487
 s and ran on alone to 658. A failure's time says nothing about a suite's
 length, so `gate.py` keeps the last *passing* time now.
+
+## 18.221 A process from an image in a region
+
+Step 1 of the loader (`docs/elf.md`, `roadmap.md` 6t): **`SYS_SPAWN_IMAGE`**,
+a process made from an image that is not its parent's. The caller hands a
+region and how many of its bytes are the image, with `SYS_SPAWN`'s role
+word, capabilities and powers, as one `struct spawn_image` - six values,
+more than x86-64 carries in registers. The kernel resolves the region from
+the caller's own table, **copies it into a region of its own**, checks the
+header **on the copy**, and makes the process from that: code mapped from
+the copy's pages one at a time, data copied out of it. The copy is held by
+every process made from it - a child of such a process starts from the
+same image - and let go after the last one's address space is gone.
+`sys_spawn`'s checks and grants are one pair of functions both calls use.
+And `SYS_ERR_NOT_IMAGE` (-111), so a broken file is never reported as the
+machine being full.
+
+**In the kernel suite, both machines**:
+
+- *an image from a region runs*: the system's image copied into a region,
+  made into a process with a new C role, `CTEST_IMAGE`, which ends with 42
+  before anything else - so a 42 is that code, reached through the kernel's
+  copy. Its code pages are not the region's, the region written over with
+  0xff before it starts changes nothing, and afterwards no region is in use
+  and its slot is back. **Control**: the child made from the caller's region
+  itself - "its code is the region's own pages", and overwritten, it dies.
+- *bytes not an image, refused*: the wrong magic, code longer than the
+  image, code that is not whole pages, an image longer than its region, and
+  one shorter than a header, each said to be the bytes' fault.
+- *the syscall refuses them too*: `CTEST_SPAWN_IMAGE`, through the syscall
+  from a process - a request it may not read (`SYS_ERR_FAULT`), bytes not an
+  image and an image longer than its region (`SYS_ERR_NOT_IMAGE`), a region
+  it was not handed and a power it has not got (`SYS_ERR_DENIED`).
+
+**What the first version measured wrongly.** It compared free pages before
+and after, and came back ten pages short - and so did the ordinary path,
+`process_create` with the same role, three times: ten pages each. Not a
+leak: a thread's two stacks, four pages and a guard each, stay with its slot
+when it ends so the next thread there inherits them (`thread.c`,
+`release_thread`), and untouched slots are taken first, so a process on a
+new slot leaves ten pages with it, bounded by the slots. This test runs
+while slots are still new; the process table's test runs after they have
+all been touched, which is why its page count balances. So the test holds
+what the feature owns - the copy released, the slot back - and says why.
+
+And `process.h` said twice that the image is copied rather than mapped in
+place, which stopped being true long ago; corrected.
+
+The gate with step 1: 48 of 48 in 8:48 - the order kept from passing runs
+(18.220) doing what it should.

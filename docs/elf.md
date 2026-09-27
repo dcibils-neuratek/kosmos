@@ -176,7 +176,8 @@ anything is spawned, and names the page that differs.
 
 ## The steps, each checked on its own
 
-1. **`SYS_SPAWN_IMAGE`** in the kernel, on both machines. The kernel suite
+1. **DONE on 27 September** (`testing.md` 18.221) - **`SYS_SPAWN_IMAGE`**
+   in the kernel, on both machines. The kernel suite
    spawns a copy of the system's image from a region and sees it run; a
    region with a bad magic, a code size past its end, or too small is
    refused, and the parent writing the region afterwards changes nothing

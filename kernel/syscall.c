@@ -331,12 +331,14 @@ static long sys_reply(struct process *p, uintptr_t sender, uintptr_t msg_ptr)
  * cannot hand over what it does not hold, and the child's indices are its
  * own, in the order they were given.
  */
-static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
-                      size_t ncaps, unsigned long flags)
+/*
+ * What both spawns check before anything is built: the capabilities are
+ * readable and not too many, and every power asked for is one the parent
+ * holds. 0, or the error.
+ */
+static long spawn_allowed(struct process *p, uintptr_t caps_ptr, size_t ncaps,
+                          unsigned long flags)
 {
-    struct process *child;
-    size_t i;
-
     if (ncaps > captable_limit()) {
         return SYS_ERR_NO_ROOM;
     }
@@ -384,10 +386,18 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
         return SYS_ERR_DENIED;      /* cannot pass on what it has not got */
     }
 
-    child = process_spawn(p, arg);
-    if (child == NULL) {
-        return SYS_ERR_NO_ROOM;
-    }
+    return 0;
+}
+
+/*
+ * And what both do once the child exists: its capabilities, its powers, and
+ * its start. The child's id, or the error - with the child abandoned, never
+ * half-started.
+ */
+static long spawn_finish(struct process *child, uintptr_t caps_ptr, size_t ncaps,
+                         unsigned long flags)
+{
+    size_t i;
 
     for (i = 0; i < ncaps; i++) {
         cap_t from = (cap_t)((const int32_t *)caps_ptr)[i];
@@ -441,6 +451,74 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
 
     process_start(child);
     return (long)child->id;
+}
+
+static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
+                      size_t ncaps, unsigned long flags)
+{
+    long allowed = spawn_allowed(p, caps_ptr, ncaps, flags);
+    struct process *child;
+
+    if (allowed < 0) {
+        return allowed;
+    }
+
+    child = process_spawn(p, arg);
+    if (child == NULL) {
+        return SYS_ERR_NO_ROOM;
+    }
+
+    return spawn_finish(child, caps_ptr, ncaps, flags);
+}
+
+/*
+ * A process from an image in a region the caller holds (`docs/elf.md`).
+ * Everything `sys_spawn` checks, checked the same way, and the region
+ * resolved from the caller's own table as `SYS_MEM_MAP` does - a region it
+ * was not handed it cannot name.
+ */
+static long sys_spawn_image(struct process *p, uintptr_t req_ptr)
+{
+    struct spawn_image req;
+    struct memobj *region;
+    struct process *child;
+    bool not_image;
+    long allowed;
+
+    if (!process_may_read(p, req_ptr, sizeof(req))) {
+        return SYS_ERR_FAULT;
+    }
+
+    /* Copied once, so a caller changing it from another thread cannot make
+     * the kernel check one request and act on another. */
+    memcpy(&req, (const void *)req_ptr, sizeof(req));
+
+    allowed = spawn_allowed(p, (uintptr_t)req.caps, (size_t)req.ncaps,
+                            (unsigned long)req.flags);
+
+    if (allowed < 0) {
+        return allowed;
+    }
+
+    region = ipc_resolve_memory(thread_current(), (cap_t)req.region);
+
+    if (region == NULL) {
+        return SYS_ERR_DENIED;
+    }
+
+    /* Held while it is copied, which for a game is megabytes: another of
+     * the caller's threads could let the capability go meanwhile. */
+    memobj_ref(region);
+    child = process_spawn_image(p, region, (size_t)req.length,
+                                (unsigned long)req.arg, &not_image);
+    memobj_unref(region);
+
+    if (child == NULL) {
+        return not_image ? SYS_ERR_NOT_IMAGE : SYS_ERR_NO_ROOM;
+    }
+
+    return spawn_finish(child, (uintptr_t)req.caps, (size_t)req.ncaps,
+                        (unsigned long)req.flags);
 }
 
 /*
@@ -2396,6 +2474,10 @@ void syscall_dispatch(struct syscall_frame *sc)
 
     case SYS_SPAWN:
         result = sys_spawn(p, sc->arg[0], sc->arg[1], (size_t)sc->arg[2], sc->arg[3]);
+        break;
+
+    case SYS_SPAWN_IMAGE:
+        result = sys_spawn_image(p, sc->arg[0]);
         break;
 
     case SYS_SCREEN:

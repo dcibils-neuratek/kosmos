@@ -4107,6 +4107,191 @@ static bool test_the_table_says_threads_and_file(void)
         && pmm_free_pages() == pages_before;
 }
 
+/*
+ * **A process from an image in a region** (`docs/elf.md` step 1): the
+ * system's image copied into a region, made into a process, and run to
+ * `CTEST_IMAGE`'s 42. Its code is the kernel's copy and not the region's
+ * pages - so the region written over before it starts changes nothing it
+ * runs - and when it has gone, the kernel's copy has gone with it (no region
+ * left in use, and a region gives back every page it holds) and so has its
+ * process slot.
+ *
+ * **Not the free page count**, which a first version compared and which
+ * came back ten pages short - on the ordinary path too, `process_create`
+ * with the same role, run three times: ten pages each. They are a thread's
+ * two stacks, which stay with its slot when it ends so the next thread in
+ * that slot inherits them (`thread.c`, `release_thread`), and untouched
+ * slots are taken first - so a process on a new slot leaves ten pages there,
+ * bounded by the slots, whatever image it came from.
+ */
+#define CTEST_IMAGE       905UL
+#define CTEST_SPAWN_IMAGE 906UL
+
+static bool test_an_image_from_a_region_runs(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    size_t len = (size_t)init_image_len;
+    size_t pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    unsigned before = process_count();
+    unsigned regions_before = memobj_in_use();
+    struct memobj *region = memobj_create(pages, false);
+    struct process *p;
+    bool not_image = false;
+    bool own_code;
+    size_t i;
+    int code;
+
+    if (region == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < pages; i++) {
+        size_t n = len - i * PAGE_SIZE;
+
+        memcpy(memobj_page(region, i), init_image + i * PAGE_SIZE,
+               n < PAGE_SIZE ? n : PAGE_SIZE);
+    }
+
+    p = process_spawn_image(NULL, region, len, CTEST_IMAGE, &not_image);
+
+    if (p == NULL) {
+        memobj_unref(region);
+        kputs(not_image ? "\n   (refused as not an image)\n"
+                        : "\n   (no room to make it)\n");
+        return false;
+    }
+
+    own_code = as_page_phys(p->space, USER_TEXT_VA)
+               != virt_to_phys(memobj_page(region, 0));
+
+    for (i = 0; i < pages; i++) {
+        memset(memobj_page(region, i), 0xff, PAGE_SIZE);
+    }
+
+    memobj_unref(region);
+    process_start(p);
+
+    for (i = 0; i < LUATEST_SLICES && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        kputs("\n   (still running)\n");
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    if (code != 42) {
+        kputs("\n   (it ended with ");
+        kputu((unsigned)code);
+        kputs(", not 42)\n");
+    }
+
+    if (!own_code) {
+        kputs("\n   (its code is the region's own pages)\n");
+    }
+
+    if (memobj_in_use() != regions_before) {
+        kputs("\n   (an image of ");
+        kputu((unsigned long)pages);
+        kputs(" pages; regions in use before ");
+        kputu(regions_before);
+        kputs(", after ");
+        kputu(memobj_in_use());
+        kputs(")");
+    }
+
+    return own_code && code == 42 && process_count() == before
+        && memobj_in_use() == regions_before;
+}
+
+/*
+ * And the bytes that are not an image, refused before anything is built:
+ * the wrong magic, code longer than the image, code that is not whole
+ * pages, an image longer than its region, and one shorter than a header -
+ * each said to be the bytes' fault, and nothing left behind.
+ */
+static bool test_bytes_that_are_not_an_image_are_refused(void)
+{
+    unsigned before = process_count();
+    size_t pages_before = pmm_free_pages();
+    struct memobj *region = memobj_create(2, false);
+    uint64_t *h;
+    bool not_image = false;
+    bool ok = true;
+
+    if (region == NULL) {
+        return false;
+    }
+
+    h = memobj_page(region, 0);
+    memset(h, 0, PAGE_SIZE);
+
+    h[0] = 0x1234;
+    h[1] = PAGE_SIZE;
+    ok = ok && process_spawn_image(NULL, region, 2 * PAGE_SIZE, 0, &not_image) == NULL
+         && not_image;
+
+    h[0] = USER_IMAGE_MAGIC;
+    h[1] = 3 * PAGE_SIZE;
+    ok = ok && process_spawn_image(NULL, region, 2 * PAGE_SIZE, 0, &not_image) == NULL
+         && not_image;
+
+    h[1] = 100;
+    ok = ok && process_spawn_image(NULL, region, 2 * PAGE_SIZE, 0, &not_image) == NULL
+         && not_image;
+
+    h[1] = PAGE_SIZE;
+    ok = ok && process_spawn_image(NULL, region, 3 * PAGE_SIZE, 0, &not_image) == NULL
+         && not_image;
+
+    ok = ok && process_spawn_image(NULL, region, 8, 0, &not_image) == NULL
+         && not_image;
+
+    memobj_unref(region);
+
+    return ok && process_count() == before && pmm_free_pages() == pages_before;
+}
+
+/* The same refusals through the syscall, from a process: `spawn_image_role`. */
+static bool test_spawn_image_refuses_through_the_syscall(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *p = process_create("t-spawnimg", init_image,
+                                       (size_t)init_image_len, CTEST_SPAWN_IMAGE);
+    unsigned i;
+    int code;
+
+    if (p == NULL) {
+        return false;
+    }
+
+    process_start(p);
+
+    for (i = 0; i < LUATEST_SLICES && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    if (code != 0) {
+        kputs("\n   (SYS_SPAWN_IMAGE answered check ");
+        kputu((unsigned)code);
+        kputs(" wrongly)\n");
+    }
+
+    return code == 0;
+}
+
 static bool test_lua_arithmetic(void)          { return luatest_role(0); }
 static bool test_lua_floats(void)              { return luatest_role(1); }
 static bool test_lua_strings_and_tables(void)  { return luatest_role(2); }
@@ -8804,6 +8989,9 @@ static const struct test tests[] = {
     { "dev: only the owner may print",         test_only_the_console_owner_may_print },
     { "dev: a dead driver's button comes up",  test_a_driver_that_ends_lets_go_of_the_pointer },
     { "spawn: a child runs and is waited for", test_a_process_can_spawn_and_wait },
+    { "spawn: an image from a region runs",    test_an_image_from_a_region_runs },
+    { "spawn: bytes not an image, refused",    test_bytes_that_are_not_an_image_are_refused },
+    { "spawn: the syscall refuses them too",   test_spawn_image_refuses_through_the_syscall },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },

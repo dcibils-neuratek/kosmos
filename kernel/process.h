@@ -46,8 +46,9 @@ struct thread;
  * The cost is not the slot, which is 1.4 KB in a slab. It is what a process
  * is made of, and that is charged only when one exists:
  *
- *   image     a private copy, so it can be mapped read-only and executable
- *             without the original being. About 240 KB today.
+ *   image     its writable half, copied. The code is mapped where it lies -
+ *             the system's image, the same pages in every process - or, for
+ *             an image from a file, from the kernel's own copy of it.
  *   heap      2 MB, fixed, because `design.md` §5.2 wants a bounded one: a
  *             small heap collects quickly and the maximum GC pause is what
  *             decides whether the system stutters.
@@ -401,6 +402,16 @@ struct process {
     const void       *image;
     size_t            image_len;
 
+    /*
+     * **Or an image from a file** (`docs/elf.md`, `SYS_SPAWN_IMAGE`): the
+     * kernel's own copy of a region somebody handed it, in pages of its own
+     * that no process can map writable. Held by every process made from it
+     * - its children start from the same image - and its pages go back
+     * when the last of them ends. NULL for the system's image, which the
+     * kernel keeps in `.rodata` and never frees.
+     */
+    struct memobj    *image_obj;
+
     /* Who spawned it, and the thread of theirs waiting for it to end. A
      * process with no parent was started by whoever is playing init. */
     struct process   *parent;
@@ -549,15 +560,13 @@ struct process {
 void process_init(void);
 
 /*
- * Creates a process from a blob of position-independent user code, copied
- * into fresh pages and mapped at USER_TEXT_VA. Returns NULL when the pool is
- * full or there are no pages.
- *
- * The blob is copied rather than mapped in place because the image's own
- * pages are the kernel's, mapped for the kernel alone, and shared by every
- * process. A process gets its own copy so it can be given user permissions
- * without
- * handing them to anybody else.
+ * Creates a process from an image: Kosmos's sixteen-byte header, then the
+ * code, then the data. The code is **mapped where it lies**, read and
+ * execute, the same physical pages in every process made from that image;
+ * the data is copied into pages of the process's own. Returns NULL when
+ * the header is not an image's, the pool is full, or there are no pages.
+ * `process_create` itself is for an image the kernel holds in one run -
+ * the system's, in `.rodata`.
  */
 /*
  * Builds a process but does not start it. Its capabilities are granted after
@@ -670,6 +679,26 @@ void process_exit(struct process *p, int code);
  * kernel does for its own.
  */
 struct process *process_spawn(struct process *parent, unsigned long arg);
+
+/*
+ * A child of `parent` from a *different* image: the first `len` bytes of
+ * `region`, a region the caller holds (`docs/elf.md`). The kernel copies
+ * them into a region of its own first - the caller can still write
+ * `region`, and code it could change under the child is code nobody should
+ * run - and makes the child from the copy, whose header is checked there,
+ * after the copy, so nothing written to `region` meanwhile can get past
+ * it. Not started, as `process_spawn`.
+ *
+ * NULL when it could not be made; `*not_image` says whether that was the
+ * bytes - no image's header, or longer than the region - rather than the
+ * machine being out of room, so the caller can say which.
+ */
+struct process *process_spawn_image(struct process *parent,
+                                    struct memobj *region, size_t len,
+                                    unsigned long arg, bool *not_image);
+
+/* Whether the first `len` bytes at `header` begin a Kosmos image. */
+bool process_image_ok(const void *header, size_t len);
 
 /*
  * Waits for any exited child, reaping it, so a supervisor that waits in a

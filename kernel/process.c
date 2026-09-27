@@ -19,6 +19,7 @@
 #include "console.h"
 #include "hal.h"
 #include "pool.h"
+#include "memobj.h"
 
 
 /*
@@ -776,11 +777,60 @@ static void wait_for_siblings(struct process *p)
     }
 }
 
-struct process *process_create(const char *name, const void *image,
-                               size_t len, unsigned long arg)
+/*
+ * Whether `len` bytes starting at `header` begin an image.
+ *
+ * The header is checked rather than trusted, even for the image built
+ * alongside the kernel. A loader that assumes its input is well formed is a
+ * loader that will be wrong exactly once - and images come off a disk now
+ * (`docs/elf.md`).
+ *
+ * `rx_bytes > len` is the one that matters now the read-only half is mapped
+ * rather than copied. `rx_pages > pages` only said the half fits in the
+ * image *rounded up to a page*, which was enough while the tail of that page
+ * was zeroed on the way in. Mapping in place has no such moment: an 80-byte
+ * blob whose header claims a 4096-byte read-only half would have the rest
+ * of the page - whatever the linker put after it - readable by the process.
+ * So the half has to be bytes the image actually has.
+ */
+bool process_image_ok(const void *header, size_t len)
+{
+    const uint64_t *h = header;
+    size_t rx_bytes;
+
+    if (h == NULL || len < USER_IMAGE_HEADER || h[0] != USER_IMAGE_MAGIC) {
+        return false;
+    }
+
+    rx_bytes = (size_t)h[1];
+
+    return (rx_bytes & PAGE_MASK) == 0 && rx_bytes != 0 && rx_bytes <= len;
+}
+
+/*
+ * Page `i` of an image: the system's, one run in `.rodata`, or the kernel's
+ * copy of a region, in pages of its own (`SYS_SPAWN_IMAGE`).
+ */
+static const char *image_page(const void *image, struct memobj *obj, size_t i)
+{
+    if (obj != NULL) {
+        return memobj_page(obj, i);
+    }
+
+    return (const char *)image + i * PAGE_SIZE;
+}
+
+/*
+ * The one way a process is made, from either kind of image: `image` for
+ * the system's, or `obj` for a copy the kernel made of a region - exactly
+ * one of them.
+ */
+static struct process *create(const char *name, const void *image,
+                              struct memobj *obj, size_t len,
+                              unsigned long arg)
 {
     struct process *p = alloc_process();   /* zeroed and claimed */
-    const uint64_t *header = image;
+    const uint64_t *header;
     size_t pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
     size_t rx_bytes;
     size_t rx_pages;
@@ -792,37 +842,19 @@ struct process *process_create(const char *name, const void *image,
 
     captable_init(&p->caps);
 
-    if (pages == 0) {
+    if (pages == 0 || (image == NULL) == (obj == NULL)
+        || (obj != NULL && pages > obj->pages)) {
         return give_back(p);
     }
 
-    /*
-     * The header is checked rather than trusted, even though the only image
-     * that exists is built alongside the kernel. A loader that assumes its
-     * input is well formed is a loader that will be wrong exactly once, and
-     * at M8 the images come off a disk.
-     */
-    if (len < USER_IMAGE_HEADER || header[0] != USER_IMAGE_MAGIC) {
+    header = (const uint64_t *)image_page(image, obj, 0);
+
+    if (!process_image_ok(header, len)) {
         return give_back(p);
     }
 
     rx_bytes = (size_t)header[1];
     rx_pages = rx_bytes / PAGE_SIZE;
-
-    /*
-     * `rx_bytes > len` is the one that matters now the read-only half is
-     * mapped rather than copied.
-     *
-     * `rx_pages > pages` only says the half fits in the image *rounded up to
-     * a page*, which was enough while the tail of that page was zeroed on
-     * the way in. Mapping in place has no such moment: an 80-byte blob whose
-     * header claims a 4096-byte read-only half would have the rest of the
-     * page - whatever the linker put after it - readable by the process.
-     * So the half has to be bytes the image actually has.
-     */
-    if ((rx_bytes & PAGE_MASK) != 0 || rx_pages == 0 || rx_bytes > len) {
-        return give_back(p);
-    }
 
     /*
      * The read-only half is mapped where it lies; only the writable half is
@@ -856,7 +888,7 @@ struct process *process_create(const char *name, const void *image,
      * The writable half is still copied, and has to be: two processes from
      * one image must not share their globals.
      */
-    if (((uintptr_t)image & PAGE_MASK) != 0) {
+    if (image != NULL && ((uintptr_t)image & PAGE_MASK) != 0) {
         /*
          * Refused rather than rounded down, and rather than silently copying
          * instead. An image mapped from an unaligned address maps whatever
@@ -884,7 +916,16 @@ struct process *process_create(const char *name, const void *image,
             return give_back(p);
         }
 
-        memcpy(p->image_pages, (const char *)image + rx_bytes, len - rx_bytes);
+        /* A page at a time, because a copy the kernel made of a region is
+         * pages of its own rather than one run. The read-only half is whole
+         * pages, so the data starts at the top of one. */
+        for (i = 0; rx_bytes + i * PAGE_SIZE < len; i++) {
+            size_t n = len - rx_bytes - i * PAGE_SIZE;
+
+            memcpy((char *)p->image_pages + i * PAGE_SIZE,
+                   image_page(image, obj, rx_pages + i),
+                   n < PAGE_SIZE ? n : PAGE_SIZE);
+        }
 
         /* The tail of the last page holds whatever the previous owner left,
          * which this process would otherwise be able to read. */
@@ -916,9 +957,21 @@ struct process *process_create(const char *name, const void *image,
      * which is why `mmu.h` makes it total over kernel pointers rather than
      * leaving each caller to know which kind it is holding.
      */
-    if (as_map(p->space, USER_TEXT_VA, virt_to_phys(image),
-               rx_pages, MAP_USER_RX) != AS_OK) {
-        goto fail;
+    if (image != NULL) {
+        if (as_map(p->space, USER_TEXT_VA, virt_to_phys(image),
+                   rx_pages, MAP_USER_RX) != AS_OK) {
+            goto fail;
+        }
+    } else {
+        /* The kernel's copy: its pages, one at a time, and no process holds
+         * a capability to it, so nothing can map them writable. */
+        for (i = 0; i < rx_pages; i++) {
+            if (as_map(p->space, USER_TEXT_VA + i * PAGE_SIZE,
+                       virt_to_phys(memobj_page(obj, i)), 1,
+                       MAP_USER_RX) != AS_OK) {
+                goto fail;
+            }
+        }
     }
 
     if (p->image_page_count > 0
@@ -964,6 +1017,13 @@ struct process *process_create(const char *name, const void *image,
     p->image = image;
     p->image_len = len;
 
+    /* Held for as long as this process is, and let go in `release_memory`
+     * after its address space is gone, never while anything maps it. */
+    if (obj != NULL) {
+        memobj_ref(obj);
+        p->image_obj = obj;
+    }
+
     for (i = 0; i + 1 < PROCESS_NAME_MAX && name[i] != '\0'; i++) {
         p->name[i] = name[i];
     }
@@ -1008,20 +1068,89 @@ fail:
         pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
     }
     as_destroy(p->space);
+
+    if (p->image_obj != NULL) {
+        memobj_unref(p->image_obj);
+        p->image_obj = NULL;
+    }
+
     return give_back(p);
+}
+
+struct process *process_create(const char *name, const void *image,
+                               size_t len, unsigned long arg)
+{
+    return create(name, image, NULL, len, arg);
 }
 
 struct process *process_spawn(struct process *parent, unsigned long arg)
 {
     struct process *child;
 
-    if (parent == NULL || parent->image == NULL) {
+    if (parent == NULL || (parent->image == NULL && parent->image_obj == NULL)) {
         return NULL;
     }
 
-    child = process_create(parent->name, parent->image, parent->image_len, arg);
+    /* From the image the parent was made from - the system's, or the
+     * kernel's copy of a file's, which the child holds as well. */
+    child = create(parent->name, parent->image, parent->image_obj,
+                   parent->image_len, arg);
 
     if (child != NULL) {
+        child->parent = parent;
+        child->parent_id = parent->id;
+    }
+
+    return child;
+}
+
+struct process *process_spawn_image(struct process *parent,
+                                    struct memobj *region, size_t len,
+                                    unsigned long arg, bool *not_image)
+{
+    size_t pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    struct memobj *copy;
+    struct process *child;
+    size_t i;
+
+    *not_image = false;
+
+    if (region == NULL || len < USER_IMAGE_HEADER || pages > region->pages) {
+        *not_image = true;
+        return NULL;
+    }
+
+    copy = memobj_create(pages, false);
+
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < pages; i++) {
+        memcpy(memobj_page(copy, i), memobj_page(region, i), PAGE_SIZE);
+    }
+
+    /* Past the image's end, in its last page, is whatever the region held:
+     * not the image's, so not the child's. */
+    if ((len & PAGE_MASK) != 0) {
+        memset((char *)memobj_page(copy, pages - 1) + (len & PAGE_MASK), 0,
+               PAGE_SIZE - (len & PAGE_MASK));
+    }
+
+    /* Checked on the copy, after the copy: what the region says now is not
+     * what the child will run, and only the copy is. */
+    if (!process_image_ok(memobj_page(copy, 0), len)) {
+        memobj_unref(copy);
+        *not_image = true;
+        return NULL;
+    }
+
+    child = create(parent != NULL ? parent->name : "image", NULL, copy, len, arg);
+
+    /* The create's own reference; a child holds one of its own. */
+    memobj_unref(copy);
+
+    if (child != NULL && parent != NULL) {
         child->parent = parent;
         child->parent_id = parent->id;
     }
@@ -1710,7 +1839,8 @@ static void release_memory(struct process *p)
     /*
      * The writable half only. The read-only half is the kernel's own image,
      * mapped rather than copied, and freeing it would return the pages the
-     * kernel is running out of.
+     * kernel is running out of - or the kernel's copy of a file's, which is
+     * let go below, once nothing maps it.
      */
     for (i = 0; p->image_pages != NULL && i < p->image_page_count; i++) {
         pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
@@ -1742,6 +1872,13 @@ static void release_memory(struct process *p)
     p->mapped_pages = 0;
 
     as_destroy(p->space);
+
+    /* An image from a file, once nothing maps it: its pages go back when the
+     * last process made from it has gone the same way. */
+    if (p->image_obj != NULL) {
+        memobj_unref(p->image_obj);
+        p->image_obj = NULL;
+    }
 
     p->space = NULL;
     p->image_pages = NULL;

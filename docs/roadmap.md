@@ -2236,7 +2236,11 @@ processors, and still what follows USB:
    `per-launcher-permissions` is waiting on: what a program may reach, when
    the build no longer vouched for it. Written as a document before it is
    built, as `threads.md` was, in steps each with its suite; the layout it
-   installs into is 6s's drawing.
+   installs into is 6s's drawing. **Written as `docs/elf.md`** the same
+   day: an installed program is an image of its own beside its Lua, named
+   by `-- kosmos: image`, an ELF read and checked in userland, copied by the
+   kernel. **Step 1 DONE** (`testing.md` 18.221): `SYS_SPAWN_IMAGE`, a
+   process from an image in a region, the kernel's own copy of it.
 
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the

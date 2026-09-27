@@ -265,6 +265,74 @@ static int first_leaves_role(void)
 #define CTEST_TABLE             904UL
 #define TABLE_FILE              "/bin/t-table.lua"
 
+/*
+ * **An image from a region** (`docs/elf.md` step 1). `CTEST_IMAGE` is run by
+ * the kernel suite from a copy of this image it put in a region, and says
+ * so by ending with 42 before anything else happens - so a 42 is this code,
+ * reached through the kernel's copy. `CTEST_SPAWN_IMAGE` is SYS_SPAWN_IMAGE
+ * refusing, through the syscall: a request it may not read, bytes that are
+ * not an image, a region it was not handed, an image longer than its region,
+ * and a power this process has not got. Its code names the first answered
+ * wrongly.
+ */
+#define CTEST_IMAGE             905UL
+#define CTEST_SPAWN_IMAGE       906UL
+
+static int spawn_image_role(void)
+{
+    struct spawn_image req;
+    long region = kosmos_mem_create(1);
+    long at;
+
+    memset(&req, 0, sizeof req);
+
+    if (region < 0) {
+        return 1;
+    }
+
+    at = kosmos_mem_map(region);
+
+    if (at < 0) {
+        return 1;
+    }
+
+    ((unsigned long *)at)[0] = 0x1234;           /* not the magic */
+    ((unsigned long *)at)[1] = 4096;
+
+    if (kosmos_spawn_image(NULL) != SYS_ERR_FAULT) {
+        return 2;
+    }
+
+    req.region = region;
+    req.length = 4096;
+
+    if (kosmos_spawn_image(&req) != SYS_ERR_NOT_IMAGE) {
+        return 3;
+    }
+
+    req.region = 12345;
+
+    if (kosmos_spawn_image(&req) != SYS_ERR_DENIED) {
+        return 4;
+    }
+
+    req.region = region;
+    req.length = 8192;                            /* two pages of a one-page region */
+
+    if (kosmos_spawn_image(&req) != SYS_ERR_NOT_IMAGE) {
+        return 5;
+    }
+
+    req.length = 4096;
+    req.flags = SPAWN_DEVICES;                    /* a power it was not given */
+
+    if (kosmos_spawn_image(&req) != SYS_ERR_DENIED) {
+        return 6;
+    }
+
+    return 0;
+}
+
 static struct proc_info table[64];
 static volatile unsigned long released;
 
@@ -424,6 +492,14 @@ int main(unsigned long arg)
 
     if (arg == CTEST_TABLE) {
         return table_role();
+    }
+
+    if (arg == CTEST_IMAGE) {
+        return 42;
+    }
+
+    if (arg == CTEST_SPAWN_IMAGE) {
+        return spawn_image_role();
     }
 #endif
 
