@@ -2133,8 +2133,8 @@ processors, and still what follows USB:
      starts without the layer when a changed window manager does not come
      up. Haiku's non-packaged folders over its read-only packages;
    - **writable is not writable by everything**: an application is handed
-     `/kosmos` read-only, the IDE the writable one (6d's per-launcher
-     permissions);
+     `/kosmos` read-only, the IDE the writable one - what a launcher
+     grants, the per-launcher permissions not yet built;
    - **what stays fixed**: the C - kernel, servers, drivers, kits - has no
      compiler on the machine, so it is read there and replaced by an
      image; everything in Lua can change; what runs before the disk is
