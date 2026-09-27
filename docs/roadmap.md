@@ -2090,6 +2090,20 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6o. **AGREED on 26 September - one set of line icons for every button bar.**
+   Diego, looking at the IDE's drawing: "we should look for a set of icons
+   that match that of the mockup in the save, open, copy, etc button bar",
+   "in gray with transparent background that can be used in many apps in
+   kosmos". The way they are carried already exists: `tools/lineicons.py`
+   renders SVGs at the four sizes the desktop's scale asks for and keeps only
+   their coverage, which `gc:line_icon` paints grey or in the accent in any
+   look. What is missing is a set - Kosmos has 26 icons, drawn by hand from
+   the mockups. Three open ones, Lucide (ISC), Tabler (MIT) and Phosphor's
+   light weight (MIT), are laid side by side in the IDE's bar in
+   `docs/icon-sets.html`, Lucide proposed; the chosen one is vendored at a
+   pinned commit, its licence beside it, and replaces the 26 so no window
+   mixes two hands. Before the IDE's button bar is built (6n step 2).
+
 6n. **AGREED on 26 September - a Lua editor and IDE of Kosmos's own.** Diego:
    "i want to remove lxedit as we are going to crate our own LUA development
    editor and ide". Lite XL, the ported editor, left the tree the same day
