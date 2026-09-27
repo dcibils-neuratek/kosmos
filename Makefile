@@ -1962,12 +1962,26 @@ check-lua: $(HOSTDIR)/lua.ok
 # first not: `make apps` relinked `init.elf` for the new string and had no
 # reason to make `init.bin` again, so the host suite found the two
 # disagreeing - a failure about the notes, in a gate about the code.
+#
+# **One make, one name** - worked out by the make somebody typed and handed
+# to every make it starts, rather than asked of git again by each. The same
+# evening the note in `boot.md` was fixed, a *commit* made during the gate
+# did the same thing: `gate-images` is several makes in turn, the one after
+# the commit named a different revision, and `make apps` relinked `init.elf`
+# for it and left `init.bin`. Whatever happens to the tree while a build
+# runs, the build is of one revision and says one.
+#
 IMAGE_DOCS := docs/cheatsheet.html docs/cafesa3d-tutorial
+
+ifndef KOSMOS_BUILD
 KOSMOS_DIRTY := $(shell { git status --porcelain -- . ':!builds' ':!docs' ':!.*'; \
                           git status --porcelain -- $(IMAGE_DOCS); } 2>/dev/null | head -1)
 KOSMOS_BUILD := $(shell git describe --always 2>/dev/null || echo "no-git")$(if $(KOSMOS_DIRTY),-dirty,)
 KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
                         2>/dev/null || echo "unknown")
+endif
+
+export KOSMOS_BUILD KOSMOS_DATE
 
 # The pictures in assets/images/, as a C table. Binary, so unlike programs
 # and libraries these cannot travel as Lua source: a PNG contains every byte

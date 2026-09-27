@@ -11561,3 +11561,15 @@ separator (`menu_row_middle`). Both boards pass the direct menu, places and
 camera phases. Control: a separator a whole row again - the window manager
 opens it 100 tall and the phase fails.
 
+**And the gate's own build, twice.** The gate after these found the host
+suite's ELF reader holding `init.elf` and `init.bin` apart - twice in one
+evening, and neither time the code. First a note written into `boot.md`
+mid-gate made the build `-dirty` (all of `docs/` counted; now only what the
+image carries does). Then a *commit* mid-gate did the same: `gate-images`
+is several makes in turn, each asked git for the build's name, the one
+after the commit named another revision, and `make apps` relinked
+`init.elf` for it and had no reason to make `init.bin`. So the make
+somebody types works the name out once and hands it down (`export
+KOSMOS_BUILD KOSMOS_DATE`, under `ifndef`): checked by hand, a make handed
+`KOSMOS_BUILD=handed-down` keeps it and one handed nothing works it out.
+
