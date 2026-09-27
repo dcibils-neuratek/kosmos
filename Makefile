@@ -757,6 +757,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/network/crypto.c \
              user/init/lua_glue.c \
              user/init/sys_user.c \
+             user/init/elfimage.c \
              user/kits/gfx/gfx.c \
              user/kits/gfx/shadow.c \
              user/kits/gfx/yuv.c \

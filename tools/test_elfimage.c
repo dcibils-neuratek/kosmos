@@ -201,6 +201,17 @@ int main(int argc, char **argv)
     refused(data_in_code,     "inside what its header",   "data inside the code the header describes");
     refused(elsewhere,        "starts somewhere other",   "an entry other than the base plus sixteen");
 
+    /* A plan from too little of the file to hold the program headers. */
+    {
+        struct elfimage_plan plan;
+        const char *p;
+
+        build(f);
+        p = elfimage_plan(f, 100, FILE_LEN, &want, &plan);
+        check(p != NULL && strstr(p, "not near its start") != NULL,
+              "program headers beyond what was read are refused");
+    }
+
     /* The system's own image, read the way `objcopy` flattened it. */
     if (argc == 3) {
         size_t elf_len = 0, bin_len = 0, got = 0;
@@ -224,6 +235,34 @@ int main(int argc, char **argv)
 
             check(why == NULL && got == bin_len && memcmp(img, bin, got) == 0,
                   "the system's ELF reads into exactly the bytes objcopy made");
+
+            /* And in two parts, as a launcher reads it: a plan from the
+             * file's first four kilobytes, each segment copied where it
+             * says, and Kosmos's header checked once it has been read. */
+            {
+                struct elfimage_plan plan;
+                const char *p = elfimage_plan(elf, elf_len < 4096 ? elf_len : 4096,
+                                              elf_len, &sys, &plan);
+                unsigned k;
+
+                if (p == NULL) {
+                    p = elfimage_head(elf + plan.head, &plan);
+                }
+
+                if (p == NULL) {
+                    memset(img, 0, plan.length);
+
+                    for (k = 0; k < plan.count; k++) {
+                        memcpy(img + plan.segment[k].at, elf + plan.segment[k].offset,
+                               (size_t)plan.segment[k].size);
+                    }
+                }
+
+                check(p == NULL && plan.length == bin_len
+                      && memcmp(img, bin, bin_len) == 0,
+                      "read in two parts, the same bytes");
+            }
+
             free(img);
         }
 
@@ -238,8 +277,8 @@ int main(int argc, char **argv)
 
     printf("PASS: %d checks on the ELF reader (a Kosmos program read into its image, "
            "refused %s)\n", checks,
-           argc == 3 ? "twenty-three ways, and the system's own ELF read into the "
-                       "bytes objcopy made"
-                     : "twenty-three ways");
+           argc == 3 ? "twenty-four ways, and the system's own ELF read into the "
+                       "bytes objcopy made, whole and in two parts"
+                     : "twenty-four ways");
     return 0;
 }

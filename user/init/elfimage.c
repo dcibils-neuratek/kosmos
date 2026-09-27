@@ -65,25 +65,19 @@ static const char *machine_name(unsigned m)
     }
 }
 
-/* One loadable segment, as the file states it. */
-struct seg {
-    uint64_t offset, vaddr, filesz, memsz;
-    unsigned flags;
-};
-
 /*
- * Everything checked, the loadable segments gathered, and the image's
- * length. NULL, or the sentence.
+ * The file's first bytes: everything but Kosmos's header, which may be
+ * further in than the caller has read.
  */
-static const char *read_file(const unsigned char *f, size_t n,
-                             const struct elfimage_want *want,
-                             struct seg *segs, unsigned *nsegs, size_t *length)
+const char *elfimage_plan(const unsigned char *f, size_t n, uint64_t file_len,
+                          const struct elfimage_want *want,
+                          struct elfimage_plan *plan)
 {
-    uint64_t phoff, entry, rx_bytes, end = 0, prev_end = 0;
+    uint64_t phoff, entry, end = 0, prev_end = 0;
     unsigned phnum, phentsize, i, loads = 0;
     static char said[96];
 
-    if (f == NULL || n < EHDR_SIZE) {
+    if (f == NULL || n < EHDR_SIZE || file_len < n) {
         return "shorter than an ELF header";
     }
 
@@ -138,14 +132,24 @@ static const char *read_file(const unsigned char *f, size_t n,
         return "more program headers than a Kosmos program has";
     }
 
-    if (phoff > n || (uint64_t)phnum * PHDR_SIZE > n - phoff) {
+    if (phoff > file_len || (uint64_t)phnum * PHDR_SIZE > file_len - phoff) {
         return "its program headers run past the end of the file";
     }
+
+    if (phoff > n || (uint64_t)phnum * PHDR_SIZE > n - phoff) {
+        return "its program headers are not near its start, where a Kosmos "
+               "program has them";
+    }
+
+    plan->count = 0;
+    plan->code_end = 0;
+    plan->data_start = 0;
 
     for (i = 0; i < phnum; i++) {
         const unsigned char *ph = f + phoff + (uint64_t)i * PHDR_SIZE;
         unsigned type = (unsigned)le(ph, 4);
-        struct seg s;
+        unsigned flags;
+        uint64_t offset, vaddr, filesz, memsz;
 
         if (type == PT_INTERP || type == PT_DYNAMIC) {
             return "it asks for a dynamic linker, and Kosmos has none: a "
@@ -161,58 +165,70 @@ static const char *read_file(const unsigned char *f, size_t n,
             continue;                 /* a note, the stack's flags: nothing to load */
         }
 
-        s.flags  = (unsigned)le(ph + 4, 4);
-        s.offset = le(ph + 8, 8);
-        s.vaddr  = le(ph + 16, 8);
-        s.filesz = le(ph + 32, 8);
-        s.memsz  = le(ph + 40, 8);
+        flags  = (unsigned)le(ph + 4, 4);
+        offset = le(ph + 8, 8);
+        vaddr  = le(ph + 16, 8);
+        filesz = le(ph + 32, 8);
+        memsz  = le(ph + 40, 8);
 
-        if (s.filesz > s.memsz) {
+        if (filesz > memsz) {
             return "a segment with more bytes in the file than in memory";
         }
 
-        if (s.offset > n || s.filesz > n - s.offset) {
+        if (offset > file_len || filesz > file_len - offset) {
             return "a segment runs past the end of the file";
         }
 
-        if (s.vaddr < want->base) {
+        if (vaddr < want->base) {
             return "a segment below where a Kosmos image begins";
         }
 
-        if (s.memsz > want->most || s.vaddr - want->base > want->most - s.memsz) {
+        if (memsz > want->most || vaddr - want->base > want->most - memsz) {
             return "longer than an image may be - it would run into its heap";
         }
 
-        if ((s.flags & PF_W) != 0 && (s.flags & PF_X) != 0) {
+        if ((flags & PF_W) != 0 && (flags & PF_X) != 0) {
             return "a segment that is writable and executable at once";
         }
 
-        if ((s.flags & PF_R) == 0) {
+        if ((flags & PF_R) == 0) {
             return "a segment that cannot be read";
         }
 
-        if (loads > 0 && s.vaddr < prev_end) {
+        if (loads > 0 && vaddr < prev_end) {
             return "segments out of order, or overlapping";
         }
 
         if (loads == 0) {
-            if (s.vaddr != want->base) {
+            if (vaddr != want->base) {
                 return "its first segment is not where a Kosmos image begins";
             }
 
-            if ((s.flags & PF_X) == 0) {
+            if ((flags & PF_X) == 0) {
                 return "its first segment is not code";
             }
-        } else if ((s.flags & PF_X) != 0) {
-            return "code after its data - a Kosmos image is its code, then its data";
+
+            if (filesz < KOSMOS_HEADER) {
+                return "no room for a Kosmos header at its start";
+            }
+
+            plan->head = offset;
+            plan->code_end = memsz;
+        } else {
+            if ((flags & PF_X) != 0) {
+                return "code after its data - a Kosmos image is its code, then its data";
+            }
+
+            if (loads == 1) {
+                plan->data_start = vaddr - want->base;
+            }
         }
 
-        if (loads == MOST_PHDRS) {
-            return "more program headers than a Kosmos program has";
-        }
-
-        segs[loads++] = s;
-        prev_end = s.vaddr + s.memsz;
+        plan->segment[loads].offset = offset;
+        plan->segment[loads].at = vaddr - want->base;
+        plan->segment[loads].size = filesz;
+        loads++;
+        prev_end = vaddr + memsz;
 
         if (prev_end - want->base > end) {
             end = prev_end - want->base;
@@ -223,76 +239,102 @@ static const char *read_file(const unsigned char *f, size_t n,
         return "nothing in it to load";
     }
 
-    /* Kosmos's header, at the front of the code. */
-    if (segs[0].filesz < KOSMOS_HEADER) {
-        return "no room for a Kosmos header at its start";
+    if (entry != want->base + KOSMOS_HEADER) {
+        return "it starts somewhere other than where a Kosmos image starts";
     }
 
-    if (le(f + segs[0].offset, 8) != KOSMOS_MAGIC) {
+    if (loads == 1) {
+        plan->data_start = end;
+    }
+
+    plan->count = loads;
+    plan->length = (size_t)end;
+    return NULL;
+}
+
+/* Kosmos's header, at the front of the code, against what the plan says. */
+const char *elfimage_head(const unsigned char head[16],
+                          const struct elfimage_plan *plan)
+{
+    uint64_t rx_bytes;
+
+    if (le(head, 8) != KOSMOS_MAGIC) {
         return "no Kosmos header at its start - it was not built for Kosmos";
     }
 
-    rx_bytes = le(f + segs[0].offset + 8, 8);
+    rx_bytes = le(head + 8, 8);
 
     if (rx_bytes == 0 || (rx_bytes % PAGE) != 0) {
         return "its header's code size is not a whole number of pages";
     }
 
-    if (segs[0].memsz > rx_bytes) {
+    if (plan->code_end > rx_bytes) {
         return "its code runs past where its header says code ends";
     }
 
-    for (i = 1; i < loads; i++) {
-        if (segs[i].vaddr - want->base < rx_bytes) {
-            return "its data begins inside what its header calls code";
-        }
+    if (plan->data_start < rx_bytes) {
+        return "its data begins inside what its header calls code";
     }
 
-    if (end < rx_bytes) {
+    if (plan->length < rx_bytes) {
         return "its header says there is more code than the file has";
     }
 
-    if (entry != want->base + KOSMOS_HEADER) {
-        return "it starts somewhere other than where a Kosmos image starts";
+    return NULL;
+}
+
+/* Both parts, over a whole file in memory. */
+static const char *read_file(const unsigned char *f, size_t n,
+                             const struct elfimage_want *want,
+                             struct elfimage_plan *plan)
+{
+    const char *why = elfimage_plan(f, n, n, want, plan);
+
+    if (why != NULL) {
+        return why;
     }
 
-    *nsegs = loads;
-    *length = (size_t)end;
-    return NULL;
+    return elfimage_head(f + plan->head, plan);
 }
 
 const char *elfimage_size(const unsigned char *file, size_t file_len,
                           const struct elfimage_want *want, size_t *length)
 {
-    struct seg segs[MOST_PHDRS];
-    unsigned nsegs;
+    struct elfimage_plan plan;
+    const char *why = read_file(file, file_len, want, &plan);
 
-    return read_file(file, file_len, want, segs, &nsegs, length);
+    if (why == NULL) {
+        *length = plan.length;
+    }
+
+    return why;
 }
 
 const char *elfimage_write(const unsigned char *file, size_t file_len,
                            const struct elfimage_want *want,
                            unsigned char *out, size_t room, size_t *length)
 {
-    struct seg segs[MOST_PHDRS];
-    unsigned nsegs, i;
-    const char *why = read_file(file, file_len, want, segs, &nsegs, length);
+    struct elfimage_plan plan;
+    const char *why = read_file(file, file_len, want, &plan);
+    unsigned i;
 
     if (why != NULL) {
         return why;
     }
 
-    if (out == NULL || *length > room) {
+    *length = plan.length;
+
+    if (out == NULL || plan.length > room) {
         return "no room for the image it describes";
     }
 
     /* The gaps between segments and a segment's bytes past its file part are
      * zeroes, as `objcopy` writes them - and as the kernel expects them. */
-    memset(out, 0, *length);
+    memset(out, 0, plan.length);
 
-    for (i = 0; i < nsegs; i++) {
-        memcpy(out + (segs[i].vaddr - want->base), file + segs[i].offset,
-               (size_t)segs[i].filesz);
+    for (i = 0; i < plan.count; i++) {
+        memcpy(out + plan.segment[i].at, file + plan.segment[i].offset,
+               (size_t)plan.segment[i].size);
     }
 
     return NULL;

@@ -11103,3 +11103,45 @@ writable-and-executable rule, and without the data-inside-code rule, the
 case for each is read instead of refused.
 
 The gate: 48 of 48 in 9:36.
+
+## 18.224 A program run in the image beside it
+
+Step 4 of the loader (`docs/elf.md`): **a program whose header says
+`-- kosmos: image apptest.elf` runs in that image**, the file of that name
+beside it, rather than in its launcher's own. The shell's `run_program` and
+the runner's `launch` both start a program through one table at the top of
+`init.lua`, `IMAGES`, so the prompt and everything that launches from a
+window cannot disagree about it.
+
+The image is tens of megabytes and a process's heap is two, so none of it
+passes through Lua. The reader has two parts now (`elfimage_plan` and
+`elfimage_head`): the ELF's first four kilobytes are planned, the sixteen
+bytes of Kosmos's header are read and checked, and each segment is read a
+window at a time into one scratch region and copied to where it belongs in
+the image, in C (`sys.region_copy`). A mapped region stays mapped - the
+shared window cannot be unmapped - so an image is made once a file (keyed
+by its path, size and modification time) and kept, and the next start
+begins from it; the launcher says "image: made" when it makes one, which
+the shell writes where it was typed because the shell's own `print` reaches
+nothing. `sys.spawn_image` is `sys.spawn` with the region.
+
+**`tools/run_loader.py`, as `arm-loader` and `x86-loader`, 7 checks**, on
+a `/home` disk holding `/home/apps/apptest/`: `apptest.lua` saying 42 from
+the `apptest` kit, which is in no image but its own, with "image: made"
+the first time; `plain.lua`, the same without the image line, told there is
+no kit called apptest; `broken.lua`, whose image is the first 200 KB of the
+real one, refused as "broken.elf: a segment runs past the end of the file";
+`stranger.lua`, whose image names the other processor, refused as "built
+for an x86-64 processor, not this one" (or AArch64, on x86-64); and
+apptest.lua again, from the kept image, which it does not make again. The
+image is 32.7 MB on AArch64 and 33.1 on x86-64, stripped, and the first
+start took under half a second.
+
+**Control**: the image line ignored - every program runs in the system's
+image, and the four that use the kit are told there is none.
+
+The reader's host test has 30 checks now: the system's ELF read in two
+parts, as a launcher reads it, into the same bytes as whole; and program
+headers beyond what was read, refused.
+
+The gate with step 4: 50 of 50 in 8:49.

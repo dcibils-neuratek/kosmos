@@ -140,6 +140,11 @@ SUITES = [
     # editor in Cafesa3D's own pixels, a script run, an error on its line,
     # a loop without end stopped by its budget. A suite of its own rather
     # than more of `cafesa3d`, which is the gate's longest already.
+    # **Programs from a file** (`docs/elf.md` step 4): a program run in the
+    # image beside it, whose kit the system's image has not got, and two
+    # broken images refused with the reader's sentences.
+    Suite("arm-loader", ["python3", "tools/run_loader.py", ARM]),
+    Suite("x86-loader", ["python3", "tools/run_loader.py", X86], x86=True),
     Suite("arm-script", ["python3", "tools/run_script.py", ARM]),
     Suite("x86-script", ["python3", "tools/run_script.py", X86], x86=True),
 

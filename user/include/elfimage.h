@@ -28,6 +28,37 @@ struct elfimage_want {
     uint64_t most;                  /* how long one may be: 40 MB */
 };
 
+/*
+ * **Read in two parts**, for a launcher that does not hold the whole file:
+ * a program's image may be tens of megabytes, and it is read a window at a
+ * time into the image where each segment belongs (`init.lua`, `launch`).
+ *
+ * `elfimage_plan` reads the file's first bytes - its header and program
+ * headers, which a Kosmos program has at offset 64 - and says where each
+ * segment goes and where Kosmos's header is in the file. `elfimage_head`
+ * checks those sixteen bytes against the plan once they have been read.
+ * Everything `elfimage_write` refuses, the two refuse between them.
+ */
+struct elfimage_plan {
+    size_t   length;                /* the image's bytes */
+    uint64_t head;                  /* where Kosmos's header is, in the file */
+    unsigned count;                 /* segments */
+    struct {
+        uint64_t offset;            /* in the file */
+        uint64_t at;                /* in the image */
+        uint64_t size;              /* bytes to copy; the rest of it is zero */
+    } segment[16];
+    uint64_t code_end;              /* where the code ends, in the image */
+    uint64_t data_start;            /* where the first data begins, or length */
+};
+
+const char *elfimage_plan(const unsigned char *start, size_t start_len,
+                          uint64_t file_len, const struct elfimage_want *want,
+                          struct elfimage_plan *plan);
+
+const char *elfimage_head(const unsigned char head[16],
+                          const struct elfimage_plan *plan);
+
 /* How long the image the file describes is, into `*length`; NULL, or why
  * the file is not a Kosmos program. */
 const char *elfimage_size(const unsigned char *file, size_t file_len,

@@ -23,6 +23,7 @@
 #include "lauxlib.h"
 
 #include "kosmos.h"
+#include "elfimage.h"
 #include "audioring.h"
 #include "serialize.h"
 
@@ -2258,6 +2259,167 @@ static int l_region_read(lua_State *L)
     return 1;
 }
 
+/*
+ * **A program's image, from a file** (`docs/elf.md` step 4).
+ *
+ * `sys.elf_plan(first, file_len [, head])` - what a program's ELF says, from
+ * its first bytes: `{ length, head, segments = { { offset, at, size } } }`,
+ * or nil and the rule it broke (`elfimage.c`). Given the sixteen bytes at
+ * `head` as well, Kosmos's header is checked too, and the plan is final.
+ *
+ * `sys.region_copy(to, to_at, from, from_at, bytes)` - bytes from one
+ * region to another, both mapped once and kept, so a launcher moves a
+ * program's image a window at a time without a byte of it passing through
+ * Lua.
+ *
+ * `sys.spawn_image(region, length, role, caps, flags)` - `sys.spawn`, from
+ * the image in that region rather than this process's own.
+ */
+static const struct elfimage_want *this_machine(void)
+{
+    static const struct elfimage_want want = {
+#if defined(__aarch64__)
+        ELFIMAGE_AARCH64,
+#else
+        ELFIMAGE_X86_64,
+#endif
+        (uint64_t)USER_TEXT, (uint64_t)(USER_HEAP - USER_TEXT)
+    };
+
+    return &want;
+}
+
+static int l_elf_plan(lua_State *L)
+{
+    size_t n, hn = 0;
+    const unsigned char *first = (const unsigned char *)luaL_checklstring(L, 1, &n);
+    lua_Integer file_len = luaL_checkinteger(L, 2);
+    const unsigned char *head = (const unsigned char *)luaL_optlstring(L, 3, NULL, &hn);
+    struct elfimage_plan plan;
+    const char *why;
+    unsigned i;
+
+    if (file_len < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "a file shorter than nothing");
+        return 2;
+    }
+
+    why = elfimage_plan(first, n, (uint64_t)file_len, this_machine(), &plan);
+
+    if (why == NULL && head != NULL) {
+        why = (hn < 16) ? "no Kosmos header at its start" : elfimage_head(head, &plan);
+    }
+
+    if (why != NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, why);
+        return 2;
+    }
+
+    lua_createtable(L, 0, 3);
+    lua_pushinteger(L, (lua_Integer)plan.length);
+    lua_setfield(L, -2, "length");
+    lua_pushinteger(L, (lua_Integer)plan.head);
+    lua_setfield(L, -2, "head");
+    lua_createtable(L, (int)plan.count, 0);
+
+    for (i = 0; i < plan.count; i++) {
+        lua_createtable(L, 0, 3);
+        lua_pushinteger(L, (lua_Integer)plan.segment[i].offset);
+        lua_setfield(L, -2, "offset");
+        lua_pushinteger(L, (lua_Integer)plan.segment[i].at);
+        lua_setfield(L, -2, "at");
+        lua_pushinteger(L, (lua_Integer)plan.segment[i].size);
+        lua_setfield(L, -2, "size");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    lua_setfield(L, -2, "segments");
+    return 1;
+}
+
+static int l_region_copy(lua_State *L)
+{
+    long to = (long)luaL_checkinteger(L, 1);
+    lua_Integer to_at = luaL_checkinteger(L, 2);
+    long from = (long)luaL_checkinteger(L, 3);
+    lua_Integer from_at = luaL_checkinteger(L, 4);
+    lua_Integer bytes = luaL_checkinteger(L, 5);
+    uintptr_t to_base, from_base;
+    size_t to_bytes, from_bytes;
+
+    if (!region_of(to, &to_base, &to_bytes) || !region_of(from, &from_base, &from_bytes)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "that is not a region this process can map: %s", region_fail);
+        return 2;
+    }
+
+    /* Both ends against the regions' real sizes, as `region_write` is. */
+    if (bytes < 0 || to_at < 0 || from_at < 0
+        || (size_t)to_at > to_bytes || (size_t)bytes > to_bytes - (size_t)to_at
+        || (size_t)from_at > from_bytes || (size_t)bytes > from_bytes - (size_t)from_at) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that would copy past the end of a region");
+        return 2;
+    }
+
+    memmove((void *)(to_base + (uintptr_t)to_at),
+            (const void *)(from_base + (uintptr_t)from_at), (size_t)bytes);
+    lua_pushinteger(L, bytes);
+    return 1;
+}
+
+static int l_spawn_image(lua_State *L)
+{
+    struct spawn_image req;
+    int caps[16];
+    unsigned long n = 0;
+    long id;
+
+    memset(&req, 0, sizeof req);
+    req.region = (int64_t)luaL_checkinteger(L, 1);
+    req.length = (uint64_t)luaL_checkinteger(L, 2);
+    req.arg = (uint64_t)luaL_checkinteger(L, 3);
+    req.flags = (uint64_t)luaL_optinteger(L, 5, 0);
+
+    /* Capabilities as an array, in the order the child will see them, as
+     * `sys.spawn` takes them. */
+    if (!lua_isnoneornil(L, 4)) {
+        lua_Integer count;
+
+        luaL_checktype(L, 4, LUA_TTABLE);
+        count = (lua_Integer)lua_rawlen(L, 4);
+
+        if (count > 16) {
+            lua_pushnil(L);
+            lua_pushstring(L, "too many capabilities");
+            return 2;
+        }
+
+        for (n = 0; n < (unsigned long)count; n++) {
+            lua_rawgeti(L, 4, (lua_Integer)(n + 1));
+            caps[n] = (int)luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+        }
+    }
+
+    req.caps = (uint64_t)(uintptr_t)caps;
+    req.ncaps = n;
+    id = kosmos_spawn_image(&req);
+
+    if (id < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, id == SYS_ERR_NOT_IMAGE ? "not an image the kernel accepts"
+                          : id == SYS_ERR_DENIED ? "this process does not hold that"
+                          : "no room to start it");
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)id);
+    return 1;
+}
+
 static int l_memory_size(lua_State *L)
 {
     long pages = kosmos_mem_size((long)luaL_checkinteger(L, 1));
@@ -2811,6 +2973,9 @@ static const luaL_Reg sys_functions[] = {
     { "pcm",         l_pcm },
     { "getchar",  l_getchar },
     { "spawn",    l_spawn },
+    { "spawn_image", l_spawn_image },
+    { "elf_plan", l_elf_plan },
+    { "region_copy", l_region_copy },
     { "wait",     l_wait },
     { "exit",     l_exit },
     { "yield",    l_yield },

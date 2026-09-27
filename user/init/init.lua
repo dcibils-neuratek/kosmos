@@ -41,6 +41,138 @@ local ROLE_DRIVES     = 20 -- serves /drives: every volume on every drive, read 
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /dev/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 
+--
+-- **A program's own image** (`docs/elf.md` step 4). A program whose header
+-- says `-- kosmos: image doom.elf` runs in that image - the file of that name
+-- beside it - rather than in this process's own: the way a program with C in
+-- it is installed rather than compiled in. The shell's `run_program` and the
+-- runner's `launch` both start a program through `IMAGES.spawn`, so the two
+-- ways of starting one cannot disagree about it.
+--
+-- The file may be tens of megabytes and a process's heap is two, so no byte
+-- of it passes through Lua: its first four kilobytes are read and planned
+-- (`sys.elf_plan`), and each segment is read a window at a time into one
+-- scratch region and copied from there to where it belongs in the image
+-- (`sys.region_copy`). A region mapped here stays mapped - a share cannot be
+-- unmapped - so the image is made once a file and kept, and the next start
+-- of the same file begins from it.
+--
+local IMAGES = { WINDOW = 256 * 1024, made = {}, window = nil,
+                 -- Where it says so when it makes one: Lua's `print`, which
+                 -- reaches the log from any program; the shell writes to its
+                 -- console instead, and says so where it is typed.
+                 say = print }
+
+-- The name in a program's header, or nil. The header is the comment its file
+-- opens with, blank lines and all.
+function IMAGES.named(ns, path)
+  local source = ns.read(path)
+
+  if type(source) ~= "string" then return nil end
+
+  for line in (source .. "\n"):gmatch("(.-)\n") do
+    if line ~= "" and not line:match("^%-%-") then break end
+
+    local name = line:match("^%-%-%s*kosmos:%s*image%s+(%S+)")
+
+    if name then return name end
+  end
+
+  return nil
+end
+
+-- The image `file` holds, made the first time and kept: the region and its
+-- length, or nil and why - the file named, and the rule it broke.
+function IMAGES.load(ns, file)
+  local attrs = ns.getattr(file)
+  local size = attrs and attrs.size
+
+  if math.type(size) ~= "integer" or size <= 0 then
+    return nil, file .. ": not there"
+  end
+
+  local key = ("%s:%d:%s"):format(file, size, tostring(attrs.mtime or ""))
+  local made = IMAGES.made[key]
+
+  if made then return made.region, made.length end
+
+  IMAGES.window = IMAGES.window or sys.memory(IMAGES.WINDOW // 4096)
+
+  if not IMAGES.window then return nil, "no room to read " .. file end
+
+  local function bytes_at(offset, n)
+    local got = ns.read_into(file, IMAGES.window, offset, n)
+
+    if got ~= n then return nil end
+
+    return sys.region_read(IMAGES.window, 0, n)
+  end
+
+  local first = bytes_at(0, math.min(size, 4096))
+
+  if not first then return nil, file .. ": could not be read" end
+
+  local plan, why = sys.elf_plan(first, size)
+
+  if plan then
+    plan, why = sys.elf_plan(first, size, bytes_at(plan.head, 16) or "")
+  end
+
+  if not plan then return nil, file .. ": " .. tostring(why) end
+
+  local region = sys.memory((plan.length + 4095) // 4096)
+
+  if not region then return nil, "no room for " .. file .. "'s image" end
+
+  for _, seg in ipairs(plan.segments) do
+    local done = 0
+
+    while done < seg.size do
+      local want = math.min(IMAGES.WINDOW, seg.size - done)
+
+      if ns.read_into(file, IMAGES.window, seg.offset + done, want) ~= want then
+        return nil, ("%s: stopped after %d bytes"):format(file, seg.offset + done)
+      end
+
+      sys.region_copy(region, seg.at + done, IMAGES.window, 0, want)
+      done = done + want
+    end
+  end
+
+  IMAGES.made[key] = { region = region, length = plan.length }
+
+  -- Said once an image, when it is made: the next start of the same file
+  -- says nothing, which is how a start from the kept one can be told apart.
+  IMAGES.say(("image: made %s, %d bytes"):format(file, plan.length))
+  return region, plan.length
+end
+
+-- A runner for `path`, in its own image if it names one and in this
+-- process's otherwise: the child's id, or nil and why.
+function IMAGES.spawn(ns, path, role, caps, flags)
+  local image = IMAGES.named(ns, path)
+
+  if not image then
+    local id = sys.spawn(role, caps, flags)
+
+    return id, id == nil and "could not start a process for it" or nil
+  end
+
+  if image:find("/", 1, true) or image == "." or image == ".." then
+    return nil, image .. ": an image is a file beside its program"
+  end
+
+  local region, length = IMAGES.load(ns, (path:match("^(.*)/[^/]*$") or "") .. "/" .. image)
+
+  if not region then return nil, length end
+
+  local id, why = sys.spawn_image(region, length, role, caps, flags)
+
+  if not id then return nil, image .. ": " .. tostring(why) end
+
+  return id
+end
+
 -- Whether this process can pass the screen on to a child.
 --
 -- Asking for the flag on a machine with no display is refused by the
@@ -4048,6 +4180,10 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   end
 
   local function out(s) write_text(ns, "/dev/console", s) end
+
+  -- An installed program's image made at the prompt is said where it was
+  -- typed: this process's own `print` reaches nothing (`IMAGES`).
+  IMAGES.say = function(text) out(text .. "\n") end
   local function readline() return ns.read("/dev/console") end
 
   --------------------------------------------------------------------------
@@ -4680,11 +4816,12 @@ query. `find` and `watch` are built on exactly these two calls.
 
     if camera then caps[#caps + 1] = camera end
 
-    local id = sys.spawn(RUNNER_ROLE, caps, flags)
+    -- In the program's own image when it names one (`IMAGES.spawn`).
+    local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
 
     if not id then
       sys.destroy(ep)
-      return false, "could not start a process for it"
+      return false, why or "could not start a process for it"
     end
 
     local reply = sys.call(ep, {
@@ -6020,11 +6157,12 @@ if role == ROLE_RUNNER then
       end
     end
 
-    local id = sys.spawn(RUNNER_ROLE, caps, flags)
+    -- In the program's own image when it names one (`IMAGES.spawn`).
+    local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
 
     if not id then
       sys.destroy(ep)
-      return false, "no process"
+      return false, why or "no process"
     end
 
     local reply = sys.call(ep, {

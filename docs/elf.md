@@ -191,7 +191,8 @@ anything is spawned, and names the page that differs.
    built**: a make target linking the runtime with
    one kit - a small test kit first, then Doom's - into `build/apps/`, with
    its sums.
-4. **`run` learns `-- kosmos: image`**: reads the file into a region,
+4. **DONE on 27 September** (`testing.md` 18.224) - **`run` learns
+   `-- kosmos: image`**: reads the file into a region,
    checks it, spawns the runner in it. A suite runs a program whose kit is
    only in its own image, and one whose image is broken, which is refused
    with a sentence rather than a crash.

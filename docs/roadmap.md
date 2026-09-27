@@ -2253,6 +2253,8 @@ processors, and still what follows USB:
    DONE** (18.223): the reader, `user/init/elfimage.c`, refusing twenty-three
    ways and reading the system's own ELF into exactly `objcopy`'s bytes on
    both boards - once the ELF said which segment is code, which it did not.
+   **Step 4 DONE** (18.224): a program naming `-- kosmos: image` runs in
+   that image, from the prompt and from anything that launches it.
 
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the
