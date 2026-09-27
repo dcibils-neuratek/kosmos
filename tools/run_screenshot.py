@@ -1136,16 +1136,27 @@ def reaches_program(guest, line, name, built=None):
     mark = len(guest.seen)
     guest.type(line)
 
+    #
+    # **The prompt after this line's echo**, not any prompt after the mark.
+    # The mark is taken when the previous command's last words arrive, and
+    # its prompt can come after that: a prompt found anywhere past the mark
+    # was then the *previous* one, and the check read the program's answer
+    # before it had been given - `snes --scale 3` failed in 7 s with only
+    # its own echo to show, on 26 September.
+    #
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        if PROMPT in guest.seen[mark:]:
+        seen = guest.seen[mark:]
+        at = seen.find(line)
+        if at >= 0 and PROMPT in seen[at + len(line):]:
             break
         time.sleep(0.2)
     else:
         raise Failure(f"`{line}` at the prompt never came back to it.\n"
                       f"--- what arrived ---\n{guest.seen[mark:]}")
 
-    said = guest.seen[mark:].replace("\r", "")
+    seen = guest.seen[mark:]
+    said = seen[seen.find(line) + len(line):].replace("\r", "")
 
     if not re.search(rf"^{name}: ", said, re.M):
         raise Failure(

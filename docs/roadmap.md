@@ -2160,6 +2160,26 @@ processors, and still what follows USB:
    opens on **the last project opened**; and **debugging is a later step of
    its own**.
    **The steps, each used and tested before the next**:
+   0. **The keys the editor needs, which a kit window has never had**
+      (found reading for step 1, 26 September). The board turns a key that
+      is not a character into an escape sequence and every reader of the
+      stream - the kit's decoder, the console's line editor, `edit.lua` -
+      takes a sequence to be three bytes, so `ESC [ 5 ~` (Page Up, Page
+      Down and Delete are four) loses its `5` and types its `~`. Shift and
+      Control are consumed at the board, so Shift with an arrow is an arrow
+      and Control with anything but a letter says nothing: no selecting
+      from the keyboard, no Ctrl+/, Ctrl+Space or Ctrl+Enter. And `rawkey`
+      cannot stand in, because the window manager posts a pass's characters
+      before its transitions, so a Shift pressed in the same pass as the
+      arrow arrives after it. So: **the modifier travels inside the key's
+      own sequence**, as Super's already does - xterm's `ESC [ 1 ; m A` for
+      a modified arrow, Home, End, the page keys and Delete, `ESC [ Z` for
+      Shift+Tab, F1 to F12, and `ESC [ c ; m u` for Control with a key that
+      is not a letter - and **every reader takes a whole sequence**,
+      parameters and all, keeping what it knows and dropping the rest
+      rather than typing it. The kit hands a widget one number per key:
+      the key's own code, with Shift, Alt and Control added as named
+      multiples, read back with `ui.keyparts`.
    1. **The editor component** - the kit's `ui.editor` grown: selection,
       undo, Lua coloured by a tokenizer, line numbers, the current line and
       marked lines. Tested on the Mac, where the kit's Lua runs.

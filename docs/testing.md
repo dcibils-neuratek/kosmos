@@ -10423,3 +10423,14 @@ moved a pixel of antialiasing in ten existing pictures, which were put back
 as they were rather than committed as a change nobody made.
 
 The gate with both: 42 of 42 in 8:24.
+
+**And a race in the display harness, found by the prepush after it.**
+`arm-display-1` failed in 7 s on `snes --scale 3`, with only its own echo to
+show: the program check waited for any prompt after its mark, and the mark
+was taken when the previous command's last words arrived - before that
+command's own prompt - so it found the old prompt and read an answer not
+yet given. It waits now for the prompt after its line's echo, and reads
+only what came after the echo. The other twenty prompt waits follow a
+stopped desktop, whose prompt came long before, and cannot race the same
+way. `display-1` on both boards passed again, 68 checks each.
+
