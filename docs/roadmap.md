@@ -2126,6 +2126,37 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6zd. **AGREED on 27 September - the Deskbar's menu in two layers:
+   `/Kosmos/Deskbar` shipped, `/Home/Deskbar` the person's.** Diego: "the
+   deskbar launchers are on /home while they really are delivered with
+   kosmos", "shouldnt be those in /kosmos/deskbar?", "and the user be able
+   to add their own? so basically merging both?". **What there was**: the
+   Deskbar *seeds* `/Home/Deskbar` - a launcher copied in for every
+   application the first time it is seen, from its `kosmos: section` and
+   icon, and a `.seeded` record so one a person deleted stays deleted. So
+   the system's menu lived in the person's folder: stale when the system
+   changed (every launcher said `/bin/clock.lua` after 6s c2, and
+   `ns.program` learned the old spelling for them), carried to another
+   machine with a home, and indistinguishable from what the person made.
+   **Agreed**, Haiku's shape (a system menu folder and a person's, merged):
+   1. `/Kosmos/Deskbar` is the shipped menu, **made from each
+      application's header** - its section and icon - so there are no
+      launcher files to keep in step, and it cannot go stale;
+   2. `/Home/Deskbar` holds only what the person made - a launcher, a
+      folder, Doom with their own arguments;
+   3. the Deskbar shows both merged: a section in each is one submenu;
+   4. changing a shipped item writes the person's version into
+      `/Home/Deskbar` under the same section and name, and theirs wins;
+   5. removing one leaves a visible note there - "Quake: hidden" - which
+      Tracker shows as what it is; deleting the note brings it back;
+   6. seeding and `.seeded` go.
+   **And the homes that exist**, Diego's answer: "Send to the trash all
+   seeded" - every launcher the seed made, from `.seeded`'s record, goes to
+   the Trash once, so the menu is not everything twice; one he had changed
+   can be dragged back out. It is the "two layers" idea for `/Kosmos` (6s)
+   tried on one small folder first; Themes and the startup list can follow
+   if it feels right. **Order**: after 6za's step (a).
+
 6zc. **FOUND on 27 September, on the M700 with 0.10.175 - a menu's
    separator is as tall as an item.** Diego, with a photograph of Tracker's
    `...` menu: "the spacing on this menu is off. it shouldnt occupy all
