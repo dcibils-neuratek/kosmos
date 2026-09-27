@@ -10596,3 +10596,39 @@ started with F5 and stopped with Shift+F5. **Control**: without the wait fix,
 the stop is never said.
 
 The gate with step 3: 46 of 46 in 8:47.
+
+## 18.211 The IDE's checking: Lua's own parser, and luacheck
+
+Step 4 of the IDE (roadmap 6n). **What would stop a file running** is Lua's
+own parser, `lint.parse`: the file compiled and never called, the line it
+refuses taken from Lua's message and the token it names underlined - the
+last place it appears on the line, since the parser has read past the ones
+before. Run a moment - 0.4 s - after the typing stops. **What would go wrong
+once it runs** is luacheck 1.2.0, vendored unmodified in
+`runtime/upstream/luacheck/` and carried as `/lib/luacheck/`, run by
+`lint.check` in an environment of its own - a `require` for its modules,
+and `package.config`, `os.getenv` and `io.type` answered - and told what a
+Kosmos program has and lacks. Run when a file opens, when it is saved and
+on F7; Kosmos's own read-only files get the parser only.
+
+**`tools/test_lint.lua`, in `make test`, 12 checks**: a file Lua takes has
+no problem; a missing `end` is the error at the file's end in Lua's own
+words, without the file's name; a stray `=` is placed on its line and byte;
+then luacheck, loaded from the tree's copy as the machine loads it - `use`,
+`fs` and `sys` known, an unused local a warning, a global set and an unused
+argument two problems on one line, `io` "a Kosmos program has no io; files
+are fs", a name never set placed on its bytes, all in line order, and a
+clean file clean. **Control**: `io` left out of what Kosmos lacks fails it.
+
+**`tools/run_ide.py`, now 14 checks a board**: a file with one of each
+problem checked as it opens - one error, two warnings; `end` typed on a new
+line refused by the parser on line 4 after the pause, and Ctrl+Z making it
+parse; and the tab, still changed by the new line, closed only when asked
+twice. **Control**: a checker that finds nothing fails the count.
+
+Looked at once under QEMU: warning lines tinted with their triangles, the
+error red with its dot, each name underlined, Problems 5 on its tab and
+listed in their colours, "It parses" in green, and the foot's count - the
+drawing's "A mistake".
+
+The gate with step 4: 46 of 46 in 9:15.

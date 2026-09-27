@@ -191,13 +191,50 @@ def main():
         check(stopped is not None and stopped.startswith("stopped"),
               "Shift+F5 did not stop s.lua: %r" % stopped)
 
+        # **Checking** (step 4): a file with one of each problem, checked as
+        # it opens - io is not a Kosmos program's, an unused local, a name
+        # never set - and then a stray `end` typed, which Lua's own parser
+        # names a moment after the typing stops, and Ctrl+Z takes back.
+        stop_desktop()
+        guest.type('fs.write("/home/development/p.lua", '
+                   '"local unused = 1\\nprint(undefined_thing)\\nio.write(1)\\n")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("wm ide:/home/development/p.lua")
+        checked = said("ide: checked p.lua: ", mark, 120)
+        check(checked == "1 errors, 2 warnings",
+              "p.lua was not checked as it opened to one error and two "
+              "warnings: %r" % checked)
+        time.sleep(1.5)
+
+        mark = len(guest.seen)
+        press("ctrl-end", "ret", "e", "n", "d")
+        refused = said("ide: p.lua does not parse: ", mark, 20)
+        check(refused is not None and refused.startswith("line 4:")
+              and "near 'end'" in refused,
+              "a stray end was not refused by Lua's parser on line 4: %r" % refused)
+
+        mark = len(guest.seen)
+        press("ctrl-z")
+        check(said("ide: p.lua parses", mark, 20) is not None,
+              "undoing the stray end did not make the file parse again")
+
         # Control-W twice: the prefix, then itself to the window - the tab closed.
         time.sleep(1.5)
         mark = len(guest.seen)
         guest.proc.stdin.write(b"\x17\x17")
         guest.proc.stdin.flush()
-        check(said("ide: closed ", mark, 10) == "s.lua",
-              "Control-W twice did not close the tab in front, s.lua")
+        # p.lua still has the new line the stray `end` was typed on, so the
+        # first close is refused with a word, and the second closes it.
+        refused = said("ide: p.lua is not saved", mark, 10)
+        check(refused is not None,
+              "closing p.lua with a change in it did not ask first")
+
+        mark = len(guest.seen)
+        guest.proc.stdin.write(b"\x17\x17")
+        guest.proc.stdin.flush()
+        check(said("ide: closed ", mark, 10) == "p.lua",
+              "Control-W twice, again, did not close the tab in front, p.lua")
 
         stop_desktop()
     finally:
@@ -213,7 +250,7 @@ def main():
           "project, in the code look; Tab kept to indent, Ctrl+/ and undo, a new "
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
           "its file remembered; a program run to its error with Ctrl+Enter, "
-          "another started with F5 and stopped with Shift+F5; a tab closed)" % checks)
+          "another started with F5 and stopped with Shift+F5; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice)" % checks)
     return 0
 
 

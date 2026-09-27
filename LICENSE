@@ -64,6 +64,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       runtime/upstream/ufbx/LICENSE, with the vendoring recorded in
       README.kosmos.md beside it
 
+  luacheck, by Peter Melnichenko and contributors, MIT
+      runtime/upstream/luacheck/LICENSE, with the vendoring recorded in
+      README.kosmos.md beside it; and the SHA-1 it carries, under
+      src/luacheck/vendor/sha1/LICENSE
+
   LakeSnes, by angelo_wf and contributors, the CX4 by dink, MIT
       runtime/upstream/lakesnes/LICENSE.txt, with the vendoring recorded
       in README.kosmos.md beside it. Built by default, in `FULL=1`

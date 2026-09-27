@@ -149,9 +149,17 @@ its own - fixed and rerun on both boards (18.206).
   marked red and a click away; Shift+F5 stops it. Stop found a kernel fault:
   a killed child's end was lost by `SYS_WAIT` - fixed, see above.
 
-**Next, in order**: checking (6n step 4) - Lua's own parser as you type,
-then luacheck; suggestions (5), Cafesa3D's Script panel (6); the tutorial's
-lessons (7). And 6q, the Deskbar focus check that fails now and then.
+- **Step 4, checking** (18.211). Lua's own parser a moment after typing
+  stops, and luacheck - vendored unmodified, sandboxed, told Kosmos's names
+  - on open, save and F7. Problems lists them with a count on its tab, each
+  line marked and underlined in the editor, a click from the line; the foot
+  says "1 error, 4 warnings". The host's `tools/luacheck.c` is
+  `tools/luaparse.c`.
+
+**Next, in order**: suggestions (6n step 5), with the drawing's third kind of
+check - a name a library does not have; Cafesa3D's Script panel on the
+component (6); the tutorial's lessons (7). And 6q, the Deskbar focus check
+that fails now and then. Nine commits unpushed since 0.10.171.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor
@@ -8846,7 +8854,7 @@ There is a display check that reads the meter.
 - **`monitor` redraws on its own clock**, once a second, from a detached
   process. Every earlier version did not, and none of them could be told
   apart over serial - so there is now a display check for it.
-- **The Lua is checked at build time.** `tools/luacheck.c` parses every file
+- **The Lua is checked at build time.** `tools/luacheck.c` (`tools/luaparse.c` since 27 September, when the real luacheck arrived) parses every file
   and `tools/luaglobals.py` compares the globals each one reads against the
   environment it will run in. That second one exists because a lost `local`
   has killed a server four separate times, and it catches exactly that.

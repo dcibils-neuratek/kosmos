@@ -2213,10 +2213,17 @@ processors, and still what follows USB:
       the scratch path turned back into the file's in what it says; an
       error's line marked and a click away. Stop found `SYS_WAIT` losing a
       killed child's end; fixed in the kernel.
-   4. **Checking** - Lua's own parser as you type, then luacheck, vendored,
-      given the names a Kosmos program has (`tools/luaglobals.py`'s list).
-      The host already has a `tools/luacheck.c`, which only parses: one of
-      the two names has to change when luacheck arrives.
+   4. **DONE on 27 September - checking** - Lua's own parser as you type,
+      then luacheck, vendored, given the names a Kosmos program has
+      (`tools/luaglobals.py`'s list) (`testing.md` 18.211). luacheck 1.2.0
+      is in `runtime/upstream/luacheck/`, unmodified, carried as
+      `/lib/luacheck/` and run by `/lib/lint.lua` in an environment of its
+      own; `io` and the rest read "a Kosmos program has no io; files are
+      fs". The parser a moment after typing stops, luacheck on open, save
+      and F7; Problems lists them, with a count on its tab. The host's
+      parse-only `tools/luacheck.c` is `tools/luaparse.c`. **Left for
+      step 5**: the drawing's third kind, a name a library does not have -
+      `ui.slidr` - which is asked of the library the way suggestions are.
    5. **Suggestions** - names read from the libraries `use` returned, with
       the comment above each as its documentation.
    6. **Cafesa3D's Script panel**, on the same component (4l).

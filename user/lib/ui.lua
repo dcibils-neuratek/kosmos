@@ -3855,6 +3855,10 @@ function ui.editor(spec)
     self.dirty = buf.dirty
     self.lines = buf.lines
 
+    -- A number that rises with every change to the text, so whoever checks
+    -- it can tell a pause from a change without keeping a copy.
+    if buf.changed_from ~= math.huge then self.version = (self.version or 0) + 1 end
+
     if buf.changed_from <= known then known = buf.changed_from - 1 end
 
     buf.changed_from = math.huge

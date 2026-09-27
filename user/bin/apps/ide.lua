@@ -15,6 +15,11 @@
 -- opens on the desktop - and how it ended is said, with the line of an
 -- error marked and a click away.
 --
+-- **Step 4, checking**: Lua's own parser a moment after typing stops, and
+-- luacheck - told what a Kosmos program is given - when a file opens, when
+-- it is saved and on F7 (`/lib/lint.lua`). Each problem is marked on its
+-- line and listed in Problems, a click from the line.
+--
 -- `docs/kosmos-ide.html` is the drawing, agreed as drawn ("the mockup is
 -- perfect!!!"), and `roadmap.md` 6n the steps. This is step 2, the window:
 -- the project as a tree with Kosmos itself under it to read, a tab a file,
@@ -36,6 +41,7 @@
 
 local ui = use("/lib/ui.lua")
 local files = use("/lib/files.lua")
+local lint = use("/lib/lint.lua")
 local panel = use("/lib/panel.lua")
 local theme = ui.theme
 local L = ui.layout
@@ -119,6 +125,9 @@ local BODY = L.head + TAB_H
 -- The open files, in their tabs' order: `{ path =, editor = }`.
 local open = {}
 local current = nil
+
+-- Checking, which opening and saving ask for and which is written below.
+local check_now
 
 -- Said in the Output panel, and in the log for whoever drives this.
 local output
@@ -236,6 +245,9 @@ local function open_file(path)
   open[#open + 1] = f
   show(f)
   say(("opened %s%s"):format(path, editor.read_only and ", read only" or ""))
+
+  if check_now then check_now(f) end
+
   return f
 end
 
@@ -289,6 +301,8 @@ local function save(f)
   f.editor:saved()
   f.asked = nil
   sync_tabs()
+
+  if check_now then check_now(f) end
   say(("saved %s, %d lines"):format(relative(f.path), #f.editor.lines))
   return true
 end
@@ -426,8 +440,7 @@ local problems = ui.editor{
   x = SIDE, y = H - FOOT - BOTTOM + TAB_H, w = W - SIDE, h = BOTTOM - TAB_H,
   follow = { "left", "right", "bottom" },
   read_only = true, gutter = false, plain = true, inset = { 14, 8 },
-  text = "Checking is the IDE's next step but two: Lua's own parser as you "
-         .. "type, then luacheck.",
+  text = "",
 }
 
 problems.hidden = true
@@ -453,9 +466,17 @@ function foot:draw(g)
 
   if current then
     local b = current.editor.buf
+    local counts = current.counts
+    local said = "no problems"
 
-    words = ("Ln %d, Col %d    %s    2 spaces%s"):format(b.cy, b.cx,
+    if counts and counts[1] + counts[2] > 0 then
+      said = ("%d error%s, %d warning%s"):format(counts[1], counts[1] == 1 and "" or "s",
+                                                counts[2], counts[2] == 1 and "" or "s")
+    end
+
+    words = ("Ln %d, Col %d    %s    2 spaces    %s%s"):format(b.cy, b.cx,
             current.editor.code and "Lua 5.4" or "Text",
+            current.editor.code and said or "",
             current.editor.read_only and "    read only" or "")
   else
     words = "no file open - choose one in the tree"
@@ -526,8 +547,7 @@ local run_button = ui.button{ text = "Run", go = true, icon = "run",
                               hint = "Ctrl Enter" }
 local stop = ui.button{ text = "Stop", icon = "stop", hint = "Shift F5",
                         disabled = true }
-local check = ui.button{ text = "Check", icon = "check", hint = "F7",
-                         disabled = true }
+local check = ui.button{ text = "Check", icon = "check", hint = "F7" }
 
 local header = ui.header{
   x = 0, y = 0, w = W, title = "Kosmos IDE", sub = "",
@@ -698,6 +718,134 @@ end
 run_button.on_click = function() start() end
 stop.on_click = function() stop_run() end
 
+--------------------------------------------------------------------------
+-- Checking (step 4).
+--
+-- **Two parts, as the drawing has them.** What would stop it running is Lua's
+-- own parser, run a moment after typing stops - the same parser that will run
+-- it, so a line it refuses is exactly the line Lua would. What would go wrong
+-- once it runs is luacheck, run when a file opens, when it is saved and on F7:
+-- it reads the whole file, and under emulation that is worth doing when asked
+-- rather than between two letters.
+--------------------------------------------------------------------------
+
+-- How long typing has to stop before the parser looks.
+local PAUSE = counter_hz * 2 // 5
+
+local WARNING = function() return ui.code_colours().warning end
+
+-- A file's problems, marked in its editor and - for the one in front -
+-- listed in Problems with a count on its tab.
+local function show_problems(f)
+  local list = {}
+
+  if f.parse_problem then
+    list[1] = f.parse_problem
+  else
+    for _, p in ipairs(f.lint or {}) do list[#list + 1] = p end
+  end
+
+  f.editor:clear_marks()
+
+  -- Warnings first, so an error on the same line is the mark that stays.
+  for _, kind in ipairs({ "warning", "error" }) do
+    for _, p in ipairs(list) do
+      if p.kind == kind then f.editor:mark(p.line, p.kind, p.column, p.last) end
+    end
+  end
+
+  local errors, warnings = 0, 0
+
+  for _, p in ipairs(list) do
+    if p.kind == "error" then errors = errors + 1 else warnings = warnings + 1 end
+  end
+
+  f.counts = { errors, warnings }
+
+  if f ~= current then return end
+
+  problems:set("")
+
+  for _, p in ipairs(list) do
+    problems:append(("line %-4d  %s    - %s\n"):format(p.line, p.text, p.by),
+                    p.kind == "error" and theme.bad or WARNING())
+  end
+
+  if not f.parse_problem then
+    problems:append(("It parses: Lua itself read all %d lines.\n"):format(#f.editor.lines),
+                    theme.good)
+  end
+
+  bottom_tabs.items[2].count = (#list > 0) and #list or nil
+end
+
+-- Lua's parser, and what changed said in the log when it did.
+local function parse_now(f)
+  local p = lint.parse(f.editor:content(), base(f.path), f.editor.lines)
+  local was = f.parse_problem and f.parse_problem.text
+
+  f.parse_problem = p
+
+  if (p and p.text) ~= was then
+    if p then
+      print(("ide: %s does not parse: line %d: %s"):format(base(f.path), p.line, p.text))
+    else
+      print(("ide: %s parses"):format(base(f.path)))
+    end
+  end
+
+  show_problems(f)
+end
+
+-- Both parts; with `open_panel`, Problems in front, as F7 does. Kosmos's own
+-- files, read only, get the parser and not luacheck: they are not yours to
+-- change, and luacheck over `ui.lua` would stop the window for a while.
+function check_now(f, open_panel)
+  if not (f and f.editor.code) then return end
+
+  parse_now(f)
+
+  if not f.parse_problem and not f.editor.read_only then
+    local list, why = lint.check(f.editor:content(), fs.read, "/lib/")
+
+    if not list then
+      say("luacheck could not load: " .. tostring(why), theme.bad)
+      list = {}
+    end
+
+    f.lint = list
+    show_problems(f)
+  end
+
+  print(("ide: checked %s: %d errors, %d warnings"):format(base(f.path),
+        f.counts[1], f.counts[2]))
+
+  if open_panel then
+    bottom_tabs.on = 2
+    output.hidden, problems.hidden = true, false
+  end
+end
+
+check.on_click = function() check_now(current, true) end
+
+-- A click on a problem goes to its line.
+local problems_mouse = problems.mouse
+
+function problems:mouse(action, x, y)
+  local handled = problems_mouse(self, action, x, y)
+
+  if action == "press" and current then
+    local n = (self.buf.lines[self.buf.cy] or ""):match("^line (%d+)")
+
+    if n then
+      current.editor:go_to(tonumber(n), 1)
+      win:focus_on(current.editor)
+    end
+  end
+
+  return handled
+end
+
 --
 -- Every pass: the console served, the child collected when it ends, and
 -- the pill's seconds - awake while something runs, asleep otherwise.
@@ -717,6 +865,24 @@ function win:on_frame()
     end
   end
 
+  -- The parser, once typing has stopped for a moment.
+  local f = current
+
+  if f and f.editor.code then
+    local now = sys.ticks()
+
+    if f.editor.version ~= f.seen_version then
+      f.seen_version, f.edited_at = f.editor.version, now
+    elseif f.parsed_version ~= f.seen_version and now - (f.edited_at or 0) > PAUSE then
+      f.parsed_version = f.seen_version
+      parse_now(f)
+      changed = true
+    end
+  end
+
+  -- And awake while it is waiting to look.
+  local waiting = f and f.editor.code and f.parsed_version ~= f.seen_version
+
   local shown = running and ((sys.ticks() - running.started) // counter_hz)
 
   if shown ~= self.shown_seconds then
@@ -724,7 +890,7 @@ function win:on_frame()
     changed = true
   end
 
-  self.poll_wait_ticks = running and 1 or nil
+  self.poll_wait_ticks = (running or waiting) and 1 or nil
   return changed
 end
 
@@ -806,6 +972,7 @@ function win:on_key(c)
   -- same as Cafesa3D's Script panel will have.
   if (k == 13 and mods == ui.CTRL) or c == ui.F[5] then start() return true end
   if k == ui.F[5] and mods == ui.SHIFT then stop_run() return true end
+  if c == ui.F[7] then check_now(current, true) return true end
 
   if c == 19 then save() return true end                    -- Ctrl S
   if c == 14 then new_file() return true end                -- Ctrl N

@@ -1454,8 +1454,12 @@ $(GEN)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
 # Two checks, built from lua/upstream/ with the host compiler so the parser
 # is exactly the one that will run the code:
 #
-#   luacheck    it parses
+#   luaparse    it parses
 #   luaglobals  every global it reads will actually be there
+#
+# `luaparse` was `luacheck` until 27 September, when the real luacheck
+# arrived for the IDE (runtime/upstream/luacheck/) and the name had to be
+# the one that says what this does.
 #
 # The second is the one that earns its place. A name that used to be a local
 # and is not any more compiles perfectly happily - it is a global, and
@@ -1465,7 +1469,7 @@ $(GEN)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
 
 # -w because upstream's warnings are not ours to fix, the same reasoning the
 # target build uses.
-$(HOSTDIR)/luacheck: tools/luacheck.c $(LUA_HOST_SRCS)
+$(HOSTDIR)/luaparse: tools/luaparse.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
 
@@ -1906,8 +1910,8 @@ $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 
 # A stamp rather than a phony target: the generated sources depend on this,
 # and a phony one would rebuild them on every make.
-$(HOSTDIR)/lua.ok: $(LUA_FILES) $(HOSTDIR)/luacheck $(HOSTDIR)/luac tools/luaglobals.py
-	@$(HOSTDIR)/luacheck $(LUA_FILES)
+$(HOSTDIR)/lua.ok: $(LUA_FILES) $(HOSTDIR)/luaparse $(HOSTDIR)/luac tools/luaglobals.py
+	@$(HOSTDIR)/luaparse $(LUA_FILES)
 	@python3 tools/luaglobals.py $(HOSTDIR)/luac $(LUA_FILES)
 	@touch $@
 
@@ -2144,12 +2148,23 @@ SOLAR_ROOTED := --rooted user/lib/solar solar/
 TRANSLATORS := $(wildcard user/lib/translators/*.lua)
 TRANSLATORS_ROOTED := --rooted user/lib/translators translators/
 
+#
+# **luacheck**, for the IDE's checking (`roadmap.md` 6n, step 4): vendored
+# unmodified in runtime/upstream/luacheck/ and carried as `/lib/luacheck/`,
+# where `/lib/lint.lua`'s `require` finds its modules. Not in LUA_FILES:
+# it is upstream's Lua, written for a Lua with `io` and `require`, and the
+# checks above are about Kosmos's.
+#
+LUACHECK := $(shell find runtime/upstream/luacheck/src/luacheck -name '*.lua' 2>/dev/null)
+LUACHECK_ROOTED := --rooted runtime/upstream/luacheck/src/luacheck luacheck/
+
 $(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(SOLAR_DATA) $(TRANSLATORS) \
-                    tools/progs2c.py $(HOSTDIR)/lua.ok
+                    $(LUACHECK) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
 	    $(SOLAR_ROOTED) $(SOLAR_DATA) \
-	    $(TRANSLATORS_ROOTED) $(TRANSLATORS)
+	    $(TRANSLATORS_ROOTED) $(TRANSLATORS) \
+	    $(LUACHECK_ROOTED) $(LUACHECK)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
@@ -3161,6 +3176,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# coloured a line at a time with what carries across lines (6n, step 1).
 	$(HOSTDIR)/lua tools/test_textbuf.lua
 	$(HOSTDIR)/lua tools/test_lualex.lua
+	@# And its checking: Lua's own parser, and the vendored luacheck loaded
+	@# as the machine loads it (6n, step 4).
+	$(HOSTDIR)/lua tools/test_lint.lua
 	@# And an MP4's index, for the video player (roadmap 4e).
 	$(HOSTDIR)/lua tools/test_mp4.lua
 	@# JSON, and Cafesa3D's scenes read out of glTF: the samples written
