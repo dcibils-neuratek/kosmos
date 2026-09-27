@@ -148,8 +148,8 @@ handed, a role word, a heap and a stack - so `run` starts a runner in the
 game's image exactly as it starts one in the system's, and the runner
 loads `doom.lua`, which reaches the engine this image carries. **Not as a
 kit**: Doom's C is Doom's, and a kit is what Kosmos ships for every program
-(Diego: "there is no /kits/doom folder and wont be"). How the Lua names
-its own C is below, under what is open.
+(Diego: "there is no /kits/doom folder and wont be"). It names the file:
+`use("doom.elf")`, decided below.
 
 ### The bytes are the ones the build wrote
 
@@ -201,9 +201,8 @@ anything is spawned, and names the page that differs.
    only in its own image, and one whose image is broken, which is refused
    with a sentence rather than a crash.
 5. **Doom leaves the image**: `/Home/Apps/Doom` with `doom.lua` and
-   `doom.elf` and its WAD in one folder, handed that folder and nothing
-   else of `/Home` - a capability to one folder, from the disk's server,
-   which is new - the stick built that way,
+   `doom.elf` and its WAD in one folder, `use("doom.elf")` in place of
+   `use("/kits/doom")`, the stick built that way,
    and `KOSMOS_DOOM` out of the system's build. Then Quake and the Super
    Nintendo.
 
@@ -244,35 +243,30 @@ files are inherent parts of the game, not savedata that you generate". So:
   settings or saves elsewhere; the Deskbar lists the folders in
   `/Home/Apps`, so there is nothing to unregister either.
 
-**What that asks of the system, because today it is a convention and it
-has to be a fact.** Every program started today is handed the whole disk at
-`/home`, read and write (`init.lua`, the runner's mounts), so an installed
-game could write anywhere in it. An installed application has to be handed
-**its own folder and not `/Home`** - and not as a mount with a `root`,
-which lives in the application's own mount table and so binds only a
-program that keeps to it, but as a capability the disk's server holds to
-that folder: asked for a path outside it, the server has no such path.
-Then leaving files elsewhere is not bad manners but impossible, which is
-the capability argument doing what it is for.
+**Kept by convention for now, and not enforced.** Every program started
+today is handed the whole disk at `/home`, read and write, so an installed
+application could write anywhere in it; making that impossible would mean
+handing it only its own folder, as a capability the disk's server holds.
+**Diego set that aside**: "lets not do this yet, we need to use the systme
+first before enforcing things that limit the usage. right now is all
+experimentation". So the rule stands as where things go - an application
+keeps what it brings in its folder - and the capability to one folder is
+for when using the system says it is time.
 
 What a person saves *through* an application - a scene Cafesa3D writes into
 `/Home/Documents` because they chose Save there - is theirs and stays when
-the application goes. That needs the Open and Save window to hand the
-application the one file chosen rather than the folder; today the panel
-runs inside the application, so that is later work, written here so it is
-not forgotten.
+the application goes.
 
-## Open
+## And the answers to what was open - Diego: "1 yes, 2 yes, 3 yes"
 
-- **How an application's Lua reaches its own C.** Proposed: by the file,
-  as it names its image - `use("doom.elf")` returns the table the engine
-  in that image builds, and `/kits` keeps only the system's kits. The same
-  rule then gives an application's own Lua files: `use("menu.lua")` is the
-  file beside the program.
-- **The manifest.** Proposed: the program's `-- kosmos:` header, which
-  `binfs`, the Deskbar and the launcher already read, rather than a second
-  file saying the same things; and the program is the Lua file named after
-  its folder, `Doom/doom.lua`.
-- **Where the applications Kosmos ships keep their settings**, since their
-  folders are the system's: proposed, `/Home/Preferences`, one entry each -
-  today they are dotfiles at the top of `/home`.
+- **An application's Lua reaches its own C by the file**: `use("doom.elf")`
+  returns the table the engine in that image builds, as `use` of a kit
+  does; `/kits` holds only what Kosmos ships. And by the same rule an
+  application's own Lua files: `use("menu.lua")` is the file beside the
+  program.
+- **The manifest is the program's `-- kosmos:` header**, which `binfs`, the
+  Deskbar and the launcher already read, and the program is the Lua file
+  named after its folder: `Doom/doom.lua`.
+- **The applications Kosmos ships keep their settings in
+  `/Home/Preferences`**, one entry each, since their folders are the
+  system's - today they are dotfiles at the top of `/home`.

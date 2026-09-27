@@ -2268,13 +2268,15 @@ processors, and still what follows USB:
    replaces the answer above that a game's files live apart from it; its C
    is not a kit, so there is no `/kits/doom`; and it leaves nothing
    anywhere else - "i want to be able to delete an app and all that the app
-   brought,its gone". So step 5 grows **a capability to one folder** from
-   the disk's server: an installed application is handed its own folder,
-   not `/Home`, and cannot name anything outside it. **Open, and asked**:
-   how its Lua reaches its own C (proposed `use("doom.elf")`) and its own
-   Lua files; the header as the manifest, and the program named after its
-   folder; and where the applications Kosmos ships keep their settings
-   (proposed `/Home/Preferences`).
+   brought,its gone". **Answered, "1 yes, 2 yes, 3 yes"**: its Lua reaches
+   its own C as `use("doom.elf")` and its own Lua files as `use("menu.lua")`;
+   the manifest is the program's `-- kosmos:` header and the program is the
+   file named after its folder; the applications Kosmos ships keep their
+   settings in `/Home/Preferences`. **Not enforced, for now**: handing an
+   installed application only its own folder, a capability the disk's
+   server would hold, was proposed and set aside - "we need to use the
+   systme first before enforcing things that limit the usage". Later, when
+   using it says so.
 
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the

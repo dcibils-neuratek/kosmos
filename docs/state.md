@@ -65,12 +65,15 @@ folder holding everything of it - Lua, ELF, what it plays (the WAD),
 settings and saves; no `/Home/Games`; its C is not a kit, so no
 `/kits/doom`; self-contained on Kosmos's kits, servers and drivers; and it
 leaves nothing anywhere else - "i want to be able to delete an app and all
-that the app brought,its gone". Today every program is handed the whole
-disk at `/home`, so step 5 grows a capability to one folder from the
-disk's server. **Asked and waiting**: how an application's Lua reaches its
-own C (proposed `use("doom.elf")`) and its own Lua files; the header as the
-manifest and the program named after its folder; and where the shipped
-applications keep their settings (proposed `/Home/Preferences`).
+that the app brought,its gone". **Answered "1 yes, 2 yes, 3 yes"**: an
+application's Lua reaches its own C as `use("doom.elf")` and its own Lua
+files as `use("menu.lua")`; the manifest is the program's `-- kosmos:`
+header, the program the file named after its folder; the shipped
+applications' settings in `/Home/Preferences`. **Not enforced**: handing an
+application only its folder was set aside - "we need to use the systme
+first before enforcing things that limit the usage". And his focus: "an
+elegant and easy way to understand where things go ... systems should be
+self explanatory in their structure of files and directorues".
 
 **Next**, in his order: case-insensitive names, then ELF step 5 once the
 app's anatomy is agreed, then 6e's lesson plan drawn (the tutorial, with
