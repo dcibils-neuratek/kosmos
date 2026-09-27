@@ -6,12 +6,14 @@ Booted, `wm cafesa3d`, and then with QEMU's own keyboard:
 
   Shift F4        the panel opens beside the view, and the view narrows by
                   the panel's width
-  Ctrl Enter      the sample script runs: what it prints comes to the strip
-                  under the code, and "ran"
-  a line typed    `error("boom")` at the end, run: the error on its line,
-                  and nothing made
-  Ctrl Z, a loop  `while true do end` on that line instead, run: stopped by its
-                  budget of instructions, and Cafesa3D still answering
+  Ctrl Enter      the sample, the drawing's staircase, runs: 24 steps and a
+                  column and a lamp made, and what it printed shown
+  Ctrl Enter      again: the same, replacing the 26 it made last time
+  Escape, Ctrl Z  the whole run taken back, as one undo step
+  a click, a line `scene.box{ sise = 1 }` typed on a new last line, run:
+                  refused on its line - the box has no sise - nothing made
+  a loop          the line erased and `while true do end` typed instead, run:
+                  stopped by its budget of instructions, Cafesa3D still answering
   Escape, Z       the keyboard given back: Z is the shading key again
   Shift F4        the panel closed, the view as wide as it was
 
@@ -36,7 +38,8 @@ import run_screenshot as R                                   # noqa: E402
 def keys_for(text):
     """QEMU's names for typing `text`."""
     names = {" ": "spc", "(": "shift-9", ")": "shift-0", '"': "shift-apostrophe",
-             "=": "equal", ".": "dot", "\n": "ret"}
+             "=": "equal", ".": "dot", "\n": "ret", "{": "shift-bracket_left",
+             "}": "shift-bracket_right"}
     return [names.get(ch, ch) for ch in text]
 
 
@@ -95,25 +98,61 @@ def main():
               "%d: %r" % (view_w, panel))
         time.sleep(2)
 
-        # The sample, run.
+        # The sample, the staircase, run: made, and then made again in its
+        # own place rather than on top of itself.
         mark = len(guest.seen)
         press("ctrl-ret")
-        ran = said("cafesa3d: script ran: ", mark, 30)
-        check(said("cafesa3d: script step 1 of 3", mark, 5) is not None
-              and ran == "3 lines printed",
-              "Ctrl Enter did not run the sample to its three lines: %r" % ran)
+        ran = said("cafesa3d: script ran in ", mark, 60)
+        check(said("cafesa3d: script 24 steps, 4.3 m up", mark, 5) is not None
+              and ran is not None and ran.endswith(": 25 objects and 1 lamp"),
+              "Ctrl Enter did not make the staircase: %r" % ran)
 
-        # A mistake, on the line it is on.
-        press("ctrl-end", *keys_for('\nerror("boom")'))
+        mark = len(guest.seen)
+        press("ctrl-ret")
+        again = said("cafesa3d: script ran in ", mark, 60)
+        check(again is not None and again.endswith(
+                  "25 objects and 1 lamp, replacing the 26 it made last time"),
+              "a second run did not replace what the first made: %r" % again)
+
+        # The keyboard given back, and Ctrl Z: the whole run, one step.
+        mark = len(guest.seen)
+        press("esc", "ctrl-z")
+        check(said("cafesa3d: undid ", mark, 20) == "ran script",
+              "Ctrl Z did not take back the run as one step")
+
+        # A mistake, refused on its line: a click in the code gives it the
+        # keyboard again, and a new last line asks for a field there is not.
+        window = said("cafesa3d: window at ", 0, 5) or "0,0"
+        ox, oy = (int(v) for v in window.split(","))
+        code = re.search(r"cafesa3d: script code (\d+),(\d+) (\d+)x(\d+)",
+                         guest.seen)
+        width, height, _ = R.pixel_reader(guest.screendump())
+
+        if code:
+            cx, cy = int(code.group(1)) + 200, int(code.group(2)) + 12
+            guest.mouse_to(*R._to_tablet(ox + cx, oy + cy, width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.3)
+            guest.mouse_button(False)
+            time.sleep(0.5)
+
+        press("ctrl-end", *keys_for("\nscene.box{ sise = 1 }"))
         mark = len(guest.seen)
         press("ctrl-ret")
         failed_line = said("cafesa3d: script line ", mark, 30)
-        check(failed_line is not None and failed_line.startswith("8: ")
-              and "boom" in failed_line and failed_line.endswith("nothing was made"),
-              "error on line 8 was not said on its line: %r" % failed_line)
+        check(failed_line is not None and failed_line.startswith("25: ")
+              and "the box has no sise" in failed_line
+              and failed_line.endswith("nothing was made"),
+              "a field the box has not got was not refused on line 25: %r" % failed_line)
 
         # A loop without end, stopped by its budget, and Cafesa3D answering.
-        press("ctrl-z")
+        # A refusal puts the caret at the start of the line it names, so End
+        # is on line 25 only if the caret went there. The line is erased
+        # rather than undone: undo takes back a word at a time, as every
+        # editor does, so one Ctrl Z would leave `scene.box{ sise = 1` in
+        # front of the loop.
+        press("end", *["backspace"] * len("scene.box{ sise = 1 }"))
         press(*keys_for("while true do end"))
         mark = len(guest.seen)
         started = time.monotonic()
@@ -145,11 +184,14 @@ def main():
         print("FAIL: %d of %d checks on Cafesa3D's Script panel:" % (len(failed), checks))
         for f in failed:
             print("  " + f)
+        said_lines = [l for l in guest.seen.splitlines() if "cafesa3d:" in l]
+        print("--- what Cafesa3D said last ---\n" + "\n".join(said_lines[-25:]))
         return 1
 
     print("PASS: %d checks on Cafesa3D's Script panel (opened with Shift F4 beside "
-          "a view narrower by its width; the sample run to what it printed; an "
-          "error said on its line with nothing made; a loop without end stopped "
+          "a view narrower by its width; the staircase made, made again in its "
+          "own place, and taken back with one Ctrl Z; a field the box has not "
+          "got refused on its line with nothing made; a loop without end stopped "
           "by its budget in %.0f s, Cafesa3D answering; Escape giving the keyboard "
           "back; closed, the view as wide as it was)" % (checks, took))
     return 0

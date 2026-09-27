@@ -408,14 +408,33 @@ local FULL = { on = false, was = { W, H }, tv = math.tan(FOV / 2) * 744 / 1014 }
 local SCRIPT = {
   W = 470, OUT = 78, open = false, focused = false, name = "script",
   out = {}, decode = ui.key_decoder(),
+  -- The drawing's own script (`docs/cafesa3d-scripting.html`): a spiral
+  -- staircase, twenty-four steps round a column, and a lamp.
   text = table.concat({
-    "-- A script for this scene: Ctrl Enter runs it, and what it",
-    "-- prints is below. It is handed the scene and nothing else.",
-    "local steps = 3",
+    "-- A spiral staircase: a step every fifteen degrees,",
+    "-- each a little higher, round a steel column.",
+    "local steps, rise = 24, 0.18",
     "",
-    "for i = 1, steps do",
-    "  print((\"step %d of %d\"):format(i, steps))",
+    "for i = 0, steps - 1 do",
+    "  local a = math.rad(i * 15)",
+    "",
+    "  scene.box{",
+    "    name = \"Step\", size = { 1.4, 0.34, 0.07 },",
+    "    loc = { math.cos(a) * 0.8, math.sin(a) * 0.8, 0.2 + i * rise },",
+    "    rot = { 0, 0, i * 15 },",
+    "    material = { preset = \"Plastic\", base = 0x7a4a2a,",
+    "                 texture = \"Wood\", rough = 0.45 },",
+    "  }",
     "end",
+    "",
+    "scene.cylinder{",
+    "  name = \"Column\", radius = 0.1, depth = 0.4 + steps * rise,",
+    "  loc = { 0, 0, (0.4 + steps * rise) / 2 },",
+    "  material = { preset = \"Metal\", base = 0x8a8d92 },",
+    "}",
+    "",
+    "scene.light{ loc = { -3, -4, 7 }, power = 2500, radius = 1 }",
+    "print((\"%d steps, %.1f m up\"):format(steps, steps * rise))",
   }, "\n") .. "\n",
 }
 
@@ -1819,6 +1838,14 @@ function SCRIPT.draw(s)
   control("script:code", x0 + 1, y0 + PANEL_T, e.w, e.h)
   ui.paint_view(e, s, x0 + 1, y0 + PANEL_T)
 
+  -- Where the code and Run are, the first time it is drawn open, for
+  -- whoever drives Cafesa3D from outside (`tools/run_script.py`).
+  if not SCRIPT.told then
+    SCRIPT.told = true
+    print(("cafesa3d: script code %d,%d %dx%d; run %d,%d"):format(x0 + 1, y0 + PANEL_T,
+          e.w, e.h, run.x + run.w // 2, run.y + run.h // 2))
+  end
+
   -- What the last run printed, and how it went.
   local oy = y0 + PANEL_T + e.h
 
@@ -1857,6 +1884,7 @@ function SCRIPT.toggle()
   view = v
   SCRIPT.open = open
   SCRIPT.focused = open
+  SCRIPT.told = nil
 
   if open and not SCRIPT.editor then
     SCRIPT.editor = ui.editor{ x = 0, y = 0, w = SCRIPT.W - 1, h = 100,
@@ -1919,7 +1947,9 @@ function SCRIPT.run()
   e:clear_marks()
 
   local printed = {}
+  local wants = { things = {} }
   local env = {
+    scene = SCRIPT.scene(wants),
     math = math, string = string, table = table,
     ipairs = ipairs, pairs = pairs, next = next, select = select,
     tostring = tostring, tonumber = tonumber, type = type,
@@ -1935,6 +1965,7 @@ function SCRIPT.run()
 
   local chunk, err = load(e:content(), "=" .. SCRIPT.name, "t", env)
   local ok, why = chunk ~= nil, err
+  local t0 = sys.ticks()
 
   if chunk then
     local co = coroutine.create(chunk)
@@ -1946,7 +1977,12 @@ function SCRIPT.run()
   for _, line in ipairs(printed) do SCRIPT.say(line) end
 
   if ok then
-    SCRIPT.say(("ran: %d line%s printed"):format(#printed, #printed == 1 and "" or "s"),
+    local shapes, lamps_made, replaced = SCRIPT.make(wants)
+
+    SCRIPT.say(("ran in %.2f s: %d object%s%s%s"):format((sys.ticks() - t0) / HZ,
+               shapes, shapes == 1 and "" or "s",
+               lamps_made > 0 and (" and %d lamp%s"):format(lamps_made, lamps_made == 1 and "" or "s") or "",
+               replaced > 0 and (", replacing the %d it made last time"):format(replaced) or ""),
                theme.good)
   else
     local line, text = tostring(why):match(":(%d+): (.*)$")
@@ -2597,6 +2633,315 @@ local ADDABLE = {
     fields = { size = 2, segments = 10, rings = 10 } },
   { text = "Monkey" },
 }
+
+--------------------------------------------------------------------------
+-- **The scene a script is handed** (step 6c): `scene.box{...}` and the
+-- other shapes, `scene.light`, `scene.camera`, `scene.world` and
+-- `scene.find` - the calls the Properties tabs already make, by the
+-- Properties tabs' names, and every number held to what they hold it to.
+-- A wrong name or value is refused with a sentence, on the script's line:
+-- "the texture Wod is not one of None, Checker, Brick, Tiles, Noise, Wood,
+-- Marble". Colours are 0xrrggbb, as the file keeps them.
+--
+-- **Nothing is made while the script runs.** Each call writes down what it
+-- wants; the scene changes only when the script has finished, all of it at
+-- once and as one undo step - so a mistake anywhere leaves the scene as it
+-- was, and Ctrl Z takes back a whole run.
+--
+-- In a block of its own, so the helpers are not the main chunk's locals,
+-- which is at Lua's two hundred.
+--------------------------------------------------------------------------
+
+do
+-- A refusal, raised on the line of the script that made the call.
+local function refuse(text) error({ refused = text }, 0) end
+
+local function script_number(v, what, spec)
+  if type(v) ~= "number" then
+    refuse(("%s is %s, where a number is wanted"):format(what, type(v)))
+  end
+
+  local lo, hi = spec and spec.lo, spec and spec.hi
+
+  if (lo and v < lo) or (hi and v > hi) then
+    refuse(("%s is %s, and it is from %s to %s"):format(what, fmt(v, 3),
+           lo and fmt(lo, 3) or "anything", hi and fmt(hi, 3) or "anything"))
+  end
+
+  if spec and spec.int then v = math.floor(v + 0.5) end
+
+  return v
+end
+
+local function script_colour(v, what)
+  if type(v) ~= "number" or v < 0 or v > 0xffffff or v % 1 ~= 0 then
+    refuse(("%s is not a colour: they are written 0xrrggbb"):format(what))
+  end
+
+  return v
+end
+
+-- Three numbers, or one for all three where that means something - a
+-- scale of 2 is 2 every way.
+local function script_three(v, what, spec, one_is_all)
+  if type(v) == "number" and one_is_all then v = { v, v, v } end
+
+  if type(v) ~= "table" or #v ~= 3 then
+    refuse(("%s is three numbers, { x, y, z }"):format(what))
+  end
+
+  return { script_number(v[1], what .. "'s x", spec), script_number(v[2], what .. "'s y", spec),
+           script_number(v[3], what .. "'s z", spec) }
+end
+
+local function script_one_of(v, what, list)
+  for _, name in ipairs(list) do
+    if v == name then return v end
+  end
+
+  refuse(("%s %s is not one of %s"):format(what, tostring(v), table.concat(list, ", ")))
+end
+
+-- What each shape is made of, beyond where it is: the Data tab's fields.
+local SCRIPT_SHAPES = {
+  plane = { size = "number" }, box = { size = "box" },
+  sphere = { radius = "number", segments = "number", rings = "number" },
+  ico = { radius = "number", subdivisions = "number" },
+  cylinder = { radius = "number", depth = "number", segments = "number" },
+  cone = { radius = "number", radius2 = "number", depth = "number", segments = "number" },
+  torus = { radius = "number", radius2 = "number", segments = "number", rings = "number" },
+  grid = { size = "number", segments = "number", rings = "number" },
+}
+
+local SCRIPT_COMMON = { name = true, loc = true, rot = true, scale = true, smooth = true,
+                        hidden = true, material = true }
+
+local SCRIPT_MATERIAL = { preset = true, base = true, metallic = true, rough = true,
+                          trans = true, ior = true, emit = true, texture = true,
+                          colour2 = true, texture_scale = true, bump = true }
+
+local function script_material(m)
+  if type(m) ~= "table" then refuse("material is a table of the Material tab's fields") end
+
+  for k in pairs(m) do
+    if not SCRIPT_MATERIAL[k] then refuse(("a material has no %s"):format(tostring(k))) end
+  end
+
+  local preset = m.preset and script_one_of(m.preset, "the preset", PRESET_ORDER) or "Plastic"
+  local mat = material(m.base and script_colour(m.base, "base") or 0xcccccc, preset)
+
+  for _, k in ipairs({ "metallic", "rough", "trans", "ior", "emit" }) do
+    if m[k] ~= nil then mat[k] = script_number(m[k], k, FIELD[k]) end
+  end
+
+  if m.texture ~= nil then
+    local name = script_one_of(m.texture, "the texture", LOOK.texture_order)
+
+    if name ~= "None" then
+      local tx = {}
+
+      for k, v in pairs(LOOK.textures[name]) do tx[k] = v end
+
+      if m.colour2 ~= nil then tx.colour2 = script_colour(m.colour2, "colour2") end
+      if m.texture_scale ~= nil then tx.scale = script_number(m.texture_scale, "texture_scale", FIELD.tscale) end
+      if m.bump ~= nil then tx.bump = script_number(m.bump, "bump", FIELD.bump) end
+
+      mat.texture = tx
+    end
+  end
+
+  return mat
+end
+
+-- A shape, as a thing the scene will be given when the run is over.
+local function script_shape(kind, spec)
+  if type(spec) ~= "table" then refuse(("scene.%s takes a table: scene.%s{ ... }"):format(kind, kind)) end
+
+  local own = SCRIPT_SHAPES[kind]
+
+  for k in pairs(spec) do
+    if not (own[k] or SCRIPT_COMMON[k]) then
+      refuse(("the %s has no %s"):format(kind, tostring(k)))
+    end
+  end
+
+  local defaults
+
+  for _, a in ipairs(ADDABLE) do
+    if a.kind == kind then defaults = a end
+  end
+
+  local t = { kind = kind, name = defaults.name, loc = { 0, 0, 0 }, rot = { 0, 0, 0 },
+              scale = { 1, 1, 1 }, mat = material(0xcccccc, "Plastic") }
+
+  for k, v in pairs(defaults.fields) do t[k] = copy(v) end
+
+  if spec.name ~= nil then
+    if type(spec.name) ~= "string" or spec.name == "" then refuse("a name is words") end
+    t.name = spec.name
+  end
+
+  if spec.loc ~= nil then t.loc = script_three(spec.loc, "loc") end
+  if spec.rot ~= nil then t.rot = script_three(spec.rot, "rot") end
+  if spec.scale ~= nil then t.scale = script_three(spec.scale, "scale", FIELD.scale, true) end
+  if spec.smooth ~= nil then t.smooth = spec.smooth and true or false end
+  if spec.hidden ~= nil then t.hidden = spec.hidden and true or false end
+  if spec.material ~= nil then t.mat = script_material(spec.material) end
+
+  for k in pairs(own) do
+    if spec[k] ~= nil then
+      if own[k] == "box" then
+        t.size = script_three(spec.size, "size", FIELD.size, true)
+      else
+        t[k] = script_number(spec[k], k, FIELD[k])
+      end
+    end
+  end
+
+  return t
+end
+
+-- The scene a script sees, writing down into `wants` what it asks for.
+function SCRIPT.scene(wants)
+  local api = {}
+
+  local function call(fn)
+    return function(...)
+      local ok, got = pcall(fn, ...)
+
+      if not ok then
+        if type(got) == "table" and got.refused then error(got.refused, 2) end
+        error(got, 2)
+      end
+
+      return got
+    end
+  end
+
+  for kind in pairs(SCRIPT_SHAPES) do
+    api[kind] = call(function(spec)
+      local t = script_shape(kind, spec)
+
+      wants.things[#wants.things + 1] = t
+      return { name = t.name }
+    end)
+  end
+
+  api.light = call(function(spec)
+    if type(spec) ~= "table" then refuse("scene.light takes a table") end
+
+    for k in pairs(spec) do
+      if not ({ name = true, loc = true, power = true, radius = true, colour = true })[k] then
+        refuse(("a lamp has no %s"):format(tostring(k)))
+      end
+    end
+
+    local t = { kind = "light", name = spec.name or "Light",
+                loc = spec.loc and script_three(spec.loc, "loc") or { 0, 0, 3 },
+                power = spec.power and script_number(spec.power, "power", FIELD.power) or 1000,
+                radius = spec.radius and script_number(spec.radius, "radius", FIELD.radius) or 0.1,
+                colour = spec.colour and script_colour(spec.colour, "colour") or 0xffffff }
+
+    wants.things[#wants.things + 1] = t
+    return { name = t.name }
+  end)
+
+  api.camera = call(function(spec)
+    if type(spec) ~= "table" then refuse("scene.camera takes a table") end
+
+    local c = {}
+
+    for k, v in pairs(spec) do
+      if k == "loc" or k == "target" then
+        c[k] = script_three(v, k)
+      elseif k == "focal" then
+        c.focal = script_number(v, "focal", FIELD.focal)
+      else
+        refuse(("the camera has no %s"):format(tostring(k)))
+      end
+    end
+
+    wants.camera = c
+  end)
+
+  api.world = call(function(spec)
+    if type(spec) ~= "table" then refuse("scene.world takes a table") end
+
+    local w = {}
+
+    for k, v in pairs(spec) do
+      if k == "zenith" or k == "horizon" then
+        w[k] = script_colour(v, k)
+      elseif k == "strength" then
+        w.strength = script_number(v, "strength", FIELD.strength)
+      else
+        refuse(("the world has no %s"):format(tostring(k)))
+      end
+    end
+
+    wants.world = w
+  end)
+
+  -- An object already in the scene, to read: a copy of where it is.
+  api.find = call(function(name)
+    for _, t in ipairs(things) do
+      if t.name == name then
+        return { name = t.name, kind = t.kind, loc = copy(t.loc), rot = copy(t.rot or { 0, 0, 0 }),
+                 scale = copy(t.scale or { 1, 1, 1 }) }
+      end
+    end
+
+    return nil
+  end)
+
+  return api
+end
+
+-- What a run wanted, made: the last run's things taken out and these put
+-- in, as one undo step. Returns how many it made and how many it replaced.
+function SCRIPT.make(wants)
+  will("ran " .. SCRIPT.name)
+
+  local kept, replaced = {}, 0
+
+  for _, t in ipairs(things) do
+    if t.by == SCRIPT.name then
+      if t.id then scene:remove(t.id) end
+      if selected == t then selected = nil end
+      replaced = replaced + 1
+    else
+      kept[#kept + 1] = t
+    end
+  end
+
+  things = kept
+
+  local shapes, lamps_made = 0, 0
+
+  for _, t in ipairs(wants.things) do
+    t.name = unique(t.name)
+    t.by = SCRIPT.name
+    add(t)
+
+    if t.kind == "light" then lamps_made = lamps_made + 1 else shapes = shapes + 1 end
+  end
+
+  if wants.camera then
+    for _, t in ipairs(things) do
+      if t.kind == "camera" then
+        for k, v in pairs(wants.camera) do t[k] = v end
+      end
+    end
+  end
+
+  if wants.world then
+    for k, v in pairs(wants.world) do world[k] = v end
+  end
+
+  scene_version = scene_version + 1
+  return shapes, lamps_made, replaced
+end
+end
 
 local function add_primitive(a)
   local name = unique(a.name)

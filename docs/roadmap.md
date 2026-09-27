@@ -2246,10 +2246,18 @@ processors, and still what follows USB:
       panel, Shift F4, beside the view, the keys and the pointer to the
       editor, and Run in an environment of Lua's own with a budget of
       instructions (`sys.budget`) that stops a loop without end in about
-      five seconds under emulation (`testing.md` 18.214); 6c the scene -
-      `scene.box{...}` and the rest, held to what Properties holds, one undo
-      step a Run, a Run replacing what the last made; 6d scripts saved with
-      the scene; 6e the three samples as scripts.
+      five seconds under emulation (`testing.md` 18.214); **6c DONE on 27
+      September** - the scene: `scene.box{...}` and the other seven shapes,
+      `scene.light`, `scene.camera`, `scene.world` and `scene.find`, by the
+      Properties tabs' names and held to their bounds, a wrong name or
+      value refused on its line with nothing made; nothing changes until
+      the script has finished, then all of it as one undo step, replacing
+      what the last Run made and never what was made by hand; the sample is
+      the drawing's staircase (`testing.md` 18.215); 6d scripts saved with
+      the scene - and with them which script made each object, so a Run
+      after opening the file still replaces the right ones, and the
+      Outliner grouping them under the script's name, as drawn; 6e the
+      three samples as scripts.
    Later: debugging.
 
 6m. **DONE on 26 September - Processes shows each process's threads.** Diego,

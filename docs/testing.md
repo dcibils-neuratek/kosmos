@@ -10721,9 +10721,66 @@ typed on line 8 and said on its line with nothing made; `while true do end`
 stopped by its budget - in 5 to 6 seconds - with Cafesa3D answering; Escape
 then Z changing the shading; Shift F4 closing it and the view as wide as it
 was. **Control**: the characters not routed to the editor fails four.
+(6c rewrote the suite around the staircase, and it has eight checks now:
+18.215.)
 
 Cafesa3D was at Lua's 200 locals in its main chunk: the panel is one table,
 `SCRIPT`, and the main loop's body a function, `pass()`, whose locals are
 its own.
 
 The gate with 6b: 48 of 48 in 9:26.
+
+## 18.215 The scene a script is handed
+
+Step 6c of the IDE (roadmap 6n, 4l), as `docs/cafesa3d-scripting.html`
+draws it. A script is given `scene`: `scene.plane`, `box`, `sphere`, `ico`,
+`cylinder`, `cone`, `torus` and `grid`, each taking a table of the Object
+and Data tabs' fields - `name`, `loc`, `rot`, `scale`, `smooth`, `hidden`,
+`size`, `radius` and the rest - and a `material` of the Material tab's;
+`scene.light`, `scene.camera` and `scene.world`; and `scene.find(name)`, a
+copy of where an object already is. Every number is held to the bounds the
+Properties field holds it to, from the same `FIELD` table, and every name to
+its list: "the texture Wod is not one of None, Checker, ...". A refusal is
+raised at the caller's level, so it is said on the script's own line, and
+the editor marks that line and puts the caret at its start.
+
+**Nothing is made while the script runs.** Each call writes down what it
+wants; when the script has finished the scene is changed all at once, as one
+undo step - `will("ran script")` - so a mistake anywhere, or a budget run
+out, leaves it as it was. The objects a Run makes carry the script's name
+(`by`), and the next Run takes those out before it adds its own: changing a
+number and running again gives a new staircase rather than a second one on
+top of the first. Objects made by hand carry no `by` and are never touched.
+
+The panel's sample is the drawing's: a spiral staircase of 24 `scene.box`
+steps round a `scene.cylinder` column, a `scene.light` above it, and a
+`print` of how many steps and how high.
+
+**`tools/run_script.py`, as `arm-script` and `x86-script`, now 8 checks,
+about 40 seconds a board**: the panel opened and the view 470 narrower; Ctrl
+Enter making the staircase - "24 steps, 4.3 m up" printed and "25 objects
+and 1 lamp" made; Ctrl Enter again "replacing the 26 it made last time";
+Escape then Ctrl Z answered "undid ran script", the whole Run as one step; a
+click into the code, a last line `scene.box{ sise = 1 }` refused as "line
+25: the box has no sise - nothing was made"; that line erased - End first,
+which is on line 25 only because the refusal put the caret there - and
+`while true do end` stopped by its budget, with Cafesa3D answering; Escape
+then Z changing the shading; Shift F4 closing, the view as wide as before.
+
+**Control**: a Run that does not take out what the last one made - `if
+false and t.by == SCRIPT.name` - fails the second Run's check, which reads
+"25 objects and 1 lamp" with nothing replaced.
+
+Two mistakes in the suite on the way, both the test's: one Ctrl Z to take
+back the typed line left `scene.box{ sise = 1` in front of the loop, because
+undo takes back a word at a time, as every editor does (`textbuf.lua`); and
+Backspace without End first ate the end of line 24, because a refusal moves
+the caret to the start of its line. The suite prints the last 25 things
+Cafesa3D said when it fails, which is what showed both.
+
+Cafesa3D's main chunk is still at Lua's 200 locals, so the scene's helpers
+live in a `do` block of their own, placed after `ADDABLE` - the shapes'
+defaults and Blender's names come from there, and before it `ADDABLE` is a
+global that will not exist, which `luaglobals` said at build time.
+
+The gate with 6c: 48 of 48 in 9:15.

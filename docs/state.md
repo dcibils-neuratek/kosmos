@@ -166,13 +166,19 @@ its own - fixed and rerun on both boards (18.206).
   shared (`/lib/paint.lua`, `ui.paint_view`); 6b the panel itself (18.214) -
   Shift F4, the IDE's editor in Cafesa3D's own pixels, Run with a budget of
   instructions. Cafesa3D and `wm.lua` were both at Lua's 200 locals; the
-  main loop of Cafesa3D is a function now.
+  main loop of Cafesa3D is a function now. 6c the scene (18.215):
+  `scene.box{...}` and the rest held to what Properties holds, refused on
+  the script's line, nothing made until the script ends and then one undo
+  step, and a Run replacing what the last one made; the sample is the
+  drawing's staircase.
 
-**Next, in order**: the scene for scripts (6c), saving them with the scene
-(6d), the samples as scripts (6e);
+**Next, in order**: saving scripts with the scene (6d) - with which script
+made each object, and the Outliner grouping them under its name, which 6c
+left for it - and the samples as scripts (6e);
 the tutorial's lessons (7), the IDE's first project. And 6q, the Deskbar
-focus check that fails now and then. Commits unpushed since 0.10.171: the
-IDE's steps 0 to 5.
+focus check and the Large icons check, which each fail now and then under
+the whole gate and pass alone. Commits unpushed since 0.10.171: the IDE's
+steps 0 to 5 and 6a to 6c.
 
 **The x86-64 failure of the afternoon was the suite**, not a lost click:
 it read the World tab's fields for the Render tab's on a slow processor
