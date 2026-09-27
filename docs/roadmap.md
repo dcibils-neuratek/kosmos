@@ -2108,6 +2108,45 @@ processors, and still what follows USB:
    documents - and a stick's `/home` needs its launchers rewritten once.
    Proposed, drawn first if agreed.
 
+   **Diego widened it the same evening, BEING DISCUSSED - "let's think
+   before doing anything"**: "All user things live on /home" - `/home/apps`
+   for his apps, `/home/development`, `/home/preferences` - so that "Home
+   should be portable to a drive and I could take my home dir anywhere to
+   another kosmos machine and boot it with my personal stuff and
+   preferences"; and the system under one root, `/kosmos` -
+   `/kosmos/libraries`, `/kosmos/kits`, `/kosmos/kernel`,
+   `/kosmos/programs`, `/kosmos/logs`. "But the user can change them so
+   they don't need to be read only", "a user could create a new window
+   manager and have that instead of our system one". It is `layout.md` §2's
+   hard line between what the system ships and what a person makes, with
+   his own applications inside `/home` and the system named for what it is.
+   What was put to him, and not yet answered:
+   - **you and this machine**: theme, fonts, keyboard, Deskbar, startup in
+     `/home/preferences`; a screen's scale, the network card, the power
+     button, the sound card in `/kosmos/settings`, so a home carried from
+     the ThinkPad does not bring its 14-inch scale to the M700; and a home
+     found at boot by what it is, on any drive, rather than by a GUID;
+   - **`/kosmos` as two layers**: the system as shipped, from the image,
+     checksummed and never written; and the person's changes on top,
+     shadowing a file without losing it - a listing is what was changed,
+     deleting a file undoes it, and a boot choice "the system as shipped"
+     starts without the layer when a changed window manager does not come
+     up. Haiku's non-packaged folders over its read-only packages;
+   - **writable is not writable by everything**: an application is handed
+     `/kosmos` read-only, the IDE the writable one (6d's per-launcher
+     permissions);
+   - **what stays fixed**: the C - kernel, servers, drivers, kits - has no
+     compiler on the machine, so it is read there and replaced by an
+     image; everything in Lua can change; what runs before the disk is
+     found always comes from the image;
+   - **the names**: `use("/lib/...")` in a few hundred places, once; and
+     `/kosmos/apps`, `/kosmos/servers`, `/kosmos/drivers` and the assets,
+     which the list did not have. Before 6e, so the tutorial teaches the
+     final names.
+   Asked: whether his changes to the system travel with his home (leaned
+   to: the layer inside `/home`) or stay with the machine; `/kosmos/apps`;
+   how "the system as shipped" is chosen at boot; and a drawing first.
+
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the
    deskbar", "all the app icons look the same, not the real app icon as it
