@@ -543,8 +543,13 @@ def main():
     failed = [s for s in chosen if s.code != 0]
     left = sorted(scratch.leftovers() - before)
 
+    # **Only a suite that passed says how long it takes.** One that failed
+    # usually failed early - x86-display-4 at 32 of its 171 seconds - and
+    # remembered as that, it was started last next time and ran on alone
+    # after everything else had finished: 11:07 for a gate of 8:43
+    # (`testing.md` 18.220).
     last.update({s.name: round(s.took, 1) for s in chosen
-                 if s.took is not None})
+                 if s.took is not None and s.code == 0})
 
     with open(times_file, "w") as f:
         json.dump(last, f, indent=1, sort_keys=True)

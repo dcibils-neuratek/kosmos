@@ -10943,3 +10943,41 @@ early, each now waiting for the thing it checks:
 
 The gate, twice after the helpers changed: 48 of 48 in **8:43**, then the
 Large icons check once, fixed above; both phases pass on both boards.
+
+## 18.220 The IDE's scrollbar and its text size
+
+Diego, 27 September, on the 0.10.172 stick: "the ide is missing a
+scrollbar to see where we are on the file", and "we need a way to increase
+font size like we have in the terminal app". Both are in the kit's editor,
+so every `ui.editor` has them - Cafesa3D's Script panel's too.
+
+- **The scrollbar** is the one every list has (`draw_scrollbar`,
+  `ui.scrollbar_mouse`): drawn when there are more lines than rows, the
+  text kept clear of it, a press in the trough or a drag of the thumb moving
+  the view, and the cursor not pulled back to where it was.
+- **The face** is `spec.face`, a function the editor asks each time it
+  measures or draws - a sized face is given back when the desktop's faces
+  change, so one kept would name a slot that is gone - and the desktop's
+  `mono` when there is none. The IDE hands every editor, Output and
+  Problems `/lib/textsize.lua`'s face, with Larger text, Smaller text and
+  Actual size in its dots - the dots' first items - and Ctrl = and Ctrl -,
+  kept in `/home/.ide-text` because `/home/.ide` is the project's memory.
+
+**`tools/run_ide.py`, 23 checks now**: Ctrl = then Ctrl - making the text a
+step larger and a step smaller ("ide: text N px"), and a press low in
+`bench.lua`'s scrollbar moving its view down ("ide: bench.lua shows line N
+of M", said when the lines shown change). **Controls**: an editor whose
+scrollbar takes no presses, and an IDE without the two keys, fail both.
+
+`luaglobals` caught two on the way: the text size declared after the
+function that opens a file, which read it as a global; and `local text =
+textsize.new(..., function() ... text ... end)`, whose callback names a
+`text` that is not yet the local - a local is in scope only after its
+initialiser.
+
+The gate with these: 48 of 48 in 11:07 - and the suites took what they
+took the time before, 8:43. **The order was wrong**: the gate starts the
+longest suites first by what each took last time, and x86-display-4 had
+failed at 32 of its 171 seconds in the run before, so it was started at 487
+s and ran on alone to 658. A failure's time says nothing about a suite's
+length, so `gate.py` keeps the last *passing* time now.

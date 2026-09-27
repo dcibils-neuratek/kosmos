@@ -192,6 +192,45 @@ def main():
               "/lib/bench.lua was not said to be a library and run to its end: "
               "%r, %r" % (library, bench))
 
+        # **Text larger and smaller** (Diego, 27 September, "like we have in
+        # the terminal app"): Ctrl = a step up, Ctrl - a step down.
+        mark = len(guest.seen)
+        press("ctrl-equal")
+        larger = said("ide: text ", mark, 20)
+        mark = len(guest.seen)
+        press("ctrl-minus")
+        smaller = said("ide: text ", mark, 20)
+        up, down = (int(t.split()[0]) if t else 0 for t in (larger, smaller))
+        check(up > down > 0, "Ctrl = and Ctrl - did not make the text larger and "
+              "then smaller: %r, %r" % (larger, smaller))
+
+        # **The scrollbar** (Diego: "the ide is missing a scrollbar to see
+        # where we are on the file"): a press low in its trough, at the
+        # editor's right edge, moves bench.lua's view down.
+        win = re.search(r"wm: window Kosmos IDE at (\d+),(\d+)", guest.seen)
+        ed = [m for m in re.finditer(r"ide: editor at (\d+),(\d+) (\d+)x(\d+)",
+                                     guest.seen)]
+        moved = None
+
+        if win and ed:
+            wx, wy = int(win.group(1)), int(win.group(2))
+            ex, ey, ew, eh = (int(v) for v in ed[-1].groups())
+            width, height, _ = R.pixel_reader(guest.screendump())
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(wx + ex + ew - 9, wy + ey + eh - 40,
+                                         width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            moved = said("ide: bench.lua shows line ", mark, 20)
+
+        shown = re.match(r"(\d+) of (\d+)", moved or "")
+        check(shown is not None and int(shown.group(1)) > 1
+              and int(shown.group(2)) > 300,
+              "a press low in the editor's scrollbar did not move bench.lua's view "
+              "down: %r" % moved)
+
         # **Stop**: a program that never ends, run with F5 and stopped with
         # Shift+F5.
         stop_desktop()
@@ -317,7 +356,7 @@ def main():
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
           "its file remembered; a program changed and not saved run to its error "
           "with Ctrl+Enter, a 21 KB library run as it is and said to be one, "
-          "another started with F5 and stopped with Shift+F5; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab)" % checks)
+          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab)" % checks)
     return 0
 
 

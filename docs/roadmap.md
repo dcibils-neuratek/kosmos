@@ -2426,7 +2426,13 @@ processors, and still what follows USB:
       is in the file, and dragged to go there; the text larger and smaller
       as Terminal's is, remembered as Terminal's is; and a field that finds
       a file anywhere in the project by any part of its name, and opens it.
-      And "the ide looks great!".
+      And "the ide looks great!". **The scrollbar and the text size DONE
+      the same day** (`testing.md` 18.220): the kit's own scrollbar in
+      every `ui.editor`, and Larger, Smaller and Actual size in the IDE's
+      dots and on Ctrl = and Ctrl -. **Find a file drawn** in
+      `docs/kosmos-ide.html` - a field where Tracker keeps its Search, Ctrl
+      P, the matches under it with where each lives and what it is - and
+      built once Diego has seen it.
       **And two faults from the same evening, DONE the same day**
       (`testing.md` 18.218): "I can't run things like bench.lua from the ide
       as it says ramfs is full" - every Run went through a copy in `/ramfs`,

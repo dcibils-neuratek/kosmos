@@ -61,6 +61,20 @@ local L = ui.layout
 
 local SETTINGS = "/home/.ide"
 
+--
+-- **Its text larger and smaller**, as Terminal's and Log View's is: Diego,
+-- 27 September, "we need a way to increase font size like we have in the
+-- terminal app". `/lib/textsize.lua`'s steps and its menu, in the dots, and
+-- Ctrl = and Ctrl - besides; kept in a file of its own, since `/home/.ide`
+-- is the project's memory. Every editor asks for the face as it draws.
+--
+local textsize = use("/lib/textsize.lua")
+local text                    -- declared first: the callback below names it
+
+text = textsize.new(ui, "/home/.ide-text", function()
+  print(("ide: text %d px"):format(text:size()))
+end)
+
 -- The first project: where the tutorial's lessons will be (`roadmap.md` 7),
 -- made if it is not there, so the tree has somewhere to stand.
 local FIRST = "/home/development"
@@ -244,12 +258,17 @@ local function open_file(path)
     code = path:match("%.lua$") and "lua" or nil,
     read_only = read_only(path),
     text = body,
+    face = function() return text:face() end,
   }
 
   -- Every file shows the same place in the window; the drawing's editor
   -- has its text 6 in from the top.
   editor.hidden = true
   win:add(editor)
+
+  -- Where it is, for whoever drives the IDE from outside - its scrollbar
+  -- is at the right edge (`tools/run_ide.py`).
+  print(("ide: editor at %d,%d %dx%d"):format(editor.x, editor.y, editor.w, editor.h))
 
   if wire_suggestions then wire_suggestions(editor) end
 
@@ -446,14 +465,14 @@ output = ui.editor{
   x = SIDE, y = H - FOOT - BOTTOM + TAB_H, w = W - SIDE, h = BOTTOM - TAB_H,
   follow = { "left", "right", "bottom" },
   read_only = true, gutter = false, plain = true, inset = { 14, 8 },
-  text = "",
+  text = "", face = function() return text:face() end,
 }
 
 local problems = ui.editor{
   x = SIDE, y = H - FOOT - BOTTOM + TAB_H, w = W - SIDE, h = BOTTOM - TAB_H,
   follow = { "left", "right", "bottom" },
   read_only = true, gutter = false, plain = true, inset = { 14, 8 },
-  text = "",
+  text = "", face = function() return text:face() end,
 }
 
 problems.hidden = true
@@ -538,8 +557,6 @@ local function divider()
   return v
 end
 
-local later = "that is the IDE's next step"
-
 local pill = ui.view{ w = gfx.measure("not running", "ui") + 18, h = 22 }
 
 pill.words = "not running"
@@ -576,7 +593,9 @@ local header = ui.header{
     divider(),
     run_button, stop, check, pill,
   },
-  right = { icon("more", function() say("the dots' menu is " .. later) end) },
+  right = { icon("more", function(self)
+    win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, text:items())
+  end) },
 }
 
 --------------------------------------------------------------------------
@@ -1325,6 +1344,14 @@ end
 function win:on_frame()
   local changed = serve()
 
+  local front = current
+
+  if front and front.shown_top ~= front.editor.top then
+    front.shown_top = front.editor.top
+    print(("ide: %s shows line %d of %d"):format(base(front.path), front.editor.top,
+          #front.editor.lines))
+  end
+
   if running then
     local id, code = sys.wait(true)
 
@@ -1445,6 +1472,9 @@ function win:on_key(c)
   if (k == 13 and mods == ui.CTRL) or c == ui.F[5] then start() return true end
   if k == ui.F[5] and mods == ui.SHIFT then stop_run() return true end
   if c == ui.F[7] then check_now(current, true) return true end
+
+  if c == ui.keywith(61, ui.CTRL) then text:step(1) return true end    -- Ctrl =
+  if c == ui.keywith(45, ui.CTRL) then text:step(-1) return true end   -- Ctrl -
 
   if c == 19 then save() return true end                    -- Ctrl S
   if c == 14 then new_file() return true end                -- Ctrl N

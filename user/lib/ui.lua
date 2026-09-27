@@ -3808,6 +3808,12 @@ function ui.editor(spec)
   v.code = spec.code
   v.top = 1
 
+  -- The face it draws in: `spec.face`, a function asked each time it is
+  -- needed - a sized face is given back when the desktop's faces change,
+  -- so one kept would name a slot that is gone (`/lib/textsize.lua`) - or
+  -- the desktop's `mono`. It is how the IDE makes its text larger.
+  v.face = spec.face
+
   -- The same table the buffer holds, so `#editor.lines` is the line count
   -- as it always was; `set` replaces it and says so again.
   v.lines = buf.lines
@@ -4064,8 +4070,16 @@ function ui.editor(spec)
   -- preference. Read per repaint because the font is a setting and a window
   -- open while it changes has to follow it.
   --
+  local function face()
+    return (v.face and v.face()) or "mono"
+  end
+
+  local F = "mono"              -- the face this draw is in, asked at its start
+
   local function cell()
-    return math.max(1, gfx.measure("0", "mono")), gfx.height("mono")
+    local f = face()
+
+    return math.max(1, gfx.measure("0", f)), gfx.height(f)
   end
 
   local function rows(self)
@@ -4147,7 +4161,7 @@ function ui.editor(spec)
       if to > columns then to = columns end
       if to < from then return end
 
-      g:text(x0 + (from - 1) * GW, y, line:sub(from, to), colour, nil, "mono")
+      g:text(x0 + (from - 1) * GW, y, line:sub(from, to), colour, nil, F)
     end
 
     for _, s in ipairs(spans_of(n)) do
@@ -4173,6 +4187,8 @@ function ui.editor(spec)
   end
 
   function v:draw(g)
+    F = face()
+
     local GW, GH = cell()
     local code = self.code
     local colours = code and code_colours()
@@ -4193,7 +4209,12 @@ function ui.editor(spec)
     end
 
     local gutter = gutter_cells(self)
-    local columns = (self.w - 2 * IN_X) // GW - gutter
+    -- **The kit's scrollbar**, when there is more than fits: where the
+    -- view is in the file, and dragged it goes there (Diego, 27 September:
+    -- "the ide is missing a scrollbar to see where we are on the file").
+    -- The text keeps clear of it.
+    local barred = #buf.lines > rows(self)
+    local columns = (self.w - 2 * IN_X - (barred and SCROLL_W + 2 or 0)) // GW - gutter
     local x0 = IN_X + gutter * GW
     local sy1, sx1, sy2, sx2 = buf:selection()
 
@@ -4232,7 +4253,7 @@ function ui.editor(spec)
         local number = tostring(n)
 
         g:text(x0 - 2 * GW - #number * GW, y, number,
-               here and colours.number_here or colours.number_dim, nil, "mono")
+               here and colours.number_here or colours.number_dim, nil, F)
 
         if sy1 and n >= sy1 and n <= sy2 then
           local from = (n == sy1) and sx1 or 1
@@ -4253,7 +4274,7 @@ function ui.editor(spec)
         end
       else
         if GUTTER > 0 then
-          g:text(IN_X, y, ("%4d "):format(n), theme.line, theme.sunken, "mono")
+          g:text(IN_X, y, ("%4d "):format(n), theme.line, theme.sunken, F)
         end
 
         local vis = line:sub(1, columns)
@@ -4269,7 +4290,7 @@ function ui.editor(spec)
           -- A line may have a colour of its own - the Output panel's run
           -- and end lines - and every other is the text's.
           g:text(x0, y, vis, self.colours and self.colours[n] or theme.text,
-                 theme.sunken, "mono")
+                 theme.sunken, F)
         else
           --
           -- Three pieces, and the middle one is the caret's own colours.
@@ -4285,15 +4306,15 @@ function ui.editor(spec)
           if to > columns then to = columns end
 
           g:text(x0, y, vis:sub(1, from - 1), theme.text, theme.sunken,
-                 "mono")
+                 F)
 
           if to >= from then
             g:text(x0 + (from - 1) * GW, y, vis:sub(from, to), theme.sunken,
-                   theme.ring, "mono")
+                   theme.ring, F)
           end
 
           g:text(x0 + to * GW, y, vis:sub(to + 1), theme.text, theme.sunken,
-                 "mono")
+                 F)
 
           -- The line break, so a run through several lines reads as one
           -- shape rather than as a ragged stack.
@@ -4320,10 +4341,12 @@ function ui.editor(spec)
         g:fill(px, py, GW, GH, theme.ring)
 
         if under ~= "" then
-          g:text(px, py, under, theme.sunken, theme.ring, "mono")
+          g:text(px, py, under, theme.sunken, theme.ring, F)
         end
       end
     end
+
+    self.bar = draw_scrollbar(g, self.w, self.h, #buf.lines, rows(self), self.top)
   end
 
   local SHIFT, CTRL = keys.SHIFT, keys.CTRL
@@ -4434,6 +4457,17 @@ function ui.editor(spec)
   -- until it does not.
   --
   function v:mouse(action, x, y)
+    -- The scrollbar first: a press on it, and a drag begun on it wherever
+    -- the pointer has got to since (`ui.scrollbar_mouse`). Where the view
+    -- goes, the cursor is not pulled back to.
+    local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h, #buf.lines,
+                                  rows(self), self.top)
+
+    if to then
+      self.top, self.followed = to, buf.cy
+      return true
+    end
+
     -- The same cell the drawing used, or a click lands on a different
     -- character from the one under the pointer. That disagreement is the
     -- whole reason `cell()` is a function rather than two captured numbers.
