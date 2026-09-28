@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
 ---
 
@@ -17,6 +17,61 @@ Last updated: 2026-09-27
    keys, the power button, the Super Nintendo's menus, the controller and
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
+
+## 28 September, overnight: wm.lua in parts, LuaJIT measured, and windows without title bars
+
+**Nothing is pushed since 0.10.176 (395472a)**; 0.10.177 to 0.10.182 are on
+`main`, each gated. A push takes Diego's word and `make prepush`.
+
+**The stick to write is 0.10.182** (`boot.md`), for the M700: 32 checks
+under OVMF, not booted there yet. 0.10.175 to 0.10.181 were handed over the
+same night and each is superseded by the next; 0.10.181 was never written.
+The M700's stable is still 0.10.169 - whether a later one replaces it is
+Diego's word, after he has used one.
+
+**Disk: 2.2 GB free** on this Mac, and each stick image is 738 MB -
+`build/x86_64/kosmos-usb-0.10.175` to `-0.10.181-development.img` are
+superseded. Deleting them is Diego's call; below about 1 GB the gate fails
+in ways that look like something else (a screendump that is not there).
+
+Done overnight, in order:
+
+- **Super + Control and a drag moves a window from anywhere in it**
+  (0.10.180, `testing.md` 18.241).
+- **`wm.lua` in parts** (6zn, done for now): the frame profile, the level
+  bar, the menu strip over a direct window, one window drawn, the
+  pointer's pass, compositing and the keys are files in `user/lib/wm/`
+  (`/Kosmos/Libraries/wm/`), each `return function(ctx)` handed stable
+  references; mutable state lives in `OUT` (measurements) and `PT` (the
+  pointer). `wm.lua` is 5,840 lines, from 7,410; the no-title-bar work since added two hundred.
+- **LuaJIT, measured** (6zo, `docs/luajit.md`): 2.3 to 4.3 times faster
+  compiled on four of Kosmos's own libraries, 1.1 to 1.5 interpreted; but
+  it is Lua 5.1 and 96 of 194 files use what 5.1 lacks - integers above
+  all, which the dates, the counter and every protocol need - and its
+  compiler needs memory that is written and then run, which Kosmos
+  refuses. **The recommendation is to keep 5.4; Diego's to decide.**
+- **Windows without title bars** (6zj steps 1 and 2, 0.10.181 and
+  0.10.182, `testing.md` 18.242 and 18.243, `ui.md` 16.25): in the Plex
+  looks (`title_bars = no`) a window whose kit header offers to be its
+  title bar has no bar; the window manager draws the three at the header's
+  right end - grey behind, the front shadow deeper - and a press on the
+  header's empty band is handed back to it as a drag (`move_begin`), a
+  double click as `maximise`. Every window with a kit header and
+  Preferences; the Calculator, the Clock, About, Music and every window
+  that draws its own pixels keep their bars, and Classic keeps the tab.
+  Found on the way: a maximise never said the window had moved, so its
+  menus opened where it had been; and a look without `flat` kept the last
+  look's.
+
+**Waiting for Diego**: the push; LuaJIT (`docs/luajit.md`); the M700's
+stable; and **6zj step 3** - the display harness runs in the dark look,
+where every window keeps its tab, so nothing there broke. Whether it should
+run in Plex, the look Diego uses, is the question step 3 is now.
+
+**Next, in order**: 6zd (the Deskbar's menu in two layers, the seeded
+launchers to the Trash once), 6za step (c) Open with and File types (6z),
+step (d) zip and unzip (6v), 6s (d) and (e) with 6w, then ELF step 5 -
+Doom into `/Home/Apps/Doom`, and Diego is told when it can be tried.
 
 ## 27 September, late: the root as agreed, two sticks on the M700, and the right click drawn
 
