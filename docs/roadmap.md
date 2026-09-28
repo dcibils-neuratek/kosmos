@@ -2252,6 +2252,21 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zp. **FOUND on 28 September - the gate is at the edge of its ten
+   minutes.** Five gates that night ran 9:40, 9:42, 9:06, 9:09 and 9:59;
+   the last rebuilt the images for a C change (102 s where a Lua change
+   takes about 50) and added the `deskbar layers` phase. The gate is bound
+   by throughput, not by one suite: about 2,900 seconds of suites six at a
+   time, after the images - Cafesa3D on x86 is the longest at 341 s and
+   ends well before the rest. The display harness is 1,100 of those seconds
+   across both boards. **What to look at, in order**: the fixed sleeps that
+   stand in for a condition - `compositor budget` waits 25 s for its
+   windows and a decode, and its control (the flat budget) has to be run
+   again with whatever replaces it, or the check stops biting; the image
+   build, which compiles each variant's userland C separately; and whether
+   seven at once is faster or only more contended on this Mac's four
+   performance cores. Never by dropping checks (`CLAUDE.md`).
+
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua
    code". It was rejected in August for Lua 5.4 (`design.md` §5, README),
