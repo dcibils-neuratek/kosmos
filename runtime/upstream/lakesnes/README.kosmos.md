@@ -58,8 +58,10 @@ work.
 
 **For its size.** The image is copied into every process, and the core is
 about 94 KB of code and 9 KB of `.bss`, paid by the shell and the Deskbar
-for a console neither of them runs. `FULL=1`, the default, turns it on, as
-it does Doom and the browser; `FULL=0` leaves it out.
+for a console neither of them runs. It was on in `FULL=1`; since 28
+September it is an installed application instead (`docs/elf.md` step 5):
+`make apps` links it into `snes.elf`, in `/Home/Apps/SNES` beside
+`snes.lua`, and no process but the one playing pays for it.
 
 ## What it costs a process that runs it
 

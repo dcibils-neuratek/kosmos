@@ -43,7 +43,10 @@ looked at:
 
 ## What the build takes, and what it replaces
 
-`make QUAKE=1` compiles 78 of upstream's files: the engine - rendering,
+`make apps` compiles 78 of upstream's files into `quake.elf`, Quake's own
+image, which lives in `/Home/Apps/Quake` beside `quake.lua` and its pak - an
+installed application since 28 September (`docs/elf.md` step 5); it was
+`make QUAKE=1`, in the system's image. The files: the engine - rendering,
 the client and server, the progs interpreter, the menus, sound mixing,
 loopback networking and the connection book `net_socket.c` keeps.
 `make quake` compiles those alone, to say whether they still build.

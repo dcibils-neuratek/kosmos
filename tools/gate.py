@@ -314,7 +314,7 @@ DISPLAY_PARTS = [
      "wheel"],
     ["faces", "wallpapers", "direct menu", "super drag", "no title bar",
      "tabs", "appearance",
-     "Super Nintendo --scale", "deskbar", "deskbar focus", "deskbar layers",
+     "deskbar", "deskbar focus", "deskbar layers",
      "desktop",
      "places", "panel"],
     ["clipboard", "cores", "cpu split", "monitor", "camera", "reaped",

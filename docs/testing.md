@@ -12110,3 +12110,26 @@ The kernel suite's `gfx: faces by size are given back` filled the old pool
 of eight and wanted a ninth refused, which it failed in the first gate. It
 asks for sixteen now, each in a slot of its own, and one again after they
 are given back; with the pool set back to eight it fails.
+
+## 18.253 Quake and the Super Nintendo, installed (`elf.md` step 5)
+
+Quake and the Super Nintendo went where Doom went: `user/installed/Quake`
+and `user/installed/SNES`, each program naming its own image - `quake.elf`,
+`snes.elf`, linked by `make apps` and held to the same two promises, the
+kit in the image and not in the system's. Quake plays the `id1/pak0.pak`
+beside it; the Super Nintendo's ROMs stay in `/Home/roms/snes`, a person's
+own. `QUAKE` and `SNES` are gone as build variables, `MEGA=1` is `FULL=1`,
+and `tools/installed.py` is the one list a stick's `/Home` and `make
+install-apps` both read - each application's Lua, its image stripped, and
+the WAD and the pak from the top of the home folder.
+
+**`run_loader.py`**, 13, on both boards, with all three on its `/Home`:
+`quake` typed is found in `/Home/Apps/Quake`, made from `quake.elf` and says
+it has no pak beside it; and the Super Nintendo's two `--scale` checks moved
+here from the display harness, which carries no disk to install it on -
+`wm snes:--scale 3` refused by name, which `snes.lua` reaches only after
+`use("snes.elf")` has worked, and `--scale 2 nosuch.sfc` looking for exactly
+that name. The harness's programs-by-name phase keeps its walk for any
+program a global hides, with nothing left to type. `make quake-check` and
+`snes-check` put the installed applications on their disks beside the pak
+or the ROM.

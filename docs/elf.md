@@ -239,7 +239,13 @@ anything is spawned, and names the page that differs.
      (`homeimage.py`'s installed pairs, which win over the folder's own at
      the same path).
 
-   **Then Quake and the Super Nintendo**, the same way.
+   **Then Quake and the Super Nintendo**, the same way - **DONE the same
+   day** (`testing.md` 18.253): `user/installed/Quake` and `SNES`,
+   `quake.elf` and `snes.elf`, Quake's pak beside it in `id1/` and the
+   Super Nintendo's ROMs where they were, in `/Home/roms/snes`, a person's
+   own. `QUAKE` and `SNES` are gone as build variables and `MEGA=1` is
+   `FULL=1`; `tools/installed.py` is the one list a stick and `make
+   install-apps` read. Step 5 is done.
 
 ---
 

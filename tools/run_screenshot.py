@@ -1042,19 +1042,16 @@ def check_keyboard(guest):
     return 2
 
 
-# Typed at the prompt, and whose refusal each must print. Each argument is
-# one the program turns down before it opens a window or maps a byte, so the
-# refusal is quick and is the program's own sentence. `snes --scale 3` is the
-# line that found the bug; `quake` answers "not built with QUAKE=1" in an
-# image without it, which is the same proof - the program ran.
-PROGRAMS_BY_NAME = (
-    ("snes --scale 3", "snes"),
-    ("quake /nowhere.pak", "quake"),
-)
-# Doom is not here since 28 September: it is an installed application, in
-# `/Home/Apps/Doom` with an image of its own (`docs/elf.md` step 5), and a
-# machine it was not installed on has no `doom` to type. `run_loader.py`
-# installs it and types it.
+# Typed at the prompt, and whose refusal each must print - which it was for
+# `snes --scale 3` and `quake /nowhere.pak`, the lines that found a kit
+# hiding its program behind a global. **None now**: Doom, Quake and the
+# Super Nintendo are installed applications since 28 September, each in
+# `/Home/Apps` with an image of its own (`docs/elf.md` step 5), and this
+# harness carries no disk to install them on. `run_loader.py` installs all
+# three, types `doom` and `quake`, and starts the Super Nintendo with
+# `--scale` through the window manager. What stays here is the class: the
+# walk below names any program a global hides, whatever it is called.
+PROGRAMS_BY_NAME = ()
 
 
 def check_programs_by_name(guest):
@@ -5670,85 +5667,6 @@ def check_drives_app(guest):
         time.sleep(0.3)
 
     return 3
-
-
-def check_snes_scale(guest):
-    """`--scale` reaches the Super Nintendo, and never reaches a ROM's name.
-
-    The emulator takes one option before the ROM - `--scale 2`, a window twice
-    the size, which a launcher stores with its arguments - and ROMs are named
-    the way No-Intro names them, spaces and all, so the rest of the line is the
-    name. Both ways that goes wrong are asked here without a ROM, which this
-    harness does not carry: a scale it cannot draw is refused by name, and the
-    option comes off the front of the line rather than becoming part of the
-    file it looks for.
-
-    Started through the window manager, as the Deskbar and a launcher start
-    it. The first version typed `snes --scale 3` at the prompt and got
-    `table: 0x...` back: the core registers itself as a global named `snes`
-    in every Lua state, the shell's included, so there the name is the core
-    and `--scale 3` a Lua comment.
-
-    The pixels are `tools/test_snesblit.c`'s, on the host. Whether a real game
-    fills a 1024 by 960 window is `make snes-check ROM=...`'s to say.
-    """
-    def ask(line, *texts):
-        """Starts `line`, waits for the first of `texts`, and gives the screen
-        back. Answers which text was heard, or None, and everything said."""
-        mark = len(guest.seen)
-        guest.type(line)
-        deadline = time.monotonic() + 30
-        heard = None
-
-        while heard is None and time.monotonic() < deadline:
-            guest._read_available()
-            heard = next((t for t in texts if t in guest.seen[mark:]), None)
-
-            if heard is None:
-                time.sleep(0.3)
-
-        answer = guest.seen[mark:]
-        stop = len(guest.seen)
-        guest.proc.stdin.write(STOP_DESKTOP)
-        guest.proc.stdin.flush()
-        end = time.monotonic() + 15
-
-        while time.monotonic() < end:
-            guest._read_available()
-
-            if PROMPT in guest.seen[stop:]:
-                break
-
-            time.sleep(0.3)
-        else:
-            raise Failure(f"Control-W Q did not get the screen back after `{line}`.")
-
-        return heard, answer
-
-    unbuilt = "not built with SNES=1"
-    refused = "snes: --scale is 1 or 2, and 3 is neither"
-    heard, answer = ask("wm snes:--scale 3", refused, unbuilt)
-
-    if heard == unbuilt:
-        return 0                        # an image without the core: nothing to ask
-
-    if heard != refused:
-        raise Failure(
-            "`wm snes:--scale 3` was not refused by name; the program said: "
-            + repr(answer[-300:])
-        )
-
-    looked = "snes: no /Home/roms/snes/nosuch.sfc"
-    heard, answer = ask("wm snes:--scale 2 nosuch.sfc", looked)
-
-    if heard != looked:
-        raise Failure(
-            "`wm snes:--scale 2 nosuch.sfc` did not look for exactly nosuch.sfc - "
-            "the option has to come off the front of the ROM's name; the "
-            "program said: " + repr(answer[-300:])
-        )
-
-    return 2
 
 
 def check_volume_keys(guest):
@@ -11348,7 +11266,6 @@ def main():
         scale_live_checks = phase("scale changed", check_scale_live)
         appearance_checks = phase("appearance", check_appearance)
         drives_app_checks = phase("drives app", check_drives_app)
-        snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
         layers_checks = phase("deskbar layers", check_deskbar_layers)
@@ -11420,7 +11337,7 @@ def main():
              + sized_checks + fold_checks + tri_checks
              + direct_checks
              + three_d_checks + registry_checks + context_checks
-             + repaint_checks + power_checks + budget_checks + snes_checks
+             + repaint_checks + power_checks + budget_checks
              + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks + layers_checks + types_checks + compress_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
@@ -11551,8 +11468,6 @@ def main():
           f"{monitor_checks} on Monitor's minute of history filling in, "
           f"{camera_checks} on the Camera app showing the test pattern, "
           f"mirrored and not, and moving, "
-          f"{snes_checks} on the Super Nintendo's --scale reaching the window "
-          f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "
           f"{three_d_checks} on a software-rendered solid).")
     return 0

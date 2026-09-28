@@ -98,23 +98,35 @@ for name, line in (("apptest", "-- kosmos: image apptest.elf"), ("plain", ""),
 # say it has no WAD beside it: the sentence only the program itself says,
 # once all of that has worked.
 #
-doom_app = this_boards_image("doom.elf")
+#
+# **And Quake and the Super Nintendo**, installed the same way on 28
+# September: each folder's Lua and its image, stripped.
+#
+installed = []
 
-if doom_app is None:
-    print("FAIL: no doom.elf for this board - `make apps` (and ARCH=x86_64) builds it")
-    sys.exit(1)
+for folder, image in (("Doom", "doom.elf"), ("Quake", "quake.elf"), ("SNES", "snes.elf")):
+    built = this_boards_image(image)
 
-doom_elf = os.path.join(WORK, "doom.elf")
-subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "objcopy",
-                "--strip-debug", doom_app, doom_elf], check=True)
+    if built is None:
+        print("FAIL: no %s for this board - `make apps` (and ARCH=x86_64) builds it" % image)
+        sys.exit(1)
+
+    stripped_image = os.path.join(WORK, image)
+    subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "objcopy",
+                    "--strip-debug", built, stripped_image], check=True)
+    installed.append("%s:/Home/Apps/%s/%s" % (stripped_image, folder, image))
+
+    source = os.path.join(ROOT, "user", "installed", folder)
+
+    for name in sorted(os.listdir(source)):
+        if name.endswith(".lua"):
+            installed.append("%s:/Home/Apps/%s/%s" % (os.path.join(source, name), folder, name))
 
 files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "apptest.elf",
          "broken.elf", "stranger.elf"]
-subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "160"]
+subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "224"]
                + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files]
-               + ["%s:/Home/Apps/Doom/doom.lua"
-                  % os.path.join(ROOT, "user", "installed", "Doom", "doom.lua"),
-                  "%s:/Home/Apps/Doom/doom.elf" % doom_elf],
+               + installed,
                check=True, capture_output=True, cwd=ROOT)
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -213,6 +225,63 @@ def main():
               "it: %r" % said)
         check("image: made /Home/Apps/doom/doom.elf, " in guest.seen[doom_at:],
               "doom did not run in the image beside it")
+
+        quake_at = len(guest.seen)
+        said, took = typed("quake", "quake:", 240)
+        times.append(took)
+        check(said is not None
+              and said.startswith("quake: no /Home/Apps/quake/id1/pak0.pak"),
+              "quake, typed, was not found in /Home/Apps/Quake, run in quake.elf "
+              "and its engine reached - or did not say it has no pak beside it: %r"
+              % said)
+        check("image: made /Home/Apps/quake/quake.elf, " in guest.seen[quake_at:],
+              "quake did not run in the image beside it")
+
+        #
+        # **The Super Nintendo's `--scale`**, from the display harness, which
+        # carries no disk and so no installed application: through the window
+        # manager, as the Deskbar and a launcher start it. A scale it cannot
+        # draw is refused by name, and the option comes off the front of the
+        # line rather than becoming part of the ROM's name. Neither needs a
+        # ROM, which this suite does not carry.
+        #
+        def ask(line, want):
+            mark = len(guest.seen)
+            guest.type(line)
+            deadline = time.monotonic() + 120
+
+            while want not in guest.seen[mark:] and time.monotonic() < deadline:
+                time.sleep(0.2)
+                guest._read_available()
+
+            heard = want in guest.seen[mark:]
+            answer = guest.seen[mark:]
+            stop = len(guest.seen)
+            guest.proc.stdin.write(R.STOP_DESKTOP)
+            guest.proc.stdin.flush()
+            end = time.monotonic() + 20
+
+            while time.monotonic() < end and R.PROMPT not in guest.seen[stop:]:
+                time.sleep(0.2)
+                guest._read_available()
+
+            return heard, answer
+
+        #
+        # The refusal is also the proof it ran in `snes.elf`: `snes.lua`
+        # reaches its options only after `use("snes.elf")`, which fails in
+        # any other image. (The launcher's "image: made" is said by the
+        # process that spawns for the window manager, whose `print` reaches
+        # nothing - so it is not looked for here.)
+        #
+        heard, answer = ask("wm snes:--scale 3", "snes: --scale is 1 or 2, and 3 is neither")
+        check(heard, "`wm snes:--scale 3` was not refused by name - so not "
+              "found in /Home/Apps/SNES, or not run in snes.elf: %r" % answer[-300:])
+
+        heard, answer = ask("wm snes:--scale 2 nosuch.sfc",
+                            "snes: no /Home/roms/snes/nosuch.sfc")
+        check(heard, "`wm snes:--scale 2 nosuch.sfc` did not look for exactly nosuch.sfc "
+              "- the option has to come off the front of the ROM's name: %r" % answer[-300:])
     finally:
         guest.close()
 
@@ -225,10 +294,11 @@ def main():
     print("PASS: %d checks on programs from a file (a program run in the %.1f MB image "
           "beside it, where its kit is and the system's has none; a truncated image and "
           "one for another processor refused with the reader's sentences; started again "
-          "from the image made the first time - %.1f s, then %.1f s; and Doom, "
-          "installed in /Home/Apps/Doom, found by its name and run in doom.elf, "
-          "%.1f s)"
-          % (checks, len(whole) / 1e6, times[0], times[1], times[2]))
+          "from the image made the first time - %.1f s, then %.1f s; Doom and "
+          "Quake, installed in /Home/Apps, each found by its name and run in its "
+          "own image, %.1f s and %.1f s; and the Super Nintendo's --scale, from "
+          "its image, through the window manager)"
+          % (checks, len(whole) / 1e6, times[0], times[1], times[2], times[3]))
     return 0
 
 

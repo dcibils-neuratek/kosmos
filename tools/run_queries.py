@@ -221,7 +221,7 @@ def main():
             # application that says nothing.
             'local function o(p) return table.concat((fs.getattr(p) or {}).opens or {}, " ") end '
             'print("K-OPENS", o("/Kosmos/Apps/photo.lua"), o("/Kosmos/Apps/video.lua"), '
-            'o("/Kosmos/Programs/play.lua"), o("/Kosmos/Apps/snes.lua"), '
+            'o("/Kosmos/Programs/play.lua"), '
             '(fs.getattr("/Kosmos/Apps/calc.lua") or {}).opens == nil)',
 
             # And where it went: into /Home/Preferences, under its name
@@ -343,10 +343,13 @@ def main():
             ("P-MOVED", "true kept across the move directory",
              "a preference at the top of the home was not moved into "
              "/Home/Preferences as the shell started"),
-            ("K-OPENS", "png jpg jpeg mp4 mp4 sfc smc true",
+            # The Super Nintendo's cartridges were here until it became an
+            # installed application (28 September); `test_filetypes.lua` holds
+            # what an installed one opens.
+            ("K-OPENS", "png jpg jpeg mp4 mp4 true",
              "an application's `kosmos: opens` did not reach its attributes - "
-             "Photo's three, Video's and Play's film, the Super Nintendo's "
-             "cartridges - or one that declares nothing had some"),
+             "Photo's three, Video's and Play's film - or one that declares "
+             "nothing had some"),
             ("K-DESKBAR", "Applications,Demos,Preferences,System launcher "
                           "/Kosmos/Apps/tracker.lua App_Tracker directory "
                           "launcher true true true",

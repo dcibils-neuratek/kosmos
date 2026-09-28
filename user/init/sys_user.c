@@ -2936,8 +2936,8 @@ static const struct {
      * runtime/upstream/doom's README says what Doom makes of an image's
      * licence. */
     { "doom",     kosmos_doom_kit, 1 },
-    { "quake",    kosmos_quake_kit, 0 },
-    { "snes",     kosmos_snes_kit, 0 },
+    { "quake",    kosmos_quake_kit, 1 },
+    { "snes",     kosmos_snes_kit, 1 },
     /* In no image but its own: the loader's test (`docs/elf.md`). */
     { "apptest",  kosmos_apptest_kit, 1 },
 #ifdef KOSMOS_FFMPEG

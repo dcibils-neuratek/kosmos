@@ -158,8 +158,8 @@ make qemu        # build and run under QEMU virt, in a window
 make fast        # the same, on this Mac's own cores (hvf); 4-14x
 make FB=1280x800 qemu    # the same, at that display size
 make FULL=0 qemu         # without the browser and FFmpeg, and quicker to link
-make MEGA=1 qemu         # everything: FULL, plus Quake
-make install-apps        # Doom into the QEMU disk's /Home/Apps/Doom
+make MEGA=1 qemu         # the same as FULL now; kept for the stick's command
+make install-apps        # Doom, Quake, the Super Nintendo into the QEMU disk's /Home/Apps
 make serial      # the same, serial only, no window
 make test        # every suite, side by side, in about five minutes; 0 or 1
 make screenshot  # boot, screendump, and check the picture QEMU scans out
@@ -175,12 +175,13 @@ half of it. `FULL=0` gives the lean image; `make test` and `make bench`
 build their own and are unaffected, because a suite's value is being quick
 enough to run without thinking about it.
 
-Doom is not in it: it is an application installed in `/Home/Apps/Doom`
-with an image of its own, `doom.elf`, which `make apps` links, a stick
-carries and `make install-apps` puts on the QEMU disk (`docs/elf.md` step
-5). Nothing here is linked dynamically, so
-`doom.elf` is the GPLv2 work, and what the system's image carries is in
-`LICENSE`, which the About window shows.
+Doom, Quake and the Super Nintendo are not in it: each is an application
+installed in `/Home/Apps` with an image of its own - `doom.elf`, `quake.elf`,
+`snes.elf` - which `make apps` links, a stick carries and `make
+install-apps` puts on the QEMU disk (`docs/elf.md` step 5). Nothing here is
+linked dynamically, so `doom.elf` and `quake.elf` are the GPL works, and
+what the system's image carries is in `LICENSE`, which the About window
+shows.
 
 Toolchain: `aarch64-none-elf-gcc`, `qemu-system-aarch64`.
 
@@ -938,16 +939,16 @@ user/           everything at EL0:
   kits/           C that runs inside your own process, one directory per
                   kit: gfx/ gl/ pdf/ compress/ game/ network/ console/
                   mp3/ record/ 3d/ ffmpeg/ - an app's own engine C lives
-                  with the app, in bin/apps/browser/, quake/, snes/, and
-                  installed/Doom/
+                  with the app, in bin/apps/browser/ and installed/
   lib/            the same position, in Lua. All .lua and nothing else
   include/        the protocol headers both sides compile against
   bin/            apps/ and programs/, in Lua, served from the image as
                   /Kosmos/Apps and /Kosmos/Programs. An app opens a
                   window; a program prints
   installed/      applications the build installs into /Home/Apps rather
-                  than serves from /Kosmos, one folder each: Doom/, its Lua
-                  and the C `make apps` links into its own doom.elf
+                  than serves from /Kosmos, one folder each - Doom/, Quake/,
+                  SNES/ - its Lua and the C `make apps` links into its own
+                  image
   tests/          the Lua suite
 tests/          guest-side tests, in C
 bench/          benchmarks and baselines.json

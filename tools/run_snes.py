@@ -137,9 +137,17 @@ def main():
         if os.path.exists(stale):
             os.remove(stale)
 
+    # The installed applications - the Super Nintendo among them since 28
+    # September, in `/Home/Apps/SNES` (`docs/elf.md` step 5) - and the ROM
+    # in /Home/roms/snes, which is a person's own.
+    sys.path.insert(0, HERE)
+    import installed                                         # noqa: E402
+
     name = os.path.basename(rom)
-    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", DISK, "64",
-                    rom + ":/Home/roms/snes/" + name], check=True)
+    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", DISK, "160",
+                    rom + ":/Home/roms/snes/" + name]
+                   + installed.pairs("x86_64" if "x86_64" in image else "aarch64", None),
+                   check=True)
 
     # Both read by run_screenshot when it is imported, so they are set first.
     os.environ["KOSMOS_DISK"] = DISK

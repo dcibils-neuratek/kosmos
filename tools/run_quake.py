@@ -19,7 +19,8 @@ The one picture check is that the window holds more than a handful of
 colours: a window that opened and drew nothing is the failure every port here
 has had at least once.
 
-Only for an image built with `make QUAKE=1`, which the ordinary image is not.
+Quake is an installed application (`docs/elf.md` step 5): the disk made here carries
+it in /Home/Apps/Quake, with the pak beside it.
 
 Usage: run_quake.py [image] [pak]
 """
@@ -79,13 +80,20 @@ def colours_in(parse_ppm, data, x, y, w, h):
     return len(seen)
 
 
-def disk_with(pak):
-    """A 64 MB kfs image holding the pak where `quake.lua` looks for it."""
+def disk_with(pak, image):
+    """A kfs image with the installed applications on it - Quake among them,
+    since 28 September, in `/Home/Apps/Quake` (`docs/elf.md` step 5) - and
+    the pak beside `quake.lua`, where it looks."""
+    sys.path.insert(0, HERE)
+    import installed                                         # noqa: E402
+
     os.makedirs(os.path.dirname(DISK), exist_ok=True)
     if os.path.exists(DISK):
         os.remove(DISK)
-    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", DISK, "64",
-                    pak + ":/Home/id1/pak0.pak"], check=True)
+    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", DISK, "160",
+                    pak + ":/Home/Apps/Quake/id1/pak0.pak"]
+                   + installed.pairs("x86_64" if "x86_64" in image else "aarch64", None),
+                   check=True)
 
 
 def main():
@@ -112,7 +120,7 @@ def main():
         print("note: %s is %d bytes, not the shareware 1.06 pak's %d"
               % (pak, os.path.getsize(pak), PAK_SIZE))
 
-    disk_with(pak)
+    disk_with(pak, image)
 
     # Read by run_screenshot when it is imported, so it is set first.
     os.environ["KOSMOS_DISK"] = DISK

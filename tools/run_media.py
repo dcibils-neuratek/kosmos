@@ -452,11 +452,25 @@ def main():
     mjpeg_mp4(film_in, FILM_GREYS, width=16, height=16, fps=10)
     mp3_with_cover(cover_in, COVER)
     snes_rom(rom_in)
-    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
+
+    #
+    # **The Super Nintendo, installed** (`docs/elf.md` step 5): in
+    # `/Home/Apps/SNES` with its image, which the gate links against the
+    # test userland it builds, or `make apps` against the lean one.
+    #
+    import installed
+    arch = "x86_64" if "x86_64" in image else "aarch64"
+    tested = os.path.join(os.path.dirname(HERE), "build",
+                          "user-x86_64-test" if arch == "x86_64" else "user-test", "apps")
+    snes = [p for p in installed.pairs(arch, None,
+                                       tested if os.path.isdir(tested) else None)
+            if "/Home/Apps/SNES/" in p]
+
+    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "96",
                     wav_in + ":/Home/tone.wav", vbr_in + ":/Home/vbr.mp3",
                     cover_in + ":/Home/cover.mp3",
                     rom_in + ":/Home/kosmos-test.sfc",
-                    film_in + ":/Home/tiny.mp4"], check=True,
+                    film_in + ":/Home/tiny.mp4"] + snes, check=True,
                    capture_output=True, cwd=os.path.dirname(HERE))
 
     # Both read by run_screenshot when it is imported, so they are set first.

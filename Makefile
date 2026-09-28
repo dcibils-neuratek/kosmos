@@ -62,22 +62,19 @@ SIZE    := $(CROSS)size
 # GPLv2 work until 28 September, is an application beside it now
 # (`docs/elf.md` step 5), and `doom.elf` is the GPLv2 work.
 #
-# **`MEGA=1` is everything this tree can put in one image**: what `FULL=1`
-# turns on, and the one it does not carry - Quake. It carried Lite XL too,
-# until Lite XL left the tree on 26 September for an editor of Kosmos's own
-# (`roadmap.md` 6n). It is for
-# running the whole of it at once, not for the suites: the test and bench
-# images ignore it as they ignore `FULL`, and the checks that build a variant
-# of their own say `MEGA=` so an inherited one cannot change what they check.
-# The image is a GPL work (`LICENSE`), and the game data is still not in it:
-# `make image FILES=...` puts `pak0.pak` on the disk, and Doom's WAD goes
-# beside `doom.lua` in `/Home/Apps/Doom`.
+# **`MEGA=1` is `FULL=1` now, and kept so the command a stick is built with
+# still works.** It was everything this tree could put in one image: what
+# `FULL=1` turns on, and Quake. Lite XL left the tree on 26 September, and
+# Doom, Quake and the Super Nintendo are installed applications since 28
+# September (`docs/elf.md` step 5) - images of their own that `make apps`
+# links and a stick carries in `/Home/Apps` - so there is nothing left that
+# only MEGA carries. The test and bench images ignore it as they ignore
+# `FULL`, and the checks that build a variant of their own say `MEGA=`.
 #
 ifeq ($(MEGA),1)
 ifndef TEST
 ifndef BENCH
 FULL   := 1
-QUAKE  := 1
 endif
 endif
 endif
@@ -88,7 +85,6 @@ ifeq ($(FULL),1)
 ifndef TEST
 ifndef BENCH
 WEB  := 1
-SNES := 1
 FFMPEG := 1
 WALLPAPERS := 1
 FB   ?= 1920x1080
@@ -118,7 +114,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(WEB),-web)$(if $(QUAKE),-quake)$(if $(SNES),-snes)$(if $(FFMPEG),-ffmpeg)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(WEB),-web)$(if $(FFMPEG),-ffmpeg)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -567,8 +563,11 @@ USER_LIBC := runtime/libc/string.c \
              user/init/panic_user.c
 
 #
-# `make QUAKE=1` - Quake, from Chocolate Quake, GPL like Doom and outside
-# `FULL=1` for the same reasons.
+# Quake, from Chocolate Quake, GPL like Doom - and, like Doom, an installed
+# application since 28 September (`docs/elf.md` step 5): `make apps` links
+# `QUAKE_SRCS` into `apps/quake.elf`, which lives in `/Home/Apps/Quake`
+# beside `quake.lua` and the pak, and no system image carries it. It was
+# `make QUAKE=1`, outside `FULL=1`.
 #
 # Chocolate Quake rather than the quakegeneric this began from, because
 # quakegeneric says it builds only for 32-bit machines and Kosmos is only
@@ -577,7 +576,7 @@ USER_LIBC := runtime/libc/string.c \
 # **Two lists.** `QUAKE_ENGINE` is upstream's - 78 files, which `make quake`
 # compiles on their own to say whether they still build against the shim.
 # `QUAKE_SRCS` is what goes into the image: the engine, and
-# `user/bin/apps/quake/quake_kosmos.c`, the platform under it (`Sys_*`, `VID_*`, `IN_*`,
+# `user/installed/Quake/quake_kosmos.c`, the platform under it (`Sys_*`, `VID_*`, `IN_*`,
 # `SNDDMA_*`), which is Kosmos's and held to the ordinary flags.
 #
 # **Left out, to be replaced rather than patched**: `main.c`,
@@ -592,7 +591,7 @@ USER_LIBC := runtime/libc/string.c \
 # `screen.h` are also the names of headers in `kernel/`, which every
 # userland compile has on its path; `-iquote` directories are searched first
 # for `#include "..."`, so no ordering of flags can pick the wrong one.
-# `-Iuser/bin/apps/quake` is the SDL shim the engine's `#include <SDL.h>` and
+# `-Iuser/installed/Quake` is the SDL shim the engine's `#include <SDL.h>` and
 # `<SDL_stdinc.h>` resolve to, so nothing upstream released is touched.
 #
 # `HAVE_STRCPY` and its two siblings are what upstream's CMake detects, and
@@ -602,8 +601,8 @@ QUAKE_DIR := runtime/upstream/quake/src
 
 QUAKE_INCLUDES := $(addprefix -iquote ,$(wildcard $(QUAKE_DIR)/*/include)) \
                   -iquote $(QUAKE_DIR) \
-                  -Iuser/bin/apps/quake \
-                  -include user/bin/apps/quake/kosmos_quake.h
+                  -Iuser/installed/Quake \
+                  -include user/installed/Quake/kosmos_quake.h
 
 QUAKE_CFLAGS := -w -Wno-error \
                 -DHAVE_STRCPY -DHAVE_STRNCPY -DHAVE_STRCAT \
@@ -689,7 +688,7 @@ QUAKE_ENGINE := $(addprefix $(QUAKE_DIR)/, \
                   status_bar/src/sbar.c \
                   wad/src/wad.c)
 
-QUAKE_SRCS := $(QUAKE_ENGINE) user/bin/apps/quake/quake_kosmos.c
+QUAKE_SRCS := $(QUAKE_ENGINE) user/installed/Quake/quake_kosmos.c
 
 #
 # The Record Kit's two vendored halves, `minih264e` and `minimp4`, on their
@@ -824,10 +823,6 @@ endif
 # beside `apptest.elf` and built by `make apps` - so there is no variant to
 # choose and no image to name after it.
 #
-ifdef QUAKE
-USER_SRCS += $(QUAKE_SRCS)
-endif
-
 #
 # `FFMPEG=1` - FFmpeg's H.264 decoder, which is the H.264 Kit
 # (`user/kits/ffmpeg/`, `roadmap.md` 4e), on in `FULL=1`.
@@ -868,28 +863,22 @@ USER_SRCS += $(FFMPEG_SRCS)
 endif
 
 #
-# `SNES=1` - LakeSnes, a Super Nintendo, on in `FULL=1`.
-#
-# **A build option for Doom's second reason and not its first.** LakeSnes is
-# MIT, so an image carrying it is as MIT as one without. But its writable
-# data is copied into every process - the code is mapped from one copy
-# (design.md) - and would be paid by all of them for the one that runs it.
+# LakeSnes, a Super Nintendo - an installed application since 28 September
+# (`docs/elf.md` step 5): `make apps` links `SNES_SRCS` into `apps/snes.elf`,
+# in `/Home/Apps/SNES` beside `snes.lua`. It was `SNES=1`, on in `FULL=1`,
+# and every process paid its writable data for the one that ran it.
 #
 # The twelve files upstream's own Makefile names for the core, listed rather
 # than globbed for the reason Doom's are. Its SDL frontend, tracer and zip
-# reader are not built: `user/bin/apps/snes/snes_kosmos.c` stands where the frontend
+# reader are not built: `user/installed/SNES/snes_kosmos.c` stands where the frontend
 # was. `runtime/upstream/lakesnes/README.kosmos.md` is the account.
 #
 SNES_DIR   := runtime/upstream/lakesnes/snes
 SNES_NAMES := spc dsp apu cpu dma ppu cart cx4 input statehandler snes \
               snes_other
 SNES_SRCS  := $(addprefix $(SNES_DIR)/,$(addsuffix .c,$(SNES_NAMES))) \
-              user/bin/apps/snes/snes_kosmos.c user/bin/apps/snes/snes_blit.c
+              user/installed/SNES/snes_kosmos.c user/installed/SNES/snes_blit.c
 SNES_CFLAGS := -w -Wno-error -iquote $(SNES_DIR)
-
-ifdef SNES
-USER_SRCS += $(SNES_SRCS)
-endif
 
 #
 # **Doom is an installed application now, not part of the system**
@@ -1082,7 +1071,7 @@ MINIZ_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(WEB),-DKOSMOS_WEB) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(WEB),-DKOSMOS_WEB) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/miniz $(MINIZ_FLAGS) \
            -Iruntime/upstream/minimp3 \
@@ -1142,7 +1131,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1396,7 +1385,7 @@ $(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(UFLAGS_FILE
 # because this file is ours - all but `-Wcomment`, which five `//` comments
 # in Quake's own headers set off by ending in a backslash, and which is about
 # upstream's text rather than anything this file does.
-$(UBUILD)/user/bin/apps/quake/quake_kosmos.c.o: user/bin/apps/quake/quake_kosmos.c $(UFLAGS_FILE)
+$(UBUILD)/user/installed/Quake/quake_kosmos.c.o: user/installed/Quake/quake_kosmos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(QUAKE_INCLUDES) -Wno-comment -MMD -MP -c $< -o $@
 
@@ -1406,7 +1395,7 @@ $(UBUILD)/runtime/upstream/lakesnes/%.c.o: runtime/upstream/lakesnes/%.c $(UFLAG
 	$(CC) $(UCFLAGS) $(SNES_CFLAGS) -MMD -MP -c $< -o $@
 
 # And Kosmos's half: the core's headers on the path, and every warning on.
-$(UBUILD)/user/bin/apps/snes/snes_kosmos.c.o: user/bin/apps/snes/snes_kosmos.c $(UFLAGS_FILE)
+$(UBUILD)/user/installed/SNES/snes_kosmos.c.o: user/installed/SNES/snes_kosmos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -iquote $(SNES_DIR) -MMD -MP -c $< -o $@
 
@@ -1567,10 +1556,10 @@ $(HOSTDIR)/test_efiboot: tools/test_efiboot.c boot/efi/mbi.c boot/efi/mbi.h boot
 # core's pixels and the window, asked without a core or a ROM, including
 # every byte it must not touch.
 #
-$(HOSTDIR)/test_snesblit: tools/test_snesblit.c user/bin/apps/snes/snes_blit.c user/bin/apps/snes/snes_blit.h
+$(HOSTDIR)/test_snesblit: tools/test_snesblit.c user/installed/SNES/snes_blit.c user/installed/SNES/snes_blit.h
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/bin/apps/snes -o $@ \
-	        tools/test_snesblit.c user/bin/apps/snes/snes_blit.c
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/installed/SNES -o $@ \
+	        tools/test_snesblit.c user/installed/SNES/snes_blit.c
 
 #
 # And where the page bitmap goes, for the same reason one layer down.
@@ -2277,6 +2266,27 @@ $(UBUILD)/apps/doom.elf: $(USER_OBJS) $(DOOM_OBJS) $(UBUILD)/init.elf user/user.
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_doom_kit$$' \
 	    || { echo "apps: the system's image has Doom in it"; rm -f $@; exit 1; }
 
+# **Quake's and the Super Nintendo's**, the same way and to the same two
+# promises (`docs/elf.md` step 5).
+QUAKE_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(QUAKE_SRCS)))
+SNES_OBJS  := $(addprefix $(UBUILD)/,$(addsuffix .o,$(SNES_SRCS)))
+
+$(UBUILD)/apps/quake.elf: $(USER_OBJS) $(QUAKE_OBJS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(QUAKE_OBJS) -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_quake_kit$$' \
+	    || { echo "apps: quake.elf does not have Quake"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_quake_kit$$' \
+	    || { echo "apps: the system's image has Quake in it"; rm -f $@; exit 1; }
+
+$(UBUILD)/apps/snes.elf: $(USER_OBJS) $(SNES_OBJS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(SNES_OBJS) -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_snes_kit$$' \
+	    || { echo "apps: snes.elf does not have the Super Nintendo"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_snes_kit$$' \
+	    || { echo "apps: the system's image has the Super Nintendo in it"; rm -f $@; exit 1; }
+
 #
 # **Against the lean userland, whatever this build is.** An application's
 # image carries its own copy of the runtime and not the system's files -
@@ -2291,7 +2301,8 @@ $(UBUILD)/apps/doom.elf: $(USER_OBJS) $(DOOM_OBJS) $(UBUILD)/init.elf user/user.
 apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
 
-app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/doom.elf
+app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/doom.elf \
+            $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf
 
 $(GEN)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
 	@mkdir -p $(dir $@)
@@ -2555,22 +2566,18 @@ image: $(HOSTDIR)/lua
 	$(HOSTDIR)/lua tools/kfs.lua create $(DISK) $(DISK_MB) $(FILES)
 
 #
-# **The applications the build installs, onto that disk**: Doom into
-# `/Home/Apps/Doom` (`docs/elf.md` step 5) - `doom.lua` and its image,
-# stripped, over what is there, and the `doom1.wad` from the top of
-# `HOME_DIR` beside them when the folder has one. Nothing else on the disk
-# is touched; a stick gets the same from `x86-usb-image`.
+# **The applications the build installs, onto that disk** (`docs/elf.md`
+# step 5): Doom, Quake and the Super Nintendo into `/Home/Apps`, each its Lua
+# and its image, stripped, over what is there, and the WAD and the pak from
+# the top of `HOME_DIR` when the folder has them - `tools/installed.py`'s
+# list. Nothing else on the disk is touched; a stick gets the same.
 #
 .PHONY: install-apps
 install-apps: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory apps
-	@mkdir -p build/disk-apps
-	$(OBJCOPY) --strip-debug build/user/apps/doom.elf build/disk-apps/doom.elf
-	$(HOSTDIR)/lua tools/kfs.lua put $(DISK) user/installed/Doom/doom.lua /Home/Apps/Doom/doom.lua
-	$(HOSTDIR)/lua tools/kfs.lua put $(DISK) build/disk-apps/doom.elf /Home/Apps/Doom/doom.elf
-	@if [ -f "$(HOME_DIR)/doom1.wad" ]; then \
-	    $(HOSTDIR)/lua tools/kfs.lua put $(DISK) "$(HOME_DIR)/doom1.wad" /Home/Apps/Doom/doom1.wad; \
-	fi
+	@for pair in $$(python3 tools/installed.py aarch64 "$(HOME_DIR)"); do \
+	    $(HOSTDIR)/lua tools/kfs.lua put $(DISK) "$${pair%%:*}" "$${pair#*:}" || exit 1; \
+	done
 
 # An empty disk. Made when it is missing and never overwritten by accident:
 # `make disk` after deleting it is a deliberate act, and a build that
@@ -3209,29 +3216,24 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 #
 USB_BOOT ?= wm
 
-# **And Doom, installed** (`docs/elf.md` step 5): `doom.lua` and its image,
-# stripped, into `/Home/Apps/Doom` - the build's, over anything the folder has
-# there - and a `doom1.wad` at the top of the folder copied in beside them,
-# since the WAD is part of the game (Diego, 27 September) and the folder is
-# his to leave as it is. A folder with `Apps/Doom/doom1.wad` already has it.
+# **And the installed applications** (`docs/elf.md` step 5): Doom, Quake
+# and the Super Nintendo, each its Lua and its image, stripped, into
+# `/Home/Apps/<name>` - the build's, over anything the folder has there -
+# and the data a game plays from the top of the folder copied in beside
+# them, since the WAD and the pak are part of the game (Diego, 27
+# September) and the folder is his to leave as it is. `tools/installed.py`
+# is the list, for this and for `install-apps`.
 #
 USB_HOME      ?= partition
 HOME_DIR      ?= $(HOME)/Kosmos/home
 STICK_HOME_MB ?= 512
 STICK_HOME    := build/stick-home.img
-STICK_APPS    := build/stick-apps
-X86_APPS      := build/user-x86_64/apps
 
 x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	@if [ "$(USB_HOME)" = partition ]; then \
 	    $(MAKE) --no-print-directory ARCH=x86_64 apps && \
-	    mkdir -p $(STICK_APPS) && \
-	    x86_64-elf-objcopy --strip-debug $(X86_APPS)/doom.elf $(STICK_APPS)/doom.elf && \
 	    python3 tools/homeimage.py "$(HOME_DIR)" $(STICK_HOME) $(STICK_HOME_MB) \
-	        user/installed/Doom/doom.lua:/Home/Apps/Doom/doom.lua \
-	        $(STICK_APPS)/doom.elf:/Home/Apps/Doom/doom.elf \
-	        $$([ -f "$(HOME_DIR)/doom1.wad" ] && [ ! -f "$(HOME_DIR)/Apps/Doom/doom1.wad" ] \
-	            && echo "$(HOME_DIR)/doom1.wad:/Home/Apps/Doom/doom1.wad") && \
+	        $$(python3 tools/installed.py x86_64 "$(HOME_DIR)") && \
 	    echo "$(HOME_DIR) goes on the stick as /Home, $(STICK_HOME_MB) MB, in a partition of its own" && \
 	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --home $(STICK_HOME) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	elif [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
@@ -3724,7 +3726,7 @@ quake:
 	done; \
 	echo; \
 	echo "  $$ok of $$((ok + fail)) Quake engine files compile."; \
-	echo "  A QUAKE=1 image carries them and user/bin/apps/quake/quake_kosmos.c."; \
+	echo "  quake.elf carries them and user/installed/Quake/quake_kosmos.c."; \
 	test $$fail -eq 0
 
 
@@ -3738,7 +3740,8 @@ quake:
 .PHONY: quake-check
 quake-check: $(HOSTDIR)/lua
 	@test -f "$(PAK)" || { echo "FAIL: no pak. make quake-check PAK=/path/to/pak0.pak"; exit 1; }
-	@$(MAKE) --no-print-directory MEGA= FULL=0 QUAKE=1
+	@$(MAKE) --no-print-directory MEGA= FULL=0
+	@$(MAKE) --no-print-directory apps
 	python3 tools/run_quake.py build/kosmos.elf $(PAK)
 
 # The Super Nintendo on the machine: a ROM from `/Home/roms/snes`, a window
@@ -3753,7 +3756,8 @@ quake-check: $(HOSTDIR)/lua
 .PHONY: snes-check
 snes-check: $(HOSTDIR)/lua
 	@test -f "$(ROM)" || { echo "FAIL: no ROM. make snes-check ROM=/path/to/game.sfc"; exit 1; }
-	@$(MAKE) --no-print-directory MEGA= FULL=0 SNES=1
+	@$(MAKE) --no-print-directory MEGA= FULL=0
+	@$(MAKE) --no-print-directory apps
 	python3 tools/run_snes.py build/kosmos.elf "$(ROM)"
 
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf

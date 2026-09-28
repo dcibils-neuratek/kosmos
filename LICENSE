@@ -75,7 +75,8 @@ Vendored third-party code keeps its own licence, which travels beside it:
 
   LakeSnes, by angelo_wf and contributors, the CX4 by dink, MIT
       runtime/upstream/lakesnes/LICENSE.txt, with the vendoring recorded
-      in README.kosmos.md beside it. Built by default, in `FULL=1`
+      in README.kosmos.md beside it. Not in the system's image: `make
+      apps` links it into snes.elf, installed in /Home/Apps/SNES
 
   The fonts
       assets/fonts/, each under the LICENSE file beside it. A font
@@ -124,6 +125,7 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
       runtime/upstream/quake/, with the vendoring recorded in
       README.kosmos.md beside it. Every source file carries id's
       "version 2, or any later version" notice, and the project's own
-      LICENSE file is version 3. Not built by default: Quake is included
-      only under `make QUAKE=1` and `make MEGA=1`, and `FULL=1` does not
-      turn it on.
+      LICENSE file is version 3. Not in the system's image in any build:
+      `make apps` links it into quake.elf, Quake's own image, installed
+      in /Home/Apps/Quake beside quake.lua, and that image is the GPL
+      work.

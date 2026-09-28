@@ -4,6 +4,7 @@
 -- kosmos: icon App_Generic
 -- kosmos: section demos
 -- kosmos: opens sfc smc
+-- kosmos: image snes.elf
 --
 --   wm snes                        the first ROM in /Home/roms/snes
 --   wm snes:Top Gear 2.sfc         that one, from the same directory
@@ -14,16 +15,18 @@
 -- A launcher carries the same words, so the bigger window is a launcher of
 -- its own: `launcher /Home/Desktop/Mario snes --scale 2 Super Mario World.sfc`.
 --
--- In an image built with `FULL=1`, the default, or `SNES=1`. The core is
--- LakeSnes; `runtime/upstream/lakesnes/README.kosmos.md` is the account.
+-- **An installed application**, in `/Home/Apps/SNES` with its image. The
+-- core is LakeSnes; `runtime/upstream/lakesnes/README.kosmos.md` is the
+-- account.
 --
 -- **This file is the loop, the way `doom.lua` is Doom's.** The core does
 -- the console; `snes_kosmos.c` hands it a ROM, a surface, a ring and a pad;
 -- and what is left - which ROM, which window, when a frame happens, when to
 -- stop - is policy, so it is here.
 --
--- ROMs live on the drive, in /Home/roms/snes, the way Doom's WAD lives in
--- /Home. None is in the repository, and none will be:
+-- ROMs live on the drive, in /Home/roms/snes: they are a person's games,
+-- as photographs are theirs, where Doom's WAD is part of Doom. None is in
+-- the repository, and none will be:
 --
 --   make image FILES="game.sfc:/Home/roms/snes/game.sfc"
 
@@ -33,14 +36,15 @@ local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 
 --
--- The core is a kit, and only in an image built with it. It used to be a
--- global, and a global named `snes` hid this program from the prompt: the
--- shell gives a word that already names something to Lua.
+-- The core is in this program's own image, `snes.elf` beside it in
+-- `/Home/Apps/SNES` (`docs/elf.md` step 5), reached by the file. It was a
+-- global once, and a global named `snes` hid this program from the prompt:
+-- the shell gives a word that already names something to Lua.
 --
-local have, snes = pcall(use, "/Kosmos/Kits/snes")
+local have, snes = pcall(use, "snes.elf")
 
 if not have or type(snes) ~= "table" then
-  print("snes: this image was not built with SNES=1")
+  print("snes: " .. tostring(snes))
   return
 end
 

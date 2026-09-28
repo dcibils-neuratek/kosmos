@@ -3,13 +3,15 @@
 -- kosmos: application
 -- kosmos: icon App_Generic
 -- kosmos: section demos
+-- kosmos: image quake.elf
 --
---   wm quake                       /Home/id1/pak0.pak
+--   wm quake                       the id1/pak0.pak beside this file
 --   wm quake:/Temporary/pak0.pak   somewhere else
 --
--- Only in an image built with `make QUAKE=1`; see
--- `runtime/upstream/quake/README.kosmos.md` for why that is a build option
--- and not part of the desktop.
+-- **An installed application** (`docs/elf.md` step 5), as Doom is: this
+-- file, `quake.elf` - Chocolate Quake and `quake_kosmos.c`, linked with the
+-- runtime into an image of their own - and `id1/pak0.pak`, in one folder,
+-- `/Home/Apps/Quake`. No system image carries it.
 --
 -- **This file is the loop, the way `doom.lua` is Doom's.** Chocolate Quake
 -- does the game; `quake_kosmos.c` is the platform under it; and what is left
@@ -23,21 +25,24 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
--- A kit, not a global, for the reason `snes.lua` gives.
-local have, quake = pcall(use, "/Kosmos/Kits/quake")
+-- The engine this program's own image carries, reached by its file.
+local have, quake = pcall(use, "quake.elf")
 
 if not have or type(quake) ~= "table" then
-  print("quake: this image was not built with QUAKE=1")
+  print("quake: " .. tostring(quake))
   return
 end
 
-local path = (args or ""):match("^%s*(%S+)") or "/Home/id1/pak0.pak"
+-- **The pak beside this file**, in `id1/` as Quake keeps it, unless another
+-- is named: part of the game, as Doom's WAD is.
+local here = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/Quake"
+local path = (args or ""):match("^%s*(%S+)") or (here .. "/id1/pak0.pak")
 
 local attrs, why = fs.getattr(path)
 
 if not attrs then
   print("quake: no " .. path .. ": " .. tostring(why))
-  print("       put one on the disk: make image FILES=\"pak0.pak:/Home/id1/pak0.pak\"")
+  print("       put one beside quake.lua: " .. here .. "/id1/pak0.pak")
   return
 end
 

@@ -2418,6 +2418,42 @@ processors, and still what follows USB:
    much of LÖVE it uses - a count, not a guess. **Needs** 6zg for its
    keyboard, and 4i for sound that answers a key. Drawn first, as every
    app is. The source is Diego's to hand over when it starts.
+   **AGREED on 28 September - converted, not carried: an application
+   called Groove.** Diego: "i want to add a music creation tool which i
+   developed in Love2d with Lua", "I need you yo analuzse the code and port
+   it to Kosmos as it currently uses some Love2d Libraries which we dont
+   have, so we need to adapt the code to fit Kosmos APIs and Kits", "i dont
+   want to vendor it in, just convert it to Kosmos and it will come bundled
+   to KOsmos as an app called Groove for music creation". So the question
+   above is answered: **the rewrite**, onto the kits - no LÖVE layer, and
+   nothing of it under `runtime/upstream/`; Groove is Kosmos's own, shipped
+   in the image. The source is `~/Downloads/PulseMusic/pulse` (16 Lua
+   files, about 3,100 lines), analysed first for every LÖVE call it makes
+   and what stands for each here.
+   **Analysed the same day, and four answers from Diego** ("All in C, on
+   its own thread", "PulseMusic's look, faithfully", MIDI "After Groove
+   plays", "Groove next"). What the analysis found: LÖVE is touched only
+   in its platform file - drawing (14 `love.graphics` calls, the knobs'
+   arcs among them), a queueable 44.1 kHz stereo S16 source, the timer,
+   keys, mouse, the save folder - and PortMidi over LuaJIT's FFI; the song
+   model, sequencer and widgets are plain Lua. **The sound is made a sample
+   at a time in Lua** - oscillators, a state-variable filter, seven drum
+   models, a ping-pong delay, a Freeverb - 23% of a core under Lua 5.4 on
+   the Mac, and a loop over samples on a deadline, which is C here. So:
+   - **The Synth Kit** (`user/kits/synth/`, C): PulseMusic's voices, drums,
+     effects, mixer *and* sequencer, on a thread of its own writing into
+     the audio ring - sound never waits on drawing (4i). Lua holds the song
+     and the window and hands the kit each edit; the kit says where it is.
+     **Checked against the original**: PulseMusic's own Lua engine,
+     running on the Mac, is the reference its C is held to, block by block.
+   - **Groove** (`user/bin/apps/groove/`), PulseMusic's window as it looks
+     - dark panels, the orange accent, eight track columns, ringed knobs -
+     drawn by itself in a direct window, which wants an arc in the Graphics
+     Kit. The LÖVE app is the drawing, so no HTML mockup comes first.
+   - **Then 6zg**, USB MIDI, and the Launchkey's DAW mode with its LEDs.
+   Not carried as it was: PortMidi, the FFI, `require` and the save folder
+   become the kit, `/Devices/midi` (6zg), `use` and `/Home/Documents`, and
+   two labels that read `C3.0` under Lua 5.4 are fixed on the way.
 
 6zg. **WANTED on 27 September - a USB MIDI keyboard.** Diego: "usb midi
    keyboard support", and Grooves plays from one (6zh). A USB MIDI device
