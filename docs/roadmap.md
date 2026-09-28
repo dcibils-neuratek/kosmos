@@ -210,6 +210,19 @@ this now-real-time check would catch.
 
 ### Next, in this order
 
+**Reordered on 28 September, by Diego**: "go on with the proposed plan for
+the roadmap", and after it "prioritize the gpu encoder/decoder capabilities
+which will then lead to us having accelerated 2d graphics in kosmos which as
+of now we dont have". So, one at a time:
+
+1. **6zg** - USB MIDI and the Launchkey, which finishes Groove (6zh).
+2. **4i** - low-latency audio: Groove and everything media lean on it.
+3. **Storage at full speed** - the filesystem's byte path in C (above).
+4. **4h** - the GPU: video encode and decode in hardware first, and from
+   the driver that takes, accelerated 2D - which Kosmos does not have.
+
+The order before this one follows, and what it put first - USB - is built.
+
 **Reordered on 2026-09-11, and USB went to the front.**
 
 The evening that did it is in `docs/thinkpad.md` §6a: the machine would not
@@ -981,8 +994,15 @@ processors, and still what follows USB:
      game. `snes_saveState` and `snes_loadState`; one slot per ROM, saved on
      quit and offered on the next start, and carried across Double Size's
      restart so switching scale no longer loses your place.
-4h. **WANTED since 19 September, not scheduled - real GPU rendering, 2D and
-   3D.** Diego: "we will implement real gpu 2d and 3d rendering in the
+4h. **WANTED since 19 September; SCHEDULED on 28 September, fourth in the
+   order above - real GPU rendering, 2D and 3D, and video in hardware.**
+   Diego, 28 September: "prioritize the gpu encoder/decoder capabilities
+   which will then lead to us having accelerated 2d graphics in kosmos which
+   as of now we dont have" - the video engine first, and the 2D that the
+   same driver makes possible after it. Where it starts - the M700 study
+   below, or virtio-gpu under QEMU as the plan of 12 September had it - is
+   the first thing to put to him when its turn comes.
+   **The plan as it stood:** Diego: "we will implement real gpu 2d and 3d rendering in the
    roadmap". The order is in the plan of 12 September: **virtio-gpu under
    QEMU first** - a protocol of forty pages rather than Intel's manuals, and
    what grows `hal_fb_flush` - **then virgl**, where the guest's 3D commands
