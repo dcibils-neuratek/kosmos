@@ -125,6 +125,21 @@ def main():
 
     checks += 1
 
+    # 2b. **And the userland image is the one the build made.** The kernel
+    #    sums it at boot against the sums `tools/bin2c.py` wrote beside it
+    #    (`kernel/image_sum.h`), and says either "as the build left it" or
+    #    CHANGED. Nothing held that line until the image went into the kernel
+    #    by `.incbin` with its sums from a host tool rather than Python (6zp):
+    #    a build that wrote the wrong sums would have printed CHANGED on every
+    #    boot of every machine and failed nothing.
+    if "as the build left it" not in out or "** CHANGED **" in out:
+        print("FAIL: the userland image is not what the build left:")
+        print("  " + " / ".join(l.strip() for l in out.splitlines()
+                                if "userland image" in l or "CHANGED" in l)[:400])
+        return 1
+
+    checks += 1
+
     # 3. And a program runs. Reaching a prompt only proves the shell was
     #    spawned; a program is spawned through a different path, which asks
     #    for the same grant and got it wrong in the same way.

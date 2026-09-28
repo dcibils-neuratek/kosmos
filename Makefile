@@ -1951,6 +1951,13 @@ $(HOSTDIR)/imagesum_fixture.c: tools/bin2c.py
 	        > $(HOSTDIR)/imagesum_fixture.bin
 	@python3 tools/bin2c.py $(HOSTDIR)/imagesum_fixture.bin fixture $@
 
+# The userland image's sums, by `kernel/image_sum.h` on the host, for
+# `bin2c.py --incbin` (`roadmap.md` 6zp): the kernel's own functions, so the
+# build and the machine cannot disagree about what a sum is.
+$(HOSTDIR)/imagesums: tools/imagesums.c kernel/image_sum.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ tools/imagesums.c
+
 $(HOSTDIR)/test_imagesum: tools/test_imagesum.c kernel/image_sum.h \
                           $(HOSTDIR)/imagesum_fixture.c
 	@mkdir -p $(dir $@)
@@ -2353,9 +2360,9 @@ apps:
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf
 
-$(GEN)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
+$(GEN)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py $(HOSTDIR)/imagesums
 	@mkdir -p $(dir $@)
-	python3 tools/bin2c.py $< init_image $@
+	python3 tools/bin2c.py --incbin $(HOSTDIR)/imagesums $< init_image $@
 
 QEMU      := qemu-system-aarch64
 # gic-version=3 is not the default. Plain `-M virt` gives a GICv2, and this
@@ -2986,9 +2993,9 @@ $(X86_BUILD)/%.c.o: %.c
 # `$(UBUILD)`, not a written-out path: inside the recursive call above it is
 # `build-user-x86_64`, and naming it literally is how the two came to
 # disagree once already.
-$(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
+$(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py $(HOSTDIR)/imagesums
 	@mkdir -p $(dir $@)
-	python3 tools/bin2c.py $< init_image $@
+	python3 tools/bin2c.py --incbin $(HOSTDIR)/imagesums $< init_image $@
 
 .PHONY: x86 x86-build
 #

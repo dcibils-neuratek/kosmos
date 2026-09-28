@@ -58,9 +58,83 @@ def fnv32(data):
     return h
 
 
+#
+# **`--incbin`: the bytes by the assembler, and the sums by the kernel's own
+# code** (`roadmap.md` 6zp).
+#
+# The userland image is thirty megabytes, and as an array it is a C file of
+# two hundred: this took seven seconds to write it and the compiler thirty
+# to read it back, three times a gate - most of the minute and a half the
+# gate spent on its images after any change at all. So for the image the C
+# file holds one line of assembly, `.incbin` of the binary, which the
+# assembler copies in in well under a second; and the sums come from
+# `tools/imagesums.c`, which is `kernel/image_sum.h` - the functions the
+# kernel checks them with - on the host.
+#
+# What the paragraph at the top says against `.incbin` is kept: the length
+# is still a real symbol, written here from the file's size, and a missing
+# file is still a build error - this one, and then the assembler's. The
+# alignment, the section's contents and the zero after the bytes are the
+# array's, so nothing that reads the image can tell.
+#
+def incbin(tool, path, symbol, out):
+    import os
+    import subprocess
+
+    size = os.path.getsize(path)
+
+    if size == 0:
+        sys.exit(f"bin2c: {path} is empty")
+
+    sums = subprocess.run([tool, path], check=True, capture_output=True,
+                          text=True).stdout.split()
+    total, page_bytes, pages = sums[0], int(sums[1], 16), sums[2:]
+
+    if page_bytes != PAGE or len(pages) != (size + PAGE - 1) // PAGE:
+        sys.exit(f"bin2c: {tool} answered {len(pages)} pages of {page_bytes} "
+                 f"for {size} bytes")
+
+    lines = [
+        f"/* Generated from {path} by tools/bin2c.py --incbin. Do not edit. */",
+        "",
+        "__asm__(",
+        f'    "\\t.section .rodata.{symbol}, \\"a\\"\\n"',
+        '    "\\t.balign 4096\\n"',
+        f'    "\\t.global {symbol}\\n"',
+        f'    "\\t.type {symbol}, STT_OBJECT\\n"',
+        f'    "{symbol}:\\n"',
+        f'    "\\t.incbin \\"{path}\\"\\n"',
+        '    "\\t.byte 0\\n"',
+        f'    "\\t.size {symbol}, . - {symbol}\\n"',
+        '    "\\t.previous\\n");',
+        "",
+        f"const unsigned long {symbol}_len = {size}UL;",
+        "",
+        "/* What the build put there, as the kernel will sum it. */",
+        f"const unsigned long {symbol}_sum = 0x{total}UL;",
+        f"const unsigned long {symbol}_page_bytes = {PAGE}UL;",
+        f"const unsigned long {symbol}_pages = {len(pages)}UL;",
+        "",
+        f"const unsigned {symbol}_page_sum[] = {{",
+    ]
+
+    for i in range(0, len(pages), 6):
+        lines.append("    " + ", ".join(f"0x{p}" for p in pages[i:i + 6]) + ",")
+
+    lines.append("};")
+    lines.append("")
+
+    with open(out, "w") as f:
+        f.write("\n".join(lines))
+
+
 def main():
+    if len(sys.argv) == 6 and sys.argv[1] == "--incbin":
+        incbin(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
+        return
+
     if len(sys.argv) != 4:
-        sys.exit("usage: bin2c.py <input> <symbol> <output.c>")
+        sys.exit("usage: bin2c.py [--incbin SUMS_TOOL] <input> <symbol> <output.c>")
 
     path, symbol, out = sys.argv[1], sys.argv[2], sys.argv[3]
 

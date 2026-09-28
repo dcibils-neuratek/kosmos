@@ -12287,3 +12287,24 @@ raw requests named their protocol, the program that did not ask was answered
 by the devices server and read seven devices; and with the kernel's limit
 back at four endpoints, the x86 run says the wait was refused.
 
+## 18.259 The userland image by `.incbin`, and its canary held (6zp)
+
+The gate spent about 95 s on its images after any change, and 37 of the
+full ARM image's 40 were the userland image going in as a C array: 30 MB of
+binary written by `bin2c.py` as 200 MB of C in 7 s, compiled in 30, and the
+same for the test and x86 kernels. `bin2c.py --incbin` now writes one line
+of assembly - `.incbin` of the binary, page-aligned, a zero after it, as the
+array was - and the canary's sums come from `tools/imagesums.c`, which is
+`kernel/image_sum.h` on the host. The full ARM image after a Lua change:
+40.2 s to 1.6; the images step: about 95 s to 19.
+
+Checked once: the host tool's sums equal Python's for the real image, whole
+and all 7,800 pages.
+
+**Kept, `run_headless.py`**, now 7 on each machine: the boot says the
+userland image is "as the build left it" and never CHANGED - which nothing
+held until the sums came from somewhere new. Its control: the image's whole
+sum made wrong in the generated file stops the ARM boot before its prompt -
+with a data abort in the canary's own search, not the CHANGED line, which is
+recorded under 6zp as found.
+

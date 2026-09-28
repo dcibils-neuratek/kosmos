@@ -2370,6 +2370,20 @@ processors, and still what follows USB:
    52 suites, the images step 95 s for 21 compiles - the generated files
    that carry every library, compiled again for each variant. With nothing
    to rebuild the gate is 8:49. That step is the next thing to cut here.
+   **Cut the same evening** (`testing.md` 18.259): it was not the
+   libraries. The userland image, 30 MB, went into the kernel as a C array
+   - `bin2c.py` wrote 200 MB of C in 7 s and the compiler read it back in
+   30, for each of the three kernels. Now `bin2c.py --incbin` writes one
+   line of assembly that pulls the bytes in, and the canary's sums come
+   from `tools/imagesums.c`, which is the kernel's own `image_sum.h` on
+   the host: the full ARM image after a Lua change from 40.2 s to 1.6, and
+   the images step from about 95 s to 19.
+   **Found beside it, not done**: with the image's whole sum wrong and every
+   page's right - a state only a broken build makes - the ARM kernel does
+   not say CHANGED; it panics with a data abort in the canary's search of
+   its own image for where the bytes came from, which reads a page that is
+   not mapped. On real corruption a page differs and the ThinkPad (x86)
+   printed its list; the ARM path of that search has never run.
 
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua
