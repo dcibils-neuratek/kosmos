@@ -1910,9 +1910,14 @@ local CURSOR = {
   "......XX..",
 }
 
-local pointer_x, pointer_y = 0, 0
-local buttons = 0
-local dragging = nil          -- { win, dx, dy } while a title bar is held
+-- **The pointer's state, in one table** (`roadmap.md` 6zn): where it is,
+-- its buttons, and what a press has started - a drag, a resize, a grab, an
+-- outline, a drop. The pointer's pass sets these and the compositor and the
+-- rest read them, so they are one table's fields rather than locals a part
+-- in a file of its own could only have a copy of.
+local PT = { x = 0, y = 0 }
+PT.buttons = 0
+PT.dragging = nil          -- { win, dx, dy } while a title bar is held
 
 --
 -- **Which keys are held**, from the raw events every key sends (the same
@@ -1938,12 +1943,12 @@ function OUT.chord.move_held()
          and (held[125] or held[126])              -- Super, left or right
          and true or false
 end
-local resizing = nil          -- { win, ox, oy, ow, oh } while a grip is held
+PT.resizing = nil          -- { win, ox, oy, ow, oh } while a grip is held
 
 -- The right button's own grab, because the two buttons are two
 -- conversations: one can be held while the other is pressed and released,
 -- and sharing `grabbed` would have the second end the first.
-local right_grabbed = nil
+PT.right_grabbed = nil
 
 --
 -- The rubber band: where the frame *would* be, while the grip is held.
@@ -1960,7 +1965,7 @@ local right_grabbed = nil
 -- what X11 and every desktop of that era did, and the reason was the same
 -- one.
 --
-local outline = nil           -- { x, y, w, h }, a frame rectangle
+PT.outline = nil           -- { x, y, w, h }, a frame rectangle
 
 -- Declared here and defined below, because the compositor and the pointer
 -- both ask about resizing and both run above the code that answers. Locals
@@ -1986,7 +1991,7 @@ function OUT.open_kosmos_menu()
     end
   end
 end
-local grabbed = nil           -- the window a press landed in, until release
+PT.grabbed = nil           -- the window a press landed in, until release
 
 --------------------------------------------------------------------------
 -- Dragging something from one window into another.
@@ -2012,8 +2017,8 @@ local grabbed = nil           -- the window a press landed in, until release
 -- the only window that can answer is the one this process just handed a
 -- drop to, once.
 --------------------------------------------------------------------------
-local drag = nil              -- { from, kind, payload, label } while held
-local answering = nil         -- { from, to } between a drop and its answer
+PT.drag = nil              -- { from, kind, payload, label } while held
+PT.answering = nil         -- { from, to } between a drop and its answer
 
 -- Where the badge sits next to the arrow, and how big the damage has to be
 -- while one is up. Both rectangles are the cursor's, widened.
@@ -2074,9 +2079,9 @@ end
 -- smear that stays on the screen until something else repaints over it.
 --
 local function badge_size()
-  if not (drag and drag.label) then return 0, 0 end
+  if not (PT.drag and PT.drag.label) then return 0, 0 end
 
-  return gfx.measure(drag.label) + BADGE_PAD * 2, gfx.font.h + BADGE_PAD
+  return gfx.measure(PT.drag.label) + BADGE_PAD * 2, gfx.font.h + BADGE_PAD
 end
 
 local function cursor_size()
@@ -2105,7 +2110,7 @@ local function draw_cursor()
           run = run + 1
         end
 
-        back:fill(pointer_x + col, pointer_y + row, run, 1,
+        back:fill(PT.x + col, PT.y + row, run, 1,
                   (ch == "X") and 0xff000000 or 0xffffffff)
         col = col + run
       end
@@ -2124,11 +2129,11 @@ local function draw_cursor()
   local bw, bh = badge_size()
 
   if bw > 0 then
-    raised_box(pointer_x + BADGE_DX, pointer_y + BADGE_DY, bw, bh,
+    raised_box(PT.x + BADGE_DX, PT.y + BADGE_DY, bw, bh,
                theme.raised)
-    back:text(pointer_x + BADGE_DX + BADGE_PAD,
-              pointer_y + BADGE_DY + BADGE_PAD // 2,
-              drag.label, theme.text, theme.raised)
+    back:text(PT.x + BADGE_DX + BADGE_PAD,
+              PT.y + BADGE_DY + BADGE_PAD // 2,
+              PT.drag.label, theme.text, theme.raised)
   end
 end
 
@@ -2302,208 +2307,27 @@ local osd = use("/Kosmos/Libraries/wm/osd.lua"){
   reserved_top = function() return reserved_top end,
 }
 
-local function compose_rect(r)
-  --
-  -- What each window still shows, and what is left for the desktop.
-  --
-  local visible  = {}
-  local remaining = { r }
-
-  for i = #windows, 1, -1 do
-    if #remaining == 0 then break end
-
-    local win = windows[i]
-
-    if not win.hidden then
-      --
-      -- A decorated window is its tab and its body (`tabs.shape`), each cut
-      -- out of what is behind in turn; everything else is its rectangle.
-      -- With the tab across the whole frame the two meet exactly, and the
-      -- cut is the rectangle it always was.
-      --
-      local shape, round
-
-      if win.kind == "menu" or win.backdrop or win.strip
-         or win.fullscreen then
-        shape = { { frame_of(win) } }
-      else
-        shape = { tabs.shape(win) }
-        round = OUT.corner_squares(win)
-      end
-
-      local mine = nil
-
-      for _, part in ipairs(shape) do
-        local fx, fy, fw, fh = part[1], part[2], part[3], part[4]
-        local keep = {}
-
-        for _, piece in ipairs(remaining) do
-          local x0 = (fx > piece.x) and fx or piece.x
-          local y0 = (fy > piece.y) and fy or piece.y
-          local x1 = math.min(fx + fw, piece.x + piece.w)
-          local y1 = math.min(fy + fh, piece.y + piece.h)
-
-          if x1 > x0 and y1 > y0 then
-            if mine then
-              if x0 < mine.x0 then mine.x0 = x0 end
-              if y0 < mine.y0 then mine.y0 = y0 end
-              if x1 > mine.x1 then mine.x1 = x1 end
-              if y1 > mine.y1 then mine.y1 = y1 end
-            else
-              mine = { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }
-            end
-
-            --
-            -- **The backdrop hides nothing.** It is transparent wherever it
-            -- has not drawn an icon, so what the compositor paints under it -
-            -- the wallpaper, or the flat colour, and the stamp - still has to
-            -- be painted. Every other window is opaque and cuts away what is
-            -- behind it, which is what this pass is for.
-            --
-            -- Without this the desktop was not merely covering the wallpaper:
-            -- a window that covers a rectangle makes `draw_desktop` skip it
-            -- altogether, so the picture was never drawn at all.
-            --
-            if win.backdrop then
-              keep[#keep + 1] = piece
-            else
-              subtract_into(keep, piece, x0, y0, x1, y1)
-
-              if round then OUT.uncover(keep, round, x0, y0, x1, y1) end
-            end
-          else
-            keep[#keep + 1] = piece
-          end
-        end
-
-        remaining = keep
-      end
-
-      visible[i] = mine
-    end
-  end
-
-  -- The desktop, only where no window reaches. Often nowhere.
-  for _, piece in ipairs(remaining) do
-    if P.measuring then P.prof.drawn = P.prof.drawn + piece.w * piece.h end
-    draw_desktop(piece)
-  end
-
-  -- And the windows, bottom to top, each clipped to what it shows - each
-  -- with its shadow first, which lies outside what it shows.
-  for i = 1, #windows do
-    local v = visible[i]
-
-    OUT.cast_shadow(windows[i], r)
-
-    if v then
-      if P.measuring then
-        P.prof.drawn = P.prof.drawn + (v.x1 - v.x0) * (v.y1 - v.y0)
-      end
-
-      draw_window(i, { x = v.x0, y = v.y0, w = v.x1 - v.x0, h = v.y1 - v.y0 })
-    end
-  end
-
-  --
-  -- Menus, above every window and below the cursor.
-  --
-  -- No decoration and no tab: a menu is its rectangle. One groove around
-  -- it so it reads as sitting on top of what is behind it rather than
-  -- being part of it - which is the whole job of the border on a thing
-  -- that floats.
-  --
-  -- **Rounded as a window is, by keeping its corners and putting them
-  -- back** (`OUT.corners`). Everything behind a menu has been composed by
-  -- now, so what is kept is exactly what should show outside its curve.
-  -- Menus were square here while the kit drew a rounded line inside them,
-  -- and a flat look's menu showed its surface's dark ground outside that
-  -- line once the kit stopped filling a control's square (0.10.152).
-  --
-  for i = 1, #menus do
-    local m = menus[i]
-
-    if m.x < r.x + r.w and m.x + m.w > r.x
-       and m.y < r.y + r.h and m.y + m.h > r.y then
-      local x0 = (m.x > r.x) and m.x or r.x
-      local y0 = (m.y > r.y) and m.y or r.y
-      local x1 = math.min(m.x + m.w, r.x + r.w)
-      local y1 = math.min(m.y + m.h, r.y + r.h)
-
-      if x1 > x0 and y1 > y0 then
-        local kept = OUT.corners(m.x, m.y, m.w, m.h, r)
-
-        OUT.keep(kept)
-        back:blit(m.surface, x0 - m.x, y0 - m.y,
-                  x1 - x0, y1 - y0, x0, y0)
-        OUT.put_back(kept, m.x, m.y, m.w, m.h)
-      end
-    end
-  end
-
-  --
-  -- The rubber band, above every window: this is where the frame is going.
-  -- In the focused window's colour, because it is that window being resized
-  -- and the eye should not have to work that out.
-  --
-  if outline then
-    back:fill(outline.x, outline.y, outline.w, OUTLINE, focused_colour())
-    back:fill(outline.x, outline.y + outline.h - OUTLINE, outline.w,
-              OUTLINE, focused_colour())
-    back:fill(outline.x, outline.y, OUTLINE, outline.h, focused_colour())
-    back:fill(outline.x + outline.w - OUTLINE, outline.y, OUTLINE,
-              outline.h, focused_colour())
-  end
-
-  -- The level bar, over every window and under the pointer.
-  if osd.shown then
-    local a = osd.alpha(sys.ticks())
-    local x0, y0 = math.max(r.x, osd.x), math.max(r.y, osd.y)
-    local x1 = math.min(r.x + r.w, osd.x + osd.W)
-    local y1 = math.min(r.y + r.h, osd.y + osd.H)
-
-    if a > 0 and x1 > x0 and y1 > y0 then
-      back:blend(osd.surface, x0 - osd.x, y0 - osd.y, x1 - x0, y1 - y0,
-                 x0, y0, a)
-    end
-  end
-
-  -- Last, so it is on top of everything, and before the blit, so what
-  -- reaches the screen is a frame with a cursor in it.
-  draw_cursor()
-
-  screen:blit(back, r.x, r.y, r.w, r.h, r.x, r.y)
-end
-
-local function compose()
-  if #damage == 0 then return end
-
-  if P.measuring then
-    P.prof.frames = P.prof.frames + 1
-    P.prof.rects  = P.prof.rects + #damage
-  end
-
-  for _, r in ipairs(damage) do
-    --
-    -- **`px` is what the compositor was asked for; `drawn` is what it did.**
-    --
-    -- They used to be one number, and that number was this one - the area
-    -- of the damage rectangle - which cannot see occlusion culling by
-    -- construction. It reported 170714 pixels a frame before culling and
-    -- 170395 after, identical to the noise, because the damage did not
-    -- change: what changed was how much of it got painted more than once.
-    --
-    -- A metric that answers a different question than the one being asked
-    -- is worse than no metric, because it is read as an answer. So both are
-    -- reported now, and the ratio between them is the interesting figure:
-    -- overdraw.
-    --
-    if P.measuring then P.prof.px = P.prof.px + r.w * r.h end
-    compose_rect(r)
-  end
-
-  damage = {}
-end
+-- Compositing - `/Kosmos/Libraries/wm/compose.lua` (`roadmap.md` 6zn).
+--
+local compose = use("/Kosmos/Libraries/wm/compose.lua"){
+  OUT = OUT,
+  OUTLINE = OUTLINE,
+  P = P,
+  PT = PT,
+  back = back,
+  damage = damage,
+  draw_cursor = draw_cursor,
+  draw_desktop = draw_desktop,
+  draw_window = draw_window,
+  focused_colour = focused_colour,
+  frame_of = frame_of,
+  menus = menus,
+  osd = osd,
+  screen = screen,
+  subtract_into = subtract_into,
+  tabs = tabs,
+  windows = windows,
+}
 
 --------------------------------------------------------------------------
 -- The protocol.
@@ -4195,10 +4019,10 @@ handlers.drag = function(req)
   if not win then return { ok = false, error = "no such window" } end
 
   if req.payload == nil then
-    if drag and drag.from == win.handle then
-      add_damage(pointer_x, pointer_y, cursor_size())
-      damage_outline(outline)
-      drag, outline = nil, nil
+    if PT.drag and PT.drag.from == win.handle then
+      add_damage(PT.x, PT.y, cursor_size())
+      damage_outline(PT.outline)
+      PT.drag, PT.outline = nil, nil
     end
 
     return { ok = true }
@@ -4208,7 +4032,7 @@ handlers.drag = function(req)
     return { ok = false, error = "a payload is a string" }
   end
 
-  drag = {
+  PT.drag = {
     from    = win.handle,
     kind    = tostring(req.kind or ""),
     payload = req.payload,
@@ -4217,7 +4041,7 @@ handlers.drag = function(req)
 
   -- The badge appears where the pointer already is, so that rectangle has
   -- to be redrawn even though nothing moved.
-  add_damage(pointer_x, pointer_y, cursor_size())
+  add_damage(PT.x, PT.y, cursor_size())
 
   return { ok = true }
 end
@@ -4245,18 +4069,18 @@ end
 -- any window whose handle you can guess.
 --
 handlers.dropped = function(req)
-  if not (answering and answering.to == req.window) then
+  if not (PT.answering and PT.answering.to == req.window) then
     return { ok = false, error = "nothing was dropped on you" }
   end
 
-  post(by_handle[answering.from], {
+  post(by_handle[PT.answering.from], {
     type  = "dropped",
     ok    = req.ok and true or false,
     count = tonumber(req.count) or 0,
     error = req.error and tostring(req.error) or nil,
   })
 
-  answering = nil
+  PT.answering = nil
 
   return { ok = true }
 end
@@ -4304,15 +4128,15 @@ handlers.close = function(req)
   -- A drag whose source or destination has just gone. The badge would
   -- otherwise stay under the pointer until the button came up, and the
   -- one-shot right to answer would outlive the window it was given to.
-  if drag and drag.from == req.window then
-    add_damage(pointer_x, pointer_y, cursor_size())
-    damage_outline(outline)
-    drag, outline = nil, nil
+  if PT.drag and PT.drag.from == req.window then
+    add_damage(PT.x, PT.y, cursor_size())
+    damage_outline(PT.outline)
+    PT.drag, PT.outline = nil, nil
   end
 
-  if answering and (answering.to == req.window
-                    or answering.from == req.window) then
-    answering = nil
+  if PT.answering and (PT.answering.to == req.window
+                    or PT.answering.from == req.window) then
+    PT.answering = nil
   end
 
   -- Whichever list it is in. A menu is a window in every way except where
@@ -5025,7 +4849,7 @@ end
 -- nothing else may.
 --------------------------------------------------------------------------
 
-local close_grace = 0
+OUT.close_grace = 0
 
 --
 -- How long a window may say nothing before this asks whether it is still
@@ -5035,8 +4859,8 @@ local silent_grace = 0
 
 do
   local cpu = fs.read("/Devices/cpu")
-  close_grace  = (cpu and cpu.counter_hz or 62500000)
-  silent_grace = close_grace * 5
+  OUT.close_grace  = (cpu and cpu.counter_hz or 62500000)
+  silent_grace = OUT.close_grace * 5
 end
 
 --------------------------------------------------------------------------
@@ -5105,7 +4929,7 @@ handlers.end_process = function(req)
       -- Asked first, as the close box does: a window that is listening
       -- tidies up and goes, and one that is not is taken by force on a
       -- later pass.
-      win.closing = sys.ticks() + close_grace
+      win.closing = sys.ticks() + OUT.close_grace
       post(win, { type = "close" })
 
       if sys.kill(pid) then
@@ -5341,472 +5165,36 @@ end
 --
 local pointer_log = { said = 0, replay = {}, lost = 0 }
 
-local function pointer_pass(p)
-  if not p then return end
-
-  local range_x = (p.max_x - p.min_x)
-  local range_y = (p.max_y - p.min_y)
-
-  if range_x <= 0 or range_y <= 0 then return end
-
-  local nx = (p.x - p.min_x) * (W - 1) // range_x
-  local ny = (p.y - p.min_y) * (H - 1) // range_y
-
-  local was_down = (buttons & 1) ~= 0
-  local is_down = (p.buttons & 1) ~= 0
-
-  -- Both ends of a click, bounded; the driver logs the same two moments as
-  -- `i8042 buttons`. If the driver logs a release and this does not, it was
-  -- lost between the two. If both do and the widget stays down, it was lost
-  -- after this - which on the first real machine it was, in an event queue
-  -- `post` now empties more carefully.
-  if is_down ~= was_down and pointer_log.said < 30 then
-    pointer_log.said = pointer_log.said + 1
-    print(("wm: button %s at %d,%d raw=%s"):format(
-          is_down and "down" or "up", nx, ny, tostring(p.buttons)))
-  end
-
-  local moved_this_pass = (nx ~= pointer_x or ny ~= pointer_y)
-
-  if moved_this_pass then
-    -- Both rectangles: where it was, so it is erased, and where it is going,
-    -- so it is drawn. Both are composited, so neither is ever half-done.
-    --
-    -- The badge a drag carries is drawn beside the arrow, so while one is up
-    -- the rectangle has to cover both or the label smears across the screen.
-    local cw, ch = cursor_size()
-
-    add_damage(pointer_x, pointer_y, cw, ch)
-    pointer_x, pointer_y = nx, ny
-    add_damage(pointer_x, pointer_y, cw, ch)
-
-    -- The title bar's three show their glyphs while the pointer is over
-    -- them: repaint the three it left and the three it reached.
-    local over = OUT.boxes_under(nx, ny)
-
-    if over ~= OUT.hover_boxes then
-      OUT.damage_boxes(OUT.hover_boxes)
-      OUT.hover_boxes = over
-      OUT.damage_boxes(over)
-    end
-  end
-
-  --
-  -- **The wheel, to the window under the pointer** (`roadmap.md` 5zv) - not
-  -- the one with the focus, as every desktop has it: a list is scrolled by
-  -- pointing at it, and pointing is all the wheel asks. In the window's own
-  -- coordinates, as a press is, so the kit can find the view beneath; and
-  -- posted, never sent, like everything this pass hands on. Nothing while
-  -- a menu is open, which has no wheel to turn, and nothing over a title
-  -- bar, which has nothing to scroll.
-  --
-  if (p.wheel or 0) ~= 0 and #menus == 0 then
-    local win = OUT.wheel_target(nx, ny)
-
-    if win then
-      post(win, { type = "wheel", n = p.wheel,
-                  x = nx - win.x, y = ny - win.y - strips.below(win) })
-    end
-  end
-
-  --------------------------------------------------------------------------
-  -- What a press means depends on where it lands.
-  --
-  --   the title bar    the window manager's: raise and drag
-  --   the contents     the application's: forwarded, in that window's own
-  --                    coordinates
-  --
-  -- Forwarded and not delivered, like a key: it goes on the window's queue
-  -- and the application collects it whenever it gets round to asking. This
-  -- process never calls an application, which is the whole reason a hung one
-  -- cannot freeze the desktop - and a click is not an exception to that.
-  --
-  -- A press grabs. Everything until the release goes to the window the press
-  -- landed in, even after the pointer has left it, because that is what lets
-  -- a button un-press when you slide off it and a drag keep working past the
-  -- edge. Without a grab, releasing outside would deliver the release to
-  -- whatever happened to be underneath.
-  --------------------------------------------------------------------------
-  if is_down and not was_down then
-    --
-    -- Menus first, and they take the press whatever is under them.
-    --
-    -- A press inside one goes to the *owner's* queue tagged with the menu's
-    -- handle, so an application polls one window and gets everything - which
-    -- is the reason a menu belongs to a window rather than standing alone.
-    --
-    -- A press outside every menu dismisses them and stops there. It does not
-    -- also reach whatever is underneath, which is what every desktop does
-    -- and is the right answer: the first click after opening a menu is how
-    -- you change your mind, not how you press the thing behind it.
-    --
-    if #menus > 0 then
-      local m = menu_at(nx, ny)
-
-      if m then
-        post(by_handle[m.owner],
-             { type = "mouse", menu = m.handle, action = "press",
-               x = nx - m.x, y = ny - m.y })
-        grabbed = m
-      else
-        dismiss_menus()
-      end
-
-      buttons = p.buttons
-      return
-    end
-
-    local win, fx, fy = window_at(nx, ny)
-
-    if win then
-      raise(win)
-
-      --
-      -- Super and Control held: the window moves, from wherever it was
-      -- pressed, and the application never sees the press - a button under
-      -- the pointer is not pressed, a game's picture is not clicked. Not the
-      -- desktop, the Deskbar or a full-screen window, which do not move.
-      --
-      if OUT.chord.move_held() and not (win.backdrop or win.strip or win.fullscreen) then
-        dragging = { win = win, dx = nx - win.x, dy = ny - win.y,
-                     held = true }
-        OUT.chord.super_moved = true
-
-      --
-      -- The backdrop and the strip are not windows you move.
-      --
-      -- They have no title bar, so there is nothing that *looks* like a
-      -- handle - but the hit test asks where the pointer is relative to the
-      -- frame, and for an undecorated window the frame starts at its own
-      -- first row. So the top eighteen pixels of the menu bar dragged it,
-      -- and the desktop could be picked up by its top edge and slid off the
-      -- screen with every icon on it.
-      --
-      -- Not a special case so much as the same rule as the decoration: a
-      -- window with no tab has no tab to grab.
-      --
-      -- **And a full-screen window has none either**, which this left out
-      -- when full screen arrived: its top rows were taken for a title bar
-      -- that is not drawn, so a press there dragged it, and one at the top
-      -- right - where the close box would be - asked it to close. Found on
-      -- 26 September when Cafesa3D's dots, at exactly that corner, closed
-      -- Cafesa3D instead of opening its menu.
-      --
-      elseif win.backdrop or win.strip or win.fullscreen then
-        -- Straight to the application, which is what a bar is for - and
-        -- grabbed, like any other press, or the release never arrives and a
-        -- shortcut is a word that highlights and does nothing.
-        grabbed = win
-        post(win, { type = "mouse", action = "press",
-                    x = nx - win.x, y = ny - win.y })
-      elseif ny < fy + OUT.TAB_H then
-        local mx = boxes_x(win)
-
-        if win.pinned then
-          -- Nothing on this tab but the tab. Drag it and that is all.
-          dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
-        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W] == "minimise" then
-          minimise(win)
-        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W] == "maximise" then
-          -- Greyed on a window that cannot be maximised, and then a press
-          -- on it is nothing: not a maximise, and not the start of a drag.
-          if resizable(win) then maximise(win) end
-        elseif nx >= mx + OUT.BOX_W * OUT.SLOT.close then
-          --
-          -- The close box. Asked first, taken by force second.
-          --
-          -- The window is told, and a window that is listening tidies up
-          -- and goes. One that is not listening - the whole point of this
-          -- desktop being able to survive one - never answers, so the
-          -- request is remembered and collected on a later pass.
-          --
-          win.closing = sys.ticks() + close_grace
-          post(win, { type = "close" })
-        else
-          dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
-        end
-      elseif win.menubar and ny < win.y + win.menubar.h then
-        strips.press(win, nx)
-      elseif resizable(win)
-             and nx >= win.x + win.w - OUT.GRIP and nx < win.x + win.w
-             and ny >= win.y + win.h - OUT.GRIP and ny < win.y + win.h then
-        --
-        -- The grip, and it is tested before the contents on purpose: this
-        -- square belongs to the window manager, and an application that
-        -- happens to have drawn something there does not get the press.
-        --
-        resizing = { win = win, ox = nx, oy = ny, ow = win.w, oh = win.h,
-                     w = win.w, h = win.h }
-
-        outline = { frame_of(win) }
-        outline = { x = outline[1], y = outline[2],
-                    w = outline[3], h = outline[4] }
-        damage_outline(outline)
-      else
-        grabbed = win
-        post(win, { type = "mouse", action = "press",
-                    x = nx - win.x, y = ny - win.y - strips.below(win) })
-      end
-    end
-  elseif not is_down and was_down then
-    if grabbed then
-      if grabbed.kind == "menu" then
-        post(by_handle[grabbed.owner],
-             { type = "mouse", menu = grabbed.handle, action = "release",
-               x = nx - grabbed.x, y = ny - grabbed.y })
-      else
-        post(grabbed, { type = "mouse", action = "release",
-                        x = nx - grabbed.x,
-                        y = ny - grabbed.y - strips.below(grabbed) })
-      end
-
-      grabbed = nil
-    end
-
-    --
-    -- And where the drag ended, which is the one thing only this process
-    -- knows: the release above went to the window the press started in,
-    -- wherever the pointer had got to since.
-    --
-    -- The release first and the drop second, on purpose. The source's own
-    -- view has to come out of its drag before it is told about one - and
-    -- when a drop lands back in the window it came from, which is how you
-    -- move a file into a subfolder without opening it, those two are the
-    -- same window.
-    --
-    if drag then
-      local onto = window_at(nx, ny)
-
-      add_damage(pointer_x, pointer_y, cursor_size())
-      damage_outline(outline)
-      outline = nil
-
-      if onto and onto.drops then
-        post(onto, { type = "drop", kind = drag.kind, payload = drag.payload,
-                     x = nx - onto.x, y = ny - onto.y })
-
-        -- One reply, from that window, until the next drop. `handlers.dropped`
-        -- is the only thing that reads this.
-        answering = { from = drag.from, to = onto.handle }
-      else
-        -- Nowhere that takes it. The source is told so rather than left
-        -- waiting for an answer that is not coming.
-        post(by_handle[drag.from],
-             { type = "dropped", ok = false, count = 0,
-               error = "nothing there takes a drop" })
-      end
-
-      drag = nil
-    end
-
-    --
-    -- The one resize, on release. Everything up to here was an outline.
-    --
-    if resizing then
-      damage_outline(outline)
-      outline = nil
-
-      resize_window(resizing.win, resizing.w, resizing.h)
-      resizing = nil
-    end
-
-    -- The end of a drag is where the application is told, once, rather
-    -- than on every step of it.
-    if dragging then
-      post(dragging.win, { type = "moved",
-                           x = dragging.win.x, y = dragging.win.y })
-
-      -- Said for a move by the keys, which nothing else shows but pixels,
-      -- as a keyboard's move is said below.
-      if dragging.held then
-        print(("wm: moved %s by Super + Control to %d,%d"):format(
-              tostring(dragging.win.title), dragging.win.x, dragging.win.y))
-      end
-
-      dragging = nil
-    end
-  end
-
-  if resizing and is_down and moved_this_pass then
-    --
-    -- The band follows the pointer; the window does not move at all until
-    -- the button comes up. Clamped here rather than in `resize_window`, so
-    -- what the band shows is what you will get - an outline that promises a
-    -- size the window will refuse is worse than no outline.
-    --
-    local win = resizing.win
-    local w = resizing.ow + (nx - resizing.ox)
-    local h = resizing.oh + (ny - resizing.oy)
-
-    if w < scale.MIN_W then w = scale.MIN_W end
-    if h < scale.MIN_H then h = scale.MIN_H end
-    if w > W - OUT.BORDER * 2 then w = W - OUT.BORDER * 2 end
-    if h > H - OUT.TAB_H - OUT.BORDER then h = H - OUT.TAB_H - OUT.BORDER end
-
-    resizing.w, resizing.h = w, h
-
-    damage_outline(outline)
-
-    outline = { x = win.x - OUT.BORDER, y = win.y - OUT.TAB_H,
-                w = w + OUT.BORDER * 2, h = h + OUT.TAB_H + OUT.BORDER }
-
-    damage_outline(outline)
-  end
-
-  --
-  -- What would take it, outlined, while something is being carried.
-  --
-  -- The same rectangle a resize draws and for the same reason: four thin
-  -- edges cost nothing, where highlighting the *area* would recomposite
-  -- every window underneath on every pointer movement. The two can never be
-  -- up at once - a press is either on the grip or in the contents - so they
-  -- share the one variable rather than agreeing about which is on top.
-  --
-  if drag and moved_this_pass then
-    local onto = window_at(nx, ny)
-    local want = nil
-
-    if onto and onto.drops then
-      local fx, fy, fw, fh = frame_of(onto)
-
-      want = { x = fx, y = fy, w = fw, h = fh }
-    end
-
-    local same = outline and want
-                 and outline.x == want.x and outline.y == want.y
-                 and outline.w == want.w and outline.h == want.h
-
-    if not same then
-      damage_outline(outline)
-      outline = want
-      damage_outline(outline)
-    end
-  end
-
-  if dragging and is_down then
-    move_window(dragging.win, nx - dragging.dx, ny - dragging.dy, true)
-  end
-
-  --
-  -- Movement, only while something is held.
-  --
-  -- Hover is not sent, and that is a decision rather than an omission. Every
-  -- movement would be a message, an application would poll a queue full of
-  -- them, and the whole path from here to a widget would run at the rate the
-  -- pointer moves rather than at the rate anything changes. What a button
-  -- needs to un-press when you slide off it is drag, and this is drag.
-  --
-  --
-  -- Hover, but only while a menu is open.
-  --
-  -- Movement is otherwise sent only to whatever is holding a button - see
-  -- the note below, which is still right: every movement would be a message
-  -- and an application would poll a queue full of them.
-  --
-  -- A menu is the one case that genuinely needs the pointer without a
-  -- button. You click a title, let go, and slide down the items; a submenu
-  -- opens because the pointer passed over its parent, not because anything
-  -- was pressed. Without this the whole menu is only usable by dragging.
-  --
-  -- Bounded by the thing that makes it affordable: it happens only while
-  -- menus are open, which is a second at a time and never while anything is
-  -- trying to be fast.
-  --
-  if #menus > 0 and not is_down and moved_this_pass then
-    local m = menu_at(nx, ny)
-
-    if m then
-      post(by_handle[m.owner],
-           { type = "mouse", menu = m.handle, action = "move",
-             x = nx - m.x, y = ny - m.y })
-    end
-  end
-
-  if grabbed and is_down and moved_this_pass and grabbed.kind == "menu" then
-    post(by_handle[grabbed.owner],
-         { type = "mouse", menu = grabbed.handle, action = "move",
-           x = nx - grabbed.x, y = ny - grabbed.y })
-  elseif grabbed and is_down and moved_this_pass then
-    post(grabbed, { type = "mouse", action = "move",
-                    x = nx - grabbed.x,
-                    y = ny - grabbed.y - strips.below(grabbed) })
-  elseif not is_down and moved_this_pass and #menus == 0 then
-    -- A window that asked (`handlers.track`), and only while it has focus.
-    local f = focused_window()
-
-    if f and f.tracking then
-      post(f, { type = "mouse", action = "move", hover = true,
-                x = nx - f.x, y = ny - f.y - strips.below(f) })
-    end
-  end
-
-  --------------------------------------------------------------------------
-  -- And the right button, which does none of this process's own jobs.
-  --
-  -- No raise, no drag, no close box, no grip. Those are all answers to "you
-  -- pressed the decoration", and a right press means "tell me about what is
-  -- under the pointer" - a question about the *contents*, which is the
-  -- application's to answer and not this one's. So the frame is not tested
-  -- at all: a right press outside the contents does nothing.
-  --
-  -- Only `win.context` windows hear it - see `handlers.open` for why that is
-  -- off by default - and it carries `button = "right"` so a window that
-  -- asked for both can tell them apart. **No `button` field means the left
-  -- one**, which is what every event this process has ever posted was, so
-  -- nothing already written has to change to keep being right.
-  --
-  -- Grabbed like a left press, so the release reaches the same window even
-  -- if the pointer has left it by then.
-  --------------------------------------------------------------------------
-  local was_right = (buttons & 2) ~= 0
-  local is_right  = (p.buttons & 2) ~= 0
-
-  if is_right and not was_right then
-    if #menus > 0 then
-      --
-      -- Into the menu, tagged with its handle, exactly as a left press is.
-      --
-      -- A menu row is the thing most worth asking about - "what is this and
-      -- what would it start" - and the Deskbar's rows are launchers, which
-      -- are files somebody may want to edit. Sending this to the owner is
-      -- what lets it answer without this process learning what a menu row
-      -- means.
-      --
-      -- Outside every menu it dismisses them and stops, which is what a
-      -- left press does and for the same reason: the first click after
-      -- opening a menu is how you change your mind, not how you press the
-      -- thing behind it.
-      --
-      local m = menu_at(nx, ny)
-
-      if m then
-        post(by_handle[m.owner],
-             { type = "mouse", menu = m.handle, action = "press",
-               button = "right", x = nx - m.x, y = ny - m.y })
-      else
-        dismiss_menus()
-      end
-    else
-      local win = window_at(nx, ny)
-
-      if win and win.context
-         and nx >= win.x and nx < win.x + win.w
-         and ny >= win.y and ny < win.y + win.h then
-        right_grabbed = win
-        post(win, { type = "mouse", action = "press", button = "right",
-                    x = nx - win.x, y = ny - win.y })
-      end
-    end
-  elseif not is_right and was_right and right_grabbed then
-    post(right_grabbed, { type = "mouse", action = "release",
-                          button = "right",
-                          x = nx - right_grabbed.x,
-                          y = ny - right_grabbed.y })
-    right_grabbed = nil
-  end
-
-  buttons = p.buttons
-end
+-- The pointer's pass - `/Kosmos/Libraries/wm/pointer.lua` (`roadmap.md`
+-- 6zn). Every function handed here has its body by now.
+--
+local pointer_pass = use("/Kosmos/Libraries/wm/pointer.lua"){
+  PT = PT,
+  OUT = OUT,
+  W = W,
+  H = H,
+  add_damage = add_damage,
+  boxes_x = boxes_x,
+  by_handle = by_handle,
+  cursor_size = cursor_size,
+  damage_outline = damage_outline,
+  dismiss_menus = dismiss_menus,
+  focused_window = focused_window,
+  frame_of = frame_of,
+  maximise = maximise,
+  menu_at = menu_at,
+  menus = menus,
+  minimise = minimise,
+  move_window = move_window,
+  pointer_log = pointer_log,
+  post = post,
+  raise = raise,
+  resizable = resizable,
+  resize_window = resize_window,
+  scale = scale,
+  strips = strips,
+  window_at = window_at,
+}
 
 local STEP = 16
 local prefix = false
