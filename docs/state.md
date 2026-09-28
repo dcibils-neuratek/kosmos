@@ -38,6 +38,9 @@ plays", "Groove next"; and later "GROOVE bar is the title bar".
   beats at 124.
 - **Known**: a key released in another window leaves its note held (a
   window is not told when it loses the keyboard).
+- **The gate went to 10:08 with nothing changed**, and is 8:49: x86 builds
+  were rewriting the ARM kernels' flags stamp, so every gate recompiled both
+  ARM kernels (6zp). The x86 kernel's objects still have no stamp.
 
 **Next**: 6zg, USB MIDI and the Launchkey, for Groove; then the order below
 it resumes - an application's image without the system's files, 6zr, 6zp,
