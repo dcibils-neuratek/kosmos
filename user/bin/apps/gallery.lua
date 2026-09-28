@@ -119,7 +119,8 @@ local list_h = 4 + LIST_ROWS * ui.metrics.row
 local foot_y = list_y + list_h + 10
 local H = foot_y + L.line + L.page_foot
 
-local win, err = ui.window{ title = "gallery", w = W, h = H, x = 60, y = 90 }
+local win, err = ui.window{ title = "gallery", w = W, h = H, x = 60, y = 90,
+                            header = true }
 
 if not win then
   print("gallery: " .. tostring(err))
@@ -131,7 +132,8 @@ local c = page()
 local more = ui.iconbutton{ icon = "more" }
 
 header = ui.header{ x = 0, y = 0, w = W, title = "Widgets",
-                    sub = "the kit's vocabulary", right = { more } }
+                    sub = "the kit's vocabulary", right = { more },
+                    title_bar = true }
 
 local list = ui.list{ x = L.page_side, y = list_y, w = W - 2 * L.page_side,
                       h = list_h, items = ITEMS,

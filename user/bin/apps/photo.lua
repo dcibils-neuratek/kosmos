@@ -66,6 +66,9 @@ local win, err = ui.window{ title = "Photo", w = W, h = H, x = 110, y = 70,
   -- A picture dragged out of Tracker opens here. Which is the shortest
   -- description there is of what a drop is for.
   drops = true,
+
+  -- Its header is the title bar, in a look with none (`roadmap.md` 6zj).
+  header = true,
 }
 
 if not win then
@@ -77,7 +80,8 @@ local function base(p) return p:match("([^/]+)$") or p end
 
 local more = ui.iconbutton{ icon = "more" }
 local header = ui.header{ x = 0, y = 0, w = W, title = base(name), sub = "",
-                          right = { more } }
+                          right = { more },
+                          title_bar = true }
 local picture = ui.image{ x = 0, y = L.head, w = W, h = H - L.head,
                           asset = name, ground = theme.console,
                           contain = true, centre = true,

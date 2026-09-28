@@ -28,7 +28,8 @@ local theme = ui.theme
 
 local W, H = 460, 400
 
-local win, err = ui.window{ title = "Mixer", w = W, h = H, x = 150, y = 110 }
+local win, err = ui.window{ title = "Mixer", w = W, h = H, x = 150, y = 110,
+                            header = true }
 
 if not win then
   print("mixer: " .. tostring(err))
@@ -253,6 +254,7 @@ local header = ui.header{
                                       args = "440 3000" })
                end },
   },
+  title_bar = true,
 }
 
 local cards = ui.cards{ x = 0, y = L.head, w = W, h = H - L.head }

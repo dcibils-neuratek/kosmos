@@ -148,7 +148,8 @@ local TAB_H = 32
 local BOTTOM = 176
 local FOOT = 30
 
-local win, err = ui.window{ title = "Kosmos IDE", w = W, h = H, x = 70, y = 50 }
+local win, err = ui.window{ title = "Kosmos IDE", w = W, h = H, x = 70, y = 50,
+                            header = true }
 
 if not win then
   print("ide: " .. tostring(err))
@@ -617,6 +618,7 @@ local header = ui.header{
   right = { find, icon("more", function(self)
     win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, text:items())
   end) },
+  title_bar = true,
 }
 
 --------------------------------------------------------------------------

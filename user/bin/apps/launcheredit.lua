@@ -69,7 +69,8 @@ do
 end
 
 local W, H = 560, 540
-local win, err = ui.window{ title = "Launcher", w = W, h = H, x = 180, y = 120 }
+local win, err = ui.window{ title = "Launcher", w = W, h = H, x = 180, y = 120,
+                            header = true }
 
 if not win then
   print("launcheredit: " .. tostring(err))
@@ -125,6 +126,7 @@ local header = ui.header{
   right = { ui.button{ text = "Revert", on_click = function() revert() end },
             ui.button{ text = "Save", go = true,
                        on_click = function() save() end } },
+  title_bar = true,
 }
 
 local function picture_row()

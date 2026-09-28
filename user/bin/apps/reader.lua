@@ -29,7 +29,8 @@ local W, H = 620, 460
 
 local path = args:match("^%s*(%S+)")
 
-local win, err = ui.window{ title = "Reader", w = W, h = H, x = 110, y = 60 }
+local win, err = ui.window{ title = "Reader", w = W, h = H, x = 110, y = 60,
+                            header = true }
 
 if not win then
   print("reader: " .. tostring(err))
@@ -143,7 +144,8 @@ end
 
 header = ui.header{ x = 0, y = 0, w = W, title = "Reader",
                     sub = "the built-in page",
-                    right = { ui.button{ text = "Open", on_click = open_one } } }
+                    right = { ui.button{ text = "Open", on_click = open_one } },
+                    title_bar = true }
 
 win:add(header)
 win:add(page)

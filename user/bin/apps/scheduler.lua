@@ -41,7 +41,8 @@ local theme = ui.theme
 
 local W, H = 560, 520
 
-local win, err = ui.window{ title = "Scheduler", w = W, h = H, x = 140, y = 80 }
+local win, err = ui.window{ title = "Scheduler", w = W, h = H, x = 140, y = 80,
+                            header = true }
 
 if not win then
   print("scheduler: " .. tostring(err))
@@ -171,6 +172,7 @@ header = ui.header{
         refresh("could not start one")
       end
     end } },
+  title_bar = true,
 }
 
 --

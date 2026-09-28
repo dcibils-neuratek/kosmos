@@ -105,7 +105,7 @@ local LINE_LABEL = 21
 local LINE_NOTE  = 17
 
 local win, err = ui.window{ title = "Preferences", w = W, h = H,
-                            x = 150, y = 100 }
+                            x = 150, y = 100, header = true }
 
 if not win then
   print("preferences: " .. tostring(err))
@@ -155,24 +155,22 @@ end
 
 --
 -- **The page's header**: the category's name at the left, in the title's
--- face, on the white the drawing gives a header, over a one-pixel rule.
+-- face, on the white the drawing gives a header, over a one-pixel rule -
+-- the kit's header, which draws exactly that.
 --
--- The drawing has a close box at the right of it as well, and it is left
--- out on purpose: this is a window with a title tab, and the tab already
--- has one. Two close boxes a few pixels apart would be the one place the
--- mockup and the machine disagree about how a window is built.
+-- **And the window's title bar, in a look with none** (`roadmap.md` 6zj):
+-- the drawing's three at its right end, where this used to say they were
+-- left out because the tab above had them. It was drawn by the page until
+-- then, which is why it is a view of its own now: the three need a header
+-- to leave room in, and its empty band is what moves the window.
 --
-local heading_text = ""
+local header = ui.header{ x = SIDE, y = 0, w = W - SIDE, title = "",
+                          title_bar = true }
 
 function page:draw(g)
   local x, width = column(self.w)
 
   g:fill(0, 0, self.w, self.h, theme.window)
-
-  g:fill(0, 0, self.w, HEAD - 1, theme.sunken)
-  g:fill(0, HEAD - 1, self.w, 1, theme.line_soft)
-  g:text(18, (HEAD - 1 - gfx.height("title")) // 2, heading_text,
-         theme.text, nil, "title")
 
   for _, c in ipairs(cards) do
     g:fill_round(x, c.y, width, c.h, theme.sunken, CARD_R)
@@ -219,7 +217,10 @@ end
 --
 local rebuild                      -- forward, so the list can call it
 
-local side_head = ui.view{ x = 0, y = 0, w = SIDE, h = HEAD }
+-- Taken hold of like the header beside it, in a look with no title bars:
+-- one band across the top of the window, as `docs/nochrome.html` draws it.
+local side_head = ui.view{ x = 0, y = 0, w = SIDE, h = HEAD,
+                           moves_window = true }
 
 function side_head:draw(g)
   local face = "title"
@@ -271,6 +272,7 @@ win:add(side_ground)
 win:add(side_head)
 win:add(side)
 win:add(page)
+win:add(header)
 
 --
 -- One row's control, whichever kind it is.
@@ -705,7 +707,7 @@ rebuild = function()
   cards = {}
 
   for _, c in ipairs(settings.CATEGORIES) do
-    if c.id == showing then heading_text = c.name end
+    if c.id == showing then header.title = c.name end
   end
 
   local cx, width = column(page.w)

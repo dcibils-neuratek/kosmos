@@ -98,7 +98,8 @@ end
 
 local H = height()
 
-local win, err = ui.window{ title = "Cores", w = W, h = H, x = 120, y = 100 }
+local win, err = ui.window{ title = "Cores", w = W, h = H, x = 120, y = 100,
+                            header = true }
 
 if not win then
   print("cores: " .. tostring(err))
@@ -277,6 +278,7 @@ local header = ui.header{
   right = { ui.button{ text = "Add a worker", go = true,
                        on_click = add_worker },
             ui.button{ text = "Take one off", on_click = remove_worker } },
+  title_bar = true,
 }
 
 win:add(header)

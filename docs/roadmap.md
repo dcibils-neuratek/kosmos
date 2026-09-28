@@ -2239,10 +2239,18 @@ processors, and still what follows USB:
    deeper - so the kit never paints them and focus shows at once. A press
    on a band that `moves_window` - the header's, Tracker's sidebar head -
    is handed back to the window manager as a drag (`move_begin`), and a
-   double click maximises (`maximise`). **Step 2 is every other window with
-   a header**, which is one flag on the window and one on its header each;
-   **step 3** the harness phases that press tabs, which run in the dark
-   look and are untouched until a phase opens a window in Plex.
+   double click maximises (`maximise`). **Step 2 DONE the same night**
+   (`testing.md` 18.243): every window with a kit header - Cores, Drives,
+   the Editor, the widget gallery, the launcher editor, Mixer, the IDE,
+   Photo, Log View, Reader, Network, Processes, Scheduler, Monitor, the
+   Terminal, the Web server and Video's window with no film - and
+   Preferences, whose page header became the kit's so it could hold the
+   three, and whose sidebar head moves it as Tracker's does. Windows with
+   no header of the kit's keep their bar: the Calculator, the Clock,
+   About, Music, and every window that draws its own pixels. **Step 3**
+   is the harness phases that press tabs, which run in the dark look and
+   are untouched until one opens a window in Plex - so it is a question of
+   whether the harness should run in Plex, since it is the look Diego uses.
 
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua

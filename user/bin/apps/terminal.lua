@@ -93,7 +93,8 @@ local L = ui.layout
 local W, H = 640, L.head + 572
 local SCROLLBACK = 400          -- lines kept
 
-local win, err = ui.window{ title = "Terminal", w = W, h = H, x = 90, y = 40 }
+local win, err = ui.window{ title = "Terminal", w = W, h = H, x = 90, y = 40,
+                            header = true }
 
 if not win then
   print("terminal: " .. tostring(err))
@@ -209,7 +210,8 @@ local size = textsize.new(ui, "/Home/.terminal")
 --
 local more = ui.iconbutton{ icon = "more" }
 local header = ui.header{ x = 0, y = 0, w = W, title = "Terminal", sub = cwd,
-                          right = { more } }
+                          right = { more },
+                          title_bar = true }
 
 --
 -- Every change of directory goes through here, so the header cannot drift

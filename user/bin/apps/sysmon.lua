@@ -99,7 +99,8 @@ local hist_top = L.head + L.page_top + card_h + L.between
 local hist_h = DOWN * (PANEL_NAME + PANEL_H) + (DOWN - 1) * PANEL_GAP_Y
 local H = hist_top + L.to_card + hist_h + 30 + L.page_foot
 
-local win, err = ui.window{ title = "Monitor", w = W, h = H, x = 90, y = 130 }
+local win, err = ui.window{ title = "Monitor", w = W, h = H, x = 90, y = 130,
+                            header = true }
 
 if not win then
   print("sysmon: " .. tostring(err))
@@ -175,7 +176,8 @@ more.on_click = function()
 end
 
 win:add(ui.header{ x = 0, y = 0, w = W, title = "Monitor", sub = sub,
-                   right = { legend, more } })
+                   right = { legend, more },
+                   title_bar = true })
 
 --------------------------------------------------------------------------
 -- The card: a row a core.

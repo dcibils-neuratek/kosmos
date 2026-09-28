@@ -27,7 +27,8 @@ local W, H = 500, 490
 
 local SETTINGS = "/Home/.network"
 
-local win, err = ui.window{ title = "Network", w = W, h = H, x = 140, y = 90 }
+local win, err = ui.window{ title = "Network", w = W, h = H, x = 140, y = 90,
+                            header = true }
 
 if not win then
   print("network: " .. tostring(err))
@@ -158,6 +159,7 @@ local header = ui.header{
   right = { ui.button{ text = "Apply", go = true,
                        on_click = function() apply(false) end },
             more },
+  title_bar = true,
 }
 
 local cards = ui.cards{

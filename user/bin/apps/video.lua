@@ -89,7 +89,8 @@ local function say_instead(lines, title)
   local W, H = 540, 280
   local L = ui.layout
   local win = ui.window{ title = title or "Video", w = W, h = H,
-                         x = 220, y = 160 }
+                         x = 220, y = 160,
+                         header = true }
 
   if not win then return end
 
@@ -119,6 +120,7 @@ local function say_instead(lines, title)
     sub = title and title:gsub("^Video:%s*", "") or "nothing open",
     right = { ui.button{ text = "Open a film...", go = true,
                          on_click = open_one } },
+    title_bar = true,
   })
 
   -- Blank lines were spacing in the old column; the block centres itself.

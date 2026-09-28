@@ -27,7 +27,8 @@ local L = nil                  -- the kit's layout, once it is loaded
 local STATUS = "/Temporary/httpd/status"
 local LOG    = "/Temporary/httpd/log"
 
-local win, err = ui.window{ title = "Web Server", w = W, h = H, x = 120, y = 80 }
+local win, err = ui.window{ title = "Web Server", w = W, h = H, x = 120, y = 80,
+                            header = true }
 
 if not win then
   print("webserver: " .. tostring(err))
@@ -85,7 +86,8 @@ local more = ui.iconbutton{ icon = "more" }
 
 local header = ui.header{ x = 0, y = 0, w = W, title = "Web server",
                           sub = "stopped",
-                          right = { start_button, stop_button, more } }
+                          right = { start_button, stop_button, more },
+                          title_bar = true }
 
 local cards = ui.cards{
   x = 0, y = L.head, w = W, h = 1,

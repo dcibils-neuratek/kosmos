@@ -64,7 +64,8 @@ local theme = ui.theme
 local L = ui.layout
 local W, H = 620, L.head + 420
 
-local win, err = ui.window{ title = "Log", w = W, h = H, x = 130, y = 110 }
+local win, err = ui.window{ title = "Log", w = W, h = H, x = 130, y = 110,
+                            header = true }
 
 if not win then
   print("logview: " .. tostring(err))
@@ -216,7 +217,8 @@ local size = textsize.new(ui, "/Home/.logview")
 --
 local more = ui.iconbutton{ icon = "more" }
 local header = ui.header{ x = 0, y = 0, w = W, title = "Log", sub = "",
-                          right = { more } }
+                          right = { more },
+                          title_bar = true }
 
 more.on_click = function()
   win:open_menu(win.origin_x + more.x, win.origin_y + L.head, size:items())

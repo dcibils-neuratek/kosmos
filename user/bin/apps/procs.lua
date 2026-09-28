@@ -70,7 +70,8 @@ local L = ui.layout
 local BAND_TOP, BAND_SIDE, BAND_FOOT = 14, 18, 10
 local METER_H = 35                       -- a line, 6, and the bar's 8
 
-local win, err = ui.window{ title = "Processes", w = W, h = H, x = 150, y = 90 }
+local win, err = ui.window{ title = "Processes", w = W, h = H, x = 150, y = 90,
+                            header = true }
 
 -- After the window, so the faces are the look's: the band holds a line of
 -- words over its bars.
@@ -847,6 +848,7 @@ local header = ui.header{
   x = 0, y = 0, w = W, title = "Processes", sub = "",
   right = { ui.button{ text = "End", on_click = function() end_selected() end },
             more },
+  title_bar = true,
 }
 
 -- Last, so the focus starts in the table and Tab reaches End after it.

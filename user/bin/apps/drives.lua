@@ -39,7 +39,8 @@ local PARTS_H = ROW * 5 + 2
 local STATUS_Y = PARTS_Y + PARTS_H + 10
 local H = STATUS_Y + gfx.height() + L.page_foot
 
-local win, err = ui.window{ title = "Drives", w = W, h = H, x = 180, y = 90 }
+local win, err = ui.window{ title = "Drives", w = W, h = H, x = 180, y = 90,
+                            header = true }
 
 if not win then
   print("drives: " .. tostring(err))
@@ -271,6 +272,7 @@ local header = ui.header{
   sub = (#drives == 1) and "1 drive" or (#drives .. " drives"),
   right = { ui.button{ text = "Open in Tracker", on_click = open_in_tracker },
             more },
+  title_bar = true,
 }
 
 more.on_click = function()

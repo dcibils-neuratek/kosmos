@@ -4073,6 +4073,13 @@ def check_no_title_bar(guest):
       the amber of the three minimises it, and - brought back by Super
       Tab - the red closes it.
 
+    Then the rest (step 2): Preferences opened in the harness's look, with
+    its tab, choosing Plex - the tab goes and the three are placed, which is
+    a change of look reaching an open window - and dragged by its sidebar's
+    head; and Processes, Log View and the Terminal opened in Plex, each with
+    its header as its title bar and the three in place, beside the
+    Calculator, which has no header and keeps its tab.
+
     And the control: the same Tracker in the harness's own look, which
     wears title bars, has its tab, is told of no three, and a press on the
     same band dragged the same way moves nothing.
@@ -4259,7 +4266,95 @@ def check_no_title_bar(guest):
     finally:
         stop()
 
-    return 9
+    def placed(title, mark):
+        """The window's line and its three, checked: its header the
+        title bar, and the three 12 in from the right and centred."""
+        line = guest.wait_for_line("wm: window %s at " % title,
+                                   "%s to open" % title, mark)
+        x, y, w, h = (int(v) for v in
+                      re.match(r"(\d+),(\d+) (\d+)x(\d+)", line).groups())
+        three = guest.wait_for_line("wm: %s's three at " % title,
+                                    "the three to be placed in %s's header"
+                                    % title, mark)
+        lx, ly = (int(v) for v in re.match(r"(\d+),(\d+)", three).groups())
+
+        if (lx, ly) != (w - 12 - 62, (46 - 1 - 18) // 2):
+            raise Failure("%s's three are at %d,%d in a window %d wide - "
+                          "wanted %d,%d" % (title, lx, ly, w, w - 74, 13))
+
+        return line, x, y, w, h
+
+    #
+    # **A look chosen with a window open**: Preferences opens in the
+    # harness's look, wearing its tab, and chooses Plex - its title bar goes
+    # and the three are placed in its header, which is the change of look
+    # reaching a window that is already there. Then it is dragged by its
+    # sidebar's head, the other half of its top band.
+    #
+    try:
+        mark = len(guest.seen)
+        guest.type("wm preferences:--theme plex")
+        line = guest.wait_for_line("wm: window Preferences at ",
+                                   "Preferences to open", mark)
+
+        if not re.search(r", a tab \d+ wide", line):
+            raise Failure("Preferences opened in the harness's look with no "
+                          "tab: %r" % line)
+
+        guest.wait_for_line("wm: Preferences has its header for a title bar",
+                            "choosing Plex to take Preferences' title bar off",
+                            mark)
+        _, x, y, w, h = placed("Preferences", mark)
+
+        time.sleep(1.5)
+        width, height, _ = parse_ppm(guest.screendump())
+        held = len(guest.seen)
+        press_drag(x + 100, y + 8, 120, 80)
+        moved = guest.wait_for_line("wm: moved Preferences by its header to ",
+                                    "Preferences to move by its sidebar's "
+                                    "head", held)
+        nx, ny = (int(v) for v in re.match(r"(\d+),(\d+)", moved).groups())
+
+        if abs(nx - (x + 120)) > 3 or abs(ny - (y + 80)) > 3:
+            raise Failure("a drag of 120 across and 80 down by Preferences' "
+                          "sidebar head moved it from %d,%d to %d,%d"
+                          % (x, y, nx, ny))
+    finally:
+        stop()
+        guest.type(appearance() + ' print("nochrome" .. "-look")')
+        guest.wait_for("nochrome-look", "put the harness's appearance back")
+
+    #
+    # **Every window with a header, in Plex** - three more - **and one
+    # without keeps its tab**: the Calculator has no header of the kit's to
+    # hold the three or to be taken hold of.
+    #
+    guest.type(appearance('palette = "plex"') + ' print("nochrome" .. "-all")')
+    guest.wait_for("nochrome-all", "save Plex for the window manager")
+
+    try:
+        mark = len(guest.seen)
+        guest.type("wm procs,logview,terminal,calc")
+
+        for title in ("Processes", "Log", "Terminal"):
+            line, _, _, _, _ = placed(title, mark)
+
+            if "its header the title bar" not in line:
+                raise Failure("%s opened in Plex wearing a title bar: %r"
+                              % (title, line))
+
+        line = guest.wait_for_line("wm: window Calculator at ",
+                                   "the Calculator to open", mark)
+
+        if not re.search(r", a tab \d+ wide", line):
+            raise Failure("the Calculator has no header and lost its title "
+                          "bar in Plex: %r" % line)
+    finally:
+        stop()
+        guest.type(appearance() + ' print("nochrome" .. "-done")')
+        guest.wait_for("nochrome-done", "put the harness's appearance back")
+
+    return 22
 
 
 def check_direct_menu(guest):

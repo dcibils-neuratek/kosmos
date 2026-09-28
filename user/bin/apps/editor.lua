@@ -43,7 +43,8 @@ local L = ui.layout
 local function base(p) return p:match("([^/]+)$") or p end
 
 local win, err = ui.window{ title = base(path) .. " - Editor",
-                            w = W, h = H, x = 100, y = 60 }
+                            w = W, h = H, x = 100, y = 60,
+                            header = true }
 
 if not win then
   print("editor: " .. tostring(err))
@@ -92,6 +93,7 @@ header = ui.header{
   x = 0, y = 0, w = W, title = base(path),
   sub = (type(existing) == "string") and "" or "new",
   right = { ui.button{ text = "Save", on_click = save }, more },
+  title_bar = true,
 }
 
 -- Both places the path changes go through here, so the name in the header,

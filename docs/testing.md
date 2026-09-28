@@ -11750,7 +11750,7 @@ as well. A look that left `flat` out kept the previous look's, since a
 palette applies only what it has; `theme.read` now always says both words.
 The window manager now says when it minimises and closes a window.
 
-**Checked on both boards** (the display harness's `no title bar`, 9):
+**Checked on both boards** (the display harness's `no title bar`, 11):
 Tracker opened in Plex is logged with its header as its title bar and its
 three placed 12 in from the right and centred in the header; maximise's
 green is on the screen there and no tab's yellow above the window; a press
@@ -11759,3 +11759,26 @@ far; a double click on the sidebar's head maximises it and another puts it
 back; the amber minimises it and, raised by Super Tab, the red closes it.
 **The control** is the same Tracker in the harness's own look: a tab, no
 three, and the same drag on the same band moves nothing.
+
+## 18.243 Every window with a header takes it as its title bar (6zj, step 2)
+
+The same two words in each: `header = true` on the window, `title_bar =
+true` on its header - Cores, Drives, the Editor, the widget gallery, the
+launcher editor, Mixer, the IDE, Photo, Log View, Reader, Network,
+Processes, Scheduler, Monitor, the Terminal, the Web server and Video's
+window with no film. **Preferences** drew its page header itself, so it
+had nothing to leave room in: it is the kit's header now, drawing the same
+ground, rule and title at the same places, and its sidebar head moves the
+window as Tracker's does. A window with no kit header keeps its bar in
+every look - the Calculator, the Clock, About, Music - and so does every
+window that draws its own pixels.
+
+**Checked on both boards** (the display harness's `no title bar`, 22 - the
+11 of 18.242 and these): **a look chosen with a window open** - Preferences
+opened in the harness's look with its tab, choosing Plex from its own
+command line, is logged losing its title bar and has its three placed 12
+in from the right and centred in its header, and a drag of its sidebar's
+head moves it exactly as far; **and the rest in Plex** - Processes, Log
+View and the Terminal each open with the header as the title bar and the
+three in place. **The control** is the Calculator beside them, which has
+no header of the kit's and opens with its tab.
