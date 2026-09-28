@@ -20,7 +20,7 @@ Last updated: 2026-09-28
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 
-**Nothing is pushed since 0.10.176.** Diego asked for PulseMusic, his LÖVE
+**Pushed as 0.10.185** (`395472a..cb48bda`, tag `v0.10.185`), and **released for QEMU on a Mac**: https://github.com/dcibils-neuratek/kosmos/releases/tag/v0.10.185 - both images booted with Groove beating at 124 and the download checked against its sums. `run-kosmos.sh` gives the machine a sound card now. Found making its picture: seventeen windows outgrew the `windows` reply and hung `tile` and the Deskbar - fixed in the same release (18.256). Diego asked for PulseMusic, his LÖVE
 music application, converted into Kosmos as **Groove** ("i dont want to
 vendor it in, just convert it"), and answered four questions: the sound "All
 in C, on its own thread", "PulseMusic's look, faithfully", MIDI "After Groove
