@@ -46,25 +46,30 @@
 #include "fwcfg.h"
 #include "page.h"
 #include "pmm.h"
+#include "ramfb.h"
 
 /*
  * The geometry.
  *
- * Fixed at build time because there is no allocator: the pixels are a static
- * array, so their size has to be a constant. Asking ramfb what size the
- * window is would be asking the wrong question anyway - with ramfb the guest
- * chooses, and QEMU makes a window that size.
+ * **Chosen when the machine starts, not when the image is built**
+ * (`roadmap.md` 6zt). Diego, 28 September 2026, running the release at
+ * 3840x2160 and told there was no image of that size: "why is that images
+ * need to be built for specific resolutions? cant that just be a parameter
+ * and kosmos adapts to the resolution?" It could, and should have been
+ * since the pixels came from the page allocator: this used to be fixed at
+ * build time "because there is no allocator", the pixels a static array,
+ * and when they moved nothing here moved with them.
  *
- * Overridable from the command line, because "fixed at build time" should
- * not mean "fixed in a source file":
- *
- *     make FB=1920x1080 qemu
+ * So `-fw_cfg name=opt/kosmos/fb,string=3840x2160`, read at the moment the
+ * pixels are allocated, and the size the image was built with - `make
+ * FB=1920x1080` - when there is none, or when it is no size this can show:
+ * not two numbers, outside the bounds below, or more contiguous memory than
+ * the machine has. With ramfb the guest chooses and QEMU makes a window that
+ * size, so there is nobody else to ask.
  *
  * Nothing above this cares. The console works out its rows and columns from
  * what it is handed, `gfx.screen()` reports what the kernel reports, and the
- * window manager scales the pointer against the size it was told - so the
- * only thing a bigger screen costs is the memory for it, and that memory is
- * NOLOAD and does not enter the image file.
+ * window manager scales the pointer against the size it was told.
  *
  * Changing it while the machine runs is a different question and a real one;
  * see `hal.md`.
@@ -97,8 +102,21 @@
  * and it is not a multiple of 4 pixels, so an off-by-one row is obvious
  * rather than subtle.
  */
-#define FB_PITCH    (FB_WIDTH * 4 + 64)
-#define FB_BYTES    (FB_PITCH * FB_HEIGHT)
+#define PITCH_OF(w) ((w) * 4u + 64u)
+
+/*
+ * The sizes it will take, and they are what ramfb and a screen are, not a
+ * budget: a screen narrower than 640 or shorter than 480 is not one this
+ * desktop draws, and 8K is past any display this runs on. Memory is the
+ * other bound and it is asked rather than assumed.
+ */
+#define FB_MIN_W    640u
+#define FB_MIN_H    480u
+#define FB_MAX_W    7680u
+#define FB_MAX_H    4320u
+
+static uint32_t fb_width = FB_WIDTH, fb_height = FB_HEIGHT;
+static enum ramfb_size size_from = RAMFB_SIZE_BUILT;
 
 /*
  * The pixels, **taken from the page allocator rather than reserved inside
@@ -181,6 +199,44 @@ _Static_assert(sizeof(struct ramfb_cfg) == 28, "RAMFBCfg is 28 bytes");
 
 #define DRM_FORMAT_XRGB8888 FOURCC('X', 'R', '2', '4')
 
+/* "3840x2160" into two numbers, or false. Digits, an x, digits, and nothing
+ * else: a value with anything more in it was not written for this. */
+static bool parse_size(const char *s, uint32_t *w, uint32_t *h)
+{
+    uint32_t n[2] = { 0, 0 };
+    unsigned which = 0, digits = 0;
+
+    for (; *s != '\0'; s++) {
+        if (*s >= '0' && *s <= '9') {
+            if (n[which] > 100000u) {
+                return false;
+            }
+
+            n[which] = n[which] * 10u + (uint32_t)(*s - '0');
+            digits++;
+        } else if ((*s == 'x' || *s == 'X') && which == 0 && digits > 0) {
+            which = 1;
+            digits = 0;
+        } else {
+            return false;
+        }
+    }
+
+    if (which != 1 || digits == 0) {
+        return false;
+    }
+
+    *w = n[0];
+    *h = n[1];
+    return true;
+}
+
+/* Which size it is, for the boot log - a board's `hal_fb_describe`. */
+enum ramfb_size ramfb_size_from(void)
+{
+    return size_from;
+}
+
 bool ramfb_init(struct fb *out)
 {
     struct ramfb_cfg cfg;
@@ -219,8 +275,35 @@ bool ramfb_init(struct fb *out)
      * allocated is a machine with no display.
      */
     if (framebuffer == NULL) {
-        framebuffer = pmm_alloc_contiguous(
-            (FB_BYTES + PAGE_SIZE - 1) / PAGE_SIZE);
+        char asked[24];
+        uint32_t w, h;
+
+        /*
+         * The size asked for, if it is one: tried first, and the built size
+         * after it when the memory is not there - a screen at the size it
+         * was built for is better than none at the size asked.
+         */
+        if (fwcfg_boot_option("opt/kosmos/fb", asked, sizeof asked)) {
+            size_from = RAMFB_SIZE_REFUSED;
+
+            if (parse_size(asked, &w, &h)
+                && w >= FB_MIN_W && w <= FB_MAX_W
+                && h >= FB_MIN_H && h <= FB_MAX_H) {
+                framebuffer = pmm_alloc_contiguous(
+                    (PITCH_OF(w) * h + PAGE_SIZE - 1) / PAGE_SIZE);
+
+                if (framebuffer != NULL) {
+                    fb_width = w;
+                    fb_height = h;
+                    size_from = RAMFB_SIZE_ASKED;
+                }
+            }
+        }
+
+        if (framebuffer == NULL) {
+            framebuffer = pmm_alloc_contiguous(
+                (PITCH_OF(fb_width) * fb_height + PAGE_SIZE - 1) / PAGE_SIZE);
+        }
 
         if (framebuffer == NULL) {
             return false;
@@ -229,8 +312,8 @@ bool ramfb_init(struct fb *out)
 
     /* Zeroed here rather than by start.S, which only covered .bss and never
      * covered this at all. Black rather than whatever the last owner left,
-     * and it is the first proof that these eight megabytes are writable. */
-    memset(framebuffer, 0, FB_BYTES);
+     * and it is the first proof that these pages are writable. */
+    memset(framebuffer, 0, PITCH_OF(fb_width) * fb_height);
 
     /* The address QEMU's device scans out of, so it is physical: the
      * hardware reads this memory without a page table, and on a board whose
@@ -239,9 +322,9 @@ bool ramfb_init(struct fb *out)
     cfg.addr   = __builtin_bswap64((uint64_t)virt_to_phys(framebuffer));
     cfg.fourcc = __builtin_bswap32(DRM_FORMAT_XRGB8888);
     cfg.flags  = 0;
-    cfg.width  = __builtin_bswap32(FB_WIDTH);
-    cfg.height = __builtin_bswap32(FB_HEIGHT);
-    cfg.stride = __builtin_bswap32(FB_PITCH);
+    cfg.width  = __builtin_bswap32(fb_width);
+    cfg.height = __builtin_bswap32(fb_height);
+    cfg.stride = __builtin_bswap32(PITCH_OF(fb_width));
 
     /*
      * The write is what creates the display surface: QEMU's callback runs on
@@ -259,9 +342,9 @@ bool ramfb_init(struct fb *out)
     /* `phys` is what a process's mapping is built from, and `pixels` is
      * what this kernel writes through - the same memory, two names. */
     out->phys = virt_to_phys(framebuffer);
-    out->width  = FB_WIDTH;
-    out->height = FB_HEIGHT;
-    out->pitch  = FB_PITCH;
+    out->width  = fb_width;
+    out->height = fb_height;
+    out->pitch  = PITCH_OF(fb_width);
 
     return true;
 }

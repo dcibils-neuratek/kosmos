@@ -130,7 +130,21 @@ bool hal_fb_init(struct fb *out)
     }
 
     if (ramfb_init(out)) {
-        source = "ramfb, which is QEMU's and has no equivalent on hardware";
+        switch (ramfb_size_from()) {
+        case RAMFB_SIZE_ASKED:
+            source = "ramfb, which is QEMU's and has no equivalent on "
+                     "hardware, at the size opt/kosmos/fb asked";
+            break;
+        case RAMFB_SIZE_REFUSED:
+            source = "ramfb, which is QEMU's and has no equivalent on "
+                     "hardware, at the size it was built for: opt/kosmos/fb "
+                     "asked for none it can show";
+            break;
+        default:
+            source = "ramfb, which is QEMU's and has no equivalent on hardware";
+            break;
+        }
+
         return true;
     }
 

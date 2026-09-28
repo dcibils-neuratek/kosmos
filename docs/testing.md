@@ -12428,3 +12428,28 @@ band that spins without yielding drops back after the budget and not
 before - between it and two ticks past it - with one overrun counted, and
 is in the audio band again after it sleeps. Its control: a budget a
 thousand times longer, and the test fails.
+
+## 18.264 One image at any screen size (6zt)
+
+Diego ran the release at 3840x2160 and the script said there was no image
+built for it - and then "command not found", from running itself as `"$0"`
+under `sh`. The size was compiled into `ramfb`; now QEMU hands it over as
+`opt/kosmos/fb=WxH`, the kernel allocates that screen when it starts, and
+without the option, or with one it cannot show, the image comes up at the
+size it was built with and the boot log's display line says which.
+
+**Kept, `run_fbsize.py`** (`arm-fbsize`, `x86-fbsize`), 10 checks on each
+board: the gate's 1920x1080 image booted at 1280x720 and at 2560x1440, each
+said in the boot log as asked for and scanned out by QEMU at that size with
+the prompt drawn on it; and at "banana", the image's own size and a line
+saying the option asked for none it can show. Its control: the kernel
+reading another option's name - seven of ten fail, every screen 1920x1080.
+
+**Kept, `test_runscript.sh`**, now 19 checks: `-r 3840x2160` passes the
+option and a gigabyte, `-m` still decides the memory, a small screen keeps
+512 MB, `-r banana` is refused before QEMU starts - and Diego's own command,
+`sh run-kosmos-2.sh -r 3840x2160 -fit -b wm -camera pattern` beside a
+released 1920x1080 image, runs that image at that size. Its control: the
+script as it was - four fail, Diego's command among them.
+
+Seen once, not kept: Groove on the desktop at 3840x2160 in 512 MB.

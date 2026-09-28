@@ -2341,6 +2341,15 @@ processors, and still what follows USB:
    choosing a file. **And the script's own bug**: its "Available:" list
    runs `"$0" -r list`, which is "command not found" when it was started as
    `sh run-kosmos-2.sh`. Next after 4i step c.
+   **DONE on 28 September** (`testing.md` 18.264): `ramfb` takes
+   `opt/kosmos/fb=WxH`, 640x480 to 7680x4320, from the page allocator when
+   the machine starts, and the image's built size when there is none or it
+   cannot - the boot log says which; both boards, since x86's QEMU machine
+   uses `ramfb` too. `run-kosmos.sh -r` passes it, gives a screen past
+   2560x1600 a gigabyte unless `-m` says, and no longer runs itself as
+   `"$0"`. Groove came up at 3840x2160 in 512 MB. A release needs one image
+   and its full sibling rather than one a size, which is the next release's
+   to change.
 
 6zs. **ASKED on 28 September - Editor becomes Text Editor: documents in
    plain text or Markdown.** Diego: "i realized the edit app is now
@@ -4375,8 +4384,9 @@ processors, and still what follows USB:
      harness has ever seen, and where a framebuffer that did not fit its
      window was found by looking at a photograph (`testing.md` 18.154).
      `FB=3440x1440` and the `desktop`, `widgets` and `clicks` phases pass by
-     hand; making that the gate's needs a second kernel build, since the
-     size is compiled in for ramfb, which is why it is its own piece of work.
+     hand; making that the gate's needed a second kernel build while the
+     size was compiled in for ramfb - since 6zt it is `opt/kosmos/fb`, a
+     boot option on the gate's own image.
    - **5zd-d. The 768-megabyte ceiling, on a machine with eight gigabytes.**
      Diego: "the m700 has 8 gigs of ram installed", and `diagnose` says
      `ram_size = 804257792`. **This is not a fault**: `hal_ram_capped` in

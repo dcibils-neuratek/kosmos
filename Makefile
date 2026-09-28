@@ -2735,13 +2735,13 @@ dist: $(TARGET)
 # the whole of what has to travel.
 #
 #
-# One image per display size.
+# The display size an image is built with is only its default.
 #
-# The framebuffer is a static array, so its size is a compile-time constant
-# and a different size is a different image. That is a consequence of having
-# no allocator rather than a choice, and it costs one recompile of one file
-# and a relink each - the flag is on that file's own compile line, so
-# nothing else rebuilds.
+# It was one image per display size, the framebuffer a static array and its
+# size a compile-time constant. Since the pixels come from the page
+# allocator the size is chosen when the machine starts - `opt/kosmos/fb=WxH`
+# through fw_cfg, which `run-kosmos.sh -r` passes (`roadmap.md` 6zt) - and
+# `FB=` says what an image does without one.
 #
 # Changing it while the machine runs is a different question and is written
 # up in hal.md: every process that called `gfx.screen()` is holding a

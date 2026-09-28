@@ -3,21 +3,24 @@
 # Runs Kosmos under QEMU on macOS.
 #
 #   ./run-kosmos.sh                 a window, with the shell on this terminal
-#   ./run-kosmos.sh -r 1920x1080    at that size, if a build of it is here
+#   ./run-kosmos.sh -r 3840x2160    the screen at that size, from any image
 #   ./run-kosmos.sh -b wm           straight to the desktop
 #   ./run-kosmos.sh -b "wm blocks"  with something on it
 #   ./run-kosmos.sh -fit            scale the window down to fit this screen
 #   ./run-kosmos.sh -fast           this Mac's own cores, if hvf works here
 #   ./run-kosmos.sh -smp 8          eight processors (four by default)
-#   ./run-kosmos.sh -m 2G           more memory (512M by default)
+#   ./run-kosmos.sh -m 2G           more memory (512M by default, 1G past 2560x1600)
 #   ./run-kosmos.sh -camera pattern a test pattern for the Camera app
 #   ./run-kosmos.sh -nosound        without the sound card
 #   ./run-kosmos.sh -serial         no window, serial only
 #   ./run-kosmos.sh path.elf        a particular image
 #
-# The display size is baked into the image: the framebuffer is a static
-# array, so a different size is a different build. `-r` picks the one that
-# was built for it. `./run-kosmos.sh -r list` says which are here.
+# **The screen's size is a boot option, not a build** (`roadmap.md` 6zt).
+# `-r` hands `opt/kosmos/fb` to the machine and the kernel allocates a screen
+# that size, from 640x480 to 7680x4320; without it an image comes up at the
+# size it was built with, which is the size in its name. It used to be baked
+# in - one image a size - and Diego asked, on 28 September 2026, "cant that
+# just be a parameter". `./run-kosmos.sh -r list` says which images are here.
 #
 # In the window, type `wm` for the desktop. Control-C gives the screen back
 # to the shell; Control-A then X quits QEMU.
@@ -97,6 +100,7 @@ want_boot="no"
 cpus="4"
 want_cpus="no"
 memory="512M"
+memory_said="no"
 want_memory="no"
 
 # `-fast`: run the guest on this Mac's own cores instead of emulating.
@@ -147,6 +151,7 @@ for arg in "$@"; do
 
     if [ "$want_memory" = "yes" ]; then
         memory="$arg"
+        memory_said="yes"
         want_memory="no"
         continue
     fi
@@ -187,115 +192,131 @@ if [ "$want_camera" = "yes" ]; then
     exit 2
 fi
 
-# `-r list`: what sizes are available here.
-if [ "$size" = "list" ]; then
+# `-r list`: which images are here. A function rather than this script run
+# again as `"$0"`, which was "command not found" for anybody who started it
+# as `sh run-kosmos.sh` - Diego, the first time he asked for a size.
+list_images() {
     echo "images beside this script:"
     for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf \
              "$here"/build/kosmos-*.elf; do
         [ -f "$f" ] && echo "  $(basename "$f")"
     done
+    return 0
+}
+
+if [ "$size" = "list" ]; then
+    list_images
     exit 0
 fi
 
+# `-r WxH`: two numbers and an x, which the kernel bounds again - 640x480 to
+# 7680x4320 - and answers with the image's own size, said in its boot log,
+# when it cannot.
+if [ -n "$size" ]; then
+    case "$size" in
+        [0-9]*x[0-9]*) ;;
+        *) echo "-r wants a size, such as -r 1920x1080 or -r 3840x2160;" >&2
+           echo "  -r list says which images are here." >&2
+           exit 2 ;;
+    esac
+
+    case "${size#*x}" in
+        *[!0-9]*) echo "-r wants a size, such as -r 1920x1080: not $size" >&2
+                  exit 2 ;;
+    esac
+
+    case "${size%%x*}" in
+        *[!0-9]*) echo "-r wants a size, such as -r 1920x1080: not $size" >&2
+                  exit 2 ;;
+    esac
+fi
+
+# **A large screen gets a gigabyte** unless `-m` said otherwise: a window
+# the size of a 4K screen is 33 MB of pixels, and an application that
+# flips two of them, a desktop that keeps its own and a compositor that
+# keeps a copy fill 512 MB quickly. Groove came up at 3840x2160 in 512 MB;
+# a few more windows would not.
+if [ -n "$size" ] && [ "$memory_said" = "no" ] \
+   && [ $(( ${size%%x*} * ${size#*x} )) -gt $(( 2560 * 1600 )) ]; then
+    memory="1G"
+fi
+
 if [ -z "$image" ]; then
-    if [ -n "$size" ]; then
-        # The newest build for that size, wherever the images are.
-        #
-        # The trailing `*` is not decoration: an image carrying the browser
-        # is named `...-1280x800-web.elf`, and a pattern ending in the size
-        # matched every ordinary build and none of those. `-r 1280x800`
-        # silently found the old small image and said nothing about the one
-        # that was actually being looked for.
-        for dir in "$here" "$here/builds" "$here/build" "build"; do
-            for f in "$dir"/kosmos-*-"$size".elf "$dir"/kosmos-*-"$size"-*.elf; do
-                [ -f "$f" ] && image="$f"
-            done
-        done
+    #
+    # The largest image here, which is what this script has claimed to
+    # do since it was written and did not.
+    #
+    # It looked only for `kosmos.elf` and `build/kosmos.elf` - the names
+    # a *build tree* has. A released image is called
+    # `kosmos-0.8.33-f82c43e-1280x800-web.elf`, and the version and the
+    # commit in that name change every time, which is the whole reason
+    # nothing here may hardcode one. So none of the files anybody
+    # actually downloads were ever found, and `./run-kosmos.sh` on a
+    # machine holding three of them said there was no image.
+    #
+    # **Newest version first, then largest of that version.** Not
+    # largest outright, which was the first attempt and picked a
+    # months-old 1920x1080 image over the current one because it had
+    # more pixels in it. Nobody wants the biggest old thing.
+    #
+    # Not by date either: a copied file's date is when it was copied,
+    # and these are made to be copied. Not lexicographically, because
+    # `0.10.0` sorts before `0.9.0` and this project is at 0.8 - a trap
+    # with a date on it rather than a hypothetical one.
+    #
+    # `-ge` rather than `-gt` so that of two identical rankings the
+    # later name wins, which puts a `-web` image ahead of the plain one
+    # it sorts after. That is the right way round: it can do everything
+    # the plain one can.
+    #
+    best_rank=-1
+    best_px=0
 
-        if [ -z "$image" ]; then
-            echo "no image built for $size." >&2
-            echo "Available:" >&2
-            "$0" -r list >&2
-            echo "Build one with: make FB=$size" >&2
-            exit 1
+    # `build` as well as `builds`, which is not a typo either way:
+    # `builds/` is where releases are kept in the repository and
+    # `build/` is where a build tree puts things - and somebody who
+    # downloads one image and drops it next to this script may put it in
+    # either, or in neither. All three are cheap to look in.
+    for f in "$here"/kosmos-*.elf \
+             "$here"/builds/kosmos-*.elf \
+             "$here"/build/kosmos-*.elf; do
+        [ -f "$f" ] || continue
+
+        name=$(basename "$f")
+
+        dims=$(echo "$name" \
+               | sed -n 's/.*-\([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p')
+        [ -n "$dims" ] || continue
+
+        ver=$(echo "$name" \
+              | sed -n 's/^kosmos-\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\)-.*/\1 \2 \3/p')
+        [ -n "$ver" ] || ver="0 0 0"
+
+        # Expansion rather than `set --`, which would overwrite this
+        # script's own arguments from inside a loop that is reading a
+        # filename. They are not needed by this point, which is not a
+        # reason to destroy them.
+        v_rest=${ver#* }
+        rank=$(( ${ver%% *} * 1000000
+                 + ${v_rest%% *} * 1000
+                 + ${v_rest##* } ))
+        px=$(( ${dims% *} * ${dims#* } ))
+
+        if [ "$rank" -gt "$best_rank" ] \
+           || { [ "$rank" -eq "$best_rank" ] && [ "$px" -ge "$best_px" ]; }
+        then
+            best_rank="$rank"
+            best_px="$px"
+            image="$f"
         fi
-    else
-        #
-        # The largest image here, which is what this script has claimed to
-        # do since it was written and did not.
-        #
-        # It looked only for `kosmos.elf` and `build/kosmos.elf` - the names
-        # a *build tree* has. A released image is called
-        # `kosmos-0.8.33-f82c43e-1280x800-web.elf`, and the version and the
-        # commit in that name change every time, which is the whole reason
-        # nothing here may hardcode one. So none of the files anybody
-        # actually downloads were ever found, and `./run-kosmos.sh` on a
-        # machine holding three of them said there was no image.
-        #
-        # **Newest version first, then largest of that version.** Not
-        # largest outright, which was the first attempt and picked a
-        # months-old 1920x1080 image over the current one because it had
-        # more pixels in it. Nobody wants the biggest old thing.
-        #
-        # Not by date either: a copied file's date is when it was copied,
-        # and these are made to be copied. Not lexicographically, because
-        # `0.10.0` sorts before `0.9.0` and this project is at 0.8 - a trap
-        # with a date on it rather than a hypothetical one.
-        #
-        # `-ge` rather than `-gt` so that of two identical rankings the
-        # later name wins, which puts a `-web` image ahead of the plain one
-        # it sorts after. That is the right way round: it can do everything
-        # the plain one can.
-        #
-        best_rank=-1
-        best_px=0
+    done
 
-        # `build` as well as `builds`, which is not a typo either way:
-        # `builds/` is where releases are kept in the repository and
-        # `build/` is where a build tree puts things - and somebody who
-        # downloads one image and drops it next to this script may put it in
-        # either, or in neither. All three are cheap to look in.
-        for f in "$here"/kosmos-*.elf \
-                 "$here"/builds/kosmos-*.elf \
-                 "$here"/build/kosmos-*.elf; do
-            [ -f "$f" ] || continue
-
-            name=$(basename "$f")
-
-            dims=$(echo "$name" \
-                   | sed -n 's/.*-\([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p')
-            [ -n "$dims" ] || continue
-
-            ver=$(echo "$name" \
-                  | sed -n 's/^kosmos-\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\)-.*/\1 \2 \3/p')
-            [ -n "$ver" ] || ver="0 0 0"
-
-            # Expansion rather than `set --`, which would overwrite this
-            # script's own arguments from inside a loop that is reading a
-            # filename. They are not needed by this point, which is not a
-            # reason to destroy them.
-            v_rest=${ver#* }
-            rank=$(( ${ver%% *} * 1000000
-                     + ${v_rest%% *} * 1000
-                     + ${v_rest##* } ))
-            px=$(( ${dims% *} * ${dims#* } ))
-
-            if [ "$rank" -gt "$best_rank" ] \
-               || { [ "$rank" -eq "$best_rank" ] && [ "$px" -ge "$best_px" ]; }
-            then
-                best_rank="$rank"
-                best_px="$px"
-                image="$f"
-            fi
+    # A build tree, if there are no released images beside the script.
+    if [ -z "$image" ]; then
+        for candidate in "$here/build/kosmos.elf" "build/kosmos.elf" \
+                         "$here/kosmos.elf"; do
+            [ -f "$candidate" ] && image="$candidate" && break
         done
-
-        # A build tree, if there are no released images beside the script.
-        if [ -z "$image" ]; then
-            for candidate in "$here/build/kosmos.elf" "build/kosmos.elf" \
-                             "$here/kosmos.elf"; do
-                [ -f "$candidate" ] && image="$candidate" && break
-            done
-        fi
     fi
 fi
 
@@ -465,12 +486,10 @@ else
     # -display default rather than cocoa, so this works over ssh with X or
     # on a machine whose QEMU was built without the cocoa backend.
     #
-    # The display size is *compiled in* - the framebuffer is a static array,
-    # so a different size is a different build and `-r` is how you pick one.
-    # `-fit` is the escape hatch for when the only image you have is bigger
-    # than the screen you have: QEMU scales the window instead. It is lossy
-    # on a interface drawn with one-pixel bevels, which is why it is a flag
-    # and not the default.
+    # `-fit` is for a screen bigger than the one this runs on: QEMU scales
+    # the window instead. It is lossy on an interface drawn with one-pixel
+    # bevels, which is why it is a flag and not the default - and since the
+    # size is a boot option, `-r` with one that fits is the better answer.
     #
     # macOS only, because `zoom-to-fit` is an option of the cocoa backend
     # and passing it to another one is an error rather than an ignored
@@ -483,7 +502,7 @@ else
             display="cocoa,zoom-to-fit=on"
         else
             echo "-fit needs the cocoa display, which is macOS only." >&2
-            echo "Pick a build that fits instead: $0 -r list" >&2
+            echo "Pick a size that fits instead, such as -r 1920x1080." >&2
         fi
     fi
 
@@ -502,6 +521,10 @@ fi
 
 if [ "$camera" = "pattern" ]; then
     set -- "$@" -fw_cfg "name=opt/kosmos/camera,string=pattern"
+fi
+
+if [ -n "$size" ]; then
+    set -- "$@" -fw_cfg "name=opt/kosmos/fb,string=$size"
 fi
 
 exec qemu-system-aarch64 "$@" -kernel "$image"

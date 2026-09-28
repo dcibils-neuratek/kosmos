@@ -21,9 +21,20 @@ bool hal_fb_init(struct fb *out)
     return ramfb_init(out);
 }
 
+/* With where its size came from (`opt/kosmos/fb`, `roadmap.md` 6zt). */
 const char *hal_fb_describe(void)
 {
-    return "ramfb, the way the Pi's mailbox will be";
+    switch (ramfb_size_from()) {
+    case RAMFB_SIZE_ASKED:
+        return "ramfb, the way the Pi's mailbox will be, at the size "
+               "opt/kosmos/fb asked";
+    case RAMFB_SIZE_REFUSED:
+        return "ramfb, the way the Pi's mailbox will be, at the size it was "
+               "built for: opt/kosmos/fb asked for none it can show";
+    default:
+        return "ramfb, the way the Pi's mailbox will be, at the size it was "
+               "built for";
+    }
 }
 
 /*

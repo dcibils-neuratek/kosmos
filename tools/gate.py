@@ -292,6 +292,10 @@ SUITES = [
     # `/Devices/midi` through its virtual keyboard (6zg, step b): from the
     # wait with no controller on ARM, and from the whole five-endpoint wait
     # on x86, which is given an xHCI for it.
+    # One image at any screen size (6zt): three boots at sizes the image
+    # was not built for, and one it cannot show.
+    Suite("arm-fbsize", ["python3", "tools/run_fbsize.py", ARM]),
+    Suite("x86-fbsize", ["python3", "tools/run_fbsize.py", X86], x86=True),
     Suite("arm-midi", ["python3", "tools/run_midi.py", ARM]),
     Suite("x86-midi", ["python3", "tools/run_midi.py", X86]),
 

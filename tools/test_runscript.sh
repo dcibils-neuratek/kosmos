@@ -93,10 +93,50 @@ run -camera > "$work/out" || status=$?
 check "$(if [ "$status" = 2 ] && [ ! -s "$work/out" ]; then echo yes
          else echo no; fi)" "-camera with nothing after it is refused"
 
+# `-r`: the screen's size, handed to the machine rather than chosen as a
+# file (`roadmap.md` 6zt) - so an image of another size is used at this one.
+run -r 3840x2160 > "$work/out"
+check "$(if grep -A1 -xF -- '[-fw_cfg]' "$work/out" |
+            grep -qxF '[name=opt/kosmos/fb,string=3840x2160]'
+         then echo yes; else echo no; fi)" \
+      "-r 3840x2160 asks the machine for a screen that size"
+check "$(has 1G)" "a screen that large gets a gigabyte"
+check "$(if tail -1 "$work/out" | grep -qxF "[$work/kosmos-test.elf]"
+         then echo yes; else echo no; fi)" "and the image it was given, at that size"
+
+run -r 3840x2160 -m 768M > "$work/out"
+check "$(if [ "$(has 768M)" = yes ] && [ "$(has 1G)" = no ]; then echo yes
+         else echo no; fi)" "-m says the memory, whatever the size"
+
+run -r 1280x720 > "$work/out"
+check "$(has 512M)" "a small screen keeps 512 MB"
+
+status=0
+run -r banana > "$work/out" || status=$?
+check "$(if [ "$status" = 2 ] && [ ! -s "$work/out" ]; then echo yes
+         else echo no; fi)" "-r with no size is refused"
+
+# **Diego's own command**, 28 September: a released 1920x1080 image beside
+# a copy of the script, started with `sh`, asked for 3840x2160. It said "no
+# image built for 3840x2160" and then "command not found" from running
+# itself as "$0". Now that image, at that size.
+mkdir "$work/downloads"
+: > "$work/downloads/kosmos-0.10.186-abcdef0-1920x1080-full.elf"
+cp "$here/run-kosmos.sh" "$work/downloads/run-kosmos-2.sh"
+(cd "$work/downloads" && PATH="$work/bin:$PATH" DISK_MB=1 \
+    sh run-kosmos-2.sh -r 3840x2160 -fit -b wm -camera pattern \
+    > "$work/out" 2> "$work/err") || true
+check "$(if grep -qxF '[name=opt/kosmos/fb,string=3840x2160]' "$work/out" &&
+            tail -1 "$work/out" | grep -q 'kosmos-0.10.186-abcdef0-1920x1080-full.elf' &&
+            ! grep -q 'not found' "$work/err"
+         then echo yes; else echo no; fi)" \
+      "Diego's command runs the 1920x1080 image at 3840x2160"
+
 if [ "$fails" -ne 0 ]; then
     echo "FAIL: $fails of $((checks + fails)) checks on run-kosmos.sh"
     exit 1
 fi
 
 echo "PASS: $checks checks on run-kosmos.sh (the command line it gives QEMU:" \
-     "the flags nobody guesses, a sound card, -b as one argument, -camera pattern)"
+     "the flags nobody guesses, a sound card, -b as one argument, -camera pattern," \
+     "-r as the screen's size with memory to match, and Diego's own command)"

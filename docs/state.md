@@ -75,9 +75,13 @@ capabilities which will then lead to us having accelerated 2d graphics".
   `opt/kosmos/fb=WxH`. And the script's "Available:" list runs `"$0"`,
   which fails under `sh run-kosmos-2.sh`.
 
-**Next**: 6zt, one image at any size - Diego is waiting on it. Then 4i d, a
-MIDI event reaching the kit without the window's pass; 4i e, the device's
-depth, on the ThinkPad. 6zg d when Diego has the Launchkey at hand.
+- **6zt, done** (18.264): `opt/kosmos/fb=WxH`, and `run-kosmos.sh -r` passes
+  it; both boards; Diego's own command held by the script's test.
+
+**Next**: a release so Diego can run `-r 3840x2160` - it needs his yes to
+push. Then 4i d, a MIDI event reaching the kit without the window's pass;
+4i e, the device's depth, on the ThinkPad. 6zg d when Diego has the
+Launchkey at hand.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 
