@@ -178,8 +178,9 @@ function app.update(dt, counter_hz)
     if first then
       local w = keyToEar
       print(("groove: key to ear %.1f ms - %.1f to the window's pass, %.1f to the kit, "
-             .. "%.1f in the ring (%d frames), %.1f in the device (%d frames)")
-            :format(w.total, w.window, w.kit, w.ring, w.ringFrames, w.device, w.deviceFrames))
+             .. "%.1f in the ring (%d frames, %d periods kept), %.1f in the device (%d frames)")
+            :format(w.total, w.window, w.kit, w.ring, w.ringFrames, w.ahead or 0,
+                    w.device, w.deviceFrames))
     end
   end
   loadT = loadT + dt
@@ -209,7 +210,7 @@ function app.noteWay(st, hz)
   local ring, device = st.note_ring / E.SR * 1000, st.note_device / E.SR * 1000
   return { total = toKit + ring + device, window = window, kit = toKit - window,
            ring = ring, device = device, ringFrames = st.note_ring,
-           deviceFrames = st.note_device }
+           deviceFrames = st.note_device, ahead = st.note_ahead }
 end
 
 function app.keyToEar() return keyToEar end
@@ -1172,15 +1173,21 @@ end
 -- Every MIDI event since the last pass, played; and the Launchkey's lights,
 -- `seconds` being the counter's. Answers how many arrived, which is whether
 -- there is anything new to draw.
+-- The first event is said on the console, as it came - the first, not the
+-- last of the pass that found it, which may be its own note off.
 local heard = false
 
-function app.midiPoll(seconds)
-  local n = Midi.poll(midiEvent)
-
-  if n > 0 and not heard then
+local function firstEvent(kind, ch, d1, d2, port, key)
+  if not heard then
     heard = true
-    print("groove: MIDI heard, " .. tostring(Midi.last))
+    print(("groove: MIDI heard, %s ch%d %d %d"):format(kind, ch, d1, d2))
   end
+
+  midiEvent(kind, ch, d1, d2, port, key)
+end
+
+function app.midiPoll(seconds)
+  local n = Midi.poll(heard and midiEvent or firstEvent)
 
   surfaceRefresh(seconds)
   return n

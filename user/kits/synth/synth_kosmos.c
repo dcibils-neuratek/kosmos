@@ -6,7 +6,9 @@
  *   local synth = use("/Kosmos/Kits/synth")
  *   synth.song(song, held)             Groove's tables, as `synth_lua.h` reads;
  *                                      `held` the names a hand is on
- *   synth.start(stream.ring, stream.rate)
+ *   synth.start(stream.ring, stream.rate, ahead)
+ *                                      `ahead` the periods it starts by
+ *                                      keeping queued, 2 unless said (4i)
  *   synth.play() synth.stop() synth.mode(true)  each answers its number
  *   synth.launch_clip(track, scene) synth.launch_scene(scene)
  *   synth.stop_clip(track) synth.note_on(track, pitch, vel, key)
@@ -22,8 +24,17 @@
  * **The engine runs on its own thread**, which is what Diego chose ("All in
  * C, on its own thread"): it renders a period at a time into the audio ring
  * `audio.open` made, straight into the ring's slots, sleeping a scheduler
- * tick when the ring is full. The window - its Lua, its garbage collector,
- * its drawing - is never between a step and its sound (4i).
+ * tick when it is far enough ahead. The window - its Lua, its garbage
+ * collector, its drawing - is never between a step and its sound (4i).
+ *
+ * **Far enough ahead is as few periods as this machine holds** (`roadmap.md`
+ * 4i, step b). A note is heard after everything queued before it, so a full
+ * ring - eight periods, 46 ms - was 46 ms on every key. The thread keeps two
+ * queued, and each time it wakes to find the ring run dry - the audio server
+ * would have had nothing of this stream's to mix - it keeps one more, to the
+ * ring's size. So the depth is the one the machine and its scheduler hold,
+ * found by playing rather than guessed, and QEMU's emulation settles deeper
+ * than a real core does.
  *
  * **Three things cross between the two threads, and each one way:**
  *
@@ -88,6 +99,7 @@ static uint32_t cmd_tail;               /* written by the audio thread */
 struct note_path {
     uint64_t key, posted, applied;
     uint32_t ring, device;
+    uint32_t ahead;                     /* periods the kit kept, then */
     uint32_t count;
 };
 
@@ -103,6 +115,7 @@ struct heard {
     unsigned hits[SYNTH_TRACKS][SYNTH_ROWS];
     double peak_l, peak_r;
     struct note_path note;
+    uint32_t ahead, dry;                /* periods kept queued; runs dry */
 };
 
 static struct heard heard;
@@ -119,6 +132,9 @@ static struct audio_ring *ring;
 static long thread_index = -1;
 static int quit;
 static struct note_path note_path;      /* the audio thread's alone */
+/* The audio thread's alone, set by `start` before there is one. */
+static uint32_t ahead_kept = 2;         /* periods kept queued */
+static uint32_t dry;                    /* times the ring was found empty */
 static unsigned long busy;              /* the audio thread's, rendering */
 
 static double lbuf[SYNTH_BLOCK], rbuf[SYNTH_BLOCK];
@@ -152,14 +168,16 @@ static void noted(const struct cmd *c)
 
     if (ring != NULL) {
         uint32_t period = ring->period_bytes / 4u;
-        uint64_t ahead = audio_ring_delay(ring, period);
+        uint64_t waiting = audio_ring_delay(ring, period);
         uint64_t unmixed = (uint64_t)(ring->write - ring->read) * period;
 
-        if (unmixed > ahead) unmixed = ahead;
+        if (unmixed > waiting) unmixed = waiting;
 
         note_path.ring = (uint32_t)unmixed;
-        note_path.device = (uint32_t)(ahead - unmixed);
+        note_path.device = (uint32_t)(waiting - unmixed);
     }
+
+    note_path.ahead = ahead_kept;
 
     note_path.count++;
 }
@@ -247,6 +265,8 @@ static void publish(void)
     heard.peak_l = e->peak_l;
     heard.peak_r = e->peak_r;
     heard.note = note_path;
+    heard.ahead = ahead_kept;
+    heard.dry = dry;
     e->peak_l *= 0.8;
     e->peak_r *= 0.8;
 
@@ -259,14 +279,22 @@ static void audio_main(unsigned long arg)
     (void)arg;
 
     uint32_t period = ring->period_bytes / 4u;
+    bool started = false;
 
     while (!__atomic_load_n(&quit, __ATOMIC_ACQUIRE)) {
         take_song();
         drain();
 
+        /* Run dry since the last pass: this machine does not hold the
+         * depth, so keep one period more. */
+        if (started && ring->write == ring->read && ahead_kept < ring->periods) {
+            ahead_kept++;
+            dry++;
+        }
+
         bool wrote = false;
 
-        while (audio_ring_space(ring) > 0) {
+        while (ring->write - ring->read < ahead_kept && audio_ring_space(ring) > 0) {
             int16_t *slot = (int16_t *)audio_ring_slot(ring, ring->write);
             unsigned long t0 = kosmos_ticks();
 
@@ -281,6 +309,7 @@ static void audio_main(unsigned long arg)
 
             audio_ring_publish(ring, ring->write + 1);
             wrote = true;
+            started = true;
 
             /* A note asked for between two periods is played in the next. */
             drain();
@@ -475,6 +504,13 @@ static int l_start(lua_State *L)
                   "not a ring of 16-bit stereo periods it can fill");
     luaL_argcheck(L, rate == SYNTH_RATE, 2, "the Synth Kit plays at 44100 a second");
 
+    lua_Integer first = luaL_optinteger(L, 3, 2);
+
+    luaL_argcheck(L, first >= 1 && first <= (lua_Integer)r->periods, 3,
+                  "keep between one period and the ring's");
+
+    ahead_kept = (uint32_t)first;
+    dry = 0;
     ring = r;
     __atomic_store_n(&quit, 0, __ATOMIC_RELEASE);
 
@@ -549,6 +585,9 @@ static void set_boolean(lua_State *L, const char *key, bool v)
  *   note_applied                 down, when it was posted and when taken,
  *   note_ring, note_device       and the frames queued ahead of it, the
  *                                ring's and the device's
+ *   note_ahead                   the periods the kit kept queued, then
+ *   ahead, dry                   the periods it keeps now, and how often
+ *                                the ring has run dry
  */
 static int l_state(lua_State *L)
 {
@@ -607,6 +646,9 @@ static int l_state(lua_State *L)
     set_integer(L, "note_applied", (lua_Integer)copy.note.applied);
     set_integer(L, "note_ring", copy.note.ring);
     set_integer(L, "note_device", copy.note.device);
+    set_integer(L, "note_ahead", copy.note.ahead);
+    set_integer(L, "ahead", copy.ahead);
+    set_integer(L, "dry", copy.dry);
 
     if (lua_getfield(L, -1, "tracks") != LUA_TTABLE) {
         lua_pop(L, 1);

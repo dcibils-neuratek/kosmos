@@ -12327,6 +12327,11 @@ listing says "0 listening" when nobody does. Its controls: Groove with its
 per-pass poll taken out is silent and hears nothing; Groove without `needs
 midi` opens no port, and `midi play` says nothing listened.
 
+**Found by `make prepush`**, under the whole gate's load: Groove's pass took
+113 ms, the pad's on and off arrived in the same one, and Groove said the
+last event of the pass - "off ch10 36 0" - as the first it heard. It says the
+first now, and holds with `midi play`'s pause between the two taken out.
+
 **Kept, `test_groove.lua`**, on the Mac: the ports named as PulseMusic
 matched them - a jack's name, or its cable counted from one - the events
 handed on in its words with System Exclusive left out, the Launchkey's
@@ -12354,3 +12359,20 @@ the ring and 11.6 in the device. The milliseconds before the kit are QEMU's
 emulation and are not held to anything; the queue is structure. Its control:
 the event's counter dropped in `midiport.lua` - the window's part is 0.0 and
 the suite fails.
+
+## 18.262 As few periods ahead as the machine holds (4i, step b)
+
+The Synth Kit filled its ring, so a note was heard after all eight periods
+queued before it - 46 ms on any machine, before the device's own. It now
+keeps two, and one more each time its thread wakes to find the ring run dry,
+up to eight: the depth is found by playing, per machine. `synth.state()`
+says how many it keeps and how often it has run dry, and each note says how
+many were kept when it was taken.
+
+**Kept, `run_midi.py`** on ARM, 17 checks: the ring's part of a note's way
+is whole periods within those the kit kept then. Under QEMU it settled at
+five - 29 ms in the ring, where the full ring was 46. Its control: the old
+loop, filling the ring - 1536 and then 2048 frames in the ring with two
+periods kept, and the suite fails both times. `run_synth.py` still hears
+its beats half a second apart and Groove's house demo at 124 with the kit
+starting at two.

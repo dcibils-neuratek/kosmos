@@ -18,9 +18,9 @@ Last updated: 2026-09-28
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
-## 28 September, the night: USB MIDI, and Groove plays from it (6zg a-c)
+## 28 September, the night: USB MIDI, Groove plays from it, and the way to the ear (6zg a-c, 4i a-b)
 
-**Nothing is pushed since 0.10.185** (`cb48bda`). On `main`, each gated:
+**Pushed as 0.10.186** - everything below. Before it, on `main`, each gated:
 `fc6d7d0` state, `18da2ca` `get-and-run-kosmos.sh` - which fetches the
 newest GitHub Release and needs a push before its one-liner works - `82a3bc4`
 the roadmap's order, `2a5ed90` 6zg a, `b273e7f` 6zg b, `ea564e3` the images
@@ -48,9 +48,21 @@ capabilities which will then lead to us having accelerated 2d graphics".
   the real Launchkey in his hands, whose own descriptor bytes replace the
   composed fixture.
 
-**Next**: 6zg d when Diego has the keyboard at the Mac or the ThinkPad;
-meanwhile 4i, low-latency audio - which is also where a MIDI event should
-wake the window rather than be looked for every tick.
+- **4i a** (18.261): a note carries the counter when its key went down -
+  the MIDI driver's, or the window manager's `rawkey` `at` - and the Synth
+  Kit records posted, taken, and frames queued in the ring and the device.
+  Groove shows KEY TO EAR. The gate's run: 87 ms, 46.4 of it a full ring
+  and 23.2 the device's four periods.
+- **4i b** (18.262): the kit keeps two periods ahead and deepens by one each
+  time the ring runs dry; QEMU settles at five.
+- **0.10.186**: Diego, "groove app works great, push it and lets continue
+  with the roadmap" - pushed with `make prepush`.
+
+**Next**: 4i c - the rendering and mixing threads woken on time, which band
+they may be in is Diego's decision; 4i d - a MIDI event reaching the kit
+without the window's pass (48.8 ms of one run was the window's, under
+emulation); 4i e - the device's depth, on the ThinkPad. 6zg d when Diego
+has the Launchkey at the Mac or the ThinkPad.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 

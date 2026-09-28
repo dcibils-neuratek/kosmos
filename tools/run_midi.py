@@ -182,20 +182,21 @@ def main():
             check("groove: MIDI heard, on ch10 36 100" in said,
                   "Groove did not say it heard the pad:\n" + said[-900:])
             way = re.search(r"groove: key to ear ([\d.]+) ms - ([\d.-]+) to the window's pass, "
-                            r"([\d.-]+) to the kit, ([\d.]+) in the ring \((\d+) frames\), "
-                            r"([\d.]+) in the device \((\d+) frames\)", said)
+                            r"([\d.-]+) to the kit, ([\d.]+) in the ring \((\d+) frames, "
+                            r"(\d+) periods kept\), ([\d.]+) in the device \((\d+) frames\)", said)
             check(way, "Groove did not say the note's way to the ear:\n" + said[-900:])
 
             if way:
                 heard_way.append(way.group(0)[len("groove: "):])
-                total, window, kit, ring, device = (float(way.group(i)) for i in (1, 2, 3, 4, 6))
-                ring_frames = int(way.group(5))
+                total, window, kit, ring, device = (float(way.group(i)) for i in (1, 2, 3, 4, 7))
+                ring_frames, kept = int(way.group(5)), int(way.group(6))
                 check(abs(window + kit + ring + device - total) <= 0.3 and kit >= 0,
                       "the note's way does not add up: %s" % way.group(0))
                 check(window > 0,
                       "the pad's own time did not reach the kit: %s" % way.group(0))
-                check(ring_frames % 256 == 0 and ring_frames <= 8 * 256,
-                      "the ring's part is not whole periods within its eight: %s" % way.group(0))
+                check(ring_frames % 256 == 0 and 2 <= kept <= 8 and ring_frames <= kept * 256,
+                      "the ring's part is not whole periods within those the kit kept: %s"
+                      % way.group(0))
     finally:
         guest.close()
 

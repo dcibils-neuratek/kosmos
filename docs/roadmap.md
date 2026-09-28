@@ -217,7 +217,8 @@ of now we dont have". So, one at a time:
 
 1. **6zg** - USB MIDI and the Launchkey, which finishes Groove (6zh).
 2. **4i** - low-latency audio: Groove and everything media lean on it.
-   Step a, the way to the ear measured per note, done 28 September.
+   Steps a and b done 28 September: the way to the ear measured per note,
+   and the Synth Kit keeping as few periods ahead as the machine holds.
 3. **Storage at full speed** - the filesystem's byte path in C (above).
 4. **4h** - the GPU: video encode and decode in hardware first, and from
    the driver that takes, accelerated 2D - which Kosmos does not have.
@@ -1062,7 +1063,12 @@ processors, and still what follows USB:
      down, and it is structure rather than speed.
    - **b** - the kit renders just ahead rather than filling the ring: the
      fewest periods that hold without a gap, as PulseMusic kept two with a
-     keyboard attached.
+     keyboard attached. **DONE on 28 September** (`testing.md` 18.262):
+     it keeps two, and one more each time it wakes to find the ring run
+     dry, to the ring's eight - so each machine settles on the depth it
+     holds. Under QEMU it settled at five; before, a note waited behind all
+     eight, 46 ms, on every machine. The device's four periods, 23 ms, are
+     the audio server's, and step e's.
    - **c** - the thread that renders and the one that mixes, woken on
      time: a band above the window's, and woken by the server taking a
      period rather than by a tick. Which threads may be in that band is a
