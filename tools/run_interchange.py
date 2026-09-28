@@ -20,9 +20,12 @@ implementation, and this test would be checking that two copies of the
 same idea still agree - which they would, right up until one changed.
 """
 
+import io
 import os
+import random
 import re
 import shutil
+import zipfile
 import subprocess
 import sys
 import scratch
@@ -81,6 +84,72 @@ def main():
         checks += 1
 
         #
+        # **Zips, both ways** (`roadmap.md` 6v): a folder for the machine to
+        # compress - a file that deflates, one that does not, and an empty
+        # one - and two zips made here by Python's own `zipfile` for it to
+        # open, the second naming a place outside the folder it would be
+        # opened into. And the program that does it, put as a file.
+        #
+        zip_text = b"hello kosmos " * 200
+        zip_noise = random.Random(7).randbytes(3000)
+        zip_files = {"a.txt": zip_text, "sub/b.bin": zip_noise,
+                     "empty.txt": b""}
+
+        for name, data in zip_files.items():
+            path = os.path.join(work, "zt-" + name.replace("/", "-"))
+
+            with open(path, "wb") as f:
+                f.write(data)
+
+            kfs("put", disk, path, "/Home/zt/" + name)
+
+        def made_by_python(entries):
+            b = io.BytesIO()
+
+            with zipfile.ZipFile(b, "w") as z:
+                for name, data, how in entries:
+                    z.writestr(zipfile.ZipInfo(name) if how is None
+                               else name, data,
+                               compress_type=how or zipfile.ZIP_STORED)
+
+            return b.getvalue()
+
+        for name, data in (
+            ("py.zip", made_by_python([
+                ("x/", b"", None),
+                ("x/one.txt", b"one " * 100, zipfile.ZIP_DEFLATED),
+                ("x/two.txt", b"two", zipfile.ZIP_STORED)])),
+            ("evil.zip", made_by_python([
+                ("../evil.txt", b"out of bounds", zipfile.ZIP_STORED)])),
+            ("ztest.lua", b'''
+local zip = use("/Kosmos/Libraries/zip.lua")
+
+local ok, why = zip.write{ paths = { "/Home/zt" }, to = "/Home/zt.zip" }
+print("ZIP-WRITE", ok, why)
+
+ok, why = zip.extract{ from = "/Home/zt.zip", into = "/Home/zt2" }
+print("ZIP-BACK", ok, why,
+      fs.read("/Home/zt2/a.txt") == fs.read("/Home/zt/a.txt"),
+      fs.read("/Home/zt2/sub/b.bin") == fs.read("/Home/zt/sub/b.bin"),
+      (fs.getattr("/Home/zt2/empty.txt") or {}).size)
+
+ok, why = zip.extract{ from = "/Home/py.zip", into = "/Home/pyx" }
+print("ZIP-PY", ok, why, fs.read("/Home/pyx/one.txt") == string.rep("one ", 100),
+      fs.read("/Home/pyx/two.txt"))
+
+ok, why = zip.extract{ from = "/Home/evil.zip", into = "/Home/evilx" }
+print("ZIP-SLIP", ok, fs.getattr("/Home/evil.txt") == nil,
+      fs.getattr("/Home/evilx") == nil, tostring(why):find("outside") ~= nil)
+'''),
+        ):
+            path = os.path.join(work, name)
+
+            with open(path, "wb") as f:
+                f.write(data)
+
+            kfs("put", disk, path, "/Home/" + name)
+
+        #
         # How much room is left, as this computer counts it.
         #
         # The machine's `df` must say the same number, and it did not: the
@@ -90,6 +159,7 @@ def main():
         # Asked first, before anything below writes to the image.
         #
         host_free = re.search(r"(\d+) blocks free of (\d+)", kfs("df", disk))
+
 
         # ---- the machine reads what this computer wrote ----
         out = run_disk.boot(image, disk, [
@@ -149,6 +219,12 @@ def main():
             '  worked = worked + 1 '
             'end '
             'print("GUEST" .. "-MANY", worked)',
+            # The zip library, and the two programs at the prompt.
+            "run /Home/ztest.lua",
+            "zip /Home/prog.zip /Home/zt",
+            "unzip /Home/prog.zip",
+            'print("GUEST" .. "-UNZIPPED", fs.read("/Home/prog/a.txt") == '
+            'fs.read("/Home/zt/a.txt"))',
         ], each=60)
 
         if ("GUEST-READ %d" % len(body)) not in out.replace("\t", " "):
@@ -232,6 +308,66 @@ def main():
                 "server keeping the capability to a buffer it was lent. It "
                 "used to stop at thirty-two.\n" + out[-900:]
             )
+
+        checks += 1
+
+        # ---- zips, made there and read here, made here and read there ----
+        for marker, want, what in [
+            ("ZIP-WRITE", "true nil", "the machine did not make a zip of a folder"),
+            ("ZIP-BACK", "true nil true true 0",
+             "a zip the machine made did not open back into the same files - "
+             "one that deflates, one that does not, and an empty one"),
+            ("ZIP-PY", "true nil true two",
+             "a zip Python made, one file deflated and one stored, did not "
+             "open on the machine"),
+            ("ZIP-SLIP", "nil true true true",
+             "a zip naming ../evil.txt was opened, or wrote outside its "
+             "folder, or made the folder, or did not say why"),
+        ]:
+            lines = [l for l in flat.splitlines() if l.startswith(marker + " ")]
+
+            if not lines or lines[-1][len(marker) + 1:].strip() != want:
+                raise Failure(f"{what}: wanted {want!r}, got "
+                              + (repr(lines[-1]) if lines else out[-900:]))
+
+            checks += 1
+
+        zipped = os.path.join(work, "zt.zip")
+        kfs("get", disk, "/Home/zt.zip", zipped)
+
+        with zipfile.ZipFile(zipped) as z:
+            names = z.namelist()
+            wanted = ["zt/", "zt/a.txt", "zt/empty.txt", "zt/sub/",
+                      "zt/sub/b.bin"]
+
+            if names != wanted:
+                raise Failure("the machine's zip, read by Python, holds %r - "
+                              "wanted %r" % (names, wanted))
+
+            bad = z.testzip()
+
+            if bad is not None:
+                raise Failure("Python finds %s's CRC wrong in the machine's "
+                              "zip" % bad)
+
+            for name, data in zip_files.items():
+                if z.read("zt/" + name) != data:
+                    raise Failure("zt/%s read back from the machine's zip by "
+                                  "Python is not the file" % name)
+
+            if (z.getinfo("zt/a.txt").compress_type != zipfile.ZIP_DEFLATED
+                    or z.getinfo("zt/sub/b.bin").compress_type
+                    != zipfile.ZIP_STORED):
+                raise Failure("the machine's zip did not deflate the text and "
+                              "store the noise, which does not get smaller")
+
+        checks += 1
+
+        if ("zip: made /Home/prog.zip" not in flat
+                or "unzip: opened into /Home/prog" not in flat
+                or "GUEST-UNZIPPED true" not in flat):
+            raise Failure("`zip` and `unzip` at the prompt did not make and "
+                          "open an archive:\n" + out[-900:])
 
         checks += 1
 

@@ -306,7 +306,7 @@ DISPLAY_PARTS = [
     ["keyboard", "programs by name", "latency", "window manager latency",
      "interrupt", "status_bar", "editor", "registry", "context", "widgets",
      "scripting", "idle", "direct", "3d", "terminal", "programs by file",
-     "preferences", "file types"],
+     "preferences", "file types", "compress"],
     ["log view", "text size", "window resize", "triangle", "repaints",
      "@@BOARD@@", "volume keys", "compositor budget", "corners", "shadow",
      "wheel"],

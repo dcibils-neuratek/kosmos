@@ -45,8 +45,9 @@ end
 
 local folder = filemenu.items{ what = "folder", name = "roms" }
 
-check(ids(folder) == "open - pin - rename cut copy - delete - info",
-      "a folder: Open, Pin to sidebar, Rename Cut Copy, Delete, Info: "
+check(ids(folder) == "open - pin compress - rename cut copy - delete - info",
+      "a folder: Open, Pin to sidebar, Compress, Rename Cut Copy, Delete, "
+      .. "Info: "
       .. ids(folder))
 
 check(not find(folder, "edit") and not find(folder, "empty_trash")
@@ -98,14 +99,31 @@ check(chooser and chooser.submenu and #chooser.submenu == 2
       and chooser.submenu[2].program == "play" and not chooser.submenu[2].hint,
       "a film's Open with is not Video, the default, then Play")
 check(ids(filemenu.items{ what = "file", opener = "Video", with = with })
-      == "open open_with - rename cut copy - delete - info",
-      "Open with is not straight after Open")
+      == "open open_with - compress - rename cut copy - delete - info",
+      "Open with is not straight after Open, and Compress after it")
 check(not find(odd, "open_with"),
       "a file nothing opens offers an Open with with nothing in it")
 check(find(filemenu.items{ what = "lua",
                            with = { { program = "editor", name = "Editor" } } },
            "open_with"),
       "a Lua file offers no Open with")
+
+-- Compress and Extract (`roadmap.md` 6v): a zip's first item is Extract,
+-- saying into what, and it is not compressed again; nothing in the Trash is
+-- compressed, and several in it are not either.
+local zipped = filemenu.items{ what = "zip", stem = "renders" }
+
+check(ids(zipped) == "extract - rename cut copy - delete - info"
+      and find(zipped, "extract").hint == "into renders",
+      "a zip is not Extract, into its folder, then the rest: " .. ids(zipped))
+check(not find(filemenu.items{ what = "file", opener = "Video", in_trash = true },
+               "compress")
+      and ids(filemenu.items{ what = "several", count = 2, in_trash = true })
+          == "cut copy - delete - info",
+      "something in the Trash is offered Compress")
+check(filemenu.what_of({ name = "Renders.ZIP" }, "/Home/Renders.ZIP", "/T")
+      == "zip",
+      "a .ZIP is not a zip to the menu")
 
 local launcher = filemenu.items{ what = "launcher" }
 
@@ -119,9 +137,11 @@ check(find(launcher, "open") and find(launcher, "edit")
 
 local three = filemenu.items{ what = "several", count = 3 }
 
-check(ids(three) == "cut copy - delete - info"
-      and find(three, "delete").text == "Delete 3 items",
-      "several: Cut, Copy, Delete 3 items, Info - the count in the words: "
+check(ids(three) == "compress - cut copy - delete - info"
+      and find(three, "delete").text == "Delete 3 items"
+      and find(three, "compress").text == "Compress 3 items",
+      "several: Compress 3 items, Cut, Copy, Delete 3 items, Info - the count "
+      .. "in the words: "
       .. ids(three))
 
 check(not find(three, "rename") and not find(three, "open"),

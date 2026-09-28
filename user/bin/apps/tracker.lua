@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Tracker
+-- kosmos: opens zip
 -- Tracker: the file manager.
 --
 --   wm tracker            opens at /Home
@@ -104,6 +105,22 @@ local where = "/Home"
 
 for _, w in ipairs(words) do
   if w:sub(1, 1) == "/" then where = w end
+end
+
+--
+-- **Started on a zip**, which is what opening one from anywhere else does -
+-- Tracker is what opens a `.zip` (`-- kosmos: opens zip`): the folder it is
+-- in, and the zip extracted there once the window is up.
+--
+local opened_zip = nil
+
+if where:lower():match("%.zip$") then
+  local attrs = fs.getattr(where)
+
+  if attrs and attrs.kind ~= "directory" then
+    opened_zip, where = where, (where:match("^(.*)/[^/]+$") or "/Home")
+    if where == "" then where = "/" end
+  end
 end
 
 local as_icons  = false
@@ -390,6 +407,9 @@ local start_drag
 -- is built above it.
 local show, visit
 
+-- Compress and Extract, below the foot they draw in (`roadmap.md` 6v).
+local compress_paths, zip_folder, extract_zip
+
 -- And the right click's two menus, which the views above open and which are
 -- written below the actions they name (`roadmap.md` 6za).
 local context_menu, place_menu
@@ -512,6 +532,226 @@ local count  = ui.label{ x = W - 180, y = H - FOOT_H + 4, w = 168, text = "",
 rename_field = ui.field{ x = SIDE_W + 12, y = H - FOOT_H - 34, w = 300,
                          text = "",
                          hidden = true, follow = { "left", "bottom" } }
+
+--------------------------------------------------------------------------
+-- **Compress and Extract, as work a program does** (`roadmap.md` 6v).
+--
+-- Tracker is one Lua loop, and a large folder compressed inside it would
+-- stop the window answering until it was done. So the work is `zip` and
+-- `unzip`, programs of their own (`docs/rightclick.html`, answer 3):
+-- Tracker writes what to do into a file, starts the program on it, and
+-- watches the state the program keeps beside it (`zip.job`) - in the
+-- window's foot, as the drawing has it, the words, a bar and Stop - until
+-- it says it has finished. One at a time: a second waits for a first.
+--------------------------------------------------------------------------
+
+local job = nil
+local job_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local JOB_WAIT = 25                   -- scheduler ticks between looks
+
+-- The bar: the accent over the track, in thousandths of the work.
+local job_bar = ui.view{ x = 0, y = H - FOOT_H + (FOOT_H - 6) // 2, w = 160,
+                         h = 6, hidden = true, follow = { "left", "bottom" } }
+
+job_bar.done = 0
+
+function job_bar:draw(g)
+  g:fill_round(0, 0, self.w, self.h, theme.track, self.h // 2)
+
+  local w = self.w * self.done // 1000
+
+  if w > 0 then
+    g:fill_round(0, 0, math.max(w, self.h), self.h, theme.accent, self.h // 2)
+  end
+end
+
+local job_words = ui.label{ x = 0, y = H - FOOT_H + 4, w = 280, text = "",
+                            color = "text_dim", hidden = true,
+                            follow = { "left", "bottom" } }
+
+local stop_button = ui.button{ text = "Stop", h = FOOT_H - 4, hidden = true,
+                               follow = { "right", "bottom" } }
+
+-- A count as the drawing writes one: 1,204.
+local function grouped(n)
+  local out, more = tostring(math.floor(tonumber(n) or 0)), 0
+
+  repeat out, more = out:gsub("^(%d+)(%d%d%d)", "%1,%2") until more == 0
+
+  return out
+end
+
+-- The foot's parts after the words that say what is happening.
+local function place_job()
+  job_bar.x = status.x + gfx.measure(status.text) + 12
+  job_words.x = job_bar.x + job_bar.w + 12
+  stop_button.x = win.w - 12 - stop_button.w
+  stop_button.y = win.h - FOOT_H + (FOOT_H - stop_button.h) // 2
+end
+
+local function job_ends(state)
+  local j = job
+
+  job = nil
+  job_bar.hidden, job_words.hidden, stop_button.hidden = true, true, true
+  count.hidden = false
+
+  -- The job's three files are this window's and go with it.
+  for _, suffix in ipairs({ "", ".state", ".stop" }) do
+    if fs.getattr(j.file .. suffix) then
+      fs.send(j.file .. suffix, { type = "delete" })
+    end
+  end
+
+  if state.state == "done" then
+    status.text = j.done_words
+
+    if j.open and not backdrop then
+      visit(j.target)
+    elseif j.open then
+      fs.send("/Running/wm", { type = "launch", program = "tracker",
+                               args = j.target })
+    else
+      show(where)
+    end
+  elseif state.state == "stopped" then
+    status.text = j.label .. " - stopped"
+    show(where)
+  else
+    status.text = j.label .. " - " .. tostring(state.why or "failed")
+  end
+
+  -- What the display harness waits for.
+  print(("tracker: %s %s"):format(j.verb, tostring(state.state)))
+  win.dirty = true
+end
+
+--
+-- Looked at a few times a second while there is one, from `on_frame`: true
+-- when the foot changed and wants painting.
+--
+local function watch_job()
+  if not job then return false end
+
+  local now = sys.ticks()
+
+  if now - job.asked < job_hz // 5 then return false end
+
+  job.asked = now
+
+  local state = fs.read(job.file .. ".state")
+
+  if type(state) ~= "table" then
+    -- A program that never started says nothing at all, so ten seconds of
+    -- that is an answer.
+    if now - job.started > job_hz * 10 then
+      job_ends({ state = "failed", why = "the program never started" })
+      return true
+    end
+
+    return false
+  end
+
+  if state.state ~= "working" then
+    job_ends(state)
+    return true
+  end
+
+  local bytes, files_n = state.bytes or 0, state.files or 0
+
+  job_bar.done = (bytes > 0) and ((state.bytes_done or 0) * 1000 // bytes)
+                 or (files_n > 0) and ((state.files_done or 0) * 1000 // files_n)
+                 or 0
+  job_words.text = ("%s of %s files · %s of %s"):format(
+    grouped(state.files_done), grouped(files_n),
+    files.size(state.bytes_done or 0), files.size(bytes))
+
+  return true
+end
+
+local function start_job(program, spec, t)
+  if job then
+    status.text = "one at a time - " .. job.label:lower() .. " first"
+    return
+  end
+
+  local file = ("/Temporary/tracker-%s-%d"):format(program, sys.ticks())
+  local ok, why = fs.write(file, spec)
+
+  if ok then
+    ok, why = fs.send("/Running/wm", { type = "launch", program = program,
+                                       args = "--job " .. file })
+  end
+
+  if not ok then
+    status.text = ("could not start %s: %s"):format(program, tostring(why))
+    return
+  end
+
+  job = { file = file, label = t.label, verb = t.verb, target = t.target,
+          open = t.open, done_words = t.done_words, started = sys.ticks(),
+          asked = 0 }
+
+  status.text = t.label
+  job_bar.done, job_words.text = 0, ""
+  job_bar.hidden, job_words.hidden, stop_button.hidden = false, false, false
+  count.hidden = true
+  place_job()
+
+  print(("tracker: %s into %s"):format(t.verb, t.target))
+  win.dirty = true
+end
+
+-- Stop: a file the program notices between two files, and ends on.
+stop_button.on_click = function()
+  if not job then return end
+
+  fs.write(job.file .. ".stop", true)
+  status.text = job.label .. " - stopping"
+  win.dirty = true
+end
+
+--
+-- **Compress**: a zip beside what is compressed, named after it - or
+-- `Archive.zip` for several - numbered when the name is taken, as New folder
+-- numbers one.
+--
+function compress_paths(paths)
+  if #paths == 0 then return end
+
+  local dir = files.parent(paths[1])
+  local one = (#paths == 1) and (paths[1]:match("([^/]+)$") or "archive")
+  local name = files.free_name(dir, one and (one .. ".zip") or "Archive.zip")
+
+  if not name then status.text = "no free name for the zip" return end
+
+  start_job("zip", { paths = paths, to = files.join(dir, name) },
+            { label = "Compressing " .. (one or (#paths .. " items")),
+              verb = "compress", target = files.join(dir, name),
+              done_words = "compressed into " .. name })
+end
+
+--
+-- **Extract**: beside the zip, into a new folder named after it - and then
+-- that folder, which is what opening a zip means (answer 1).
+--
+function zip_folder(path)
+  local dir = files.parent(path)
+  local stem = (path:match("([^/]+)$") or "archive"):gsub("%.[Zz][Ii][Pp]$", "")
+
+  return dir, files.free_name(dir, stem)
+end
+
+function extract_zip(path)
+  local dir, name = zip_folder(path)
+
+  if not name then status.text = "no free name for the folder" return end
+
+  start_job("unzip", { from = path, into = files.join(dir, name) },
+            { label = "Extracting " .. (path:match("([^/]+)$") or path),
+              verb = "extract", target = files.join(dir, name), open = true,
+              done_words = "extracted into " .. name })
+end
 
 --
 -- The search box, top right, which is where every file manager puts it.
@@ -1201,6 +1441,9 @@ local function open_selected()
                   or ("could not open it: " .. tostring(why))
   elseif e.kind == "directory" then
     visit(path_of(e))
+  elseif types.kind_of(path_of(e), e.attrs) == "zip" then
+    -- A zip opens by being extracted, here (`roadmap.md` 6v, answer 1).
+    extract_zip(path_of(e))
   else
     -- How it opens is `/Kosmos/Libraries/filetypes.lua`'s answer, not Tracker's.
     -- Tracker does not need to know what an editor is - only that opening
@@ -2284,7 +2527,25 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local ask_every  = counter_hz // 2
 local asked_at   = 0
 
+--
+-- **A job under way, and then a query** (`watch_job`, above): a pass looks at
+-- the one, then asks the other - and while a job runs, the window comes
+-- round often enough to move its bar.
+--
+local query_frame
+
 function win:on_frame()
+  local moved = watch_job()
+  local asked_moved = query_frame()
+
+  if job then
+    win.poll_wait_ticks = math.min(win.poll_wait_ticks or JOB_WAIT, JOB_WAIT)
+  end
+
+  return moved or asked_moved
+end
+
+function query_frame()
   if not asked then
     win.poll_wait_ticks = nil
     return false
@@ -2623,6 +2884,10 @@ function context_menu(e, sx, sy)
 
     if t.what == "folder" then
       t.pinned = placelib.find(placelib.read(fs), path, side.volumes()) ~= nil
+    elseif t.what == "zip" then
+      local _, name = zip_folder(path)
+
+      t.stem = name
     elseif t.what == "file" or t.what == "lua" then
       local program = types.opener(path, e.attrs)
 
@@ -2683,6 +2948,8 @@ function context_menu(e, sx, sy)
     info = function()
       open_info(e and selected_paths() or { where })
     end,
+    compress = function() compress_paths(selected_paths()) end,
+    extract = e and function() extract_zip(path_of(e)) end,
     -- In the program chosen from Open with, this once.
     open_with = e and function(program)
       local ok, why = fs.send("/Running/wm", { type = "launch",
@@ -2917,8 +3184,14 @@ chrome(header)
 chrome(rename_field)
 chrome(status)
 chrome(count)
+chrome(job_bar)
+chrome(job_words)
+chrome(stop_button)
 
 refresh_places()
 
 show(where)
+
+if opened_zip then extract_zip(opened_zip) end
+
 win:run()

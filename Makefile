@@ -776,6 +776,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gfx/jpeg.c \
              user/kits/gfx/docfont.c \
              user/kits/compress/inflate.c \
+             user/kits/compress/deflate.c \
              user/kits/pdf/pdftok.c \
              user/kits/gl/gl_kosmos.c \
              user/kits/console/con_kosmos.c \
@@ -786,6 +787,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/record/record_mp4.c \
              $(MUSL_SRCS) \
              runtime/upstream/puff/puff.c \
+             runtime/upstream/miniz/miniz.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \
              user/kits/gl/gl_demos.c \
@@ -1073,10 +1075,23 @@ endif
 USER_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(USER_SRCS)))
 USER_DEPS := $(USER_OBJS:.o=.d)
 
+# miniz, for its deflater and nothing else (`runtime/upstream/miniz/README.md`,
+# `roadmap.md` 6v): no stdio, no time, no archives, no inflater - `puff` is
+# that - and no allocator. On every userland file, since `miniz.h` reads them
+# wherever it is included and the kit that includes it has to agree with the
+# file that defines it.
+# `MINIZ_NO_INFLATE_APIS` takes the archive code with it, in `miniz.h`
+# itself - which defines `MINIZ_NO_ARCHIVE_APIS` then, and a second
+# definition here is one the kit's `-Werror` refuses.
+MINIZ_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
+               -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES -DMINIZ_NO_MALLOC \
+               -DMINIZ_NO_INFLATE_APIS
+
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
 UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
+           -Iruntime/upstream/miniz $(MINIZ_FLAGS) \
            -Iruntime/upstream/minimp3 \
            -Iruntime/upstream/minih264 -Iruntime/upstream/minimp4 \
            -Iuser/include -Ikernel -Iruntime/include \

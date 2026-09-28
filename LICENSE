@@ -35,6 +35,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
   puff.c, by Mark Adler, zlib licence
       runtime/upstream/puff/LICENSE.puff
 
+  miniz 3.0.2, by Rich Geldreich, RAD Game Tools and Valve Software, MIT
+      runtime/upstream/miniz/LICENSE; its deflater makes the zips Tracker
+      compresses, and README.md beside it says how it is built
+
   musl's maths functions, by Rich Felker and others, MIT
       runtime/upstream/musl-math/COPYRIGHT, which also lists the other
       permissive notices parts of musl carry; the vendoring is recorded

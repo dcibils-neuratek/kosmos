@@ -8621,6 +8621,127 @@ def check_file_types(guest):
     return 6
 
 
+def check_compress(guest):
+    """**Compress and Extract in Tracker** (`roadmap.md` 6v,
+    `docs/rightclick.html`). Diego: "add a way to right click a file in
+    tracker, open context menu, click 'compress' and it will Zip the file",
+    and "Same thing win uncompressing zip files".
+
+    A folder, `renders`, with two files in it, in a folder of its own:
+
+      Compress from its right click starts `zip` on it, and Tracker says the
+      job is done - `renders.zip` beside it;
+      Extract from the zip's right click starts `unzip`, into `renders 2`,
+      since `renders` is taken, and Tracker says that is done too;
+      and the two files are in it, as they were.
+
+    The zip itself is checked against Python's `zipfile` in
+    `run_interchange.py`; this is Tracker's half - its menus, its jobs and
+    what it says when they end.
+    """
+    body = "every frame is a picture " * 40
+
+    guest.type('fs.send("/Home/ztest", { type = "mkdir" }) '
+               'fs.send("/Home/ztest/renders", { type = "mkdir" }) '
+               'fs.write("/Home/ztest/renders/a.txt", string.rep("every frame is a picture ", 40)) '
+               'fs.write("/Home/ztest/renders/b.txt", "bee") '
+               'print("zipped" .. "-set")')
+    guest.wait_for("zipped-set", "make a folder to compress")
+
+    def stop():
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+    try:
+        mark = len(guest.seen)
+        guest.type("wm tracker:/Home/ztest")
+        line = guest.wait_for_line("wm: window Tracker at ",
+                                   "Tracker to open", mark)
+        content = guest.wait_for_line("tracker: content at ",
+                                      "Tracker to say where its list is", mark)
+        wx, wy = (int(v) for v in re.match(r"(\d+),(\d+)", line).groups())
+        first_row_y = (int(re.match(r"(\d+)", content).group(1))
+                       + LAYOUT_ROW + 1 + LAYOUT_ROW // 2)
+        time.sleep(2.0)
+        width, height, _ = parse_ppm(guest.screendump())
+
+        def menu_choose(row_y, row, separators, what):
+            at = len(guest.seen)
+            guest.mouse_to(*_to_tablet(wx + 260, wy + row_y, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True, "right")
+            time.sleep(0.1)
+            guest.mouse_button(False, "right")
+            said = guest.wait_for_line("wm: menu of Tracker at ", what, at)
+            mx, my = (int(v) for v in re.match(r"(\d+),(\d+)", said).groups())
+            time.sleep(1.0)
+            guest.mouse_to(*_to_tablet(mx + 20,
+                                       menu_row_middle(my, row, separators),
+                                       width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+            guest.mouse_button(False)
+
+        # The folder's menu: Open, a separator, Pin to sidebar, Compress -
+        # the fourth row, a separator counted as one, as the places phase
+        # counts it.
+        at = len(guest.seen)
+        menu_choose(first_row_y, 4, 1, "the folder's menu to open")
+        guest.wait_for_line("tracker: compress into /Home/ztest/renders.zip",
+                            "Compress to start zip on the folder", at)
+        deadline = time.monotonic() + 30
+
+        while "tracker: compress done" not in guest.seen[at:]:
+            if ("tracker: compress failed" in guest.seen[at:]
+                    or time.monotonic() > deadline):
+                raise Failure("Compress on a folder did not finish: "
+                              + guest.seen[at:][-600:])
+
+            guest._read_available()
+            time.sleep(0.3)
+
+        # The zip is the list's second row now: folders, then files.
+        time.sleep(1.5)
+        at = len(guest.seen)
+        menu_choose(first_row_y + LAYOUT_ROW, 1, 0, "the zip's menu to open")
+        guest.wait_for_line("tracker: extract into /Home/ztest/renders 2",
+                            "Extract to start unzip into renders 2", at)
+        deadline = time.monotonic() + 30
+
+        while "tracker: extract done" not in guest.seen[at:]:
+            if ("tracker: extract failed" in guest.seen[at:]
+                    or time.monotonic() > deadline):
+                raise Failure("Extract on the zip did not finish: "
+                              + guest.seen[at:][-600:])
+
+            guest._read_available()
+            time.sleep(0.3)
+    finally:
+        stop()
+
+    guest.type('print("zipped" .. "-back", fs.getattr("/Home/ztest/renders.zip") ~= nil, '
+               'fs.read("/Home/ztest/renders 2/a.txt") == string.rep("every frame is a picture ", 40), '
+               'fs.read("/Home/ztest/renders 2/b.txt"))')
+    back = guest.wait_for_line("zipped-back\t", "the files read back")
+
+    if back.split("\t") != ["true", "true", "bee"]:
+        raise Failure("the zip and the folder it opened into do not hold the "
+                      "two files: %r" % back)
+
+    return 3
+
+
 def check_focus_shown(guest):
     """The Deskbar shows where the focus went, at once.
 
@@ -11209,6 +11330,7 @@ def main():
         focus_checks = phase("deskbar focus", check_focus_shown)
         layers_checks = phase("deskbar layers", check_deskbar_layers)
         types_checks = phase("file types", check_file_types)
+        compress_checks = phase("compress", check_compress)
         icon_size_checks = phase("icon sizes", check_icon_sizes)
         desktop_checks = phase("desktop", check_desktop)
         places_checks = phase("places", check_places)
@@ -11276,7 +11398,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks + layers_checks + types_checks
+             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks + layers_checks + types_checks + compress_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
              + split_checks + monitor_checks + camera_checks
@@ -11366,6 +11488,8 @@ def main():
           f"{super_drag_checks} on a window moved from anywhere in it with "
           f"Super + Control, its application not hearing the press and the "
           f"Super opening nothing, "
+          f"{compress_checks} on Compress and Extract from Tracker's right "
+          f"click, each a program Tracker watches to its end, "
           f"{types_checks} on what opens what - Play chosen for a film on "
           f"Preferences' File types, kept alone, and shown in Info - "
           f"{layers_checks} on the Deskbar's menu in two layers - the one "

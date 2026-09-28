@@ -2540,6 +2540,8 @@ processors, and still what follows USB:
    now** - it had none because there was no date to put in it; not asked
    for, so not built.
    **(c) DONE on 28 September** (`testing.md` 18.245) - 6z below.
+   **(d) DONE on 28 September** (`testing.md` 18.246) - 6v below. **All four
+   steps are done.**
 
 6z. **WANTED on 27 September - what opens what, and a Preferences page for
    it.** Diego, on the M700 with 0.10.174, a film in his home refused -
@@ -2658,6 +2660,21 @@ processors, and still what follows USB:
    `docs/rightclick.html` (6za), which proposes miniz, a program of its own
    for the work, and `Archive.zip` for several - **agreed on 27
    September** (6za's 1 to 4), and built as its step d.
+   **DONE on 28 September** (`testing.md` 18.246). miniz 3.0.2 vendored as
+   released (`runtime/upstream/miniz/`), built with only its deflater; the
+   compress kit gains `deflate_into`, `crc32` and `copy_into`, over regions,
+   and `inflate_into` a raw mode. The zip's structure is `zip.lua`'s:
+   written whole and read whole, through regions where the filesystem has
+   them and through strings where it does not; a file that does not shrink
+   is stored; a name reaching outside the folder is refused before anything
+   is written. `zip` and `unzip` are programs; Tracker starts them with a job
+   file and watches the state beside it in its foot - words, a bar, Stop -
+   and opening a zip extracts it into a new folder named after it and opens
+   that, a single folder at the top of the archive being the one made.
+   **Not yet**: the zip drawn shaded while it is being written (the drawing
+   has it; the archive is written in one go at the end, so there is nothing
+   to draw until then); ZIP64, for a file over 4 GB or more than 65,535
+   things; and a file larger than memory, since both ends are whole.
 
 6s. **ASKED on 27 September, for Diego to decide - applications in `/apps`.**
    Diego, reading `/lib/clock.lua` in the IDE: "I don't understand why
@@ -2794,7 +2811,10 @@ processors, and still what follows USB:
    in /Kosmos/Themes, yes"), `/system` and `/user` gone - **DONE** (18.234), a look somebody adds in `/Home/Themes`; `/Kosmos/Themes`, the looks as files, **DONE** (18.235); **(d)** the dotfiles at
    the top of `/home` into `/Home/Preferences`; **(e)** `layout.md`, the
    layout in words, rewritten to the agreed root - it still describes the
-   plan before it, with `/tmp` and `/system/libraries`.
+   plan before it, with `/tmp` and `/system/libraries`. **(e) DONE on 28
+   September**: the seven names, `/Kosmos`'s six folders and `/Home`'s as
+   `layout.html` draws them, what a Terminal and an installed game are
+   handed, what is real and what waits on the loader, and the order left.
 
 6u. **AGREED on 27 September - one scrollbar, everywhere.** Diego, seeing
    the IDE's thin one: "Why scrollbars here look flat and in other apps look

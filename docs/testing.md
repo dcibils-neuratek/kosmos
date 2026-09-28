@@ -11880,3 +11880,45 @@ file and nothing else, Info says Play, of Video and Play - and **the
 control**, the choice taken out, Info says Video; then Tracker's right
 click on the film, Open with, Play, and Play is launched.
 
+## 18.246 Compress and Extract, and zips both ways (6v, 6za step d)
+
+Diego: "add a way to right click a file in tracker, open context menu,
+click 'compress' and it will Zip the file", "Same thing win uncompressing
+zip files", "We need to have a zip compression kit added". As
+`docs/rightclick.html` agreed: a zip opens by extracting; several make
+`Archive.zip`; the work is a program of its own; DEFLATE from miniz.
+
+**The bytes are C, the structure is Lua.** miniz 3.0.2 is vendored as
+released and built with only its deflater (`MINIZ_FLAGS`: no stdio, time,
+allocator, archive code or inflater); the compress kit runs it over two
+regions with its state in pages of its own - `deflate_into`, `crc32`,
+`copy_into` - and `inflate_into` takes `raw`, since a zip's deflate has no
+zlib header and guessing is not reading. `zip.lua` writes the local
+headers, the files and the directory, and reads them back: a file is
+stored when deflate does not make it smaller; a name from the root or
+through `..` is refused before anything is written, and so is an encrypted
+or split archive or another method; one folder at the top of an archive is
+the folder being made, so `renders.zip` opens as `renders`, not
+`renders/renders`. Files move through regions where the filesystem serves
+them and through strings where it does not - `/Home` in memory, `/Temporary`.
+
+**Tracker** offers Compress on a file, a folder and several, and Extract on
+a zip; it writes a job file, starts `zip` or `unzip` on it, and watches the
+state the program keeps beside it (`zip.job`) - its foot says what is
+happening, with a bar and Stop, until the program says it has ended.
+Opening a zip, by a double click or from anywhere that asks what opens one
+(`-- kosmos: opens zip`), extracts it into a new folder and opens that.
+
+**Checked**: `test_filemenu.lua` (30) - Compress where it applies and not
+in the Trash, a zip's Extract saying into what, a `.ZIP` a zip.
+`run_interchange.py` (15), on a disk - **a zip the machine made, read by
+Python's `zipfile`**: its five names, every CRC, each file's bytes, the text
+deflated and the noise stored; that zip opened back on the machine; **a
+zip Python made**, one file deflated and one stored, opened on the machine;
+a zip naming `../evil.txt` refused, nothing written and no folder made; and
+`zip` and `unzip` at the prompt. **The control**: a CRC one wrong in what
+the machine writes fails the machine's own check of it. On both boards
+(the display harness's `compress`, 3), on a machine with no disk: Compress
+from a folder's right click starts `zip` and ends done, Extract from the
+zip's opens it into `renders 2`, and both files read back.
+

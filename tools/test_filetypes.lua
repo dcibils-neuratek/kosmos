@@ -247,6 +247,9 @@ check(types.opener("/Home/notes.md") == "reader"
       "a note, a page and a launcher are not the Reader's, the Browser's and "
       .. "the launcher editor's")
 
+check(types.opener("/Home/renders.zip") == "tracker",
+      "a zip is not Tracker's, which opens one by extracting it")
+
 local film = types.openers("mp4")
 
 check(table.concat(film, ",") == "video,play",

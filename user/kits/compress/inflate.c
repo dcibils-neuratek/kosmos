@@ -184,6 +184,14 @@ static int l_inflate_into(lua_State *L)
     uintptr_t      dst     = (uintptr_t)luaL_checkinteger(L, 3);
     size_t         dst_cap = (size_t)luaL_checkinteger(L, 4);
 
+    /*
+     * **`raw`, the fifth: raw deflate, said rather than guessed.** A zip's
+     * data is deflate with no zlib header, and the guess below - a header
+     * when the first two bytes look like one - is a guess a raw stream can
+     * lose. So a zip says what it holds (`roadmap.md` 6v).
+     */
+    int            raw     = lua_toboolean(L, 5);
+
     const unsigned char *source;
     unsigned long        destlen = 0;
     unsigned long        srclen;
@@ -197,7 +205,8 @@ static int l_inflate_into(lua_State *L)
         return luaL_error(L, "inflate_into: no compressed data");
     }
 
-    source = skip_zlib_header((const unsigned char *)src, &src_len);
+    source = raw ? (const unsigned char *)src
+                 : skip_zlib_header((const unsigned char *)src, &src_len);
     srclen = (unsigned long)src_len;
 
     err = puff(NIL, &destlen, source, &srclen);
@@ -270,9 +279,14 @@ static int l_inflated_size(lua_State *L)
  * everything else - so a program that was not given `/Kosmos/Kits` has none, the
  * same way a program that was not given `/Kosmos/Libraries` has no libraries.
  */
+/* `deflate.c`: the deflater, CRC-32 and a copy, into the same table. */
+void kosmos_compress_deflate(lua_State *L);
+
 void kosmos_compress_kit(lua_State *L)
 {
     lua_newtable(L);
+
+    kosmos_compress_deflate(L);
 
     lua_pushcfunction(L, l_inflate);
     lua_setfield(L, -2, "inflate");

@@ -22,6 +22,7 @@
 -- What was pressed on, `what`:
 --
 --   "folder"    a folder in a window           `pinned`: already a place
+--   "zip"       a zip, which opening extracts   `stem`: the folder it makes
 --   "file"      a file                         `opener`: what opens it
 --   "lua"       a Lua file, which Open runs
 --
@@ -78,8 +79,31 @@ end
 
 local MENUS = {}
 
+--
+-- **Compress** (`roadmap.md` 6v): a zip beside what was pressed on, named
+-- after it - or `Archive.zip` for several - by a program Tracker starts and
+-- watches. Not on the Trash, not inside it, and not on a zip, which is
+-- compressed already.
+--
+local function compress(t)
+  if t.in_trash then return nil end
+
+  return item("compress", "Compress")
+end
+
 function MENUS.folder(t)
-  return joined({ item("open", "Open"), SEP, pin_item(t) }, tail(t))
+  return joined({ item("open", "Open"), SEP, pin_item(t), compress(t) },
+                tail(t))
+end
+
+--
+-- A zip opens by extracting it, beside it, into a folder named after it
+-- (`docs/rightclick.html`, answer 1) - so Extract is the first thing on it
+-- and says where the files go.
+--
+function MENUS.zip(t)
+  return joined({ item("extract", "Extract",
+                       t.stem and ("into " .. t.stem) or nil) }, tail(t))
 end
 
 --
@@ -108,16 +132,26 @@ end
 function MENUS.file(t)
   local open = t.opener and item("open", "Open", t.opener)
                or item("open", "Open", "nothing opens it", true)
+  local head = { open }
 
-  return joined({ open, open_with(t) }, tail(t))
+  head[#head + 1] = open_with(t)
+  head[#head + 1] = SEP
+  head[#head + 1] = compress(t)
+
+  return joined(head, tail(t))
 end
 
 -- Opening a Lua file runs it, so the menu says Run; Edit beside it is the
 -- only way to change one, and is offered only here and on a launcher, where
 -- it does something Open does not.
 function MENUS.lua(t)
-  return joined({ item("open", "Run"), item("edit", "Edit", "Editor"),
-                  open_with(t) }, tail(t))
+  local head = { item("open", "Run"), item("edit", "Edit", "Editor") }
+
+  head[#head + 1] = open_with(t)
+  head[#head + 1] = SEP
+  head[#head + 1] = compress(t)
+
+  return joined(head, tail(t))
 end
 
 function MENUS.launcher(t)
@@ -129,7 +163,10 @@ end
 function MENUS.several(t)
   local n = tostring(t.count or 2)
 
-  return {
+  local head = t.in_trash and {}
+               or { item("compress", "Compress " .. n .. " items"), SEP }
+
+  return joined(head, {
     item("cut", "Cut"),
     item("copy", "Copy"),
     SEP,
@@ -137,7 +174,7 @@ function MENUS.several(t)
          t.in_trash and "for good" or "to the Trash"),
     SEP,
     item("info", "Info"),
-  }
+  })
 end
 
 -- Empty Trash is here and nowhere else in a right click: it is the one thing
@@ -212,6 +249,7 @@ function filemenu.what_of(entry, path, trash)
   local ext = tostring(entry.name):sub(2):match("%.([%w]+)$")
 
   if ext and ext:lower() == "lua" then return "lua" end
+  if ext and ext:lower() == "zip" then return "zip" end
 
   return "file"
 end
