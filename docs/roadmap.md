@@ -1205,7 +1205,8 @@ processors, and still what follows USB:
       window DONE with step 3**, as the drawing has it, and materials,
       lamps and the sky reach the tracer; the Material tab's numbers
       editable is what is left.
-      **NEXT, at Diego's word on 26 September** - asked for a tutorial and
+      **DONE on 26 September** (`testing.md` 18.198; this said NEXT until
+      the roadmap was read back on the 27th) - asked for a tutorial and
       told the Material tab could not colour anything yet: "Make materials
       editable first". So: the presets, the base colour and every number
       in the Material tab editable, a texture section in it in the same
