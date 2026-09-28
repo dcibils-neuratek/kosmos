@@ -50,6 +50,16 @@ filetypes.STORES = { "/Kosmos/Apps", "/Kosmos/Programs" }   -- then /Home/Apps
 filetypes.CHOICES = "/Home/Preferences/filetypes"
 
 --
+-- **Which comes first, where two of the applications Kosmos ships open one
+-- type** - said here, once, rather than left to the order of their names,
+-- which put Reader before Text Editor for `.md`. A Markdown document opens
+-- where it is written, and Reader, which shows the guides, is in Open with
+-- (`roadmap.md` 6zs, agreed on 28 September). A person's own choice still
+-- comes before this.
+--
+filetypes.PREFERRED = { md = "texteditor" }
+
+--
 -- Type -> the programs that open it, the default first: the ones in
 -- `/Kosmos/Apps` before the ones in `/Kosmos/Programs`, and in each by name,
 -- so the answer never depends on the order anything was found in.
@@ -90,6 +100,16 @@ function filetypes.table(store)
                  :lower():gmatch("[%w_]+") do
       out[ext] = out[ext] or {}
       out[ext][#out[ext] + 1] = app.name
+    end
+  end
+
+  for ext, program in pairs(filetypes.PREFERRED) do
+    for i, one in ipairs(out[ext] or {}) do
+      if one == program and i > 1 then
+        table.remove(out[ext], i)
+        table.insert(out[ext], 1, program)
+        break
+      end
     end
   end
 
@@ -197,7 +217,7 @@ end
 -- - "SFC file" - which is honest and never wrong.
 --
 filetypes.names = {
-  lua = "Lua source", txt = "Text", md = "Note", conf = "Settings",
+  lua = "Lua source", txt = "Text", md = "Note", conf = "Settings", log = "Log",
   pdf = "PDF document", html = "Web page",
   png = "Picture", jpg = "Photograph", jpeg = "Photograph",
   mp3 = "Song", wav = "Sound", mp4 = "Film",
@@ -241,7 +261,7 @@ end
 -- through `choose` rather than a key written by hand.
 --
 filetypes.GROUPS = {
-  { "Documents", { "txt", "md", "pdf", "html", "lua", "conf" } },
+  { "Documents", { "txt", "md", "pdf", "html", "lua", "conf", "log" } },
   { "Pictures", { "png", "jpg", "jpeg" } },
   { "Sound and film", { "mp3", "wav", "mp4" } },
   { "Games", { "wad", "sfc", "smc" } },
@@ -396,7 +416,8 @@ end
 -- application says of itself in its header.
 --
 local APP_NAMES = {
-  editor = "Editor", reader = "Reader", photo = "Photo", pdfview = "PDF",
+  texteditor = "Text Editor", ide = "Kosmos IDE",
+  reader = "Reader", photo = "Photo", pdfview = "PDF",
   video = "Video", browser = "Browser", music = "Music", play = "Play",
   launcheredit = "Launcher editor", terminal = "Terminal",
   snes = "Super Nintendo", doom = "Doom",

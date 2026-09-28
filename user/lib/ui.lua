@@ -770,6 +770,11 @@ end
 
 ui.SCROLL_W = SCROLL_W
 
+-- The pill itself, for a view that scrolls by something other than rows -
+-- Text Editor's page, in pixels (`/Kosmos/Libraries/docview.lua`). The
+-- same numbers `ui.scrollbar_mouse` takes, so the two agree.
+ui.draw_scrollbar = draw_scrollbar
+
 --
 -- The whole interaction, in one place.
 --
@@ -2708,6 +2713,105 @@ ui.layout = {
 }
 
 local L = ui.layout
+
+--
+-- **Segments**: two or three words in one box, one of them chosen - Text
+-- Editor's `Text | Markdown` (`docs/texteditor.html`). The dropdown's box -
+-- the sunken ground, the soft rule, the control's corner - divided by the
+-- same rule, and the chosen one on a quiet fill in the text's colour, the
+-- others dim.
+--
+--   ui.segments{ items = { "Text", "Markdown" }, on = 2,
+--                on_change = function(self, i) end }
+--
+-- `on` is a field: set it and the next paint says so. A click on the one
+-- already chosen changes nothing and says nothing.
+--
+function ui.segments(spec)
+  local v = ui.view(spec)
+  local PAD = 11
+
+  v.items = v.items or {}
+  v.on = v.on or 1
+  v.h = v.h > 0 and v.h or BUTTON
+  v.focusable = true
+
+  local function widths()
+    local out = {}
+
+    for i, word in ipairs(v.items) do
+      out[i] = gfx.measure(tostring(word)) + 2 * PAD
+    end
+
+    return out
+  end
+
+  function v:fit()
+    local w = 0
+
+    for _, one in ipairs(widths()) do w = w + one end
+
+    self.w = w + 2
+  end
+
+  if v.w == 0 then v:fit() end
+
+  local function choose(self, i)
+    if i < 1 or i > #self.items or i == self.on then return end
+
+    self.on = i
+
+    if self.on_change then self.on_change(self, i) end
+  end
+
+  function v:draw(g)
+    local ws = widths()
+    local x = 1
+
+    g:fill_round(0, 0, self.w, self.h, theme.sunken, CONTROL_R)
+
+    for i, word in ipairs(self.items) do
+      local w = ws[i]
+
+      if i == self.on then
+        g:fill_round(x, 1, w, self.h - 2,
+                     theme.mix(theme.sunken, theme.text_dim, 180), CONTROL_R - 1)
+      end
+
+      if i > 1 then g:fill(x, 1, 1, self.h - 2, theme.line_soft) end
+
+      g:text(x + (w - gfx.measure(tostring(word))) // 2, centred(self.h),
+             tostring(word), (i == self.on) and theme.text or theme.text_dim)
+      x = x + w
+    end
+
+    g:frame_round(0, 0, self.w, self.h,
+                  (self.focused and self.keyed) and theme.ring or theme.line_soft,
+                  CONTROL_R)
+  end
+
+  function v:key(c)
+    if c == -3 then choose(self, self.on + 1) return true end
+    if c == -4 then choose(self, self.on - 1) return true end
+
+    return false
+  end
+
+  function v:mouse(action, x)
+    if action ~= "press" then return true end
+
+    local ws, at = widths(), 1
+
+    for i, w in ipairs(ws) do
+      if x < at + w or i == #ws then choose(self, i) break end
+      at = at + w
+    end
+
+    return true
+  end
+
+  return v
+end
 
 --
 -- **An icon button**: 26 square, no border, a line icon at 15 in the dim

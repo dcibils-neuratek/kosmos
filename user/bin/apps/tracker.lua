@@ -2606,7 +2606,8 @@ local function do_open()
 end
 
 -- Edit, beside Open: a Lua file opens by running now, and this is the way to
--- change one. Whatever handles the file's type - the editor, for a `.lua`.
+-- change one. Whatever handles the file's type - the IDE, for a `.lua` - and
+-- Text Editor for anything nothing claims.
 local function do_edit()
   local e = chosen()
 
@@ -2617,7 +2618,7 @@ local function do_edit()
     return
   end
 
-  local program = types.opener(path_of(e)) or "editor"
+  local program = types.opener(path_of(e)) or "texteditor"
   local ok, why = fs.send("/Running/wm", { type = "launch", program = program,
                                        args = path_of(e) })
 

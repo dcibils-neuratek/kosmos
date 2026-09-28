@@ -3320,6 +3320,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# The IDE's editor: the text it edits, every edit undoable, and Lua
 	@# coloured a line at a time with what carries across lines (6n, step 1).
 	$(HOSTDIR)/lua tools/test_textbuf.lua
+	@# And Text Editor's page: where a line breaks into rows, and the
+	@# caret's steps whole characters (`roadmap.md` 6zs).
+	$(HOSTDIR)/lua tools/test_docview.lua
 	$(HOSTDIR)/lua tools/test_lualex.lua
 	@# And its checking: Lua's own parser, and the vendored luacheck loaded
 	@# as the machine loads it (6n, step 4).

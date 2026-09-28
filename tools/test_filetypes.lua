@@ -125,8 +125,8 @@ end
 check(types.kind_of("/Home/notes.txt") == "txt",
       "a .txt is a txt")
 
-check(types.opener("/Home/notes.txt") == "editor",
-      "and the editor opens it")
+check(types.opener("/Home/notes.txt") == "texteditor",
+      "and Text Editor opens it")
 
 check(types.kind_of("/Home/nothing") == nil,
       "a file with no extension has no type")
@@ -238,14 +238,26 @@ check(how and how.program == "terminal",
 
 how = types.how_to_open("/Home/notes.txt")
 
-check(how and how.program == "editor" and how.args == "/Home/notes.txt",
+check(how and how.program == "texteditor" and how.args == "/Home/notes.txt",
       "anything else opens in what handles its type, as before")
 
 check(types.how_to_open("/Home/nothing") == nil,
       "and a file nothing claims still opens in nothing")
 
-check(types.opener("/Home/diego.lua") == "editor",
-      "the editor is still what handles a .lua, for Edit")
+check(types.opener("/Home/diego.lua") == "ide",
+      "the IDE is what handles a .lua, for Edit - not Text Editor (6zs)")
+
+check(types.opener("/Home/Documents/notes.md") == "texteditor",
+      "a Markdown document opens in Text Editor, where it is written")
+
+local md = types.openers("md")
+
+check(#md == 2 and md[1] == "texteditor" and md[2] == "reader",
+      "Reader is still offered for a .md, after Text Editor: "
+      .. table.concat(md, ","))
+
+check(types.opener("/Home/boot.log") == "texteditor",
+      "and so does a log")
 
 -- A film and a photograph (`roadmap.md` 6z): Video and Photo, whatever case
 -- the extension is written in.
@@ -267,12 +279,12 @@ check(types.opener("/Home/doom1.wad") == "doom"
       and types.opener("/Home/roms/mario.SMC") == "snes",
       "a Doom level and a cartridge are not opened by the applications that "
       .. "say they open them")
-check(types.opener("/Home/notes.md") == "reader"
+check(types.opener("/Home/notes.md") == "texteditor"
       and types.opener("/Home/page.html") == "browser"
       and types.opener("/Home/Desktop/Drive", { kind = "launcher" })
           == "launcheredit",
-      "a note, a page and a launcher are not the Reader's, the Browser's and "
-      .. "the launcher editor's")
+      "a note, a page and a launcher are not Text Editor's (6zs), the "
+      .. "Browser's and the launcher editor's")
 
 check(types.opener("/Home/renders.zip") == "tracker",
       "a zip is not Tracker's, which opens one by extracting it")

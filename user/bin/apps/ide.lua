@@ -2,6 +2,7 @@
 -- kosmos: application
 -- kosmos: icon App_Pe
 -- kosmos: section applications
+-- kosmos: opens lua
 --
 -- **Kosmos IDE**: where Lua for Kosmos is written and run.
 --

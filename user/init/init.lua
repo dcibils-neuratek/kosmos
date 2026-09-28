@@ -835,6 +835,11 @@ local function new_namespace()
     -- it is now. A person's file is not rewritten to say it.
     name = name:match("^/[Bb][Ii][Nn]/([^/]+)%.lua$") or name
 
+    -- **And Editor, which is Text Editor** since 28 September (`roadmap.md`
+    -- 6zs): a launcher or a startup list that says `editor` starts it, the
+    -- same way, rather than being rewritten.
+    if name == "editor" then name = "texteditor" end
+
     if name:sub(1, 1) == "/" then return name end
 
     for _, dir in ipairs({ "/Kosmos/Apps", "/Kosmos/Programs" }) do

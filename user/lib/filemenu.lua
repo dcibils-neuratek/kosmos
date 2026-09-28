@@ -142,10 +142,11 @@ function MENUS.file(t)
 end
 
 -- Opening a Lua file runs it, so the menu says Run; Edit beside it is the
--- only way to change one, and is offered only here and on a launcher, where
--- it does something Open does not.
+-- only way to change one - in the IDE, since 28 September (`roadmap.md`
+-- 6zs) - and is offered only here and on a launcher, where it does
+-- something Open does not.
 function MENUS.lua(t)
-  local head = { item("open", "Run"), item("edit", "Edit", "Editor") }
+  local head = { item("open", "Run"), item("edit", "Edit", "Kosmos IDE") }
 
   head[#head + 1] = open_with(t)
   head[#head + 1] = SEP

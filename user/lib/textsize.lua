@@ -1,10 +1,12 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- A text size of a window's own, for the windows that are made of text in
--- the monospace face: the Terminal and Log View.
+-- A text size of a window's own, for the windows that are made of text:
+-- the Terminal and Log View in the monospace face, and Text Editor in the
+-- text face (`roadmap.md` 6zs).
 --
 --   local textsize = use("/Kosmos/Libraries/textsize.lua")
 --   local size = textsize.new(ui, "/Home/Preferences/terminal")
+--   local size = textsize.new(ui, "/Home/Preferences/texteditor", nil, "ui")
 --   size:face()                   -- the face to measure and draw with
 --   size:size()                   -- its size, to hand `g:text`
 --   size:items()                  -- the menu, built at the press
@@ -54,11 +56,12 @@ end
 --
 -- `path` is the window's settings file; `changed`, if given, is called
 -- after a change. A choice from the window's own menu needs none: the kit
--- paints a window again after any menu choice.
+-- paints a window again after any menu choice. `role` is the face being
+-- sized, `mono` unless it says otherwise.
 --
-function textsize.new(ui, path, changed)
-  local self = setmetatable({ ui = ui, path = path, changed = changed },
-                            methods)
+function textsize.new(ui, path, changed, role)
+  local self = setmetatable({ ui = ui, path = path, changed = changed,
+                              role = role or "mono" }, methods)
   local saved = fs.read(path)
 
   self.px = nil
@@ -70,11 +73,11 @@ function textsize.new(ui, path, changed)
   return self
 end
 
--- The desktop's `mono` size, which is Actual size.
+-- The desktop's size for the role, which is Actual size.
 function methods:default()
-  local mono = self.ui.theme.fonts.mono
+  local face = self.ui.theme.fonts[self.role]
 
-  return (mono and mono.px) or 16
+  return (face and face.px) or 16
 end
 
 -- The size in force: the window's own, or the desktop's.
@@ -85,7 +88,7 @@ end
 -- What to measure with: the role itself at its own size, a face of this
 -- size otherwise.
 function methods:face()
-  return self.ui.sized("mono", self:size())
+  return self.ui.sized(self.role, self:size())
 end
 
 function methods:set(px)
@@ -105,7 +108,14 @@ function methods:set(px)
 
   self.px = want
 
-  local ok, why = fs.write(self.path, { text_px = self.px })
+  -- **Into the file, beside whatever else the window keeps there** - Text
+  -- Editor's recent documents - rather than over it.
+  local keep = fs.read(self.path)
+
+  keep = (type(keep) == "table") and keep or {}
+  keep.text_px = self.px
+
+  local ok, why = fs.write(self.path, keep)
 
   if not ok then
     print("textsize: not saved to " .. self.path .. ": " .. tostring(why))

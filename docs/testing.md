@@ -12033,3 +12033,40 @@ least a quarter of that (check 18), and not fall once the worker has been
 waited for and its slot has gone back (check 20). **Controls**: the
 workers left out of the sum stops the role at 18; the collected count not
 kept stops it at 20.
+
+## 18.251 Text Editor, step 1: documents in plain text (6zs)
+
+Editor became Text Editor (`texteditor.lua`), drawn as
+`docs/texteditor.html` and agreed on 28 September: documents rather than
+programs, on a page of the kit's own (`docview.lua`) - the look's text face
+wrapped to a column about seventy characters wide, a caret between
+characters. `Text | Markdown`, Save and the dots in the header, which says
+the format, the words and whether it is saved; the dots hold New window,
+Open, Open recent, Save as, Find and replace, Wrap long lines, Monospaced
+text (kept on the document, as an attribute), Text size and Show in Tracker.
+A new document is Markdown and saved in `/Home/Documents`, made if missing.
+It opens `txt md conf log`; a `.lua` opens in the IDE, which now says `opens
+lua`; `.md` is Text Editor's before Reader's by `filetypes.PREFERRED`, since
+the order of the names put Reader first; and a launcher naming `editor`
+starts Text Editor. Markdown is written as text until step 2 styles it.
+
+**`test_docview.lua`**, 47, on the Mac: where a line breaks into rows - after
+a word's spaces, which stay on its row; a word wider than a row cut where
+it stops fitting, at a character and never inside one; every width from 1
+to 30 covering the line exactly - and the caret's steps being whole UTF-8
+characters. Its control: a byte taken as a character wherever it is fails
+three.
+
+**`run_editor.py`**, on both boards, now types the same keys into two
+editors, one desktop each: Text Editor's page and the IDE's `ui.editor`,
+which until now was only typed at through Editor. Both files have to be
+exactly what the keys meant. **And a hole in it, found by its control**:
+the sequence selected a word, pressed Backspace and typed over it - so a
+Backspace that did nothing still gave the right file, since typing replaces
+a selection. It presses End after Backspace now, and a Backspace that does
+nothing leaves `secondtwo` in Text Editor's file, which fails; the IDE's is
+untouched.
+
+**`test_filetypes.lua`**: a note, a log and a text file open in Text
+Editor, a `.lua` in the IDE for Edit, and Reader is still offered for a
+`.md`, after Text Editor.

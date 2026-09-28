@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""The editor, typed at through a keyboard (`roadmap.md` 6n, steps 0 and 1).
+"""Two editors, typed at through a keyboard (`roadmap.md` 6n steps 0 and 1,
+and 6zs).
 
-Booted, `wm editor:/Temporary/keys.txt`, and then every key pressed with QEMU's
-own keyboard - `sendkey`, which goes through the virtio keyboard on one
-board and the PS/2 controller on the other - so what is checked is the
-whole path a key takes: the driver, the board's sequence with its
-modifiers, the window manager, the kit's decoder, and `ui.editor` doing
-what the key means over `/Kosmos/Libraries/textbuf.lua`.
+Booted, and then every key pressed with QEMU's own keyboard - `sendkey`,
+which goes through the virtio keyboard on one board and the PS/2 controller
+on the other - so what is checked is the whole path a key takes: the driver,
+the board's sequence with its modifiers, the window manager, the kit's
+decoder, and the editor doing what the key means over
+`/Kosmos/Libraries/textbuf.lua`.
 
-One file is written by keys alone and saved with Control-S, then read back
+**Twice, into two editors that are not the same code**: Text Editor's page
+(`docview.lua` - a proportional face, rows that wrap, a caret between
+characters) and the IDE's (`ui.editor`, monospace by construction). They
+share the buffer and nothing on top of it, and this was the only suite that
+typed at `ui.editor` - through Editor, until Editor became Text Editor.
+
+Each file is written by keys alone and saved with Control-S, then read back
 at the prompt, and it has to be exactly what the keys meant:
 
   hello world      typed
@@ -19,8 +26,11 @@ at the prompt, and it has to be exactly what the keys meant:
   home, ctrl-right, delete, ctrl-z
                    Home, a word right, the space deleted and put back
   pgup, pgdn       which typed a "~" each until 26 September; nothing now
-  end, ret, second, ctrl-shift-left, backspace
-                   a new line, a word selected by words and taken back
+  end, ret, second, ctrl-shift-left, backspace, end
+                   a new line, a word selected by words and taken back -
+                   and End after it, since typing over a selection that
+                   Backspace had left would hide a Backspace that did
+                   nothing: until 28 September it did, and nothing noticed
   two, ctrl-z, ctrl-y
                    typed, undone, redone
 
@@ -89,15 +99,10 @@ def main():
         for name in names:
             guest.sendkey(name)
 
-    try:
-        guest.wait_for("kosmos> ", "reached a prompt")
-        mark = len(guest.seen)
-        guest.type("wm editor:/Temporary/keys.txt")
-
-        if said("wm: window keys.txt - Editor at ", mark, 90) is None:
-            print("FAIL: the Editor never opened its window.\n--- the guest said ---\n"
-                  + guest.seen[mark:][-1500:])
-            return 1
+    def keys_into(since, title_line, saved_line):
+        """The keys, into the editor that said `title_line`; what its save said."""
+        if said(title_line, since, 90) is None:
+            return None
 
         time.sleep(1.5)
 
@@ -109,18 +114,16 @@ def main():
         press("home", "ctrl-right", "delete", "ctrl-z")
         press("pgup", "pgdn")
         press("end", "ret", *letters("second"))
-        press("ctrl-shift-left", "backspace")
+        press("ctrl-shift-left", "backspace", "end")
         press(*letters("two"))
         press("ctrl-z", "ctrl-y")
 
         mark = len(guest.seen)
         press("ctrl-s")
-        saved = said("editor: saved ", mark, 20)
-        check(saved == "2 lines to /Temporary/keys.txt",
-              "Control-S did not save two lines: %r" % saved)
+        return said(saved_line, mark, 20)
 
-        # The desktop away, and the file read back at the prompt - as hex,
-        # so a stray byte cannot hide in what a terminal shows.
+    def to_the_prompt():
+        """The desktop away, and the shell back."""
         mark = len(guest.seen)
         guest.proc.stdin.write(R.STOP_DESKTOP)
         guest.proc.stdin.flush()
@@ -130,32 +133,74 @@ def main():
             guest._read_available()
             time.sleep(0.2)
 
+    def read_back(path):
+        """The file, as hex, so a stray byte cannot hide in what a terminal shows."""
         mark = len(guest.seen)
-        guest.type('local b, t = fs.read("/Temporary/keys.txt") or "", {} '
-                   'for c in b:gmatch(".") do t[#t + 1] = ("%02x"):format(c:byte()) end '
-                   'print("file" .. "-hex:" .. table.concat(t, " "))')
+        guest.type('local b, t = fs.read("%s") or "", {} '
+                   'for c in b:gmatch(".") do t[#t + 1] = ("%%02x"):format(c:byte()) end '
+                   'print("file" .. "-hex:" .. table.concat(t, " "))' % path)
         hexes = said("file-hex:", mark, 20)
 
         if hexes is None:
-            check(False, "the file could not be read back:\n" + guest.seen[mark:][-800:])
-        else:
-            content = bytes(int(h, 16) for h in hexes.split()).decode("utf-8", "replace")
-            check(content == WANT,
-                  "the keys wrote %r, where they meant %r" % (content, WANT))
+            return None
+
+        return bytes(int(h, 16) for h in hexes.split()).decode("utf-8", "replace")
+
+    try:
+        guest.wait_for("kosmos> ", "reached a prompt")
+
+        # Text Editor's page.
+        mark = len(guest.seen)
+        guest.type("wm texteditor:/Temporary/keys.txt")
+        saved = keys_into(mark, "wm: window keys.txt - Text Editor at ",
+                          "texteditor: saved ")
+
+        if saved is None and "Text Editor at" not in guest.seen[mark:]:
+            print("FAIL: Text Editor never opened its window.\n--- the guest said ---\n"
+                  + guest.seen[mark:][-1500:])
+            return 1
+
+        check(saved == "2 lines to /Temporary/keys.txt",
+              "Control-S in Text Editor did not save two lines: %r" % saved)
+        to_the_prompt()
+
+        # The IDE's editor, over a file in a folder of its own.
+        # The file made first: the IDE takes a path that is not there for a
+        # project folder to open, not a file to write.
+        guest.type('fs.send("/Temporary/ide", { type = "mkdir" }) '
+                   'fs.write("/Temporary/ide/keys.txt", "")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("wm ide:/Temporary/ide/keys.txt")
+        saved = keys_into(mark, "ide: editor at ", "ide: saved ")
+        check(saved == "keys.txt, 2 lines",
+              "Control-S in the IDE did not save two lines: %r\n%s"
+              % (saved, guest.seen[mark:][-800:]))
+        to_the_prompt()
+
+        for who, path in (("Text Editor", "/Temporary/keys.txt"),
+                          ("the IDE", "/Temporary/ide/keys.txt")):
+            content = read_back(path)
+
+            if content is None:
+                check(False, "%s's file could not be read back" % who)
+            else:
+                check(content == WANT,
+                      "the keys wrote %r in %s, where they meant %r" % (content, who, WANT))
     finally:
         guest.close()
 
     if failed:
-        print("FAIL: %d of %d checks on the editor, typed at:" % (len(failed), checks))
+        print("FAIL: %d of %d checks on two editors, typed at:" % (len(failed), checks))
         for f in failed:
             print("  " + f)
         return 1
 
-    print("PASS: %d checks on the editor, typed at through the keyboard (Shift "
-          "and the arrows selecting, typing over a selection, undo and redo a "
-          "step at a time, Home, End, a word right, Delete, the page keys "
-          "typing nothing, Control+Shift+Left by words, Control-S; the file "
-          "exactly what the keys meant)" % checks)
+    print("PASS: %d checks on two editors typed at through the keyboard - Text "
+          "Editor's page and the IDE's (Shift and the arrows selecting, typing "
+          "over a selection, undo and redo a step at a time, Home, End, a word "
+          "right, Delete, the page keys typing nothing, Control+Shift+Left by "
+          "words, Control-S; each file exactly what the keys meant)" % checks)
     return 0
 
 

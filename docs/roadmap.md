@@ -2263,6 +2263,24 @@ processors, and still what follows USB:
    `**bold**` because "this font has one weight", which stopped being true
    when the Plex family arrived. **Drawn first**, as every app is:
    `docs/texteditor.html`, with what is Diego's to decide at its end.
+   **AGREED the same day, as drawn** - "Great, let's do it": Text Editor
+   replaces Editor as `texteditor.lua`, a launcher naming `editor` still
+   finding it; Markdown styled as it is written with its marks faint and
+   hanging in the margin; a column about seventy characters wide and no
+   line numbers; one window per document; a new document Markdown, saved
+   in `/Home/Documents`, its format following its name; it opens `txt md
+   conf log`, `.lua` going to the IDE and Run with it; Reader stays for the
+   guides; and **plain text first, then Markdown**, each landing on its
+   own. **Step 1, plain text**: a document view of the kit's own - a
+   proportional face, lines that wrap, a caret between characters -
+   since `ui.editor` is monospace by construction; the window, its menu,
+   find and replace, text size and the mono face. **Step 2, Markdown**:
+   that view learning faces per span and lines of their own heights.
+   **Step 1 DONE on 28 September** (`testing.md` 18.251): `texteditor.lua`
+   on `docview.lua`, `ui.segments`; `.md` Text Editor's first by
+   `filetypes.PREFERRED`, `.lua` the IDE's. **Known, for later**: a window
+   closed with changes loses them - the desktop gives a closing window a
+   second and no way to ask - as Editor did.
 
 6zr. **FOUND on 28 September - `context_switch` is 4.1% slower and
    `ipc_roundtrip` 2.2% than their baselines** (`make bench`, under

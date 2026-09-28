@@ -104,7 +104,7 @@ check(ids(filemenu.items{ what = "file", opener = "Video", with = with })
 check(not find(odd, "open_with"),
       "a file nothing opens offers an Open with with nothing in it")
 check(find(filemenu.items{ what = "lua",
-                           with = { { program = "editor", name = "Editor" } } },
+                           with = { { program = "ide", name = "Kosmos IDE" } } },
            "open_with"),
       "a Lua file offers no Open with")
 

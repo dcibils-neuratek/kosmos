@@ -1761,3 +1761,30 @@ client that draws its own header asks the compositor to begin the move.
 | Stack and tile | 7 |
 | Replicants | 7 |
 | Shared-memory surfaces (see `gfx.md` §19.9) | 7 |
+
+## 16.26 A page for documents, and a choice of two words
+
+**`/Kosmos/Libraries/docview.lua`** is a document on a page (`roadmap.md`
+6zs, Text Editor): the text in a proportional face - the look's `ui` at a
+size of the window's own, or `mono` when a document asks - wrapped to a
+column about seventy characters wide in the middle of the view, with a caret
+between characters. It is not `ui.editor`, which is monospace by
+construction: that widget numbers lines, puts a block caret *on* a cell and
+turns a click into a column by dividing. Here everything is measured with
+the face it is drawn in - where a row breaks, where the caret stands, which
+character a click lands on.
+
+It sits on the same `textbuf` as `ui.editor`, so undo, the selection and the
+clipboard are the ones already tested; what is its own is the page. Up and
+Down move by rows as they are seen, not by lines; Home and End go to a row's
+ends; a caret's step is a whole UTF-8 character. It scrolls by pixels rather
+than rows, so a row may one day be taller than another (Markdown's
+headings, 6zs step 2). Find is part of it: every match of a word, case
+ignored, found again after each change, one of them current and selected,
+replaced one at a time or all as one step to undo.
+
+**`ui.segments`** is two or three words in one box with one chosen - Text
+Editor's `Text | Markdown`: the dropdown's box divided by its rule, the
+chosen word on a quiet fill in the text's colour and the others dim.
+`ui.draw_scrollbar` is the kit's pill, exported for a view that scrolls by
+something other than rows.
