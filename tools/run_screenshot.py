@@ -3940,6 +3940,117 @@ def check_wallpapers(guest):
     return 4
 
 
+def check_super_drag(guest):
+    """**Super + Control and a drag moves a window from anywhere in it**
+    (`roadmap.md` 6zj). Diego, 27 September: "a key combination and that
+    activates full window drag? Like super+ctrl+click and drag".
+
+    A probe window that says when it is pressed, in the middle of its own
+    content where no title bar is. A plain press there reaches it - which is
+    what shows the probe can hear one. Then Control and Super are held down
+    through QEMU's keyboard, the same place is pressed and dragged 120 across
+    and 80 down, and let go, Super first:
+
+      the window manager says the window moved by the keys, to exactly where
+      the drag took it;
+      the probe never heard that press - the window manager kept it;
+      and the Super let go after it opened nothing - its tap, which is the
+      Kosmos menu, was let by (`OUT.chord` in `wm.lua`).
+    """
+    program = (
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
+        "local win = ui.window{ title = 'DragProbe', w = 300, h = 200, "
+        "x = 400, y = 300 } "
+        "local v = ui.view{ x = 0, y = 0, w = 300, h = 200 } "
+        "function v:draw(g) g:fill(0, 0, self.w, self.h, 'raised') end "
+        "function v:mouse(action) if action == 'press' then "
+        "print('drag' .. 'probe: pressed') end return true end "
+        "win:add(v) win:run()"
+    )
+    guest.type("fs.write('/Temporary/dragprobe.lua', %r)" % program)
+    time.sleep(1.0)
+    mark = len(guest.seen)
+    guest.type("wm /Temporary/dragprobe.lua")
+
+    opened = guest.wait_for_line("wm: window DragProbe at ",
+                                 "the probe window to open", mark)
+    x, y, w, h = (int(v) for v in
+                  re.match(r"(\d+),(\d+) (\d+)x(\d+)", opened).groups())
+    time.sleep(2.0)
+    width, height, _ = parse_ppm(guest.screendump())
+    mx, my = x + w // 2, y + h // 2
+
+    def to(px, py):
+        guest.mouse_to(*_to_tablet(px, py, width, height))
+
+    def keys(down, *names):
+        guest._qmp("input-send-event", {"events": [
+            {"type": "key", "data": {"down": down,
+                                     "key": {"type": "qcode", "data": n}}}
+            for n in names]})
+        time.sleep(0.2)
+
+    # A plain press: the probe hears it.
+    to(mx, my)
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.1)
+    guest.mouse_button(False)
+    guest.wait_for_line("dragprobe: pressed", "a plain press to reach the "
+                        "probe - which is what shows it can hear one", mark)
+
+    # Control and Super held, the same place pressed and dragged.
+    held = len(guest.seen)
+    keys(True, "ctrl")
+    keys(True, "meta_l")
+    to(mx, my)
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.2)
+
+    for k in range(1, 7):
+        to(mx + 20 * k, my + 80 * k // 6)
+        time.sleep(0.15)
+
+    time.sleep(0.4)
+    guest.mouse_button(False)
+    time.sleep(0.4)
+    keys(False, "meta_l")
+    keys(False, "ctrl")
+
+    moved = guest.wait_for_line("wm: moved DragProbe by Super + Control to ",
+                                "the window to move by Super + Control", held)
+    nx, ny = (int(v) for v in re.match(r"(\d+),(\d+)", moved).groups())
+
+    if abs(nx - (x + 120)) > 3 or abs(ny - (y + 80)) > 3:
+        raise Failure("Super + Control and a drag of 120 across and 80 down "
+                      "moved the window from %d,%d to %d,%d" % (x, y, nx, ny))
+
+    guest.wait_for_line("wm: Super moved a window, so its tap opens nothing",
+                        "the Super held for the move to open nothing when "
+                        "let go", held)
+
+    if "dragprobe: pressed" in guest.seen[held:]:
+        raise Failure("the press held with Super and Control reached the "
+                      "window as well as moving it - the application heard "
+                      "a click nobody meant for it")
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[back:]:
+            break
+
+        time.sleep(0.3)
+
+    return 3
+
+
 def check_direct_menu(guest):
     """A window that draws its own pixels has a menu bar, drawn above them.
 
@@ -10429,6 +10540,7 @@ def main():
         face_checks = phase("faces", check_faces)
         wallpaper_checks = phase("wallpapers", check_wallpapers)
         direct_menu_checks = phase("direct menu", check_direct_menu)
+        super_drag_checks = phase("super drag", check_super_drag)
         tab_checks = phase("tabs", check_tabs)
         corner_checks = phase("corners", check_corners)
         shadow_checks = phase("shadow", check_shadow)
@@ -10507,7 +10619,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
+             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
              + split_checks + monitor_checks + camera_checks
@@ -10594,6 +10706,9 @@ def main():
           f"Grotesk's five weights among them, "
           f"{wallpaper_checks} on the desktop's wallpapers carried in the "
           f"image and one reaching the screen pixel for pixel, "
+          f"{super_drag_checks} on a window moved from anywhere in it with "
+          f"Super + Control, its application not hearing the press and the "
+          f"Super opening nothing, "
           f"{direct_menu_checks} on a menu bar above a window that draws its "
           f"own pixels, and its menu reaching the program and as tall as "
           f"what is in it, "

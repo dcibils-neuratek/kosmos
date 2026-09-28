@@ -11683,3 +11683,28 @@ integer `modified` within five seconds of `/Devices/clock`. Control: the
 disk server stamping with the counter again - `nil false`. Seen under QEMU
 with a kfs disk: Info on a film says "Modified 28 September 2026, 01:40".
 
+## 18.241 A window moved from anywhere in it: Super + Control and a drag (6zj)
+
+Diego: "a key combination and that activates full window drag? Like
+super+ctrl+click and drag". The window manager keeps which keys are held,
+from the raw events every key sends (the same numbers on both boards), and
+a press with Control and Super down starts the drag a tab's press starts -
+anywhere in the window, the press kept from the application. Not the
+desktop, the Deskbar or a full-screen window.
+
+**Super's tap is let go by after a move.** Both keyboard drivers send
+Super's tap - the Kosmos menu - on its release when no letter came between,
+and a click is not a letter, so every such move would have ended with the
+menu open. A move marks the Super held for it (`OUT.chord` - in `OUT`
+because `wm.lua`'s main chunk is at Lua's two hundred locals), and that
+Super's tap opens nothing; a fresh Super clears the mark. Listed in the
+Shortcuts window.
+
+**Checked on both boards** (the display harness's `super drag`, 3): a
+probe window that says when it is pressed hears a plain press, which shows
+it can; then with Control and Super held through QEMU's keyboard, the same
+place pressed and dragged 120 across and 80 down moves the window exactly
+that far, the probe hears nothing, and the Super let go after opens nothing.
+Controls, each failing its own check: the tap not let go by; no drag from
+the keys held.
+

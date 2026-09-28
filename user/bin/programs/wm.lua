@@ -1912,6 +1912,31 @@ local CURSOR = {
 local pointer_x, pointer_y = 0, 0
 local buttons = 0
 local dragging = nil          -- { win, dx, dy } while a title bar is held
+
+--
+-- **Which keys are held**, from the raw events every key sends (the same
+-- numbers on both boards, `hal/keys.h`), for a press that asks with them:
+-- Super and Control held and a window pressed anywhere moves it
+-- (`roadmap.md` 6zj - Diego: "a key combination and that activates full
+-- window drag? Like super+ctrl+click and drag"). The window manager sees
+-- the keys and the press before any application, so it keeps the press.
+--
+-- **And the Super it was held with does not open the menu.** Both keyboard
+-- drivers send Super's tap - `ESC [ 1 ; 9 ~`, the Kosmos menu - on its
+-- release when no letter came between, and a click is not a letter; so a
+-- move marks the Super held for it, and that Super's tap is let go by.
+--
+-- In `OUT` rather than three locals of its own: this file's main chunk is
+-- at Lua's two hundred.
+OUT.chord = { held = {}, super_moved = false }
+
+function OUT.chord.move_held()
+  local held = OUT.chord.held
+
+  return (held[29] or held[97])                    -- Control, left or right
+         and (held[125] or held[126])              -- Super, left or right
+         and true or false
+end
 local resizing = nil          -- { win, ox, oy, ow, oh } while a grip is held
 
 -- The right button's own grab, because the two buttons are two
@@ -6158,6 +6183,17 @@ local function pointer_pass(p)
       raise(win)
 
       --
+      -- Super and Control held: the window moves, from wherever it was
+      -- pressed, and the application never sees the press - a button under
+      -- the pointer is not pressed, a game's picture is not clicked. Not the
+      -- desktop, the Deskbar or a full-screen window, which do not move.
+      --
+      if OUT.chord.move_held() and not (win.backdrop or win.strip or win.fullscreen) then
+        dragging = { win = win, dx = nx - win.x, dy = ny - win.y,
+                     held = true }
+        OUT.chord.super_moved = true
+
+      --
       -- The backdrop and the strip are not windows you move.
       --
       -- They have no title bar, so there is nothing that *looks* like a
@@ -6177,7 +6213,7 @@ local function pointer_pass(p)
       -- 26 September when Cafesa3D's dots, at exactly that corner, closed
       -- Cafesa3D instead of opening its menu.
       --
-      if win.backdrop or win.strip or win.fullscreen then
+      elseif win.backdrop or win.strip or win.fullscreen then
         -- Straight to the application, which is what a bar is for - and
         -- grabbed, like any other press, or the release never arrives and a
         -- shortcut is a word that highlights and does nothing.
@@ -6300,6 +6336,14 @@ local function pointer_pass(p)
     if dragging then
       post(dragging.win, { type = "moved",
                            x = dragging.win.x, y = dragging.win.y })
+
+      -- Said for a move by the keys, which nothing else shows but pixels,
+      -- as a keyboard's move is said below.
+      if dragging.held then
+        print(("wm: moved %s by Super + Control to %d,%d"):format(
+              tostring(dragging.win.title), dragging.win.x, dragging.win.y))
+      end
+
       dragging = nil
     end
   end
@@ -6771,6 +6815,13 @@ local SUPER_BINDINGS = {
       -- comment's reason.
       if OUT.keys.super == "nothing" then return end
 
+      -- The Super a window was just moved with, let go (`OUT.chord`).
+      if OUT.chord.super_moved then
+        OUT.chord.super_moved = false
+        print("wm: Super moved a window, so its tap opens nothing")
+        return
+      end
+
       OUT.open_kosmos_menu()
     end,
   },
@@ -6844,6 +6895,10 @@ handlers.shortcuts = function()
   for _, b in ipairs(SUPER_BINDINGS) do
     keys[#keys + 1] = { shown = b.shown, what = b.what }
   end
+
+  -- Not a key's, so not in the table keys are looked up in: the pointer's.
+  keys[#keys + 1] = { shown = "Super + Control + drag",
+                      what = "Move a window from anywhere in it" }
 
   for _, b in ipairs(PREFIX_BINDINGS) do
     prefixes[#prefixes + 1] = { shown = b.shown, what = b.what }
@@ -7186,6 +7241,13 @@ while running do
 
   -- The same presses as transitions, for whoever wants them that way.
   for _, ev in ipairs(input.events or {}) do
+    OUT.chord.held[ev.code] = ev.down or nil
+
+    -- A fresh Super is a fresh chance to open the menu.
+    if (ev.code == 125 or ev.code == 126) and ev.down then
+      OUT.chord.super_moved = false
+    end
+
     if not volume_key(ev.code, ev.down)
        and not machine_keys.take(ev.code, ev.down) then
       raw_to_focused(ev.code, ev.down)

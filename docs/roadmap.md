@@ -2227,6 +2227,36 @@ processors, and still what follows USB:
    Independent of the rest, and small; the care is that the Super held for
    it must not open the Kosmos menu when it is let go. (Closing from the
    keyboard is there already: Super + Q, and Super + H to minimise.)
+   **DONE the same night** (`testing.md` 18.241). Diego answered the five
+   questions "Let's go" and "It's good": all five as drawn, and this
+   before the rest of 6zj.
+
+6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
+   the possibility of using luajit in kosmos to improve performance for Lua
+   code". It was rejected in August for Lua 5.4 (`design.md` §5, README),
+   and the reasons are the study's questions rather than its answer:
+   LuaJIT is Lua 5.1 - no integer subtype, no `//`, `<<` or `&`, no
+   `string.pack`, all of which Kosmos's Lua uses, every protocol included -
+   and its compiler writes machine code into memory as it runs, which the
+   kernel and the ELF loader refuse (no page writable and executable at
+   once). **The study, a document for Diego to decide from**: how much of
+   the tree uses what LuaJIT lacks, counted; `luabench` and the display
+   harness's Lua-heavy paths under LuaJIT's interpreter and its compiler on
+   this Mac, against 5.4, measured; what the kernel would have to allow and
+   what that costs its rule; and what is left in Lua that a profile says is
+   slow, since the byte loops are C already. After 6zn.
+
+6zn. **ASKED on 27 September - `wm.lua` in several files.** Diego:
+   "Perhaps we need to partition WM.lua in smaller files as it keeps
+   growing". Over seven thousand lines, and its main chunk reached Lua's
+   two hundred locals the same night (6zj's chord went into `OUT`). Split
+   by job, and nothing else: keys and shortcuts, the pointer - presses,
+   drags, resizing - windows (placing, focus, raising), tabs and
+   decoration, menus and strips, composing, and the requests applications
+   send; sharing their state through one table as `OUT` already does. No
+   behaviour changes, which the whole gate is what shows. **Before the
+   rest of 6zj**, which rewrites the tab and pointer parts - easier once
+   they are files of their own.
 
 6zi. **WANTED on 27 September - a Mouse page in Preferences.** Diego:
    "preferences app need a mouse setting panel (pointer speed, mouse click

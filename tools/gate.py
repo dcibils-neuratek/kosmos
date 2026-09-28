@@ -310,7 +310,7 @@ DISPLAY_PARTS = [
     ["log view", "text size", "window resize", "triangle", "repaints",
      "@@BOARD@@", "volume keys", "compositor budget", "corners", "shadow",
      "wheel"],
-    ["faces", "wallpapers", "direct menu", "tabs", "appearance",
+    ["faces", "wallpapers", "direct menu", "super drag", "tabs", "appearance",
      "Super Nintendo --scale", "deskbar", "deskbar focus", "desktop",
      "places", "panel"],
     ["clipboard", "cores", "cpu split", "monitor", "camera", "reaped",
