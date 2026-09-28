@@ -2257,6 +2257,15 @@ processors, and still what follows USB:
    behaviour changes, which the whole gate is what shows. **Before the
    rest of 6zj**, which rewrites the tab and pointer parts - easier once
    they are files of their own.
+   **In progress, a part at a time** under `user/lib/wm/`, used by whole
+   path: the frame profile (`profile.lua`, its state `P`'s fields, which
+   the loop and `frames` set and read) and the level bar (`osd.lua`, a
+   function handed the screen's width, `add_damage`, and `reserved_top` as
+   a function - the Deskbar changes it, and a copy would go stale). Found
+   on the way, and not by the split: `run_frames.py`'s dragging scenario
+   gets no report, and did not at the commit before this night's work
+   either - it is not in the gate, which is how it went unseen. For its
+   turn.
 
 6zi. **WANTED on 27 September - a Mouse page in Preferences.** Diego:
    "preferences app need a mouse setting panel (pointer speed, mouse click

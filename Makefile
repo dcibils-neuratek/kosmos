@@ -231,6 +231,7 @@ BIN_LUA := $(wildcard user/bin/apps/*.lua) $(wildcard user/bin/apps/*/*.lua) \
 
 LUA_FILES := user/init/init.lua $(BIN_LUA) \
              $(wildcard user/lib/*.lua) $(wildcard user/lib/translators/*.lua) \
+             $(wildcard user/lib/wm/*.lua) \
              $(wildcard user/tests/*.lua)
 
 SRCS := boot/start.S \
@@ -2189,6 +2190,13 @@ TRANSLATORS := $(wildcard user/lib/translators/*.lua)
 TRANSLATORS_ROOTED := --rooted user/lib/translators translators/
 
 #
+# **The window manager's parts** (`roadmap.md` 6zn): `wm.lua` in files by
+# job, under `wm/`, used by whole path as any library is.
+#
+WM_PARTS := $(wildcard user/lib/wm/*.lua)
+WM_ROOTED := --rooted user/lib/wm wm/
+
+#
 # **luacheck**, for the IDE's checking (`roadmap.md` 6n, step 4): vendored
 # unmodified in runtime/upstream/luacheck/ and carried as `/lib/luacheck/`,
 # where `/lib/lint.lua`'s `require` finds its modules. Not in LUA_FILES:
@@ -2199,11 +2207,12 @@ LUACHECK := $(shell find runtime/upstream/luacheck/src/luacheck -name '*.lua' 2>
 LUACHECK_ROOTED := --rooted runtime/upstream/luacheck/src/luacheck luacheck/
 
 $(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(SOLAR_DATA) $(TRANSLATORS) \
-                    $(LUACHECK) tools/progs2c.py $(HOSTDIR)/lua.ok
+                    $(WM_PARTS) $(LUACHECK) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
 	    $(SOLAR_ROOTED) $(SOLAR_DATA) \
 	    $(TRANSLATORS_ROOTED) $(TRANSLATORS) \
+	    $(WM_ROOTED) $(WM_PARTS) \
 	    $(LUACHECK_ROOTED) $(LUACHECK)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok

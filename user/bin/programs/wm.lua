@@ -2020,162 +2020,12 @@ local BADGE_DX, BADGE_DY = 12, 10
 local BADGE_PAD = 4
 
 --------------------------------------------------------------------------
--- The frame profile.
---
--- Where a pass of the loop below actually goes, measured rather than
--- argued. The system is aiming at a fast desktop on a Pi 5 and every
--- discussion about moving this process into C has had to guess at whether
--- its Lua half is five per cent of a frame or fifty. This is the thing
--- that answers that.
---
--- **Off by default, and costing nothing while it is off.** The timer reads
--- are behind `profiling`, so a desktop nobody asked to measure itself does
--- not make eight extra syscalls a hundred times a second.
---
--- **Waiting is not working, and the two are counted apart.** Most of a
--- pass on an idle desktop is `wait_input` sleeping, which is the loop
--- doing its job rather than costing anything. `busy` is every stage except
--- that one, and `busy.max` - the worst pass ever seen - is the number that
--- matters: responsiveness is a promise about the worst case.
---
--- **Pixels, so compose time can be divided by something.** Knowing that
--- compose took 3 ms means nothing without knowing whether it drew a
--- cursor or the whole screen. With both, the quotient can be compared
--- against what the C primitives do on their own, and the difference is
--- what the Lua around them costs.
---
--- **And the collector, because that is the whole argument.** C is proposed
--- here for jitter rather than throughput: a GC pause is about 1.25 ms and
--- arrives when it chooses, against a 16 ms frame. So a pass during which
--- the heap shrank is a pass a collection finished in, and the worst of
--- those is recorded separately. If the worst pass overall is also a
--- collection pass, the argument is made. If it is not, it is not.
+-- The frame profile - `/Kosmos/Libraries/wm/profile.lua`, where it says
+-- what it measures and why (`roadmap.md` 6zn). Its state is `P`'s: the
+-- loop and `frames` set and read `P.profiling`, `P.measuring` and the rest.
 --------------------------------------------------------------------------
 
-local STAGES = { "wait", "keys", "messages", "pointer",
-                 "waiting", "collect", "compose" }
-
-local profiling = false
-
---
--- Whether *this* pass is being measured, decided once at the top of it.
---
--- Not the same question as `profiling`, and conflating them was a crash on
--- the first run: `frames` turns the profile on by sending a message, which
--- is handled in the middle of a pass, so a pass that began unmeasured
--- reached the next stage boundary with no reading to subtract from. A pass
--- measures throughout or not at all - which is also the only way its
--- stages can add up to its total.
---
-local measuring = false
-
-local prof
-local pass_busy = 0
-
---
--- A client blocked in `fs.send` until its measurement is over.
---
--- `frames` cannot sleep for itself: `sys.wait_input` is refused to anything
--- that does not own the console, and this process owns it. Spinning instead
--- would be worse than useless - a program burning processor beside the loop
--- it is measuring lands in whichever stage the loop was preempted in, and
--- the measurement would be of the measuring.
---
--- So the wait happens here, and the client spends it blocked in IPC, which
--- costs a descheduled thread and nothing else. Same shape as `poll`.
---
-local profile_waiting = nil
-
-local function prof_reset()
-  prof = { passes = 0, frames = 0, rects = 0, px = 0, drawn = 0,
-           busy = { total = 0, max = 0 },
-           gc = { collections = 0, worst = 0 } }
-
-  for _, name in ipairs(STAGES) do
-    prof[name] = { total = 0, max = 0, kb = 0 }
-  end
-end
-
---
--- Charge the time since `t0` to a stage, and hand back the reading so the
--- next stage starts where this one ended - one clock read per boundary
--- rather than two.
---
--- **And the heap it grew**, which is why this now takes and returns two
--- numbers instead of one.
---
--- The first profile said the Lua half of this loop is about a tenth of a
--- busy pass and composing is the rest - so the question of rewriting it in
--- C was answered no. What the same profile also said was that the worst
--- collecting pass was 5.7 ms against a 16 ms frame, and *that* is not a
--- question about which language the loop is written in. It is a question
--- about what the loop allocates, and nothing here could say.
---
--- Per stage rather than per pass, for the same reason the times are per
--- stage: "this pass allocated 40 KB" tells you there is a problem and
--- nothing about where.
---
--- `collectgarbage("count")` is a call per stage boundary, seven a pass, and
--- only when measuring. A stage in which a collection ran shows a *fall*,
--- and a fall is charged as zero rather than as a negative: it did allocate,
--- and how much is unknowable once something else freed more.
---
-local function charge(stage, t0, h0, idle)
-  local now = sys.ticks()
-  local heap = collectgarbage("count")
-  local took = now - t0
-  local grew = heap - h0
-  local s = prof[stage]
-
-  s.total = s.total + took
-  if took > s.max then s.max = took end
-  if grew > 0 then s.kb = s.kb + grew end
-  if not idle then pass_busy = pass_busy + took end
-
-  return now, heap
-end
-
--- Everything measured, flattened: the serialiser crosses this as a table of
--- scalars, and a stage is two numbers rather than a structure worth naming
--- twice. Times are counter ticks - what a tick is worth is `/Devices/cpu`'s
--- business and the reporting program's, not this one's.
-local function profile_report()
-  local out = { ok = true, profiling = profiling,
-                passes = prof.passes, frames = prof.frames,
-                rects = prof.rects, px = prof.px, drawn = prof.drawn,
-                busy_total = prof.busy.total, busy_max = prof.busy.max,
-                collections = prof.gc.collections, gc_worst = prof.gc.worst,
-                heap = collectgarbage("count") }
-
-  for _, name in ipairs(STAGES) do
-    out[name .. "_total"] = prof[name].total
-    out[name .. "_max"]   = prof[name].max
-    out[name .. "_kb"]    = prof[name].kb
-  end
-
-  return out
-end
-
---
--- Answer a client whose measurement is over.
---
--- Called at the very top of a pass, before that pass decides whether it is
--- being measured, and stopping first so that it is not. Building a report
--- takes a few microseconds and charging them to a stage would land them in
--- `max` - which is the one number this whole thing exists to report, and
--- the last place to put an artefact of reporting it.
---
-local function profile_due()
-  if not profile_waiting then return end
-  if sys.ticks() < profile_waiting.deadline then return end
-
-  local who = profile_waiting.who
-
-  profiling = false
-  profile_waiting = nil
-
-  pcall(sys.reply, who, profile_report())
-end
+local P = use("/Kosmos/Libraries/wm/profile.lua")
 
 -- Into the backbuffer, clipped by the surface primitives like anything
 -- else. A run of identical pixels at a time rather than one fill per pixel:
@@ -2851,177 +2701,14 @@ end
 -- one is skipped outright.
 --
 --------------------------------------------------------------------------
--- The level bar: the volume, and the brightness when there is one, shown
--- over everything.
+-- The level bar - `/Kosmos/Libraries/wm/osd.lua`, the volume and the
+-- brightness shown over everything (`roadmap.md` 6zn).
 --
--- `docs/levels.html`, drawn after macOS's Display and Sound panels and
--- approved on 18 September - "all is good", "i like the bar with smooth
--- instead of notches": a dark rounded panel titled by what it controls, a
--- small and a large icon either side of a smooth track with a knob, top
--- right under the bar. It appears when a level changes and fades two
--- seconds after the last change.
---
--- **Drawn here, by the window manager, from what it already knows.** The
--- keys are the system's, taken in `volume_key`, so the panel moves at the
--- moment of the key rather than after a round trip - the rule every control
--- here follows. It is drawn once into a surface of its own when the level
--- changes; each frame only blends that surface over the windows, with a
--- global alpha for the fade.
---
--- **Built so nothing is drawn twice.** `fill` replaces pixels and `disc`
--- blends only its anti-aliased edge, so a rounded shape is four corner discs
--- first and three rectangles over them: the rectangles replace whatever the
--- discs left inside, and the corners keep their smooth edge. Everything
--- inside the panel is at the panel's own opacity, pre-mixed, because a
--- colour with less alpha written in by replacement would be a hole in it.
---
---
--- **One table, because `wm.lua`'s main chunk is at Lua's limit of two
--- hundred locals** - this first went in as twenty of them, and the file
--- stopped loading. Everything about the level bar lives here.
---
-local osd = {
-  W = 300, H = 74, R = 18,
-  HOLD = 2.0,                           -- seconds after the last change
-  FADE = 0.18,                          -- seconds of fading out
-  HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000,
-
-  EDGE  = 0xe63a3a3a,                   -- the rim
-  BODY  = 0xe61e1e1e,                   -- the panel, at nine tenths
-  RAIL  = 0xe6484848,                   -- the track's empty part, pre-mixed
-  INK   = 0xffffffff,
-  KNOB  = 0xfff2f2f2,
-  QUIET = 0xe68c8c8c,                   -- the fill while muted
-
-  surface = nil, shown = false, until_at = 0, x = 0, y = 0,
+local osd = use("/Kosmos/Libraries/wm/osd.lua"){
+  width = W,
+  add_damage = add_damage,
+  reserved_top = function() return reserved_top end,
 }
-
-function osd.rounded(s, x, y, w, h, r, colour)
-  s:disc(x + r, y + r, r, colour)
-  s:disc(x + w - r - 1, y + r, r, colour)
-  s:disc(x + r, y + h - r - 1, r, colour)
-  s:disc(x + w - r - 1, y + h - r - 1, r, colour)
-  s:fill(x + r, y, w - 2 * r, h, colour)
-  s:fill(x, y + r, r, h - 2 * r, colour)
-  s:fill(x + w - r, y + r, r, h - 2 * r, colour)
-end
-
--- A line two pixels thick, as two triangles, for the mute's cross.
-function osd.line(s, x1, y1, x2, y2, colour)
-  s:triangle(x1 - 1, y1, x1 + 1, y1, x2 + 1, y2, colour)
-  s:triangle(x1 - 1, y1, x2 + 1, y2, x2 - 1, y2, colour)
-end
-
--- A speaker: a box and a cone, and `waves` arcs made as crescents - a disc
--- of ink with one of the panel's colour over it, two pixels to the left.
-function osd.speaker(s, x, cy, waves, muted, colour)
-  for i = waves, 1, -1 do
-    s:disc(x + 9, cy, 2 + 4 * i, colour)
-    s:disc(x + 7, cy, 2 + 4 * i, osd.BODY)
-  end
-
-  s:fill(x, cy - 3, 4, 7, colour)
-  s:triangle(x + 3, cy - 3, x + 9, cy - 8, x + 9, cy + 8, colour)
-  s:triangle(x + 3, cy - 3, x + 9, cy + 8, x + 3, cy + 3, colour)
-
-  if muted then
-    osd.line(s, x + 12, cy - 5, x + 20, cy + 5, colour)
-    osd.line(s, x + 12, cy + 5, x + 20, cy - 5, colour)
-  end
-end
-
--- A sun: a disc and eight dots around it.
-function osd.sun(s, cx, cy, core, reach, dot, colour)
-  s:disc(cx, cy, core, colour)
-
-  for i = 0, 7 do
-    local a = i * math.pi / 4
-
-    s:disc(math.floor(cx + math.cos(a) * reach + 0.5),
-           math.floor(cy + math.sin(a) * reach + 0.5), dot, colour)
-  end
-end
-
---
--- Shown, or shown again: `which` is "sound" or "display", `level` 0 to 1.
--- Muted keeps the level and greys the fill, as `levels.html` draws it.
---
-function osd.show(which, level, muted)
-  if not osd.surface then
-    osd.surface = gfx.surface{ w = osd.W, h = osd.H }
-
-    if not osd.surface then return end
-  end
-
-  local s, w, h = osd.surface, osd.W, osd.H
-
-  s:fill(0, 0, w, h, 0x00000000)
-  osd.rounded(s, 0, 0, w, h, osd.R, osd.EDGE)
-  osd.rounded(s, 1, 1, w - 2, h - 2, osd.R - 1, osd.BODY)
-
-  s:text(18, 10, which == "display" and "Display" or "Sound", osd.INK)
-
-  local cy = 50
-  local tx, tw = 48, w - 48 - 50
-
-  if which == "display" then
-    osd.sun(s, 26, cy, 3, 7, 1, osd.INK)
-    osd.sun(s, w - 28, cy, 4, 10, 2, osd.INK)
-  else
-    osd.speaker(s, 18, cy, muted and 0 or 1, muted, osd.INK)
-    osd.speaker(s, w - 40, cy, 3, false, osd.INK)
-  end
-
-  level = math.max(0, math.min(1, level or 0))
-
-  local fw = math.max(6, math.floor(tw * level + 0.5))
-
-  osd.rounded(s, tx, cy - 3, tw, 6, 3, osd.RAIL)
-  osd.rounded(s, tx, cy - 3, fw, 6, 3, muted and osd.QUIET or osd.INK)
-
-  local kx = math.max(tx, math.min(tx + tw - 26, tx + fw - 13))
-
-  osd.rounded(s, kx, cy - 8, 26, 16, 8, osd.KNOB)
-
-  -- Top right, under the bar: where macOS puts it, and where the drawing
-  -- does.
-  if osd.shown then add_damage(osd.x, osd.y, w, h) end
-
-  osd.x = W - w - 14
-  osd.y = reserved_top + 10
-  osd.until_at = sys.ticks() + math.floor(osd.HOLD * osd.HZ)
-  osd.shown = true
-
-  add_damage(osd.x, osd.y, w, h)
-end
-
--- How opaque it is now: whole until its time is up, then fading to nothing.
-function osd.alpha(now)
-  if not osd.shown then return 0 end
-
-  local left = osd.until_at - now
-
-  if left > 0 then return 255 end
-
-  local gone = -left / (osd.FADE * osd.HZ)
-
-  if gone >= 1 then return 0 end
-
-  return math.floor(255 * (1 - gone))
-end
-
--- Each pass: the fade drawn a frame at a time, and the panel gone at its end.
-function osd.tick()
-  if not osd.shown then return end
-
-  local now = sys.ticks()
-
-  if now >= osd.until_at then
-    add_damage(osd.x, osd.y, osd.W, osd.H)
-
-    if osd.alpha(now) == 0 then osd.shown = false end
-  end
-end
 
 local function compose_rect(r)
   --
@@ -3106,7 +2793,7 @@ local function compose_rect(r)
 
   -- The desktop, only where no window reaches. Often nowhere.
   for _, piece in ipairs(remaining) do
-    if measuring then prof.drawn = prof.drawn + piece.w * piece.h end
+    if P.measuring then P.prof.drawn = P.prof.drawn + piece.w * piece.h end
     draw_desktop(piece)
   end
 
@@ -3118,8 +2805,8 @@ local function compose_rect(r)
     OUT.cast_shadow(windows[i], r)
 
     if v then
-      if measuring then
-        prof.drawn = prof.drawn + (v.x1 - v.x0) * (v.y1 - v.y0)
+      if P.measuring then
+        P.prof.drawn = P.prof.drawn + (v.x1 - v.x0) * (v.y1 - v.y0)
       end
 
       draw_window(i, { x = v.x0, y = v.y0, w = v.x1 - v.x0, h = v.y1 - v.y0 })
@@ -3199,9 +2886,9 @@ end
 local function compose()
   if #damage == 0 then return end
 
-  if measuring then
-    prof.frames = prof.frames + 1
-    prof.rects  = prof.rects + #damage
+  if P.measuring then
+    P.prof.frames = P.prof.frames + 1
+    P.prof.rects  = P.prof.rects + #damage
   end
 
   for _, r in ipairs(damage) do
@@ -3219,7 +2906,7 @@ local function compose()
     -- reported now, and the ratio between them is the interesting figure:
     -- overdraw.
     --
-    if measuring then prof.px = prof.px + r.w * r.h end
+    if P.measuring then P.prof.px = P.prof.px + r.w * r.h end
     compose_rect(r)
   end
 
@@ -5784,9 +5471,9 @@ end
 --
 handlers.profile = function(req, who)
   if req.on == true then
-    prof_reset()
-    pass_busy = 0
-    profiling = true
+    P.reset()
+    P.pass_busy = 0
+    P.profiling = true
 
     --
     -- `run_for` counter ticks and then the answer, which is how `frames`
@@ -5795,23 +5482,23 @@ handlers.profile = function(req, who)
     -- blocked thread costing nothing.
     --
     if req.run_for then
-      profile_waiting = { who = who,
+      P.waiting = { who = who,
                           deadline = sys.ticks() + req.run_for }
       return DEFER
     end
 
     return { ok = true, profiling = true }
   elseif req.on == false then
-    profiling = false
-    profile_waiting = nil
+    P.profiling = false
+    P.waiting = nil
     return { ok = true, profiling = false }
   end
 
-  if not prof then
+  if not P.prof then
     return { ok = false, error = "nothing measured yet: start it with on=true" }
   end
 
-  return profile_report()
+  return P.report()
 end
 
 handlers.end_process = function(req)
@@ -7216,12 +6903,12 @@ while running do
   -- with, and the collection check below needs the second.
   local t, heap, heap_at_start
 
-  profile_due()
+  P.due()
 
-  measuring = profiling
+  P.measuring = P.profiling
 
-  if measuring then
-    prof.passes = prof.passes + 1
+  if P.measuring then
+    P.prof.passes = P.prof.passes + 1
     heap = collectgarbage("count")
     heap_at_start = heap
     t = sys.ticks()
@@ -7232,7 +6919,7 @@ while running do
 
   -- Idle, and charged as such: this is the loop asleep with nothing to do,
   -- and counting it as work would make an empty desktop look busy.
-  if measuring then t, heap = charge("wait", t, heap, true) end
+  if P.measuring then t, heap = P.charge("wait", t, heap, true) end
 
   step("keys")
   for _, c in ipairs(input.keys or {}) do
@@ -7254,7 +6941,7 @@ while running do
     end
   end
 
-  if measuring then t, heap = charge("keys", t, heap) end
+  if P.measuring then t, heap = P.charge("keys", t, heap) end
 
   step("messages")
   -- 2. Whatever the applications have asked for, and not one message more
@@ -7288,7 +6975,7 @@ while running do
     end
   end
 
-  if measuring then t, heap = charge("messages", t, heap) end
+  if P.measuring then t, heap = P.charge("messages", t, heap) end
 
   step("pointer")
   -- 3. The pointer, before the picture: a click can raise a window and a
@@ -7344,7 +7031,7 @@ while running do
 
   pointer_pass(input.pointer)
 
-  if measuring then t, heap = charge("pointer", t, heap) end
+  if P.measuring then t, heap = P.charge("pointer", t, heap) end
 
   -- 3b. Whoever asked to be told the list changed, before the answers go.
   tell_watchers()
@@ -7353,7 +7040,7 @@ while running do
   -- 4. Anybody who has been waiting long enough, or now has something.
   answer_waiting()
 
-  if measuring then t, heap = charge("waiting", t, heap) end
+  if P.measuring then t, heap = P.charge("waiting", t, heap) end
 
   -- 5. Anything that was asked to close and did not, and the slots of
   -- anything that has already gone.
@@ -7370,19 +7057,19 @@ while running do
   --
   while sys.wait(true) do end
 
-  if measuring then t, heap = charge("collect", t, heap) end
+  if P.measuring then t, heap = P.charge("collect", t, heap) end
 
   step("compose")
   osd.tick()
   -- 6. The picture, cursor included.
   compose()
 
-  if measuring then
-    charge("compose", t, heap)
+  if P.measuring then
+    P.charge("compose", t, heap)
 
-    local b = prof.busy
-    b.total = b.total + pass_busy
-    if pass_busy > b.max then b.max = pass_busy end
+    local b = P.prof.busy
+    b.total = b.total + P.pass_busy
+    if P.pass_busy > b.max then b.max = P.pass_busy end
 
     --
     -- A pass the heap ended smaller than it started is a pass a collection
@@ -7391,12 +7078,12 @@ while running do
     -- which is the kind that takes the time.
     --
     if collectgarbage("count") < heap_at_start then
-      local gc = prof.gc
+      local gc = P.prof.gc
       gc.collections = gc.collections + 1
-      if pass_busy > gc.worst then gc.worst = pass_busy end
+      if P.pass_busy > gc.worst then gc.worst = P.pass_busy end
     end
 
-    pass_busy = 0
+    P.pass_busy = 0
   end
 end
 
