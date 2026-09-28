@@ -11,6 +11,7 @@
 #   ./run-kosmos.sh -smp 8          eight processors (four by default)
 #   ./run-kosmos.sh -m 2G           more memory (512M by default)
 #   ./run-kosmos.sh -camera pattern a test pattern for the Camera app
+#   ./run-kosmos.sh -nosound        without the sound card
 #   ./run-kosmos.sh -serial         no window, serial only
 #   ./run-kosmos.sh path.elf        a particular image
 #
@@ -76,6 +77,7 @@ here=$(dirname "$0")
 image=""
 serial_only="no"
 fit="no"
+sound="yes"
 size=""
 want_size="no"
 
@@ -158,6 +160,7 @@ for arg in "$@"; do
         -smp)    want_cpus="yes" ;;
         -m)      want_memory="yes" ;;
         -camera) want_camera="yes" ;;
+        -nosound) sound="no" ;;
         -*)      echo "unknown option: $arg" >&2; exit 2 ;;
         *)       image="$arg" ;;
     esac
@@ -440,6 +443,20 @@ set -- "$@" -netdev user,id=net0 -device virtio-net-device,netdev=net0
 if [ -n "$disk" ]; then
     set -- "$@" -drive "file=$disk,format=raw,if=none,id=disk" \
                 -device virtio-blk-device,drive=disk
+fi
+
+# A sound card, as `make qemu` gives one, out through the Mac's own output:
+# without it Music, Groove and Doom have no device and say so. CoreAudio is
+# macOS's, so elsewhere QEMU picks its own default. `-nosound` leaves it out
+# - for a Mac whose QEMU plays too fast, which one of them measurably does.
+if [ "$sound" = "yes" ]; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+        set -- "$@" -audiodev coreaudio,id=snd0
+    else
+        set -- "$@" -audiodev none,id=snd0
+    fi
+
+    set -- "$@" -device virtio-sound-device,audiodev=snd0
 fi
 
 if [ "$serial_only" = "yes" ]; then

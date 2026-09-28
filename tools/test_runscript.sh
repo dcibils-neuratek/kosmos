@@ -58,6 +58,15 @@ check "$(if tail -2 "$work/out" | head -1 | grep -qxF '[-kernel]' &&
          then echo yes; else echo no; fi)" "the image, last"
 check "$(if grep -q 'opt/kosmos/camera' "$work/out"; then echo no
          else echo yes; fi)" "no camera unless one is asked for"
+check "$(has virtio-sound-device,audiodev=snd0)" \
+      "a sound card, or Music, Groove and Doom have no device"
+check "$(if [ "$(uname -s)" != Darwin ] || grep -qxF '[coreaudio,id=snd0]' "$work/out"
+         then echo yes; else echo no; fi)" "out through the Mac's own output"
+
+# And none when asked for none.
+run -nosound > "$work/out"
+check "$(if grep -q 'virtio-sound' "$work/out"; then echo no
+         else echo yes; fi)" "-nosound leaves the sound card out"
 
 # `-b` with a space in it is one argument, not two.
 run -b "wm blocks" > "$work/out"
@@ -90,4 +99,4 @@ if [ "$fails" -ne 0 ]; then
 fi
 
 echo "PASS: $checks checks on run-kosmos.sh (the command line it gives QEMU:" \
-     "the flags nobody guesses, -b as one argument, -camera pattern)"
+     "the flags nobody guesses, a sound card, -b as one argument, -camera pattern)"
