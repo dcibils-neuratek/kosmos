@@ -1132,8 +1132,18 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 # per-variant and a MEGA build and a plain one cannot invalidate each other
 # at all.
 #
+#
+# **And one a processor.** `$(BUILD)` does not vary with `ARCH`: a
+# `make ARCH=x86_64` puts its objects in `build/x86_64` but was writing its
+# flags into `build/flags` and `build/test/flags` - the ARM kernels' own
+# stamps - at parse time, before it compiled a thing. Every gate builds the
+# x86 images after the ARM ones, so the next gate found both ARM kernels'
+# stamps holding x86 flags and recompiled them, 127 objects, with nothing
+# changed; that was most of the images step's 96 seconds, and what took the
+# gate past ten minutes on 28 September (`roadmap.md` 6zp).
+#
 KFLAGS_NOW := $(CFLAGS)
-KFLAGS_FILE := $(BUILD)/flags
+KFLAGS_FILE := $(BUILD)/flags-$(ARCH)
 
 UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
@@ -1160,7 +1170,7 @@ $(UFLAGS_FILE):
 # And the same trick for the one file that carries its own flag, so that
 # changing the screen size rebuilds that file and relinks, and touches
 # nothing else.
-FB_FILE := $(BUILD)/fb.flags
+FB_FILE := $(BUILD)/fb-$(ARCH).flags
 
 $(shell [ "$$(cat $(FB_FILE) 2>/dev/null)" = '$(FB_FLAGS)' ] \
         || printf '%s' '$(FB_FLAGS)' > $(FB_FILE))

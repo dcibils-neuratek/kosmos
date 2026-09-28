@@ -2331,6 +2331,16 @@ processors, and still what follows USB:
    gate links them against the test userland it builds anyway now; 9:30,
    images 62 s. The compositor budget's 25 s sleep is still there - it
    waits for Photo's decode, which nothing reports yet.
+   **28 September, later: 10:06, then 10:08 with nothing changed** - Groove
+   added about eight seconds of suites, and a gate with nothing to rebuild
+   still spent 96 s on its images, compiling both ARM kernels, 127 objects.
+   The cause was the kernel's flags stamp: `$(BUILD)/flags` does not vary
+   with `ARCH`, so every `make ARCH=x86_64` wrote x86 flags into the ARM
+   kernels' stamps at parse time, and the next gate recompiled them. One
+   stamp a processor now (`flags-$(ARCH)`, `fb-$(ARCH).flags`): the images
+   step with nothing to rebuild is 9 s. **Found beside it, not done**: the
+   x86 kernel's objects (`$(X86_BUILD)/%.c.o`) depend on no stamp at all,
+   so a change to `X86_FLAGS` alone rebuilds none of them.
 
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua
