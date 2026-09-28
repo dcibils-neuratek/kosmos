@@ -86,10 +86,15 @@ ABS = 32767
 # `/Temporary` first, since nothing Markdown ships in the image: a heading,
 # bold, and a checklist with one box ticked.
 #
+#
+# **And Groove** (`roadmap.md` 6zh), playing its techno demo: the second big
+# window, so `tile` gives it two cells by two as it gives Cafesa3D, and the
+# corner that shows is PulseMusic's top bar over the first tracks' clips.
+#
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "cube3d",
         "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
-        "texteditor:/Temporary/Grooves.md", "tile"]
+        "texteditor:/Temporary/Grooves.md", "groove:--play", "tile"]
 
 NOTE = ("# Grooves\\nA drum machine for Kosmos, with **swing** per track "
         "and a pattern saved as `pattern-01.grv`.\\n\\n## Next\\n"

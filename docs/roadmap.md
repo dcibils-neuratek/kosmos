@@ -2446,7 +2446,7 @@ processors, and still what follows USB:
      and the window and hands the kit each edit; the kit says where it is.
      **Checked against the original**: PulseMusic's own Lua engine,
      running on the Mac, is the reference its C is held to, block by block.
-   - **Groove** (`user/bin/apps/groove/`), PulseMusic's window as it looks
+   - **Groove** (`user/bin/apps/groove.lua`, `user/lib/groove/`), PulseMusic's window as it looks
      - dark panels, the orange accent, eight track columns, ringed knobs -
      drawn by itself in a direct window, which wants an arc in the Graphics
      Kit. The LÖVE app is the drawing, so no HTML mockup comes first.
@@ -2458,8 +2458,29 @@ processors, and still what follows USB:
    `user/kits/synth/`, PulseMusic's engine in C on a thread of its own,
    rendering into the audio ring. Rendered against PulseMusic's own engine
    on the Mac for a minute of each demo, automation included: within six
-   billionths. **Next, step 2**: Groove's window, PulseMusic's look, which
-   wants an arc in the Graphics Kit for its knobs.
+   billionths.
+   **Step 2 DONE on 28 September - Groove's window** (`testing.md` 18.255):
+   `user/bin/apps/groove.lua` and `user/lib/groove/` - PulseMusic's
+   `app.lua`, `ui.lua`, `presets.lua` and `demos.lua`, function for
+   function, and an `engine.lua` that keeps the song and hands it to the
+   kit. Maximised, as a workstation wants, and **its top bar is its title
+   bar** - Diego, asked: "GROOVE bar is the title bar" - in the looks that
+   take title bars off (Plex, Plex Night): the window manager draws the
+   three at the bar's right end and a press on its empty band moves the
+   window, which is 6zj's header extended to a window that draws its own
+   pixels; in Endeavour and Classic it wears a tab like every window. The
+   Graphics Kit gained `arc` and `line` for the
+   knobs; the kit gained `release`, `export` (a WAV rendered by an engine of
+   its own into a region, written with `write_from`), the scene heard, each
+   clip's start, numbered commands and its render time for the DSP load.
+   **A song crosses whole on every edit**, at most once a frame, and a hand
+   on an automated knob travels with it (`synth.song(song, held)`) - a hold
+   kept only in the song it was sent to would be lost to the next.
+   Projects save to `/Home/Documents/Groove/Project.groove` in PulseMusic's
+   format, so one of his saved under LÖVE reads here; exports go to
+   `/Home/Music`. **Not yet**: MIDI (6zg, next), and a key released in
+   another window leaves its note held, because a window is not told when
+   it loses the keyboard.
 
 6zg. **WANTED on 27 September - a USB MIDI keyboard.** Diego: "usb midi
    keyboard support", and Grooves plays from one (6zh). A USB MIDI device

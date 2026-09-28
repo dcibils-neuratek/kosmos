@@ -422,6 +422,11 @@ static void release_track(struct synth_engine *e, int ti)
     e->rt[ti].offs_count = 0;
 }
 
+void synth_engine_release(struct synth_engine *e, int ti)
+{
+    release_track(e, ti);
+}
+
 void synth_engine_bend(struct synth_engine *e, int ti, double semitones)
 {
     e->rt[ti].bend = semitones;
@@ -480,6 +485,7 @@ void synth_engine_play(struct synth_engine *e)
         synth_engine_launch_scene(e, 1);
     }
 
+    e->scene = 0;
     e->playing = true;
 }
 
@@ -554,6 +560,11 @@ static void tick(struct synth_engine *e)
             e->chain_left--;
         }
 
+        if (e->pending_scene > 0) {
+            e->scene = e->pending_scene;
+            e->pending_scene = 0;
+        }
+
         for (int ti = 0; ti < SYNTH_TRACKS; ti++) {
             struct synth_track_rt *rt = &e->rt[ti];
 
@@ -616,15 +627,15 @@ static void tick(struct synth_engine *e)
     }
 
     e->ticks[e->ticks_count++] = (struct synth_tick){
-        e->total, s, d, e->chain_pos, s - e->section_start,
+        e->total, s, d, e->chain_pos, s - e->section_start, e->scene,
     };
 
     e->step = s + 1;
     e->until_tick += d;
 }
 
-bool synth_engine_heard(const struct synth_engine *e, long latency, double *step,
-                        int *chain_pos, long *section_step)
+bool synth_engine_heard(const struct synth_engine *e, long latency,
+                        struct synth_heard *out)
 {
     long h = e->total - latency;
 
@@ -634,9 +645,10 @@ bool synth_engine_heard(const struct synth_engine *e, long latency, double *step
         if (tk->total <= h) {
             double frac = (double)(h - tk->total) / tk->dur;
 
-            *step = (double)tk->step + (frac < 0.999 ? frac : 0.999);
-            *chain_pos = tk->chain_pos;
-            *section_step = tk->section_step;
+            out->step = (double)tk->step + (frac < 0.999 ? frac : 0.999);
+            out->chain_pos = tk->chain_pos;
+            out->section_step = tk->section_step;
+            out->scene = tk->scene;
             return true;
         }
     }

@@ -229,7 +229,7 @@ BIN_LUA := $(wildcard user/bin/apps/*.lua) $(wildcard user/bin/apps/*/*.lua) \
 
 LUA_FILES := user/init/init.lua $(BIN_LUA) $(wildcard user/installed/*/*.lua) \
              $(wildcard user/lib/*.lua) $(wildcard user/lib/translators/*.lua) \
-             $(wildcard user/lib/wm/*.lua) \
+             $(wildcard user/lib/wm/*.lua) $(wildcard user/lib/groove/*.lua) \
              $(wildcard user/tests/*.lua)
 
 SRCS := boot/start.S \
@@ -2219,6 +2219,14 @@ WM_PARTS := $(wildcard user/lib/wm/*.lua)
 WM_ROOTED := --rooted user/lib/wm wm/
 
 #
+# **Groove's parts** (`roadmap.md` 6zh): PulseMusic's files, converted -
+# the window, the widgets, the song, the sound bank and the demos - under
+# `groove/`, used by whole path. The sound itself is the Synth Kit.
+#
+GROOVE_PARTS := $(wildcard user/lib/groove/*.lua)
+GROOVE_ROOTED := --rooted user/lib/groove groove/
+
+#
 # **luacheck**, for the IDE's checking (`roadmap.md` 6n, step 4): vendored
 # unmodified in runtime/upstream/luacheck/ and carried as `/lib/luacheck/`,
 # where `/lib/lint.lua`'s `require` finds its modules. Not in LUA_FILES:
@@ -2229,12 +2237,13 @@ LUACHECK := $(shell find runtime/upstream/luacheck/src/luacheck -name '*.lua' 2>
 LUACHECK_ROOTED := --rooted runtime/upstream/luacheck/src/luacheck luacheck/
 
 $(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(SOLAR_DATA) $(TRANSLATORS) \
-                    $(WM_PARTS) $(LUACHECK) tools/progs2c.py $(HOSTDIR)/lua.ok
+                    $(WM_PARTS) $(GROOVE_PARTS) $(LUACHECK) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
 	    $(SOLAR_ROOTED) $(SOLAR_DATA) \
 	    $(TRANSLATORS_ROOTED) $(TRANSLATORS) \
 	    $(WM_ROOTED) $(WM_PARTS) \
+	    $(GROOVE_ROOTED) $(GROOVE_PARTS) \
 	    $(LUACHECK_ROOTED) $(LUACHECK)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
@@ -3349,6 +3358,8 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	$(HOSTDIR)/lua tools/test_mdstyle.lua
 	@# And the Synth Kit's engine, heard: Groove's sound (6zh).
 	$(HOSTDIR)/test_synth tools/test_synth.lua
+	@# And Groove's Lua held to it: the sound bank, the demos, projects.
+	$(HOSTDIR)/test_synth tools/test_groove.lua
 	$(HOSTDIR)/lua tools/test_lualex.lua
 	@# And its checking: Lua's own parser, and the vendored luacheck loaded
 	@# as the machine loads it (6n, step 4).

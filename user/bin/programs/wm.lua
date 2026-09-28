@@ -1680,6 +1680,24 @@ function OUT.headed(win)
   return (win.can_head and theme.title_bars == false) and true or nil
 end
 
+--
+-- **Whether a window asking to open has a header that can be the title
+-- bar**: it says so, and it is an ordinary window - not a menu, the
+-- backdrop, a strip or full screen, none of which has a bar to lose.
+--
+-- A window that draws its own pixels may say so as well, since Groove
+-- (`roadmap.md` 6zh): PulseMusic's top bar is its title bar, it leaves the
+-- three their room at its right end and says where (`handlers.lights`), and
+-- it hands a press on the bar's empty band back as a drag
+-- (`handlers.move_begin`) - which is everything a kit's header does. This
+-- used to leave such a window out, on the grounds that the kit had no
+-- header in it to put the three in; the window has one of its own.
+--
+function OUT.wants_head(req)
+  return req.header == true and not req.kind and not req.backdrop
+         and not req.strip and not req.fullscreen
+end
+
 -- The room the three take, in a window's points: what its header leaves
 -- free for this process to draw them in (`handlers.lights`).
 function OUT.lights_size(pct)
@@ -2772,6 +2790,16 @@ handlers.open = function(req, who, cap)
   --
   local floor = (req.strip == "top") and 1 or 32
 
+  --
+  -- **A maximised window whose header will be its title bar** has no tab
+  -- and no border to leave room for (`OUT.room`): the screen's width, and
+  -- down from the strip - which is what `workarea` told it when it asked
+  -- with its header.
+  --
+  if req.maximised and OUT.wants_head(req) and theme.title_bars == false then
+    room_w, room_h = W, H - reserved_top
+  end
+
   local w_ = math.min(math.max(tonumber(req.w) or 320, floor), room_w)
   local h_ = math.min(math.max(tonumber(req.h) or 200, floor), room_h)
 
@@ -2917,15 +2945,12 @@ handlers.open = function(req, who, cap)
   strips.accept(win, req.menubar)
 
   --
-  -- **A header that can be the title bar** (`roadmap.md` 6zj): the kit
-  -- says its window has one, and the look decides whether it is - Plex's
-  -- are, Classic keeps its tab (`OUT.headed`). Only a window of the kit's
-  -- commands: one that draws its own pixels has no header of the kit's to
-  -- put the three in, and keeps its bar in every look.
+  -- **A header that can be the title bar** (`roadmap.md` 6zj): the window
+  -- says it has one, and the look decides whether it is - Plex's are,
+  -- Classic keeps its tab (`OUT.headed`). Which windows may say so is
+  -- `OUT.wants_head`.
   --
-  win.can_head = (req.header == true and not win.shared and not req.kind
-                  and not req.backdrop and not req.strip
-                  and not req.fullscreen) or nil
+  win.can_head = OUT.wants_head(req) or nil
   win.headed = OUT.headed(win)
 
   --
@@ -4280,7 +4305,13 @@ end
 -- know the size first (Cafesa3D, 26 September: "3d tools are mostly used
 -- maximized"). The window's contents, in the screen's points.
 --
-handlers.workarea = function()
+handlers.workarea = function(req)
+  -- Asked by a window that will have its header for a title bar, in a look
+  -- where it will: no tab and no border to leave room for (`OUT.room`).
+  if req and req.header == true and theme.title_bars == false then
+    return { ok = true, x = 0, y = reserved_top, w = W, h = H - reserved_top, headed = true }
+  end
+
   local w, h = OUT.maximised()
 
   return { ok = true, x = OUT.BORDER, y = top_limit(), w = w, h = h }

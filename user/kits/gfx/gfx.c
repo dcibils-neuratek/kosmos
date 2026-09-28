@@ -1058,6 +1058,145 @@ static inline void round_put(uint32_t *p, uint32_t colour, long cover)
     }
 }
 
+/*
+ * **A ring's arc and a thick line**, for Groove's knobs (`roadmap.md` 6zh):
+ * PulseMusic draws each knob as a three-pixel ring from 135 to 405 degrees,
+ * its value as a coloured arc over it, and a two-pixel pointer - which LÖVE
+ * gave it as `arc` and `line` with a width, and which this kit had neither
+ * of.
+ *
+ *   s:arc(cx, cy, r, width, ax, ay, bx, by, wide, colour)
+ *   s:line(x0, y0, x1, y1, width, colour)
+ *
+ * **Integer only, as `disc` is.** An arc's ends are given
+ * as the directions to them - `ax, ay` and `bx, by`, any length, the caller
+ * having the sine and cosine - and a pixel is on the arc when it is on the
+ * ring and turned past the first end and short of the second: two cross
+ * products, their signs, and `wide` saying the arc is more than half a turn,
+ * when either will do. The ring's edges are smoothed the way `disc`'s are,
+ * from the squared distance; the ends are square.
+ *
+ * The colour's alpha is honoured, through `round_put`, as `fill_round`'s is.
+ */
+static int l_arc(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    long cx = (long)luaL_checkinteger(L, 2);
+    long cy = (long)luaL_checkinteger(L, 3);
+    long r = (long)luaL_checkinteger(L, 4);
+    long width = (long)luaL_checkinteger(L, 5);
+    long ax = (long)luaL_checkinteger(L, 6), ay = (long)luaL_checkinteger(L, 7);
+    long bx = (long)luaL_checkinteger(L, 8), by = (long)luaL_checkinteger(L, 9);
+    int wide = lua_toboolean(L, 10);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 11);
+
+    if (r <= 0 || width <= 0 || r > 4096 || width > 4096) {
+        return 0;
+    }
+
+    /* Everything at twice the scale, as `disc` measures it. */
+    long outer = 2 * r + width, inner = 2 * r - width;
+    long o_in = (outer - 1) * (outer - 1), o_out = (outer + 1) * (outer + 1);
+    long i_in = inner > 1 ? (inner + 1) * (inner + 1) : 0;
+    long i_out = inner > 1 ? (inner - 1) * (inner - 1) : 0;
+    long reach = r + width / 2 + 2;
+
+    for (long dy = -reach; dy <= reach; dy++) {
+        long y = cy + dy;
+
+        if (y < 0 || y >= (long)s->height) continue;
+
+        uint32_t *p = row_of(s, (unsigned)y);
+
+        for (long dx = -reach; dx <= reach; dx++) {
+            long x = cx + dx;
+
+            if (x < 0 || x >= (long)s->width) continue;
+
+            long d2 = 4 * (dx * dx + dy * dy);
+
+            if (d2 >= o_out || (inner > 1 && d2 <= i_out)) continue;
+
+            long past_a = ax * dy - ay * dx;
+            long short_b = dx * by - dy * bx;
+            int on = wide ? (past_a >= 0 || short_b >= 0) : (past_a >= 0 && short_b >= 0);
+
+            if (!on) continue;
+
+            unsigned cover = 255u;
+
+            if (d2 > o_in) cover = (unsigned)(255 * (o_out - d2) / (o_out - o_in));
+
+            if (inner > 1 && d2 < i_in) {
+                unsigned c = (unsigned)(255 * (d2 - i_out) / (i_in - i_out));
+
+                if (c < cover) cover = c;
+            }
+
+            round_put(&p[x], colour, cover);
+        }
+    }
+
+    return 0;
+}
+
+static int l_line(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    long x0 = (long)luaL_checkinteger(L, 2), y0 = (long)luaL_checkinteger(L, 3);
+    long x1 = (long)luaL_checkinteger(L, 4), y1 = (long)luaL_checkinteger(L, 5);
+    long width = (long)luaL_checkinteger(L, 6);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 7);
+    long vx = x1 - x0, vy = y1 - y0;
+    long len2 = vx * vx + vy * vy;
+
+    if (width <= 0 || width > 64 || len2 > 16L * 1024 * 1024) {
+        return 0;
+    }
+
+    long pad = width / 2 + 2;
+    long left = (x0 < x1 ? x0 : x1) - pad, right = (x0 > x1 ? x0 : x1) + pad;
+    long top = (y0 < y1 ? y0 : y1) - pad, bottom = (y0 > y1 ? y0 : y1) + pad;
+
+    /* Squared distances at twice the scale, as `arc`'s: solid inside
+     * (width - 1), empty past (width + 1), a ramp between. */
+    long in2 = (width - 1) * (width - 1), out2 = (width + 1) * (width + 1);
+
+    for (long y = top; y <= bottom; y++) {
+        if (y < 0 || y >= (long)s->height) continue;
+
+        uint32_t *p = row_of(s, (unsigned)y);
+
+        for (long x = left; x <= right; x++) {
+            if (x < 0 || x >= (long)s->width) continue;
+
+            long px = x - x0, py = y - y0;
+            long t = px * vx + py * vy;
+            long d2;
+
+            if (len2 == 0 || t <= 0) {
+                d2 = 4 * (px * px + py * py);
+            } else if (t >= len2) {
+                long qx = x - x1, qy = y - y1;
+
+                d2 = 4 * (qx * qx + qy * qy);
+            } else {
+                long cross = px * vy - py * vx;
+
+                d2 = (4 * cross * cross) / len2;
+            }
+
+            if (d2 >= out2) continue;
+
+            unsigned cover = d2 <= in2 ? 255u : (unsigned)(255 * (out2 - d2) / (out2 - in2));
+
+            round_put(&p[x], colour, cover);
+        }
+    }
+
+    return 0;
+}
+
 static int l_fill_round(lua_State *L)
 {
     struct surface *dst = check_surface(L, 1);
@@ -2685,6 +2824,8 @@ static const luaL_Reg surface_methods[] = {
     { "span",   l_span },
     { "triangle", l_triangle },
     { "disc",   l_disc },
+    { "arc",    l_arc },
+    { "line",   l_line },
     { "blit",   l_blit },
     { "blit_round", l_blit_round },
     { "shadow", l_shadow },

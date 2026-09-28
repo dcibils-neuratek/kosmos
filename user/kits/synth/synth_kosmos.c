@@ -4,14 +4,17 @@
  * thread of its own (`roadmap.md` 6zh).
  *
  *   local synth = use("/Kosmos/Kits/synth")
- *   synth.song(song)                   Groove's tables, as `synth_lua.h` reads
+ *   synth.song(song, held)             Groove's tables, as `synth_lua.h` reads;
+ *                                      `held` the names a hand is on
  *   synth.start(stream.ring, stream.rate)
- *   synth.play() synth.stop() synth.mode(true)
+ *   synth.play() synth.stop() synth.mode(true)  each answers its number
  *   synth.launch_clip(track, scene) synth.launch_scene(scene)
  *   synth.stop_clip(track) synth.note_on(track, pitch, vel)
  *   synth.note_off(track, pitch) synth.bend(track, semitones)
+ *   synth.release(track)               its held notes let go
  *   synth.hold("t3.p.cut", true)       a person's hand on an automated knob
  *   synth.state(t)                     what is heard, into `t`
+ *   synth.export(song, at, capacity)   the song as a WAV, into a region
  *   synth.close()
  *
  * **The engine runs on its own thread**, which is what Diego chose ("All in
@@ -52,7 +55,7 @@
 
 enum cmd_kind {
     CMD_PLAY, CMD_STOP, CMD_MODE, CMD_LAUNCH_CLIP, CMD_LAUNCH_SCENE,
-    CMD_STOP_CLIP, CMD_NOTE_ON, CMD_NOTE_OFF, CMD_BEND, CMD_HOLD,
+    CMD_STOP_CLIP, CMD_NOTE_ON, CMD_NOTE_OFF, CMD_BEND, CMD_HOLD, CMD_RELEASE,
 };
 
 struct cmd {
@@ -71,10 +74,12 @@ static uint32_t cmd_tail;               /* written by the audio thread */
 
 struct heard {
     bool   playing, finished, song_mode, known;
-    double step;
-    int    chain_pos;
-    long   section_step;
+    uint32_t applied;                   /* commands taken before this */
+    unsigned long busy;                 /* counter ticks spent rendering */
+    long   rendered;                    /* frames rendered, all told */
+    struct synth_heard at;
     int    playing_clip[SYNTH_TRACKS], queued[SYNTH_TRACKS];
+    long   clip_start[SYNTH_TRACKS];
     double peak[SYNTH_TRACKS];
     unsigned hits[SYNTH_TRACKS][SYNTH_ROWS];
     double peak_l, peak_r;
@@ -93,6 +98,7 @@ static struct synth_song *latest;       /* the last made, for `hold`'s names */
 static struct audio_ring *ring;
 static long thread_index = -1;
 static int quit;
+static unsigned long busy;              /* the audio thread's, rendering */
 
 static double lbuf[SYNTH_BLOCK], rbuf[SYNTH_BLOCK];
 
@@ -128,6 +134,7 @@ static void apply(const struct cmd *c)
     case CMD_NOTE_OFF:     synth_engine_note_off(e, c->a, c->b); break;
     case CMD_BEND:         synth_engine_bend(e, c->a, c->v); break;
     case CMD_HOLD:         synth_engine_hold(e, c->a, c->b != 0); break;
+    case CMD_RELEASE:      synth_engine_release(e, c->a); break;
     }
 }
 
@@ -167,6 +174,9 @@ static void publish(void)
     __atomic_store_n(&heard_seq, seq + 1, __ATOMIC_RELAXED);
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
+    heard.applied = cmd_tail;
+    heard.busy = busy;
+    heard.rendered = e->total;
     heard.playing = e->playing;
     heard.finished = e->finished;
     heard.song_mode = e->song_mode;
@@ -174,12 +184,12 @@ static void publish(void)
     uint32_t period = ring ? ring->period_bytes / 4u : 0;
     long latency = ring ? (long)audio_ring_delay(ring, period) : 0;
 
-    heard.known = synth_engine_heard(e, latency, &heard.step, &heard.chain_pos,
-                                     &heard.section_step);
+    heard.known = synth_engine_heard(e, latency, &heard.at);
 
     for (int t = 0; t < SYNTH_TRACKS; t++) {
         heard.playing_clip[t] = e->rt[t].playing;
         heard.queued[t] = e->rt[t].queued;
+        heard.clip_start[t] = e->rt[t].clip_start;
         heard.peak[t] = e->rt[t].peak;
         memcpy(heard.hits[t], e->rt[t].hits, sizeof heard.hits[t]);
 
@@ -210,6 +220,7 @@ static void audio_main(unsigned long arg)
 
         while (audio_ring_space(ring) > 0) {
             int16_t *slot = (int16_t *)audio_ring_slot(ring, ring->write);
+            unsigned long t0 = kosmos_ticks();
 
             synth_engine_render(engine, lbuf, rbuf, (int)period);
 
@@ -217,6 +228,8 @@ static void audio_main(unsigned long arg)
                 slot[i * 2] = (int16_t)(lbuf[i] * 32767.0);
                 slot[i * 2 + 1] = (int16_t)(rbuf[i] * 32767.0);
             }
+
+            busy += kosmos_ticks() - t0;
 
             audio_ring_publish(ring, ring->write + 1);
             wrote = true;
@@ -248,18 +261,26 @@ static void collect(void)
     if (old != NULL && old != latest) synth_song_free(old);
 }
 
+/*
+ * A command, for the thread - or done at once when there is none. Answers
+ * its number: `state().applied` reaching it says the state read includes
+ * it, which is how the window tells "play was pressed and not yet heard"
+ * from "the song has ended by itself".
+ */
 static int post(lua_State *L, enum cmd_kind kind, int a, int b, double v)
 {
     struct cmd c = { kind, a, b, v };
 
     if (!ensure_engine(L)) return 0;
 
+    uint32_t head = cmd_head;
+
     if (!running()) {
         apply(&c);
-        return 0;
+        cmd_head = cmd_tail = head + 1;
+        lua_pushinteger(L, head + 1);
+        return 1;
     }
-
-    uint32_t head = cmd_head;
 
     if (head - __atomic_load_n(&cmd_tail, __ATOMIC_ACQUIRE) >= CMDS) {
         return luaL_error(L, "the Synth Kit's engine is not keeping up");
@@ -267,7 +288,8 @@ static int post(lua_State *L, enum cmd_kind kind, int a, int b, double v)
 
     cmds[head % CMDS] = c;
     __atomic_store_n(&cmd_head, head + 1, __ATOMIC_RELEASE);
-    return 0;
+    lua_pushinteger(L, head + 1);
+    return 1;
 }
 
 static int track_arg(lua_State *L, int index)
@@ -294,6 +316,7 @@ static int l_song(lua_State *L)
 
     if (song == NULL) return lua_error(L);
 
+    synth_song_holds_from_lua(L, 2, song);
     collect();
 
     if (!running()) {
@@ -361,6 +384,11 @@ static int l_bend(lua_State *L)
     double semis = luaL_checknumber(L, 2);
 
     return post(L, CMD_BEND, track_arg(L, 1), 0, semis < -24 ? -24 : semis > 24 ? 24 : semis);
+}
+
+static int l_release(lua_State *L)
+{
+    return post(L, CMD_RELEASE, track_arg(L, 1), 0, 0);
 }
 
 static int l_hold(lua_State *L)
@@ -449,11 +477,16 @@ static void set_boolean(lua_State *L, const char *key, bool v)
  * synth.state(t) - what is heard, into `t` (made when not given), reused
  * frame after frame so a window drawing it makes no garbage:
  *
+ *   applied                      the commands it includes, by their number
+ *   busy, rendered               counter ticks spent rendering and frames
+ *                                rendered, all told: PulseMusic's DSP load
  *   playing, finished, song      booleans
  *   step                         the step heard, with its fraction, or nil
  *   chain, section_step          the section and the step inside it
+ *   scene                        the scene launched last, from its bar; 0
  *   peak_l, peak_r               the master's meters
- *   tracks[1..8]                 { playing, queued, peak, hits = {8} }
+ *   tracks[1..8]                 { playing, queued, start, peak, hits = {8} }
+ *                                `start` the step its clip began on
  */
 static int l_state(lua_State *L)
 {
@@ -486,17 +519,22 @@ static int l_state(lua_State *L)
         lua_createtable(L, 0, 10);
     }
 
+    set_integer(L, "applied", copy.applied);
+    set_integer(L, "busy", (lua_Integer)copy.busy);
+    set_integer(L, "rendered", copy.rendered);
     set_boolean(L, "playing", copy.playing);
     set_boolean(L, "finished", copy.finished);
     set_boolean(L, "song", copy.song_mode);
 
     if (copy.known) {
-        set_number(L, "step", copy.step);
-        set_integer(L, "chain", copy.chain_pos);
-        set_integer(L, "section_step", copy.section_step);
+        set_number(L, "step", copy.at.step);
+        set_integer(L, "chain", copy.at.chain_pos);
+        set_integer(L, "section_step", copy.at.section_step);
+        set_integer(L, "scene", copy.at.scene);
     } else {
         lua_pushnil(L);
         lua_setfield(L, -2, "step");
+        set_integer(L, "scene", 0);
     }
 
     set_number(L, "peak_l", copy.peak_l);
@@ -519,6 +557,7 @@ static int l_state(lua_State *L)
 
         set_integer(L, "playing", copy.playing_clip[t]);
         set_integer(L, "queued", copy.queued[t]);
+        set_integer(L, "start", copy.clip_start[t]);
         set_number(L, "peak", copy.peak[t]);
 
         if (lua_getfield(L, -1, "hits") != LUA_TTABLE) {
@@ -540,6 +579,118 @@ static int l_state(lua_State *L)
     return 1;
 }
 
+/*
+ * synth.export(song, at, capacity) - the song, from its first section to its
+ * last and four seconds after for the echoes to die, as PulseMusic's EXPORT
+ * WAV renders it: a WAV of 16-bit stereo at 44.1 kHz, header and all, written
+ * into the region at `at`, which has `capacity` bytes. Answers the file's
+ * length in bytes and its seconds, and true when the region was too small
+ * for the whole of it and the file stops where the room did.
+ *
+ * **An engine of its own**, made here and gone after, so the one playing
+ * goes on playing and nothing crosses to its thread; and seeded the same
+ * every time, so a song exported twice is the same file twice. The caller
+ * writes the region with `fs.write_from`, which takes a file of any size
+ * where `fs.write` takes a string.
+ */
+struct exporter {
+    struct synth_engine engine;
+    double l[SYNTH_BLOCK], r[SYNTH_BLOCK];
+};
+
+static void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+static void put16(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static int l_export(lua_State *L)
+{
+    uintptr_t at = (uintptr_t)luaL_checkinteger(L, 2);
+    lua_Integer capacity = luaL_checkinteger(L, 3);
+
+    luaL_argcheck(L, at != 0, 2, "not a region");
+    luaL_argcheck(L, capacity >= 44 + 4 * SYNTH_BLOCK, 3, "no room for a period");
+
+    struct synth_song *song = synth_song_from_lua(L, 1);
+
+    if (song == NULL) return lua_error(L);
+
+    struct exporter *x = malloc(sizeof *x);
+
+    if (x == NULL) {
+        synth_song_free(song);
+        return luaL_error(L, "no memory to export with");
+    }
+
+    synth_engine_init(&x->engine, 1);
+    synth_engine_set_song(&x->engine, song, false);
+    synth_engine_mode(&x->engine, true);
+    synth_engine_play(&x->engine);
+
+    uint8_t *out = (uint8_t *)at;
+    int16_t *pcm = (int16_t *)(out + 44);
+    long room = (long)((capacity - 44) / 4);
+    long limit = (long)SYNTH_RATE * 60 * 30;       /* half an hour, as PulseMusic */
+    long tail = (long)SYNTH_RATE * 4;
+    long frames = 0;
+    bool cut = false;
+
+    for (;;) {
+        if (frames + SYNTH_BLOCK > room) {
+            cut = true;
+            break;
+        }
+
+        if (frames >= limit) break;
+
+        synth_engine_render(&x->engine, x->l, x->r, SYNTH_BLOCK);
+
+        for (int i = 0; i < SYNTH_BLOCK; i++) {
+            pcm[(frames + i) * 2] = (int16_t)(x->l[i] * 32767.0);
+            pcm[(frames + i) * 2 + 1] = (int16_t)(x->r[i] * 32767.0);
+        }
+
+        frames += SYNTH_BLOCK;
+
+        if (x->engine.finished) {
+            tail -= SYNTH_BLOCK;
+            if (tail <= 0) break;
+        }
+    }
+
+    synth_song_free(synth_engine_set_song(&x->engine, NULL, false));
+    free(x);
+
+    uint32_t bytes = (uint32_t)frames * 4u;
+
+    memcpy(out, "RIFF", 4);
+    put32(out + 4, 36u + bytes);
+    memcpy(out + 8, "WAVEfmt ", 8);
+    put32(out + 16, 16);
+    put16(out + 20, 1);                             /* PCM */
+    put16(out + 22, 2);                             /* stereo */
+    put32(out + 24, SYNTH_RATE);
+    put32(out + 28, SYNTH_RATE * 4);
+    put16(out + 32, 4);
+    put16(out + 34, 16);
+    memcpy(out + 36, "data", 4);
+    put32(out + 40, bytes);
+
+    lua_pushinteger(L, 44 + (lua_Integer)bytes);
+    lua_pushnumber(L, (double)frames / SYNTH_RATE);
+    lua_pushboolean(L, cut);
+    return 3;
+}
+
 void kosmos_synth_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -548,7 +699,8 @@ void kosmos_synth_kit(lua_State *L)
         { "launch_clip", l_launch_clip }, { "launch_scene", l_launch_scene },
         { "stop_clip", l_stop_clip }, { "note_on", l_note_on },
         { "note_off", l_note_off }, { "bend", l_bend }, { "hold", l_hold },
-        { "state", l_state }, { NULL, NULL },
+        { "release", l_release }, { "state", l_state }, { "export", l_export },
+        { NULL, NULL },
     };
 
     luaL_newlib(L, api);

@@ -214,6 +214,24 @@ int synth_song_target(const struct synth_song *song, const char *name)
  * A target by name, added if it is new and names something; its number, or
  * -1. `room` is how many the array was made for.
  */
+void synth_song_holds_from_lua(lua_State *L, int index, struct synth_song *song)
+{
+    if (lua_type(L, index) != LUA_TTABLE) return;
+
+    index = lua_absindex(L, index);
+    lua_pushnil(L);
+
+    while (lua_next(L, index)) {
+        if (lua_type(L, -2) == LUA_TSTRING && lua_toboolean(L, -1)) {
+            int t = synth_song_target(song, lua_tostring(L, -2));
+
+            if (t >= 0) song->held[t] = true;
+        }
+
+        lua_pop(L, 1);
+    }
+}
+
 static int target_of(struct synth_song *song, const char *name, int room)
 {
     int at = synth_song_target(song, name);

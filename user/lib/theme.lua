@@ -266,8 +266,8 @@ theme.tokens = {
   -- dont have an actual window crome above the app contents". `no` and the
   -- header is the title bar: the window manager draws the three at its
   -- right end and a press on its empty band moves the window. A window that
-  -- draws its own pixels has no header of the kit's, and keeps its bar in
-  -- every look.
+  -- draws its own pixels may offer a bar of its own the same way - Groove's
+  -- (`roadmap.md` 6zh); one that does not keeps its bar in every look.
   --
   -- A look's property, as `flat` is, and for the same reason: the Plex
   -- looks are content-first and the BeOS look is its tab.

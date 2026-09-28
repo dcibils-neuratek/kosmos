@@ -12176,3 +12176,50 @@ starts its thread on its stream's ring and waits three seconds; QEMU's WAV
 has to hold the beats half a second apart, and the engine has to say it is
 playing. Its control: a thread that renders and never publishes into the
 ring is heard as nothing.
+
+## 18.255 Groove's window: PulseMusic, on Kosmos (6zh)
+
+Diego's PulseMusic, converted: `user/bin/apps/groove.lua` is the window and
+its loop, `user/lib/groove/` is PulseMusic's `app.lua`, `ui.lua`,
+`presets.lua` and `demos.lua` with LÖVE's calls replaced by a surface's, and
+`engine.lua` keeps the song and hands it to the Synth Kit whole, at most once
+a frame, with the names of the knobs a hand is on. Opened on the house demo
+and playing, at 1920 by 1080, it looks as PulseMusic looks.
+
+**Kept, `test_groove.lua`**, 383, on the Mac, run by the Synth Kit's harness
+so the window's half can be held to the sound's: every knob's range, curve,
+steps and default the same in `presets.lua` and in the kit's C, and every
+drum of every kit, field by field; both demos counting their bars and
+playing twenty seconds of sound in song mode; a project saved and read back
+the same song, and a number, a one-track table, bytecode and a table that
+reaches outside its world refused; a lane's resting value kept, and given
+back to the knob when the last lane goes. Its control: a cutoff's ceiling of
+17,000 and one clap's pitch changed in `presets.lua` fail exactly those two.
+
+**Kept, `test_synth.lua`**, now 16: the scene launched is the one the engine
+says it is in after the bar, and a lane taking a track down is overruled by
+a hand on its fader when the song is handed over again mid-bar with the
+hold in it. Its control: the hold not read from the song - the fader
+follows the lane, 0.0533 held and not.
+
+**Kept, `run_synth.py`**, now 19, on the ARM machine. The bar of rims is
+also **exported** while the thread plays - an engine of the kit's own
+rendering into a region, `write_from` writing it - and read back off the
+disk: a header saying what it holds, four rims on their beats, six seconds
+with the echoes' four. Then **Groove opens** on the house demo, playing, in Plex:
+the picture has PulseMusic's panels over a quarter of the screen, its ground
+between them, the kick's red column and the lit play button and meters;
+**its bar is its title bar** - the window manager says so, places the three
+at the bar's right end, the top rows are Groove's panel with no tab above
+it, and the amber and red of the three are in the bar; and the last six
+seconds of the WAV beat at 124 a minute, by autocorrelation of their
+envelope. Its controls: the picture checks all fail on the day's desktop
+without Groove; in Endeavour, which keeps title bars, the three title-bar
+checks fail; and a click every half second reads as 0.499 seconds, outside
+the 124's hundredth.
+
+**Kept, the kernel suite's Lua**, `gfx: a knob's arc and a thick line`
+(role 51): a knob's ring drawn round the top and not across its gap, a
+quarter arc clockwise from the left to the top and not the other way, a
+smoothed edge, a colour's alpha honoured, a line two wide and not past its
+ends, and an arc and a line far off the surface writing nothing outside it.

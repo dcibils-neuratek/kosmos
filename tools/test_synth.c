@@ -12,7 +12,9 @@
  *
  *   synth.reset()                  a fresh engine: its noise from the start,
  *                                  its delay and reverb empty
- *   synth.song(t)                  the song, from Groove's tables
+ *   synth.song(t, held, keep)      the song, from Groove's tables; `held`
+ *                                  the names a hand is on; `keep` handed
+ *                                  over while it plays, as an edit is
  *   synth.play() synth.stop()      and the rest of the transport:
  *   synth.mode(song) synth.launch_clip(t, s) synth.launch_scene(s)
  *   synth.note_on(t, p, v) synth.note_off(t, p)
@@ -22,8 +24,15 @@
  *   synth.peak(from, to)           the loudest frame between
  *   synth.crossings(from, to)      rising zero crossings of the left side
  *   synth.sum()                    every sample added, for sameness
- *   synth.state()                  playing, step, chain position, finished
+ *   synth.state()                  playing, step, chain position, finished,
+ *                                  the scene launched last
  *   synth.dump(path)               the capture as doubles, left and right
+ *   synth.target(name)             a target's range, as the engine has it
+ *   synth.value(name)              its value in the song the engine has
+ *   synth.kit(k, row)              a drum of a kit, as the C has it
+ *
+ * The last three are for `tools/test_groove.lua`, which holds Groove's
+ * `presets.lua` - what the window shows - to the numbers the C plays.
  */
 #include <math.h>
 #include <stdio.h>
@@ -46,8 +55,14 @@ static int l_song(lua_State *L)
 
     if (song == NULL) return lua_error(L);
 
-    synth_song_free(synth_engine_set_song(engine, song, false));
-    captured = 0;
+    synth_song_holds_from_lua(L, 2, song);
+
+    /* Handed over while it plays, as the kit does with an edit, when asked:
+     * the capture goes on rather than starting again. */
+    bool keep = lua_toboolean(L, 3);
+
+    synth_song_free(synth_engine_set_song(engine, song, keep));
+    if (!keep) captured = 0;
     return 0;
 }
 
@@ -187,6 +202,76 @@ static int l_state(lua_State *L)
     lua_setfield(L, -2, "chain_pos");
     lua_pushboolean(L, engine->finished);
     lua_setfield(L, -2, "finished");
+    lua_pushinteger(L, engine->scene);
+    lua_setfield(L, -2, "scene");
+    return 1;
+}
+
+/* What the engine takes a target to be: its range, and whether it is stepped. */
+static int l_target(lua_State *L)
+{
+    struct synth_target t;
+
+    if (!synth_target_parse(luaL_checkstring(L, 1), &t)) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_createtable(L, 0, 4);
+    lua_pushnumber(L, t.min);
+    lua_setfield(L, -2, "min");
+    lua_pushnumber(L, t.max);
+    lua_setfield(L, -2, "max");
+    lua_pushboolean(L, t.exp);
+    lua_setfield(L, -2, "exp");
+    lua_pushboolean(L, t.stepped);
+    lua_setfield(L, -2, "stepped");
+    return 1;
+}
+
+/* A target's value in the song the engine has - its default, in a song
+ * whose tables leave it out. */
+static int l_value(lua_State *L)
+{
+    struct synth_target t;
+    double *v;
+
+    if (engine->song == NULL || !synth_target_parse(luaL_checkstring(L, 1), &t)
+        || (v = synth_target_value(engine->song, &t)) == NULL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushnumber(L, *v);
+    return 1;
+}
+
+/* A drum as the kit's C has it: `synth.kit(k, row)`, both from 1. */
+static int l_kit(lua_State *L)
+{
+    static const char *const TYPES[] = { "kick", "tom", "snare", "clap", "hat", "rim", "perc" };
+    lua_Integer k = luaL_checkinteger(L, 1), r = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, k >= 1 && k <= SYNTH_KITS, 1, "no such kit");
+    luaL_argcheck(L, r >= 1 && r <= 8, 2, "no such row");
+
+    const struct synth_drum_base *b = &synth_kits[k - 1][r - 1];
+    const struct { const char *name; double v; } f[] = {
+        { "f", b->f }, { "sweep", b->sweep }, { "pd", b->pd }, { "dec", b->dec },
+        { "drive", b->drive }, { "click", b->click }, { "g", b->g },
+        { "tdec", b->tdec }, { "hp", b->hp }, { "fm", b->fm }, { "metal", b->metal },
+        { "ratio", b->ratio }, { "bp", b->bp },
+    };
+
+    lua_createtable(L, 0, 14);
+    lua_pushstring(L, TYPES[b->type]);
+    lua_setfield(L, -2, "type");
+
+    for (size_t i = 0; i < sizeof f / sizeof f[0]; i++) {
+        lua_pushnumber(L, f[i].v);
+        lua_setfield(L, -2, f[i].name);
+    }
+
     return 1;
 }
 
@@ -210,7 +295,8 @@ static const luaL_Reg FUNCS[] = {
     { "launch_clip", l_launch_clip }, { "launch_scene", l_launch_scene },
     { "note_on", l_note_on }, { "note_off", l_note_off }, { "render", l_render },
     { "onset", l_onset }, { "peak", l_peak }, { "crossings", l_crossings },
-    { "sum", l_sum }, { "state", l_state }, { "dump", l_dump }, { NULL, NULL },
+    { "sum", l_sum }, { "state", l_state }, { "dump", l_dump },
+    { "target", l_target }, { "value", l_value }, { "kit", l_kit }, { NULL, NULL },
 };
 
 int main(int argc, char **argv)

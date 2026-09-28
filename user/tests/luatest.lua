@@ -72,6 +72,7 @@ local R_JPEG         = 47
 local R_STRETCH      = 48
 local R_PNG_PALETTE  = 49
 local R_FACES_BACK   = 50
+local R_ARC          = 51
 
 -- The /Running registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
@@ -998,6 +999,66 @@ if role == R_TRIANGLE then
   s:fill(0, 0, 16, 16, BG)
   s:triangle(-8, 0, 8, 0, 8, 16, FG)
   check(s:get(0, 1) == FG, "a triangle crossing the left edge left a gap")
+
+  s:free()
+  sys.exit(0)
+end
+
+-- ------------------------------------------------------------------
+-- A ring's arc and a thick line: Groove's knobs (`roadmap.md` 6zh).
+--
+-- The arc is given as the directions to its ends and goes clockwise on the
+-- screen, as LÖVE's does with y downward; a knob's ring runs from 135 to
+-- 405 degrees and leaves its gap at the bottom. The checks are the ones a
+-- knob would show wrong: the gap in the wrong place, an arc drawn the other
+-- way round, a hard edge, a colour's alpha ignored.
+
+if role == R_ARC then
+  local BG, FG = 0xff000000, 0xffffffff
+  local s = gfx.surface { w = 64, h = 64 }
+  local D = 2896                                  -- 4096 times a half root two
+
+  -- A knob's ring: radius 20, four wide, from down-left round the top to
+  -- down-right - more than half a turn.
+  s:fill(0, 0, 64, 64, BG)
+  s:arc(32, 32, 20, 4, -D, D, D, D, true, FG)
+  check(s:get(32, 12) == FG, "the top of a knob's ring was not drawn")
+  check(s:get(12, 32) == FG and s:get(52, 32) == FG, "a knob's ring lost a side")
+  check(s:get(32, 52) == BG, "a knob's ring was drawn across its gap")
+  check(s:get(32, 32) == BG, "a ring filled its middle")
+  check(s:get(2, 2) == BG, "a ring drew outside itself")
+
+  -- Its outer edge smoothed: half covered, neither colour.
+  local edge = s:get(32, 10)
+  check(edge ~= FG and edge ~= BG, "a ring's edge is hard: " .. tostring(edge))
+
+  -- A quarter, from the left to the top: clockwise, so the upper-left and
+  -- nothing else.
+  s:fill(0, 0, 64, 64, BG)
+  s:arc(32, 32, 20, 4, -4096, 0, 0, -4096, false, FG)
+  check(s:get(18, 18) == FG, "a quarter arc missed its quarter")
+  check(s:get(46, 18) == BG and s:get(32, 52) == BG, "a quarter arc was drawn the other way round")
+
+  -- A colour's alpha is honoured: half white over black is grey.
+  s:fill(0, 0, 64, 64, BG)
+  s:arc(32, 32, 20, 4, -D, D, D, D, true, 0x80ffffff)
+  local grey = s:get(32, 12) & 0xff
+  check(grey > 0x60 and grey < 0xa0, "an arc ignored its colour's alpha: " .. tostring(grey))
+
+  -- Lines: two wide across, one wide down the diagonal, round at the ends.
+  s:fill(0, 0, 64, 64, BG)
+  s:line(4, 40, 60, 40, 2, FG)
+  check(s:get(30, 40) == FG and s:get(30, 44) == BG, "a line two wide is not two wide")
+  check(s:get(1, 40) == BG and s:get(63, 40) == BG, "a line ran past its ends")
+  s:line(0, 0, 30, 30, 1, FG)
+  check(s:get(20, 20) == FG and s:get(20, 24) == BG, "a diagonal line missed its pixels")
+
+  -- Far off the surface, and far larger than it: nothing written outside,
+  -- which from here is the surface surviving.
+  s:line(-1000, -1000, 1000, 1000, 3, FG)
+  s:arc(-500, -500, 4000, 64, 4096, 0, 0, 4096, false, FG)
+  s:arc(32, 32, 0, 4, 1, 0, 0, 1, false, FG)
+  check(s:get(63, 63) ~= nil, "the surface did not survive an arc and a line off its edges")
 
   s:free()
   sys.exit(0)

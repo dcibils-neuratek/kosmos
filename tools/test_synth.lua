@@ -120,6 +120,8 @@ local bar = synth.onset(math.floor(STEP * 12), 0.01)
 
 check(nine and math.abs(nine - STEP * 8) < 64,
       "scene 1 did not finish its bar: its rim is at " .. tostring(nine))
+check(synth.state().scene == 2, "the scene launched is not the one the song says it is in: "
+      .. tostring(synth.state().scene))
 check(bar and math.abs(bar - STEP * 16) < 64,
       "scene 2 did not start on the next bar: its rim is at " .. tostring(bar))
 
@@ -164,6 +166,34 @@ local late = synth.peak(math.floor(STEP * 12), math.floor(STEP * 14))
 
 check(late > early * 3, ("the lane did not bring the track up: %.4f then %.4f"):format(early, late))
 synth.mode(false)
+
+-- A lane taking a track down, and a hand on its fader two steps in: the
+-- song is handed over again while it plays, held, as the window does on
+-- every edit - and the track stays where the song has it rather than
+-- following the lane down. Without the hand, it follows.
+local function falling(held)
+  local s = song(function(s)
+    s.chain = { { scene = 1, bars = 1, auto = { ["t1.m.vol"] = {} } } }
+    for step = 1, 16 do s.chain[1].auto["t1.m.vol"][step] = (16 - step) / 15 end
+    s.autoBase = { ["t1.m.vol"] = 0.7 }
+    s.tracks[1] = { type = "drum", vol = 0.7, kit = 1,
+                    clips = { drums(16, { { 1, 5, 9, 13 } }) } }
+  end)
+
+  synth.song(s)
+  synth.mode(true)
+  synth.play()
+  synth.render(math.floor(STEP * 2))
+  synth.song(s, held and { ["t1.m.vol"] = true } or nil, true)
+  synth.render(math.floor(STEP * 14))
+  synth.mode(false)
+  return synth.peak(math.floor(STEP * 12), math.floor(STEP * 14))
+end
+
+local followed, kept = falling(false), falling(true)
+
+check(kept > followed * 3,
+      ("a held fader was taken back by its lane: %.4f held, %.4f not"):format(kept, followed))
 
 -- The closed hat stops the open one: the open hat alone rings longer.
 local function hats(rows)
@@ -218,4 +248,4 @@ end
 
 print(("PASS: %d checks on the Synth Kit's engine (silence, a rim shot on its step, "
        .. "swing, A 440, a release, a scene on the next bar, mute, a song that "
-       .. "ends, a lane, a choked hat, nonsense in range, the same twice)"):format(passed))
+       .. "ends, a lane, a held lane, a choked hat, nonsense in range, the same twice)"):format(passed))

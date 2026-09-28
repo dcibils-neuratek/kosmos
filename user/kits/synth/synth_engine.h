@@ -150,6 +150,7 @@ struct synth_tick {
     double dur;
     int    chain_pos;
     long   section_step;
+    int    scene;
 };
 
 struct synth_engine {
@@ -164,6 +165,13 @@ struct synth_engine {
     double duck_env, duck;
     double peak_l, peak_r;
     int    chain_pos, chain_left, pending_scene;
+
+    /*
+     * The scene launched last, from the bar it took effect - which is what
+     * Groove's performance recording writes into the song, a bar at a time,
+     * as PulseMusic's `curScene`. 0 until a scene is launched.
+     */
+    int    scene;
     long   section_start;
 
     struct synth_tick ticks[SYNTH_TICKS];
@@ -195,17 +203,27 @@ void synth_engine_stop_clip(struct synth_engine *e, int track);
 void synth_engine_note_on(struct synth_engine *e, int track, int pitch, double vel);
 void synth_engine_note_off(struct synth_engine *e, int track, int pitch);
 void synth_engine_bend(struct synth_engine *e, int track, double semitones);
+
+/* Every held note of a track let go, as a clip's change of scene does. */
+void synth_engine_release(struct synth_engine *e, int track);
 void synth_engine_hold(struct synth_engine *e, int target, bool held);
 
 /* `n` frames of stereo into `l` and `r`, in -1 to 1. */
 void synth_engine_render(struct synth_engine *e, double *l, double *r, int n);
 
 /*
- * The step being heard, `latency` frames behind what has been rendered - with
- * its fraction - and the section and the step inside it. False before the
- * first tick.
+ * What is being heard, `latency` frames behind what has been rendered: the
+ * step with its fraction, the section and the step inside it, and the scene
+ * launched last. False before the first tick.
  */
-bool synth_engine_heard(const struct synth_engine *e, long latency, double *step,
-                        int *chain_pos, long *section_step);
+struct synth_heard {
+    double step;
+    int    chain_pos;
+    long   section_step;
+    int    scene;
+};
+
+bool synth_engine_heard(const struct synth_engine *e, long latency,
+                        struct synth_heard *out);
 
 #endif

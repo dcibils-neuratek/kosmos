@@ -4509,6 +4509,14 @@ static bool test_a_palette_png_decodes(void)           { return luatest_role(49)
 static bool test_sized_faces_given_back(void)          { return luatest_role(50); }
 
 /*
+ * A ring's arc and a thick line, which Groove's knobs are drawn with
+ * (`roadmap.md` 6zh): the gap where a knob has it, clockwise as LÖVE's
+ * arcs are, a smoothed edge, a colour's alpha, and nothing written off
+ * the surface.
+ */
+static bool test_gfx_arc_and_line(void)                { return luatest_role(51); }
+
+/*
  * An endpoint ends with the process that made it. A server takes a client's
  * call and is killed before answering: the client has to be woken with an
  * error, and the pool has to get the endpoint back.
@@ -9117,6 +9125,7 @@ static const struct test tests[] = {
     { "jpeg: four quadrants, and not a PNG",   test_a_jpeg_decodes },
     { "png: a palette, its alpha, and no palette", test_a_palette_png_decodes },
     { "gfx: faces by size are given back",     test_sized_faces_given_back },
+    { "gfx: a knob's arc and a thick line",    test_gfx_arc_and_line },
     { "ipc: an endpoint ends with its process",  test_endpoint_ends_with_its_process },
     { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },

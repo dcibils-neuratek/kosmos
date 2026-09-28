@@ -18,6 +18,31 @@ Last updated: 2026-09-28
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
+
+**Nothing is pushed since 0.10.176.** Diego asked for PulseMusic, his LÖVE
+music application, converted into Kosmos as **Groove** ("i dont want to
+vendor it in, just convert it"), and answered four questions: the sound "All
+in C, on its own thread", "PulseMusic's look, faithfully", MIDI "After Groove
+plays", "Groove next"; and later "GROOVE bar is the title bar".
+
+- **Step 1, the Synth Kit** (`user/kits/synth/`, 18.254): PulseMusic's
+  engine in C on a thread of its own, within six billionths of the original.
+- **Step 2, the window** (`user/bin/apps/groove.lua`, `user/lib/groove/`,
+  18.255): PulseMusic's `app.lua` and widgets on a surface, maximised; the
+  song handed to the kit whole on each edit with what a hand holds; save to
+  `/Home/Documents/Groove`, export a WAV to `/Home/Music`. The Graphics Kit
+  gained `arc` and `line`; the window manager lets a window that draws its
+  own pixels offer its bar as the title bar (Plex looks). Seen at 1920 by
+  1080 playing the house demo: it looks as PulseMusic looks, and the WAV
+  beats at 124.
+- **Known**: a key released in another window leaves its note held (a
+  window is not told when it loses the keyboard).
+
+**Next**: 6zg, USB MIDI and the Launchkey, for Groove; then the order below
+it resumes - an application's image without the system's files, 6zr, 6zp,
+6zk, 6zi.
+
 ## 28 September, the day: Text Editor, and the fixes Diego's testing found
 
 **Nothing is pushed since 0.10.176.** The stick to write is **0.10.184**

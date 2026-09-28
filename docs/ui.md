@@ -1711,8 +1711,18 @@ tab that is BeOS. A window offers a header that can be its title bar -
 `ui.window{ header = true }`, and `ui.header{ title_bar = true }` on the one
 that is - and the window manager answers whether it is (`headed`), in the
 reply that opens it and again with every change of look. A window with no
-header of the kit's has nothing to put the three in or to take hold of, and
-keeps its bar in every look: Doom, the Cube, the Super Nintendo.
+header has nothing to put the three in or to take hold of, and keeps its
+bar in every look: Doom, the Cube, the Super Nintendo.
+
+**A window that draws its own pixels can offer one too**, since Groove (28
+September, `roadmap.md` 6zh): Diego chose "GROOVE bar is the title bar" for
+PulseMusic's top bar. It opens with `header = true`, asks `workarea` with it
+(a window with no tab and no border has the whole width), places the three
+itself with a `lights` request at the bar's right end, and hands a press on
+the bar's empty band back with `take_hold`, as a kit's header does. This
+said such a window "has no header of the kit's" and so could not; what it
+lacked was a header the *kit* drew, and the protocol never needed one - the
+window manager draws the three over any window's pixels.
 
 **The window manager draws the three; the header only leaves room.** At
 the header's right end, 12 in and 10 after its last control; the header
