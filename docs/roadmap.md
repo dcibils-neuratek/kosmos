@@ -2208,7 +2208,9 @@ processors, and still what follows USB:
    such a window. **Drawn first**, since it changes every window: where the
    three buttons go - at the left as on the Mac, or at the right where
    Kosmos has them - on Tracker, Preferences and the IDE. **Order**: after
-   6za's step (a).
+   6za's step (a). **DRAWN on 27 September** as `docs/nochrome.html`, the
+   buttons at the right as Diego asked ("buttons on the right to see how
+   they would look"), with five questions under it.
 
 6zi. **WANTED on 27 September - a Mouse page in Preferences.** Diego:
    "preferences app need a mouse setting panel (pointer speed, mouse click
