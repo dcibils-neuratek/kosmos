@@ -23,23 +23,15 @@ Last updated: 2026-09-28
 **Nothing is pushed since 0.10.176 (395472a).** Everything below is on
 `main`, each piece gated; a push takes Diego's word and `make prepush`.
 
-**No new stick: the Mac's disk is full.** 1.3 GB free, and a stick with
-Doom needs about 2 GB to build and check - its 738 MB image, the OVMF
-check's copy of it, and the MEGA userland's new directory (the variant
-lost its `-doom`). **The stick to write is still 0.10.182** (`boot.md`),
-which has no Doom. Freeing space is Diego's call; what can go is:
-
-- the userland directories of variants that no longer exist, about 2 GB -
-  every `build/user*-doom-*` and `build/gen*-doom*`, which nothing can
-  build again now that `DOOM` is gone;
-- the superseded sticks, 738 MB each - `build/x86_64/kosmos-usb-0.10.175`
-  to `-0.10.181-development.img`.
-
-Then `make bump` to 0.10.183, `make MEGA=1 x86-usb-image`, the OVMF check,
-and the `boot.md` row - and Doom is on the stick in `/Home/Apps/Doom`, WAD
-and all. **On QEMU it can be tried now**: `make install-apps` puts it on
-`build/kosmos.img` (checked on a copy, not run on that disk), then
-`make qemu` and `wm doom`.
+**The stick to write is 0.10.183** (`boot.md`), for the M700: Doom in
+`/Home/Apps/Doom` with its WAD, Quake's pak in `/Home/id1`, 32 checks under
+OVMF, the gate green on its own commit (50 suites, 9:58). Diego cleared the
+disk in the morning - old builds, sticks 0.10.175 to 0.10.182 and old disk
+images, 8.7 GB - and the old disk images took files that were nowhere else
+with them: `odyssey.pdf`, `pride.pdf` and the WAV tests (`play.img`,
+`wavtest.img`), which Time Machine may still have. **On QEMU**,
+`make install-apps` puts Doom on `build/kosmos.img` (checked on a copy,
+not run on that disk), then `make qemu` and `wm doom`.
 
 Done, in the agreed order, each with its suite (`testing.md` 18.244-18.249):
 
