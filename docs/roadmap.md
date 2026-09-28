@@ -2454,6 +2454,12 @@ processors, and still what follows USB:
    Not carried as it was: PortMidi, the FFI, `require` and the save folder
    become the kit, `/Devices/midi` (6zg), `use` and `/Home/Documents`, and
    two labels that read `C3.0` under Lua 5.4 are fixed on the way.
+   **Step 1 DONE on 28 September - the Synth Kit** (`testing.md` 18.254):
+   `user/kits/synth/`, PulseMusic's engine in C on a thread of its own,
+   rendering into the audio ring. Rendered against PulseMusic's own engine
+   on the Mac for a minute of each demo, automation included: within six
+   billionths. **Next, step 2**: Groove's window, PulseMusic's look, which
+   wants an arc in the Graphics Kit for its knobs.
 
 6zg. **WANTED on 27 September - a USB MIDI keyboard.** Diego: "usb midi
    keyboard support", and Grooves plays from one (6zh). A USB MIDI device

@@ -778,6 +778,10 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gfx/docfont.c \
              user/kits/compress/inflate.c \
              user/kits/compress/deflate.c \
+             user/kits/synth/synth_dsp.c \
+             user/kits/synth/synth_engine.c \
+             user/kits/synth/synth_lua.c \
+             user/kits/synth/synth_kosmos.c \
              user/kits/pdf/pdftok.c \
              user/kits/gl/gl_kosmos.c \
              user/kits/console/con_kosmos.c \
@@ -1477,6 +1481,22 @@ $(GEN)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
 $(HOSTDIR)/luaparse: tools/luaparse.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
+
+# The Synth Kit's engine on this machine (`roadmap.md` 6zh): its pure half -
+# the sound, the engine, the song read from Lua - with every warning on, and
+# a Lua to drive it, whose own warnings are not ours.
+SYNTH_PURE := user/kits/synth/synth_dsp.c user/kits/synth/synth_engine.c \
+              user/kits/synth/synth_lua.c
+
+$(HOSTDIR)/test_synth: tools/test_synth.c $(SYNTH_PURE) $(wildcard user/kits/synth/*.h) \
+                       lua/upstream/linit.c $(LUA_HOST_SRCS)
+	@mkdir -p $(HOSTDIR)/synth
+	@for f in tools/test_synth.c $(SYNTH_PURE); do \
+	    $(HOST_CC) -O2 -std=c11 -Wall -Wextra -Werror -Iuser/kits/synth -Ilua/upstream \
+	        -c $$f -o $(HOSTDIR)/synth/$$(basename $$f .c).o || exit 1; \
+	done
+	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $(HOSTDIR)/synth/*.o lua/upstream/linit.c \
+	    $(LUA_HOST_SRCS) -lm
 
 $(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
@@ -3290,7 +3310,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3327,6 +3347,8 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	$(HOSTDIR)/lua tools/test_docview.lua
 	@# And the Markdown it styles while it is written (6zs step 2).
 	$(HOSTDIR)/lua tools/test_mdstyle.lua
+	@# And the Synth Kit's engine, heard: Groove's sound (6zh).
+	$(HOSTDIR)/test_synth tools/test_synth.lua
 	$(HOSTDIR)/lua tools/test_lualex.lua
 	@# And its checking: Lua's own parser, and the vendored luacheck loaded
 	@# as the machine loads it (6n, step 4).

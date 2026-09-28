@@ -12133,3 +12133,46 @@ that name. The harness's programs-by-name phase keeps its walk for any
 program a global hides, with nothing left to type. `make quake-check` and
 `snes-check` put the installed applications on their disks beside the pak
 or the ROM.
+
+## 18.254 The Synth Kit: PulseMusic's engine in C, on a thread (6zh)
+
+Groove's sound. PulseMusic's `dsp.lua` and `engine.lua` - Diego's LÖVE
+application - converted line for line into C, in doubles:
+`user/kits/synth/synth_dsp.c` (the voice with its polyBLEP oscillators and
+state-variable filter, seven drums, the ping-pong delay, the Freeverb),
+`synth_engine.c` (the song as structs, the sequencer accurate to the sample
+with swing, the mixer with its duck and sends, automation lanes and their
+glides), `synth_lua.c` (the song read out of Groove's tables, PulseMusic's
+defaults where a field is missing and every value brought into range), and
+`synth_kosmos.c` (the kit, `use("/Kosmos/Kits/synth")`, and its thread). The
+thread renders a period at a time straight into the audio ring's slots; a
+song crosses to it as a pointer and the one it replaces comes back to be
+freed where it was made, commands cross in a single-writer ring, and what is
+heard comes back under a sequence number - so the audio thread never
+allocates and the window is never between a step and its sound.
+
+**Checked once against the original, while it was written**, and not kept,
+since the original is Diego's and not the repository's: PulseMusic's own
+engine running under Lua 5.4 on the Mac, fed the same seeded random numbers
+as the kit, against the kit's C, sample by sample. The techno and house
+demos for a minute each in song mode: worst difference 5.8 billionths, which
+is Lua 5.4's `tanh` - PulseMusic's own fallback formula - rounding otherwise
+than C's. With automation lanes written into the techno demo, which change
+its sound by up to 0.64: 5.0 billionths.
+
+**Kept, `test_synth.lua`**, 14, on the Mac, through a harness that is a Lua
+with the kit's pure half in it: silence from nothing; a rim shot on its step
+and the next a beat later, within a sixth of a millisecond; swing moving the
+off-beat by its share; A 440 crossing zero 440 times in a second, and quiet
+after its release; a scene launched mid-bar starting on the next bar; a
+muted track silent; a song of one bar finishing; a lane bringing a track up;
+the closed hat stopping the open one; a tempo of zero and a kit that is not
+one played within range; the same song twice the same sound from a fresh
+engine. Its control: swing taken out of a step's length fails the swing.
+
+**Kept, `run_synth.py`**, 4, on the ARM machine, whose harness has the sound
+device: a program hands the kit a rim shot on every beat at 120 a minute,
+starts its thread on its stream's ring and waits three seconds; QEMU's WAV
+has to hold the beats half a second apart, and the engine has to say it is
+playing. Its control: a thread that renders and never publishes into the
+ring is heard as nothing.

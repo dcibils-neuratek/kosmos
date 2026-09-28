@@ -2888,6 +2888,7 @@ void kosmos_mp3_kit(lua_State *L);
 void kosmos_record_kit(lua_State *L);
 void kosmos_game_kit(lua_State *L);
 void kosmos_3d_kit(lua_State *L);
+void kosmos_synth_kit(lua_State *L);
 void kosmos_net_kit(lua_State *L);
 #ifdef KOSMOS_WEB
 void kosmos_web_kit(lua_State *L);
@@ -2927,6 +2928,8 @@ static const struct {
     { "record",   kosmos_record_kit, 0 },
     { "game",     kosmos_game_kit, 0 },
     { "3d",       kosmos_3d_kit, 0 },
+    /* Groove's sound: PulseMusic's engine in C, on a thread (6zh). */
+    { "synth",    kosmos_synth_kit, 0 },
     { "network",  kosmos_net_kit, 0 },
 #ifdef KOSMOS_WEB
     { "web",      kosmos_web_kit, 0 },

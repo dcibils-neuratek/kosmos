@@ -275,6 +275,9 @@ SUITES = [
     # sound keeping real time. It shares the machine with the others: a run
     # it fails because of them is the evidence for giving it a quiet one.
     Suite("arm-media", ["python3", "tools/run_media.py", ARM]),
+    # The Synth Kit's thread, heard: Groove's sound (6zh). The ARM harness
+    # has the sound device; x86's is the HD Audio suite's.
+    Suite("arm-synth", ["python3", "tools/run_synth.py", ARM]),
 
     # The Game Kit's rasterizer against the portable one it was ported
     # from: every primitive, both ways, and all 368,640 pixels compared
