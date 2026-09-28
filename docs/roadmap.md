@@ -2210,7 +2210,23 @@ processors, and still what follows USB:
    Kosmos has them - on Tracker, Preferences and the IDE. **Order**: after
    6za's step (a). **DRAWN on 27 September** as `docs/nochrome.html`, the
    buttons at the right as Diego asked ("buttons on the right to see how
-   they would look"), with five questions under it.
+   they would look"), with five questions under it. Diego: "I love the new
+   look without title bar so that the header is the title bar". **Three
+   steps**, each a stick: one window end to end (the window manager's
+   tabless window and "begin moving me", the kit's header drawing the
+   three and handing it a press on its empty band), Tracker first; every
+   application with a header, grey buttons behind, a double click to
+   maximise, the look's switch; and the display harness, which grabs,
+   drags and closes windows by their tabs in dozens of places.
+   **And a window moved from anywhere in it: Super + Ctrl + a press and a
+   drag** - Diego, the same evening: "Can we make a shortcut ... while
+   pressing a key combination and that activates full window drag? Like
+   super+ctrl+click and drag". The window manager sees the keys held and
+   the press before any application, so it keeps that press and moves the
+   window whatever is under the pointer - every window, a game's included.
+   Independent of the rest, and small; the care is that the Super held for
+   it must not open the Kosmos menu when it is let go. (Closing from the
+   keyboard is there already: Super + Q, and Super + H to minimise.)
 
 6zi. **WANTED on 27 September - a Mouse page in Preferences.** Diego:
    "preferences app need a mouse setting panel (pointer speed, mouse click
