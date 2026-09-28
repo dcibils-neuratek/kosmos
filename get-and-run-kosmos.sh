@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Downloads the newest Kosmos image and runs it.
+# Downloads the newest Kosmos release and runs it, under QEMU on a Mac.
 #
 # **Nothing to download first**, which is the point of it:
 #
@@ -29,6 +29,12 @@
 # beside it, so there is nothing to clone and nothing to build. What it
 # cannot fetch is QEMU: `brew install qemu` on macOS.
 #
+# **From the newest GitHub Release**, since 28 September. It read the
+# repository's `builds/` folder, which stopped being where images go when
+# releases began (0.10.153): it went on fetching 0.9.21 while 0.10.185 was
+# published beside it. A release also carries `SHA256SUMS`, so what is
+# fetched is checked against the sums the release was published with.
+#
 # **Nothing here knows a file name.** A release is called something like
 # `kosmos-0.8.33-f82c43e-1280x800-web.elf` and the version and the commit in
 # that change every time, so the list is asked for and the newest is worked
@@ -41,9 +47,8 @@ set -eu
 
 REPO="dcibils-neuratek/kosmos"
 BRANCH="main"
-API="https://api.github.com/repos/$REPO/contents/builds"
+API="https://api.github.com/repos/$REPO/releases/latest"
 RAW_ROOT="https://raw.githubusercontent.com/$REPO/$BRANCH"
-RAW="$RAW_ROOT/builds"
 
 dir="$HOME/.kosmos"
 want="richest"
@@ -82,11 +87,11 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 #
-# What is published.
+# What is published: the newest release, as GitHub's API describes it.
 #
-# The GitHub contents API rather than a hardcoded list, because the point of
-# this script is that nobody has to know what the files are called. It needs
-# no token: the repository is public.
+# The API rather than a hardcoded list, because the point of this script is
+# that nobody has to know what the files are called. It needs no token: the
+# repository is public.
 #
 #
 # Whether this file is the published one.
@@ -156,12 +161,22 @@ fi
 
 listing=$(curl -fsSL "$API" 2>/dev/null) || {
     echo "could not reach $API" >&2
-    echo "Either there is no network here, or the repository moved." >&2
+    echo "Either there is no network here, or nothing has been released." >&2
     exit 1
 }
 
-# `name size` a line, for the image files only. GitHub prints `name` before
-# `size` in every entry, which is what lets one awk pass pair them.
+tag=$(printf '%s\n' "$listing" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+
+if [ -z "$tag" ]; then
+    echo "the newest release has no tag - nothing to fetch." >&2
+    exit 1
+fi
+
+DL="https://github.com/$REPO/releases/download/$tag"
+
+# `name size` a line, for the image files only. GitHub prints an asset's
+# `name` before its `size`, which is what lets one awk pass pair them; the
+# release's own `name` has no `size` after it before the first asset's.
 images=$(printf '%s\n' "$listing" | awk '
     /"name":/ { n = $0; sub(/.*"name": *"/, "", n); sub(/".*/, "", n) }
     /"size":/ {
@@ -177,10 +192,10 @@ if [ -z "$images" ]; then
 fi
 
 if [ "$mode" = "list" ]; then
-    echo "published in $REPO:"
+    echo "published in $REPO, release $tag:"
     printf '%s\n' "$images" | while read -r name size; do
         case "$name" in
-            *-full.elf) has="browser, Doom" ;;
+            *-full.elf) has="the whole system" ;;
             *-web.elf)  has="browser" ;;
             *-doom.elf) has="Doom" ;;
             *)          has="the desktop" ;;
@@ -300,8 +315,8 @@ if [ -f "$dir/$best" ] && [ "$(wc -c < "$dir/$best" | tr -d ' ')" = "$best_size"
 then
     echo "have $best"
 else
-    echo "fetching $best ($((best_size / 1048576)) MB)"
-    curl -fL --progress-bar -o "$dir/$best.part" "$RAW/$best"
+    echo "fetching $best ($((best_size / 1048576)) MB), release $tag"
+    curl -fL --progress-bar -o "$dir/$best.part" "$DL/$best"
     mv "$dir/$best.part" "$dir/$best"
 fi
 
@@ -315,13 +330,34 @@ if [ "$magic" != "177ELF" ]; then
     exit 1
 fi
 
-# And the runner, which is small and changes with the images.
-curl -fsSL -o "$dir/run-kosmos.sh" "$RAW/run-kosmos.sh" || {
+# And the runner, which is small and changes with the images - the one
+# published with this release, beside them.
+curl -fsSL -o "$dir/run-kosmos.sh" "$DL/run-kosmos.sh" || {
     echo "could not fetch run-kosmos.sh" >&2
     exit 1
 }
 
 chmod +x "$dir/run-kosmos.sh"
+
+#
+# Both held to the sums the release was published with, when it has them.
+# A length says a download finished; a sum says it is the file that was
+# released, which a length cannot.
+#
+if curl -fsSL -o "$dir/SHA256SUMS" "$DL/SHA256SUMS" 2>/dev/null; then
+    for f in "$best" run-kosmos.sh; do
+        want_sum=$(awk -v f="$f" '$2 == f { print $1 }' "$dir/SHA256SUMS")
+        have_sum=$(shasum -a 256 "$dir/$f" | cut -d" " -f1)
+
+        if [ -n "$want_sum" ] && [ "$want_sum" != "$have_sum" ]; then
+            echo "$f does not match the sum release $tag was published with." >&2
+            rm -f "$dir/$f"
+            exit 1
+        fi
+    done
+
+    echo "checked against $tag's SHA256SUMS"
+fi
 
 echo "running $dir/$best"
 echo
