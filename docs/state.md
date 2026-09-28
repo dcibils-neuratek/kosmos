@@ -18,6 +18,31 @@ Last updated: 2026-09-28
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 28 September, the day: Text Editor, and the fixes Diego's testing found
+
+**Nothing is pushed since 0.10.176.** The stick to write is **0.10.184**
+(`boot.md`): 32 checks under OVMF, Doom installed, Text Editor.
+
+- **Processes charged the kernel with Cafesa3D's render** (6zq, 18.250): the
+  kernel counted a process's first thread only. Every thread now, and a
+  recycled thread slot starts at zero.
+- **`make bench`**: `context_switch` +4.1% and `ipc_roundtrip` +2.2% since
+  the baselines of 19 September - not from 6zq; to bisect (6zr).
+- **Text Editor replaces Editor** (6zs, drawn as `docs/texteditor.html`,
+  agreed "Great, let's do it"): step 1, plain text on a page of the kit's
+  own (`docview.lua`, 18.251); step 2, Markdown styled as it is written
+  (`mdstyle.lua`, 18.252), with the faces' pool growing to sixty-four since
+  Markdown wants six at once in the window manager.
+- **The gate went to 10:06** and is back to 9:30: the app images link
+  against the test userland rather than two of their own (6zp).
+- **The old builds and images were deleted** on Diego's word - 8.7 GB - and
+  with two old disk images went `odyssey.pdf`, `pride.pdf` and the WAV
+  tests, which were nowhere else; Time Machine may have them.
+
+**Next, in order**: Quake and the Super Nintendo into `/Home/Apps` as Doom
+went; an application's image without the system's files; 6zr, the bisect;
+6zp's compositor-budget sleep; 6zk, 6zi.
+
 ## 28 September, later in the night: the rest of the order, and Doom installed
 
 **Nothing is pushed since 0.10.176 (395472a).** Everything below is on
