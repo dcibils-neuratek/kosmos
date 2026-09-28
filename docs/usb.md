@@ -2576,6 +2576,43 @@ it is built). Diego chose H.264, "as all modern video players are h264".
 Recorded under QEMU on the test pattern, 640 x 480: 128 frames in four
 seconds, 22.6 KB. How it is tested is `testing.md` 18.179.
 
+## 12. Step 9: MIDI
+
+**A keyboard that plays notes rather than types letters** (`roadmap.md`
+6zg), for Groove first. USB MIDI is the Audio class's MIDIStreaming
+subclass: two bulk endpoints, and on them four-byte *event packets* - a
+cable number and a Code Index Number in the first byte, then one to three
+bytes of MIDI. Nothing about it is isochronous, and nothing needs a
+setting chosen for bandwidth; it is the simplest class this driver has
+met.
+
+### 12a: what a MIDI device says it is
+
+`user/drivers/usb/midi_decode.c`, pure C held on the Mac
+(`tools/test_mididecode.c`), as `uvc_decode.c` is:
+
+- **The interface**: the first MIDIStreaming setting with a bulk endpoint -
+  a device may declare a setting without any first.
+- **Ports are cables.** A device with several ports carries them on the same
+  two endpoints; each endpoint's class descriptor lists the embedded jacks
+  it carries, and the order of that list is the cable numbering. A jack's
+  `iJack` names the port. The Launchkey Mini MK3 has two each way - its keys
+  on cable 0 and its DAW controls on cable 1 - which is what PulseMusic
+  found by name on the Mac ("MIDI 2", "DAW").
+- **The specification asks for more than devices give.** Novation's
+  Launchpad MK2 declares no external jacks at all, only the embedded pair,
+  and a parser that looked for the full topology would not find it. An
+  endpoint that lists no jacks still carries cable 0.
+- **Packets both ways**: the Code Index Number says how many bytes follow;
+  0 and 1 are reserved, and 0 is also what the zeros padding a short
+  transfer look like. System Exclusive goes three bytes a packet, the last
+  saying how many it holds.
+
+**The fixtures**: the MK2 rebuilt field for field from a Linux `lsusb -D`
+of it (espressif/esp-idf issue 11616), and the Launchkey's two-port shape
+composed from the specification with its ports' names, until its own
+bytes are read from it (12d).
+
 ## Sources
 
 - Microsoft, *FAT32 File System Specification*, version 1.03, 6 December 2000

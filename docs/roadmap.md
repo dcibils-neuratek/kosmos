@@ -2531,6 +2531,25 @@ processors, and still what follows USB:
    *when* a key went down and not only that it did; a shape in a header,
    as `/Devices/audio`'s is. Tested under QEMU as the camera was, with the
    real keyboard passed through from the Mac (`usb-host`).
+   **STARTED on 28 September, first in Diego's order** ("go on with the
+   proposed plan for the roadmap"). In steps, each gated before the next:
+   - **a** - reading USB MIDI, as pure C held on the Mac: the class
+     descriptors - which interface, its jacks and their names, which cable
+     each endpoint carries - and the four-byte event packets, both ways.
+     Fixtures: Novation's Launchpad MK2 as a Linux `lsusb` printed it
+     (`1235:0069`, one port each way, no external jacks), and the
+     Launchkey Mini MK3's two ports each way (`1235:0102`) composed from
+     the specification until its own bytes are read.
+   - **b** - `/Devices/midi`, served by the USB driver as `/Devices/camera`
+     is: a declared shape (`midiproto.h`), events in a ring in the program's
+     region with the counter's time on each, sending back to the device -
+     and a virtual keyboard under `opt/kosmos/midi`, as the camera has its
+     pattern, so both boards and the gate have one without USB. `midi.lua`.
+   - **c** - Groove plays from it: PulseMusic's keys, pads, bend, sustain and
+     knobs, and the Launchkey's DAW mode with its pads lit (`launchkey.lua`,
+     converted), held by the gate through the virtual keyboard.
+   - **d** - the real Launchkey: on the ThinkPad, or passed through on the
+     Mac as root (`tools/usbhost.sh`); Diego's hands.
 
 6zf. **WANTED on 27 September - a PlayStation emulator.** Diego:
    "playstation emulator psx". As the Super Nintendo was: an emulator in C,

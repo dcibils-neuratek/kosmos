@@ -12244,3 +12244,24 @@ every page; and no reply is dropped. Its control: the list in one page of a
 hundred fails both, and `tile` says "the desktop did not answer" rather
 than hanging, which is the error reply reaching it.
 
+## 18.257 USB MIDI, read (6zg, step a)
+
+`user/drivers/usb/midi_decode.c`: a MIDI device's configuration - which
+interface, its bulk endpoints, which cable is which named port - and the
+four-byte event packets both ways (`usb.md` §12).
+
+**Kept, `test_mididecode`**, 47, on the Mac: Novation's Launchpad MK2 from
+its printed `lsusb` - one port each way, 64-byte bulk endpoints, and no
+external jacks, which a parser insisting on the specification's topology
+would miss; the Launchkey Mini MK3's two ports, keys on cable 0 and DAW on
+cable 1, with their names; every length of it cut short on the last byte
+before an unmapped page, refused exactly where a descriptor is cut; a
+descriptor of length zero, an audio device that is not MIDI, a
+MIDIStreaming interface with no endpoint, and a setting without endpoints
+before one with them; packets - notes, a controller, a bend, a program, the
+clock, System Exclusive begun and ended, a tune request that is not, padding
+and a reserved code; and encoding, System Exclusive of four, five and six
+bytes, messages that are not refused, and every channel message on every
+cable there and back. Its control: the jacks taken as cables in reverse
+fails the Launchkey's two cable checks.
+
