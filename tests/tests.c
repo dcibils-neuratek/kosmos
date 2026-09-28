@@ -4055,8 +4055,9 @@ static bool test_the_first_thread_leaves(void)
  *
  * Has to match `user/init/main.c`, `CTEST_TABLE`, which reads its own row
  * back through SYS_PROCTABLE: born with no file, given one by SYS_SETNAME,
- * two threads while a worker lives and one after, the file kept when only
- * the name changes, a bad pointer refused before anything is written, and a
+ * two threads while a worker lives and one after, a spinning worker's
+ * time charged to the process while it runs and kept once it is collected
+ * (checks 16 to 20), the file kept when only the name changes, a bad pointer refused before anything is written, and a
  * control character made printable. Its exit code names the first check
  * that failed. Here, after it has ended: the file it gave last is the one
  * the kernel kept, and nothing is left behind.

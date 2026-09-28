@@ -823,6 +823,11 @@ struct thread *thread_create_suspended(const char *name,
     t->ended = false;
     t->process = NULL;
     t->space = NULL;
+
+    /* The previous occupant's time is not this thread's. Nothing summed a
+     * thread's count until a process was charged with its workers (28
+     * September), so a recycled slot carrying one went unnoticed. */
+    t->ticks = 0;
     memset(&t->ipc, 0, sizeof(t->ipc));
     memset(&t->sched, 0, sizeof(t->sched));
 

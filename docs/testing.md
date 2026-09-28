@@ -12007,3 +12007,29 @@ check that it is said fails.
 The stick's `/Home` gets `Apps/Doom` from `make x86-usb-image`: `doom.lua`,
 the stripped x86 `doom.elf`, and `doom1.wad` from the top of `HOME_DIR`
 when the folder has one there and none in `Apps/Doom`.
+
+## 18.250 A process charged with its workers' time (6zq)
+
+Diego, rendering in Cafesa3D on QEMU: Processes showed the kernel at 89%
+while Monitor showed every core at 99% user. The kernel charged a process
+with its first thread's ticks alone - `process_table` read
+`p->thread->ticks`, written before a process could have more than one - so
+the four workers Cafesa3D renders on were charged to nobody, and Processes,
+whose kernel row is the busy ticks less everything charged to a process
+(`procshare.lua`), called their time the kernel's.
+
+A process's `ticks` is now every thread's (`process_ticks`): the first,
+the workers on its list, ended or not, and `collected_ticks`, which a
+worker's count joins when its slot leaves the list - waited for, or
+released with its process - under the lock that list is changed under, so
+the sum only rises. And `thread_create` sets a thread's count to zero:
+a recycled slot kept its previous occupant's, which nothing summed until
+now.
+
+**Checked** in the kernel suite's `proc: the table says its threads and its
+file`, on both boards: `CTEST_TABLE` starts a worker that spins while the
+first thread sleeps a fifth of a second, and its own row has to rise by at
+least a quarter of that (check 18), and not fall once the worker has been
+waited for and its slot has gone back (check 20). **Controls**: the
+workers left out of the sum stops the role at 18; the collected count not
+kept stops it at 20.

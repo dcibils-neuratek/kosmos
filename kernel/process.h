@@ -525,8 +525,22 @@ struct process {
      * Reporting the thread's directly meant an exited process read as zero
      * ticks, and anything computing a delta against an earlier reading got
      * a negative percentage - which is how `htop` came to show -939%.
+     *
+     * **Every thread's, not the first one's** (`process_ticks`). It was
+     * `p->thread->ticks` alone until 28 September, so a process whose work
+     * is in its workers - Cafesa3D rendering on four - was charged with a
+     * thread that sat waiting, and Processes, which calls whatever no
+     * process was charged with the kernel's, showed the kernel at 89%.
      */
     unsigned long     ticks;
+
+    /*
+     * The ticks of workers that ended and were collected - waited for, or
+     * released with their process - whose slots went back to the pool and
+     * took their own counts with them. So `ticks` only rises when a worker
+     * goes.
+     */
+    unsigned long     collected_ticks;
 
     int               exit_code;
     bool              exited;

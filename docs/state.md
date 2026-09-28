@@ -65,6 +65,11 @@ own files. Taking those out of an application's image is on the roadmap
 the gate's load and passed 187/187 three times alone; the binary is kept in
 the scratchpad and the roadmap's Known section has it.
 
+**And a fix from Diego's first look at 0.10.183 on QEMU** (6zq, 18.250):
+Processes said the kernel was using 89% while Cafesa3D rendered, because
+the kernel charged a process with its first thread only; a process is now
+charged with all its threads.
+
 **Waiting for Diego**: the push; LuaJIT (`docs/luajit.md`, the
 recommendation is to keep 5.4); the M700's stable; 6zj step 3 (should the
 display harness run in Plex?); and the disk - about 2 GB free, with seven

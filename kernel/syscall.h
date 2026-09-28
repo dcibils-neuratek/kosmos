@@ -724,7 +724,7 @@ struct proc_info {
     uint32_t state;             /* the thread's: ready, running, blocked */
     uint32_t exited;
     int32_t  exit_code;
-    uint64_t ticks;             /* timer ticks charged to it, only rising */
+    uint64_t ticks;             /* timer ticks charged to all its threads, only rising */
     uint32_t pages;             /* pages it holds through SYS_MAP */
     uint32_t held;              /* and everything else: image, heap, stacks */
     uint32_t caps;              /* capabilities in its table */

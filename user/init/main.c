@@ -347,6 +347,26 @@ static void waits_to_be_released(unsigned long arg)
     kosmos_thread_exit(0);
 }
 
+/*
+ * A worker doing the work, for the check that a process is charged with it:
+ * it spins until the first thread says stop, and the first thread sleeps
+ * meanwhile, so whatever the row gains is this thread's.
+ */
+static volatile unsigned long stop_spinning;
+
+#define SPIN_TICKS              50UL    /* scheduler ticks, a fifth of a second */
+
+static void spins_until_stopped(unsigned long arg)
+{
+    (void)arg;
+
+    while (!stop_spinning) {
+        counted++;
+    }
+
+    kosmos_thread_exit(0);
+}
+
 /* This process's own row, found by the name it gave itself, or NULL. */
 static const struct proc_info *own_row(const char *name)
 {
@@ -411,6 +431,53 @@ static int table_role(void)
 
     if (row == NULL || row->threads != 1) {
         return 8;
+    }
+
+    /*
+     * **A worker's time is its process's** (28 September). Until then the
+     * row was the first thread's count alone - which gains nothing while it
+     * sleeps here - so Cafesa3D rendering on four workers was charged with
+     * the one that waited, and Processes, calling whatever no process was
+     * charged with the kernel's, showed the kernel at 89%. Charged while
+     * the worker runs, and still after it has been collected and its slot
+     * has gone back to the pool.
+     */
+    {
+        unsigned long before, during;
+        long spinner;
+
+        row = own_row("t-table");
+
+        if (row == NULL) {
+            return 16;
+        }
+
+        before = row->ticks;
+        spinner = kosmos_thread_start(spins_until_stopped, 0);
+
+        if (spinner < 0) {
+            return 17;
+        }
+
+        kosmos_sleep(SPIN_TICKS);
+        row = own_row("t-table");
+
+        if (row == NULL || row->ticks < before + SPIN_TICKS / 4) {
+            return 18;
+        }
+
+        during = row->ticks;
+        stop_spinning = 1;
+
+        if (kosmos_thread_wait((unsigned long)spinner) != 0) {
+            return 19;
+        }
+
+        row = own_row("t-table");
+
+        if (row == NULL || row->ticks < during) {
+            return 20;
+        }
     }
 
     /* A name alone leaves the file where it was. */

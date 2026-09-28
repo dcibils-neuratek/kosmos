@@ -98,6 +98,32 @@ unsigned process_count(void)
  * So both numbers are reported now. A pool that says fewer are in use than
  * are occupied is a pool that will run out for reasons nobody can see.
  */
+/* Defined with the pool it guards, below; the table takes it too. */
+static struct spinlock processes_lock;
+
+/*
+ * **What a process has been charged: every thread of it** - the first, the
+ * workers on its list, ended or not, and the ones already collected. A
+ * thread's slot leaves the list and adds its count to `collected_ticks`
+ * under `processes_lock`, which the caller holds, so the sum never counts a
+ * worker twice or loses one, and only rises.
+ */
+static unsigned long process_ticks(struct process *p)
+{
+    unsigned long sum = p->collected_ticks;
+    struct thread *t;
+
+    if (p->thread != NULL) {
+        sum += p->thread->ticks;
+    }
+
+    for (t = p->threads; t != NULL; t = t->sibling) {
+        sum += t->ticks;
+    }
+
+    return sum;
+}
+
 /*
  * Every process, as a table. See `struct proc_info`.
  *
@@ -120,9 +146,17 @@ unsigned process_table(struct proc_info *out, unsigned max)
         out[n].state     = (p->thread != NULL) ? (uint32_t)p->thread->state : 0;
         out[n].exited    = p->exited ? 1u : 0u;
         out[n].exit_code = (int32_t)p->exit_code;
-        /* From the thread while it exists, from the process afterwards. */
-        if (p->thread != NULL) {
-            p->ticks = p->thread->ticks;
+        /* From the threads while they exist, from the process afterwards -
+         * looked at under the lock an exit clears `p->thread` under, or a
+         * sum taken just after that would leave the first thread out. */
+        {
+            unsigned long flags = spin_lock(&processes_lock);
+
+            if (p->thread != NULL) {
+                p->ticks = process_ticks(p);
+            }
+
+            spin_unlock(&processes_lock, flags);
         }
 
         out[n].ticks = p->ticks;
@@ -601,6 +635,7 @@ int process_thread_wait(struct process *p, unsigned index)
 
         if (t->ended) {
             code = t->exit_code;
+            p->collected_ticks += t->ticks;
             *link = t->sibling;
             t->sibling = NULL;
             t->ended = false;               /* the slot is the pool's again */
@@ -628,6 +663,7 @@ static void release_ended_threads(struct process *p)
     while (t != NULL) {
         struct thread *next = t->sibling;
 
+        p->collected_ticks += t->ticks;
         t->sibling = NULL;
         t->ended = false;
         t = next;
@@ -1822,7 +1858,10 @@ static void release_memory(struct process *p)
 
     /* Before the thread is gone, so the figure outlives it. */
     if (p->thread != NULL) {
-        p->ticks = p->thread->ticks;
+        unsigned long flags = spin_lock(&processes_lock);
+
+        p->ticks = process_ticks(p);
+        spin_unlock(&processes_lock, flags);
     }
 
     size_t i;

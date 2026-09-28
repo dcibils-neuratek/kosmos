@@ -2252,6 +2252,21 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zq. **FOUND on 28 September, on QEMU - Processes said the kernel was using
+   89% of the machine while Cafesa3D rendered.** Diego, with Monitor beside
+   it at 99% user on all four cores: "it seems the processes is saying
+   kernel os consiming almost 90% of the cpu but the realitiy is that
+   cafesa rendering is consiuming most of it". The kernel charged a process
+   with its *first* thread's ticks alone (`process_table`, `p->ticks =
+   p->thread->ticks`), which predates threads in a process; Cafesa3D
+   renders on four workers while its first thread waits, and Processes
+   calls whatever no process was charged with the kernel's. And a recycled
+   thread slot kept the previous thread's count, which nothing noticed
+   because nothing summed one. **DONE the same day** (`testing.md`
+   18.250): a process is charged with every thread - the first, its
+   workers, and those already collected (`collected_ticks`) - and a new
+   thread starts at zero.
+
 6zp. **FOUND on 28 September - the gate is at the edge of its ten
    minutes.** Five gates that night ran 9:40, 9:42, 9:06, 9:09 and 9:59;
    the last rebuilt the images for a C change (102 s where a Lua change
