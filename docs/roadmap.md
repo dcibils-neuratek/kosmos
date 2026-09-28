@@ -2245,6 +2245,13 @@ processors, and still what follows USB:
    this Mac, against 5.4, measured; what the kernel would have to allow and
    what that costs its rule; and what is left in Lua that a profile says is
    slow, since the byte loops are C already. After 6zn.
+   **STUDIED on 28 September** - `docs/luajit.md`, for Diego to decide.
+   LuaJIT's compiler ran four of Kosmos's libraries 1.2 to 4.3 times
+   faster on this Mac, and its interpreter alone 1.1 to 1.5; 96 of the
+   194 Lua files use what Lua 5.1 lacks, above all 64-bit integers, which
+   the protocols, a file's date and the counter depend on; and the
+   compiler needs executable memory Kosmos is built not to hand out. The
+   page recommends keeping 5.4 and moving a measured loop to C, as before.
 
 6zn. **ASKED on 27 September - `wm.lua` in several files.** Diego:
    "Perhaps we need to partition WM.lua in smaller files as it keeps
@@ -2266,6 +2273,20 @@ processors, and still what follows USB:
    gets no report, and did not at the commit before this night's work
    either - it is not in the gate, which is how it went unseen. For its
    turn.
+   **DONE for now, on 28 September**, eight parts: `profile`, `osd`,
+   `strips`, `drawwindow`, `pointer`, `compose`, `keys`, with the window's
+   measurements, the pointer's state (`PT`) and the loop's `running` in
+   shared tables so no part holds a copy of something that changes.
+   `wm.lua` is 5604 lines from 7413, and 144 names at its top level from
+   Lua's limit of 200. **What is left in it**, each a part when it is
+   worth one: the protocol's requests (1300 lines; five pieces of state -
+   `next_handle`, `pending_pid`, `pending_program`, `reserved_top` and the
+   trace switches - move into shared tables first), the look (520),
+   ending applications (400), the head's settings and scale, the windows
+   list and the loop. Found on the way: the renaming tool took the text
+   before a name from a comment above when there was one, so a comment
+   ending in a full stop made a bare name look like a field; fixed, and
+   every name moved before it checked for a bare use left - none.
 
 6zi. **WANTED on 27 September - a Mouse page in Preferences.** Diego:
    "preferences app need a mouse setting panel (pointer speed, mouse click

@@ -91,6 +91,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The first real machine, a ThinkPad T14: `docs/thinkpad.md`
 - How a PC boots, and why the loader is Kosmos's own: `docs/boot.md`
 - Threads in a process, written before they are built: `docs/threads.md`
+- LuaJIT, measured against Lua 5.4 for Diego to decide: `docs/luajit.md`
 - Glossary: `docs/glossary.md`
 
 ---
