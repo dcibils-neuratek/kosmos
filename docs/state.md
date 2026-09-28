@@ -78,8 +78,12 @@ capabilities which will then lead to us having accelerated 2d graphics".
 - **6zt, done** (18.264): `opt/kosmos/fb=WxH`, and `run-kosmos.sh -r` passes
   it; both boards; Diego's own command held by the script's test.
 
-**Next**: a release so Diego can run `-r 3840x2160` - it needs his yes to
-push. Then 4i d, a MIDI event reaching the kit without the window's pass;
+- **0.10.187**: Diego, "push 187 yes" - pushed with `make prepush` and
+  released for QEMU on a Mac as v0.10.187. **The gate took 10:09** in that
+  prepush, past the ten-minute budget (9:15 the run before): to fix before
+  anything else lands.
+
+**Next**: the gate back under ten minutes. Then 4i d, a MIDI event reaching the kit without the window's pass;
 4i e, the device's depth, on the ThinkPad. 6zg d when Diego has the
 Launchkey at hand.
 
