@@ -236,6 +236,7 @@ OUT.TITLE_IN   = 18
 --
 OUT.GRIP       = 16
 OUT.BOX_W      = OUT.BOX + 4        -- minimise and maximise, at the right
+OUT.RUN        = OUT.BOX_W * 2 + OUT.BOX    -- the three, end to end
 
 -- Nothing may be resized smaller than `scale.MIN_W` by `scale.MIN_H`, 120 by
 -- 60 at 100 per cent. Below it a window is all decoration and no window.
@@ -291,6 +292,7 @@ function scale.chrome()
   OUT.cascade = OUT.TAB_H + scale.px(8)
   OUT.GRIP    = scale.px(16)
   OUT.BOX_W   = OUT.BOX + scale.px(4)
+  OUT.RUN     = OUT.BOX_W * 2 + OUT.BOX
   scale.MIN_W = scale.px(120)
   scale.MIN_H = scale.px(60)
 end
@@ -1373,7 +1375,12 @@ local function frame_of(win)
   -- A menu and the backdrop are both undecorated, at opposite ends of the
   -- stack: one floats over everything, the other is what everything sits
   -- on. Neither has a tab, so for both the frame is the rectangle.
-  if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen then
+  --
+  -- **And a window whose header is its title bar** (`win.headed`,
+  -- `roadmap.md` 6zj): no tab and no border, so its frame is its page -
+  -- rounded, and with its shadow, which the others here do not have.
+  if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen
+     or win.headed then
     return win.x, win.y, win.w, win.h
   end
 
@@ -1633,6 +1640,62 @@ local function top_limit()
   return OUT.TAB_H + reserved_top
 end
 
+--
+-- **How high this window may go**: its tab's height below the strip, or
+-- right up to the strip when it has no tab (`win.headed`) - its header is
+-- then the handle, and it is inside the window.
+--
+function OUT.top_of(win)
+  return win.headed and reserved_top or top_limit()
+end
+
+--
+-- **The largest page this window may have**: the screen less the strip,
+-- for a window with no tab and no border; the screen less those for one
+-- with them.
+--
+function OUT.room(win)
+  if win.headed then return W, H - reserved_top end
+
+  return W - OUT.BORDER * 2, H - OUT.TAB_H - OUT.BORDER
+end
+
+--
+-- **Whether this window's header is its title bar**: it has one the kit
+-- can put the three in (`win.can_head`), and the look says windows like it
+-- wear no bar (`title_bars = no`, `theme.lua`). True or nil.
+--
+function OUT.headed(win)
+  return (win.can_head and theme.title_bars == false) and true or nil
+end
+
+-- The room the three take, in a window's points: what its header leaves
+-- free for this process to draw them in (`handlers.lights`).
+function OUT.lights_size(pct)
+  return { w = scale.pt(OUT.RUN, pct), h = scale.pt(OUT.BOX, pct) }
+end
+
+--
+-- **A new look, and a window gains its tab or loses it.** Its page stays
+-- where it is; one that gains a tab is moved down if the tab would be
+-- above the room, since a tab off the top of the screen is a window that
+-- cannot be taken hold of.
+--
+function OUT.rehead(win)
+  local now = OUT.headed(win)
+
+  if now == win.headed then return end
+
+  damage_window(win)
+  win.headed = now
+
+  if win.y < OUT.top_of(win) then win.y = OUT.top_of(win) end
+
+  damage_window(win)
+  print(("wm: %s %s"):format(tostring(win.title),
+        now and "has its header for a title bar" or "wears a title bar"))
+end
+
 local function boxes_x(win)
   local fx = frame_of(win)
 
@@ -1658,7 +1721,15 @@ local function boxes_x(win)
   -- The run spans from here to `2 * BOX_W + BOX`: each box starts a slot
   -- and the last is `BOX` wide, with the far edge `MARGIN` from the frame.
   --
-  return fx + tabs.width(win) - OUT.MARGIN - (OUT.BOX_W * 2 + OUT.BOX)
+  -- **On a window with no tab, where its header left room for them**
+  -- (`handlers.lights`), and nowhere until it has said: nil, which every
+  -- caller reads as "no three here".
+  --
+  if win.headed then
+    return win.lights_at and win.x + win.lights_at.x or nil
+  end
+
+  return fx + tabs.width(win) - OUT.MARGIN - OUT.RUN
 end
 
 --
@@ -1702,14 +1773,26 @@ OUT.IN_SLOT = { [0] = "maximise", [1] = "minimise", [2] = "close" }
 -- they take, so a change of which is repainted without the whole tab.
 --
 function OUT.boxes_rect(win)
+  local bx = boxes_x(win)
+
+  if not bx then return nil end
+
+  if win.headed then
+    return bx, win.y + win.lights_at.y, OUT.RUN, OUT.BOX
+  end
+
   local _, fy = frame_of(win)
 
-  return boxes_x(win), fy + (OUT.TAB_H - OUT.BOX) // 2, OUT.BOX_W * 2 + OUT.BOX, OUT.BOX
+  return bx, fy + (OUT.TAB_H - OUT.BOX) // 2, OUT.RUN, OUT.BOX
 end
 
-
 function OUT.damage_boxes(win)
-  if win then add_damage(OUT.boxes_rect(win)) end
+  if not win then return end
+
+  -- Not `win and OUT.boxes_rect(win)`: `and` keeps one value of the four.
+  local x, y, w, h = OUT.boxes_rect(win)
+
+  if x then add_damage(x, y, w, h) end
 end
 
 --
@@ -2352,7 +2435,13 @@ end
 -- The two disagreed by four rows, and a window that asked for this size
 -- was quietly given less (26 September, Cafesa3D opening maximised).
 --
-function OUT.maximised()
+--
+-- **A window with no tab has the whole room below the strip** (`win.headed`):
+-- no bar above it and no frame round it, so nothing to leave space for.
+--
+function OUT.maximised(win)
+  if win and win.headed then return OUT.room(win) end
+
   return math.min(W - OUT.BORDER * 2, W - 8),
          math.min(H - top_limit() - OUT.BORDER, H - OUT.TAB_H - 8)
 end
@@ -2367,6 +2456,7 @@ local function maximise(win)
     damage_window(win)
     win.x, win.y = r.x, r.y
     resize_window(win, r.w, r.h)
+    post(win, { type = "moved", x = win.x, y = win.y })
 
     return true
   end
@@ -2383,9 +2473,9 @@ local function maximise(win)
   local was = { x = win.x, y = win.y, w = win.w, h = win.h }
 
   damage_window(win)
-  win.x, win.y = OUT.BORDER, top_limit()
+  win.x, win.y = win.headed and 0 or OUT.BORDER, OUT.top_of(win)
 
-  if not resize_window(win, OUT.maximised()) then
+  if not resize_window(win, OUT.maximised(win)) then
     win.x, win.y = was.x, was.y
     damage_window(win)
 
@@ -2393,6 +2483,13 @@ local function maximise(win)
   end
 
   win.restore = was
+
+  --
+  -- **And told where it went**, as a drag tells it: a menu is a window on
+  -- the screen, and one opened after a maximise opened where the window
+  -- had been, since nothing said it had moved.
+  --
+  post(win, { type = "moved", x = win.x, y = win.y })
 
   return true
 end
@@ -2412,6 +2509,9 @@ local function minimise(win)
 
   win.hidden = true
   damage_window(win)
+
+  -- Said, since nothing else on the screen but its absence says it.
+  print(("wm: minimised %s"):format(tostring(win.title)))
 
   return true
 end
@@ -2806,6 +2906,18 @@ handlers.open = function(req, who, cap)
   strips.accept(win, req.menubar)
 
   --
+  -- **A header that can be the title bar** (`roadmap.md` 6zj): the kit
+  -- says its window has one, and the look decides whether it is - Plex's
+  -- are, Classic keeps its tab (`OUT.headed`). Only a window of the kit's
+  -- commands: one that draws its own pixels has no header of the kit's to
+  -- put the three in, and keeps its bar in every look.
+  --
+  win.can_head = (req.header == true and not win.shared and not req.kind
+                  and not req.backdrop and not req.strip
+                  and not req.fullscreen) or nil
+  win.headed = OUT.headed(win)
+
+  --
   -- Cascaded, if something is already there.
   --
   -- Applications carry a position in their source and several of them were
@@ -2828,7 +2940,7 @@ handlers.open = function(req, who, cap)
   -- maximise uses, over whatever is there, which is the point of it.
   --
   if req.maximised and not req.fullscreen and not req.backdrop and req.strip ~= "top" then
-    win.x, win.y = OUT.BORDER, top_limit()
+    win.x, win.y = win.headed and 0 or OUT.BORDER, OUT.top_of(win)
   end
 
   if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top"
@@ -3143,6 +3255,11 @@ handlers.open = function(req, who, cap)
   elseif win.backdrop or win.strip then
     print(("wm: window %s at %d,%d %dx%d"):format(
           tostring(win.title), win.x, win.y, win.w, win.h))
+  elseif win.headed then
+    -- No tab to be wide: its header is the title bar, and the log says so
+    -- where the others give the tab's width.
+    print(("wm: window %s at %d,%d %dx%d, its header the title bar"):format(
+          tostring(win.title), win.x, win.y, win.w, win.h))
   else
     -- And how wide its tab is, which the title's font decides (`tabs`): a
     -- harness pressing the minimise box at the tab's end is told where
@@ -3225,7 +3342,8 @@ handlers.open = function(req, who, cap)
            x = scale.pt(win.x, pct), y = scale.pt(win.y, pct),
            screen_w = scale.pt(W, pct), screen_h = scale.pt(H, pct),
            palette = theme.current(), desktop = theme.desktop,
-           fonts = theme.fonts }
+           fonts = theme.fonts, headed = win.headed or false,
+           lights = OUT.lights_size(pct) }
 end
 
 handlers.draw = function(req)
@@ -3803,7 +3921,7 @@ function move_window(win, x, y, quiet)
   local KEEP = 48
 
   win.x = math.min(math.max(x, KEEP - win.w), W - KEEP)
-  win.y = math.min(math.max(y, top_limit()), H - KEEP)
+  win.y = math.min(math.max(y, OUT.top_of(win)), H - KEEP)
   damage_window(win)
 
   --
@@ -3837,6 +3955,103 @@ handlers.move = function(req)
               req.quiet)
 
   return { ok = true, x = scale.pt(win.x, pct), y = scale.pt(win.y, pct) }
+end
+
+--
+-- **Where a header's three go** (`roadmap.md` 6zj). A window whose header
+-- is its title bar leaves room at the header's right end and says where,
+-- in its points; this process draws the three there over its page - in
+-- colour in front and grey behind, with their glyphs under the pointer -
+-- and takes the presses on them, as it does on a tab. The window never
+-- draws them, so which window is in front is shown the moment it changes,
+-- from what this process already knows.
+--
+-- Held inside the window: a place that would put them outside it is
+-- pulled back, so nothing a window says can have this process draw over
+-- another.
+--
+handlers.lights = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  if not win.headed then
+    return { ok = false, error = "this window wears a title bar" }
+  end
+
+  local x, y = tonumber(req.x), tonumber(req.y)
+
+  if not (x and y) then
+    return { ok = false, error = "the three need an x and a y" }
+  end
+
+  local pct = win.pct or 100
+
+  x = math.max(0, math.min(scale.px(x, pct), win.w - OUT.RUN))
+  y = math.max(0, math.min(scale.px(y, pct), win.h - OUT.BOX))
+
+  OUT.damage_boxes(win)
+  win.lights_at = { x = x, y = y }
+  OUT.damage_boxes(win)
+
+  print(("wm: %s's three at %d,%d in it"):format(tostring(win.title), x, y))
+
+  return { ok = true }
+end
+
+--
+-- **A press on a header's empty band, taken as a drag** (`roadmap.md`
+-- 6zj). The window is what knows its band from its buttons - it hit-tests
+-- its own views - so the press goes to it as every press does, and it hands
+-- the rest of the press back here: until the button comes up the pointer
+-- moves the window, and the window hears no more of it.
+--
+-- `x` and `y` are where the press landed, in its points, so the point that
+-- was pressed stays under the pointer however far the pointer went while
+-- this was on its way. Only for the press still held on this window: a
+-- band clicked and let go before this arrived was a click.
+--
+handlers.move_begin = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  if not win.headed then
+    return { ok = false, error = "this window is moved by its title bar" }
+  end
+
+  if ((PT.buttons or 0) & 1) == 0 or PT.grabbed ~= win or PT.dragging then
+    return { ok = false, error = "no press is held on this window" }
+  end
+
+  local pct = win.pct or 100
+  local x = math.max(0, math.min(scale.px(tonumber(req.x) or 0, pct), win.w))
+  local y = math.max(0, math.min(scale.px(tonumber(req.y) or 0, pct), win.h))
+
+  PT.grabbed = nil
+  PT.dragging = { win = win, dx = x, dy = y, header = true }
+
+  return { ok = true }
+end
+
+--
+-- **Maximise, and back, asked by the window** - a double click on its
+-- header's band, which is where a title bar's double click went.
+--
+handlers.maximise = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  if not resizable(win) then
+    return { ok = false, error = "this window cannot be resized" }
+  end
+
+  local done = maximise(win)
+
+  if done then
+    print(("wm: %s %s"):format(tostring(win.title),
+          win.restore and "maximised" or "restored"))
+  end
+
+  return { ok = done, maximised = win.restore ~= nil }
 end
 
 --
@@ -4155,6 +4370,12 @@ handlers.close = function(req)
   -- it, and to the backdrop, which grows back up to the top of the screen.
   if win.strip then recount_strips() end
 
+  -- Said for a window, as its opening is; a menu comes and goes with every
+  -- click and is not.
+  if win.kind ~= "menu" then
+    print(("wm: closed %s"):format(tostring(win.title)))
+  end
+
   --
   -- And a window takes its menus with it. Without this a menu outlives the
   -- window it belongs to and floats above a desktop with nothing behind
@@ -4363,7 +4584,7 @@ function scale.rescale(pct)
 
       if not (win.strip or win.backdrop) then
         win.x = math.min(math.max(scale.px(lx, pct), KEEP - win.w), W - KEEP)
-        win.y = math.min(math.max(scale.px(ly, pct), top_limit()), H - KEEP)
+        win.y = math.min(math.max(scale.px(ly, pct), OUT.top_of(win)), H - KEEP)
       end
 
       damage_window(win)
@@ -4495,9 +4716,13 @@ handlers.theme = function(req)
   --
   local now = theme.current()
 
+  -- A look with no title bars takes them off, and one with them puts them
+  -- back - and each window is told which it has, so its header draws or
+  -- stops drawing the room for the three.
   for _, win in ipairs(windows) do
+    OUT.rehead(win)
     post(win, { type = "theme", palette = now, desktop = theme.desktop,
-                fonts = theme.fonts })
+                fonts = theme.fonts, headed = win.headed or false })
   end
 
   -- The menu bars this process draws above direct windows wear it too.
@@ -4579,10 +4804,12 @@ function resize_window(win, w, h)
 
   -- Not smaller than a window, and not bigger than the screen it has to fit
   -- inside along with its own decoration.
+  local most_w, most_h = OUT.room(win)
+
   if w < scale.MIN_W then w = scale.MIN_W end
   if h < scale.MIN_H then h = scale.MIN_H end
-  if w > W - OUT.BORDER * 2 then w = W - OUT.BORDER * 2 end
-  if h > H - OUT.TAB_H - OUT.BORDER then h = H - OUT.TAB_H - OUT.BORDER end
+  if w > most_w then w = most_w end
+  if h > most_h then h = most_h end
 
   if w == win.w and h == win.h then return false end
 
@@ -5122,7 +5349,15 @@ function OUT.cast_shadow(win, r)
 
   local fx, fy, fw, fh = frame_of(win)
 
-  back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow, nil,
+  --
+  -- **Deeper in front, for a window with no tab** (`roadmap.md` 6zj): a
+  -- tab's colour said which window has the focus, and without one the
+  -- three and the shadow say it - the front one's as it always was, the
+  -- rest lighter. The same spread, so what a shadow damages is unchanged.
+  --
+  local alpha = (win.headed and win ~= focused_window()) and 55 or nil
+
+  back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow, alpha,
               r.x, r.y, r.w, r.h)
 end
 
@@ -5146,7 +5381,9 @@ function OUT.boxes_under(x, y)
 
   local bx, by, bw, bh = OUT.boxes_rect(win)
 
-  if x >= bx and x < bx + bw and y >= by and y < by + bh then return win end
+  if bx and x >= bx and x < bx + bw and y >= by and y < by + bh then
+    return win
+  end
 
   return nil
 end

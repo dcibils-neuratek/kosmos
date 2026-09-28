@@ -2230,6 +2230,19 @@ processors, and still what follows USB:
    **DONE the same night** (`testing.md` 18.241). Diego answered the five
    questions "Let's go" and "It's good": all five as drawn, and this
    before the rest of 6zj.
+   **Step 1 DONE on 28 September** (`testing.md` 18.242): Tracker, end to
+   end. A look says `title_bars = no` (Plex and Plex Night); a window says
+   its header can be the title bar (`ui.window{ header = true }`) and marks
+   which (`ui.header{ title_bar = true }`); the window manager then draws
+   no tab or border, keeps the corners and the shadow, and draws the three
+   itself at the place the header leaves - grey behind, the front shadow
+   deeper - so the kit never paints them and focus shows at once. A press
+   on a band that `moves_window` - the header's, Tracker's sidebar head -
+   is handed back to the window manager as a drag (`move_begin`), and a
+   double click maximises (`maximise`). **Step 2 is every other window with
+   a header**, which is one flag on the window and one on its header each;
+   **step 3** the harness phases that press tabs, which run in the dark
+   look and are untouched until a phase opens a window in Plex.
 
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua

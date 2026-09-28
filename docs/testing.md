@@ -11708,3 +11708,54 @@ that far, the probe hears nothing, and the Super let go after opens nothing.
 Controls, each failing its own check: the tap not let go by; no drag from
 the keys held.
 
+## 18.242 A window whose header is its title bar (6zj, step 1)
+
+Diego, of the mockups: "i love the fact that the mokcups dont have an
+actual window crome above the app contents", then "Let's go" to
+`docs/nochrome.html`'s five answers. Tracker first, end to end.
+
+**The look decides, the window offers.** `title_bars = no` is a look's
+word, as `flat` is (Plex and Plex Night); a window offers a header that
+can be the title bar (`ui.window{ header = true }`) and the window manager
+says in its reply whether it is (`headed`), and says again when the look
+changes. A window that draws its own pixels never offers one.
+
+**The window manager draws the three, not the kit.** The header leaves
+room at its right end - 12 in, 10 after its last control - and says where
+(`lights`, once, and again only when it moves). The window manager draws
+them over the page from `OUT.light`, as on a tab: coloured in front, grey
+behind, glyphs under the pointer, maximise greyed on a window that cannot
+be resized. Which window is in front is therefore shown the moment it
+changes, with nothing asked of the application; the front window's shadow
+is also the deeper one. No tab and no border, so the frame is the page:
+`frame_of`, the compositor's cut and the corners know `win.headed`, and a
+window with no tab may go up to the strip (`OUT.top_of`) and fills the
+room below it when maximised (`OUT.room`).
+
+**A press on the band is handed back.** Only the kit knows its band from
+its buttons, so the press goes to the window as every press does; a view
+that `moves_window` - the header, Tracker's sidebar head - sends
+`move_begin` with where it was pressed, and the window manager drags from
+that point until the button comes up. Refused unless that press is still
+held on that window, so a click let go before the message arrived stays a
+click. A second press within the kit's double-click interval sends
+`maximise` instead.
+
+**Found on the way.** `OUT.damage_boxes` read `local x, y, w, h = win and
+OUT.boxes_rect(win)`, and `and` keeps one value of four: the placing
+request died in its `pcall` and said nothing - the kit now says when the
+three are not placed. A maximise moved a window without posting `moved`,
+so a menu opened afterwards opened where the window had been, on a tab
+as well. A look that left `flat` out kept the previous look's, since a
+palette applies only what it has; `theme.read` now always says both words.
+The window manager now says when it minimises and closes a window.
+
+**Checked on both boards** (the display harness's `no title bar`, 9):
+Tracker opened in Plex is logged with its header as its title bar and its
+three placed 12 in from the right and centred in the header; maximise's
+green is on the screen there and no tab's yellow above the window; a press
+on the header's band dragged 120 across and 80 down moves it exactly that
+far; a double click on the sidebar's head maximises it and another puts it
+back; the amber minimises it and, raised by Super Tab, the red closes it.
+**The control** is the same Tracker in the harness's own look: a tab, no
+three, and the same drag on the same band moves nothing.

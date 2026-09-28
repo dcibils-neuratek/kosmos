@@ -258,6 +258,21 @@ theme.tokens = {
   -- would be a fourth thing nobody designed (`ui.md` 16.8b).
   --
   "flat",
+
+  --
+  -- **`title_bars`: whether a window with a header of its own wears a
+  -- title bar above it** (`roadmap.md` 6zj, `docs/nochrome.html`). Diego,
+  -- 27 September 2026, of the mockups: "i love the fact that the mokcups
+  -- dont have an actual window crome above the app contents". `no` and the
+  -- header is the title bar: the window manager draws the three at its
+  -- right end and a press on its empty band moves the window. A window that
+  -- draws its own pixels has no header of the kit's, and keeps its bar in
+  -- every look.
+  --
+  -- A look's property, as `flat` is, and for the same reason: the Plex
+  -- looks are content-first and the BeOS look is its tab.
+  --
+  "title_bars",
 }
 
 local known = {}
@@ -428,14 +443,14 @@ function theme.read(text, base)
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
       elseif key == "name" then
         out.name = value
-      elseif key == "flat" then
+      elseif key == "flat" or key == "title_bars" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
         if value == "yes" or value == "no" then
-          out.flat = (value == "yes")
+          out[key] = (value == "yes")
         else
           said[#said + 1] =
-            ("line %d: `flat` is yes or no, not `%s`"):format(n, value)
+            ("line %d: `%s` is yes or no, not `%s`"):format(n, key, value)
         end
       else
         local c = colour(value)
@@ -449,6 +464,15 @@ function theme.read(text, base)
       end
     end
   end
+
+  --
+  -- **The two words, always said**, as the look's own or as its default.
+  -- `theme.apply` copies only what a palette has, so a look that left
+  -- `flat` out kept the last look's: from Plex to Classic, every control
+  -- stayed flat until the window was opened again.
+  --
+  if out.flat == nil then out.flat = false end
+  if out.title_bars == nil then out.title_bars = true end
 
   return out, said
 end

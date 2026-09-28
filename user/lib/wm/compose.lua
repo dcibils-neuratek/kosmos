@@ -42,6 +42,10 @@ return function(ctx)
         if win.kind == "menu" or win.backdrop or win.strip
            or win.fullscreen then
           shape = { { frame_of(win) } }
+        elseif win.headed then
+          -- No tab: its rectangle, and rounded (`roadmap.md` 6zj).
+          shape = { { frame_of(win) } }
+          round = OUT.corner_squares(win)
         else
           shape = { tabs.shape(win) }
           round = OUT.corner_squares(win)

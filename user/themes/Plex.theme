@@ -36,6 +36,14 @@
 
 name       = plex
 flat       = yes
+
+# **No title bars** (`roadmap.md` 6zj, `docs/nochrome.html`): a window
+# whose header is the kit's wears no bar above it - the header is the
+# title bar, with the three at its right end. Diego, 27 September 2026,
+# of the mockups: "i love the fact that the mokcups dont have an actual
+# window crome above the app contents... it looks much cleaner". The
+# Plex looks are content-first; Classic keeps BeOS's tab.
+title_bars = no
 desktop    = #3d63b8
 window     = #fafafb
 raised     = #ffffff

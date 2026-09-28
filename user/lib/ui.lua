@@ -1452,6 +1452,25 @@ function view:mouse(action, x, y)
 end
 
 --
+-- **Where a view is in its window, and the window**, by walking `parent`
+-- to the root, which points back at the window it is in. Nil for the
+-- window while the view is in none.
+--
+function view:in_window()
+  local x, y, at = self.x or 0, self.y or 0, self.parent
+  local win = self.window
+
+  while at do
+    win = win or at.window
+    x = x + (at.x or 0)
+    y = y + (at.y or 0)
+    at = at.parent
+  end
+
+  return x, y, win
+end
+
+--
 -- The deepest view containing a point, and that point in its coordinates.
 --
 -- Backwards through the children, because they are drawn in order and a
@@ -2673,6 +2692,7 @@ ui.layout = {
   head_in   = 18,   -- the subject, in from the left
   head_edge = 10,   -- controls, in from either edge
   head_gap  = 4,    -- between two controls
+  lights_in = 12,   -- a title bar's three, in from the right (6zj)
   page_top  = 22,   -- a page of cards: from the header to the first name
   page_side = 26,   --   and in from either side
   page_foot = 26,   --   and below the last card
@@ -2947,6 +2967,15 @@ function ui.header(spec)
   local edge_l = v.edge and v.edge[1] or L.head_edge
   local edge_r = v.edge and v.edge[2] or L.head_edge
 
+  --
+  -- **A header that is its window's title bar** (`title_bar`, `roadmap.md`
+  -- 6zj): in a look with no title bars, its empty band is what moves the
+  -- window (`moves_window`) and its right end holds the three - which the
+  -- window manager draws, told where by `window:place_lights`. In a look
+  -- with them, it is a header like any other.
+  --
+  if v.title_bar then v.moves_window = true end
+
   function v:measure()
     local x = edge_l
 
@@ -2964,6 +2993,20 @@ function ui.header(spec)
                    or L.head_in
 
     local r = self.w - edge_r
+
+    --
+    -- The three at the right end, 12 in from it and 10 after the last
+    -- control, as `docs/nochrome.html` draws them; the controls move left
+    -- to make the room.
+    --
+    local _, _, win = self:in_window()
+
+    if self.title_bar and win and win.headed and win.lights then
+      local lx = self.w - L.lights_in - win.lights.w
+
+      win:place_lights(self, lx, (L.head - 1 - win.lights.h) // 2)
+      r = lx - L.head_edge
+    end
 
     for i = #self.right, 1, -1 do
       local c = self.right[i]
@@ -5393,6 +5436,15 @@ function ui.window(spec)
     drops = spec.drops or nil,
 
     --
+    -- **A header that can be the title bar** (`roadmap.md` 6zj): this
+    -- window has one, marked `title_bar`, which can hold the three and be
+    -- taken hold of. Whether it is, the look decides and the reply says
+    -- (`headed`): Plex's windows have no bar above them, Classic's keep the
+    -- tab.
+    --
+    header = spec.header or nil,
+
+    --
     -- **A menu bar, for a window that draws its own pixels.** The kit cannot
     -- draw one into memory the application owns, so the window manager
     -- draws the strip above it and says when a title is pressed; the menus
@@ -5467,6 +5519,12 @@ function ui.window(spec)
     -- while every widget inside it followed - which looks like the theme
     -- half worked, and is the one thing that was wrong when it did.
     background = spec.background,
+
+    -- Whether its header is its title bar, and the room the three take in
+    -- it (`window:place_lights`).
+    headed = reply.headed == true,
+    lights = type(reply.lights) == "table" and reply.lights or nil,
+
     focus = 1,
     running = true,
     title = spec.title or "window",
@@ -5781,6 +5839,55 @@ function window:focus_on(view)
   end
 
   return false
+end
+
+--
+-- **Where the three go**, told to the window manager, which draws them
+-- (`roadmap.md` 6zj): `view` is the header leaving room for them and `x`,
+-- `y` are that room's corner inside it. Said once, and again only when the
+-- place changes - a header measures itself on every paint, and a message
+-- per paint would be a round trip for nothing.
+--
+function window:place_lights(view, x, y)
+  local vx, vy = view:in_window()
+
+  x, y = vx + x, vy + y
+
+  local told = self.lights_told
+
+  if told and told.x == x and told.y == y then return end
+
+  self.lights_told = { x = x, y = y }
+
+  local reply, why = fs.send("/Running/wm", { type = "lights",
+                                              window = self.handle,
+                                              x = x, y = y })
+
+  if not (reply and reply.ok) then
+    print(("ui: %s's three were not placed: %s"):format(
+          tostring(self.title), tostring(reply and reply.error or why)))
+  end
+end
+
+--
+-- **A press on a band that moves the window** (`moves_window`), in a
+-- window whose header is its title bar: the rest of the press is handed to
+-- the window manager as a drag, from `x`, `y` in the window, so the point
+-- pressed stays under the pointer. A second press soon after is a double
+-- click, and maximises or restores it, as a title bar's did.
+--
+function window:take_hold(x, y)
+  local now = sys.ticks()
+
+  if self.held_at and now - self.held_at < ui_again() then
+    self.held_at = nil
+    fs.send("/Running/wm", { type = "maximise", window = self.handle })
+    return
+  end
+
+  self.held_at = now
+  fs.send("/Running/wm", { type = "move_begin", window = self.handle,
+                           x = x, y = y })
 end
 
 function window:close()
@@ -6575,6 +6682,16 @@ local function dispatch_mouse(self, ev)
 
     self.grab = nil
 
+    --
+    -- **The band of a header that is the title bar**: the window's to
+    -- move, not a widget's to press (`window:take_hold`). Nothing is
+    -- grabbed, so the rest of this press is nobody's here.
+    --
+    if target and target.moves_window and self.headed then
+      self:take_hold(ev.x, ev.y)
+      return false
+    end
+
     if target and target.mouse then
       self.grab = { view = target, dx = ev.x - lx, dy = ev.y - ly }
     end
@@ -6853,6 +6970,14 @@ function window:run()
         --
         if ev.palette then theme.apply(ev.palette) end
         if ev.desktop then theme.override { desktop = ev.desktop } end
+
+        -- A look that takes the title bars off, or puts them back: the
+        -- header makes room for the three or gives it back, and says
+        -- where they are again.
+        if ev.headed ~= nil and ev.headed ~= self.headed then
+          self.headed = ev.headed
+          self.lights_told = nil
+        end
 
         -- A window that draws its own pixels draws its own text, so it
         -- needs the faces as well as the colours. One that sends commands

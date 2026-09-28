@@ -63,7 +63,13 @@ return function(ctx)
         -- screen. The last used to be left out, so a tab, its title and its
         -- boxes were painted under a full-screen window's top rows on every
         -- pass, only for its contents to cover them.
-        local bare = win.backdrop or win.strip or win.fullscreen
+        --
+        -- **And a window whose header is its title bar** (`win.headed`,
+        -- `roadmap.md` 6zj) has no tab or border either - but it is rounded,
+        -- which the others are not, and it has the three, drawn over its
+        -- header below.
+        local rounded = not (win.backdrop or win.strip or win.fullscreen)
+        local bare = not rounded or win.headed
 
         -- The shadow is drawn before this, by `compose_rect`: it lies
         -- outside the frame, and `r` here is only the frame's visible part.
@@ -72,7 +78,7 @@ return function(ctx)
         -- The corners, kept before anything is painted over them. Put back at
         -- the end of this window's drawing, which is what rounds it.
         --
-        local kept = not bare
+        local kept = rounded
                      and OUT.corners(fx, fy, fw, fh, r) or nil
 
         if kept then OUT.keep(kept) end
@@ -300,14 +306,37 @@ return function(ctx)
         end
 
         --
+        -- **The three, over the header that left room for them** (`handlers.
+        -- lights`): in colour on the window in front and grey on the rest,
+        -- which is how a window without a tab says it has the focus - the
+        -- tab's colour said it before. Their glyphs while the pointer is
+        -- over them, as on a tab; maximise greyed on a window that cannot
+        -- be resized. Only where the rectangle being drawn reaches them.
+        --
+        if win.headed and not win.pinned then
+          local bx, by, bw, bh = OUT.boxes_rect(win)
+
+          if bx and bx < r.x + r.w and bx + bw > r.x
+             and by < r.y + r.h and by + bh > r.y then
+            local lit = (OUT.hover_boxes == win)
+
+            for kind, slot in pairs(OUT.SLOT) do
+              OUT.light(bx + OUT.BOX_W * slot, by, kind, lit,
+                        not focused or (kind == "maximise" and not resizable(win)))
+            end
+          end
+        end
+
+        --
         -- The page rounded inside the frame, then **the corners back, last of
         -- all.** Everything this window drew is on the screen now, square;
         -- this copies what was behind over the pixels outside the arc and the
         -- window is round. One place, after every drawing call rather than
-        -- inside any of them.
+        -- inside any of them. A window with no frame has no page inside one
+        -- to round.
         --
         if kept then
-          OUT.round_inside(win, r, tab)
+          if not bare then OUT.round_inside(win, r, tab) end
           OUT.put_back(kept, fx, fy, fw, fh)
         end
       end

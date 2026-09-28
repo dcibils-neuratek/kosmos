@@ -4051,6 +4051,217 @@ def check_super_drag(guest):
     return 3
 
 
+def check_no_title_bar(guest):
+    """**A window whose header is its title bar** (`roadmap.md` 6zj,
+    `docs/nochrome.html`). Diego, 27 September: "i love the fact that the
+    mokcups dont have an actual window crome above the app contents", and
+    "Let's go" to the page's five answers.
+
+    Tracker, the first window with a header to take it, opened in Plex -
+    whose look says `title_bars = no`:
+
+      the window manager says its header is its title bar, where a tabbed
+      window's line says how wide the tab is, and places the three where
+      the header left room: 12 in from the right and centred in its 46
+      rows;
+      the three are on the screen there, maximise's green first, and
+      above the window is not a tab's yellow;
+      a press on the header's empty band, dragged 120 across and 80 down,
+      moves the window exactly that far;
+      a double click on the sidebar's head maximises it, and another puts
+      it back;
+      the amber of the three minimises it, and - brought back by Super
+      Tab - the red closes it.
+
+    And the control: the same Tracker in the harness's own look, which
+    wears title bars, has its tab, is told of no three, and a press on the
+    same band dragged the same way moves nothing.
+    """
+    width = height = 0
+
+    def to(px, py):
+        guest.mouse_to(*_to_tablet(px, py, width, height))
+
+    def press_drag(fx, fy, dx, dy):
+        to(fx, fy)
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+
+        for k in range(1, 7):
+            to(fx + dx * k // 6, fy + dy * k // 6)
+            time.sleep(0.15)
+
+        time.sleep(0.4)
+        guest.mouse_button(False)
+        time.sleep(0.3)
+
+    def click_at(cx, cy):
+        to(cx, cy)
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.1)
+        guest.mouse_button(False)
+
+    def double_at(cx, cy):
+        to(cx, cy)
+        time.sleep(0.4)
+
+        for _ in range(2):
+            guest.mouse_button(True)
+            time.sleep(0.05)
+            guest.mouse_button(False)
+            time.sleep(0.1)
+
+    def keys(down, *names):
+        guest._qmp("input-send-event", {"events": [
+            {"type": "key", "data": {"down": down,
+                                     "key": {"type": "qcode", "data": n}}}
+            for n in names]})
+        time.sleep(0.2)
+
+    def stop():
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+    def open_tracker(what):
+        mark = len(guest.seen)
+        guest.type("wm tracker")
+        line = guest.wait_for_line("wm: window Tracker at ", what, mark)
+        band = guest.wait_for_line("tracker: band at ",
+                                   "Tracker to say where its band is", mark)
+        x, y, w, h = (int(v) for v in
+                      re.match(r"(\d+),(\d+) (\d+)x(\d+)", line).groups())
+        bx, by = (int(v) for v in re.match(r"(\d+),(\d+)", band).groups())
+        return mark, line, x, y, w, h, bx, by
+
+    guest.type(appearance('palette = "plex"') + ' print("nochrome" .. "-saved")')
+    guest.wait_for("nochrome-saved", "save Plex for the window manager")
+
+    try:
+        mark, line, x, y, w, h, bx, by = open_tracker(
+            "Tracker to open in Plex")
+
+        if "its header the title bar" not in line:
+            raise Failure("Tracker opened in Plex wearing a title bar: %r"
+                          % line)
+
+        three = guest.wait_for_line("wm: Tracker's three at ",
+                                    "the three to be placed in Tracker's "
+                                    "header", mark)
+        lx, ly = (int(v) for v in re.match(r"(\d+),(\d+)", three).groups())
+
+        # 62 for the three (`OUT.RUN`) and 12 in from the right; centred in
+        # a header of 46 whose last row is its rule.
+        if (lx, ly) != (w - 12 - 62, (46 - 1 - 18) // 2):
+            raise Failure("Tracker's three are at %d,%d in a window %d wide "
+                          "- wanted %d,%d" % (lx, ly, w, w - 74, 13))
+
+        time.sleep(2.0)
+        width, height, px = parse_ppm(guest.screendump())
+
+        def rgb(qx, qy):
+            at = (qy * width + qx) * 3
+            return px[at], px[at + 1], px[at + 2]
+
+        # Maximise's green, at the middle of the first disc: the window
+        # manager drew the three over the header.
+        r_, g_, b_ = rgb(x + lx + 9, y + ly + 9)
+
+        if not (abs(r_ - 0x28) <= 24 and abs(g_ - 0xc8) <= 24
+                and abs(b_ - 0x40) <= 24):
+            raise Failure("no green disc at Tracker's maximise, %d,%d: "
+                          "#%02x%02x%02x" % (x + lx + 9, y + ly + 9,
+                                             r_, g_, b_))
+
+        # And no tab above it: Plex's tab is #f2c230.
+        r_, g_, b_ = rgb(x + w // 2, y - 10)
+
+        if abs(r_ - 0xf2) <= 16 and abs(g_ - 0xc2) <= 16 and abs(b_ - 0x30) <= 24:
+            raise Failure("a tab's yellow above Tracker, at %d,%d, in a look "
+                          "with no title bars" % (x + w // 2, y - 10))
+
+        # Dragged by the header's band.
+        held = len(guest.seen)
+        press_drag(x + bx, y + by, 120, 80)
+        moved = guest.wait_for_line("wm: moved Tracker by its header to ",
+                                    "Tracker to move by its header", held)
+        nx, ny = (int(v) for v in re.match(r"(\d+),(\d+)", moved).groups())
+
+        if abs(nx - (x + 120)) > 3 or abs(ny - (y + 80)) > 3:
+            raise Failure("a drag of 120 across and 80 down by Tracker's "
+                          "header moved it from %d,%d to %d,%d"
+                          % (x, y, nx, ny))
+
+        # A double click on the sidebar's head, which is band as well.
+        at = len(guest.seen)
+        double_at(nx + 100, ny + 8)
+        guest.wait_for_line("wm: Tracker maximised",
+                            "a double click on the sidebar's head to "
+                            "maximise Tracker", at)
+        at = len(guest.seen)
+        time.sleep(1.5)
+        double_at(0 + 100, 0 + 8)
+        guest.wait_for_line("wm: Tracker restored",
+                            "a second double click to put Tracker back", at)
+        time.sleep(1.5)
+
+        # The amber of the three: minimised.
+        at = len(guest.seen)
+        click_at(nx + lx + 22 + 9, ny + ly + 9)
+        guest.wait_for_line("wm: minimised Tracker",
+                            "the amber of the three to minimise Tracker", at)
+
+        # Back with Super Tab, and the red closes it.
+        keys(True, "meta_l")
+        keys(True, "tab")
+        keys(False, "tab")
+        keys(False, "meta_l")
+        time.sleep(1.5)
+        at = len(guest.seen)
+        click_at(nx + lx + 44 + 9, ny + ly + 9)
+        guest.wait_for_line("wm: closed Tracker",
+                            "the red of the three to close Tracker", at)
+    finally:
+        stop()
+        guest.type(appearance() + ' print("nochrome" .. "-reset")')
+        guest.wait_for("nochrome-reset", "put the harness's appearance back")
+
+    # The control: a look with title bars.
+    try:
+        mark, line, x, y, w, h, bx, by = open_tracker(
+            "Tracker to open in the harness's look")
+
+        if not re.search(r", a tab \d+ wide", line):
+            raise Failure("Tracker in a look with title bars has no tab: %r"
+                          % line)
+
+        time.sleep(2.0)
+        width, height, _ = parse_ppm(guest.screendump())
+        held = len(guest.seen)
+        press_drag(x + bx, y + by, 120, 80)
+        time.sleep(1.5)
+        told = guest.seen[mark:]
+
+        if "moved Tracker by its header" in told or "Tracker's three" in told:
+            raise Failure("Tracker wears a title bar and its header still "
+                          "moved it, or took the three:\n%s" % told[-600:])
+    finally:
+        stop()
+
+    return 9
+
+
 def check_direct_menu(guest):
     """A window that draws its own pixels has a menu bar, drawn above them.
 
@@ -10541,6 +10752,7 @@ def main():
         wallpaper_checks = phase("wallpapers", check_wallpapers)
         direct_menu_checks = phase("direct menu", check_direct_menu)
         super_drag_checks = phase("super drag", check_super_drag)
+        no_title_checks = phase("no title bar", check_no_title_bar)
         tab_checks = phase("tabs", check_tabs)
         corner_checks = phase("corners", check_corners)
         shadow_checks = phase("shadow", check_shadow)
@@ -10619,7 +10831,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks
+             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
              + split_checks + monitor_checks + camera_checks
@@ -10709,6 +10921,10 @@ def main():
           f"{super_drag_checks} on a window moved from anywhere in it with "
           f"Super + Control, its application not hearing the press and the "
           f"Super opening nothing, "
+          f"{no_title_checks} on a window whose header is its title bar - "
+          f"the three in it, moved by its band, maximised by a double click, "
+          f"minimised and closed by the three, and none of it in a look with "
+          f"title bars, "
           f"{direct_menu_checks} on a menu bar above a window that draws its "
           f"own pixels, and its menu reaching the program and as tall as "
           f"what is in it, "

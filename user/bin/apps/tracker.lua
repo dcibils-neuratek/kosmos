@@ -208,6 +208,11 @@ local win, err = ui.window{
   -- this window while one is overhead because of this flag, so it is a
   -- promise: `rows:drop` below is what keeps it.
   drops = true,
+
+  -- Its header can be its title bar (`roadmap.md` 6zj): in a look with no
+  -- title bars the three are at the header's right end, and the header and
+  -- the sidebar's head above the places are what move the window.
+  header = true,
 }
 
 if not win then
@@ -1813,6 +1818,10 @@ header = ui.header{
   x = SIDE_W, y = 0, w = W - SIDE_W, title = "", edge = { 6, 8 },
   left = { back_button, forward_button, place_button },
   right = { new_button, view_button, more_button, search },
+
+  -- The title bar, when the look has none; its window from the start, so
+  -- the place it says for View below already leaves room for the three.
+  title_bar = true, window = win,
 }
 
 --
@@ -1834,7 +1843,10 @@ function side_ground:draw(g)
   g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
 end
 
-local side_head = ui.view{ x = 0, y = 0, w = SIDE_W, h = L.head }
+-- Taken hold of like the header beside it: one band across the window's
+-- top, as `docs/nochrome.html` draws it.
+local side_head = ui.view{ x = 0, y = 0, w = SIDE_W, h = L.head,
+                           moves_window = true }
 
 function side_head:draw(g)
   local word = "Files"
@@ -1854,6 +1866,15 @@ if not backdrop then
   print(("tracker: content at %d, view at %d,%d"):format(
         CONTENT_Y, SIDE_W + view_button.x + view_button.w // 2,
         view_button.y + view_button.h // 2))
+
+  -- And the middle of the header's empty band, between the trail and the
+  -- controls at the right: what a press moves the window by, when the
+  -- header is the title bar.
+  local band_l = place_button.x + place_button.w
+  local band_r = new_button.x
+
+  print(("tracker: band at %d,%d"):format(SIDE_W + (band_l + band_r) // 2,
+                                          L.head // 2))
 end
 
 --

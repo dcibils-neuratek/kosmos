@@ -1687,6 +1687,42 @@ only for as long as someone asked. Like the other requests it takes the
 window's handle as its authority; what it hands out is where the pointer is
 over the window that has the focus anyway.
 
+## 16.25 A header that is the title bar
+
+Diego, 27 September 2026, of the mockups: "i love the fact that the
+mokcups dont have an actual window crome above the app contents... it
+looks much cleaner". Drawn as `docs/nochrome.html`, and every one of its
+five answers agreed as drawn.
+
+**The look decides and the window offers.** `title_bars = no` is a look's
+word, beside `flat` (`theme.lua`): the Plex looks say it, Classic keeps the
+tab that is BeOS. A window offers a header that can be its title bar -
+`ui.window{ header = true }`, and `ui.header{ title_bar = true }` on the one
+that is - and the window manager answers whether it is (`headed`), in the
+reply that opens it and again with every change of look. A window with no
+header of the kit's has nothing to put the three in or to take hold of, and
+keeps its bar in every look: Doom, the Cube, the Super Nintendo.
+
+**The window manager draws the three; the header only leaves room.** At
+the header's right end, 12 in and 10 after its last control; the header
+says where, once and again only when it moves. They are the tab's three,
+drawn by the same code - coloured on the window in front, grey on the rest,
+glyphs under the pointer - so which window is in front shows the moment it
+changes, from what the window manager already knows, and no application can
+draw them wrong. It takes the presses on them as it takes them on a tab.
+The front window's shadow is the deeper one, which is the rest of what the
+tab's colour used to say.
+
+**The band is the application's to recognise and the window manager's to
+drag.** Only the kit knows its band from its buttons, so a press goes to
+the window as every press does; a view that `moves_window` hands the rest
+of it back (`move_begin`, with where it was pressed), and the window
+manager moves the window from there until the button comes up - refused
+unless that press is still held, so a click let go before the message
+arrived stays a click. Twice within the double-click interval is
+`maximise`. It is the same split Wayland arrived at for the same reason: a
+client that draws its own header asks the compositor to begin the move.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

@@ -23,6 +23,38 @@ return function(ctx)
   local window_at =
     ctx.window_at
 
+  --
+  -- **A press on one of the three**, on a tab or over a header that is the
+  -- title bar: `mx` is where the first starts. True when it landed on one,
+  -- and false for the rest of a tab, which is a drag.
+  --
+  local function press_box(win, nx, mx)
+    local slot = nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W]
+
+    if slot == "minimise" then
+      minimise(win)
+    elseif slot == "maximise" then
+      -- Greyed on a window that cannot be maximised, and then a press
+      -- on it is nothing: not a maximise, and not the start of a drag.
+      if resizable(win) then maximise(win) end
+    elseif nx >= mx + OUT.BOX_W * OUT.SLOT.close then
+      --
+      -- The close box. Asked first, taken by force second.
+      --
+      -- The window is told, and a window that is listening tidies up
+      -- and goes. One that is not listening - the whole point of this
+      -- desktop being able to survive one - never answers, so the
+      -- request is remembered and collected on a later pass.
+      --
+      win.closing = sys.ticks() + OUT.close_grace
+      post(win, { type = "close" })
+    else
+      return false
+    end
+
+    return true
+  end
+
   local function pointer_pass(p)
     if not p then return end
 
@@ -181,32 +213,24 @@ return function(ctx)
           PT.grabbed = win
           post(win, { type = "mouse", action = "press",
                       x = nx - win.x, y = ny - win.y })
-        elseif ny < fy + OUT.TAB_H then
+        elseif not win.headed and ny < fy + OUT.TAB_H then
           local mx = boxes_x(win)
 
           if win.pinned then
             -- Nothing on this tab but the tab. Drag it and that is all.
             PT.dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
-          elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W] == "minimise" then
-            minimise(win)
-          elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W] == "maximise" then
-            -- Greyed on a window that cannot be maximised, and then a press
-            -- on it is nothing: not a maximise, and not the start of a drag.
-            if resizable(win) then maximise(win) end
-          elseif nx >= mx + OUT.BOX_W * OUT.SLOT.close then
-            --
-            -- The close box. Asked first, taken by force second.
-            --
-            -- The window is told, and a window that is listening tidies up
-            -- and goes. One that is not listening - the whole point of this
-            -- desktop being able to survive one - never answers, so the
-            -- request is remembered and collected on a later pass.
-            --
-            win.closing = sys.ticks() + OUT.close_grace
-            post(win, { type = "close" })
-          else
+          elseif not press_box(win, nx, mx) then
             PT.dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
           end
+        elseif win.headed and not win.pinned and OUT.boxes_under(nx, ny) == win then
+          --
+          -- **The three over a header that is the title bar** (`roadmap.md`
+          -- 6zj): the same three and the same presses as on a tab. What is
+          -- beside them is the window's own, and a press there goes to it -
+          -- the header hands a press on its empty band back as a drag
+          -- (`handlers.move_begin`).
+          --
+          press_box(win, nx, boxes_x(win))
         elseif win.menubar and ny < win.y + win.menubar.h then
           strips.press(win, nx)
         elseif resizable(win)
@@ -303,6 +327,11 @@ return function(ctx)
         if PT.dragging.held then
           print(("wm: moved %s by Super + Control to %d,%d"):format(
                 tostring(PT.dragging.win.title), PT.dragging.win.x, PT.dragging.win.y))
+        elseif PT.dragging.header then
+          -- And by a header, whose drag began in the window rather than
+          -- here (`handlers.move_begin`).
+          print(("wm: moved %s by its header to %d,%d"):format(
+                tostring(PT.dragging.win.title), PT.dragging.win.x, PT.dragging.win.y))
         end
 
         PT.dragging = nil
@@ -320,17 +349,24 @@ return function(ctx)
       local w = PT.resizing.ow + (nx - PT.resizing.ox)
       local h = PT.resizing.oh + (ny - PT.resizing.oy)
 
+      local most_w, most_h = OUT.room(win)
+
       if w < scale.MIN_W then w = scale.MIN_W end
       if h < scale.MIN_H then h = scale.MIN_H end
-      if w > W - OUT.BORDER * 2 then w = W - OUT.BORDER * 2 end
-      if h > H - OUT.TAB_H - OUT.BORDER then h = H - OUT.TAB_H - OUT.BORDER end
+      if w > most_w then w = most_w end
+      if h > most_h then h = most_h end
 
       PT.resizing.w, PT.resizing.h = w, h
 
       damage_outline(PT.outline)
 
-      PT.outline = { x = win.x - OUT.BORDER, y = win.y - OUT.TAB_H,
-                  w = w + OUT.BORDER * 2, h = h + OUT.TAB_H + OUT.BORDER }
+      -- The frame it will have: the page alone, for a window with no tab.
+      if win.headed then
+        PT.outline = { x = win.x, y = win.y, w = w, h = h }
+      else
+        PT.outline = { x = win.x - OUT.BORDER, y = win.y - OUT.TAB_H,
+                    w = w + OUT.BORDER * 2, h = h + OUT.TAB_H + OUT.BORDER }
+      end
 
       damage_outline(PT.outline)
     end
