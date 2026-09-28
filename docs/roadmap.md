@@ -2146,7 +2146,18 @@ processors, and still what follows USB:
    end as it is, and the same indicators - network, Wi-Fi, volume, battery,
    the processor meter, the clock - in the line icons the image carries
    (`assets/icons/line`), in the Deskbar's own look, for Diego to compare
-   before anything changes.
+   before anything changes. **DRAWN** as `docs/statusicons.html`, and
+   **AGREED the same evening - "1 yes, 2 yes, 3 yes, 4 yes, 5 yes"**:
+   1. Lucide's line glyphs at 19 pixels, in the bar's text colour;
+   2. the battery keeps its percentage, and the bolt replaces "charging";
+   3. network: the Ethernet port for a wired card, Wi-Fi's arcs once there
+      is Wi-Fi, and the crossed arcs when there is no network - where the
+      picture used to be left out;
+   4. muted sound, the speaker crossed, which could not be shown before;
+   5. the Kosmos button keeps its colour picture - the system's mark.
+   The glyphs are the vendored Lucide SVGs, added to what
+   `tools/lineicons.py` renders. **Order**: next after the 0.10.177 stick,
+   being small, then 6za's step (b).
 
 6zk. **FOUND on 27 September - the shadow a window casts is thin beside
    the drawings'.** Diego: "the drop shadow in the mockups look amazing, but
