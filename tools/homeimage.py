@@ -22,6 +22,17 @@ Everything else goes in, dot-files included: `.music` is Music's.
 
 `Desktop` and `Deskbar` need not be in the folder: Tracker and the Deskbar
 make them on a first boot that finds none (`deskbar.lua`).
+
+**And what the build installs**, as `host:/Home/path` after the size:
+
+    python3 tools/homeimage.py ~/Kosmos/home build/stick-home.img 512 \
+        user/installed/Doom/doom.lua:/Home/Apps/Doom/doom.lua ...
+
+Doom is the first (`docs/elf.md` step 5): `doom.lua` and `doom.elf` from the
+build, into `/Home/Apps/Doom`. What the build installs wins over a file the
+folder has at the same path - an older `doom.lua` Diego copied in himself
+would otherwise run against a newer image - and that is said, as what is
+left out is.
 """
 
 import os
@@ -61,10 +72,17 @@ def pairs_from(folder):
 
 
 def main():
-    if len(sys.argv) != 4:
-        sys.exit("usage: homeimage.py <folder> <image> <megabytes>")
+    if len(sys.argv) < 4:
+        sys.exit("usage: homeimage.py <folder> <image> <megabytes> [host:/Home/path]...")
 
     folder, image, megabytes = sys.argv[1], sys.argv[2], sys.argv[3]
+    installed = sys.argv[4:]
+
+    for pair in installed:
+        host, _, guest = pair.partition(":")
+
+        if not guest.startswith("/Home/") or not os.path.isfile(host):
+            sys.exit("homeimage: %s is not a file here and a place in /Home" % pair)
 
     if not os.path.isdir(folder):
         sys.exit("homeimage: no folder %s - make it, and put in it what the "
@@ -74,6 +92,19 @@ def main():
 
     for host in left_out:
         print("homeimage: left out %s - a `:` in its name" % host)
+
+    replaced = {pair.partition(":")[2] for pair in installed}
+    kept = []
+
+    for pair in pairs:
+        host, _, guest = pair.partition(":")
+
+        if guest in replaced:
+            print("homeimage: %s is the build's, not %s" % (guest, host))
+        else:
+            kept.append(pair)
+
+    pairs = kept + installed
 
     os.makedirs(os.path.dirname(os.path.abspath(image)), exist_ok=True)
     made = subprocess.run([LUA, KFS, "create", image, megabytes] + pairs,

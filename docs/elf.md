@@ -78,7 +78,7 @@ Mapped on 27 September, with every claim against the code:
 - **Doom, Quake and the Super Nintendo are kits** in that one image:
   `doom.lua` does `use("/Kosmos/Kits/doom")`, and `sys.kit` finds `doom` compiled
   in under `KOSMOS_DOOM` (`sys_user.c` 2720-2760). Their Lua is a file
-  already; their C is the image.
+  already; their C is the image. *(Doom left on 28 September, step 5.)*
 - **The image is checked four times a boot** against sums the build wrote
   (`kernel/main.c` 95-240) - which covers the image in the kernel, and
   nothing a disk will hold.
@@ -200,11 +200,46 @@ anything is spawned, and names the page that differs.
    checks it, spawns the runner in it. A suite runs a program whose kit is
    only in its own image, and one whose image is broken, which is refused
    with a sentence rather than a crash.
-5. **Doom leaves the image**: `/Home/Apps/Doom` with `doom.lua` and
-   `doom.elf` and its WAD in one folder, `use("doom.elf")` in place of
-   `use("/Kosmos/Kits/doom")`, the stick built that way,
-   and `KOSMOS_DOOM` out of the system's build. Then Quake and the Super
-   Nintendo.
+5. **DONE for Doom on 28 September** (`testing.md` 18.249) - **Doom leaves
+   the image**: `/Home/Apps/Doom` with `doom.lua` and `doom.elf` and its
+   WAD in one folder, `use("doom.elf")` in place of `use("/Kosmos/Kits/doom")`,
+   the stick built that way, and `KOSMOS_DOOM` out of the system's build.
+   What it took, piece by piece:
+   - **`doom.elf`, linked by `make apps`** beside `apptest.elf`, and held to
+     the same two promises: the image has `kosmos_doom_kit`, and the
+     system's image does not. The sources moved from `user/bin/apps/doom/`
+     to **`user/installed/Doom/`** - what the build installs into `/Home`
+     rather than serves from `/Kosmos` - and `DOOM` is no longer a build
+     variable: nothing compiles Doom into a system image, so there is no
+     variant to name.
+   - **Against the lean userland.** Linked against a `FULL=1` one, Doom's
+     image carried the wallpapers, the browser and FFmpeg too, 33 MB
+     stripped; against the lean one it is 17.8 MB. Most of that is still
+     the system's own files, which binfs serves from the system's image and
+     no application needs a copy of - **the next thing to take out**: an
+     application's image should be the runtime and its own C, a few
+     megabytes.
+   - **`use("doom.elf")`**: `sys.kit(name, true)` answers only a kit marked
+     as the application's own (`own` in `sys_user.c`'s table), and refuses
+     outside that image with "this program is not running in doom.elf";
+     `kits` does not list them, since they are nobody else's to use.
+   - **Found by its name**: `ns.program` looks in `/Home/Apps/<name>/` after
+     `/Kosmos/Apps` and `/Kosmos/Programs`, so `doom` at the prompt and
+     `wm doom` start it.
+   - **Listed where applications are**: the Deskbar reads the folders in
+     `/Home/Apps` as a third layer after the shipped menu and the person's
+     (`deskbarmenu.installed`), each under the section its header names -
+     Doom under Demos - and File types lists what they open, so a WAD
+     opens in Doom. Nothing is registered, so deleting the folder takes all
+     of it away.
+   - **The WAD beside it**: `doom.lua` plays the `doom1.wad` in its own
+     folder unless another is named. A stick's `/Home` gets `Apps/Doom`
+     from the build - `doom.lua`, the stripped x86 `doom.elf`, and a
+     `doom1.wad` from the top of `HOME_DIR` copied in beside them
+     (`homeimage.py`'s installed pairs, which win over the folder's own at
+     the same path).
+
+   **Then Quake and the Super Nintendo**, the same way.
 
 ---
 

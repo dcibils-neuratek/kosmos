@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """`homeimage.py`, on a folder made here: nested folders kept, a dot-file
-kept, macOS's litter and a name with a colon left out, and the size asked
-for."""
+kept, macOS's litter and a name with a colon left out, the size asked for,
+and what the build installs put in beside the folder's - winning over a file
+the folder has at the same path, and saying so."""
 
 import os
 import shutil
@@ -15,8 +16,10 @@ ROOT = os.path.dirname(HERE)
 LUA = os.path.join(ROOT, "build", "host", "lua")
 
 # The colon said, the size, three names in /Home, the nested file, two
-# names kept out of /Home, the `._` file kept out, and the bytes back.
-CHECKS = 10
+# names kept out of /Home, the `._` file kept out, and the bytes back; then
+# the build's file said to win, its bytes back rather than the folder's, and
+# the build's other file there.
+CHECKS = 13
 
 
 def main():
@@ -27,6 +30,7 @@ def main():
 
     try:
         os.makedirs(os.path.join(folder, "roms", "snes"))
+        os.makedirs(os.path.join(folder, "Apps", "Doom"))
         files = {
             "song.mp3": b"not a song" * 100,
             ".music": b"/Home",
@@ -34,15 +38,24 @@ def main():
             ".DS_Store": b"litter",
             "roms/._game one.sfc": b"litter",
             "a:b.txt": b"a colon",
+            "Apps/Doom/doom.lua": b"-- the folder's, older",
         }
 
         for rel, data in files.items():
             with open(os.path.join(folder, rel), "wb") as out:
                 out.write(data)
 
+        built = {"doom.lua": b"-- the build's", "doom.elf": b"\x7fELF" * 64}
+
+        for name, data in built.items():
+            with open(os.path.join(work, name), "wb") as out:
+                out.write(data)
+
         made = subprocess.run([sys.executable,
                                os.path.join(HERE, "homeimage.py"),
-                               folder, image, "64"],
+                               folder, image, "64"]
+                              + ["%s:/Home/Apps/Doom/%s" % (os.path.join(work, n), n)
+                                 for n in built],
                               capture_output=True, text=True)
 
         if made.returncode != 0:
@@ -86,6 +99,21 @@ def main():
         if not os.path.exists(back) or \
                 open(back, "rb").read() != files["roms/snes/game one.sfc"]:
             fails.append("the nested file did not come back byte for byte")
+
+        if "/Home/Apps/Doom/doom.lua is the build's" not in made.stdout:
+            fails.append("the build's doom.lua was not said to win over the "
+                         "folder's:\n" + made.stdout)
+
+        doom = os.path.join(work, "back.lua")
+        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", image,
+                        "/Home/Apps/Doom/doom.lua", doom],
+                       capture_output=True, check=False)
+
+        if not os.path.exists(doom) or open(doom, "rb").read() != built["doom.lua"]:
+            fails.append("/Home/Apps/Doom/doom.lua is not the build's")
+
+        if "doom.elf" not in ls("/Home/Apps/Doom"):
+            fails.append("the build's doom.elf is not in /Home/Apps/Doom")
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -99,7 +127,8 @@ def main():
 
     print("PASS: %d checks on homeimage.py (folders kept, a dot-file kept, "
           "macOS's litter and a name with a colon left out, the size asked "
-          "for, and a file back byte for byte)." % CHECKS)
+          "for, a file back byte for byte, and what the build installs put "
+          "in, over the folder's at the same path)." % CHECKS)
     return 0
 
 

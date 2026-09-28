@@ -252,6 +252,34 @@ check(tracker_m and tracker_m.path == "/K/Applications/tracker"
 check(named(merged, "Games") and #named(merged, "Games").items == 1,
       "a section only the person has is theirs")
 
+-- The applications installed in /Home/Apps, filed by their headers and
+-- merged in between (`docs/elf.md` step 5): Doom under Demos, by its
+-- folder's name; one that says `section none`, nowhere.
+local function said(source, word)
+  return source:match("kosmos: " .. word .. " ([%w/_]+)")
+end
+
+local installed = menu.installed({
+  { name = "doom", folder = "Doom", program = "/Home/Apps/Doom/doom.lua",
+    source = "-- kosmos: application\n-- kosmos: section demos\n-- kosmos: icon App_Doom\n" },
+  { name = "gl", folder = "Wobble", program = "/Home/Apps/Wobble/wobble.lua",
+    source = "-- kosmos: application\n-- kosmos: section demos/GLDemos\n" },
+  { name = "hidden", folder = "Helper", program = "/Home/Apps/Helper/helper.lua",
+    source = "-- kosmos: application\n-- kosmos: section none\n" },
+}, said)
+local three = menu.merge_sections(menu.merge_sections(
+  menu.sections(shipped_store, "/K"), installed), menu.sections(home_store, "/H"))
+local demos3 = named(three, "Demos")
+local doom3 = named(demos3 and demos3.items, "Doom")
+local wobble = named(named(demos3 and demos3.items, "GLDemos").items, "Wobble")
+
+check(doom3 and doom3.path == "/H/Demos/Doom",
+      "the person's Doom is not still theirs over an installed one of the name")
+check(wobble and wobble.program == "/Home/Apps/Wobble/wobble.lua",
+      "an installed application is not in the submenu its section names")
+check(#installed == 1 and not named(three, "None"),
+      "an installed application with `section none` is in the menu")
+
 --------------------------------------------------------------------------
 -- What the seed left goes to the Trash once: a folder of nothing but its
 -- launchers whole, and only its launchers from a folder with anything of

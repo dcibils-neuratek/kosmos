@@ -11970,3 +11970,40 @@ starts, in `/Home/Preferences/tracker` with its bytes, and gone from the top;
 and every suite that sets a look, a size or a startup list, through the new
 place.
 
+
+## 18.249 Doom, installed in /Home/Apps/Doom (`elf.md` step 5)
+
+Doom left the system's image. Its engine and `doom_kosmos.c` are linked into
+an image of their own, `apps/doom.elf`, by `make apps` against the lean
+userland; the sources moved to `user/installed/Doom/`, what the build
+installs into `/Home` rather than serves from `/Kosmos`; and `DOOM` is not a
+build variable any more. `doom.lua` names its image
+(`-- kosmos: image doom.elf`), reaches the engine as `use("doom.elf")` - a
+kit `sys.kit` answers only inside that image - and plays the `doom1.wad`
+beside it.
+
+**Checked, `run_loader.py`, on both boards**: a `/Home` holding only
+`Apps/Doom/doom.lua` and the stripped `doom.elf`, as a stick carries them,
+and no WAD. `doom` typed at the prompt has to be found in `/Home/Apps/Doom`
+(`ns.program`), run in `doom.elf` - the launcher says it made
+`/Home/Apps/doom/doom.elf`'s image - reach its engine, and then say
+`doom: no /Home/Apps/doom/doom1.wad`: the one sentence only the program
+itself says, after all of that has worked. `plain.lua`'s check that the
+system's image has no such kit now reads "not running in apptest.elf".
+The build refuses a `doom.elf` without `kosmos_doom_kit` and a system image
+with it, every time it links.
+
+**`test_filetypes.lua`**, 46: an application in `/Home/Apps` declares what
+it opens, and File types lists it - a WAD opens in Doom.
+**`test_deskbarmenu.lua`**, 21: the folders in `/Home/Apps` are a third
+layer of the Deskbar's menu, each under its header's section, Doom under
+Demos; a folder whose program is `section none` is not listed.
+**`test_homeimage.py`**, 13: what the build installs goes into a stick's
+`/Home` beside the folder's files, and over one at the same path, saying so
+- a `doom.lua` copied into `~/Kosmos/home` by hand would otherwise run
+against a newer image. Its control: with the replacement taken out, the
+check that it is said fails.
+
+The stick's `/Home` gets `Apps/Doom` from `make x86-usb-image`: `doom.lua`,
+the stripped x86 `doom.elf`, and `doom1.wad` from the top of `HOME_DIR`
+when the folder has one there and none in `Apps/Doom`.

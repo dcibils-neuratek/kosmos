@@ -22,7 +22,6 @@ long each took is said.
 Usage: run_loader.py IMAGE
 """
 
-import glob
 import os
 import subprocess
 import sys
@@ -41,17 +40,21 @@ HOME_DISK = os.path.join(WORK, "home.img")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 
 
-def this_boards_image():
-    """The newest apptest.elf `make apps` linked for this board."""
-    found = [p for p in glob.glob(os.path.join(ROOT, "build", "user*", "apps", "apptest.elf"))
-             if ("x86_64" in p) == X86]
-    return max(found, key=os.path.getmtime) if found else None
+def this_boards_image(name="apptest.elf"):
+    """The `name` `make apps` linked for this board, or None.
+
+    From the one place it links them - the lean userland's `apps/`, whatever
+    variant the system's image is - rather than the newest of any: a stale
+    one from a directory nothing builds any more is newer than nothing.
+    """
+    path = os.path.join(ROOT, "build", "user-x86_64" if X86 else "user", "apps", name)
+    return path if os.path.exists(path) else None
 
 
 PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The loader's test program (`tools/run_loader.py`).
 {line}
-local kit = use("/Kosmos/Kits/apptest")
+local kit = use("apptest.elf")
 print("apptest: " .. tostring(kit.answer()))
 """
 
@@ -83,10 +86,31 @@ for name, line in (("apptest", "-- kosmos: image apptest.elf"), ("plain", ""),
     with open(os.path.join(WORK, name + ".lua"), "w") as f:
         f.write(PROGRAM.format(line=line))
 
+#
+# **Doom, installed** (`docs/elf.md` step 5): `doom.lua` and its image in one
+# folder, `/Home/Apps/Doom`, as a stick carries them - and no WAD, which is
+# not the repository's to have. Typed at the prompt, `doom` has to be found
+# there, run in `doom.elf`, reach its engine as `use("doom.elf")`, and then
+# say it has no WAD beside it: the sentence only the program itself says,
+# once all of that has worked.
+#
+doom_app = this_boards_image("doom.elf")
+
+if doom_app is None:
+    print("FAIL: no doom.elf for this board - `make apps` (and ARCH=x86_64) builds it")
+    sys.exit(1)
+
+doom_elf = os.path.join(WORK, "doom.elf")
+subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "objcopy",
+                "--strip-debug", doom_app, doom_elf], check=True)
+
 files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "apptest.elf",
          "broken.elf", "stranger.elf"]
-subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "64"]
-               + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files],
+subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "160"]
+               + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files]
+               + ["%s:/Home/Apps/Doom/doom.lua"
+                  % os.path.join(ROOT, "user", "installed", "Doom", "doom.lua"),
+                  "%s:/Home/Apps/Doom/doom.elf" % doom_elf],
                check=True, capture_output=True, cwd=ROOT)
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -106,7 +130,10 @@ def main():
             failed.append(complaint)
 
     def run(name, want, seconds):
-        """`run` the program; the first line after it holding `want`.
+        return typed("run /Home/apps/apptest/%s.lua" % name, want, seconds)
+
+    def typed(command, want, seconds):
+        """`command` typed; the first line after it holding `want`.
 
         **And then the prompt, before the next one is typed.** A line a
         program says can arrive after the shell has printed its prompt, and
@@ -117,7 +144,7 @@ def main():
         """
         mark = len(guest.seen)
         started = time.monotonic()
-        guest.type("run /Home/apps/apptest/%s.lua" % name)
+        guest.type(command)
         deadline = started + seconds
         found = None
 
@@ -153,7 +180,7 @@ def main():
               "the first start did not make the image from the file")
 
         said, _ = run("plain", "apptest", 60)
-        check(said is not None and "there is no kit called apptest" in said,
+        check(said is not None and "not running in apptest.elf" in said,
               "plain.lua, in the system's image, found the apptest kit: %r" % said)
 
         said, _ = run("broken", "run:", 60)
@@ -171,6 +198,17 @@ def main():
         check(said == "apptest: 42", "apptest.lua did not say 42 the second time: %r" % said)
         check("image: made" not in guest.seen[again:],
               "the second start made the image again rather than using the one kept")
+
+        doom_at = len(guest.seen)
+        said, took = typed("doom", "doom:", 240)
+        times.append(took)
+        check(said is not None
+              and said.startswith("doom: no /Home/Apps/doom/doom1.wad"),
+              "doom, typed, was not found in /Home/Apps/Doom, run in doom.elf "
+              "and its engine reached - or did not say it has no WAD beside "
+              "it: %r" % said)
+        check("image: made /Home/Apps/doom/doom.elf, " in guest.seen[doom_at:],
+              "doom did not run in the image beside it")
     finally:
         guest.close()
 
@@ -183,8 +221,10 @@ def main():
     print("PASS: %d checks on programs from a file (a program run in the %.1f MB image "
           "beside it, where its kit is and the system's has none; a truncated image and "
           "one for another processor refused with the reader's sentences; started again "
-          "from the image made the first time - %.1f s, then %.1f s)"
-          % (checks, len(whole) / 1e6, times[0], times[1]))
+          "from the image made the first time - %.1f s, then %.1f s; and Doom, "
+          "installed in /Home/Apps/Doom, found by its name and run in doom.elf, "
+          "%.1f s)"
+          % (checks, len(whole) / 1e6, times[0], times[1], times[2]))
     return 0
 
 

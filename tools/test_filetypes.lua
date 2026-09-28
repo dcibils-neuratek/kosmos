@@ -23,7 +23,22 @@ local types = dofile("user/lib/filetypes.lua")
 --
 -- The files, as the Makefile hands them over: the host's Lua has no way
 -- to list a directory.
-local STORE = { ["/Kosmos/Apps"] = {}, ["/Kosmos/Programs"] = {} }
+local STORE = { ["/Kosmos/Apps"] = {}, ["/Kosmos/Programs"] = {},
+                ["/Home/Apps"] = {} }
+
+-- And the applications Kosmos builds to be installed (`docs/elf.md` step 5),
+-- as a stick installs them: `user/installed/Doom/doom.lua` is
+-- `/Home/Apps/Doom/doom.lua`, a folder with its program in it.
+local INSTALLED = {}
+
+for _, file in ipairs(arg) do
+  local folder, main = file:match("^user/installed/([^/]+)/([^/]+)%.lua$")
+
+  if folder and main == folder:lower() then
+    STORE["/Home/Apps"][folder] = true
+    INSTALLED["/Home/Apps/" .. folder .. "/" .. main .. ".lua"] = file
+  end
+end
 
 for _, file in ipairs(arg) do
   local dir, name = file:match("^user/bin/(%a+)/(.+)%.lua$")
@@ -75,7 +90,19 @@ fs = {
 
     return file and { opens = opens_of(file) } or nil
   end,
-  read = function(path) return saved[path] end,
+  read = function(path)
+    local file = INSTALLED[path]
+
+    if file then
+      local f = io.open(file)
+      local text = f:read("a")
+
+      f:close()
+      return text
+    end
+
+    return saved[path]
+  end,
   write = function(path, value) saved[path] = value return true end,
   send = function() return true end,           -- the folder, made
 }

@@ -843,6 +843,17 @@ local function new_namespace()
       if ns.getattr(path) then return path end
     end
 
+    --
+    -- **And an installed application** (`docs/elf.md` step 5): one folder
+    -- in `/Home/Apps`, its program the Lua file named after it -
+    -- `/Home/Apps/Doom/doom.lua` for `doom`, whatever the folder's case.
+    --
+    if name:match("^[%w_%-]+$") then
+      local path = "/Home/Apps/" .. name .. "/" .. name .. ".lua"
+
+      if ns.getattr(path) then return path end
+    end
+
     return "/Kosmos/Programs/" .. name .. ".lua"
   end
 
@@ -6658,6 +6669,26 @@ if role == ROLE_RUNNER then
 
     if kit then
       local value, why = sys.kit(kit)
+
+      if not value then
+        error(("use: %s: %s"):format(path, tostring(why)), 2)
+      end
+
+      loaded[key] = value
+      return value
+    end
+
+    --
+    -- **An application's own C, by its file** (`docs/elf.md` step 5):
+    -- `use("doom.elf")` is the table the engine in that image builds, from
+    -- a program running in it - which is what `-- kosmos: image doom.elf`
+    -- in its header made it. Not a kit: `/Kosmos/Kits` is what Kosmos
+    -- ships, and Doom's engine is Doom's.
+    --
+    local image = key:match("^([%w_%-]+)%.elf$")
+
+    if image then
+      local value, why = sys.kit(image, true)
 
       if not value then
         error(("use: %s: %s"):format(path, tostring(why)), 2)

@@ -1049,9 +1049,12 @@ def check_keyboard(guest):
 # image without it, which is the same proof - the program ran.
 PROGRAMS_BY_NAME = (
     ("snes --scale 3", "snes"),
-    ("doom /nowhere.wad", "doom"),
     ("quake /nowhere.pak", "quake"),
 )
+# Doom is not here since 28 September: it is an installed application, in
+# `/Home/Apps/Doom` with an image of its own (`docs/elf.md` step 5), and a
+# machine it was not installed on has no `doom` to type. `run_loader.py`
+# installs it and types it.
 
 
 def check_programs_by_name(guest):

@@ -2883,7 +2883,16 @@ processors, and still what follows USB:
    installed application only its own folder, a capability the disk's
    server would hold, was proposed and set aside - "we need to use the
    systme first before enforcing things that limit the usage". Later, when
-   using it says so.
+   using it says so. **Step 5 DONE for Doom on 28 September** (18.249):
+   Doom left the system's image for `/Home/Apps/Doom` - `doom.lua`, its own
+   `doom.elf` linked by `make apps` against the lean userland, and the WAD
+   beside them; `use("doom.elf")`; found by name at the prompt and by `wm`;
+   listed in the Deskbar and in File types from the folder, with nothing
+   registered; the stick's `/Home` built with it; and `DOOM` gone as a
+   build variable. **Next in this line**: Quake and the Super Nintendo the
+   same way, and an application's image without the system's files in it -
+   Doom's is 17.8 MB stripped, most of it binfs's content that it never
+   serves.
 
 6r. **FOUND and DONE on 27 September - every application in the Deskbar had
    the same icon** (`testing.md` 18.217). Diego, with a picture of the Deskbar: "there is a bug on the

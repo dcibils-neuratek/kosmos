@@ -16,35 +16,28 @@ whole of the interesting part.
 a blit rather than a conversion.
 
 **The WAD is not here and will not be.** `doom1.wad` is 4 MB of shareware
-data; it goes on the disk with `tools/kfs.lua put`, which is what a
-filesystem is for.
+data, and it goes beside `doom.lua` in `/Home/Apps/Doom`: a stick built by
+`make x86-usb-image` copies one from the top of `~/Kosmos/home` there.
 
-## Why it is a build option, and which builds turn it on
+## An application of its own, not part of the system
 
-**`make` turns it on.** `FULL=1` is the default, and it builds the whole
-system, Doom and the browser included, because the machine you sit in front
-of should be the whole machine - the decision log has that row. `make
-FULL=0` leaves Doom out, and so do `make test` and `make bench`, which build
-images of their own.
+**Doom is installed, not built in** (`docs/elf.md` step 5, 28 September).
+These files and `user/installed/Doom/doom_kosmos.c` are linked by `make apps`
+into `doom.elf`, an image of Doom's own, which lives in `/Home/Apps/Doom`
+beside `doom.lua` and the WAD; the system's image carries none of it, in any
+build. `doom.lua` reaches the engine as `use("doom.elf")`.
 
-**So an ordinary image is a GPLv2 work.** Doom is GPLv2 and Kosmos is MIT.
-There is no dynamic linking here - `layout.md` says so and means it - so
-anything compiled in is *linked* in, and a Kosmos image containing Doom is a
-combined work under the GPL. That is not a problem to be solved, it is a
-fact to be respected, and the line is drawn in the build rather than in a
-comment because a licence boundary that depends on somebody remembering is
-not a boundary. Kosmos's own sources stay MIT and are unaffected, and
-`FULL=0` is the image to hand somebody who needs an MIT one.
+**So `doom.elf` is the GPLv2 work, and the system's image is not.** Doom is
+GPLv2 and Kosmos is MIT; nothing here is linked dynamically, so an image
+Doom is compiled into is a combined work under the GPL - and from 28
+September the only such image is Doom's own. Until then `make` built Doom
+into every ordinary image (`FULL=1`), which made each of them GPLv2 and made
+every process on the machine carry a megabyte of code one of them called.
+`LICENSE` has the list.
 
-**And the size.** The image is copied into every process - `roadmap.md`
-records the cost and `procs` shows it, which is why every process reports
-the same few megabytes. Doom is about a megabyte of code, paid by every
-process on the machine for something one of them calls. `FULL=1` pays it
-on purpose, and `FULL=0` does not.
-
-`DOOM=1` gets its own `VARIANT`, so its objects never mix with an ordinary
-build's: they are compiled with different flags, and `make` compares
-timestamps rather than command lines.
+There is no `DOOM=1` any more: with nothing to compile Doom into, there is no
+variant to name, and the objects are built once, into the lean userland's
+directory, for `doom.elf`.
 
 ## The compile flags
 

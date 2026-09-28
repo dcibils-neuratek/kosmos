@@ -209,6 +209,63 @@ function menu.merge(shipped, home)
   return in_order(out)
 end
 
+--
+-- **The applications installed in `/Home/Apps`** (`docs/elf.md` step 5), as
+-- sections to merge with the menu that ships: each filed by its header's
+-- `section` - Doom under Demos - as `binfs` files the shipped ones, the
+-- first letter a capital and a group after a slash a submenu, and named by
+-- its folder. "The Deskbar lists the folders in /Home/Apps, so there is
+-- nothing to unregister": deleting the folder takes it out of the menu.
+--
+-- `apps` is `filetypes.installed`'s list; `declared` is
+-- `filetypes.declared`, so this reads nothing itself.
+--
+function menu.installed(apps, declared)
+  local by, order = {}, {}
+
+  for _, app in ipairs(apps or {}) do
+    local said = declared(app.source, "section") or "applications"
+
+    if said:lower() ~= "none" and said ~= "" then
+      local where, group = said:match("^([^/]+)/(.+)$")
+
+      where = where or said
+
+      local name = where:sub(1, 1):upper() .. where:sub(2)
+      local section = by[name]
+
+      if not section then
+        section = { name = name, items = {} }
+        by[name] = section
+        order[#order + 1] = section
+      end
+
+      local item = { name = app.folder, program = app.program, args = "",
+                     icon = declared(app.source, "icon") }
+      local into = section.items
+
+      if group then
+        local sub = nil
+
+        for _, it in ipairs(section.items) do
+          if it.folder and it.name == group then sub = it end
+        end
+
+        if not sub then
+          sub = { name = group, folder = true, items = {} }
+          section.items[#section.items + 1] = sub
+        end
+
+        into = sub.items
+      end
+
+      into[#into + 1] = item
+    end
+  end
+
+  return order
+end
+
 -- The same for the sections, which are the two roots' folders.
 function menu.merge_sections(shipped, home)
   local function as_folders(sections)

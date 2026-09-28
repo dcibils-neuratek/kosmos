@@ -65,6 +65,11 @@ ENVIRONMENTS = {
     "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
                   "interrupted", "use", "write"},
 
+    # An installed application (`docs/elf.md` step 5) is a program like
+    # any other, run from `/Home/Apps` rather than served from the image.
+    "user/installed/": {"sys", "gfx", "fs", "args", "cwd", "run",
+                        "interrupted", "use", "write"},
+
     # A library is loaded into the environment of whoever asked for it, so it
     # sees the same names a program does - minus `args`, which belongs to the
     # program and not to what it loaded.

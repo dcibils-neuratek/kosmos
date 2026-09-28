@@ -77,7 +77,7 @@ machine, a person arrives with everything that is theirs.
 /Home/
   Apps/          applications a person installed, each one folder holding
                  everything that is it - Doom's holds doom.lua, doom.elf and
-                 its WAD - once a program can be loaded from a file (6t)
+                 its WAD (6t, elf.md step 5)
   Development/   projects: what the IDE opens
   Preferences/   a person's choices - the look, the keyboard, what starts at
                  login, what opens what (6z), each application's own
@@ -124,6 +124,13 @@ processes get different subsets of it - `layout.html` draws three:
 Doom cannot open your photographs. Not because it is forbidden - because
 they were never put in its namespace and it has no way to name them.
 
+**That column is the drawing, not yet the machine.** Doom is installed as
+of 28 September, and started it is handed all of `/Home`, as every program
+is: narrowing an installed application to its own folder was proposed and
+set aside by Diego until using the system says it is time (`elf.md`,
+"Kept by convention for now"). The shape above is what that narrowing
+would be.
+
 This is why the layout is worth agreeing on anyway: it is the *convention*
 every program can rely on being handed, in the way POSIX programs rely on
 `/etc` existing. It just is not enforced by a tree, and no server is
@@ -139,7 +146,7 @@ the image.
 
 | what | today | what is left |
 |---|---|---|
-| applications and programs | inside the image, served by `binfs` as `/Kosmos/Apps` and `/Kosmos/Programs` | installed ones in `/Home/Apps`, once a program is loaded from a file (6t) |
+| applications and programs | inside the image, served by `binfs` as `/Kosmos/Apps` and `/Kosmos/Programs`; installed ones in `/Home/Apps` - Doom, in its own image (6t, `elf.md` step 5) | Quake and the Super Nintendo, the same way |
 | the Deskbar's menu | `/Kosmos/Deskbar`, a view of the same store, merged with `/Home/Deskbar` (6zd) | done |
 | libraries and kits | `/Kosmos/Libraries` served from the image, `/Kosmos/Kits` answered in-process | done |
 | the looks | `/Kosmos/Themes`, a file each; a person's in `/Home/Themes` | done |
@@ -172,8 +179,10 @@ everything you make in it.
 **Programs as files is the step the rest waits on.** Every process used to
 be the *same* image with a different role number. The ELF loader (6t) makes
 a process from an image of its own: the kernel copies it into pages it
-checks, and the ELF is read in userland (`docs/elf.md`). Doom, Quake and the
-Super Nintendo leaving the image for `/Home/Apps` is its next step.
+checks, and the ELF is read in userland (`docs/elf.md`). Doom left the
+image for `/Home/Apps/Doom` on 28 September - `doom.lua`, `doom.elf` and its
+WAD in one folder, found by name, listed in the Deskbar, deleted by deleting
+the folder - and Quake and the Super Nintendo follow it.
 
 And a constraint that stays: **there is no dynamic linking.** No `dlopen`,
 no shared objects. A C library is *linked into* whoever uses it, which is
@@ -186,9 +195,10 @@ its own ELF, beside its Lua.
 
 What is left, in the order `roadmap.md` has it:
 
-1. **Doom into `/Home/Apps/Doom`** - the loader's step 5: its Lua, its ELF
-   and its WAD in one folder; then Quake and the Super Nintendo.
+1. **Quake and the Super Nintendo into `/Home/Apps`**, as Doom went - the
+   rest of the loader's step 5.
 2. **Fonts and pictures as files**, and `/Kosmos/Settings` and `Logs`.
 
-A person's preferences moved into `/Home/Preferences` (6s d) and the five
-places arrived (6w) on 28 September.
+A person's preferences moved into `/Home/Preferences` (6s d), the five
+places arrived (6w), and Doom went into `/Home/Apps/Doom` (`elf.md` step 5)
+on 28 September.

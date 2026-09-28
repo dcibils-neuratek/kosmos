@@ -74,6 +74,7 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local menudata = use("/Kosmos/Libraries/deskbarmenu.lua")
 local files = use("/Kosmos/Libraries/files.lua")
+local types = use("/Kosmos/Libraries/filetypes.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 -- The *kit's* palette, not a copy of it.
 --
@@ -258,9 +259,16 @@ local function exists(program)
   return true
 end
 
+--
+-- Three layers: the menu that ships, the applications installed in
+-- `/Home/Apps` (`docs/elf.md` step 5) beside it, and the person's own on top.
+--
 local function read_sections()
-  sections = menudata.merge_sections(menudata.sections(fs, SHIPPED, exists),
-                                     menudata.sections(fs, DESKBAR, exists))
+  local installed = menudata.installed(types.installed(fs), types.declared)
+
+  sections = menudata.merge_sections(
+    menudata.merge_sections(menudata.sections(fs, SHIPPED, exists), installed),
+    menudata.sections(fs, DESKBAR, exists))
 end
 
 retire_seed()

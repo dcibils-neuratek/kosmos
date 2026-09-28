@@ -4,14 +4,17 @@
 -- kosmos: icon App_Generic
 -- kosmos: section demos
 -- kosmos: opens wad
+-- kosmos: image doom.elf
 --
---   wm doom                        /Home/doom1.wad
+--   wm doom                        the doom1.wad beside this file
 --   wm doom:/Temporary/other.wad   somewhere else
 --
--- Only in an image with Doom compiled in: `make` and `make qemu` build one
--- (`FULL=1`, the default) and `make FULL=0` does not. See
--- `runtime/upstream/doom/README.md` for why it is a build option, and what
--- carrying it makes of the image's licence.
+-- **An installed application** (`docs/elf.md` step 5): this file, the image
+-- `doom.elf` its header names - id's engine and `doom_kosmos.c`, linked with
+-- the runtime into an image of their own - and the WAD it plays, in one
+-- folder, `/Home/Apps/Doom`. Deleting the folder is removing Doom. The
+-- system's image carries none of it; `runtime/upstream/doom/README.md` says
+-- what Doom makes of an image's licence, which is now only its own.
 --
 -- **This file is the loop, and that is the whole division.** id's code does
 -- the game; `doom_kosmos.c` gives it six functions; and what is left - which
@@ -28,21 +31,27 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
--- A kit, not a global, for the reason `snes.lua` gives.
-local have, doom = pcall(use, "/Kosmos/Kits/doom")
+-- The engine this program's own image carries, reached by its file; not a
+-- global, for the reason `snes.lua` gives, and not a kit, since it is Doom's.
+local have, doom = pcall(use, "doom.elf")
 
 if not have or type(doom) ~= "table" then
-  print("doom: this image was not built with DOOM=1")
+  print("doom: " .. tostring(doom))
   return
 end
 
-local path = (args or ""):match("^%s*(%S+)") or "/Home/doom1.wad"
+--
+-- **The WAD beside this file** - "WAD files are inherent parts of the game"
+-- (Diego, 27 September) - unless another is named.
+--
+local here = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/Doom"
+local path = (args or ""):match("^%s*(%S+)") or (here .. "/doom1.wad")
 
 local attrs, why = fs.getattr(path)
 
 if not attrs then
   print("doom: no " .. path .. ": " .. tostring(why))
-  print("      put one on the disk: make image FILES=\"doom1.wad:/Home/doom1.wad\"")
+  print("      put one beside doom.lua: " .. here .. "/doom1.wad")
   return
 end
 

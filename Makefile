@@ -55,10 +55,12 @@ SIZE    := $(CROSS)size
 # image must not carry, and its whole value is being fast enough to run
 # without thinking about it.
 #
-# **And the licence, which follows from the first line.** Doom is GPLv2 and
-# nothing here is linked dynamically, so the image `FULL=1` builds is a
-# combined work under the GPL, and `FULL=0` is the MIT one. `LICENSE` says
-# so, and the About window reads it out of the image.
+# **And the licence, which follows from the first line.** Nothing here is
+# linked dynamically, so what an image carries decides its terms, and
+# `LICENSE` says which, and the About window reads it out of the image. The
+# image `FULL=1` builds carries FFmpeg's LGPL decoder; Doom, which made it a
+# GPLv2 work until 28 September, is an application beside it now
+# (`docs/elf.md` step 5), and `doom.elf` is the GPLv2 work.
 #
 # **`MEGA=1` is everything this tree can put in one image**: what `FULL=1`
 # turns on, and the one it does not carry - Quake. It carried Lite XL too,
@@ -68,7 +70,8 @@ SIZE    := $(CROSS)size
 # images ignore it as they ignore `FULL`, and the checks that build a variant
 # of their own say `MEGA=` so an inherited one cannot change what they check.
 # The image is a GPL work (`LICENSE`), and the game data is still not in it:
-# `make image FILES=...` puts `doom1.wad` and `pak0.pak` on the disk.
+# `make image FILES=...` puts `pak0.pak` on the disk, and Doom's WAD goes
+# beside `doom.lua` in `/Home/Apps/Doom`.
 #
 ifeq ($(MEGA),1)
 ifndef TEST
@@ -84,7 +87,6 @@ FULL ?= 1
 ifeq ($(FULL),1)
 ifndef TEST
 ifndef BENCH
-DOOM := 1
 WEB  := 1
 SNES := 1
 FFMPEG := 1
@@ -116,7 +118,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(QUAKE),-quake)$(if $(SNES),-snes)$(if $(FFMPEG),-ffmpeg)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(WEB),-web)$(if $(QUAKE),-quake)$(if $(SNES),-snes)$(if $(FFMPEG),-ffmpeg)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -229,7 +231,7 @@ LUA_HOST_SRCS := $(filter-out lua/upstream/lua.c lua/upstream/luac.c \
 BIN_LUA := $(wildcard user/bin/apps/*.lua) $(wildcard user/bin/apps/*/*.lua) \
            $(wildcard user/bin/programs/*.lua)
 
-LUA_FILES := user/init/init.lua $(BIN_LUA) \
+LUA_FILES := user/init/init.lua $(BIN_LUA) $(wildcard user/installed/*/*.lua) \
              $(wildcard user/lib/*.lua) $(wildcard user/lib/translators/*.lua) \
              $(wildcard user/lib/wm/*.lua) \
              $(wildcard user/tests/*.lua)
@@ -815,24 +817,12 @@ USER_SRCS += $(GEN)/luabench_lua.c
 endif
 
 #
-# `make DOOM=1 qemu` builds an image with Doom in it.
-#
-# **A build option because of the licence.** Doom is GPLv2 and Kosmos is
-# MIT; there is no dynamic linking here, so anything compiled in is linked
-# in and an image containing Doom is a combined work under the GPL. The line
-# is drawn in the build rather than in a comment, because a licence boundary
-# that depends on somebody remembering is not a boundary. See
-# `user/doom/README.md`.
-#
-# **And because of the size**, which is a smaller reason than it was. The
-# image's code and read-only data are mapped into every process from one
-# copy now (design.md, "The read-only half is mapped where it lies"), so a
-# megabyte of Doom costs a megabyte and not a megabyte a process - but its
-# writable data is still copied into each, and every boot still loads it.
-#
-# Its own VARIANT, so the objects never mix with an ordinary build's: they
-# are compiled with different flags and `make` compares timestamps, not
-# command lines.
+# There was a `make DOOM=1` here, and `FULL=1` turned it on: Doom compiled
+# into the system's image, which made every ordinary image a GPLv2 work and
+# every process pay for a megabyte one of them called. **Doom is an installed
+# application now** (`docs/elf.md` step 5) - `apps/doom.elf`, linked below
+# beside `apptest.elf` and built by `make apps` - so there is no variant to
+# choose and no image to name after it.
 #
 ifdef QUAKE
 USER_SRCS += $(QUAKE_SRCS)
@@ -901,7 +891,12 @@ ifdef SNES
 USER_SRCS += $(SNES_SRCS)
 endif
 
-ifdef DOOM
+#
+# **Doom is an installed application now, not part of the system**
+# (`docs/elf.md` step 5): its engine and its binding are linked into an
+# image of their own, `apps/doom.elf`, which goes in `/Home/Apps/Doom` beside
+# `doom.lua` and its WAD, and the system's image carries none of it. So what
+# follows is defined whatever the build, and nothing adds it to `USER_SRCS`.
 #
 # The 79 objects doomgeneric's own Makefile names, and not one more.
 #
@@ -925,8 +920,7 @@ DOOM_NAMES := dummy am_map doomdef doomstat dstrings d_event d_items \
               w_main w_wad z_zone i_input i_video doomgeneric
 
 DOOM_SRCS := $(addprefix runtime/upstream/doom/,$(addsuffix .c,$(DOOM_NAMES))) \
-             user/bin/apps/doom/doom_kosmos.c
-USER_SRCS += $(DOOM_SRCS)
+             user/installed/Doom/doom_kosmos.c
 
 #
 # id's source is 1997 C and does not compile clean under this project's
@@ -971,16 +965,15 @@ USER_SRCS += $(DOOM_SRCS)
 DOOM_CFLAGS := -DKOSMOS_DOOM -w -Wno-error -Iruntime/upstream/doom \
                -DNORMALUNIX -DLINUX -DDOOMGENERIC_RESX=640 \
                -DDOOMGENERIC_RESY=400
-endif
 
 #
 # `make WEB=1 qemu` builds an image with the NetSurf parsing stack in it.
 #
-# **A build option for the reason Doom is one: size.** These are five
+# **A build option for the reason Doom was one: size.** These are five
 # libraries and a hundred and forty thousand lines, and a build that does not
 # want a browser should not carry a CSS engine. When the GPLv2 browser core
-# joins them the flag will be doing licence work too, exactly as `DOOM`
-# does - and drawing that line in the build rather than in a comment is the
+# joins them the flag will be doing licence work too, as `DOOM` did before
+# Doom became an application of its own - and drawing that line in the build rather than in a comment is the
 # same argument, because a boundary somebody has to remember is not one.
 #
 # **No heap flag**, which was once a thing worth saying about this build in
@@ -1089,7 +1082,7 @@ MINIZ_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(WEB),-DKOSMOS_WEB) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/miniz $(MINIZ_FLAGS) \
            -Iruntime/upstream/minimp3 \
@@ -1388,6 +1381,11 @@ $(GEN)/netsurf/css/autogenerated_%.c: \
 $(UBUILD)/runtime/upstream/doom/%.c.o: runtime/upstream/doom/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(DOOM_CFLAGS) -MMD -MP -c $< -o $@
+
+# Doom's binding, Kosmos's own and so every warning on, with Doom's headers.
+$(UBUILD)/user/installed/Doom/doom_kosmos.c.o: user/installed/Doom/doom_kosmos.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -Iruntime/upstream/doom -include lua/kosmos/kosmos_lua.h -MMD -MP -c $< -o $@
 
 # Quake's, above the generic rule for the reason Doom's is.
 $(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(UFLAGS_FILE)
@@ -2264,8 +2262,36 @@ $(UBUILD)/apps/apptest.elf: $(USER_OBJS) $(APPTEST_OBJS) $(UBUILD)/init.elf user
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_apptest_kit$$' \
 	    || { echo "apps: the system's image has the loader's test kit in it"; rm -f $@; exit 1; }
 
-.PHONY: apps
-apps: $(UBUILD)/apps/apptest.elf
+#
+# **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
+# linked as `apptest.elf` is, and held to the same two promises - the image
+# has the kit, and the system's does not.
+#
+DOOM_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(DOOM_SRCS)))
+
+$(UBUILD)/apps/doom.elf: $(USER_OBJS) $(DOOM_OBJS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(DOOM_OBJS) -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_doom_kit$$' \
+	    || { echo "apps: doom.elf does not have Doom"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_doom_kit$$' \
+	    || { echo "apps: the system's image has Doom in it"; rm -f $@; exit 1; }
+
+#
+# **Against the lean userland, whatever this build is.** An application's
+# image carries its own copy of the runtime and not the system's files -
+# binfs serves those from the system's image - and linked against a `FULL=1`
+# userland it carried the wallpapers, the browser and FFmpeg as well: Doom's
+# was 33 MB stripped, read off the disk at every first start, for nothing it
+# uses. So `make apps` builds `build/user/apps/` (or `build/user-x86_64/`),
+# the one place `run_loader.py` and the stick take them from, and `MEGA=`
+# says so because an inherited one would turn `FULL` back on.
+#
+.PHONY: apps app-images
+apps:
+	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
+
+app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/doom.elf
 
 $(GEN)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
 	@mkdir -p $(dir $@)
@@ -2528,6 +2554,24 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) $(SMPARG)
 image: $(HOSTDIR)/lua
 	$(HOSTDIR)/lua tools/kfs.lua create $(DISK) $(DISK_MB) $(FILES)
 
+#
+# **The applications the build installs, onto that disk**: Doom into
+# `/Home/Apps/Doom` (`docs/elf.md` step 5) - `doom.lua` and its image,
+# stripped, over what is there, and the `doom1.wad` from the top of
+# `HOME_DIR` beside them when the folder has one. Nothing else on the disk
+# is touched; a stick gets the same from `x86-usb-image`.
+#
+.PHONY: install-apps
+install-apps: $(HOSTDIR)/lua
+	@$(MAKE) --no-print-directory apps
+	@mkdir -p build/disk-apps
+	$(OBJCOPY) --strip-debug build/user/apps/doom.elf build/disk-apps/doom.elf
+	$(HOSTDIR)/lua tools/kfs.lua put $(DISK) user/installed/Doom/doom.lua /Home/Apps/Doom/doom.lua
+	$(HOSTDIR)/lua tools/kfs.lua put $(DISK) build/disk-apps/doom.elf /Home/Apps/Doom/doom.elf
+	@if [ -f "$(HOME_DIR)/doom1.wad" ]; then \
+	    $(HOSTDIR)/lua tools/kfs.lua put $(DISK) "$(HOME_DIR)/doom1.wad" /Home/Apps/Doom/doom1.wad; \
+	fi
+
 # An empty disk. Made when it is missing and never overwritten by accident:
 # `make disk` after deleting it is a deliberate act, and a build that
 # silently reformatted the disk would be a build that eats the filesystem it
@@ -2658,16 +2702,16 @@ dist: $(TARGET)
 # framebuffer cannot be resized: the size is the build. A downloaded image
 # too big for the screen is not a preference, it is unusable.
 #
-RELEASE_SIZES := $(if $(or $(WEB),$(DOOM)),1280x720 1920x1080,\
+RELEASE_SIZES := $(if $(WEB),1280x720 1920x1080,\
                    1024x768 1280x800 1920x1080)
 
 # What is in it, in the name, because the images are not interchangeable and
 # a name that did not say so is a trap: the browser opens on an image built
 # without it and reports no web kit, which reads like a broken browser
-# rather than the wrong file. `-full` is browser and Doom, which is what
-# `make release` builds unless told otherwise.
-RELEASE_TAG := $(if $(and $(DOOM),$(WEB)),-full,\
-                 $(if $(WEB),-web,$(if $(DOOM),-doom,)))
+# rather than the wrong file. `-full` is the whole system, `FULL=1`, which
+# is what `make release` builds unless told otherwise; Doom is no longer in
+# it, being an application installed beside it (`docs/elf.md` step 5).
+RELEASE_TAG := $(if $(filter 1,$(FULL)),-full,$(if $(WEB),-web,))
 
 # A binary that leaves this machine has been used for a while first.
 #
@@ -2894,7 +2938,7 @@ $(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
 #
 # `FULL=0` is passed through, and it has to be.
 #
-# Inside the recursive call, `FULL` decides `DOOM` and `WEB`, which decide
+# Inside the recursive call, `FULL` decides `WEB` and the rest, which decide
 # `VARIANT`, which decides `UBUILD` - so leaving it out built the userland
 # into `build-user-x86_64-doom-web` while the rule below named
 # `build-user-x86_64`. The image then linked against whatever `init_bin.c`
@@ -2906,7 +2950,7 @@ $(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
 #
 # `FULL` is passed through rather than forced, and it has to be *passed*.
 #
-# Inside the recursive call `FULL` decides `DOOM` and `WEB`, which decide
+# Inside the recursive call `FULL` decides `WEB` and the rest, which decide
 # `VARIANT`, which decides `UBUILD` - so leaving it out once built the
 # userland into a directory the rule below did not name, and the image
 # linked against whatever `init_bin.c` was lying there. It was one built
@@ -3165,14 +3209,29 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 #
 USB_BOOT ?= wm
 
+# **And Doom, installed** (`docs/elf.md` step 5): `doom.lua` and its image,
+# stripped, into `/Home/Apps/Doom` - the build's, over anything the folder has
+# there - and a `doom1.wad` at the top of the folder copied in beside them,
+# since the WAD is part of the game (Diego, 27 September) and the folder is
+# his to leave as it is. A folder with `Apps/Doom/doom1.wad` already has it.
+#
 USB_HOME      ?= partition
 HOME_DIR      ?= $(HOME)/Kosmos/home
 STICK_HOME_MB ?= 512
 STICK_HOME    := build/stick-home.img
+STICK_APPS    := build/stick-apps
+X86_APPS      := build/user-x86_64/apps
 
 x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	@if [ "$(USB_HOME)" = partition ]; then \
-	    python3 tools/homeimage.py "$(HOME_DIR)" $(STICK_HOME) $(STICK_HOME_MB) && \
+	    $(MAKE) --no-print-directory ARCH=x86_64 apps && \
+	    mkdir -p $(STICK_APPS) && \
+	    x86_64-elf-objcopy --strip-debug $(X86_APPS)/doom.elf $(STICK_APPS)/doom.elf && \
+	    python3 tools/homeimage.py "$(HOME_DIR)" $(STICK_HOME) $(STICK_HOME_MB) \
+	        user/installed/Doom/doom.lua:/Home/Apps/Doom/doom.lua \
+	        $(STICK_APPS)/doom.elf:/Home/Apps/Doom/doom.elf \
+	        $$([ -f "$(HOME_DIR)/doom1.wad" ] && [ ! -f "$(HOME_DIR)/Apps/Doom/doom1.wad" ] \
+	            && echo "$(HOME_DIR)/doom1.wad:/Home/Apps/Doom/doom1.wad") && \
 	    echo "$(HOME_DIR) goes on the stick as /Home, $(STICK_HOME_MB) MB, in a partition of its own" && \
 	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --home $(STICK_HOME) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	elif [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
@@ -3304,7 +3363,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# device authority, a server by init starting it, the rest by /bin.
 	$(HOSTDIR)/lua tools/test_prockind.lua
 	@# And what a file *is*: the attribute first, the extension second.
-	$(HOSTDIR)/lua tools/test_filetypes.lua $(wildcard user/bin/apps/*.lua user/bin/apps/*/*.lua user/bin/programs/*.lua)
+	$(HOSTDIR)/lua tools/test_filetypes.lua $(wildcard user/bin/apps/*.lua user/bin/apps/*/*.lua user/bin/programs/*.lua user/installed/*/*.lua)
 	@# And the audio ring's position arithmetic. It models the client, the
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.
@@ -3528,7 +3587,7 @@ SHOTDIR := docs/screenshots
 # The web libraries, running rather than merely linked.
 #
 # Its own target rather than part of `make test`, because `WEB=1` is an
-# optional variant like `DOOM=1` and the ordinary image carries none of it.
+# optional variant and the images the suites build carry none of it.
 #
 web: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory WEB=1 $(TARGET)

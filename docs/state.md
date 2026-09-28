@@ -18,6 +18,55 @@ Last updated: 2026-09-28
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 28 September, later in the night: the rest of the order, and Doom installed
+
+**Nothing is pushed since 0.10.176 (395472a).** Everything below is on
+`main`, each piece gated; a push takes Diego's word and `make prepush`.
+
+**The stick to write is 0.10.183** (`boot.md`), with Doom in
+`/Home/Apps/Doom`, and 0.10.182 is superseded by it.
+
+Done, in the agreed order, each with its suite (`testing.md` 18.244-18.249):
+
+- **The Deskbar's menu in two layers** (6zd): `/Kosmos/Deskbar` is what
+  ships, laid out from each application's header; `/Home/Deskbar` holds
+  only what the person made, and wins where the two name the same thing.
+  The seeded launchers went to the Trash once.
+- **What opens what** (6z, 6za step c): `-- kosmos: opens ...` in each
+  application's header; Tracker's Open with, Info's Opens with, and a File
+  types page in Preferences, with a person's choices in
+  `/Home/Preferences/filetypes`.
+- **Compress and Extract** (6v, 6za step d): miniz's deflater vendored;
+  `zip` and `unzip` programs, and Tracker's right click running them as
+  jobs with a Stop.
+- **The root as agreed** (6s e, `layout.md`), **the five places** (6w:
+  Documents, Photos, Movies, Captures, Music) and **a person's preferences
+  in `/Home/Preferences`** (6s d), moved there once by the shell.
+- **Doom, installed** (`elf.md` step 5, 18.249): `doom.lua`, its own
+  `doom.elf` and the WAD in `/Home/Apps/Doom`; `use("doom.elf")`; found by
+  name at the prompt and by `wm`; in the Deskbar under Demos and in File
+  types, read from the folder; the stick's `/Home` built with it; `DOOM`
+  gone as a build variable, so the system's image is no longer GPLv2
+  because of Doom. **On the QEMU disk**, `make install-apps` puts it in
+  `/Home/Apps/Doom` - not run on `build/kosmos.img`, which is Diego's.
+
+**Found on the way**: an application's image linked against a `FULL=1`
+userland carried the wallpapers, the browser and FFmpeg - 33 MB stripped;
+against the lean one it is 17.8 MB, and most of that is still the system's
+own files. Taking those out of an application's image is on the roadmap
+(6t). And `x86-kernel`'s "the higher priority runs first" failed once under
+the gate's load and passed 187/187 three times alone; the binary is kept in
+the scratchpad and the roadmap's Known section has it.
+
+**Waiting for Diego**: the push; LuaJIT (`docs/luajit.md`, the
+recommendation is to keep 5.4); the M700's stable; 6zj step 3 (should the
+display harness run in Plex?); and the disk - about 2 GB free, with seven
+superseded stick images at 738 MB each in `build/x86_64/`, which are his to
+delete.
+
+**Next**: Quake and the Super Nintendo into `/Home/Apps` as Doom went, then
+6zk (the shadow as the mockups draw it) and 6zi (the Mouse page).
+
 ## 28 September, overnight: wm.lua in parts, LuaJIT measured, and windows without title bars
 
 **Nothing is pushed since 0.10.176 (395472a)**; 0.10.177 to 0.10.182 are on

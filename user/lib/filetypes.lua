@@ -31,14 +31,14 @@ local filetypes = {}
 -- cartridge that Doom and the Super Nintendo open.
 --
 -- `/Kosmos/Programs` as well as `/Kosmos/Apps`: Play is a program and opens
--- a film in a window of its own. `/Home/Apps` joins the list when
--- applications are installed there.
+-- a film in a window of its own. And `/Home/Apps`, where an application is
+-- installed - Doom, which opens a WAD (`docs/elf.md` step 5).
 --
 -- **A launcher** is a type too - `kind_of` says so from its attributes - and
 -- the launcher editor opens it for editing; *starting* one is what Tracker
 -- and the Deskbar do before they ever ask here.
 --
-filetypes.STORES = { "/Kosmos/Apps", "/Kosmos/Programs" }
+filetypes.STORES = { "/Kosmos/Apps", "/Kosmos/Programs" }   -- then /Home/Apps
 
 --
 -- **A person's choice for a type**, where more than one application opens it
@@ -80,6 +80,16 @@ function filetypes.table(store)
         out[ext] = out[ext] or {}
         out[ext][#out[ext] + 1] = short
       end
+    end
+  end
+
+  -- And what the installed applications open, after the shipped ones:
+  -- read from each one's header, since a disk keeps no `opens` of its own.
+  for _, app in ipairs(filetypes.installed(from)) do
+    for ext in tostring(filetypes.declared(app.source, "opens") or "")
+                 :lower():gmatch("[%w_]+") do
+      out[ext] = out[ext] or {}
+      out[ext][#out[ext] + 1] = app.name
     end
   end
 
@@ -437,6 +447,53 @@ function filetypes.declares(source, word)
   end
 
   return false
+end
+
+--
+-- **What a program's header says after a word**: `declared(source,
+-- "section")` is `demos` for Doom, or nil - the rest of that `kosmos:` line,
+-- by the rule above, for a program no store has read for us: one installed
+-- in `/Home/Apps`, which a disk holds as a plain file.
+--
+function filetypes.declared(source, word)
+  for line in (tostring(source or "") .. "\n"):gmatch("(.-)\n") do
+    if line ~= "" and line:sub(1, 2) ~= "--" then return nil end
+
+    local said, rest = line:match("kosmos:%s*(%a+)%s*(.-)%s*$")
+
+    if said == word then return rest end
+  end
+
+  return nil
+end
+
+--
+-- **The applications installed in `/Home/Apps`** (`docs/elf.md` step 5):
+-- each folder whose program - the Lua file named after it - says it is an
+-- application, as `{ name, folder, program, header }`. What the Deskbar lists
+-- and what opens what gathers, beside the ones Kosmos ships.
+--
+filetypes.INSTALLED = "/Home/Apps"
+
+function filetypes.installed(store)
+  local from = store or fs
+  local out = {}
+  local names = from.list(filetypes.INSTALLED) or {}
+
+  table.sort(names)
+
+  for _, folder in ipairs(names) do
+    local name = tostring(folder):lower()
+    local program = filetypes.INSTALLED .. "/" .. folder .. "/" .. name .. ".lua"
+    local source = from.read(program)
+
+    if type(source) == "string" and filetypes.declares(source, "application") then
+      out[#out + 1] = { name = name, folder = folder, program = program,
+                        source = source }
+    end
+  end
+
+  return out
 end
 
 --

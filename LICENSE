@@ -115,11 +115,10 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
       of a static link.
 
   doomgeneric, id Software's Doom by way of Chocolate Doom, GPLv2
-      runtime/upstream/doom/, in LICENSE.doomgeneric. Built by default:
-      `make` and `make qemu` build the whole system (`FULL=1`), Doom
-      included, so the image they produce is GPLv2. `make FULL=0` leaves
-      Doom out and produces an MIT image, and so do `make test` and
-      `make bench`, which build images of their own.
+      runtime/upstream/doom/, in LICENSE.doomgeneric. Not in the system's
+      image in any build: `make apps` links it into doom.elf, Doom's own
+      image, installed in /Home/Apps/Doom beside doom.lua, and that image
+      is the GPLv2 work.
 
   Chocolate Quake, by id Software, Henrique Barateli and others, GPL
       runtime/upstream/quake/, with the vendoring recorded in

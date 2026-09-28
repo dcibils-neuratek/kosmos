@@ -2908,53 +2908,69 @@ void kosmos_h264_kit(lua_State *L);
 void kosmos_aac_kit(lua_State *L);
 #endif
 
+/*
+ * `own`: **an application's own C, in its own image** (`docs/elf.md` step
+ * 5), reached as `use("doom.elf")` and never as `/Kosmos/Kits/doom` -
+ * "/Kosmos/Kits holds only what Kosmos ships". Quake and the Super Nintendo
+ * are still in the system's image and still kits, until they move too.
+ */
 static const struct {
     const char *name;
     void      (*build)(lua_State *L);
+    int         own;
 } kits[] = {
-    { "compress", kosmos_compress_kit },
-    { "pdf",      kosmos_pdf_kit },
-    { "gl",       kosmos_gl_kit },
-    { "console",  kosmos_console_kit },
-    { "mp3",      kosmos_mp3_kit },
-    { "record",   kosmos_record_kit },
-    { "game",     kosmos_game_kit },
-    { "3d",       kosmos_3d_kit },
-    { "network",  kosmos_net_kit },
+    { "compress", kosmos_compress_kit, 0 },
+    { "pdf",      kosmos_pdf_kit, 0 },
+    { "gl",       kosmos_gl_kit, 0 },
+    { "console",  kosmos_console_kit, 0 },
+    { "mp3",      kosmos_mp3_kit, 0 },
+    { "record",   kosmos_record_kit, 0 },
+    { "game",     kosmos_game_kit, 0 },
+    { "3d",       kosmos_3d_kit, 0 },
+    { "network",  kosmos_net_kit, 0 },
 #ifdef KOSMOS_WEB
-    { "web",      kosmos_web_kit },
+    { "web",      kosmos_web_kit, 0 },
 #endif
-    /* Linked where `FULL=1` (Doom, the Super Nintendo) or `MEGA=1` (Quake)
-     * puts them, or into a program's own image; runtime/upstream/doom's
-     * README says what Doom makes of an image's licence. */
-    { "doom",     kosmos_doom_kit },
-    { "quake",    kosmos_quake_kit },
-    { "snes",     kosmos_snes_kit },
+    /* Doom in its own image, `apps/doom.elf`; the Super Nintendo where
+     * `FULL=1` and Quake where `MEGA=1` link them into the system's.
+     * runtime/upstream/doom's README says what Doom makes of an image's
+     * licence. */
+    { "doom",     kosmos_doom_kit, 1 },
+    { "quake",    kosmos_quake_kit, 0 },
+    { "snes",     kosmos_snes_kit, 0 },
     /* In no image but its own: the loader's test (`docs/elf.md`). */
-    { "apptest",  kosmos_apptest_kit },
+    { "apptest",  kosmos_apptest_kit, 1 },
 #ifdef KOSMOS_FFMPEG
     /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
-    { "h264",     kosmos_h264_kit },
-    { "aac",      kosmos_aac_kit },
+    { "h264",     kosmos_h264_kit, 0 },
+    { "aac",      kosmos_aac_kit, 0 },
 #endif
-    { NULL, NULL }
+    { NULL, NULL, 0 }
 };
 
+/*
+ * `sys.kit(name[, own])`: a kit Kosmos ships, or - with `own` - the one an
+ * application's own image carries, which `use("doom.elf")` asks for. Each
+ * is only the one it is asked as.
+ */
 static int l_kit(lua_State *L)
 {
     const char *want = luaL_checkstring(L, 1);
+    int own = lua_toboolean(L, 2);
     unsigned i;
 
     for (i = 0; kits[i].name != NULL; i++) {
         /* A weak kit this image did not link is not here at all. */
-        if (kits[i].build != NULL && strcmp(kits[i].name, want) == 0) {
+        if (kits[i].build != NULL && kits[i].own == own
+            && strcmp(kits[i].name, want) == 0) {
             kits[i].build(L);
             return 1;
         }
     }
 
     lua_pushnil(L);
-    lua_pushfstring(L, "there is no kit called %s", want);
+    lua_pushfstring(L, own ? "this program is not running in %s.elf"
+                           : "there is no kit called %s", want);
     return 2;
 }
 
@@ -2968,7 +2984,8 @@ static int l_kit_names(lua_State *L)
     lua_newtable(L);
 
     for (i = 0; kits[i].name != NULL; i++) {
-        if (kits[i].build != NULL) {
+        /* An application's own is not one of Kosmos's kits. */
+        if (kits[i].build != NULL && !kits[i].own) {
             lua_pushstring(L, kits[i].name);
             lua_rawseti(L, -2, ++n);
         }
