@@ -93,7 +93,7 @@ struct midi_reply {                         /* 380 bytes */
     uint8_t  ins;                           /* LIST: ports it sends on */
     uint8_t  outs;                          /* ...and listens on */
     uint8_t  source;                        /* MIDI_SOURCE_* */
-    uint8_t  reserved;
+    uint8_t  listening;                     /* LIST: programs listening to it */
     char     name[MIDI_NAME_BYTES];
     char     in_names[MIDI_PORTS_NAMED][MIDI_NAME_BYTES];
     char     out_names[MIDI_PORTS_NAMED][MIDI_NAME_BYTES];

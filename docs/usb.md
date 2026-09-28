@@ -2653,9 +2653,36 @@ SEND whole messages to a device's port.
   (`fs.raw(path, bytes, pass, "midi")`) and is told the path is not there
   when it resolves to any other; audio, blocks, the backlight and the
   camera say theirs too.
-- **`midi`** at the prompt: every device, `midi listen`, `midi send ID CABLE
-  HEX..` - `midi send 3 1 9F 0C 7F` puts a Launchkey in its DAW mode - and
-  `midi try ID`, which sends five messages and prints what comes back.
+- **`midi`** at the prompt: every device and how many programs listen to
+  it, `midi listen`, `midi send ID CABLE HEX..` - `midi send 3 1 9F 0C 7F`
+  puts a Launchkey in its DAW mode - and `midi try ID`, which sends five
+  messages and prints what comes back.
+
+### 12c: Groove plays from it
+
+**PulseMusic's MIDI, over `/Devices/midi`.** Its app spoke to a small
+interface - open, the ports' names, poll with a handler, send to a port by
+name - which it had over PortMidi through LuaJIT's FFI, and
+`groove/midiport.lua` is that interface over `midi.lua`. What sits on top of
+it is PulseMusic's, converted and otherwise unchanged: the keys play the
+selected track, channel 10's pads the drum track, the knobs the selected
+track's sound, the sustain pedal, bend and program change, and
+`groove/launchkey.lua` puts a Launchkey Mini MK3 in its DAW mode with its
+pads showing clips and scenes, or lighting as the drums hit.
+
+- **A port's name is its device's and its jack's**, "Launchkey Mini MK3 DAW
+  Port" - what PulseMusic matched on under macOS. A jack with no name of its
+  own is its cable counted from one, "Launchkey Mini MK3 2", which the
+  Launchkey's matcher takes as it took Windows's second port. Which of the
+  two the real unit gives is step d's to find out, from its own bytes.
+- **Every pass while a keyboard is open, and a tick's wait between them**:
+  the events arrive in a page rather than as messages, so nothing wakes the
+  window for one, and Groove looks every 4 ms instead of the 100 it waits
+  when nothing moves. A note is played in the pass that finds it and drawn
+  in the same pass. Waking the window for an event is 4i's, with the rest of
+  the path from a key to the ear.
+- **LIST says how many programs listen to a device**, which is what the
+  gate's helper waits for before it plays: the thing rather than a time.
 
 ## Sources
 

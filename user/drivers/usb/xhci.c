@@ -7693,6 +7693,25 @@ static void copy_name(char *to, const char *from)
     to[n] = '\0';
 }
 
+/*
+ * How many programs listen to device `id`, itself or every device - which
+ * counts one that ended without CLOSE until its place is taken, and is what
+ * lets a test wait until a program is listening rather than for a time.
+ */
+static uint8_t midi_listening(uint32_t id)
+{
+    unsigned i, n = 0;
+
+    for (i = 0; i < MIDI_LISTENERS; i++) {
+        if (listeners[i].used
+            && (listeners[i].device == MIDI_EVERY || listeners[i].device == id)) {
+            n++;
+        }
+    }
+
+    return (uint8_t)n;
+}
+
 static void midi_list(uint32_t index, struct midi_reply *rep)
 {
     struct midi_place all[NAMED_MAX * DEVICES_MAX + 1];
@@ -7707,6 +7726,7 @@ static void midi_list(uint32_t index, struct midi_reply *rep)
 
     if (all[index].c == NULL) {
         rep->id = midi_virtual_id;
+        rep->listening = midi_listening(midi_virtual_id);
         rep->source = MIDI_SOURCE_VIRTUAL;
         rep->ins = 1;
         rep->outs = 1;
@@ -7721,6 +7741,7 @@ static void midi_list(uint32_t index, struct midi_reply *rep)
         const struct usbmidi *m = &c->midi[all[index].slot];
 
         rep->id = m->id;
+        rep->listening = midi_listening(m->id);
         rep->source = MIDI_SOURCE_USB;
         rep->ins = (uint8_t)m->nin;
         rep->outs = (uint8_t)m->nout;

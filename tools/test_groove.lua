@@ -15,7 +15,11 @@
 --   their chains say;
 -- - a project saved and read back is the same song, and a file that is not
 --   one - or is bytecode - is refused;
--- - a lane's resting value is kept and given back when the lane goes.
+-- - a lane's resting value is kept and given back when the lane goes;
+-- - **MIDI** (`roadmap.md` 6zg): ports named as PulseMusic matched them,
+--   events handed on in its words, and the Launchkey put in its DAW mode,
+--   its controls told from its keys by the port they came on, its lights
+--   sent once rather than every pass, and the unit handed back.
 
 local passed, failed = 0, 0
 
@@ -40,6 +44,30 @@ local stub = {
   }, { __index = function() return function() return 1 end end }),
   ["/Kosmos/Libraries/ui.lua"] = { sized = function(_, px) return px end },
   ["/Kosmos/Libraries/clock.lua"] = { now = function() return nil end },
+}
+
+-- `/Devices/midi` as `midi.lua` gives it: a Launchkey whose jacks have no
+-- names, one whose jack repeats its device's, and the virtual keyboard; and
+-- what is sent, kept to be looked at.
+local sent, pending = {}, {}
+stub["/Kosmos/Libraries/midi.lua"] = {
+  all = function()
+    return {
+      { id = 3, name = "Launchkey Mini MK3", ins = 2, outs = 2, inputs = { "", "" }, outputs = { "", "" } },
+      { id = 4, name = "Keystation", ins = 1, outs = 0, inputs = { "Keystation MIDI In" }, outputs = {} },
+      { id = 5, name = "Virtual keyboard", ins = 1, outs = 1, inputs = { "Keys" }, outputs = { "Keys" } },
+    }
+  end,
+  open = function()
+    return { events = function(_, fn)
+                        local n = #pending
+                        for _, e in ipairs(pending) do fn(e) end
+                        pending = {}
+                        return n
+                      end,
+             close = function() end }
+  end,
+  send = function(id, cable, ...) sent[#sent + 1] = { id, cable, ... }; return true end,
 }
 local loaded = {}
 
@@ -170,6 +198,62 @@ check(not E.isAutomated("t3.p.cut"), "the last lane gone left the knob automated
 check(math.abs(E.song.tracks[3].params.cut - cut) < 1e-6,
       ("the knob was not given back its resting value: %g, not %g"):format(E.song.tracks[3].params.cut, cut))
 
+---------------------------------------------------------------- MIDI
+local Midi = use("/Kosmos/Libraries/groove/midiport.lua")
+local LK = use("/Kosmos/Libraries/groove/launchkey.lua")
+
+check(Midi.open(), "the MIDI ports did not open: " .. tostring(Midi.err))
+check(table.concat(Midi.names(), "|") == "Launchkey Mini MK3 1|Launchkey Mini MK3 2|Keystation MIDI In|Virtual keyboard Keys",
+      "the ports are not named as PulseMusic matched them: " .. table.concat(Midi.names(), "|"))
+
+local function said(i, ...)
+  local want, got = { ... }, sent[i] or {}
+  for k = 1, math.max(#want, #got) do if want[k] ~= got[k] then return false end end
+  return true
+end
+
+check(LK.attach(Midi) and LK.port == "Launchkey Mini MK3 2",
+      "the Launchkey's second port was not taken for its DAW port: " .. tostring(LK.port))
+check(#sent == 2 and said(1, 3, 1, 0x9F, 12, 127) and said(2, 3, 1, 0xBF, 3, 2),
+      "the Launchkey was not put in its DAW mode, pads in session, on its second cable")
+
+local heard = {}
+pending = {
+  { kind = "on", channel = 10, d1 = 36, d2 = 100, device = 3, cable = 0 },
+  { kind = "program", channel = 1, d1 = 5, d2 = 0, device = 4, cable = 0 },
+  { kind = "cc", channel = 1, d1 = 104, d2 = 127, device = 3, cable = 1 },
+  { kind = "cc", channel = 1, d1 = 104, d2 = 127, device = 3, cable = 0 },
+  { kind = "sysex", device = 5, cable = 0 },
+}
+check(Midi.poll(function(kind, ch, d1, d2, port)
+        heard[#heard + 1] = { kind, ch, d1, d2, port, LK.handle(kind, ch, d1, d2, port) }
+      end) == 5, "the events waiting were not all taken")
+check(#heard == 4, "System Exclusive was handed on to Groove: " .. #heard .. " events")
+check(heard[1][1] == "on" and heard[1][2] == 10 and heard[1][5] == "Launchkey Mini MK3 1" and not heard[1][6],
+      "a pad on the Launchkey's first port is not a note from it")
+check(heard[2][1] == "pc" and heard[2][5] == "Keystation MIDI In", "a program change is not PulseMusic's \"pc\"")
+check(heard[3][6] and heard[3][6].type == "launchSelected",
+      "the DAW port's launch button is not the control surface's")
+check(not heard[4][6], "the same controller on the keys' port was taken for the surface's")
+check(Midi.last == "cc ch1 104 127", "the last event is not said as PulseMusic said it: " .. tostring(Midi.last))
+
+local lights = { clips = {}, scenes = {}, rowLit = {}, selScene = 1, drumColor = 1 }
+for i = 1, 8 do lights.clips[i], lights.scenes[i] = "empty", "empty" end
+local before = #sent
+LK.refresh(lights)
+local once = #sent - before
+LK.refresh(lights)
+check(once == 18 and #sent - before == once,
+      ("the lights were sent %d times, then %d more for the same state"):format(once, #sent - before - once))
+lights.clips[3] = "playing"
+LK.refresh(lights)
+check(#sent - before == once + 1 and said(#sent, 3, 1, 0x92, 98, 13),
+      "a clip playing did not pulse its pad, alone")
+LK.detach()
+check(said(#sent, 3, 1, 0x9F, 12, 0) and not LK.active, "the Launchkey was not handed back")
+Midi.close()
+check(#Midi.inputs == 0 and Midi.poll(function() end) == 0, "closed MIDI still has ports")
+
 if failed > 0 then
   print(("FAIL: %d of %d checks on Groove's Lua"):format(failed, passed + failed))
   os.exit(1)
@@ -177,4 +261,4 @@ end
 
 print(("PASS: %d checks on Groove's Lua (every knob and drum the same in presets.lua and the kit, "
        .. "both demos playing their length, a project saved and read back, three files refused, "
-       .. "a lane's resting value)"):format(passed))
+       .. "a lane's resting value, MIDI ports and the Launchkey's DAW mode)"):format(passed))

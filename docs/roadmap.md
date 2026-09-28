@@ -2531,7 +2531,7 @@ processors, and still what follows USB:
    kept only in the song it was sent to would be lost to the next.
    Projects save to `/Home/Documents/Groove/Project.groove` in PulseMusic's
    format, so one of his saved under LÖVE reads here; exports go to
-   `/Home/Music`. **Not yet**: MIDI (6zg, next), and a key released in
+   `/Home/Music`. MIDI since 6zg step c. **Not yet**: a key released in
    another window leaves its note held, because a window is not told when
    it loses the keyboard.
 
@@ -2568,6 +2568,18 @@ processors, and still what follows USB:
    - **c** - Groove plays from it: PulseMusic's keys, pads, bend, sustain and
      knobs, and the Launchkey's DAW mode with its pads lit (`launchkey.lua`,
      converted), held by the gate through the virtual keyboard.
+     **DONE on 28 September** (`testing.md` 18.260, `usb.md` §12c):
+     `groove/midiport.lua` is PulseMusic's MIDI interface over
+     `/Devices/midi`; Groove looks every tick while a keyboard is open;
+     LIST says how many programs listen to a device, and `midi play` waits
+     for one and plays a note into it, which is the gate's hand on the
+     keys. **Found on the way**: a program on the disk cannot declare
+     `needs` - only the image's server reads a header's, and the disk's
+     getattr has none - so a program written in the IDE in `/Home` is
+     never given MIDI, audio or the camera, whatever it says. The test's
+     helper was to be one, and became `midi play` instead. It is the
+     tutorial's (6n, 6e) and per-launcher permissions' ground: which of a
+     person's files may ask for what is the question they answer.
    - **d** - the real Launchkey: on the ThinkPad, or passed through on the
      Mac as root (`tools/usbhost.sh`); Diego's hands.
 

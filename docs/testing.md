@@ -12308,3 +12308,29 @@ sum made wrong in the generated file stops the ARM boot before its prompt -
 with a data abort in the canary's own search, not the CHANGED line, which is
 recorded under 6zp as found.
 
+## 18.260 Groove played from a MIDI keyboard (6zg, step c)
+
+Groove listens to every MIDI device when it opens (`usb.md` §12c):
+`groove/midiport.lua` gives PulseMusic's MIDI interface over
+`/Devices/midi`, and PulseMusic's handling on top of it plays the keys, the
+pads, bend, sustain, program change and the knobs, and puts a Launchkey in
+its DAW mode with its lights. `/Devices/midi`'s LIST says how many programs
+listen to a device, and `midi play ID NOTE [CHANNEL]` waits for one and
+plays a note on the virtual keyboard into it.
+
+**Kept, `run_midi.py`** on ARM, now 13 checks, 10 s: Groove opened beside
+`midi play 1 36 10` - the Launchkey's first drum pad - says it took the
+virtual keyboard's port, `midi play` finds it listening, Groove says it heard
+"on ch10 36 100", and the WAV QEMU wrote of the sound device holds exactly one
+kick: Groove is stopped, so nothing else could have made it. The `midi`
+listing says "0 listening" when nobody does. Its controls: Groove with its
+per-pass poll taken out is silent and hears nothing; Groove without `needs
+midi` opens no port, and `midi play` says nothing listened.
+
+**Kept, `test_groove.lua`**, on the Mac: the ports named as PulseMusic
+matched them - a jack's name, or its cable counted from one - the events
+handed on in its words with System Exclusive left out, the Launchkey's
+second port taken for its DAW port and the unit put in DAW mode on it, its
+launch button told from the same controller on its keys' port, its lights
+sent once for a state and one message for one change, and the unit handed
+back. Its control: without the "mk3 2" match, six checks fail.

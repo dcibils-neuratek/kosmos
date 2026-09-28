@@ -18,13 +18,16 @@
 -- - files are Kosmos's: the project in `/Home/Documents/Groove`, exports in
 --   `/Home/Music`, where Music finds them.
 --
--- MIDI - the Launchkey, and any keyboard - is the next step (`roadmap.md`
--- 6zg), after Groove plays; its button is here and says so.
+-- MIDI - any keyboard, and the Launchkey's DAW mode with its pads lit - is
+-- PulseMusic's too (`roadmap.md` 6zg), over `/Devices/midi`
+-- (`groove/midiport.lua`).
 
 local E = use("/Kosmos/Libraries/groove/engine.lua")
 local P = use("/Kosmos/Libraries/groove/presets.lua")
 local U = use("/Kosmos/Libraries/groove/ui.lua")
 local Demos = use("/Kosmos/Libraries/groove/demos.lua")
+local Midi = use("/Kosmos/Libraries/groove/midiport.lua")
+local LK = use("/Kosmos/Libraries/groove/launchkey.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 
 local app = {}
@@ -39,6 +42,7 @@ local meters, mMeterL, mMeterR = {}, 0, 0
 local cpu, loadT, loadBusy, loadFrames = 0, 0, nil, nil
 local L = {}
 local now = 0                                   -- seconds, for the blink
+local midiScan                                  -- MIDI, below
 
 -- Whether the top bar is the window's title bar, and the room the three
 -- take at its right end when it is (`/Kosmos/Apps/groove.lua`).
@@ -147,6 +151,7 @@ function app.load()
   U.load()
   E.setSong(Demos.techno())
   for i = 1, E.NT do meters[i] = 0 end
+  midiScan()
 end
 
 -- `busy` and `rendered` are the kit's, all told; the load is their change
@@ -292,9 +297,9 @@ local function drawTop()
   if U.button(x, y, 46, h, "SAVE") then app.save() end
   if U.button(x + 48, y, 46, h, "LOAD") then app.open() end
   if U.button(x + 96, y, 86, h, "EXPORT WAV", EXPORT_O) then exportState = "pending" end
-  if U.button(x + 196, y, 46, h, "MIDI", MIDI_O) then
-    say("MIDI keyboards are not supported yet: they come in the next step")
-  end
+  MIDI_O.on = #Midi.inputs > 0
+  if U.button(x + 196, y, 46, h, "MIDI", MIDI_O) then midiScan() end
+  if Midi.last then U.text(Midi.last, x + 250, 18, C.dim, U.fS) end
   local right = (chrome.headed and chrome.lights) and (L.W - chrome.lights.w - 24) or (L.W - 10)
   U.text(string.format("DSP %2.0f%%", cpu * 100), right - 70, 18, cpu > 0.7 and C.rec or C.dim, U.fS, 70, "right")
 
@@ -965,6 +970,191 @@ local function playKey(sc, down)
   if not pitch then return false end
   return liveNote(sc, sel.track, pitch, 0.85, true)
 end
+
+---------------------------------------------------------------- MIDI
+-- Launchkey Mini MK3, standalone: keys on ch 1, drum pads on ch 10 (notes 36-51),
+-- knobs CC 21-28, mod strip CC 1. Play / Record arrive as CC 115 / 117 when the unit sends them.
+local PAD_ROW = { [36] = 1, [37] = 2, [38] = 3, [39] = 4, [44] = 5, [45] = 6, [46] = 7, [47] = 8,
+                  [40] = 1, [41] = 2, [42] = 3, [43] = 4, [48] = 5, [49] = 6, [50] = 7, [51] = 8 }
+local BEND_RANGE = 2 -- semitones
+local SYNTH_KNOBS = { "cut", "res", "env", "fD", "aA", "aR" }
+local DRUM_KNOBS = { "tune", "decay", "tone", "level" }
+
+local function specFor(list, key)
+  for _, sp in ipairs(list) do if sp.k == key then return sp end end
+end
+
+local function ccSet(target, label, c, k, spec, n, color)
+  local old = c[k]
+  c[k] = P.fromNorm(spec, n)
+  if c[k] ~= old then touched(target, label, old, spec, color) end
+end
+
+local function firstDrumTrack()
+  if track().type == "drum" then return sel.track end
+  for ti = 1, E.NT do if E.song.tracks[ti].type == "drum" then return ti end end
+end
+
+local sustain, sustained = false, {}
+
+local function releaseLive(id)
+  if sustain and held[id] and not held[id].note then sustained[id] = true; return end
+  liveNote(id, 0, 0, 0, false)
+end
+
+local function surfaceAction(act)
+  if act.type == "clip" then
+    local ti = act.track
+    if E.song.tracks[ti].clips[sel.scene] then
+      if E.rt[ti].playing == sel.scene then E.stopClip(ti) else E.launchClip(ti, sel.scene) end
+      if not E.playing then E.play() end
+    end
+    sel.track = ti
+  elseif act.type == "scene" then
+    sel.scene = act.scene; E.launchScene(act.scene)
+    if not E.playing then E.play() end
+  elseif act.type == "launchSelected" then
+    E.launchScene(sel.scene); if not E.playing then E.play() end
+  elseif act.type == "stopAll" then for ti = 1, E.NT do E.stopClip(ti) end
+  elseif act.type == "track" then sel.track = max(1, min(E.NT, sel.track + act.delta))
+  elseif act.type == "play" then if E.playing then E.stop() else E.play() end
+  elseif act.type == "rec" then recArm = not recArm; say(recArm and "REC armed" or "REC off")
+  elseif act.type == "padmode" then say(act.mode == 1 and "Pads: drums" or (act.mode == 2 and "Pads: clips + scenes" or "Pads: custom"))
+  end
+end
+
+local function midiEvent(kind, ch, d1, d2, port)
+  local act = LK.handle(kind, ch, d1, d2, port)
+  if act then surfaceAction(act); return end
+  if kind == "on" or kind == "off" then
+    local down = kind == "on"
+    local vel = 0.25 + 0.75 * (d2 / 127)
+    local id, ti, pitch
+    if ch == 10 and PAD_ROW[d1] then
+      id, ti, pitch = "pad" .. d1, firstDrumTrack(), PAD_ROW[d1]
+    elseif track().type == "drum" then
+      id, ti, pitch = "key" .. d1, sel.track, d1 % 12 % 8 + 1
+    else
+      id, ti, pitch = "key" .. d1, sel.track, d1
+    end
+    if not ti then return end
+    if down then
+      if sustained[id] then sustained[id] = nil; liveNote(id, 0, 0, 0, false) end
+      liveNote(id, ti, pitch, vel, true)
+    else releaseLive(id) end
+  elseif kind == "bend" then
+    E.bend(sel.track, (d1 + d2 * 128 - 8192) / 8192 * BEND_RANGE)
+  elseif kind == "pc" then
+    local tr = track()
+    if tr.type == "drum" then tr.kit = d1 % #P.kits + 1
+    else tr.preset = d1 % #P.synths + 1; P.applySynth(tr.params, tr.preset) end
+    say((tr.type == "drum" and P.kits[tr.kit].name or P.synths[tr.preset].name) or "preset")
+  elseif kind == "cc" then
+    local tr, v = track(), d2 / 127
+    if d1 >= 21 and d1 <= 26 then
+      local i = d1 - 20
+      local tcol = U.trackColors[tr.color]
+      if tr.type == "drum" then
+        local sp = DRUM_KNOBS[i] and specFor(P.drumParams, DRUM_KNOBS[i])
+        if sp then
+          ccSet("t" .. sel.track .. ".r" .. sel.row .. "." .. sp.k, tr.name .. " / " .. P.rowNames[sel.row] .. " " .. sp.l, tr.rows[sel.row], sp.k, sp, v, tcol)
+        end
+      else
+        local sp = specFor(P.synthParams, SYNTH_KNOBS[i])
+        if sp then ccSet("t" .. sel.track .. ".p." .. sp.k, tr.name .. " / " .. sp.l, tr.params, sp.k, sp, v, tcol) end
+      end
+    elseif d1 == 27 then ccSet("t" .. sel.track .. ".m.sendA", tr.name .. " / DELAY SEND", tr, "sendA", P.mixParams.sendA, v, C.blue)
+    elseif d1 == 28 then ccSet("t" .. sel.track .. ".m.sendB", tr.name .. " / REVERB SEND", tr, "sendB", P.mixParams.sendB, v, C.blue)
+    elseif d1 == 1 and tr.type ~= "drum" then
+      local sp = specFor(P.synthParams, "cut")
+      ccSet("t" .. sel.track .. ".p.cut", tr.name .. " / " .. sp.l, tr.params, "cut", sp, v, U.trackColors[tr.color])
+    elseif d1 == 64 then
+      sustain = d2 >= 64
+      if not sustain then
+        for id in pairs(sustained) do liveNote(id, 0, 0, 0, false) end
+        sustained = {}
+      end
+    elseif d1 == 115 and d2 > 0 then
+      if E.playing then E.stop() else E.play() end
+    elseif d1 == 117 and d2 > 0 then
+      recArm = not recArm; say(recArm and "REC armed" or "REC off")
+    end
+  end
+end
+
+-- Pad LEDs, from what the kit says each drum row has hit: a row lights for
+-- a moment each time its count moves. PulseMusic delayed each flash by its
+-- output latency; the kit's counts are taken as it renders, which is ahead
+-- of the sound by the ring's depth - a few periods, too short to see.
+-- `now` is the counter's seconds rather than the frames', because a pass
+-- with nothing to draw does not move the frames' clock.
+local seenHits, rowLitUntil = {}, {}
+
+local function surfaceRefresh(now)
+  if not LK.active then return end
+  local dti = firstDrumTrack()
+  if dti then
+    local hits = E.rt[dti].hits or {}
+    for r = 1, 8 do
+      local h = hits[r] or 0
+      if h ~= (seenHits[r] or 0) then seenHits[r] = h; rowLitUntil[r] = now + 0.09 end
+    end
+  end
+  local st = { clips = {}, scenes = {}, rowLit = {}, selScene = sel.scene, drumColor = dti or 1,
+               playing = E.playing, rec = recArm }
+  for i = 1, 8 do
+    local tr, rt = E.song.tracks[i], E.rt[i]
+    if rt.queued == sel.scene and rt.playing ~= sel.scene then st.clips[i] = "queued"
+    elseif rt.playing == sel.scene then st.clips[i] = "playing"
+    elseif tr.clips[sel.scene] then st.clips[i] = "has"
+    else st.clips[i] = "empty" end
+    st.rowLit[i] = (rowLitUntil[i] or 0) > now
+    st.scenes[i] = "empty"
+    for ti = 1, E.NT do
+      if E.rt[ti].playing == i then st.scenes[i] = "playing"; break end
+      if E.song.tracks[ti].clips[i] then st.scenes[i] = "has" end
+    end
+  end
+  LK.refresh(st)
+end
+
+midiScan = function()
+  LK.detach()
+  if Midi.open() then
+    local names = Midi.names()
+    if #names > 0 then
+      local surface = LK.attach(Midi)
+      say("MIDI in: " .. table.concat(names, ", ") .. (surface and "  |  Launchkey DAW mode on" or ""))
+      print("groove: MIDI in from " .. table.concat(names, ", ") .. (surface and ", Launchkey in DAW mode" or ""))
+    else
+      say("No MIDI inputs found. Plug the keyboard in and press MIDI again.")
+    end
+  else
+    say("MIDI off: " .. tostring(Midi.err))
+  end
+end
+
+-- Every MIDI event since the last pass, played; and the Launchkey's lights,
+-- `seconds` being the counter's. Answers how many arrived, which is whether
+-- there is anything new to draw.
+local heard = false
+
+function app.midiPoll(seconds)
+  local n = Midi.poll(midiEvent)
+
+  if n > 0 and not heard then
+    heard = true
+    print("groove: MIDI heard, " .. tostring(Midi.last))
+  end
+
+  surfaceRefresh(seconds)
+  return n
+end
+
+-- Whether MIDI is open, so the window looks often enough to answer a key.
+function app.midiOpen() return #Midi.inputs > 0 end
+
+function app.quit() LK.detach(); Midi.close() end
 
 function app.keypressed(key)
   local tr = track()

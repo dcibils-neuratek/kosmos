@@ -39,7 +39,7 @@ local midi = {}
 local REQUEST  = "<I4I4I4I4BBc6c40"
 local SEND_MAX = 40
 
--- struct midi_reply: error, devices, id, handle, ins, outs, source, reserved,
+-- struct midi_reply: error, devices, id, handle, ins, outs, source, listening,
 -- name, four in names, four out names
 local REPLY      = "<I4I4I4I4BBBBc40"
 local REPLY_SIZE = 380
@@ -101,14 +101,15 @@ end
 
 --
 -- The device at `index` (from 0): its id, name, where its events come from,
--- and its ports each way by name - and how many devices there are.
+-- its ports each way by name, and how many programs listen to it - and how
+-- many devices there are.
 --
 function midi.list(index)
   local reply, why = ask(OP.list, { index = index })
 
   if not reply then return nil, why end
 
-  local _, devices, id, _, ins, outs, source, _, name = string.unpack(REPLY, reply)
+  local _, devices, id, _, ins, outs, source, listening, name = string.unpack(REPLY, reply)
   local inputs, outputs = {}, {}
 
   for i = 1, math.min(ins, 4) do
@@ -122,7 +123,7 @@ function midi.list(index)
 
   return { index = index, devices = devices, id = id, name = cstring(name),
            source = SOURCES[source] or "other", ins = ins, outs = outs,
-           inputs = inputs, outputs = outputs }
+           inputs = inputs, outputs = outputs, listening = listening }
 end
 
 -- Every device there is; an empty list and why when there are none.

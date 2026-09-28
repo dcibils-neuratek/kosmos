@@ -2,6 +2,7 @@
 -- kosmos: application
 -- kosmos: icon File_Audio
 -- kosmos: section applications
+-- kosmos: needs midi
 -- Groove: making music - eight tracks of drums and synthesisers, clips
 -- launched in scenes, a song arranged from them with automation, and a WAV
 -- at the end (`roadmap.md` 6zh).
@@ -17,6 +18,9 @@
 --   groove --house      the house demo
 --   groove --open       the saved project
 --   groove --play       and playing, which is how `make shot` pictures it
+--
+-- A MIDI keyboard plays it (`roadmap.md` 6zg): every one there is when it
+-- opens, and again whenever its MIDI button is pressed.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
@@ -154,6 +158,11 @@ end
 -- **The song goes to the kit after the frame**, when anything was touched:
 -- the frame is where a knob or a step changes, and `E.sync` hands the
 -- whole song over at most once a frame.
+--
+-- **With a MIDI keyboard open it looks every tick**, four milliseconds,
+-- because its events arrive in a page rather than as messages and nothing
+-- wakes the window for one. A note heard is played at once and the frame
+-- follows, as a key typed on the computer's keyboard is.
 --------------------------------------------------------------------------
 
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
@@ -179,7 +188,7 @@ end
 
 while win.running do
   local busy = app.busy()
-  local wait = busy and 1 or (dirty and 0 or 25)
+  local wait = (busy or app.midiOpen()) and 1 or (dirty and 0 or 25)
   local reply = wmproto.poll(win.handle, wait)
 
   if not reply then break end
@@ -253,6 +262,8 @@ while win.running do
 
   if not win.running then break end
 
+  if app.midiPoll(sys.ticks() / hz) > 0 then touched, draw = true, true end
+
   if draw or touched then
     if not frame(touched) then break end
   else
@@ -260,6 +271,7 @@ while win.running do
   end
 end
 
+app.quit()
 synth.close()
 if out then out:close() end
 win:close()

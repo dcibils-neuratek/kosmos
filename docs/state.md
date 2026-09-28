@@ -18,6 +18,40 @@ Last updated: 2026-09-28
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## 28 September, the night: USB MIDI, and Groove plays from it (6zg a-c)
+
+**Nothing is pushed since 0.10.185** (`cb48bda`). On `main`, each gated:
+`fc6d7d0` state, `18da2ca` `get-and-run-kosmos.sh` - which fetches the
+newest GitHub Release and needs a push before its one-liner works - `82a3bc4`
+the roadmap's order, `2a5ed90` 6zg a, `b273e7f` 6zg b, `ea564e3` the images
+by `.incbin`, and 6zg c. Diego's order (28 September): **6zg, then 4i
+low-latency audio, then storage in C, then 4h** - "the gpu encoder/decoder
+capabilities which will then lead to us having accelerated 2d graphics".
+
+- **6zg a** (18.257): USB MIDI read as pure C held on the Mac -
+  MIDIStreaming descriptors, jacks as cables, event packets both ways.
+- **6zg b** (18.258): `/Devices/midi` in the USB driver, events in a page
+  the program owns, a virtual keyboard under `opt/kosmos/midi=virtual`,
+  `needs midi`, the `midi` program, the kernel's watch slots to eight, raw
+  requests naming their protocol.
+- **Images by `.incbin`** (18.259): the gate's images step from 95 s to 19,
+  the gate 10:16 to 8:41. **Found**: with the whole-image sum wrong the ARM
+  boot takes a data abort in the canary's own search (6zp).
+- **6zg c** (18.260): Groove plays from any MIDI keyboard and drives a
+  Launchkey's DAW mode - PulseMusic's handling over `groove/midiport.lua`;
+  LIST says how many listen; `midi play` is the gate's hand on the keys;
+  WAV holds one kick from the pad. **Found**: a program on the disk cannot
+  declare `needs` - only the image's server reads the header - so nothing
+  Diego writes in `/Home` gets MIDI, audio or the camera (roadmap 6zg c).
+- **Waiting on Diego**: a terminal tab, "Kosmos camera", at a `sudo`
+  password prompt for `tools/camera.sh`, to show him the webcam; and 6zg d,
+  the real Launchkey in his hands, whose own descriptor bytes replace the
+  composed fixture.
+
+**Next**: 6zg d when Diego has the keyboard at the Mac or the ThinkPad;
+meanwhile 4i, low-latency audio - which is also where a MIDI event should
+wake the window rather than be looked for every tick.
+
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 
 **Pushed as 0.10.185** (`395472a..cb48bda`, tag `v0.10.185`), and **released for QEMU on a Mac**: https://github.com/dcibils-neuratek/kosmos/releases/tag/v0.10.185 - both images booted with Groove beating at 124 and the download checked against its sums. `run-kosmos.sh` gives the machine a sound card now. Found making its picture: seventeen windows outgrew the `windows` reply and hung `tile` and the Deskbar - fixed in the same release (18.256). Diego asked for PulseMusic, his LÖVE

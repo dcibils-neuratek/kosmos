@@ -2,7 +2,8 @@
 -- kosmos: needs midi
 -- MIDI keyboards and controllers, at the prompt (`roadmap.md` 6zg).
 --
---   midi                      every device, its id, and its ports each way
+--   midi                      every device, its id, its ports each way, and
+--                             how many programs listen to it
 --   midi listen [seconds]     what is played, as it is played, for ten
 --                             seconds or as many as said
 --   midi send ID CABLE HEX..  whole messages to a device's port:
@@ -12,6 +13,12 @@
 --                             System Exclusive sent to a device's first
 --                             port, and what comes back - from the virtual
 --                             keyboard, all of it
+--   midi play ID NOTE [CH]    once a program listens to the device, NOTE
+--                             on channel CH, 1 unless said, for a tenth of
+--                             a second: the virtual keyboard played into
+--                             whatever is listening - `wm groove,midi:play
+--                             1 36 10` is Groove's kick from the
+--                             Launchkey's first pad
 --
 -- The smallest thing that uses `/Devices/midi` end to end (`usb.md` §12),
 -- through `midi.lua`, the way `sticks` uses the block protocol. With
@@ -55,9 +62,9 @@ if words[1] == nil then
   end
 
   for _, d in ipairs(all) do
-    print(("midi: device %d, %s, over %s: %d in (%s), %d out (%s)"):format(
+    print(("midi: device %d, %s, over %s: %d in (%s), %d out (%s), %d listening"):format(
           d.id, d.name, d.source, d.ins, table.concat(d.inputs, ", "),
-          d.outs, table.concat(d.outputs, ", ")))
+          d.outs, table.concat(d.outputs, ", "), d.listening))
   end
 
   return
@@ -146,4 +153,43 @@ if words[1] == "try" then
   return
 end
 
-print("midi: midi | midi listen [seconds] | midi send ID CABLE HEX.. | midi try ID")
+if words[1] == "play" then
+  local id, note, channel = tonumber(words[2]), tonumber(words[3]), tonumber(words[4] or "1")
+
+  if not id or not note or note > 127 or not channel or channel < 1 or channel > 16 then
+    print("midi: midi play ID NOTE [CHANNEL]")
+    return
+  end
+
+  -- A minute for the program it plays into to start listening: the thing,
+  -- rather than a guess at how long a program takes to open.
+  local listening, why
+
+  for _ = 1, 600 do
+    local all
+    all, why = midi.all()
+
+    for _, d in ipairs(all) do
+      if d.id == id and d.listening > 0 then listening = d.listening end
+    end
+
+    if listening then break end
+    sys.sleep(25)
+  end
+
+  if not listening then
+    print("midi: nothing listened to device " .. id .. (why and (" (" .. why .. ")") or ""))
+    return
+  end
+
+  local on, err = midi.send(id, 0, 0x8F + channel, note, 100)
+  sys.sleep(25)
+  midi.send(id, 0, 0x7F + channel, note, 0)
+  print(on and ("midi: played note %d on channel %d of device %d, %d listening")
+                 :format(note, channel, id, listening)
+           or ("midi: " .. tostring(err)))
+  return
+end
+
+print("midi: midi | midi listen [seconds] | midi send ID CABLE HEX.. | midi try ID "
+      .. "| midi play ID NOTE [CHANNEL]")

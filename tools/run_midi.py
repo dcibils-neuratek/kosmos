@@ -17,6 +17,15 @@ sent to it - and this plays it through the `midi` program, which reaches
 - **and nothing for a program that did not ask**: one run from `/Temporary`,
   with no `needs midi`, finds no `/Devices/midi` at all.
 
+Then, on the ARM machine, **Groove plays from it** (step c): Groove opens on
+its techno demo, stopped, and listens to every device; `midi play`, started
+with it, waits until the virtual keyboard has a listener - `/Devices/midi`
+says how many - and plays the Launchkey's first drum pad, note 36 on channel
+10. QEMU writes what the sound device played to a WAV, which has to hold one
+kick and nothing else: the note heard by the driver, put in Groove's page,
+taken by its pass, turned into a voice by the Synth Kit and played. Groove
+says what it heard.
+
 On the ARM machine, which has no USB controller, the driver answers from the
 wait it keeps when there is none; on x86 it is given one, so the answers come
 from its whole wait - five endpoints since `/Devices/midi`, which the kernel
@@ -27,13 +36,20 @@ Usage: run_midi.py IMAGE
 
 import os
 import re
+import struct
 import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import scratch                                               # noqa: E402
+
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+X86 = "x86_64" in IMAGE
+WAV = os.path.join(scratch.directory("midi"), "heard.wav")
+RATE = 44100
+
 
 SENT = [
     ("on channel 1 note 60 velocity 100"),
@@ -45,7 +61,32 @@ SENT = [
 ]
 
 
+def left_of(path):
+    with open(path, "rb") as f:
+        data = f.read()[44:]
+    frames = len(data) // 4
+    return struct.unpack("<%dh" % (frames * 2), data[:frames * 4])[0::2]
+
+
+def onsets(left, level=2000, gap=RATE // 4):
+    """Frames where the sound first rises past `level` after a quarter of a
+    second under it."""
+    found, last = [], -gap
+
+    for i, v in enumerate(left):
+        if abs(v) > level:
+            if i - last >= gap:
+                found.append(i)
+            last = i
+
+    return found
+
+
 def main():
+    # The sound device, on the ARM machine, written to a WAV.
+    if not X86:
+        os.environ["KOSMOS_AUDIO_WAV"] = WAV
+
     import run_screenshot as R
 
     x86 = R.machine(IMAGE) == "x86_64"
@@ -78,7 +119,7 @@ def main():
 
         said = run("midi", "ended")
         listed = re.search(r"midi: device (\d+), Virtual keyboard, over virtual: "
-                           r"1 in \(Keys\), 1 out \(Keys\)", said)
+                           r"1 in \(Keys\), 1 out \(Keys\), 0 listening", said)
         check(listed, "the virtual keyboard is not listed with its ports:\n" + said[-600:])
         vid = listed.group(1) if listed else "1"
 
@@ -115,8 +156,30 @@ def main():
         said = run("run /Temporary/nomidi.lua", "nomidi: ")
         check("nomidi: 0 " in said,
               "a program that did not ask for MIDI reached it:\n" + said[-400:])
+
+        # Groove, played from the keyboard. Last, because the window
+        # manager keeps the prompt.
+        if not x86:
+            mark = len(guest.seen)
+            run("wm groove,midi:play %s 36 10" % vid, "midi: ", 120)
+            time.sleep(1.5)
+            guest._read_available()
+            said = guest.seen[mark:]
+            check("groove: MIDI in from Virtual keyboard Keys" in said,
+                  "Groove did not open the virtual keyboard:\n" + said[-900:])
+            check("midi: played note 36 on channel 10 of device %s, 1 listening" % vid in said,
+                  "midi play did not find Groove listening:\n" + said[-900:])
+            check("groove: MIDI heard, on ch10 36 100" in said,
+                  "Groove did not say it heard the pad:\n" + said[-900:])
     finally:
         guest.close()
+
+    if not x86:
+        left = left_of(WAV) if os.path.exists(WAV) else []
+        found = onsets(left)
+        check(len(found) == 1,
+              "Groove's sound is not one kick from the pad: onsets at %r of %d frames"
+              % (found[:6], len(left)))
 
     if failed:
         print("FAIL: %d of %d checks on /Devices/midi:" % (len(failed), checks))
@@ -126,8 +189,9 @@ def main():
 
     print("PASS: %d checks on /Devices/midi, on %s (the virtual keyboard listed with "
           "its ports, six events back in order with rising times, three refusals "
-          "in their own words, and nothing for a program that did not ask)"
-          % (checks, "x86-64 with an xHCI" if x86 else "the ARM machine, no USB"))
+          "in their own words, and nothing for a program that did not ask%s)"
+          % (checks, "x86-64 with an xHCI" if x86 else "the ARM machine, no USB",
+             "" if x86 else "; and Groove playing one kick from the keyboard's pad"))
     return 0
 
 
