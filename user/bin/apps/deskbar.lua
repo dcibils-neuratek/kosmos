@@ -393,7 +393,7 @@ local function volume_now()
 
   if not ok or not stats or not stats.master then return nil end
 
-  return stats.master
+  return stats.master, stats.master_muted
 end
 
 --
@@ -464,10 +464,17 @@ local function battery_now()
   return b
 end
 
+--
+-- A card, not merely a stack: the stack answers `net_info` with no card to
+-- drive, and says so in `card`. This read only that the stack answered, so
+-- the picture was drawn on every PC, card or not - found on 27 September
+-- by the x86 suite's first machine with `-nic none`, once "offline" was a
+-- thing the bar says (`roadmap.md` 6zl).
+--
 local function network_now()
   local ok, info = pcall(fs.net_info, "/Network")
 
-  if not ok or type(info) ~= "table" then return nil end
+  if not ok or type(info) ~= "table" or not info.card then return nil end
 
   return info
 end
@@ -475,6 +482,10 @@ end
 
 local H = theme.metrics.deskbar
 local ICON = 24
+
+-- The indicators' line glyphs (`docs/statusicons.html`): 19 of the sizes
+-- `tools/lineicons.py` renders, in the 32-pixel bar.
+local LINE = 19
 local W = sw
 
 local win, err = ui.window{ title = "Deskbar", w = W, h = H, strip = "top" }
@@ -1132,20 +1143,40 @@ function bar:draw(g)
   -- card, so `/Devices/audio` is not in this namespace and `audio.stats()` says
   -- so. The rule is the same one; it is enforced instead of remembered.
   --
-  if volume_now() then
-    x = x - PAD - ICON
-    g:icon(x, iy, "Misc_Speaker.png", ICON)
+  --
+  -- **Line glyphs, in the bar's own words' colour** (`roadmap.md` 6zl,
+  -- `docs/statusicons.html`, agreed 27 September): Lucide's, 19 pixels in
+  -- the 32-pixel bar, where Haiku's coloured pictures were 24. A muted
+  -- speaker is crossed, which the picture could not say.
+  --
+  local ly = (self.h - LINE) // 2
+  local level, muted = volume_now()
+
+  if level then
+    x = x - PAD - LINE
+    g:line_icon(x, ly, muted and "muted" or "sound", theme.tab_text, LINE)
     self.volume_x = x
   else
     self.volume_x = nil
   end
 
-  if network_now() then
-    x = x - PAD - ICON
-    g:icon(x, iy, "Prefs_Network.png", ICON)
-    self.network_x = x
-  else
-    self.network_x = nil
+  --
+  -- **The network is always said, offline too** - Diego's 3: the picture
+  -- used to be left out with no card, and a gap says nothing where crossed
+  -- arcs say the machine is not on a network. The Ethernet port for a card,
+  -- since every card Kosmos drives is wired; Wi-Fi's arcs when there is a
+  -- driver for one.
+  --
+  local net = network_now() and "wired" or "offline"
+
+  x = x - PAD - LINE
+  g:line_icon(x, ly, net, theme.tab_text, LINE)
+  self.network_x = x
+
+  -- Said in the log when it changes, as the battery is, for a harness.
+  if self.network_said ~= net then
+    print("deskbar: network " .. net)
+    self.network_said = net
   end
 
   --
@@ -1169,21 +1200,34 @@ function bar:draw(g)
   local bat = battery_now()
 
   if bat then
+    --
+    -- The glyph says how full, or the bolt that it is charging - which the
+    -- word "charging" used to (Diego's 2) - and the number beside it is
+    -- what a person looks for. Low, glyph and number both in the look's red.
+    --
+    local charging = bat.state == "charging"
     local label = ("%d%%"):format(bat.percent)
-                  .. (bat.state == "charging" and " charging" or "")
     local low = bat.critical == 1
                 or (bat.state == "discharging" and bat.percent <= 10)
+    local ink = low and (theme.bad or 0xffe04848) or theme.tab_text
+    local glyph = charging and "battery-charging"
+                  or (bat.percent >= 80 and "battery-full")
+                  or (bat.percent >= 30 and "battery-medium")
+                  or "battery-low"
     local lw = gfx.measure(label)
 
-    x = x - PAD - ICON - 4 - lw
+    x = x - PAD - LINE - 4 - lw
     self.battery_x = x
 
-    g:icon(x, iy, "App_PowerStatus.png", ICON)
-    g:text(x + ICON + 4, ty, label, low and 0xffe04848 or theme.tab_text)
+    g:line_icon(x, ly, glyph, ink, LINE)
+    g:text(x + LINE + 4, ty, label, ink)
 
-    if self.battery_said ~= label then
-      print("deskbar: battery " .. label)
-      self.battery_said = label
+    -- The log says the state in words, as it did, for whoever reads it.
+    local said = label .. (charging and " charging" or "")
+
+    if self.battery_said ~= said then
+      print("deskbar: battery " .. said)
+      self.battery_said = said
     end
   else
     self.battery_x = nil
@@ -1309,12 +1353,12 @@ function bar:mouse(action, x, y)
     return true
   end
 
-  if self.volume_x and x >= self.volume_x and x < self.volume_x + ICON then
+  if self.volume_x and x >= self.volume_x - 4 and x < self.volume_x + LINE + 4 then
     fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/mixer.lua" })
     return true
   end
 
-  if self.network_x and x >= self.network_x and x < self.network_x + ICON then
+  if self.network_x and x >= self.network_x - 4 and x < self.network_x + LINE + 4 then
     fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/network.lua" })
     return true
   end

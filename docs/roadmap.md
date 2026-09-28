@@ -2156,8 +2156,10 @@ processors, and still what follows USB:
    4. muted sound, the speaker crossed, which could not be shown before;
    5. the Kosmos button keeps its colour picture - the system's mark.
    The glyphs are the vendored Lucide SVGs, added to what
-   `tools/lineicons.py` renders. **Order**: next after the 0.10.177 stick,
-   being small, then 6za's step (b).
+   `tools/lineicons.py` renders. **DONE the same night** (`testing.md`
+   18.238) - and the check for 3 found that the Deskbar had never looked
+   for a card, only for a network stack, so every PC drew the network
+   picture whether it had a card or not.
 
 6zk. **FOUND on 27 September - the shadow a window casts is thin beside
    the drawings'.** Diego: "the drop shadow in the mockups look amazing, but

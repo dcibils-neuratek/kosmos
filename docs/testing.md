@@ -11615,3 +11615,26 @@ MP4" beside a 48-pixel picture, one card: Where, Size with the bytes under
 it grouped, Opens with). A menu's dim word on the right is the kit's now
 (`hint`), with 24 pixels between it and the item's words.
 
+## 18.238 The Deskbar's indicators in line glyphs (6zl)
+
+`docs/statusicons.html`, agreed on 27 September: Lucide's glyphs at 19
+pixels in the bar's text colour - the speaker, crossed when muted (the
+audio server's `master_muted`); the Ethernet port for a card and the
+crossed arcs for none; the battery full, medium, low or the bolt, with the
+percentage beside it, glyph and number in the look's red when low. Eight
+names added to `tools/lineicons.py` and rendered at its four sizes; the
+eighteen existing icons a new run redrew a shade differently were restored
+rather than committed.
+
+**Checked on x86** (`run_x86.py`, battery, 7): the Deskbar now says its
+network state in the log when it changes, as it says the battery's, and a
+machine started with `-nic none` has to say `offline`. **It said `wired`**,
+on a machine with no card: `network_now` asked only whether the network
+stack answered, and the stack answers with no card to drive - `card` in its
+reply says so, and was never read. So the network picture was on every
+PC's bar since it was drawn. Read now, and the check passes; the failing
+run is the control. The low battery is still told from a charging one by
+its red (13 or more pixels between the two screens, where it needs 12).
+Seen under QEMU on ARM as drawn: the port and the speaker, dark on the
+blue bar.
+

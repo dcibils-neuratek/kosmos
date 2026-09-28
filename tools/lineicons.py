@@ -106,6 +106,20 @@ ICONS = {
     "paste":      ("clipboard-paste", None),
     "cut":        ("scissors", None),
     "settings":   ("settings", None),
+
+    # The Deskbar's indicators (`roadmap.md` 6zl, `docs/statusicons.html`):
+    # sound on is `sound` above, the same speaker Preferences shows. A run
+    # renders every icon again, and on 27 September eighteen of the ones
+    # already committed came back a shade different - the browser's, not the
+    # vectors' - so only these new names were kept and the rest restored.
+    "muted":      ("volume-x", None),
+    "wired":      ("ethernet-port", None),
+    "wifi":       ("wifi", None),
+    "offline":    ("wifi-off", None),
+    "battery-full":     ("battery-full", None),
+    "battery-medium":   ("battery-medium", None),
+    "battery-low":      ("battery-low", None),
+    "battery-charging": ("battery-charging", None),
 }
 
 

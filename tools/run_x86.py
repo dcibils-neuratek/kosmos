@@ -2767,7 +2767,7 @@ def battery(image, check):
           + next((l.strip() for l in out.splitlines()
                   if l.startswith("BATTERY")), "nothing"))
 
-    def desktop(value, label):
+    def desktop(value, label, extra=(), network=None):
         work = scratch.directory("x86-battery")
         path = os.path.join(work, "monitor")
         cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
@@ -2775,7 +2775,7 @@ def battery(image, check):
                "-monitor", "unix:%s,server,nowait" % path,
                "-serial", "stdio",
                "-fw_cfg", "name=opt/kosmos/boot,string=wm"] + option(value) \
-              + ["-kernel", binary]
+              + list(extra) + ["-kernel", binary]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL)
@@ -2809,6 +2809,18 @@ def battery(image, check):
                      next((l.strip() for l in said.splitlines()
                            if "deskbar: battery" in l), "nothing")))
 
+            #
+            # **And the network, said offline too** (`roadmap.md` 6zl):
+            # where a machine has no card the Deskbar draws the crossed
+            # arcs, and used to draw nothing - a gap that said nothing.
+            #
+            if network is not None:
+                check("deskbar: network " + network in said,
+                      "the Deskbar did not say the network is %s: %s"
+                      % (network, next((l.strip() for l in said.splitlines()
+                                        if "deskbar: network" in l),
+                                       "nothing")))
+
             time.sleep(2.0)
             screen = monitor.screendump(os.path.join(work, "bar.ppm"))
 
@@ -2831,7 +2843,7 @@ def battery(image, check):
         return red
 
     quiet = desktop("57,charging", "57% charging")
-    low = desktop("8", "8%")
+    low = desktop("8", "8%", ["-nic", "none"], network="offline")
 
     check(quiet is not None and low is not None,
           "a battery desktop drew nothing to look at: 57%% charging gave "
