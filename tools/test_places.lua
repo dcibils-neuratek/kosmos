@@ -256,6 +256,23 @@ local inside = { { name = "Running" }, { name = "cpu" } }
 check(#places.files_only("/Home", inside) == 2,
       "a folder that is not the root is listed whole, a Running in it too")
 
+--
+-- The places a person keeps (`roadmap.md` 6w): the five, in the drawing's
+-- order, each a folder in /Home with its own picture.
+--
+local names, paths = {}, true
+
+for _, p in ipairs(places.STANDARD) do
+  names[#names + 1] = p.name
+  paths = paths and p.path == "/Home/" .. p.name and type(p.icon) == "string"
+end
+
+check(table.concat(names, ",") == "Documents,Photos,Movies,Captures,Music"
+      and paths,
+      "the places a person keeps are not Documents, Photos, Movies, Captures "
+      .. "and Music, each a folder in /Home with a picture: "
+      .. table.concat(names, ","))
+
 if failed == 0 then
   print(("PASS: %d checks on Tracker's shortcut places - made, named, and "
          .. "found again by what their volume is, on this machine; and the "

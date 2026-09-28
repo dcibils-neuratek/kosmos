@@ -64,7 +64,7 @@ with open(TOWER, "w") as f:
             'print("tower")\n')
 
 subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "64",
-                TOWER + ":/Home/Scenes/a-tower.lua"],
+                TOWER + ":/Home/Documents/a-tower.lua"],
                check=True, capture_output=True, cwd=os.path.dirname(HERE))
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -354,7 +354,7 @@ def main():
             click(*button)
 
         saved = said("cafesa3d: saved ", mark, 60) or ""
-        check(re.match(r"/Home/Scenes/still-life\.gltf, 33 objects, \d+ bytes$", saved),
+        check(re.match(r"/Home/Documents/still-life\.gltf, 33 objects, \d+ bytes$", saved),
               "Ctrl S did not save the scene with the staircase in it: %r" % saved)
 
         # Changed after saving, and the saved scene opened again: its script
@@ -401,7 +401,7 @@ def main():
             click(*button)
 
         lua_saved = said("cafesa3d: script saved ", mark, 30) or ""
-        check(re.match(r"/Home/Scenes/staircase\.lua, \d+ bytes$", lua_saved),
+        check(re.match(r"/Home/Documents/staircase\.lua, \d+ bytes$", lua_saved),
               "Save .lua... did not write staircase.lua: %r" % lua_saved)
 
         # Open .lua...: another script, run beside the staircase.
@@ -423,7 +423,7 @@ def main():
 
         tower = said("cafesa3d: script ran in ", mark, 60)
         listed = last_said("cafesa3d: outliner ", mark)
-        check(lua_opened == "/Home/Scenes/a-tower.lua, 2 lines"
+        check(lua_opened == "/Home/Documents/a-tower.lua, 2 lines"
               and said("cafesa3d: script tower", mark, 5) is not None
               and tower is not None and tower.endswith(": 1 object")
               and listed is not None
@@ -453,11 +453,11 @@ def main():
 
     # **Off the disk**, with the machine stopped: the script on its own, and
     # the scene with the script and its 26 objects marked as its own.
-    lua = from_disk("/Home/Scenes/staircase.lua") or ""
+    lua = from_disk("/Home/Documents/staircase.lua") or ""
     check(lua.startswith("-- A spiral staircase") and 'print("from the file")\n' in lua,
           "staircase.lua on the disk is not the script: %r" % lua[:80])
 
-    scene = from_disk("/Home/Scenes/still-life.gltf")
+    scene = from_disk("/Home/Documents/still-life.gltf")
     doc = json.loads(scene) if scene else {}
     own = doc.get("extras", {}).get("cafesa3d", {}).get("script", {})
     made = [n for n in doc.get("nodes", [])

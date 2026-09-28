@@ -19,7 +19,7 @@
 -- picture comes from `surface:camera`, in C, straight out of the region the
 -- driver writes (`/Kosmos/Libraries/camera.lua`). No pixel passes through this file.
 --
--- **Record** records to H.264 in an MP4 in `/Home/videos` (step 8f), and
+-- **Record** records to H.264 in an MP4 in `/Home/Captures` (step 8f), and
 -- R does it from the keyboard, as M mirrors.
 --
 --   camera                 the first camera, at 640x480
@@ -88,13 +88,15 @@ end
 --------------------------------------------------------------------------
 -- **Recording** (`roadmap.md` 6d 8f), as `docs/camera.html` draws it:
 -- Record becomes Stop, filled red; the picture carries how long; the foot
--- where the file is going. Into `/Home/videos`, named by the date and the
+-- where the file is going. Into `/Home/Captures` - a place in Tracker's
+-- sidebar since 28 September (`roadmap.md` 6w), `/Home/videos` before -
+-- named by the date and the
 -- time, H.264 in an MP4 by the Record Kit - and never mirrored, since the
 -- kit takes the camera's bytes and the mirror is only this window's.
 --------------------------------------------------------------------------
 
 local clock = use("/Kosmos/Libraries/clock.lua")
-local VIDEOS = "/Home/videos"
+local VIDEOS = "/Home/Captures"
 
 -- A size as a person reads it: KB under a megabyte, where "0.0 MB" read as
 -- nothing kept - the test pattern is five kilobytes a second.
@@ -298,7 +300,7 @@ local function draw_foot(s)
     local b = ("YUY2, %.1f MB a second%s"):format(rate / 1e6, from or "")
 
     -- Where it is going, and how big it is so far; the folder is always
-    -- /Home/videos, so the name is what is said.
+    -- /Home/Captures, so the name is what is said.
     if recording then
       local bytes = stream:record_progress() or 0
 

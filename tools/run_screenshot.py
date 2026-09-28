@@ -9247,6 +9247,22 @@ def check_places(guest):
                       + guest.seen[mark:][-900:])
 
     wx, wy = placed[0], placed[1]
+
+    #
+    # **The sidebar as the drawings order it** (`roadmap.md` 6w): Home and
+    # Desktop, the five places a person keeps - each made by Tracker the
+    # first time it is missing, so a home with nothing in it has all five -
+    # and the Trash last.
+    #
+    sidebar = guest.wait_for_line("tracker: sidebar ",
+                                  "Tracker to say what its sidebar holds",
+                                  mark)
+
+    if sidebar != ("Home, Desktop, Documents, Photos, Movies, Captures, "
+                   "Music, Trash"):
+        raise Failure("Tracker's sidebar is not Home, Desktop, the five "
+                      "places a person keeps and the Trash: %r" % sidebar)
+
     time.sleep(3.0)
     width, height, _ = parse_ppm(guest.screendump())
 
@@ -9286,7 +9302,11 @@ def check_places(guest):
     time.sleep(0.3)
     to(272, first_row_y + 12)
     time.sleep(0.4)
-    to(100, 300)                        # the sidebar's empty lower part
+    # The sidebar's empty lower part: below Home, Desktop, the five places
+    # a person keeps and the Trash (`roadmap.md` 6w), eight rows of 33 from
+    # 48 - where 300 was empty until those five arrived, and is the Trash's
+    # row now, which a drop moves the folder into.
+    to(100, 450)
     time.sleep(0.6)
     guest.mouse_button(False)
     time.sleep(1.5)
@@ -9498,7 +9518,7 @@ def check_places(guest):
             "Info on /Home/placetest, which holds one empty folder, did not "
             "count one folder and nothing else: %r" % counted)
 
-    return 5
+    return 6
 
 
 def check_icon_sizes(guest):

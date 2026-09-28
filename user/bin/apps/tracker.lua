@@ -216,6 +216,22 @@ if backdrop then
   end
 end
 
+--
+-- **The places a person keeps** - Documents, Photos, Movies, Captures and
+-- Music (`places.STANDARD`, `roadmap.md` 6w) - made whenever a Tracker finds
+-- one missing, as the desktop makes `Desktop`: a folder that only exists
+-- once somebody thinks to make it is a folder nobody makes.
+--
+for _, p in ipairs(placelib.STANDARD) do
+  if not fs.getattr(p.path) then
+    local ok, why = fs.send(p.path, { type = "mkdir" })
+
+    if not ok then
+      print(("tracker: no %s: %s"):format(p.name, tostring(why)))
+    end
+  end
+end
+
 local win, err = ui.window{
   title = "Tracker", w = W, h = H,
   x = backdrop and 0 or 80, y = backdrop and 0 or 60,
@@ -862,10 +878,10 @@ end
 --
 -- The places on the left, the listing on the right.
 --
--- **Home, Desktop and the Trash; then Documents, Music and Pictures where
--- they exist, and the places a person made; then the drives** - the
--- drawing's groups, less its Recent, which would be a row that leads
--- nowhere: nothing here keeps a list of recent files yet. The system's
+-- **Home and Desktop, the places a person keeps, what they pinned and the
+-- Trash; then the drives** - the drawing's groups, less its Recent, which
+-- would be a row that leads nowhere: nothing here keeps a list of recent
+-- files yet. The system's
 -- mounts are one press away through the place button's menu, which starts
 -- at `/`.
 --
@@ -889,17 +905,18 @@ local function place_items()
     by[it.id] = it
   end
 
+  --
+  -- **As the drawings order them** (`docs/rightclick.html`, `roadmap.md`
+  -- 6w): Home and Desktop, the five places a person keeps, what they
+  -- pinned, and the Trash last - the place things go out of.
+  --
   add("Home", "/Home", "home")
   add("Desktop", "/Home/Desktop", "folder")
-  add("Trash", files.TRASH, "trash")
 
   local mine = {}
 
-  for _, f in ipairs({ { "Documents", "document" }, { "Music", "music" },
-                       { "Pictures", "pictures" } }) do
-    local path = "/Home/" .. f[1]
-
-    if fs.getattr(path) then mine[#mine + 1] = { f[1], path, f[2] } end
+  for _, p in ipairs(placelib.STANDARD) do
+    if fs.getattr(p.path) then mine[#mine + 1] = { p.name, p.path, p.icon } end
   end
 
   --
@@ -916,9 +933,9 @@ local function place_items()
                                                   quiet = (path == nil) } }
   end
 
-  if #mine > 0 then items[#items + 1] = { gap = true, rule = true } end
-
   for _, m in ipairs(mine) do add(m[1], m[2], m[3], m[4]) end
+
+  add("Trash", files.TRASH, "trash")
 
   local drives = side.volumes() or {}
 
@@ -3189,6 +3206,18 @@ chrome(job_words)
 chrome(stop_button)
 
 refresh_places()
+
+-- The sidebar's rows, once, for the display harness, which holds them to
+-- the drawing's order (`roadmap.md` 6w).
+if not backdrop then
+  local names = {}
+
+  for _, it in ipairs(places.items or {}) do
+    if it.name then names[#names + 1] = it.name end
+  end
+
+  print("tracker: sidebar " .. table.concat(names, ", "))
+end
 
 show(where)
 

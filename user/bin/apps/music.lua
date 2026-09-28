@@ -89,7 +89,12 @@ local FOOT_H    = 24
 -- is what Tracker sends when somebody opens an MP3.
 --------------------------------------------------------------------------
 
-local FOLDER = "/Home"
+--
+-- **Music, first** (`roadmap.md` 6w): the place in Tracker's sidebar that is
+-- for it, when it is there - and `/Home` when it is not, since a machine
+-- whose Tracker has never run has not made it yet.
+--
+local FOLDER = fs.getattr("/Home/Music") and "/Home/Music" or "/Home"
 local START
 
 do

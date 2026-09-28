@@ -175,8 +175,8 @@ for _name, _bytes in IMPORTS.items():
 
 subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
                 os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "64",
-                BROKEN + ":/Home/Scenes/zz-broken.gltf"]
-               + ["%s:/Home/Scenes/%s" % (os.path.join(WORK, n), n) for n in IMPORTS],
+                BROKEN + ":/Home/Documents/zz-broken.gltf"]
+               + ["%s:/Home/Documents/%s" % (os.path.join(WORK, n), n) for n in IMPORTS],
                check=True, capture_output=True, cwd=os.path.dirname(HERE))
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -869,9 +869,9 @@ def main():
             click(*button)
 
         saved = said("cafesa3d: saved ", mark, 120) or ""
-        m = re.match(r"/Home/Scenes/plane\.gltf, 106 objects, (\d+) bytes$", saved)
+        m = re.match(r"/Home/Documents/plane\.gltf, 106 objects, (\d+) bytes$", saved)
         check(m is not None and int(m.group(1)) > 200000,
-              "Save did not write the plane to /Home/Scenes/plane.gltf: %r" % saved)
+              "Save did not write the plane to /Home/Documents/plane.gltf: %r" % saved)
         size = m and m.group(1)
 
         mark = len(guest.seen)
@@ -909,7 +909,7 @@ def main():
         mark = len(guest.seen)
         keys("ctrl-s")
         again = said("cafesa3d: saved ", mark, 120) or ""
-        check(size is not None and again == "/Home/Scenes/plane.gltf, 106 objects, %s bytes"
+        check(size is not None and again == "/Home/Documents/plane.gltf, 106 objects, %s bytes"
               % size, "Ctrl S on the opened file did not write the same file: %r" % again)
 
         m = re.search(r"the view (\d+) by (\d+)", summary)
@@ -1099,7 +1099,7 @@ def main():
         # **The Render tab and a saved picture**: Preview, 1280 by 720 and one
         # sample set in the tab - each said back - then F12, which makes the
         # Render window again at the new size, the render finished, and Save
-        # as PNG through the panel into /Home/Renders. The file itself is
+        # as PNG through the panel into /Home/Documents. The file itself is
         # read back off the disk once the machine has stopped, below.
         mark = len(guest.seen)
         click(ox + tabs["render"][0], oy + tabs["render"][1])
@@ -1166,9 +1166,9 @@ def main():
 
             saved_png = said("cafesa3d: saved the render to ", mark, 60) or ""
 
-        check(saved_png is not None and re.match(r"/Home/Renders/plane\.png, 1280 by 720, "
+        check(saved_png is not None and re.match(r"/Home/Documents/plane\.png, 1280 by 720, "
                                                  r"\d+ bytes$", saved_png) is not None,
-              "Save as PNG did not write the render to /Home/Renders: %r" % saved_png)
+              "Save as PNG did not write the render to /Home/Documents: %r" % saved_png)
 
         # Cafesa3D in front again, by its own title in the header - the
         # larger Render window now covers the foot this suite clicks for it.
@@ -1254,7 +1254,7 @@ def main():
                 click(*button)
 
         got = said("cafesa3d: exported ", mark, 60) or ""
-        m = re.match(r"/Home/Scenes/zz-broken\.stl, 7 objects, (\d+) bytes$", got)
+        m = re.match(r"/Home/Documents/zz-broken\.stl, 7 objects, (\d+) bytes$", got)
         check(m is not None and (int(m.group(1)) - 84) % 50 == 0 and int(m.group(1)) > 84,
               "Export, STL did not write the scene's seven objects as a binary STL: %r" % got)
 
@@ -1294,7 +1294,7 @@ def main():
     got = os.path.join(WORK, "plane.png")
     fetched = subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
                               os.path.join(HERE, "kfs.lua"), "get", HOME_DISK,
-                              "/Home/Renders/plane.png", got],
+                              "/Home/Documents/plane.png", got],
                              capture_output=True, cwd=os.path.dirname(HERE))
     size, colours = None, 0
 

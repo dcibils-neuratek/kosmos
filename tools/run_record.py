@@ -9,7 +9,7 @@ formats itself and the driver's test pattern for a camera.
 
 The Camera app opens on the pattern; R starts a recording and R stops it,
 four seconds later; the app says how many frames and bytes it kept and where.
-Then, at the prompt, the file is asked for: that size, in `/Home/videos`, and
+Then, at the prompt, the file is asked for: that size, in `/Home/Captures`, and
 read by the video player's own MP4 reader - one H.264 track, the pattern's
 size, as many samples as frames, the first a key frame. And played
 (`roadmap.md` 4e): every frame decoded by FFmpeg through `/Kosmos/Libraries/video.lua`,
@@ -114,9 +114,9 @@ def main():
         guest.sendkey("r")
         started = guest.wait_for_line("camera: recording to ",
                                       "a recording to start", mark)
-        check(started.startswith("/Home/videos/")
+        check(started.startswith("/Home/Captures/")
               and started.endswith(".mp4"),
-              "the recording is not going into /Home/videos as an MP4: %r"
+              "the recording is not going into /Home/Captures as an MP4: %r"
               % started)
 
         time.sleep(4)
@@ -146,7 +146,7 @@ def main():
         got = row.groups() if row else None
 
         check(got is not None and got[0] == str(size),
-              "the file in /Home/videos is not the %d bytes the app kept: %r"
+              "the file in /Home/Captures is not the %d bytes the app kept: %r"
               % (size, got))
         check(got is not None and got[1:6] == ("1", "video", "avc1", "640",
                                                "480"),
@@ -196,7 +196,7 @@ def main():
         return 1
 
     print("PASS: %d checks on recording the camera (R, four seconds, R: %d "
-          "frames in %d bytes kept in /Home/videos, read back as one H.264 "
+          "frames in %d bytes kept in /Home/Captures, read back as one H.264 "
           "track of the pattern's size and frames, and played: every frame "
           "decoded by FFmpeg through /Kosmos/Libraries/video.lua, %.1f ms each under "
           "QEMU, and the eight bars their colours: %s)"

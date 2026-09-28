@@ -86,6 +86,12 @@ end
 -- has a perfectly ordinary file.
 --------------------------------------------------------------------------
 
+--
+-- Where the Open window starts: Movies, the place in Tracker's sidebar for
+-- films (`roadmap.md` 6w), when it is there, and `/Home` when it is not.
+--
+local FILMS = fs.getattr("/Home/Movies") and "/Home/Movies" or "/Home"
+
 local function say_instead(lines, title)
   local W, H = 540, 280
   local L = ui.layout
@@ -104,7 +110,7 @@ local function say_instead(lines, title)
   --
   local function open_one()
     local chooser = panel.open{
-      start = "/Home", title = "Open a film", filter = is_film,
+      start = FILMS, title = "Open a film", filter = is_film,
       on_choose = function(chosen)
         fs.send("/Running/wm", { type = "launch", program = "video",
                              args = chosen })
@@ -281,7 +287,7 @@ end
 
 local function open_another()
   local chooser = panel.open{
-    start = "/Home", title = "Open a film", filter = is_film,
+    start = FILMS, title = "Open a film", filter = is_film,
     on_choose = function(chosen)
       local reply = fs.send("/Running/wm", { type = "launch", program = "video",
                                          args = chosen })

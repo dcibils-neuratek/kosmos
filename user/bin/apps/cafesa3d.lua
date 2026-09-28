@@ -2665,9 +2665,11 @@ function final.tend()
   end
 end
 
--- The picture as it stands, at its own size, as a PNG in /Home/Renders.
+-- The picture as it stands, at its own size, as a PNG in /Home/Documents -
+-- with the scenes, where a person keeps what they made (`roadmap.md` 6w);
+-- it was /Home/Renders.
 function final.save()
-  local dir = "/Home/Renders"
+  local dir = "/Home/Documents"
 
   fs.send(dir, { type = "mkdir" })
   FILE.panel("save", {
@@ -3579,10 +3581,12 @@ end
 -- the samples are, written by `/Kosmos/Libraries/scenefile.lua` - so the reader that
 -- opens a sample opens a saved scene, and any other program's glTF reader
 -- opens it too. Through the Open and Save panel every application has,
--- into /Home/Scenes unless the scene came from somewhere else.
+-- into /Home/Documents unless the scene came from somewhere else - a place
+-- in Tracker's sidebar since 28 September (`roadmap.md` 6w), where it was
+-- /Home/Scenes.
 --------------------------------------------------------------------------
 
-FILE.DIR = "/Home/Scenes"
+FILE.DIR = "/Home/Documents"
 
 function FILE.base(path) return path:match("([^/]+)$") or path end
 function FILE.dir(path) return path:match("^(.*)/[^/]*$") end

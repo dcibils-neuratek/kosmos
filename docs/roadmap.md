@@ -2636,6 +2636,14 @@ processors, and still what follows USB:
    and `/home/Renders`). After `/Home` is spelled so (6s b), so they are made
    once under their own names; and `docs/drives.html`'s sidebar shows them
    first, as the drawing Places follows.
+   **DONE on 28 September** (`testing.md` 18.247): `places.STANDARD` names
+   the five once; any Tracker makes one it finds missing; the sidebar is
+   Home, Desktop, the five, what was pinned, and the Trash last, as
+   `docs/rightclick.html` orders it, with Lucide's `film` and `video` for
+   Movies and Captures. The Camera records into Captures, Music and Video
+   start in Music and Movies when they are there, and Cafesa3D keeps scenes
+   and renders in Documents. The Open and Save window's sidebar is not
+   changed yet.
 
 6v. **WANTED on 27 September - Compress and Extract in Tracker, and zip in
    a kit.** Diego: "add a way to right click a file in tracker, open context

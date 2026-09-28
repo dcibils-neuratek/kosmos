@@ -86,6 +86,10 @@ ICONS = {
     "music":      ("music", None),
     "pictures":   ("image", None),
     "drive":      ("hard-drive", None),
+    # The places a person keeps (`roadmap.md` 6w): Movies and Captures,
+    # beside Documents, Photos (`pictures`) and Music above.
+    "movies":     ("film", None),
+    "captures":   ("video", None),
 
     # The kit's checkbox, ticked: white on the accent, so heavier than the
     # rest - at 15 pixels Lucide's own 2 on a filled box reads as a scratch.

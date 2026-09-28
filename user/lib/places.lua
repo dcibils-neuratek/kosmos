@@ -33,6 +33,25 @@ local places = {}
 places.DIR = "/Home/Places"
 
 --
+-- **The places a person keeps** (`roadmap.md` 6w), after Home and Desktop in
+-- Tracker's sidebar and before anything pinned: a folder each in `/Home`,
+-- made the first time it is missing, as Tracker makes `Desktop`. Diego, 27
+-- September: "tracker needs places like photos, documents, movies,
+-- captures, music", and "Captures is basically webcam video captures". The
+-- applications keep what they make and look first in them, each naming its
+-- own: the Camera's recordings in `/Home/Captures`, Music and Video starting
+-- in `/Home/Music` and `/Home/Movies`, Cafesa3D's scenes and renders in
+-- `/Home/Documents`.
+--
+places.STANDARD = {
+  { name = "Documents", path = "/Home/Documents", icon = "document" },
+  { name = "Photos",    path = "/Home/Photos",    icon = "pictures" },
+  { name = "Movies",    path = "/Home/Movies",    icon = "movies" },
+  { name = "Captures",  path = "/Home/Captures",  icon = "captures" },
+  { name = "Music",     path = "/Home/Music",     icon = "music" },
+}
+
+--
 -- A path under `/Drives`, as its volume's name and the rest - `/` for the
 -- volume itself. Anything else is not on a drive.
 --

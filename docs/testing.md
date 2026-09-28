@@ -11922,3 +11922,28 @@ the machine writes fails the machine's own check of it. On both boards
 from a folder's right click starts `zip` and ends done, Extract from the
 zip's opens it into `renders 2`, and both files read back.
 
+## 18.247 The places a person keeps (6w)
+
+Diego: "tracker needs places like photos, documents, movies, captures,
+music", and "Captures is basically webcam video captures". Named once, in
+`places.STANDARD` - Documents, Photos, Movies, Captures, Music, each a
+folder in `/Home` with its own picture (Lucide's `film` and `video` added
+for the two it had none for, the rest re-rendered by the tool and put back
+as they were). Any Tracker makes one it finds missing, as the desktop
+makes `Desktop`. The sidebar is ordered as `docs/rightclick.html` draws it:
+Home, Desktop, the five, the places a person pinned, and the Trash last.
+
+**The applications agree with them**: the Camera records into
+`/Home/Captures` (it was `/Home/videos`), Music opens `/Home/Music` first
+and Video's Open window starts in `/Home/Movies` when each is there, and
+Cafesa3D saves its scenes and renders in `/Home/Documents` (they were
+`/Home/Scenes` and `/Home/Renders`); `run_record.py`, `run_cafesa3d.py`,
+`run_script.py` and `camera.sh` follow.
+
+**Checked**: `test_places.lua` (27) holds the five and their order; the
+display harness's `places` (6) holds Tracker's sidebar, as Tracker reports
+it opening on a home with nothing in it, to Home, Desktop, Documents,
+Photos, Movies, Captures, Music, Trash - and drops a folder below it, where
+it used to drop at 300, which is the Trash's row now and would have thrown
+the folder away.
+
