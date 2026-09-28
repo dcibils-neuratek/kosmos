@@ -2252,6 +2252,18 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zs. **ASKED on 28 September - Editor becomes Text Editor: documents in
+   plain text or Markdown.** Diego: "i realized the edit app is now
+   worthless as the ide replaced it with a real Lua editor", "So let's
+   convert edit into a Text Editor app that allows the user to write simple
+   documents in either plain text or markdown", "let's mockup the new
+   version of edit called Text Editor to be a general text editor app".
+   Editor (`editor.lua`) edits and runs Lua, which the IDE (6n) does
+   properly; Reader shows Markdown in one face, its parser dropping
+   `**bold**` because "this font has one weight", which stopped being true
+   when the Plex family arrived. **Drawn first**, as every app is:
+   `docs/texteditor.html`, with what is Diego's to decide at its end.
+
 6zr. **FOUND on 28 September - `context_switch` is 4.1% slower and
    `ipc_roundtrip` 2.2% than their baselines** (`make bench`, under
    `-icount`, so exact): 12.316 to 12.816 and 63.523 to 64.899. Not from
