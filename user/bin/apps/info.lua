@@ -20,15 +20,17 @@
 -- `/Kosmos/Libraries/tally.lua` counts a slice every pass while the numbers
 -- climb - a window that walked first would be a window that did not open.
 --
--- **No Modified yet.** A file in `/Home` is stamped with the counter since
--- the machine started, which means nothing after a restart; the disk server
--- is given the clock first (6za step b), and then this gains the line.
+-- **Modified is the date the disk kept** (6za step b): a file in `/Home`
+-- written since the disk server was given the clock says when, in local
+-- time; one written before - stamped with a count since some boot - and a
+-- file on a store that keeps no dates say nothing rather than a wrong one.
 
 local ui       = use("/Kosmos/Libraries/ui.lua")
 local files    = use("/Kosmos/Libraries/files.lua")
 local types    = use("/Kosmos/Libraries/filetypes.lua")
 local placelib = use("/Kosmos/Libraries/places.lua")
 local tally    = use("/Kosmos/Libraries/tally.lua")
+local clock    = use("/Kosmos/Libraries/clock.lua")
 
 local theme = ui.theme
 
@@ -157,6 +159,11 @@ local function rows()
     local size = tonumber(attrs.size) or 0
 
     out[#out + 1] = { "Size", files.size(size), grouped(size) .. " bytes" }
+  end
+
+  if one and math.type(attrs.modified) == "integer" then
+    out[#out + 1] = { "Modified",
+                      clock.long_string(clock.at(attrs.modified)) }
   end
 
   if pinned then

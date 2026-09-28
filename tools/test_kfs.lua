@@ -709,6 +709,36 @@ check(kfs.unlink(sb, "/WORK/NOTES.TXT") == true and names("/Work") == "Docs",
       "a file is removed whatever the case it is named in")
 
 --------------------------------------------------------------------------
+-- A file's time: a date, when there was a clock (`roadmap.md` 6za step b).
+--------------------------------------------------------------------------
+
+do
+  local sept27 = 1790532000                  -- 27 September 2026, 18:00 UTC
+
+  check(kfs.modified({ mtime = kfs.stamp(sept27) }) == sept27,
+        "a dated stamp gives its second back")
+
+  check(kfs.modified({ mtime = kfs.stamp(sept27, 3) }) == sept27
+        and kfs.stamp(sept27, 3) > kfs.stamp(sept27, 2)
+        and kfs.stamp(sept27 + 1, 0) > kfs.stamp(sept27, 65535),
+        "the writes of one second stay in order and apart, and the next "
+        .. "second comes after all of them")
+
+  -- A count from some boot is no date, however date-like its size: on the
+  -- ARM board 29 seconds of uptime is 1.8 billion, which as seconds is 2027.
+  check(kfs.modified({ mtime = 1812500000 }) == nil
+        and kfs.modified({ mtime = 0 }) == nil
+        and kfs.modified({}) == nil,
+        "a count since boot, a zero and nothing are no date")
+
+  local _, err = kfs.store(sb, "/dated.txt", "when", kfs.stamp(sept27, 7))
+  local _, node = kfs.find(sb, "/dated.txt")
+
+  check(err == nil and node and kfs.modified(node) == sept27,
+        "a file stored with a dated stamp reads its date back off the disk")
+end
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed.")

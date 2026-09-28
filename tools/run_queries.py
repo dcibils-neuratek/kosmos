@@ -203,6 +203,16 @@ def main():
             'if x == "pdf" or x == "compress" or x == "3d" then n = n + 1 end end '
             'print("K-KITS", n)',
 
+            # **A file's time is a date** (`roadmap.md` 6za step b): written
+            # to the disk now, its `modified` is the clock's second, give or
+            # take the few a write and a read take - where it was a count
+            # since boot, which no clock could be held to.
+            'fs.write("/Home/dated.txt", "when") '
+            'local a = fs.getattr("/Home/dated.txt") or {} '
+            'local c = fs.read("/Devices/clock") or {} '
+            'print("D-DATED", math.type(a.modified), c.epoch ~= nil and '
+            'math.type(a.modified) == "integer" and math.abs(a.modified - c.epoch) <= 5)',
+
             # `use` is a program's, not the prompt's: a program that asks
             # for one library by two spellings.
             'fs.write("/Temporary/usetwice.lua", "print(\\"C-USE\\", '
@@ -289,6 +299,9 @@ def main():
              "one folder and no path as a name"),
             ("K-KITS", "3",
              "/Kosmos/Kits did not list the image's kits - pdf, compress, 3d"),
+            ("D-DATED", "integer true",
+             "a file written to the disk did not carry the clock's date as "
+             "its modified, within five seconds"),
             ("T-BIG", "true 200 true",
              "a table larger than a message was not kept in /Temporary and read "
              "back whole"),

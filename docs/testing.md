@@ -11655,3 +11655,31 @@ suite (`run_ide.py`, 27): a window draws with `ui.sized("mono", 24)` and
 reads its own op back, which must be `mono 24`. Control: the look-up
 removed - the op says `6 nil`, the number and no size, and the check fails.
 
+## 18.240 A file's time is a date (6za step b)
+
+A file in `/Home` was stamped with the counter since boot, so nothing could
+say when it was changed. **The disk server is handed the devices endpoint**
+- the clock is a capability (`design.md` §4.4), and a server reaches what
+it is handed - and stamps each write with `/Devices/clock`'s second:
+`kfs.stamp`, the seconds moved up sixteen bits with the writes of that
+second counted in the low sixteen (a cache of program images keys on a
+file's size and this, so two writes in one second must still differ), and
+`kfs.DATED` - bit 62 - set. A stamp without it is a count from some boot
+and says no date: on this board 29 seconds of uptime is 1.8 billion, which
+as seconds is 2027, and no count reaches 2^62. `getattr` answers
+`modified`; Info says it in local time (`clock.at`, `clock.long_string`).
+
+The devices protocol's client (`dev_request` and its layouts) moved out of
+the namespace to file scope, so the disk server and the namespace share it
+rather than `devproto.h` being written a third time.
+
+**Checks.** `test_kfs.lua` 79 (4 new): a stamp gives its second back; the
+writes of a second stay in order and apart, and the next second follows
+all of them; a count since boot, a zero and nothing are no date; a file
+stored with a stamp reads its date back off the disk. `test_clock.lua`, 6,
+new: a moment in UTC, three hours west, across midnight, now, none.
+`run_queries.py` 34: `D-DATED` - a file written to the disk carries an
+integer `modified` within five seconds of `/Devices/clock`. Control: the
+disk server stamping with the counter again - `nil false`. Seen under QEMU
+with a kfs disk: Info on a film says "Modified 28 September 2026, 01:40".
+

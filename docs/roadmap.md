@@ -2406,6 +2406,14 @@ processors, and still what follows USB:
    drawn to the page's measurements - Diego: "make sure we make them pixel
    perfect on kosmos". A menu item has a dim word on its right now (`hint`
    in `ui.lua`), which "Open ... Video" and "Delete ... to the Trash" are.
+   **(b) DONE on 27 September** (`testing.md` 18.240): the disk server is
+   handed the devices endpoint and stamps a write with the clock's date
+   (`kfs.stamp`, `kfs.DATED`), and Info says Modified in local time.
+   Written before, a file says no date rather than a wrong one. The devices
+   protocol's client moved out of the namespace so the two share one copy
+   of `devproto.h`'s layouts. **And Tracker could have its Modified column
+   now** - it had none because there was no date to put in it; not asked
+   for, so not built.
 
 6z. **WANTED on 27 September - what opens what, and a Preferences page for
    it.** Diego, on the M700 with 0.10.174, a film in his home refused -

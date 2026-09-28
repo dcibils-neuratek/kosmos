@@ -524,6 +524,79 @@ end
 --
 
 --------------------------------------------------------------------------
+-- /Devices, which is C and speaks `devproto.h`.
+--
+-- **Out here, not inside the namespace**, since 27 September: the disk
+-- server has no namespace and is handed the devices endpoint to read the
+-- clock from (`roadmap.md` 6za step b), and a second copy of these layouts
+-- would be a third place `devproto.h` is written. The namespace and the
+-- disk server both ask through this one.
+--------------------------------------------------------------------------
+
+local DEV_REQUEST = "<I4c20"          -- op, name[20]
+local DEV_FIELD   = "<I8I4c20c32"     -- number, kind, name[20], text[32]
+local DEV_HEAD    = "<I4I4"           -- error, count
+
+assert(#string.pack(DEV_REQUEST, 0, "") == 24,
+       "namespace: the /Devices request layout does not match devproto.h")
+assert(#string.pack(DEV_FIELD, 0, 0, "", "") == 64,
+       "namespace: the /Devices field layout does not match devproto.h")
+
+local DEV_OPS = { list = 1, read = 2, getattr = 3 }
+local DEV_ERRORS = {
+  [1] = "the kernel would not say",
+  [2] = "no such device",
+  [3] = "the devices server did not understand that",
+}
+
+local function trim(s) return (s:gsub("%z.*$", "")) end
+
+local function dev_request(capability, op, rest)
+  local code = DEV_OPS[op]
+
+  if not code then
+    return nil, "no such operation: " .. tostring(op)
+  end
+
+  --
+  -- A name longer than the field is no device the server holds, and is
+  -- answered as one. `string.pack` would raise instead - ending whoever
+  -- asked with a line about packing - and cutting the name could find a
+  -- different device that shares its first twenty bytes.
+  --
+  if #(rest or "") > 20 then return nil, DEV_ERRORS[2] end
+
+  local reply, why = sys.call_raw(capability,
+                                  string.pack(DEV_REQUEST, code, rest or ""))
+
+  if not reply then return nil, tostring(why) end
+
+  if #reply < 8 then return nil, "a /Devices reply of the wrong size" end
+
+  local err, count = string.unpack(DEV_HEAD, reply)
+
+  if err ~= 0 then
+    return nil, DEV_ERRORS[err] or ("device error " .. tostring(err))
+  end
+
+  local names, value = {}, {}
+
+  for i = 1, count do
+    local at = 8 + (i - 1) * 64 + 1
+    local number, kind, name, text = string.unpack(DEV_FIELD, reply, at)
+
+    name = trim(name)
+    names[i] = name
+    value[name] = (kind == 1) and trim(text) or number
+  end
+
+  if op == "list" then return { ok = true, entries = names } end
+  if op == "getattr" then return { ok = true, attrs = value } end
+
+  return { ok = true, value = value }
+end
+
+--------------------------------------------------------------------------
 -- The client side of the protocol: a namespace.
 --
 -- design.md 2: what a process has not mounted does not exist. Not permission
@@ -891,23 +964,6 @@ local function new_namespace()
     [6] = "the volume is damaged",
   }
 
-  local DEV_REQUEST = "<I4c20"          -- op, name[20]
-  local DEV_FIELD   = "<I8I4c20c32"     -- number, kind, name[20], text[32]
-  local DEV_HEAD    = "<I4I4"           -- error, count
-
-  assert(#string.pack(DEV_REQUEST, 0, "") == 24,
-         "namespace: the /Devices request layout does not match devproto.h")
-  assert(#string.pack(DEV_FIELD, 0, 0, "", "") == 64,
-         "namespace: the /Devices field layout does not match devproto.h")
-
-  local DEV_OPS = { list = 1, read = 2, getattr = 3 }
-  local DEV_ERRORS = {
-    [1] = "the kernel would not say",
-    [2] = "no such device",
-    [3] = "the devices server did not understand that",
-  }
-
-  local function trim(s) return (s:gsub("%z.*$", "")) end
 
   --
   -- **A volume's identity, as text that says what it is.** Sixteen bytes
@@ -1060,50 +1116,6 @@ local function new_namespace()
              more = more ~= 0 }
   end
 
-  local function dev_request(capability, op, rest)
-    local code = DEV_OPS[op]
-
-    if not code then
-      return nil, "no such operation: " .. tostring(op)
-    end
-
-    --
-    -- A name longer than the field is no device the server holds, and is
-    -- answered as one. `string.pack` would raise instead - ending whoever
-    -- asked with a line about packing - and cutting the name could find a
-    -- different device that shares its first twenty bytes.
-    --
-    if #(rest or "") > 20 then return nil, DEV_ERRORS[2] end
-
-    local reply, why = sys.call_raw(capability,
-                                    string.pack(DEV_REQUEST, code, rest or ""))
-
-    if not reply then return nil, tostring(why) end
-
-    if #reply < 8 then return nil, "a /Devices reply of the wrong size" end
-
-    local err, count = string.unpack(DEV_HEAD, reply)
-
-    if err ~= 0 then
-      return nil, DEV_ERRORS[err] or ("device error " .. tostring(err))
-    end
-
-    local names, value = {}, {}
-
-    for i = 1, count do
-      local at = 8 + (i - 1) * 64 + 1
-      local number, kind, name, text = string.unpack(DEV_FIELD, reply, at)
-
-      name = trim(name)
-      names[i] = name
-      value[name] = (kind == 1) and trim(text) or number
-    end
-
-    if op == "list" then return { ok = true, entries = names } end
-    if op == "getattr" then return { ok = true, attrs = value } end
-
-    return { ok = true, value = value }
-  end
 
   --------------------------------------------------------------------------
   -- /bin, which is C and speaks `binproto.h`.
@@ -2815,6 +2827,32 @@ local TABLE_MARK = "\0KTV"
 local function diskfs_handlers(state)
   local kfs = state.kfs
 
+  --
+  -- **What a write is stamped with: the date, when there is a clock**
+  -- (`roadmap.md` 6za step b). `/Devices/clock` asked through the devices
+  -- endpoint this server is handed for nothing else - one exchange a
+  -- write, beside the several a write already is - and made a stamp by
+  -- `kfs.stamp`, with how many writes this second has seen so they stay in
+  -- order. No clock is the counter since boot, as it was: the order kept,
+  -- and no date claimed.
+  --
+  local last_second, nth = nil, 0
+
+  local function stamp()
+    local r = state.clock and dev_request(state.clock, "read", "clock")
+    local epoch = r and r.value and math.tointeger(r.value.epoch)
+
+    if not epoch or epoch <= 0 then return sys.ticks() end
+
+    if epoch == last_second then
+      nth = nth + 1
+    else
+      last_second, nth = epoch, 0
+    end
+
+    return kfs.stamp(epoch, nth)
+  end
+
   -- The superblock, read once at mount and kept.
   --
   -- Not re-read per request: it does not change except at format, and a
@@ -2860,7 +2898,7 @@ local function diskfs_handlers(state)
       local disk = sys.disk()
 
       if disk and blank_disk() then
-        local made, why = kfs.mkfs(disk.sectors, sys.ticks())
+        local made, why = kfs.mkfs(disk.sectors, stamp())
 
         if made then
           print("disk: it was blank, so it has been formatted")
@@ -2929,6 +2967,7 @@ local function diskfs_handlers(state)
                  or attrs.kind or "file"
     attrs.size    = node.size
     attrs.mtime   = node.mtime
+    attrs.modified = kfs.modified(node)
     attrs.extents = #node.extents
 
     -- Always indexed, without anyone declaring it, which is the BFS rule
@@ -3326,7 +3365,7 @@ local function diskfs_handlers(state)
           return { ok = false, error = tostring(why) }
         end
 
-        local sb, err = kfs.mkfs(disk.sectors, sys.ticks())
+        local sb, err = kfs.mkfs(disk.sectors, stamp())
 
         if not sb then
           return { ok = false, error = tostring(err) }
@@ -3399,7 +3438,7 @@ local function diskfs_handlers(state)
         }
 
         local number, serr = atomic(sb, kfs.store, req.path, reader,
-                                    sys.ticks())
+                                    stamp())
 
         if not number then
           return done_with({ ok = false, error = tostring(serr) })
@@ -3444,7 +3483,7 @@ local function diskfs_handlers(state)
         body = tostring(body)
       end
 
-      local number, err = atomic(sb, kfs.store, req.path, body, sys.ticks())
+      local number, err = atomic(sb, kfs.store, req.path, body, stamp())
 
       if not number then
         return { ok = false, error = tostring(err) }
@@ -3559,7 +3598,7 @@ local function diskfs_handlers(state)
         return { ok = false, error = "there is no filesystem here" }
       end
 
-      local ok, err = atomic(sb, kfs.mkdir, req.path, sys.ticks())
+      local ok, err = atomic(sb, kfs.mkdir, req.path, stamp())
 
       if not ok then
         return { ok = false, error = tostring(err) }
@@ -3607,6 +3646,7 @@ local function diskfs_handlers(state)
                     or attrs.kind or "file"
       attrs.size  = node.size
       attrs.mtime = node.mtime
+      attrs.modified = kfs.modified(node)
       -- How the file is laid out on the disk. Not something a filesystem
       -- usually tells you, and worth telling here: this is a machine for
       -- learning how one works, and "one extent" versus "nine" is the
@@ -4163,7 +4203,7 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
   end
 end
 
-local function diskfs_main(endpoint, read_cap, write_cap)
+local function diskfs_main(endpoint, read_cap, write_cap, clock_cap)
   --
   -- Split three ways, because "the libraries would not load" has two very
   -- different causes and they need opposite fixes:
@@ -4258,7 +4298,8 @@ local function diskfs_main(endpoint, read_cap, write_cap)
     return wrote, why
   end
 
-  ok = pcall(serve, endpoint, { kfs = kfs, device = device }, diskfs_handlers)
+  ok = pcall(serve, endpoint, { kfs = kfs, device = device, clock = clock_cap },
+             diskfs_handlers)
 
   if not ok then sys.exit(DIED_SERVING) end
 end
@@ -5757,8 +5798,13 @@ if role == ROLE_INIT then
   -- else is given - so `/Home` on a stick is this process's to write and
   -- nobody else's, as the kernel's disk is.
   --
+  --
+  -- And the devices endpoint, for the clock and nothing else it uses: a
+  -- file's time is a date now (`roadmap.md` 6za step b), and a server
+  -- reaches what it is handed.
+  --
   local diskfs  = start("the disk server", ROLE_DISKFS,
-                        { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP },
+                        { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
   --
@@ -6165,7 +6211,7 @@ end
 
 if role == ROLE_DISKFS then
   sys.name("diskfs")
-  diskfs_main(CAP, 1, 2)
+  diskfs_main(CAP, 1, 2, 3)
   return
 end
 

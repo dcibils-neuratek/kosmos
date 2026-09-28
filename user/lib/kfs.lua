@@ -135,6 +135,35 @@ end
 
 local INODE_HEAD = "<I4I4I8I8I4I4"     -- kind, links, size, mtime, attrs, n
 
+--
+-- **A file's time, a date when there is a clock** (`roadmap.md` 6za step
+-- b). `mtime` was the counter since the machine started - `sys.ticks()` -
+-- which orders writes and means nothing after a restart, so no window could
+-- say when a file was changed. With a clock it holds the date: seconds
+-- since 1970, UTC, moved up sixteen bits, the low sixteen counting the
+-- writes within that second so two of them stay in order and apart (a cache
+-- of program images is keyed on a file's size and this); and `DATED` set.
+--
+-- **A stamp without `DATED` is a count from some boot**, and says no date
+-- rather than a wrong one. A count can reach any number a date could - on
+-- this board 29 seconds of uptime is 1.8 billion, which as seconds is 2027 -
+-- but never 2^62, which is seventy years at 2 GHz.
+--
+kfs.DATED = 1 << 62
+
+function kfs.stamp(epoch, nth)
+  return kfs.DATED | (epoch << 16) | ((nth or 0) & 0xffff)
+end
+
+-- The date a node was last changed, in seconds since 1970, or nil.
+function kfs.modified(node)
+  local m = math.tointeger(node and node.mtime) or 0
+
+  if m & kfs.DATED == 0 then return nil end
+
+  return (m & ~kfs.DATED) >> 16
+end
+
 function kfs.pack_inode(node)
   local out = string.pack(INODE_HEAD,
                           node.kind or kfs.KIND_FREE,

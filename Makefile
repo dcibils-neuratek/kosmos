@@ -3274,6 +3274,8 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# a folder a slice at a time (`roadmap.md` 6za).
 	$(HOSTDIR)/lua tools/test_filemenu.lua
 	$(HOSTDIR)/lua tools/test_tally.lua
+	@# The local time of a moment: the Deskbar's clock, and Info's Modified.
+	$(HOSTDIR)/lua tools/test_clock.lua
 	@# What kind of thing a process is, for Processes: a driver by its
 	@# device authority, a server by init starting it, the rest by /bin.
 	$(HOSTDIR)/lua tools/test_prockind.lua

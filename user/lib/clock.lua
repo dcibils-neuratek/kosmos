@@ -56,6 +56,9 @@ end
 clock.DAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 clock.MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+clock.FULL_MONTHS = { "January", "February", "March", "April", "May", "June",
+                      "July", "August", "September", "October", "November",
+                      "December" }
 
 --
 -- Minutes east of UTC. Montevideo is -180, Berlin is 60, Kathmandu is 345.
@@ -112,8 +115,17 @@ function clock.now()
 
   if type(dev) ~= "table" or not dev.epoch then return nil end
 
+  return clock.at(dev.epoch)
+end
+
+--
+-- **Any moment, where you are**: `now`'s answer for `epoch` rather than for
+-- this second - a file's Modified (`roadmap.md` 6za step b), which is a
+-- date the disk kept rather than the time it is.
+--
+function clock.at(epoch)
   local offset = clock.offset()
-  local local_epoch = dev.epoch + offset * 60
+  local local_epoch = epoch + offset * 60
 
   -- Floor division, so a machine set west of UTC on the first hours of the
   -- day lands on the previous day rather than on day zero of nothing.
@@ -130,7 +142,7 @@ function clock.now()
     weekday = (days + 4) % 7,
 
     offset = offset,
-    epoch = dev.epoch,
+    epoch = epoch,
   }
 end
 
@@ -140,6 +152,14 @@ function clock.time_string(now)
   if not now then return "--:--" end
 
   return ("%02d:%02d"):format(now.hour, now.min)
+end
+
+-- As the drawings write a file's date: 27 September 2026, 18:42.
+function clock.long_string(t)
+  if not t then return "no clock" end
+
+  return ("%d %s %d, %02d:%02d"):format(t.day, clock.FULL_MONTHS[t.month],
+                                        t.year, t.hour, t.min)
 end
 
 function clock.date_string(now)
