@@ -2533,7 +2533,8 @@ processors, and still what follows USB:
    real keyboard passed through from the Mac (`usb-host`).
    **STARTED on 28 September, first in Diego's order** ("go on with the
    proposed plan for the roadmap"). In steps, each gated before the next:
-   - **a** - reading USB MIDI, as pure C held on the Mac: the class
+   - **a** - **DONE on 28 September** (`testing.md` 18.257) - reading USB
+     MIDI, as pure C held on the Mac: the class
      descriptors - which interface, its jacks and their names, which cable
      each endpoint carries - and the four-byte event packets, both ways.
      Fixtures: Novation's Launchpad MK2 as a Linux `lsusb` printed it
@@ -2545,6 +2546,11 @@ processors, and still what follows USB:
      region with the counter's time on each, sending back to the device -
      and a virtual keyboard under `opt/kosmos/midi`, as the camera has its
      pattern, so both boards and the gate have one without USB. `midi.lua`.
+     **DONE on 28 September** (`testing.md` 18.258): and the `midi` program;
+     the kernel's watch slots from four to eight for the driver's fifth
+     endpoint; and raw requests naming their protocol, which the test's
+     last check needed - a program without `needs midi` was answered by the
+     devices server behind the path.
    - **c** - Groove plays from it: PulseMusic's keys, pads, bend, sustain and
      knobs, and the Launchkey's DAW mode with its pads lit (`launchkey.lua`,
      converted), held by the gate through the virtual keyboard.

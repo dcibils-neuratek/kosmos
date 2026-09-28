@@ -30,7 +30,7 @@ local ERRORS = {
 }
 
 local function request(op, level)
-  local reply, why = fs.raw("/Devices/backlight", string.pack(REQUEST, op, level))
+  local reply, why = fs.raw("/Devices/backlight", string.pack(REQUEST, op, level), nil, "backlight")
 
   if not reply then return nil, tostring(why) end
 

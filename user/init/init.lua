@@ -2610,8 +2610,24 @@ local function new_namespace()
   -- server. A C server reads a struct; only the client library and that
   -- server know its shape, and they share a header that says so.
   --
-  function ns.raw(path, bytes, pass)
+  --
+  -- **And the protocol the caller expects, when it names one.** A path is
+  -- served by the longest mount that holds it, so a program that was not
+  -- given `/Devices/midi` still resolves the path - to `/Devices`, the
+  -- devices server - which read a MIDI request and answered it: `midi.lua`
+  -- took the reply for seven MIDI devices (`roadmap.md` 6zg). A struct means
+  -- something only to the server whose header it is, so a caller that says
+  -- which it speaks is told the path is not there when it resolves to any
+  -- other - which, for this process, is the truth.
+  --
+  function ns.raw(path, bytes, pass, proto)
     local capability = resolve(path)
+
+    if proto and capability then
+      local _, _, _, speaks = match(path)
+
+      if speaks ~= proto then capability = nil end
+    end
 
     if not capability then
       return nil, "no such path: " .. path
@@ -4355,7 +4371,8 @@ local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
-                          blocks_cap, drives_cap, backlight_cap, camera_cap)
+                          blocks_cap, drives_cap, backlight_cap, camera_cap,
+                          midi_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -5158,7 +5175,7 @@ query. `find` and `watch` are built on exactly these two calls.
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera = nil
+    local camera, midi = nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -5169,15 +5186,19 @@ query. `find` and `watch` are built on exactly these two calls.
         flags = flags | SPAWN_NET
       end
       if want == "camera" then camera = camera_cap end
+      if want == "midi" then midi = midi_cap end
     end
 
-    -- The camera last, and only when declared: everything before it keeps
-    -- its number, and a program that did not ask never holds it.
+    -- The camera and MIDI last, and only when declared: everything before
+    -- them keeps its number, and a program that did not ask never holds
+    -- either. Their places are said in the request, as the rest are.
     local caps = { ep, console_cap, ramfs_cap, bin_cap, devices_cap,
                    lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                    blocks_cap, drives_cap, backlight_cap }
+    local camera_at, midi_at = nil, nil
 
-    if camera then caps[#caps + 1] = camera end
+    if camera then caps[#caps + 1] = camera; camera_at = #caps - 1 end
+    if midi then caps[#caps + 1] = midi; midi_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -5192,7 +5213,7 @@ query. `find` and `watch` are built on exactly these two calls.
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12, camera = camera and 13 or nil,
+      backlight = 12, camera = camera_at, midi = midi_at,
       home_in_memory = home_in_memory or nil,
     })
 
@@ -5820,6 +5841,13 @@ if role == ROLE_INIT then
   --
   local CAMERA_EP = sys.endpoint()
 
+  --
+  -- **`/Devices/midi`**, answered by the same driver (`usb.md` §12), and
+  -- handed down the same way: only to a program that declares `kosmos: needs
+  -- midi`, and to the desktop so it can pass it on.
+  --
+  local MIDI_EP = sys.endpoint()
+
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
     sys.exit(1)
@@ -5952,7 +5980,7 @@ if role == ROLE_INIT then
   do
     local _, err = sys.spawn(ROLE_XHCI,
                              { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
-                               FRAMES_EP, CAMERA_EP },
+                               FRAMES_EP, CAMERA_EP, MIDI_EP },
                              SPAWN_DEVICES)
 
     if err then
@@ -6152,7 +6180,7 @@ if role == ROLE_INIT then
                       -- runner names them by number further down.
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
-                        DRIVES_EP, BACKLIGHT_EP, CAMERA_EP },
+                        DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6224,7 +6252,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
   return
 end
 
@@ -6389,6 +6417,7 @@ if role == ROLE_RUNNER then
     ns.mount("/Devices/backlight", req.backlight, nil, "backlight")
   end
   if req.camera  then ns.mount("/Devices/camera",  req.camera, nil, "camera") end
+  if req.midi    then ns.mount("/Devices/midi",    req.midi, nil, "midi") end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -6518,7 +6547,7 @@ if role == ROLE_RUNNER then
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera_at = nil
+    local camera_at, midi_at = nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -6536,6 +6565,11 @@ if role == ROLE_RUNNER then
         caps[#caps + 1] = req.camera
         camera_at = #caps - 1
       end
+
+      if want == "midi" and req.midi then
+        caps[#caps + 1] = req.midi
+        midi_at = #caps - 1
+      end
     end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
@@ -6551,7 +6585,7 @@ if role == ROLE_RUNNER then
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12, camera = camera_at,
+      backlight = 12, camera = camera_at, midi = midi_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Inherited rather than decided again. This is a program starting a

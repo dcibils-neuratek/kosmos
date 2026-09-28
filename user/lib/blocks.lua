@@ -55,7 +55,7 @@ end
 local function exchange(op, fields, pass)
   local bytes = string.pack(REQUEST, op, fields.unit or 0, fields.lba or 0,
                             fields.count or 0, fields.handle or 0)
-  local reply, why = fs.raw("/Devices/blocks", bytes, pass)
+  local reply, why = fs.raw("/Devices/blocks", bytes, pass, "blocks")
 
   if not reply then return nil, tostring(why) end
 

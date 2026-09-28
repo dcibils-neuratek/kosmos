@@ -2274,6 +2274,40 @@ static int l_region_read(lua_State *L)
 }
 
 /*
+ * `sys.region_load32(cap, offset)` - one 32-bit word of a region, little-
+ * endian and aligned, read with acquire (`roadmap.md` 6zg).
+ *
+ * For a ring another process writes: it fills a slot and then publishes
+ * its index with release, and a reader that loads the index with acquire
+ * sees the slot whole. `region_read` is a plain copy and orders nothing, so
+ * on a machine whose cores reorder loads - an ARM one - a reader that took
+ * the index with it could read a slot from before the writer filled it.
+ */
+static int l_region_load32(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    lua_Integer offset = luaL_checkinteger(L, 2);
+    uintptr_t at;
+    size_t bytes;
+
+    if (!region_of(cap, &at, &bytes)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "that is not a region this process can map: %s", region_fail);
+        return 2;
+    }
+
+    if (offset < 0 || (offset & 3) != 0 || (size_t)offset > bytes - 4) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that is not an aligned word inside the region");
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)__atomic_load_n(
+        (const uint32_t *)(at + (uintptr_t)offset), __ATOMIC_ACQUIRE));
+    return 1;
+}
+
+/*
  * **A program's image, from a file** (`docs/elf.md` step 4).
  *
  * `sys.elf_plan(first, file_len [, head])` - what a program's ELF says, from
@@ -3035,6 +3069,7 @@ static const luaL_Reg sys_functions[] = {
     { "memory_size", l_memory_size },
     { "region_write", l_region_write },
     { "region_read",  l_region_read },
+    { "region_load32", l_region_load32 },
     { "disk",        l_disk },
     { "net",         l_net },
     { "net_send",    l_net_send },

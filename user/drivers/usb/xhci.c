@@ -74,10 +74,12 @@
 #include "ethproto.h"
 #include "ethring.h"
 #include "cameraproto.h"
+#include "midiproto.h"
 #include "storage_decode.h"
 #include "pad_decode.h"
 #include "usb_decode.h"
 #include "uvc_decode.h"
+#include "midi_decode.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
 #define CAP_LENGTH_VERSION  0x00u   /* CAPLENGTH 7:0, HCIVERSION 31:16 (BCD) */
@@ -241,6 +243,8 @@
 #define DEVICE_PAGE_PAD_SAY 7u          /* ...and what is sent on it */
 #define DEVICE_PAGE_NOTIFY  6u          /* an Ethernet adapter's interrupt ring */
 #define DEVICE_PAGE_NOTE    7u          /* ...and the notifications it reads */
+#define DEVICE_PAGE_MIDI_OUT 6u         /* a MIDI device's bytes out */
+#define DEVICE_PAGE_MIDI_IN  7u         /* ...and its events in */
 #define PAD_SAY_SLOT        64u         /* bytes a message, a page of them */
 #define SCRATCH_OFFSET      64u         /* the array, after the table's entry */
 #define SCRATCHPADS_MAX     ((PAGE - SCRATCH_OFFSET) / 8u)
@@ -515,6 +519,41 @@ struct ether {
 };
 
 /*
+ * **A MIDI keyboard or controller** (`usb.md` §12, `roadmap.md` 6zg): two
+ * bulk endpoints, and on the IN one a read kept outstanding, as an Ethernet
+ * adapter's is. Its rings are the slot's OUT and IN pages, and what moves on
+ * them the slot's last two - a device is one class, so nothing else here
+ * uses them.
+ *
+ * `id` is what `/Devices/midi` calls it: given when it arrives and never to
+ * anything else, so a program's SEND cannot reach a keyboard plugged in
+ * after the one it meant.
+ */
+struct usbmidi {
+    bool          on;
+    uint32_t      id;
+    unsigned      port;
+    unsigned      in_dci;
+    unsigned      out_dci;
+    unsigned      in_packet;
+    unsigned      out_packet;
+    struct ring   in;
+    struct ring   out;
+    uint8_t      *in_data;              /* the next read lands here */
+    uint64_t      in_bus;
+    uint8_t      *out_data;             /* and what is sent goes from here */
+    uint64_t      out_bus;
+    bool          receiving;            /* a read is out on the bulk IN */
+    unsigned      nin;                  /* ports it sends on, by cable */
+    unsigned      nout;
+    char          in_names[MIDI_PORTS_NAMED][NAME_MAX_CHARS + 1];
+    char          out_names[MIDI_PORTS_NAMED][NAME_MAX_CHARS + 1];
+    unsigned long events;
+    unsigned long sent;
+    struct device dev;
+};
+
+/*
  * **How many unit numbers have been given out.** A stick takes the next as it
  * becomes ready and keeps it until it leaves, and no other stick is ever given
  * it (USB step 5e). The disk server keeps the unit its partition is on, so a
@@ -577,6 +616,9 @@ struct controller {
 
     /* ...and its Ethernet adapter. */
     struct ether  ether[DEVICES_MAX + 1];
+
+    /* ...and its MIDI keyboard. */
+    struct usbmidi midi[DEVICES_MAX + 1];
 };
 
 static long console = -1;
@@ -1033,6 +1075,10 @@ static bool is_video(const struct controller *c, const uint32_t *event);
 static void take_video(struct controller *c, const uint32_t *event);
 static void camera_bells(const struct controller *c);
 
+/* A MIDI device's events coming in (`usb.md` §12). */
+static bool is_midi(const struct controller *c, const uint32_t *event);
+static void take_midi(struct controller *c, const uint32_t *event);
+
 /*
  * **A wait that goes on reading mice.** Until `c` has an event that is not a
  * mouse's report - put in `out`, and true - or until `ms` have passed, and
@@ -1100,7 +1146,7 @@ static bool wait_serving(struct controller *c, unsigned long ms,
             while (take_event(o, event)) {
                 if (o == c && out != NULL && !is_report(o, event)
                     && !is_note(o, event) && !is_frame(o, event)
-                    && !is_video(o, event)) {
+                    && !is_video(o, event) && !is_midi(o, event)) {
                     camera_bells(o);
                     memcpy(out, event, sizeof(event));
                     return true;
@@ -1110,6 +1156,7 @@ static bool wait_serving(struct controller *c, unsigned long ms,
                 take_note(o, event);
                 take_frame(o, event);
                 take_video(o, event);
+                take_midi(o, event);
             }
 
             camera_bells(o);
@@ -4118,6 +4165,296 @@ static void use_ethernet(struct controller *c, struct device *d,
     ether_probe(c, d->slot, ecm->bulk_out_packet, line);
 }
 
+/* ---------------------------------------------------------------- MIDI */
+
+/*
+ * **A MIDI keyboard or controller** (`usb.md` §12, `roadmap.md` 6zg): the
+ * simplest class this driver has met. Two bulk endpoints; on the IN one a
+ * read always out, as an adapter's frames are, and each that comes back
+ * taken apart into four-byte packets by `midi_decode.c` and handed to
+ * `/Devices/midi`'s listeners with the counter's time on it.
+ */
+static uint32_t midi_ids;               /* the last id given */
+
+static void midi_deliver(uint32_t id, const struct midi_event *e, uint64_t counter);
+
+/* One read out on the bulk IN, for whatever the device says next. */
+static void midi_ask(struct controller *c, unsigned slot)
+{
+    struct usbmidi *m = &c->midi[slot];
+
+    if (!m->on || m->in_dci == 0) {
+        return;
+    }
+
+    m->receiving = true;
+    (void)ring_push(&m->in, (uint32_t)m->in_bus, (uint32_t)(m->in_bus >> 32),
+                    m->in_packet, TRB_TYPE(TRB_NORMAL) | TRB_ISP | TRB_IOC);
+    mmio_write32(c->doorbells + 4u * slot, m->in_dci);
+}
+
+static bool is_midi(const struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+
+    return TRB_TYPE_OF(event[3]) == TRB_TRANSFER && slot != 0
+        && slot <= DEVICES_MAX && c->midi[slot].on && c->midi[slot].receiving
+        && TRB_ENDPOINT_OF(event[3]) == c->midi[slot].in_dci;
+}
+
+/*
+ * **What the device said**, a packet at a time, and the next read asked for.
+ * A transfer is as many packets as the device had ready, and ends short -
+ * which is `TRB_ISP`'s success, not a fault; the zeros padding one out are
+ * packets that carry nothing, and `midi_decode_packet` says so.
+ */
+static void take_midi(struct controller *c, const uint32_t *event)
+{
+    struct say_line line;
+    struct usbmidi *m;
+    unsigned slot, got, i;
+    uint32_t code, left;
+    uint64_t now;
+
+    if (!is_midi(c, event)) {
+        return;
+    }
+
+    slot = TRB_SLOT_OF(event[3]);
+    m = &c->midi[slot];
+    m->receiving = false;
+    code = TRB_CODE_OF(event[2]);
+    left = TRB_LEFT_OF(event[2]);
+
+    if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, m->port);
+        say_text(&line, ": a MIDI read failed: ");
+        say_text(&line, completion_name(code));
+        say_text(&line, " (");
+        say_dec(&line, code);
+        say_text(&line, "); nothing is read from it until it is plugged in "
+                        "again");
+        say_send(console, &line);
+        return;
+    }
+
+    got = left < m->in_packet ? m->in_packet - left : 0u;
+    now = kosmos_ticks();
+
+    for (i = 0; i + 4u <= got; i += 4u) {
+        struct midi_event e;
+
+        if (midi_decode_packet(m->in_data + i, &e)) {
+            m->events++;
+            midi_deliver(m->id, &e, now);
+        }
+    }
+
+    midi_ask(c, slot);
+}
+
+/* Its ports' names, by their `iJack` strings, in the language it named. */
+static void midi_names(struct controller *c, struct device *d,
+                       const struct midi_port *ports, unsigned n,
+                       char (*names)[NAME_MAX_CHARS + 1])
+{
+    unsigned i;
+
+    for (i = 0; i < n && i < MIDI_PORTS_NAMED; i++) {
+        names[i][0] = '\0';
+
+        if (ports[i].name != 0 && d->language != 0
+            && control_in(c, d, GET_DESCRIPTOR,
+                          (uint16_t)(DESC_STRING | ports[i].name), d->language,
+                          255u)
+            && d->buffer[1] == 3u) {
+            as_ascii(names[i], d->buffer);
+        }
+    }
+}
+
+/*
+ * **The device made ready**, in the order an adapter is (4.3.5): its
+ * endpoints' contexts, Configure Endpoint, SET_CONFIGURATION, and its
+ * setting if that is not the first; then the first read.
+ */
+static void use_midi(struct controller *c, struct device *d,
+                     const struct usb_midi *info, struct say_line *line)
+{
+    struct usbmidi *m = &c->midi[d->slot];
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    uint32_t done[4];
+    uint32_t *icc, *slot, *ep;
+    unsigned last, i;
+
+    memset(m, 0, sizeof(*m));
+    m->dev = *d;
+    d = &m->dev;                        /* the kept device, from here on */
+    m->port = d->port;
+
+    if (d->language == 0
+        && control_in(c, d, GET_DESCRIPTOR, DESC_STRING, 0, 255u)
+        && d->buffer[0] >= 4u && d->buffer[1] == 3u) {
+        d->language = (uint16_t)(d->buffer[2] | (unsigned)d->buffer[3] << 8);
+    }
+
+    m->nin = info->nin;
+    m->nout = info->nout;
+    midi_names(c, d, info->in, info->nin, m->in_names);
+    midi_names(c, d, info->out, info->nout, m->out_names);
+
+    m->in_dci = info->in_endpoint != 0 ? 2u * info->in_endpoint + 1u : 0u;
+    m->out_dci = info->out_endpoint != 0 ? 2u * info->out_endpoint : 0u;
+    m->in_packet = info->in_packet != 0 ? info->in_packet : 64u;
+    m->out_packet = info->out_packet != 0 ? info->out_packet : 64u;
+    last = m->in_dci > m->out_dci ? m->in_dci : m->out_dci;
+
+    ring_start(&m->out,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_OUT) * PAGE),
+               c->bus + (page + DEVICE_PAGE_OUT) * PAGE);
+    ring_start(&m->in,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_IN) * PAGE),
+               c->bus + (page + DEVICE_PAGE_IN) * PAGE);
+    m->out_data = (uint8_t *)(c->mem + (page + DEVICE_PAGE_MIDI_OUT) * PAGE);
+    m->out_bus = c->bus + (page + DEVICE_PAGE_MIDI_OUT) * PAGE;
+    m->in_data = (uint8_t *)(c->mem + (page + DEVICE_PAGE_MIDI_IN) * PAGE);
+    m->in_bus = c->bus + (page + DEVICE_PAGE_MIDI_IN) * PAGE;
+
+    icc = context(c, d->input, 0);
+    slot = context(c, d->input, 1);
+
+    icc[0] = 0;
+    icc[1] = 1u;
+    slot[0] = (slot[0] & ~(0x1Fu << 27)) | (last << 27);
+
+    if (m->out_dci != 0) {
+        icc[1] |= 1u << m->out_dci;
+        ep = context(c, d->input, m->out_dci + 1u);
+        memset(ep, 0, c->context);
+        ep[1] = ((uint32_t)m->out_packet << 16) | (EP_TYPE_BULK_OUT << 3)
+              | (3u << 1);
+        ep[2] = (uint32_t)m->out.bus | 1u;
+        ep[3] = (uint32_t)(m->out.bus >> 32);
+        ep[4] = m->out_packet;
+    }
+
+    if (m->in_dci != 0) {
+        icc[1] |= 1u << m->in_dci;
+        ep = context(c, d->input, m->in_dci + 1u);
+        memset(ep, 0, c->context);
+        ep[1] = ((uint32_t)m->in_packet << 16) | (EP_TYPE_BULK_IN << 3)
+              | (3u << 1);
+        ep[2] = (uint32_t)m->in.bus | 1u;
+        ep[3] = (uint32_t)(m->in.bus >> 32);
+        ep[4] = m->in_packet;
+    }
+
+    if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                 TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
+        say_failure(c, d->port, "Configure Endpoint",
+                    "; the MIDI device is not read", line);
+        return;
+    }
+
+    if (!control_nodata(c, d, SET_CONFIGURATION, info->configuration, 0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION",
+                    "; the MIDI device is not read", line);
+        return;
+    }
+
+    if (info->alternate != 0
+        && !control_nodata(c, d, SET_INTERFACE, info->alternate,
+                           info->interface)) {
+        say_failure(c, d->port, "SET_INTERFACE",
+                    "; the MIDI device is not read", line);
+        return;
+    }
+
+    m->id = ++midi_ids;
+    m->on = true;
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": MIDI, device ");
+    say_dec(line, m->id);
+    say_text(line, ", ");
+    say_dec(line, m->nin);
+    say_text(line, m->nin == 1 ? " port in" : " ports in");
+
+    for (i = 0; i < m->nin && i < MIDI_PORTS_NAMED; i++) {
+        say_text(line, i == 0 ? " (" : ", ");
+        say_text(line, m->in_names[i][0] != '\0' ? m->in_names[i] : "unnamed");
+        if (i + 1u == m->nin || i + 1u == MIDI_PORTS_NAMED) say_text(line, ")");
+    }
+
+    say_text(line, " and ");
+    say_dec(line, m->nout);
+    say_text(line, " out, bulk IN ");
+    say_dec(line, info->in_endpoint);
+    say_text(line, " and OUT ");
+    say_dec(line, info->out_endpoint);
+    say_text(line, " of ");
+    say_dec(line, m->in_packet);
+    say_text(line, " bytes");
+    say_send(console, line);
+
+    midi_ask(c, d->slot);
+}
+
+/* A device gone: nothing more read from it, and its id never given again. */
+static void midi_gone(struct controller *c, unsigned slot,
+                      struct say_line *line)
+{
+    struct usbmidi *m = &c->midi[slot];
+
+    if (!m->on) {
+        return;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, m->port);
+    say_text(line, ": MIDI device ");
+    say_dec(line, m->id);
+    say_text(line, " gone, after ");
+    say_dec(line, m->events);
+    say_text(line, m->events == 1 ? " event in and " : " events in and ");
+    say_dec(line, m->sent);
+    say_text(line, " out");
+    say_send(console, line);
+
+    memset(m, 0, sizeof(*m));
+}
+
+/*
+ * **Packets out**, on the device's bulk OUT: as many as fit in the page
+ * they go from. Synchronous, as an adapter's frame is: `wait_serving` goes
+ * on reading everything else while it waits.
+ */
+static bool midi_usb_send(struct controller *c, unsigned slot,
+                          const uint8_t (*packets)[4], unsigned n)
+{
+    struct usbmidi *m = &c->midi[slot];
+    unsigned moved = 0;
+
+    if (!m->on || m->out_dci == 0 || n == 0 || n * 4u > PAGE) {
+        return false;
+    }
+
+    memcpy(m->out_data, packets, n * 4u);
+
+    if (!bulk(c, slot, m->out_dci, &m->out, m->out_bus, n * 4u, &moved)
+        || moved != n * 4u) {
+        return false;
+    }
+
+    m->sent += n;
+    return true;
+}
+
 /* ---------------------------------------------------------------- a camera */
 
 /*
@@ -5236,6 +5573,18 @@ static void use_device(struct controller *c, struct device *d,
                 return;
             }
         }
+
+        /* A MIDI keyboard or controller (`usb.md` §12). */
+        {
+            static struct usb_midi midi;
+
+            midi_decode_config(d->buffer, total, &midi);
+
+            if (midi.ok) {
+                use_midi(c, d, &midi, line);
+                return;
+            }
+        }
     }
 
     /* None of them: what is said is about the first, as it always was. */
@@ -5794,6 +6143,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
 
     if (slot != 0 && slot != PORT_FAILED) {
         camera_gone(c, slot);
+        midi_gone(c, slot, line);
         stick_release_buffer(&c->stick[slot]);
         memset(&c->stick[slot], 0, sizeof(c->stick[slot]));
         disable_slot(c, slot);
@@ -5942,6 +6292,7 @@ static void service(struct controller *c, struct say_line *line)
         take_note(c, trb);
         take_frame(c, trb);
         take_video(c, trb);
+        take_midi(c, trb);
     }
 
     camera_bells(c);
@@ -6424,18 +6775,21 @@ static void serve_blocks(struct say_line *line)
 static void serve_camera(struct say_line *line);
 static unsigned long camera_wait_ms(unsigned long otherwise);
 static long camera_endpoint_now(void);
+static void serve_midi(struct say_line *line);
+static long midi_endpoint_now(void);
 
 static void serve_without_controllers(int code)
 {
     struct say_line line;
     struct message msg;
     uint64_t sender = 0;
-    const long ends[3] = { blocks_endpoint, frames_endpoint,
-                           camera_endpoint_now() };
+    const long ends[4] = { blocks_endpoint, frames_endpoint,
+                           camera_endpoint_now(), midi_endpoint_now() };
 
     say_begin(&line);
 
-    if (blocks_endpoint < 0 && frames_endpoint < 0 && ends[2] < 0) {
+    if (blocks_endpoint < 0 && frames_endpoint < 0 && ends[2] < 0
+        && ends[3] < 0) {
         kosmos_exit(code);
     }
 
@@ -6452,7 +6806,7 @@ static void serve_without_controllers(int code)
         /* Forever, unless a stream wants looking at: the test pattern's
          * frames, and a lease, come round on the clock (`/Devices/camera`). */
         long woke = kosmos_irq_wait_any(NULL, 0, ticks_for(camera_wait_ms(0)),
-                                        ends, 3u);
+                                        ends, 4u);
 
         if (woke < 0 && woke != SYS_NO_INTERRUPT) {
             kosmos_exit(code);
@@ -6467,6 +6821,7 @@ static void serve_without_controllers(int code)
 
         serve_frames(&line);
         serve_camera(&line);
+        serve_midi(&line);
     }
 }
 
@@ -7196,6 +7551,426 @@ static unsigned long camera_wait_ms(unsigned long otherwise)
     return stream.open ? 10u : otherwise;
 }
 
+/*------------------------------------------------------------ /Devices/midi */
+
+/*
+ * **MIDI to programs** (`midiproto.h`, `usb.md` §12): every device's events
+ * written into the ring of each program listening to it, a SEND out to a
+ * device's port, and the list of what there is.
+ *
+ * `MIDI_LISTENERS` programs at once, each with a page of its own. A program
+ * that ends without CLOSE keeps its place until it has fallen a whole ring
+ * behind - its `read` still while events went on arriving - and then the
+ * next program that opens is given it. One that never heard an event keeps
+ * it; there are sixteen.
+ */
+#define MIDI_LISTENERS      16u
+
+struct midi_listener {
+    bool          used;
+    uint32_t      generation;
+    uint32_t      device;               /* an id, or MIDI_EVERY */
+    long          cap;
+    uintptr_t     at;
+    unsigned long pages;
+    struct midi_ring *ring;
+};
+
+static long midi_endpoint = -1;
+static struct midi_listener listeners[MIDI_LISTENERS];
+
+/*
+ * **The virtual keyboard**, with `opt/kosmos/midi=virtual`: one port each
+ * way, and what is sent to it on cable 0 comes back as its own events - so
+ * a test can play it and a program hear it with no USB in the machine.
+ */
+static bool midi_virtual;
+static uint32_t midi_virtual_id;
+static unsigned long midi_virtual_events;
+
+static void midi_options(void)
+{
+    char option[16] = { 0 };
+    long n = kosmos_boot_option("opt/kosmos/midi", option, sizeof(option));
+
+    midi_virtual = n == 7 && memcmp(option, "virtual", 7) == 0;
+
+    if (midi_virtual) {
+        midi_virtual_id = ++midi_ids;
+    }
+}
+
+static long midi_endpoint_now(void)
+{
+    return midi_endpoint;
+}
+
+/*
+ * **One event to everyone listening for it**: into the slot after the last,
+ * and `write` published after it, release, so a program that reads `write`
+ * with acquire - `sys.region_load32` - sees the slot whole.
+ */
+static void midi_deliver(uint32_t id, const struct midi_event *e,
+                         uint64_t counter)
+{
+    unsigned i;
+
+    for (i = 0; i < MIDI_LISTENERS; i++) {
+        struct midi_listener *l = &listeners[i];
+        struct midi_ring_event *slot;
+        uint32_t w;
+
+        if (!l->used || (l->device != MIDI_EVERY && l->device != id)) {
+            continue;
+        }
+
+        w = l->ring->write;
+        slot = &l->ring->events[w % MIDI_RING_SLOTS];
+        slot->counter = counter;
+        slot->device = (uint16_t)id;
+        slot->cable = e->cable;
+        slot->length = e->length;
+        slot->flags = e->sysex ? MIDI_EVENT_SYSEX : 0u;
+        memcpy(slot->bytes, e->bytes, 3);
+        __atomic_store_n(&l->ring->write, w + 1u, __ATOMIC_RELEASE);
+    }
+}
+
+/* Every USB MIDI device there is, then the virtual keyboard: their places. */
+struct midi_place {
+    struct controller *c;               /* NULL: the virtual keyboard */
+    unsigned slot;
+};
+
+static unsigned midi_listed(struct midi_place *out, unsigned most)
+{
+    unsigned n = 0, i, s;
+
+    for (i = 0; i < controllers_found; i++) {
+        for (s = 1; s <= DEVICES_MAX && n < most; s++) {
+            if (controllers[i].midi[s].on) {
+                out[n].c = &controllers[i];
+                out[n++].slot = s;
+            }
+        }
+    }
+
+    if (midi_virtual && n < most) {
+        out[n].c = NULL;
+        out[n++].slot = 0;
+    }
+
+    return n;
+}
+
+static bool midi_by_id(uint32_t id, struct midi_place *out)
+{
+    struct midi_place all[NAMED_MAX * DEVICES_MAX + 1];
+    unsigned n = midi_listed(all, NAMED_MAX * DEVICES_MAX + 1), i;
+
+    for (i = 0; i < n; i++) {
+        uint32_t its = all[i].c != NULL ? all[i].c->midi[all[i].slot].id
+                                        : midi_virtual_id;
+
+        if (its == id) {
+            *out = all[i];
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void copy_name(char *to, const char *from)
+{
+    size_t n = strlen(from);
+
+    if (n > MIDI_NAME_BYTES - 1u) {
+        n = MIDI_NAME_BYTES - 1u;
+    }
+
+    memcpy(to, from, n);
+    to[n] = '\0';
+}
+
+static void midi_list(uint32_t index, struct midi_reply *rep)
+{
+    struct midi_place all[NAMED_MAX * DEVICES_MAX + 1];
+    unsigned n = midi_listed(all, NAMED_MAX * DEVICES_MAX + 1), i;
+
+    rep->devices = n;
+
+    if (index >= n) {
+        rep->error = MIDI_ERR_NONE;
+        return;
+    }
+
+    if (all[index].c == NULL) {
+        rep->id = midi_virtual_id;
+        rep->source = MIDI_SOURCE_VIRTUAL;
+        rep->ins = 1;
+        rep->outs = 1;
+        copy_name(rep->name, "Virtual keyboard");
+        copy_name(rep->in_names[0], "Keys");
+        copy_name(rep->out_names[0], "Keys");
+        return;
+    }
+
+    {
+        const struct controller *c = all[index].c;
+        const struct usbmidi *m = &c->midi[all[index].slot];
+
+        rep->id = m->id;
+        rep->source = MIDI_SOURCE_USB;
+        rep->ins = (uint8_t)m->nin;
+        rep->outs = (uint8_t)m->nout;
+        copy_name(rep->name, c->name[all[index].slot][0] != '\0'
+                             ? c->name[all[index].slot] : "USB MIDI");
+
+        for (i = 0; i < m->nin && i < MIDI_PORTS_NAMED; i++) {
+            copy_name(rep->in_names[i], m->in_names[i]);
+        }
+
+        for (i = 0; i < m->nout && i < MIDI_PORTS_NAMED; i++) {
+            copy_name(rep->out_names[i], m->out_names[i]);
+        }
+    }
+}
+
+static void midi_open(const struct midi_request *req, long cap,
+                      struct midi_reply *rep, struct say_line *line)
+{
+    struct midi_place place;
+    struct midi_listener *l = NULL;
+    long pages, at;
+    unsigned i;
+
+    if (req->device != MIDI_EVERY && !midi_by_id(req->device, &place)) {
+        rep->error = MIDI_ERR_NONE;
+        return;
+    }
+
+    pages = cap < 0 ? -1 : kosmos_mem_size(cap);
+
+    if (pages < 1 || (unsigned long)pages * PAGE < sizeof(struct midi_ring)) {
+        rep->error = MIDI_ERR_REGION;
+        return;
+    }
+
+    for (i = 0; i < MIDI_LISTENERS && l == NULL; i++) {
+        if (!listeners[i].used) {
+            l = &listeners[i];
+        }
+    }
+
+    /* None free: one a whole ring behind has stopped listening. */
+    for (i = 0; i < MIDI_LISTENERS && l == NULL; i++) {
+        struct midi_listener *o = &listeners[i];
+        uint32_t read = __atomic_load_n(&o->ring->read, __ATOMIC_ACQUIRE);
+
+        if (o->ring->write - read >= MIDI_RING_SLOTS) {
+            (void)kosmos_share_unmap((unsigned long)o->at, o->pages);
+            (void)kosmos_cap_drop(o->cap);
+            o->used = false;
+            l = o;
+        }
+    }
+
+    if (l == NULL) {
+        rep->error = MIDI_ERR_FULL;
+        return;
+    }
+
+    at = kosmos_mem_map(cap);
+
+    if (at < 0) {
+        rep->error = MIDI_ERR_REGION;
+        return;
+    }
+
+    l->generation = (l->generation + 1u) & 0x00FFFFFFu;
+    l->used = true;
+    l->device = req->device;
+    l->cap = cap;
+    l->at = (uintptr_t)at;
+    l->pages = (unsigned long)pages;
+    l->ring = (struct midi_ring *)(uintptr_t)at;
+    l->ring->read = 0;
+    l->ring->slots = MIDI_RING_SLOTS;
+    __atomic_store_n(&l->ring->write, 0u, __ATOMIC_RELEASE);
+
+    rep->handle = (l->generation << 8) | (uint32_t)(l - listeners);
+
+    say_begin(line);
+    say_text(line, "xhci: midi: listening to ");
+
+    if (req->device == MIDI_EVERY) {
+        say_text(line, "every device");
+    } else {
+        say_text(line, "device ");
+        say_dec(line, req->device);
+    }
+
+    say_send(console, line);
+}
+
+static void midi_close(uint32_t handle)
+{
+    unsigned i = handle & 0xFFu;
+    struct midi_listener *l;
+
+    if (i >= MIDI_LISTENERS) {
+        return;
+    }
+
+    l = &listeners[i];
+
+    if (!l->used || l->generation != (handle >> 8)) {
+        return;
+    }
+
+    (void)kosmos_share_unmap((unsigned long)l->at, l->pages);
+    (void)kosmos_cap_drop(l->cap);
+    l->used = false;
+}
+
+/*
+ * **Whole messages out.** The bytes are cut into messages - a status byte
+ * and what its kind says follows, or System Exclusive to its F7 - and each
+ * into packets for the cable; anything that is not whole is refused before
+ * anything is sent.
+ */
+static void midi_send(const struct midi_request *req, struct midi_reply *rep)
+{
+    uint8_t packets[MIDI_SEND_BYTES][4];
+    struct midi_place place;
+    unsigned at = 0, n = 0, i;
+
+    if (!midi_by_id(req->device, &place)) {
+        rep->error = MIDI_ERR_NONE;
+        return;
+    }
+
+    if (req->length == 0 || req->length > MIDI_SEND_BYTES) {
+        rep->error = MIDI_ERR_MESSAGE;
+        return;
+    }
+
+    if (place.c == NULL ? req->cable != 0
+                        : req->cable >= place.c->midi[place.slot].nout) {
+        rep->error = MIDI_ERR_CABLE;
+        return;
+    }
+
+    while (at < req->length) {
+        unsigned len = midi_message_length(req->bytes[at]);
+        unsigned wrote;
+
+        if (req->bytes[at] == 0xF0) {
+            len = 0;
+
+            while (at + len < req->length && req->bytes[at + len] != 0xF7) {
+                len++;
+            }
+
+            len++;                      /* and the F7, if there was one */
+        }
+
+        if (len == 0 || at + len > req->length) {
+            rep->error = MIDI_ERR_MESSAGE;
+            return;
+        }
+
+        wrote = midi_encode(req->cable, req->bytes + at, len, packets + n,
+                            MIDI_SEND_BYTES - n);
+
+        if (wrote == 0) {
+            rep->error = MIDI_ERR_MESSAGE;
+            return;
+        }
+
+        n += wrote;
+        at += len;
+    }
+
+    if (place.c == NULL) {
+        /* The virtual keyboard: back as its own events, now. */
+        uint64_t now = kosmos_ticks();
+
+        for (i = 0; i < n; i++) {
+            struct midi_event e;
+
+            if (midi_decode_packet(packets[i], &e)) {
+                midi_virtual_events++;
+                midi_deliver(midi_virtual_id, &e, now);
+            }
+        }
+
+        return;
+    }
+
+    if (!midi_usb_send(place.c, place.slot, (const uint8_t (*)[4])packets, n)) {
+        rep->error = MIDI_ERR_SEND;
+    }
+}
+
+static void midi_answer(const struct message *in, uint64_t sender, long cap,
+                        struct say_line *line)
+{
+    struct message out;
+    struct midi_reply *rep = (struct midi_reply *)(void *)out.data;
+    const struct midi_request *req =
+        (const struct midi_request *)(const void *)in->data;
+
+    memset(&out, 0, sizeof(out));
+    out.tag = in->tag;
+    out.length = (uint32_t)sizeof(*rep);
+
+    if (in->length != sizeof(*req)) {
+        rep->error = MIDI_ERR_REQUEST;
+    } else {
+        switch (req->op) {
+        case MIDI_OP_LIST:
+            midi_list(req->index, rep);
+            break;
+        case MIDI_OP_OPEN:
+            midi_open(req, cap, rep, line);
+            if (rep->error == MIDI_OK) {
+                cap = -1;               /* kept, in its listener */
+            }
+            break;
+        case MIDI_OP_CLOSE:
+            midi_close(req->handle);
+            break;
+        case MIDI_OP_SEND:
+            midi_send(req, rep);
+            break;
+        default:
+            rep->error = MIDI_ERR_REQUEST;
+            break;
+        }
+    }
+
+    if (cap >= 0) {
+        (void)kosmos_cap_drop(cap);
+    }
+
+    (void)kosmos_reply(sender, &out);
+}
+
+static void serve_midi(struct say_line *line)
+{
+    struct message msg;
+    uint64_t sender = 0;
+
+    while (midi_endpoint >= 0
+           && kosmos_receive(midi_endpoint, &msg, &sender, 1, 0) == 0) {
+        midi_answer(&msg, sender,
+                    msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1,
+                    line);
+    }
+}
+
 /*
  * Until the machine stops: **every running controller's interrupt waited on
  * at once**, and every controller looked at after any of them.
@@ -7218,6 +7993,7 @@ static unsigned long camera_wait_ms(unsigned long otherwise)
 static void watch(struct controller *list, unsigned count,
                   struct say_line *line)
 {
+    static bool wait_refused;
     long lines[IRQ_WAIT_ANY_MAX];
     unsigned owner[IRQ_WAIT_ANY_MAX] = { 0 };
     unsigned waited = 0, i;
@@ -7240,16 +8016,32 @@ static void watch(struct controller *list, unsigned count,
          * which is what watching one cost and is why the kernel now watches
          * three. A caller answers IRQ_WAIT_CALLER + its place, a line with
          * an interrupt first; all three are served after every wake. */
-        const long ends[4] = { writes_endpoint, blocks_endpoint,
-                               frames_endpoint, camera_endpoint };
+        const long ends[5] = { writes_endpoint, blocks_endpoint,
+                               frames_endpoint, camera_endpoint,
+                               midi_endpoint };
 
         if (waited > 0) {
             woke = kosmos_irq_wait_any(lines, waited,
                                        ticks_for(camera_wait_ms(WATCH_MS)),
-                                       ends, 4u);
+                                       ends, 5u);
         }
 
-        /* Nothing to wait on, or a wait refused: slept instead, never spun. */
+        /* Nothing to wait on, or a wait refused: slept instead, never spun.
+         * **And a refusal said, once**: the driver goes on working by
+         * napping, so a wait the kernel will not take - more endpoints than
+         * a thread may watch, which is what `/Devices/midi`, the fifth,
+         * would have been under the old limit of four - looks like nothing
+         * but a slower machine unless it is written down. */
+        if (waited > 0 && woke < 0 && woke != SYS_NO_INTERRUPT && !wait_refused) {
+            wait_refused = true;
+            say_begin(line);
+            say_text(line, "xhci: the kernel refused the wait on its lines and "
+                           "endpoints (");
+            say_dec(line, (unsigned long)(-woke));
+            say_text(line, "); every device is looked at by napping instead");
+            say_send(console, line);
+        }
+
         if (waited == 0 || (woke < 0 && woke != SYS_NO_INTERRUPT)) {
             kosmos_sleep(ticks_for(WATCH_MS));
         }
@@ -7265,6 +8057,7 @@ static void watch(struct controller *list, unsigned count,
         serve_blocks(line);
         serve_frames(line);
         serve_camera(line);
+        serve_midi(line);
     }
 }
 
@@ -7274,7 +8067,7 @@ static long camera_endpoint_now(void)
 }
 
 void xhci_server(long console_cap, long blocks_cap, long writes_cap,
-                 long frames_cap, long camera_cap)
+                 long frames_cap, long camera_cap, long midi_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -7289,6 +8082,8 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     frames_endpoint = frames_cap;
     camera_endpoint = camera_cap;
     camera_options();
+    midi_endpoint = midi_cap;
+    midi_options();
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;

@@ -2613,6 +2613,50 @@ of it (espressif/esp-idf issue 11616), and the Launchkey's two-port shape
 composed from the specification with its ports' names, until its own
 bytes are read from it (12d).
 
+### 12b: `/Devices/midi`
+
+**In the USB driver, as `/Devices/camera` is**, with a header both sides
+compile against (`user/include/midiproto.h`): LIST a device by its place -
+its id, its name and its ports each way by name - OPEN a page of the
+program's own for the events of one device or of all of them, CLOSE, and
+SEND whole messages to a device's port.
+
+- **A device is an id**, given when it arrives and never to anything else;
+  places move as things are plugged in, ids do not.
+- **The class driver** keeps a read out on the bulk IN, as an adapter's
+  frames are; each transfer is taken apart into packets and each event
+  written, with the counter's time, into the page of every program
+  listening for it. The slot's own pages hold its rings and its data - a
+  device is one class, so nothing else in the slot uses them.
+- **The page is a ring**: `write` is the driver's and counts every event,
+  published with release after the slot it fills; `read` is the program's
+  place, which it writes back after reading - the one field it writes, and
+  how the driver knows a listener a whole ring behind has stopped
+  listening, whose place goes to the next program that opens. Lua reads
+  `write` with `sys.region_load32`, an acquire load: `region_read` is a
+  plain copy, and on an ARM core a plain copy of the index may be ordered
+  before the slot it publishes.
+- **A virtual keyboard** under `opt/kosmos/midi=virtual`: one port each way,
+  and what is sent to it on cable 0 comes back as its own events. QEMU has
+  no MIDI device, so this is what the gate plays; the display harness
+  offers it on every boot, as it does the camera's pattern.
+- **The fifth endpoint the driver waits on**, beside the disk's two, the
+  network's frames and the camera: the kernel took four, a thread's watch
+  slots (`kernel/thread.h`), and takes eight now. Were it refused, the driver
+  would go on by napping - every device looked at every 50 ms - which looks
+  like nothing but a slower machine, so a refused wait is now said once.
+- **`needs midi`**: only a program that declares it is given `/Devices/midi`,
+  and the window manager declares it so it can pass it on. A program that
+  did not ask still *resolves* the path - to `/Devices`, the devices server
+  behind it - which answered a MIDI request, and `midi.lua` read the reply
+  as seven devices. So a raw request now names the protocol it expects
+  (`fs.raw(path, bytes, pass, "midi")`) and is told the path is not there
+  when it resolves to any other; audio, blocks, the backlight and the
+  camera say theirs too.
+- **`midi`** at the prompt: every device, `midi listen`, `midi send ID CABLE
+  HEX..` - `midi send 3 1 9F 0C 7F` puts a Launchkey in its DAW mode - and
+  `midi try ID`, which sends five messages and prints what comes back.
+
 ## Sources
 
 - Microsoft, *FAT32 File System Specification*, version 1.03, 6 December 2000

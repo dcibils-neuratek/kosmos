@@ -68,7 +68,7 @@ local PIXELS = { [1] = "yuy2", [2] = "mjpeg" }
 local function ask(op, which, size, pass, handle)
   local ok, reply, why = pcall(fs.raw, "/Devices/camera",
                                string.pack(REQUEST, op, which or 0,
-                                           size or 0, handle or 0), pass)
+                                           size or 0, handle or 0), pass, "camera")
 
   if not ok or not reply then
     return nil, tostring(ok and why or reply)

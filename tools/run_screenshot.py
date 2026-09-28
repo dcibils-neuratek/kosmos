@@ -222,6 +222,7 @@ X86_ARGS = [
     "-M", "q35",
     "-m", "512M",
     "-fw_cfg", "name=opt/kosmos/camera,string=pattern+silent",   # `QEMU_ARGS` says
+    "-fw_cfg", "name=opt/kosmos/midi,string=virtual",            # and MIDI's
     "-display", "none",
     "-vga", "none",
     "-device", "ramfb",
@@ -278,6 +279,12 @@ QEMU_ARGS = [
     # that never sends a frame, which is what holds the lease (`check_camera`).
     #
     "-fw_cfg", "name=opt/kosmos/camera,string=pattern+silent",
+    #
+    # And the virtual MIDI keyboard at `/Devices/midi` (`usb.md` §12): QEMU
+    # has no MIDI device either, and what is sent to this one comes back as
+    # its own events, so a check can play it.
+    #
+    "-fw_cfg", "name=opt/kosmos/midi,string=virtual",
     "-display", "none",
     "-device", "ramfb",
     # force-legacy=false is not optional: QEMU's virtio-mmio transports

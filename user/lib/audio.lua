@@ -325,7 +325,7 @@ function request(op, fields, pass)
                             fields.master_muted or -1,
                             name)
 
-  local reply, why = fs.raw("/Devices/audio", bytes, pass)
+  local reply, why = fs.raw("/Devices/audio", bytes, pass, "audio")
 
   if not reply then return nil, tostring(why) end
 

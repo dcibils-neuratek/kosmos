@@ -750,6 +750,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/drivers/usb/usb_decode.c \
              user/drivers/usb/pad_decode.c \
              user/drivers/usb/uvc_decode.c \
+             user/drivers/usb/midi_decode.c \
              user/drivers/usb/storage_decode.c \
              user/drivers/display/backlight.c \
              user/drivers/display/backlight_decode.c \

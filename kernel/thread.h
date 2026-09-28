@@ -112,8 +112,10 @@ struct addrspace;
  * driver's whole watch interval - which is the fault that made this two
  * rather than one (`usb.md` 7d). And four since 24 September: `/dev/camera`
  * is the same driver's fourth (`usb.md` §11 8d), eight bytes a thread.
+ * Eight since 28 September: `/Devices/midi` is its fifth (`usb.md` §12), and
+ * room for the next three rather than one more step of one.
  */
-#define IPC_WATCH_MAX 4u
+#define IPC_WATCH_MAX 8u
 
 struct thread {
     /* First, because switch.S reaches it through the thread pointer and a

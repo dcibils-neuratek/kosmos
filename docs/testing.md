@@ -12265,3 +12265,25 @@ bytes, messages that are not refused, and every channel message on every
 cable there and back. Its control: the jacks taken as cables in reverse
 fails the Launchkey's two cable checks.
 
+## 18.258 `/Devices/midi`, end to end (6zg, step b)
+
+The USB driver serves `/Devices/midi` (`usb.md` §12b): a device by its id,
+its events into a page of the listening program's with the counter's time
+on each, whole messages sent to a port, and a virtual keyboard under
+`opt/kosmos/midi=virtual` whose port gives back what it is sent. `midi.lua`
+reads the page (`sys.region_load32` for the index, with acquire), and the
+`midi` program uses it at the prompt.
+
+**Kept, `run_midi.py`** (`arm-midi`, `x86-midi`), 9 on ARM and 10 on x86:
+the virtual keyboard listed with its port's name; a note on and off, a
+controller, a bend and System Exclusive sent and six events heard - the
+System Exclusive in its two packets - in order, each what was sent, their
+counter times rising; a cable with no port, a device that is not there and
+bytes that are not messages each refused in its own words; and a program
+run from `/Temporary`, with no `needs midi`, finding no MIDI at all. On x86
+the machine has an xHCI, so the answers come from the driver's whole wait,
+and that the kernel took its five endpoints is checked. Its controls: before
+raw requests named their protocol, the program that did not ask was answered
+by the devices server and read seven devices; and with the kernel's limit
+back at four endpoints, the x86 run says the wait was refused.
+

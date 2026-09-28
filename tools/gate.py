@@ -281,6 +281,11 @@ SUITES = [
     # More windows than one message can list: twenty Calculators and the
     # Deskbar, and `tile` arranging every one from the list in pages (6zp).
     Suite("arm-windows", ["python3", "tools/run_windows.py", ARM]),
+    # `/Devices/midi` through its virtual keyboard (6zg, step b): from the
+    # wait with no controller on ARM, and from the whole five-endpoint wait
+    # on x86, which is given an xHCI for it.
+    Suite("arm-midi", ["python3", "tools/run_midi.py", ARM]),
+    Suite("x86-midi", ["python3", "tools/run_midi.py", X86]),
 
     # The Game Kit's rasterizer against the portable one it was ported
     # from: every primitive, both ways, and all 368,640 pixels compared
