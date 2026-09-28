@@ -2138,6 +2138,18 @@ processors, and still what follows USB:
      widgets phase now holds the opposite of what it held: no tab colour
      in the bar's strip at all.
 
+6zm. **FOUND on 27 September, on the M700 - the IDE made larger changed its
+   font.** Diego: "making the font larger in the ide changes the font
+   instead of making it larger as it does in the terminal app, as it
+   should". The editor measured in the face `ui.sized` gave it - a number,
+   in the IDE's own process - and drew with it too, so the number crossed
+   to the compositor, which has its own faces at those numbers and drew in
+   whichever sat there. Terminal draws with "mono" and a size, which is
+   what `ui.lua`'s own rule says must cross. **DONE the same night**
+   (`testing.md` 18.239): `gc:text` turns any number `ui.sized` gave out
+   back into its role and size before it becomes an op, so the rule is
+   kept by the kit rather than by every caller.
+
 6zl. **WANTED on 27 September - the Deskbar's indicators drawn with the
    line icons, drawn first.** Diego, with the Mac's menu bar beside him:
    "now that we have status icons from our new icon library, can we mockup

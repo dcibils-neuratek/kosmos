@@ -11638,3 +11638,20 @@ its red (13 or more pixels between the two screens, where it needs 12).
 Seen under QEMU on ARM as drawn: the port and the speaker, dark on the
 blue bar.
 
+## 18.239 A face asked for by size crosses as its role and size (6zm)
+
+Diego on the M700: the Kosmos IDE made larger "changes the font instead of
+making it larger". Seen under QEMU: IBM Plex Mono at 18, and three steps
+larger a different monospace laid out on Plex Mono's measurements. The
+editor handed `gc:text` the face `ui.sized` had given it - a number in the
+IDE's process - and the op carried that number to the compositor, where
+another face has it. `ui.lua` already said "a size crosses, never a face
+number"; nothing held a caller to it.
+
+`gc:text` now looks a number up among the faces `ui.sized` has given out
+(`sized_back`, rebuilt when the desktop's faces change) and sends the role
+and size instead. Seen after: Plex Mono, larger. **Checked** in the IDE's
+suite (`run_ide.py`, 27): a window draws with `ui.sized("mono", 24)` and
+reads its own op back, which must be `mono 24`. Control: the look-up
+removed - the op says `6 nil`, the number and no size, and the check fails.
+

@@ -259,15 +259,31 @@ end
 -- kept drawing in whatever the widgets were using, which for a
 -- proportional face means the columns it is made of stop lining up.
 --
+-- Every face `ui.sized` has given out, by its number: the role and size it
+-- is, so `gc:text` can send those instead of the number (below).
+local sized_back = {}
+
 -- `px` asks for that role's font at a size of its own, which is what a title
 -- larger than the three roles needs. **A size crosses, never a face number**:
 -- `gfx`'s `role_of` does take a number, so an index would resolve in the
 -- compositor's process - where that slot was never loaded - and the text
 -- would quietly come out in the 8x16 bitmap. Each side resolves the size
 -- against its own pool instead, and measuring happens in the face that draws.
+--
+-- **And the rule is kept here, not by every caller** (`roadmap.md` 6zm).
+-- The IDE's editor measured in the face `ui.sized` gave it and drew in it
+-- too - a number - so the Kosmos IDE made larger came out in another font
+-- (Diego, on the M700: "making the font larger in the ide changes the font
+-- instead of making it larger as it does in the terminal app"). A number
+-- `ui.sized` gave out is turned back into its role and size before it
+-- becomes an op, so whatever a caller holds, what crosses is a size.
 function gc:text(x, y, s, color, bg, role, px)
   color, bg = shade(color), shade(bg)
   local ax, ay = self.ox + x, self.oy + y
+
+  if type(role) == "number" and sized_back[role] then
+    role, px = sized_back[role].role, sized_back[role].px
+  end
 
   local face = px and ui.sized(role, px) or role
 
@@ -5179,11 +5195,17 @@ local function apply_fonts(fonts)
   -- order puts each size back on the number its holder has.
   gfx.release_faces()
 
+  for number in pairs(sized_back) do sized_back[number] = nil end
+
   for _, key in ipairs(sized_order) do
     local role, px = key:match("^(.-)@(%d+)$")
     local want = theme.fonts[role]
 
     sized_faces[key] = want and gfx.face(want.font, tonumber(px)) or false
+
+    if sized_faces[key] then
+      sized_back[sized_faces[key]] = { role = role, px = tonumber(px) }
+    end
   end
 end
 
@@ -5258,6 +5280,8 @@ function ui.sized(role, px)
     got = gfx.face(want.font, px) or false
     sized_faces[key] = got
     sized_order[#sized_order + 1] = key
+
+    if got then sized_back[got] = { role = role, px = px } end
   end
 
   return got or role

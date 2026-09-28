@@ -373,6 +373,42 @@ def main():
         guest.type('print("last" .. "-line:" .. fs.read("/Home/development/u.lua"):match("([^\\n]*)\\n$"))')
         check(said("last-line:", mark, 20) == "ui.slider",
               "the name taken did not reach the file")
+
+        #
+        # **Text larger is the same face, larger** (`roadmap.md` 6zm). The
+        # editor measured in the face `ui.sized` gave it and drew in it too,
+        # so the number crossed to the compositor, where no face had it:
+        # Diego, on the M700, "making the font larger in the ide changes the
+        # font instead of making it larger". A window draws with such a
+        # number, and what its op carries is read back: the role and the
+        # size, never the number.
+        #
+        probe = (
+            "local ui = use('/Kosmos/Libraries/ui.lua') "
+            "local win = ui.window{ title = 'FaceProbe', w = 240, h = 80, "
+            "x = 300, y = 300 } "
+            "local v = ui.view{ x = 0, y = 0, w = 240, h = 80 } "
+            "local told = false "
+            "function v:draw(g) "
+            "local f = ui.sized('mono', 24) "
+            "g:text(4, 4, 'Plex', nil, nil, f) "
+            "local op = g.ops[#g.ops] "
+            "if not told then told = true "
+            "print('face' .. 'probe ' .. type(f) .. ' ' .. tostring(op.role) "
+            ".. ' ' .. tostring(op.px)) end end "
+            "win:add(v) win:run()"
+        )
+        guest.type("fs.write('/Temporary/faceprobe.lua', %r)" % probe)
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        guest.type("wm /Temporary/faceprobe.lua")
+        drew = said("faceprobe ", mark, 60)
+        check(drew == "number mono 24",
+              "a face ui.sized gave out, drawn with, crossed to the compositor "
+              "as %r - it has to go as the role and its size, mono 24, or the "
+              "text comes out in whatever face the compositor has at that "
+              "number" % drew)
+        stop_desktop()
     finally:
         guest.close()
 
@@ -387,7 +423,7 @@ def main():
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
           "its file remembered; a program changed and not saved run to its error "
           "with Ctrl+Enter, a 21 KB library run as it is and said to be one, "
-          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab; Ctrl P finding the Clock, its library and the longer name in that order whatever the case, the library opened with Down and Enter, and the project's own file first)" % checks)
+          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, in the same face, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab; Ctrl P finding the Clock, its library and the longer name in that order whatever the case, the library opened with Down and Enter, and the project's own file first)" % checks)
     return 0
 
 
