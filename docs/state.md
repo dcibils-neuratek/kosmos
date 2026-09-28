@@ -64,7 +64,7 @@ capabilities which will then lead to us having accelerated 2d graphics".
   prioritized", "and not be jerky under heavy load". `needs audio` now
   grants `SPAWN_AUDIO_BAND` (the device stays the server's); the Synth Kit
   and the audio server ask for the band; past a ring's worth of running
-  without sleeping a thread drops back. Under six display-band spinners the
+  without sleeping a thread drops back. Under display-band spinners on every core the
   sound thread was never away more than 14 ms, inside the device's 23; out
   of the band, 428 ms. The Synth Kit now starts with the whole ring and
   comes down. Groove has `--report N`, for the ThinkPad - where the device's
@@ -83,7 +83,18 @@ capabilities which will then lead to us having accelerated 2d graphics".
   prepush, past the ten-minute budget (9:15 the run before): to fix before
   anything else lands.
 
-**Next**: the gate back under ten minutes. Then 4i d, a MIDI event reaching the kit without the window's pass;
+- **0.10.188 stick** handed to Diego at the Mac mini (OVMF 32 checks); on
+  the M700 he found Groove laggy - maximised at 3440x1440, redrawn whole
+  every frame. Now 1920x1080 by default, `--size`, the menu's Full screen,
+  frame numbers in `--report` (72 ms a frame at 1920x1080 under QEMU, 150
+  at 3432x1406, 0.4 handing over: the pixels).
+- **The gate back to 9:10** (18.265): guests never told to quit, the
+  loaded suite's start, a timer test failing on one stretched window, the
+  loader reading its own echo, and two host instruments out of the loaded
+  suite.
+
+**Next**: Groove redrawing only what is dirty (6zh; a Graphics Kit view to
+clip by). Then 4i d, a MIDI event reaching the kit without the window's pass;
 4i e, the device's depth, on the ThinkPad. 6zg d when Diego has the
 Launchkey at hand.
 

@@ -699,20 +699,41 @@ class Guest:
         raise Failure("the monitor never produced a screendump.")
 
     def close(self):
+        """QEMU told to quit, and waited for.
+
+        **The monitor is connected on first use**, for a screendump or a key,
+        and `quit` went only down a monitor already connected - so a guest
+        that never used one, which is most of them, was sent nothing, waited
+        out five seconds and was killed. Five seconds a boot, some eighty
+        boots a gate: the gate crossed ten minutes on 28 September with a
+        suite that spent a fifth of its time here (`testing.md` 18.265).
+        Connected now if it was not, and SIGTERM behind it, which QEMU also
+        takes as a clean shutdown - closing a WAV it was writing properly.
+        """
         try:
             if self.qmp is not None:
                 self.qmp.close()
                 self.qmp = None
 
+            if self.monitor is None and self.proc.poll() is None:
+                self._connect_monitor()
+
             if self.monitor is not None:
                 self.monitor.sendall(b"quit\n")
                 self.monitor.close()
+                self.monitor = None
         except Exception:
             pass
-        try:
-            self.proc.wait(timeout=5)
-        except Exception:
-            self.proc.kill()
+
+        for stop, wait in ((None, 5), (self.proc.terminate, 2), (self.proc.kill, 2)):
+            try:
+                if stop is not None:
+                    stop()
+                self.proc.wait(timeout=wait)
+                break
+            except Exception:
+                continue
+
         shutil.rmtree(self.dir, ignore_errors=True)
 
 

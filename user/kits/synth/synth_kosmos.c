@@ -146,6 +146,7 @@ static uint32_t ahead_floor = 2;        /* never fewer: `fewest`, or a dry */
 static uint32_t dry;                    /* times the ring was found empty */
 static bool     in_audio_band;          /* the thread got the band it asked */
 static unsigned long worst_pass;        /* counter ticks between two passes */
+static unsigned long last_pass_at;      /* the counter at the latest pass */
 static unsigned long busy;              /* the audio thread's, rendering */
 
 static double lbuf[SYNTH_BLOCK], rbuf[SYNTH_BLOCK];
@@ -326,6 +327,11 @@ static void audio_main(unsigned long arg)
         }
 
         last_pass = now;
+
+        /* Every pass, read by `state` straight: the snapshot is published
+         * only when periods are written, and a thread waiting on a full
+         * ring passes without writing. */
+        __atomic_store_n(&last_pass_at, now, __ATOMIC_RELAXED);
 
         take_song();
         drain();
@@ -658,6 +664,9 @@ static void set_boolean(lua_State *L, const char *key, bool v)
  *   worst_pass                   the longest between two of its passes, in
  *                                counter ticks: a tick's sleep, and what
  *                                held it off after
+ *   last_pass                    the counter at its latest pass: a thread
+ *                                held off still is away since then, which
+ *                                no pair of passes can say
  */
 static int l_state(lua_State *L)
 {
@@ -721,6 +730,8 @@ static int l_state(lua_State *L)
     set_integer(L, "dry", copy.dry);
     set_boolean(L, "audio_band", copy.audio_band);
     set_integer(L, "worst_pass", (lua_Integer)copy.worst_pass);
+    set_integer(L, "last_pass",
+                (lua_Integer)__atomic_load_n(&last_pass_at, __ATOMIC_RELAXED));
 
     if (lua_getfield(L, -1, "tracks") != LUA_TTABLE) {
         lua_pop(L, 1);

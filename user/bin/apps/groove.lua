@@ -18,6 +18,9 @@
 --   groove --house      the house demo
 --   groove --open       the saved project
 --   groove --play       and playing, which is how `make shot` pictures it
+--   groove --size 2560x1440   a window that size; `--size full` the whole
+--                       screen. 1920x1080 otherwise, or the whole screen
+--                       when that is no bigger
 --   groove --report 30  and after thirty seconds, says on the console how
 --                       the sound held: how often its ring ran dry, and the
 --                       audio server's worst turn and starvations
@@ -38,11 +41,21 @@ local app = use("/Kosmos/Libraries/groove/app.lua")
 local want = {}
 for word in tostring(args or ""):gmatch("%S+") do want[word] = true end
 local report = tonumber(tostring(args or ""):match("%-%-report%s+(%d+)"))
+local asked = tostring(args or ""):match("%-%-size%s+(%S+)")
+local carried = tostring(args or ""):match("%-%-carry%s+(%S+)")
 
 --------------------------------------------------------------------------
--- The window, maximised as Cafesa3D's is: a workstation wants the room,
--- and a window that draws its own pixels is opened at its size and never
--- resized. PulseMusic's own 1400 by 860 when there is nobody to ask.
+-- **The window: 1920 by 1080**, centred, or the whole work area where that
+-- is no bigger. It was maximised, as Cafesa3D is, and on the M700's
+-- 3440x1440 that was five million pixels drawn again every frame while a
+-- song played - Diego, 28 September: "the app feels laggy", "It should open
+-- at 1920x1080 by default", "Or have the launcher parameter to open at a
+-- certain resolution", "Also a 3 dot menu option to go full screen". So
+-- `--size WxH` or `--size full`, and Full screen in the bar's menu, which
+-- starts Groove again at the new size with the song carried over (`again`
+-- below): a window that draws its own pixels cannot be resized, because its
+-- buffers are this process's, as Video's are. PulseMusic's own 1400 by 860
+-- when there is nobody to ask.
 --
 -- **Its top bar is its title bar** (`roadmap.md` 6zj), as Diego chose:
 -- "GROOVE bar is the title bar". It says it has a header, so where the
@@ -53,18 +66,30 @@ local report = tonumber(tostring(args or ""):match("%-%-report%s+(%d+)"))
 -- with no tab and no border has the whole width.
 --------------------------------------------------------------------------
 
-local W, H, area = 1400, 860, false
+local DEFAULT_W, DEFAULT_H = 1920, 1080
+local W, H, whole = 1400, 860, false
 
 do
   local ok, got = pcall(fs.send, "/Running/wm", { type = "workarea", header = true })
 
   if ok and type(got) == "table" and got.ok and tonumber(got.w) and tonumber(got.h) then
-    W, H, area = got.w, got.h, true
+    local aw, ah = got.w, got.h
+    local w, h = tostring(asked or ""):match("^(%d+)[xX](%d+)$")
+
+    if asked == "full" then
+      W, H = aw, ah
+    elseif w then
+      W, H = math.min(tonumber(w), aw), math.min(tonumber(h), ah)
+    else
+      W, H = math.min(DEFAULT_W, aw), math.min(DEFAULT_H, ah)
+    end
+
+    whole = W == aw and H == ah
   end
 end
 
 local win = ui.window{ title = "Groove", w = W, h = H, direct = true, header = true,
-                       maximised = area or nil, centre = not area or nil }
+                       maximised = whole or nil, centre = not whole or nil }
 
 if not win or not win:surface() then
   print("groove: no window")
@@ -85,6 +110,45 @@ wmproto.track(win.handle, true)
 app.size(W, H)
 app.load()
 
+-- **Another size**: this Groove's song saved where the next will find it,
+-- Groove asked for at that size, and this window closed once the window
+-- manager has said yes - not before, so a refused start leaves the song on
+-- the screen and a line saying why. As Video does for its sizes.
+local CARRY = "/Temporary/groove-carry.groove"
+
+local function again(size)
+  local ok, why = E.save(CARRY)
+
+  if not ok then
+    app.say("The song could not be carried across: " .. tostring(why))
+    return
+  end
+
+  local reply, sent = fs.send("/Running/wm", {
+    type = "launch", program = "groove",
+    args = ("--size %s --carry %s%s"):format(size, CARRY, E.playing and " --play" or ""),
+  })
+
+  if reply and reply.ok then
+    win:close()
+    return
+  end
+
+  app.say("Groove could not start again at " .. size .. ": "
+          .. tostring(reply and reply.error or sent))
+end
+
+app.onSize = again
+app.sizing = { whole = whole, w = W, h = H }
+
+-- The song a Groove at another size handed over, and then gone.
+if carried then
+  local ok, why = E.load(carried)
+
+  if not ok then app.say("The song did not come across: " .. tostring(why)) end
+  fs.send(carried, { type = "delete" })
+end
+
 -- The three, in the bar's right end, when the bar is the title bar; and a
 -- press on its empty band handed to the window manager as a drag, or a
 -- double one as maximise - `take_hold`, as a kit's header does.
@@ -104,9 +168,12 @@ if want["--house"] then E.setSong(Demos.house()) end
 if want["--open"] then app.open() end
 
 local out, why = audio.open("Groove", 8)
+local soundSince = nil              -- the counter when the kit's thread began
 
 if out then
   local ok, err = pcall(synth.start, out.ring, out.rate)
+
+  soundSince = sys.ticks()
 
   if not ok then
     out:close()
@@ -174,6 +241,14 @@ local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
 local last = sys.ticks()
 local reportAt = report and (last + report * hz)
 
+-- **Where a frame's time goes**, for `--report` (Diego, on the M700: "the
+-- app feels laggy", "Are we redrawing the entire ui every frame"): drawing
+-- - Groove's Lua and the Graphics Kit under it - and handing the window to
+-- the window manager, counted apart, because the answer to a slow frame is
+-- different for each.
+local frames = { n = 0, draw = 0, draw_worst = 0, commit = 0, commit_worst = 0,
+                 since = sys.ticks() }
+
 -- `--report`: how the sound held, from both of the places it could fail -
 -- the Synth Kit's thread keeping its ring, and the audio server keeping the
 -- device (4i). Said once.
@@ -190,20 +265,48 @@ local function reportSound()
   local st = E.kitState()
   local stats = audio.stats() or {}
   local info = sys.info() or {}
-  local frames = (info.audio_period or 0) // (2 * math.max(1, info.audio_channels or 2))
-  local holds = (info.audio_periods or 0) * frames / math.max(1, info.audio_rate or 44100) * 1000
+  local period = (info.audio_period or 0) // (2 * math.max(1, info.audio_channels or 2))
+  local holds = (info.audio_periods or 0) * period / math.max(1, info.audio_rate or 44100) * 1000
 
   -- The DSP load, all told: the time spent rendering over the time it
   -- rendered. Past one, no scheduler can keep the sound whole.
   local load = (st.busy and st.rendered and st.rendered > 0)
                and (st.busy / hz) / (st.rendered / E.SR) or 0
 
+  -- Away since its last pass counts too: a thread held off for good has no
+  -- second pass to measure a gap by, and published nothing since. Asked of
+  -- the kit now rather than from the frame's copy, which under load is as
+  -- old as this window's last turn - half a second, once.
+  local fresh = synth.state()
+  local away = math.max(fresh.worst_pass or 0,
+                        (fresh.last_pass and fresh.last_pass > 0)
+                        and (sys.ticks() - fresh.last_pass) or 0)
+
   print(("groove: after %d s: the device holds %.1f ms; the kit's worst pass %.1f ms, "
          .. "the audio server's worst turn %.1f ms; the kit %s, %d periods kept, "
          .. "its ring ran dry %d times; DSP %.0f%%; the device ran dry %d times")
-        :format(report, holds, (st.worst_pass or 0) / hz * 1000, (stats.late or 0) / 1000,
+        :format(report, holds, away / hz * 1000, (stats.late or 0) / 1000,
                 st.audio_band and "in the audio band" or "not in the audio band",
                 st.ahead or 0, st.dry or 0, load * 100, info.audio_dry or -1))
+
+  local n = math.max(1, frames.n)
+  local ms = 1000 / hz
+
+  -- How much sound came through, by the kit's count: it renders only into
+  -- the room the audio server makes, and the server takes at the device's
+  -- pace - so this is the device's, and under QEMU's emulation, loaded, it
+  -- runs at about half the time that passed (`testing.md` 18.265). Said,
+  -- not held to anything.
+  local since = soundSince and (sys.ticks() - soundSince) / hz or 0
+
+  print(("groove: the kit rendered %.2f s of sound in the %.2f s since it began")
+        :format((st.rendered or 0) / E.SR, since))
+
+  print(("groove: %dx%d, %.1f frames a second; drawing %.1f ms a frame, %.1f at worst; "
+         .. "handing it over %.1f ms, %.1f at worst")
+        :format(W, H, frames.n / math.max(1e-9, (sys.ticks() - frames.since) / hz),
+                frames.draw / n * ms, frames.draw_worst * ms,
+                frames.commit / n * ms, frames.commit_worst * ms))
 end
 local lastPress, lastX, lastY = -1, -100, -100
 local dirty = true
@@ -217,7 +320,17 @@ local function frame(touched)
   U.target(win:surface())
   app.draw()
 
+  local drawn = sys.ticks()
+
   if not win:commit{ x = 0, y = 0, w = W, h = H } then return false end
+
+  local handed = sys.ticks()
+
+  frames.n = frames.n + 1
+  frames.draw = frames.draw + (drawn - t)
+  frames.commit = frames.commit + (handed - drawn)
+  frames.draw_worst = math.max(frames.draw_worst, drawn - t)
+  frames.commit_worst = math.max(frames.commit_worst, handed - drawn)
 
   if touched then E.changed() end
   E.sync()

@@ -6749,6 +6749,20 @@ static bool test_timer_period_matches_the_rate(void)
      * as well as a long one, since both ends are read with interrupts off,
      * and forty of them give a loaded host forty chances in four seconds.
      */
+    /*
+     * **And any clean window within tolerance passes; one outside it does
+     * not fail.** It returned false at the first clean window that measured
+     * long, so the forty chances above were forty only while every window
+     * was dirty: on 28 September, in a gate of 57 suites, one clean window
+     * of 25 ticks read 15% long on x86 and the image passed three times of
+     * three alone. A window can be clean - no deadline missed - and still
+     * have had its vCPU taken away by the host between two readings. The
+     * drift this exists for, 27%, is in every window, so it still fails:
+     * only if no clean window agrees, with the last one's numbers said.
+     */
+    uint64_t long_elapsed = 0, long_expected = 0;
+    unsigned long long_ticks = 0;
+
     for (attempt = 0; attempt < 40; attempt++) {
         unsigned long k0, k1, m0, m1;
         uint64_t t0, t1, elapsed, expected, tolerance;
@@ -6787,13 +6801,19 @@ static bool test_timer_period_matches_the_rate(void)
             return true;
         }
 
-        /* Which way it failed is the whole of what a failure has to say. */
-        kputs("\n   (a clean window of ");
-        kputu(k1 - k0);
-        kputs(" ticks took ");
-        kputu((unsigned long)elapsed);
+        long_elapsed = elapsed;
+        long_expected = expected;
+        long_ticks = k1 - k0;
+    }
+
+    /* Which way it failed is the whole of what a failure has to say. */
+    if (long_ticks != 0) {
+        kputs("\n   (no clean window agreed; the last, of ");
+        kputu(long_ticks);
+        kputs(" ticks, took ");
+        kputu((unsigned long)long_elapsed);
         kputs(" counts; the rate says ");
-        kputu((unsigned long)expected);
+        kputu((unsigned long)long_expected);
         kputs(")");
         return false;
     }

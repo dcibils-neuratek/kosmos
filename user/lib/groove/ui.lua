@@ -126,7 +126,10 @@ local function icon(kind, cx, cy, s)
   elseif kind == "stop" then
     local d = floor(s * 1.6 + 0.5)
     S:fill(floor(cx - d / 2 + 0.5), floor(cy - d / 2 + 0.5), d, d, cur)
-  elseif kind == "rec" then U.circle(cx, cy, s) end
+  elseif kind == "rec" then U.circle(cx, cy, s)
+  elseif kind == "more" then          -- three dots, stood up: the window's menu
+    for i = -1, 1 do U.circle(cx, cy + i * s * 1.3, s * 0.34) end
+  end
 end
 U.icon = icon
 

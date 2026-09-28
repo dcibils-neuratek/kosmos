@@ -2613,6 +2613,31 @@ processors, and still what follows USB:
    `/Home/Music`. MIDI since 6zg step c. **Not yet**: a key released in
    another window leaves its note held, because a window is not told when
    it loses the keyboard.
+   **Asked on 28 September, on the M700 with 0.10.188**: "I am testing
+   groove on the m700 and the app feels laggy", "Like the ui is running at
+   a lower frames per second", "The entire os feels snappy but this app".
+   Groove was maximised - 3440x1440 there - and PulseMusic's UI is
+   immediate-mode: every frame the whole window is drawn again in Lua and
+   handed over. Measured under QEMU with `--report`: 72 ms a frame drawing
+   at 1920x1080 and 150 at 3432x1406, 0.4 ms handing it over - the time is
+   the pixels drawn, and it grows with the window. Agreed, in his words:
+   - **"It should open at 1920x1080 by default"** - centred, or the whole
+     work area where the screen is no bigger; **"Or have the launcher
+     parameter to open at a certain resolution"** - `--size WxH` and
+     `--size full`; **"Also a 3 dot menu option to go full screen"** - the
+     three dots at the bar's right end, Full screen and a 1920x1080 window,
+     which start Groove again at that size with the song carried over, as
+     Video does for its sizes. `--report` says frames a second and each
+     frame's drawing and hand-over.
+   - **"Or just redraw what's dirty?"** - yes: Groove's drawing recorded as
+     it is made, compared with what was last drawn into the same buffer,
+     and drawn again only where something changed, clipped to those places
+     by a view the Graphics Kit gives of a rectangle of a surface - so
+     PulseMusic's own drawing code is untouched, and a playing song redraws
+     its playheads, meters and counter rather than the window. And "Can we
+     use simd vector operations to speed it up?" - for the pixel loops,
+     which is 4h's road (the blitter vectorised); drawing fewer pixels
+     comes first because it is the larger factor.
 
 6zg. **WANTED on 27 September - a USB MIDI keyboard.** Diego: "usb midi
    keyboard support", and Grooves plays from one (6zh). A USB MIDI device

@@ -12393,14 +12393,14 @@ left for the thread's old band when it runs longer than a full ring takes
 to play without sleeping.
 
 **Kept, `run_synth.py --load`** (`arm-synth-load`), 7 checks: a boot that
-plays the house demo while six `spin 60 display` hold every core in the band
+plays the house demo while four `spin 60 display` - six at first - hold every core in the band
 every program runs in, and Groove's `--report 8` says what the guest itself
 measured. **Each party has to have come back within what the device holds**
-- four periods, 23.2 ms - the kit's thread between two passes and the audio
-server between two turns: a longer absence is a gap on any device, a
-shorter one is covered. And the kit in the audio band, come down from the
-whole ring, and six seconds played. Three runs: the kit's worst pass 9.3 to
-13.6 ms, the server's 8.6 to 13.7, five periods kept, DSP 6 to 7%.
+- four periods, 23.2 ms - the kit's thread between two passes, or since its
+last one, and the audio server between two turns: a longer absence is a
+gap on any device, a shorter one is covered. And the kit in the audio band
+and come down from the whole ring. Runs: the kit's worst pass 9.3 to 15 ms,
+the server's 8.6 to 15, four or five periods kept, DSP 6 to 7%.
 
 Its controls: the kit not asking - away **427.8 ms**, its ring dry 51 times,
 at most 5.4 s of 12 played and once none at all; the audio server not
@@ -12453,3 +12453,44 @@ released 1920x1080 image, runs that image at that size. Its control: the
 script as it was - four fail, Diego's command among them.
 
 Seen once, not kept: Groove on the desktop at 3840x2160 in 512 MB.
+
+## 18.265 The gate back under ten minutes: a quit nobody sent, and two timing checks
+
+0.10.187's prepush took 10:09, and the gate before it 9:15. What moved:
+
+- **`Guest.close` sent `quit` only down a monitor already connected**, and
+  the monitor is connected on first use - a screendump or a key - so a guest
+  that never used one, which is most of them, was sent nothing, waited out
+  five seconds and was killed. Five seconds a boot, in every suite that
+  boots through `run_screenshot.Guest`. Connected now if it was not, with
+  SIGTERM and then SIGKILL behind it: a close takes 0.03 to 0.3 s and QEMU
+  exits 0, closing a WAV it was writing as it should.
+- **`arm-synth-load`, which runs alone, took 23 s in one gate and 70 in the
+  next.** Its time was Groove's own start: six display-band spinners and
+  Groove's window 50 s in coming once, 5 the next. Four spinners, one a
+  core: 15 s a run, and the controls bite as before (18.263). Spinners that
+  waited for Groove's window were tried first and emptied the test: placed
+  while blocked, they left the sound thread a core of its own, and the kit
+  kept up even stepped down to LOW.
+- **And two more host instruments out of it.** "Six seconds played", from
+  QEMU's WAV, failed a run whose guest-side numbers were all right (5.5 s
+  of 8); the kit's own rendered seconds read the same, because it renders
+  only into room the server makes at the emulated device's pace - about
+  half the time that passed, loaded. Both are said, neither held. What is
+  held instead covers what "played" had caught: **the kit's absence counts
+  up to the report**, not only between passes, so a thread held off for
+  good - which never makes a second pass, and read 0.0 ms - reads 5,444 ms.
+  Its last pass is read straight from the kit, since the snapshot is
+  published only when periods are written, and the report asks the kit
+  fresh, since the frame's copy under load was half a second old.
+- **`timer: the period matches the rate` failed on x86 inside the gate** -
+  one clean window of 25 ticks read 15% long - and the same image passed
+  three times of three alone. It returned false at the first clean window
+  outside tolerance, so its forty chances were forty only while every window
+  was dirty. Now any clean window within 10% passes, and it fails only if
+  none agrees - which the 27% drift it was written for still does. Control:
+  the rate's prediction scaled by 1.27, and no window agrees.
+- **`x86-loader` read its own echo again**: waiting for "apptest" after
+  typing `run /Home/apps/apptest/plain.lua`, which names it. The first line
+  was skipped as the echo, and a line break before it let the echo through.
+  A line holding the command typed is never the answer now.

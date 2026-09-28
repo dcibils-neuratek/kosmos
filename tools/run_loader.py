@@ -165,8 +165,16 @@ def main():
         found = None
 
         while time.monotonic() < deadline and found is None:
+            # Not the first line and not a line ending in the command: the
+            # echo is the first line only when nothing else arrived between
+            # the prompt and it, and in the whole gate once, on 28
+            # September, a line break did - so the echo of `plain`, which
+            # names `apptest`, was read as its answer again. *Ending in* it,
+            # not holding it: `doom` and `quake` answer in lines that name
+            # themselves.
             for line in guest.seen[mark:].split("\n")[1:]:
-                if want in line and not line.lstrip().startswith("kosmos>"):
+                if (want in line and not line.rstrip().endswith(command)
+                        and not line.lstrip().startswith("kosmos>")):
                     found = line.strip()
                     break
             if found is None:

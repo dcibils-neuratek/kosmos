@@ -403,7 +403,7 @@ a thread there that runs longer than a full ring takes to play without
 sleeping drops back until it next sleeps. That budget is what makes a band
 above the desktop safe: the audio server had been kept below it because a
 thread that high is harmless only while it blocks, and nothing enforced
-that it did. Under six spinners holding every core in the display band,
+that it did. Under spinners holding every core in the display band,
 Groove's sound thread was never away longer than 14 ms, inside the 23 ms
 the device holds; out of the band it was away 428 ms (`testing.md`
 18.263).

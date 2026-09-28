@@ -289,6 +289,58 @@ local REC_O = { glyph = "rec", color = C.rec, ic = C.rec }
 local SESSION_O, SONG_O = { color = C.blue }, { color = C.blue }
 local BPM_O, SWING_O = { wheelStep = 1 }, { wheelStep = 0.01 }
 local EXPORT_O, MIDI_O = { tc = C.accent }, {}
+local MORE_O = { glyph = "more", is = 3.5 }
+
+---------------------------------------------------------------- the window's menu
+-- **Kosmos's, not PulseMusic's** (`roadmap.md` 6zh): the three dots at the
+-- bar's right end, as the kit's windows have them. What it offers is the
+-- window's size - Full screen, or back to a 1920 by 1080 window - which
+-- Groove does by starting again at that size with the song carried over
+-- (`app.onSize`, set by `/Kosmos/Apps/groove.lua`). Drawn in PulseMusic's
+-- colours and drawn last, over everything; it takes its click before the
+-- widgets under it are drawn, because in an immediate-mode window whatever
+-- is drawn first under the pointer would otherwise have had it.
+local menu = nil                  -- { x, y, w } while it is open
+local MENU_ROW = 30
+
+local function menuItems()
+  local s = app.sizing or {}
+  return {
+    { label = "Full screen", size = "full", on = s.whole },
+    { label = "1920 x 1080 window", size = "1920x1080",
+      on = not s.whole and s.w == 1920 and s.h == 1080 },
+  }
+end
+
+-- The menu's click, if it has one: taken, and nothing under it sees it.
+local function menuInput()
+  if not menu or not U.pressed then return end
+  local items = menuItems()
+  local inside = U.hit(menu.x, menu.y, menu.w, #items * MENU_ROW + 8)
+  if inside then
+    local i = floor((U.my - menu.y - 4) / MENU_ROW) + 1
+    local item = items[i]
+    if item and not item.on and app.onSize then app.onSize(item.size) end
+  end
+  U.pressed, U.down = false, false
+  menu = nil
+end
+
+local function drawMenu()
+  if not menu then return end
+  local items = menuItems()
+  local h = #items * MENU_ROW + 8
+  U.rect(menu.x + 3, menu.y + 4, menu.w, h, C.dark, 6, 0.5)
+  U.rect(menu.x, menu.y, menu.w, h, C.panel2, 6)
+  for i, item in ipairs(items) do
+    local y = menu.y + 4 + (i - 1) * MENU_ROW
+    if U.hit(menu.x, y, menu.w, MENU_ROW) and not item.on then
+      U.rect(menu.x + 4, y, menu.w - 8, MENU_ROW, C.panel3, 4)
+    end
+    U.text(item.label, menu.x + 14, y + 7, item.on and C.dim or C.text, U.fM)
+    if item.on then U.text("now", menu.x, y + 9, C.dim, U.fS, menu.w - 12, "right") end
+  end
+end
 
 local function swingLabel(s) return string.format("%d%%", floor(s * 100 + 0.5)) end
 
@@ -339,6 +391,11 @@ local function drawTop()
   if U.button(x + 196, y, 46, h, "MIDI", MIDI_O) then midiScan() end
   if Midi.last then U.text(Midi.last, x + 250, 18, C.dim, U.fS) end
   local right = (chrome.headed and chrome.lights) and (L.W - chrome.lights.w - 24) or (L.W - 10)
+  MORE_O.on = menu ~= nil
+  if U.button(right - 26, y, 26, h, nil, MORE_O) then
+    menu = { x = right - 220, y = y + h + 4, w = 220 }
+  end
+  right = right - 36
   U.text(string.format("DSP %2.0f%%", cpu * 100), right - 70, 18, cpu > 0.7 and C.rec or C.dim, U.fS, 70, "right")
   if keyToEar then
     U.text(string.format("KEY TO EAR %.0f ms", keyToEar.total), right - 250, 18, C.dim, U.fS, 170, "right")
@@ -931,6 +988,7 @@ end
 function app.draw()
   layout()
   U.begin()
+  menuInput()
   U.rect(0, 0, L.W, L.H, C.bg, 0)
   drawTop()
   for ti = 1, E.NT do drawTrackColumn(ti, 4 + (ti - 1) * L.trackW) end
@@ -954,6 +1012,7 @@ function app.draw()
     U.text("Rendering song to WAV...", 0, L.H / 2 - 12, C.accent, U.fL, L.W)
     if exportState == "pending" then exportState = "go" end
   end
+  drawMenu()
   U.finish()
 end
 
@@ -1206,6 +1265,7 @@ function app.quit() LK.detach(); Midi.close() end
 
 -- `at` is the counter when the window manager read the key.
 function app.keypressed(key, at)
+  if menu and key == "escape" then menu = nil; return end
   local tr = track()
   if U.ctrl then
     if key == "s" then app.save()
