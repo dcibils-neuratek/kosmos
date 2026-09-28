@@ -86,30 +86,6 @@ local EDIT_KEYS = {
 
 local theme = use("/Kosmos/Libraries/theme.lua")
 
---
--- **Twenty-six, and the reasoning that gave twenty was measuring the wrong
--- thing.**
---
--- It said: the controls are fourteen and the glyphs sixteen, so this is the
--- smallest a tab can be and still hold both with a pixel either side. That
--- is an argument about what *fits*, and a title bar is not a container - it
--- is a handle. What decides its height is how hard it is to put a pointer on
--- it and keep it there while dragging.
---
--- On a 14-inch panel at 1920x1080 twenty pixels is about 2.4 mm of physical
--- target, and it reads as a hairline you have to aim at. The number that
--- matters is millimetres on the glass rather than pixels in the buffer, and
--- nothing in this file had ever asked that question - it was a desktop
--- measured in QEMU windows, where the panel is whatever the Mac's display
--- makes of it.
---
--- Six more, because that is what the machine says is comfortable. The
--- controls stay fourteen: a bigger handle, not bigger buttons.
---
--- **Read from the fixed layout** (`theme.metrics.tab`), which said 20 for
--- as long as this said 26 - the one number, kept in one place.
---
-local TAB_H      = theme.metrics.tab
 
 --
 -- **A window's outside, in one table rather than two names.**
@@ -150,6 +126,31 @@ local OUT = { want_corner = true,
               -- quarters are gone. A title bar and a little, so the one
               -- underneath is still grabbable.
               cascade = theme.metrics.tab + 8 }
+
+--
+-- **Twenty-six, and the reasoning that gave twenty was measuring the wrong
+-- thing.**
+--
+-- It said: the controls are fourteen and the glyphs sixteen, so this is the
+-- smallest a tab can be and still hold both with a pixel either side. That
+-- is an argument about what *fits*, and a title bar is not a container - it
+-- is a handle. What decides its height is how hard it is to put a pointer on
+-- it and keep it there while dragging.
+--
+-- On a 14-inch panel at 1920x1080 twenty pixels is about 2.4 mm of physical
+-- target, and it reads as a hairline you have to aim at. The number that
+-- matters is millimetres on the glass rather than pixels in the buffer, and
+-- nothing in this file had ever asked that question - it was a desktop
+-- measured in QEMU windows, where the panel is whatever the Mac's display
+-- makes of it.
+--
+-- Six more, because that is what the machine says is comfortable. The
+-- controls stay fourteen: a bigger handle, not bigger buttons.
+--
+-- **Read from the fixed layout** (`theme.metrics.tab`), which said 20 for
+-- as long as this said 26 - the one number, kept in one place.
+--
+OUT.TAB_H =  theme.metrics.tab
 --
 -- **The frame down the sides and along the bottom**, in the title bar's
 -- colour: 4, where it was 2. Diego, 24 September, looking at a Log View
@@ -167,7 +168,7 @@ local OUT = { want_corner = true,
 -- window is too thick, we should take a couple of pixels out". Six read as
 -- a picture frame; four holds the page without being looked at.
 --
-local BORDER     = 4
+OUT.BORDER     = 4
 --
 -- The three controls on a tab, and the room they take.
 --
@@ -194,7 +195,7 @@ local BORDER     = 4
 -- thin is a target you miss" - and this is that sentence applied to the end
 -- of the bar it shares.
 --
-local BOX        = 18
+OUT.BOX        = 18
 
 -- How far the controls sit from the end of the tab, and the title from its
 -- start.
@@ -211,8 +212,8 @@ local BOX        = 18
 -- column rather than two near-misses. The controls are 10 in, the header's
 -- `head_edge`, for the same reason at the other end.
 --
-local MARGIN     = 10
-local TITLE_IN   = 18
+OUT.MARGIN     = 10
+OUT.TITLE_IN   = 18
 
 -- How far each window steps down and across from the one already in its
 -- corner. A tab's height, so the one underneath always has a strip of its
@@ -233,8 +234,8 @@ local TITLE_IN   = 18
 -- window manager's and never reaches the application. Sixteen pixels square
 -- in the one corner least likely to hold anything you meant to press.
 --
-local GRIP       = 16
-local BOX_W      = BOX + 4        -- minimise and maximise, at the right
+OUT.GRIP       = 16
+OUT.BOX_W      = OUT.BOX + 4        -- minimise and maximise, at the right
 
 -- Nothing may be resized smaller than `scale.MIN_W` by `scale.MIN_H`, 120 by
 -- 60 at 100 per cent. Below it a window is all decoration and no window.
@@ -280,16 +281,16 @@ function scale.valid(pct)
 end
 
 function scale.chrome()
-  TAB_H   = scale.px(theme.metrics.tab)
+  OUT.TAB_H   = scale.px(theme.metrics.tab)
   OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
   OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
-  BORDER  = scale.px(4)
-  BOX     = scale.px(18)
-  MARGIN  = scale.px(10)
-  TITLE_IN = scale.px(18)
-  OUT.cascade = TAB_H + scale.px(8)
-  GRIP    = scale.px(16)
-  BOX_W   = BOX + scale.px(4)
+  OUT.BORDER  = scale.px(4)
+  OUT.BOX     = scale.px(18)
+  OUT.MARGIN  = scale.px(10)
+  OUT.TITLE_IN = scale.px(18)
+  OUT.cascade = OUT.TAB_H + scale.px(8)
+  OUT.GRIP    = scale.px(16)
+  OUT.BOX_W   = OUT.BOX + scale.px(4)
   scale.MIN_W = scale.px(120)
   scale.MIN_H = scale.px(60)
 end
@@ -351,16 +352,16 @@ local SETTINGS = "/Home/.appearance"
 local tabs = {}
 
 function tabs.width(win)
-  return win.w + BORDER * 2
+  return win.w + OUT.BORDER * 2
 end
 
 -- The tab and the body, as rectangles, for a decorated window.
 function tabs.shape(win)
-  local fx, fy = win.x - BORDER, win.y - TAB_H
-  local fw = win.w + BORDER * 2
+  local fx, fy = win.x - OUT.BORDER, win.y - OUT.TAB_H
+  local fw = win.w + OUT.BORDER * 2
 
-  return { fx, fy, tabs.width(win), TAB_H },
-         { fx, win.y, fw, win.h + BORDER }
+  return { fx, fy, tabs.width(win), OUT.TAB_H },
+         { fx, win.y, fw, win.h + OUT.BORDER }
 end
 
 -- What `load_appearance` found, for the startup below to apply.
@@ -1376,10 +1377,10 @@ local function frame_of(win)
     return win.x, win.y, win.w, win.h
   end
 
-  return win.x - BORDER,
-         win.y - TAB_H,
-         win.w + BORDER * 2,
-         win.h + TAB_H + BORDER
+  return win.x - OUT.BORDER,
+         win.y - OUT.TAB_H,
+         win.w + OUT.BORDER * 2,
+         win.h + OUT.TAB_H + OUT.BORDER
 end
 
 --
@@ -1478,7 +1479,7 @@ end
 OUT.frame_fill = gfx.surface{ w = 64, h = 64 }
 
 function OUT.round_inside(win, r, colour)
-  local c = OUT.corner - BORDER
+  local c = OUT.corner - OUT.BORDER
 
   if c <= 0 or c > 64 or win.kind == "menu" then return end
 
@@ -1629,7 +1630,7 @@ end
 local reserved_top = 0
 
 local function top_limit()
-  return TAB_H + reserved_top
+  return OUT.TAB_H + reserved_top
 end
 
 local function boxes_x(win)
@@ -1657,7 +1658,7 @@ local function boxes_x(win)
   -- The run spans from here to `2 * BOX_W + BOX`: each box starts a slot
   -- and the last is `BOX` wide, with the far edge `MARGIN` from the frame.
   --
-  return fx + tabs.width(win) - MARGIN - (BOX_W * 2 + BOX)
+  return fx + tabs.width(win) - OUT.MARGIN - (OUT.BOX_W * 2 + OUT.BOX)
 end
 
 --
@@ -1703,7 +1704,7 @@ OUT.IN_SLOT = { [0] = "maximise", [1] = "minimise", [2] = "close" }
 function OUT.boxes_rect(win)
   local _, fy = frame_of(win)
 
-  return boxes_x(win), fy + (TAB_H - BOX) // 2, BOX_W * 2 + BOX, BOX
+  return boxes_x(win), fy + (OUT.TAB_H - OUT.BOX) // 2, OUT.BOX_W * 2 + OUT.BOX, OUT.BOX
 end
 
 
@@ -1721,8 +1722,8 @@ end
 --
 function OUT.light(x, y, kind, lit, off)
   local c = OUT.LIGHTS[kind]
-  local d = BOX - scale.px(4)
-  local dx, dy = x + (BOX - d) // 2, y + (BOX - d) // 2
+  local d = OUT.BOX - scale.px(4)
+  local dx, dy = x + (OUT.BOX - d) // 2, y + (OUT.BOX - d) // 2
 
   if off then
     back:fill_round(dx, dy, d, d, theme.track, d // 2)
@@ -2200,437 +2201,28 @@ local function draw_desktop(r)
 end
 
 --------------------------------------------------------------------------
--- A menu bar above a window that draws its own pixels.
+-- A menu bar above a window that draws its own pixels -
+-- `/Kosmos/Libraries/wm/strips.lua` (`roadmap.md` 6zn).
 --
--- Diego chose this on 18 September for the Super Nintendo's File menu (the
--- README's decision log): a direct window's contents are the application's
--- own memory, so the kit cannot draw a menu bar into them - `window:paint`
--- returns at once for one - and the alternative was each application
--- painting an imitation of one into its game. So the window manager draws
--- the strip, as the kit draws `ui.menubar`: the same gradient and groove,
--- the same titles in the same places. The application's buffer is the area
--- below it, and everything it is told about the pointer is in the buffer's
--- own coordinates.
+-- `post` is declared above and given its body far below, so it is handed
+-- as a function that asks for it when called: handed as it is here, it
+-- would be nil.
+local strips = use("/Kosmos/Libraries/wm/strips.lua"){
+  back = back, theme = theme, add_damage = add_damage,
+  post = function(win, event) return post(win, event) end,
+}
+
+-- One window, clipped - `/Kosmos/Libraries/wm/drawwindow.lua`
+-- (`roadmap.md` 6zn). `resizable` is declared above and given its body
+-- below, so it is handed as a function that asks for it when called.
 --
--- **Only the strip is here.** A press on a title is posted as a `menubar`
--- event with where the menu should open, and the application opens an
--- ordinary kit menu - a window, `kind = "menu"`, owned by its window - so
--- the menus themselves look and behave exactly like every other one, and
--- Doom and Quake can have them the same way.
---
--- One table, because this file's main chunk is near Lua's two hundred
--- locals (the level bar found the limit).
---
-local strips = {}
-
--- A glyph and eight pixels of air: `ui.menubar`'s height.
-function strips.height()
-  return gfx.height("ui") + 8
-end
-
--- Where each title starts and ends: `ui.menubar`'s `spans`, the same sums.
-function strips.spans(titles)
-  local out, x = {}, 4
-
-  for i, t in ipairs(titles) do
-    local w = gfx.measure(t) + 16
-
-    out[i] = { x = x, w = w }
-    x = x + w
-  end
-
-  return out
-end
-
-function strips.paint(win)
-  local mb = win.menubar
-  local s, w, h = mb.surface, win.w, mb.h
-  local top, bottom = theme.chrome(theme.raised)
-
-  theme.vgradient(s, 0, 0, w, h - 2, top, bottom, 0, h - 2)
-  s:fill(0, h - 2, w, 1, theme.edge_dark)
-  s:fill(0, h - 1, w, 1, theme.edge_light)
-
-  for i, sp in ipairs(strips.spans(mb.titles)) do
-    s:text(sp.x + 8, (h - 2 - gfx.height("ui")) // 2, mb.titles[i],
-           theme.text)
-  end
-
-  add_damage(win.x, win.y, w, h)
-end
-
---
--- Asked for, and checked: a list of at most eight titles, each a string of
--- at most thirty-two characters, on a window that draws its own pixels. A
--- window manager is a server, and a server takes what it expects.
---
-function strips.accept(win, titles)
-  if not win.shared or type(titles) ~= "table" then return end
-
-  local kept = {}
-
-  for i = 1, math.min(#titles, 8) do
-    if type(titles[i]) == "string" then
-      kept[#kept + 1] = titles[i]:sub(1, 32)
-    end
-  end
-
-  if #kept == 0 then return end
-
-  local h = strips.height()
-
-  win.menubar = { titles = kept, h = h,
-                  surface = gfx.surface{ w = win.w, h = h } }
-  win.h = win.h + h
-  strips.paint(win)
-end
-
--- How far below the window's top the application's own pixels begin.
-function strips.below(win)
-  return win.menubar and win.menubar.h or 0
-end
-
--- A press on the strip: a title opens its menu under it; between titles,
--- nothing. Said, as a window's placing is, so the log shows which menu of
--- which window was opened and where - a harness finds the menu by it.
-function strips.press(win, nx)
-  local mb = win.menubar
-
-  for i, sp in ipairs(strips.spans(mb.titles)) do
-    if nx >= win.x + sp.x and nx < win.x + sp.x + sp.w then
-      print(("wm: menu bar %s of %s at %d,%d"):format(mb.titles[i],
-            win.title, win.x + sp.x, win.y + mb.h))
-      post(win, { type = "menubar", index = i, title = mb.titles[i],
-                  x = win.x + sp.x, y = win.y + mb.h })
-      return
-    end
-  end
-end
-
--- The strip from its own surface, and the application's pixels below it.
-function strips.compose(win, from, x0, y0, x1, y1)
-  local split = win.y + win.menubar.h
-
-  if y0 < split then
-    local yb = math.min(y1, split)
-
-    back:blit(win.menubar.surface, x0 - win.x, y0 - win.y,
-              x1 - x0, yb - y0, x0, y0)
-  end
-
-  if y1 > split then
-    local ya = math.max(y0, split)
-
-    local lower = win.h - win.menubar.h
-
-    if win.src_w and (win.src_w ~= win.w or win.src_h ~= lower) then
-      back:stretch(from, 0, 0, win.src_w, win.src_h,
-                   win.x, split, win.w, lower, nil, false,
-                   x0, ya, x1 - x0, y1 - ya)
-    else
-      back:blit(from, x0 - win.x, ya - split, x1 - x0, y1 - ya, x0, ya)
-    end
-  end
-end
-
---
--- One window, clipped to `r`.
---
--- Lifted out of `compose_rect` unchanged - the parameter is named `r` for
--- exactly that reason, so that two hundred lines of drawing and the
--- reasoning attached to it did not have to be re-read to be moved.
---
-local function draw_window(i, r)
-    local win = windows[i]
-    local focused = (i == #windows)
-    local fx, fy, fw, fh = frame_of(win)
-
-    --
-    -- Windows that this rectangle does not touch are skipped, and the ones
-    -- it does touch are drawn only where it touches them.
-    --
-    -- This is what makes dragging cost the same with eight windows open as
-    -- with one. Without it every damage rectangle redrew every window in
-    -- full - the primitives clip to the *backbuffer*, not to the rectangle
-    -- being composed - so moving one window re-blitted the entire desktop
-    -- twice per step, once for where it was and once for where it now is.
-    -- What that feels like is a drag that gets heavier as you open things,
-    -- which is exactly what it was.
-    --
-    if not win.hidden
-       and fx < r.x + r.w and fx + fw > r.x
-       and fy < r.y + r.h and fy + fh > r.y then
-      local tab = focused and focused_colour() or idle_colour()
-
-      --
-      -- Undecorated windows skip all of it: no tab, no border, no controls.
-      --
-      -- Menus have always escaped this by accident rather than by rule -
-      -- they live in their own list and are composited by a different loop,
-      -- so this one never sees one. The backdrop and the strip do not have
-      -- that luck: they are ordinary entries in `windows`, and the strip
-      -- came up wearing a title bar that said "Topbar" with a minimise box
-      -- on the end of it.
-      --
-      -- `frame_of` already knows which windows these are - it is the
-      -- function that says a menu, the backdrop and the strip are their own
-      -- rectangle with nothing added. This asks it the same question a
-      -- second way, and that is the part worth not repeating: one predicate,
-      -- used by the thing that measures and by the thing that paints.
-      --
-      -- Undecorated: the backdrop, the strip, and a window that is the
-      -- screen. The last used to be left out, so a tab, its title and its
-      -- boxes were painted under a full-screen window's top rows on every
-      -- pass, only for its contents to cover them.
-      local bare = win.backdrop or win.strip or win.fullscreen
-
-      -- The shadow is drawn before this, by `compose_rect`: it lies
-      -- outside the frame, and `r` here is only the frame's visible part.
-
-      --
-      -- The corners, kept before anything is painted over them. Put back at
-      -- the end of this window's drawing, which is what rounds it.
-      --
-      local kept = not bare
-                   and OUT.corners(fx, fy, fw, fh, r) or nil
-
-      if kept then OUT.keep(kept) end
-
-      -- The whole decoration in one colour: the tab and the border all the
-      -- way round, yellow when this window has the focus and grey when it
-      -- does not.
-      --
-      -- **The tab is BeOS's again, by default**, and wide across the frame
-      -- when Appearance says so (`tabs`). This comment used to record the
-      -- full bar as a deliberate departure from BeOS - a tab as wide as its
-      -- title bought nothing on a desktop that does not stack windows, and
-      -- a narrow tab drew a handle smaller than the one the pointer took.
-      -- Diego chose the tab on 18 September, and the second objection went
-      -- with it: the pointer takes the tab's own shape now (`window_at`).
-      --
-      -- Clipped to the damage rectangle, which the contents below have
-      -- always been and this had never been.
-      --
-      -- The comment above explains that the primitives clip to the
-      -- backbuffer rather than to the rectangle being composed, and uses
-      -- that to skip windows the rectangle does not touch. It did not
-      -- finish the thought: a window the rectangle touches *at all* was
-      -- having its whole frame filled. Ten pixels of damage on a 360x264
-      -- window cost 95,040 of them.
-      --
-      -- Which is what the profile found. A dragged window composed half
-      -- the pixels of an animating one and took four fifths of the time,
-      -- and a cost that does not fall when the damage does is a cost that
-      -- is not being charged to the damage.
-      --
-      local dx0 = (fx > r.x) and fx or r.x
-      local dy0 = (fy > r.y) and fy or r.y
-      local dx1 = math.min(fx + fw, r.x + r.w)
-      local dy1 = math.min(fy + fh, r.y + r.h)
-
-      if not bare then
-        --
-        -- The tab is a gradient and the border below it is not, which is
-        -- why this is two fills where it was one.
-        --
-        -- The single fill above covered both, because both were the same
-        -- colour: `tab` is the whole decoration, and the border says which
-        -- window is listening by being the same yellow as the bar. A
-        -- gradient run over all of it would shade the border too, and a
-        -- border that is lighter at the top of a window than at the bottom
-        -- reads as a lighting error rather than as a surface.
-        --
-        -- `fy` and `TAB_H` rather than `dy0` and the damaged height: the
-        -- ramp belongs to the bar, not to whatever piece of it is being
-        -- repainted. `theme.vgradient` says why at length.
-        --
-        local band = math.max(dy0, math.min(dy1, fy + TAB_H))
-
-        -- Across the tab, which is the whole frame only in the full style:
-        -- beside a BeOS tab is what is behind, and nothing is painted there.
-        local tx1 = math.min(dx1, fx + tabs.width(win))
-
-        if dy0 < band and tx1 > dx0 then
-          local top, bottom = theme.chrome(tab)
-
-          theme.vgradient(back, dx0, dy0, tx1 - dx0, band - dy0,
-                          top, bottom, fy, TAB_H)
-        end
-
-        if band < dy1 then
-          back:fill(dx0, band, dx1 - dx0, dy1 - band, tab)
-        end
-      end
-
-      -- The close box, at the left of the tab where BeOS put it. A square
-      -- outline rather than a cross: at this size a cross is four grey
-      -- pixels and a smudge.
-      --
-      -- Both it and the title only when the rectangle reaches the tab at
-      -- all. A window whose *contents* changed damages the area below the
-      -- bar, and redrawing a title nobody disturbed is a string of glyphs
-      -- per frame for nothing.
-      if not bare and r.y < fy + TAB_H and r.y + r.h > fy then
-        --
-        -- Raised, like every other control in the system.
-        --
-        -- These were 8x8 flat squares painted straight onto the tab, from
-        -- before `ui.md` 16.8b decided the look was dimensional. Next to a
-        -- bevelled button they read as a smudge rather than as something
-        -- you press - which is precisely the sentence a bevel is there to
-        -- say, and the title bar is the one place every window has one.
-        --
-        -- The face is the window colour rather than the tab's, so a control
-        -- looks like a control and not like a hole in the amber.
-        --
-        local by = fy + (TAB_H - BOX) // 2
-
-        -- The title starts at the margin: nothing is to the left of it any
-        -- more, since the close box moved to the right with the other two.
-        --
-        -- In the title font, which is its own role.
-        --
-        -- It used to be the widget font, and the two are not the same
-        -- question: a title bar is a label on a piece of chrome and can
-        -- afford a face with some character in it, where a widget font has
-        -- to work at every size in every list in the system. Asking one
-        -- setting to answer both meant choosing a display face for the
-        -- title bars and getting it in every list as well.
-        --
-        -- `gfx.measure` with the same role, so the vertical centring is of
-        -- the font that will actually be drawn.
-        --
-        back:text(fx + TITLE_IN,
-                  fy + (TAB_H - gfx.height("title")) // 2,
-                  win.title, title_colour(), tab, "title")
-
-        --
-        -- Maximise, minimise and close, all at the right and in the slots
-        -- `OUT.SLOT` gives them - `boxes_x` says why the split went.
-        local mx = boxes_x(win)
-
-        if win.pinned then goto no_controls end
-
-        local lit = (OUT.hover_boxes == win)
-
-        -- Minimise, amber (`OUT.light`, `roadmap.md` 5zq).
-        OUT.light(mx + BOX_W * OUT.SLOT.minimise, by, "minimise", lit)
-
-        --
-        -- Maximise: a little window - a frame with a title bar on it - and
-        -- the bar is what makes it read as a window rather than as an
-        -- empty box.
-        --
-        -- **Greyed, not gone, on a window that cannot be maximised** - one
-        -- that draws its own pixels into a surface of a fixed size. It was
-        -- left off, and the tab's controls then changed from one window to
-        -- the next. Diego, 22 September: "when a window cant be maximixed we
-        -- shouldnt remove the button we should just gray it out and disable
-        -- it". Flat rather than raised, since raised is how this look says
-        -- a thing can be pressed (`ui.md` 16.8b), and its glyph dimmed; a
-        -- press on it does nothing.
-        --
-        -- Green, or grey and without a glyph when it cannot be used.
-        local zx = mx + BOX_W * OUT.SLOT.maximise
-
-        OUT.light(zx, by, "maximise", lit, not resizable(win))
-
-        --
-        -- Close, last and furthest right, which is where a hand that has
-        -- used anything else goes. A square, the way BeOS drew it: a cross
-        -- would need diagonals and there is no line primitive, so it would
-        -- be fourteen one-pixel fills to say what a square says in two.
-        --
-        -- Red, outermost.
-        local cx = mx + BOX_W * OUT.SLOT.close
-
-        OUT.light(cx, by, "close", lit)
-
-        ::no_controls::
-      end
-
-      -- And the contents, clipped to the intersection. The window's own
-      -- surface is the source, so the source rectangle moves with the clip:
-      -- reading from 0,0 and drawing at the clipped position would slide
-      -- the picture inside its own frame.
-      local x0 = (win.x > r.x) and win.x or r.x
-      local y0 = (win.y > r.y) and win.y or r.y
-      local x1 = math.min(win.x + win.w, r.x + r.w)
-      local y1 = math.min(win.y + win.h, r.y + r.h)
-
-      if x1 > x0 and y1 > y0 then
-        -- Whichever buffer the application is not drawing into, or the
-        -- surface this process owns for an ordinary window.
-        local from = win.surface
-
-        if win.shared then
-          from = win.shared[win.shared.live]
-        end
-
-        --
-        -- Blended for the backdrop and copied for everything else. The
-        -- desktop is transparent between its icons and the wallpaper is
-        -- underneath it; `blend` is source-over and costs more than a copy,
-        -- which is why it is not what every window gets.
-        --
-        if win.backdrop then
-          back:blend(from, x0 - win.x, y0 - win.y,
-                     x1 - x0, y1 - y0, x0, y0)
-        elseif win.menubar then
-          strips.compose(win, from, x0, y0, x1, y1)
-        elseif win.src_w and (win.src_w ~= win.w or win.src_h ~= win.h) then
-          --
-          -- A surface in the application's points, at a scale: stretched
-          -- to its place, and only this damaged piece of it written.
-          --
-          back:stretch(from, 0, 0, win.src_w, win.src_h,
-                       win.x, win.y, win.w, win.h, nil, false,
-                       x0, y0, x1 - x0, y1 - y0)
-        else
-          back:blit(from, x0 - win.x, y0 - win.y,
-                    x1 - x0, y1 - y0, x0, y0)
-        end
-      end
-
-      --
-      -- The sizing grip, over the window's own bottom-right corner.
-      --
-      -- Three diagonal steps rather than a solid block, which is the
-      -- shape every desktop uses for this and is readable at a glance
-      -- without a label. Drawn after the contents so it sits on top of
-      -- them, and only on windows that can actually be resized - see
-      -- `resizable`.
-      --
-      if resizable(win) then
-        local gx = win.x + win.w - GRIP
-        local gy = win.y + win.h - GRIP
-
-        for step = 0, 2 do
-          local o = step * 5
-          local n = GRIP - 3 - o
-
-          if n > 0 then
-            -- Light above, dark below: the same two edges every raised
-            -- thing here is made of, at a diagonal.
-            back:fill(gx + o + 2, gy + GRIP - 3 - o, n, 1, theme.edge_light)
-            back:fill(gx + o + 2, gy + GRIP - 2 - o, n, 1, theme.edge_dark)
-          end
-        end
-      end
-
-      --
-      -- The page rounded inside the frame, then **the corners back, last of
-      -- all.** Everything this window drew is on the screen now, square;
-      -- this copies what was behind over the pixels outside the arc and the
-      -- window is round. One place, after every drawing call rather than
-      -- inside any of them.
-      --
-      if kept then
-        OUT.round_inside(win, r, tab)
-        OUT.put_back(kept, fx, fy, fw, fh)
-      end
-    end
-end
+local draw_window = use("/Kosmos/Libraries/wm/drawwindow.lua"){
+  OUT = OUT, back = back, theme = theme, tabs = tabs, windows = windows,
+  strips = strips, frame_of = frame_of, boxes_x = boxes_x,
+  resizable = function(win) return resizable(win) end,
+  focused_colour = focused_colour, idle_colour = idle_colour,
+  title_colour = title_colour,
+}
 
 --
 -- `a` with `b` cut out of it, appended to `out` as up to four rectangles.
@@ -2937,8 +2529,8 @@ end
 -- was quietly given less (26 September, Cafesa3D opening maximised).
 --
 function OUT.maximised()
-  return math.min(W - BORDER * 2, W - 8),
-         math.min(H - top_limit() - BORDER, H - TAB_H - 8)
+  return math.min(W - OUT.BORDER * 2, W - 8),
+         math.min(H - top_limit() - OUT.BORDER, H - OUT.TAB_H - 8)
 end
 
 local function maximise(win)
@@ -2967,7 +2559,7 @@ local function maximise(win)
   local was = { x = win.x, y = win.y, w = win.w, h = win.h }
 
   damage_window(win)
-  win.x, win.y = BORDER, top_limit()
+  win.x, win.y = OUT.BORDER, top_limit()
 
   if not resize_window(win, OUT.maximised()) then
     win.x, win.y = was.x, was.y
@@ -3234,7 +2826,7 @@ handlers.open = function(req, who, cap)
   end
 
   local room_w = (req.strip == "top") and W or (W - 8)
-  local room_h = (req.strip == "top") and H or (H - TAB_H - 8)
+  local room_h = (req.strip == "top") and H or (H - OUT.TAB_H - 8)
 
   --
   -- The floor of 32 is so a window cannot be smaller than its own
@@ -3317,14 +2909,14 @@ handlers.open = function(req, who, cap)
     -- actually available rather than half a strip too high.
     --
     x       = req.centre
-              and math.max(BORDER, (W - w_) // 2)
-              or math.min(math.max(tonumber(req.x) or 40, BORDER),
-                          W - w_ - BORDER),
+              and math.max(OUT.BORDER, (W - w_) // 2)
+              or math.min(math.max(tonumber(req.x) or 40, OUT.BORDER),
+                          W - w_ - OUT.BORDER),
     y       = req.centre
               and math.max(top_limit(),
                            top_limit() + (H - top_limit() - h_) // 2)
               or math.min(math.max(tonumber(req.y) or 40, top_limit()),
-                          H - h_ - BORDER),
+                          H - h_ - OUT.BORDER),
     w       = w_,
     h       = h_,
     pct     = pct,
@@ -3412,7 +3004,7 @@ handlers.open = function(req, who, cap)
   -- maximise uses, over whatever is there, which is the point of it.
   --
   if req.maximised and not req.fullscreen and not req.backdrop and req.strip ~= "top" then
-    win.x, win.y = BORDER, top_limit()
+    win.x, win.y = OUT.BORDER, top_limit()
   end
 
   if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top"
@@ -3498,8 +3090,8 @@ handlers.open = function(req, who, cap)
       -- spoken for and is therefore the last offered.
       --
       local top = top_limit()
-      local midx = BORDER + (W - BORDER * 2) // 2
-      local midy = top + (H - BORDER - top) // 2
+      local midx = OUT.BORDER + (W - OUT.BORDER * 2) // 2
+      local midy = top + (H - OUT.BORDER - top) // 2
 
       local placed = false
 
@@ -3537,14 +3129,14 @@ handlers.open = function(req, who, cap)
         return true
       end
 
-      for _, slot in ipairs({ { BORDER, top }, { BORDER, midy },
+      for _, slot in ipairs({ { OUT.BORDER, top }, { OUT.BORDER, midy },
                               { midx, midy }, { midx, top } }) do
         -- Pulled back to fit rather than skipped: a window taller than half
         -- the screen still belongs in the left half of it.
-        local x = math.min(slot[1], W - BORDER - win.w)
-        local y = math.min(slot[2], H - BORDER - win.h)
+        local x = math.min(slot[1], W - OUT.BORDER - win.w)
+        local y = math.min(slot[2], H - OUT.BORDER - win.h)
 
-        if x >= BORDER and y >= top and slot_ok(x, y) then
+        if x >= OUT.BORDER and y >= top and slot_ok(x, y) then
           win.x, win.y = x, y
           placed = true
           break
@@ -3559,8 +3151,8 @@ handlers.open = function(req, who, cap)
           win.y = win.y + OUT.cascade
 
           -- Back to the top left rather than off the bottom right.
-          if win.x + win.w > W - BORDER or win.y + win.h > H - BORDER then
-            win.x, win.y = BORDER + OUT.cascade, top + OUT.cascade
+          if win.x + win.w > W - OUT.BORDER or win.y + win.h > H - OUT.BORDER then
+            win.x, win.y = OUT.BORDER + OUT.cascade, top + OUT.cascade
             break
           end
         end
@@ -4641,7 +4233,7 @@ end
 handlers.workarea = function()
   local w, h = OUT.maximised()
 
-  return { ok = true, x = BORDER, y = top_limit(), w = w, h = h }
+  return { ok = true, x = OUT.BORDER, y = top_limit(), w = w, h = h }
 end
 
 --
@@ -5165,8 +4757,8 @@ function resize_window(win, w, h)
   -- inside along with its own decoration.
   if w < scale.MIN_W then w = scale.MIN_W end
   if h < scale.MIN_H then h = scale.MIN_H end
-  if w > W - BORDER * 2 then w = W - BORDER * 2 end
-  if h > H - TAB_H - BORDER then h = H - TAB_H - BORDER end
+  if w > W - OUT.BORDER * 2 then w = W - OUT.BORDER * 2 end
+  if h > H - OUT.TAB_H - OUT.BORDER then h = H - OUT.TAB_H - OUT.BORDER end
 
   if w == win.w and h == win.h then return false end
 
@@ -5664,7 +5256,7 @@ local function window_at(x, y)
 
     if not win.hidden
        and x >= fx and x < fx + fw and y >= fy and y < fy + fh
-       and not (y < fy + TAB_H and win.kind ~= "menu" and not win.backdrop
+       and not (y < fy + OUT.TAB_H and win.kind ~= "menu" and not win.backdrop
                 and not win.strip and x >= fx + tabs.width(win)) then
       return win, fx, fy
     end
@@ -5907,19 +5499,19 @@ local function pointer_pass(p)
         grabbed = win
         post(win, { type = "mouse", action = "press",
                     x = nx - win.x, y = ny - win.y })
-      elseif ny < fy + TAB_H then
+      elseif ny < fy + OUT.TAB_H then
         local mx = boxes_x(win)
 
         if win.pinned then
           -- Nothing on this tab but the tab. Drag it and that is all.
           dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
-        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // BOX_W] == "minimise" then
+        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W] == "minimise" then
           minimise(win)
-        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // BOX_W] == "maximise" then
+        elseif nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W] == "maximise" then
           -- Greyed on a window that cannot be maximised, and then a press
           -- on it is nothing: not a maximise, and not the start of a drag.
           if resizable(win) then maximise(win) end
-        elseif nx >= mx + BOX_W * OUT.SLOT.close then
+        elseif nx >= mx + OUT.BOX_W * OUT.SLOT.close then
           --
           -- The close box. Asked first, taken by force second.
           --
@@ -5936,8 +5528,8 @@ local function pointer_pass(p)
       elseif win.menubar and ny < win.y + win.menubar.h then
         strips.press(win, nx)
       elseif resizable(win)
-             and nx >= win.x + win.w - GRIP and nx < win.x + win.w
-             and ny >= win.y + win.h - GRIP and ny < win.y + win.h then
+             and nx >= win.x + win.w - OUT.GRIP and nx < win.x + win.w
+             and ny >= win.y + win.h - OUT.GRIP and ny < win.y + win.h then
         --
         -- The grip, and it is tested before the contents on purpose: this
         -- square belongs to the window manager, and an application that
@@ -6048,15 +5640,15 @@ local function pointer_pass(p)
 
     if w < scale.MIN_W then w = scale.MIN_W end
     if h < scale.MIN_H then h = scale.MIN_H end
-    if w > W - BORDER * 2 then w = W - BORDER * 2 end
-    if h > H - TAB_H - BORDER then h = H - TAB_H - BORDER end
+    if w > W - OUT.BORDER * 2 then w = W - OUT.BORDER * 2 end
+    if h > H - OUT.TAB_H - OUT.BORDER then h = H - OUT.TAB_H - OUT.BORDER end
 
     resizing.w, resizing.h = w, h
 
     damage_outline(outline)
 
-    outline = { x = win.x - BORDER, y = win.y - TAB_H,
-                w = w + BORDER * 2, h = h + TAB_H + BORDER }
+    outline = { x = win.x - OUT.BORDER, y = win.y - OUT.TAB_H,
+                w = w + OUT.BORDER * 2, h = h + OUT.TAB_H + OUT.BORDER }
 
     damage_outline(outline)
   end
