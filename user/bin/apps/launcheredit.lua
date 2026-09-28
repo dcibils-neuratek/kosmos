@@ -16,6 +16,12 @@
 -- So this writes those attributes and tells the Deskbar to read its tree
 -- again; it does not know what a menu is, and the Deskbar does not know this
 -- exists.
+--
+-- **Except that the menu is two trees** (`roadmap.md` 6zd), and one of them
+-- ships and cannot be written: a launcher in `/Kosmos/Deskbar` is saved as
+-- the person's own, at the same place in `/Home/Deskbar`, where it wins.
+-- And one that ships can be hidden - a note under its name there, which
+-- Tracker shows for what it is and whose deletion brings the item back.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
@@ -42,6 +48,43 @@ end
 -- taken. So this window is about what the launcher *does*.
 --
 local name = path:match("([^/]+)$") or path
+
+--
+-- **Which tree it is in.** `shipped` is the item as it ships, when there
+-- is one - this path, or the one a person's copy of it shadows - and
+-- `mine` is where the person's version of it lives; nil for a launcher
+-- of their own that shadows nothing, or one on the desktop.
+--
+local SHIPPED, MINE = "/Kosmos/Deskbar", "/Home/Deskbar"
+
+local function inside(p, root)
+  return p:lower():sub(1, #root + 1) == root:lower() .. "/"
+end
+
+local shipped, mine = nil, nil
+
+if inside(path, SHIPPED) then
+  shipped, mine = path, MINE .. path:sub(#SHIPPED + 1)
+elseif inside(path, MINE) and fs.getattr(SHIPPED .. path:sub(#MINE + 1)) then
+  shipped, mine = SHIPPED .. path:sub(#MINE + 1), path
+end
+
+-- Its folders, made as they are needed: `/Home/Deskbar/Demos/GLDemos`.
+local function make_room(p)
+  local at = ""
+
+  for part in p:match("^(.*)/[^/]+$"):gmatch("[^/]+") do
+    at = at .. "/" .. part
+
+    if not fs.getattr(at) then
+      local ok, why = fs.send(at, { type = "mkdir" })
+
+      if not ok then return nil, why end
+    end
+  end
+
+  return true
+end
 
 --
 -- Every picture the image carries, which is what there is to choose from.
@@ -119,11 +162,17 @@ function preview:draw(g)
   if chosen ~= "" then g:icon(0, 0, chosen .. ".png", 32) end
 end
 
-local save, revert               -- the verbs, below
+local save, revert, hide         -- the verbs, below
+
+-- Hide, for an item that ships: the one thing a person cannot do to it by
+-- deleting a file, since its file is not theirs.
+local hide_button = ui.button{ text = "Hide", on_click = function() hide() end,
+                               hidden = (shipped == nil) or nil }
 
 local header = ui.header{
   x = 0, y = 0, w = W, title = name, sub = path,
-  right = { ui.button{ text = "Revert", on_click = function() revert() end },
+  right = { hide_button,
+            ui.button{ text = "Revert", on_click = function() revert() end },
             ui.button{ text = "Save", go = true,
                        on_click = function() save() end } },
   title_bar = true,
@@ -175,6 +224,14 @@ win:add(header)
 win:add(cards)
 win:add(picture)
 
+-- Where its verbs are, in points inside the window, for the display harness,
+-- which can type and cannot aim.
+header:measure()
+print(("launcheredit: hide at %d,%d, save at %d,%d"):format(
+      hide_button.x + hide_button.w // 2, hide_button.y + hide_button.h // 2,
+      header.right[3].x + header.right[3].w // 2,
+      header.right[3].y + header.right[3].h // 2))
+
 --
 -- Saved, and the Deskbar told.
 --
@@ -202,16 +259,32 @@ function save()
     program.caret = #starts + 1
   end
 
-  local ok, why = fs.setattr(path, {
-    kind = "launcher",
-    type = "launcher",
-    program = starts,
-    args = arguments.text,
-    -- An empty choice means "no picture of its own", which is nil rather
-    -- than an empty string: an empty string is a name, and nothing is
-    -- called "".
-    icon = (chosen ~= "") and chosen or nil,
-  })
+  --
+  -- **One that ships is saved as the person's**, where it wins: its own
+  -- file cannot be written, and the menu it came from is the same on every
+  -- machine. From then on this window edits theirs.
+  --
+  local ok, why = true, nil
+
+  if shipped and path ~= mine then
+    ok, why = make_room(mine)
+
+    if ok then ok, why = fs.write(mine, "") end
+    if ok then path = mine end
+  end
+
+  if ok then
+    ok, why = fs.setattr(path, {
+      kind = "launcher",
+      type = "launcher",
+      program = starts,
+      args = arguments.text,
+      -- An empty choice means "no picture of its own", which is nil rather
+      -- than an empty string: an empty string is a name, and nothing is
+      -- called "".
+      icon = (chosen ~= "") and chosen or nil,
+    })
+  end
 
   if not ok then
     header.sub = "could not save: " .. tostring(why)
@@ -222,6 +295,40 @@ function save()
   fs.write("/Running/Deskbar/menu", "reload")
 
   header.sub = "saved - " .. name .. " starts " .. starts
+    .. ((path == mine) and (", as yours in " .. MINE) or "")
+  win.dirty = true
+end
+
+--
+-- **Hidden: a note in the person's menu under the item's name**, which takes
+-- the shipped one out wherever the menu is drawn (`deskbarmenu.merge`). A
+-- version of theirs already there goes to the Trash first, not away.
+-- Deleting the note, in Tracker, brings the item back.
+--
+function hide()
+  local ok, why = make_room(mine)
+
+  if ok and fs.getattr(mine) then
+    local files = use("/Kosmos/Libraries/files.lua")
+    local kept = files.free_name(files.TRASH, name)
+
+    ok, why = kept and files.move(mine, files.join(files.TRASH, kept))
+  end
+
+  if ok then ok, why = fs.write(mine, "") end
+  if ok then ok, why = fs.setattr(mine, { kind = "hidden", type = "hidden" }) end
+
+  if not ok then
+    header.sub = "could not hide it: " .. tostring(why)
+    win.dirty = true
+    return
+  end
+
+  fs.write("/Running/Deskbar/menu", "reload")
+  print(("launcheredit: %s hidden from the menu by %s"):format(name, mine))
+
+  header.sub = "hidden - delete " .. mine .. " to bring it back"
+  hide_button.hidden = true
   win.dirty = true
 end
 

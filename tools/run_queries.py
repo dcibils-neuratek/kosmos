@@ -203,6 +203,20 @@ def main():
             'if x == "pdf" or x == "compress" or x == "3d" then n = n + 1 end end '
             'print("K-KITS", n)',
 
+            # **The Deskbar's menu as it ships** (`roadmap.md` 6zd): a folder
+            # a section, laid out from each application's header - Tracker a
+            # launcher in Applications, starting its whole path with its own
+            # picture; a group a submenu; neither the Deskbar nor Info, whose
+            # section is none; and nothing can be written into it.
+            'local function a(p) return fs.getattr(p) or {} end '
+            'local t = a("/Kosmos/Deskbar/Applications/tracker") '
+            'local wrote = fs.write("/Kosmos/Deskbar/Applications/mine", "") '
+            'print("K-DESKBAR", table.concat(fs.list("/Kosmos/Deskbar") or {}, ","), '
+            't.kind, t.program, t.icon, a("/Kosmos/Deskbar/Demos/GLDemos").kind, '
+            'a("/Kosmos/Deskbar/Demos/GLDemos/glgears").kind, '
+            'fs.getattr("/Kosmos/Deskbar/Applications/deskbar") == nil, '
+            'fs.getattr("/Kosmos/Deskbar/Applications/info") == nil, not wrote)',
+
             # **A file's time is a date** (`roadmap.md` 6za step b): written
             # to the disk now, its `modified` is the clock's second, give or
             # take the few a write and a read take - where it was a count
@@ -284,7 +298,7 @@ def main():
              "a rename to a name's own other case was refused"),
             ("C-NAMES", "CASE.txt,CASE.txt",
              "a rename to another case did not change the name's spelling"),
-            ("K-KOSMOS", 'directory Apps,Kits,Libraries,Programs,Themes kit a kit is C, and is used rather '
+            ("K-KOSMOS", 'directory Apps,Deskbar,Kits,Libraries,Programs,Themes kit a kit is C, and is used rather '
                          'than read: use("/Kosmos/Kits/pdf")',
              "/Kosmos was not a folder of Kits and Libraries, a kit in it a kit, "
              "and reading one an answer saying to use it"),
@@ -299,6 +313,12 @@ def main():
              "one folder and no path as a name"),
             ("K-KITS", "3",
              "/Kosmos/Kits did not list the image's kits - pdf, compress, 3d"),
+            ("K-DESKBAR", "Applications,Demos,Preferences,System launcher "
+                          "/Kosmos/Apps/tracker.lua App_Tracker directory "
+                          "launcher true true true",
+             "/Kosmos/Deskbar was not the shipped menu - its sections, Tracker "
+             "a launcher of its own path and picture, GLDemos a submenu, no "
+             "Deskbar and no Info, and nothing written into it"),
             ("D-DATED", "integer true",
              "a file written to the disk did not carry the clock's date as "
              "its modified, within five seconds"),

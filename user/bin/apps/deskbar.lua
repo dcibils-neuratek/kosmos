@@ -73,6 +73,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local menudata = use("/Kosmos/Libraries/deskbarmenu.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 -- The *kit's* palette, not a copy of it.
 --
@@ -111,8 +112,13 @@ if screen then sw, sh = screen:size() end
 -- no arguments at all, because a header line is a fact about the *program*
 -- and arguments are a choice about a *use* of it.
 --
--- `kosmos: section` is now the *default* a program is filed under the first
--- time it is seen, and nothing more. See `seed` below.
+-- **And it is two trees** (`roadmap.md` 6zd): `/Kosmos/Deskbar` is the menu
+-- as it ships, laid out from each application's `kosmos: section` and
+-- `kosmos: icon` by the store that serves them, and `/Home/Deskbar` holds
+-- only what the person made - their launchers, their folders, Doom with
+-- their own arguments. Shown merged (`deskbarmenu.lua`). It used to be one:
+-- the shipped menu was copied into every home, where it went stale, went to
+-- other machines with the home, and could not be told from the person's.
 --
 -- **No launcher, no entry.** There is deliberately no fallback that lists a
 -- program with no launcher, and no ledger of programs seen before: both
@@ -123,6 +129,7 @@ if screen then sw, sh = screen:size() end
 --------------------------------------------------------------------------
 
 local DESKBAR = "/Home/Deskbar"
+local SHIPPED = "/Kosmos/Deskbar"
 
 --
 -- What `/bin` can start, which is a different question from what the menu
@@ -130,11 +137,9 @@ local DESKBAR = "/Home/Deskbar"
 --
 -- Startup items name a *program*, and are checked against this rather than
 -- against the menu: "open this at login" and "show this in the menu" are
--- two choices, and an item can reasonably be one without the other. The
--- seed reads it too, for the section and icon each program declares.
+-- two choices, and an item can reasonably be one without the other.
 --
 local programs = {}
-local launchable = {}
 
 do
   for _, file in ipairs(fs.list("/Kosmos/Apps") or {}) do
@@ -148,131 +153,65 @@ do
       -- Info - which has nothing to show opened on its own from a menu.
       if short ~= "deskbar" and attrs.section ~= "none" then
         programs[short] = attrs
-        launchable[#launchable + 1] = short
       end
     end
   end
-
-  table.sort(launchable)
 end
 
 --
--- The tree, made once, on a machine that has never had one.
+-- **What the seed left, to the Trash once** (`roadmap.md` 6zd).
 --
--- A first run rather than a fallback, and the difference is the whole rule
--- above: this makes a menu where there is *no* menu, and never adds an item
--- to one that exists. So a launcher deliberately thrown away stays thrown
--- away, which a per-item fallback could not promise.
+-- Until 28 September this Deskbar copied a launcher for every application
+-- into `/Home/Deskbar` - the whole menu, the first time it found no folder,
+-- and every new application after - and kept `.seeded`, the record of what
+-- it had given. With the menu shipping in `/Kosmos/Deskbar` those copies
+-- are the menu twice. Diego: "Send to the trash all seeded". So on a home
+-- that has the record, every launcher the seed made goes to the Trash -
+-- a folder of nothing else whole, so the Trash keeps the menu's shape
+-- (`deskbarmenu.seed_leftovers`) - and the record after them, which is what
+-- makes it once. One a person changed goes too, and can be dragged back.
 --
--- Tracker does the same for `/Home/Desktop`, Drive, the Trash and the cheat
--- sheet, and for the same reason it gives: a folder that only exists once
--- you think to make one is a folder nobody makes.
---
--- `/Home` is always there to put it in - on the disk when there is one, and
--- moved into memory by `init.lua` when there is not - so a machine with no
--- drive gets a menu too, and loses it at the power switch along with
--- everything else it wrote.
---
---
--- **The record of what the menu has been given**, beside it: every
--- application `/bin` declared the last time the Deskbar looked. What is in
--- it and has no launcher was taken out by a person and stays out; what is
--- not in it is new, and gets a launcher (`deskbarmenu.missing`).
+-- To the Trash, never deleted: what goes is the person's to have back.
 --
 local SEEDED = DESKBAR .. "/.seeded"
-local made = {}
 
--- A launcher for one application, in the folder its header names.
-local function add_launcher(short)
-  local attrs = programs[short]
-  local said = attrs.section or "applications"
-  local where, group = said:match("^([^/]+)/(.+)$")
+local function retire_seed()
+  local record = fs.read(SEEDED)
 
-  where = where or said
+  if type(record) ~= "table" or type(record.programs) ~= "table" then return end
 
-  -- Capitalised here and nowhere else. The folder's name *is* what the
-  -- menu shows from now on, so this is the one moment the identifier in a
-  -- program's header becomes a word on the screen.
-  local folder = DESKBAR .. "/" .. where:sub(1, 1):upper() .. where:sub(2)
+  local seeded = {}
 
-  if group then folder = folder .. "/" .. group end
+  for _, short in ipairs(record.programs) do seeded[tostring(short)] = true end
 
-  if not made[folder] then
-    made[folder] = true
+  -- The Trash is Tracker's to make, and this may start before Tracker ever
+  -- has on this home.
+  for _, dir in ipairs({ files.parent(files.TRASH), files.TRASH }) do
+    if not fs.getattr(dir) then fs.send(dir, { type = "mkdir" }) end
+  end
 
-    if not fs.getattr(folder) then
-      local fine, oops = fs.send(folder, { type = "mkdir" })
+  local moved = 0
 
-      if not fine then
-        print(("deskbar: no %s: %s"):format(folder, tostring(oops)))
-      end
+  for _, path in ipairs(menudata.seed_leftovers(fs, DESKBAR, seeded)) do
+    local name = files.free_name(files.TRASH, path:match("([^/]+)$"))
+    local ok, why = name and files.move(path, files.join(files.TRASH, name))
+
+    if ok then
+      moved = moved + 1
+    else
+      print(("deskbar: %s stayed: %s"):format(path, tostring(why)))
     end
   end
 
-  local path = folder .. "/" .. short
-  local fine, oops = fs.write(path, "")
+  local name = files.free_name(files.TRASH, ".seeded")
+  local ok, why = name and files.move(SEEDED, files.join(files.TRASH, name))
 
-  if fine then
-    --
-    -- The whole path, not the short name.
-    --
-    -- `handlers.launch` accepts either - a bare name becomes
-    -- `/bin/<name>.lua` - and what a *file* records should not depend on
-    -- a completion rule the file cannot state. A launcher that says
-    -- `/Kosmos/Apps/doom.lua` says what it runs; one that says `doom` says what
-    -- it runs only to somebody who knows the rule, and reads as broken to
-    -- anybody who does not.
-    --
-    -- Launchers already written the short way keep working, because the
-    -- window manager still completes a bare name. Nothing has to be
-    -- migrated.
-    --
-    fine, oops = fs.setattr(path, { kind = "launcher", type = "launcher",
-                                    program = "/Kosmos/Apps/" .. short .. ".lua",
-                                    args = "", icon = attrs.icon })
+  if not ok then
+    print("deskbar: the seed's record stayed: " .. tostring(why))
   end
 
-  if not fine then
-    print(("deskbar: no launcher for %s: %s"):format(short, tostring(oops)))
-  end
-end
-
-local function seed()
-  if not fs.getattr(DESKBAR) then
-    local ok, why = fs.send(DESKBAR, { type = "mkdir" })
-
-    if not ok then
-      print("deskbar: no " .. DESKBAR .. ": " .. tostring(why))
-      return
-    end
-
-    for _, short in ipairs(launchable) do add_launcher(short) end
-
-    print(("deskbar: made %s from what /bin declares"):format(DESKBAR))
-  else
-    --
-    -- **And every start after that, what arrived since.** The folder was
-    -- made once and never again, so an application newer than a person's
-    -- `/Home` was not in their menu - Preferences, on 24 September.
-    --
-    local record = fs.read(SEEDED)
-    local seeded = nil
-
-    if type(record) == "table" and type(record.programs) == "table" then
-      seeded = {}
-
-      for _, short in ipairs(record.programs) do seeded[short] = true end
-    end
-
-    local present = (not seeded) and menudata.programs_in(fs, DESKBAR) or nil
-
-    for _, short in ipairs(menudata.missing(launchable, seeded, present)) do
-      add_launcher(short)
-      print(("deskbar: added %s to the menu"):format(short))
-    end
-  end
-
-  fs.write(SEEDED, { programs = launchable })
+  print(("deskbar: %d of the seed's launchers and folders went to the Trash")
+        :format(moved))
 end
 
 --
@@ -320,10 +259,17 @@ local function exists(program)
 end
 
 local function read_sections()
-  sections = menudata.sections(fs, DESKBAR, exists)
+  sections = menudata.merge_sections(menudata.sections(fs, SHIPPED, exists),
+                                     menudata.sections(fs, DESKBAR, exists))
 end
 
-seed()
+retire_seed()
+
+-- Somewhere for the person's own, which a menu that only ships would never
+-- make: a folder that exists once you think to make one is one nobody
+-- makes, as Tracker says of `/Home/Desktop`.
+if not fs.getattr(DESKBAR) then fs.send(DESKBAR, { type = "mkdir" }) end
+
 read_sections()
 
 --------------------------------------------------------------------------
@@ -506,13 +452,32 @@ end
 -- notice from a launcher that was not made. `Deskbar` with the capital is
 -- the window's title, which is the name `ui.window` registers it under.
 --
+--
+-- **And what is in it**: each section's rows by name, a folder with a
+-- slash after it and the person's own with a star (`roadmap.md` 6zd) - an
+-- item of theirs in `/Home/Deskbar` rather than the menu as it ships. Which
+-- is how a menu that did not merge would be told from one that did.
+--
 win:publish("menu",
   function()
-    local n = 0
+    local n, said = 0, {}
 
-    for _, section in ipairs(sections) do n = n + #section.items end
+    for _, section in ipairs(sections) do
+      local rows = {}
 
-    return ("%d sections, %d items"):format(#sections, n)
+      n = n + #section.items
+
+      for _, item in ipairs(section.items) do
+        rows[#rows + 1] = item.name .. (item.folder and "/" or "")
+          .. ((tostring(item.path or ""):sub(1, #DESKBAR + 1) == DESKBAR .. "/")
+              and "*" or "")
+      end
+
+      said[#said + 1] = section.name .. ": " .. table.concat(rows, ", ")
+    end
+
+    return ("%d sections, %d items; %s"):format(#sections, n,
+                                                table.concat(said, "; "))
   end,
   function()
     read_sections()
@@ -1484,11 +1449,7 @@ do
     -- Only what this Deskbar would list. A name in the file that is no
     -- longer in `/bin` is a stale tick, not a reason to send the window
     -- manager a program it cannot find.
-    local known = false
-
-    for _, have in ipairs(launchable) do
-      if have == name then known = true break end
-    end
+    local known = programs[name] ~= nil
 
     -- Narrated, because this is the step nobody could see. Four windows
     -- opening at login is four `launch` messages from here, and when one of

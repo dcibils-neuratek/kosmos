@@ -137,6 +137,11 @@ function filetypes.describe(path, attrs)
 
   if attrs.kind == "directory" then return "Folder" end
   if attrs.kind == "launcher" then return "Launcher" end
+
+  -- A person's note in `/Home/Deskbar` that takes a shipped item out of the
+  -- menu (`roadmap.md` 6zd), said as what it is: deleting it brings the
+  -- item back, and Tracker is where somebody would look for why it went.
+  if attrs.kind == "hidden" then return "Hidden from the Deskbar's menu" end
   if attrs.kind == "kit" then return "Kit, part of the system" end
   if attrs.kind == "application" then return "Application" end
   if attrs.kind == "program" then return "Program" end

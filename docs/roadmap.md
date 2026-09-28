@@ -2409,6 +2409,17 @@ processors, and still what follows USB:
    can be dragged back out. It is the "two layers" idea for `/Kosmos` (6s)
    tried on one small folder first; Themes and the startup list can follow
    if it feels right. **Order**: after 6za's step (a).
+   **DONE on 28 September** (`testing.md` 18.244, `ui.md` 16.13): all six,
+   as agreed. `/Kosmos/Deskbar` is a view of the applications' store
+   (`binfs.c`, `menu_path`), read-only, a launcher an application; the
+   Deskbar merges it with `/Home/Deskbar` (`deskbarmenu.merge`); the
+   launcher editor saves a shipped item as the person's and hides one with
+   a `kind = "hidden"` note, which Tracker calls "Hidden from the Deskbar's
+   menu"; and a home with `.seeded` sends the seed's launchers to the Trash
+   once - a folder of nothing else whole - and the record after them. The
+   one thing the record cannot tell: a person's own launcher starting an
+   application the seed also gave goes to the Trash too, as Diego's words
+   said, and can be dragged back.
 
 6zc. **FOUND on 27 September, on the M700 with 0.10.175 - a menu's
    separator is as tall as an item.** Diego, with a photograph of Tracker's

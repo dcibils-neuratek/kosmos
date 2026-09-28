@@ -166,6 +166,12 @@ check(types.describe("/Home/magicword-clip.mp4") == "Film"
       and types.describe("/Home/Desktop/Doom", { kind = "launcher" }) == "Launcher"
       and types.describe("/Home/x.SFC") == "Super Nintendo cartridge",
       "a film, a folder, a launcher and a cartridge are not called what they are")
+check(types.describe("/Home/Deskbar/Demos/quake", { kind = "hidden", type = "hidden" })
+      == "Hidden from the Deskbar's menu"
+      and types.opener("/Home/Deskbar/Demos/quake",
+                       { kind = "hidden", type = "hidden" }) == nil,
+      "a note that hides a shipped item is not called what it is, or opens "
+      .. "something (`roadmap.md` 6zd)")
 check(types.describe("/Home/data.xyz") == "XYZ file"
       and types.describe("/Home/README") == "File",
       "an extension with no words is not named by itself, or no extension not a File")

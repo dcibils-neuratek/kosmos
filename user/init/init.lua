@@ -1210,6 +1210,16 @@ local function new_namespace()
         end
       end
 
+      --
+      -- **A launcher in the shipped menu** (`/Kosmos/Deskbar`, `roadmap.md`
+      -- 6zd) names the application it starts in its data, as the store
+      -- knows it; its place here is `/Kosmos/Apps`, where `ns.program`
+      -- finds an application. The whole path, as every launcher records
+      -- what it starts.
+      --
+      local launcher = (trim(kind) == "launcher")
+      local starts = launcher and reply:sub(BIN_DATA, BIN_DATA + length - 1)
+
       return { ok = true, attrs = {
         size = size,
         kind = trim(kind),
@@ -1219,6 +1229,9 @@ local function new_namespace()
         -- What the Deskbar draws beside it, and nil rather than "" when the
         -- program declares nothing, so `or` picks the default.
         icon = (trim(icon) ~= "") and trim(icon) or nil,
+        type = launcher and "launcher" or nil,
+        program = launcher and ("/Kosmos/Apps/" .. starts) or nil,
+        args = launcher and "" or nil,
       } }
     end
 
@@ -4387,6 +4400,10 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- And the looks that ship, a folder of the same store.
   ns.mount("/Kosmos/Themes", bin_cap, "/themes", "bin")
 
+  -- And the Deskbar's menu as it ships, laid out from each application's
+  -- header (`binfs.c`, `menu_path`); a person's own is `/Home/Deskbar`.
+  ns.mount("/Kosmos/Deskbar", bin_cap, "/deskbar", "bin")
+
   -- And what programs load rather than run. Separate from the programs so
   -- that `ls /Kosmos/Programs` lists things you can type and nothing else.
   ns.mount("/Kosmos/Libraries", lib_cap, nil, "bin")
@@ -6275,6 +6292,7 @@ if role == ROLE_RUNNER then
   if req.bin     then ns.mount("/Kosmos/Apps",       req.bin, "/apps", "bin") end
   if req.bin     then ns.mount("/Kosmos/Programs",   req.bin, "/programs", "bin") end
   if req.bin     then ns.mount("/Kosmos/Themes",     req.bin, "/themes", "bin") end
+  if req.bin     then ns.mount("/Kosmos/Deskbar",    req.bin, "/deskbar", "bin") end
   if req.devices then ns.mount("/Devices",           req.devices, nil, "dev") end
   if req.lib     then ns.mount("/Kosmos/Libraries",  req.lib, nil, "bin") end
 

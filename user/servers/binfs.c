@@ -142,12 +142,13 @@ static const char *declared(const char *src, unsigned long len,
  * part - `/apps/clock.lua` - and a name with neither is the whole store,
  * as the libraries are served.
  */
-enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS };
+enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS, VIEW_DESKBAR };
 
 static enum view view_of(const char **name)
 {
     static const struct { const char *word; enum view view; } views[] = {
         { "apps", VIEW_APPS }, { "programs", VIEW_PROGRAMS },
+        { "deskbar", VIEW_DESKBAR },
     };
     const char *n = *name;
     unsigned i;
@@ -176,6 +177,11 @@ static bool in_view(const struct source_entry *e, enum view v)
 
     if (v == VIEW_ALL) {
         return true;
+    }
+
+    /* The menu's names are not the store's: `menu_path` below. */
+    if (v == VIEW_DESKBAR) {
+        return false;
     }
 
     /* The applications and the programs are the store's top level: what
@@ -250,6 +256,130 @@ static bool is_folder(const char *dir, size_t dlen)
         bool f;
 
         if (child_of(store[i].name, dir, dlen, &l, &f) != NULL) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*
+ * **The Deskbar's menu, as it ships** (`roadmap.md` 6zd): `/Kosmos/Deskbar`,
+ * a folder a section, holding a launcher an application - made from each
+ * application's header, so there is no file to keep in step with it and it
+ * cannot go stale. `/Home/Deskbar` holds only what a person made, and the
+ * Deskbar shows the two merged (`deskbarmenu.lua`).
+ *
+ * An application's place is its `section`, `applications` when it says
+ * none, with the first letter made a capital - the word a person reads in
+ * the menu, as the Deskbar wrote it when it copied these into every home -
+ * and a group after a slash is a submenu: `demos/GLDemos` puts `glgears`
+ * at `Demos/GLDemos/glgears`. Not the Deskbar itself, which is not
+ * something you start, and not `section none` - a window something else
+ * opens with a file in it, which has nothing to show opened from a menu.
+ *
+ * False when the application is not in the menu, or its place does not fit.
+ */
+static bool menu_path(const struct source_entry *e, char *out, size_t cap)
+{
+    unsigned long n = 0;
+    const char *section;
+    size_t nlen = strlen(e->name);
+    size_t at = 0;
+
+    if (strchr(e->name, '/') != NULL
+        || declared(e->text, e->length, "application", &n) == NULL
+        || nlen < 5 || strcasecmp(e->name + nlen - 4, ".lua") != 0
+        || strcasecmp(e->name, "deskbar.lua") == 0) {
+        return false;
+    }
+
+    section = declared(e->text, e->length, "section", &n);
+
+    if (section == NULL) {
+        section = "applications";
+        n = 12;
+    }
+
+    while (n > 0 && (section[n - 1] == ' ' || section[n - 1] == '\t'
+                     || section[n - 1] == '\r')) {
+        n--;
+    }
+
+    if (n == 0 || (n == 4 && strncasecmp(section, "none", 4) == 0)
+        || n + 1 + (nlen - 4) + 1 > cap) {
+        return false;
+    }
+
+    memcpy(out, section, n);
+    at = n;
+
+    if (out[0] >= 'a' && out[0] <= 'z') {
+        out[0] = (char)(out[0] - 'a' + 'A');
+    }
+
+    out[at++] = '/';
+    memcpy(out + at, e->name, nlen - 4);
+    at += nlen - 4;
+    out[at] = '\0';
+
+    return true;
+}
+
+/* The application whose place in the menu is `path`, or NULL. */
+static const struct source_entry *menu_find(const char *path, size_t plen)
+{
+    char mp[BIN_NAME_MAX];
+    unsigned i;
+
+    for (i = 0; i < store_count; i++) {
+        if (menu_path(&store[i], mp, sizeof(mp)) && strlen(mp) == plen
+            && strncasecmp(mp, path, plen) == 0) {
+            return &store[i];
+        }
+    }
+
+    return NULL;
+}
+
+/* A folder of the menu an earlier application already gave. */
+static bool menu_listed_before(unsigned upto, const char *dir, size_t dlen,
+                               const char *child, size_t clen)
+{
+    char mp[BIN_NAME_MAX];
+    unsigned j;
+
+    for (j = 0; j < upto; j++) {
+        size_t l;
+        bool f;
+        const char *c;
+
+        if (!menu_path(&store[j], mp, sizeof(mp))) {
+            continue;
+        }
+
+        c = child_of(mp, dir, dlen, &l, &f);
+
+        if (c != NULL && f && l == clen && strncasecmp(c, child, clen) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* Whether some application's place is below `dir`: a folder of the menu. */
+static bool menu_folder(const char *dir, size_t dlen)
+{
+    char mp[BIN_NAME_MAX];
+    unsigned i;
+
+    for (i = 0; i < store_count; i++) {
+        size_t l;
+        bool f;
+
+        if (menu_path(&store[i], mp, sizeof(mp))
+            && child_of(mp, dir, dlen, &l, &f) != NULL) {
             return true;
         }
     }
@@ -352,6 +482,31 @@ static void fill_attrs(const struct source_entry *e, struct bin_reply *rep)
     }
 }
 
+/*
+ * **A launcher in the shipped menu**: `kind` launcher, the application's
+ * picture, and the application it starts - its name in the store, in
+ * `data`, which the namespace turns into the path it has there
+ * (`/Kosmos/Apps/clock.lua`). What a launcher in `/Home/Deskbar` says in
+ * its attributes, said here from the header.
+ */
+static void fill_launcher(const struct source_entry *e, struct bin_reply *rep)
+{
+    unsigned long n = 0;
+    const char *s = declared(e->text, e->length, "icon", &n);
+    size_t len = strlen(e->name);
+
+    copy_word(rep->kind, BIN_WORD_MAX, "launcher", 8);
+    copy_word(rep->icon, BIN_ICON_MAX, (s != NULL) ? s : "",
+              (s != NULL) ? n : 0);
+
+    if (len > BIN_CHUNK) {
+        len = BIN_CHUNK;
+    }
+
+    memcpy(rep->data, e->name, len);
+    rep->length = (uint32_t)len;
+}
+
 static void answer(const struct message *in, uint64_t sender)
 {
     struct message out;
@@ -416,8 +571,25 @@ static void answer(const struct message *in, uint64_t sender)
         for (i = 0; i < store_count; i++) {
             const char *shown = store[i].name;
             size_t slen = strlen(shown);
+            char mp[BIN_NAME_MAX];
 
-            if (view != VIEW_ALL) {
+            if (view == VIEW_DESKBAR) {
+                /* The menu's folders and launchers, by each application's
+                 * place in it rather than by its name in the store. */
+                bool folder;
+
+                if (!menu_path(&store[i], mp, sizeof(mp))) {
+                    continue;
+                }
+
+                shown = child_of(mp, dir, dlen, &slen, &folder);
+
+                if (shown == NULL
+                    || (folder
+                        && menu_listed_before(i, dir, dlen, shown, slen))) {
+                    continue;
+                }
+            } else if (view != VIEW_ALL) {
                 if (!in_view(&store[i], view)) {
                     continue;
                 }
@@ -452,6 +624,17 @@ static void answer(const struct message *in, uint64_t sender)
     case BIN_OP_READ: {
         unsigned long left;
 
+        /* A launcher is an empty file: what it starts is its attributes. */
+        if (view == VIEW_DESKBAR) {
+            const char *p = (at[0] == '/') ? at + 1 : at;
+
+            if (menu_find(p, strlen(p)) == NULL) {
+                rep->error = BIN_ERR_NO_PROGRAM;
+            }
+
+            break;
+        }
+
         e = find((at[0] == '/') ? at + 1 : at);
 
         /* A program asked for under `/Kosmos/Apps` is not there. */
@@ -475,6 +658,27 @@ static void answer(const struct message *in, uint64_t sender)
     }
 
     case BIN_OP_GETATTR:
+        if (view == VIEW_DESKBAR) {
+            const char *p = (at[0] == '/') ? at + 1 : at;
+            size_t plen = strlen(p);
+
+            while (plen > 0 && p[plen - 1] == '/') {
+                plen--;
+            }
+
+            e = menu_find(p, plen);
+
+            if (e != NULL) {
+                fill_launcher(e, rep);
+            } else if (plen == 0 || menu_folder(p, plen)) {
+                copy_word(rep->kind, BIN_WORD_MAX, "directory", 9);
+            } else {
+                rep->error = BIN_ERR_NO_PROGRAM;
+            }
+
+            break;
+        }
+
         e = find((at[0] == '/') ? at + 1 : at);
 
         /* A folder of the store: `luacheck`, `themes`. */

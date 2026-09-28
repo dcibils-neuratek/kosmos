@@ -8273,6 +8273,173 @@ def check_deskbar(guest):
     return 3
 
 
+def check_deskbar_layers(guest):
+    """**The Deskbar's menu in two layers** (`roadmap.md` 6zd): the menu as it
+    ships in `/Kosmos/Deskbar`, laid out from each application's header, and
+    a person's own in `/Home/Deskbar`, merged - and a home the old Deskbar
+    seeded, whose copies go to the Trash once. Diego: "Send to the trash all
+    seeded".
+
+    A home written as the seed left one - Applications with only the seed's
+    Calc and Tracker in it, a Demos holding the seed's Cube and the person's
+    note hiding Plasma, a Games of their own, their own Processes, and the
+    record `.seeded` - and the Deskbar started over it:
+
+      it says two went to the Trash - Applications whole, the Cube from a
+      Demos that holds something of the person's - and the Trash and the
+      home say the same, the record gone with them;
+      its menu, read back, has Applications from the menu that ships, the
+      Cube shipped rather than the person's, no Plasma, their Games and
+      their Processes, marked theirs.
+
+    Then the launcher editor on two shipped items: Save on the Calculator
+    writes the person's own at the same place in `/Home/Deskbar`, and Hide
+    on Blocks leaves a note there, `kind` hidden - which Tracker describes
+    for what it is (`tools/test_filetypes.lua`).
+    """
+    setup = (
+        'for _, d in ipairs({ "", "/Applications", "/Demos", "/Games", '
+        '"/System" }) do fs.send("/Home/Deskbar" .. d, { type = "mkdir" }) end '
+        'local function l(p, prog, args) fs.write(p, "") fs.setattr(p, '
+        '{ kind = "launcher", type = "launcher", program = prog, '
+        'args = args or "" }) end '
+        'l("/Home/Deskbar/Applications/calc", "/Kosmos/Apps/calc.lua") '
+        'l("/Home/Deskbar/Applications/tracker", "/bin/tracker.lua") '
+        'l("/Home/Deskbar/Demos/cube3d", "cube3d", "--spin") '
+        'fs.write("/Home/Deskbar/Demos/plasma", "") '
+        'fs.setattr("/Home/Deskbar/Demos/plasma", { kind = "hidden", '
+        'type = "hidden" }) '
+        'l("/Home/Deskbar/Games/mine", "/Home/mine.lua") '
+        'l("/Home/Deskbar/System/procs", "/Kosmos/Apps/procs.lua", "--wide") '
+        'fs.write("/Home/Deskbar/.seeded", { programs = { "calc", "tracker", '
+        '"cube3d" } }) print("layers" .. "-set")'
+    )
+    guest.type(setup)
+    guest.wait_for("layers-set", "write a home as the seed left one")
+
+    probe = (
+        "local hz = fs.read('/Devices/cpu').counter_hz "
+        "local till = sys.ticks() + hz * 20 local said "
+        "repeat said = fs.read('/Running/Deskbar/menu') "
+        "if said then break end sys.yield() until sys.ticks() > till "
+        "print('layers-menu ' .. tostring(said)) "
+        "print('layers-trash ' .. table.concat(fs.list('/Home/Desktop/Trash') or {}, ',')) "
+        "print('layers-home ' .. table.concat(fs.list('/Home/Deskbar') or {}, ',') "
+        ".. ' | ' .. table.concat(fs.list('/Home/Deskbar/Demos') or {}, ','))"
+    )
+    guest.type("fs.write('/Temporary/layers.lua', %r)" % probe)
+    time.sleep(1.0)
+
+    def stop():
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+    try:
+        mark = len(guest.seen)
+        guest.type("wm deskbar,/Temporary/layers.lua")
+        guest.wait_for_line(
+            " of the seed's launchers and folders went to the Trash",
+            "the Deskbar to send the seed's launchers to the Trash", mark)
+        told = guest.seen[mark:]
+        count = re.search(r"deskbar: (\d+) of the seed's launchers", told)
+
+        if not count or count.group(1) != "2":
+            raise Failure("the Deskbar sent %s of the seed's to the Trash - "
+                          "wanted 2, Applications whole and the Cube"
+                          % (count.group(1) if count else "none"))
+
+        menu = guest.wait_for_line("layers-menu ", "the menu read back", mark)
+        trash = guest.wait_for_line("layers-trash ", "the Trash listed", mark)
+        home = guest.wait_for_line("layers-home ", "the home listed", mark)
+    finally:
+        stop()
+
+    trashed = trash.split(",")
+
+    if not ("Applications" in trashed and "cube3d" in trashed
+            and ".seeded" in trashed):
+        raise Failure("the Trash does not hold Applications, the Cube and the "
+                      "seed's record: %r" % trash)
+
+    left, demos = (part.strip() for part in home.split("|"))
+
+    if sorted(left.split(",")) != ["Demos", "Games", "System"] or demos != "plasma":
+        raise Failure("the home kept %r, and in Demos %r - wanted Demos, Games "
+                      "and System, and only the note hiding Plasma" % (left, demos))
+
+    sections = dict(part.split(": ", 1) for part in menu.split("; ")[1:])
+
+    def rows(name):
+        return [r.strip() for r in sections.get(name, "").split(",")]
+
+    apps, demo_rows, games, system = (rows("Applications"), rows("Demos"),
+                                      rows("Games"), rows("System"))
+
+    if not ("calc" in apps and "tracker" in apps):
+        raise Failure("Applications in the menu is not the one that ships: %r"
+                      % sections.get("Applications"))
+
+    if "cube3d" not in demo_rows or any(r.startswith("plasma") for r in demo_rows):
+        raise Failure("Demos in the menu kept Plasma or lost the shipped Cube: "
+                      "%r" % sections.get("Demos"))
+
+    if games != ["mine*"] or "procs*" not in system:
+        raise Failure("the person's own Games and Processes are not in the menu "
+                      "as theirs: Games %r, System %r"
+                      % (sections.get("Games"), sections.get("System")))
+
+    # The launcher editor on the menu as it ships: Save and Hide.
+    def edit(item, verb):
+        mark = len(guest.seen)
+        guest.type("wm launcheredit:/Kosmos/Deskbar/" + item)
+
+        try:
+            line = guest.wait_for_line("wm: window Launcher at ",
+                                       "the launcher editor to open", mark)
+            at = guest.wait_for_line("launcheredit: hide at ",
+                                     "the launcher editor to say where its "
+                                     "verbs are", mark)
+            x, y = (int(v) for v in re.match(r"(\d+),(\d+)", line).groups())
+            hx, hy, sx, sy = (int(v) for v in re.findall(r"\d+", at)[:4])
+            time.sleep(2.0)
+            width, height, _ = parse_ppm(guest.screendump())
+            px, py = (hx, hy) if verb == "hide" else (sx, sy)
+            guest.mouse_to(*_to_tablet(x + px, y + py, width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+            guest.mouse_button(False)
+            time.sleep(2.0)
+        finally:
+            stop()
+
+    edit("Applications/calc", "save")
+    edit("Demos/blocks", "hide")
+
+    guest.type(
+        'local c = fs.getattr("/Home/Deskbar/Applications/calc") or {} '
+        'local b = fs.getattr("/Home/Deskbar/Demos/blocks") or {} '
+        'print("layers" .. "-edit", c.kind, c.program, b.kind, b.type)')
+    edited = guest.wait_for_line("layers-edit\t", "the edits read back")
+
+    if edited.split("\t") != ["launcher", "/Kosmos/Apps/calc.lua", "hidden",
+                              "hidden"]:
+        raise Failure("Save on a shipped launcher and Hide on another did not "
+                      "leave the person's own and a note: %r" % edited)
+
+    return 7
+
+
 def check_focus_shown(guest):
     """The Deskbar shows where the focus went, at once.
 
@@ -10859,6 +11026,7 @@ def main():
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
+        layers_checks = phase("deskbar layers", check_deskbar_layers)
         icon_size_checks = phase("icon sizes", check_icon_sizes)
         desktop_checks = phase("desktop", check_desktop)
         places_checks = phase("places", check_places)
@@ -10926,7 +11094,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks
+             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks + layers_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
              + split_checks + monitor_checks + camera_checks
@@ -11016,6 +11184,9 @@ def main():
           f"{super_drag_checks} on a window moved from anywhere in it with "
           f"Super + Control, its application not hearing the press and the "
           f"Super opening nothing, "
+          f"{layers_checks} on the Deskbar's menu in two layers - the one "
+          f"that ships and the person's merged, a seeded home's copies to the "
+          f"Trash once, and a shipped item saved as theirs and hidden, "
           f"{no_title_checks} on a window whose header is its title bar - "
           f"the three in it, moved by its band, maximised by a double click, "
           f"minimised and closed by the three, and none of it in a look with "

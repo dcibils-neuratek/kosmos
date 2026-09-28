@@ -1013,10 +1013,21 @@ edited, sitting beside a menu that can.
 It is one strip now, 32 pixels tall (36 until 22 September), and
 `topbar.lua` is deleted:
 
-- **The Kosmos menu at the left**, which is `/Home/Deskbar` read off the
-  disk. Right-clicking it offers **Reload Menus** and **Open Deskbar
-  Folder**, the second because nothing on the screen said the folder
-  existed.
+- **The Kosmos menu at the left**, which is two folders merged
+  (`roadmap.md` 6zd, 28 September): `/Kosmos/Deskbar`, the menu as it
+  ships, which the store serving the applications lays out from each one's
+  `kosmos: section` and `kosmos: icon` - so it has no files to go stale -
+  and `/Home/Deskbar`, holding only what the person made. A section in
+  both is one submenu; an item in both is the person's; a note of theirs
+  under an item's name (`kind = "hidden"`) takes the shipped one out, and
+  deleting the note brings it back. The launcher editor saves a shipped
+  item as the person's, at the same place in their folder, and hides one
+  with a note. The shipped menu used to be *seeded* - copied into every
+  home - where it went stale, travelled to other machines with the home,
+  and could not be told from what the person made; a home the seed filled
+  sends those copies to the Trash once. Right-clicking the Kosmos button
+  offers **Reload Menus** and **Open Deskbar Folder**, the second because
+  nothing on the screen said the folder existed.
 - **A button per running window across the middle**, each drawing that
   application's own picture. The window manager reports the *program* that
   opened each window - a path - and `/bin` reports what its header declares,

@@ -11782,3 +11782,54 @@ head moves it exactly as far; **and the rest in Plex** - Processes, Log
 View and the Terminal each open with the header as the title bar and the
 three in place. **The control** is the Calculator beside them, which has
 no header of the kit's and opens with its tab.
+
+## 18.244 The Deskbar's menu in two layers (6zd)
+
+Diego: "the deskbar launchers are on /home while they really are delivered
+with kosmos", "shouldnt be those in /kosmos/deskbar?", "and the user be
+able to add their own? so basically merging both?" - and, of the homes the
+old Deskbar had filled, "Send to the trash all seeded".
+
+**The menu that ships is a view of a store**, not files: `binfs.c` serves
+`/Kosmos/Deskbar` from each application's header - its section, with the
+first letter a capital as the seed wrote it, a group after a slash as a
+submenu, and a launcher named for the application with its picture and
+its whole path (`/Kosmos/Apps/tracker.lua`, which the namespace makes from
+the store's name). Not the Deskbar and not `section none`. Read-only, so it
+cannot go stale and cannot be written. **The Deskbar merges it** with
+`/Home/Deskbar` (`deskbarmenu.merge`): a section in both is one; an item in
+both is the person's, whatever the case of its name; a `kind = "hidden"`
+note of theirs takes the shipped item out and is no row itself.
+
+**The launcher editor** saves a shipped item as the person's own at the
+same place in `/Home/Deskbar`, making its folders, and hides one with a
+note - moving a version of theirs to the Trash first. Tracker calls the note
+"Hidden from the Deskbar's menu".
+
+**A seeded home, once**: every launcher starting an application in
+`.seeded`'s record goes to the Trash, changed or not; a folder of nothing
+but those goes whole, so the Trash keeps the menu's shape; a folder with
+anything of the person's stays, and only the seed's leave it; then the
+record, which is what makes it once. The Deskbar's startup list asked the
+seed's list whether an item exists and asks the applications now.
+
+**Checked**: on the build machine (`test_deskbarmenu.lua`, 18) - the two
+trees' sections each once; a section in both with the person's Doom, no
+hidden Quake and a note hiding nothing that is no row; a shipped item with
+its picture; a section only the person has; and what the seed left chosen
+exactly - Applications and GLDemos whole, Doom from a Demos that holds
+something of the person's, an empty folder of theirs untouched.
+`test_filetypes.lua` names the note and opens nothing with it. In the
+guest (`run_queries.py`, K-DESKBAR): `/Kosmos` lists Deskbar; its sections;
+Tracker a launcher of its own path and picture; GLDemos a submenu of
+launchers; no Deskbar and no Info; nothing written into it. On both boards
+(the display harness's `deskbar layers`, 7): a home written as the seed left
+one, with a note hiding Plasma, a Games and a Processes of the person's, and
+the record - the Deskbar says two went to the Trash, the Trash and the home
+agree, and its `menu` property (which now lists each section's rows, the
+person's starred) has the shipped Applications, the shipped Cube, no Plasma,
+and their Games and Processes; then the launcher editor's Save on the
+shipped Calculator and Hide on Blocks, read back as the person's launcher
+and a hidden note. **The control**: the Deskbar reading only
+`/Home/Deskbar` fails the phase - Applications is not the one that ships.
+

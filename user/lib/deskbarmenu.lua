@@ -1,11 +1,18 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The Deskbar's menu, read off the disk.
 --
--- `/Home/Deskbar` holds a folder per section, each holding launchers, and a
--- folder inside one of those is a submenu. This turns that into the shape
--- the menu draws, and it is the whole of the rule: **a thing appears in the
--- menu because a launcher file exists.** Nothing here invents an item, so
--- there is no path by which a program with no launcher can appear.
+-- A folder per section, each holding launchers, and a folder inside one of
+-- those is a submenu. This turns that into the shape the menu draws, and it
+-- is the whole of the rule: **a thing appears in the menu because a
+-- launcher file exists.** Nothing here invents an item, so there is no path
+-- by which a program with no launcher can appear.
+--
+-- **Two such trees, merged** (`roadmap.md` 6zd): `/Kosmos/Deskbar`, the menu
+-- as it ships - laid out from each application's header by the store that
+-- serves them, so it cannot go stale - and `/Home/Deskbar`, holding only
+-- what the person made. A section in both is one submenu; an item in both
+-- is the person's; and a note of theirs, `kind = "hidden"`, under an item's
+-- name takes the shipped one out (`menu.merge`).
 --
 -- Here rather than in `deskbar.lua` for `iconlayout.lua`'s reason, which is
 -- the same reason: it is the part with the decisions in it - what counts,
@@ -64,6 +71,10 @@ function menu.read(store, path, depth, exists)
         args = tostring(attrs.args or ""),
         icon = attrs.icon,
       }
+    elseif attrs.kind == "hidden" then
+      -- A person's note that a shipped item is not wanted: it takes that
+      -- item out in `menu.merge`, and is never a row itself.
+      launchers[#launchers + 1] = { name = name, path = full, hidden = true }
     end
   end
 
@@ -128,64 +139,162 @@ function menu.sections(store, root, exists)
 end
 
 --
--- **Which applications a launcher names**, anywhere under `root`: the short
--- name of each, `/Kosmos/Apps/doom.lua` and `doom` alike - the two ways a launcher
--- has recorded one.
+-- **The two trees as one**: `shipped` and `home` are one folder's rows each,
+-- as `menu.read` gives them, and what comes back is the rows the menu
+-- shows.
 --
-function menu.programs_in(store, root, depth)
-  depth = depth or 12
+-- By name, whatever its case, since a person who writes `quake` means
+-- Quake: an item only in one is itself; a folder in both is one folder,
+-- merged the same way; anything else in both is the person's - changed by
+-- them, so theirs wins; and a person's hidden note takes the shipped item
+-- of its name out and shows nothing. In `read`'s order: submenus first,
+-- then launchers, each by name.
+--
+local function in_order(items)
+  local folders, launchers = {}, {}
 
-  local found = {}
+  for _, item in ipairs(items) do
+    if item.folder then folders[#folders + 1] = item
+    else launchers[#launchers + 1] = item end
+  end
 
-  for _, name in ipairs(store.list(root) or {}) do
-    local full = root .. "/" .. name
-    local attrs = store.getattr(full) or {}
+  local function by_name(a, b) return a.name < b.name end
 
-    if attrs.kind == "directory" and depth > 0 then
-      for short in pairs(menu.programs_in(store, full, depth - 1)) do
-        found[short] = true
+  table.sort(folders, by_name)
+  table.sort(launchers, by_name)
+
+  for _, one in ipairs(launchers) do folders[#folders + 1] = one end
+
+  return folders
+end
+
+function menu.merge(shipped, home)
+  local mine, taken, out = {}, {}, {}
+
+  for _, item in ipairs(home or {}) do mine[item.name:lower()] = item end
+
+  for _, item in ipairs(shipped or {}) do
+    local theirs = mine[item.name:lower()]
+
+    if not theirs then
+      out[#out + 1] = item
+    else
+      taken[theirs] = true
+
+      if theirs.hidden then
+        -- Taken out by the person, and the note is not a row.
+      elseif theirs.folder and item.folder then
+        out[#out + 1] = { name = theirs.name, path = theirs.path,
+                          folder = true,
+                          items = menu.merge(item.items, theirs.items) }
+      else
+        out[#out + 1] = theirs
       end
-    elseif attrs.kind == "launcher" then
-      local program = tostring(attrs.program or "")
-      -- `/bin/` is how a launcher made before 27 September says it.
-      local short = program:match("^/[Kk][Oo][Ss][Mm][Oo][Ss]/[Aa][Pp][Pp][Ss]/([^/]+)%.lua$")
-                    or program:match("^/[Bb][Ii][Nn]/([^/]+)%.lua$")
-
-      if not short and not program:find("/", 1, true) then
-        short = (program:gsub("%.lua$", ""))
-      end
-
-      if short and short ~= "" then found[short] = true end
     end
   end
 
-  return found
+  for _, item in ipairs(home or {}) do
+    if not taken[item] and not item.hidden then
+      if item.folder then
+        -- A folder only the person has can still hold notes, which are
+        -- never rows.
+        out[#out + 1] = { name = item.name, path = item.path, folder = true,
+                          items = menu.merge(nil, item.items) }
+      else
+        out[#out + 1] = item
+      end
+    end
+  end
+
+  return in_order(out)
 end
 
---
--- **What to add to the menu**: the applications `/bin` declares that the
--- menu has never been given.
---
--- The menu was made once, the first time `/Home/Deskbar` did not exist,
--- and never again - so every application that arrived after that had no
--- launcher, and on a `/Home` older than Preferences there was no
--- Preferences in the menu at all (Diego, 24 September: "where is the
--- preferences app in the menu? please add it").
---
--- `seeded` is the record of what the menu has been given, kept beside it;
--- an application in it whose launcher is gone was taken out by a person,
--- and stays out. Without a record - a menu made before there was one - the
--- launchers themselves are the record: `present`, what they name.
---
-function menu.missing(launchable, seeded, present)
-  local out = {}
-  local known = seeded or present or {}
+-- The same for the sections, which are the two roots' folders.
+function menu.merge_sections(shipped, home)
+  local function as_folders(sections)
+    local out = {}
 
-  for _, short in ipairs(launchable) do
-    if not known[short] then out[#out + 1] = short end
+    for i, s in ipairs(sections or {}) do
+      out[i] = { name = s.name, path = s.path, folder = true, items = s.items }
+    end
+
+    return out
+  end
+
+  local out = {}
+
+  for _, f in ipairs(menu.merge(as_folders(shipped), as_folders(home))) do
+    out[#out + 1] = { name = f.name, path = f.path, items = f.items }
   end
 
   return out
+end
+
+--
+-- The short name of the application a launcher starts - `/Kosmos/Apps/
+-- doom.lua`, `/bin/doom.lua` from before 27 September, and `doom`, the
+-- three ways a launcher has recorded one - or nil for anything else.
+--
+local function short_of(program)
+  local short = program:match("^/[Kk][Oo][Ss][Mm][Oo][Ss]/[Aa][Pp][Pp][Ss]/([^/]+)%.lua$")
+                or program:match("^/[Bb][Ii][Nn]/([^/]+)%.lua$")
+
+  if not short and program ~= "" and not program:find("/", 1, true) then
+    short = (program:gsub("%.lua$", ""))
+  end
+
+  return short
+end
+
+--
+-- **What the seed left in a person's menu, to go to the Trash once**
+-- (`roadmap.md` 6zd). Until 28 September the Deskbar copied a launcher for
+-- every application into `/Home/Deskbar`, recording which in `.seeded`;
+-- the shipped menu makes them copies of what is already there, and a menu
+-- with everything twice. Diego: "Send to the trash all seeded".
+--
+-- `seeded` is that record, a set of short names. A launcher starting one
+-- of them is the seed's, changed or not - one a person changed can be
+-- dragged back out of the Trash. A folder holding nothing but the seed's
+-- goes whole, so the Trash keeps the menu's shape; a folder with anything
+-- of the person's in it stays, and only the seed's go from inside it.
+-- The root itself never goes: it is where the person's own menu lives.
+--
+local function sweep(store, path, seeded, depth)
+  local all, any, moves = true, false, {}
+
+  for _, name in ipairs(store.list(path) or {}) do
+    local full = path .. "/" .. name
+    local attrs = store.getattr(full) or {}
+
+    if attrs.kind == "launcher"
+       and seeded[short_of(tostring(attrs.program or "")) or ""] then
+      any = true
+      moves[#moves + 1] = full
+    elseif attrs.kind == "directory" and depth > 0 then
+      local whole, some, inside = sweep(store, full, seeded, depth - 1)
+
+      if whole then
+        any = true
+        moves[#moves + 1] = full
+      else
+        all = false
+        any = any or some
+
+        for _, p in ipairs(inside) do moves[#moves + 1] = p end
+      end
+    else
+      all = false
+    end
+  end
+
+  return all and any, any, moves
+end
+
+function menu.seed_leftovers(store, root, seeded)
+  local _, _, moves = sweep(store, root, seeded or {}, 12)
+
+  return moves
 end
 
 return menu
