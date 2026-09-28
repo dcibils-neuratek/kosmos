@@ -5,7 +5,8 @@
 --   local docview = use("/Kosmos/Libraries/docview.lua")
 --   local page = docview.new(ui, { x = 0, y = 46, w = 760, h = 500,
 --                                  text = body,
---                                  face = function() return size:face() end,
+--                                  faces = function(kind) return face end,
+--                                  style = md.line,          -- or nil
 --                                  on_change = function(page) end })
 --
 -- **Not `ui.editor`**, which is monospace by construction: it numbers lines,
@@ -13,7 +14,7 @@
 -- dividing, all of which is arithmetic on a cell every glyph shares. A
 -- letter is in a proportional face and wraps, so here everything is
 -- *measured* - where a row breaks, where the caret stands, which character a
--- click lands on - with the face it is drawn in, asked for on every draw.
+-- click lands on - with the faces it is drawn in, asked for on every draw.
 --
 -- **Over the same `textbuf`** the IDE's editor edits, so undo, the
 -- selection and every change being a `replace` are the ones that are
@@ -21,9 +22,22 @@
 -- on them, Up and Down by what is seen rather than by line, and the steps a
 -- caret takes being whole characters - a byte of `é` is not a place.
 --
--- **Pixels, not rows, are what it scrolls by**, so a row may one day be
--- taller than another (Markdown's headings, step 2) without the scrolling
--- changing.
+-- **Styled, when it is given a `style`** (step 2): a function that says what
+-- a line is - `mdstyle.line`, for Markdown - and the page draws the same
+-- bytes that way. A heading in the heading face and larger, with space
+-- above it; bold, italic and code in their faces; a list's bullet, a
+-- checkbox that ticks when clicked, a quotation's bar, a code block's
+-- ground. **The marks stay** - `#`, `**`, `- [ ]` - faint, and the ones that
+-- start a line hang in the margin, so the words line up down the page and
+-- what is on the disk is what is on the screen (agreed on 28 September).
+-- With no `style` every line is plain, in the body face.
+--
+-- `faces(kind)` gives the face for "body", "bold", "italic", "bolditalic",
+-- "code", "h1", "h2" and "h3", asked on every draw: a sized face is given
+-- back when the desktop's faces change.
+--
+-- **Pixels, not rows, are what it scrolls by**, since a heading's row is
+-- taller than a paragraph's.
 --
 -- `docview.wrap`, `next_char` and `prev_char` are pure, and
 -- `tools/test_docview.lua` holds them to a measure on the Mac.
@@ -63,52 +77,53 @@ function docview.prev_char(s, i)
 end
 
 --
--- **A line as rows no wider than `width`**, measured by `measure`: a list of
--- `{ from, to }`, the bytes of each, `to` the last. A row breaks after the
+-- **A line as rows no wider than `width`**: a list of `{ from, to }`, the
+-- bytes of each, `to` the last, starting at byte `from` of the line (1 when
+-- not given - a styled line's hanging mark is not wrapped with its words).
+-- `measure(a, b)` is how wide bytes `a` to `b` are. A row breaks after the
 -- spaces that follow a word, and they stay on it, as every editor keeps
--- them; a word wider than the row alone is cut where it stops fitting, at
--- a character and never inside one. An empty line is one empty row.
+-- them; a word wider than the row alone is cut where it stops fitting, at a
+-- character and never inside one. Nothing to wrap is one empty row.
 --
-function docview.wrap(s, width, measure)
-  if s == "" or not width then return { { 1, #s } } end
+function docview.wrap(s, width, measure, from)
+  from = from or 1
+
+  if from > #s or not width then return { { from, #s } } end
 
   local rows = {}
-  local from, at, x = 1, 1, 0
+  local start, at, x = from, from, 0
 
   while at <= #s do
     local _, token_end = s:find("^[^ ]* *", at)
-    local word = s:sub(at, token_end):match("^[^ ]*")
-    local ww = measure(word)
+    local word_end = at + #(s:sub(at, token_end):match("^[^ ]*")) - 1
+    local ww = (word_end >= at) and measure(at, word_end) or 0
 
     if x > 0 and x + ww > width then
-      rows[#rows + 1] = { from, at - 1 }
-      from, x = at, 0
+      rows[#rows + 1] = { start, at - 1 }
+      start, x = at, 0
     end
 
     if x == 0 and ww > width then
       -- As much of it as fits, and at least one character.
-      local word_end = at + #word - 1
       local e = docview.next_char(s, at) - 1
 
       while true do
         local further = docview.next_char(s, e + 1) - 1
 
-        if further > word_end or measure(s:sub(at, further)) > width then
-          break
-        end
+        if further > word_end or measure(at, further) > width then break end
 
         e = further
       end
 
-      rows[#rows + 1] = { from, e }
-      from, at = e + 1, e + 1
+      rows[#rows + 1] = { start, e }
+      start, at = e + 1, e + 1
     else
-      x = x + measure(s:sub(at, token_end))
+      x = x + measure(at, token_end)
       at = token_end + 1
     end
   end
 
-  if from <= #s or #rows == 0 then rows[#rows + 1] = { from, #s } end
+  if start <= #s or #rows == 0 then rows[#rows + 1] = { start, #s } end
 
   return rows
 end
@@ -120,10 +135,22 @@ end
 local LEADING = 55      -- a row's height past its face's, in hundredths
 local PAD_Y   = 22      -- above the first row and below the last
 local PAD_X   = 26      -- the least room either side of the column
+local MARGIN  = 10      -- from a hanging mark to what it marks
+local BOX     = 14      -- a checklist's box
 
 -- A sentence of the letters prose is made of, measured to know how wide
 -- "seventy characters" is in a face whose letters are not one width.
 local SAMPLE = "the quick brown fox jumps over a lazy dog, "
+
+-- A line with no style: every byte the body's.
+local PLAIN = { kind = "para", hang = 0, level = 0 }
+
+-- What each kind of line is drawn in, and the space above a heading, in
+-- hundredths of the body's height.
+local BASE = { h1 = "h1", h2 = "h2", h3 = "h3", code = "code", fence = "code",
+               quote = "italic" }
+local ABOVE = { h1 = 40, h2 = 30, h3 = 20 }   -- a blank line is usually above too
+local LISTS = { item = true, check = true, number = true }
 
 function docview.new(ui, spec)
   local theme = ui.theme
@@ -135,27 +162,65 @@ function docview.new(ui, spec)
   v.focusable = true
   v.wrap = (spec.wrap ~= false)
   v.column = spec.column or 70
-  v.face = spec.face
+  v.faces = spec.faces
+  v.style = spec.style
+  v.continue = spec.continue
   v.on_change = spec.on_change
   v.scroll = 0                -- pixels scrolled from the top
   v.hscroll = 0               -- and from the left, when lines do not wrap
   v.version = 0
   v.dirty = false
 
-  local F = "ui"              -- the face this pass measures and draws in
-  local GH, RH = 16, 24       -- its height, and a row's
+  local face_of = {}          -- kind -> the face this pass draws it in
+  local GH, RH = 16, 24       -- the body's height, and a body row's
 
   local rows, first, total = {}, {}, 0
   local laid, laid_version = nil, -1
   local cache, cached, cache_for = {}, 0, nil
-  local want = nil            -- the x Up and Down aim for, in the column
+  local want = nil            -- the x Up and Down aim for, past the indent
 
-  local function measure(s) return gfx.measure(s, F) end
+  local KINDS = { "body", "bold", "italic", "bolditalic", "code", "h1", "h2", "h3" }
 
   local function metrics()
-    F = (v.face and v.face()) or "ui"
-    GH = gfx.height(F)
+    for _, k in ipairs(KINDS) do
+      face_of[k] = (v.faces and v.faces(k)) or "ui"
+    end
+
+    GH = gfx.height(face_of.body)
     RH = GH + (GH * LEADING) // 100
+  end
+
+  -- The face a span of a line is drawn in: the line's own when it is a
+  -- heading or code, the span's weight and slant otherwise.
+  local function span_face(entry, what)
+    local kind = entry.info.kind
+
+    if BASE[kind] and kind ~= "quote" then return face_of[BASE[kind]] end
+    if what == "code" then return face_of.code end
+    if what == "bold" or what == "italic" or what == "bolditalic" then
+      return face_of[what]
+    end
+
+    return face_of[entry.base]
+  end
+
+  -- How wide bytes `a` to `b` of a line are, span by span.
+  local function width_of(line, entry, a, b)
+    if b < a then return 0 end
+
+    local spans = entry.info.spans
+
+    if not spans then return gfx.measure(line:sub(a, b), face_of[entry.base]) end
+
+    local w = 0
+
+    for _, sp in ipairs(spans) do
+      local sa, sb = math.max(a, sp[1]), math.min(b, sp[2])
+
+      if sa <= sb then w = w + gfx.measure(line:sub(sa, sb), span_face(entry, sp[3])) end
+    end
+
+    return w
   end
 
   -- Where the column is and how wide.
@@ -164,15 +229,51 @@ function docview.new(ui, spec)
 
     if not self.wrap then return PAD_X, math.max(1, room) end
 
-    local each = gfx.measure(SAMPLE, F) / #SAMPLE
+    local each = gfx.measure(SAMPLE, face_of.body) / #SAMPLE
     local width = math.max(1, math.min(room, math.floor(each * self.column)))
 
     return PAD_X + (room - width) // 2, width
   end
 
+  -- A line read, measured and broken into rows: what it is, its face, how
+  -- far in its words start, and the space above it.
+  local function entry_for(self, line, state, width)
+    local info, after = PLAIN, false
+
+    if self.style then info, after = self.style(line, state) end
+
+    local kind = info.kind
+    local base = BASE[kind] or "body"
+    local bullet = GH + GH // 2
+    local indent = 0
+
+    if LISTS[kind] then
+      indent = bullet * ((info.level or 0) + 1)
+    elseif kind == "quote" then
+      indent = GH
+    elseif kind == "code" or kind == "fence" then
+      indent = GH // 2 + 4
+    end
+
+    local gh = gfx.height(face_of[base])
+    local entry = { info = info, after = after, base = base, indent = indent,
+                    gh = gh, rh = gh + (gh * LEADING) // 100,
+                    gap = ((ABOVE[kind] or 0) * GH) // 100, bullet = bullet }
+
+    local room = self.wrap and math.max(1, width - indent - ((kind == "code") and GH // 2 or 0))
+                 or nil
+
+    entry.pieces = docview.wrap(line, room, function(a, b)
+      return width_of(line, entry, a, b)
+    end, (info.hang or 0) + 1)
+
+    return entry
+  end
+
   local function layout(self)
     local _, width = geometry(self)
-    local key = tostring(F) .. ":" .. width .. ":" .. tostring(self.wrap)
+    local key = tostring(face_of.body) .. ":" .. tostring(face_of.h1) .. ":"
+                .. width .. ":" .. tostring(self.wrap) .. ":" .. tostring(self.style)
 
     if laid == key and laid_version == self.version then return end
 
@@ -182,22 +283,28 @@ function docview.new(ui, spec)
 
     rows, first = {}, {}
 
-    local y = PAD_Y
+    local y, state = PAD_Y, false
 
     for n, line in ipairs(buf.lines) do
-      local pieces = cache[line]
+      local slot = state and (line .. "\1") or line
+      local entry = cache[slot]
 
-      if not pieces then
-        pieces = self.wrap and docview.wrap(line, width, measure) or { { 1, #line } }
-        cache[line] = pieces
+      if not entry then
+        entry = entry_for(self, line, state, width)
+        cache[slot] = entry
         cached = cached + 1
       end
 
+      state = entry.after
       first[n] = #rows + 1
 
-      for _, p in ipairs(pieces) do
-        rows[#rows + 1] = { i = #rows + 1, n = n, from = p[1], to = p[2], y = y }
-        y = y + RH
+      for k, p in ipairs(entry.pieces) do
+        local gap = (k == 1) and entry.gap or 0
+        local h = entry.rh + gap
+
+        rows[#rows + 1] = { i = #rows + 1, n = n, from = p[1], to = p[2], y = y,
+                            h = h, gap = gap, first = (k == 1), entry = entry }
+        y = y + h
       end
     end
 
@@ -206,8 +313,11 @@ function docview.new(ui, spec)
     laid, laid_version = key, self.version
   end
 
+  local function hang_of(r) return r.entry.info.hang or 0 end
+
   -- The row a place is on: the last of its line's rows that starts at or
-  -- before it, so a place at a break is at the start of the row below.
+  -- before it, so a place at a break is at the start of the row below; a
+  -- place in a line's mark is on its first row.
   local function row_of(n, x)
     local i = first[n] or 1
 
@@ -222,21 +332,60 @@ function docview.new(ui, spec)
     return rows[i + 1] == nil or rows[i + 1].n ~= rows[i].n
   end
 
-  -- How far into its row a place is, in pixels.
-  local function x_in_row(r, x)
-    return measure(buf.lines[r.n]:sub(r.from, x - 1))
+  -- Where a line's hanging mark ends, in the page's pixels: before its
+  -- bullet for a list, before its words for anything else.
+  local function mark_right(x0, r)
+    local e = r.entry
+
+    if LISTS[e.info.kind] then return x0 + e.indent - e.bullet - MARGIN // 2 end
+
+    return x0 - MARGIN
   end
 
-  -- The place in row `r` nearest `px` pixels into it: past a character's
-  -- middle is after it. The end of a row that wraps is before its last
-  -- character, which is the space it broke at - after it is the next row.
+  -- The mark as it is drawn: without the spaces around it.
+  local function mark_span(line, r)
+    local hang = hang_of(r)
+    local a = (line:find("%S") or 1)
+    local b = hang
+
+    while b >= a and line:sub(b, b):match("%s") do b = b - 1 end
+
+    return a, b
+  end
+
+  -- How far from the column's edge a place is drawn: in its row's words,
+  -- or in the mark hanging before them.
+  local function x_of(x0, r, x)
+    local line = buf.lines[r.n]
+
+    if r.first and x <= hang_of(r) and r.entry.info.kind ~= "number" then
+      local a, b = mark_span(line, r)
+      local left = mark_right(x0, r) - width_of(line, r.entry, a, b)
+
+      return left + width_of(line, r.entry, a, math.min(b, x - 1)) - v.hscroll
+    end
+
+    if r.first and x <= hang_of(r) then
+      -- A number is drawn where a bullet would be, ending at its words.
+      local a, b = mark_span(line, r)
+      local left = x0 + r.entry.indent - MARGIN // 2 - width_of(line, r.entry, a, b)
+
+      return left + width_of(line, r.entry, a, math.min(b, x - 1)) - v.hscroll
+    end
+
+    return x0 + r.entry.indent + width_of(line, r.entry, r.from, x - 1) - v.hscroll
+  end
+
+  -- The place in row `r` nearest `px` pixels past its indent: past a
+  -- character's middle is after it. The end of a row that wraps is before
+  -- its last character, which is the space it broke at.
   local function place_in_row(r, px)
     local line = buf.lines[r.n]
     local at, w = r.from, 0
 
     while at <= r.to do
       local nxt = docview.next_char(line, at)
-      local cw = measure(line:sub(at, nxt - 1))
+      local cw = width_of(line, r.entry, at, nxt - 1)
 
       if w + cw / 2 > px then break end
 
@@ -276,20 +425,19 @@ function docview.new(ui, spec)
 
     self.followed = true
 
-    local i = row_of(buf.cy, buf.cx)
-    local r = rows[i]
+    local r = rows[row_of(buf.cy, buf.cx)]
 
     if not r then return end
 
     if r.y < self.scroll + PAD_Y // 2 then
       self.scroll = math.max(0, r.y - PAD_Y)
-    elseif r.y + RH > self.scroll + self.h then
-      self.scroll = r.y + RH - self.h + PAD_Y // 2
+    elseif r.y + r.h > self.scroll + self.h then
+      self.scroll = r.y + r.h - self.h + PAD_Y // 2
     end
 
     if not self.wrap then
       local _, width = geometry(self)
-      local cx = x_in_row(r, buf.cx)
+      local cx = r.entry.indent + width_of(buf.lines[r.n], r.entry, r.from, buf.cx - 1)
 
       if cx < self.hscroll then self.hscroll = math.max(0, cx - width // 4) end
       if cx > self.hscroll + width then self.hscroll = cx - width + width // 4 end
@@ -336,6 +484,65 @@ function docview.new(ui, spec)
     return true
   end
 
+  -- The selection, or the caret, between `before` and `after`: a word made
+  -- bold is `**word**`, and nothing selected leaves the caret between the
+  -- two, ready for the word.
+  function v:surround(before, after)
+    local y1, x1, y2, x2 = buf:selection()
+
+    if y1 then
+      local inside = buf:between(y1, x1, y2, x2)
+
+      buf:replace(y1, x1, y2, x2, before .. inside .. after)
+    else
+      local y, x = buf.cy, buf.cx
+
+      buf:replace(y, x, y, x, before .. after)
+      buf.cy, buf.cx = y, x + #before
+    end
+
+    self.followed = nil
+    after_edit(self)
+  end
+
+  -- The line the caret is on begins with `lead` in place of whatever mark
+  -- it had - a heading, a bullet, a quotation - as one step to undo.
+  function v:set_lead(lead)
+    local y = buf.cy
+    local line = buf.lines[y]
+    local hang = 0
+
+    if self.style then hang = (self.style(line, false).hang or 0) end
+
+    if line:sub(1, hang) == lead then lead = "" end   -- asked again: taken off
+
+    local x = buf.cx
+
+    buf:replace(y, 1, y, hang + 1, lead)
+    buf.cy, buf.cx = y, math.max(1 + #lead, x - hang + #lead)
+    self.followed = nil
+    after_edit(self)
+  end
+
+  -- A checklist item's box, ticked or opened, on line `n`; false when the
+  -- line has none.
+  function v:toggle_check(n)
+    n = n or buf.cy
+
+    if not self.style then return false end
+
+    local info = self.style(buf.lines[n], false)
+
+    if info.kind ~= "check" or not info.box then return false end
+
+    local keep_y, keep_x = buf.cy, buf.cx
+
+    buf:replace(n, info.box, n, info.box + 1, info.checked and " " or "x")
+    buf.cy, buf.cx = keep_y, keep_x
+    after_edit(self)
+    return true
+  end
+
   -- Words, as a person counts them: runs of what is not a space.
   function v:words()
     if self.words_at ~= self.version then
@@ -351,7 +558,7 @@ function docview.new(ui, spec)
     return self.word_count
   end
 
-  -- Where the caret is on the page, in the view's own pixels, and a row's
+  -- Where the caret is on the page, in the view's own pixels, and its row's
   -- height - for the right click's menu, and for a harness.
   function v:caret_at()
     metrics()
@@ -362,7 +569,7 @@ function docview.new(ui, spec)
 
     if not r then return x0, PAD_Y, RH end
 
-    return x0 + x_in_row(r, buf.cx) - self.hscroll, r.y - self.scroll, RH
+    return x_of(x0, r, buf.cx), r.y + r.gap - self.scroll, r.h - r.gap
   end
 
   --------------------------------------------------------------------------
@@ -506,46 +713,158 @@ function docview.new(ui, spec)
 
   local HIT, HIT_NOW = 0xffffe58a, 0xffffc933
 
-  -- A run of a row's bytes, starting `px` into the column; the part left of
-  -- the column's edge, when lines do not wrap and the page has scrolled
-  -- sideways, is left out a character at a time.
-  local function draw_run(g, line, from, to, x0, px, y, colour)
-    if to < from then return end
+  -- The colours of this pass, from the look.
+  local C = {}
 
-    local x = x0 + px - v.hscroll
+  local function colours()
+    C.text = theme.text
+    C.dim = theme.text_dim
+    C.faint = theme.mix(theme.sunken, theme.text_dim, 450)
+    C.link = theme.accent
+    C.selection = theme.mix(theme.sunken, theme.accent, 260)
+    C.hit = theme.mix(theme.sunken, HIT, 800)
+    C.hit_now = theme.mix(theme.sunken, HIT_NOW, 850)
+    C.code_ground = theme.mix(theme.sunken, theme.text_dim, 70)
+    C.rule = theme.mix(theme.sunken, theme.text_dim, 250)
+    C.done = theme.mix(theme.sunken, theme.text_dim, 750)
+  end
 
-    while x < x0 and from <= to do
+  local SPAN_COLOUR = { mark = "faint", link = "link", url = "faint" }
+
+  -- A run of a row's bytes from x, in its span's face and colour, the part
+  -- left of the column's edge left out a character at a time when lines do
+  -- not wrap and the page has scrolled sideways. Returns where it ended.
+  local function draw_run(g, line, entry, from, to, x, left, y_base, face, colour)
+    if to < from then return x end
+
+    while x < left and from <= to do
       local nxt = docview.next_char(line, from)
 
-      x = x + measure(line:sub(from, nxt - 1))
+      x = x + gfx.measure(line:sub(from, nxt - 1), face)
       from = nxt
     end
 
-    if from <= to then g:text(x, y, line:sub(from, to), colour, nil, F) end
+    if from > to then return x end
+
+    local text = line:sub(from, to)
+    local w = gfx.measure(text, face)
+
+    -- Faces of one size are not of one height; their feet are put level.
+    g:text(x, y_base - gfx.height(face), text, colour, nil, face)
+    return x + w
+  end
+
+  -- A row's words, span by span.
+  local function draw_words(g, r, x0, y_base, done)
+    local line = buf.lines[r.n]
+    local e = r.entry
+    local x = x0 + e.indent - v.hscroll
+    local left = x0
+    local spans = e.info.spans or { { r.from, r.to, nil } }
+    local start_x = x
+
+    for _, sp in ipairs(spans) do
+      local a, b = math.max(r.from, sp[1]), math.min(r.to, sp[2])
+
+      if a <= b then
+        local face = span_face(e, sp[3])
+        local colour = C[SPAN_COLOUR[sp[3]] or "text"]
+
+        if done and sp[3] ~= "mark" then colour = C.done end
+        if e.info.kind == "fence" then colour = C.faint end
+
+        if sp[3] == "code" and e.info.kind ~= "code" then
+          local w = width_of(line, e, a, b)
+          local fh = gfx.height(face)
+
+          g:fill_round(x - 2, y_base - fh - 1, w + 4, fh + 2, C.code_ground, 4)
+        end
+
+        x = draw_run(g, line, e, a, b, x, left, y_base, face, colour)
+      end
+    end
+
+    -- A ticked item is struck through, words and all.
+    if done and x > start_x then
+      g:fill(start_x, y_base - GH // 2 + 1, x - start_x, 1, C.done)
+    end
   end
 
   -- A band behind bytes `a` to `b - 1` of row `r`, clipped to the column.
-  local function band(g, r, a, b, x0, width, y, colour, eol)
-    local x1 = x0 + x_in_row(r, a) - v.hscroll
-    local x2 = x0 + x_in_row(r, b) - v.hscroll + (eol and GH // 3 or 0)
+  local function band(g, r, a, b, x0, width, y, h, colour, eol)
+    local x1 = x_of(x0, r, a)
+    local x2 = x_of(x0, r, b) + (eol and GH // 3 or 0)
 
-    if x1 < x0 then x1 = x0 end
+    if x1 < x0 - PAD_X then x1 = x0 - PAD_X end
     if x2 > x0 + width + GH then x2 = x0 + width + GH end
-    if x2 > x1 then g:fill(x1, y, x2 - x1, RH, colour) end
+    if x2 > x1 then g:fill(x1, y, x2 - x1, h, colour) end
+  end
+
+  -- What a styled line has that is not its words: a code block's ground, a
+  -- quotation's bar, a rule, a bullet, a box, and its mark in the margin.
+  local function draw_furniture(g, r, x0, width, y, y_base)
+    local e = r.entry
+    local info = e.info
+    local kind = info.kind
+    local line = buf.lines[r.n]
+
+    if kind == "code" or kind == "fence" then
+      g:fill(x0, y, width, r.h, C.code_ground)
+    elseif kind == "quote" then
+      g:fill(x0 + 2, y + r.gap, 3, r.h - r.gap, C.rule)
+    elseif kind == "rule" then
+      g:fill(x0, y + r.h // 2, width, 1, C.rule)
+    end
+
+    if not r.first then return end
+
+    local body_h = gfx.height(face_of.body)
+    local hang = hang_of(r)
+
+    if kind == "item" then
+      local dot = "\u{2022}"
+      local w = gfx.measure(dot, face_of.body)
+
+      g:text(x0 + e.indent - e.bullet + (e.bullet - w) // 2 - MARGIN // 2,
+             y_base - body_h, dot, C.dim, nil, face_of.body)
+    elseif kind == "check" then
+      local bx = x0 + e.indent - e.bullet + (e.bullet - BOX) // 2 - MARGIN // 2
+      local by = y_base - (body_h + BOX) // 2 - 1
+
+      if info.checked then
+        g:fill_round(bx, by, BOX, BOX, C.link, 3)
+        g:line_icon(bx - 1, by - 1, "check", theme.sunken)
+      else
+        g:fill_round(bx, by, BOX, BOX, C.dim, 3)
+        g:fill_round(bx + 1, by + 1, BOX - 2, BOX - 2, theme.sunken, 2)
+      end
+    end
+
+    -- The mark, faint - or a number, which is what it says, dim.
+    if hang > 0 then
+      local a, b = mark_span(line, r)
+
+      if b >= a then
+        local text = line:sub(a, b)
+        local w = gfx.measure(text, face_of.body)
+        local right = (kind == "number") and (x0 + e.indent - MARGIN // 2)
+                      or mark_right(x0, r)
+
+        g:text(right - w - v.hscroll, y_base - body_h, text,
+               (kind == "number") and C.dim or C.faint, nil, face_of.body)
+      end
+    end
   end
 
   function v:draw(g)
     metrics()
+    colours()
     layout(self)
     follow(self)
     clamp_scroll(self)
 
     local x0, width = geometry(self)
-    local text_y = (RH - GH) // 2
     local sy1, sx1, sy2, sx2 = buf:selection()
-    local selection = theme.mix(theme.sunken, theme.accent, 260)
-    local hit = theme.mix(theme.sunken, HIT, 800)
-    local hit_now = theme.mix(theme.sunken, HIT_NOW, 850)
     local found = self.needle and matches(self) or {}
 
     g:fill(0, 0, self.w, self.h, theme.sunken)
@@ -575,27 +894,38 @@ function docview.new(ui, spec)
 
       if y >= self.h then break end
 
-      local line = buf.lines[r.n]
-      local row_end = r.to + 1
+      if y + r.h > 0 then
+        local line = buf.lines[r.n]
+        local row_end = r.to + 1
+        local text_y = y + r.gap
+        local text_h = r.h - r.gap
+        local fh = r.entry.gh
+        local y_base = text_y + (text_h - fh) // 2 + fh
+        local from = r.first and (hang_of(r) > 0 and 1 or r.from) or r.from
 
-      if y + RH > 0 then
+        draw_furniture(g, r, x0, width, y, y_base)
+
         if sy1 and r.n >= sy1 and r.n <= sy2 then
-          local a = (r.n == sy1) and math.max(sx1, r.from) or r.from
+          local a = (r.n == sy1) and math.max(sx1, from) or from
           local b = (r.n == sy2) and math.min(sx2, row_end) or row_end
           local eol = (r.n < sy2) and last_of_line(i)
 
-          if b > a or eol then band(g, r, a, math.max(a, b), x0, width, y, selection, eol) end
+          if b > a or eol then
+            band(g, r, a, math.max(a, b), x0, width, text_y, text_h, C.selection, eol)
+          end
         end
 
         -- The matches over the selection, since the current one *is* the
         -- selection and says so in the stronger of the two yellows.
         for _, f in ipairs(by_line[r.n] or {}) do
-          local a, b = math.max(f.m.from, r.from), math.min(f.m.to, row_end)
+          local a, b = math.max(f.m.from, from), math.min(f.m.to, row_end)
 
-          if b > a then band(g, r, a, b, x0, width, y, f.now and hit_now or hit) end
+          if b > a then
+            band(g, r, a, b, x0, width, text_y, text_h, f.now and C.hit_now or C.hit)
+          end
         end
 
-        draw_run(g, line, r.from, r.to, x0, 0, y + text_y, theme.text)
+        draw_words(g, r, x0, y_base, r.entry.info.checked)
       end
     end
 
@@ -604,11 +934,13 @@ function docview.new(ui, spec)
       local r = rows[row_of(buf.cy, buf.cx)]
 
       if r then
-        local cx = x0 + x_in_row(r, buf.cx) - self.hscroll
-        local cy = r.y - self.scroll + text_y
+        local cx = x_of(x0, r, buf.cx)
+        local fh = (r.first and buf.cx <= hang_of(r)) and GH or r.entry.gh
+        local text_y = r.y - self.scroll + r.gap
+        local cy = text_y + (r.h - r.gap - r.entry.gh) // 2 + (r.entry.gh - fh)
 
-        if cx >= x0 - 1 and cy + GH > 0 and cy < self.h then
-          g:fill(cx - 1, cy, 2, GH, theme.accent)
+        if cy + fh > 0 and cy < self.h then
+          g:fill(cx - 1, cy, 2, fh, theme.accent)
         end
       end
     end
@@ -635,12 +967,19 @@ function docview.new(ui, spec)
     buf.cy, buf.cx = buf:clamp(n, x)
   end
 
+  -- How far past its row's indent a place is, which is what Up and Down
+  -- keep: a bullet's words line up with a paragraph's under them.
+  local function offset_in_row(r, x)
+    if r.first and x <= hang_of(r) then return 0 end
+
+    return width_of(buf.lines[r.n], r.entry, r.from, x - 1)
+  end
+
   -- Up or down by `by` rows as they are seen, keeping to the same x.
   local function vertical(self, by, extend)
     local i = row_of(buf.cy, buf.cx)
-    local r = rows[i]
 
-    want = want or x_in_row(r, buf.cx)
+    want = want or offset_in_row(rows[i], buf.cx)
 
     local target = rows[i + by]
 
@@ -666,6 +1005,8 @@ function docview.new(ui, spec)
     end
   end
 
+  local CTRL_ENTER = keys.with(13, CTRL)
+
   function v:key(c)
     metrics()
     layout(self)
@@ -674,6 +1015,12 @@ function docview.new(ui, spec)
     local k, mods = keys.parts(c)
     local shift = (mods & SHIFT) ~= 0
     local ctrl = (mods & CTRL) ~= 0
+
+    -- Control and Return ticks a checklist item, or opens it again.
+    if c == CTRL_ENTER then
+      self:toggle_check()
+      return true
+    end
 
     if (mods & ~(SHIFT | CTRL)) ~= 0 then return false end
 
@@ -741,7 +1088,23 @@ function docview.new(ui, spec)
     elseif c == 25 then                                       -- ^Y
       buf:redo()
     elseif c == 10 or c == 13 then                            -- Enter
-      buf:newline(false)
+      --
+      -- **A list goes on**: Return after an item starts the next - the same
+      -- bullet, the next number, an open box - and Return on an empty one
+      -- takes its mark away, which is the way out of a list.
+      --
+      local line = buf.lines[buf.cy]
+      local lead, ends = nil, false
+
+      if self.continue and not buf:selection() then lead, ends = self.continue(line) end
+
+      if lead and ends then
+        buf:replace(buf.cy, 1, buf.cy, #line + 1, "")
+      elseif lead then
+        buf:insert("\n" .. lead)
+      else
+        buf:newline(false)
+      end
     elseif c == 8 or c == 127 then                            -- Backspace
       if not buf:delete_selected() then
         if buf.cx > 1 then
@@ -818,9 +1181,8 @@ function docview.new(ui, spec)
   -- The pointer.
   --------------------------------------------------------------------------
 
-  -- The place under a point of the view.
-  local function place_at(self, x, y)
-    local x0 = geometry(self)
+  -- The row under a point of the view, by halving.
+  local function row_at(self, y)
     local py = y + self.scroll
     local lo, hi = 1, #rows
 
@@ -830,12 +1192,50 @@ function docview.new(ui, spec)
       if rows[mid].y <= py then lo = mid else hi = mid - 1 end
     end
 
-    local r = rows[lo]
+    return rows[lo], py
+  end
+
+  -- The place under a point of the view: in a row's words, or in the mark
+  -- hanging before them.
+  local function place_at(self, x, y)
+    local x0 = geometry(self)
+    local r, py = row_at(self, y)
 
     if not r then return 1, 1 end
     if py < r.y then return r.n, r.from end
 
-    return r.n, place_in_row(r, x - x0 + self.hscroll)
+    local line = buf.lines[r.n]
+    local hang = hang_of(r)
+
+    if r.first and hang > 0 and x < x0 + r.entry.indent - v.hscroll then
+      -- In the margin: the nearest place in the mark, or its end.
+      local best, far = hang + 1, math.huge
+
+      for at = 1, hang + 1 do
+        local d = math.abs(x_of(x0, r, at) - x)
+
+        if d < far then best, far = at, d end
+      end
+
+      return r.n, best
+    end
+
+    return r.n, place_in_row(r, x - x0 - r.entry.indent + self.hscroll)
+  end
+
+  -- Whether a point is on a checklist item's box.
+  local function on_box(self, x, y)
+    local x0 = geometry(self)
+    local r = row_at(self, y)
+
+    if not (r and r.first and r.entry.info.kind == "check") then return nil end
+
+    local e = r.entry
+    local bx = x0 + e.indent - e.bullet + (e.bullet - BOX) // 2 - MARGIN // 2
+
+    if x >= bx - 3 and x <= bx + BOX + 3 then return r.n end
+
+    return nil
   end
 
   function v:mouse(action, x, y)
@@ -849,6 +1249,13 @@ function docview.new(ui, spec)
       self.scroll = to - 1
       self.followed = true
       return true
+    end
+
+    -- A box is ticked by clicking it, which writes the `x` into the file.
+    if action == "press" then
+      local n = on_box(self, x, y)
+
+      if n and self:toggle_check(n) then return true end
     end
 
     if action == "press" or action == "move" then
@@ -875,6 +1282,13 @@ function docview.new(ui, spec)
     clamp_scroll(self)
     self.followed = true
     return true
+  end
+
+  -- A different style, or none: plain text, or Markdown.
+  function v:restyle(style, continue)
+    self.style, self.continue = style, continue
+    self.version = self.version + 1
+    self.words_at = nil
   end
 
   return v

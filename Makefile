@@ -3323,6 +3323,8 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# And Text Editor's page: where a line breaks into rows, and the
 	@# caret's steps whole characters (`roadmap.md` 6zs).
 	$(HOSTDIR)/lua tools/test_docview.lua
+	@# And the Markdown it styles while it is written (6zs step 2).
+	$(HOSTDIR)/lua tools/test_mdstyle.lua
 	$(HOSTDIR)/lua tools/test_lualex.lua
 	@# And its checking: Lua's own parser, and the vendored luacheck loaded
 	@# as the machine loads it (6n, step 4).
@@ -3487,13 +3489,22 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 # building the same thing at once.
 J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
+#
+# **The applications' images against the test userland** (`roadmap.md`
+# 6zp): the loader's suite needs an image of each, and linking them against
+# a userland built for them alone was two more userlands to compile every
+# time a library changed - 100 seconds of images where 56 had been. The
+# test userland is built here anyway; an image linked against it carries
+# the suites' roles as well, which nothing asks it for. A stick and
+# `install-apps` still link against the lean one.
+#
 gate-images: $(TARGET) $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf
-	@$(MAKE) --no-print-directory -j$(J) apps
+	@$(MAKE) --no-print-directory -j$(J) TEST=1 apps
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory -j$(J) x86-build >/dev/null && \
-	    $(MAKE) --no-print-directory -j$(J) ARCH=x86_64 FULL=$(FULL) apps >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) TEST=1 x86-build >/dev/null && \
+	    $(MAKE) --no-print-directory -j$(J) ARCH=x86_64 TEST=1 apps >/dev/null && \
 	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \
 	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null && \

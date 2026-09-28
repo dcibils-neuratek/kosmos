@@ -32,10 +32,15 @@ end
 -- One unit a character, whatever its bytes.
 local function chars(s) return utf8.len(s) or #s end
 
-local function rows(s, width)
+-- How wide bytes `a` to `b` of `s` are, in that face.
+local function over(s)
+  return function(a, b) return chars(s:sub(a, b)) end
+end
+
+local function rows(s, width, from)
   local out = {}
 
-  for _, r in ipairs(docview.wrap(s, width, chars)) do
+  for _, r in ipairs(docview.wrap(s, width, over(s), from)) do
     out[#out + 1] = s:sub(r[1], r[2])
   end
 
@@ -58,14 +63,21 @@ wraps("a bcdefgh", 4, "a |bcde|fgh", "a long word after a short one starts a row
 wraps("éééé", 2, "éé|éé", "a cut at a character, never inside one")
 wraps("x\xc3", 1, "x|\xc3", "a stray byte at the end is still a place")
 wraps("one  two", 4, "one  |two", "every space after a word stays with it")
-check(docview.wrap("anything", nil, chars)[1][2] == 8,
+check(docview.wrap("anything", nil, over("anything"))[1][2] == 8,
       "no width - lines that do not wrap - is the whole line")
+
+-- A styled line's hanging mark is not wrapped with its words.
+check(rows("## a heading that wraps", 8, 4) == "a |heading |that |wraps",
+      "from the words after the mark: " .. rows("## a heading that wraps", 8, 4))
+check(rows("# ", 8, 3) == "", "a mark and nothing after it is one empty row")
+check(docview.wrap("# ", 8, over("# "), 3)[1][1] == 3,
+      "and that row starts after the mark")
 
 -- The pieces cover the line, in order, with nothing missing or twice.
 local text = "the quick brown fox jumps over the lazy dog and keeps going"
 
 for width = 1, 30 do
-  local list = docview.wrap(text, width, chars)
+  local list = docview.wrap(text, width, over(text))
   local joined, at = {}, 1
 
   for _, r in ipairs(list) do

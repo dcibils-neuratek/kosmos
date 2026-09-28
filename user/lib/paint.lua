@@ -66,9 +66,11 @@ function paint.new(picture_named, sized)
       -- `o.role` picks the face. Absent, `gfx` uses the interface font, which
       -- is what every application that does not care wants. `o.px` asks for
       -- that role's font at another size, which is resolved here rather than
-      -- sent as a number: a face index means nothing in this process.
+      -- sent as a number: a face index means nothing in this process. And
+      -- `o.variant` a weight or a slant of it - Text Editor's bold.
       s:text(o.x or 0, o.y or 0, tostring(o.s or ""),
-             o.color or 0xffffffff, o.bg, o.px and sized(o.role, o.px) or o.role)
+             o.color or 0xffffffff, o.bg,
+             (o.px or o.variant) and sized(o.role, o.px, o.variant) or o.role)
     end,
 
     --

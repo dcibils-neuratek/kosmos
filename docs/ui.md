@@ -1788,3 +1788,11 @@ Editor's `Text | Markdown`: the dropdown's box divided by its rule, the
 chosen word on a quiet fill in the text's colour and the others dim.
 `ui.draw_scrollbar` is the kit's pill, exported for a view that scrolls by
 something other than rows.
+
+**Styled, with `style = mdstyle.line`** (6zs step 2): a line is read as a
+kind - a heading, an item, a checklist item, a quotation, code - with the
+bytes of its mark and the spans after it, and drawn in faces the window
+gives by name (`faces("bold")`). The marks stay, faint, and the ones that
+start a line hang in the margin before its bullet or its words. A text
+command carries a `variant` beside its role and size, and `ui.sized(role,
+px, variant)` is the role's font with that ending - `ibmplexsans-bold`.

@@ -19,9 +19,12 @@
 -- middle of the window, with a caret between characters. A document can
 -- ask for the mono face instead, and keeps that on itself, as an attribute.
 --
--- **Plain text is step 1**, and a Markdown document is written as text until
--- step 2 styles it as it is written. Its format follows its name: `.md` is
--- Markdown and anything else is text, and `Text | Markdown` switches it.
+-- **Markdown is styled as it is written** (step 2, `mdstyle.lua`): headings
+-- larger, bold bold, code in the mono face, a checklist's boxes that tick -
+-- and its marks kept, faint, the ones that start a line hanging in the
+-- margin. Plain text is nothing but its words. A document's format follows
+-- its name: `.md` is Markdown and anything else is text, and `Text |
+-- Markdown` switches it.
 --
 -- **One window per document**, as StyledEdit had. Open in a window that
 -- holds an untouched new document fills it; anywhere else it opens another.
@@ -29,6 +32,7 @@
 local ui       = use("/Kosmos/Libraries/ui.lua")
 local panel    = use("/Kosmos/Libraries/panel.lua")
 local docview  = use("/Kosmos/Libraries/docview.lua")
+local md       = use("/Kosmos/Libraries/mdstyle.lua")
 local textsize = use("/Kosmos/Libraries/textsize.lua")
 local files    = use("/Kosmos/Libraries/files.lua")
 
@@ -138,16 +142,36 @@ local function describe(page)
                                                  page:words(), state)
 end
 
+--
+-- **The faces a page is drawn in**, at the window's text size: the look's
+-- text face and its bold, italic and bold italic; the mono face a little
+-- smaller for code; the heading face larger for the first two levels and
+-- the text's bold for the third. A monospaced document is in the mono face
+-- throughout, its headings still headings.
+--
+local function faces(kind)
+  local px = size:size()
+
+  if kind == "h1" then return ui.sized("heading", (px * 160) // 100) end
+  if kind == "h2" then return ui.sized("heading", (px * 130) // 100) end
+  if kind == "h3" then return ui.sized("heading", px + 1) end
+  if kind == "code" then return ui.sized("mono", mono and px or px - 1) end
+
+  local variant = (kind ~= "body") and kind or nil
+
+  if mono then return ui.sized("mono", px, variant) end
+
+  return ui.sized("ui", px, variant)
+end
+
 local page = docview.new(ui, {
   x = 0, y = L.head, w = W, h = H - L.head,
   follow = { "left", "right", "top", "bottom" },
   text = body,
   wrap = (settings.wrap ~= false),
-  face = function()
-    if mono then return ui.sized("mono", size:size()) end
-
-    return size:face()
-  end,
+  faces = faces,
+  style = markdown and md.line or nil,
+  continue = markdown and md.continue or nil,
   on_change = function(self)
     note = nil
     if header then header.sub = describe(self) end
@@ -238,6 +262,7 @@ function save_as()
       end
 
       format.on = markdown and 2 or 1
+      page:restyle(markdown and md.line or nil, markdown and md.continue or nil)
       save()
       retitle()
     end,
@@ -274,6 +299,7 @@ local function open_document(p)
   mono = asked_mono(p)
   format.on = markdown and 2 or 1
   page:set(got)
+  page:restyle(markdown and md.line or nil, markdown and md.continue or nil)
   remember(p)
   note = nil
   retitle()
@@ -394,6 +420,8 @@ end
 format = ui.segments{ items = { "Text", "Markdown" }, on = markdown and 2 or 1,
                       on_change = function(_, i)
                         markdown = (i == 2)
+                        page:restyle(markdown and md.line or nil,
+                                     markdown and md.continue or nil)
                         header.sub = describe(page)
                       end }
 
@@ -459,14 +487,55 @@ win:add(header)
 -- A right click in the text: the clipboard, and all of it.
 --------------------------------------------------------------------------
 
+-- What Format does: marks around the selection, or at the start of the
+-- line - the same marks a person would type, and nothing else.
+local FORMAT = {
+  bold      = function() page:surround("**", "**") end,
+  italic    = function() page:surround("*", "*") end,
+  code      = function() page:surround("`", "`") end,
+  link      = function() page:surround("[", "]()") end,
+  heading1  = function() page:set_lead("# ") end,
+  heading2  = function() page:set_lead("## ") end,
+  heading3  = function() page:set_lead("### ") end,
+  list      = function() page:set_lead("- ") end,
+  checklist = function() page:set_lead("- [ ] ") end,
+  quote     = function() page:set_lead("> ") end,
+}
+
+local function format_items()
+  return {
+    { text = "Bold",      hint = "Ctrl B", on_choose = FORMAT.bold },
+    { text = "Italic",    on_choose = FORMAT.italic },
+    { text = "Code",      hint = "Ctrl E", on_choose = FORMAT.code },
+    { text = "Link",      hint = "Ctrl K", on_choose = FORMAT.link },
+    { separator = true },
+    { text = "Heading 1", on_choose = FORMAT.heading1 },
+    { text = "Heading 2", on_choose = FORMAT.heading2 },
+    { text = "Heading 3", on_choose = FORMAT.heading3 },
+    { separator = true },
+    { text = "List",      on_choose = FORMAT.list },
+    { text = "Checklist", on_choose = FORMAT.checklist },
+    { text = "Quote",     on_choose = FORMAT.quote },
+  }
+end
+
 function page:on_context(x, y)
-  win:open_menu(win.origin_x + self.x + x, win.origin_y + self.y + y, {
+  local items = {
     { text = "Cut",        hint = "Ctrl X", on_choose = function() page:edit("cut") end },
     { text = "Copy",       hint = "Ctrl C", on_choose = function() page:edit("copy") end },
     { text = "Paste",      hint = "Ctrl V", on_choose = function() page:edit("paste") end },
     { separator = true },
-    { text = "Select all", hint = "Ctrl A", on_choose = function() page:edit("selectall") end },
-  })
+  }
+
+  -- Format only where there is something to format: plain text has none.
+  if markdown then
+    items[#items + 1] = { text = "Format", submenu = format_items() }
+  end
+
+  items[#items + 1] = { text = "Select all", hint = "Ctrl A",
+                        on_choose = function() page:edit("selectall") end }
+
+  win:open_menu(win.origin_x + self.x + x, win.origin_y + self.y + y, items)
   return true
 end
 
@@ -483,6 +552,16 @@ function win:on_key(c)
   if c == ui.keywith(61, ui.CTRL) then size:step(1) return true end   -- Ctrl =
   if c == ui.keywith(45, ui.CTRL) then size:step(-1) return true end  -- Ctrl -
   if c == 27 and finding then show_bar(false) return true end         -- Escape
+
+  -- The formatting keys, in Markdown; plain text has nothing to format.
+  if markdown then
+    if c == 2 then FORMAT.bold() return true end                      -- Ctrl B
+    if c == 5 then FORMAT.code() return true end                      -- Ctrl E
+    if c == 11 then FORMAT.link() return true end                     -- Ctrl K
+    if c == ui.keywith(49, ui.CTRL) then FORMAT.heading1() return true end
+    if c == ui.keywith(50, ui.CTRL) then FORMAT.heading2() return true end
+    if c == ui.keywith(51, ui.CTRL) then FORMAT.heading3() return true end
+  end
 
   return false
 end

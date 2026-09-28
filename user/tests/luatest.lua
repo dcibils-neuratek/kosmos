@@ -1882,19 +1882,30 @@ if role == R_FACES_BACK then
   --------------------------------------------------------------------------
   -- **Faces asked for by size are given back** (`gfx.release_faces`).
   --
-  -- Eight sizes fill the pool and a ninth is refused, with the reason; given
-  -- back, a ninth loads. The window manager asks for a new set at every
-  -- change of scale (`roadmap.md` 5z), so a pool that only filled was a
-  -- desktop whose sized text fell back after a few.
+  -- The window manager asks for a new set at every change of scale
+  -- (`roadmap.md` 5z), so a pool that only filled was a desktop whose sized
+  -- text fell back after a few.
+  --
+  -- **And the pool grows now** (28 September, 6zs): eight was the whole of
+  -- it, and a ninth size was refused; Text Editor's Markdown wants six at
+  -- once in the window manager beside every other window's. Sixteen sizes
+  -- load here, each in a slot of its own - twice the old pool - and given
+  -- back, one loads again. The ceiling, sixty-four, is not reached: filling
+  -- it would rasterise six thousand glyphs under TCG to read one refusal.
   --------------------------------------------------------------------------
-  for px = 10, 17 do
-    check(gfx.face("ibmplexsans", px), "the face at " .. px .. " did not load")
+  local slots = {}
+
+  for px = 10, 25 do
+    local face, why = gfx.face("ibmplexsans", px)
+
+    check(face, "the face at " .. px .. " did not load: " .. tostring(why))
+
+    if face then
+      check(not slots[face], "the face at " .. px .. " was given slot "
+            .. tostring(face) .. " again")
+      slots[face] = true
+    end
   end
-
-  local none, why = gfx.face("ibmplexsans", 18)
-
-  check(none == nil and why == "no room for another face",
-        "a ninth size was " .. tostring(none) .. " / " .. tostring(why))
 
   gfx.release_faces()
 

@@ -19,7 +19,11 @@ and `run` at the prompt for each, then apptest.lua again - from the image
 made the first time, which the launcher says only when it makes one. How
 long each took is said.
 
-Usage: run_loader.py IMAGE
+Usage: run_loader.py IMAGE [APPS]
+
+`APPS` is the directory `make apps` linked the images into: the lean
+userland's by default, `build/user-test/apps` from the gate, which links them
+against the test userland it builds anyway (`roadmap.md` 6zp).
 """
 
 import os
@@ -35,19 +39,19 @@ import scratch                                               # noqa: E402
 
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
 X86 = "x86_64" in IMAGE
+APPS = sys.argv[2] if len(sys.argv) > 2 else None
 WORK = scratch.directory("loader")
 HOME_DISK = os.path.join(WORK, "home.img")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 
 
 def this_boards_image(name="apptest.elf"):
-    """The `name` `make apps` linked for this board, or None.
-
-    From the one place it links them - the lean userland's `apps/`, whatever
-    variant the system's image is - rather than the newest of any: a stale
-    one from a directory nothing builds any more is newer than nothing.
-    """
-    path = os.path.join(ROOT, "build", "user-x86_64" if X86 else "user", "apps", name)
+    """The `name` `make apps` linked for this board, or None: from `APPS`,
+    or the lean userland's `apps/` - one place, never the newest of any, since
+    a stale image from a directory nothing builds any more is newer than
+    nothing."""
+    folder = APPS or os.path.join(ROOT, "build", "user-x86_64" if X86 else "user", "apps")
+    path = os.path.join(folder, name)
     return path if os.path.exists(path) else None
 
 

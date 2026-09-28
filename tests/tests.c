@@ -4501,9 +4501,10 @@ static bool test_a_jpeg_decodes(void)                  { return luatest_role(47)
 static bool test_a_palette_png_decodes(void)           { return luatest_role(49); }
 
 /*
- * Faces asked for by size are given back. Eight fill the pool, a ninth is
- * refused, and after `gfx.release_faces` a ninth loads - which the window
- * manager depends on since a change of scale asks for a new set.
+ * Faces asked for by size are given back, and there are more than eight
+ * now: sixteen load, each in a slot of its own, and after
+ * `gfx.release_faces` one loads again - which the window manager depends
+ * on since a change of scale asks for a new set.
  */
 static bool test_sized_faces_given_back(void)          { return luatest_role(50); }
 

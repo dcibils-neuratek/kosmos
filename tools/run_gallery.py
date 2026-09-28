@@ -81,9 +81,19 @@ ABS = 32767
 # whose code starts on its thirteenth line, so the picture shows Lua in the
 # IDE's colours rather than a page of comments.
 #
+#
+# **And Text Editor** (`roadmap.md` 6zs), on a Markdown note written into
+# `/Temporary` first, since nothing Markdown ships in the image: a heading,
+# bold, and a checklist with one box ticked.
+#
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "cube3d",
-        "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua", "tile"]
+        "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
+        "texteditor:/Temporary/Grooves.md", "tile"]
+
+NOTE = ("# Grooves\\nA drum machine for Kosmos, with **swing** per track "
+        "and a pattern saved as `pattern-01.grv`.\\n\\n## Next\\n"
+        "- [x] Draw the grid\\n- [ ] Swing\\n- [ ] Export the loop\\n")
 
 
 def png(width, height, rgb):
@@ -136,6 +146,7 @@ def main():
         # Tracker, Monitor and Processes in the picture twice: emptied here,
         # as the display harness empties it.
         guest.type('fs.write("/Home/Preferences/startup", { items = {} }) '
+                   'fs.write("/Temporary/Grooves.md", "' + NOTE + '") '
                    'print("gallery" .. "-ready")')
         guest.wait_for("gallery-ready", "emptied the login set")
         guest.type("wm deskbar," + names)

@@ -280,12 +280,14 @@ local sized_back = {}
 function gc:text(x, y, s, color, bg, role, px)
   color, bg = shade(color), shade(bg)
   local ax, ay = self.ox + x, self.oy + y
+  local variant = nil
 
   if type(role) == "number" and sized_back[role] then
-    role, px = sized_back[role].role, sized_back[role].px
+    role, px, variant = sized_back[role].role, sized_back[role].px,
+                        sized_back[role].variant
   end
 
-  local face = px and ui.sized(role, px) or role
+  local face = (px or variant) and ui.sized(role, px, variant) or role
 
   -- **Asked, not remembered.** `GH` above is `gfx.font.h` as it was when
   -- this file loaded, which is before a process has been told what the
@@ -368,7 +370,7 @@ function gc:text(x, y, s, color, bg, role, px)
 
   self.ops[#self.ops + 1] = { op = "text", x = ax, y = ay,
                               s = shown, color = color, bg = bg,
-                              role = role, px = px }
+                              role = role, px = px, variant = variant }
 end
 
 --
@@ -5345,13 +5347,15 @@ local function apply_fonts(fonts)
   for number in pairs(sized_back) do sized_back[number] = nil end
 
   for _, key in ipairs(sized_order) do
-    local role, px = key:match("^(.-)@(%d+)$")
+    local role, variant, px = key:match("^([^:@]+):?([%a]*)@(%d+)$")
     local want = theme.fonts[role]
 
-    sized_faces[key] = want and gfx.face(want.font, tonumber(px)) or false
+    variant = (variant ~= "") and variant or nil
+    sized_faces[key] = want and gfx.face(want.font .. (variant and ("-" .. variant) or ""),
+                                         tonumber(px)) or false
 
     if sized_faces[key] then
-      sized_back[sized_faces[key]] = { role = role, px = tonumber(px) }
+      sized_back[sized_faces[key]] = { role = role, px = tonumber(px), variant = variant }
     end
   end
 end
@@ -5413,23 +5417,35 @@ do
   end
 end
 
-function ui.sized(role, px)
+--
+-- **And a weight or a slant of it**: `variant` is `bold`, `italic` or
+-- `bolditalic`, the role's font with that ending - `ibmplexsans-bold` -
+-- for Text Editor's Markdown (`roadmap.md` 6zs). A look whose font has no
+-- such file draws the role's own, which is plain rather than wrong.
+--
+function ui.sized(role, px, variant)
   role = role or "ui"
 
   local want = theme.fonts[role]
 
-  if not want or not px or px == want.px then return role end
+  if not want then return role end
 
-  local key = role .. "@" .. px
+  px = px or want.px
+
+  if not variant and px == want.px then return role end
+
+  local key = role .. (variant and (":" .. variant) or "") .. "@" .. px
   local got = sized_faces[key]
 
   if got == nil then
-    got = gfx.face(want.font, px) or false
+    got = gfx.face(want.font .. (variant and ("-" .. variant) or ""), px) or false
     sized_faces[key] = got
     sized_order[#sized_order + 1] = key
 
-    if got then sized_back[got] = { role = role, px = px } end
+    if got then sized_back[got] = { role = role, px = px, variant = variant } end
   end
+
+  if not got and variant then return ui.sized(role, px) end
 
   return got or role
 end

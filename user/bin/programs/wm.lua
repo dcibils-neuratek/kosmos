@@ -384,21 +384,32 @@ local saved_wallpaper = nil
 --
 local sized_faces, sized_full = {}, false
 
-local function sized(role, px)
+local function sized(role, px, variant)
   role = role or "ui"
 
   local want = theme.fonts[role]
 
+  if not want then return role end
+
+  local asked = px or want.px
+
   -- `px` is in points, like the role's; both are drawn at the scale.
-  px = scale.px(px)
+  px = scale.px(asked)
 
-  if not want or px == scale.px(want.px) then return role end
+  if not variant and px == scale.px(want.px) then return role end
 
-  local key = role .. "@" .. px
+  -- A weight or a slant of the role's font (`ui.sized`): its own file, or
+  -- the role's size when the look's font has none.
+  local key = role .. (variant and (":" .. variant) or "") .. "@" .. px
   local got = sized_faces[key]
 
   if got == nil then
-    local face, why = gfx.face(want.font, px)
+    local face, why = gfx.face(want.font .. (variant and ("-" .. variant) or ""), px)
+
+    if not face and variant then
+      sized_faces[key] = sized(role, asked)
+      return sized_faces[key]
+    end
 
     got = face or false
     sized_faces[key] = got

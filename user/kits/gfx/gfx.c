@@ -1528,10 +1528,41 @@ static unsigned utf8_next(const char *str, size_t len, size_t *at)
  * Written as a sum so that the next role costs a slot of its own rather
  * than one of these.
  */
-#define FACES_SIZED 8
+/*
+ * **And it grows, as every pool here does now** (28 September, `roadmap.md`
+ * 6zs). Eight was enough while a window asked for a size or two; Text
+ * Editor's Markdown asks for a bold, an italic, a bold italic, the code
+ * face and two heading sizes at once, and the window manager cuts every
+ * window's faces from one pool - so eight would have been Text Editor's,
+ * and the IDE's and the Terminal's sizes would have fallen back to the
+ * role's. A sized face is made the first time it is asked for, so a
+ * process pays for the faces it uses; sixty-four is the ceiling, and it is
+ * pointers until then.
+ */
+#define FACES_SIZED 64
 #define FACES_MAX   (ROLE_COUNT + FACES_SIZED)
 
-static struct outline_font faces[FACES_MAX];
+static struct outline_font role_faces[ROLE_COUNT];
+static struct outline_font *sized_pool[FACES_SIZED];
+
+/* What a sized index never filled reads as: a face not loaded, which draws
+ * in the bitmap. Never written. */
+static struct outline_font no_face;
+
+/* The face at an index: a role's, or a sized one's once it has been made. */
+static struct outline_font *face_slot(int i)
+{
+    if (i < 0 || i >= FACES_MAX) {
+        i = ROLE_UI;
+    }
+
+    if (i < ROLE_COUNT) {
+        return &role_faces[i];
+    }
+
+    return (sized_pool[i - ROLE_COUNT] != NULL) ? sized_pool[i - ROLE_COUNT]
+                                                : &no_face;
+}
 
 /*
  * Which face a call names: a role by name, or a face by the number
@@ -1920,12 +1951,12 @@ static void publish_font(lua_State *L, const char *name)
      * wide - true for these two monospaced faces, and still *honest* for a
      * proportional one, where it becomes an upper bound and `gfx.measure`
      * becomes the thing to ask. */
-    lua_pushinteger(L, faces[ROLE_UI].loaded
-                       ? faces[ROLE_UI].widest : GLYPH_W);
+    lua_pushinteger(L, role_faces[ROLE_UI].loaded
+                       ? role_faces[ROLE_UI].widest : GLYPH_W);
     lua_setfield(L, -2, "w");
 
-    lua_pushinteger(L, faces[ROLE_UI].loaded
-                       ? (faces[ROLE_UI].ascent + faces[ROLE_UI].descent)
+    lua_pushinteger(L, role_faces[ROLE_UI].loaded
+                       ? (role_faces[ROLE_UI].ascent + role_faces[ROLE_UI].descent)
                        : GLYPH_H);
     lua_setfield(L, -2, "h");
 
@@ -1954,19 +1985,32 @@ static int l_face(lua_State *L)
     int i;
 
     for (i = ROLE_COUNT; i < FACES_MAX; i++) {
-        if (faces[i].loaded && faces[i].px == px
-            && strcmp(faces[i].name, name) == 0) {
+        const struct outline_font *f = sized_pool[i - ROLE_COUNT];
+
+        if (f != NULL && f->loaded && f->px == px && strcmp(f->name, name) == 0) {
             lua_pushinteger(L, i);
             return 1;
         }
     }
 
     for (i = ROLE_COUNT; i < FACES_MAX; i++) {
-        if (faces[i].loaded) {
+        struct outline_font **slot = &sized_pool[i - ROLE_COUNT];
+
+        if (*slot != NULL && (*slot)->loaded) {
             continue;
         }
 
-        if (!outline_load(&faces[i], name, px)) {
+        if (*slot == NULL) {
+            *slot = calloc(1, sizeof **slot);
+
+            if (*slot == NULL) {
+                lua_pushnil(L);
+                lua_pushliteral(L, "no memory for another face");
+                return 2;
+            }
+        }
+
+        if (!outline_load(*slot, name, px)) {
             lua_pushnil(L);
             lua_pushliteral(L, "no such font");
             return 2;
@@ -2006,9 +2050,9 @@ static int l_release_faces(lua_State *L)
 
     (void)L;
 
-    for (i = ROLE_COUNT; i < FACES_MAX; i++) {
-        if (faces[i].loaded) {
-            outline_release(&faces[i]);
+    for (i = 0; i < FACES_SIZED; i++) {
+        if (sized_pool[i] != NULL && sized_pool[i]->loaded) {
+            outline_release(sized_pool[i]);
         }
     }
 
@@ -2021,8 +2065,14 @@ static int l_use_font(lua_State *L)
     int px = (int)luaL_optinteger(L, 2, 16);
     int role = role_of(L, 3);
 
+    if (role >= ROLE_COUNT) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "not a role");
+        return 2;
+    }
+
     if (name[0] == 's') {                       /* spleen: the bitmap */
-        outline_release(&faces[role]);
+        outline_release(&role_faces[role]);
 
         if (role == ROLE_UI) {
             publish_font(L, "spleen");
@@ -2032,7 +2082,7 @@ static int l_use_font(lua_State *L)
         return 1;
     }
 
-    if (!outline_load(&faces[role], name, px)) {
+    if (!outline_load(&role_faces[role], name, px)) {
         lua_pushnil(L);
         lua_pushstring(L, "no such font");
         return 2;
@@ -2061,7 +2111,7 @@ static int l_use_font(lua_State *L)
  */
 static int l_height(lua_State *L)
 {
-    const struct outline_font *f = &faces[role_of(L, 1)];
+    const struct outline_font *f = face_slot(role_of(L, 1));
 
     lua_pushinteger(L, f->loaded ? (f->ascent + f->descent) : GLYPH_H);
 
@@ -2077,7 +2127,7 @@ static int l_measure(lua_State *L)
     const char *str = luaL_checklstring(L, 1, &len);
 
     lua_pushinteger(L,
-        (lua_Integer)text_width(&faces[role_of(L, 2)], str, len));
+        (lua_Integer)text_width(face_slot(role_of(L, 2)), str, len));
     return 1;
 }
 
@@ -2128,7 +2178,7 @@ static int l_text(lua_State *L)
     /* An outline font, when one is in force. Same call, same arguments;
      * what changes is where the glyphs come from. */
     {
-        const struct outline_font *f = &faces[role_of(L, 7)];
+        const struct outline_font *f = face_slot(role_of(L, 7));
 
         if (f->loaded) {
             draw_outline_text(s, f, x, y, text, len, fg,
@@ -2895,11 +2945,7 @@ void gfx_draw_i420(struct surface *s, const uint8_t *const plane[3],
  * this process has open. */
 static const struct outline_font *face_at(int face)
 {
-    if (face < 0 || face >= FACES_MAX) {
-        face = ROLE_UI;
-    }
-
-    return &faces[face];
+    return face_slot(face);
 }
 
 /*

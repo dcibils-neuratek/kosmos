@@ -12070,3 +12070,43 @@ untouched.
 **`test_filetypes.lua`**: a note, a log and a text file open in Text
 Editor, a `.lua` in the IDE for Edit, and Reader is still offered for a
 `.md`, after Text Editor.
+
+## 18.252 Text Editor, step 2: Markdown styled as it is written (6zs)
+
+`mdstyle.lua` reads a line - a heading, a bullet, a number, a checklist item,
+a quotation, a rule, a fence or code, a paragraph - and which of its bytes
+are its mark and which are bold, italic, code, a link's words or its place;
+it changes nothing. `docview.lua` draws the same bytes that way: headings in
+the heading face and larger with room above, bold, italic and code in their
+faces, a bullet, a box, a number, a quotation's bar, a code block's ground,
+a rule - and every mark kept, faint, the ones that start a line hanging in
+the margin, so what is on the disk is what is on the screen. A box ticks
+when clicked or with Control-Return, writing the `x`; Return in a list starts
+the next item and on an empty one ends the list; Control-B, E and K put the
+marks for bold, code and a link around the selection, and the right click's
+Format has the rest.
+
+**The faces had to grow first.** The window manager cuts every window's
+faces from one pool, and it was eight: Markdown's bold, italic, bold italic,
+code and two heading sizes would have taken nearly all of it. Sized faces
+are made when first asked for now, up to sixty-four, and a text command
+carries a `variant` - `bold`, `italic`, `bolditalic` - that both sides turn
+into the role's font with that ending, or the role's own when the look has
+none.
+
+**Checked**: `test_mdstyle.lua`, 37, on the Mac - every kind of line, the
+spans inside one, a star inside code being code, a star before a space
+being arithmetic, fenced blocks, what Return starts, and every byte in one
+span. `test_docview.lua`, 50: a styled line's mark is not wrapped with its
+words. `run_editor.py`, 6, on both boards: into a new `.md`, `- [ ] one`
+ticked with Control-Return, Return giving `- [ ] ` for `two`, Return on that
+empty item ending the list, and Control-B with nothing selected: the file is
+exactly `- [x] one`, `- [ ] two`, `end**b**`. Its control: without the list
+going on, the file reads `two` with no box and an empty line, and fails.
+And the dated screenshot has Text Editor in it, on a note the gallery writes
+into `/Temporary` first.
+
+The kernel suite's `gfx: faces by size are given back` filled the old pool
+of eight and wanted a ninth refused, which it failed in the first gate. It
+asks for sixteen now, each in a slot of its own, and one again after they
+are given back; with the pool set back to eight it fails.

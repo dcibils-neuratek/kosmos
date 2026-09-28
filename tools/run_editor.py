@@ -52,6 +52,12 @@ import run_screenshot as R                                   # noqa: E402
 
 WANT = "hello world!\ntwo\n"
 
+# **And Markdown as it is written** (`roadmap.md` 6zs step 2), into a new
+# `.md`: an item ticked with Control-Return, Return starting the next item
+# with an open box, Return on that empty item ending the list, and Control-B
+# with nothing selected putting the caret between two pairs of stars.
+WANT_MD = "- [x] one\n- [ ] two\nend**b**\n"
+
 
 def letters(text):
     """QEMU's names for typing `text`."""
@@ -164,6 +170,26 @@ def main():
               "Control-S in Text Editor did not save two lines: %r" % saved)
         to_the_prompt()
 
+        # Markdown, in Text Editor again: a new `.md`.
+        mark = len(guest.seen)
+        guest.type("wm texteditor:/Temporary/list.md")
+
+        if said("wm: window list.md - Text Editor at ", mark, 90) is None:
+            check(False, "Text Editor did not open list.md")
+        else:
+            time.sleep(1.5)
+            press("minus", "spc", "bracket_left", "spc", "bracket_right", "spc",
+                  *letters("one"))
+            press("ctrl-ret", "end", "ret", *letters("two"), "ret", "ret")
+            press(*letters("end"), "ctrl-b", "b")
+            mark = len(guest.seen)
+            press("ctrl-s")
+            saved = said("texteditor: saved ", mark, 20)
+            check(saved == "3 lines to /Temporary/list.md",
+                  "Control-S did not save the Markdown's three lines: %r" % saved)
+
+        to_the_prompt()
+
         # The IDE's editor, over a file in a folder of its own.
         # The file made first: the IDE takes a path that is not there for a
         # project folder to open, not a file to write.
@@ -178,15 +204,16 @@ def main():
               % (saved, guest.seen[mark:][-800:]))
         to_the_prompt()
 
-        for who, path in (("Text Editor", "/Temporary/keys.txt"),
-                          ("the IDE", "/Temporary/ide/keys.txt")):
+        for who, path, want in (("Text Editor", "/Temporary/keys.txt", WANT),
+                                ("Text Editor's Markdown", "/Temporary/list.md", WANT_MD),
+                                ("the IDE", "/Temporary/ide/keys.txt", WANT)):
             content = read_back(path)
 
             if content is None:
                 check(False, "%s's file could not be read back" % who)
             else:
-                check(content == WANT,
-                      "the keys wrote %r in %s, where they meant %r" % (content, who, WANT))
+                check(content == want,
+                      "the keys wrote %r in %s, where they meant %r" % (content, who, want))
     finally:
         guest.close()
 
@@ -200,7 +227,9 @@ def main():
           "Editor's page and the IDE's (Shift and the arrows selecting, typing "
           "over a selection, undo and redo a step at a time, Home, End, a word "
           "right, Delete, the page keys typing nothing, Control+Shift+Left by "
-          "words, Control-S; each file exactly what the keys meant)" % checks)
+          "words, Control-S; each file exactly what the keys meant) - and "
+          "Markdown in Text Editor: a box ticked with Control-Return, a list "
+          "going on and ending, Control-B" % checks)
     return 0
 
 

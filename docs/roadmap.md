@@ -2278,7 +2278,11 @@ processors, and still what follows USB:
    that view learning faces per span and lines of their own heights.
    **Step 1 DONE on 28 September** (`testing.md` 18.251): `texteditor.lua`
    on `docview.lua`, `ui.segments`; `.md` Text Editor's first by
-   `filetypes.PREFERRED`, `.lua` the IDE's. **Known, for later**: a window
+   `filetypes.PREFERRED`, `.lua` the IDE's. **Step 2 DONE the same day**
+   (18.252): `mdstyle.lua`, the page drawing it, boxes that tick, lists
+   that go on, Control-B, E and K, Format in the right click - and the
+   faces' pool growing, since Markdown's six would have filled the window
+   manager's eight. **Known, for later**: a window
    closed with changes loses them - the desktop gives a closing window a
    second and no way to ask - as Editor did.
 
@@ -2321,6 +2325,12 @@ processors, and still what follows USB:
    build, which compiles each variant's userland C separately; and whether
    seven at once is faster or only more contended on this Mac's four
    performance cores. Never by dropping checks (`CLAUDE.md`).
+   **28 September, 10:06 and back**: tonight's app images had added two
+   userlands built for them alone (lean ARM and lean x86) to every gate, so
+   a library change compiled six userlands and the images took 100 s. The
+   gate links them against the test userland it builds anyway now; 9:30,
+   images 62 s. The compositor budget's 25 s sleep is still there - it
+   waits for Photo's decode, which nothing reports yet.
 
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua
