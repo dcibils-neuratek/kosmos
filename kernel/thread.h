@@ -197,6 +197,20 @@ struct thread {
         unsigned long  quantum;
 
         /*
+         * **The audio band, asked for** (`sched.h`, `SCHED_PRIO_AUDIO`):
+         * whether this thread asked for it, the band it had before and
+         * drops back to when it overruns, the ticks it has run since it was
+         * last woken, and how many times it has overrun. Written by this
+         * thread's own syscall, by its core's tick while it runs, and by
+         * its waker under its queue's lock while it is blocked - never two
+         * at once.
+         */
+        bool           audio;
+        unsigned       audio_fallback;
+        unsigned       audio_run_ticks;
+        unsigned long  audio_overruns;
+
+        /*
          * Which processor's runqueue this thread belongs to.
          *
          * **A thread has a home, and it does not move.** That is the
@@ -534,6 +548,7 @@ void thread_set_idle(struct thread *t);
  * imprecision and not worth a requeue to remove.
  */
 void thread_set_priority(struct thread *t, unsigned priority);
+void thread_enter_audio_band(struct thread *t);
 
 /*
  * What a thread actually runs at: its own band, or one borrowed from a

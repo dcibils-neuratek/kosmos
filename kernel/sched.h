@@ -113,6 +113,10 @@ struct scheduler {
  *   LOW      background work nobody is waiting for.
  *   NORMAL   everything, unless there is a reason.
  *   DISPLAY  the compositor: what the eye is waiting for.
+ *   AUDIO    a thread that renders or mixes sound: what the ear is
+ *            waiting for, on a deadline the device sets every period.
+ *            Asked for by the thread itself, allowed only to a process
+ *            granted it, and held to a budget (below).
  *   INPUT    whoever reads the keyboard and the pointer. `design.md` and
  *            `ui.md` have both called this non-negotiable since before
  *            there was a scheduler that could express it.
@@ -121,7 +125,34 @@ struct scheduler {
 #define SCHED_PRIO_LOW      1u
 #define SCHED_PRIO_NORMAL   2u
 #define SCHED_PRIO_DISPLAY  3u
-#define SCHED_PRIO_INPUT    4u
+#define SCHED_PRIO_AUDIO    4u
+#define SCHED_PRIO_INPUT    5u
+
+/*
+ * **Sound above every program, and the budget that makes that safe**
+ * (`roadmap.md` 4i, step c). Diego, 28 September 2026: "audio should be
+ * prioritized", "and not be jerky under heavy load" - and chose a band of
+ * its own with a budget, over a thread taking its creator's band.
+ *
+ * Every program sits in the display band, because the screen is granted to
+ * all of them, so a thread that renders sound for one was either in that
+ * band - taking 100 ms turns with every busy window - or below it, where
+ * anything drawing starves it outright. The audio server was put at DISPLAY
+ * rather than above its clients for one reason, written down in
+ * `process_grant_audio`: a band that high is safe only while the thread
+ * blocks, and nothing enforced that it did. This is the enforcement.
+ *
+ * **A thread in the audio band that runs for longer than the budget without
+ * sleeping drops back** to the band it had before it asked, and returns to
+ * the audio band the next time it is woken. The budget is longer than a
+ * whole ring takes to play - eight periods, 46 ms - so a thread that has
+ * run that long without once sleeping cannot be keeping a ring and is not
+ * doing a sound thread's work, and a real one, which renders a period in a
+ * fraction of its length and sleeps, never meets it. Counted in the ticks
+ * that land while the thread runs, so it is coarse by a tick, which is the
+ * resolution the scheduler has.
+ */
+#define SCHED_AUDIO_BUDGET_TICKS  ((TICK_HZ + 19u) / 20u)
 
 extern const struct scheduler sched_priority;
 

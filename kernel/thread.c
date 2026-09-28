@@ -1217,6 +1217,27 @@ void thread_disinherit(struct thread *t)
     }
 }
 
+/*
+ * The calling thread into the audio band (`sched.h`), from whatever band it
+ * is in, which is where it drops back to if it overruns. Whether it may is
+ * the syscall's question, asked of its process; this is only the move.
+ */
+void thread_enter_audio_band(struct thread *t)
+{
+    if (t == NULL) {
+        return;
+    }
+
+    if (!t->sched.audio) {
+        t->sched.audio_fallback = t->sched.priority;
+        t->sched.audio = true;
+    }
+
+    t->sched.audio_run_ticks = 0;
+    t->sched.priority = SCHED_PRIO_AUDIO;
+    refresh_effective(t);
+}
+
 void thread_set_priority(struct thread *t, unsigned priority)
 {
     if (t == NULL) {
@@ -1227,6 +1248,9 @@ void thread_set_priority(struct thread *t, unsigned priority)
         priority = SCHED_PRIORITIES - 1;
     }
 
+    /* A band given outright ends one asked for: a sound thread that steps
+     * down is not put back in the audio band by its next wake. */
+    t->sched.audio = false;
     t->sched.priority = priority;
     refresh_effective(t);
 }
@@ -1438,6 +1462,20 @@ void thread_tick(void)
      * where moving the stack is safe.
      */
     current->ticks++;
+
+    /*
+     * **The audio band's budget** (`sched.h`): a thread there that has run
+     * this long without sleeping drops back to its own band, and the switch
+     * is asked for at once so whatever it was holding off runs. It comes
+     * back when it is next woken.
+     */
+    if (current->sched.audio && current->sched.priority == SCHED_PRIO_AUDIO
+        && ++current->sched.audio_run_ticks > SCHED_AUDIO_BUDGET_TICKS) {
+        current->sched.priority = current->sched.audio_fallback;
+        refresh_effective(current);
+        current->sched.audio_overruns++;
+        this_cpu()->preempt_pending = true;
+    }
 
     if (policy->tick(current)) {
         this_cpu()->preempt_pending = true;
@@ -1952,6 +1990,18 @@ void thread_wake(struct thread *t)
         }
 
         t->state = THREAD_READY;
+
+        /* A sound thread that slept is doing a sound thread's work again:
+         * back in the audio band, with its budget whole. */
+        if (t->sched.audio) {
+            t->sched.audio_run_ticks = 0;
+
+            if (t->sched.priority != SCHED_PRIO_AUDIO) {
+                t->sched.priority = SCHED_PRIO_AUDIO;
+                refresh_effective(t);
+            }
+        }
+
         policy->enqueue(cpu, t);
 
         spin_unlock(&runq_lock[cpu], flags);

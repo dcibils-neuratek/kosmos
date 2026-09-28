@@ -1461,10 +1461,29 @@ bool process_grant_audio(struct process *p)
      * the right answer for a periodic deadline; the quantum is a separate
      * question and `sched_prio.c` says it is a variable so that it can be
      * asked.
+     *
+     * **And then there was one** (28 September 2026, `roadmap.md` 4i step
+     * c): the audio band, above the display band, with the budget this
+     * waited for - a thread there that runs too long without sleeping
+     * drops back (`sched.h`). So nothing is promoted here any more. The
+     * device is one grant and the band another, `SPAWN_AUDIO_BAND`, and the
+     * server's thread asks for the band itself, as a program's sound thread
+     * does. This grant used to raise whoever held the device to DISPLAY -
+     * init, and the window manager and the Deskbar, which declared `needs
+     * audio` to reach the Mixer's numbers they read as clients anyway.
      */
-    thread_set_priority(p->thread, SCHED_PRIO_DISPLAY);
-
     return true;
+}
+
+/*
+ * The right to put a thread in the audio band (`SPAWN_AUDIO_BAND`,
+ * `sched.h`). Nothing moves until a thread asks.
+ */
+void process_grant_audio_band(struct process *p)
+{
+    if (p != NULL) {
+        p->owns_audio_band = true;
+    }
 }
 
 /*

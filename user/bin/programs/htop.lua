@@ -35,7 +35,7 @@ local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }
 -- is busy, and nothing on this screen said what it was: a process at 90% and
 -- a process at 90% *in the display band* are different situations.
 --
-local BANDS = { [0] = "idle", "low", "normal", "display", "input" }
+local BANDS = { [0] = "idle", "low", "normal", "display", "audio", "input" }
 
 local function meter(pct, width)
   local filled = (pct * width) // 100

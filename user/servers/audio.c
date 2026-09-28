@@ -451,6 +451,16 @@ void audio_server(long endpoint)
     unsigned long us;
     unsigned channels;
 
+    /*
+     * **Into the audio band first** (`kernel/sched.h`): above every program
+     * and the compositor, under the scheduler's budget. It was the display
+     * band, and `process_grant_audio` says why at length - above its
+     * clients was right and unsafe until something enforced that it
+     * blocks. The budget does. Refused only if init did not grant it, and
+     * then this runs where it was spawned.
+     */
+    (void)kosmos_sched_set(SCHED_SET_AUDIO_BAND, 0);
+
     memset(streams, 0, sizeof(streams));
     memset(&info, 0, sizeof(info));
     (void)kosmos_sysinfo(&info);

@@ -22,11 +22,34 @@ the bar's right end; and the end of the WAV has to beat at 124 a minute,
 which is the demo's kick heard through the window's song, the kit and the
 device.
 
+**And under heavy load**, with `--load` (`roadmap.md` 4i, step c; Diego:
+"audio should be prioritized", "and not be jerky under heavy load"), a boot
+of its own that plays the house demo while six `spin display` hold every
+core in the band every program runs in. Groove reports what the guest
+itself measured, and **each party has to have come back within what the
+device holds** - four periods, 23.2 ms: the Synth Kit's thread between two
+of its passes, and the audio server between two turns. A longer absence is
+a gap on any device; a shorter one is covered. The kit has to be in the
+audio band, to have come down from the whole ring, and six seconds of sound
+at least have to have been played.
+
+**Not the device's own count of periods that found it empty**, which is the
+real thing on hardware: under QEMU its WAV writer drains the queue in
+bursts, and an idle machine with nothing wrong counts a hundred of them. Not
+the WAV's silences either: the server writes nothing for a lone empty
+stream, and the writer waits for it, so a starved thread comes out as sound
+*missing* - which the six seconds catch - and never as zeros.
+
+**It runs on a quiet machine** (`arm-synth-load`, `alone` in `gate.py`):
+inside the whole gate the Mac held the emulated machine off its processors
+for 38 ms, longer than the device's whole buffer, which nothing inside the
+guest can cause (18.127's lesson).
+
 What the engine sounds like is `test_synth.lua`'s, on the Mac, and Groove's
 Lua is `test_groove.lua`'s; this is the kit on the machine, with its
 thread, and the application on top of it.
 
-Usage: run_synth.py IMAGE
+Usage: run_synth.py IMAGE [--load]
 """
 
 import os
@@ -46,6 +69,9 @@ IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
 WORK = scratch.directory("synth")
 DISK = os.path.join(WORK, "home.img")
 WAV = os.path.join(WORK, "heard.wav")
+LOADED = os.path.join(WORK, "loaded.wav")
+SPINNERS = 6
+REPORT_S = 8
 LUA = os.path.join(ROOT, "build", "host", "lua")
 RATE = 44100
 BEAT = RATE // 2                        # 120 a minute
@@ -188,7 +214,108 @@ def groove_seen(counts, total):
     ]
 
 
+def played_seconds(path):
+    """How much sound the device played, from the first sound to the last."""
+    with open(path, "rb") as f:
+        data = f.read()[44:]
+
+    frames = len(data) // 4
+    both = struct.unpack("<%di" % frames, data[:frames * 4])
+    first = next((i for i, v in enumerate(both) if v != 0), None)
+
+    if first is None:
+        return 0.0
+
+    last = frames - 1
+
+    while last > first and both[last] == 0:
+        last -= 1
+
+    return (last - first + 1) / RATE
+
+
+def loaded(R, check):
+    """Groove's house demo with every core spun in the display band."""
+    R.use_audiodev("wav,id=snd0,path=%s" % LOADED)
+    guest = R.Guest(IMAGE, 120)
+    said = ""
+
+    try:
+        guest.wait_for("kosmos> ", "reached a prompt, for the loaded run")
+        mark = len(guest.seen)
+        guest.type("wm groove:--house --play --report %d" % REPORT_S
+                   + ",spin:60 display" * SPINNERS)
+        deadline = time.monotonic() + 150
+
+        while time.monotonic() < deadline and ("groove: after %d s" % REPORT_S) not in guest.seen[mark:]:
+            time.sleep(0.3)
+            guest._read_available()
+
+        time.sleep(0.5)
+        guest._read_available()
+        said = guest.seen[mark:]
+    finally:
+        guest.close()
+
+    started = said.count("started /Kosmos/Programs/spin.lua")
+    check(started == SPINNERS,
+          "%d spinners started, not %d:\n%s" % (started, SPINNERS, said[-900:]))
+    check("groove: the sound's thread in the audio band" in said,
+          "Groove's sound thread is not in the audio band:\n" + said[-900:])
+    report = re.search(r"groove: after \d+ s: the device holds ([\d.]+) ms; "
+                       r"the kit's worst pass ([\d.]+) ms, the audio server's worst turn ([\d.]+) ms; "
+                       r"the kit (?:not )?in the audio band, (\d+) periods kept, its ring ran dry \d+ times; "
+                       r"DSP \d+%; the device ran dry -?\d+ times", said)
+    check(report, "Groove did not report how its sound held:\n" + said[-900:])
+
+    if report:
+        holds, kit, server = (float(report.group(i)) for i in (1, 2, 3))
+        check(holds > 0 and kit < holds,
+              "the kit's thread was away %.1f ms under load, longer than the device's "
+              "%.1f - the sound skipped" % (kit, holds))
+        check(holds > 0 and server < holds,
+              "the audio server was away %.1f ms under load, longer than the device's "
+              "%.1f - the sound skipped" % (server, holds))
+        check(int(report.group(4)) < 8,
+              "the kit kept the whole ring under load: %s" % report.group(0))
+
+    played = played_seconds(LOADED) if os.path.exists(LOADED) else 0.0
+    check(played >= REPORT_S - 2,
+          "Groove played %.1f s under load, not %d" % (played, REPORT_S - 2))
+
+    return (report.group(0)[len("groove: "):] if report else "no report", played)
+
+
+def main_loaded():
+    os.environ["KOSMOS_AUDIO_WAV"] = LOADED
+
+    import run_screenshot as R                               # noqa: E402
+
+    failed, checks = [], 0
+
+    def check(ok, complaint):
+        nonlocal checks
+        checks += 1
+        if not ok:
+            failed.append(complaint)
+
+    held, played = loaded(R, check)
+
+    if failed:
+        print("FAIL: %d of %d checks on Groove's sound under load:" % (len(failed), checks))
+        for f in failed:
+            print("  " + f)
+        return 1
+
+    print("PASS: %d checks on Groove's sound under %d display-band spinners (%.1f s played - %s)"
+          % (checks, SPINNERS, played, held))
+    return 0
+
+
 def main():
+    if "--load" in sys.argv[2:]:
+        return main_loaded()
+
     with open(os.path.join(WORK, "synthtest.lua"), "w") as f:
         f.write(PROGRAM)
 
@@ -320,7 +447,8 @@ def main():
     print("PASS: %d checks on the Synth Kit and Groove, on the machine (its thread "
           "rendering into the stream's ring, %d beats half a second apart, "
           "the engine playing when asked, a bar exported whole, and Groove "
-          "drawn as PulseMusic, its bar its title bar, and beating at 124)" % (checks, len(beats)))
+          "drawn as PulseMusic, its bar its title bar, and beating at 124)"
+          % (checks, len(beats)))
     return 0
 
 

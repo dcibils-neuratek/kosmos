@@ -56,7 +56,8 @@ more of the kernel says "one thread" than the single pointer suggests.
 1. **`struct process` holds one `struct thread *`** (`kernel/process.h`
    301), and about forty places use it as *the* thread: the process table
    `sysinfo` lists (`process.c` 93-134, one state and one core a process),
-   granting sound or the screen raises one thread's band (731, 958), waking
+   granting the screen raises one thread's band (958) - sound no longer
+   does: a thread asks for the audio band itself (`sched.h`) - waking
    for audio or the network wakes one thread (762-872), kill aborts one
    thread's IPC (1031), start wakes one (1050), and `process_exit` requires
    its caller to be that thread (1139, 1189). `thread->process` already

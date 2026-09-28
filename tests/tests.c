@@ -7809,6 +7809,79 @@ static bool test_a_wake_preempts_a_lower_priority_thread(void)
     return preempt_woke;
 }
 
+/*
+ * **The audio band's budget** (`sched.h`, `roadmap.md` 4i step c): a
+ * thread in the audio band that spins drops back to the band it had once it
+ * has run SCHED_AUDIO_BUDGET_TICKS without sleeping - not before, which
+ * would take the band from a thread doing a sound thread's work, and not
+ * much after, which is the desktop held off - and is back in the audio band
+ * the next time it is woken, its budget whole.
+ */
+static volatile bool     budget_done;
+static volatile unsigned budget_in_band, budget_after_sleep;
+static volatile unsigned long budget_demoted_after, budget_overruns;
+
+static void budget_spinner(void *arg)
+{
+    struct thread *self = thread_current();
+    unsigned long  began, guard;
+
+    (void)arg;
+
+    thread_enter_audio_band(self);
+    budget_in_band = self->sched.priority;
+    began = hal_ticks();
+    guard = began + SCHED_AUDIO_BUDGET_TICKS * 4u;
+
+    /* No yield: only the tick can take the band away. */
+    while (self->sched.priority == SCHED_PRIO_AUDIO && hal_ticks() < guard) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    budget_demoted_after = hal_ticks() - began;
+    budget_overruns = self->sched.audio_overruns;
+
+    thread_sleep_until(thread_deadline_in(1));
+    budget_after_sleep = self->sched.priority;
+    budget_done = true;
+    thread_exit();
+}
+
+static bool test_the_audio_band_budget(void)
+{
+    struct thread *t;
+    unsigned long  guard;
+
+    budget_done = false;
+    budget_in_band = budget_after_sleep = 0;
+    budget_demoted_after = budget_overruns = 0;
+
+    t = thread_create_suspended("audio-budget", budget_spinner, NULL);
+
+    if (t == NULL) {
+        return false;
+    }
+
+    thread_set_priority(t, SCHED_PRIO_NORMAL);
+    thread_set_priority(thread_current(), SCHED_PRIO_IDLE);
+    thread_wake(t);
+
+    guard = hal_ticks() + SCHED_AUDIO_BUDGET_TICKS * 8u;
+
+    while (!budget_done && hal_ticks() < guard) {
+        thread_yield();
+    }
+
+    thread_set_priority(thread_current(), SCHED_PRIO_NORMAL);
+
+    return budget_done
+        && budget_in_band == SCHED_PRIO_AUDIO
+        && budget_demoted_after >= SCHED_AUDIO_BUDGET_TICKS
+        && budget_demoted_after <= SCHED_AUDIO_BUDGET_TICKS + 2u
+        && budget_overruns == 1u
+        && budget_after_sleep == SCHED_PRIO_AUDIO;
+}
+
 static bool test_fp_survives_a_preemption(void)
 {
     unsigned i;
@@ -9072,6 +9145,7 @@ static const struct test tests[] = {
     { "fp: the kernel may use FP and SIMD",    test_fp_is_usable_in_the_kernel },
     { "sched: the higher priority runs first", test_higher_priority_runs_first },
     { "sched: a wake preempts a lower band",   test_a_wake_preempts_a_lower_priority_thread },
+    { "sched: the audio band's budget",        test_the_audio_band_budget },
     { "sched: a server inherits its caller",   test_a_server_inherits_its_callers_priority },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
 #if defined(__aarch64__)

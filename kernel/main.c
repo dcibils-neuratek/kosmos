@@ -1354,6 +1354,10 @@ void kmain(void)
          */
         (void)process_grant_audio(init);
 
+        /* And the audio band, which is not hardware: every machine has it,
+         * and init hands it to whatever makes sound (`sched.h`). */
+        process_grant_audio_band(init);
+
         /*
          * And the network card, on the same terms as the disk: init holds
          * it so it can hand it on, and hands it to exactly one process.

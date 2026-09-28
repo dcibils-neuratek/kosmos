@@ -390,10 +390,23 @@ almost nothing:
 - The quantum is a variable that can be changed and measured, not a constant
   compiled in and never questioned.
 
-Not borrowed: 256 priority levels, where five say everything this system has
+Not borrowed: 256 priority levels, where six say everything this system has
 to say, and hard guarantees, which would mean bounding every kernel
 operation. Kosmos wants a desktop that feels alive, not an airbag that fires
 in time.
+
+**Sound is above every program** (28 September 2026; Diego: "audio should be
+prioritized", "and not be jerky under heavy load"). The sixth band is
+AUDIO, between the compositor's and the input reader's. A thread enters it
+by asking, only if its process was granted it - `kosmos: needs audio` - and
+a thread there that runs longer than a full ring takes to play without
+sleeping drops back until it next sleeps. That budget is what makes a band
+above the desktop safe: the audio server had been kept below it because a
+thread that high is harmless only while it blocks, and nothing enforced
+that it did. Under six spinners holding every core in the display band,
+Groove's sound thread was never away longer than 14 ms, inside the 23 ms
+the device holds; out of the band it was away 428 ms (`testing.md`
+18.263).
 
 **The kernel is SMP-aware, and the machine boots four processors.** Each one
 installs its own exception vector, wakes its own GIC redistributor, arms its

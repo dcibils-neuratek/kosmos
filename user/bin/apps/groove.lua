@@ -2,7 +2,7 @@
 -- kosmos: application
 -- kosmos: icon File_Audio
 -- kosmos: section applications
--- kosmos: needs midi
+-- kosmos: needs audio midi
 -- Groove: making music - eight tracks of drums and synthesisers, clips
 -- launched in scenes, a song arranged from them with automation, and a WAV
 -- at the end (`roadmap.md` 6zh).
@@ -18,9 +18,13 @@
 --   groove --house      the house demo
 --   groove --open       the saved project
 --   groove --play       and playing, which is how `make shot` pictures it
+--   groove --report 30  and after thirty seconds, says on the console how
+--                       the sound held: how often its ring ran dry, and the
+--                       audio server's worst turn and starvations
 --
 -- A MIDI keyboard plays it (`roadmap.md` 6zg): every one there is when it
--- opens, and again whenever its MIDI button is pressed.
+-- opens, and again whenever its MIDI button is pressed. `needs audio` puts
+-- the Synth Kit's thread in the audio band, above every window (4i).
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
@@ -33,6 +37,7 @@ local app = use("/Kosmos/Libraries/groove/app.lua")
 
 local want = {}
 for word in tostring(args or ""):gmatch("%S+") do want[word] = true end
+local report = tonumber(tostring(args or ""):match("%-%-report%s+(%d+)"))
 
 --------------------------------------------------------------------------
 -- The window, maximised as Cafesa3D's is: a workstation wants the room,
@@ -167,6 +172,39 @@ end
 
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
 local last = sys.ticks()
+local reportAt = report and (last + report * hz)
+
+-- `--report`: how the sound held, from both of the places it could fail -
+-- the Synth Kit's thread keeping its ring, and the audio server keeping the
+-- device (4i). Said once.
+--
+-- **What decides a skip is whether each party came back in time**: the
+-- kit's thread between two of its passes, and the audio server between two
+-- turns, each against what the device holds. Past that a gap is certain on
+-- any device; within it none is owed to this machine. The device's own
+-- count of periods that found it empty (`hal_snd_dry`) is said too, and is
+-- the real thing on hardware - under QEMU it is not: its WAV writer drains
+-- the queue in bursts, and an idle machine counts a hundred (`testing.md`
+-- 18.263).
+local function reportSound()
+  local st = E.kitState()
+  local stats = audio.stats() or {}
+  local info = sys.info() or {}
+  local frames = (info.audio_period or 0) // (2 * math.max(1, info.audio_channels or 2))
+  local holds = (info.audio_periods or 0) * frames / math.max(1, info.audio_rate or 44100) * 1000
+
+  -- The DSP load, all told: the time spent rendering over the time it
+  -- rendered. Past one, no scheduler can keep the sound whole.
+  local load = (st.busy and st.rendered and st.rendered > 0)
+               and (st.busy / hz) / (st.rendered / E.SR) or 0
+
+  print(("groove: after %d s: the device holds %.1f ms; the kit's worst pass %.1f ms, "
+         .. "the audio server's worst turn %.1f ms; the kit %s, %d periods kept, "
+         .. "its ring ran dry %d times; DSP %.0f%%; the device ran dry %d times")
+        :format(report, holds, (st.worst_pass or 0) / hz * 1000, (stats.late or 0) / 1000,
+                st.audio_band and "in the audio band" or "not in the audio band",
+                st.ahead or 0, st.dry or 0, load * 100, info.audio_dry or -1))
+end
 local lastPress, lastX, lastY = -1, -100, -100
 local dirty = true
 
@@ -188,7 +226,7 @@ end
 
 while win.running do
   local busy = app.busy()
-  local wait = (busy or app.midiOpen()) and 1 or (dirty and 0 or 25)
+  local wait = (busy or app.midiOpen() or reportAt) and 1 or (dirty and 0 or 25)
   local reply = wmproto.poll(win.handle, wait)
 
   if not reply then break end
@@ -263,6 +301,11 @@ while win.running do
   if not win.running then break end
 
   if app.midiPoll(sys.ticks() / hz) > 0 then touched, draw = true, true end
+
+  if reportAt and sys.ticks() >= reportAt then
+    reportAt = nil
+    reportSound()
+  end
 
   if draw or touched then
     if not frame(touched) then break end

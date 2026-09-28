@@ -143,7 +143,7 @@ local video = {}
 -- the whole reason to show it is that the bands are the thing the scheduler
 -- app changes and nothing showed what it had done.
 --
-local BANDS = { [0] = "idle", "low", "normal", "display", "input" }
+local BANDS = { [0] = "idle", "low", "normal", "display", "audio", "input" }
 -- The *process* that is selected, not the row.
 --
 -- The list is sorted, busiest first unless somebody chose otherwise, and

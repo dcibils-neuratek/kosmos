@@ -8,16 +8,18 @@
 -- - which says nothing about the card. init grants it to the shell for the
 -- same reason and the shell to this.
 --
--- `audio` is here for the same reason and one more: the Deskbar draws what
--- the machine is doing - the network, the volume - and a bar that is always
--- on screen is where a person looks for that. Reading it means holding it,
--- and holding it here is what lets this hand it down.
+-- `audio` is here for the same reason: it is the audio band (`kernel/sched.h`,
+-- `roadmap.md` 4i), which an application that makes sound - Groove - puts
+-- its sound thread in, and which this must hold to pass on. It used to be
+-- the sound device itself, held so the Deskbar could draw the volume; the
+-- Deskbar reads that from `/Devices/audio` as any client does, and the
+-- device is the audio server's alone.
 --
--- **Neither widens what an application can reach.** `init.lua` grants each
--- only when the machine has the thing - `may_pass_audio` asks whether there
--- is a sound card at all - and a child gets a capability only when its own
--- header declares it needs one. So this is a conduit rather than a store,
--- which is the same arrangement `network` has had since the browser.
+-- **Neither widens what an application can reach.** `init.lua` grants the
+-- network only when the machine has a card, and a child gets a grant only
+-- when its own header declares it needs one. So this is a conduit rather
+-- than a store, which is the same arrangement `network` has had since the
+-- browser.
 -- The window manager: windows, decoration, stacking, focus, and the
 -- compositor underneath them.
 --

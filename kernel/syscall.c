@@ -372,6 +372,10 @@ static long spawn_allowed(struct process *p, uintptr_t caps_ptr, size_t ncaps,
         return SYS_ERR_DENIED;          /* cannot pass on what it has not got */
     }
 
+    if ((flags & SPAWN_AUDIO_BAND) != 0 && !p->owns_audio_band) {
+        return SYS_ERR_DENIED;
+    }
+
     if ((flags & SPAWN_SCREEN) != 0 && !p->owns_screen) {
         return SYS_ERR_DENIED;
     }
@@ -428,6 +432,10 @@ static long spawn_finish(struct process *child, uintptr_t caps_ptr, size_t ncaps
     if ((flags & SPAWN_AUDIO) != 0 && !process_grant_audio(child)) {
         /* Not fatal: a machine with no sound device still runs a program
          * that would have liked some, and it finds out by being silent. */
+    }
+
+    if ((flags & SPAWN_AUDIO_BAND) != 0) {
+        process_grant_audio_band(child);
     }
 
     if ((flags & SPAWN_DEVICES) != 0) {
@@ -2403,6 +2411,23 @@ void syscall_dispatch(struct syscall_frame *sc)
             }
 
             thread_set_priority(thread_current(), (unsigned)sc->arg[1]);
+            result = 0;
+            break;
+
+        case SCHED_SET_AUDIO_BAND:
+            /*
+             * **Up, and the one way up**: to the audio band only, only for
+             * a process granted it, and under the budget `sched.h` sets out
+             * - which is what keeps "nothing promotes itself" meaning what
+             * it says. The grant is the authority; the thread asking is
+             * only saying which of its process's threads makes the sound.
+             */
+            if (!p->owns_audio_band) {
+                result = SYS_ERR_DENIED;
+                break;
+            }
+
+            thread_enter_audio_band(thread_current());
             result = 0;
             break;
 

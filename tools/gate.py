@@ -22,11 +22,12 @@ sharing nothing; the Mac has ten cores and the gate used about one. So:
      its own (`--parts`, `--phases`).
 
 A suite marked `alone` runs after the rest on a quiet machine, for a check
-about timing that cannot share. One does: x86's HDA sessions, whose ring
-underran once with five other machines running and passed alone. Sound on
-the ARM board, scheduling latency, the idle desktop and the compositor's
-budget have all passed shared; a run where one does not is the evidence for
-marking it.
+about timing that cannot share. Two do: x86's HDA sessions, whose ring
+underran once with five other machines running and passed alone; and
+Groove under heavy load, whose audio server was held off 38 ms inside the
+gate - longer than the device holds - and 9 to 14 alone. Sound on the ARM board otherwise, scheduling latency, the
+idle desktop and the compositor's budget have all passed shared; a run
+where one does not is the evidence for marking it.
 
 The first run of this took 18:28 with the display harness whole; the second,
 with the parts, 4:37 - the same 1,000-odd checks (`testing.md` 18.97).
@@ -278,6 +279,13 @@ SUITES = [
     # The Synth Kit's thread, heard: Groove's sound (6zh). The ARM harness
     # has the sound device; x86's is the HD Audio suite's.
     Suite("arm-synth", ["python3", "tools/run_synth.py", ARM]),
+    # **Groove under heavy load, on a quiet machine** (4i step c): six
+    # spinners in the display band, and neither the sound thread nor the
+    # audio server may be away longer than the device holds. Shared, the Mac
+    # held the machine off its processors for 38 ms; alone, 9 to 14 - the
+    # evidence the note at the top says to wait for.
+    Suite("arm-synth-load", ["python3", "tools/run_synth.py", ARM, "--load"],
+          alone=True),
     # More windows than one message can list: twenty Calculators and the
     # Deskbar, and `tile` arranging every one from the list in pages (6zp).
     Suite("arm-windows", ["python3", "tools/run_windows.py", ARM]),

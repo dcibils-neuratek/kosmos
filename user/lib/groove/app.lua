@@ -41,6 +41,7 @@ local recArm, octave, held, songScroll = false, 3, {}, 0
 local meters, mMeterL, mMeterR = {}, 0, 0
 local cpu, loadT, loadBusy, loadFrames = 0, 0, nil, nil
 local keyToEar, notesSeen, hzSeen = nil, 0, nil  -- the last note's way, in ms
+local bandSaid = false
 local L = {}
 local now = 0                                   -- seconds, for the blink
 local midiScan                                  -- MIDI, below
@@ -171,6 +172,11 @@ function app.update(dt, counter_hz)
   now = now + dt
   local st = E.kitState()
   if counter_hz then hzSeen = counter_hz end
+  if not bandSaid and (st.rendered or 0) > 0 then
+    bandSaid = true
+    print(st.audio_band and "groove: the sound's thread in the audio band"
+          or "groove: the sound's thread refused the audio band")
+  end
   if st.notes and st.notes ~= notesSeen and hzSeen then
     local first = keyToEar == nil
     notesSeen = st.notes

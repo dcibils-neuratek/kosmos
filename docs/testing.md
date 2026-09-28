@@ -12364,15 +12364,67 @@ the suite fails.
 
 The Synth Kit filled its ring, so a note was heard after all eight periods
 queued before it - 46 ms on any machine, before the device's own. It now
-keeps two, and one more each time its thread wakes to find the ring run dry,
-up to eight: the depth is found by playing, per machine. `synth.state()`
-says how many it keeps and how often it has run dry, and each note says how
-many were kept when it was taken.
+finds the fewest the machine holds by playing. **As first built it kept two
+and climbed** a period each time its thread woke to find the ring run dry;
+under QEMU that settled at five by running dry three times in the first
+second of every start. **So it starts full and comes down** (with 4i c): a
+period fewer for each second in which every wake found two to spare, and
+one more at once if the ring runs dry, which then becomes a floor it never
+probes below again. `synth.state()` says how many it keeps and how often it
+has run dry, and each note says how many were kept when it was taken.
 
 **Kept, `run_midi.py`** on ARM, 17 checks: the ring's part of a note's way
-is whole periods within those the kit kept then. Under QEMU it settled at
-five - 29 ms in the ring, where the full ring was 46. Its control: the old
-loop, filling the ring - 1536 and then 2048 frames in the ring with two
-periods kept, and the suite fails both times. `run_synth.py` still hears
-its beats half a second apart and Groove's house demo at 124 with the kit
-starting at two.
+is whole periods within those the kit kept then. Under QEMU it settles at
+four or five - 23 to 29 ms in the ring, where the full ring was 46. Its
+control, run while it still started at two: the old loop, filling the ring -
+1536 and then 2048 frames in the ring with two periods kept, and the suite
+fails both times. `arm-synth-load` (18.263) holds that it comes down from
+the whole ring under load.
+
+## 18.263 Sound above every program, under heavy load (4i, step c)
+
+Diego: "audio should be prioritized", "and not be jerky under heavy load".
+The Synth Kit's thread was at NORMAL - a process's second thread started
+there - below its own window and every program, which all sit in the
+display band; the audio server was at DISPLAY, sharing 100 ms turns with
+them. Now there is an audio band above the display band, entered by a
+thread that asks and whose process was granted it (`needs audio`), and
+left for the thread's old band when it runs longer than a full ring takes
+to play without sleeping.
+
+**Kept, `run_synth.py --load`** (`arm-synth-load`), 7 checks: a boot that
+plays the house demo while six `spin 60 display` hold every core in the band
+every program runs in, and Groove's `--report 8` says what the guest itself
+measured. **Each party has to have come back within what the device holds**
+- four periods, 23.2 ms - the kit's thread between two passes and the audio
+server between two turns: a longer absence is a gap on any device, a
+shorter one is covered. And the kit in the audio band, come down from the
+whole ring, and six seconds played. Three runs: the kit's worst pass 9.3 to
+13.6 ms, the server's 8.6 to 13.7, five periods kept, DSP 6 to 7%.
+
+Its controls: the kit not asking - away **427.8 ms**, its ring dry 51 times,
+at most 5.4 s of 12 played and once none at all; the audio server not
+asking, now that the device grant no longer promotes it - away **211 ms**,
+1.8 s of 8 played.
+
+**Two instruments were tried first and are wrong under QEMU, and why is the
+useful part.** The device's own count of periods that found it empty
+(`hal_snd_dry`) is the real thing on hardware; under QEMU its WAV writer
+drains the queue in bursts, and Groove on an *idle* machine counted 115 and
+118 - so the zeros it gave under load at first were luck, and the twos and
+threes after were noise. And the WAV's silences: the server writes nothing
+for a lone empty stream and the writer waits for it, so a starved thread
+comes out as sound *missing* - which the six seconds catch - never as zeros.
+Both are still said in the report; neither decides.
+
+**On a quiet machine, and the gate is why.** Inside the whole gate the
+server's worst turn was 38.3 ms, longer than the device's whole buffer,
+which nothing inside the guest can cause: the Mac held the emulated machine
+off its processors. So it is `alone` in `gate.py`, as x86's HDA sessions are
+(18.127), and its own suite so the rest of `run_synth.py` still shares.
+
+**Kept, `tests.c`**, "sched: the audio band's budget": a thread in the audio
+band that spins without yielding drops back after the budget and not
+before - between it and two ticks past it - with one overrun counted, and
+is in the audio band again after it sleeps. Its control: a budget a
+thousand times longer, and the test fails.

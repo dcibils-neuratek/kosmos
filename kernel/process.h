@@ -447,6 +447,9 @@ struct process {
     bool              owns_screen;
     bool              owns_audio;
 
+    /* May put its threads in the audio band (`SPAWN_AUDIO_BAND`). */
+    bool              owns_audio_band;
+
     /* Raw sectors. The strongest grant in the system - it is every file on
      * the machine, under every namespace - so it goes to one process. */
     bool              owns_disk;
@@ -616,6 +619,7 @@ void process_grant_console(struct process *p);
  */
 bool process_grant_screen(struct process *p);
 bool process_grant_audio(struct process *p);
+void process_grant_audio_band(struct process *p);
 
 /*
  * Hands a process the disk. Like the console and unlike the screen, there is

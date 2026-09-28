@@ -265,6 +265,13 @@ local SPAWN_DISK    = 4
 local SPAWN_PROCCTL = 8
 local SPAWN_AUDIO   = 16
 
+-- The audio band (`kernel/sched.h`): a thread of this process's may put
+-- itself above every program, under the scheduler's budget. What `needs
+-- audio` grants - a program that makes sound - and not the device, which is
+-- SPAWN_AUDIO and the audio server's alone. Not hardware, so every machine
+-- has it to give.
+local SPAWN_AUDIO_BAND = 128
+
 -- The network card. The disk's grant, pointed outwards: a process that can
 -- put a raw frame on the wire can claim any address on the network and read
 -- every frame that reaches the machine, whatever any namespace says. So one
@@ -5179,9 +5186,7 @@ query. `find` and `watch` are built on exactly these two calls.
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
-      if want == "audio" and may_pass_audio() then
-        flags = flags | SPAWN_AUDIO
-      end
+      if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end
       if want == "network" and may_pass_net() then
         flags = flags | SPAWN_NET
       end
@@ -5383,7 +5388,7 @@ query. `find` and `watch` are built on exactly these two calls.
     if rows then
       -- The bands by name. A number here would be five values nobody can
       -- read; `help "sys"` is where the scheduler is explained.
-      local BAND = { [0] = "idle", "low", "normal", "display", "input" }
+      local BAND = { [0] = "idle", "low", "normal", "display", "audio", "input" }
 
       out(("%-4s %-16s %-8s %6s %8s\n")
           :format("id", "name", "band", "cpu", "caps"))
@@ -5925,7 +5930,7 @@ if role == ROLE_INIT then
   -- application volume would have nothing to be a volume *of*.
   --
   local audio = start("the audio server", ROLE_AUDIO, { AUDIO_EP },
-                      may_pass_audio() and SPAWN_AUDIO or 0)
+                      SPAWN_AUDIO_BAND | (may_pass_audio() and SPAWN_AUDIO or 0))
 
   --
   -- And the network stack, on exactly the same terms.
@@ -6213,7 +6218,7 @@ if role == ROLE_INIT then
                       -- same mistake this function has now made four times.
                       --
                       (may_pass_screen() and SPAWN_SCREEN or 0)
-                      | (may_pass_audio() and SPAWN_AUDIO or 0)
+                      | SPAWN_AUDIO_BAND
                       | (may_pass_net() and SPAWN_NET or 0)
                       | SPAWN_PROCCTL)
 
@@ -6551,9 +6556,10 @@ if role == ROLE_RUNNER then
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
-      if want == "audio" and may_pass_audio() then
-        flags = flags | SPAWN_AUDIO
-      end
+
+      -- A program that makes sound: its threads may take the audio band.
+      if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end
+
       if want == "network" and may_pass_net() then
         flags = flags | SPAWN_NET
       end

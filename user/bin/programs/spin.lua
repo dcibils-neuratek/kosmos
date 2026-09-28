@@ -5,8 +5,9 @@
 -- is not what a workload looks like: the point is to be something the
 -- scheduler has to preempt, so the numbers read what real work would.
 --
---   spin        ten seconds
---   spin 3      three
+--   spin            ten seconds
+--   spin 3          three
+--   spin 3 display  three, in the display band, where every program is
 --
 -- It stops on its own rather than looping for ever, and it is the one
 -- program here that Control-C does not stop. That is not an oversight, it
@@ -37,9 +38,21 @@
 -- be refused without consequence: an older kernel without it leaves this
 -- program where it was, which is where it has always been.
 --
-if sys.step_down then pcall(sys.step_down, 2) end   -- 2 is NORMAL
+local words = {}
 
-local seconds = tonumber(args) or 10
+for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
+
+--
+-- **Unless asked to stay**, with `display`: a busy application is in that
+-- band, because the screen is granted to every program, and that is the
+-- load the audio band has to hold its own against (`roadmap.md` 4i) - so
+-- `run_synth.py` makes it, on every core, while Groove plays.
+--
+if words[2] ~= "display" and sys.step_down then
+  pcall(sys.step_down, 2)                             -- 2 is NORMAL
+end
+
+local seconds = tonumber(words[1]) or 10
 local hz = fs.read("/Devices/cpu").counter_hz
 local until_ = sys.ticks() + hz * seconds
 

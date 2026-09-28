@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Deskbar
--- kosmos: needs screen network audio
+-- kosmos: needs screen network
 -- The Deskbar: the strip across the top, and everything you reach from it.
 --
 --   wm                  starts this by itself
@@ -18,8 +18,8 @@
 -- person hunting for a window wants one place that is always the same
 -- shape.
 --
--- **`network` and `audio` are for the indicators, and they are a change of
--- position worth naming.** This used to declare `needs screen` and nothing
+-- **`network` is for the indicators, and it is a change of position worth
+-- naming.** This used to declare `needs screen` and nothing
 -- else, and the paragraph below said why - launching goes through the
 -- window manager so that reaching the Deskbar is not reaching everything.
 -- That is still true of *power*: Restart and Shut Down are a request this
@@ -28,12 +28,12 @@
 -- that cannot see the volume cannot show it. Reading state is not holding
 -- power, and the two are kept apart on purpose.
 --
--- Neither widens what this can reach on a machine that lacks the hardware:
--- `init.lua` grants `audio` only when there is a sound card, so on a board
--- without one `/Devices/audio` is not in this namespace and the speaker is not
--- drawn. The old rule - never draw an indicator for a subsystem that does
--- not exist - is now enforced by the kernel rather than remembered by a
--- comment.
+-- It does not widen what this can reach on a machine that lacks the
+-- hardware: `init.lua` grants `network` only when there is a card. The
+-- volume is read from `/Devices/audio` as any client reads it; this
+-- declared `needs audio` for it too while that word was the sound device,
+-- and since it became the audio band (`roadmap.md` 4i) there is nothing
+-- here that makes sound to want it.
 --
 --------------------------------------------------------------------------
 -- Where the two lists come from, and why neither is a list this program
@@ -1111,10 +1111,11 @@ function bar:draw(g)
   --
   -- `topbar.lua` refused to draw indicators for subsystems that did not
   -- exist, on the grounds that a picture which lies about what the system
-  -- knows is worse than a gap. What decides it now is the kernel rather
-  -- than this file: `needs audio` grants nothing on a board with no sound
-  -- card, so `/Devices/audio` is not in this namespace and `audio.stats()` says
-  -- so. The rule is the same one; it is enforced instead of remembered.
+  -- knows is worse than a gap. What decides it now is the audio server
+  -- rather than this file: on a board with no sound card it answers that
+  -- there is none, and `audio.stats()` says so. The rule is the same one;
+  -- it is answered instead of remembered. (This said `needs audio` decided
+  -- it, which it never did - `/Devices/audio` reaches every program.)
   --
   --
   -- **Line glyphs, in the bar's own words' colour** (`roadmap.md` 6zl,

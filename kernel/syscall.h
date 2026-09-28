@@ -581,6 +581,15 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SPAWN_DEVICES  64u
 
+/*
+ * **The audio band**: this child's threads may put themselves in
+ * `SCHED_PRIO_AUDIO` (`SCHED_SET_AUDIO_BAND`). What a program that makes
+ * sound declares, as `kosmos: needs audio` - and not the device, which is
+ * `SPAWN_AUDIO` and goes to the audio server alone. Passed on like the
+ * others: a parent without it cannot give it.
+ */
+#define SPAWN_AUDIO_BAND 128u
+
 
 
 /*
@@ -619,6 +628,14 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * it looks. This lets the one program that is *deliberately* a hog say so.
  */
 #define SCHED_SET_MY_BAND  2
+
+/*
+ * The calling thread into the audio band (`kernel/sched.h`), which a
+ * process may ask for only if it was spawned with `SPAWN_AUDIO_BAND`. The
+ * one way up, and it is up only to one band, under a budget: a thread there
+ * that runs too long without sleeping drops back to where it was.
+ */
+#define SCHED_SET_AUDIO_BAND  3
 
 /*
  * What SYS_SCREEN reports.

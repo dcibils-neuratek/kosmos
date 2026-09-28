@@ -217,8 +217,9 @@ of now we dont have". So, one at a time:
 
 1. **6zg** - USB MIDI and the Launchkey, which finishes Groove (6zh).
 2. **4i** - low-latency audio: Groove and everything media lean on it.
-   Steps a and b done 28 September: the way to the ear measured per note,
-   and the Synth Kit keeping as few periods ahead as the machine holds.
+   Steps a, b and c done 28 September: the way to the ear measured per
+   note, the Synth Kit keeping as few periods ahead as the machine holds,
+   and sound in a band above every program, held to a budget.
 3. **Storage at full speed** - the filesystem's byte path in C (above).
 4. **4h** - the GPU: video encode and decode in hardware first, and from
    the driver that takes, accelerated 2D - which Kosmos does not have.
@@ -1064,15 +1065,37 @@ processors, and still what follows USB:
    - **b** - the kit renders just ahead rather than filling the ring: the
      fewest periods that hold without a gap, as PulseMusic kept two with a
      keyboard attached. **DONE on 28 September** (`testing.md` 18.262):
-     it keeps two, and one more each time it wakes to find the ring run
-     dry, to the ring's eight - so each machine settles on the depth it
-     holds. Under QEMU it settled at five; before, a note waited behind all
-     eight, 46 ms, on every machine. The device's four periods, 23 ms, are
-     the audio server's, and step e's.
+     it starts with the ring's eight and keeps one fewer each second every
+     wake had two to spare; a dry ring keeps one more and sets a floor - so
+     each machine settles on the depth it holds, from the safe side. (It
+     first kept two and climbed, which ran dry three times at every start.)
+     Under QEMU it settles at four or five; before, a note waited behind
+     all eight, 46 ms, on every machine. The device's four periods, 23 ms,
+     are the audio server's, and step e's.
    - **c** - the thread that renders and the one that mixes, woken on
      time: a band above the window's, and woken by the server taking a
      period rather than by a tick. Which threads may be in that band is a
      decision to put to Diego with the measurement beside it.
+     **DONE on 28 September** (`testing.md` 18.263). Found first: a
+     process's second thread started at NORMAL, so Groove's sound thread
+     was *below* its own window and every program. Diego chose "Audio band
+     only" - a band of its own with a budget, over threads taking their
+     creator's band - and "audio should be prioritized", "and not be jerky
+     under heavy load". So: SCHED_PRIO_AUDIO between DISPLAY and INPUT; a
+     thread asks for it (`SCHED_SET_AUDIO_BAND`) if its process was spawned
+     with `SPAWN_AUDIO_BAND`, which is what `needs audio` now means - the
+     device stays `SPAWN_AUDIO`, the audio server's alone; a thread there
+     that runs longer than a ring takes to play without sleeping drops back
+     until it sleeps. The audio server and the Synth Kit ask. Under six
+     display-band spinners the sound thread was never away more than 14 ms,
+     inside the device's 23; out of the band, 428 ms. Checked on a quiet
+     machine (`arm-synth-load`): inside the whole gate this Mac's own load
+     held the emulated machine off for 38 ms. **Found**: the device's count
+     of periods that found it empty is not an instrument under QEMU - an
+     idle machine counts a hundred - so the check is each party's absence
+     against what the device holds. Being *woken by the server taking a
+     period* rather than by a tick is left: at a 4 ms tick and five periods
+     kept it has not been what fails.
    - **d** - a MIDI event reaches the kit without waiting for the window's
      pass - the window is told, or the kit reads the page itself and
      places the note at its own sample.
@@ -2303,6 +2326,21 @@ processors, and still what follows USB:
    is the harness phases that press tabs, which run in the dark look and
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
+
+6zt. **ASKED on 28 September - one image at any screen size.** Diego,
+   running the release at 3840x2160: "why is that images need to be built
+   for specific resolutions? cant that just be a parameter and kosmos
+   adapts to the resolution?" It can. On the ARM machine the kernel tells
+   QEMU's `ramfb` the screen's size, and the size is compiled in
+   (`FB_WIDTH`, `FB_HEIGHT` in `hal/fwcfg/ramfb.c`, `make FB=`), so each
+   size was an image of its own; everything above the kernel already takes
+   the size it is told. So: `opt/kosmos/fb=WxH` through fw_cfg, as the MIDI
+   keyboard's option is, read before the screen is set up and bounded by
+   what `ramfb` and memory allow, with the built size as the default; one
+   release image, and `run-kosmos.sh -r` passing the option rather than
+   choosing a file. **And the script's own bug**: its "Available:" list
+   runs `"$0" -r list`, which is "command not found" when it was started as
+   `sh run-kosmos-2.sh`. Next after 4i step c.
 
 6zs. **ASKED on 28 September - Editor becomes Text Editor: documents in
    plain text or Markdown.** Diego: "i realized the edit app is now

@@ -18,7 +18,7 @@ Last updated: 2026-09-28
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
-## 28 September, the night: USB MIDI, Groove plays from it, and the way to the ear (6zg a-c, 4i a-b)
+## 28 September, the night: USB MIDI, Groove plays from it, the way to the ear, and sound above every program (6zg a-c, 4i a-c)
 
 **Pushed as 0.10.186** - everything below. Before it, on `main`, each gated:
 `fc6d7d0` state, `18da2ca` `get-and-run-kosmos.sh` - which fetches the
@@ -58,11 +58,26 @@ capabilities which will then lead to us having accelerated 2d graphics".
 - **0.10.186**: Diego, "groove app works great, push it and lets continue
   with the roadmap" - pushed with `make prepush`.
 
-**Next**: 4i c - the rendering and mixing threads woken on time, which band
-they may be in is Diego's decision; 4i d - a MIDI event reaching the kit
-without the window's pass (48.8 ms of one run was the window's, under
-emulation); 4i e - the device's depth, on the ThinkPad. 6zg d when Diego
-has the Launchkey at the Mac or the ThinkPad.
+- **4i c** (18.263): an audio band above every program, with a budget.
+  Found: a process's second thread started at NORMAL, so Groove's sound was
+  below its own window. Diego chose "Audio band only", and "audio should be
+  prioritized", "and not be jerky under heavy load". `needs audio` now
+  grants `SPAWN_AUDIO_BAND` (the device stays the server's); the Synth Kit
+  and the audio server ask for the band; past a ring's worth of running
+  without sleeping a thread drops back. Under six display-band spinners the
+  sound thread was never away more than 14 ms, inside the device's 23; out
+  of the band, 428 ms. The Synth Kit now starts with the whole ring and
+  comes down. Groove has `--report N`, for the ThinkPad - where the device's
+  own dry count, which QEMU makes meaningless, is the one to read.
+- **6zt, asked**: Diego ran the release at 3840x2160 and the script said
+  there was no image for it - "cant that just be a parameter". The screen
+  size is compiled into the ARM kernel's `ramfb`; it becomes
+  `opt/kosmos/fb=WxH`. And the script's "Available:" list runs `"$0"`,
+  which fails under `sh run-kosmos-2.sh`.
+
+**Next**: 6zt, one image at any size - Diego is waiting on it. Then 4i d, a
+MIDI event reaching the kit without the window's pass; 4i e, the device's
+depth, on the ThinkPad. 6zg d when Diego has the Launchkey at hand.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 
