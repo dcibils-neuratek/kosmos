@@ -136,6 +136,38 @@ local pinned = folder and placelib.find(placelib.read(fs), one) or nil
 local unpin = ui.button{ text = "Unpin" }
 
 --
+-- **What opens its type, and the choice of it** (`roadmap.md` 6z): where
+-- more than one application opens a file's type, this row is where the
+-- person chooses - for every file of the type, as Preferences' File types
+-- chooses, since it is one setting. A dropdown, the default first.
+--
+local kind = one and not folder and attrs.kind ~= "launcher"
+             and types.kind_of(one, attrs) or nil
+local able = kind and types.openers(kind) or {}
+local chooser = nil
+
+if #able > 1 then
+  local choices = {}
+
+  for _, program in ipairs(able) do
+    choices[#choices + 1] = { program, types.app_name(program) }
+  end
+
+  -- Said once, for the display harness: what it opens with, of what.
+  print(("info: .%s opens with %s, of %s"):format(kind,
+        tostring(types.opener(one, attrs)), table.concat(able, ", ")))
+
+  chooser = ui.dropdown{ choices = choices, value = types.opener(one, attrs),
+                         on_change = function(_, program)
+                           local ok, why = types.choose(kind, program)
+
+                           print(("info: .%s opens with %s%s"):format(
+                                 kind, tostring(program),
+                                 ok and "" or (" - not kept: " .. tostring(why))))
+                         end }
+end
+
+--
 -- The rows, as label, value and a note under the value. Asked again every
 -- pass while counting, because the values climb; the rows themselves are
 -- the same from the first pass, so nothing moves while it counts.
@@ -176,6 +208,11 @@ local function rows()
     out[#out + 1] = { "Starts", tostring(attrs.program or "?")
                       .. ((attrs.args and attrs.args ~= "")
                           and (" " .. attrs.args) or "") }
+  elseif chooser then
+    -- What it applies to, dim, where a value would be; the choice itself is
+    -- the dropdown at the right.
+    out[#out + 1] = { "Opens with", "for every ." .. kind, nil, chooser,
+                      dim = true }
   elseif one and not folder then
     local opener = types.opener(one, attrs)
 
@@ -262,8 +299,13 @@ function body:draw(g)
 
     g:text(lx, top + (gfx.height("text") - gfx.height()) // 2,
            ui.fitted(r[1], LABEL_W), theme.text_dim, theme.sunken)
-    g:text(vx, top, ui.fitted(r[2], room, "text"), theme.text, theme.sunken,
-           "text")
+    if r.dim then
+      g:text(vx, top + (gfx.height("text") - gfx.height()) // 2,
+             ui.fitted(r[2], room), theme.text_dim, theme.sunken)
+    else
+      g:text(vx, top, ui.fitted(r[2], room, "text"), theme.text,
+             theme.sunken, "text")
+    end
 
     if r[3] then
       g:text(vx, top + gfx.height("text"), ui.fitted(r[3], room),
@@ -293,18 +335,19 @@ unpin.on_click = function()
 end
 
 --
--- The Unpin button against the card's right, in the middle of its row -
--- placed once, since the rows are the same from the first pass to the last.
+-- The Unpin button, or the choice of what opens it, against the card's
+-- right, in the middle of its row - placed once, since the rows are the same
+-- from the first pass to the last.
 --
-if pinned then
+if pinned or chooser then
   local y = card_top
 
   for _, r in ipairs(rows()) do
     local h = row_h(r)
 
-    if r[4] == unpin then
-      unpin.x = PAD + card_w - ROW_IN - unpin.w
-      unpin.y = y + (h - unpin.h) // 2
+    if r[4] == unpin or (r[4] and r[4] == chooser) then
+      r[4].x = PAD + card_w - ROW_IN - r[4].w
+      r[4].y = y + (h - r[4].h) // 2
     end
 
     y = y + h
@@ -343,4 +386,5 @@ if count and not count.done then win.poll_wait_ticks = 1 end
 
 win:add(body)
 if pinned then win:add(unpin) end
+if chooser then win:add(chooser) end
 win:run()

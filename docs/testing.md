@@ -11833,3 +11833,50 @@ shipped Calculator and Hide on Blocks, read back as the person's launcher
 and a hidden note. **The control**: the Deskbar reading only
 `/Home/Deskbar` fails the phase - Applications is not the one that ships.
 
+## 18.245 What opens what, from the applications (6z, 6za step c)
+
+Diego: "file associations with programs is nowhere to be found", "MP4
+should be opened with video player for example", and "A preference panel
+should be added for this to be configurable as well for all file types and
+what programs handle those files". Built as `docs/rightclick.html` draws
+it, answer 7: "an application declares what it opens in its header".
+
+**The header is the manifest.** `-- kosmos: opens png jpg jpeg` in Photo,
+`mp4` in Video and in Play - a program - `mp3 wav` in Music, `wad` in Doom,
+`sfc smc` in the Super Nintendo, `launcher` in the launcher editor, and
+the rest. `binfs` reports the line (`binproto.h`'s `opens`, 40 bytes, the
+reply still under a message) and the namespace splits it into words.
+`filetypes` gathers them from `/Kosmos/Apps` then `/Kosmos/Programs`, each
+by name, once a process; the default for a type is the first, and a
+person's choice in `/Home/Preferences/filetypes` - written only where it
+differs from the default - wins while the program still opens the type.
+The hand-written table is gone; it sent a `.wav` to Play, which plays
+films, and knew nothing of a Doom level or a cartridge.
+
+**Three places, one setting.** Tracker's right click has **Open with**, a
+submenu of every application that opens the file, the default first and
+saying so - for that once. Info's **Opens with** is a dropdown where more
+than one opens the type, "for every .mp4". Preferences' **File types** is a
+page of every type something opens, in the drawing's groups, the type in a
+column of its own, what else opens it in the note, a choice where there is
+one and the name where there is not; `.jpg` and `.jpeg` share a row, and a
+choice in it is made for both. A Find field above it, and the page scrolls
+with the wheel - it is the first page taller than the window.
+
+**Checked**: on the build machine, `test_filetypes.lua` (45) against the
+tree's own headers, read the way `binfs` reads them - a `.wav` and an
+`.mp3` Music's, a WAD Doom's, both cartridges the Super Nintendo's, a note
+the Reader's; a film Video's then Play's; a choice made and kept, the
+default taken back out of the file, a program that does not open the type
+refused, and a stale choice not followed; the page's groups, shared rows,
+notes and choices, a choice made in a row, and Find. `test_filemenu.lua`
+(27) - Open with after Open, the default first, and none where nothing
+opens it; `test_settings.lua` knows the page's rows are the applications'.
+In the guest, `run_queries.py`'s K-OPENS: the words reach the attributes,
+and none for an application that declares nothing. On both boards (the
+display harness's `file types`, 6): Preferences opened on File types with
+`--find mp4` shows one row and a choice, Play chosen there is kept in the
+file and nothing else, Info says Play, of Video and Play - and **the
+control**, the choice taken out, Info says Video; then Tracker's right
+click on the film, Open with, Play, and Play is launched.
+

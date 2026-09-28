@@ -2,6 +2,7 @@
 -- kosmos: application
 -- kosmos: icon App_MediaPlayer
 -- kosmos: section applications
+-- kosmos: opens mp4
 --
 -- Video: a window that plays a film.
 --

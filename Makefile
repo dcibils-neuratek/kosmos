@@ -3289,7 +3289,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# device authority, a server by init starting it, the rest by /bin.
 	$(HOSTDIR)/lua tools/test_prockind.lua
 	@# And what a file *is*: the attribute first, the extension second.
-	$(HOSTDIR)/lua tools/test_filetypes.lua
+	$(HOSTDIR)/lua tools/test_filetypes.lua $(wildcard user/bin/apps/*.lua user/bin/apps/*/*.lua user/bin/programs/*.lua)
 	@# And the audio ring's position arithmetic. It models the client, the
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.

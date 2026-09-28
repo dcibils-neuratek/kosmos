@@ -9,6 +9,7 @@
 --   wm preferences:sound                 opened on one category
 --   wm preferences:--theme plexnight     a look, as a press on its swatch
 --   wm preferences:--scale 150           a size, as the dropdown's choice
+--   wm preferences:filetypes --find mp4  File types, found as by typing
 --
 -- **And the look, since 24 September**: the Appearance panel's three
 -- settings - the look, the wallpaper and the scale - are this window's
@@ -32,6 +33,7 @@ local settings = use("/Kosmos/Libraries/settings.lua")
 local hardware = use("/Kosmos/Libraries/hardware.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
+local types = use("/Kosmos/Libraries/filetypes.lua")
 local backlight_ok, backlight = pcall(use, "/Kosmos/Libraries/backlight.lua")
 local theme = ui.theme
 
@@ -217,6 +219,9 @@ end
 --
 local rebuild                      -- forward, so the list can call it
 
+-- How far down the page is scrolled, and how tall it is (`page:wheel`).
+local scroll, page_h = 0, 0
+
 -- Taken hold of like the header beside it, in a look with no title bars:
 -- one band across the top of the window, as `docs/nochrome.html` draws it.
 local side_head = ui.view{ x = 0, y = 0, w = SIDE, h = HEAD,
@@ -254,7 +259,7 @@ local side = ui.sidebar{
   x = 0, y = HEAD + 2, w = SIDE - 1, h = H - HEAD - 2,
   items = items, selected = showing,
   on_select = function(_, id)
-    showing = id
+    showing, scroll = id, 0
     rebuild()
   end,
 }
@@ -597,7 +602,17 @@ local function control_for(it, x, y, changed)
     return ui.dropdown{ x = x, y = y, choices = it.choices,
                         value = settings.get(it),
                         on_change = function(_, v)
-                          if live(it, v) then settings.set(it, v) end
+                          if live(it, v) then
+                            local ok, why = settings.set(it, v)
+
+                            -- What a file type now opens with, said: the
+                            -- display harness chooses one and reads this.
+                            if it.tag then
+                              print(("preferences: %s opens with %s%s"):format(
+                                    it.tag, tostring(v),
+                                    ok and "" or (" - not kept: " .. tostring(why))))
+                            end
+                          end
                           if changed then changed() end
                         end }
   end
@@ -681,6 +696,9 @@ local function value_text(it)
   -- The option's name is in the note; this is the part that is not obvious
   -- from reading the row, and the part a long note must not squeeze out.
   if it.kind == "fact" then return fact[it.fact] or "-" end
+
+  -- A file type only one application opens: its name, not a choice.
+  if it.kind == "value" then return tostring(it.value or "") end
   if it.kind == "volume" or it.kind == "mute" then return "No sound device" end
   if it.kind == "brightness" then return "Not on this screen" end
 
@@ -700,24 +718,75 @@ local function value_text(it)
 end
 
 --
+-- **The page scrolls when it is taller than the window**, as File types is -
+-- a row for every type an application opens (`roadmap.md` 6z). `scroll` is
+-- how far down it is, and every row is placed that much higher; the header
+-- is drawn after the page, so what goes up passes under it.
+--
+function page:wheel(n)
+  local most = math.max(0, page_h - self.h)
+  local to = math.max(0, math.min(most, scroll - n * ui.WHEEL_ROWS * 16))
+
+  if to == scroll then return false end
+
+  scroll = to
+  rebuild()
+
+  return true
+end
+
+--
+-- **File types' Find**, the drawing's field above its groups: the rows whose
+-- type, name or application has the words in them. Kept across rebuilds, so
+-- what is typed and where the caret is survive each one.
+--
+local TAG_W = 62                   -- the drawing's column for `.mp4`
+local filter = tostring(args or ""):match("%-%-find%s+(%S+)") or ""
+local find = ui.field{ w = BODY_W, text = filter,
+                       hint = "Find a type - mp4, photo, zip", icon = "search" }
+
+find.on_change = function(_, text)
+  filter, scroll = text, 0
+  rebuild()
+  win:focus_on(find)
+end
+
+--
 -- Build the page for `showing`.
 --
 rebuild = function()
   for i = #page.children, 1, -1 do page.children[i] = nil end
   cards = {}
 
+  local made_by_applications = false
+
   for _, c in ipairs(settings.CATEGORIES) do
-    if c.id == showing then header.title = c.name end
+    if c.id == showing then
+      header.title = c.name
+      made_by_applications = c.from_applications
+    end
   end
 
   local cx, width = column(page.w)
-  local y = HEAD + BODY_TOP
+  local y = HEAD + BODY_TOP - scroll
 
   fact = facts()
   row_room = width - 2 - 2 * ROW_IN
   now_label = nil
 
-  for gi, group in ipairs(settings.groups(showing)) do
+  local groups
+
+  if made_by_applications then
+    find.x, find.y, find.w = cx, y, width
+    page:add(find)
+    y = y + find.h + 16                 -- the drawing's margin under it
+
+    groups = types.page(nil, nil, filter)
+  else
+    groups = settings.groups(showing)
+  end
+
+  for gi, group in ipairs(groups) do
     if gi > 1 then y = y + CARD_NEXT end
 
     -- The group's name, 3 in from the card's edge as the drawing sets it,
@@ -774,8 +843,17 @@ rebuild = function()
         if it.fact == "now" then now_label, shown.right = shown, right end
       end
 
-      local room = right - (taken > 0 and taken + ROW_IN or 0)
-                   - (cx + 1 + ROW_IN)
+      -- A file type's own column before its name, in the fixed face.
+      local lx = cx + 1 + ROW_IN
+
+      if it.tag then
+        page:add(ui.label{ x = lx, y = y + (h - LINE_LABEL) // 2
+                                   + (LINE_LABEL - gfx.height("mono")) // 2,
+                           w = TAG_W, text = it.tag, role = "mono" })
+        lx = lx + TAG_W
+      end
+
+      local room = right - (taken > 0 and taken + ROW_IN or 0) - lx
 
       --
       -- The name and its note as one block, centred in the row: each in a
@@ -786,7 +864,7 @@ rebuild = function()
       -- The row's name in `label`: the drawing's 13.5 at weight 500.
       if it.label ~= "" then
         page:add(ui.label{
-          x = cx + 1 + ROW_IN,
+          x = lx,
           y = top + (LINE_LABEL - gfx.height("label")) // 2,
           w = room, text = it.label, role = "label" })
       end
@@ -798,7 +876,7 @@ rebuild = function()
       --
       if it.note then
         page:add(ui.label{
-          x = cx + 1 + ROW_IN,
+          x = lx,
           y = top + LINE_LABEL + (LINE_NOTE - gfx.height("ui")) // 2,
           w = room, text = it.note, color = theme.text_dim, role = "ui" })
       end
@@ -815,6 +893,40 @@ rebuild = function()
     card.h = y - card.y
     cards[#cards + 1] = card
   end
+
+  --
+  -- Where File types' choices are kept, under the last card, as the drawing
+  -- says it: only what differs from the default, so a home carried to
+  -- another machine takes its choices and nothing else.
+  --
+  if made_by_applications then
+    --
+    -- How many rows, and where the first choice is, in the window's points:
+    -- for the display harness, which can type and cannot aim.
+    --
+    local n, first = 0, nil
+
+    for _, g in ipairs(groups) do n = n + #g.items end
+
+    for _, c in ipairs(page.children) do
+      if not first and c.choices then first = c end
+    end
+
+    print(("preferences: file types, %d rows%s"):format(n,
+          first and (", a choice at %d,%d"):format(
+            SIDE + first.x + first.w // 2, first.y + first.h // 2) or ""))
+
+    local words = types.CHOICES .. " - only the choices that differ from "
+                  .. "the default"
+
+    if #groups == 0 then words = "No type is called that." end
+
+    page:add(ui.label{ x = cx + 4, y = y + 6, w = width,
+                       text = words, color = theme.text_dim, role = "ui" })
+    y = y + 6 + gfx.height()
+  end
+
+  page_h = y + scroll + BODY_TOP
 
   win:paint()
 end

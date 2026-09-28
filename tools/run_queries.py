@@ -203,6 +203,15 @@ def main():
             'if x == "pdf" or x == "compress" or x == "3d" then n = n + 1 end end '
             'print("K-KITS", n)',
 
+            # **What an application opens, from its header** (`roadmap.md`
+            # 6z): Photo's three types, Video's film and Play's - a program
+            # - in the attributes the store reports, and nothing for an
+            # application that says nothing.
+            'local function o(p) return table.concat((fs.getattr(p) or {}).opens or {}, " ") end '
+            'print("K-OPENS", o("/Kosmos/Apps/photo.lua"), o("/Kosmos/Apps/video.lua"), '
+            'o("/Kosmos/Programs/play.lua"), o("/Kosmos/Apps/snes.lua"), '
+            '(fs.getattr("/Kosmos/Apps/calc.lua") or {}).opens == nil)',
+
             # **The Deskbar's menu as it ships** (`roadmap.md` 6zd): a folder
             # a section, laid out from each application's header - Tracker a
             # launcher in Applications, starting its whole path with its own
@@ -313,6 +322,10 @@ def main():
              "one folder and no path as a name"),
             ("K-KITS", "3",
              "/Kosmos/Kits did not list the image's kits - pdf, compress, 3d"),
+            ("K-OPENS", "png jpg jpeg mp4 mp4 sfc smc true",
+             "an application's `kosmos: opens` did not reach its attributes - "
+             "Photo's three, Video's and Play's film, the Super Nintendo's "
+             "cartridges - or one that declares nothing had some"),
             ("K-DESKBAR", "Applications,Demos,Preferences,System launcher "
                           "/Kosmos/Apps/tracker.lua App_Tracker directory "
                           "launcher true true true",

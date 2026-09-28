@@ -51,6 +51,13 @@ settings.CATEGORIES = {
   { id = "network",    name = "Network",     icon = "network" },
   { id = "keyboard",   name = "Keyboard",    icon = "keyboard" },
   { id = "startup",    name = "Startup",     icon = "startup" },
+  --
+  -- **File types** (`roadmap.md` 6z): what opens what, whose rows are not
+  -- here - every type an application says it opens, from the applications
+  -- themselves (`filetypes.page`), so a new one brings its own.
+  --
+  { id = "filetypes",  name = "File types",  icon = "document",
+    from_applications = true },
   { id = "datetime",   name = "Date & Time", icon = "datetime",
     gap_after = true },
   { id = "system",     name = "System",      icon = "system" },
@@ -323,6 +330,10 @@ end
 function settings.set(it, value, read, write)
   read = read or fs.read
   write = write or fs.write
+
+  -- A row that knows how it is kept - a file type's choice, made for every
+  -- spelling of the type (`filetypes.page`).
+  if it and it.set then return it.set(value) end
 
   if not it or not it.file or not it.key then return false, "not stored" end
 

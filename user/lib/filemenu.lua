@@ -24,6 +24,9 @@
 --   "folder"    a folder in a window           `pinned`: already a place
 --   "file"      a file                         `opener`: what opens it
 --   "lua"       a Lua file, which Open runs
+--
+--   and on both, `with`: every application that opens it, the default
+--   first, as `{ program = "video", name = "Video" }` (`roadmap.md` 6z)
 --   "launcher"  a launcher
 --   "trash"     the Trash, in a window or in the sidebar
 --   "several"   more than one thing selected   `count`
@@ -79,22 +82,42 @@ function MENUS.folder(t)
   return joined({ item("open", "Open"), SEP, pin_item(t) }, tail(t))
 end
 
+--
+-- **Open with**, a submenu of every application that opens the file, the
+-- default first and saying so (`roadmap.md` 6z). For this once: it changes
+-- nothing, since what opens a type is one setting, in Preferences' File
+-- types and in Info. Not offered when nothing opens it.
+--
+local function open_with(t)
+  local sub = {}
+
+  for i, one in ipairs(t.with or {}) do
+    sub[#sub + 1] = { id = "open_with", text = one.name,
+                      hint = (i == 1) and "default" or nil,
+                      program = one.program }
+  end
+
+  if #sub == 0 then return nil end
+
+  return { id = "open_with", text = "Open with", submenu = sub }
+end
+
 -- Open names what it will open the file in, so there is no guessing; with
 -- nothing that opens it, Open is there and dim - the file exists, and
--- saying nothing claims it is the menu's job (6z makes that rarer).
+-- saying nothing claims it is the menu's job.
 function MENUS.file(t)
   local open = t.opener and item("open", "Open", t.opener)
                or item("open", "Open", "nothing opens it", true)
 
-  return joined({ open }, tail(t))
+  return joined({ open, open_with(t) }, tail(t))
 end
 
 -- Opening a Lua file runs it, so the menu says Run; Edit beside it is the
 -- only way to change one, and is offered only here and on a launcher, where
 -- it does something Open does not.
 function MENUS.lua(t)
-  return joined({ item("open", "Run"), item("edit", "Edit", "Editor") },
-                tail(t))
+  return joined({ item("open", "Run"), item("edit", "Edit", "Editor"),
+                  open_with(t) }, tail(t))
 end
 
 function MENUS.launcher(t)

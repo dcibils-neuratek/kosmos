@@ -388,7 +388,7 @@ end
 
 -- What Kosmos can actually tell apart, and nothing else. An entry here for
 -- a distinction the system cannot make would be a picture that lies about
--- what it knows - which is the same rule `filetypes.by_extension` follows
+-- what it knows - which is the same rule `kosmos: opens` in a header follows
 -- and for the same reason.
 local ICONS = {
   directory = "Folder_generic",

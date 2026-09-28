@@ -8,9 +8,77 @@
 --
 -- Pure Lua over two tables, so it needs no machine.
 --
---   build/host/lua tools/test_filetypes.lua
+--   build/host/lua tools/test_filetypes.lua user/bin/apps/*.lua \
+--       user/bin/apps/*/*.lua user/bin/programs/*.lua
 
 local types = dofile("user/lib/filetypes.lua")
+
+--
+-- **The store, as the machine's serves it**: the applications and programs
+-- in this tree, each reporting what its header says it opens - read here
+-- the way `binfs.c` reads it, the opening comment block and no further. So
+-- what is checked below is what the tree declares, not a table kept beside
+-- it (`roadmap.md` 6z). An application in a folder of its own is served by
+-- its main file's name, as `progs2c.py` serves it.
+--
+-- The files, as the Makefile hands them over: the host's Lua has no way
+-- to list a directory.
+local STORE = { ["/Kosmos/Apps"] = {}, ["/Kosmos/Programs"] = {} }
+
+for _, file in ipairs(arg) do
+  local dir, name = file:match("^user/bin/(%a+)/(.+)%.lua$")
+  local store = (dir == "apps") and STORE["/Kosmos/Apps"]
+                or (dir == "programs") and STORE["/Kosmos/Programs"]
+
+  -- `doom/doom.lua` is served as `doom.lua`; `doom/doomgame.lua` is not
+  -- served at all.
+  local folder, main = (name or ""):match("^([^/]+)/([^/]+)$")
+
+  if store and name and (not folder or folder == main) then
+    store[(main or name) .. ".lua"] = file
+  end
+end
+
+local function opens_of(file)
+  local words = nil
+
+  for line in io.lines(file) do
+    if line ~= "" and line:sub(1, 2) ~= "--" then break end
+
+    local said = line:match("kosmos:%s*opens%s+(.*)$")
+
+    if said then
+      for w in said:lower():gmatch("[%w_]+") do
+        words = words or {}
+        words[#words + 1] = w
+      end
+    end
+  end
+
+  return words
+end
+
+-- A home with no choices in it, unless a check below makes one.
+local saved = {}
+
+fs = {
+  list = function(dir)
+    local names = {}
+
+    for name in pairs(STORE[dir] or {}) do names[#names + 1] = name end
+
+    return names
+  end,
+  getattr = function(path)
+    local dir, name = path:match("^(.*)/([^/]+)$")
+    local file = STORE[dir] and STORE[dir][name]
+
+    return file and { opens = opens_of(file) } or nil
+  end,
+  read = function(path) return saved[path] end,
+  write = function(path, value) saved[path] = value return true end,
+  send = function() return true end,           -- the folder, made
+}
 
 local checks, failed = 0, 0
 
@@ -158,6 +226,88 @@ check(types.opener("/Home/magicword-clip.mp4") == "video",
       "an .mp4 is not opened by Video")
 check(types.opener("/Home/think.JPG") == "photo" and types.opener("/Home/a.jpeg") == "photo",
       "a .jpg or .jpeg is not opened by Photo")
+
+--------------------------------------------------------------------------
+-- What opens what, from the headers (`roadmap.md` 6z).
+--------------------------------------------------------------------------
+
+check(types.opener("/Home/hello.wav") == "music"
+      and types.opener("/Home/song.mp3") == "music",
+      "a .wav and a .mp3 are not the Music's - the table this replaced sent a "
+      .. ".wav to Play, which plays films")
+check(types.opener("/Home/doom1.wad") == "doom"
+      and types.opener("/Home/roms/zelda.sfc") == "snes"
+      and types.opener("/Home/roms/mario.SMC") == "snes",
+      "a Doom level and a cartridge are not opened by the applications that "
+      .. "say they open them")
+check(types.opener("/Home/notes.md") == "reader"
+      and types.opener("/Home/page.html") == "browser"
+      and types.opener("/Home/Desktop/Drive", { kind = "launcher" })
+          == "launcheredit",
+      "a note, a page and a launcher are not the Reader's, the Browser's and "
+      .. "the launcher editor's")
+
+local film = types.openers("mp4")
+
+check(table.concat(film, ",") == "video,play",
+      "a film is not opened by Video, then Play - an application before a "
+      .. "program: " .. table.concat(film, ","))
+
+-- A choice, and it is kept only while it differs from the default.
+check(types.choose("mp4", "play") and types.opener("/Home/film.mp4") == "play"
+      and saved[types.CHOICES].mp4 == "play",
+      "choosing Play for a film did not make it what opens one")
+check(types.choose("mp4", "video") and types.opener("/Home/film.mp4") == "video"
+      and saved[types.CHOICES].mp4 == nil,
+      "choosing the default back did not take the choice out of the file")
+check(not types.choose("mp4", "doom"),
+      "Doom was allowed to be what opens a film, which it says nothing of")
+
+-- A choice for a program that no longer opens the type is not followed.
+saved[types.CHOICES] = { mp4 = "gone" }
+check(types.opener("/Home/film.mp4") == "video",
+      "a choice naming a program that does not open the type was followed")
+saved[types.CHOICES] = nil
+
+-- The File types page: the drawing's groups, a row a type - two spellings
+-- of one sharing it - and a choice only where there is one.
+local page = types.page()
+local group_names, by = {}, {}
+
+for _, g in ipairs(page) do
+  group_names[#group_names + 1] = g.name
+
+  for _, r in ipairs(g.items) do by[r.tag] = r end
+end
+
+check(table.concat(group_names, ",") == "Documents,Pictures,Sound and film,Games,Kosmos",
+      "the page's groups are not the drawing's: " .. table.concat(group_names, ","))
+check(by[".jpg"] and by[".jpg"].note == ".jpeg the same" and not by[".jpeg"]
+      and by[".jpg"].kind == "value" and by[".jpg"].value == "Photo",
+      "a .jpeg is not in the .jpg's row, which names Photo")
+check(by[".sfc"] and by[".sfc"].note == ".smc the same"
+      and by[".sfc"].value == "Super Nintendo",
+      "a cartridge's two spellings are not one row, the Super Nintendo's")
+check(by[".mp4"] and by[".mp4"].kind == "choice"
+      and by[".mp4"].note == "Play can open it too"
+      and by[".mp4"].choices[1][1] == "video" and by[".mp4"].choices[2][2] == "Play",
+      "a film's row is not a choice of Video, then Play, saying Play can too")
+check(by[".lua"] and by[".lua"].note == "Opening runs it; this is what Edit uses",
+      "a Lua file's row does not say that opening one runs it")
+check(by[".mp4"].set("play") and saved[types.CHOICES].mp4 == "play"
+      and by[".mp4"].set("video") and saved[types.CHOICES].mp4 == nil,
+      "a choice made in the row is not the one kept, or the default not "
+      .. "taken back out")
+
+local found = types.page(nil, nil, "photo")
+local tags = {}
+
+for _, g in ipairs(found) do
+  for _, r in ipairs(g.items) do tags[#tags + 1] = r.tag end
+end
+
+check(table.concat(tags, ",") == ".png,.jpg",
+      "finding \"photo\" is not the two rows Photo opens: " .. table.concat(tags, ","))
 
 -- What a kind of file is called, for Info (`roadmap.md` 6za): words, and
 -- the extension named by itself where there are none.

@@ -2539,6 +2539,7 @@ processors, and still what follows USB:
    of `devproto.h`'s layouts. **And Tracker could have its Modified column
    now** - it had none because there was no date to put in it; not asked
    for, so not built.
+   **(c) DONE on 28 September** (`testing.md` 18.245) - 6z below.
 
 6z. **WANTED on 27 September - what opens what, and a Preferences page for
    it.** Diego, on the M700 with 0.10.174, a film in his home refused -
@@ -2563,6 +2564,22 @@ processors, and still what follows USB:
    as its step c). The
    first step while it is drawn: `mp4` to Video and `jpg` to Photo in the
    table, so a film and a photograph open today - **DONE** (18.235).
+   **DONE on 28 September** (`testing.md` 18.245), as 6za's step (c): each
+   application says `-- kosmos: opens ...` - Play, a program, too - and
+   `binfs` reports it; `filetypes` gathers the answer from `/Kosmos/Apps`
+   and `/Kosmos/Programs` and the hand-written table is gone (it sent a
+   `.wav` to Play, which plays films); the default for a type is the one in
+   `/Kosmos/Apps` first, then the first by name, and a person's choice,
+   kept in `/Home/Preferences/filetypes` only where it differs, wins while
+   the program still opens the type. **Open with** in Tracker's right
+   click is for that once; **Info's Opens with** and **Preferences' File
+   types** set the one choice - a page with the drawing's groups, a type's
+   two spellings sharing a row, a Find field, scrolling with the wheel.
+   **What each declares is what it is the natural opener of**: the Editor
+   opens `.txt`, `.lua` and `.conf`, and not `.md` or `.html` - with both,
+   the first-by-name rule would have made it the default for a note and a
+   page, which the Reader and the Browser open now. Edit is still there for
+   any text. `/Home/Apps` joins the stores when applications live there.
 
 6y. **FOUND on 27 September, on the M700 with 0.10.173 - a USB drive's
    folders would not open, and `/Home`'s partition read "Untitled".** Diego,

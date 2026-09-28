@@ -1,4 +1,5 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- kosmos: opens mp4
 --
 -- `play <film>` - a window with a film in it.
 --

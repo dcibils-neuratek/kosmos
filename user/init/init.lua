@@ -1135,12 +1135,13 @@ local function new_namespace()
   --
   local BIN_NAME_MAX = 64                 -- has to match binproto.h
   local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
-  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c32"
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c32c40"
 
   assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
-  local BIN_DATA = 24 + 128 + 32 + 1  -- past the header and the icon, 1-based
+  -- Past the header, the icon and what it opens, 1-based.
+  local BIN_DATA = 24 + 128 + 32 + 40 + 1
   local BIN_OPS = { list = 1, read = 2, getattr = 3 }
   local BIN_ERRORS = {
     [1] = "no such program",
@@ -1168,7 +1169,7 @@ local function new_namespace()
     if #reply < BIN_DATA then return nil, "a /bin reply of the wrong size" end
 
     local err, count, size, length, more, windowed,
-          kind, section, n1, n2, n3, n4, n5, n6, icon =
+          kind, section, n1, n2, n3, n4, n5, n6, icon, opens =
       string.unpack(BIN_HEAD, reply)
 
     if err ~= 0 then
@@ -1232,6 +1233,18 @@ local function new_namespace()
         type = launcher and "launcher" or nil,
         program = launcher and ("/Kosmos/Apps/" .. starts) or nil,
         args = launcher and "" or nil,
+        -- The types it opens (`kosmos: opens`), each word lowercased, or
+        -- nil when it declares none.
+        opens = (function()
+          local out = nil
+
+          for word in trim(opens):lower():gmatch("[%w_]+") do
+            out = out or {}
+            out[#out + 1] = word
+          end
+
+          return out
+        end)(),
       } }
     end
 

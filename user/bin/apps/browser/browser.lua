@@ -2,6 +2,7 @@
 -- kosmos: icon App_NetSurf
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: needs network
+-- kosmos: opens html
 --
 -- A web browser.
 --

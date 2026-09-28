@@ -3,6 +3,7 @@
 -- kosmos: application
 -- kosmos: icon App_Generic
 -- kosmos: section demos
+-- kosmos: opens sfc smc
 --
 --   wm snes                        the first ROM in /Home/roms/snes
 --   wm snes:Top Gear 2.sfc         that one, from the same directory

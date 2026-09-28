@@ -21,51 +21,115 @@
 
 local filetypes = {}
 
--- extension -> the program that opens it.
 --
--- Deliberately short. Every entry is a claim that an application handles
--- something, and an entry for a program that does not exist is a file that
--- appears to open and does not.
-filetypes.by_extension = {
-  lua  = "editor",
-  txt  = "editor",
-  conf = "editor",
+-- **What opens what, from the applications themselves** (`roadmap.md` 6z,
+-- `docs/rightclick.html`). Each says it in its header - `-- kosmos: opens
+-- png jpg jpeg` - as it says its icon; the store serving it reports the
+-- words (`opens`), and this gathers them from where applications live. The
+-- table this used to be, written by hand, is gone: it said `.wav` opened in
+-- Play, which plays films, and nothing at all for a Doom level or a
+-- cartridge that Doom and the Super Nintendo open.
+--
+-- `/Kosmos/Programs` as well as `/Kosmos/Apps`: Play is a program and opens
+-- a film in a window of its own. `/Home/Apps` joins the list when
+-- applications are installed there.
+--
+-- **A launcher** is a type too - `kind_of` says so from its attributes - and
+-- the launcher editor opens it for editing; *starting* one is what Tracker
+-- and the Deskbar do before they ever ask here.
+--
+filetypes.STORES = { "/Kosmos/Apps", "/Kosmos/Programs" }
 
-  md   = "reader",
+--
+-- **A person's choice for a type**, where more than one application opens it
+-- - written only when it differs from the default, so a home carried to
+-- another machine takes its choices and nothing else. One setting, shown in
+-- Preferences' File types and in Info; Open with in a right click is for
+-- that once and changes nothing.
+--
+filetypes.CHOICES = "/Home/Preferences/filetypes"
 
-  png  = "photo",
-  pdf  = "pdfview",
+--
+-- Type -> the programs that open it, the default first: the ones in
+-- `/Kosmos/Apps` before the ones in `/Kosmos/Programs`, and in each by name,
+-- so the answer never depends on the order anything was found in.
+--
+-- `store` answers `list` and `getattr`: `fs`, or a table in a test. Made once
+-- a process for `fs` - the applications in the image do not change while it
+-- runs - and each time for anything else.
+--
+local gathered = nil
 
-  -- A film and a photograph, which Video and Photo open and nothing here
-  -- said so: "magicword-clip.mp4: nothing claims a .mp4 file" (Diego, on
-  -- the M700, 27 September). The first step of `roadmap.md` 6z, where an
-  -- application says what it opens in its own header and this table goes.
-  mp4  = "video",
-  jpg  = "photo",
-  jpeg = "photo",
+function filetypes.table(store)
+  if not store and gathered then return gathered end
 
-  html = "browser",
+  local from = store or fs
+  local out = {}
 
-  mp3  = "music",
-  wav  = "play",
+  for _, dir in ipairs(filetypes.STORES) do
+    local names = from.list(dir) or {}
 
-  --
-  -- Not an extension, and the first entry here that never was one.
-  --
-  -- A launcher's type comes from its attributes rather than its name -
-  -- `kind_of` below - because the name is the label somebody sees in the
-  -- menu and on the desktop, and `Drive.launcher` under an icon is the
-  -- machinery showing through. This is the type-to-program half of that.
-  --
-  -- **`launcheredit` edits one; it does not open one.** Opening a launcher
-  -- means starting what it points at, which is what Tracker does when you
-  -- double-click it and what the Deskbar does when you choose it - both
-  -- test `kind == "launcher"` before they ever ask here. So this is the
-  -- answer to "what handles this type", which is the question a Get Info or
-  -- a right-click asks.
-  --
-  launcher = "launcheredit",
-}
+    table.sort(names)
+
+    for _, file in ipairs(names) do
+      local attrs = from.getattr(dir .. "/" .. file) or {}
+      local short = tostring(file):gsub("%.lua$", "")
+
+      for _, ext in ipairs(attrs.opens or {}) do
+        ext = tostring(ext):lower()
+        out[ext] = out[ext] or {}
+        out[ext][#out[ext] + 1] = short
+      end
+    end
+  end
+
+  if not store then gathered = out end
+
+  return out
+end
+
+-- The programs that open a type, the default first; empty when none does.
+function filetypes.openers(ext, store)
+  return filetypes.table(store)[tostring(ext or ""):lower()] or {}
+end
+
+-- The choices a person has made, `{ mp4 = "play" }`; `read` is `fs.read`.
+function filetypes.choices(read)
+  local saved = (read or fs.read)(filetypes.CHOICES)
+
+  return type(saved) == "table" and saved or {}
+end
+
+--
+-- **Choose what opens a type**: written when it is not the default and
+-- taken out when it is, as every setting here is kept. False and why when
+-- the program does not open that type.
+--
+function filetypes.choose(ext, program, store, read, write)
+  read, write = read or fs.read, write or fs.write
+  ext = tostring(ext or ""):lower()
+
+  local list = filetypes.openers(ext, store)
+  local known = false
+
+  for _, one in ipairs(list) do
+    if one == program then known = true end
+  end
+
+  if not known then
+    return nil, ("%s does not open .%s"):format(tostring(program), ext)
+  end
+
+  local saved = filetypes.choices(read)
+
+  saved[ext] = (program ~= list[1]) and program or nil
+
+  if not store and not fs.getattr("/Home/Preferences") then
+    fs.send("/Home/Preferences", { type = "mkdir" })
+  end
+
+  return write(filetypes.CHOICES, saved)
+end
 
 -- What a path is, as a type name rather than a program.
 function filetypes.kind_of(path, attrs)
@@ -154,6 +218,168 @@ function filetypes.describe(path, attrs)
 end
 
 --
+-- **The File types page** (`roadmap.md` 6z, `docs/rightclick.html`): every
+-- type something opens, as Preferences' rows - in the drawing's groups,
+-- each type's name with what else opens it under it, and a choice at the
+-- right where there is one, or the one application's name where there is
+-- not. Two types that are one thing - `.jpg` and `.jpeg`, a cartridge's
+-- two spellings - share a row, and a choice in it is made for both.
+--
+-- `filter` keeps the rows whose type, name or applications have it in them,
+-- for the page's Find field. The rows are Preferences' own shape, with a
+-- `tag` - the type, in its own column - and a `set` that makes the choice
+-- through `choose` rather than a key written by hand.
+--
+filetypes.GROUPS = {
+  { "Documents", { "txt", "md", "pdf", "html", "lua", "conf" } },
+  { "Pictures", { "png", "jpg", "jpeg" } },
+  { "Sound and film", { "mp3", "wav", "mp4" } },
+  { "Games", { "wad", "sfc", "smc" } },
+  { "Kosmos", { "zip", "launcher" } },
+}
+
+-- What only a sentence says about a type: opening a Lua file runs it.
+local TOLD = {
+  lua = "Opening runs it; this is what Edit uses",
+  launcher = "Opening starts it; Edit uses this",
+  zip = "Opening extracts it",
+}
+
+function filetypes.page(store, read, filter)
+  local all = filetypes.table(store)
+  local placed, out = {}, {}
+  local want = filter and tostring(filter):lower():gsub("^%s*%.?", "")
+                                            :gsub("%s+$", "") or ""
+
+  local function row(ext)
+    local list = all[ext]
+    local names = {}
+
+    for i, program in ipairs(list) do names[i] = filetypes.app_name(program) end
+
+    local others = {}
+
+    for i = 2, #names do others[#others + 1] = names[i] end
+
+    return {
+      category = "filetypes", tag = "." .. ext, keys = { ext },
+      label = filetypes.names[ext] or (ext:upper() .. " file"),
+      notes = { TOLD[ext], (#others > 0)
+                and (table.concat(others, " and ") .. " can open it too")
+                or nil },
+      kind = (#list > 1) and "choice" or "value",
+      file = filetypes.CHOICES, key = ext, default = list[1],
+      value = names[1], openers = list, names = names,
+    }
+  end
+
+  local function same(a, b)
+    return a.label == b.label and table.concat(a.openers, ",")
+           == table.concat(b.openers, ",")
+  end
+
+  local function wanted(r)
+    if want == "" then return true end
+
+    local words = { r.label:lower() }
+
+    for _, k in ipairs(r.keys) do words[#words + 1] = k end
+    for _, n in ipairs(r.names) do words[#words + 1] = n:lower() end
+
+    for _, w in ipairs(words) do
+      if w:find(want, 1, true) then return true end
+    end
+
+    return false
+  end
+
+  local function finish(r)
+    -- The second spelling of a shared row, said first, as the drawing does.
+    local lines = {}
+
+    if #r.keys > 1 then
+      local also = {}
+
+      for i = 2, #r.keys do also[#also + 1] = "." .. r.keys[i] end
+
+      lines[#lines + 1] = table.concat(also, ", ") .. " the same"
+    end
+
+    for i = 1, 2 do
+      if r.notes[i] then lines[#lines + 1] = r.notes[i] end
+    end
+
+    r.note = (#lines > 0) and table.concat(lines, " · ") or nil
+    r.notes = nil
+
+    if r.kind == "choice" then
+      r.choices = {}
+
+      for i, program in ipairs(r.openers) do
+        r.choices[i] = { program, r.names[i] }
+      end
+    end
+
+    local keys = r.keys
+
+    r.set = function(program)
+      for _, k in ipairs(keys) do
+        local ok, why = filetypes.choose(k, program, store, read)
+
+        if not ok then return nil, why end
+      end
+
+      return true
+    end
+
+    return r
+  end
+
+  local function group(name, exts)
+    local rows = {}
+
+    for _, ext in ipairs(exts) do
+      if all[ext] and not placed[ext] then
+        placed[ext] = true
+
+        local r = row(ext)
+        local last = rows[#rows]
+
+        if last and same(last, r) then
+          last.keys[#last.keys + 1] = ext
+        else
+          rows[#rows + 1] = r
+        end
+      end
+    end
+
+    local kept = {}
+
+    for _, r in ipairs(rows) do
+      if wanted(r) then kept[#kept + 1] = finish(r) end
+    end
+
+    for _, r in ipairs(kept) do r.group = name end
+
+    if #kept > 0 then out[#out + 1] = { name = name, items = kept } end
+  end
+
+  for _, g in ipairs(filetypes.GROUPS) do group(g[1], g[2]) end
+
+  -- Whatever an application opens that no group names, last.
+  local rest = {}
+
+  for ext in pairs(all) do
+    if not placed[ext] then rest[#rest + 1] = ext end
+  end
+
+  table.sort(rest)
+  group("Other", rest)
+
+  return out
+end
+
+--
 -- **An opener by the name its window has**, for the right click's "Open -
 -- Video" and Info's "Opens with". A program's name is a file's, and `pdfview`
 -- is not what anybody calls it. 6z replaces this with what each
@@ -163,6 +389,7 @@ local APP_NAMES = {
   editor = "Editor", reader = "Reader", photo = "Photo", pdfview = "PDF",
   video = "Video", browser = "Browser", music = "Music", play = "Play",
   launcheredit = "Launcher editor", terminal = "Terminal",
+  snes = "Super Nintendo", doom = "Doom",
 }
 
 function filetypes.app_name(program)
@@ -172,10 +399,20 @@ function filetypes.app_name(program)
          or (program:sub(1, 1):upper() .. program:sub(2))
 end
 
-function filetypes.opener(path, attrs)
+function filetypes.opener(path, attrs, store, read)
   local kind = filetypes.kind_of(path, attrs)
+  local list = kind and filetypes.openers(kind, store) or {}
 
-  return kind and filetypes.by_extension[kind] or nil
+  if #list == 0 then return nil end
+
+  -- The person's choice, while it still opens the type.
+  local chosen = filetypes.choices(read)[kind]
+
+  for _, one in ipairs(list) do
+    if one == chosen then return chosen end
+  end
+
+  return list[1]
 end
 
 --
@@ -226,7 +463,7 @@ function filetypes.how_to_open(path, attrs, source)
     return { program = "terminal", args = path }
   end
 
-  local program = kind and filetypes.by_extension[kind]
+  local program = kind and filetypes.opener(path, attrs)
 
   return program and { program = program, args = path } or nil
 end

@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_StyledEdit
+-- kosmos: opens txt lua conf
 -- A text editor, in a window.
 --
 --   wm editor                        a new file

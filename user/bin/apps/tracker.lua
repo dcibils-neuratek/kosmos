@@ -2574,6 +2574,19 @@ local function menu_of(items, act)
       out[#out + 1] = { separator = true }
     elseif it.id == "icon_sizes" then
       for _, size in ipairs(icons:items()) do out[#out + 1] = size end
+    elseif it.submenu then
+      -- Open with: each row opens the file in its program, this once.
+      local sub = {}
+
+      for _, one in ipairs(it.submenu) do
+        local fn = act[one.id]
+
+        sub[#sub + 1] = { text = one.text, hint = one.hint,
+                          disabled = (not fn) or nil,
+                          on_choose = fn and function() fn(one.program) end }
+      end
+
+      out[#out + 1] = { text = it.text, submenu = sub }
     else
       local fn = act[it.id]
 
@@ -2610,10 +2623,25 @@ function context_menu(e, sx, sy)
 
     if t.what == "folder" then
       t.pinned = placelib.find(placelib.read(fs), path, side.volumes()) ~= nil
-    elseif t.what == "file" then
+    elseif t.what == "file" or t.what == "lua" then
       local program = types.opener(path, e.attrs)
 
       t.opener = program and types.app_name(program)
+
+      -- Every application that opens it, the default first (`roadmap.md`
+      -- 6z) - the one a person chose for the type, when they have.
+      local kind = types.kind_of(path, e.attrs)
+      local list = kind and types.openers(kind) or {}
+
+      t.with = {}
+
+      if program then t.with[1] = { program = program, name = t.opener } end
+
+      for _, one in ipairs(list) do
+        if one ~= program then
+          t.with[#t.with + 1] = { program = one, name = types.app_name(one) }
+        end
+      end
     end
   end
 
@@ -2654,6 +2682,17 @@ function context_menu(e, sx, sy)
     unpin = e and function() unpin(path_of(e)) end,
     info = function()
       open_info(e and selected_paths() or { where })
+    end,
+    -- In the program chosen from Open with, this once.
+    open_with = e and function(program)
+      local ok, why = fs.send("/Running/wm", { type = "launch",
+                                               program = program,
+                                               args = path_of(e) })
+
+      status.text = ok and ("opened " .. e.name .. " in "
+                            .. types.app_name(program))
+                    or ("could not open it: " .. tostring(why))
+      win.dirty = true
     end,
   }
 

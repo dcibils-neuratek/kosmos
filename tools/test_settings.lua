@@ -49,7 +49,8 @@ for _, it in ipairs(settings.ITEMS) do
 end
 
 for _, c in ipairs(settings.CATEGORIES) do
-  check(#settings.groups(c.id) > 0,
+  -- File types' rows are the applications' (`filetypes.page`), not ITEMS.
+  check(c.from_applications or #settings.groups(c.id) > 0,
         ("category %q has no settings in it, so the sidebar would show an "
          .. "empty page"):format(c.id))
 end

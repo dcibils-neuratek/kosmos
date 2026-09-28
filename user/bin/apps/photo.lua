@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_ShowImage
+-- kosmos: opens png jpg jpeg
 -- A picture, in a window.
 --
 --   wm photo                     the test pattern

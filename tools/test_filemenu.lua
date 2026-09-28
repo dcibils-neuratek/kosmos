@@ -84,6 +84,29 @@ check(find(lua, "open").text == "Run" and find(lua, "edit"),
 check(not find(film, "edit"),
       "Edit is not offered where it would do what Open does")
 
+-- Open with (`roadmap.md` 6z): every application that opens it, the default
+-- first and saying so, after Open - and not there when nothing opens it.
+local with = { { program = "video", name = "Video" },
+               { program = "play", name = "Play" } }
+local chooser = find(filemenu.items{ what = "file", opener = "Video",
+                                     with = with }, "open_with")
+
+check(chooser and chooser.submenu and #chooser.submenu == 2
+      and chooser.submenu[1].text == "Video"
+      and chooser.submenu[1].hint == "default"
+      and chooser.submenu[1].program == "video"
+      and chooser.submenu[2].program == "play" and not chooser.submenu[2].hint,
+      "a film's Open with is not Video, the default, then Play")
+check(ids(filemenu.items{ what = "file", opener = "Video", with = with })
+      == "open open_with - rename cut copy - delete - info",
+      "Open with is not straight after Open")
+check(not find(odd, "open_with"),
+      "a file nothing opens offers an Open with with nothing in it")
+check(find(filemenu.items{ what = "lua",
+                           with = { { program = "editor", name = "Editor" } } },
+           "open_with"),
+      "a Lua file offers no Open with")
+
 local launcher = filemenu.items{ what = "launcher" }
 
 check(find(launcher, "open") and find(launcher, "edit")

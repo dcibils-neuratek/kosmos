@@ -3,6 +3,7 @@
 -- kosmos: application
 -- kosmos: icon App_Generic
 -- kosmos: section demos
+-- kosmos: opens wad
 --
 --   wm doom                        /Home/doom1.wad
 --   wm doom:/Temporary/other.wad   somewhere else

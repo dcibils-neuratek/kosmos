@@ -2,6 +2,7 @@
 -- kosmos: application
 -- kosmos: icon Prefs_Appearance
 -- kosmos: needs screen
+-- kosmos: opens launcher
 -- Edit a launcher: what it starts, with what arguments, under what picture.
 --
 --   launcheredit /Home/Deskbar/Demos/doom

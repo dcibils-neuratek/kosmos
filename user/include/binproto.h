@@ -69,6 +69,7 @@
 #define BIN_WORD_MAX    16u       /* a kind, a section, one `needs` word */
 #define BIN_NEEDS_MAX    6u       /* authorities one program may declare */
 #define BIN_ICON_MAX    32u       /* `Misc_Deskbar_Group` is eighteen */
+#define BIN_OPENS_MAX   40u       /* `kosmos: opens`, a line of types */
 #define BIN_CHUNK     1792u       /* source bytes, or 28 names, per reply */
 
 struct bin_request {
@@ -98,6 +99,12 @@ struct bin_reply {
      * an asset's name without its `.png`. Wider than a word because Haiku's
      * names are, and blank when a program declares none. */
     char     icon[BIN_ICON_MAX];
+
+    /* What it opens - `kosmos: opens png jpg jpeg`, the types a file of
+     * which it is started with (`roadmap.md` 6z) - as the line says it,
+     * words apart. Blank when it declares none. Programs as well as
+     * applications: `play` opens a film in a window of its own. */
+    char     opens[BIN_OPENS_MAX];
 
     uint8_t  data[BIN_CHUNK];
 };

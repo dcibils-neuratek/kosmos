@@ -8440,6 +8440,187 @@ def check_deskbar_layers(guest):
     return 7
 
 
+def check_file_types(guest):
+    """**What opens what, chosen in Preferences and shown in Info**
+    (`roadmap.md` 6z, `docs/rightclick.html`). Diego: "file associations
+    with programs is nowhere to be found", "A preference panel should be
+    added for this to be configurable as well for all file types and what
+    programs handle those files".
+
+    Each application says what it opens in its header; the File types page
+    lists every type something opens. Opened on it with `--find mp4`, as a
+    person typing in its Find field would:
+
+      it says it shows one row, and where its choice is;
+      Play chosen there for a film is what the page says it chose, and what
+      `/Home/Preferences/filetypes` keeps - only that, the one choice that
+      differs from the default;
+      Info on a film then says it opens with Play, of Video and Play.
+
+    **The control**: with the choice taken out of the file, Info on the same
+    film says Video, the default - so it was the choice that Info read.
+
+    And Tracker's right click on the film: Open with, Video the default and
+    then Play, and Play chosen starts Play on it, this once.
+    """
+    guest.type('fs.write("/Home/film.mp4", "a film, as far as its name goes") '
+               'fs.write("/Home/Preferences/filetypes", {}) '
+               'print("types" .. "-set")')
+    guest.wait_for("types-set", "put a film in /Home")
+
+    def stop():
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+    try:
+        mark = len(guest.seen)
+        guest.type("wm preferences:filetypes --find mp4")
+        line = guest.wait_for_line("wm: window Preferences at ",
+                                   "Preferences to open", mark)
+        said = guest.wait_for_line("preferences: file types, ",
+                                   "the File types page to be drawn", mark)
+        found = re.match(r"(\d+) rows, a choice at (\d+),(\d+)", said)
+
+        if not found or found.group(1) != "1":
+            raise Failure("the File types page found for mp4 is not one row "
+                          "with a choice in it: %r" % said)
+
+        x, y = (int(v) for v in re.match(r"(\d+),(\d+)", line).groups())
+        cx, cy = int(found.group(2)), int(found.group(3))
+        time.sleep(1.5)
+        width, height, _ = parse_ppm(guest.screendump())
+
+        def click(px, py):
+            guest.mouse_to(*_to_tablet(px, py, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            time.sleep(0.6)
+
+        before = len(guest.seen)
+        click(x + cx, y + cy)
+        menu = guest.wait_for_line("wm: menu of Preferences at ",
+                                   "the film's choice to open", before)
+        mx, my = (int(v) for v in re.match(r"(\d+),(\d+)", menu).groups())
+        time.sleep(1.0)
+        click(mx + 20, menu_row_middle(my, 2))
+        chose = guest.wait_for_line("preferences: .mp4 opens with ",
+                                    "Play to be chosen for a film", before)
+    finally:
+        stop()
+
+    if chose != "play":
+        raise Failure("choosing Play for a film said %r" % chose)
+
+    guest.type('local t = fs.read("/Home/Preferences/filetypes") or {} '
+               'local n = 0 for _ in pairs(t) do n = n + 1 end '
+               'print("types" .. "-kept", t.mp4, n)')
+    kept = guest.wait_for_line("types-kept\t", "the choice read back")
+
+    if kept.split("\t") != ["play", "1"]:
+        raise Failure("/Home/Preferences/filetypes does not keep Play for a "
+                      "film and nothing else: %r" % kept)
+
+    def info_says():
+        mark = len(guest.seen)
+        guest.type("wm info:/Home/film.mp4")
+
+        try:
+            return guest.wait_for_line("info: .mp4 opens with ",
+                                       "Info to say what opens a film", mark)
+        finally:
+            stop()
+
+    shown = info_says()
+
+    if shown != "play, of video, play":
+        raise Failure("Info on a film, with Play chosen, says %r" % shown)
+
+    guest.type('fs.write("/Home/Preferences/filetypes", {}) '
+               'print("types" .. "-cleared")')
+    guest.wait_for("types-cleared", "take the choice out")
+    shown = info_says()
+
+    if shown != "video, of video, play":
+        raise Failure("Info on a film with nothing chosen says %r - wanted "
+                      "Video, the default" % shown)
+
+    #
+    # **Open with, from Tracker's right click**: on the film, its second
+    # row, and in it Video, the default, then Play - which starts Play on
+    # the film, this once. A folder with only the film in it, so it is the
+    # list's first row.
+    #
+    guest.type('fs.send("/Home/typestest", { type = "mkdir" }) '
+               'fs.write("/Home/typestest/film.mp4", "a film, by its name") '
+               'print("types" .. "-folder")')
+    guest.wait_for("types-folder", "put a film in a folder of its own")
+
+    try:
+        mark = len(guest.seen)
+        guest.type("wm tracker:/Home/typestest")
+        line = guest.wait_for_line("wm: window Tracker at ",
+                                   "Tracker to open on the film", mark)
+        content = guest.wait_for_line("tracker: content at ",
+                                      "Tracker to say where its list is", mark)
+        wx, wy = (int(v) for v in re.match(r"(\d+),(\d+)", line).groups())
+        first_row_y = (int(re.match(r"(\d+)", content).group(1))
+                       + LAYOUT_ROW + 1 + LAYOUT_ROW // 2)
+        time.sleep(2.0)
+        width, height, _ = parse_ppm(guest.screendump())
+
+        def to(px, py):
+            guest.mouse_to(*_to_tablet(px, py, width, height))
+
+        at = len(guest.seen)
+        to(wx + 260, wy + first_row_y)
+        time.sleep(0.3)
+        guest.mouse_button(True, "right")
+        time.sleep(0.1)
+        guest.mouse_button(False, "right")
+        said = guest.wait_for_line("wm: menu of Tracker at ",
+                                   "the film's menu to open", at)
+        mx, my = (int(v) for v in re.match(r"(\d+),(\d+)", said).groups())
+        time.sleep(1.0)
+
+        # Onto Open with, and its submenu opens beside it.
+        sub_at = len(guest.seen)
+        to(mx + 20, menu_row_middle(my, 2))
+        said = guest.wait_for_line("wm: menu of Tracker at ",
+                                   "Open with's submenu to open", sub_at)
+        sx, sy = (int(v) for v in re.match(r"(\d+),(\d+)", said).groups())
+        time.sleep(0.8)
+        to(sx + 20, menu_row_middle(my, 2))
+        time.sleep(0.5)
+        to(sx + 20, menu_row_middle(sy, 2))
+        time.sleep(0.5)
+        guest.mouse_button(True)
+        time.sleep(0.1)
+        guest.mouse_button(False)
+        launched = guest.wait_for_line("wm: launched play -> ",
+                                       "Play to start on the film from Open "
+                                       "with", at)
+
+        if not launched.startswith("true"):
+            raise Failure("Play chosen from Open with did not start: %r"
+                          % launched)
+    finally:
+        stop()
+
+    return 6
+
+
 def check_focus_shown(guest):
     """The Deskbar shows where the focus went, at once.
 
@@ -11027,6 +11208,7 @@ def main():
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
         layers_checks = phase("deskbar layers", check_deskbar_layers)
+        types_checks = phase("file types", check_file_types)
         icon_size_checks = phase("icon sizes", check_icon_sizes)
         desktop_checks = phase("desktop", check_desktop)
         places_checks = phase("places", check_places)
@@ -11094,7 +11276,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks + layers_checks
+             + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks + layers_checks + types_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
              + split_checks + monitor_checks + camera_checks
@@ -11184,6 +11366,8 @@ def main():
           f"{super_drag_checks} on a window moved from anywhere in it with "
           f"Super + Control, its application not hearing the press and the "
           f"Super opening nothing, "
+          f"{types_checks} on what opens what - Play chosen for a film on "
+          f"Preferences' File types, kept alone, and shown in Info - "
           f"{layers_checks} on the Deskbar's menu in two layers - the one "
           f"that ships and the person's merged, a seeded home's copies to the "
           f"Trash once, and a shipped item saved as theirs and hidden, "
