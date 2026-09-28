@@ -2341,6 +2341,11 @@ processors, and still what follows USB:
    step with nothing to rebuild is 9 s. **Found beside it, not done**: the
    x86 kernel's objects (`$(X86_BUILD)/%.c.o`) depend on no stamp at all,
    so a change to `X86_FLAGS` alone rebuilds none of them.
+   **And the list of windows in pages** (`testing.md` 18.256): the dated
+   picture's seventeen windows no longer fitted the `windows` reply, which
+   was dropped, and `tile` and the Deskbar hung waiting for it - found when
+   Groove joined the picture. Six to a page now, and a reply that cannot go
+   is answered with an error instead.
 
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua

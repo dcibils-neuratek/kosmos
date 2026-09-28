@@ -3521,11 +3521,27 @@ end
 -- What belongs in a list of what is running is what is on the screen, and
 -- this process is the only one that knows that.
 --
+--
+-- **A page at a time.** The list was one reply, and a reply is a message:
+-- 2048 bytes, about sixteen windows' worth. On 28 September the dated
+-- picture opened sixteen applications and the Deskbar, the seventeenth did
+-- not fit, the reply was dropped - and `tile` and the Deskbar, each waiting
+-- in `fs.send` for it, waited for ever. So `from` asks for the list from
+-- that place, a page is `WINDOWS_PAGE` long, and `more` says where the next
+-- one starts; `wmproto.windows` puts them together. Six, because a window's
+-- title and its program's path are each allowed to be long.
+--
+local WINDOWS_PAGE = 6
+
 handlers.windows = function(req)
   local out = {}
+  local from = math.max(1, math.floor(tonumber(req.from) or 1))
+  local last = math.min(#windows, from + WINDOWS_PAGE - 1)
 
-  for i, win in ipairs(windows) do
-    out[i] = { handle = win.handle, title = win.title,
+  for i = from, last do
+    local win = windows[i]
+
+    out[#out + 1] = { handle = win.handle, title = win.title,
                focused = (i == #windows) or nil,
 
                -- Who to ask about, and how it draws. `procs` shows this:
@@ -3578,7 +3594,7 @@ handlers.windows = function(req)
     watcher.watching = true
   end
 
-  return { ok = true, windows = out }
+  return { ok = true, windows = out, more = (last < #windows) and (last + 1) or nil }
 end
 
 --
@@ -5752,9 +5768,22 @@ while OUT.running do
 
     -- A handler that took responsibility for its own answer, which `poll`
     -- does when there is nothing to report yet.
+    --
+    -- **And an answer that cannot go becomes one that can.** A reply too
+    -- large for a message was dropped, and its caller - in `fs.send`, with
+    -- nothing else that will ever wake it - waited for ever: the `windows`
+    -- list did that to `tile` and the Deskbar on 28 September. So a failed
+    -- reply is followed by a small one saying why, which reaches a caller
+    -- that is still there and fails as harmlessly as the first for one that
+    -- is not.
     if reply ~= DEFER then
       local sent, err = pcall(sys.reply, who, reply)
-      replied(sent, err, req.type)
+
+      if not replied(sent, err, req.type) then
+        pcall(sys.reply, who, { ok = false,
+                                error = "the answer to " .. tostring(req.type)
+                                        .. " did not fit in a message" })
+      end
     end
   end
 

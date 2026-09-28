@@ -12223,3 +12223,24 @@ the 124's hundredth.
 quarter arc clockwise from the left to the top and not the other way, a
 smoothed edge, a colour's alpha honoured, a line two wide and not past its
 ends, and an arc and a line far off the surface writing nothing outside it.
+
+## 18.256 More windows than one message can list (6zp)
+
+Found making the dated picture for 0.10.185: sixteen applications and the
+Deskbar are seventeen windows, and the window manager's `windows` reply for
+seventeen is more than a message's 2048 bytes. The reply was dropped - `wm:
+reply for windows failed: value does not fit in a message` - and `tile` and
+the Deskbar, each in `fs.send` waiting for it, waited for ever: the picture
+was Groove, maximised, over everything, and on any machine with that many
+windows the Deskbar would have stopped. Now the list comes six to a page,
+`wmproto.windows` puts the pages together for the four that ask - `tile`,
+the Deskbar, the desktop and Processes - and a reply that cannot be sent is
+followed by a small one saying so, so no caller can be left waiting.
+
+**Kept, `run_windows.py`** (`arm-windows`), 2, on the ARM machine: the
+Deskbar and twenty Calculators, and `tile 20` - which now waits for that many
+before arranging - arranges all twenty, which it can only do having read
+every page; and no reply is dropped. Its control: the list in one page of a
+hundred fails both, and `tile` says "the desktop did not answer" rather
+than hanging, which is the error reply reaching it.
+

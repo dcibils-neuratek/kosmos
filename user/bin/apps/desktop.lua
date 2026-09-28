@@ -40,7 +40,7 @@
 -- this in Startup should be told that the desktop was already there, not
 -- left wondering whether the tick did anything.
 --
-local seen = fs.send("/Running/wm", { type = "windows" })
+local seen = use("/Kosmos/Libraries/wmproto.lua").windows()
 
 for _, w in ipairs(seen and seen.windows or {}) do
   if w.backdrop then

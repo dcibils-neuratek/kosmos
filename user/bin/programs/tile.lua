@@ -2,6 +2,7 @@
 -- Puts every open window somewhere you can see it.
 --
 --   tile
+--   tile 15      once fifteen application windows are open
 --
 -- The desktop cascades a window that opens on top of another one, which is
 -- enough to keep every title bar reachable and is not enough to let you read
@@ -32,19 +33,42 @@
 -- moment. No list of what to wait for, which would go stale the first time
 -- somebody tiled a different set.
 --
+-- **And a number, when the caller knows it.** Three still seconds was
+-- taken for "everything is open" on 28 September, when the dated picture
+-- opened sixteen applications at once under QEMU: Groove, the IDE and Text
+-- Editor reached their windows after the others had been arranged, and
+-- Groove, maximised, lay over all of them. `tile 15` waits until fifteen
+-- application windows are open - the chrome, the desktop and the Deskbar,
+-- not counted - and then for the same still moment, and gives up later,
+-- since it knows there is something to wait for.
+--
+local wanted = tonumber(tostring(args or ""):match("%d+"))
+
+local function counted(windows)
+  local n = 0
+
+  for _, w in ipairs(windows) do
+    if not w.chrome and w.title ~= "Deskbar" then n = n + 1 end
+  end
+
+  return n
+end
+
 local function settled()
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   local last, steady = -1, 0
-  local giveup = sys.ticks() + hz * 30
+  local giveup = sys.ticks() + hz * (wanted and 120 or 30)
 
   while sys.ticks() < giveup do
-    local r = fs.send("/Running/wm", { type = "windows" })
+    local r = use("/Kosmos/Libraries/wmproto.lua").windows()
 
     if not r or not r.windows then return nil end
 
     local n = #r.windows
 
-    if n == last and n > 1 then
+    if wanted and counted(r.windows) < wanted then
+      last, steady = -1, 0
+    elseif n == last and n > 1 then
       steady = steady + 1
 
       -- Three passes of no change, and something is actually open.

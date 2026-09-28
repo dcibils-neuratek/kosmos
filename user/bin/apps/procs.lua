@@ -871,7 +871,7 @@ function sampler:tick()
   -- Which processes have windows, and how those windows draw.
   video = {}
 
-  local desktop = fs.send("/Running/wm", { type = "windows" })
+  local desktop = use("/Kosmos/Libraries/wmproto.lua").windows()
 
   for _, w in ipairs(desktop and desktop.windows or {}) do
     if w.pid then

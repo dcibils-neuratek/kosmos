@@ -278,6 +278,9 @@ SUITES = [
     # The Synth Kit's thread, heard: Groove's sound (6zh). The ARM harness
     # has the sound device; x86's is the HD Audio suite's.
     Suite("arm-synth", ["python3", "tools/run_synth.py", ARM]),
+    # More windows than one message can list: twenty Calculators and the
+    # Deskbar, and `tile` arranging every one from the list in pages (6zp).
+    Suite("arm-windows", ["python3", "tools/run_windows.py", ARM]),
 
     # The Game Kit's rasterizer against the portable one it was ported
     # from: every primitive, both ways, and all 368,640 pixels compared

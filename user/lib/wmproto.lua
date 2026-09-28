@@ -54,6 +54,35 @@ wmproto.WM = "/Running/wm"
 --
 -- The pointer's movement with no button held, while `on` - for an
 -- operation that follows the pointer until a click, as Blender's G does.
+--
+-- **Every window, as one list**, from the pages the window manager answers
+-- `windows` in: a list of seventeen did not fit in one message, and its
+-- reply was dropped (`wm.lua`, `handlers.windows`). `watch` is passed on
+-- the first page, as it always was. Answers what one reply used to - `ok`
+-- and `windows` - or nil and why.
+--
+-- A window that opens or closes between two pages moves the rest by one;
+-- the caller may then see one twice or miss one, until it asks again - and
+-- the Deskbar, the one that watches, is told to.
+--
+function wmproto.windows(watch)
+  local all, from = {}, 1
+
+  while from do
+    local reply, why = fs.send(wmproto.WM, { type = "windows", from = from,
+                                             watch = (from == 1) and watch or nil })
+
+    if not reply then return nil, why end
+    if not reply.ok then return nil, reply.error end
+
+    for _, w in ipairs(reply.windows or {}) do all[#all + 1] = w end
+
+    from = tonumber(reply.more)
+  end
+
+  return { ok = true, windows = all }
+end
+
 function wmproto.track(handle, on)
   return fs.send(wmproto.WM, { type = "track", window = handle, on = on and true or false })
 end

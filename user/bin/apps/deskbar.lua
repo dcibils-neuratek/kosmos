@@ -564,7 +564,7 @@ end
 -- field and the line that asks then says what it is asking for.
 --
 local function refresh()
-  local reply = fs.send("/Running/wm", { type = "windows", watch = win.handle })
+  local reply = use("/Kosmos/Libraries/wmproto.lua").windows(win.handle)
   local list = {}
 
   --
