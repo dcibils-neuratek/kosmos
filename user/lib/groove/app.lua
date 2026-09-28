@@ -411,6 +411,9 @@ local function drawTop()
 end
 
 function app.save()
+  -- A level at a time: a new disk has no `/Home/Documents` yet, and making
+  -- a folder does not make the one it is in.
+  fs.send("/Home/Documents", { type = "mkdir" })
   fs.send(DIR, { type = "mkdir" })
   local ok, err = E.save(PROJECT)
   say(ok and ("Saved to " .. PROJECT) or ("Save failed: " .. tostring(err)))

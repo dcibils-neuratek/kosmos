@@ -34,7 +34,242 @@ local C = U.C
 -- direct window's buffers flip, so it is never kept from one to the next.
 local S
 
-function U.target(surface) S = surface end
+---------------------------------------------------------------- what changed
+-- **Only what changed is drawn** (`roadmap.md` 6zh). Diego on the M700:
+-- "the app feels laggy", "Are we redrawing the entire ui every frame for
+-- groove?", "Or just redraw what's dirty?" PulseMusic's UI is immediate
+-- mode - every frame draws everything - and under QEMU a frame was 72 ms of
+-- drawing at 1920x1080 and 150 at 3432x1406: the pixels.
+--
+-- So PulseMusic's code is left as it is and the surface it draws on is not
+-- the window's: `S` is a recorder. Each call - eight kinds, the Graphics
+-- Kit's `fill` to `arc` - is kept as numbers with the rectangle it can
+-- touch, and at the end of the frame (`U.flush`) the calls are compared,
+-- one by one in order, with those last drawn into the same buffer. Where
+-- one differs, its old and new rectangles are dirty; the dirty places are
+-- gathered into tiles and the tiles into rectangles, and every call that
+-- touches one is drawn again into a *view* of it - the kit's surface over
+-- that rectangle, which clips by being no bigger. A playing song changes
+-- its playheads, meters and counter, so that is what is drawn.
+--
+-- **The same buffer, not the last frame**: a direct window has two, and
+-- the one drawn into now holds the frame before last. So each buffer keeps
+-- the calls last drawn into it, and the first frame into each is drawn
+-- whole. A call's rectangle is generous - text by its measured width and
+-- the face's height, lines and arcs by their width - because a rectangle
+-- that is too small leaves yesterday's pixels behind, and one too large
+-- only draws a little more.
+local REAL                                   -- the buffer this frame is for
+local STRIDE = 10                            -- numbers kept a call
+local TILE = 32
+local lastIn = setmetatable({}, { __mode = "k" })    -- buffer -> its calls
+local spare = nil                            -- a list no buffer holds
+local L                                      -- this frame's calls
+local heights = setmetatable({}, { __mode = "k" })   -- face -> height
+
+local function newList()
+  return { n = 0, op = {}, a = {}, s = {}, f = {}, x0 = {}, y0 = {}, x1 = {}, y1 = {} }
+end
+
+-- A call: its kind, its numbers, a string and a face for text, and the
+-- rectangle it may touch.
+local function rec(op, x0, y0, x1, y1, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, str, face)
+  local i = L.n + 1
+  L.n = i
+  L.op[i] = op
+  local k, A = (i - 1) * STRIDE, L.a
+  A[k + 1], A[k + 2], A[k + 3], A[k + 4], A[k + 5] = a1, a2, a3, a4, a5
+  A[k + 6], A[k + 7], A[k + 8], A[k + 9], A[k + 10] = a6, a7, a8, a9, a10
+  L.s[i], L.f[i] = str, face
+  L.x0[i], L.y0[i], L.x1[i], L.y1[i] = floor(x0) - 1, floor(y0) - 1, floor(x1) + 2, floor(y1) + 2
+end
+
+local function bool(v) return v and 1 or 0 end
+
+-- The recorder, with the kit's surface's methods and its arguments.
+local R = {}
+
+function R:fill(x, y, w, h, c) rec(1, x, y, x + w, y + h, x, y, w, h, c) end
+function R:fill_round(x, y, w, h, c, r) rec(2, x, y, x + w, y + h, x, y, w, h, c, r) end
+function R:frame_round(x, y, w, h, c, r) rec(3, x, y, x + w, y + h, x, y, w, h, c, r) end
+
+function R:line(x0, y0, x1, y1, width, c)
+  local e = (width or 1) / 2 + 1
+  rec(4, min(x0, x1) - e, min(y0, y1) - e, max(x0, x1) + e, max(y0, y1) + e,
+      x0, y0, x1, y1, width, c)
+end
+
+function R:disc(x, y, r, c, filled)
+  rec(5, x - r - 1, y - r - 1, x + r + 1, y + r + 1, x, y, r, c, bool(filled))
+end
+
+function R:text(x, y, s, c, _, face)
+  local h = heights[face]
+  if not h then h = gfx.height(face); heights[face] = h end
+  rec(6, x - 2, y - 2, x + gfx.measure(s, face) + 2, y + h + 2, x, y, c, nil, nil,
+      nil, nil, nil, nil, nil, s, face)
+end
+
+function R:triangle(ax, ay, bx, by, cx, cy, c)
+  rec(7, min(ax, bx, cx), min(ay, by, cy), max(ax, bx, cx), max(ay, by, cy),
+      ax, ay, bx, by, cx, cy, c)
+end
+
+function R:arc(x, y, r, width, ax, ay, bx, by, big, c)
+  local e = r + width + 1
+  rec(8, x - e, y - e, x + e, y + e, x, y, r, width, ax, ay, bx, by, bool(big), c)
+end
+
+-- Call `i` of list `C` drawn on `t`, moved by (dx, dy) - into a view whose
+-- corner is where (-dx, -dy) was.
+local function play(t, C, i, dx, dy)
+  local o, k, A = C.op[i], (i - 1) * STRIDE, C.a
+  if o == 1 then t:fill(A[k + 1] + dx, A[k + 2] + dy, A[k + 3], A[k + 4], A[k + 5])
+  elseif o == 2 then t:fill_round(A[k + 1] + dx, A[k + 2] + dy, A[k + 3], A[k + 4], A[k + 5], A[k + 6])
+  elseif o == 3 then t:frame_round(A[k + 1] + dx, A[k + 2] + dy, A[k + 3], A[k + 4], A[k + 5], A[k + 6])
+  elseif o == 4 then t:line(A[k + 1] + dx, A[k + 2] + dy, A[k + 3] + dx, A[k + 4] + dy, A[k + 5], A[k + 6])
+  elseif o == 5 then t:disc(A[k + 1] + dx, A[k + 2] + dy, A[k + 3], A[k + 4], A[k + 5] == 1)
+  elseif o == 6 then t:text(A[k + 1] + dx, A[k + 2] + dy, C.s[i], A[k + 3], nil, C.f[i])
+  elseif o == 7 then
+    t:triangle(A[k + 1] + dx, A[k + 2] + dy, A[k + 3] + dx, A[k + 4] + dy, A[k + 5] + dx, A[k + 6] + dy, A[k + 7])
+  elseif o == 8 then
+    t:arc(A[k + 1] + dx, A[k + 2] + dy, A[k + 3], A[k + 4], A[k + 5], A[k + 6], A[k + 7], A[k + 8],
+          A[k + 9] == 1, A[k + 10])
+  end
+end
+
+local function same(C, P, i)
+  if C.op[i] ~= P.op[i] or C.s[i] ~= P.s[i] or C.f[i] ~= P.f[i] then return false end
+  local k, A, B = (i - 1) * STRIDE, C.a, P.a
+  for j = k + 1, k + STRIDE do
+    if A[j] ~= B[j] then return false end
+  end
+  return true
+end
+
+function U.target(surface)
+  REAL = surface
+  L = spare or newList()
+  spare = nil
+  L.n = 0
+  S = R
+end
+
+-- What the last flush did, for `--report` and the check below.
+U.drawn = { frames = 0, whole = 0, px = 0, window = 0 }
+
+-- Every dirty tile, and the rectangles they make: runs along a row of tiles,
+-- a run carried down while the rows below repeat it.
+local tiles = {}
+
+local function dirty(tw, th, x0, y0, x1, y1)
+  local c0, c1 = max(0, x0 // TILE), min(tw - 1, (x1 - 1) // TILE)
+  local r0, r1 = max(0, y0 // TILE), min(th - 1, (y1 - 1) // TILE)
+  for r = r0, r1 do
+    local base = r * tw
+    for c = c0, c1 do tiles[base + c] = true end
+  end
+end
+
+local function rectangles(tw, th, W, H)
+  local out, open = {}, {}
+  for r = 0, th - 1 do
+    local runs, c = {}, 0
+    while c < tw do
+      if tiles[r * tw + c] then
+        local c0 = c
+        while c < tw and tiles[r * tw + c] do tiles[r * tw + c] = nil; c = c + 1 end
+        runs[#runs + 1] = c0 * 65536 + c
+      else
+        c = c + 1
+      end
+    end
+    local still = {}
+    for _, key in ipairs(runs) do
+      local o = open[key]
+      if o then o.h = o.h + TILE; still[key] = o
+      else
+        o = { x = (key // 65536) * TILE, y = r * TILE, w = (key % 65536 - key // 65536) * TILE, h = TILE }
+        out[#out + 1] = o
+        still[key] = o
+      end
+    end
+    open = still
+  end
+  for _, o in ipairs(out) do
+    o.w = min(o.w, W - o.x)
+    o.h = min(o.h, H - o.y)
+  end
+  return out
+end
+
+-- **The frame, onto the window**: drawn whole into a buffer the first time,
+-- and after that only where its calls differ from those last drawn into the
+-- same buffer. Answers the rectangle to hand over, or nil when nothing
+-- changed at all.
+function U.flush()
+  local W, H = REAL:size()
+  local P = lastIn[REAL]
+  local d = U.drawn
+  local damage
+
+  d.frames, d.window = d.frames + 1, W * H
+
+  if not P or P.w ~= W or P.h ~= H then
+    for i = 1, L.n do play(REAL, L, i, 0, 0) end
+    d.whole, d.px = d.whole + 1, d.px + W * H
+    damage = { x = 0, y = 0, w = W, h = H }
+  else
+    local tw, th = (W + TILE - 1) // TILE, (H + TILE - 1) // TILE
+    local any = false
+
+    for i = 1, max(L.n, P.n) do
+      if i > L.n or i > P.n or not same(L, P, i) then
+        any = true
+        if i <= L.n then dirty(tw, th, L.x0[i], L.y0[i], L.x1[i], L.y1[i]) end
+        if i <= P.n then dirty(tw, th, P.x0[i], P.y0[i], P.x1[i], P.y1[i]) end
+      end
+    end
+
+    if any then
+      local x0, y0, x1, y1 = W, H, 0, 0
+      for _, r in ipairs(rectangles(tw, th, W, H)) do
+        local v = REAL:view(r.x, r.y, r.w, r.h)
+        if v then
+          for i = 1, L.n do
+            if L.x1[i] > r.x and L.x0[i] < r.x + r.w and L.y1[i] > r.y and L.y0[i] < r.y + r.h then
+              play(v, L, i, -r.x, -r.y)
+            end
+          end
+        end
+        d.px = d.px + r.w * r.h
+        x0, y0 = min(x0, r.x), min(y0, r.y)
+        x1, y1 = max(x1, r.x + r.w), max(y1, r.y + r.h)
+      end
+      damage = { x = x0, y = y0, w = x1 - x0, h = y1 - y0 }
+    end
+  end
+
+  L.w, L.h = W, H
+  spare = P
+  lastIn[REAL] = L
+
+  -- `--redraw-check`: the frame drawn whole as well, into a surface of its
+  -- own, and the pixels that differ counted - which has to be none.
+  if U.checking then
+    local ref = U.checkSurface
+    if not ref or select(1, ref:size()) ~= W or select(2, ref:size()) ~= H then
+      ref = gfx.surface{ w = W, h = H }
+      U.checkSurface = ref
+    end
+    for i = 1, L.n do play(ref, L, i, 0, 0) end
+    local wrong = REAL:differs(ref) or -1
+    U.checked = (U.checked or 0) + 1
+    U.wrong = (U.wrong or 0) + wrong
+  end
+
+  return damage
+end
 
 ---------------------------------------------------------------- colour
 -- PulseMusic's colours are LÖVE's, three numbers from 0 to 1; a surface

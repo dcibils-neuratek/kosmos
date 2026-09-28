@@ -12494,3 +12494,43 @@ Seen once, not kept: Groove on the desktop at 3840x2160 in 512 MB.
   typing `run /Home/apps/apptest/plain.lua`, which names it. The first line
   was skipped as the echo, and a line break before it let the echo through.
   A line holding the command typed is never the answer now.
+
+## 18.266 Groove draws only what changed (6zh)
+
+Diego, on the M700 with 0.10.188: "the app feels laggy", "Are we redrawing
+the entire ui every frame", "Or just redraw what's dirty?" Groove opened
+maximised, 3440x1440 there, and PulseMusic's immediate-mode UI drew the whole
+window every frame. `groove --report` now says a frame's drawing and hand-over
+apart: 72 ms and 0.4 at 1920x1080 under QEMU, 150 and 0.4 at 3432x1406.
+
+Now it opens at 1920x1080 (or the work area when no bigger), takes `--size`,
+and its three dots offer Full screen and a 1920x1080 window, which start it
+again at that size with the song carried over. And it draws only what
+changed: its calls recorded, compared with those last drawn into the same
+buffer, and drawn again into a Graphics Kit view of each changed place (gfx.md
+19.12). Playing the house demo: 67 frames a second instead of 11.8, 10.1 ms a
+frame instead of 72, 0.4% of the window drawn a frame.
+
+**Kept, `run_synth.py`**, now 22 checks: Groove opens with `--redraw-check`,
+which draws every frame whole as well into a surface of its own and counts
+the pixels that differ (`surface:differs`, in C). While the song plays, the
+pointer moves along the bar, a clip of the kick's is picked and the three
+dots' menu opens and is closed by a click elsewhere: at least 20 frames, and
+**none differing** - the first run 108 frames and 0 - with at most six drawn
+whole and under 30% of the window a frame (7.2 to 8.9% with that much going
+on). Then the menu's 1920x1080 window: a new Groove, saying the song came
+across. Its controls: every call compared equal, so nothing is drawn again -
+45,741 pixels differ; and the new Groove not reading `--carry` - the check
+fails.
+
+**Found**: `/Temporary` keeps 16 KB a file, and a song is more, so the song
+is carried through `/Home/Documents/Groove`; and Groove's own Save failed on a
+new disk, which has no `/Home/Documents`: a folder is made a level at a time
+now. Groove prints why a carry failed, which is how both were seen.
+
+**And one more read too soon**, in the display harness under the whole gate:
+"the /bin walk saw 12 program(s)" where the guest had printed 121 - the
+count's pattern ended in `$`, which under `re.M` matches at the end of what
+has arrived, so the line was taken with its last digit still on the wire. It
+waits for the newline now. Every other `$` pattern in the harnesses has a
+later line it waits for first; this one was the last thing printed.

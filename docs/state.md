@@ -93,8 +93,13 @@ capabilities which will then lead to us having accelerated 2d graphics".
   loader reading its own echo, and two host instruments out of the loaded
   suite.
 
-**Next**: Groove redrawing only what is dirty (6zh; a Graphics Kit view to
-clip by). Then 4i d, a MIDI event reaching the kit without the window's pass;
+- **Groove draws only what changed** (18.266): recorded calls compared with
+  the same buffer's last, redrawn into Graphics Kit views; 67 fps instead of
+  11.8 under QEMU, held pixel for pixel to a whole redraw. The menu's
+  restart works; Save on a new disk was broken and is fixed.
+
+**Next**: a stick with the lag fix for Diego to try on the M700 (0.10.189).
+Then 4i d, a MIDI event reaching the kit without the window's pass;
 4i e, the device's depth, on the ThinkPad. 6zg d when Diego has the
 Launchkey at hand.
 

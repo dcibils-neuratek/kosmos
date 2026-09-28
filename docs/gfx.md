@@ -602,3 +602,33 @@ whichever process asked to draw, behind its own address space, so a malformed
 JPEG that gets past its bounds checks kills that process and nothing else.
 That is the microkernel earning its keep rather than a licence to be careless
 - a picture on a disk somebody handed you is untrusted input.
+
+---
+
+## 19.12 A view, and redrawing only what changed
+
+**`surface:view(x, y, w, h)`** is that rectangle of a surface as a surface of
+its own: the same pixels and pitch, the rectangle's bounds. Whatever is drawn
+into it stays inside it, so it is a clip that costs nothing per primitive -
+the address arithmetic is in C, where 19.3 puts all of it. It keeps what it
+looks into alive as its Lua user value, and using one whose parent has been
+freed is an error, as using a freed surface is (19.6). A user value rather
+than a field, because four other kits keep a copy of `struct surface` and two
+of them make surfaces.
+
+**`surface:differs(other)`** counts the pixels that differ between two
+surfaces of one size - for a check, since counting in Lua would be the pixel
+loop 19.1 rules out.
+
+They exist for Groove (`roadmap.md` 6zh). PulseMusic's UI is immediate mode:
+every frame draws everything. Under QEMU that was 72 ms a frame at 1920x1080
+and 150 at 3432x1406 - the time was the pixels, and it grew with the window.
+So `groove/ui.lua` records the frame's calls instead of drawing them, compares
+them in order with those last drawn into the same buffer - a direct window
+has two, and the one drawn now holds the frame before last - and draws again,
+into a view of each changed rectangle, only the calls that touch it. A song
+playing redraws its playheads, meters and counter: 67 frames a second instead
+of 11.8, 0.4% of the window's pixels a frame. `groove --redraw-check` draws
+each frame whole as well and counts what differs, and `run_synth.py` holds it
+to nought while the song plays and a person hovers, picks and opens a menu.
+

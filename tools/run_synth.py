@@ -335,6 +335,7 @@ def main():
 
     import run_screenshot as R                               # noqa: E402
 
+    redrawn = []
     guest = R.Guest(IMAGE, 120)
     failed, checks = [], 0
     shot = None
@@ -372,16 +373,60 @@ def main():
         guest.wait_for("plex-set", "chose Plex for the window manager")
 
         mark = len(guest.seen)
-        guest.type("wm groove:--house --play")
+        guest.type("wm groove:--house --play --redraw-check --report 12")
         deadline = time.monotonic() + 90
 
         while time.monotonic() < deadline and "groove: " not in guest.seen[mark:]:
             time.sleep(0.2)
             guest._read_available()
 
-        time.sleep(12)
+        # **Redrawn only where it changed, and checked** (6zh): every frame
+        # drawn whole as well and the pixels compared, while the song plays
+        # and while a person moves along the bar, picks a clip and opens the
+        # three dots' menu and closes it by clicking elsewhere.
+        time.sleep(2)
+        guest._read_available()
+
+        def at(x, y):
+            guest.mouse_to(x * 32767 // 1920, y * 32767 // 1080)
+
+        def click(x, y):
+            at(x, y)
+            time.sleep(0.1)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+            guest.mouse_button(False)
+            time.sleep(0.6)
+
+        for x in range(200, 1000, 80):
+            at(x, 24)
+            time.sleep(0.15)
+
+        click(60, 200)                       # a clip of the kick's, which stays selected
+        lights = re.search(r"Groove's three at (\d+),15 in it", guest.seen[mark:])
+
+        if lights:
+            click(int(lights.group(1)) - 25, 24)
+            time.sleep(0.4)
+            click(960, 640)
+
+        while time.monotonic() < deadline and "redraw check" not in guest.seen[mark:]:
+            time.sleep(0.3)
+            guest._read_available()
+
+        time.sleep(0.5)
         guest._read_available()
         said = guest.seen[mark:]
+        checked = re.search(r"redraw check: (\d+) frames drawn both ways, (\d+) pixels differ", said)
+        check(checked and int(checked.group(1)) >= 20 and checked.group(2) == "0",
+              "Groove's frames drawn where they changed are not what a whole redraw draws: %s"
+              % (checked and checked.group(0)))
+        share = re.search(r"of (\d+) frames (\d+) drawn whole; ([\d.]+)% of the window", said)
+        if checked and share:
+            redrawn.append("%s frames checked, %s pixels differing, %s%% of the window drawn a frame"
+                           % (checked.group(1), checked.group(2), share.group(3)))
+        check(share and int(share.group(2)) <= 6 and float(share.group(3)) < 30,
+              "Groove still draws most of its window a frame: %s" % (share and share.group(0)))
         check("playing into the audio stream" in said,
               "Groove did not open playing into the audio stream:\n" + said[-800:])
         check("window Groove at 0,0 1920x1080, its header the title bar" in said,
@@ -390,6 +435,32 @@ def main():
         check(three and 1920 - 120 < int(three.group(1)) < 1920 - 40,
               "the three are not at the right end of Groove's bar: %s" % (three and three.group(0)))
         shot = guest.screendump()
+
+        # **And the menu's other size**, which starts Groove again with its
+        # song carried: on this screen the 1920x1080 window is the whole
+        # work area again, but it is a new Groove all the same. Six seconds
+        # after, so the WAV's last six are the new one playing.
+        if lights:
+            mark = len(guest.seen)
+            x = int(lights.group(1))
+            click(x - 25, 24)
+            time.sleep(0.4)
+            click(x - 232 + 110, 91)
+            carried_by = time.monotonic() + 60
+
+            while (time.monotonic() < carried_by
+                   and "groove: the song carried across" not in guest.seen[mark:]):
+                time.sleep(0.3)
+                guest._read_available()
+
+            time.sleep(7)
+            guest._read_available()
+            again = guest.seen[mark:]
+            check("groove: the song carried across, at 1920x1080" in again
+                  and "playing into the audio stream" in again,
+                  "the menu did not start Groove again with its song:\n" + again[-800:])
+        else:
+            check(False, "Groove's three were not found, so neither was its menu")
     finally:
         guest.close()
 
@@ -455,8 +526,8 @@ def main():
     print("PASS: %d checks on the Synth Kit and Groove, on the machine (its thread "
           "rendering into the stream's ring, %d beats half a second apart, "
           "the engine playing when asked, a bar exported whole, and Groove "
-          "drawn as PulseMusic, its bar its title bar, and beating at 124)"
-          % (checks, len(beats)))
+          "drawn as PulseMusic, its bar its title bar, and beating at 124; drawn only "
+          "where it changed: %s)" % (checks, len(beats), "".join(redrawn) or "?"))
     return 0
 
 

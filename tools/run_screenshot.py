@@ -1118,7 +1118,10 @@ def check_programs_by_name(guest):
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         said = guest.seen[mark:].replace("\r", "")
-        counted = re.search(r"^bin-scanned (\d+)$", said, re.M)
+        # Its newline, not `$`: under `re.M` a `$` also matches at the end of
+        # what has arrived so far, and on 28 September `bin-scanned 121` was
+        # read as `bin-scanned 12` with its last digit still on the wire.
+        counted = re.search(r"^bin-scanned (\d+)\n", said, re.M)
         if counted:
             break
         time.sleep(0.2)

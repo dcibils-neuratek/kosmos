@@ -24,6 +24,9 @@
 --   groove --report 30  and after thirty seconds, says on the console how
 --                       the sound held: how often its ring ran dry, and the
 --                       audio server's worst turn and starvations
+--   groove --redraw-check  every frame drawn whole as well, and the pixels
+--                       that differ from the one drawn only where it changed
+--                       counted, for `--report` to say
 --
 -- A MIDI keyboard plays it (`roadmap.md` 6zg): every one there is when it
 -- opens, and again whenever its MIDI button is pressed. `needs audio` puts
@@ -41,6 +44,7 @@ local app = use("/Kosmos/Libraries/groove/app.lua")
 local want = {}
 for word in tostring(args or ""):gmatch("%S+") do want[word] = true end
 local report = tonumber(tostring(args or ""):match("%-%-report%s+(%d+)"))
+U.checking = want["--redraw-check"] or nil
 local asked = tostring(args or ""):match("%-%-size%s+(%S+)")
 local carried = tostring(args or ""):match("%-%-carry%s+(%S+)")
 
@@ -114,13 +118,29 @@ app.load()
 -- Groove asked for at that size, and this window closed once the window
 -- manager has said yes - not before, so a refused start leaves the song on
 -- the screen and a line saying why. As Video does for its sizes.
-local CARRY = "/Temporary/groove-carry.groove"
+-- In Groove's own folder, where its project is, and taken away once read:
+-- `/Temporary` keeps 16 KB a file and a song is more (`roadmap.md` 6zh).
+-- `/Temporary` all the same on a machine with no disk to put it on.
+local CARRIES = { "/Home/Documents/Groove/.carried.groove", "/Temporary/groove-carried.groove" }
 
 local function again(size)
-  local ok, why = E.save(CARRY)
+  fs.send("/Home/Documents", { type = "mkdir" })
+  fs.send("/Home/Documents/Groove", { type = "mkdir" })
+
+  local ok, why, CARRY
+  local said = {}
+
+  for _, path in ipairs(CARRIES) do
+    ok, why = E.save(path)
+    if ok then CARRY = path break end
+    said[#said + 1] = path .. ": " .. tostring(why)
+  end
+
+  why = table.concat(said, "; ")
 
   if not ok then
     app.say("The song could not be carried across: " .. tostring(why))
+    print("groove: the song could not be carried across: " .. tostring(why))
     return
   end
 
@@ -136,6 +156,8 @@ local function again(size)
 
   app.say("Groove could not start again at " .. size .. ": "
           .. tostring(reply and reply.error or sent))
+  print("groove: could not start again at " .. size .. ": "
+        .. tostring(reply and reply.error or sent))
 end
 
 app.onSize = again
@@ -146,6 +168,8 @@ if carried then
   local ok, why = E.load(carried)
 
   if not ok then app.say("The song did not come across: " .. tostring(why)) end
+  print(ok and ("groove: the song carried across, at %dx%d"):format(W, H)
+           or ("groove: the song did not come across: " .. tostring(why)))
   fs.send(carried, { type = "delete" })
 end
 
@@ -302,6 +326,16 @@ local function reportSound()
   print(("groove: the kit rendered %.2f s of sound in the %.2f s since it began")
         :format((st.rendered or 0) / E.SR, since))
 
+  local d = U.drawn
+
+  print(("groove: of %d frames %d drawn whole; %.1f%% of the window's pixels drawn a frame")
+        :format(d.frames, d.whole, d.px / math.max(1, d.frames * d.window) * 100))
+
+  if U.checking then
+    print(("groove: redraw check: %d frames drawn both ways, %d pixels differ")
+          :format(U.checked or 0, U.wrong or 0))
+  end
+
   print(("groove: %dx%d, %.1f frames a second; drawing %.1f ms a frame, %.1f at worst; "
          .. "handing it over %.1f ms, %.1f at worst")
         :format(W, H, frames.n / math.max(1e-9, (sys.ticks() - frames.since) / hz),
@@ -320,9 +354,12 @@ local function frame(touched)
   U.target(win:surface())
   app.draw()
 
+  -- Drawn only where it changed, and only that handed over; nothing, when
+  -- nothing did (`groove/ui.lua`).
+  local damage = U.flush()
   local drawn = sys.ticks()
 
-  if not win:commit{ x = 0, y = 0, w = W, h = H } then return false end
+  if damage and not win:commit(damage) then return false end
 
   local handed = sys.ticks()
 

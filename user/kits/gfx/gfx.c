@@ -88,6 +88,26 @@ static struct surface *check_surface(lua_State *L, int index)
         luaL_error(L, "this surface has been freed");
     }
 
+    /*
+     * **And a view's parent** (`view` below): the surface it looks into,
+     * kept as its user value - which also keeps it from being collected.
+     * Freed under the view, its pixels are gone and the view's with them,
+     * so the same rule holds: an error, not a crash. A user value rather
+     * than a field, because four other kits keep a copy of this struct and
+     * two of them make surfaces; a field here would be read past the end of
+     * theirs.
+     */
+    index = lua_absindex(L, index);
+
+    if (lua_getiuservalue(L, index, 1) == LUA_TUSERDATA) {
+        const struct surface *parent = lua_touserdata(L, -1);
+
+        if (parent->pixels == NULL) {
+            luaL_error(L, "the surface this is a view of has been freed");
+        }
+    }
+
+    lua_pop(L, 1);
     return s;
 }
 
@@ -2817,8 +2837,90 @@ static int l_camera(lua_State *L)
     return 1;
 }
 
+/*
+ * surface:view(x, y, w, h) - that rectangle of this surface, as a surface of
+ * its own (`roadmap.md` 6zh): the same pixels, the same pitch, and bounds
+ * that are the rectangle's, so whatever is drawn into it stays inside it.
+ * **A clip that costs nothing per primitive**, which is what a window that
+ * redraws only what changed needs: Groove replays a frame's drawing into a
+ * view of each changed rectangle and nothing outside it is touched. The
+ * address arithmetic is here, in C, as `CLAUDE.md` has it for all of it.
+ *
+ * Clipped to this surface; nil when nothing of it is left. A view of a view
+ * is a view of the first surface, which is the one its life depends on.
+ * Never owned: freeing a view frees nothing, and freeing what it looks into
+ * makes it an error to use (`check_surface`).
+ */
+static int l_view(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    long x = (long)luaL_checkinteger(L, 2);
+    long y = (long)luaL_checkinteger(L, 3);
+    long w = (long)luaL_checkinteger(L, 4);
+    long h = (long)luaL_checkinteger(L, 5);
+    struct surface *v;
+
+    if (!clip(s, &x, &y, &w, &h, NULL, NULL)) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    v = lua_newuserdatauv(L, sizeof(*v), 1);
+    v->pixels = row_of(s, (unsigned)y) + x;
+    v->width  = (unsigned)w;
+    v->height = (unsigned)h;
+    v->pitch  = s->pitch;
+    v->bytes  = 0;
+    v->pages  = 0;
+    v->owned  = false;
+
+    if (lua_getiuservalue(L, 1, 1) != LUA_TUSERDATA) {
+        lua_pop(L, 1);
+        lua_pushvalue(L, 1);
+    }
+
+    lua_setiuservalue(L, -2, 1);
+    luaL_setmetatable(L, SURFACE_MT);
+    return 1;
+}
+
+/*
+ * surface:differs(other) - how many pixels differ between two surfaces of
+ * one size, or nil when their sizes differ. For a check that a window which
+ * redrew only part of itself holds what a whole redraw would: the answer
+ * has to be nought, and counting in Lua would be the pixels in a Lua loop
+ * that `CLAUDE.md` rules out.
+ */
+static int l_differs(lua_State *L)
+{
+    struct surface *a = check_surface(L, 1);
+    struct surface *b = check_surface(L, 2);
+    unsigned long count = 0;
+    unsigned row;
+
+    if (a->width != b->width || a->height != b->height) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    for (row = 0; row < a->height; row++) {
+        const uint32_t *p = row_of(a, row);
+        const uint32_t *q = row_of(b, row);
+        unsigned i;
+
+        for (i = 0; i < a->width; i++) {
+            count += p[i] != q[i];
+        }
+    }
+
+    lua_pushinteger(L, (lua_Integer)count);
+    return 1;
+}
+
 static const luaL_Reg surface_methods[] = {
     { "size",   l_size },
+    { "view",   l_view },
+    { "differs", l_differs },
     { "pitch",  l_pitch },
     { "fill",   l_fill },
     { "span",   l_span },

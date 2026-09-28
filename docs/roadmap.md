@@ -2638,6 +2638,17 @@ processors, and still what follows USB:
      use simd vector operations to speed it up?" - for the pixel loops,
      which is 4h's road (the blitter vectorised); drawing fewer pixels
      comes first because it is the larger factor.
+   **DONE on 28 September** (`testing.md` 18.266): all four. Groove draws
+   only what changed - under QEMU 67 frames a second instead of 11.8, and
+   0.4% of the window's pixels a frame while a song plays - held to what a
+   whole redraw draws, pixel for pixel, while it plays and while a person
+   hovers, clicks and uses the menu. **Found on the way**: `/Temporary`
+   keeps 16 KB a file in a fixed pool, too little for a song, so the song
+   is carried through Groove's own folder; and Groove's Save failed on a
+   new disk, because `/Home/Documents` did not exist and making a folder
+   does not make the one it is in. The 16 KB ceiling is one of the limits
+   sized for a 512 MB QEMU guest that the "no hard limits" decision is
+   about, and waits its turn there.
 
 6zg. **WANTED on 27 September - a USB MIDI keyboard.** Diego: "usb midi
    keyboard support", and Grooves plays from one (6zh). A USB MIDI device
