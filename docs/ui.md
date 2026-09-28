@@ -223,6 +223,11 @@ that reads `rawkey` holds keys - Doom, Quake, the Super Nintendo, Camera,
 Video, Solar - and a game whose W is down when Super Tab moves the focus
 walked on for the same reason.
 
+**A `rawkey` says when** (28 September, `roadmap.md` 4i): `at` is the
+counter when the window manager read the key, so a window that plays a note
+from it - Groove - can say how long the sound took, and which part of that
+was the desktop's.
+
 A widget's `key(c)` is handed one number: a character is itself, a key that
 is not one is a small negative number (`ui.UP` -1 to `ui.LEFT` -4 as ever,
 then `ui.HOME`, `ui.END`, `ui.PAGEUP`, `ui.PAGEDOWN`, `ui.INSERT`,

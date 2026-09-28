@@ -188,7 +188,9 @@ function E.stopClip(ti)
   posted(synth.stop_clip(ti))
 end
 
-function E.noteOn(ti, pitch, vel) E.sync(); posted(synth.note_on(ti, pitch, vel or 0.8)) end
+-- `key` is the counter when its key went down, so the kit can say how long
+-- the note took to be heard (4i); nil when nobody knows.
+function E.noteOn(ti, pitch, vel, key) E.sync(); posted(synth.note_on(ti, pitch, vel or 0.8, key)) end
 function E.noteOff(ti, pitch) posted(synth.note_off(ti, pitch)) end
 function E.triggerDrum(ti, row, vel) E.sync(); posted(synth.note_on(ti, row, vel or 0.8)) end
 function E.releaseTrack(ti) posted(synth.release(ti)) end

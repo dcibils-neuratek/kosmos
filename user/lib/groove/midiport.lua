@@ -8,7 +8,8 @@
 --   M.outputNames()            the ports it can send to
 --   M.send(port, s, d1, d2)    one message out, to a port by its name
 --   M.poll(fn)                 every event since last time:
---                              fn(kind, channel, d1, d2, port)
+--                              fn(kind, channel, d1, d2, port, counter),
+--                              the counter when the driver took it
 --   M.close()
 --   M.inputs, M.last, M.err    as PulseMusic had them
 --
@@ -117,7 +118,7 @@ function M.poll(handler)
       M.last = string.format("%s ch%d %d %d", kind, e.channel, e.d1, e.d2)
     end
 
-    handler(kind, e.channel, e.d1, e.d2, port)
+    handler(kind, e.channel, e.d1, e.d2, port, e.counter)
   end)
 end
 

@@ -217,6 +217,7 @@ of now we dont have". So, one at a time:
 
 1. **6zg** - USB MIDI and the Launchkey, which finishes Groove (6zh).
 2. **4i** - low-latency audio: Groove and everything media lean on it.
+   Step a, the way to the ear measured per note, done 28 September.
 3. **Storage at full speed** - the filesystem's byte path in C (above).
 4. **4h** - the GPU: video encode and decode in hardware first, and from
    the driver that takes, accelerated 2D - which Kosmos does not have.
@@ -1046,6 +1047,31 @@ processors, and still what follows USB:
    because QEMU's audio passes through the Mac's and says nothing about the
    machine. Then the shortest period the controller and the scheduler
    hold without a gap, and a priority band for the thread that mixes.
+   **STARTED on 28 September, second in Diego's order**, with Groove and a
+   MIDI keyboard as the instrument (6zg). In steps:
+   - **a** - **DONE on 28 September** (`testing.md` 18.261) - the way to
+     the ear, per note, in its parts: a note carries the counter when its
+     key went down - the MIDI driver's, or the window manager's on a
+     `rawkey` - and the Synth Kit stamps when it was posted and taken and
+     what was queued ahead of it, the ring's frames and the device's.
+     Groove shows KEY TO EAR in its bar. Under QEMU: 35.7 ms, of which 12.2
+     to Groove's pass (emulation), 0.3 to the kit, 11.6 in the ring and
+     11.6 in the device - the ring shallow only because the emulated kit
+     barely keeps up. **On metal the kit keeps it full**: eight periods,
+     46 ms, before anything the device holds. That is the number to take
+     down, and it is structure rather than speed.
+   - **b** - the kit renders just ahead rather than filling the ring: the
+     fewest periods that hold without a gap, as PulseMusic kept two with a
+     keyboard attached.
+   - **c** - the thread that renders and the one that mixes, woken on
+     time: a band above the window's, and woken by the server taking a
+     period rather than by a tick. Which threads may be in that band is a
+     decision to put to Diego with the measurement beside it.
+   - **d** - a MIDI event reaches the kit without waiting for the window's
+     pass - the window is told, or the kit reads the page itself and
+     places the note at its own sample.
+   - **e** - the device's own depth and the shortest period the controller
+     holds, on the ThinkPad's HD Audio; and the whole number there.
 4i-b. **WANTED since 19 September - where the fortnight went: IPC costs 70%
    more and a context switch 44% more than on 5 September** (`testing.md`
    18.118). Measured at three commits, so it is attributed rather than

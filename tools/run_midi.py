@@ -26,6 +26,15 @@ kick and nothing else: the note heard by the driver, put in Groove's page,
 taken by its pass, turned into a voice by the Synth Kit and played. Groove
 says what it heard.
 
+**And how long it took** (`roadmap.md` 4i, step a): Groove says the note's
+way from its key to the ear - to the window's pass, to the kit's thread, and
+the frames queued ahead of it in the ring and in the device. The parts have
+to add up, the key's own time has to have come through from the driver - a
+window's part of exactly nothing means the note was timed from when Groove
+posted it - and the ring's part has to be whole periods within its depth.
+The milliseconds before the kit are QEMU's emulation and are not checked;
+the queue is structure, and is what step b makes shorter.
+
 On the ARM machine, which has no USB controller, the driver answers from the
 wait it keeps when there is none; on x86 it is given one, so the answers come
 from its whole wait - five endpoints since `/Devices/midi`, which the kernel
@@ -96,6 +105,7 @@ def main():
 
     guest = R.Guest(IMAGE, 120)
     failed, checks = [], 0
+    heard_way = []
 
     def check(ok, complaint):
         nonlocal checks
@@ -171,6 +181,21 @@ def main():
                   "midi play did not find Groove listening:\n" + said[-900:])
             check("groove: MIDI heard, on ch10 36 100" in said,
                   "Groove did not say it heard the pad:\n" + said[-900:])
+            way = re.search(r"groove: key to ear ([\d.]+) ms - ([\d.-]+) to the window's pass, "
+                            r"([\d.-]+) to the kit, ([\d.]+) in the ring \((\d+) frames\), "
+                            r"([\d.]+) in the device \((\d+) frames\)", said)
+            check(way, "Groove did not say the note's way to the ear:\n" + said[-900:])
+
+            if way:
+                heard_way.append(way.group(0)[len("groove: "):])
+                total, window, kit, ring, device = (float(way.group(i)) for i in (1, 2, 3, 4, 6))
+                ring_frames = int(way.group(5))
+                check(abs(window + kit + ring + device - total) <= 0.3 and kit >= 0,
+                      "the note's way does not add up: %s" % way.group(0))
+                check(window > 0,
+                      "the pad's own time did not reach the kit: %s" % way.group(0))
+                check(ring_frames % 256 == 0 and ring_frames <= 8 * 256,
+                      "the ring's part is not whole periods within its eight: %s" % way.group(0))
     finally:
         guest.close()
 
@@ -191,7 +216,8 @@ def main():
           "its ports, six events back in order with rising times, three refusals "
           "in their own words, and nothing for a program that did not ask%s)"
           % (checks, "x86-64 with an xHCI" if x86 else "the ARM machine, no USB",
-             "" if x86 else "; and Groove playing one kick from the keyboard's pad"))
+             "" if x86 else "; and Groove playing one kick from the keyboard's pad, "
+                            "and saying how long it took: %s" % "".join(heard_way)))
     return 0
 
 

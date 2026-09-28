@@ -219,7 +219,7 @@ while win.running do
       if SHIFT[ev.code] or CTRL[ev.code] or ALT[ev.code] then
         modifiers()
       elseif KEYS[ev.code] and ev.down and not was then
-        app.keypressed(KEYS[ev.code])
+        app.keypressed(KEYS[ev.code], ev.at)
         touched, draw = true, true
       elseif KEYS[ev.code] and not ev.down and was then
         app.keyreleased(KEYS[ev.code])

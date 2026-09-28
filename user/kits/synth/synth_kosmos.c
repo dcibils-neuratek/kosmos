@@ -9,7 +9,9 @@
  *   synth.start(stream.ring, stream.rate)
  *   synth.play() synth.stop() synth.mode(true)  each answers its number
  *   synth.launch_clip(track, scene) synth.launch_scene(scene)
- *   synth.stop_clip(track) synth.note_on(track, pitch, vel)
+ *   synth.stop_clip(track) synth.note_on(track, pitch, vel, key)
+ *                                      `key` the counter when its key went
+ *                                      down, for the way to the ear (4i)
  *   synth.note_off(track, pitch) synth.bend(track, semitones)
  *   synth.release(track)               its held notes let go
  *   synth.hold("t3.p.cut", true)       a person's hand on an automated knob
@@ -62,6 +64,8 @@ struct cmd {
     enum cmd_kind kind;
     int    a, b;
     double v;
+    uint64_t key;                       /* a note's: its key went down */
+    uint64_t posted;                    /* ...and the window posted it */
 };
 
 #define CMDS 256u
@@ -71,6 +75,21 @@ static uint32_t cmd_head;               /* written by the window's thread */
 static uint32_t cmd_tail;               /* written by the audio thread */
 
 /* ------------------------------------------------------------ what is heard */
+
+/*
+ * **A note's way to the ear** (`roadmap.md` 4i): when its key went down -
+ * the MIDI driver's counter, or the window manager's for a key on the
+ * computer - when the window posted it, when this thread took it, and what
+ * was already queued ahead of it, in frames: the ring's periods the audio
+ * server has not mixed, and the device's it has not played. The note's
+ * first sample is in the next period written, so it is heard after those.
+ * The last note's, and how many there have been.
+ */
+struct note_path {
+    uint64_t key, posted, applied;
+    uint32_t ring, device;
+    uint32_t count;
+};
 
 struct heard {
     bool   playing, finished, song_mode, known;
@@ -83,6 +102,7 @@ struct heard {
     double peak[SYNTH_TRACKS];
     unsigned hits[SYNTH_TRACKS][SYNTH_ROWS];
     double peak_l, peak_r;
+    struct note_path note;
 };
 
 static struct heard heard;
@@ -98,6 +118,7 @@ static struct synth_song *latest;       /* the last made, for `hold`'s names */
 static struct audio_ring *ring;
 static long thread_index = -1;
 static int quit;
+static struct note_path note_path;      /* the audio thread's alone */
 static unsigned long busy;              /* the audio thread's, rendering */
 
 static double lbuf[SYNTH_BLOCK], rbuf[SYNTH_BLOCK];
@@ -117,6 +138,32 @@ static bool ensure_engine(lua_State *L)
     return true;
 }
 
+/*
+ * Where a note stands as it is taken: the frames written and not yet heard,
+ * split at the server's `read` - what it has not mixed is the ring's, the
+ * rest the device's. With no thread there is no ring and nothing queued.
+ */
+static void noted(const struct cmd *c)
+{
+    note_path.key = c->key != 0 ? c->key : c->posted;
+    note_path.posted = c->posted;
+    note_path.applied = kosmos_ticks();
+    note_path.ring = note_path.device = 0;
+
+    if (ring != NULL) {
+        uint32_t period = ring->period_bytes / 4u;
+        uint64_t ahead = audio_ring_delay(ring, period);
+        uint64_t unmixed = (uint64_t)(ring->write - ring->read) * period;
+
+        if (unmixed > ahead) unmixed = ahead;
+
+        note_path.ring = (uint32_t)unmixed;
+        note_path.device = (uint32_t)(ahead - unmixed);
+    }
+
+    note_path.count++;
+}
+
 static void apply(const struct cmd *c)
 {
     struct synth_engine *e = engine;
@@ -130,7 +177,7 @@ static void apply(const struct cmd *c)
     case CMD_LAUNCH_CLIP:  synth_engine_launch_clip(e, c->a, c->b); break;
     case CMD_LAUNCH_SCENE: synth_engine_launch_scene(e, c->a); break;
     case CMD_STOP_CLIP:    synth_engine_stop_clip(e, c->a); break;
-    case CMD_NOTE_ON:      synth_engine_note_on(e, c->a, c->b, c->v); break;
+    case CMD_NOTE_ON:      synth_engine_note_on(e, c->a, c->b, c->v); noted(c); break;
     case CMD_NOTE_OFF:     synth_engine_note_off(e, c->a, c->b); break;
     case CMD_BEND:         synth_engine_bend(e, c->a, c->v); break;
     case CMD_HOLD:         synth_engine_hold(e, c->a, c->b != 0); break;
@@ -199,6 +246,7 @@ static void publish(void)
 
     heard.peak_l = e->peak_l;
     heard.peak_r = e->peak_r;
+    heard.note = note_path;
     e->peak_l *= 0.8;
     e->peak_r *= 0.8;
 
@@ -267,9 +315,10 @@ static void collect(void)
  * it, which is how the window tells "play was pressed and not yet heard"
  * from "the song has ended by itself".
  */
-static int post(lua_State *L, enum cmd_kind kind, int a, int b, double v)
+static int post_at(lua_State *L, enum cmd_kind kind, int a, int b, double v,
+                   uint64_t key)
 {
-    struct cmd c = { kind, a, b, v };
+    struct cmd c = { kind, a, b, v, key, kosmos_ticks() };
 
     if (!ensure_engine(L)) return 0;
 
@@ -290,6 +339,11 @@ static int post(lua_State *L, enum cmd_kind kind, int a, int b, double v)
     __atomic_store_n(&cmd_head, head + 1, __ATOMIC_RELEASE);
     lua_pushinteger(L, head + 1);
     return 1;
+}
+
+static int post(lua_State *L, enum cmd_kind kind, int a, int b, double v)
+{
+    return post_at(L, kind, a, b, v, 0);
 }
 
 static int track_arg(lua_State *L, int index)
@@ -366,8 +420,11 @@ static int l_note_on(lua_State *L)
     lua_Integer p = luaL_checkinteger(L, 2);
     double v = luaL_optnumber(L, 3, 0.8);
 
+    lua_Integer key = luaL_optinteger(L, 4, 0);
+
     luaL_argcheck(L, p >= 0 && p <= 127, 2, "a pitch is 0 to 127");
-    return post(L, CMD_NOTE_ON, t, (int)p, v < 0 ? 0 : v > 2 ? 2 : v);
+    return post_at(L, CMD_NOTE_ON, t, (int)p, v < 0 ? 0 : v > 2 ? 2 : v,
+                   key > 0 ? (uint64_t)key : 0);
 }
 
 static int l_note_off(lua_State *L)
@@ -487,6 +544,11 @@ static void set_boolean(lua_State *L, const char *key, bool v)
  *   peak_l, peak_r               the master's meters
  *   tracks[1..8]                 { playing, queued, start, peak, hits = {8} }
  *                                `start` the step its clip began on
+ *   notes                        notes played, all told; and the last one's
+ *   note_key, note_posted,       way to the ear: counters when its key went
+ *   note_applied                 down, when it was posted and when taken,
+ *   note_ring, note_device       and the frames queued ahead of it, the
+ *                                ring's and the device's
  */
 static int l_state(lua_State *L)
 {
@@ -539,6 +601,12 @@ static int l_state(lua_State *L)
 
     set_number(L, "peak_l", copy.peak_l);
     set_number(L, "peak_r", copy.peak_r);
+    set_integer(L, "notes", copy.note.count);
+    set_integer(L, "note_key", (lua_Integer)copy.note.key);
+    set_integer(L, "note_posted", (lua_Integer)copy.note.posted);
+    set_integer(L, "note_applied", (lua_Integer)copy.note.applied);
+    set_integer(L, "note_ring", copy.note.ring);
+    set_integer(L, "note_device", copy.note.device);
 
     if (lua_getfield(L, -1, "tracks") != LUA_TTABLE) {
         lua_pop(L, 1);

@@ -4907,6 +4907,9 @@ end
 -- whose W is held while Super Tab moves the focus walks on for the same
 -- reason. A window closed meanwhile is posted to and never reads it.
 --
+-- **`at` is the counter when this read the key**, so a window that plays a
+-- note from it can say how long the sound took (`roadmap.md` 4i).
+--
 local raw_to_focused
 
 do
@@ -4916,7 +4919,7 @@ do
     local win = pressed_in[code] or focused_window()
 
     pressed_in[code] = down and win or nil
-    post(win, { type = "rawkey", code = code, down = down })
+    post(win, { type = "rawkey", code = code, down = down, at = sys.ticks() })
   end
 end
 

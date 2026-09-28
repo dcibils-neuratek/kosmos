@@ -40,6 +40,7 @@ local clipboard, toast, toastT, exportState = nil, "", 0, nil
 local recArm, octave, held, songScroll = false, 3, {}, 0
 local meters, mMeterL, mMeterR = {}, 0, 0
 local cpu, loadT, loadBusy, loadFrames = 0, 0, nil, nil
+local keyToEar, notesSeen, hzSeen = nil, 0, nil  -- the last note's way, in ms
 local L = {}
 local now = 0                                   -- seconds, for the blink
 local midiScan                                  -- MIDI, below
@@ -169,6 +170,18 @@ function app.update(dt, counter_hz)
   E.update()
   now = now + dt
   local st = E.kitState()
+  if counter_hz then hzSeen = counter_hz end
+  if st.notes and st.notes ~= notesSeen and hzSeen then
+    local first = keyToEar == nil
+    notesSeen = st.notes
+    keyToEar = app.noteWay(st, hzSeen)
+    if first then
+      local w = keyToEar
+      print(("groove: key to ear %.1f ms - %.1f to the window's pass, %.1f to the kit, "
+             .. "%.1f in the ring (%d frames), %.1f in the device (%d frames)")
+            :format(w.total, w.window, w.kit, w.ring, w.ringFrames, w.device, w.deviceFrames))
+    end
+  end
   loadT = loadT + dt
   if loadT >= 0.5 and st.busy then
     if loadBusy and st.rendered > loadFrames and counter_hz then
@@ -182,6 +195,24 @@ function app.update(dt, counter_hz)
   end
   mMeterL = max(mMeterL * 0.88, E.masterPeakL); mMeterR = max(mMeterR * 0.88, E.masterPeakR)
 end
+
+-- **The last note's way to the ear** (`roadmap.md` 4i), in milliseconds:
+-- from its key to the kit's taking it, which is the window manager, this
+-- window's pass and the kit's thread waking; and then what was queued ahead
+-- of it - the ring's periods the audio server had not mixed, and the
+-- device's it had not played. Queued frames are heard at the sound's rate,
+-- so they are milliseconds on any machine; the first part is counter time,
+-- and under QEMU's emulation says little about a real one.
+function app.noteWay(st, hz)
+  local toKit = (st.note_applied - st.note_key) / hz * 1000
+  local window = (st.note_posted - st.note_key) / hz * 1000
+  local ring, device = st.note_ring / E.SR * 1000, st.note_device / E.SR * 1000
+  return { total = toKit + ring + device, window = window, kit = toKit - window,
+           ring = ring, device = device, ringFrames = st.note_ring,
+           deviceFrames = st.note_device }
+end
+
+function app.keyToEar() return keyToEar end
 
 -- Whether a frame would show anything new without a person doing anything:
 -- the song moving, a clip blinking to say it waits for the bar, a message
@@ -302,6 +333,9 @@ local function drawTop()
   if Midi.last then U.text(Midi.last, x + 250, 18, C.dim, U.fS) end
   local right = (chrome.headed and chrome.lights) and (L.W - chrome.lights.w - 24) or (L.W - 10)
   U.text(string.format("DSP %2.0f%%", cpu * 100), right - 70, 18, cpu > 0.7 and C.rec or C.dim, U.fS, 70, "right")
+  if keyToEar then
+    U.text(string.format("KEY TO EAR %.0f ms", keyToEar.total), right - 250, 18, C.dim, U.fS, 170, "right")
+  end
 
   -- The bar's empty band is the title bar's, when it is one: a press there
   -- is handed to the window manager, which moves the window until the
@@ -929,11 +963,12 @@ function app.modifiers(shift, ctrl, alt) U.shift, U.ctrl, U.alt = shift, ctrl, a
 
 -- One path for every live input (computer keys now, MIDI keys and pads
 -- after). id identifies the physical key so its release finds the right voice and recorded note.
-local function liveNote(id, ti, pitch, vel, down)
+-- `key` is the counter when it went down, for the way to the ear (4i).
+local function liveNote(id, ti, pitch, vel, down, key)
   if down then
     if held[id] then return false end
     local tr = E.song.tracks[ti]
-    E.noteOn(ti, pitch, vel)
+    E.noteOn(ti, pitch, vel, key)
     held[id] = { ti = ti, pitch = pitch }
     if tr.type == "drum" and ti == sel.track then sel.row = pitch end
     if recArm then
@@ -963,12 +998,12 @@ local function liveNote(id, ti, pitch, vel, down)
   end
 end
 
-local function playKey(sc, down)
+local function playKey(sc, down, key)
   if not down then return liveNote(sc, sel.track, 0, 0, false) end
   local pitch
   if track().type == "drum" then pitch = DRUM_KEYS[sc] else pitch = NOTE_KEYS[sc] and (NOTE_KEYS[sc] + (octave + 2) * 12) end
   if not pitch then return false end
-  return liveNote(sc, sel.track, pitch, 0.85, true)
+  return liveNote(sc, sel.track, pitch, 0.85, true, key)
 end
 
 ---------------------------------------------------------------- MIDI
@@ -1023,7 +1058,7 @@ local function surfaceAction(act)
   end
 end
 
-local function midiEvent(kind, ch, d1, d2, port)
+local function midiEvent(kind, ch, d1, d2, port, key)
   local act = LK.handle(kind, ch, d1, d2, port)
   if act then surfaceAction(act); return end
   if kind == "on" or kind == "off" then
@@ -1040,7 +1075,7 @@ local function midiEvent(kind, ch, d1, d2, port)
     if not ti then return end
     if down then
       if sustained[id] then sustained[id] = nil; liveNote(id, 0, 0, 0, false) end
-      liveNote(id, ti, pitch, vel, true)
+      liveNote(id, ti, pitch, vel, true, key)
     else releaseLive(id) end
   elseif kind == "bend" then
     E.bend(sel.track, (d1 + d2 * 128 - 8192) / 8192 * BEND_RANGE)
@@ -1156,7 +1191,8 @@ function app.midiOpen() return #Midi.inputs > 0 end
 
 function app.quit() LK.detach(); Midi.close() end
 
-function app.keypressed(key)
+-- `at` is the counter when the window manager read the key.
+function app.keypressed(key, at)
   local tr = track()
   if U.ctrl then
     if key == "s" then app.save()
@@ -1192,7 +1228,7 @@ function app.keypressed(key)
   elseif tonumber(key) and tonumber(key) >= 1 and tonumber(key) <= E.NS then
     sel.scene = tonumber(key); E.launchScene(sel.scene)
     if not E.playing then E.play() end
-  else playKey(key, true) end
+  else playKey(key, true, at) end
 end
 
 function app.keyreleased(key) playKey(key, false) end

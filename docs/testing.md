@@ -12334,3 +12334,23 @@ second port taken for its DAW port and the unit put in DAW mode on it, its
 launch button told from the same controller on its keys' port, its lights
 sent once for a state and one message for one change, and the unit handed
 back. Its control: without the "mk3 2" match, six checks fail.
+
+## 18.261 A note's way to the ear, in its parts (4i, step a)
+
+Nobody knew how long a key took to be heard. Now a note carries the counter
+when its key went down - the MIDI driver's, taken with the event, or the
+window manager's, stamped on each `rawkey` - and the Synth Kit records when
+the window posted it, when its thread took it, and the frames queued ahead
+of it: the ring's, which the audio server has not mixed, and the device's,
+which it has not played. `synth.state()` says the last note's; Groove shows
+KEY TO EAR in its bar and prints the first note's parts.
+
+**Kept, `run_midi.py`** on ARM, 17 checks: the pad played into Groove is
+reported, its parts add up to the whole, the window's part is more than
+nothing - the pad's own time reached the kit rather than Groove's posting
+standing in for it - and the ring's part is whole periods within its eight.
+The first run said 35.7 ms: 12.2 to Groove's pass, 0.3 to the kit, 11.6 in
+the ring and 11.6 in the device. The milliseconds before the kit are QEMU's
+emulation and are not held to anything; the queue is structure. Its control:
+the event's counter dropped in `midiport.lua` - the window's part is 0.0 and
+the suite fails.
