@@ -4490,6 +4490,36 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
     end
   end
 
+  --
+  -- **A person's preferences, in `/Home/Preferences`** (`roadmap.md` 6s d,
+  -- `layout.html`): the folder made when it is not there, and the files
+  -- that used to be dotfiles at the top of `/Home` moved into it once - on
+  -- a home that has one where the new place has none, so a person's look,
+  -- keyboard and Tracker survive the move. Here because the shell is the
+  -- first to know where `/Home` is, and everything else is started after.
+  -- The filesystem's own dotfiles, the IDE's working copies and a
+  -- benchmark's results are not preferences and stay where they are.
+  --
+  do
+    local PREFS = "/Home/Preferences"
+
+    if not ns.getattr(PREFS) then ns.send(PREFS, { type = "mkdir" }) end
+
+    for _, name in ipairs({ "appearance", "clock", "keyboard", "power",
+                            "startup", "terminal", "tracker", "logview",
+                            "music", "network", "ide" }) do
+      local old, new = "/Home/." .. name, PREFS .. "/" .. name
+
+      if ns.getattr(old) and not ns.getattr(new) then
+        local moved, why = ns.send(old, { type = "rename", to = new })
+
+        if not moved then
+          print(("shell: %s stayed where it was: %s"):format(old, tostring(why)))
+        end
+      end
+    end
+  end
+
   local function out(s) write_text(ns, "/Devices/console", s) end
 
   -- An installed program's image made at the prompt is said where it was
@@ -6011,7 +6041,7 @@ if role == ROLE_INIT then
   -- **Static, because DHCP needs UDP** and there is none yet. The defaults
   -- are QEMU's user-mode network, which is what this machine boots on:
   -- 10.0.2.15 behind a NAT with the router and the DNS at 10.0.2.2 and
-  -- 10.0.2.3. `/Home/.network` overrides them, so a real board is a file
+  -- 10.0.2.3. `/Home/Preferences/network` overrides them, so a real board is a file
   -- rather than a rebuild - the same arrangement `.appearance` has.
   --
   -- **Given whether or not the kernel found a card**, which it was not until
@@ -6044,7 +6074,17 @@ if role == ROLE_INIT then
     --
     local address, netmask, gateway = "10.0.2.15", "255.255.255.0", "10.0.2.2"
     local dns = "10.0.2.3"
-    local ok_read, saved = pcall(mine.read, "/Home/.network")
+    --
+    -- In `/Home/Preferences` since 28 September (`roadmap.md` 6s d), and at
+    -- the top of `/Home` before: this runs before the shell has moved it,
+    -- on the one boot that does, so the old place is asked when the new
+    -- one has nothing.
+    --
+    local ok_read, saved = pcall(mine.read, "/Home/Preferences/network")
+
+    if not (ok_read and type(saved) == "table") then
+      ok_read, saved = pcall(mine.read, "/Home/.network")
+    end
 
     if ok_read and type(saved) == "table" then
       address = saved.address or address

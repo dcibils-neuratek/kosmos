@@ -8,7 +8,7 @@
 -- here rather than by opening a window and looking.
 --
 -- **The read-modify-write is the part worth testing hardest.** Two places
--- share `/Home/.appearance` and two share `/Home/.tracker`, so a write that
+-- share `/Home/Preferences/appearance` and two share `/Home/Preferences/tracker`, so a write that
 -- rebuilt the file from what one process happened to know would silently
 -- drop the other's keys. That is not a crash; it is a setting that comes
 -- back wrong an hour later, which is the kind of bug a window test would
@@ -138,7 +138,7 @@ for _, it in ipairs(settings.ITEMS) do
   end
 end
 
-check(scale_item ~= nil, "there is no Scale setting in /Home/.appearance")
+check(scale_item ~= nil, "there is no Scale setting in /Home/Preferences/appearance")
 
 wrote = nil
 settings.set(scale_item, scale_item and scale_item.default,
@@ -161,7 +161,7 @@ settings.set(look, look.default,
              function(_, t) wrote = t; return true end)
 
 check(wrote and wrote.palette == look.default,
-      "choosing the default look stored nothing, so /Home/.appearance no "
+      "choosing the default look stored nothing, so /Home/Preferences/appearance no "
       .. "longer says which look this machine wears")
 
 --

@@ -783,18 +783,18 @@ end
 -- **Dark and light, both**, which is the first thing Diego decided about this
 -- window (`docs/music.html`). The palette is this application's rather than
 -- the desktop's - that is what makes it a pilot - so the switch is here, in a
--- menu of its own, and the choice is kept in `/Home/.music`.
+-- menu of its own, and the choice is kept in `/Home/Preferences/music`.
 --
 local function use_look(name)
   look = LOOKS[name] and name or "dark"
   P = LOOKS[look]
 
-  fs.write("/Home/.music", { look = look })
+  fs.write("/Home/Preferences/music", { look = look })
   win:paint()
 end
 
 do
-  local saved = fs.read("/Home/.music")
+  local saved = fs.read("/Home/Preferences/music")
 
   if type(saved) == "table" and LOOKS[saved.look] then
     look = saved.look

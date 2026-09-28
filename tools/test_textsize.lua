@@ -43,9 +43,9 @@ local ui = kit()
 
 -- 1. Nothing saved: the desktop's size, and the role's own face.
 do
-  files["/Home/.terminal"] = nil
+  files["/Home/Preferences/terminal"] = nil
 
-  local size = textsize.new(ui, "/Home/.terminal")
+  local size = textsize.new(ui, "/Home/Preferences/terminal")
 
   check(size:size() == 16, "with nothing saved the size is " .. size:size())
   check(size:face() == "mono", "with nothing saved the face is " .. size:face())
@@ -54,19 +54,19 @@ end
 
 -- 2. A step up and a step down, each written down.
 do
-  files["/Home/.terminal"] = nil
+  files["/Home/Preferences/terminal"] = nil
 
-  local size = textsize.new(ui, "/Home/.terminal")
+  local size = textsize.new(ui, "/Home/Preferences/terminal")
 
   check(size:step(1) == true and size:size() == 18,
         "a step up from 16 gave " .. size:size())
-  check(files["/Home/.terminal"].text_px == 18,
+  check(files["/Home/Preferences/terminal"].text_px == 18,
         "the step up was not saved")
   check(size:face() == "mono@18", "at 18 the face is " .. size:face())
 
   check(size:step(-1) == true and size:size() == 16,
         "a step down from 18 gave " .. size:size())
-  check(files["/Home/.terminal"].text_px == nil,
+  check(files["/Home/Preferences/terminal"].text_px == nil,
         "back at the desktop's size, a size of its own was still saved")
 
   check(size:step(-1) == true and size:size() == 14,
@@ -116,9 +116,9 @@ end
 
 -- 6. The menu: three choices and a separator, and they do what they say.
 do
-  files["/Home/.terminal"] = nil
+  files["/Home/Preferences/terminal"] = nil
 
-  local size = textsize.new(ui, "/Home/.terminal")
+  local size = textsize.new(ui, "/Home/Preferences/terminal")
   local items = size:items()
 
   check(#items == 4 and items[3].separator == true,

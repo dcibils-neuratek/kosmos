@@ -21,7 +21,7 @@
 
 local clock = {}
 
-local SETTINGS = "/Home/.clock"
+local SETTINGS = "/Home/Preferences/clock"
 
 --
 -- Days since 1970 into a year, month and day.

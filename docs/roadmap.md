@@ -2823,6 +2823,13 @@ processors, and still what follows USB:
    September**: the seven names, `/Kosmos`'s six folders and `/Home`'s as
    `layout.html` draws them, what a Terminal and an installed game are
    handed, what is real and what waits on the loader, and the order left.
+   **(d) DONE on 28 September** (`testing.md` 18.248): eleven preferences -
+   the look, the clock, the keyboard, the power button, what starts at
+   login, the Terminal's, Tracker's, Log View's, Music's, the network's and
+   the IDE's - live in `/Home/Preferences/<name>`, and the shell makes the
+   folder and moves any it finds at the top of `/Home` there once, as it
+   starts. The filesystem's own dotfiles (`.super`), the IDE's working
+   copies and a benchmark's results are not preferences and stay.
 
 6u. **AGREED on 27 September - one scrollbar, everywhere.** Diego, seeing
    the IDE's thin one: "Why scrollbars here look flat and in other apps look
@@ -5270,7 +5277,11 @@ twice, and `sched: the higher priority runs first`, twice - the second time in
 0.10.60's first `make prepush` on 13 September 2026. `state.md` has the two
 suspicions - the harness's load, and the two threads homed on different cores
 so that the lower runs before the higher is awake - and neither is measured.
-The next step is many runs with each thread's core printed.
+The next step is many runs with each thread's core printed. **On x86 too,
+on 28 September**: `the higher priority runs first` failed once in the
+whole gate on the 6s (d) change, which does not reach the kernel, and the
+same binary (kept) passed 187 of 187 three times out of three alone - the
+harness's load, again, on the other architecture.
 
 ---
 

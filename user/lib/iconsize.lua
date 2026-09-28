@@ -4,7 +4,7 @@
 -- and Tracker's icon view (`roadmap.md` 5za).
 --
 --   local iconsize = use("/Kosmos/Libraries/iconsize.lua")
---   local icons = iconsize.new("/Home/.tracker", "desktop_icon_px", redraw)
+--   local icons = iconsize.new("/Home/Preferences/tracker", "desktop_icon_px", redraw)
 --   icons:size()                  -- 16, 32 or 64, in points
 --   { title = "Icons", items = icons:items() }   -- a menu, one marked
 --

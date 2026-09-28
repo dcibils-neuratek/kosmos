@@ -1170,7 +1170,7 @@ def main():
 
     try:
         guest.wait_for(PROMPT, "reached a shell")
-        guest.type('fs.write("/Home/.appearance", { palette = "dark", fonts = { '
+        guest.type('fs.write("/Home/Preferences/appearance", { palette = "dark", fonts = { '
                    'ui = { font = "ibmplexsans", px = 14 } } }) '
                    'print("music-face" .. "-ready")')
         guest.wait_for("music-face-ready", "chose a scalable face")

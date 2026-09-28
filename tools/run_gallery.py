@@ -135,7 +135,7 @@ def main():
         # The Deskbar opens its login set as well, and that is what put
         # Tracker, Monitor and Processes in the picture twice: emptied here,
         # as the display harness empties it.
-        guest.type('fs.write("/Home/.startup", { items = {} }) '
+        guest.type('fs.write("/Home/Preferences/startup", { items = {} }) '
                    'print("gallery" .. "-ready")')
         guest.wait_for("gallery-ready", "emptied the login set")
         guest.type("wm deskbar," + names)

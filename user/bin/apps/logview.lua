@@ -203,11 +203,11 @@ view.focusable = true
 --
 -- **Its own text size**, from the View menu (`/Kosmos/Libraries/textsize.lua`): Diego,
 -- 22 September, "a way to increase font size in the menu of the log viewer
--- and terminal". Kept in `/Home/.logview`. The rows are measured and drawn
+-- and terminal". Kept in `/Home/Preferences/logview`. The rows are measured and drawn
 -- in `size:face()` at `size:size()`, so a new size rewraps them.
 --
 local textsize = use("/Kosmos/Libraries/textsize.lua")
-local size = textsize.new(ui, "/Home/.logview")
+local size = textsize.new(ui, "/Home/Preferences/logview")
 
 --
 -- **Following, or held**, which is the one thing about this window a person

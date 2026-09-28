@@ -27,7 +27,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 
-local SETTINGS = "/Home/.startup"
+local SETTINGS = "/Home/Preferences/startup"
 
 local W, H = 320, 340
 

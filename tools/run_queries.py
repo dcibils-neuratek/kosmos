@@ -55,6 +55,18 @@ def main():
         del os.environ["KFS_LAYOUT"]
 
         #
+        # **A preference where it was before 28 September** - a dotfile at
+        # the top of the home - for the shell to move into
+        # `/Home/Preferences` as it starts (`roadmap.md` 6s d).
+        #
+        old_pref = os.path.join(work, "old-tracker")
+
+        with open(old_pref, "w") as f:
+            f.write("kept across the move")
+
+        run_interchange.kfs("put", disk, old_pref, "/home/.tracker")
+
+        #
         # Every answer is printed as one line with a marker, so a check is a
         # string comparison rather than a parse. `table.concat` with a comma
         # keeps the order the server sorted them into, which is part of what
@@ -212,6 +224,12 @@ def main():
             'o("/Kosmos/Programs/play.lua"), o("/Kosmos/Apps/snes.lua"), '
             '(fs.getattr("/Kosmos/Apps/calc.lua") or {}).opens == nil)',
 
+            # And where it went: into /Home/Preferences, under its name
+            # without the dot, and nothing left at the top.
+            'print("P-MOVED", fs.getattr("/Home/.tracker") == nil, '
+            'fs.read("/Home/Preferences/tracker"), '
+            '(fs.getattr("/Home/Preferences") or {}).kind)',
+
             # **The Deskbar's menu as it ships** (`roadmap.md` 6zd): a folder
             # a section, laid out from each application's header - Tracker a
             # launcher in Applications, starting its whole path with its own
@@ -322,6 +340,9 @@ def main():
              "one folder and no path as a name"),
             ("K-KITS", "3",
              "/Kosmos/Kits did not list the image's kits - pdf, compress, 3d"),
+            ("P-MOVED", "true kept across the move directory",
+             "a preference at the top of the home was not moved into "
+             "/Home/Preferences as the shell started"),
             ("K-OPENS", "png jpg jpeg mp4 mp4 sfc smc true",
              "an application's `kosmos: opens` did not reach its attributes - "
              "Photo's three, Video's and Play's film, the Super Nintendo's "

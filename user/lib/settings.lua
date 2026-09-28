@@ -67,12 +67,12 @@ settings.CATEGORIES = {
 -- The files settings live in, named once so a typo is a missing value rather
 -- than a second file nobody reads.
 --
-settings.APPEARANCE = "/Home/.appearance"
-settings.TRACKER    = "/Home/.tracker"
-settings.CLOCK      = "/Home/.clock"
-settings.STARTUP    = "/Home/.startup"
-settings.POWER      = "/Home/.power"
-settings.KEYBOARD   = "/Home/.keyboard"
+settings.APPEARANCE = "/Home/Preferences/appearance"
+settings.TRACKER    = "/Home/Preferences/tracker"
+settings.CLOCK      = "/Home/Preferences/clock"
+settings.STARTUP    = "/Home/Preferences/startup"
+settings.POWER      = "/Home/Preferences/power"
+settings.KEYBOARD   = "/Home/Preferences/keyboard"
 
 --
 -- One setting.
@@ -147,7 +147,7 @@ settings.ITEMS = {
 
   --
   -- **Two the window manager draws rather than any window.** They live in
-  -- `/Home/.appearance` like the look, and like the look, the scale and the
+  -- `/Home/Preferences/appearance` like the look, and like the look, the scale and the
   -- wallpaper they have to reach the manager the moment they change - a
   -- setting that took effect at the next restart is one nobody believes in.
   --
@@ -317,8 +317,8 @@ end
 -- Set one, by reading the file, changing one key and writing it back.
 --
 -- **Read, change, write, and never a whole file composed from what this
--- process happens to know.** Two places share `/Home/.appearance` and two
--- share `/Home/.tracker`, so a write that rebuilt the table would drop
+-- process happens to know.** Two places share `/Home/Preferences/appearance` and two
+-- share `/Home/Preferences/tracker`, so a write that rebuilt the table would drop
 -- whatever the other one had put there - which is the mistake `iconsize.lua`
 -- documents having avoided for the same reason.
 --
@@ -379,7 +379,7 @@ end
 -- for the Wallpaper row: none, then the pictures in `/Home`, then the
 -- photographs the image carries.
 --
--- The value is what `/Home/.appearance` keeps and what the window manager
+-- The value is what `/Home/Preferences/appearance` keeps and what the window manager
 -- is sent - a path in `/Home`, or `wallpaper/<file>` in the image - and ""
 -- for the look's own desk. The name is what a person reads.
 --

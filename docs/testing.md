@@ -11947,3 +11947,26 @@ Photos, Movies, Captures, Music, Trash - and drops a folder below it, where
 it used to drop at 300, which is the Trash's row now and would have thrown
 the folder away.
 
+## 18.248 A person's preferences in /Home/Preferences (6s d)
+
+`layout.html`, agreed on 27 September: `/Home/Preferences` holds "your
+choices: the look, the keyboard, the Deskbar, what starts at login, and the
+settings of the applications Kosmos ships", where they had been dotfiles at
+the top of `/Home`. Eleven are preferences and move - `appearance`,
+`clock`, `keyboard`, `power`, `startup`, `terminal`, `tracker`, `logview`,
+`music`, `network`, `ide` - to `/Home/Preferences/<name>`, in every place
+that reads or writes one and in every suite. What is not a preference
+stays: the filesystem's own `.super`, `.format` and `.device`, the IDE's
+working copies `.ide-run` and `.ide-text`, and the benchmarks' results.
+
+**The move, once**: the shell, the first to know where `/Home` is, makes
+the folder and renames each old file it finds into it when the new place
+has none. The network is started before the shell, so it asks the new place
+and then the old one, on the boot that does the move.
+
+**Checked**: `run_queries.py`'s P-MOVED - a `.tracker` put at the top of a
+home made the way sticks were before 27 September is, after the machine
+starts, in `/Home/Preferences/tracker` with its bytes, and gone from the top;
+and every suite that sets a look, a size or a startup list, through the new
+place.
+

@@ -80,8 +80,7 @@ machine, a person arrives with everything that is theirs.
                  its WAD - once a program can be loaded from a file (6t)
   Development/   projects: what the IDE opens
   Preferences/   a person's choices - the look, the keyboard, what starts at
-                 login, what opens what (6z); the rest of the dotfiles at the
-                 top of /Home move here (6s d)
+                 login, what opens what (6z), each application's own
   Documents/  Photos/  Movies/  Music/  Captures/
                  places in Tracker's sidebar, and where the applications
                  that make or open each keep them (6w)
@@ -146,8 +145,8 @@ the image.
 | the looks | `/Kosmos/Themes`, a file each; a person's in `/Home/Themes` | done |
 | the servers and drivers | one C file each in `user/servers/` and `user/drivers/`, roles of the one image | files of their own, after the loader |
 | `/Home` | the disk Kosmos started from, journalled - or memory, on a machine with none | done |
-| a person's preferences | dotfiles at the top of `/Home`: `.appearance`, `.tracker`, `.terminal` and the rest; what opens what already in `/Home/Preferences` | into `/Home/Preferences` (6s d) |
-| a person's places | Home, Desktop, and what they pin | Documents, Photos, Movies, Captures and Music (6w) |
+| a person's preferences | `/Home/Preferences`: the look, the keyboard, Tracker's, the Terminal's, what starts at login, what opens what - moved there from dotfiles at the top of `/Home` by the shell, once (6s d) | done |
+| a person's places | Home, Desktop, Documents, Photos, Movies, Captures, Music, what they pin, the Trash (6w) | done |
 | `/Temporary` | the ramfs | done |
 | fonts and pictures | inside the image | files, when the image stops carrying them |
 
@@ -187,10 +186,9 @@ its own ELF, beside its Lua.
 
 What is left, in the order `roadmap.md` has it:
 
-1. **A person's preferences into `/Home/Preferences`** (6s d) - the
-   dotfiles at the top of `/Home`, moved once on a home that has them.
-2. **The places** (6w) - Documents, Photos, Movies, Captures, Music - and
-   the applications that make or open each keeping them there.
-3. **Doom into `/Home/Apps/Doom`** - the loader's step 5: its Lua, its ELF
+1. **Doom into `/Home/Apps/Doom`** - the loader's step 5: its Lua, its ELF
    and its WAD in one folder; then Quake and the Super Nintendo.
-4. **Fonts and pictures as files**, and `/Kosmos/Settings` and `Logs`.
+2. **Fonts and pictures as files**, and `/Kosmos/Settings` and `Logs`.
+
+A person's preferences moved into `/Home/Preferences` (6s d) and the five
+places arrived (6w) on 28 September.

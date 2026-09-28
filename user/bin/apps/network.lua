@@ -25,7 +25,7 @@ local theme = ui.theme
 
 local W, H = 500, 490
 
-local SETTINGS = "/Home/.network"
+local SETTINGS = "/Home/Preferences/network"
 
 local win, err = ui.window{ title = "Network", w = W, h = H, x = 140, y = 90,
                             header = true }

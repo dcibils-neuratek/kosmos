@@ -193,12 +193,12 @@ local view = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
 --
 -- **Its own text size**, from the View menu (`/Kosmos/Libraries/textsize.lua`): Diego,
 -- 22 September, "a way to increase font size in the menu of the log viewer
--- and terminal". Kept in `/Home/.terminal`. Everything below measures and
+-- and terminal". Kept in `/Home/Preferences/terminal`. Everything below measures and
 -- draws in `size:face()` at `size:size()`, which is the desktop's `mono`
 -- until somebody chooses otherwise.
 --
 local textsize = use("/Kosmos/Libraries/textsize.lua")
-local size = textsize.new(ui, "/Home/.terminal")
+local size = textsize.new(ui, "/Home/Preferences/terminal")
 
 --
 -- The header: where you are, and everything else behind the dots.

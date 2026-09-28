@@ -328,7 +328,7 @@ local function stamp_colour()    return theme.stamp end
 -- filesystem gets the default palette and says nothing about it - the
 -- appearance of the desktop is not a reason to fail to start one.
 --------------------------------------------------------------------------
-local SETTINGS = "/Home/.appearance"
+local SETTINGS = "/Home/Preferences/appearance"
 
 --
 -- **The title's shape: a bar across the whole window, and not a setting.**
@@ -339,7 +339,7 @@ local SETTINGS = "/Home/.appearance"
 -- choice left with the looks (`roadmap.md` 5y) and the tab stayed, until
 -- Diego, 22 September: "i want to switch back the tabs from be os style to
 -- full width". So every window's title bar is as wide as the window, and a
--- `tabs` an older `/Home/.appearance` saved is read by nothing: a machine
+-- `tabs` an older `/Home/Preferences/appearance` saved is read by nothing: a machine
 -- whose file still says "beos" would have kept the tab under a new default
 -- alone. The tab's width was worked out from the close box, the title and
 -- the two boxes; 0.10.113 has it.
@@ -537,7 +537,7 @@ local function load_appearance()
   -- This was `theme.apply(saved.palette)`, and the name reached a table
   -- holding only the two palettes compiled into `theme.lua`. So Photon,
   -- BeOS, Platinum, IRIX and Plex - everything `themes.lua` ships and
-  -- every `.theme` file on the disk - were written to `/Home/.appearance`
+  -- every `.theme` file on the disk - were written to `/Home/Preferences/appearance`
   -- faithfully, and at the next start came back as `dark`, with the
   -- faces restored beside them because those are saved spelled out.
   -- Nothing said so, because the answer `theme.apply` gives was thrown
@@ -1065,7 +1065,7 @@ end
 --
 -- This threw the reason away: `wallpaper_load` answers `nil, why` and the
 -- `if` took only the truth of it. A wallpaper that had been chosen,
--- accepted by this process and written to `/Home/.appearance` then failed
+-- accepted by this process and written to `/Home/Preferences/appearance` then failed
 -- to come back with the machine saying *nothing at all* - which is what
 -- Diego met on the ThinkPad on 21 September: "the appearance app does not
 -- rememver the wallpapers and other things upon restarting".
@@ -1552,7 +1552,7 @@ end
 
 --
 -- **What the power button and the Super key do**, as Preferences' Power
--- and Keyboard pages set them (`/Home/.power`, `/Home/.keyboard`). Read
+-- and Keyboard pages set them (`/Home/Preferences/power`, `/Home/Preferences/keyboard`). Read
 -- once at the start and told again by `handlers.keys` when a row changes,
 -- because both are acted on in the key path, where a read from the disk is
 -- a call that may not be made. Until 24 September both rows wrote files
@@ -1562,8 +1562,8 @@ end
 OUT.keys = { power = "off", super = "menu" }
 
 function OUT.load_keys()
-  local power = fs.read("/Home/.power")
-  local keyboard = fs.read("/Home/.keyboard")
+  local power = fs.read("/Home/Preferences/power")
+  local keyboard = fs.read("/Home/Preferences/keyboard")
 
   if type(power) == "table" and power.button then
     OUT.keys.power = power.button

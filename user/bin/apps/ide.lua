@@ -63,13 +63,13 @@ local L = ui.layout
 -- A Lua table written with `fs.write`, like every settings file here.
 --------------------------------------------------------------------------
 
-local SETTINGS = "/Home/.ide"
+local SETTINGS = "/Home/Preferences/ide"
 
 --
 -- **Its text larger and smaller**, as Terminal's and Log View's is: Diego,
 -- 27 September, "we need a way to increase font size like we have in the
 -- terminal app". `/Kosmos/Libraries/textsize.lua`'s steps and its menu, in the dots, and
--- Ctrl = and Ctrl - besides; kept in a file of its own, since `/Home/.ide`
+-- Ctrl = and Ctrl - besides; kept in a file of its own, since `/Home/Preferences/ide`
 -- is the project's memory. Every editor asks for the face as it draws.
 --
 local textsize = use("/Kosmos/Libraries/textsize.lua")

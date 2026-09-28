@@ -16,7 +16,7 @@ The picture has Lua's keyword colour in it, from either of the drawing's
 two palettes, where the editor is.
 
 Then `wm ide` alone opens the same project with the same file, from what it
-remembered in /Home/.ide; and Control-W twice - the window manager's prefix,
+remembered in /Home/Preferences/ide; and Control-W twice - the window manager's prefix,
 then itself - closes the tab, which the IDE says.
 
 Then Run and Stop, checking, suggestions, the text's size and the scrollbar,
