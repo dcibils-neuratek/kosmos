@@ -2252,6 +2252,16 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zr. **FOUND on 28 September - `context_switch` is 4.1% slower and
+   `ipc_roundtrip` 2.2% than their baselines** (`make bench`, under
+   `-icount`, so exact): 12.316 to 12.816 and 63.523 to 64.899. Not from
+   6zq - `75079bb`, the commit before it, reads the same to the third
+   decimal - but from somewhere in the 253 commits since the baselines were
+   set at `c835d4c` (19 September), 26 of which touch `kernel/`, `arch/` or
+   `hal/`. **Next**: bisect those 26 with builds in the scratchpad, as
+   `bench-not-in-the-gate` says, and either take the cost back or raise the
+   baselines saying what bought it. The baseline is not raised until then.
+
 6zq. **FOUND on 28 September, on QEMU - Processes said the kernel was using
    89% of the machine while Cafesa3D rendered.** Diego, with Monitor beside
    it at 99% user on all four cores: "it seems the processes is saying
