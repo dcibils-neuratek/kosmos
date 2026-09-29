@@ -1098,7 +1098,20 @@ processors, and still what follows USB:
      kept it has not been what fails.
    - **d** - a MIDI event reaches the kit without waiting for the window's
      pass - the window is told, or the kit reads the page itself and
-     places the note at its own sample.
+     places the note at its own sample. **Designed on 29 September, after
+     "go on with the gate fix and then 4i d"**: the kit reads a page of its
+     own. Groove opens a second `/Devices/midi` stream and hands the Synth
+     Kit its page (`synth.listen`); the kit's thread, in the audio band,
+     takes new events every pass - a tick at most - and starts notes
+     itself, from a small map the window hands it when it changes (which
+     track the keys play, which is the drum track, and which port is the
+     Launchkey's surface, whose session pads are not notes). The kit does
+     what is on the clock - notes, sustain, bend - and remembers where
+     each key's note went, so its release finds it after the selection has
+     moved; the window keeps its own stream for what a person sees, the
+     Launchkey's lights and recording, and stops starting the sound
+     itself. Placing a note at its own sample within the period is left
+     for after.
    - **e** - the device's own depth and the shortest period the controller
      holds, on the ThinkPad's HD Audio; and the whole number there.
 4i-b. **WANTED since 19 September - where the fortnight went: IPC costs 70%
