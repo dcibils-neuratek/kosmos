@@ -13144,8 +13144,17 @@ condition, as C allows it and an assignment is not (`stdlib.h`).
 
 **Kept, `tools/run_nogame.py`** - `arm-nogame` and `x86-nogame`, 6 checks,
 5 s each: **nothing in the gate had ever started either engine**, because
-their games are id's and never in the tree, and `doom.lua` stops before the
-engine when there is no WAD - which is what `arm-launch` gives it. A pak of
+their games are id's and never in the tree. `make quake-check PAK=...`
+(`run_quake.py`, 6 checks) plays Quake's shareware demo and quits it, and so
+runs outside the gate; nothing does for Doom, and `doom.lua` stops before
+the engine when there is no WAD - which is what `arm-launch` gives it.
+`quake-check` passed with both fixes, with the shareware pak, the same day.
+
+**And a mistake of this work's own, put right the same day**: the suite's
+first draft was written as `tools/run_quake.py`, over the harness of that
+name, unread - the tool said "updated" rather than "created" - and then
+renamed, so the commit deleted `quake-check`'s harness. It is back as it
+was (`74e40b8`'s), byte for byte. A pak of
 no files ("PACK", its directory at 12, empty) and a WAD of no lumps, written
 by the suite, take each engine through its start - its image off the disk,
 `l_start`, the engine's own stack - to its own first error and `exit`: Quake

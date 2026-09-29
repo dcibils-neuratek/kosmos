@@ -113,9 +113,10 @@ SUITES = [
 
     # **Doom and Quake started with nothing to play** (`testing.md` 18.281):
     # an empty pak and an empty WAD take each engine through its start, its
-    # first error and `exit`, back to Lua with nothing dead. Nothing had ever
-    # started either engine here - their games are id's and never in the
-    # tree - so Quake shipped to the M700 dying of a stale object on start.
+    # first error and `exit`, back to Lua with nothing dead. Nothing in the
+    # gate had started either engine - their games are id's and never in the
+    # tree, so `make quake-check` needs a pak and runs outside it - and Quake
+    # shipped to the M700 dying of a stale object on start.
     Suite("arm-nogame", ["python3", "tools/run_nogame.py", ARM]),
     Suite("x86-nogame", ["python3", "tools/run_nogame.py", X86], x86=True),
 

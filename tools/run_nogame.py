@@ -8,9 +8,10 @@ where its return address should have been: `quake_kosmos.c.o` was compiled
 before `struct sysinfo` grew to 2744 bytes, and `l_start` kept the old size
 on its stack while the kernel wrote the new one over it (`testing.md`
 18.281). **Nothing in the gate had ever started either engine**: their games
-are id's, a person's own, and never in this repository - `arm-launch` starts
-Doom without a WAD, and `doom.lua` stops before the engine when there is
-none.
+are id's, a person's own, and never in this repository. `make quake-check
+PAK=...` plays Quake's demo with the shareware pak (`run_quake.py`), and so
+runs outside the gate; nothing does for Doom, and `arm-launch` starts Doom
+without a WAD, where `doom.lua` stops before the engine.
 
 And writing this found the second fault under the first: `exit` from an
 engine landed in `kosmos_exit_arm`'s frame after it had returned, so an
