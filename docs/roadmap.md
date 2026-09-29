@@ -262,6 +262,28 @@ of now we dont have". So, one at a time:
 tomorrow" - 4i's remaining steps, storage at full speed, then 4h in the
 order above; 6zg d, the Launchkey, the next day.
 
+**And later the same day, his answers to what was his to decide**:
+1. **Push** - yes (0.10.190).
+2. **The M700's GPU** (`docs/m700-gpu.md`) - "Go ahead": measure software
+   decode at 1080p on the M700 first; a driver of Kosmos's own from Intel's
+   manuals rather than a port of Linux's; a stick for each step; and
+   `SYS_DEV_MAP`'s bound raised for this device, with no IOMMU for now. And
+   his question, "will that also allow us to do hardware accelerated
+   desktop?": the driver's foundation - waking the GPU, its GTT, submission
+   and completion - is what every engine runs on, so the **blitter engine**
+   gives copies and fills in hardware, and the **display engine's plane
+   register** gives page flips without a copy; blending and windows as
+   textures need the **render engine's** shaders, which is a Mesa-sized
+   project of its own (and the one virgl would try first under QEMU).
+3. **virgl** - "Yes try to do this": a QEMU built with virglrenderer on this
+   Mac, kept in `build/` beside the installed one (4h d).
+4. **A development stick for the M700** - yes: `groove --report 30` for
+   4i e, and the Video app's numbers for a 1080p H.264 film (the study's
+   first step), on one stick.
+5. **`diskfs` to a declared protocol and C** - yes, now: storage's next step
+   (item 3's last paragraph), in steps lived with one at a time, as every
+   other server moved.
+
 The order before this one follows, and what it put first - USB - is built.
 
 **Reordered on 2026-09-11, and USB went to the front.**
