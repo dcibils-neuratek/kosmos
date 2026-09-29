@@ -1627,6 +1627,18 @@ $(HOSTDIR)/test_apicdecode: tools/test_apicdecode.c hal/pc/apic_decode.c hal/pc/
 	        tools/test_apicdecode.c hal/pc/apic_decode.c
 
 #
+# **The keyboard controller's drain, with the test as the controller**
+# (`hal/pc/i8042_drain.c`): the M700's firmware answers as an i8042 until
+# the USB driver takes the controller, and its ports read 0xff after -
+# which the drain took as bytes, sixty-four port reads at every question.
+# No emulator here has a controller that goes away.
+#
+$(HOSTDIR)/test_i8042drain: tools/test_i8042drain.c hal/pc/i8042_drain.c hal/pc/i8042_drain.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_i8042drain.c hal/pc/i8042_drain.c
+
+#
 # And what SMBIOS says the machine is called, for the same reason from the
 # other side: QEMU can be told to put a ThinkPad's name in its table, and
 # `run_x86.py` does, but it cannot be made to produce a *malformed* table -
@@ -2961,6 +2973,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/virtio/net.c \
              hal/virtio/input.c \
              hal/pc/i8042.c \
+             hal/pc/i8042_drain.c \
              hal/pc/input_bind.c \
              hal/pc/pointer.c \
              hal/keys.c \
@@ -3435,7 +3448,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3549,6 +3562,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache
 	$(HOSTDIR)/test_loaderfb
 	$(HOSTDIR)/test_efiboot
 	$(HOSTDIR)/test_apicdecode
+	$(HOSTDIR)/test_i8042drain
 	$(HOSTDIR)/test_snesblit
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv

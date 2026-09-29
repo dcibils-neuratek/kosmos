@@ -252,8 +252,13 @@ a Lua share worth naming - a quarter to half a processor, about a third of it
 Lua. The largest waste is C: `console` at 48-71% of a processor inside
 `getchar` and key-event syscalls (roadmap, FOUND).
 
-**Next**: what Diego decides from that; the console's syscalls measured on
-the M700 first. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+**Diego: "yes go after the console spin"** - `testing.md` 18.285: the
+i8042's drain stops at a status of 0xff, retires a controller that floats
+for sixty-four drains in a row, and says in the log what draining cost.
+`test_i8042drain`, 12 checks and two controls.
+
+**Next**: a stick for the M700 - its log's `i8042:` line, and `profile`
+again - to confirm which of the two readings it was. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware

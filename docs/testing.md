@@ -13384,3 +13384,54 @@ two spinners kept `profile` - asleep a quarter of a second between drains -
 from draining for about 46 s of ticks: 10,376 samples lost. The spinners
 step down to the normal band, as `spin` does, and `profile` keeps its time.
 
+## 18.285 The console server's spin on the M700, and a keyboard controller that floats
+
+**Found by the profiler's first run on the M700** (18.284, 0.10.194): the
+console server at 71% of one processor on an idle desktop and 48% on a busy
+one, and none of it the server's own code - 54% of its samples on the way
+back from `getchar`, 28% from the key-event syscall, 13% from its `wait`.
+On a PC both go through one function, `drain()` in `hal/pc/i8042.c`, which
+also runs from the check the kernel makes at every interrupt, with
+interrupts masked - where the profiler cannot see it at all.
+
+**The M700 has no PS/2 port, and its boot found an i8042** ("the chip a
+laptop still has"). What answered was its firmware, which plays a keyboard
+controller for a USB keyboard - until the USB driver takes the controller
+from it, which the log shows at 0.279 s. A port nothing drives reads 0xff,
+and 0xff as a status says a byte is waiting. So every drain read thirty-two
+bytes of 0xff and dropped them - sixty-four port reads, at every question,
+from then on.
+
+**That is the reading the evidence fits, and it is not yet proven**: the
+other one is a firmware that still answers for the controller, where each
+port read is a trip into System Management Mode. So the change measures as
+well as mends, and the M700 decides between them:
+
+- **The drain is a loop over a port reader it is handed**
+  (`hal/pc/i8042_drain.c`), and a status of 0xff - every bit, a state no
+  controller is in - ends it after one read and no byte.
+- **Sixty-four drains in a row that float retire the controller** - no
+  longer asked, `present` false, said once in the log with what draining
+  had cost. Not the first: the ThinkPad's keyboard *is* this controller, and
+  a glitch must not take it away.
+- **And after a hundred thousand drains the log says what they cost** - so
+  a controller that is there but slow shows its price too.
+
+**`test_i8042drain`, 12 checks, in `host-check`**, with the test playing
+the controller, since QEMU's q35 has a real i8042 or none and never one
+that goes away: an empty controller one read; keyboard and pointer bytes
+kept and told apart; a floating bus one read and no byte; two bytes and then
+a float, both kept; one that never empties bounded at 32 bytes; 63 floating
+drains not gone, a good drain starting the count again, the 64th gone. Its
+two controls: 0xff read as a byte (two checks fail) and gone at the first
+float (two fail).
+
+**The gate, 29 September**: 65 of 66, and `x86-sound` the one - "the HDA
+ring underran", worst write 31 ms - in the quiet phase at the end. Run
+alone three times after, 14/14 each, and no `i8042:` line in a boot of the
+same image, so it was not the log line either: 18.127's rule, a sound
+failure inside the gate re-run alone before it is believed.
+
+**What the M700 has to say**: the log's `i8042:` line, and `profile` again
+with the console where it was.
+

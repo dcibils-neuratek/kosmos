@@ -65,8 +65,10 @@
 
 #include "hal.h"
 #include "console.h"
+#include "cpu.h"
 #include "keys.h"
 #include "i8042.h"
+#include "i8042_drain.h"
 #include "pc.h"
 #include "pointer.h"
 #include "spinlock.h"
@@ -619,9 +621,53 @@ static void kbd_byte(uint8_t b)
     put_char(c);
 }
 
+/*
+ * A byte the drain fetched, to whichever device sent it. An auxiliary byte
+ * with no device on that port is dropped, as it always was.
+ */
+static void drained_byte(uint8_t b, bool aux)
+{
+    if (aux) {
+        if (aux_present) {
+            aux_byte(b);
+        }
+    } else {
+        kbd_byte(b);
+    }
+}
+
+/*
+ * What draining has cost, for the log - `diagnose` carries it off a stick.
+ * Counted under `i8042_lock`, like everything the drain touches.
+ */
+static unsigned long drains, port_reads;
+static uint64_t drain_cycles;
+static struct i8042_watch watch;
+
+/*
+ * **Said twice at most**: when the controller is taken to have gone, and
+ * once after a hundred thousand drains, so a controller that is there but
+ * slow to read - a firmware answering for one in System Management Mode -
+ * shows its price too.
+ */
+static void say_cost(const char *what)
+{
+    kputs("i8042: ");
+    kputs(what);
+    kputs(" after ");
+    kputu(drains);
+    kputs(" drains, ");
+    kputu(port_reads);
+    kputs(" port reads, ");
+    kputu((unsigned long)(drain_cycles / (drains != 0 ? drains : 1)));
+    kputs(" counter ticks a drain\n");
+}
+
 static void drain(void)
 {
-    unsigned n;
+    uint64_t began;
+    unsigned reads;
+    int how;
 
     if (!present) {
         return;
@@ -633,24 +679,38 @@ static void drain(void)
      * shell. Thirty-two bytes is ten keystrokes or ten mouse packets, which
      * is more than arrives between two looks.
      */
-    for (n = 0; n < 32; n++) {
-        uint8_t status = pc_in8(STATUS);
-        uint8_t b;
+    began = cpu_cycles();
+    how = i8042_drain_bytes(pc_in8, drained_byte, 32, &reads);
+    drain_cycles += cpu_cycles() - began;
+    port_reads += reads;
+    drains++;
 
-        if ((status & ST_OUTPUT) == 0) {
-            return;
-        }
-
-        b = pc_in8(DATA);
-
-        if ((status & ST_AUX) != 0) {
-            if (aux_present) {
-                aux_byte(b);
-            }
-        } else {
-            kbd_byte(b);
-        }
+    if (drains == 100000) {
+        say_cost("still here");
     }
+
+    /*
+     * **Gone, when the bus has floated for a while - and not at once.** The
+     * M700 has no PS/2 port: what answered at boot was its firmware, which
+     * answers as a controller for a USB keyboard until the USB driver takes
+     * the controller from it (`xhci: ... taken from the firmware`). From
+     * then its ports read 0xff, and every question - each `getchar`, each
+     * key event, and the check the kernel makes at every interrupt - drained
+     * thirty-two bytes of it: sixty-four port reads, and the console server
+     * at 71% of a processor on an idle desktop.
+     *
+     * Not the first 0xff, because a ThinkPad's keyboard *is* this controller
+     * and a glitch must not take it away; a bus nobody drives reads 0xff
+     * every time, so sixty-four drains in a row say so, and each costs one
+     * read rather than sixty-four until then.
+     */
+    if (!i8042_gone(&watch, how)) {
+        return;
+    }
+
+    say_cost("the status port reads ff - nobody is there; no longer asked");
+    present = false;
+    aux_present = false;
 }
 
 /*------------------------------------------------------------------------

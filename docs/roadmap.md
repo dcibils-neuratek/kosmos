@@ -5446,6 +5446,22 @@ the Pi", and the Pi is not here yet.
   drain reads its bound of 32 bytes, 64 port reads, and the pending check the
   kernel runs on every interrupt does the same. The first step is counting
   what `drain()` reads, in `diagnose`.
+
+  **Built the same day** (`testing.md` 18.285): a status of 0xff ends a
+  drain after one read, sixty-four such drains in a row retire the
+  controller, and the log says what draining cost - once when it retires,
+  once after a hundred thousand drains. For the M700 to confirm with the log
+  and a second `profile`.
+- **FOUND on 29 September, by a sixty-second profile on the M700 - Doom's
+  sleep is a spin.** `DG_SleepMs` (`user/installed/Doom/doom_kosmos.c`)
+  waits by yielding until the counter passes the deadline, and a yield on
+  eight processors with room on them comes straight back: 84% of Doom's
+  samples land on the way back from it, about 29% of a processor spent
+  waiting. The kernel sleeps in scheduler ticks (4 ms) and Doom asks for 1,
+  so the answer is not simply `kosmos_sleep` - it is the Lua loop waiting on
+  the frame rather than the engine waiting on the clock, or the one-shot
+  timer `architecture.md` §5 is heading for. Quake's and the Super
+  Nintendo's waits to be looked at the same way.
 - **FOUND on 29 September, writing the profiler's suite - on QEMU's x86-64,
   one processor.** Two spinners in the display band kept `profile`, asleep a
   quarter of a second between drains in the same band, from running for
