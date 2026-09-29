@@ -12683,3 +12683,63 @@ the absences can tell - the kit away 113.4 ms and the server 106.5, shared,
 and both checks fail on the ceiling. (The first build of this control
 changed only the entry, and a sound thread is put back in the band each
 time it wakes, so it would have measured nothing.)
+
+## 18.270 A file's bytes without a Lua string (storage at full speed, step 3)
+
+`kfs` reads a window of a file into a region (`read_range_into`) and writes
+a file from one (`write_file` with `{ size, region, at }`), and the whole
+blocks go between the disk and the region through `sys.disk_read_into` and
+`sys.disk_write_from` - the kernel's copy on its own disk, `region_copy` from
+the USB driver's region on a stick (`design.md` 8.3b2).
+
+**Measured, `diskbench /Home 1 1`, twice each, the same on both runs:**
+
+```
+                          before           after
+ARM, the kernel's disk
+  sequential read         375 MB/s         780 MB/s
+  sequential write        277 MB/s         367 MB/s
+  random 4 KB read        1760 IOPS        1787 IOPS
+  outside the device      60% of a read    33%
+x86, /Home on a stick
+  sequential read         212 MB/s         210 MB/s
+  sequential write        141 MB/s         143 MB/s
+  random 4 KB read        768 IOPS         795 IOPS
+  outside the device      41% of a read    10%
+```
+
+**The stick did not move, and the shares say why.** What left the disk
+server's own time came back, one for one, as time waiting on the device -
+about 1.5 ms a megabyte each way - so the pace there is QEMU's USB
+emulation's, not anything in Kosmos. On a real stick the device is nearly
+all of it anyway (18.64); what the change buys there is the processor.
+
+**Random 4 KB reads did not move either, and that pointed at the next
+cost.** Counted through `/Home/.device`, a 4 KB read of `/Home/top.bin`
+makes six disk calls and one carries its bytes, and each directory deeper
+adds two: while an index exists every request's path is put in the disk's
+spelling (`kfs.spelled`) and then found (`kfs.find`), two walks each reading
+the root's inode block and its directory from the disk again. On the Mac
+`kfs.find` alone is two calls for a name that is not there and three for one
+that is.
+
+**Kept, `test_kfs.lua`**, 87 checks: a file written from a region, and from
+one at an offset in it, reads back as the region held; its whole blocks
+went in the disk's own calls and only the last part-block through a string;
+windows into a region at an offset in it - part-blocks at either end, across
+two extents, past the end of the file - hold what `read_range` gives and
+nothing either side, in no more disk calls than it but the part-blocks at
+the two ends; three whole blocks are one call. And the Disk Benchmark suite
+writes 3 MB from a region and reads it back into one, which is this path in
+the machine. Controls, each a copy of `kfs.lua` the test loads instead: the
+part-block's offset ignored, the last part-block not written, the region's
+own offset ignored - each fails its check.
+
+**One check was removed rather than kept**: a block the open transaction
+holds, read into a region from there. The control that took the branch out
+passed, and reading why found it could not matter - a file's blocks, a
+directory's included, go straight to the disk (8.3b), and a block freed in
+a transaction is not handed out inside it, so what the transaction holds is
+inodes, the bitmap, attributes and the superblock, which `read_block`
+answers. The branch went too; `read_blocks` still has its twin, from before
+8.3b, for the review before the next minor version.

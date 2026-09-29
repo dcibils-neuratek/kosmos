@@ -3300,10 +3300,12 @@ local function diskfs_handlers(state)
       -- message is 2048 bytes, and that was the whole reason a file bigger
       -- than a message could not be read.
       --
-      -- Stepped rather than read in one piece, so this process's own heap
-      -- holds sixty-four kilobytes however large the window is. A server
-      -- that read a megabyte into a Lua string to copy it out again would
-      -- have moved the limit rather than removed it.
+      -- **Straight into those pages**, and never through this process's
+      -- heap: `kfs.read_range_into` puts the whole blocks there from the disk
+      -- (storage at full speed, step 3). It was stepped a disk call at a
+      -- time through a string, which kept the heap at 124 KB however large
+      -- the window - and made three copies of every byte and 124 KB of
+      -- garbage a call in the process every file goes through.
       --
       if req.into then
         --
@@ -3336,24 +3338,10 @@ local function diskfs_handlers(state)
 
         local from = tonumber(req.offset) or 0
         local want = tonumber(req.bytes) or node.size
-        -- A disk call's worth: 124 KB, so a window is one call to the disk
-        -- rather than two (storage at full speed, step 3).
-        local STEP = 31 * 4096
-        local done = 0
+        local done, err = kfs.read_range_into(sb, node, from, want, cap, 0)
 
-        while done < want do
-          local piece = kfs.read_range(sb, node, from + done,
-                                       math.min(STEP, want - done))
-
-          if not piece or #piece == 0 then break end
-
-          local ok, err = sys.region_write(cap, done, piece)
-
-          if not ok then
-            return done_with({ ok = false, error = tostring(err) })
-          end
-
-          done = done + #piece
+        if not done then
+          return done_with({ ok = false, error = tostring(err) })
         end
 
         return done_with({ ok = true, bytes = done, size = node.size })
@@ -3488,21 +3476,11 @@ local function diskfs_handlers(state)
           return answer
         end
 
+        -- The region itself, so its bytes go to the disk without becoming
+        -- a string here (storage at full speed, step 3).
         local want = math.max(0, math.floor(tonumber(req.bytes) or 0))
-        local done = 0
-
-        local reader = {
-          size = want,
-          read = function(offset, length)
-            local piece, rerr = sys.region_read(cap, offset, length)
-
-            if piece then done = done + #piece end
-
-            return piece, rerr and tostring(rerr)
-          end,
-        }
-
-        local number, serr = atomic(sb, kfs.store, req.path, reader,
+        local number, serr = atomic(sb, kfs.store, req.path,
+                                    { size = want, region = cap, at = 0 },
                                     stamp())
 
         if not number then
@@ -3512,7 +3490,7 @@ local function diskfs_handlers(state)
         state.writes = (state.writes or 0) + 1
         touched(sb, req.path)
 
-        return done_with({ ok = true, bytes = done })
+        return done_with({ ok = true, bytes = want })
       end
 
       -- A leading dot is ordinary. It was refused for a while, on the
@@ -3952,7 +3930,8 @@ local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 -- partition and no other, so a second Kosmos stick is never taken for the one
 -- the machine started from. Without the option nothing here runs, and the
 -- disk server's disk is the kernel's, as it always was. With it, `sys.disk`,
--- `sys.disk_read` and `sys.disk_write` are replaced in this process - as
+-- `sys.disk_read`, `sys.disk_write` and the two that move a file's bytes
+-- between a region and the disk are replaced in this process - as
 -- `tools/kfs.lua` replaces them for a file on the Mac - by ones over that
 -- partition. `kfs.lua` does not change, and cannot tell.
 --
@@ -4237,6 +4216,36 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
     return sys.region_read(region, 0, bytes)
   end
 
+  -- A file's bytes between the driver's region and a caller's, with no
+  -- string between them (storage at full speed, step 3).
+  sys.disk_read_into = function(sector, bytes, into, at)
+    local count, why = span(sector, bytes)
+
+    if not count then return nil, why end
+
+    local r, err = ask(write_cap, OP_READ, unit, first + sector, count)
+
+    if not r then return nil, err end
+
+    return sys.region_copy(into, at, region, 0, bytes)
+  end
+
+  sys.disk_write_from = function(sector, from, at, bytes)
+    local count, why = span(sector, bytes)
+
+    if not count then return nil, why end
+
+    local copied, cerr = sys.region_copy(region, 0, from, at, bytes)
+
+    if not copied then return nil, cerr end
+
+    local r, err = ask(write_cap, OP_WRITE, unit, first + sector, count)
+
+    if not r then return nil, err end
+
+    return bytes
+  end
+
   sys.disk_write = function(sector, data)
     local count, why = span(sector, #data)
 
@@ -4340,6 +4349,7 @@ local function diskfs_main(endpoint, read_cap, write_cap, clock_cap)
   local device = { reads = 0, writes = 0, read_bytes = 0, write_bytes = 0,
                    read_counter_ticks = 0, write_counter_ticks = 0 }
   local disk_read, disk_write = sys.disk_read, sys.disk_write
+  local disk_read_into, disk_write_from = sys.disk_read_into, sys.disk_write_from
 
   sys.disk_read = function(sector, bytes)
     local began = sys.ticks()
@@ -4359,6 +4369,28 @@ local function diskfs_main(endpoint, read_cap, write_cap, clock_cap)
     device.write_counter_ticks = device.write_counter_ticks + (sys.ticks() - began)
     device.writes = device.writes + 1
     device.write_bytes = device.write_bytes + #data
+
+    return wrote, why
+  end
+
+  sys.disk_read_into = function(sector, bytes, into, at)
+    local began = sys.ticks()
+    local got, why = disk_read_into(sector, bytes, into, at)
+
+    device.read_counter_ticks = device.read_counter_ticks + (sys.ticks() - began)
+    device.reads = device.reads + 1
+    device.read_bytes = device.read_bytes + (math.type(got) == "integer" and got or 0)
+
+    return got, why
+  end
+
+  sys.disk_write_from = function(sector, from, at, bytes)
+    local began = sys.ticks()
+    local wrote, why = disk_write_from(sector, from, at, bytes)
+
+    device.write_counter_ticks = device.write_counter_ticks + (sys.ticks() - began)
+    device.writes = device.writes + 1
+    device.write_bytes = device.write_bytes + bytes
 
     return wrote, why
   end

@@ -75,6 +75,47 @@ function sys.disk_write(sector, data)
   return true
 end
 
+-- Regions, as the disk server is handed them: a capability's bytes, here a
+-- string per number. The disk's two region calls move whole blocks between
+-- one and the disk and never hand kfs a string, which is what they are for.
+local regions = {}
+local into_calls, from_calls = 0, 0
+
+function sys.region_write(cap, at, data)
+  local r = assert(regions[cap], "no such region")
+
+  if at < 0 or at + #data > #r then return nil, "past the end of the region" end
+
+  regions[cap] = r:sub(1, at) .. data .. r:sub(at + #data + 1)
+  return #data
+end
+
+function sys.region_read(cap, at, bytes)
+  local r = assert(regions[cap], "no such region")
+
+  if at < 0 or at + bytes > #r then return nil, "past the end of the region" end
+
+  return r:sub(at + 1, at + bytes)
+end
+
+function sys.disk_read_into(sector, bytes, cap, at)
+  local data = sys.disk_read(sector, bytes)
+
+  into_calls = into_calls + 1
+  reads = reads - 1                       -- one call, counted as one
+  return sys.region_write(cap, at, data)
+end
+
+function sys.disk_write_from(sector, cap, at, bytes)
+  local data, why = sys.region_read(cap, at, bytes)
+
+  if not data then return nil, why end
+
+  from_calls = from_calls + 1
+  write_calls = write_calls - 1
+  return sys.disk_write(sector, data)
+end
+
 function sys.disk()
   return { sectors = SECTORS, sector_size = 512, bytes = SECTORS * 512,
            most = MOST }
@@ -336,6 +377,108 @@ check(kfs.read_file(sb, select(2, kfs.find(sb, "/from-a-region")))
 check(largest <= 64 * 1024 and asked >= 5,
       ("a piece at a time: %d reads, the largest %d bytes"):format(asked,
                                                                    largest))
+
+--------------------------------------------------------------------------
+-- **A file's bytes between a region and the disk, never as a string**
+-- (storage at full speed, step 3). Written from a region and read into one,
+-- at an offset in it, and the same bytes `read_file` and `read_range` give:
+-- windows that start and end part way through a block, cross from one
+-- extent to the next, and run past the end of the file. The whole blocks go
+-- in the disk's own calls, as many as a string's path would make and no
+-- more.
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+local odd = {}
+
+for i = 1, 70000 do
+  odd[i] = string.char(32 + (i * 7 + i // 4096) % 95)
+end
+
+odd = table.concat(odd, "", 1, 70000) .. string.rep("z", 131 * 1024 + 17)
+regions[1] = odd
+regions[2] = string.rep("\0", 16) .. odd
+into_calls, from_calls, reads, write_calls = 0, 0, 0, 0
+
+assert(kfs.begin())
+check(kfs.store(sb, "/regioned", { size = #odd, region = 1, at = 0 }, 1) ~= nil,
+      "a file is stored from a region")
+assert(kfs.commit(sb))
+check(from_calls >= 2 and write_calls >= 1,
+      ("its whole blocks went from the region to the disk (%d calls), only "
+       .. "the last part-block through a string"):format(from_calls))
+
+assert(kfs.begin())
+check(kfs.store(sb, "/regioned-at", { size = #odd, region = 2, at = 16 }, 2) ~= nil,
+      "and from a region at an offset in it")
+assert(kfs.commit(sb))
+
+local _, reg = kfs.find(sb, "/regioned")
+local _, reg_at = kfs.find(sb, "/regioned-at")
+
+check(kfs.read_file(sb, reg) == odd and kfs.read_file(sb, reg_at) == odd,
+      "and both read back as the bytes the region held")
+
+-- Two extents: a file removed leaves a hole smaller than the next, which
+-- kfs fills first - it takes the first free run - and continues past. The
+-- hole has to be committed free: a block freed in a transaction is not
+-- handed out again inside it.
+assert(kfs.begin())
+assert(kfs.store(sb, "/hole", string.rep("h", 3 * kfs.BLOCK), 3))
+assert(kfs.store(sb, "/between", string.rep("b", kfs.BLOCK), 3))
+assert(kfs.commit(sb))
+assert(kfs.begin())
+assert(kfs.unlink(sb, "/hole"))
+assert(kfs.commit(sb))
+assert(kfs.begin())
+assert(kfs.store(sb, "/split-a", string.rep("a", 3 * kfs.BLOCK + 100)
+                                 .. string.rep("c", 5 * kfs.BLOCK), 3))
+assert(kfs.commit(sb))
+
+local _, split = kfs.find(sb, "/split-a")
+local split_bytes = kfs.read_file(sb, split)
+
+local windows = {
+  { reg, 0, #odd }, { reg, 1, 4095 }, { reg, 4095, 2 }, { reg, 100, 70000 },
+  { reg, 4096, 8192 }, { reg, 5000, 150000 }, { reg, #odd - 5, 100 },
+  { reg, #odd + 1, 10 }, { split, 0, #split_bytes },
+  { split, 3 * kfs.BLOCK - 10, 300 }, { split, 1, #split_bytes },
+}
+local same_bytes, same_calls = true, true
+
+for _, w in ipairs(windows) do
+  local node, offset, want = w[1], w[2], w[3]
+  local expect = kfs.read_range(sb, node, offset, want)
+
+  reads = 0
+  kfs.read_range(sb, node, offset, want)
+
+  local string_calls = reads
+
+  regions[3] = string.rep("\1", 7 + #expect + 9)
+  reads, into_calls = 0, 0
+
+  local placed = kfs.read_range_into(sb, node, offset, want, 3, 7)
+
+  same_bytes = same_bytes and placed == #expect
+               and regions[3]:sub(8, 7 + #expect) == expect
+               and regions[3]:sub(1, 7) == string.rep("\1", 7)
+               and regions[3]:sub(8 + #expect) == string.rep("\1", 9)
+  same_calls = same_calls and reads + into_calls <= string_calls + 2
+end
+
+check(#split.extents >= 2, "the file for the windows has two extents")
+check(same_bytes, "a window read into a region, at an offset in it, holds "
+                  .. "what read_range gives and nothing either side of it")
+check(same_calls, "and takes no more disk calls than read_range, but the "
+                  .. "part-blocks at its two ends")
+
+regions[4] = string.rep("\1", 3 * kfs.BLOCK)
+into_calls = 0
+kfs.read_range_into(sb, reg, 0, 3 * kfs.BLOCK, 4, 0)
+check(into_calls == 1, ("three whole blocks are one call into the region, "
+                        .. "not %d"):format(into_calls))
 
 --------------------------------------------------------------------------
 -- Blocks taken a run at a time. A file of 513 blocks took 513 scans of the

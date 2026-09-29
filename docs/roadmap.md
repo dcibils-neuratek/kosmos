@@ -163,6 +163,16 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    which Diego allowed, "if you need to take the filesystem from lua to c do
    it" - a block protocol that queues on a shared ring, NVMe as a userland
    driver, and chained USB transfers.
+   **The byte path in C is built** (29 September, `design.md` 8.3b2,
+   `testing.md` 18.270): a file's bytes go between the disk and the
+   caller's region without a Lua string - sequential reads on the ARM
+   board's disk 375 to 780 MB/s, writes 277 to 367. A stick's `/Home` under
+   QEMU did not move, 212 and 141, because the time saved came back as time
+   waiting on QEMU's USB. **And the next cost is metadata**: a 4 KB read
+   of a file in `/Home` makes six disk calls and one carries its bytes - the
+   path is walked twice while an index exists (`kfs.spelled`, then
+   `kfs.find`), each walk reading the inode block and the directory again.
+   A cache of metadata blocks in the disk server, its only writer, is next.
 4. **OPEN - for Diego, when a measurement asks**: a device writing straight
    into a client's pages with no IOMMU to fence it.
 

@@ -982,6 +982,36 @@ instead of a string it assembled, and refused past a megabyte. A 3 MB file
 is written and read back in the gate, the instant between the bytes and the
 commit is held on the host, and `make powertest` still passes (18.178).
 
+### 8.3b2 A file's bytes never become a string
+
+Built on 29 September 2026, as storage at full speed's step 3 (`roadmap.md`),
+under Diego's "if you need to take the filesystem from lua to c do it".
+
+A read went from the disk into a Lua string per disk call, `kfs` cut and
+joined those into another, and the disk server copied that into the
+caller's region: three copies of every byte, and 124 KB of garbage a call in
+the process every file goes through. A write read the caller's region 64 KB
+at a time into strings for `kfs` to hand the disk.
+
+**`kfs` still decides which blocks; the bytes go in C.** Two calls,
+`sys.disk_read_into(sector, bytes, region, at)` and `sys.disk_write_from(sector,
+region, at, bytes)`, move whole blocks between the disk and a region the
+server holds: on the kernel's disk the kernel's copy out of its bounce buffer
+lands in the caller's pages, and on a stick the driver's region is copied to
+the caller's (`sys.region_copy`). `kfs.read_range_into` walks the extents as
+`read_range` does and reads each run's whole blocks that way; only a block a
+window enters or leaves part way - its first and its last - comes through a
+string to be cut. `write_file` takes a region as a source (`{ size, region,
+at }`) and writes its whole blocks from it, the last part-block padded
+through a string. Metadata - inodes, directories, the bitmap, the journal -
+is structure, and stays strings and `string.unpack`.
+
+What it cost to keep testable: the host test has regions and the two calls
+as stand-ins, so the same `kfs.lua` is held on the Mac to the bytes
+`read_range` gives, at every alignment and across extents, in no more disk
+calls. Measured under QEMU (`testing.md` 18.270): sequential reads on the
+ARM board's disk 375 to 780 MB/s, writes 277 to 367.
+
 ### 8.3c A name is found whatever its case, and keeps the case it was given
 
 Decided on 27 September 2026 by Diego, once the layout gave every name a capital - `/Kosmos/Libraries`, `/Home` - "it doesnet make sense to have case sensitiveness in this day and age". Kosmos had compared names exactly everywhere but the FAT reader.

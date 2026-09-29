@@ -2387,6 +2387,98 @@ static int l_elf_plan(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.disk_read_into(sector, bytes, cap, at)` - those bytes, into a region.
+ * `sys.disk_write_from(sector, cap, at, bytes)` - and to the disk from one.
+ *
+ * **A file's bytes never become a Lua string** (storage at full speed, step
+ * 3). `disk_read` made one per call, kfs cut and joined them into another,
+ * and the disk server copied that into the caller's region: three copies of
+ * every byte, and 124 KB of garbage a call for the collector of a process
+ * everybody's files go through. The kernel's copy out of its bounce buffer
+ * lands in the caller's pages here - the only copy this process makes - and
+ * kfs still decides which blocks, because that is structure and not bytes.
+ *
+ * The region is checked against its real size, as `region_write` checks it,
+ * and the kernel checks the pages are this process's to write.
+ */
+static bool disk_span(lua_State *L, long cap, lua_Integer at, lua_Integer bytes,
+                      uintptr_t *where)
+{
+    uintptr_t base;
+    size_t size;
+
+    if (!region_of(cap, &base, &size)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "that is not a region this process can map: %s", region_fail);
+        return false;
+    }
+
+    if (at < 0 || (size_t)at > size || (size_t)bytes > size - (size_t)at) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that would go past the end of the region");
+        return false;
+    }
+
+    *where = base + (uintptr_t)at;
+    return true;
+}
+
+static int l_disk_read_into(lua_State *L)
+{
+    lua_Integer sector = luaL_checkinteger(L, 1);
+    lua_Integer bytes = luaL_checkinteger(L, 2);
+    long cap = (long)luaL_checkinteger(L, 3);
+    lua_Integer at = luaL_checkinteger(L, 4);
+    uintptr_t where;
+    long got;
+
+    if (bytes <= 0 || bytes > DISK_MAX_READ) {
+        return fail(L, SYS_ERR_FAULT);
+    }
+
+    if (!disk_span(L, cap, at, bytes, &where)) {
+        return 2;
+    }
+
+    got = kosmos_disk_read((unsigned long)sector, (void *)where, (unsigned long)bytes);
+
+    if (got < 0) {
+        return fail(L, got);
+    }
+
+    lua_pushinteger(L, got);
+    return 1;
+}
+
+static int l_disk_write_from(lua_State *L)
+{
+    lua_Integer sector = luaL_checkinteger(L, 1);
+    long cap = (long)luaL_checkinteger(L, 2);
+    lua_Integer at = luaL_checkinteger(L, 3);
+    lua_Integer bytes = luaL_checkinteger(L, 4);
+    uintptr_t where;
+    long wrote;
+
+    if (bytes <= 0 || bytes > DISK_MAX_READ) {
+        return fail(L, SYS_ERR_FAULT);
+    }
+
+    if (!disk_span(L, cap, at, bytes, &where)) {
+        return 2;
+    }
+
+    wrote = kosmos_disk_write((unsigned long)sector, (const void *)where,
+                              (unsigned long)bytes);
+
+    if (wrote < 0) {
+        return fail(L, wrote);
+    }
+
+    lua_pushinteger(L, wrote);
+    return 1;
+}
+
 static int l_region_copy(lua_State *L)
 {
     long to = (long)luaL_checkinteger(L, 1);
@@ -3076,6 +3168,8 @@ static const luaL_Reg sys_functions[] = {
     { "net_recv",    l_net_recv },
     { "disk_read",   l_disk_read },
     { "disk_write",  l_disk_write },
+    { "disk_read_into",  l_disk_read_into },
+    { "disk_write_from", l_disk_write_from },
     { "boot",     l_boot_option },
     { "log",      l_log },
     { "firmware", l_firmware },

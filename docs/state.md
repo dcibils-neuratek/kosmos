@@ -126,9 +126,17 @@ capabilities which will then lead to us having accelerated 2d graphics".
   on the M700 with `groove --report 30`. The kit's window is a quarter
   second; the audio server is born in its band.
 
-**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): storage at full
-speed, then 4h - virtio-gpu under QEMU, then the M700's GPU codec and
-driver. 6zg d, the Launchkey, on 30 September.
+- **Storage at full speed, the byte path in C** (18.270, `design.md`
+  8.3b2): a file's bytes between the disk and the caller's region with no Lua
+  string - ARM sequential reads 375 to 780 MB/s, writes 277 to 367. A 4 KB
+  read still makes six disk calls where one carries its bytes: the path is
+  walked twice (`kfs.spelled`, `kfs.find`) and each walk reads the inode
+  block and the directory again.
+
+**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): storage - a cache of
+metadata blocks in the disk server, then measure again; then 4h -
+virtio-gpu under QEMU, then the M700's GPU codec and driver. 6zg d, the
+Launchkey, on 30 September.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 

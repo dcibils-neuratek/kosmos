@@ -1022,6 +1022,93 @@ function kfs.read_range(sb, node, offset, want)
   return table.concat(parts)
 end
 
+--
+-- **A window of a file into a region**, at `at`, and never through a string
+-- (storage at full speed, step 3). The same walk as `read_range`; the whole
+-- blocks of each extent go from the disk to the region in as few calls as
+-- the disk allows (`sys.disk_read_into`), and only a block entered or left
+-- part way - the first and the last of a window, at most - comes through a
+-- string to be cut.
+--
+-- **Nothing here asks the open transaction**, as `read_blocks` does. A
+-- file's blocks - a directory's too - are written straight to the disk and
+-- never through it (`write_data`, `design.md` 8.3b), and a block freed in a
+-- transaction is not handed out again inside it; what the transaction holds
+-- is inodes, the bitmap, attributes and the superblock, which `read_block`
+-- answers. A test written for the branch could not make it matter, and a
+-- control that took it out passed.
+--
+-- Answers how many bytes it placed.
+--
+local function read_blocks_into(first, count, region, at)
+  local per = blocks_a_call()
+  local done = 0
+
+  while done < count do
+    local n = math.min(per, count - done)
+    local got, why = sys.disk_read_into((first + done) * kfs.PER_BLOCK,
+                                        n * kfs.BLOCK, region,
+                                        at + done * kfs.BLOCK)
+
+    if got ~= n * kfs.BLOCK then return nil, why or "a short read" end
+
+    done = done + n
+  end
+
+  return true
+end
+
+function kfs.read_range_into(sb, node, offset, want, region, at)
+  if offset >= node.size then return 0 end
+
+  if offset + want > node.size then
+    want = node.size - offset
+  end
+
+  local start = 0                  -- where this extent starts in the file
+  local finish = offset + want     -- one past the last byte wanted
+
+  for _, e in ipairs(node.extents) do
+    local span = e.count * kfs.BLOCK
+
+    if start >= finish then break end
+
+    local now = math.max(offset, start)
+    local to = math.min(finish, start + span)
+
+    while now < to do
+      local block = (now - start) // kfs.BLOCK
+      local skip = now - (start + block * kfs.BLOCK)
+      local place = at + (now - offset)
+
+      if skip == 0 and to - now >= kfs.BLOCK then
+        local whole = (to - now) // kfs.BLOCK
+        local ok, why = read_blocks_into(e.start + block, whole, region, place)
+
+        if not ok then return nil, why end
+
+        now = now + whole * kfs.BLOCK
+      else
+        local take = math.min(kfs.BLOCK - skip, to - now)
+        local bytes = kfs.read_block(e.start + block)
+
+        if not bytes then return nil, "reading a file" end
+
+        local ok, why = sys.region_write(region, place,
+                                         bytes:sub(skip + 1, skip + take))
+
+        if not ok then return nil, why end
+
+        now = now + take
+      end
+    end
+
+    start = start + span
+  end
+
+  return want
+end
+
 function kfs.read_file(sb, node)
   local parts = {}
   local left = node.size
@@ -1092,11 +1179,45 @@ local function write_data(first, bytes)
 end
 
 --
--- **Where a file's bytes come from**: a string, or a reader over somebody
--- else's buffer - `{ size = n, read = function(offset, length) }` - so a
--- file larger than this process's heap is written a piece at a time. The
--- disk server hands one over the caller's region; it used to read the
--- whole region into one string first, and refused anything over a megabyte.
+-- The same from a region, at `at`: the whole blocks straight to the disk
+-- (`sys.disk_write_from`), and the last block's part through a string, to
+-- be padded.
+--
+local function write_data_from(first, region, at, bytes)
+  local per = blocks_a_call()
+  local whole = bytes // kfs.BLOCK
+  local i = 0
+
+  while i < whole do
+    local n = math.min(per, whole - i)
+    local ok, err = sys.disk_write_from((first + i) * kfs.PER_BLOCK, region,
+                                        at + i * kfs.BLOCK, n * kfs.BLOCK)
+
+    if not ok then return nil, err end
+
+    i = i + n
+  end
+
+  if bytes > whole * kfs.BLOCK then
+    local tail, why = sys.region_read(region, at + whole * kfs.BLOCK,
+                                      bytes - whole * kfs.BLOCK)
+
+    if not tail then return nil, why end
+
+    return write_data(first + whole, tail)
+  end
+
+  return true
+end
+
+--
+-- **Where a file's bytes come from**: a string, a region - `{ size = n,
+-- region = cap, at = offset }`, whose bytes go to the disk without becoming
+-- a string at all - or a reader over somebody else's buffer - `{ size = n,
+-- read = function(offset, length) }` - so a file larger than this process's
+-- heap is written a piece at a time. The disk server hands over the caller's
+-- region; it used to read the whole region into one string first, and
+-- refused anything over a megabyte, then a reader 64 KB at a time.
 --
 local PIECE_BLOCKS = 16                  -- 64 KB of a reader at a time
 
@@ -1107,7 +1228,13 @@ local function source_of(data)
     end
   end
 
-  return math.max(0, math.floor(tonumber(data.size) or 0)), data.read
+  local size = math.max(0, math.floor(tonumber(data.size) or 0))
+
+  if data.region then
+    return size, nil, data.region, math.floor(tonumber(data.at) or 0)
+  end
+
+  return size, data.read
 end
 
 function kfs.write_file(sb, number, node, data)
@@ -1118,7 +1245,7 @@ function kfs.write_file(sb, number, node, data)
   -- it commits (`free_run`), so this write never lands on the old file.
   release(sb, node)
 
-  local size, read = source_of(data)
+  local size, read, region, at = source_of(data)
   local left = (size + kfs.BLOCK - 1) // kfs.BLOCK
   local offset = 0
 
@@ -1144,6 +1271,18 @@ function kfs.write_file(sb, number, node, data)
     end
 
     local b = 0
+
+    if region then
+      local want = math.min(got * kfs.BLOCK, size - offset)
+      local ok, werr = write_data_from(start, region, at + offset, want)
+
+      if not ok then
+        release(sb, node)
+        return nil, werr
+      end
+
+      offset, b = offset + want, got
+    end
 
     while b < got do
       local n = math.min(got - b, PIECE_BLOCKS)
