@@ -284,6 +284,26 @@ order above; 6zg d, the Launchkey, the next day.
    (item 3's last paragraph), in steps lived with one at a time, as every
    other server moved.
 
+**And one noticed on the way, not yet done**: three drivers wait for their
+device a fixed number of loops rather than a time - `hal/virtio/blk.c`,
+`snd.c` and `gpu.c`, 100 million each - and give up with a failure while
+the device may still be working on the request. How long that is under
+QEMU on a busy Mac is anybody's guess. It is the one explanation found for
+`arm-script` failing once in a gate with Cafesa3D's save answered "a pointer
+this process may not use" - `SYS_ERR_FAULT`, which a block request that
+timed out returns - and passing alone and in the next gate; a hypothesis,
+kept with that run's log, not a finding. The fix is a class, not an
+instance: a deadline in the counter's time, and a line in the log when one
+expires, so the next time it happens it says so.
+
+**And a fix he found the same day**: Doom and Quake "will get the desktop
+stuck for a second and then run", and "Every os currently does that" -
+start an application in the background and show it when it is ready.
+**Done** (`testing.md` 18.275): the window manager reads an installed image
+a window a pass and answers when the program has started. What is left is
+the kernel's copy of the image into the process - a few milliseconds on
+the M700 - which sharing an image's code (`elf.md`) would remove.
+
 The order before this one follows, and what it put first - USB - is built.
 
 **Reordered on 2026-09-11, and USB went to the front.**
@@ -1210,13 +1230,15 @@ processors, and still what follows USB:
      a second.
    - **e** - the device's own depth and the shortest period the controller
      holds, on the ThinkPad's HD Audio; and the whole number there.
-     **Built on 29 September, to be measured on the M700** (`testing.md`
-     18.269): the audio server keeps the device by the kit's rule, now
-     `depth.h`, starting at four periods and coming down only on a second
-     in which the device was taken a period at a time - where the
-     controller keeps time; QEMU's takes it in bursts and stays at four.
-     `groove --report 30` on the M700 says what it keeps and how often it
-     found the device empty. The shortest *period* the controller holds is
+     **Tried on 29 September and taken back the same day** (`testing.md`
+     18.269, 18.276): the audio server kept the device by the kit's rule,
+     `depth.h`, and a film under QEMU had a gap in it two runs in three,
+     however steady the evidence it asked for - finding a floor by playing
+     costs a gap, and the device's is everybody's. The device stays at what
+     its driver holds and counts how often it ran dry. **The 0.10.190 stick
+     still adapts it**, so `groove --report 30` on the M700 says what the
+     device held there and whether it ran dry - the evidence to try again
+     with, if it is ever tried again. The shortest *period* the controller holds is
      the next question, and a bigger change: the period is the board's,
      256 frames, in every ring. The kit's window is a quarter second now,
      so a note early in Groove waits behind less, and the audio server is

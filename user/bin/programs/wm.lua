@@ -3446,7 +3446,64 @@ end
 --
 -- So the Deskbar asks. It can name a program and nothing else.
 --
-handlers.launch = function(req)
+--
+-- **Launches under way, stepped a window at a time** (Diego, 29 September:
+-- running Doom "will get the desktop stuck for a second and then run"). An
+-- installed application is read off the disk into an image before it can
+-- start - eighteen megabytes for Doom and Quake - and this handler read all
+-- of it before it answered, so for that second nothing was drawn and nobody
+-- was answered: under QEMU 283 ms, against 60 for Calculator, and on the
+-- M700 the image comes off a USB stick. So a launch is a coroutine that
+-- `IMAGES.load` yields from after each window it copies (`run`'s `pace`),
+-- stepped once a pass (`step_launches`, in the loop), and the answer to
+-- whoever asked - the Deskbar, which shows an error - waits for the program
+-- to have started, as it always did. A program in this image never yields,
+-- and finishes in the first step, from here.
+--
+local launching = {}
+
+local function finish_launch(l, ok, err, id)
+  print(("wm: launched %s -> %s %s"):format(tostring(l.program),
+        tostring(ok), tostring(ok and id or err)))
+
+  local reply = { ok = true }
+
+  if not ok then
+    reply = { ok = false, error = tostring(err) }
+  else
+    -- Remembered so that the *next* window to open can be tied to it. There
+    -- is nothing better available: a window arrives in a message and a
+    -- message does not say which process sent it - the sender is a thread
+    -- pointer, and the thread that opens a window is the one this started.
+    -- Good enough to end what was just launched, and honestly not more.
+    pending_pid = id
+    pending_program = l.path
+  end
+
+  replied(pcall(sys.reply, l.who, reply), nil, "launch")
+end
+
+local function step_launches()
+  if #launching == 0 then return end
+
+  local still = {}
+
+  for _, l in ipairs(launching) do
+    local resumed, ok, err, id = coroutine.resume(l.co)
+
+    if not resumed then
+      finish_launch(l, false, ok)             -- `ok` is the error, here
+    elseif coroutine.status(l.co) == "dead" then
+      finish_launch(l, ok, err, id)
+    else
+      still[#still + 1] = l
+    end
+  end
+
+  launching = still
+end
+
+handlers.launch = function(req, who)
   local name = tostring(req.program or "")
 
   if name == "" or name:match("[^%w%-_./]") then
@@ -3463,23 +3520,17 @@ handlers.launch = function(req)
   --
   print(("wm: launching %s"):format(tostring(req.program)))
 
-  local ok, err, id = run(path, req.args or "", true, { ["/Running/wm"] = ep })
+  local l = { who = who, program = req.program, path = path }
 
-  print(("wm: launched %s -> %s %s"):format(tostring(req.program),
-        tostring(ok), tostring(ok and id or err)))
+  l.co = coroutine.create(function()
+    return run(path, req.args or "", true, { ["/Running/wm"] = ep }, nil,
+               coroutine.yield)
+  end)
 
-  if not ok then
-    return { ok = false, error = tostring(err) }
-  end
+  launching[#launching + 1] = l
+  step_launches()
 
-  -- Remembered so that the *next* window to open can be tied to it. There
-  -- is nothing better available: a window arrives in a message and a
-  -- message does not say which process sent it - the sender is a thread
-  -- pointer, and the thread that opens a window is the one this started.
-  -- Good enough to end what was just launched, and honestly not more.
-  pending_pid = id
-  pending_program = path
-  return { ok = true }
+  return DEFER
 end
 
 --
@@ -5653,6 +5704,10 @@ local function sleep_for()
   local now = sys.ticks()
   local scale = counter_per_tick()
 
+  -- An application being read off the disk is read a window a pass, so a
+  -- pass that slept would be a load that crawled.
+  if #launching > 0 then return 0 end
+
   for i = 1, #waiting do
     local left = (waiting[i].deadline - now) // scale
 
@@ -5791,6 +5846,9 @@ while OUT.running do
       end
     end
   end
+
+  -- A window of each application being read off the disk (`launching`).
+  step_launches()
 
   if P.measuring then t, heap = P.charge("messages", t, heap) end
 

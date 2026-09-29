@@ -119,12 +119,12 @@ capabilities which will then lead to us having accelerated 2d graphics".
   after: context switch +4.1%, IPC +2.3% - the same as 28 September's
   readings before any of this (6zr), so unmoved by it.
 
-- **4i e built** (18.269): `depth.h`, the kit's rule for its ring, now the
-  audio server's for the device too - asking for a second in which the
-  device was taken a period at a time, since the kit's quarter second on
-  QEMU's bursts left a gap in `x86-film` three runs in ten. To be measured
-  on the M700 with `groove --report 30`. The kit's window is a quarter
-  second; the audio server is born in its band.
+- **4i e** (18.269, 18.276): `depth.h`, the kit's rule for its ring, with a
+  quarter-second window; the audio server born in its band. The device was
+  kept by the rule too, and **taken back**: a film under QEMU had a gap two
+  runs in three however steady the evidence asked for, none held at four.
+  The 0.10.190 stick still adapts the device - `groove --report 30` on the
+  M700 says what it held there.
 
 - **Storage at full speed, the byte path in C** (18.270, `design.md`
   8.3b2): a file's bytes between the disk and the caller's region with no Lua
@@ -159,6 +159,13 @@ capabilities which will then lead to us having accelerated 2d graphics".
 - **4h e, the M700 study** (`docs/m700-gpu.md`): hardware H.264 decode
   needs no firmware; a driver of Kosmos's own, not Linux's pair; measure
   software decode at 1080p on the M700 first. Four decisions are Diego's.
+
+- **An installed application starts in the background** (18.275): Diego
+  saw Doom and Quake hold the desktop still for a second on the M700; the
+  window manager read their eighteen-megabyte images inside the launch
+  request. Now it reads them a window a pass and answers when the program
+  has started - `arm-launch` in the gate, 71 answers during Doom's start
+  where there was one. Not on the 0.10.190 stick.
 
 **Next** (Diego, 29 September: "do 4i, 3 and 4 now"): 4h b and c -
 the hardware cursor on the cursor queue, and the screen's size from the

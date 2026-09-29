@@ -29,7 +29,6 @@
 #include "kosmos.h"
 #include "audioring.h"
 #include "audioproto.h"
-#include "depth.h"
 #include "syscall.h"
 
 #define STREAM_MAX  8u          /* one more than AUDIO_LIST_MAX would show */
@@ -64,22 +63,20 @@ static unsigned      period_frames;     /* that period, in the position's unit *
 static unsigned      device_depth;      /* what the device will hold */
 
 /*
- * **How much of that is kept in it** (`roadmap.md` 4i, step e): `depth.h`'s
- * rule, the Synth Kit's for its ring, asked for more before it comes down. A
- * sound is heard after all the device holds, and it held four periods, 23
- * ms, whether the machine needed them or not. So it starts at four and comes
- * down a period for each *second* in which every look found two still in it
- * and none found more than one gone, and goes up one, for good, when a look
- * finds it empty. The device is every program's sound, and a step taken on
- * a quarter second of QEMU's bursts left a gap in a film (`testing.md`
- * 18.269): a controller that takes a period at a time comes down, one that
- * takes them in bursts stays at four. Looked at only once it has been filled
- * - a stream starts with an empty device, and that is not a dry run - and
- * from the start again when nobody is playing.
+ * **All of it is kept in it, and how often it was found empty is counted.**
+ * 4i step e tried the Synth Kit's rule here too (`depth.h`): start full, one
+ * period fewer on evidence, one more for good on a dry run. Finding a
+ * queue's floor that way costs a gap the first time it is taken faster than
+ * a quiet window showed - on the kit's ring that is Groove's own sound, and
+ * on the device it is every program's. Under QEMU's HD Audio it was two
+ * films in three with a gap in them however steady the evidence asked for,
+ * and none in five held at four (`testing.md` 18.276). So the device stays
+ * at what its driver holds; `device_dry` - looks, once a stream has filled
+ * it, that found it empty - is what `groove --report` says, and what the
+ * M700 will be read by.
  */
-static struct depth  device;
 static bool          device_primed;
-static unsigned long depth_window;
+static uint32_t      device_dry;
 static unsigned long counter_hz;
 
 /* Diagnostics, reported with `streams`. `starved` is the device having room
@@ -126,14 +123,17 @@ static bool refill(void)
 
     unsigned queued = (unsigned)kosmos_snd_queued();
 
+    /* Filled once before it counts: a stream starts with an empty device,
+     * and that is not the device running dry. */
     if (device_primed) {
-        depth_look(&device, queued, kosmos_ticks(), depth_window);
-    } else if (queued >= device.kept) {
+        if (queued == 0) {
+            device_dry++;
+        }
+    } else if (queued >= device_depth) {
         device_primed = true;
-        depth_resume(&device, kosmos_ticks());  /* a window of this stream's */
     }
 
-    if (queued >= device.kept) {
+    if (queued >= device_depth) {
         return false;                   /* the device has all it is to hold */
     }
 
@@ -392,8 +392,8 @@ static void do_streams(struct audio_reply *rep)
     rep->mixes = mixes;
     rep->starved = starved;
     rep->late = late;
-    rep->kept = device.kept;
-    rep->device_dry = device.dry;
+    rep->kept = device_depth;
+    rep->device_dry = device_dry;
     rep->count = 0;
 
     for (i = 0; i < STREAM_MAX && rep->count < AUDIO_LIST_MAX; i++) {
@@ -511,8 +511,6 @@ void audio_server(long endpoint)
         us = 1;
     }
 
-    depth_window = counter_hz;
-    depth_begin(&device, device_depth, 1, 1, kosmos_ticks());
 
     for (;;) {
         struct message msg;
@@ -548,7 +546,7 @@ void audio_server(long endpoint)
             continue;                   /* there may be room for another */
         }
 
-        if ((unsigned)kosmos_snd_queued() < device.kept) {
+        if ((unsigned)kosmos_snd_queued() < device_depth) {
             starved++;                  /* room, and nothing to put in it */
         }
 

@@ -795,7 +795,7 @@ static int l_start(lua_State *L)
     luaL_argcheck(L, fewest >= 1 && fewest <= (lua_Integer)r->periods, 3,
                   "keep between one period and the ring's");
 
-    depth_begin(&kept, r->periods, (uint32_t)fewest, 0, kosmos_ticks());
+    depth_begin(&kept, r->periods, (uint32_t)fewest, kosmos_ticks());
     worst_pass = 0;
     ring = r;
     __atomic_store_n(&quit, 0, __ATOMIC_RELEASE);

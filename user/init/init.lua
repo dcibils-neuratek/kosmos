@@ -83,7 +83,14 @@ end
 
 -- The image `file` holds, made the first time and kept: the region and its
 -- length, or nil and why - the file named, and the rule it broke.
-function IMAGES.load(ns, file)
+--
+-- **`pace`, when given, is called between windows** - after each one has been
+-- copied into the image, so the scratch window is free again. The window
+-- manager passes `coroutine.yield`: it starts an application while it keeps
+-- drawing, and an installed one is eighteen megabytes read off a disk, which
+-- on the M700's stick held the whole desktop still for a second (Diego, 29
+-- September). Everyone else passes nothing and waits, as a command line does.
+function IMAGES.load(ns, file, pace)
   local attrs = ns.getattr(file)
   local size = attrs and attrs.size
 
@@ -136,6 +143,8 @@ function IMAGES.load(ns, file)
 
       sys.region_copy(region, seg.at + done, IMAGES.window, 0, want)
       done = done + want
+
+      if pace then pace() end
     end
   end
 
@@ -148,8 +157,9 @@ function IMAGES.load(ns, file)
 end
 
 -- A runner for `path`, in its own image if it names one and in this
--- process's otherwise: the child's id, or nil and why.
-function IMAGES.spawn(ns, path, role, caps, flags)
+-- process's otherwise: the child's id, or nil and why. `pace` is
+-- `IMAGES.load`'s.
+function IMAGES.spawn(ns, path, role, caps, flags, pace)
   local image = IMAGES.named(ns, path)
 
   if not image then
@@ -162,7 +172,8 @@ function IMAGES.spawn(ns, path, role, caps, flags)
     return nil, image .. ": an image is a file beside its program"
   end
 
-  local region, length = IMAGES.load(ns, (path:match("^(.*)/[^/]*$") or "") .. "/" .. image)
+  local region, length = IMAGES.load(ns, (path:match("^(.*)/[^/]*$") or "") .. "/" .. image,
+                                     pace)
 
   if not region then return nil, length end
 
@@ -6527,7 +6538,12 @@ if role == ROLE_RUNNER then
   -- `where` is the directory the child starts in. Without it a program run
   -- from a Terminal always started at the Terminal's *parent's* cwd, so
   -- `cd` moved the prompt and nothing that ran from it.
-  local function launch(path, argument, detach, shares, where)
+  --
+  -- `pace`, when given, is called while an installed program's image is read
+  -- off the disk, a window at a time (`IMAGES.load`): the window manager
+  -- passes `coroutine.yield`, so it draws while an application starts.
+  --
+  local function launch(path, argument, detach, shares, where, pace)
     local ep = sys.endpoint()
     if not ep then return false, "no endpoint" end
 
@@ -6637,7 +6653,7 @@ if role == ROLE_RUNNER then
     end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
-    local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
+    local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags, pace)
 
     if not id then
       sys.destroy(ep)

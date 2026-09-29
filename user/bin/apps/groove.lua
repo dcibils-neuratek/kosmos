@@ -318,8 +318,8 @@ local function reportSound()
   local stats = audio.stats() or {}
   local info = sys.info() or {}
   local period = (info.audio_period or 0) // (2 * math.max(1, info.audio_channels or 2))
-  -- What the audio server keeps in the device now (`depth.h`), which can
-  -- be fewer than it will hold.
+  -- What the audio server keeps in the device: all it holds (`audio.c`,
+  -- `testing.md` 18.276).
   local kept = stats.kept or info.audio_periods or 0
   local holds = kept * period / math.max(1, info.audio_rate or 44100) * 1000
 
@@ -369,8 +369,8 @@ local function reportSound()
   print(("groove: the kit rendered %.2f s of sound in the %.2f s since it began")
         :format((st.rendered or 0) / E.SR, since))
 
-  -- How the two depths settled: the kit's ring and the server's device,
-  -- each kept by `depth.h`'s rule.
+  -- How the two depths settled: the kit's ring, kept by `depth.h`'s rule,
+  -- and the server's device, kept full - and how often each ran dry.
   print(("groove: the kit keeps %d periods, last changed %.2f s after it began; "
          .. "the audio server keeps %d in the device, and found it empty %d times")
         :format(fresh.ahead or 0,

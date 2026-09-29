@@ -12886,3 +12886,69 @@ flush sending nothing - "the background is (0, 0, 0) ... the console did
 not clear the screen"; and the compositor's flush left out - "1 window(s)
 never appeared". The first run found the harness's own bars unflushed, a
 direct drawer like any other, and they flush now.
+
+## 18.275 The desktop answers while an installed application starts
+
+Diego, 29 September, on the M700: running Doom or Quake "will get the
+desktop stuck for a second and then run" - since they became applications
+installed in `/Home/Apps` with images of their own (`docs/elf.md`). The
+window manager starts what the Deskbar asks for, and `run` read the whole
+image - eighteen megabytes - inside that request, so nothing was drawn and
+nobody answered until it was in. Timed under QEMU from a program inside the
+desktop: a launch request for Calculator answered in 60 ms, Doom's in 283 -
+and 169 the second time, from the image the window manager kept, which is
+the kernel's copy of the image into the new process.
+
+**Now a launch is stepped.** `IMAGES.load` calls a `pace` after each window
+it copies into the image; `run` passes one through; the window manager
+makes each launch a coroutine that passes `coroutine.yield`, steps it once
+a pass, does not sleep while one is under way, and answers whoever asked
+(`DEFER`) when the program has started - so the Deskbar still shows an
+error, as it did. A program in the system's image never yields and
+finishes in its first step.
+
+**Kept, `arm-launch`** (`tools/run_launch.py`), 2 checks: a disk with Doom
+installed, and the desktop started with two programs of the harness's - one
+asks the window manager for its windows in a loop, the other asks it to
+start Doom - and the window manager has to answer the first at least ten
+times while Doom starts. It answered 69 and 71 times in 251 and 277 ms, the
+longest without an answer 72 and 77 ms, which is the kernel's copy. Its
+control, the window manager and `IMAGES.load` as they were: once in 238 ms,
+the answer already in flight, and it fails. (A first rerun failed the same
+way on the real change: the image under test was still the control's,
+built and not rebuilt after the sources were put back.)
+
+What is left of the wait is that copy: under QEMU 77 ms, and on the M700
+a few milliseconds. Sharing an image's code between processes, which
+`elf.md` puts off until a region can be sealed, would take it away.
+
+## 18.276 The device's depth, taken back
+
+18.269 kept the audio server's device by the Synth Kit's rule - start at
+four periods, one fewer on evidence, one more for good on a dry run - and
+asked it for steadier evidence than the kit: a whole second, begun when a
+stream fills the device, in which no look found more than a period gone.
+Ten films of ten passed alone with that, and several gates. The gate after
+the launch fix (18.275) failed `x86-film` with a gap of silence near its
+end, and alone it failed **two runs in three**, the gaps at 1.49 and 2.87 s
+- where one-second windows from the stream's start let the device step
+down. The same image with the device held at four: **five of five**. The
+ten of ten had been luck: before `depth_resume` the first window was judged
+on one look, which usually found a burst and began again.
+
+**So the device is not kept by the rule.** Finding a queue's floor by
+playing costs a gap the first time the queue is taken faster than a quiet
+window showed; QEMU's HD Audio takes it a period at a time for seconds and
+then in a burst. On the kit's ring that gap is Groove's own sound; on the
+device it is every program's, a film's included. The device stays at what
+its driver holds, and the server counts the looks, once a stream has filled
+it, that found it empty - `audio_reply.device_dry`, which `groove --report`
+says. The steadiness condition and `depth_resume`, which only the device
+used, are gone from `depth.h`, and `test_depth.c` is its 11 checks again.
+With the change, five films of five alone.
+
+**The 0.10.190 stick for the M700 still adapts the device**, so its
+`groove --report 30` says what the device held on a real controller and
+whether it ran dry: the evidence to try it again with, if it is ever tried
+again - on hardware, where a controller takes a period at a time, and not
+on the strength of QEMU.

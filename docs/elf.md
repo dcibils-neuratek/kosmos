@@ -143,6 +143,18 @@ child. A copy of twenty megabytes is a few milliseconds, once, when a game
 starts; two games sharing their pages is an improvement for later, and
 needs the region sealed first.
 
+**And the reading happens while the desktop draws** (29 September 2026).
+The window manager starts what the Deskbar asks for, so it was the process
+that read the image - eighteen megabytes, off a USB stick on the M700 - and
+it answered nobody and drew nothing until it had: Diego, "the desktop stuck
+for a second and then run". Now it starts an application as every desktop
+does, in the background: `IMAGES.load` calls the `pace` it is given after
+each window it copies, the window manager passes `coroutine.yield` and
+steps each launch a window a pass, and whoever asked is answered when the
+program has started. Under QEMU it answered 71 times while Doom started,
+where it had answered once; the longest it went without an answer is now
+the kernel's copy above, 77 ms under QEMU (`testing.md` 18.275).
+
 The child is otherwise every other process: the caps and powers it was
 handed, a role word, a heap and a stack - so `run` starts a runner in the
 game's image exactly as it starts one in the system's, and the runner

@@ -106,6 +106,10 @@ SUITES = [
     # held to saying what it measured and what it could not, rather than to a
     # speed, since under QEMU the speed is QEMU's.
     Suite("arm-diskbench", ["python3", "tools/run_diskbench.py", ARM]),
+    # The desktop answering while an installed application's image is read
+    # off the disk (Diego, 29 September: Doom "will get the desktop stuck for
+    # a second and then run").
+    Suite("arm-launch", ["python3", "tools/run_launch.py", ARM]),
 
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is
