@@ -133,8 +133,14 @@ capabilities which will then lead to us having accelerated 2d graphics".
   walked twice (`kfs.spelled`, `kfs.find`) and each walk reads the inode
   block and the directory again.
 
-**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): storage - a cache of
-metadata blocks in the disk server, then measure again; then 4h -
+- **And the disk server keeps its small reads** (18.271, `design.md`
+  8.3d): `blockcache.lua` around the four disk calls, write-through - a 4 KB
+  read one disk call where it was six; ARM random reads 1787 to 3215 IOPS,
+  a stick's 795 to 2324, ARM sequential reads 973 MB/s. The disk server
+  also stopped holding every library's source for its whole life.
+
+**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): storage - where 89%
+of a random read goes now, the disk server's Lua; then 4h -
 virtio-gpu under QEMU, then the M700's GPU codec and driver. 6zg d, the
 Launchkey, on 30 September.
 

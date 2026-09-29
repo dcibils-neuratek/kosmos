@@ -1012,6 +1012,43 @@ as stand-ins, so the same `kfs.lua` is held on the Mac to the bytes
 calls. Measured under QEMU (`testing.md` 18.270): sequential reads on the
 ARM board's disk 375 to 780 MB/s, writes 277 to 367.
 
+### 8.3d The disk server keeps its small reads
+
+Built on 29 September 2026, the step after 8.3b2, because counting found it:
+a 4 KB read of a file in `/Home` made six disk calls and one carried its
+bytes. The path is walked twice while an index exists (8.3c), and each walk
+read the root's inode block and its directory again, and two more blocks
+for every directory deeper.
+
+**Around the four disk calls, not inside kfs.** `user/lib/blockcache.lua`
+wraps `sys.disk_read`, `sys.disk_write`, `sys.disk_write_from` and passes
+`sys.disk_read_into` through, in the disk server, after the stick's calls
+and the device's counters. Every block kfs reads or writes passes through
+one of them - the journal, the bitmap, an inode, a directory, a file's bytes
+- so a cache there is told of every write by the writing itself. Inside
+kfs it would have had to be told by each of seven places that write, and
+the eighth, added later, would have been the bug.
+
+**Coherent because this process is the disk's only writer, and write-through
+because a crash must lose nothing.** A write goes to the disk first; a kept
+block is then replaced by what was written, or forgotten when the write
+failed or was not whole blocks. A write from a region - a file's bytes -
+forgets what it covers, and a read into one goes past, since the disk is
+always current. Reads of four blocks or fewer are kept - an inode block, the
+bitmap, a directory, a settings file - and larger ones are not, so a file
+read in one piece does not push the metadata out. Sixty-four blocks, the
+least recently used going first.
+
+Measured under QEMU (`testing.md` 18.271): random 4 KB reads 1787 to 3215
+IOPS on the ARM board's disk and 795 to 2324 on a stick's `/Home`. A read of
+a file whose path is known is one disk call. The same `kfs.lua` suite runs
+on the Mac a second time through the cache (`KFS_CACHE=1`), journal,
+recovery and power losses included.
+
+The spelling walk 8.3c says is paid "because kfs has no block cache" costs
+no disk calls now; it still costs a second walk in Lua, which is where a
+random read's time is (89% of it outside the device).
+
 ### 8.3c A name is found whatever its case, and keeps the case it was given
 
 Decided on 27 September 2026 by Diego, once the layout gave every name a capital - `/Kosmos/Libraries`, `/Home` - "it doesnet make sense to have case sensitiveness in this day and age". Kosmos had compared names exactly everywhere but the FAT reader.

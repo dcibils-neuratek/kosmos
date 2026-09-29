@@ -3374,6 +3374,8 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
 	$(HOSTDIR)/lua tools/test_kfs.lua
+	KFS_CACHE=1 $(HOSTDIR)/lua tools/test_kfs.lua
+	$(HOSTDIR)/lua tools/test_blockcache.lua
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.
 	$(HOSTDIR)/lua tools/test_tags.lua

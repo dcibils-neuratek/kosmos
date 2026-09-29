@@ -51,6 +51,25 @@ BIG_WRITE = (
     'sys.release(r) sys.release(r2)')
 RANDOM_WRITE = "not yet: a write replaces the whole file"
 
+#
+# **A 4 KB read is one disk call once its path is known** (`design.md` 8.3d,
+# `testing.md` 18.271). It was six and one carried the bytes: while an index
+# exists the path is walked twice - `kfs.spelled`, then `kfs.find` - and each
+# walk read the root's inode block and its directory from the disk again. The
+# disk server keeps its small reads now (`blockcache.lua`), and a read into a
+# region goes past it, so what is left is the file's own block. The read
+# before the fifty is the one that finds the path.
+#
+CALLS = (
+    'local r = sys.memory(16) sys.region_write(r, 0, string.rep("k", 65536)) '
+    'fs.write_from("/Home/calls.bin", r, 65536) '
+    'fs.read_into("/Home/calls.bin", r, 0, 4096) '
+    'local d0 = fs.read("/Home/.device") '
+    'for i = 0, 49 do fs.read_into("/Home/calls.bin", r, (i % 16) * 4096, 4096) end '
+    'local d1 = fs.read("/Home/.device") '
+    'print("CALLS", (d1.reads - d0.reads) / 50, d1.cache_hits - d0.cache_hits) '
+    'fs.send("/Home/calls.bin", { type = "delete" }) sys.release(r)')
+
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
@@ -71,7 +90,8 @@ def main():
                              "diskbench /Home 1 1",
                              "ls /Home/benchmarks",
                              "ls /Home/.diskbench",
-                             BIG_WRITE],
+                             BIG_WRITE,
+                             CALLS],
                             boot_timeout=120, each=180)
     finally:
         os.unlink(disk)
@@ -151,6 +171,14 @@ def main():
           "a 3 MB file - three times the journal - was not written from a "
           "region and read back whole: %r" % ((big.groups() if big else out[-600:]),))
 
+    calls = re.search(r"^CALLS\s+([\d.]+)\s+(\d+)", out, re.M)
+
+    check(calls is not None and float(calls.group(1)) <= 1.0
+          and int(calls.group(2)) > 0,
+          "a 4 KB read of a file whose path was known was not one disk call "
+          "with the rest answered from the block cache: %r"
+          % ((calls.groups() if calls else out[-600:]),))
+
     if fails:
         print("FAIL: %d of %d checks on Disk Benchmark at the prompt:"
               % (len(fails), len(fails) + checks))
@@ -161,7 +189,8 @@ def main():
     print("PASS: %d checks on Disk Benchmark at the prompt (/Home found, every "
           "row it can run measured with the device's share of it, every row it cannot run saying why, the "
           "run kept, its test file removed, and a file three times the "
-          "journal written and read back)." % checks)
+          "journal written and read back, and a 4 KB read one disk call once "
+          "its path is known)." % checks)
     return 0
 
 

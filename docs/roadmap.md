@@ -172,7 +172,13 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    of a file in `/Home` makes six disk calls and one carries its bytes - the
    path is walked twice while an index exists (`kfs.spelled`, then
    `kfs.find`), each walk reading the inode block and the directory again.
-   A cache of metadata blocks in the disk server, its only writer, is next.
+   **Built the same day** (`design.md` 8.3d, `testing.md` 18.271): the disk
+   server keeps its small reads, write-through, around its disk calls -
+   random 4 KB reads 1787 to 3215 IOPS on the ARM board, 795 to 2324 on a
+   stick; sequential reads 973 MB/s. A read is one disk call once its path
+   is known, and 89% of a random read is now the disk server's Lua: the
+   path walked twice, each directory's entries unpacked into tables each
+   time. What that points at is measured next.
 4. **OPEN - for Diego, when a measurement asks**: a device writing straight
    into a client's pages with no IOMMU to fence it.
 
@@ -1151,6 +1157,20 @@ processors, and still what follows USB:
      256 frames, in every ring. The kit's window is a quarter second now,
      so a note early in Groove waits behind less, and the audio server is
      born in its band.
+4i-f. **WANTED on 29 September - the machine's own lateness as the witness
+   to a stall.** `arm-synth-load` excuses an absence the kit and the audio
+   server shared only while it is under twice the device's time (`testing.md`
+   18.269): the Mac holding the emulated machine off stops both at once, and
+   a band that failed for both would hold both off for a turn of the
+   spinners. The ceiling is a guess about how long the Mac can stall, and a
+   gate found 50 ms (18.271). The machine knows: its timer's ticks come late
+   by exactly the stall, and a starved thread leaves them on time. So the
+   timer keeps how long its ticks were held off past an interval, a count
+   that only rises, per processor (`hal_ticks_missed` counts resyncs, not
+   time), `sysinfo` carries it, Groove's report says how much of its window
+   the machine was held off, and a shared absence is excused only as far as
+   the machine was. On hardware the same number is an SMI or firmware
+   stealing the processor, which is worth seeing there for its own sake.
 4i-b. **WANTED since 19 September - where the fortnight went: IPC costs 70%
    more and a context switch 44% more than on 5 September** (`testing.md`
    18.118). Measured at three commits, so it is attributed rather than

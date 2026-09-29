@@ -98,8 +98,12 @@ function sys.region_read(cap, at, bytes)
   return r:sub(at + 1, at + bytes)
 end
 
+-- The disk itself, not whatever `sys.disk_read` has been wrapped in: a read
+-- into a region goes past the block cache in the disk server too.
+local disk_read = sys.disk_read
+
 function sys.disk_read_into(sector, bytes, cap, at)
-  local data = sys.disk_read(sector, bytes)
+  local data = disk_read(sector, bytes)
 
   into_calls = into_calls + 1
   reads = reads - 1                       -- one call, counted as one
@@ -119,6 +123,24 @@ end
 function sys.disk()
   return { sectors = SECTORS, sector_size = 512, bytes = SECTORS * 512,
            most = MOST }
+end
+
+--
+-- **Through the disk server's cache, when asked** (`KFS_CACHE=1`). kfs runs
+-- through `blockcache.lua` on the machine, so this whole suite runs through
+-- it a second time: the journal, recovery and the power losses below are
+-- the cases a cache that answered with something the disk no longer holds
+-- would get wrong. It is told when this test changes the disk behind kfs's
+-- back - four places, each marked - which nothing on the machine does.
+--
+local cache = nil
+
+if os.getenv("KFS_CACHE") then
+  cache = assert(loadfile("user/lib/blockcache.lua"))().wrap(sys, 64, 4)
+end
+
+local function disk_changed()
+  if cache then cache.clear() end
 end
 
 -- Attributes are serialised with the C serialiser, which is not here. A
@@ -184,6 +206,7 @@ end
 
 local function fresh()
   disk = {}
+  disk_changed()                          -- behind kfs's back
   local sb = assert(kfs.mkfs(SECTORS, 1))
   return assert(kfs.mount())
 end
@@ -451,12 +474,16 @@ for _, w in ipairs(windows) do
   local node, offset, want = w[1], w[2], w[3]
   local expect = kfs.read_range(sb, node, offset, want)
 
+  -- Both counted cold: a cache answers the string path's small reads and
+  -- never a region's, and what this compares is kfs's batching.
+  disk_changed()
   reads = 0
   kfs.read_range(sb, node, offset, want)
 
   local string_calls = reads
 
   regions[3] = string.rep("\1", 7 + #expect + 9)
+  disk_changed()
   reads, into_calls = 0, 0
 
   local placed = kfs.read_range_into(sb, node, offset, want, 3, 7)
@@ -604,6 +631,7 @@ local magic, _, count, sum, seq = string.unpack(kfs.J_HEADER, head)
 disk[sb.journal_at] = string.pack(kfs.J_HEADER, magic, kfs.J_EMPTY,
                                   count, sum, seq)
                       .. head:sub(25)
+disk_changed()                            -- behind kfs's back
 
 remounted = assert(kfs.mount())
 
@@ -632,6 +660,7 @@ assert(kfs.commit(sb, "after-commit"))
 local victim = sb.journal_at + 2
 local bytes = disk[victim]
 disk[victim] = string.char((bytes:byte(1) + 1) % 256) .. bytes:sub(2)
+disk_changed()                            -- behind kfs's back
 
 remounted = assert(kfs.mount())
 
@@ -776,6 +805,7 @@ check(kfs.free_blocks(sb) == free_by_bits(sb),
 -- and bits 5-7 are not. Byte 200 is wholly past the end.
 --
 disk = {}
+disk_changed()                            -- behind kfs's back
 
 local odd = assert(kfs.mkfs(8 * 1021, 1))
 

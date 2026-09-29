@@ -3283,6 +3283,9 @@ local function diskfs_handlers(state)
           read_bytes = d.read_bytes or 0, write_bytes = d.write_bytes or 0,
           read_counter_ticks = d.read_counter_ticks or 0,
           write_counter_ticks = d.write_counter_ticks or 0,
+          -- Reads the block cache answered, and those it passed on.
+          cache_hits = d.cache and d.cache.hits or 0,
+          cache_misses = d.cache and d.cache.misses or 0,
         } }
       end
 
@@ -4315,12 +4318,24 @@ local function diskfs_main(endpoint, read_cap, write_cap, clock_cap)
 
   local libraries = why
 
-  local kfs
+  local kfs, blockcache
   ok, kfs = pcall(function()
     return assert(load(libraries["kfs.lua"], "kfs.lua"))()
   end)
 
   if not ok then sys.exit(DIED_KFS) end
+
+  ok, blockcache = pcall(function()
+    return assert(load(libraries["blockcache.lua"], "blockcache.lua"))()
+  end)
+
+  if not ok then sys.exit(DIED_KFS) end
+
+  -- Every library's source, to take two out: let it go. These locals held
+  -- the whole of it - the string and the table made from it, a megabyte and
+  -- more each - for as long as the server ran, since `serve` below never
+  -- returns.
+  libraries, source, why = nil, nil, nil
 
   -- `/Home` on a USB stick, when the machine was started asking for one:
   -- `usb` for the first Kosmos partition, or one partition by its GUID.
@@ -4394,6 +4409,17 @@ local function diskfs_main(endpoint, read_cap, write_cap, clock_cap)
 
     return wrote, why
   end
+
+  --
+  -- **Small reads kept** (`blockcache.lua`, `design.md` 8.3d), around all of
+  -- the above: a block answered from here is not a device call, so
+  -- `/Home/.device` still says what the device cost. Sixty-four blocks, a
+  -- quarter of a megabyte - the inode blocks, the bitmap and the directories
+  -- a path walks, which a 4 KB read of a file read six times over.
+  --
+  local cache = blockcache.wrap(sys, 64, 4)
+
+  device.cache = cache.stats
 
   ok = pcall(serve, endpoint, { kfs = kfs, device = device, clock = clock_cap },
              diskfs_handlers)

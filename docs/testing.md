@@ -12743,3 +12743,65 @@ a transaction is not handed out inside it, so what the transaction holds is
 inodes, the bitmap, attributes and the superblock, which `read_block`
 answers. The branch went too; `read_blocks` still has its twin, from before
 8.3b, for the review before the next minor version.
+
+## 18.271 The disk server keeps its small reads
+
+`user/lib/blockcache.lua` wraps the disk server's four disk calls
+(`design.md` 8.3d): small reads kept, every write through to the disk and
+then kept or forgotten, a file's bytes going past.
+
+**Measured, `diskbench /Home 1 1`, twice each, the same on both runs**,
+against 18.270's after:
+
+```
+                          byte path        and the cache
+ARM, the kernel's disk
+  sequential read         780 MB/s         973 MB/s
+  sequential write        367 MB/s         403 MB/s
+  random 4 KB read        1787 IOPS        3215 IOPS
+  outside the device      55% of random    89%
+x86, /Home on a stick
+  sequential read         210 MB/s         254 MB/s
+  sequential write        143 MB/s         168 MB/s
+  random 4 KB read        795 IOPS         2324 IOPS
+```
+
+Since before 18.270, ARM's sequential reads are 2.6 times as fast and
+random reads 1.8; a stick's random reads 3 times. What is left of a random
+read is the disk server's Lua, 89% of it: the path walked twice and each
+directory's entries unpacked into tables on each walk.
+
+**Kept, `test_blockcache.lua`**, 11 checks on the Mac: a block read twice
+is one call; written through, the next read is what was written with no
+call; written from a region, forgotten; a write the disk refused, and one
+of part of a block, forgotten; a two-block read kept as its two blocks; a
+read of more than four blocks not kept; bounded, the most recently used
+kept and the least recently used the one evicted. Five controls, each a
+copy of the module: not written through, a region's write not forgotten, a
+refused write not forgotten, the most recent evicted, large reads kept -
+each fails its check.
+
+**Kept, `KFS_CACHE=1 test_kfs.lua`**: the whole kfs suite, 87 checks, a
+second time through the cache - the journal, recovery, the power losses and
+the corrupted journal are the cases where a cache answering with a block
+the disk no longer holds goes wrong. The test edits its disk behind kfs in
+four places and tells the cache at each; nothing on the machine does. Its
+control, the cache not written through: the suite dies at its first
+read-back. Counting both paths' calls in the region checks is done cold,
+since the cache answers the string path's small reads and never a region's.
+
+**Kept, `run_diskbench.py`**, one more check, in the machine: a 4 KB read
+of a file whose path is known is one disk call, with the cache answering
+the rest - `/Home/.device` counts the cache's hits and misses now. Its
+control, the disk server without the cache: 6.0 calls a read, and it fails.
+
+**And the disk server let go of every library's source.** It loaded the
+whole bundle - a megabyte and more, as a string and as the table made of
+it - to take `kfs.lua` out, and two locals held both for as long as it ran.
+
+**The gate for this failed `arm-synth-load` once**, both parties away about
+50 ms together - 49.7 and 50.3, past 18.269's ceiling of twice the
+device's 23.2 - and it passed three runs of three alone on the same image,
+the kit's worst 9.4 to 13.4 ms. The Mac held the machine off longer than
+the 32.6 ms that set the ceiling; the ceiling was a guess about how long
+that can be, and the witness that replaces it is `roadmap.md` 4i-f.
