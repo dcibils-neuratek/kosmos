@@ -478,21 +478,13 @@ void abort(void)
  *
  * Unarmed, it still panics, because then the old comment is true again.
  */
-static jmp_buf exit_to;
-static int     exit_armed;
+jmp_buf    kosmos_exit_to;
+static int exit_armed;
 
-int kosmos_exit_arm(void)
+/* Only the flag: the landing is the caller's own `setjmp` (`stdlib.h`). */
+void kosmos_exit_arm(void)
 {
-    int landed;
-
     exit_armed = 1;
-    landed = setjmp(exit_to);
-
-    if (landed != 0) {
-        exit_armed = 0;
-    }
-
-    return landed;
 }
 
 void kosmos_exit_disarm(void)
@@ -510,7 +502,7 @@ void exit(int status)
          * first pass. The status itself is not carried: nothing here reads
          * it, and inventing an encoding for it would be inventing a
          * requirement. */
-        longjmp(exit_to, (status == 0) ? 1 : 2);
+        longjmp(kosmos_exit_to, (status == 0) ? 1 : 2);
     }
 
     panic("exit() was called: there is nothing to exit to");

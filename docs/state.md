@@ -191,6 +191,17 @@ capabilities which will then lead to us having accelerated 2d graphics".
   `test_kfs_tool.py` holds the tool on the C to the tool on the Lua: every
   command, the same images and words.
 
+- **Quake on the M700** (18.281): Diego's 0.10.191 stick - "quake refused
+  to launch", a general protection fault. A stale object: the Makefile never
+  read an installed application's `.d`, so `quake_kosmos.c.o` kept the old,
+  smaller `struct sysinfo` and the kernel wrote the new one over `l_start`'s
+  return address. **Stick 0.10.192** (`c4fdb35`, OVMF 32 checks) handed
+  over with it fixed. Under it, a second fault: an engine's `exit` landed in
+  a function that had returned, so a start that failed came back as one that
+  worked - fixed after the stick, so quitting Quake from its own menu may
+  misbehave on 0.10.192. `arm-nogame`, `x86-nogame` and `rebuilds` in the
+  gate.
+
 **Next**: `diskfs` step 3, the disk server in C speaking `diskproto.h`,
 measured with Disk Benchmark before and after. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU

@@ -111,6 +111,20 @@ SUITES = [
     # a second and then run").
     Suite("arm-launch", ["python3", "tools/run_launch.py", ARM]),
 
+    # **Doom and Quake started with nothing to play** (`testing.md` 18.281):
+    # an empty pak and an empty WAD take each engine through its start, its
+    # first error and `exit`, back to Lua with nothing dead. Nothing had ever
+    # started either engine here - their games are id's and never in the
+    # tree - so Quake shipped to the M700 dying of a stale object on start.
+    Suite("arm-nogame", ["python3", "tools/run_nogame.py", ARM]),
+    Suite("x86-nogame", ["python3", "tools/run_nogame.py", X86], x86=True),
+
+    # And what let that stale object through: a header changing rebuilds
+    # everything that read it - every object whose own `.d` names
+    # `kernel/syscall.h`, and the x86-64 kernel for a header of its own -
+    # asked of make without building anything.
+    Suite("rebuilds", ["python3", "tools/test_rebuilds.py"]),
+
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is
     # written to kfs: R, four seconds, R, and the file read back by the video

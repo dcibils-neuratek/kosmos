@@ -13107,3 +13107,91 @@ ones instead of zeroes - all three images differ, which no listing or
 boot disks the tool made, `x86-disk`'s two boots of one image, the stick's
 `/Home` in the USB suites, the loader's, Cafesa3D's and the launch suite's.
 
+## 18.281 Quake on the M700, a stale object, and an `exit` that landed nowhere
+
+Diego, 29 September, with the 0.10.191 stick: "quake refused to launch",
+"it did a system fault kernel error" - and the SNES started. `make
+stick-log` brought the diagnosis back: a general protection fault at
+`0x40165f84`, twice, 5 ms after `quake: ... pak0.pak, 18251 KB`, with the
+"caller" `0x7973204946452065` - the text "e EFI sy". That address is the
+`ret` of `l_start` in `quake_kosmos.c`, and the text is the tail of the
+M700's `machine_source`, "SMBIOS 3.0 in the EFI system table": the return
+address had been overwritten by `struct sysinfo`.
+
+**A stale object.** `l_start` keeps a `struct sysinfo` on its stack and
+asks the kernel to fill it. 4i-f (`2da7fb4`, 29 September 00:18) grew the
+struct to 2744 bytes; `quake_kosmos.c.o` had been compiled on the 28th, with
+a 2496-byte frame, and nothing rebuilt it. Its `.d` named `kernel/syscall.h`
+- and the Makefile included `USER_DEPS` only, the userland's own objects,
+never `DOOM_OBJS`', `QUAKE_OBJS`' or `SNES_OBJS`'. The x86 kernel had the
+same hole a different way: one compile of every source, whose rule named
+no header. **Fixed as a class**: every `.d` the userland build wrote is
+read, found by the file rather than by a list, and the x86 kernel writes a
+`.d` for its one compile (0.10.192, `c4fdb35`). `l_start`'s frame is 0xac0
+since. Doom and the SNES had never kept that struct on their stacks.
+
+**And under it, a second fault.** `kosmos_exit_arm` called `setjmp` and
+returned, so an engine's `exit` jumped back into a function that had
+returned - undefined, and here it landed in what the next call had left
+where its frame was, which came out as that call returning. **An engine that
+gave up during its start came back as one that had started**: `l_start`
+answered true, and Quake drew frames of a half-made game until, sixty seconds
+later, its screen code said "load failed." Doom's start the same, and a quit
+from Quake's own menu goes through the same landing every frame. Now
+`kosmos_exit_arm()` only sets the flag and each caller `setjmp`s
+`kosmos_exit_to` in its own frame - the whole of an `if`'s or a `switch`'s
+condition, as C allows it and an assignment is not (`stdlib.h`).
+
+**Kept, `tools/run_nogame.py`** - `arm-nogame` and `x86-nogame`, 6 checks,
+5 s each: **nothing in the gate had ever started either engine**, because
+their games are id's and never in the tree, and `doom.lua` stops before the
+engine when there is no WAD - which is what `arm-launch` gives it. A pak of
+no files ("PACK", its directory at 12, empty) and a WAD of no lumps, written
+by the suite, take each engine through its start - its image off the disk,
+`l_start`, the engine's own stack - to its own first error and `exit`: Quake
+"You must have the registered version to use modified games", Doom
+"W_GetNumForName: PNAMES not found!". Each has to say it, the program has to
+say it stopped, and nothing may have died. One disk with both, booted once
+for each: the harness puts the disk into QEMU's arguments when it is
+imported.
+
+Its controls, each the fault it is for: the stale Quake the gate had built
+- dies, on ARM returning to address 0, the struct's tail being zeros under
+QEMU; the struct right and the old landing - Quake never says it stopped,
+and "load failed." sixty seconds on; and Doom's glue with the old landing
+put back as a helper that `setjmp`s and returns - Doom never says it
+stopped.
+
+**Kept, `tools/test_rebuilds.py`** - `rebuilds`, 8 checks, 1 s: make is
+asked, without building, what it would do were `kernel/syscall.h` new (`make
+-n -W`), and every object whose own `.d` names it has to be in the answer -
+the ARM kernel, both boards' test userlands, and Doom, Quake, the SNES and
+the application test on both. No list of its own to go stale: the `.d`
+files are the list. Objects whose source has since moved or been removed -
+the kits' old places in `user/lib/`, the fixture blobs - are counted and
+left out: 38. **The x86 kernel is asked of make's database** (`make -p
+-q`) **with a header only it reads** (`kernel/boot.h` today): it carries the
+userland's image, so `syscall.h` rebuilt it through the image with no `.d`
+of its own, and a dry run shows it rebuilt for anything, `version.c` being
+FORCE - both made the first control pass.
+
+Its controls: the Makefile's old `-include $(USER_DEPS)` - Doom's and
+Quake's glue named on both boards; and the x86 kernel's `.d` not included -
+it no longer depends on `kernel/boot.h`.
+
+**And its gate found a check of 4i-f's (18.272) failing on the host**:
+"sched: a processor held off is counted" failed once, run at the end of the
+gate beside the Cafesa3D suites, and passed five times out of five alone on
+the same image. A Mac stopping QEMU *is* time the machine was held off - the
+count exists to say so - so a stall inside the check's quiet window, or its
+masked one, read as a failure. It measures again now when either window is
+too large, up to five times; too little in the masked window is the kernel
+not counting, which is what it is for, and still fails at once. Its control,
+the kernel's line that counts it taken out: it fails.
+
+**Found on the way, not fixed yet**: `installed.pairs` strips every
+application's image into the one `build/installed/<arch>/` on every call,
+and `arm-launch` and `arm-media` call it side by side in the gate - two
+processes writing the same three files. `run_nogame.py` strips its own into
+its scratch directory. (`roadmap.md`.)
+

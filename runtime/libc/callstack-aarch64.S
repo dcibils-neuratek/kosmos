@@ -12,8 +12,8 @@
  * hands it back unchanged, which is the whole mechanism. It is pushed first,
  * beside the frame record, so this function hands x19 back too.
  *
- * `exit` from inside `fn` still lands where `kosmos_exit_arm` was armed on the
- * old stack: `longjmp` restores `sp` from its buffer, and the frames left on
+ * `exit` from inside `fn` still lands at the caller's `setjmp(kosmos_exit_to)`,
+ * on the old stack: `longjmp` restores `sp` from its buffer, and the frames left on
  * the other stack are simply never returned to.
  */
 

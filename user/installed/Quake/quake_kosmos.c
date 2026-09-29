@@ -726,7 +726,9 @@ static int l_start(lua_State *L)
                           ENGINE_STACK_PAGES * 4);
     }
 
-    if (kosmos_exit_arm() != 0) {
+    kosmos_exit_arm();
+
+    if (setjmp(kosmos_exit_to) != 0) {
         lua_pushboolean(L, 0);
         lua_pushstring(L, "quake stopped during startup");
         return 2;
@@ -782,8 +784,6 @@ static int l_frame(lua_State *L)
     unsigned w = 0, h = 0, pitch = 0;
     uint32_t *dst = kosmos_surface_pixels(L, 1, &w, &h, &pitch);
     double seconds = luaL_checknumber(L, 2);
-    int landed;
-
     if (!running) {
         return luaL_error(L, "quake has not been started");
     }
@@ -791,13 +791,22 @@ static int l_frame(lua_State *L)
     drawn = false;
     empty_asks = 0;
 
-    landed = kosmos_exit_arm();
+    kosmos_exit_arm();
 
-    if (landed != 0) {
+    switch (setjmp(kosmos_exit_to)) {
+    case 0:
+        break;
+
+    case 1:
         running = 0;
         lua_pushboolean(L, 0);
-        lua_pushstring(L, (landed == 1) ? "quit"
-                                        : "stopped with an error, above");
+        lua_pushstring(L, "quit");
+        return 2;
+
+    default:
+        running = 0;
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "stopped with an error, above");
         return 2;
     }
 

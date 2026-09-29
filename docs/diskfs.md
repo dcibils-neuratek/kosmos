@@ -132,11 +132,75 @@ controls, and the documents saying what it became. Step 1 is the largest and
 the one everything rests on; it is also the one that can be finished and
 held entirely on the Mac.
 
+## Step 3, drawn before it is built
+
+**The disk server in C, `user/servers/diskfs.c`, on `kfs.c`**, answering what
+`diskfs_handlers` answers today - the same operations, the same answers -
+and speaking a declared shape, `user/include/diskproto.h`. In three parts,
+each gated and lived with:
+
+**3a. The server, and the namespace's side in Lua.** The namespace speaks it
+with `string.pack`, as it speaks `/Temporary` (`ram_request`) and `/Drives`:
+the pattern this system has for a declared protocol, and nothing new to get
+right in the same step as everything else.
+
+- **Its own header, with `ramproto.h`'s conventions** - `drivesproto.h`'s
+  reason, the other way round: `/Temporary` has `watch`, which the disk does
+  not, and the disk has regions, `.super`, `.device` and `.format`, which
+  `/Temporary` does not. A listing a page at a time at an offset, a read of
+  bytes at an offset with `more`, an error as a number the namespace puts
+  into words. Paths of 512 bytes rather than 256: a disk holds folders deep
+  enough for a whole path to pass 256 with names of 64.
+- **The operations**: `list`, `read` - into the region handed with it, or
+  inline a page at a time - `write` - from a region, or inline - `delete`,
+  `rename`, `mkdir`, `getattr`, `setattr`, `query`; and `.super`, `.device`
+  and `.format` as they are read and written now.
+- **Values stay the namespace's.** `fs.write(path, table)` is stored as bytes
+  with a mark in front, and read back as the table: the server does that
+  today (`TABLE_MARK`), and in the protocol it moves to the namespace, which
+  already packs and unpacks for `/Temporary`. The server stores bytes.
+- **Attributes are `sys.pack`'s bytes on the wire as on the disk**, since
+  what a launcher says - a program's path, its arguments - is longer than
+  `/Temporary`'s forty-eight characters. `getattr` answers the node's facts
+  in fields - kind, size, the stamp, the date, its extents - and its stored
+  attributes as those bytes, paged if they are long; `setattr` sends the
+  changes the same way. The server has to read them to merge them and to
+  answer a query, so it has a small reader and writer of that format for
+  flat tables of names to strings, numbers and booleans - what attributes
+  are - and refuses anything else.
+- **A query scans what it is asked about**: the folder named and what is
+  under it, each file's facts and attributes against the terms. No index,
+  and so **no path put in the disk's spelling first** - which is the second
+  walk of every request while an index exists, 38% of a random read
+  (18.273). Whether that holds up is part 3b's to measure.
+- **And what is around it now**: the stick's partition behind the USB driver
+  (`blockproto.h`, in C), the block cache (`blockcache.lua`'s rules), the
+  device's counters behind `.device`, a write's date from `/Devices/clock`,
+  a blank disk formatting itself once, and a replay said out loud.
+- **Held by what holds the disk now** - `arm-queries`, `arm-interchange`,
+  `x86-disk`, `run_power`, the USB suites' `/Home`, Disk Benchmark's suite -
+  unchanged, since they speak through the namespace; and a check of the
+  wire itself: a request of every shape a hostile caller can send refused
+  without the server's state changing.
+
+**3b. Measured.** Disk Benchmark before and after, the random read's parts
+again (18.273), and queries timed on a `/Home` of two thousand files - which
+is the question below, answered by numbers rather than by a guess.
+
+**3c. The namespace's side in C**, as `con.wait` did for the console, if 3b
+shows the Lua client allocating on a path that is felt: one reused table
+and no string a request, rather than `string.pack` and five tables.
+
 ## What is Diego's to decide, if anything
 
 Nothing yet: the direction was his ("yes, now"), and every step keeps the
 format the disk already has, so a `/Home` made before is read after. One
-question for step 3, to be put to him then with measurements: whether the
-index keeps being built at mount - a scan of every file's attributes, which
-on a large `/Home` is the slow part of a first query - or is dropped for a
-scan per query.
+question for step 3, to be put to him with measurements (3b): **whether a
+query scans the folder it is asked about, or an index is kept.** Today the
+index is built on the first query - every file's attributes, the whole disk
+- and from then on every request is spelled the disk's way first, because
+the index is keyed by path. The recommendation is the scan: queries come
+from `find`, Tracker's search and the query suite, never from anything on a
+frame's path, and dropping the index drops the second walk from every
+request that is. 3a builds the scan, since it is the simpler of the two and
+the one that can be measured; an index is added if the numbers ask for it.

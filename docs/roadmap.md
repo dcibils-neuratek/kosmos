@@ -306,6 +306,15 @@ over 293 operations; two holes in `kfs.lua`'s `rename` found and fixed.
 **Step 2 done the same day** (18.280): the host's disk tool on the C, and
 one host Lua carrying it.
 
+**Quake on the M700, the same day** (`testing.md` 18.281): it died on start
+of a stale object - the Makefile never read an installed application's `.d`
+files, nor the x86 kernel's - and under that, an engine's `exit` landed in a
+function that had returned. Both fixed, with `arm-nogame`, `x86-nogame` and
+`rebuilds` in the gate. **Left to do**: `installed.pairs` strips every
+application's image into one shared `build/installed/<arch>/` on each call,
+and `arm-launch` and `arm-media` call it at the same time in the gate - a
+staging directory of the caller's own.
+
 **And a gap in the gate, noticed the same day**: `arm-cafesa3d` hung once for
 720 s in a `prepush` and left nothing to read - the suite prints at its end,
 and the gate killed it before then - and passed alone and in the next gate.

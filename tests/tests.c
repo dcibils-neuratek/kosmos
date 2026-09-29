@@ -7839,47 +7839,70 @@ static bool test_a_wake_preempts_a_lower_priority_thread(void)
  * starved; this is the kernel stopping them on purpose, which the count
  * cannot tell from the Mac and says so.
  */
+/*
+ * **Measured again when the host stalled the machine**, up to five times. A
+ * Mac that stops QEMU is time the machine was held off - the count exists to
+ * say so - and in a busy gate it did, inside the window: the check failed
+ * once at the end of a gate beside the Cafesa3D suites, and five times out
+ * of five passed alone on the same image (`testing.md` 18.281). Too much in
+ * either window is the host; too little in the masked one is the kernel not
+ * counting, which is what this is for, and fails at once.
+ */
 static bool test_held_off_is_counted(void)
 {
     uint64_t tick = cntfrq() / TICK_HZ;
     unsigned cpu = this_cpu()->index;
-    uint64_t before, quiet, masked, until;
-    unsigned long t0;
 
-    t0 = hal_ticks();
-
-    while (hal_ticks() < t0 + 1) {          /* start on a tick */
-        __asm__ volatile("" ::: "memory");
+    if (tick == 0) {
+        return false;
     }
 
-    before = thread_held_off_cpu(cpu);
-    t0 = hal_ticks();
+    for (int attempt = 0; attempt < 5; attempt++) {
+        uint64_t before, quiet, masked, until;
+        unsigned long t0;
 
-    while (hal_ticks() < t0 + 5) {
-        __asm__ volatile("" ::: "memory");
+        t0 = hal_ticks();
+
+        while (hal_ticks() < t0 + 1) {      /* start on a tick */
+            __asm__ volatile("" ::: "memory");
+        }
+
+        before = thread_held_off_cpu(cpu);
+        t0 = hal_ticks();
+
+        while (hal_ticks() < t0 + 5) {
+            __asm__ volatile("" ::: "memory");
+        }
+
+        quiet = thread_held_off_cpu(cpu) - before;
+
+        before = thread_held_off_cpu(cpu);
+        cpu_irq_disable();
+        until = cntpct() + 5 * tick;
+
+        while (cntpct() < until) {
+            __asm__ volatile("" ::: "memory");
+        }
+
+        cpu_irq_enable();
+        t0 = hal_ticks();
+
+        while (hal_ticks() < t0 + 2) {
+            __asm__ volatile("" ::: "memory");
+        }
+
+        masked = thread_held_off_cpu(cpu) - before;
+
+        if (masked < 3 * tick + tick / 2) {
+            return false;                   /* the kernel did not count it */
+        }
+
+        if (quiet < 2 * tick && masked <= 10 * tick) {
+            return true;
+        }
     }
 
-    quiet = thread_held_off_cpu(cpu) - before;
-
-    before = thread_held_off_cpu(cpu);
-    cpu_irq_disable();
-    until = cntpct() + 5 * tick;
-
-    while (cntpct() < until) {
-        __asm__ volatile("" ::: "memory");
-    }
-
-    cpu_irq_enable();
-    t0 = hal_ticks();
-
-    while (hal_ticks() < t0 + 2) {
-        __asm__ volatile("" ::: "memory");
-    }
-
-    masked = thread_held_off_cpu(cpu) - before;
-
-    return tick != 0 && quiet < 2 * tick && masked >= 3 * tick + tick / 2
-           && masked <= 10 * tick;
+    return false;                           /* never a quiet host to ask on */
 }
 
 /*

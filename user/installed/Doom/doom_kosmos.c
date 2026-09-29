@@ -339,7 +339,9 @@ static int l_start(lua_State *L)
      * back here, `l_start` returns false, and the Lua side prints what Doom
      * actually said.
      */
-    if (kosmos_exit_arm() != 0) {
+    kosmos_exit_arm();
+
+    if (setjmp(kosmos_exit_to) != 0) {
         running = 0;
 
         lua_pushboolean(L, 0);

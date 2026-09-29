@@ -32,11 +32,31 @@ char  *getenv(const char *name);
 int    system(const char *command);
 
 /*
- * Arm a landing place for `exit()`. Returns 0 the first time and non-zero
- * when something called `exit` and arrived back here - the same shape as
- * `setjmp`, because it is one. See the note in malloc.c.
+ * A landing place for `exit()` (the note in malloc.c has why): arm it, then
+ * `setjmp(kosmos_exit_to)` in the function that will still be running when
+ * something calls `exit` - 0 the first time, and on arriving back because
+ * something did, 1 for an `exit(0)` and 2 for any other.
+ *
+ *     kosmos_exit_arm();
+ *
+ *     if (setjmp(kosmos_exit_to) != 0) {
+ *         ... it stopped, and said why ...
+ *     }
+ *
+ * **Two lines, and they have to be.** This was one function that called
+ * `setjmp` itself and returned, and a jump back into a function that has
+ * returned is undefined: the landing arrived in whatever the next call had
+ * left where its frame was. Doom's and Quake's `exit` at startup came back
+ * as the call after the arming returning, so `l_start` said the engine had
+ * *started*, and Quake drew frames of a half-made game until it said "load
+ * failed." (29 September, `testing.md` 18.281). So `setjmp` is called in the
+ * frame the jump comes back to, and as C allows it - the whole of an `if`'s
+ * or a `switch`'s condition, never the right side of an assignment.
  */
-int    kosmos_exit_arm(void);
+#include <setjmp.h>
+
+extern jmp_buf kosmos_exit_to;
+void   kosmos_exit_arm(void);
 void   kosmos_exit_disarm(void);
 
 /*
