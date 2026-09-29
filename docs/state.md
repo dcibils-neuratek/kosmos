@@ -98,8 +98,16 @@ capabilities which will then lead to us having accelerated 2d graphics".
   11.8 under QEMU, held pixel for pixel to a whole redraw. The menu's
   restart works; Save on a new disk was broken and is fixed.
 
-**Next**: a stick with the lag fix for Diego to try on the M700 (0.10.189).
-Then 4i d, a MIDI event reaching the kit without the window's pass;
+- **0.10.189 on the M700** (29 September, photograph): "It works amazing" -
+  Groove smooth at 3440x1440 beside a film playing, Cafesa3D rendering and
+  every one of the eight cores at 90 to 100%; Processes shows the audio
+  server in the `audio` band. **Diego: "Yes, 0.10.189 is stable"** - renamed
+  `kosmos-usb-0.10.189-stable.img`, same bytes (sha256 146631cf...); the
+  M700's 0.10.169-stable and the development images 0.10.183, 0.10.184 and
+  0.10.188 moved to the Trash. Stable: the ThinkPad's 0.10.88, the M700's
+  0.10.189.
+
+**Next**: 4i d, a MIDI event reaching the kit without the window's pass;
 4i e, the device's depth, on the ThinkPad. 6zg d when Diego has the
 Launchkey at hand.
 
