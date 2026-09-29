@@ -12594,3 +12594,92 @@ was leaning on the hole.
 could not starve it even stepped down to LOW (18.265); and `spin`'s own note
 that three spinners in the display band made the desktop stop answering, but
 slowly rather than at once.
+
+## 18.269 One rule for how deep a queue of sound is kept (4i, steps e and after)
+
+The Synth Kit's rule for its ring - start full, one fewer for each window in
+which every look found two still queued, one more at once on a dry run and
+that depth a floor - is `user/include/depth.h` now, and the audio server
+follows it for the device. The device held four periods, 23 ms, whatever the
+machine needed; it starts at four and comes down where a controller keeps
+time. It looks only once the device has been filled, since a stream starts
+with an empty one, and starts over when nobody is playing. Under QEMU its WAV
+writer drains in bursts and the device stays at four; the M700's HD Audio is
+where it is measured, with `groove --report`, which now says what the server
+keeps and how often it found the device empty (two words added to
+`audio_reply`, read by `audio.stats`).
+
+**And the window is a quarter second**, not a second: a note in Groove's first
+seconds waited behind the whole ring while the kit came down a period a
+second. From eight to two is a second and a half now on a machine that holds
+two.
+
+**And the audio server is born in its band**: a child spawned with the sound
+device *and* `SPAWN_AUDIO_BAND` - which is only ever the audio server -
+starts there (`spawn_finish`), as the Synth Kit's thread does (18.268). It
+asked in its first line before, the trap the kit fell into under load.
+
+**Kept, `test_depth.c`**, 17 checks on the Mac: full at the start; one fewer a
+window with two to spare, to its floor and no further; not inside a window;
+one spare is not enough, and it never runs dry getting there; a dry run
+raises it one for good; never past the queue's size; and a queue that asks
+for a bite of one comes down to two when taken a period at a time, not at
+all when taken two at a time, and is not stopped by holding more than it
+keeps; and after `depth_resume` a window is whole again, however long
+nobody looked. Its controls: stepping down with one spare - it reaches one, runs
+dry, and the check fails (the first version of this control passed, because
+a dry run brought it back to two; the check asks now that it never ran
+dry); the bite ignored - two-period bites bring it down, and the check
+fails; and `depth_resume` doing nothing - the first look after a pause
+takes a period away.
+
+**And the device asks for more than the ring** - found by the gate, which
+failed `x86-film` with a gap of silence in the film's sound. Alone, the
+image with the device's depth failed it twice in seven; the commit before
+it passed seven of seven; the same image with the device held at four,
+seven of seven. The server's depth read four at the end of every run,
+which hid it: it had come down to three on a quarter second of two-period
+bites - QEMU's HD Audio takes the device in bursts - and the first bite of
+three emptied it, which is the gap, and put it back at four for good. One
+spare over the biggest bite a window saw is one period of time only when
+the queue is taken a period at a time. So the device asks `depth.h` for a
+bite of one and a window of a second: a controller that keeps time still
+comes down to two, and a device taken in bursts stays at four. The Synth
+Kit's ring keeps the quick rule - a dry ring is one program's sound rather
+than everybody's, and the ring is most of a key's way to the ear.
+
+**And a window judged on one look.** With the steady rule the film passed
+ten of ten alone and failed in the next gate, and reading the server again
+found why a single run could: `depth_begin` ran when the server started, and
+the device is looked at only once a stream has filled it - so the first
+look of a stream, seconds after, ended a window timed from boot and judged
+it on that look alone, and one that found a period gone took one away.
+`device_primed` starts over between streams, so it could happen at the
+start of every one. `depth_resume` starts the window when the looks begin
+again; the kit never had it, since it begins its depth when its stream
+starts.
+
+**And a race in 4i d, found by the gate**: the pad came the moment Groove
+opened, before its window's first pass had sent the kit its map, and the kit
+sent it to no drum track - dropped. The window heard it and the WAV held no
+kick. The kit takes no events before its first map now; they wait in the
+page. Three runs of `arm-midi` after it, all 18 checks.
+
+**And a short absence both share is the machine's.** `arm-synth-load`,
+alone in the gate, failed once with the kit away 32.6 ms and the audio server
+32.7 against the device's 23.2 - one stall, which is the Mac holding the
+emulated machine off (18.127). A thread the load holds off is away while the
+other keeps turning: its controls read 745 ms against 9 and 211 against 10.
+So an absence past the device's time is excused only when the other shared it
+within half the device's time *and* it is under twice the device's time.
+
+The ceiling is what keeps it from being a threshold widened until it stops
+firing, which 18.127 says not to do: a band that failed for *both* would hold
+both off alike, and the first version of this - shared, and no ceiling -
+would have passed it. Its control is that band: `thread_enter_audio_band`
+and the wake that puts a sound thread back both leaving it in the display
+band while it says it moved, so the kit reports itself in the band and only
+the absences can tell - the kit away 113.4 ms and the server 106.5, shared,
+and both checks fail on the ceiling. (The first build of this control
+changed only the entry, and a sound thread is put back in the band each
+time it wakes, so it would have measured nothing.)

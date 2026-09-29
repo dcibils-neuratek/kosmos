@@ -223,6 +223,14 @@ of now we dont have". So, one at a time:
 3. **Storage at full speed** - the filesystem's byte path in C (above).
 4. **4h** - the GPU: video encode and decode in hardware first, and from
    the driver that takes, accelerated 2D - which Kosmos does not have.
+   **Where to start, Diego on 29 September**: "Gpu do the qemu virtio-gpu
+   which you can try in the Mac mini without the m700 hardware. After that
+   do the m700 gpu codec and driver." So virtio-gpu under QEMU first, then
+   the M700's Intel GPU: its video codec and its driver.
+
+**29 September, Diego**: "Ok do 4i, 3 and 4 now. We will work on launch key
+tomorrow" - 4i's remaining steps, storage at full speed, then 4h in the
+order above; 6zg d, the Launchkey, the next day.
 
 The order before this one follows, and what it put first - USB - is built.
 
@@ -1122,6 +1130,17 @@ processors, and still what follows USB:
      a second.
    - **e** - the device's own depth and the shortest period the controller
      holds, on the ThinkPad's HD Audio; and the whole number there.
+     **Built on 29 September, to be measured on the M700** (`testing.md`
+     18.269): the audio server keeps the device by the kit's rule, now
+     `depth.h`, starting at four periods and coming down only on a second
+     in which the device was taken a period at a time - where the
+     controller keeps time; QEMU's takes it in bursts and stays at four.
+     `groove --report 30` on the M700 says what it keeps and how often it
+     found the device empty. The shortest *period* the controller holds is
+     the next question, and a bigger change: the period is the board's,
+     256 frames, in every ring. The kit's window is a quarter second now,
+     so a note early in Groove waits behind less, and the audio server is
+     born in its band.
 4i-b. **WANTED since 19 September - where the fortnight went: IPC costs 70%
    more and a context switch 44% more than on 5 September** (`testing.md`
    18.118). Measured at three commits, so it is attributed rather than

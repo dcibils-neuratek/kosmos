@@ -35,16 +35,15 @@
  * 4i, step b). A note is heard after everything queued before it, so a full
  * ring - eight periods, 46 ms - was 46 ms on every key.
  *
- * **It starts full and comes down; it does not start shallow and climb.**
- * It keeps the whole ring, and each second in which every wake found at
- * least two periods still queued it keeps one fewer, to `fewest`. A wake
- * that finds the ring empty - the audio server had nothing of this
- * stream's - keeps one more at once, and that depth becomes the floor it
- * never comes below again. So the depth is found by playing, per machine,
- * and found *from the safe side*: the first version kept two and climbed
- * each time the ring ran dry, which found the same depth by running dry on
- * the way - three times in every start under QEMU - and a ring that has
- * run dry is one late wake from a click (`testing.md` 18.262).
+ * **It starts full and comes down; it does not start shallow and climb** -
+ * `depth.h`'s rule, which the audio server follows for the device as well:
+ * one fewer for each quarter second in which every wake found two periods
+ * still queued, one more at once when a wake finds the ring empty, and that
+ * depth a floor never probed below again. The first version kept two and
+ * climbed each time the ring ran dry, which ran dry three times in every
+ * start under QEMU (`testing.md` 18.262); the second looked for a second
+ * before each step, and a note in the first seconds waited behind the whole
+ * ring (18.269).
  *
  * **Three things cross between the two threads, and each one way:**
  *
@@ -71,6 +70,7 @@
 #include "lauxlib.h"
 
 #include "audioring.h"
+#include "depth.h"
 #include "kosmos.h"
 #include "midiproto.h"
 #include "synth_lua.h"
@@ -129,6 +129,7 @@ struct heard {
     double peak_l, peak_r;
     struct note_path note;
     uint32_t ahead, dry;                /* periods kept queued; runs dry */
+    uint64_t ahead_changed;             /* the counter, when `ahead` moved */
     bool     audio_band;                /* the thread is in the audio band */
     unsigned long worst_pass;           /* counter ticks, between passes */
 };
@@ -148,9 +149,9 @@ static long thread_index = -1;
 static int quit;
 static struct note_path note_path;      /* the audio thread's alone */
 /* The audio thread's alone, set by `start` before there is one. */
-static uint32_t ahead_kept = 2;         /* periods kept queued */
-static uint32_t ahead_floor = 2;        /* never fewer: `fewest`, or a dry */
-static uint32_t dry;                    /* times the ring was found empty */
+/* How deep the ring is kept: `depth.h`'s rule, which the audio server
+ * follows for the device too. */
+static struct depth kept = { .kept = 2, .floor = 2, .most = 8, .lowest = UINT32_MAX };
 static bool     in_audio_band;          /* the thread got the band it asked */
 static unsigned long worst_pass;        /* counter ticks between two passes */
 static unsigned long last_pass_at;      /* the counter at the latest pass */
@@ -197,7 +198,7 @@ static void noted_at(uint64_t key, uint64_t posted, bool from_page)
         note_path.device = (uint32_t)(waiting - unmixed);
     }
 
-    note_path.ahead = ahead_kept;
+    note_path.ahead = kept.kept;
 
     note_path.count++;
 }
@@ -242,6 +243,15 @@ static struct midi_ring *live_offered;  /* `listen`'s, taken by the thread */
 static struct midi_ring *live_ring;     /* the thread's alone, from here */
 static uint32_t live_read;
 static struct live_map live = { -1, false, -1, 0, 0, false };
+
+/*
+ * **No events are taken before the first map.** Without one a note has
+ * nowhere to go and would be dropped - and the gate found exactly that: a
+ * pad sent the moment Groove opened, before its window's first pass had
+ * said where notes go. Untaken, they wait in the page, which is what the
+ * page is for.
+ */
+static bool live_mapped;
 static int8_t live_track[16][128], live_pitch[16][128];   /* a key's note */
 static bool live_sustain, live_sustained[16][128];
 
@@ -348,7 +358,7 @@ static void live_take(void)
         }
     }
 
-    if (live_ring == NULL || engine->song == NULL) return;
+    if (live_ring == NULL || engine->song == NULL || !live_mapped) return;
 
     uint32_t write = __atomic_load_n(&live_ring->write, __ATOMIC_ACQUIRE);
 
@@ -389,6 +399,7 @@ static void apply(const struct cmd *c)
         live.surface_device = (uint32_t)(c->key >> 16);
         live.surface_cable = (uint8_t)((c->key >> 8) & 255u);
         live.surface_session = (c->key & 1u) != 0;
+        live_mapped = true;
         break;
     }
 }
@@ -455,8 +466,9 @@ static void publish(void)
     heard.peak_l = e->peak_l;
     heard.peak_r = e->peak_r;
     heard.note = note_path;
-    heard.ahead = ahead_kept;
-    heard.dry = dry;
+    heard.ahead = kept.kept;
+    heard.dry = kept.dry;
+    heard.ahead_changed = kept.changed_at;
     heard.audio_band = in_audio_band;
     heard.worst_pass = worst_pass;
     e->peak_l *= 0.8;
@@ -481,15 +493,15 @@ static void audio_main(unsigned long arg)
     uint32_t period = ring->period_bytes / 4u;
     bool started = false;
 
-    /* The least queued at any wake in this second, and the wakes in it. */
-    uint32_t lowest = UINT32_MAX;
+    /* A quarter of a second of looks decides each step down (`depth.h`). */
     struct sysinfo info;
 
     memset(&info, 0, sizeof info);
     (void)kosmos_sysinfo(&info);
 
-    unsigned long second = info.counter_hz ? info.counter_hz : 62500000UL;
-    unsigned long second_began = kosmos_ticks();
+    unsigned long window = (info.counter_hz ? info.counter_hz : 62500000UL) / 4u;
+
+    kept.window_began = kept.changed_at = kosmos_ticks();
 
     unsigned long last_pass = 0;
 
@@ -513,35 +525,14 @@ static void audio_main(unsigned long arg)
         drain();
         live_take();
 
+        /* How deep to keep the ring, from what this pass finds in it. */
         if (started) {
-            uint32_t queued = ring->write - ring->read;
-
-            if (queued == 0) {
-                /* Run dry: this depth does not hold here. One more, and
-                 * never this few again. */
-                dry++;
-
-                if (ahead_kept < ring->periods) ahead_kept++;
-                if (ahead_floor < ahead_kept) ahead_floor = ahead_kept;
-
-                lowest = UINT32_MAX;
-                second_began = kosmos_ticks();
-            } else {
-                if (queued < lowest) lowest = queued;
-
-                /* A second with two to spare at every wake: one fewer. */
-                if (kosmos_ticks() - second_began >= second) {
-                    if (lowest >= 2 && ahead_kept > ahead_floor) ahead_kept--;
-
-                    lowest = UINT32_MAX;
-                    second_began = kosmos_ticks();
-                }
-            }
+            depth_look(&kept, ring->write - ring->read, kosmos_ticks(), window);
         }
 
         bool wrote = false;
 
-        while (ring->write - ring->read < ahead_kept && audio_ring_space(ring) > 0) {
+        while (ring->write - ring->read < kept.kept && audio_ring_space(ring) > 0) {
             int16_t *slot = (int16_t *)audio_ring_slot(ring, ring->write);
             unsigned long t0 = kosmos_ticks();
 
@@ -804,9 +795,7 @@ static int l_start(lua_State *L)
     luaL_argcheck(L, fewest >= 1 && fewest <= (lua_Integer)r->periods, 3,
                   "keep between one period and the ring's");
 
-    ahead_kept = r->periods;
-    ahead_floor = (uint32_t)fewest;
-    dry = 0;
+    depth_begin(&kept, r->periods, (uint32_t)fewest, 0, kosmos_ticks());
     worst_pass = 0;
     ring = r;
     __atomic_store_n(&quit, 0, __ATOMIC_RELEASE);
@@ -965,6 +954,7 @@ static int l_state(lua_State *L)
     set_boolean(L, "note_from_page", copy.note.from_page);
     set_integer(L, "ahead", copy.ahead);
     set_integer(L, "dry", copy.dry);
+    set_integer(L, "ahead_changed", (lua_Integer)copy.ahead_changed);
     set_boolean(L, "audio_band", copy.audio_band);
     set_integer(L, "worst_pass", (lua_Integer)copy.worst_pass);
     set_integer(L, "last_pass",

@@ -281,8 +281,8 @@ local INFO      = "<I4I4i4I4I4I4c24"
 local INFO_SIZE = 48
 
 -- struct audio_reply, as far as the list
-local REPLY      = "<I4I4I4I4I4I4I4I4I4I4"   -- ..., master, master_muted, ...
-local REPLY_HEAD = 40
+local REPLY      = "<I4I4I4I4I4I4I4I4I4I4I4I4"   -- ..., late, kept, device_dry, count
+local REPLY_HEAD = 48
 
 assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, "") == REQ_SIZE,
        "audio: the request layout does not match audioproto.h")
@@ -334,7 +334,7 @@ function request(op, fields, pass)
   end
 
   local err, stream, period, periods, master, master_muted, mixes, starved,
-        late, count = string.unpack(REPLY, reply)
+        late, kept, device_dry, count = string.unpack(REPLY, reply)
 
   if err ~= 0 then
     return nil, ERRORS[err] or ("audio error " .. tostring(err))
@@ -343,7 +343,8 @@ function request(op, fields, pass)
   return { stream = stream, period = period, periods = periods,
            master = master, master_muted = master_muted ~= 0,
            mixes = mixes, starved = starved,
-           late = late, count = count, bytes = reply }
+           late = late, kept = kept, device_dry = device_dry,
+           count = count, bytes = reply }
 end
 
 --
@@ -402,7 +403,10 @@ function audio.stats()
   -- parsed. 0 to 256, which is the scale every gain here uses.
   --
   return { starved = r.starved, late = r.late, mixes = r.mixes,
-           master = r.master, master_muted = r.master_muted }
+           master = r.master, master_muted = r.master_muted,
+           -- The periods the server keeps in the device now, and how often
+           -- it found the device empty (`depth.h`, 4i e).
+           kept = r.kept, device_dry = r.device_dry }
 end
 
 --

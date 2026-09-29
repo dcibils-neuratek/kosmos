@@ -306,7 +306,10 @@ local function reportSound()
   local stats = audio.stats() or {}
   local info = sys.info() or {}
   local period = (info.audio_period or 0) // (2 * math.max(1, info.audio_channels or 2))
-  local holds = (info.audio_periods or 0) * period / math.max(1, info.audio_rate or 44100) * 1000
+  -- What the audio server keeps in the device now (`depth.h`), which can
+  -- be fewer than it will hold.
+  local kept = stats.kept or info.audio_periods or 0
+  local holds = kept * period / math.max(1, info.audio_rate or 44100) * 1000
 
   -- The DSP load, all told: the time spent rendering over the time it
   -- rendered. Past one, no scheduler can keep the sound whole.
@@ -341,6 +344,15 @@ local function reportSound()
 
   print(("groove: the kit rendered %.2f s of sound in the %.2f s since it began")
         :format((st.rendered or 0) / E.SR, since))
+
+  -- How the two depths settled: the kit's ring and the server's device,
+  -- each kept by `depth.h`'s rule.
+  print(("groove: the kit keeps %d periods, last changed %.2f s after it began; "
+         .. "the audio server keeps %d in the device, and found it empty %d times")
+        :format(fresh.ahead or 0,
+                (soundSince and fresh.ahead_changed and fresh.ahead_changed > 0)
+                and math.max(0, (fresh.ahead_changed - soundSince) / hz) or 0,
+                kept, stats.device_dry or 0))
 
   local d = U.drawn
 

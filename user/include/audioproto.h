@@ -90,6 +90,8 @@ struct audio_reply {
     uint32_t mixes;             /* periods mixed, ever */
     uint32_t starved;           /* device had room, every ring was empty */
     uint32_t late;              /* worst gap between turns, microseconds */
+    uint32_t kept;              /* periods kept in the device now (4i e) */
+    uint32_t device_dry;        /* looks that found the device empty */
     uint32_t count;             /* how many entries in `list` are filled */
 
     struct audio_stream_info list[AUDIO_LIST_MAX];

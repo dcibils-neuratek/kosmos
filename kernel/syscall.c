@@ -436,6 +436,16 @@ static long spawn_finish(struct process *child, uintptr_t caps_ptr, size_t ncaps
 
     if ((flags & SPAWN_AUDIO_BAND) != 0) {
         process_grant_audio_band(child);
+
+        /*
+         * Given the sound device *and* the band, the child is the audio
+         * server - the device goes to one process - and it starts in the
+         * band rather than asking from NORMAL in its first line, which a
+         * busy core may never let it reach (`testing.md` 18.268).
+         */
+        if ((flags & SPAWN_AUDIO) != 0 && child->owns_audio) {
+            thread_enter_audio_band(child->thread);
+        }
     }
 
     if ((flags & SPAWN_DEVICES) != 0) {

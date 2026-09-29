@@ -29,6 +29,7 @@
 #include "kosmos.h"
 #include "audioring.h"
 #include "audioproto.h"
+#include "depth.h"
 #include "syscall.h"
 
 #define STREAM_MAX  8u          /* one more than AUDIO_LIST_MAX would show */
@@ -60,7 +61,25 @@ static bool          master_muted = false;
 
 static unsigned      period_bytes;
 static unsigned      period_frames;     /* that period, in the position's unit */
-static unsigned      device_depth;
+static unsigned      device_depth;      /* what the device will hold */
+
+/*
+ * **How much of that is kept in it** (`roadmap.md` 4i, step e): `depth.h`'s
+ * rule, the Synth Kit's for its ring, asked for more before it comes down. A
+ * sound is heard after all the device holds, and it held four periods, 23
+ * ms, whether the machine needed them or not. So it starts at four and comes
+ * down a period for each *second* in which every look found two still in it
+ * and none found more than one gone, and goes up one, for good, when a look
+ * finds it empty. The device is every program's sound, and a step taken on
+ * a quarter second of QEMU's bursts left a gap in a film (`testing.md`
+ * 18.269): a controller that takes a period at a time comes down, one that
+ * takes them in bursts stays at four. Looked at only once it has been filled
+ * - a stream starts with an empty device, and that is not a dry run - and
+ * from the start again when nobody is playing.
+ */
+static struct depth  device;
+static bool          device_primed;
+static unsigned long depth_window;
 static unsigned long counter_hz;
 
 /* Diagnostics, reported with `streams`. `starved` is the device having room
@@ -105,8 +124,17 @@ static bool refill(void)
         return false;
     }
 
-    if ((unsigned)kosmos_snd_queued() >= device_depth) {
-        return false;                   /* the device has all it will hold */
+    unsigned queued = (unsigned)kosmos_snd_queued();
+
+    if (device_primed) {
+        depth_look(&device, queued, kosmos_ticks(), depth_window);
+    } else if (queued >= device.kept) {
+        device_primed = true;
+        depth_resume(&device, kosmos_ticks());  /* a window of this stream's */
+    }
+
+    if (queued >= device.kept) {
+        return false;                   /* the device has all it is to hold */
     }
 
     if (samples > sizeof(acc) / sizeof(acc[0])) {
@@ -364,6 +392,8 @@ static void do_streams(struct audio_reply *rep)
     rep->mixes = mixes;
     rep->starved = starved;
     rep->late = late;
+    rep->kept = device.kept;
+    rep->device_dry = device.dry;
     rep->count = 0;
 
     for (i = 0; i < STREAM_MAX && rep->count < AUDIO_LIST_MAX; i++) {
@@ -452,15 +482,12 @@ void audio_server(long endpoint)
     unsigned channels;
 
     /*
-     * **Into the audio band first** (`kernel/sched.h`): above every program
-     * and the compositor, under the scheduler's budget. It was the display
-     * band, and `process_grant_audio` says why at length - above its
-     * clients was right and unsafe until something enforced that it
-     * blocks. The budget does. Refused only if init did not grant it, and
-     * then this runs where it was spawned.
+     * **In the audio band from its first instruction** (`kernel/sched.h`):
+     * init spawns it with the device and the band, and a child given both
+     * is started there (`spawn_finish`). It used to ask here, in its first
+     * line, which a thread at NORMAL on a busy core may never reach - the
+     * Synth Kit's thread did not, under load (`testing.md` 18.268).
      */
-    (void)kosmos_sched_set(SCHED_SET_AUDIO_BAND, 0);
-
     memset(streams, 0, sizeof(streams));
     memset(&info, 0, sizeof(info));
     (void)kosmos_sysinfo(&info);
@@ -483,6 +510,9 @@ void audio_server(long endpoint)
     if (us == 0) {
         us = 1;
     }
+
+    depth_window = counter_hz;
+    depth_begin(&device, device_depth, 1, 1, kosmos_ticks());
 
     for (;;) {
         struct message msg;
@@ -509,6 +539,7 @@ void audio_server(long endpoint)
             last_turn = turn;
         } else {
             last_turn = 0;
+            device_primed = false;      /* the next stream fills it again */
         }
 
         publish_positions();
@@ -517,7 +548,7 @@ void audio_server(long endpoint)
             continue;                   /* there may be room for another */
         }
 
-        if ((unsigned)kosmos_snd_queued() < device_depth) {
+        if ((unsigned)kosmos_snd_queued() < device.kept) {
             starved++;                  /* room, and nothing to put in it */
         }
 

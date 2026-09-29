@@ -119,9 +119,16 @@ capabilities which will then lead to us having accelerated 2d graphics".
   after: context switch +4.1%, IPC +2.3% - the same as 28 September's
   readings before any of this (6zr), so unmoved by it.
 
-**Next**: 4i d's follow-up, a note in Groove's first seconds waiting behind
-the whole ring. Then 4i e, the device's depth, on the ThinkPad. 6zg d when
-Diego has the Launchkey at hand.
+- **4i e built** (18.269): `depth.h`, the kit's rule for its ring, now the
+  audio server's for the device too - asking for a second in which the
+  device was taken a period at a time, since the kit's quarter second on
+  QEMU's bursts left a gap in `x86-film` three runs in ten. To be measured
+  on the M700 with `groove --report 30`. The kit's window is a quarter
+  second; the audio server is born in its band.
+
+**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): storage at full
+speed, then 4h - virtio-gpu under QEMU, then the M700's GPU codec and
+driver. 6zg d, the Launchkey, on 30 September.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 
