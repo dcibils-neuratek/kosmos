@@ -156,6 +156,10 @@ capabilities which will then lead to us having accelerated 2d graphics".
   gate. **This Mac's QEMU has no virgl**, so 4h d - 3D on the Mac's GPU,
   windows as textures - needs a QEMU built with virglrenderer: Diego's call.
 
+- **4h e, the M700 study** (`docs/m700-gpu.md`): hardware H.264 decode
+  needs no firmware; a driver of Kosmos's own, not Linux's pair; measure
+  software decode at 1080p on the M700 first. Four decisions are Diego's.
+
 **Next** (Diego, 29 September: "do 4i, 3 and 4 now"): 4h b and c -
 the hardware cursor on the cursor queue, and the screen's size from the
 device - then the M700's GPU codec and driver (4h e). Waiting on Diego: a

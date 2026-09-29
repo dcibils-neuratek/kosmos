@@ -1083,7 +1083,14 @@ processors, and still what follows USB:
    - **d** - virgl, 3D on the Mac's GPU and windows as textures: needs a
      QEMU built with virglrenderer, which is a change to this Mac's
      toolchain and Diego's to decide.
-   - **e** - the M700's Intel GPU: its video codec and its driver.
+   - **e** - the M700's Intel GPU: its video codec and its driver. **The
+     study is written** (`docs/m700-gpu.md`, 29 September): H.264 decode in
+     hardware needs no firmware; Linux's pair - i915 and media-driver - does
+     not port, and a driver of Kosmos's own from Intel's manuals, with
+     Fuchsia's GPU driver and Mesa's decode as references, does; and the
+     first step is a number - software decode at 1080p on the M700 - which
+     decides between software, FFmpeg's SIMD and threads, and the driver.
+     Four things in it are Diego's to decide.
    **A study of the effort on the M700, asked on 27 September** - Diego:
    "study the effort to integrate gpu decoding and encoding capabilities on
    m700 using intel hd graphics driver *might take it from linux*". The

@@ -37,15 +37,11 @@
  */
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "hal.h"
 #include "mmu.h"
 #include "fwcfg.h"
-#include "page.h"
-#include "pmm.h"
 #include "ramfb.h"
 #include "fbpixels.h"
 
