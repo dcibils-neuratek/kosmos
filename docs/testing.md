@@ -13204,3 +13204,59 @@ and `arm-launch` and `arm-media` call it side by side in the gate - two
 processes writing the same three files. `run_nogame.py` strips its own into
 its scratch directory. (`roadmap.md`.)
 
+## 18.282 `/Home` served by C, speaking `diskproto.h`
+
+`docs/diskfs.md` step 3a. **`user/servers/diskfs.c`**, role 15 dispatched in
+`main.c` before Lua is opened, on `kfs.c` behind `diskcache.c`, answers what
+`diskfs_handlers` answered: a listing a page at a time, a read into the
+caller's region or a page in the reply, a write from a region or from the
+request, removals, renames, folders, attributes as `sys.pack`'s bytes merged
+by `packflat.c`, queries, and `.super`, `.device` and `.format` as structs;
+the kernel's disk or a stick's Kosmos partition behind the USB driver, the
+device's cost, and the clock's date on a write. **The namespace speaks it**
+with `string.pack`, beside `/Temporary`'s client, and does what the Lua
+server did for its callers: a value packed with its mark, a read gathered,
+a large write through a region, `.super` made a table, a query sorted.
+
+**Two differences, both meant**: a query scans the folder it is asked about
+- no index, so no request is spelled the disk's way first - and the server is
+handed the console, so a replayed journal and a blank disk formatted are
+said in the log at last.
+
+**The whole gate passed with it**, 63 suites in 9:16 - every suite that
+touches `/Home` on both boards, `/Home` on a stick in the USB suites, the
+loader's disk, Disk Benchmark's suite, the launch suite reading Doom's 18 MB
+off it, the query suite. And the image `IMAGES.load` reads through
+`fs.read_into` came back byte for byte, 18,402,968 bytes of `doom.elf` with
+the Mac's own checksum.
+
+**Found on the way: an installed application speaks the protocols of its
+build.** The launch suite failed once on this machine - Doom's process
+started, ended, and the launch said `false -1` - because the `doom.elf` it
+ran was linked before the client existed, and its own copy of the namespace
+spoke tables to a server that had stopped taking them. Rebuilt, it passed.
+The gate and the stick rebuild them; a QEMU disk filled by `make
+install-apps` needs it run again, which `CLAUDE.md` now says.
+
+**Kept, `tools/run_diskwire.py`** - `arm-diskwire`, 19 checks, 2 s: a
+program on the disk sends fifteen requests `diskproto.h` cannot say, with
+`fs.raw` - the wrong size, an operation there is none of, a path with no
+end, a destination longer than a path and one with no end, a write longer
+than its field, attributes that are not a table and ones with a table
+inside, query terms named by numbers, a read into no region, a read and a
+write larger than their region, a format without its words, a write to
+`.super`, a path through a file - and each has to be refused with its own
+number; then a file written before reads back the same, the free space has
+not moved, nothing a refused write named exists, and the server still lists.
+
+Its controls, each an image with one of the server's checks taken out: a
+path with no end let through is answered "no such file" (39) rather than
+refused; and an inline write's length unchecked **stores what lies past the
+request** - the refused write made its file and took two blocks, bytes of
+the server's own memory in it. The check is what stands between a caller's
+lie about a length and a disclosure.
+
+**Left, as the plan has it**: the Lua server (`diskfs_handlers`,
+`diskfs_main`, `stick_home`) is in `init.lua` and never runs - role 15 is C -
+until step 4 removes it with `kfs.lua`; and 3b measures.
+

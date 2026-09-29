@@ -126,6 +126,14 @@ SUITES = [
     # asked of make without building anything.
     Suite("rebuilds", ["python3", "tools/test_rebuilds.py"]),
 
+    # **The disk server's wire** (`docs/diskfs.md` step 3): `/Home` speaks
+    # `diskproto.h`, and fifteen requests it cannot say - the wrong size, no
+    # such operation, a path with no end, lengths past their fields, tables
+    # that are not flat, regions missing or too small, a format without its
+    # words - are each refused with their own number, and the disk is as it
+    # was afterwards.
+    Suite("arm-diskwire", ["python3", "tools/run_diskwire.py", ARM]),
+
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is
     # written to kfs: R, four seconds, R, and the file read back by the video

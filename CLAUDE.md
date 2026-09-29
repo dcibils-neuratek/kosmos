@@ -365,9 +365,18 @@ expressed, so the wire refuses them and the server never has to.
 
 What it costs is real and is not hidden: adding a field means editing a
 header and rebuilding both sides, and an error is a number with the sentence
-composed by whoever shows it to a person. **Only `/Devices/audio` speaks this way
-today**; the rest still take tables and are being moved one at a time, each
-lived with before the next is started.
+composed by whoever shows it to a person. **Every system server speaks this
+way now**: `/Devices/audio` first, and `/Home` last, on 29 September
+(`diskproto.h`, `docs/diskfs.md` step 3), each moved and lived with before
+the next was started. What still takes tables is an application's own name
+in `/Running`, which is a program rather than a server.
+
+**And an installed application carries its own copy of the runtime**, the
+namespace included (`docs/elf.md` step 5), so it speaks the protocols of the
+build that linked it: when one changes, `doom.elf` and the rest have to be
+built again. The stick and the gate do; a QEMU disk filled by `make
+install-apps` needs that run again - on 29 September a stale `doom.elf`
+spoke tables to a `/Home` that had stopped taking them.
 
 **Capabilities by index, never global IDs.** A syscall takes an index into the process's table. If a design needs to name something globally, the design is wrong.
 
@@ -570,7 +579,9 @@ that dropped the pointer's range, a share that did not carry its protocol,
 five servers that had quietly stopped naming themselves, and a `/ramfs` that
 had always stored Lua values rather than bytes.
 
-**`diskfs` is the one left, and it is on the byte path.** Its core is
+**`diskfs` was the last, and it was on the byte path.** It is C since 29
+September (`user/servers/diskfs.c`, `docs/diskfs.md` step 3); what follows is
+why it was last and what moving it had to keep. Its core was
 `kfs.lua`, which runs on the host *and* the guest, and that is what lets
 `make test` check the filesystem format and the journal's power-loss window
 without booting a machine - at an exact instant a SIGKILL aimed at a running

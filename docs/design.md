@@ -917,9 +917,11 @@ All of the above works today and none of it is persistent. The attributes are re
 The division M8 introduces is therefore narrower than it looks:
 
 - **On disk**: the tree, the file contents, and the attributes. Everything a filesystem must not lose.
-- **In memory, rebuilt at mount**: the index. It is derivable from the attributes, and derivable state that is also stored is state that can disagree with itself - which on a filesystem means a query returning a file that is not there. Rebuilding costs a scan and removes both the B+tree and the class of bug where the index and the truth drift apart.
+- **Not stored**: the index. It is derivable from the attributes, and derivable state that is also stored is state that can disagree with itself - which on a filesystem means a query returning a file that is not there. Not storing it removes both the B+tree and the class of bug where the index and the truth drift apart.
 
-That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while a mount scan is cheaper than the complexity it avoids, and stops holding at a file count this system is nowhere near.
+**And on the disk, since 29 September, not kept either** (`docs/diskfs.md` step 3). The disk server in Lua built its index in memory on the first query and kept it; the one in C scans what a query is asked about - the folder named and what is under it - reading each file's facts and attributes against the terms. An index kept by path meant every request had to be put in the disk's spelling first, while one existed: a second walk of every path, 38% of a random read (`testing.md` 18.273). Queries come from `find`, Tracker's search and the query suite, never from anything on a frame's path; `/Temporary` keeps its index, in the ramfs server's tables, because its `watch` answers from it.
+
+That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while scanning a folder is cheaper than the complexity an index costs, and stops holding at a file count this system is nowhere near - which `docs/diskfs.md` step 3b measures.
 
 ### 8.3a `/Home` always exists, and says which kind it is
 
@@ -1061,7 +1063,7 @@ Decided on 27 September 2026 by Diego, once the layout gave every name a capital
 
 **Each place that holds a name folds its own**, and nothing is folded twice: the namespace matches a mount's prefix folded and hands the rest to the server as typed; `kfs` compares a directory's entries folded; `ramfs`, `binfs`, `/Running`, the devices and the drives each find a name the same way; and `use` keeps one instance of a library however its path is spelled.
 
-**The one place a spelling is kept by path is the disk's index**, the attributes a query answers from, and `/Home/x` and `/Home/x` there would be two keys for one file. So while an index exists, the disk server turns each path into the disk's own spelling as it arrives (`kfs.spelled`); before there is one it does not, because that is a walk of the path's directories and kfs has no block cache - a machine that never asks a query never pays it. `ramfs` stores a new file under its directories' existing spelling for the same reason: its table holds whole paths, and a query hands them back.
+**A spelling kept by path is `ramfs`'s**: its table holds whole paths and a query hands them back, so it stores a new file under its directories' existing spelling, and `/Temporary/x` and `/Temporary/X` are one key. The disk kept one too - its index, while one existed, which turned every path into the disk's spelling as it arrived (`kfs.spelled`), a walk of its directories. Since the disk server is C (`docs/diskfs.md` step 3) there is no index to key: a query scans, and spells only the folder it starts from, once, with each answer built from the names as the directories store them.
 
 ### 8.4 A large file is mapped, not copied
 

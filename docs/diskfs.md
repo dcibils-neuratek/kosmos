@@ -139,7 +139,9 @@ held entirely on the Mac.
 and speaking a declared shape, `user/include/diskproto.h`. In three parts,
 each gated and lived with:
 
-**3a. The server, and the namespace's side in Lua.** The namespace speaks it
+**3a. The server, and the namespace's side in Lua** - **done 29
+September** (`testing.md` 18.282): the whole gate passed with it, and
+`arm-diskwire` holds its wire. The namespace speaks it
 with `string.pack`, as it speaks `/Temporary` (`ram_request`) and `/Drives`:
 the pattern this system has for a declared protocol, and nothing new to get
 right in the same step as everything else.

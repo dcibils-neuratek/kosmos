@@ -1928,6 +1928,432 @@ local function new_namespace()
     return { ok = true }
   end
 
+  --------------------------------------------------------------------------
+  -- /Home, which is C and speaks `diskproto.h` (`docs/diskfs.md` step 3).
+  --
+  -- `/Temporary`'s way: `string.pack` here, one reader in the server, and
+  -- the sizes asserted. What the disk server in Lua did for a caller and the
+  -- C one does not is done here instead, so nothing above this changes:
+  --
+  --   - **a value is packed here** - `fs.write(path, table)` stores it with
+  --     a mark in front, and a read that finds the mark gives the table back;
+  --   - **`.super`, `.device` and `.format`** are its three operations of
+  --     their own, and the tables they answer are made here from structs;
+  --   - **a read, a listing and a query are gathered** from as many pages as
+  --     they took, a large write goes through a region of its own, and a
+  --     query's answer is sorted.
+  --------------------------------------------------------------------------
+
+  local DISK_REQUEST = "<I4I4I8I8I4I4c512c1024"
+  local DISK_REPLY   = "<I4I4I4I4I8I8I8I4I4I8I8I8I4I4c1024"
+  local DISK_SUPER   = "<I8I8I4I4I4I4I8" .. string.rep("I4", 10) .. "I8I4I4"
+                       .. string.rep("I4", 11) .. "I4I8I8c128c128c96c96"
+  local DISK_DEVICE  = "<" .. string.rep("I8", 8)
+
+  local DISK_DATA_MAX, DISK_PATH_MAX, DISK_REGION = 1024, 512, 1
+
+  assert(string.packsize(DISK_REQUEST) == 1568,
+         "namespace: the /Home request layout does not match diskproto.h")
+  assert(string.packsize(DISK_REPLY) == 1104,
+         "namespace: the /Home reply layout does not match diskproto.h")
+  assert(string.packsize(DISK_SUPER) == 608,
+         "namespace: the /Home superblock layout does not match diskproto.h")
+
+  local DISK_OPS = { list = 1, read = 2, write = 3, delete = 4, rename = 5,
+                     mkdir = 6, getattr = 7, setattr = 8, query = 9 }
+  local DISK_OP_SUPER, DISK_OP_DEVICE, DISK_OP_FORMAT = 10, 11, 12
+
+  local DISK_ERRORS = {
+    [1]  = "/Home did not understand that",
+    [2]  = "there is no filesystem here",
+    [3]  = "that name is reserved",
+    [4]  = "that is the directory itself",
+    [6]  = "attributes are a table of names and values",
+    [7]  = "that is not a region the disk server can use",
+    [8]  = "a format must say `yes, erase it`",
+    [10] = "more attributes than fit in a block",
+    [11] = "more folders than one search holds",
+  }
+
+  -- The filesystem's own refusals, 32 on: `kfs_why` (`user/servers/kfs.c`).
+  local KFS_WHY = {
+    "the disk refused", "not a kosmos filesystem",
+    "a version of the format this does not understand",
+    "blocks of a size this does not understand",
+    "the superblock's layout does not make sense",
+    "the disk is too small to hold a filesystem", "no such file",
+    "not a directory", "that is a directory", "that name is taken",
+    "the directory is not empty", "the disk is full", "no inodes left",
+    "the file is too fragmented for 12 extents",
+    "a transaction is already open", "no transaction is open",
+    "more blocks changed than the journal can hold",
+    "a path may not contain . or ..", "the root has no parent",
+    "a name longer than 255 bytes", "a name cannot be empty",
+    "a directory cannot be moved into itself", "no such inode",
+    "an inode claims more extents than fit in one",
+    "a directory entry is malformed", "more attributes than fit in a block",
+    "this is not an attribute block", "a directory larger than this can edit",
+    "a block write longer than a block",
+  }
+
+  -- How finding a stick's `/Home` stopped, a look at a time (`stick` in
+  -- `diskfs.c`, which counts them in this order).
+  local STICK_STEPS = {
+    "no memory for its buffer", "the USB driver refusing its buffer",
+    "no stick named yet", "a unit named but not ready",
+    "a stick whose blocks are not 512 bytes",
+    "a stick whose block 1 would not read", "a stick with no GPT",
+    "a GPT whose partitions would not read",
+    "a stick with no Kosmos partition",
+    "a Kosmos partition, not the one asked for",
+    "a Kosmos partition past the stick's end",
+  }
+
+  -- What marks a file as holding a value rather than bytes: a NUL first, so
+  -- anything reading it as text stops at once.
+  local DISK_VALUE_MARK = "\0KTV"
+
+  local function disk_error(err, blob, length)
+    if err == 5 then
+      return ("`%s` is what this is, not something you can set; nothing was "
+              .. "written"):format(blob:sub(1, length))
+    end
+
+    if err == 9 then return blob:sub(1, length) end
+
+    if err >= 32 then
+      return KFS_WHY[err - 32] or ("the filesystem refused it, error " .. (err - 32))
+    end
+
+    return DISK_ERRORS[err] or ("/Home error " .. tostring(err))
+  end
+
+  local function disk_call(capability, op, path, offset, bytes, flags, data, pass)
+    path, data = tostring(path or "/"), data or ""
+
+    if #path >= DISK_PATH_MAX then
+      return nil, "a path longer than the disk takes"
+    end
+
+    if #data > DISK_DATA_MAX then
+      return nil, "more than one request to the disk carries"
+    end
+
+    local raw, why = sys.call_raw(capability,
+                                  string.pack(DISK_REQUEST, op, flags or 0,
+                                              offset or 0, bytes or 0, #data, 0,
+                                              path, data), pass)
+
+    if not raw then return nil, tostring(why) end
+    if #raw < 1104 then return nil, "a /Home reply of the wrong size" end
+
+    local err, more, count, length, next_at, moved, size, kind, extents, nsize,
+          mtime, modified, dated, _, blob = string.unpack(DISK_REPLY, raw)
+
+    if err ~= 0 then return nil, disk_error(err, blob, length) end
+
+    return { more = more ~= 0, count = count, length = length,
+             offset = next_at, bytes = moved, size = size, blob = blob,
+             node = { kind = kind, extents = extents, size = nsize,
+                      mtime = mtime, modified = modified, dated = dated ~= 0 } }
+  end
+
+  -- A page's names or paths: `count` of them, each ending in a zero byte.
+  local function disk_names(r, into)
+    local at = 1
+
+    for _ = 1, r.count do
+      local stop = r.blob:find("\0", at, true) or (r.length + 1)
+
+      into[#into + 1] = r.blob:sub(at, stop - 1)
+      at = stop + 1
+    end
+
+    return into
+  end
+
+  -- `.super`, as the table the disk server in Lua made of it.
+  local function disk_super(blob)
+    local v = { string.unpack(DISK_SUPER, blob) }
+    local s = {}
+    local sectors, bytes, sector_size, present, formatted, free_known,
+          free_blocks = table.unpack(v, 1, 7)
+    local sb_fields = { "magic", "version", "block_size", "blocks", "bitmap_at",
+                        "bitmap_blocks", "inodes_at", "inode_count",
+                        "journal_at", "data_at" }
+    local searched, looks = v[19], v[20]
+    local first, found = v[33], v[34]
+    local why, where, flush_why, free_why = trim(v[35]), trim(v[36]),
+                                            trim(v[37]), trim(v[38])
+
+    if present == 0 then
+      return { sectors = 0, sector_size = 0, bytes = 0, formatted = false,
+               present = false, why = why }
+    end
+
+    s.sectors, s.sector_size, s.bytes = sectors, sector_size, bytes
+    s.present = true
+    s.formatted = formatted ~= 0
+    s.where = (where ~= "") and where or nil
+    s.flush_why = (flush_why ~= "") and flush_why or nil
+
+    if searched ~= 0 then
+      local stops = {}
+
+      for i, name in ipairs(STICK_STEPS) do
+        if v[20 + i] > 0 then stops[name] = v[20 + i] end
+      end
+
+      s.search = { looks = looks, stops = stops,
+                   first = (first ~= 0) and first or nil,
+                   found = (found ~= 0) and found or nil }
+    end
+
+    if not s.formatted then
+      s.why = "not a kosmos filesystem"
+      return s
+    end
+
+    for i, name in ipairs(sb_fields) do s[name] = v[7 + i] end
+
+    s.created = v[18]
+
+    if free_known ~= 0 then
+      s.free_blocks = free_blocks
+    else
+      s.free_why = free_why
+    end
+
+    return s
+  end
+
+  local function disk_request(capability, op, rest, extra, pass)
+    extra = extra or {}
+
+    local name = (tostring(rest or "")):match("([^/]+)$")
+    local special = name and name:lower()
+
+    if op == "read" and (special == ".super" or special == ".device") then
+      local r, e = disk_call(capability, (special == ".super") and DISK_OP_SUPER
+                                         or DISK_OP_DEVICE, rest)
+
+      if not r then return nil, e end
+
+      if special == ".super" then return { ok = true, value = disk_super(r.blob) } end
+
+      local d = { string.unpack(DISK_DEVICE, r.blob) }
+
+      return { ok = true, value = {
+        reads = d[1], writes = d[2], read_bytes = d[3], write_bytes = d[4],
+        read_counter_ticks = d[5], write_counter_ticks = d[6],
+        cache_hits = d[7], cache_misses = d[8] } }
+    end
+
+    if op == "write" and special == ".format" then
+      local r, e = disk_call(capability, DISK_OP_FORMAT, rest, 0, 0, 0,
+                             tostring(extra.value or ""))
+
+      if not r then return nil, e end
+
+      return { ok = true, value = disk_super(r.blob) }
+    end
+
+    local code = DISK_OPS[op]
+
+    if not code then
+      return nil, "no such operation: " .. tostring(op)
+    end
+
+    if op == "list" then
+      local entries, at = {}, tonumber(extra.offset) or 0
+
+      repeat
+        local r, e = disk_call(capability, code, rest, at)
+
+        if not r then return nil, e end
+
+        disk_names(r, entries)
+        at = r.offset
+      until not r.more
+
+      return { ok = true, entries = entries }
+    end
+
+    if op == "read" then
+      local offset = tonumber(extra.offset) or 0
+
+      if extra.into then
+        local r, e = disk_call(capability, code, rest, offset,
+                               tonumber(extra.bytes) or math.maxinteger,
+                               DISK_REGION, nil, pass)
+
+        if not r then return nil, e end
+
+        return { ok = true, bytes = r.bytes, size = r.size }
+      end
+
+      local r, e = disk_call(capability, code, rest, offset)
+
+      if not r then return nil, e end
+
+      local bytes = r.blob:sub(1, r.length)
+
+      -- A value stored as one comes back as one, whole.
+      if offset == 0 and bytes:sub(1, #DISK_VALUE_MARK) == DISK_VALUE_MARK then
+        local parts, more, at = { bytes }, r.more, r.offset
+
+        while more do
+          local n, ne = disk_call(capability, code, rest, at)
+
+          if not n then return nil, ne end
+
+          parts[#parts + 1] = n.blob:sub(1, n.length)
+          more, at = n.more, n.offset
+        end
+
+        local value, perr = sys.unpack(table.concat(parts):sub(#DISK_VALUE_MARK + 1))
+
+        if value == nil then
+          return nil, "stored value is damaged: " .. tostring(perr)
+        end
+
+        return { ok = true, value = value }
+      end
+
+      return { ok = true, value = bytes, more = r.more }
+    end
+
+    if op == "write" then
+      if extra.from then
+        local r, e = disk_call(capability, code, rest, 0,
+                               tonumber(extra.bytes) or 0, DISK_REGION, nil, pass)
+
+        if not r then return nil, e end
+
+        return { ok = true, bytes = r.bytes }
+      end
+
+      local body = extra.value or ""
+
+      if type(body) == "table" then
+        local packed, perr = sys.pack(body)
+
+        if not packed then return nil, "cannot store that: " .. tostring(perr) end
+
+        body = DISK_VALUE_MARK .. packed
+      elseif type(body) ~= "string" then
+        body = tostring(body)
+      end
+
+      if #body <= DISK_DATA_MAX then
+        local r, e = disk_call(capability, code, rest, 0, #body, 0, body)
+
+        if not r then return nil, e end
+
+        return { ok = true }
+      end
+
+      -- Larger than a request: through a region sized to it, given back after.
+      local region = sys.memory((#body + 4095) // 4096)
+
+      if not region then return nil, "no memory for a write of " .. #body .. " bytes" end
+
+      sys.region_write(region, 0, body)
+
+      local r, e = disk_call(capability, code, rest, 0, #body, DISK_REGION, nil, region)
+
+      sys.release(region)
+
+      if not r then return nil, e end
+
+      return { ok = true }
+    end
+
+    if op == "getattr" then
+      local r, e = disk_call(capability, code, rest)
+
+      if not r then return nil, e end
+
+      if r.node.kind == 3 then return { ok = true, attrs = { kind = "device" } } end
+
+      local parts, more, at = { r.blob:sub(1, r.length) }, r.more, r.offset
+
+      while more do
+        local n, ne = disk_call(capability, code, rest, at)
+
+        if not n then return nil, ne end
+
+        parts[#parts + 1] = n.blob:sub(1, n.length)
+        more, at = n.more, n.offset
+      end
+
+      local stored, attrs = table.concat(parts), {}
+
+      if #stored > 0 then
+        attrs = sys.unpack(stored)
+
+        if type(attrs) ~= "table" then
+          return nil, "the attributes did not unpack"
+        end
+      end
+
+      -- What was said about it, then what it is, which overwrites.
+      local node = r.node
+
+      attrs.kind = (node.kind == 2) and "directory" or attrs.kind or "file"
+      attrs.size = node.size
+      attrs.mtime = node.mtime
+      attrs.modified = node.dated and node.modified or nil
+      attrs.extents = node.extents
+
+      return { ok = true, attrs = attrs }
+    end
+
+    if op == "setattr" or op == "query" then
+      local given = (op == "setattr") and extra.attrs or extra.where
+
+      if type(given) ~= "table" then
+        return nil, (op == "setattr") and "setattr wants a table of attributes"
+                    or "a query wants a table of attributes"
+      end
+
+      local packed, perr = sys.pack(given)
+
+      if not packed then return nil, tostring(perr) end
+
+      if op == "setattr" then
+        local r, e = disk_call(capability, code, rest, 0, 0, 0, packed)
+
+        if not r then return nil, e end
+
+        return { ok = true }
+      end
+
+      local paths, at = {}, 0
+
+      repeat
+        local r, e = disk_call(capability, code, rest, at, 0, 0, packed)
+
+        if not r then return nil, e end
+
+        disk_names(r, paths)
+        at = r.offset
+      until not r.more
+
+      table.sort(paths)
+      return { ok = true, paths = paths }
+    end
+
+    -- `delete`, `mkdir`, and `rename`, whose destination arrives here
+    -- already in the server's own path space (`ns.send`).
+    local r, e = disk_call(capability, code, rest, 0, 0, 0,
+                           (op == "rename") and tostring(extra.to or "") or nil)
+
+    if not r then return nil, e end
+
+    return { ok = true }
+  end
+
   --
   -- How much of a value still goes inside the message.
   --
@@ -1989,6 +2415,10 @@ local function new_namespace()
 
     if proto == "ram" then
       return ram_request(capability, op, rest, extra)
+    end
+
+    if proto == "disk" then
+      return disk_request(capability, op, rest, extra, pass)
     end
 
     if proto == "dev" then
@@ -2596,6 +3026,33 @@ local function new_namespace()
 
       if op == "mkdir" or op == "delete" then
         return ram_request(capability, op, rest)
+      end
+    end
+
+    -- The same three on the disk, and for the same reason.
+    if proto == "disk" then
+      local op = tostring(message.type or "")
+
+      if op == "rename" then
+        local to = tostring(message.to or "")
+
+        -- A bare name renames within the folder; a path has to land on
+        -- this same disk, in the server's own spelling of it.
+        if to:find("/", 1, true) then
+          local other, elsewhere = match(to)
+
+          if other ~= capability then
+            return nil, "a rename cannot cross a mount"
+          end
+
+          to = elsewhere
+        end
+
+        return disk_request(capability, op, rest, { to = to })
+      end
+
+      if op == "mkdir" or op == "delete" then
+        return disk_request(capability, op, rest)
       end
     end
 
@@ -4549,7 +5006,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- them. The mount names a part of the disk still: before subtree mounts
   -- it had to be the whole disk at one name, and a file written by
   -- `mkimage` at `/Home/notes` arrived as `/Home/home/notes`.
-  ns.mount("/Home", disk_cap, "/Home")
+  ns.mount("/Home", disk_cap, "/Home", "disk")
 
   --
   -- ...and `/Home` moves into memory when there is no disk under it.
@@ -5981,8 +6438,12 @@ if role == ROLE_INIT then
   -- file's time is a date now (`roadmap.md` 6za step b), and a server
   -- reaches what it is handed.
   --
+  -- The console's endpoint too, since the disk server is C (`diskfs.c`): a
+  -- journal replayed and a blank disk formatted are said in the log, where
+  -- the Lua one had no console and its `print` went nowhere.
   local diskfs  = start("the disk server", ROLE_DISKFS,
-                        { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP },
+                        { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP,
+                          CONSOLE_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
   --
@@ -6181,7 +6642,7 @@ if role == ROLE_INIT then
 
     mine.mount("/Network", NET_EP, nil, "net")
 
-    if DISKFS_EP then mine.mount("/Home", DISKFS_EP, "/Home") end
+    if DISKFS_EP then mine.mount("/Home", DISKFS_EP, "/Home", "disk") end
 
     --
     -- 10.0.2.3 is where QEMU's own NAT puts a resolver, the way 10.0.2.2 is
@@ -6471,7 +6932,7 @@ if role == ROLE_RUNNER then
   -- that lists them, answered in-process (`kits_request`).
   ns.mount("/Kosmos/Kits", true, nil, "kits")
   if req.app     then ns.mount_registry("/Running", req.app, "app") end
-  if req.disk    then ns.mount("/Home", req.disk, "/Home") end
+  if req.disk    then ns.mount("/Home", req.disk, "/Home", "disk") end
 
   -- After the disk, because this replaces what that mounted. The shell
   -- decided once, at boot, whether there is a filesystem to put `/Home` on;

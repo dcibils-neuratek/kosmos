@@ -202,8 +202,16 @@ capabilities which will then lead to us having accelerated 2d graphics".
   misbehave on 0.10.192. `arm-nogame`, `x86-nogame` and `rebuilds` in the
   gate.
 
-**Next**: `diskfs` step 3, the disk server in C speaking `diskproto.h`,
-measured with Disk Benchmark before and after. Also agreed (29 September), after it: a QEMU
+- **`diskfs` step 3a** (18.282): `/Home` served by C - `diskfs.c` on
+  `kfs.c`, `diskcache.c` and `packflat.c` - speaking `diskproto.h`, the
+  namespace's client beside `/Temporary`'s; queries scan what they are asked
+  about, so no path is spelled first. Whole gate green, `arm-diskwire` for
+  its wire. **An installed application speaks its build's protocols**: a
+  QEMU disk filled by `make install-apps` needs it run again.
+
+**Next**: `diskfs` step 3b - Disk Benchmark and the random read's parts,
+before and after, and queries timed on a `/Home` of two thousand files -
+then step 4, the Lua server and `kfs.lua` removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
 cursor and the screen's size from the device. Waiting on Diego: the M700

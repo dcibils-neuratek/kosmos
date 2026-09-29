@@ -304,7 +304,9 @@ done 29 September** (`testing.md` 18.279): `user/servers/kfs.c`, the 87
 checks passing against it, and the same disk as the Lua's block for block
 over 293 operations; two holes in `kfs.lua`'s `rename` found and fixed.
 **Step 2 done the same day** (18.280): the host's disk tool on the C, and
-one host Lua carrying it.
+one host Lua carrying it. **Step 3a too** (18.282): `/Home` served by
+`diskfs.c`, speaking `diskproto.h`, queries scanning what they are asked
+about. Next 3b, the measurements, then step 4, the Lua removed.
 
 **Quake on the M700, the same day** (`testing.md` 18.281): it died on start
 of a stale object - the Makefile never read an installed application's `.d`

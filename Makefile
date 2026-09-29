@@ -746,6 +746,10 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/drives.c \
              user/servers/drives_decode.c \
              user/servers/fat_decode.c \
+             user/servers/diskfs.c \
+             user/servers/kfs.c \
+             user/servers/diskcache.c \
+             user/servers/packflat.c \
              user/drivers/net/e1000.c \
              user/drivers/net/e1000_decode.c \
              user/drivers/usb/xhci.c \

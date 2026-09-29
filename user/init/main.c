@@ -82,6 +82,12 @@ void e1000_server(long console, long frames);
  * rather than by what it agrees to. */
 void drives_server(long endpoint, long blocks, long console);
 
+/* /Home (`docs/diskfs.md` step 3): its own endpoint, the USB driver's read
+ * and write endpoints for a stick's partition, the devices server's for the
+ * clock, and the console's to say what it did. */
+void diskfs_server(long endpoint, long blocks_read, long blocks_write,
+                   long devices, long console);
+
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
 #define ROLE_BINFS    11UL
@@ -95,6 +101,7 @@ void drives_server(long endpoint, long blocks, long console);
 #define ROLE_E1000    22UL
 #define ROLE_DRIVES   20UL
 #define ROLE_BACKLIGHT 21UL
+#define ROLE_DISKFS   15UL
 
 static void say(const char *s)
 {
@@ -659,6 +666,11 @@ int main(unsigned long arg)
     if (arg == ROLE_DRIVES) {
         named("drives");
         drives_server(0, 1, 2);
+    }
+
+    if (arg == ROLE_DISKFS) {
+        named("diskfs");
+        diskfs_server(0, 1, 2, 3, 4);
     }
 
     L = kosmos_lua_open();
