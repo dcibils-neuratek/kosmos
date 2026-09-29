@@ -2,6 +2,12 @@
 -- The filesystem format, tested on this machine instead of the target.
 --
 --   build/host/lua tools/test_kfs.lua
+--   KFS_IMPL=c build/host/kfs-lua tools/test_kfs.lua
+--
+-- **Both implementations, the same questions** (`docs/diskfs.md` step 1).
+-- `kfs.lua` is the one the machine runs today and `kfs.c` the one it is
+-- moving to; `kfs-lua` is Lua with the C inside it, answering as `kfs.lua`
+-- does. One check differs, and says why where it is.
 --
 -- `kfs.lua` is pure arithmetic over blocks. The only thing it wants from
 -- the system is a way to read and write one, so given those as stubs over
@@ -191,7 +197,14 @@ end
 
 --------------------------------------------------------------------------
 
-local kfs = assert(loadfile("user/lib/kfs.lua"))()
+local IMPL = os.getenv("KFS_IMPL") == "c" and "c" or "lua"
+local kfs
+
+if IMPL == "c" then
+  kfs = require("kfsc")
+else
+  kfs = assert(loadfile("user/lib/kfs.lua"))()
+end
 
 local passed, failed = 0, 0
 
@@ -284,11 +297,19 @@ check(reads <= 2,
       ("a 40-block file is read in at most 2 disk calls, 31 blocks a call, "
        .. "not %d"):format(reads))
 
+-- One call from the Lua, which reads the window's blocks as one string and
+-- cuts it. The C reads whole blocks straight to where they are going and a
+-- block entered or left part way through a block of its own - on the
+-- machine the whole blocks land in the caller's region with no copy - so
+-- the window is its run and its two ends.
+local window_calls = IMPL == "c" and 3 or 1
+
 reads = 0
 check(kfs.read_range(sb, forty_node, 4000, 100000) == big:sub(4001, 104000),
       "a window across 26 blocks reads back")
-check(reads == 1,
-      ("a window across 26 blocks is one disk call, not %d"):format(reads))
+check(reads <= window_calls,
+      ("a window across 26 blocks is %d disk calls at most, not %d"):format(
+        window_calls, reads))
 
 writes, write_calls, written = 0, 0, {}
 assert(kfs.begin())
@@ -914,10 +935,11 @@ end
 --------------------------------------------------------------------------
 
 if failed > 0 then
-  print(("\nFAIL: %d of %d checks on the format failed.")
-        :format(failed, passed + failed))
+  print(("\nFAIL: %d of %d checks on the format failed (kfs.%s%s).")
+        :format(failed, passed + failed, IMPL,
+                cache and ", through the block cache" or ""))
   os.exit(1)
 end
 
-print(("PASS: %d checks on the filesystem format, on this machine.")
-      :format(passed))
+print(("PASS: %d checks on the filesystem format, on this machine (kfs.%s%s).")
+      :format(passed, IMPL, cache and ", through the block cache" or ""))

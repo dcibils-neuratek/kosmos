@@ -170,13 +170,30 @@ capabilities which will then lead to us having accelerated 2d graphics".
   window manager until its first window, started once however often it is
   asked for. Neither is on the 0.10.190 stick.
 
-**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): 4h b and c -
-the hardware cursor on the cursor queue, and the screen's size from the
-device - then the M700's GPU codec and driver (4h e). Waiting on Diego: a
-QEMU with virglrenderer for 4h d; the M700 measurements of 4i e
-(`groove --report 30`); whether `diskfs` moves to a declared struct and C
-now (18.273). 6zg d, the Launchkey, on 30 September. Unpushed: everything
-since 0deed7b.
+- **Pushed**: 0.10.190 (`8c28776`, Diego's "1. Yes"), and 0.10.191 with
+  its picture (`f075330`, "push it and go on with diskfs") - the launch in
+  the background and the breathing button, and the 0.10.191 stick.
+
+- **`diskfs` in C, step 1 of `docs/diskfs.md`** (18.279): the format and
+  every operation on it in `user/servers/kfs.c` - no Lua, no system calls,
+  no allocator, a disk of two functions - and `build/host/kfs-lua`, Lua
+  with it inside as `require "kfsc"`. `test_kfs.lua`'s 87 checks pass
+  against it, with and without the block cache, and
+  `test_kfs_cross.lua` holds it to `kfs.lua` block for block over 293
+  operations run four ways. **Two holes in `kfs.lua`'s `rename` found and
+  fixed**: a directory moved into itself through a path in another case,
+  which took it out of reach, and a rename to `..`. Nothing on the machine
+  runs the C yet.
+
+**Next**: `diskfs` step 2, the host tool (`tools/kfs.lua`) on the C core,
+then step 3, the disk server in C speaking `diskproto.h`, measured with Disk
+Benchmark before and after. Also agreed (29 September), after it: a QEMU
+with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
+codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
+cursor and the screen's size from the device. Waiting on Diego: the M700
+with the 0.10.190 stick (`groove --report 30`, the 1080p film's numbers)
+and the 0.10.191 one (Doom and Quake starting in the background, the
+breathing button). 6zg d, the Launchkey, on 30 September.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 

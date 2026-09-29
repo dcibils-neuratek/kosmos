@@ -13011,3 +13011,59 @@ parts passed all 44 checks and the film three of three: the busy gate
 18.127 describes. The film under load is the suite that says it most
 often, and 4i-f's witness - how long the machine held a processor off
 (18.272) - is what could tell it apart from a gap the guest made.
+
+## 18.279 The filesystem's format in C, held to the Lua block for block
+
+`docs/diskfs.md` step 1: `user/servers/kfs.c`, the format and every
+operation on it with no Lua, no system calls and no allocator, reading and
+writing through a disk of two functions. Nothing on the machine runs it yet
+- the disk server moves in step 3 - so what holds it is the Mac.
+
+**Kept, `test_kfs.lua` against the C** (`KFS_IMPL=c build/host/kfs-lua`),
+87 checks, and again through the block cache: `kfs-lua` is Lua with the
+core in it as `require "kfsc"`, dressed as `kfs.lua`, so the script is the
+same one. Its disk is the script's `sys`, looked up at every call; a read
+into a region is made into a buffer whose every disk call is sent to
+`sys.disk_read_into` for the same place, which is what the test counts. One
+check differs and says why - a window is at most three calls from the C,
+its run and its two part-blocks, where the Lua reads one string and cuts
+it. All 87 passed on the first run, which is why the next check exists.
+
+**Kept, `tools/test_kfs_cross.lua`**, 14 checks: a few hundred operations
+made once - files of every awkward size up to 1.3 MB, directories, renames
+within one and across two, names in another case, attributes set and
+cleared, removals, transactions of several operations, ones rolled back,
+and the power lost after a commit with the next mount by either - run four
+times over a fresh disk: all by the Lua, all by the C, taking turns, and at
+random. The four disks must be the same block for block, every operation
+must come out the same way, and each must read the same tree - every file's
+bytes and attributes - off it. Then on purpose, by both: a file too
+fragmented for twelve extents, a full disk, and a directory moved into
+itself. 293 operations, 0.3 s.
+
+**Its controls**, each a copy of `kfs.c` built in the scratchpad:
+- blocks freed in a transaction handed out again: one of the 87 fails
+  (the old file is whole) and the cross test's disks differ by hundreds of
+  blocks;
+- inodes numbered from 3: **all 87 pass**, and the cross test fails - which
+  is what it is for: a byte placed elsewhere that no behaviour shows;
+- the journal's checksum seeded one off in the C: **all 87 pass**, the C
+  believing itself, and the cross test fails in the runs where one mounts
+  what the other left when the power went;
+- the parent directory not read again after checking one is empty: the
+  cross test's process dies.
+
+**And one that did not bite**: extents never joined changed no block of any
+disk, because `write_file`'s join can never happen - a run of blocks ends
+at one that is not free, so the next starts elsewhere. Left over from
+blocks taken a block at a time; the C does without it.
+
+**Found, and fixed in `kfs.lua`**, which is what the machine runs: `rename`
+compared the paths as typed when refusing to move a directory into itself,
+so `/Home/a` to `/HOME/a/b/a` went through - the disk server puts paths in
+the disk's spelling only while it keeps an index - and `/Home/a` became its
+own grandchild, out of reach with everything in it; and a file could be
+renamed to `..`, a name no path reaches. Both refused now by both, and the
+cross test's into-itself case asks both ways. Its control, the old
+comparison put back: the move answers true and `/Home/a` is gone.
+

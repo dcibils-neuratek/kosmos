@@ -1976,6 +1976,22 @@ $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
 
+# Lua with the filesystem's C core in it, `require "kfsc"` (`docs/diskfs.md`
+# step 1): what `tools/test_kfs.lua` runs against as `KFS_IMPL=c`, and what
+# holds `kfs.c` to `kfs.lua` block for block. The core and its wrapper are
+# built with every warning, as the machine builds them; upstream Lua as the
+# host's `lua` is.
+$(HOSTDIR)/kfs.o: user/servers/kfs.c user/servers/kfs.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -c -o $@ user/servers/kfs.c
+
+$(HOSTDIR)/kfs_lua.o: tools/kfs_lua.c user/servers/kfs.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Ilua/upstream -c -o $@ tools/kfs_lua.c
+
+$(HOSTDIR)/kfs-lua: $(HOSTDIR)/kfs.o $(HOSTDIR)/kfs_lua.o lua/upstream/linit.c $(LUA_HOST_SRCS)
+	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
+
 # A stamp rather than a phony target: the generated sources depend on this,
 # and a phony one would rebuild them on every make.
 $(HOSTDIR)/lua.ok: $(LUA_FILES) $(HOSTDIR)/luaparse $(HOSTDIR)/luac tools/luaglobals.py
@@ -3364,7 +3380,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/kfs-lua $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3387,6 +3403,11 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# layout is wrong.
 	$(HOSTDIR)/lua tools/test_kfs.lua
 	KFS_CACHE=1 $(HOSTDIR)/lua tools/test_kfs.lua
+	@# And the same questions of the C the disk server is moving to, and
+	@# the two held to each other block for block (`docs/diskfs.md` step 1).
+	KFS_IMPL=c $(HOSTDIR)/kfs-lua tools/test_kfs.lua
+	KFS_IMPL=c KFS_CACHE=1 $(HOSTDIR)/kfs-lua tools/test_kfs.lua
+	$(HOSTDIR)/kfs-lua tools/test_kfs_cross.lua
 	$(HOSTDIR)/lua tools/test_blockcache.lua
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.

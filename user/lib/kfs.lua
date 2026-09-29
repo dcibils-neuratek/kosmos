@@ -1780,13 +1780,23 @@ function kfs.rename(sb, path, to)
   local to_number, to_node, to_name = dir_number, dir_node, to
 
   if to:find("/") then
-    if to:sub(1, #path + 1) == path .. "/" then
+    -- Compared as names are, whatever their case. The paths as typed were
+    -- compared, and `/Home/a` to `/HOME/a/b/a` went past - the disk server
+    -- puts a path in the disk's spelling only while it keeps an index - and
+    -- made `/Home/a` its own grandchild, out of reach with all it held.
+    -- `kfs.c` found it (`docs/diskfs.md`).
+    if to:sub(1, #path + 1):lower() == (path .. "/"):lower() then
       return nil, "a directory cannot be moved into itself"
     end
 
     to_number, to_node, to_name = kfs.parent_of(sb, to)
 
     if not to_number then return nil, to_node end
+  end
+
+  -- Nor a name no path can reach: `split` refuses both in every path.
+  if to_name == "." or to_name == ".." then
+    return nil, "a path may not contain . or .."
   end
 
   local entries, err = kfs.read_dir(sb, dir_node)

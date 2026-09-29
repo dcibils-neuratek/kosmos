@@ -582,7 +582,11 @@ string, and a write over a megabyte is refused, so a file's bytes are exactly
 the loop over bytes this section says belongs in C. **It moves when Disk
 Benchmark says that is where the time is**, and the host testing goes with
 it rather than being given up: a C core compiles on the Mac as
-`fat_decode.c` does.
+`fat_decode.c` does. **It said so on 29 September** - about 45% of a random
+read the round trip, 38% the path walked twice in Lua (`testing.md` 18.273) -
+and the move is `docs/diskfs.md`: the format is in `user/servers/kfs.c`,
+held by the same 87 checks and to `kfs.lua` block for block, and the server
+follows it.
 
 **The argument for C is jitter, not speed.** Structure-shaped code in Lua
 costs about 2%, measured, which is nothing. What decides a server is

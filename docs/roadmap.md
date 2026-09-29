@@ -299,7 +299,10 @@ after twenty seconds or when it ends. **Built the same day** (`testing.md`
 
 **`diskfs` to C: the plan is `docs/diskfs.md`** - four steps, each lived with:
 the format in C held on the Mac by the same 87 checks, the host tool on it,
-the disk server in C speaking `diskproto.h`, then the Lua removed.
+the disk server in C speaking `diskproto.h`, then the Lua removed. **Step 1
+done 29 September** (`testing.md` 18.279): `user/servers/kfs.c`, the 87
+checks passing against it, and the same disk as the Lua's block for block
+over 293 operations; two holes in `kfs.lua`'s `rename` found and fixed.
 
 **And a gap in the gate, noticed the same day**: `arm-cafesa3d` hung once for
 720 s in a `prepush` and left nothing to read - the suite prints at its end,

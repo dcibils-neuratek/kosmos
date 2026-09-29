@@ -54,14 +54,48 @@ stopped being, one at a time.
 
 ## The steps, each lived with before the next
 
-1. **`kfs.c`: the format and its operations in C**, a core with no Lua in it
-   (`user/servers/kfs/`), reading and writing through a disk it is handed as
-   four functions - the same seam `sys.disk_read` is now, so the stick and
-   the block cache sit behind it unchanged. **Held on the Mac by the same
-   87 checks**: a host Lua module over `kfs.c` with `kfs.lua`'s interface,
-   and `test_kfs.lua` run against it (`KFS_IMPL=c`) as well as against the
-   Lua; and each writes images the other reads. Attributes stay the bytes
+1. **`kfs.c`: the format and its operations in C** - **done 29 September**
+   (`testing.md` 18.279). `user/servers/kfs.c` and `kfs.h`, beside
+   `fat_decode.c` and for its reason: no system calls, no Lua and no
+   allocator, so the same file compiles on the Mac and on both boards. It
+   reads and writes through a disk it is handed as **two functions, not the
+   four this said**: `kfs.lua` has four because a Lua program cannot hold a
+   pointer to a region, and in C a region is mapped memory, so a read into
+   one is a read into a pointer - the whole blocks go from the disk to where
+   they belong, and only a block entered or left part way passes through a
+   block of the core's own. Everything it works in is a `struct kfs` its
+   owner provides, about two megabytes: the transaction's 254 blocks and a
+   directory being edited, up to a megabyte of it. Attributes stay the bytes
    `sys.pack` makes, opaque to the core.
+
+   **Held on the Mac by the same 87 checks** - `build/host/kfs-lua`, Lua
+   with the core in it as `require "kfsc"`, answering as `kfs.lua` does, and
+   `test_kfs.lua` run against it with `KFS_IMPL=c`, with and without the
+   block cache. One check differs and says why: a window of a file is one
+   disk call from the Lua and at most three from the C, its run and its two
+   part-blocks. **And held to the Lua block for block** by
+   `tools/test_kfs_cross.lua`: 293 operations run four ways over a fresh
+   disk - all by the Lua, all by the C, taking turns, at random - must leave
+   the same disk and come out the same way, and each must read the same
+   tree off it.
+
+   **What writing it found.** Two holes in `kfs.lua`'s `rename`, both fixed
+   in it the same day, since it is what the machine runs: a directory moved
+   into itself through a path in another case - `/Home/a` to `/HOME/a/b/a`
+   went past a check of the paths as typed, since the server puts a path in
+   the disk's spelling only while it keeps an index, and took `/Home/a` and
+   everything in it out of reach - and a rename to `..`, a name no path can
+   reach. And a branch that can never run: `write_file` joins a new run onto
+   the last extent when it follows it, and a run always ends at a block that
+   is not free, so none ever does - left over from blocks taken one at a
+   time; the C does without it.
+
+   **Where the C is stricter**, each only where the Lua would fail anyway or
+   do harm: a name is checked before anything is written rather than at the
+   directory's write; a transaction that would change more blocks than the
+   journal holds is refused at the write that would not fit rather than at
+   the commit; and recovering is refused while a transaction is open, which
+   nothing does.
 2. **The host tool on the C core**: `tools/kfs.lua` through that module, so
    the QEMU disk and the stick's `/Home` are made by the code the machine
    runs. Then `kfs.lua` has no user outside the disk server.
@@ -75,7 +109,12 @@ stopped being, one at a time.
    request on either side. Measured with Disk Benchmark before and after,
    and the random read's parts measured again (18.273).
 4. **`kfs.lua` and `diskfs_handlers` removed**, and `blockcache.lua` with them
-   if nothing else uses it.
+   if nothing else uses it. And **the drive server's own reading of the
+   format** goes too: `drives_decode.c` recognises a Kosmos volume and counts
+   its free blocks with a `struct kfs_super` and checks of its own
+   (`kfs_super_from`, `kfs_free_in`), a second reading of the superblock and
+   the bitmap written to `kfs.lua`'s layout; it should ask `kfs.h`, and the
+   two headers cannot both be included in one file until it does.
 
 Each step ends with `make test` green, the checks it added and their
 controls, and the documents saying what it became. Step 1 is the largest and
