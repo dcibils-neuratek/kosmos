@@ -297,6 +297,15 @@ one; a failure is said on the button, and a program with no window loses it
 after twenty seconds or when it ends. **Built the same day** (`testing.md`
 18.277, 18.278).
 
+**`diskfs` to C: the plan is `docs/diskfs.md`** - four steps, each lived with:
+the format in C held on the Mac by the same 87 checks, the host tool on it,
+the disk server in C speaking `diskproto.h`, then the Lua removed.
+
+**And a gap in the gate, noticed the same day**: `arm-cafesa3d` hung once for
+720 s in a `prepush` and left nothing to read - the suite prints at its end,
+and the gate killed it before then - and passed alone and in the next gate.
+A suite the gate stops should leave what its guest had said.
+
 **And one noticed on the way, not yet done**: three drivers wait for their
 device a fixed number of loops rather than a time - `hal/virtio/blk.c`,
 `snd.c` and `gpu.c`, 100 million each - and give up with a failure while

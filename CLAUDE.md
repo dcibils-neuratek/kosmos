@@ -83,6 +83,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - What Tracker's right click offers - Pin to sidebar, Compress, Info, Open with, File types - before it is built: `docs/rightclick.html`
 - How Cafesa3D renders across several machines, before it is built: `docs/renderfarm.md`
 - Video in hardware on the M700 - what it takes, for Diego to decide: `docs/m700-gpu.md`
+- `diskfs` in C and speaking a declared shape, written before it is built: `docs/diskfs.md`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
 - The path pixels take: `docs/gfx.md`
