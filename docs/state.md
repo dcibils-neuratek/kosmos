@@ -266,8 +266,10 @@ OVMF 32 checks, its symbols beside it. On the M700, sixty seconds: Doom 2.1%
 of a processor (34% before), the console 30% (53%), still in the same two
 syscalls - the controller not retired, so probably not 0xff. The log's line: 6.4 us a
 read of an empty status, 2,400 a second - SMM, and 1.5% of a processor,
-not 30% (`testing.md` 18.287). **Next**: stick 0.10.196, with every syscall
-timed while a profile runs and the question drains once a tick. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+not 30% (`testing.md` 18.287). **Stick 0.10.196**, with every syscall
+timed while a profile runs and the question drains once a tick: OVMF 32
+checks. **Next**: its profile on the M700 - the console's calls, timed -
+then remote (`roadmap.md`, Being built now): DHCP first. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
