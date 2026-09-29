@@ -239,6 +239,10 @@ symbols a stick now keeps beside its image, into `build/profiles/<name>.html`.
 100% C, with six controls. `binproto.h` carries eight needs (the window
 manager's came to seven with `profile`).
 
+**Stick 0.10.194** (the profiler on top of 0.10.193-stable; Diego: "build
+the 0.10.194 stick when the gate passes"): OVMF 32 checks, its symbols in
+`build/x86_64/kosmos-usb-0.10.194-development.symbols/`.
+
 **Next**: `profile 30` on the M700 with the desktop in use, and the answer
 to Diego's question from it. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
