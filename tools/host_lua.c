@@ -44,6 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../user/servers/diskcache.h"
 #include "../user/servers/kfs.h"
 #include "../user/servers/packflat.h"
 #include "serialize.h"
@@ -1186,6 +1187,39 @@ static int l_mount(lua_State *L)
     return 1;
 }
 
+/*
+ * The disk the core is handed: the script's `sys`, or the disk server's cache
+ * in C over it - `user/servers/diskcache.c`, as the machine will run the two
+ * together (`docs/diskfs.md` step 3). `test_kfs.lua` asks for the cache with
+ * `KFS_CACHE=1`, and clears it where it changes the disk behind the core.
+ */
+static const struct kfs_disk host_disk = { NULL, host_read, host_write, 1 };
+static struct diskcache *C;
+
+static int l_use_cache(lua_State *L)
+{
+    lua_Integer most = luaL_checkinteger(L, 1), small = luaL_checkinteger(L, 2);
+
+    if (C == NULL && (C = malloc(sizeof *C)) == NULL) {
+        return luaL_error(L, "out of memory for the cache");
+    }
+
+    diskcache_init(C, &host_disk, (uint32_t)most, (uint32_t)small);
+    K->disk = diskcache_disk(C);
+    return 0;
+}
+
+static int l_cache_clear(lua_State *L)
+{
+    (void)L;
+
+    if (C != NULL) {
+        diskcache_clear(C);
+    }
+
+    return 0;
+}
+
 static int luaopen_kfsc(lua_State *L)
 {
     static const luaL_Reg fns[] = {
@@ -1222,6 +1256,8 @@ static int luaopen_kfsc(lua_State *L)
         { "unlink",          l_unlink },
         { "mkfs",            l_mkfs },
         { "mount",           l_mount },
+        { "use_cache",       l_use_cache },
+        { "cache_clear",     l_cache_clear },
         { NULL, NULL },
     };
     static const struct { const char *name; lua_Integer value; } constants[] = {
@@ -1235,7 +1271,6 @@ static int luaopen_kfsc(lua_State *L)
         { "J_MAGIC", KFS_J_MAGIC },     { "J_EMPTY", KFS_J_EMPTY },
         { "J_COMMITTED", KFS_J_COMMITTED },
     };
-    static const struct kfs_disk disk = { NULL, host_read, host_write, 1 };
 
     if (K == NULL) {
         K = malloc(sizeof *K);
@@ -1244,7 +1279,7 @@ static int luaopen_kfsc(lua_State *L)
             return luaL_error(L, "out of memory for the filesystem");
         }
 
-        kfs_init(K, &disk);
+        kfs_init(K, &host_disk);
     }
 
     luaL_newlib(L, fns);

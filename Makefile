@@ -1982,7 +1982,7 @@ $(HOSTDIR)/kfs.o: user/servers/kfs.c user/servers/kfs.h
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -c -o $@ user/servers/kfs.c
 
 $(HOSTDIR)/host_lua.o: tools/host_lua.c user/servers/kfs.h user/servers/packflat.h \
-                       lua/kosmos/serialize.h
+                       user/servers/diskcache.h lua/kosmos/serialize.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Ilua/upstream -Ilua/kosmos \
 	      -Ikernel -Iarch/aarch64 -c -o $@ tools/host_lua.c
@@ -2000,8 +2000,20 @@ $(HOSTDIR)/serialize.o: lua/kosmos/serialize.c lua/kosmos/serialize.h
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Ilua/upstream -Ilua/kosmos \
 	      -Ikernel -Iarch/aarch64 -c -o $@ lua/kosmos/serialize.c
 
+$(HOSTDIR)/diskcache.o: user/servers/diskcache.c user/servers/diskcache.h user/servers/kfs.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -c -o $@ user/servers/diskcache.c
+
+# The same cache, asked `test_blockcache.lua`'s questions in C.
+$(HOSTDIR)/test_diskcache: tools/test_diskcache.c user/servers/diskcache.c \
+                           user/servers/diskcache.h user/servers/kfs.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ tools/test_diskcache.c \
+	      user/servers/diskcache.c
+
 $(HOSTDIR)/lua: $(HOSTDIR)/kfs.o $(HOSTDIR)/host_lua.o $(HOSTDIR)/packflat.o \
-                $(HOSTDIR)/serialize.o lua/upstream/linit.c $(LUA_HOST_SRCS)
+                $(HOSTDIR)/serialize.o $(HOSTDIR)/diskcache.o lua/upstream/linit.c \
+                $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
 
@@ -3395,7 +3407,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3429,6 +3441,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# The disk server's reader of `sys.pack`'s tables, held to the
 	@# serialiser itself (step 3).
 	$(HOSTDIR)/lua tools/test_packflat.lua
+	$(HOSTDIR)/test_diskcache
 	$(HOSTDIR)/lua tools/test_blockcache.lua
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.

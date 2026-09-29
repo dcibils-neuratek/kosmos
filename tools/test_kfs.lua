@@ -140,9 +140,19 @@ end
 -- back - four places, each marked - which nothing on the machine does.
 --
 local cache = nil
+local IMPL = os.getenv("KFS_IMPL") == "c" and "c" or "lua"
 
 if os.getenv("KFS_CACHE") then
-  cache = assert(loadfile("user/lib/blockcache.lua"))().wrap(sys, 64, 4)
+  if IMPL == "c" then
+    -- The C core through the cache in C, as the disk server runs the two
+    -- (`user/servers/diskcache.c`, `docs/diskfs.md` step 3).
+    local kfsc = require("kfsc")
+
+    kfsc.use_cache(64, 4)
+    cache = { clear = kfsc.cache_clear }
+  else
+    cache = assert(loadfile("user/lib/blockcache.lua"))().wrap(sys, 64, 4)
+  end
 end
 
 local function disk_changed()
@@ -197,7 +207,6 @@ end
 
 --------------------------------------------------------------------------
 
-local IMPL = os.getenv("KFS_IMPL") == "c" and "c" or "lua"
 local kfs
 
 if IMPL == "c" then
