@@ -1973,6 +1973,7 @@ local function new_namespace()
     [8]  = "a format must say `yes, erase it`",
     [10] = "more attributes than fit in a block",
     [11] = "more folders than one search holds",
+    [12] = "more answers than one query keeps",
   }
 
   -- The filesystem's own refusals, 32 on: `kfs_why` (`user/servers/kfs.c`).

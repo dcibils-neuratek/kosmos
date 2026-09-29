@@ -185,20 +185,28 @@ right in the same step as everything else.
   wire itself: a request of every shape a hostile caller can send refused
   without the server's state changing.
 
-**3b. Measured.** Disk Benchmark before and after, the random read's parts
-again (18.273), and queries timed on a `/Home` of two thousand files - which
-is the question below, answered by numbers rather than by a guess.
+**3b. Measured** - **done 29 September** (`testing.md` 18.283). Against
+the Lua server on one disk: `getattr` 350 to 235 us, a 4 KB read 410 to 276,
+`setattr` 1,912 to 548, random 4 KB reads 1,796 to 3,824 IOPS, sequential
+437/202 to 514/301 MB/s. A query scans: by name over 2,000 files 6 ms, 200
+answers 12 to 15 ms, one folder under a millisecond - once one scan answers
+every page and attributes are read only when asked for, both done then. And
+**a query of 200 answers had failed outright in Lua**, its one reply too big
+for a message.
 
-**3c. The namespace's side in C**, as `con.wait` did for the console, if 3b
-shows the Lua client allocating on a path that is felt: one reused table
-and no string a request, rather than `string.pack` and five tables.
+**3c. The namespace's side in C** - **not done, on 3b's numbers**: the
+client's Lua is about 15 of a round trip's 203 us, about 1.9 KB of garbage a
+request, and nothing on a frame's path reads the disk. The rest is the IPC
+under QEMU. Revisited if a program on a deadline ever reads `/Home` in its
+loop.
 
 ## What is Diego's to decide, if anything
 
 Nothing yet: the direction was his ("yes, now"), and every step keeps the
 format the disk already has, so a `/Home` made before is read after. One
-question for step 3, to be put to him with measurements (3b): **whether a
-query scans the folder it is asked about, or an index is kept.** Today the
+question for step 3, **put to him on 29 September with 3b's numbers**
+(`testing.md` 18.283): **whether a query scans the folder it is asked about,
+or an index is kept.** Today the
 index is built on the first query - every file's attributes, the whole disk
 - and from then on every request is spelled the disk's way first, because
 the index is keyed by path. The recommendation is the scan: queries come

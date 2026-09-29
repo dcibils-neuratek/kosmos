@@ -13260,3 +13260,58 @@ lie about a length and a disclosure.
 `diskfs_main`, `stick_home`) is in `init.lua` and never runs - role 15 is C -
 until step 4 removes it with `kfs.lua`; and 3b measures.
 
+## 18.283 `diskfs` step 3b: measured, and a query answered from one scan
+
+The same measurement on two images, the ARM board under QEMU, a 256 MB disk
+holding a 1 MB file and 2,000 small files in 20 folders: `223acad`, the last
+with the disk server in Lua, and step 3a's. 200 of each, as 18.273 took
+them:
+
+| | Lua server | C server |
+|---|---|---|
+| a request touching no disk (`.device`) | 213 us | 206 us |
+| `getattr` of a file | 343 to 360 us | 234 to 237 us |
+| a 4 KB `read_into` | 406 to 413 us | 275 to 277 us |
+| `setattr` | 1,912 us | 548 us |
+| Disk Benchmark, random 4 KB | 1,796 IOPS | 3,824 IOPS |
+| sequential 1 MB read / write | 437 / 202 MB/s | 514 / 301 MB/s |
+
+**What is left is the round trip**: a request that touches no disk is 206 of
+a random read's 276 us. Split, on step 3a's image, 500 of each: the whole
+`fs.read("/Home/.device")` 203 us, the same request built once beforehand
+and sent with `fs.raw` 188 - so the client's Lua, packing and unpacking and
+its tables, is about 15 us of it, and each request leaves about 1.9 KB for
+the collector. **Step 3c is not worth doing on these numbers**: moving the
+client into C buys well under a tenth, and nothing on a frame's path reads
+the disk; the rest is the IPC under QEMU, which is not a performance number.
+`CLAUDE.md`'s rule - what it allocates before what language it is - says the
+same.
+
+**Queries, where the scan pays and the index did not.** Over the 2,000
+files, the Lua index answered a query by name in 0.6 ms after a first query
+of 94 ms that built it - and **a query with 200 answers failed outright**:
+the Lua server answered in one message, and two hundred paths do not fit in
+one. Found by this measurement; the C server pages. The scan, as step 3a
+built it: 12.8 ms by name, 45 ms for the 200 - because each page of an
+answer scanned the tree again, and it read every file's attribute block
+whatever the terms asked.
+
+**So, the same day**: the whole answer is kept from one scan - with the
+folder and terms it answered and a count of every request that may have
+changed the disk, so a later page of the same question on the same disk is
+taken from it and anything else scans again - and an attribute block is
+read only when a term asks for something stored. By name 5.9 to 6.2 ms, the
+200 answers 12 to 15, one folder of 100 0.94.
+
+**Kept, in `arm-diskwire`**, now 22 checks: sixty files with long names
+under one folder, a query of them read raw a page at a time, and one file's
+attribute taken away between its first page and the rest - the pages after
+have to count 59, and `fs.query` has to gather 59. Its control, the count of
+changes left out of what makes a kept answer good: the pages after the
+change counted 60.
+
+**The question this was for is Diego's** (`docs/diskfs.md`): keep the scan,
+or an index. The recommendation is the scan - every request is a third
+faster for not spelling its path first, a query of a folder is a
+millisecond, and the whole of two thousand files is six to fifteen.
+

@@ -56,9 +56,11 @@ static const char KOSMOS_PARTITION[] = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A";
 #define STICK_MOST      BLOCK_TRANSFER_MOST
 #define WAIT_SECONDS    20u
 
-/* A listing sorts at most this many names; a query holds this many folders. */
+/* A listing sorts at most this many names; a query holds this many folders,
+ * and keeps this much of its answer. */
 #define NAMES_MAX       65536u
 #define PENDING_BYTES   (64u * 1024u)
+#define FOUND_BYTES     (256u * 1024u)
 
 /*
  * Everything that is not a handful of words, mapped at the start.
@@ -73,6 +75,20 @@ struct arena {
     uint32_t order[NAMES_MAX];
     uint8_t pending[PENDING_BYTES];
     char path[DISK_PATH_MAX * 2];
+
+    /*
+     * **A query's whole answer, from one scan**, and what it answered: the
+     * folder and the terms, and the disk as it was then. A page after the
+     * first is taken from here while nothing has changed - each page
+     * scanned the tree again, and an answer of two hundred files was five
+     * scans (`testing.md` 18.283).
+     */
+    uint64_t found_generation;
+    uint32_t found_key_len;
+    uint32_t found_len, found_count;
+    bool found_valid;
+    uint8_t found_key[DISK_PATH_MAX + DISK_DATA_MAX];
+    char found[FOUND_BYTES];
 };
 
 static struct arena *A;
@@ -85,6 +101,9 @@ static long blocks_write = -1;
 static struct kfs_super SB;
 static bool mounted_ok;
 static bool told_unreadable;
+
+/* Every request that may have changed the disk, counted. */
+static uint64_t generation;
 
 /*
  * ------------------------------------------------------------------------
@@ -1167,17 +1186,16 @@ static size_t fact_text(const char *key, uint32_t key_len,
     return packflat_text(&v, out, 64 + KFS_NAME_MAX);
 }
 
+/*
+ * Whether a node answers every term. **What is stored is read only when a
+ * term asks for it**: a query by name, size or kind of folder never reads an
+ * attribute block, which was a disk read for every file that had one.
+ */
 static bool matches(const struct kfs_inode *node, const char *name, size_t name_len)
 {
     char want[DISK_DATA_MAX + 1], have[DISK_DATA_MAX + 1];
     uint32_t len32;
-    bool stored = false;
-
-    if (node->attrs != 0
-        && kfs_read_attrs(&A->kfs, &SB, node, A->attrs, &len32) == KFS_OK
-        && len32 > 0 && packflat_read(A->attrs, len32, &A->stored) == PACKFLAT_OK) {
-        stored = true;
-    }
+    bool stored = false, read = false;
 
     for (uint32_t i = 0; i < A->terms.count; i++) {
         const struct packflat_value *k = &A->terms.key[i];
@@ -1187,6 +1205,14 @@ static bool matches(const struct kfs_inode *node, const char *name, size_t name_
         bool known;
 
         have_len = fact_text(k->text, k->len, node, name, name_len, &known, have);
+
+        if (!known && !read) {
+            read = true;
+            stored = node->attrs != 0
+                     && kfs_read_attrs(&A->kfs, &SB, node, A->attrs, &len32) == KFS_OK
+                     && len32 > 0
+                     && packflat_read(A->attrs, len32, &A->stored) == PACKFLAT_OK;
+        }
 
         if (!known) {
             v = stored ? packflat_get(&A->stored, k->text, k->len) : NULL;
@@ -1237,59 +1263,60 @@ static void pop_folder(uint32_t *top, uint32_t *inode, char *path, size_t *len)
     path[*len] = '\0';
 }
 
-/* A match, into the page if it is past `offset` and fits; false when full. */
-static bool answer_path(const char *path, size_t len, uint64_t *seen,
-                        const struct disk_request *rq, struct disk_reply *rp)
+/* A match, kept with the answer; false when the answer is full. */
+static bool answer_path(const char *path, size_t len)
 {
-    if ((*seen)++ < rq->offset) {
-        return true;
-    }
-
-    if (rp->length + len + 1 > DISK_DATA_MAX) {
-        rp->more = 1;
-        rp->offset = *seen - 1;
+    if (A->found_len + len + 1 > FOUND_BYTES) {
         return false;
     }
 
-    memcpy(rp->u.data + rp->length, path, len);
-    rp->length += (uint32_t)len;
-    rp->u.data[rp->length++] = '\0';
-    rp->count++;
+    memcpy(A->found + A->found_len, path, len);
+    A->found_len += (uint32_t)len;
+    A->found[A->found_len++] = '\0';
+    A->found_count++;
     return true;
 }
 
-static void op_query(const struct disk_request *rq, struct disk_reply *rp)
+/* A page of the kept answer, from its `offset`th path. */
+static void answer_page(const struct disk_request *rq, struct disk_reply *rp)
+{
+    uint32_t at = 0;
+
+    for (uint64_t i = 0; i < rq->offset && at < A->found_len; i++) {
+        at += (uint32_t)strlen(A->found + at) + 1;
+    }
+
+    for (uint64_t i = rq->offset; at < A->found_len; i++) {
+        uint32_t n = (uint32_t)strlen(A->found + at) + 1;
+
+        if (rp->length + n > DISK_DATA_MAX) {
+            rp->more = 1;
+            rp->offset = i;
+            return;
+        }
+
+        memcpy(rp->u.data + rp->length, A->found + at, n);
+        rp->length += n;
+        rp->count++;
+        at += n;
+    }
+}
+
+/* The whole answer to the terms in `A->terms` under `rq->path`, kept. */
+static uint32_t scan(const struct disk_request *rq)
 {
     struct kfs_inode node;
     uint32_t number, top = 0;
-    uint64_t seen = 0;
     size_t len, name_len;
     const char *name;
     char *path = A->path;
     int r;
 
-    if (rq->length > DISK_DATA_MAX
-        || packflat_read(rq->u.data, rq->length, &A->terms) != PACKFLAT_OK) {
-        rp->error = DISK_ERR_NOT_FLAT;
-        return;
-    }
-
-    for (uint32_t i = 0; i < A->terms.count; i++) {
-        if (A->terms.key[i].type != PACKFLAT_STRING) {
-            rp->error = DISK_ERR_NOT_FLAT;
-            return;
-        }
-    }
-
-    if (A->terms.count == 0) {
-        return;
-    }
-
+    A->found_len = A->found_count = 0;
     r = kfs_find(&A->kfs, &SB, rq->path, strlen(rq->path), &number, &node);
 
     if (r != KFS_OK) {
-        rp->error = kfs_error(r);
-        return;
+        return kfs_error(r);
     }
 
     /* The disk's spelling of where it starts, which every answer begins with. */
@@ -1302,18 +1329,16 @@ static void op_query(const struct disk_request *rq, struct disk_reply *rp)
     path[len] = '\0';
     name = last_name(path, &name_len);
 
-    if (name != NULL && matches(&node, name, name_len)
-        && !answer_path(path, len, &seen, rq, rp)) {
-        return;
+    if (name != NULL && matches(&node, name, name_len) && !answer_path(path, len)) {
+        return DISK_ERR_ANSWERS;
     }
 
     if (node.kind != KFS_KIND_DIR) {
-        return;
+        return DISK_OK;
     }
 
     if (!push_folder(&top, number, path, len)) {
-        rp->error = DISK_ERR_SEARCH;
-        return;
+        return DISK_ERR_SEARCH;
     }
 
     while (top > 0) {
@@ -1344,18 +1369,66 @@ static void op_query(const struct disk_request *rq, struct disk_reply *rp)
                 continue;
             }
 
-            if (matches(&child, entry, n)
-                && !answer_path(path, base + 1 + n, &seen, rq, rp)) {
-                return;
+            if (matches(&child, entry, n) && !answer_path(path, base + 1 + n)) {
+                return DISK_ERR_ANSWERS;
             }
 
             if (child.kind == KFS_KIND_DIR
                 && !push_folder(&top, inode, path, base + 1 + n)) {
-                rp->error = DISK_ERR_SEARCH;
-                return;
+                return DISK_ERR_SEARCH;
             }
         }
     }
+
+    return DISK_OK;
+}
+
+static void op_query(const struct disk_request *rq, struct disk_reply *rp)
+{
+    size_t plen = strlen(rq->path);
+    uint32_t key_len = (uint32_t)(plen + 1 + rq->length);
+    bool same;
+
+    if (rq->length > DISK_DATA_MAX
+        || packflat_read(rq->u.data, rq->length, &A->terms) != PACKFLAT_OK) {
+        rp->error = DISK_ERR_NOT_FLAT;
+        return;
+    }
+
+    for (uint32_t i = 0; i < A->terms.count; i++) {
+        if (A->terms.key[i].type != PACKFLAT_STRING) {
+            rp->error = DISK_ERR_NOT_FLAT;
+            return;
+        }
+    }
+
+    if (A->terms.count == 0) {
+        return;
+    }
+
+    /* The same question of the same disk, past its first page: kept. */
+    same = A->found_valid && rq->offset > 0 && A->found_generation == generation
+           && A->found_key_len == key_len
+           && memcmp(A->found_key, rq->path, plen + 1) == 0
+           && memcmp(A->found_key + plen + 1, rq->u.data, rq->length) == 0;
+
+    if (!same) {
+        uint32_t r = scan(rq);
+
+        A->found_valid = r == DISK_OK;
+
+        if (r != DISK_OK) {
+            rp->error = r;
+            return;
+        }
+
+        memcpy(A->found_key, rq->path, plen + 1);
+        memcpy(A->found_key + plen + 1, rq->u.data, rq->length);
+        A->found_key_len = key_len;
+        A->found_generation = generation;
+    }
+
+    answer_page(rq, rp);
 }
 
 /*
@@ -1496,6 +1569,13 @@ static void answer(const struct message *msg, uint64_t sender)
         case DISK_OP_QUERY:   op_query(rq, rp); break;
         default:              rp->error = DISK_ERR_BAD_OP; break;
         }
+    }
+
+    /* Anything that may have changed the disk makes a kept answer stale. */
+    if (rq->op == DISK_OP_WRITE || rq->op == DISK_OP_DELETE || rq->op == DISK_OP_RENAME
+        || rq->op == DISK_OP_MKDIR || rq->op == DISK_OP_SETATTR
+        || rq->op == DISK_OP_FORMAT) {
+        generation++;
     }
 
     /* A region handed over is given back on every path, answered or not. */

@@ -58,6 +58,7 @@
 #define DISK_ERR_NO_DISK        9u  /* no disk; why in `u.data` */
 #define DISK_ERR_ATTRS_BIG     10u  /* more attributes than a node holds */
 #define DISK_ERR_SEARCH        11u  /* more folders than one query holds */
+#define DISK_ERR_ANSWERS       12u  /* more answers than one query keeps */
 
 /*
  * And the filesystem's own refusals, as `DISK_ERR_KFS` plus `-KFS_E_*`

@@ -97,6 +97,41 @@ print(("WHOLE %s %s %s %s %s %s"):format(tostring(back == body), tostring(before
       tostring(after), tostring(fs.getattr("/Home/wire-x.txt") == nil),
       tostring(fs.getattr("/Home/wire-y.txt") == nil),
       tostring(type(fs.list("/Home")) == "table")))
+
+-- A query answered in pages, and the disk changed between two of them: the
+-- later pages are the disk as it is, not the answer kept from the first.
+fs.send("/Home/P", { type = "mkdir" })
+
+for i = 1, 60 do
+  local f = ("/Home/P/a-file-with-a-rather-long-name-%02d.txt"):format(i)
+
+  fs.write(f, "x")
+  fs.setattr(f, { kind = "page" })
+end
+
+local terms = sys.pack({ kind = "page" })
+
+local function page(offset)
+  local raw = fs.raw("/Home", req(9, 0, offset, 0, nil, "/Home/P", terms), nil, "disk")
+
+  return string.unpack("<I4I4I4I4I8", raw)
+end
+
+local e1, m1, c1, _, o1 = page(0)
+
+fs.setattr("/Home/P/a-file-with-a-rather-long-name-60.txt", { kind = "" })
+
+local total, offset, more = c1, o1, m1
+
+while more == 1 do
+  local _, m, c, _, o = page(offset)
+
+  total, offset, more = total + c, o, m
+end
+
+print(("PAGED %d %d %d %d %d"):format(e1, m1, c1, total,
+                                     #(fs.query("/Home/P", { kind = "page" }) or {})))
+
 '''
 
 
@@ -127,7 +162,7 @@ def main():
     try:
         guest.wait_for("kosmos>", "a prompt")
         guest.type("run /Home/wire.lua")
-        guest.wait_for("WHOLE ", "the disk looked at afterwards")
+        guest.wait_for("PAGED ", "the paged query, which comes last")
         time.sleep(0.5)
         guest._read_available()
     finally:
@@ -162,7 +197,26 @@ def main():
         if lists != "true":
             fails.append("the server does not list any more")
 
-    checks = len(CASES) + 4
+    paged = re.search(r"^PAGED (\d+) (\d+) (\d+) (\d+) (\d+)", said, re.M)
+
+    if not paged:
+        fails.append("the paged query did not say what it found")
+    else:
+        e1, m1, c1, total, gathered = (int(v) for v in paged.groups())
+
+        if e1 != 0 or m1 != 1 or not 0 < c1 < 59:
+            fails.append("sixty answers were not paged: error %d, more %d, %d "
+                         "on the first page" % (e1, m1, c1))
+
+        if total != 59:
+            fails.append("the pages after a change counted %d answers, not the "
+                         "59 the disk then held - an answer kept past a change"
+                         % total)
+
+        if gathered != 59:
+            fails.append("fs.query gathered %d answers, not 59" % gathered)
+
+    checks = len(CASES) + 7
 
     if "died" in said:
         fails.append("something died: " + said[said.find("died") - 60:][:400])
@@ -178,7 +232,9 @@ def main():
     print("PASS: %d checks on the disk server's wire (%d malformed requests "
           "each refused with its own number, and afterwards the disk as it "
           "was: a file the same, the free space unmoved, nothing a refused "
-          "write named, and a listing)." % (checks, len(CASES)))
+          "write named, and a listing; and a query of sixty answers paged, "
+          "its later pages seeing a change made after its first)."
+          % (checks, len(CASES)))
     return 0
 
 

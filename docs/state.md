@@ -209,9 +209,18 @@ capabilities which will then lead to us having accelerated 2d graphics".
   its wire. **An installed application speaks its build's protocols**: a
   QEMU disk filled by `make install-apps` needs it run again.
 
-**Next**: `diskfs` step 3b - Disk Benchmark and the random read's parts,
-before and after, and queries timed on a `/Home` of two thousand files -
-then step 4, the Lua server and `kfs.lua` removed. Also agreed (29 September), after it: a QEMU
+- **`diskfs` step 3b** (18.283): against the Lua server on one disk,
+  `getattr` 350 to 235 us, a 4 KB read 410 to 276, `setattr` 1,912 to 548,
+  random reads 1,796 to 3,824 IOPS. What is left is the round trip, and
+  only ~15 us of it is the client's Lua, so 3c is not done. A query scans
+  what it names - 6 ms by name over 2,000 files, 12 to 15 for 200 answers -
+  once one scan answers every page; **a 200-answer query had failed in the
+  Lua server**, its one reply too big for a message.
+
+**Next**: `diskfs` step 4, the Lua server, `kfs.lua` and the drive server's
+own superblock reading removed. **Waiting on Diego**: scan or index for
+queries (18.283, the recommendation is the scan); the 0.10.192 stick with
+Quake on the M700. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
 cursor and the screen's size from the device. Waiting on Diego: the M700
