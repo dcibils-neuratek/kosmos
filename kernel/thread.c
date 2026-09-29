@@ -1395,6 +1395,23 @@ void thread_time_return(unsigned long to_user)
     }
 }
 
+/*
+ * One tick, in the counter's units: 0 until `main.c` knows the counter's
+ * rate, which on x86 is after the timer has measured it. Written once
+ * before a second processor starts and only read after.
+ */
+static uint64_t tick_interval;
+
+void thread_set_tick_interval(uint64_t counts)
+{
+    tick_interval = counts;
+}
+
+uint64_t thread_held_off_cpu(unsigned index)
+{
+    return index < NR_CPUS ? cpus[index].held_off_counter : 0;
+}
+
 void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel)
 {
     if (index >= NR_CPUS) {
@@ -1409,6 +1426,26 @@ void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel)
 
 void thread_tick(void)
 {
+    /*
+     * **Whether this processor was held off** (`percpu.h`, `roadmap.md`
+     * 4i-f): a tick more than two intervals after the last one arrived late
+     * by what the machine took, past the one interval it is owed. Two, so
+     * the jitter of an ordinary tick is not counted. Before anything else,
+     * so a tick that preempts nothing is still a tick that was on time or
+     * was not.
+     */
+    {
+        struct percpu *c = this_cpu();
+        uint64_t now = cpu_cycles();
+
+        if (tick_interval != 0 && c->last_tick_at != 0
+            && now - c->last_tick_at > 2 * tick_interval) {
+            c->held_off_counter += now - c->last_tick_at - tick_interval;
+        }
+
+        c->last_tick_at = now;
+    }
+
     /* Before thread_init has run there is nothing to preempt, and the timer
      * starts before the first thread exists. */
     if (current == NULL || policy->tick == NULL) {

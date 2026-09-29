@@ -281,6 +281,18 @@ local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
 local last = sys.ticks()
 local reportAt = report and (last + report * hz)
 
+-- How long each processor's own ticks had been held off when the window
+-- began, for `--report` to say how much of an absence was the machine's -
+-- an emulator's host stopping it, never a thread the scheduler starved
+-- (`roadmap.md` 4i-f).
+local heldOffFrom = {}
+
+if report then
+  for _, c in ipairs(sys.cpuload() or {}) do
+    heldOffFrom[c.index] = c.held_off_counter or 0
+  end
+end
+
 -- **Where a frame's time goes**, for `--report` (Diego, on the M700: "the
 -- app feels laggy", "Are we redrawing the entire ui every frame"): drawing
 -- - Groove's Lua and the Graphics Kit under it - and handing the window to
@@ -331,6 +343,18 @@ local function reportSound()
         :format(report, holds, away / hz * 1000, (stats.late or 0) / 1000,
                 st.audio_band and "in the audio band" or "not in the audio band",
                 st.ahead or 0, st.dry or 0, load * 100, info.audio_dry or -1))
+
+  -- The machine's part: the most any processor's ticks were held off in
+  -- this window. A party away longer than the device holds skipped only
+  -- past this.
+  local held = 0
+
+  for _, c in ipairs(sys.cpuload() or {}) do
+    held = math.max(held, (c.held_off_counter or 0) - (heldOffFrom[c.index] or 0))
+  end
+
+  print(("groove: the machine was held off %.1f ms in the %d s, by its own ticks")
+        :format(held / hz * 1000, report))
 
   local n = math.max(1, frames.n)
   local ms = 1000 / hz

@@ -139,6 +139,11 @@ capabilities which will then lead to us having accelerated 2d graphics".
   a stick's 795 to 2324, ARM sequential reads 973 MB/s. The disk server
   also stopped holding every library's source for its whole life.
 
+- **4i-f, the machine's own lateness** (18.272): each processor's ticks
+  say how long it was held off - a count `sys.cpuload` carries - and the
+  loaded sound suite holds each party to the device's time past it,
+  replacing a ceiling that a 50 ms stall of the Mac broke in a gate.
+
 **Next** (Diego, 29 September: "do 4i, 3 and 4 now"): storage - where 89%
 of a random read goes now, the disk server's Lua; then 4h -
 virtio-gpu under QEMU, then the M700's GPU codec and driver. 6zg d, the

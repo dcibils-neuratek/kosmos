@@ -7830,6 +7830,59 @@ static bool test_a_wake_preempts_a_lower_priority_thread(void)
 }
 
 /*
+ * **A processor held off is counted** (`percpu.h`, `roadmap.md` 4i-f): with
+ * interrupts masked for five intervals of the counter, this core's next tick
+ * arrives that late and its count rises by about four - five, less the one
+ * interval it was owed - where five ticks on time add less than two
+ * intervals, which is what a host's jitter could leave. The machine's own
+ * ticks are what tell the Mac stopping QEMU from a thread the scheduler
+ * starved; this is the kernel stopping them on purpose, which the count
+ * cannot tell from the Mac and says so.
+ */
+static bool test_held_off_is_counted(void)
+{
+    uint64_t tick = cntfrq() / TICK_HZ;
+    unsigned cpu = this_cpu()->index;
+    uint64_t before, quiet, masked, until;
+    unsigned long t0;
+
+    t0 = hal_ticks();
+
+    while (hal_ticks() < t0 + 1) {          /* start on a tick */
+        __asm__ volatile("" ::: "memory");
+    }
+
+    before = thread_held_off_cpu(cpu);
+    t0 = hal_ticks();
+
+    while (hal_ticks() < t0 + 5) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    quiet = thread_held_off_cpu(cpu) - before;
+
+    before = thread_held_off_cpu(cpu);
+    cpu_irq_disable();
+    until = cntpct() + 5 * tick;
+
+    while (cntpct() < until) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    cpu_irq_enable();
+    t0 = hal_ticks();
+
+    while (hal_ticks() < t0 + 2) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    masked = thread_held_off_cpu(cpu) - before;
+
+    return tick != 0 && quiet < 2 * tick && masked >= 3 * tick + tick / 2
+           && masked <= 10 * tick;
+}
+
+/*
  * **The audio band's budget** (`sched.h`, `roadmap.md` 4i step c): a
  * thread in the audio band that spins drops back to the band it had once it
  * has run SCHED_AUDIO_BUDGET_TICKS without sleeping - not before, which
@@ -9237,6 +9290,7 @@ static const struct test tests[] = {
     { "sched: the higher priority runs first", test_higher_priority_runs_first },
     { "sched: a wake preempts a lower band",   test_a_wake_preempts_a_lower_priority_thread },
     { "sched: the audio band's budget",        test_the_audio_band_budget },
+    { "sched: a processor held off is counted", test_held_off_is_counted },
     { "sched: born in the audio band, it runs", test_born_in_the_audio_band },
     { "sched: a server inherits its caller",   test_a_server_inherits_its_callers_priority },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },

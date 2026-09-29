@@ -1157,8 +1157,8 @@ processors, and still what follows USB:
      256 frames, in every ring. The kit's window is a quarter second now,
      so a note early in Groove waits behind less, and the audio server is
      born in its band.
-4i-f. **WANTED on 29 September - the machine's own lateness as the witness
-   to a stall.** `arm-synth-load` excuses an absence the kit and the audio
+4i-f. **BUILT on 29 September (`testing.md` 18.272) - the machine's own
+   lateness as the witness to a stall.** `arm-synth-load` excuses an absence the kit and the audio
    server shared only while it is under twice the device's time (`testing.md`
    18.269): the Mac holding the emulated machine off stops both at once, and
    a band that failed for both would hold both off for a turn of the
@@ -1171,6 +1171,9 @@ processors, and still what follows USB:
    the machine was held off, and a shared absence is excused only as far as
    the machine was. On hardware the same number is an SMI or firmware
    stealing the processor, which is worth seeing there for its own sake.
+   Built in the kernel rather than the HAL: `thread_tick` compares each
+   tick with the last by the counter, on both boards alike - x86's tick is
+   a periodic timer with no deadline to have missed.
 4i-b. **WANTED since 19 September - where the fortnight went: IPC costs 70%
    more and a context switch 44% more than on 5 September** (`testing.md`
    18.118). Measured at three commits, so it is attributed rather than

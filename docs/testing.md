@@ -12805,3 +12805,36 @@ device's 23.2 - and it passed three runs of three alone on the same image,
 the kit's worst 9.4 to 13.4 ms. The Mac held the machine off longer than
 the 32.6 ms that set the ceiling; the ceiling was a guess about how long
 that can be, and the witness that replaces it is `roadmap.md` 4i-f.
+
+## 18.272 The machine's own ticks, the witness to a stall (4i-f)
+
+18.269 excused an absence the kit and the audio server shared only under
+twice the device's time, and the next gate but one found the Mac holding
+the machine off 50 ms (18.271). The ceiling was a guess about the Mac. The
+machine knows: its ticks come late by exactly the stall, where a thread the
+scheduler starved leaves them on time.
+
+So `thread_tick` compares each tick with the last by the counter, and one
+more than two intervals after it adds what it was late by past one - per
+processor, in the counter's units, a count that only rises
+(`held_off_counter`, in `struct cpuload` and `sys.cpuload`). Two intervals,
+so a tick's ordinary jitter is not counted. In the kernel rather than the
+HAL, and the same on both boards: x86's tick is a periodic timer with no
+deadline to have missed, which is why `hal_ticks_missed` there is 0.
+Groove's `--report` says the most any processor was held off in its
+window, and `run_synth.py --load` holds each party to the device's time
+past that. What it cannot tell apart is the kernel itself sitting with
+interrupts masked - that stops the ticks too, and is the machine rather
+than the scheduler; a long one would be a bug for another test to find.
+
+**Kept, `tests.c`**, "sched: a processor held off is counted", on both
+boards: five ticks on time add less than two intervals, and interrupts
+masked for five intervals of the counter add between three and a half and
+ten. Its controls: nothing ever added - it fails; every whole gap added,
+with no threshold - it fails.
+
+**Kept, `arm-synth-load`**, 7 checks now: the machine was held off 0.0 ms
+on a quiet Mac, the kit's worst pass 9.2 and 9.4 ms. Its control is 18.269's
+- the band gone for both - read 112.7 and 108.9 ms away with the machine
+held off 0.0, and both checks fail, as they should: the excuse is now
+exactly as large as the stall the machine saw, and a starved band sees none.

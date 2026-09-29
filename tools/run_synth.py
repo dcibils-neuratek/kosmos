@@ -278,26 +278,27 @@ def loaded(R, check):
     if report:
         holds, kit, server = (float(report.group(i)) for i in (1, 2, 3))
 
-        # **A short absence both share is the machine's, not the
-        # scheduler's.** Once, alone in the gate, both read 32.6 and 32.7
-        # against 23.2: the Mac holding the whole emulated machine off its
-        # processors, which nothing inside it can cause or cure (18.127). A
-        # thread the load holds off is away while the other keeps turning -
-        # 745 ms against 9, and 211 against 10, in the controls - and a band
-        # that failed for both would hold both off for a turn of the
-        # spinners, 100 ms. So an absence past the device's time is excused
-        # only when the other party shared it, within half the device's
-        # time, and it is under twice the device's time; the control with
-        # the band gone for both is what says the ceiling bites (18.269).
-        shared = abs(kit - server) <= holds / 2 and max(kit, server) < 2 * holds
-        check(holds > 0 and (kit < holds or shared),
-              "the kit's thread was away %.1f ms under load, longer than the device's "
-              "%.1f, and the audio server %.1f - the sound skipped"
-              % (kit, holds, server))
-        check(holds > 0 and (server < holds or shared),
-              "the audio server was away %.1f ms under load, longer than the device's "
-              "%.1f, and the kit %.1f - the sound skipped"
-              % (server, holds, kit))
+        # **What the machine was held off is not the scheduler's.** The Mac
+        # stopping the emulated machine stops both parties at once - 32.6 and
+        # 32.7 ms once, 49.7 and 50.3 once (18.269, 18.271) - and nothing
+        # inside it can cause or cure that (18.127). The machine's own ticks
+        # say how long: they come late by the stall, where a thread the
+        # scheduler starved leaves them on time (`roadmap.md` 4i-f). So each
+        # party is held to the device's time past what the machine was held
+        # off. It replaced a ceiling of twice the device's time on a shared
+        # absence, which was a guess about how long the Mac can stall.
+        held = re.search(r"groove: the machine was held off ([\d.]+) ms", said)
+        check(held is not None,
+              "Groove did not say how long the machine was held off:\n" + said[-900:])
+        off = float(held.group(1)) if held else 0.0
+        check(holds > 0 and kit - off < holds,
+              "the kit's thread was away %.1f ms under load, and the machine held "
+              "off %.1f of it - longer than the device's %.1f: the sound skipped"
+              % (kit, off, holds))
+        check(holds > 0 and server - off < holds,
+              "the audio server was away %.1f ms under load, and the machine held "
+              "off %.1f of it - longer than the device's %.1f: the sound skipped"
+              % (server, off, holds))
         check(int(report.group(4)) < 8,
               "the kit kept the whole ring under load: %s" % report.group(0))
 
@@ -307,9 +308,11 @@ def loaded(R, check):
     played = played_seconds(LOADED) if os.path.exists(LOADED) else 0.0
 
     depths = re.search(r"groove: (the kit keeps [^\n]*)", said)
+    held = re.search(r"groove: (the machine was held off [\d.]+ ms)", said)
 
     return ((report.group(0)[len("groove: "):] if report else "no report")
-            + ("; " + depths.group(1).strip() if depths else ""), played)
+            + ("; " + depths.group(1).strip() if depths else "")
+            + ("; " + held.group(1) if held else ""), played)
 
 
 def main_loaded():

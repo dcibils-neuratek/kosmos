@@ -733,6 +733,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
             info.cpu[c].busy_ticks = cb;
             thread_time_cpu(c, &info.cpu[c].user_counter,
                             &info.cpu[c].kernel_counter);
+            info.cpu[c].held_off_counter = thread_held_off_cpu(c);
         }
     }
 

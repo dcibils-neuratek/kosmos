@@ -955,6 +955,14 @@ struct cpuload {
      */
     uint64_t user_counter;
     uint64_t kernel_counter;
+
+    /*
+     * How long this processor's ticks were held off past an interval, in the
+     * counter's units: the machine stopping - an emulator's host, an SMI -
+     * or the kernel masking interrupts, never a thread starved by the
+     * scheduler (`kernel/percpu.h`, `roadmap.md` 4i-f). Only rises.
+     */
+    uint64_t held_off_counter;
 };
 
 /*

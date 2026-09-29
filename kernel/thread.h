@@ -599,6 +599,11 @@ void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy);
 /* One processor's busy time split in two, in counter units (`percpu.h`). */
 void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel);
 
+/* One tick in the counter's units, once the clock has one (`main.c`), and
+ * how long a processor's ticks were held off past it (`percpu.h`). */
+void thread_set_tick_interval(uint64_t counts);
+uint64_t thread_held_off_cpu(unsigned index);
+
 /* Slots in the pool now, and the most it may grow to (`thread.c`). */
 /* This thread's own pointer, kept and loaded (`SYS_SET_TLS`). */
 void thread_set_tls(unsigned long address);

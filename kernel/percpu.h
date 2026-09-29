@@ -99,6 +99,18 @@ struct percpu {
     unsigned long busy_ticks;
 
     /*
+     * **How long this processor was held off**, in the counter's units: a
+     * tick that arrived more than two intervals after the one before adds
+     * what it was late by past one (`thread_tick`). A thread starved by the
+     * scheduler leaves the ticks on time; the machine stopping - an
+     * emulator's host descheduling it, an SMI, firmware - does not, and
+     * neither does the kernel sitting with interrupts masked, which this
+     * cannot tell from the others. Only rises (`roadmap.md` 4i-f).
+     */
+    uint64_t last_tick_at;
+    uint64_t held_off_counter;
+
+    /*
      * **And the busy time split by whose it was**, in the counter's units
      * (`counter_hz`), measured at each crossing rather than sampled at the
      * tick (`roadmap.md` 5zx; `thread.c` has the crossings).

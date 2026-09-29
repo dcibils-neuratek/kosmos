@@ -1128,6 +1128,16 @@ void kmain(void)
     hal_irq_init();
     hal_timer_init(TICK_HZ);
 
+    /* A tick in the counter's units, so a processor's ticks can say when it
+     * was held off (`thread_tick`). After the timer: on x86 that is where
+     * the counter's rate is measured. */
+    {
+        struct cpu_info counted;
+
+        cpu_identify(&counted);
+        thread_set_tick_interval(counted.counter_hz / TICK_HZ);
+    }
+
     /*
      * And now the other processors.
      *
