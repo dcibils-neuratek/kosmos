@@ -206,7 +206,8 @@ Nothing yet: the direction was his ("yes, now"), and every step keeps the
 format the disk already has, so a `/Home` made before is read after. One
 question for step 3, **put to him on 29 September with 3b's numbers**
 (`testing.md` 18.283): **whether a query scans the folder it is asked about,
-or an index is kept.** Today the
+or an index is kept. Diego: "scan"** - the same day, so the scan stays and
+there is no index to build. Today the
 index is built on the first query - every file's attributes, the whole disk
 - and from then on every request is spelled the disk's way first, because
 the index is keyed by path. The recommendation is the scan: queries come

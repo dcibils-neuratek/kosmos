@@ -217,10 +217,13 @@ capabilities which will then lead to us having accelerated 2d graphics".
   once one scan answers every page; **a 200-answer query had failed in the
   Lua server**, its one reply too big for a message.
 
+**Diego, 29 September**: "scan, build the 0.10.193 stick and push" - the
+scan stays (no index); a stick with `/Home` served by C to live with before
+step 4 takes the Lua server away.
+
 **Next**: `diskfs` step 4, the Lua server, `kfs.lua` and the drive server's
-own superblock reading removed. **Waiting on Diego**: scan or index for
-queries (18.283, the recommendation is the scan); the 0.10.192 stick with
-Quake on the M700. Also agreed (29 September), after it: a QEMU
+own superblock reading removed - after 0.10.193 has been used on the
+machines. Waiting on Diego: the 0.10.192 and 0.10.193 sticks on the M700. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
 cursor and the screen's size from the device. Waiting on Diego: the M700

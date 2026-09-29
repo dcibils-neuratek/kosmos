@@ -13310,8 +13310,9 @@ have to count 59, and `fs.query` has to gather 59. Its control, the count of
 changes left out of what makes a kept answer good: the pages after the
 change counted 60.
 
-**The question this was for is Diego's** (`docs/diskfs.md`): keep the scan,
-or an index. The recommendation is the scan - every request is a third
+**The question this was for was Diego's** (`docs/diskfs.md`): keep the scan,
+or an index. The recommendation was the scan - every request is a third
 faster for not spelling its path first, a query of a folder is a
-millisecond, and the whole of two thousand files is six to fifteen.
+millisecond, and the whole of two thousand files is six to fifteen - and
+Diego chose it the same day: "scan".
 

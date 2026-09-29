@@ -921,7 +921,7 @@ The division M8 introduces is therefore narrower than it looks:
 
 **And on the disk, since 29 September, not kept either** (`docs/diskfs.md` step 3). The disk server in Lua built its index in memory on the first query and kept it; the one in C scans what a query is asked about - the folder named and what is under it - reading each file's facts and attributes against the terms. An index kept by path meant every request had to be put in the disk's spelling first, while one existed: a second walk of every path, 38% of a random read (`testing.md` 18.273). Queries come from `find`, Tracker's search and the query suite, never from anything on a frame's path; `/Temporary` keeps its index, in the ramfs server's tables, because its `watch` answers from it.
 
-That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while scanning a folder is cheaper than the complexity an index costs, and stops holding at a file count this system is nowhere near - which `docs/diskfs.md` step 3b measures.
+That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while scanning a folder is cheaper than the complexity an index costs, and stops holding at a file count this system is nowhere near. `docs/diskfs.md` step 3b measured it - a folder under a millisecond, two thousand files six to fifteen - and Diego chose the scan on those numbers (`testing.md` 18.283).
 
 ### 8.3a `/Home` always exists, and says which kind it is
 
