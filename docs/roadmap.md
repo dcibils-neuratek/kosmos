@@ -112,6 +112,31 @@ unblocks.
 
 ### Being built now
 
+**Remote: the Mac runs commands on the M700 over the network.** Diego, 29
+September, after a day of sticks carried back and forth for a log and a
+profile: "why dont we build a python app that can run on this mac that
+connects through the network to the m700 and just run commands on it", "the
+server is on the kosmos side, the app lives here on the client side". His
+answers to its three questions, the same day:
+
+1. **An address from the router: DHCP**, in the network stack, with
+   `/Home/Preferences/network` still able to set one by hand. The M700 came
+   up as QEMU's `10.0.2.15` on a `192.168.0.x` network. QEMU's own DHCP
+   server tests it.
+2. **`remote`, a program on Kosmos, and `tools/kosmos_remote.py` on the
+   Mac.** A command is run as a Terminal runs one - `remote` is its console,
+   and its output and exit code go back over TCP - and a file is fetched or
+   sent whole. A declared, length-prefixed frame on the wire. Tested by the
+   real client against the real server under QEMU, through the `hostfwd`
+   `run_network.py` already uses for `httpd`.
+3. **No key**: "no key, local network only" - anything on the M700's own
+   network may run commands while a development stick is booted, nothing
+   beyond it can, and `remote` refuses a connection from outside its subnet.
+   Chosen knowing the cost, for a machine on a home network. **Started by
+   itself on development sticks only**, never on a stable one.
+4. Then the round trip as one command on the Mac - profile, fetch, report -
+   and `diagnose` the same way.
+
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's
 bad to have a nicely designed and modular system if it's slow and unusable".
@@ -5461,6 +5486,21 @@ the Pi", and the Pi is not here yet.
   read a trap into System Management Mode - which stalls every processor
   while it runs. The log's `i8042:` line decides; `diagnose` was not run on
   that boot.
+
+  **It said** (`testing.md` 18.287): one read of an empty status a drain,
+  6.4 us each - the firmware in System Management Mode - about 2,400 a
+  second, which is 1.5% of a processor and not the console's 30%. So the
+  next stick times every syscall while a profile runs, and drains on a
+  question at most once a tick.
+- **FOUND for the third time on 29 September - `PANIC: spinlock: gave up
+  waiting` in a loaded gate**, on the endpoint lock, twice in one run
+  (`testing.md` 18.134 and 18.287). The bound is ten million spins, about
+  ten milliseconds on AArch64 under TCG - less than a Mac running a gate's
+  guests may pause one of them - so a holder whose host thread is paused
+  trips it as a deadlock would, and the line cannot say which. The fix
+  18.134 named: **a bound in counter time** - a second is a deadlock on any
+  machine, and not a paused thread - and **the holder asked for its PC**
+  when it does fire, so the next one says what it was doing.
 - **FOUND on 29 September, by a sixty-second profile on the M700 - Doom's
   sleep is a spin.** `DG_SleepMs` (`user/installed/Doom/doom_kosmos.c`)
   waits by yielding until the counter passes the deadline, and a yield on

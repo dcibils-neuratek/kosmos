@@ -1094,6 +1094,9 @@ void syscall_dispatch(struct syscall_frame *sc)
     unsigned long number = sc->number;
     long result;
 
+    /* Timed only while a profile runs (`profile.c`); one comparison else. */
+    uint64_t began = profile_counting() ? cpu_cycles() : 0;
+
     if (p == NULL) {
         /* A syscall from something that is not a process. Nothing issues
          * one, so reaching here means the entry path routed something
@@ -2615,4 +2618,8 @@ void syscall_dispatch(struct syscall_frame *sc)
     /* Into the frame rather than into x0 directly: the eret restores every
      * register from here, so this is where a return value lives. */
     sc->result = (uint64_t)result;
+
+    if (began != 0) {
+        profile_syscall(number, cpu_cycles() - began);
+    }
 }

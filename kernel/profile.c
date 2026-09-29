@@ -32,6 +32,7 @@
 #include "spinlock.h"
 #include "syscall.h"
 #include "thread.h"
+#include "cpu.h"
 
 /* Samples a ring holds: sixteen pages, sixteen seconds at 250 ticks a second. */
 #define RING_PAGES   16u
@@ -49,6 +50,9 @@ static struct ring rings[NR_CPUS];
 /* Read at every tick without the lock: a tick that sees it change late
  * records one sample more or one fewer, which is what a tick is worth. */
 static volatile bool active;
+
+/* Each syscall's calls and time, per processor: `profile_syscall`. */
+static struct profile_syscall spent[NR_CPUS][SYS_MAX];
 
 static struct spinlock owner_lock;
 static struct process *owner;
@@ -98,6 +102,24 @@ void profile_tick(uint64_t pc, bool user)
     spin_unlock(&r->lock, flags);
 }
 
+bool profile_counting(void)
+{
+    return active;
+}
+
+void profile_syscall(unsigned long number, uint64_t counter_ticks)
+{
+    struct profile_syscall *here;
+
+    if (number >= SYS_MAX) {
+        return;
+    }
+
+    here = &spent[this_cpu()->index][number];
+    here->calls++;
+    here->counter_ticks += counter_ticks;
+}
+
 static bool owner_alive(void)
 {
     return owner != NULL && owner->in_use && owner->id == owner_id;
@@ -136,6 +158,7 @@ static long start(struct process *p)
 
     active = false;
     rings_free();
+    memset(spent, 0, sizeof(spent));
 
     for (unsigned i = 0; i < NR_CPUS; i++) {
         void *pages = pmm_alloc_contiguous(RING_PAGES);
@@ -218,6 +241,31 @@ long profile_call(struct process *p, unsigned long op, uintptr_t buf, size_t max
         }
 
         return (long)lost;
+    }
+
+    /* Summed over every processor, into the caller's `SYS_MAX`. Read
+     * while the profile runs, so a count may be a call behind. */
+    if (op == PROFILE_SYSCALLS) {
+        struct profile_syscall *out = (struct profile_syscall *)buf;
+        size_t n = max < SYS_MAX ? max : SYS_MAX;
+
+        if (!process_may_write(p, buf, n * sizeof(*out))) {
+            return SYS_ERR_FAULT;
+        }
+
+        for (size_t k = 0; k < n; k++) {
+            uint64_t calls = 0, ticks = 0;
+
+            for (unsigned i = 0; i < NR_CPUS; i++) {
+                calls += spent[i][k].calls;
+                ticks += spent[i][k].counter_ticks;
+            }
+
+            out[k].calls = calls;
+            out[k].counter_ticks = ticks;
+        }
+
+        return (long)n;
     }
 
     if (op == PROFILE_STOP) {

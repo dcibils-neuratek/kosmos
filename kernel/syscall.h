@@ -531,6 +531,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */
 #define PROFILE_STOP    3u
 #define PROFILE_LOST    4u  /* samples a full ring could not keep, so far */
+#define PROFILE_SYSCALLS 5u /* each syscall's calls and time, `SYS_MAX` of them */
 
 #define PROFILE_USER    1u  /* a program's own code */
 #define PROFILE_KERNEL  2u  /* the kernel, for a program or for itself */
@@ -1278,6 +1279,21 @@ struct profile_sample {
 
 _Static_assert(sizeof(struct profile_sample) == 16,
                "a profile sample is 16 bytes; profile_report.py reads it so");
+
+/*
+ * **What each syscall cost while the profile ran**, indexed by its number:
+ * how many times it was made and the counter ticks between its entry and
+ * its return, summed over every processor. Sampling cannot say this - a
+ * syscall runs with interrupts masked, so a tick that falls due inside one
+ * is taken as it returns - and a count and a clock can. A call that waits
+ * counts its wait.
+ */
+struct profile_syscall {
+    uint64_t calls;
+    uint64_t counter_ticks;
+};
+
+_Static_assert(sizeof(struct profile_syscall) == 16, "a syscall's cost has no padding");
 
 struct diskinfo {
     uint64_t sectors;

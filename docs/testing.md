@@ -13471,3 +13471,51 @@ could not start ... -1` - because `build/user/apps/doom.elf` was from before
 own copy of the runtime (`CLAUDE.md`). `doom-check` runs `make apps` first,
 as `snes-check` does.
 
+## 18.287 The M700's keyboard controller costs 6.4 us a read, and the syscalls, timed
+
+**The log said it**, from `diagnose` on 0.10.195 (18.285):
+
+    i8042: still here after 100000 drains, 100000 port reads, 21725 counter ticks a drain
+
+Not 0xff, then - one read of a status that said "empty", every time - and
+**6.4 us each** at 3.409 GHz, where a real controller answers in about one.
+The firmware plays the controller, in System Management Mode, which stops
+every processor while it runs. At about 2,400 drains a second that is
+1.5% of one processor in the reads themselves - and a pause of every other
+processor at each one.
+
+**And it does not explain the console**, which the same stick's profile put
+at 30% of a processor in the syscalls that drain: 2,400 reads at 6.4 us is
+a twentieth of that. So two things for the next stick, and neither is a
+guess:
+
+- **The syscalls, timed.** While a profile runs, each processor counts, for
+  every syscall number, its calls and the counter ticks from entry to
+  return (`profile_syscall`, `PROFILE_SYSCALLS`), and the report lists
+  calls a second and microseconds each - those that wait apart, since
+  their time is mostly waiting. Sampling cannot say this: a syscall runs
+  with interrupts masked, so a tick inside one lands as it returns. And
+  each processor's own time in programs, in the kernel and held off, from
+  the counter (`sys.cpuload`) - a second reading of the same question.
+- **The questions drain at most once a tick** (`drain_asked`): lines 1 and
+  12 drain the controller as bytes arrive, so a `getchar`'s drain, a key
+  event's, the pointer's and the kernel's at every interrupt are a backup
+  for a masked line - 250 a second at most, where they were 2,400.
+
+**The gate, and a panic for the third time.** The first gate of this
+change stopped the build (a struct in `syscall.h` outside its
+`__ASSEMBLER__` guard, which the assembly the test build includes cannot
+read); the second ran twelve minutes rather than nine and a half, and two
+suites ended in `spinlock: endpoint held by 1, wanted by 3` - `arm-profile`,
+just after its profile had stopped - and `endpoint held by nobody, wanted by
+2` - `arm-film`. 18.134's panic, and chased the same way: nothing this
+change adds runs there on ARM (the syscall timing is off once a profile
+stops, the i8042 is the PC's), `arm-profile` passed alone three times and
+`arm-film` once. Load-shaped, as it was then; `roadmap.md` has the fix
+18.134 named, now that it has come three times.
+
+**`arm-profile` and `x86-profile` twelve checks now**: the clock's syscall
+among those timed, in microseconds, and every processor counted. Its
+control - the kernel never calling `profile_syscall` - fails "no timed
+SYS_TICKS". Under QEMU the console's two calls are 3.6 to 9 us each.
+

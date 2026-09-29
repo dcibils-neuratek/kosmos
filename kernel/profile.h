@@ -21,4 +21,12 @@ void profile_tick(uint64_t pc, bool user);
 
 long profile_call(struct process *p, unsigned long op, uintptr_t buf, size_t max);
 
+/*
+ * Around every syscall: whether to time it, and what it cost. A syscall
+ * runs with interrupts masked and a thread never leaves its processor, so
+ * each processor's counts are its own to add to.
+ */
+bool profile_counting(void);
+void profile_syscall(unsigned long number, uint64_t counter_ticks);
+
 #endif /* KOSMOS_PROFILE_H */

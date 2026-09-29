@@ -435,9 +435,9 @@ static inline long kosmos_proctable(struct proc_info *out, unsigned long max)
 }
 
 /* A profile: `PROFILE_START`, `_READ` up to `max` samples into `out`,
- * `_LOST` or `_STOP` (`kernel/profile.c`). Only with `SPAWN_PROFILE`. */
-static inline long kosmos_profile(unsigned long op, struct profile_sample *out,
-                                  unsigned long max)
+ * `_SYSCALLS` up to `max` syscalls' costs into it, `_LOST` or `_STOP`
+ * (`kernel/profile.c`). Only with `SPAWN_PROFILE`. */
+static inline long kosmos_profile(unsigned long op, void *out, unsigned long max)
 {
     return sys3(SYS_PROFILE, (long)op, (long)(uintptr_t)out, (long)max);
 }

@@ -289,6 +289,18 @@ def main():
     if s["lost"] != 0:
         fails.append("%d samples lost" % s["lost"])
 
+    # **The syscalls, timed**, and each processor's own counts: every
+    # processor there, and the spinners' clock among the calls - each a few
+    # microseconds, never a wait - since a count and a clock are what
+    # sampling cannot give for time spent with interrupts masked.
+    ticks = [r for r in s.get("syscalls", []) if r["name"] == "SYS_TICKS"]
+
+    if not ticks or not 0 < ticks[0]["us"] < 1000:
+        fails.append("no timed SYS_TICKS, or one not in microseconds: %s" % ticks)
+
+    if len(s.get("cpus", [])) != s["cores"]:
+        fails.append("%d processors counted, of %d" % (len(s.get("cpus", [])), s["cores"]))
+
     if not any("agrees" in n for n in s["notes"]):
         fails.append("the report found no symbols that ran: " + "; ".join(s["notes"]))
 
@@ -318,7 +330,7 @@ def main():
 
 
 def report(fails, s=None):
-    checks = 10
+    checks = 12
 
     if fails:
         print("FAIL: %d of %d checks on the profiler:" % (len(fails), checks))

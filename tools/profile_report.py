@@ -37,6 +37,7 @@ import glob
 import html
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -157,7 +158,11 @@ def read_profile(path):
     for line in data[:end].decode("utf-8", "replace").split("\n"):
         f = line.split("\t")
 
-        if f[0] == "process" and len(f) >= 6:
+        if f[0] == "syscall" and len(f) >= 4:
+            head.setdefault("syscalls", []).append((int(f[1]), int(f[2]), int(f[3])))
+        elif f[0] == "cpu" and len(f) >= 5:
+            head.setdefault("cpus", []).append(tuple(int(x) for x in f[1:5]))
+        elif f[0] == "process" and len(f) >= 6:
             head["processes"][int(f[1])] = {
                 "id": int(f[1]), "parent": int(f[2]), "name": f[3],
                 "from": f[4], "image": f[5]}
@@ -442,6 +447,52 @@ def summarise(head, samples, symbols):
     }
 
 
+def syscall_names():
+    """Each syscall's number to its name, from the header the kernel uses."""
+    names = {}
+
+    with open(os.path.join(ROOT, "kernel", "syscall.h")) as f:
+        for m in re.finditer(r"#define\s+(SYS_[A-Z0-9_]+)\s+(\d+)\b", f.read()):
+            if m.group(1) != "SYS_MAX":
+                names.setdefault(int(m.group(2)), m.group(1))
+
+    return names
+
+
+def syscall_rows(head):
+    """Each syscall made, dearest first: name, calls a second, microseconds a
+    call, and the share of one processor it took."""
+    hz = max(1, int(head.get("counter_hz", 1)))
+    seconds = int(head.get("counter_ticks", 0)) / hz or 1
+    names = syscall_names()
+    rows = []
+
+    for number, calls, ticks in head.get("syscalls", []):
+        name = names.get(number, "syscall %d" % number)
+
+        rows.append({"name": name,
+                     # Blocks until something happens, so its time is mostly
+                     # waiting: listed apart, after the ones that work.
+                     "waits": any(w in name for w in ("RECEIVE", "CALL", "SLEEP",
+                                                      "WAIT")),
+                     "per_second": calls / seconds,
+                     "us": (ticks / calls) * 1e6 / hz if calls else 0.0,
+                     "core": 100.0 * ticks / hz / seconds})
+
+    return sorted(rows, key=lambda r: (r["waits"], -r["core"]))
+
+
+def cpu_rows(head):
+    """Each processor's time in programs, in the kernel and held off, as a
+    share of the profile's length - from the counter, not from samples."""
+    hz = max(1, int(head.get("counter_hz", 1)))
+    total = max(1, int(head.get("counter_ticks", 1)))
+
+    return [{"cpu": c, "user": 100.0 * u / total, "kernel": 100.0 * k / total,
+             "held_off_ms": 1000.0 * h / hz}
+            for c, u, k, h in head.get("cpus", [])]
+
+
 def pct(n, of):
     return 100.0 * n / of if of else 0.0
 
@@ -499,6 +550,29 @@ def text_report(head, s):
                      f"Lua {pct(by['Lua'], n):3.0f}%  C {pct(by['C'], n):3.0f}%  "
                      f"kernel {pct(by['kernel'], n):3.0f}%")
 
+    calls = syscall_rows(head)
+
+    if calls:
+        lines += ["", "syscalls, timed from entry to return:"]
+        waiting = False
+
+        for r in calls:
+            if r["waits"] and not waiting:
+                waiting = True
+                lines.append("  and those that wait, whose time is mostly waiting:")
+
+            lines.append("  %6.2f%% of a processor  %-20s %9.0f a second, %8.1f us each"
+                         % (r["core"], r["name"], r["per_second"], r["us"]))
+
+    cpus = cpu_rows(head)
+
+    if cpus:
+        lines += ["", "each processor, from the counter (programs / kernel / held off):"]
+
+        for r in cpus:
+            lines.append("  cpu %d  %5.1f%% / %5.1f%% / %7.1f ms"
+                         % (r["cpu"], r["user"], r["kernel"], r["held_off_ms"]))
+
     lines += ["", "the busiest functions, of the busy time:"]
 
     for (func, path, cls), n in sorted(s["funcs"].items(), key=lambda kv: -kv[1])[:20]:
@@ -523,6 +597,39 @@ def bar(parts, of, height=14):
                      f'title="{html.escape(label)}: {w:.1f}%"></span>')
 
     return f'<div class="bar" style="height:{height}px">{"".join(cells)}</div>'
+
+
+def syscall_section(head):
+    """The timed syscalls and the processors' own counts, when the profile
+    carries them."""
+    esc = html.escape
+    calls = syscall_rows(head)
+    cpus = cpu_rows(head)
+    out = ""
+
+    if calls:
+        rows = "".join(
+            f'<tr><td class="n">{r["core"]:.2f}%</td><td><code>{esc(r["name"])}</code>'
+            f'{" <span class=split>waits</span>" if r["waits"] else ""}</td>'
+            f'<td class="n">{r["per_second"]:.0f}</td><td class="n">{r["us"]:.1f}</td></tr>'
+            for r in calls)
+        out += ('<h2>Syscalls, timed</h2><p class="meta">Each call from entry to '
+                'return. Those marked <em>waits</em> block until something happens, '
+                'so their time is mostly waiting.</p><div class="tablewrap '
+                'scroll"><table><tr><td class="n">of a processor</td><td>syscall</td>'
+                '<td class="n">a second</td><td class="n">us each</td></tr>'
+                + rows + '</table></div>')
+
+    if cpus:
+        rows = "".join(
+            f'<tr><td>cpu {r["cpu"]}</td><td class="n">{r["user"]:.1f}%</td>'
+            f'<td class="n">{r["kernel"]:.1f}%</td><td class="n">{r["held_off_ms"]:.1f}</td></tr>'
+            for r in cpus)
+        out += ('<h2>Each processor, from the counter</h2><div class="tablewrap '
+                'scroll"><table><tr><td></td><td class="n">programs</td><td class="n">'
+                'kernel</td><td class="n">held off, ms</td></tr>' + rows + '</table></div>')
+
+    return out
 
 
 def page(head, s, title):
@@ -654,6 +761,8 @@ Symbols: {esc("; ".join(s["notes"]))}</p>
 <h2>By process, of all the processors' time</h2>
 {"".join(procs)}
 
+{syscall_section(head)}
+
 <h2>The busiest functions, of the busy time</h2>
 <div class="tablewrap scroll"><table>{func_rows}</table></div>
 </main></body></html>
@@ -726,7 +835,9 @@ def main(argv):
                        "seconds": int(head.get("counter_ticks", 0))
                                   / max(1, int(head.get("counter_hz", 1))),
                        "layers": s["layers"], "classes": s["classes"],
-                       "processes": per, "notes": s["notes"]}, f, indent=1)
+                       "processes": per, "notes": s["notes"],
+                       "syscalls": syscall_rows(head), "cpus": cpu_rows(head)},
+                      f, indent=1)
 
     return 0
 

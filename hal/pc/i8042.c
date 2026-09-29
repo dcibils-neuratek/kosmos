@@ -713,6 +713,35 @@ static void drain(void)
     aux_present = false;
 }
 
+/*
+ * **A question's drain, at most once a tick.** Interrupt lines 1 and 12
+ * drain the controller as each byte arrives (`interrupt_unlocked`), so the
+ * drains the questions make - each `getchar`, each key event, each look at
+ * the pointer, and the kernel's check at every interrupt - are the belt and
+ * braces for a line that is masked, and one a scheduler tick is plenty of
+ * that.
+ *
+ * They were one a question, and on the M700 a question is a trip into the
+ * firmware: its log said "100000 drains, 100000 port reads, 21725 counter
+ * ticks a drain" - 6.4 us for one read of an empty status, which a real
+ * controller answers in about one, and the firmware playing one answers in
+ * System Management Mode, which stops every processor while it does. At
+ * 2,400 a second. Once a tick is at most 250.
+ */
+static unsigned long asked_at = ~0ul;
+
+static void drain_asked(void)
+{
+    unsigned long now = hal_ticks_on(0);
+
+    if (now == asked_at) {
+        return;
+    }
+
+    asked_at = now;
+    drain();
+}
+
 /*------------------------------------------------------------------------
  * Bringing it up.
  *----------------------------------------------------------------------*/
@@ -863,7 +892,7 @@ static bool pointer_init_unlocked(void)
 
 static int getchar_unlocked(void)
 {
-    drain();
+    drain_asked();
 
     if (chars_head == chars_tail) {
         return HAL_NO_INPUT;
@@ -884,7 +913,7 @@ bool i8042_present(void)
 
 static bool key_event_unlocked(unsigned *code, bool *down)
 {
-    drain();
+    drain_asked();
 
     if (keyq_head == keyq_tail) {
         return false;
@@ -916,7 +945,7 @@ static bool pointer_drain_unlocked(void)
         return false;
     }
 
-    drain();
+    drain_asked();
     return true;
 }
 
@@ -935,7 +964,7 @@ static bool pending_unlocked(void)
         return false;
     }
 
-    drain();
+    drain_asked();
 
     return chars_head != chars_tail || keyq_head != keyq_tail;
 }

@@ -2255,6 +2255,8 @@ static int l_region_write(lua_State *L)
  *   sys.profile("read", region, at)    -> samples drained into the region
  *                                         from byte `at`, as many as fit
  *   sys.profile("lost")                -> samples a full ring dropped
+ *   sys.profile("syscalls")            -> { [number] = { calls, ticks } }
+ *                                         for each syscall made so far
  *   sys.profile("stop")                -> true
  *
  * **Into a region and never into Lua**: a sample is sixteen bytes and a
@@ -2288,13 +2290,42 @@ static int profile_refused(lua_State *L, long r)
 
 static int l_profile(lua_State *L)
 {
-    static const char *const ops[] = { "start", "read", "lost", "stop", NULL };
+    static const char *const ops[] = { "start", "read", "lost", "stop",
+                                       "syscalls", NULL };
     static const unsigned long codes[] = { PROFILE_START, PROFILE_READ,
-                                           PROFILE_LOST, PROFILE_STOP };
+                                           PROFILE_LOST, PROFILE_STOP,
+                                           PROFILE_SYSCALLS };
     int which = luaL_checkoption(L, 1, NULL, ops);
     struct profile_sample *out = NULL;
     unsigned long room = 0;
     long r;
+
+    /* Sixty-odd small numbers, once, after the samples: a table is right. */
+    if (codes[which] == PROFILE_SYSCALLS) {
+        struct profile_syscall costs[SYS_MAX];
+        long n = kosmos_profile(PROFILE_SYSCALLS, costs, SYS_MAX);
+
+        if (n < 0) {
+            return profile_refused(L, n);
+        }
+
+        lua_createtable(L, 0, 16);
+
+        for (long k = 0; k < n; k++) {
+            if (costs[k].calls == 0) {
+                continue;
+            }
+
+            lua_createtable(L, 0, 2);
+            lua_pushinteger(L, (lua_Integer)costs[k].calls);
+            lua_setfield(L, -2, "calls");
+            lua_pushinteger(L, (lua_Integer)costs[k].counter_ticks);
+            lua_setfield(L, -2, "ticks");
+            lua_rawseti(L, -2, (lua_Integer)k);
+        }
+
+        return 1;
+    }
 
     if (codes[which] == PROFILE_READ) {
         long cap = (long)luaL_checkinteger(L, 2);

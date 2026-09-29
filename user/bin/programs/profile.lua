@@ -97,6 +97,29 @@ end
 
 note_processes()
 
+--
+-- **How long each processor was held off** (`sys.cpuload`'s
+-- `held_off_counter`): a tick that came more than two intervals late adds
+-- what it was late by. A thread the scheduler starved leaves ticks on time;
+-- firmware in System Management Mode does not - which is what the M700's
+-- keyboard controller was suspected of (`roadmap.md`).
+--
+-- And each one's time in programs and in the kernel, from the counter
+-- rather than from samples - the other reading of the same question.
+--
+local function per_cpu()
+  local out = {}
+
+  for i, c in ipairs(sys.cpuload and sys.cpuload() or {}) do
+    out[i] = { user = c.user_counter or 0, kernel = c.kernel_counter or 0,
+               held = c.held_off_counter or 0 }
+  end
+
+  return out
+end
+
+local cpu_before = per_cpu()
+
 local ok, why = sys.profile("start")
 
 if not ok then
@@ -133,6 +156,7 @@ end
 drain()
 
 local lost = sys.profile("lost") or 0
+local syscalls = sys.profile("syscalls") or {}
 local elapsed = sys.ticks() - began
 
 sys.profile("stop")
@@ -184,6 +208,21 @@ local head = {
   "lost\t" .. lost,
   "anchor\tstr_format\t" .. anchor,
 }
+
+-- Each syscall made while it ran: its number, calls and counter ticks.
+for number, cost in pairs(syscalls) do
+  head[#head + 1] = ("syscall\t%d\t%d\t%d"):format(number, cost.calls, cost.ticks)
+end
+
+-- And each processor's own counts over the same while: in programs, in the
+-- kernel, and held off - counter ticks, each.
+for i, now in ipairs(per_cpu()) do
+  local was = cpu_before[i] or { user = 0, kernel = 0, held = 0 }
+
+  head[#head + 1] = ("cpu\t%d\t%d\t%d\t%d"):format(i - 1, now.user - was.user,
+                                                   now.kernel - was.kernel,
+                                                   now.held - was.held)
+end
 
 for _, id in ipairs(order) do
   local p = seen[id]
