@@ -5452,6 +5452,15 @@ the Pi", and the Pi is not here yet.
   controller, and the log says what draining cost - once when it retires,
   once after a hundred thousand drains. For the M700 to confirm with the log
   and a second `profile`.
+
+  **0.10.195 on the M700, sixty seconds** (29 September): the console at 30%
+  of a processor, down from 53% under a comparable load, and still almost
+  all on the way back from the same two syscalls - so the controller was
+  most likely *not* retired, and the port does not read 0xff. The reading
+  that fits now is a firmware still answering for the controller, each port
+  read a trap into System Management Mode - which stalls every processor
+  while it runs. The log's `i8042:` line decides; `diagnose` was not run on
+  that boot.
 - **FOUND on 29 September, by a sixty-second profile on the M700 - Doom's
   sleep is a spin.** `DG_SleepMs` (`user/installed/Doom/doom_kosmos.c`)
   waits by yielding until the counter passes the deadline, and a yield on
@@ -5469,6 +5478,9 @@ the Pi", and the Pi is not here yet.
   doom-check WAD=...` holds it. Quake does not sleep in its engine; the
   Super Nintendo still yields through the last half-frame before one is
   due (`snes.lua`), which is the same shape, smaller.
+
+  **Confirmed on the M700 with 0.10.195**: Doom at 2.1% of a processor,
+  from 34% on 0.10.194, its sleep gone from the profile.
 - **FOUND on 29 September, writing the profiler's suite - on QEMU's x86-64,
   one processor.** Two spinners in the display band kept `profile`, asleep a
   quarter of a second between drains in the same band, from running for
