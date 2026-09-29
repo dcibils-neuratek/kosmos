@@ -243,8 +243,17 @@ manager's came to seven with `profile`).
 the 0.10.194 stick when the gate passes"): OVMF 32 checks, its symbols in
 `build/x86_64/kosmos-usb-0.10.194-development.symbols/`.
 
-**Next**: `profile 30` on the M700 with the desktop in use, and the answer
-to Diego's question from it. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+**The M700's answer** (two ten-second profiles, 29 September, `make
+profile-report` against the stick's symbols): an idle desktop busy 12.4% of
+all eight processors, Lua 16.8% of that; the desktop with Cafesa3D, a film
+and Music, busy 36.1%, Lua 7.8%, C 72.8%, the kernel 19.4%. The collector
+0.1-0.2% of the busy time. The window manager is the one system program with
+a Lua share worth naming - a quarter to half a processor, about a third of it
+Lua. The largest waste is C: `console` at 48-71% of a processor inside
+`getchar` and key-event syscalls (roadmap, FOUND).
+
+**Next**: what Diego decides from that; the console's syscalls measured on
+the M700 first. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware

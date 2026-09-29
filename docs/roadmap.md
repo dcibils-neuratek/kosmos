@@ -5432,6 +5432,20 @@ the Pi", and the Pi is not here yet.
   Next: `profile 30` on the M700 with the desktop in use, and the answer to
   Diego's question from it.
 
+- **FOUND on 29 September, by the profiler on the M700 (0.10.194) - the
+  console server spends half to three quarters of a core in two syscalls.**
+  An idle desktop: `console` 71% of one processor, 54% of it on returning
+  from `getchar` (`next_byte`), 28% from the key-event syscall
+  (`drain_key_events`), 13% from its own `wait`; with Cafesa3D, a film and
+  Music going, 48%. Its C is nothing - the time is inside those syscalls. On
+  a PC both go through `drain()` in `hal/pc/i8042.c`, and the M700's boot
+  found an i8042 ("the chip a laptop still has") while its keyboard is USB.
+  **Not yet known, and to be measured before anything is changed**: whether
+  that controller - likely the firmware's USB emulation, gone once the xHCI
+  driver takes the controller - reads as `0xFF`, "a byte waiting", so every
+  drain reads its bound of 32 bytes, 64 port reads, and the pending check the
+  kernel runs on every interrupt does the same. The first step is counting
+  what `drain()` reads, in `diagnose`.
 - **FOUND on 29 September, writing the profiler's suite - on QEMU's x86-64,
   one processor.** Two spinners in the display band kept `profile`, asleep a
   quarter of a second between drains in the same band, from running for
