@@ -163,6 +163,7 @@ wad_file_class_t stdc_wad_file = {
 
 static unsigned long started_at;
 static unsigned long counter_hz = 62500000ul;
+static unsigned long tick_hz = 250ul;       /* the scheduler's, which a sleep counts in */
 
 void DG_Init(void)
 {
@@ -170,8 +171,14 @@ void DG_Init(void)
 
     started_at = kosmos_ticks();
 
-    if (kosmos_sysinfo(&info) == 0 && info.counter_hz != 0) {
-        counter_hz = info.counter_hz;
+    if (kosmos_sysinfo(&info) == 0) {
+        if (info.counter_hz != 0) {
+            counter_hz = info.counter_hz;
+        }
+
+        if (info.tick_hz != 0) {
+            tick_hz = info.tick_hz;
+        }
     }
 }
 
@@ -187,19 +194,29 @@ void DG_DrawFrame(void)
 {
 }
 
+/*
+ * **A sleep, and it was a spin.**
+ *
+ * This is what Doom calls to hold itself to 35 tics a second: `TryRunTics`
+ * asks for a millisecond at a time until the next tic is due. It yielded
+ * until the counter passed the deadline, on the reasoning that a yield
+ * hands the processor to whoever needs it - and on the M700's eight
+ * processors, with room on them, a yield comes straight back. A profile of
+ * the desktop found 84% of Doom's samples on the way back from one: about
+ * 29% of a processor spent waiting (`roadmap.md`, FOUND on 29 September).
+ *
+ * The kernel sleeps in scheduler ticks, four milliseconds at 250 a second,
+ * and a millisecond is less than one - so a wait is a tick at least, and
+ * Doom looks at its clock again when it ends. A tic is 28.6 ms and may now
+ * start up to a tick late; the game's speed is kept by the clock
+ * (`DG_GetTicksMs`), not by this, and `run_doom.py` holds the frames a
+ * second to what they were.
+ */
 void DG_SleepMs(uint32_t ms)
 {
-    unsigned long until = kosmos_ticks() + (counter_hz / 1000ul) * ms;
+    unsigned long ticks = ((unsigned long)ms * tick_hz + 999ul) / 1000ul;
 
-    /*
-     * Yielding rather than spinning. This is what Doom calls to hold itself
-     * to 35 tics a second, and a busy wait here would be a busy wait on a
-     * desktop that has a compositor to run - `sched_prio.c`'s bands are
-     * about exactly this.
-     */
-    while (kosmos_ticks() < until) {
-        kosmos_yield();
-    }
+    kosmos_sleep(ticks != 0 ? ticks : 1ul);
 }
 
 uint32_t DG_GetTicksMs(void)

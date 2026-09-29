@@ -3939,6 +3939,17 @@ snes-check: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory apps
 	python3 tools/run_snes.py build/kosmos.elf "$(ROM)"
 
+# **Doom playing its own demo**, with a WAD - the shareware one will do - and
+# `profile` watching: its frames a second, and whether it sleeps while it
+# waits rather than spinning (`tools/run_doom.py`). Outside the gate for
+# `quake-check`'s reason: the WAD is id's, and never in the repository.
+.PHONY: doom-check
+doom-check: $(HOSTDIR)/lua
+	@test -f "$(WAD)" || { echo "FAIL: no WAD. make doom-check WAD=/path/to/doom1.wad"; exit 1; }
+	@$(MAKE) --no-print-directory MEGA= FULL=0
+	@$(MAKE) --no-print-directory apps
+	python3 tools/run_doom.py build/kosmos.elf "$(WAD)"
+
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234
 debug: $(TARGET)

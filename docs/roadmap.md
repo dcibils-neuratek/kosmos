@@ -5462,6 +5462,13 @@ the Pi", and the Pi is not here yet.
   the frame rather than the engine waiting on the clock, or the one-shot
   timer `architecture.md` §5 is heading for. Quake's and the Super
   Nintendo's waits to be looked at the same way.
+
+  **Fixed the same day, on Diego's "fix the doom sleep too"** (`testing.md`
+  18.286): `DG_SleepMs` sleeps a scheduler tick at least; under QEMU Doom
+  went from 65% of a processor to 6% at the same frames a second. `make
+  doom-check WAD=...` holds it. Quake does not sleep in its engine; the
+  Super Nintendo still yields through the last half-frame before one is
+  due (`snes.lua`), which is the same shape, smaller.
 - **FOUND on 29 September, writing the profiler's suite - on QEMU's x86-64,
   one processor.** Two spinners in the display band kept `profile`, asleep a
   quarter of a second between drains in the same band, from running for

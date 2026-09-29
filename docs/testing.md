@@ -13435,3 +13435,39 @@ failure inside the gate re-run alone before it is believed.
 **What the M700 has to say**: the log's `i8042:` line, and `profile` again
 with the console where it was.
 
+## 18.286 Doom sleeps while it waits
+
+**Found by a sixty-second profile of Diego's desktop on the M700** (0.10.194):
+84% of Doom's samples on the way back from the syscall in `DG_SleepMs`,
+about 29% of a processor. Doom holds itself to 35 tics a second by asking
+for a millisecond at a time until the next tic is due (`TryRunTics`), and
+`DG_SleepMs` answered by yielding until the counter passed the deadline -
+which on eight processors with room on them comes straight back, so the
+wait was a spin with a syscall in it.
+
+**It sleeps now**: a millisecond is less than a scheduler tick, so a wait is
+one tick at least - four milliseconds at 250 a second - and Doom looks at
+its clock again when it ends. A tic may start up to a tick late; the game's
+speed is its clock's, not the sleep's.
+
+**`make doom-check WAD=...`** (`tools/run_doom.py`), outside the gate as
+`quake-check` is, since the WAD is id's: Doom plays its demo with `profile
+30` watching, and has to report thirty frames a second or more, spend at
+most a tenth of its samples in its sleep, and leave nothing dead. `doom.lua`
+says its frames a second every ten seconds for it - and in the log on a
+stick. ARM under QEMU, the shareware WAD, the same image:
+
+| | frames a second | Doom, of one processor | of that, in the sleep |
+|---|---|---|---|
+| yielding | 62.0, 70.0 | 65% | 70% |
+| sleeping | 61.9, 69.4 | 6% | 0% |
+
+The yielding build is the control, and it fails the check: "70% of Doom's
+samples were in its sleep".
+
+**Found on the way**: the first run could not start Doom at all - `wm:
+could not start ... -1` - because `build/user/apps/doom.elf` was from before
+`binproto.h` grew to eight needs, and an installed application carries its
+own copy of the runtime (`CLAUDE.md`). `doom-check` runs `make apps` first,
+as `snes-check` does.
+

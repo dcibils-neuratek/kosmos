@@ -284,6 +284,14 @@ local ctrl_down = false
 -- damage, poll for events - and the only thing Doom adds is that the render
 -- step is somebody else's forty thousand lines.
 --
+--
+-- **Frames a second, said every ten seconds** - the Super Nintendo's
+-- report, and the number `DG_SleepMs` is held to (`tools/run_doom.py`): a
+-- game that stopped spinning while it waits has to keep its thirty-five.
+--
+local counter_hz = fs.read("/Devices/cpu").counter_hz
+local report_at, frames = sys.ticks(), 0
+
 while win.running do
   --
   -- Asked for on every pass, not captured once.
@@ -308,12 +316,24 @@ while win.running do
     break
   end
 
+  frames = frames + 1
+
+  do
+    local now = sys.ticks()
+
+    if now - report_at >= 10 * counter_hz then
+      print(("doom: %.1f frames a second"):format(
+          frames * counter_hz / (now - report_at)))
+      report_at, frames = now, 0
+    end
+  end
+
   --
   -- `wait_ticks = 0`: do not block.
   --
   -- cube3d asks for a tick of waiting so an idle desktop is idle, and that
   -- is right for a spinning cube, which has nowhere to be. Doom paces
-  -- itself - `DG_SleepMs` holds it to thirty-five tics a second and yields
+  -- itself - `DG_SleepMs` holds it to thirty-five tics a second and sleeps
   -- while it waits - so waiting here as well would halve the frame rate
   -- for nothing.
   --

@@ -713,8 +713,11 @@ def main(argv):
             for cls, k in c.items():
                 by[LAYER_OF[cls]] += k
 
-            per[proc_name(head, pid)] = {"samples": n, "layers": dict(by),
-                                         "classes": dict(c)}
+            top = sorted(s["proc_funcs"][pid].items(), key=lambda kv: -kv[1])[:12]
+            per[proc_name(head, pid)] = {
+                "samples": n, "layers": dict(by), "classes": dict(c),
+                "functions": [{"name": f, "class": cl, "samples": k}
+                              for (f, _, cl), k in top]}
 
         with open(summary, "w") as f:
             json.dump({"samples": s["total"], "busy": busy, "lost": int(head.get("lost", 0)),
