@@ -12838,3 +12838,16 @@ on a quiet Mac, the kit's worst pass 9.2 and 9.4 ms. Its control is 18.269's
 - the band gone for both - read 112.7 and 108.9 ms away with the machine
 held off 0.0, and both checks fail, as they should: the excuse is now
 exactly as large as the stall the machine saw, and a starved band sees none.
+
+## 18.273 Where a random read's time is, after the byte path and the cache
+
+By difference, at the prompt on the ARM board under QEMU, 200 of each, two
+runs: a request to the disk server that touches no disk
+(`fs.read("/Home/.device")`) 139 and 135 us; `fs.getattr` of a file in
+`/Home` 255 and 253; a 4 KB `fs.read_into` of it 297 and 329. So of a random
+read about 45% is the request's round trip - the namespace, the IPC and a
+table marshalled through `sys.pack` on both sides - 38% the path walked
+twice in Lua over cached blocks (`kfs.spelled`, then `kfs.find`), and the
+rest the region handed over and mapped, and the one disk call for the data.
+Not a permanent test: a measurement taken to decide the next step, which
+is `roadmap.md`'s storage item 3's last paragraph.

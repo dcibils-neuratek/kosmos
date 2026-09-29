@@ -178,7 +178,21 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    stick; sequential reads 973 MB/s. A read is one disk call once its path
    is known, and 89% of a random read is now the disk server's Lua: the
    path walked twice, each directory's entries unpacked into tables each
-   time. What that points at is measured next.
+   time.
+   **Where a random read's time is, measured by difference** (29 September,
+   `testing.md` 18.273), per request under QEMU on the ARM board: a request
+   that touches no disk 137 us, a `getattr` 254, a 4 KB `read_into` 297 to
+   329. So about 45% is the round trip itself - the namespace, the IPC and
+   the table marshalled on both sides - 38% the two walks of the path in
+   Lua, and the rest the region and the data. **What that points at is
+   `diskfs` itself**: a declared struct for its requests, as `/Devices/audio`
+   has (`CLAUDE.md`, *a server receives exactly what it expects*), and the
+   walk in C - the move `CLAUDE.md` says waits for Disk Benchmark to show
+   the time is there, which it now does. Its host testing goes with it, as
+   `fat_decode.c` compiles on the Mac. Not started: it is a project of its
+   own, and Diego's order puts 4h next. A smaller step before it, if it is
+   wanted: one walk instead of two while an index exists - `kfs.spelled`
+   finds the node the handler then finds again.
 4. **OPEN - for Diego, when a measurement asks**: a device writing straight
    into a client's pages with no IOMMU to fence it.
 

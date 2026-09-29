@@ -144,8 +144,12 @@ capabilities which will then lead to us having accelerated 2d graphics".
   loaded sound suite holds each party to the device's time past it,
   replacing a ceiling that a 50 ms stall of the Mac broke in a gate.
 
-**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): storage - where 89%
-of a random read goes now, the disk server's Lua; then 4h -
+- **Where a random read's time is now** (18.273): about 45% the request's
+  round trip, 38% the path walked twice in Lua, the rest the region and the
+  data - which points at `diskfs` itself, a declared struct and the walk in
+  C, a project of its own and not started.
+
+**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): 4h -
 virtio-gpu under QEMU, then the M700's GPU codec and driver. 6zg d, the
 Launchkey, on 30 September.
 
