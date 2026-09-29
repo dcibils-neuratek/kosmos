@@ -45,6 +45,8 @@
 #include <string.h>
 
 #include "../user/servers/kfs.h"
+#include "../user/servers/packflat.h"
+#include "serialize.h"
 
 static struct kfs *K;
 
@@ -1271,6 +1273,195 @@ static int luaopen_kfsc(lua_State *L)
 
 /*
  * ------------------------------------------------------------------------
+ * `require "kpack"`: the machine's serialiser - `lua/kosmos/serialize.c`,
+ * which is `sys.pack` and `sys.unpack` there - over a string, so a script
+ * here makes and reads the bytes the machine does rather than a stand-in's.
+ * ------------------------------------------------------------------------
+ */
+
+static int l_kpack_pack(lua_State *L)
+{
+    static unsigned char buf[64 * 1024];
+    size_t len;
+    int r;
+
+    luaL_checkany(L, 1);
+    r = serialize_pack_into(L, 1, buf, sizeof buf, &len);
+
+    if (r != SERIALIZE_OK) {
+        lua_pushnil(L);
+        lua_pushstring(L, serialize_error(r));
+        return 2;
+    }
+
+    lua_pushlstring(L, (const char *)buf, len);
+    return 1;
+}
+
+static int l_kpack_unpack(lua_State *L)
+{
+    size_t len;
+    const char *bytes = luaL_checklstring(L, 1, &len);
+    int r = serialize_unpack_from(L, (const unsigned char *)bytes, len);
+
+    if (r != SERIALIZE_OK) {
+        lua_pushnil(L);
+        lua_pushstring(L, serialize_error(r));
+        return 2;
+    }
+
+    return 1;
+}
+
+static int luaopen_kpack(lua_State *L)
+{
+    static const luaL_Reg fns[] = {
+        { "pack", l_kpack_pack }, { "unpack", l_kpack_unpack }, { NULL, NULL },
+    };
+
+    luaL_newlib(L, fns);
+    return 1;
+}
+
+/*
+ * `require "packflat"`: `user/servers/packflat.c`, for
+ * `tools/test_packflat.lua` to hold to the serialiser above. Each call reads
+ * the bytes it is given, does one thing, and answers bytes, text or why not.
+ */
+
+static int packflat_fail(lua_State *L, int r)
+{
+    lua_pushnil(L);
+    lua_pushstring(L, r == PACKFLAT_E_MALFORMED ? "malformed"
+                      : r == PACKFLAT_E_NOT_FLAT ? "not flat"
+                      : r == PACKFLAT_E_TOO_MANY ? "too many"
+                      : r == PACKFLAT_E_TOO_BIG ? "too big" : "failed");
+    return 2;
+}
+
+static struct packflat *read_flat(lua_State *L, int *r)
+{
+    static struct packflat t;
+    size_t len;
+    const char *bytes = luaL_checklstring(L, 1, &len);
+
+    *r = packflat_read(bytes, len, &t);
+    return &t;
+}
+
+static int push_written(lua_State *L, const struct packflat *t)
+{
+    static unsigned char out[4092];
+    size_t len;
+    int r = packflat_write(t, out, sizeof out, &len);
+
+    if (r != PACKFLAT_OK) {
+        return packflat_fail(L, r);
+    }
+
+    lua_pushlstring(L, (const char *)out, len);
+    return 1;
+}
+
+/* packflat.rewrite(bytes): read and written again, as a block holds them. */
+static int l_packflat_rewrite(lua_State *L)
+{
+    int r;
+    struct packflat *t = read_flat(L, &r);
+
+    return r != PACKFLAT_OK ? packflat_fail(L, r) : push_written(L, t);
+}
+
+/* packflat.set(bytes, name, value): `value` a string, number or boolean, or
+ * nil to take `name` out. */
+static int l_packflat_set(lua_State *L)
+{
+    int r;
+    struct packflat *t = read_flat(L, &r);
+    size_t nlen, vlen;
+    const char *name = luaL_checklstring(L, 2, &nlen);
+    struct packflat_value v;
+
+    if (r != PACKFLAT_OK) {
+        return packflat_fail(L, r);
+    }
+
+    memset(&v, 0, sizeof v);
+
+    switch (lua_type(L, 3)) {
+    case LUA_TNONE:
+    case LUA_TNIL:
+        r = packflat_set(t, name, nlen, NULL);
+        break;
+
+    case LUA_TBOOLEAN:
+        v.type = lua_toboolean(L, 3) ? PACKFLAT_TRUE : PACKFLAT_FALSE;
+        r = packflat_set(t, name, nlen, &v);
+        break;
+
+    case LUA_TNUMBER:
+        if (lua_isinteger(L, 3)) {
+            v = packflat_int((int64_t)lua_tointeger(L, 3));
+        } else {
+            double d = (double)lua_tonumber(L, 3);
+
+            v.type = PACKFLAT_FLOAT;
+            memcpy(&v.bits, &d, sizeof d);
+        }
+
+        r = packflat_set(t, name, nlen, &v);
+        break;
+
+    default: {
+        const char *text = luaL_checklstring(L, 3, &vlen);
+
+        v = packflat_string(text, vlen);
+        r = packflat_set(t, name, nlen, &v);
+        break;
+    }
+    }
+
+    return r != PACKFLAT_OK ? packflat_fail(L, r) : push_written(L, t);
+}
+
+/* packflat.text(bytes, name): the value named, as `tostring` writes it. */
+static int l_packflat_text(lua_State *L)
+{
+    int r;
+    struct packflat *t = read_flat(L, &r);
+    size_t nlen;
+    const char *name = luaL_checklstring(L, 2, &nlen);
+    const struct packflat_value *v;
+    char text[4096];
+
+    if (r != PACKFLAT_OK) {
+        return packflat_fail(L, r);
+    }
+
+    v = packflat_get(t, name, nlen);
+
+    if (v == NULL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushlstring(L, text, packflat_text(v, text, sizeof text));
+    return 1;
+}
+
+static int luaopen_packflat(lua_State *L)
+{
+    static const luaL_Reg fns[] = {
+        { "rewrite", l_packflat_rewrite }, { "set", l_packflat_set },
+        { "text", l_packflat_text }, { NULL, NULL },
+    };
+
+    luaL_newlib(L, fns);
+    return 1;
+}
+
+/*
+ * ------------------------------------------------------------------------
  * The interpreter: `lua.c`'s job, for a script and its arguments, and
  * nothing it does for a person at a prompt.
  * ------------------------------------------------------------------------
@@ -1312,6 +1503,10 @@ int main(int argc, char **argv)
     luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
     lua_pushcfunction(L, luaopen_kfsc);
     lua_setfield(L, -2, "kfsc");
+    lua_pushcfunction(L, luaopen_kpack);
+    lua_setfield(L, -2, "kpack");
+    lua_pushcfunction(L, luaopen_packflat);
+    lua_setfield(L, -2, "packflat");
     lua_pop(L, 1);
 
     lua_createtable(L, argc - 2, 2);

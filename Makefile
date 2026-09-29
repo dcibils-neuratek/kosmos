@@ -1981,11 +1981,27 @@ $(HOSTDIR)/kfs.o: user/servers/kfs.c user/servers/kfs.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -c -o $@ user/servers/kfs.c
 
-$(HOSTDIR)/host_lua.o: tools/host_lua.c user/servers/kfs.h
+$(HOSTDIR)/host_lua.o: tools/host_lua.c user/servers/kfs.h user/servers/packflat.h \
+                       lua/kosmos/serialize.h
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Ilua/upstream -c -o $@ tools/host_lua.c
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Ilua/upstream -Ilua/kosmos \
+	      -Ikernel -Iarch/aarch64 -c -o $@ tools/host_lua.c
 
-$(HOSTDIR)/lua: $(HOSTDIR)/kfs.o $(HOSTDIR)/host_lua.o lua/upstream/linit.c $(LUA_HOST_SRCS)
+# The disk server's reader of `sys.pack`'s tables, and the serialiser itself
+# for it to be held to (`tools/test_packflat.lua`). `serialize.c` reads the
+# kernel's `struct message`, whose headers are the ARM board's: this Mac is
+# an arm64 one, and nothing here calls what their assembly is for.
+$(HOSTDIR)/packflat.o: user/servers/packflat.c user/servers/packflat.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -c -o $@ user/servers/packflat.c
+
+$(HOSTDIR)/serialize.o: lua/kosmos/serialize.c lua/kosmos/serialize.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Ilua/upstream -Ilua/kosmos \
+	      -Ikernel -Iarch/aarch64 -c -o $@ lua/kosmos/serialize.c
+
+$(HOSTDIR)/lua: $(HOSTDIR)/kfs.o $(HOSTDIR)/host_lua.o $(HOSTDIR)/packflat.o \
+                $(HOSTDIR)/serialize.o lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
 
@@ -3410,6 +3426,9 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_audioring
 	@# And the host's disk tool on the C, held to itself on the Lua: the
 	@# same images and the same words from every command (step 2).
 	python3 tools/test_kfs_tool.py
+	@# The disk server's reader of `sys.pack`'s tables, held to the
+	@# serialiser itself (step 3).
+	$(HOSTDIR)/lua tools/test_packflat.lua
 	$(HOSTDIR)/lua tools/test_blockcache.lua
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.
