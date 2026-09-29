@@ -148,13 +148,24 @@ function paint.new(picture_named, sized)
       local dw = tonumber(o.dw) or 0
       local dh = tonumber(o.dh) or 0
 
+      --
+      -- **`fade`, all of it at once**, 0 to 255 over the picture's own
+      -- alpha: the Deskbar's button breathing while its program starts
+      -- (`docs/launching.html`). Clamped here, because `blend` and `stretch`
+      -- refuse anything outside the range with an error, and this is drawing
+      -- a command another process sent.
+      --
+      local fade = math.tointeger(tonumber(o.fade) or 255) or 255
+
+      fade = math.max(0, math.min(255, fade))
+
       if dw > 0 and dh > 0 then
         s:stretch(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
-                  o.x or 0, o.y or 0, dw, dh, o.alpha and 255 or nil,
+                  o.x or 0, o.y or 0, dw, dh, o.alpha and fade or nil,
                   o.smooth == true)
       elseif o.alpha then
         s:blend(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
-                o.x or 0, o.y or 0)
+                o.x or 0, o.y or 0, fade)
       else
         s:blit(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
                o.x or 0, o.y or 0)

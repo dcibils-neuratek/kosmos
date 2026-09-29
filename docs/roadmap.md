@@ -294,7 +294,8 @@ breathing launcher indicator": the Deskbar shows the program's button at the mom
 starting, until its first window takes its place; the window manager lists
 programs still starting beside its windows and refuses a second start of
 one; a failure is said on the button, and a program with no window loses it
-after twenty seconds or when it ends.
+after twenty seconds or when it ends. **Built the same day** (`testing.md`
+18.277, 18.278).
 
 **And one noticed on the way, not yet done**: three drivers wait for their
 device a fixed number of loops rather than a time - `hal/virtio/blk.c`,

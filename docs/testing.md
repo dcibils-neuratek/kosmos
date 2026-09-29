@@ -12972,3 +12972,42 @@ answered `starting` and the log shows one launch. Its control, the refusal
 taken out: Doom launched twice, and the check fails. The two programs the
 suite runs are on the disk it makes rather than typed at the prompt: the
 pinger had grown past the kilobyte a line the shell reads stops at.
+
+## 18.278 A program starting breathes on the Deskbar
+
+Diego chose A of `docs/launching.html` - "I like to try the app breathing
+launcher indicator". The Deskbar reads the window manager's `starting`
+(18.277) with its windows and gives each a button at the end of the row:
+its picture breathing between 35 and 100 per cent a breath each 1.2 s, its
+name dimmed halfway to the button's face, and, once failed, "did not start"
+in the colour the bar uses for a battery running out, for the three
+seconds the window manager keeps it. A click on one asks for nothing. The
+menu's own launch draws the button at the moment of the click, from what
+its row knows, and asks with `wait = false`: the window manager answers
+at once and says what happened in its list, so the bar is free to breathe -
+a bar that waited for the answer could not animate the button that says
+the program is starting. It wakes twelve times a second only while
+something breathes (`pace_breathing`). The kit's `icon` and the `image`
+command gained an overall opacity, `fade`, which `blend` and `stretch`
+already took.
+
+**Found on the way**: `wmproto.windows` gathers a paged answer into a table
+of its own and dropped `starting` - the Deskbar never heard of it, and the
+first run of the check below said so.
+
+**Kept, the display harness's `starting` phase** (part three), 3 checks: a
+program that waits five seconds before its window is started from inside
+the desktop with `wait = false`; the Deskbar says it is starting; three
+looks at the left half of the bar - where only task buttons are, away from
+the clock and the meters - are not all alike; and once the window is open,
+two looks are. Its control, the picture held at half: the three looks were
+alike, and it fails.
+
+The gate for this failed two suites on timing, neither near what changed:
+`x86-film` with a gap at 0.45 s - the device held at four, as it had been
+before 4i e - and `x86-usb-2` with the USB mouse's longest gap 52.8 ms
+against a bound of 50 while a keyboard was plugged in. Alone, the USB
+parts passed all 44 checks and the film three of three: the busy gate
+18.127 describes. The film under load is the suite that says it most
+often, and 4i-f's witness - how long the machine held a processor off
+(18.272) - is what could tell it apart from a gap the guest made.

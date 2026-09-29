@@ -4727,6 +4727,98 @@ def stop_desktop(guest):
         time.sleep(0.3)
 
 
+def check_starting(guest):
+    """**What is starting breathes on the Deskbar** (`docs/launching.html`).
+
+    Diego, 29 September: "When launching an app we do need some indicator
+    of the app loading" - "the user might think it didn't actually launch
+    and might try again" - and his choice of the three drawn, "the app
+    breathing launcher indicator". The window manager lists a program from
+    the request until its first window (`starting`), and the Deskbar gives
+    it a button whose picture breathes between a third and all of itself.
+
+    A program that waits five seconds before opening its window is started
+    from inside the desktop with `wait = false`, as the Deskbar starts one.
+    The Deskbar has to say it is starting; its button - on the left half of
+    the bar, where only task buttons are, away from the clock and the
+    meters - has to change between looks while it starts; and once the
+    window has opened, the same place has to hold still.
+    """
+    slow = ("local ui = use('/Kosmos/Libraries/ui.lua') "
+            "sys.sleep(5 * ((sys.info() or {}).tick_hz or 100)) "
+            "local w = ui.window{ title = 'Slow', w = 240, h = 90, x = 600, "
+            "y = 400 } w:run()")
+    starter = ("sys.sleep((sys.info() or {}).tick_hz or 100) "
+               "fs.send('/Running/wm', { type = 'launch', "
+               "program = '/Temporary/slow.lua', wait = false })")
+
+    guest.type('fs.write("/Temporary/slow.lua", [=[' + slow + ']=])')
+    time.sleep(0.5)
+    guest.type('fs.write("/Temporary/starter.lua", [=[' + starter + ']=])')
+    time.sleep(0.5)
+
+    mark = len(guest.seen)
+    guest.type("wm deskbar,/Temporary/starter.lua")
+
+    try:
+        guest.wait_for_line("deskbar: Slow is starting",
+                            "the Deskbar's starting button", since=mark)
+    except Failure:
+        stop_desktop(guest)
+        raise
+
+    def bar_left():
+        width, _, px = parse_ppm(guest.screendump())
+        rows = []
+
+        for y in range(4, 28):
+            rows.append(px[(y * width) * 3:(y * width + width // 2) * 3])
+
+        return b"".join(rows)
+
+    looks = [bar_left()]
+
+    for _ in range(2):
+        time.sleep(0.35)
+        looks.append(bar_left())
+
+    breathed = len(set(looks)) > 1
+    opened = "wm: window Slow at" in guest.seen[mark:]
+
+    if not opened:
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline and "wm: window Slow at" not in guest.seen[mark:]:
+            time.sleep(0.3)
+            guest._read_available()
+
+        opened = "wm: window Slow at" in guest.seen[mark:]
+
+    time.sleep(0.8)
+    still = [bar_left()]
+    time.sleep(0.45)
+    still.append(bar_left())
+
+    stop_desktop(guest)
+
+    if not breathed:
+        raise Failure(
+            "the Deskbar's button for a program that was starting did not change "
+            "across three looks of the bar - its picture has to breathe while "
+            "the program starts (`docs/launching.html`, `pace_breathing` and "
+            "`breath` in deskbar.lua).")
+
+    if not opened:
+        raise Failure("the slow program's window never opened.")
+
+    if still[0] != still[1]:
+        raise Failure(
+            "the Deskbar kept changing after the program's window opened: its "
+            "button has to stop breathing when the window's own takes its place.")
+
+    return 3
+
+
 def check_theme_events(guest):
     """**Four theme events reach a window that was not polling.**
 
@@ -11312,6 +11404,7 @@ def main():
         drives_app_checks = phase("drives app", check_drives_app)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
+        starting_checks = phase("starting", check_starting)
         layers_checks = phase("deskbar layers", check_deskbar_layers)
         types_checks = phase("file types", check_file_types)
         compress_checks = phase("compress", check_compress)
@@ -11373,7 +11466,7 @@ def main():
              + widget_checks + prefs_checks + script_checks
              + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + focus_checks + desktop_checks + places_checks
+             + focus_checks + starting_checks + desktop_checks + places_checks
              + panel_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
@@ -11428,7 +11521,8 @@ def main():
           f"{click_checks} on the widgets under the pointer, "
           f"{deskbar_checks} on starting an application from the Deskbar, "
           f"{focus_checks} on the Deskbar showing where the focus went at "
-          f"once, "
+          f"once, {starting_checks} on a program that is starting breathing "
+          f"on the Deskbar until its window opens, "
           f"{desktop_checks} on the desktop below the strip and an icon "
           f"staying where it is dragged, "
           f"{icon_size_checks} on the icon size chosen on the desktop and "

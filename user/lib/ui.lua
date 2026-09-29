@@ -404,7 +404,11 @@ end
 --
 local ICON_EXPORTS = { [16] = "16x16/", [32] = "", [64] = "64x64/" }
 
-function gc:icon(x, y, name, size)
+--
+-- `fade`, when given, is how much of the picture shows, 0 to 255 over its
+-- own alpha - the Deskbar's button breathing while its program starts.
+--
+function gc:icon(x, y, name, size, fade)
   size = size or 32
 
   local ax, ay = self.ox + x, self.oy + y
@@ -419,7 +423,7 @@ function gc:icon(x, y, name, size)
     self.ops[#self.ops + 1] = {
       op = "image", asset = "64x64/" .. name, alpha = true, smooth = true,
       sx = 0, sy = 0, w = 64, h = 64,
-      x = ax, y = ay, dw = size, dh = size,
+      x = ax, y = ay, dw = size, dh = size, fade = fade,
     }
 
     return
@@ -436,7 +440,7 @@ function gc:icon(x, y, name, size)
     op = "image", asset = export .. name, alpha = true,
     sx = x0 - ax, sy = y0 - ay,
     w = x1 - x0, h = y1 - y0,
-    x = x0, y = y0,
+    x = x0, y = y0, fade = fade,
   }
 end
 

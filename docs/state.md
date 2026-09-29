@@ -165,7 +165,10 @@ capabilities which will then lead to us having accelerated 2d graphics".
   window manager read their eighteen-megabyte images inside the launch
   request. Now it reads them a window a pass and answers when the program
   has started - `arm-launch` in the gate, 71 answers during Doom's start
-  where there was one. Not on the 0.10.190 stick.
+  where there was one. And **what is starting breathes on the Deskbar**
+  (18.277, 18.278, `docs/launching.html` A, Diego's choice): listed by the
+  window manager until its first window, started once however often it is
+  asked for. Neither is on the 0.10.190 stick.
 
 **Next** (Diego, 29 September: "do 4i, 3 and 4 now"): 4h b and c -
 the hardware cursor on the cursor queue, and the screen's size from the

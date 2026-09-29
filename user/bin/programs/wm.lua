@@ -1204,10 +1204,12 @@ local pending_program = nil
 --
 local starting = {}
 local STARTING_FOR = 20          -- seconds, for a program that never opens one
+local FAILED_FOR = 3             -- seconds a failure stays on its button
 
 -- The same, in the counter's units: `since` is `sys.ticks()`.
-local STARTING_COUNTS = STARTING_FOR
-                        * ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000)
+local COUNTER_HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local STARTING_COUNTS = STARTING_FOR * COUNTER_HZ
+local FAILED_COUNTS = FAILED_FOR * COUNTER_HZ
 
 local function stop_starting(match)
   for i, s in ipairs(starting) do
@@ -3503,7 +3505,12 @@ local function finish_launch(l, ok, err, id)
 
   if not ok then
     reply = { ok = false, error = tostring(err) }
-    stop_starting(function(s) return s.launch == l end)
+
+    -- Said on its button for a moment, whoever asked: the Deskbar shows
+    -- this for a program a desktop icon or Tracker started as well.
+    for _, s in ipairs(starting) do
+      if s.launch == l then s.failed, s.since = tostring(err), sys.ticks() end
+    end
   else
     for _, s in ipairs(starting) do
       if s.launch == l then s.pid = id end
@@ -3518,7 +3525,10 @@ local function finish_launch(l, ok, err, id)
     pending_program = l.path
   end
 
-  replied(pcall(sys.reply, l.who, reply), nil, "launch")
+  -- Nobody waiting: asked with `wait = false`, and answered at the start.
+  if l.who then
+    replied(pcall(sys.reply, l.who, reply), nil, "launch")
+  end
 end
 
 local function step_launches()
@@ -3559,7 +3569,7 @@ handlers.launch = function(req, who)
   -- Still starting from a click a moment ago: this one starts nothing, and
   -- the answer says so rather than failing (`docs/launching.html`).
   for _, s in ipairs(starting) do
-    if s.path == path then
+    if s.path == path and not s.failed then
       print(("wm: %s is already starting"):format(tostring(req.program)))
       return { ok = true, starting = true }
     end
@@ -3567,8 +3577,17 @@ handlers.launch = function(req, who)
 
   print(("wm: launching %s"):format(tostring(req.program)))
 
-  local l = { who = who, program = req.program, path = path }
+  --
+  -- **`wait = false` is answered now**, and a failure is said in `starting`
+  -- rather than in the reply. The Deskbar asks that way: a window that
+  -- waited for the answer could not animate the button that says the
+  -- program is starting, which is the whole of what it is for.
+  --
+  local l = { who = (req.wait ~= false) and who or nil,
+              program = req.program, path = path }
 
+  -- A failure still on its button is replaced by the new try.
+  stop_starting(function(s) return s.path == path end)
   starting[#starting + 1] = { path = path, launch = l, since = sys.ticks() }
 
   l.co = coroutine.create(function()
@@ -3578,6 +3597,10 @@ handlers.launch = function(req, who)
 
   launching[#launching + 1] = l
   step_launches()
+
+  if not l.who then
+    return { ok = true, starting = true }
+  end
 
   return DEFER
 end
@@ -3699,7 +3722,9 @@ handlers.windows = function(req)
   -- And what is still starting, for the Deskbar's buttons.
   local names = {}
 
-  for i, s in ipairs(starting) do names[i] = { program = s.path } end
+  for i, s in ipairs(starting) do
+    names[i] = { program = s.path, failed = s.failed }
+  end
 
   return { ok = true, windows = out, starting = names,
            more = (last < #windows) and (last + 1) or nil }
@@ -3771,7 +3796,9 @@ local function tell_watchers()
   if #starting > 0 or told.starting ~= "" then
     local now = {}
 
-    for i, s in ipairs(starting) do now[i] = s.path end
+    for i, s in ipairs(starting) do
+      now[i] = s.path .. (s.failed and ("\t" .. s.failed) or "")
+    end
 
     now = table.concat(now, "\n")
 
@@ -6009,10 +6036,14 @@ while OUT.running do
   end
 
   if #starting > 0 then
-    local limit = sys.ticks() - STARTING_COUNTS
+    local now = sys.ticks()
 
     for i = #starting, 1, -1 do
-      if starting[i].since < limit then table.remove(starting, i) end
+      local s = starting[i]
+
+      if now - s.since > (s.failed and FAILED_COUNTS or STARTING_COUNTS) then
+        table.remove(starting, i)
+      end
     end
   end
 

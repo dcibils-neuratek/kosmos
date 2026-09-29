@@ -520,6 +520,55 @@ win:publish("menu",
 local running = {}          -- { handle, title, icon, focused, hidden }
 
 --
+-- **And what is starting** (`docs/launching.html`; Diego: "I like to try the
+-- app breathing launcher indicator"). The window manager lists a program
+-- from the request until its first window (`starting` in `wm.lua`), and the
+-- bar gives it a button at the end of the row, its picture breathing and
+-- its name dimmed, until the window's own button takes its place - so a
+-- program that is slow to start is plainly on its way, and a second click
+-- has nothing to ask for. A failure is said on the button for the three
+-- seconds the window manager keeps it. Entries have `starting` set and no
+-- `handle`; a click on one does nothing.
+--
+local BREATH = 1.2                          -- seconds, in and out
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local tick_hz = (sys.info() or {}).tick_hz or 100
+
+-- The name a starting program is shown by: an installed application's
+-- folder - `/Home/Apps/Doom/doom.lua` is Doom - or its file's name.
+local function title_of(program)
+  local folder = tostring(program):match("/Apps/([^/]+)/[^/]+%.lua$")
+
+  if folder then return folder end
+
+  local name = tostring(program):match("([^/]+)%.lua$") or tostring(program)
+
+  return name:sub(1, 1):upper() .. name:sub(2)
+end
+
+local function any_starting()
+  for _, w_ in ipairs(running) do
+    if w_.starting and not w_.failed then return true end
+  end
+
+  return false
+end
+
+-- How much of a starting program's picture shows now: 35 to 100 per cent,
+-- a breath every `BREATH` seconds, the mockup's.
+local function breath()
+  local t = (sys.ticks() / counter_hz) % BREATH / BREATH
+
+  return math.floor(255 * (0.35 + 0.65 * (0.5 + 0.5 * math.cos(2 * math.pi * t))))
+end
+
+-- Woken twelve times a second while something breathes, and not otherwise:
+-- a bar that animates for nothing is a bar that keeps the machine awake.
+local function pace_breathing()
+  win.poll_wait_ticks = any_starting() and math.max(1, tick_hz // 12) or nil
+end
+
+--
 -- **Pressed in means the window you are in, and a minimised window is not
 -- one.** The window manager's `focused` is the top of its stack, and a
 -- window put away by its own minimise box stays at the top - so the bar drew
@@ -578,22 +627,48 @@ local function refresh()
 
   table.sort(list, function(a, b) return a.handle < b.handle end)
 
-  local changed = (#list ~= #running)
+  local rows = {}
 
   for i, w_ in ipairs(list) do
-    local was = running[i]
-
-    if not was or was.handle ~= w_.handle or was.title ~= w_.title
-       or was.focused ~= w_.focused or was.hidden ~= w_.hidden then
-      changed = true
-    end
-
-    running[i] = { handle = w_.handle, title = w_.title,
-                   icon = picture(w_.program),
-                   focused = w_.focused, hidden = w_.hidden }
+    rows[i] = { handle = w_.handle, title = w_.title,
+                icon = picture(w_.program),
+                focused = w_.focused, hidden = w_.hidden }
   end
 
-  for i = #running, #list + 1, -1 do running[i] = nil end
+  -- What is starting, after what is running: where its window's button
+  -- will be when it opens, so nothing jumps.
+  for _, s in ipairs(reply and reply.starting or {}) do
+    rows[#rows + 1] = { starting = true, program = s.program,
+                        title = title_of(s.program), icon = picture(s.program),
+                        failed = s.failed }
+
+    if s.failed then
+      print(("deskbar: %s did not start: %s"):format(title_of(s.program),
+            tostring(s.failed)))
+    end
+  end
+
+  local changed = (#rows ~= #running)
+
+  for i, row in ipairs(rows) do
+    local was = running[i]
+
+    if not was or was.handle ~= row.handle or was.title ~= row.title
+       or was.focused ~= row.focused or was.hidden ~= row.hidden
+       or was.program ~= row.program or was.failed ~= row.failed then
+      changed = true
+
+      if row.starting and not row.failed then
+        print(("deskbar: %s is starting"):format(row.title))
+      end
+    end
+
+    running[i] = row
+  end
+
+  for i = #running, #rows + 1, -1 do running[i] = nil end
+
+  pace_breathing()
 
   return changed
 end
@@ -694,11 +769,31 @@ local function launcher(item)
         return
       end
 
+      --
+      -- **The button first, from what this row already knows** - its name
+      -- and its picture - and then the request, not waited for: the window
+      -- manager answers at once and says in its list what happened, so this
+      -- bar is free to breathe while the program starts (`docs/launching.html`).
+      --
+      local already = false
+
+      for _, w_ in ipairs(running) do
+        if w_.starting and w_.program == item.program then already = true end
+      end
+
+      if not already then
+        running[#running + 1] = { starting = true, program = item.program,
+                                  title = item.name or title_of(item.program),
+                                  icon = item.icon or picture(item.program) }
+        pace_breathing()
+        win.dirty = true
+      end
+
       local ok, why = fs.send("/Running/wm", { type = "launch",
                                            program = item.program,
-                                           args = item.args })
+                                           args = item.args, wait = false })
 
-      say(ok and ("started " .. item.program)
+      say(ok and ("starting " .. item.program)
           or ("could not: " .. tostring(why)))
     end,
   }
@@ -893,6 +988,20 @@ end
 -- in. A button on a coloured bar should be that colour, darker; anything
 -- else looks like a different material.
 --
+-- Halfway between two colours, channel by channel: a name dimmed toward the
+-- face it sits on, which reads as "not yet" in every look.
+local function halfway(a, b)
+  local out = 0xff000000
+
+  for shift = 0, 16, 8 do
+    local ca, cb = (a >> shift) & 0xff, (b >> shift) & 0xff
+
+    out = out | (((ca + cb) // 2) << shift)
+  end
+
+  return out
+end
+
 local function lit(colour, k)
   local a = colour & 0xff000000
   local r = (colour >> 16) & 0xff
@@ -1289,7 +1398,10 @@ function bar:draw(g)
     -- the promise.
     --
     if s.w >= ICON + 8 then
-      g:icon(s.x + 4, iy, w_.icon .. ".png", ICON)
+      -- Breathing while it starts; half there once it has failed.
+      local fade = w_.failed and 128 or (w_.starting and breath()) or nil
+
+      g:icon(s.x + 4, iy, w_.icon .. ".png", ICON, fade)
     end
 
     --
@@ -1299,13 +1411,23 @@ function bar:draw(g)
     --
     local room = s.w - ICON - 12
     local text = tostring(w_.title or "")
+    local ink = theme.tab_text
+
+    -- A starting name dimmed halfway to the button's face; a failure says
+    -- so, in the colour this bar already uses for a battery running out.
+    if w_.failed then
+      text = text .. " did not start"
+      ink = theme.bad or 0xffe04848
+    elseif w_.starting then
+      ink = halfway(theme.tab_text, face)
+    end
 
     if room >= gfx.font.w then
       while #text > 1 and gfx.measure(text) > room do
         text = text:sub(1, #text - 1)
       end
 
-      g:text(s.x + ICON + 8, ty, text, theme.tab_text)
+      g:text(s.x + ICON + 8, ty, text, ink)
     end
   end
 end
@@ -1366,6 +1488,10 @@ function bar:mouse(action, x, y)
       -- a second thing to be wrong.
       --
       local w_ = s.w_
+
+      -- Still starting: there is no window to raise, and it is on its way.
+      if w_.starting then return true end
+
       local what = selected(w_) and "minimise" or "raise"
 
       --
@@ -1482,5 +1608,10 @@ do
     say(("started %d at login"):format(started))
   end
 end
+
+-- Repainted every pass while a program breathes on the bar - the passes
+-- themselves come twelve times a second then (`pace_breathing`) - and on
+-- its own reasons otherwise.
+win.on_frame = function() return any_starting() end
 
 win:run()

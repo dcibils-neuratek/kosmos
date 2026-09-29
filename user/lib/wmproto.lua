@@ -66,7 +66,7 @@ wmproto.WM = "/Running/wm"
 -- the Deskbar, the one that watches, is told to.
 --
 function wmproto.windows(watch)
-  local all, from = {}, 1
+  local all, from, starting = {}, 1, nil
 
   while from do
     local reply, why = fs.send(wmproto.WM, { type = "windows", from = from,
@@ -77,10 +77,12 @@ function wmproto.windows(watch)
 
     for _, w in ipairs(reply.windows or {}) do all[#all + 1] = w end
 
+    -- What is starting (`docs/launching.html`), the same on every page.
+    starting = starting or reply.starting
     from = tonumber(reply.more)
   end
 
-  return { ok = true, windows = all }
+  return { ok = true, windows = all, starting = starting or {} }
 end
 
 function wmproto.track(handle, on)
