@@ -261,8 +261,9 @@ for sixty-four drains in a row, and says in the log what draining cost.
 sleeps rather than yields, `make doom-check WAD=...` holds it (65% of a
 processor to 6% under QEMU, the same frames a second).
 
-**Next**: stick 0.10.195 for the M700 with both - its log's `i8042:` line,
-Doom's frames a second, and `profile` again. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+**Stick 0.10.195** (the i8042's drain and Doom's sleep on top of 0.10.194):
+OVMF 32 checks, its symbols beside it. **Next**: on the M700 - its log's
+`i8042:` line, Doom's frames a second, and `profile` again. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
