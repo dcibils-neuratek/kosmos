@@ -1889,7 +1889,10 @@ int kfs_unlink(struct kfs *k, const struct kfs_super *sb, const char *path,
  * ------------------------------------------------------------------------
  */
 
-int kfs_mkfs(struct kfs *k, uint64_t sectors, uint64_t now, struct kfs_super *sb)
+const char *const kfs_layout[] = { "/Home", NULL };
+
+int kfs_mkfs(struct kfs *k, uint64_t sectors, uint64_t now,
+             const char *const *layout, struct kfs_super *sb)
 {
     uint64_t blocks = sectors / KFS_PER_BLOCK;
     uint32_t inode_blocks;
@@ -1967,7 +1970,15 @@ int kfs_mkfs(struct kfs *k, uint64_t sectors, uint64_t now, struct kfs_super *sb
         return r;
     }
 
-    return kfs_mkdir(k, sb, "/Home", 5, now == KFS_NO_TIME ? 0 : now);
+    for (layout = layout != NULL ? layout : kfs_layout; *layout != NULL; layout++) {
+        r = kfs_mkdir(k, sb, *layout, strlen(*layout), now == KFS_NO_TIME ? 0 : now);
+
+        if (r != KFS_OK) {
+            return r;
+        }
+    }
+
+    return KFS_OK;
 }
 
 int kfs_mount(struct kfs *k, struct kfs_super *sb)

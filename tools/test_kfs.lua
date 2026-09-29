@@ -2,12 +2,12 @@
 -- The filesystem format, tested on this machine instead of the target.
 --
 --   build/host/lua tools/test_kfs.lua
---   KFS_IMPL=c build/host/kfs-lua tools/test_kfs.lua
+--   KFS_IMPL=c build/host/lua tools/test_kfs.lua
 --
 -- **Both implementations, the same questions** (`docs/diskfs.md` step 1).
 -- `kfs.lua` is the one the machine runs today and `kfs.c` the one it is
--- moving to; `kfs-lua` is Lua with the C inside it, answering as `kfs.lua`
--- does. One check differs, and says why where it is.
+-- moving to; the host's `lua` has the C inside it, answering as `kfs.lua`
+-- does (`tools/host_lua.c`). One check differs, and says why where it is.
 --
 -- `kfs.lua` is pure arithmetic over blocks. The only thing it wants from
 -- the system is a way to read and write one, so given those as stubs over

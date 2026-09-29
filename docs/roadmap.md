@@ -303,6 +303,8 @@ the disk server in C speaking `diskproto.h`, then the Lua removed. **Step 1
 done 29 September** (`testing.md` 18.279): `user/servers/kfs.c`, the 87
 checks passing against it, and the same disk as the Lua's block for block
 over 293 operations; two holes in `kfs.lua`'s `rename` found and fixed.
+**Step 2 done the same day** (18.280): the host's disk tool on the C, and
+one host Lua carrying it.
 
 **And a gap in the gate, noticed the same day**: `arm-cafesa3d` hung once for
 720 s in a `prepush` and left nothing to read - the suite prints at its end,

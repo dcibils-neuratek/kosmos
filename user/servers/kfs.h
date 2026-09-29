@@ -216,8 +216,16 @@ void kfs_init(struct kfs *k, const struct kfs_disk *disk);
 /* The superblock, read and held to what one must be. */
 int kfs_mount(struct kfs *k, struct kfs_super *sb);
 
-/* A new filesystem over `sectors`, with `/Home` in it. */
-int kfs_mkfs(struct kfs *k, uint64_t sectors, uint64_t now, struct kfs_super *sb);
+/*
+ * A new filesystem over `sectors`, with the folders a Kosmos disk has made in
+ * it: `layout`, a list ending in NULL, or `kfs_layout` - `/Home` - when that
+ * is NULL. Another list is for a suite that needs a disk made before 27
+ * September, whose home was `/home` beside `/system` and `/user`.
+ */
+extern const char *const kfs_layout[];
+
+int kfs_mkfs(struct kfs *k, uint64_t sectors, uint64_t now,
+             const char *const *layout, struct kfs_super *sb);
 
 /* What a mount does first: a committed transaction finished, and how many
  * blocks that took. Refused while a transaction is open. */

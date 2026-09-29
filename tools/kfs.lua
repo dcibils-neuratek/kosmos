@@ -12,11 +12,17 @@
 -- That trade has one daily cost, and it is a real one: a Mac cannot mount
 -- the image and drop a file onto it.
 --
--- This is the answer, and it is a better one than it sounds. `kfs.lua` is
--- the filesystem, it is Lua, and it asks the system for exactly two things
--- - read a block, write a block. Given those over a file instead of a
--- block device, the same code that manages the disk inside the machine
--- manages the image outside it.
+-- This is the answer, and it is a better one than it sounds. The
+-- filesystem asks the system for exactly two things - read a block, write
+-- a block. Given those over a file instead of a block device, the same code
+-- that manages the disk inside the machine manages the image outside it.
+--
+-- **That code is `user/servers/kfs.c`**, which the host's `lua` carries as
+-- `require "kfsc"` (`docs/diskfs.md` step 2) and the disk server is moving
+-- to. It was `kfs.lua` until then, which the machine still runs; the two
+-- place every byte alike (`tools/test_kfs_cross.lua`), and `KFS_IMPL=lua`
+-- makes a disk with the Lua for as long as it exists, so
+-- `tools/test_kfs_tool.py` can hold the two tools to one image.
 --
 -- **One implementation, not two.** A separate host tool that understood
 -- the format would be a second copy to keep in step, and the two would
@@ -71,16 +77,18 @@ function sys.disk_write(sector, data)
   return true
 end
 
-function sys.ticks()
-  -- Fixed, so two runs over the same inputs produce the same image. An
-  -- image that differs because it was built at a different second cannot
-  -- be diffed against yesterday's to see what actually changed.
-  return 0
-end
-
 --------------------------------------------------------------------------
 
-local kfs = assert(loadfile("user/lib/kfs.lua"))()
+-- Every time given below is 0, so two runs over the same inputs produce the
+-- same image: one that differs because it was built at a different second
+-- cannot be diffed against yesterday's to see what actually changed.
+local kfs
+
+if os.getenv("KFS_IMPL") == "lua" then
+  kfs = assert(loadfile("user/lib/kfs.lua"))()
+else
+  kfs = require("kfsc")
+end
 
 local function die(message)
   io.stderr:write("kfs: " .. message .. "\n")

@@ -176,8 +176,8 @@ capabilities which will then lead to us having accelerated 2d graphics".
 
 - **`diskfs` in C, step 1 of `docs/diskfs.md`** (18.279): the format and
   every operation on it in `user/servers/kfs.c` - no Lua, no system calls,
-  no allocator, a disk of two functions - and `build/host/kfs-lua`, Lua
-  with it inside as `require "kfsc"`. `test_kfs.lua`'s 87 checks pass
+  no allocator, a disk of two functions - and the host's Lua with it
+  inside as `require "kfsc"`. `test_kfs.lua`'s 87 checks pass
   against it, with and without the block cache, and
   `test_kfs_cross.lua` holds it to `kfs.lua` block for block over 293
   operations run four ways. **Two holes in `kfs.lua`'s `rename` found and
@@ -185,9 +185,14 @@ capabilities which will then lead to us having accelerated 2d graphics".
   which took it out of reach, and a rename to `..`. Nothing on the machine
   runs the C yet.
 
-**Next**: `diskfs` step 2, the host tool (`tools/kfs.lua`) on the C core,
-then step 3, the disk server in C speaking `diskproto.h`, measured with Disk
-Benchmark before and after. Also agreed (29 September), after it: a QEMU
+- **`diskfs` step 2** (18.280): `tools/kfs.lua` makes every disk with the
+  C - the QEMU disk, the suites', the stick's `/Home` - and `build/host/lua`
+  is the one host Lua, `tools/host_lua.c`, with the core in it.
+  `test_kfs_tool.py` holds the tool on the C to the tool on the Lua: every
+  command, the same images and words.
+
+**Next**: `diskfs` step 3, the disk server in C speaking `diskproto.h`,
+measured with Disk Benchmark before and after. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
 cursor and the screen's size from the device. Waiting on Diego: the M700

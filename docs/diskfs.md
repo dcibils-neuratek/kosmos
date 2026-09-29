@@ -68,8 +68,9 @@ stopped being, one at a time.
    directory being edited, up to a megabyte of it. Attributes stay the bytes
    `sys.pack` makes, opaque to the core.
 
-   **Held on the Mac by the same 87 checks** - `build/host/kfs-lua`, Lua
-   with the core in it as `require "kfsc"`, answering as `kfs.lua` does, and
+   **Held on the Mac by the same 87 checks** - the host's Lua with the core
+   in it as `require "kfsc"` (`build/host/kfs-lua` then, `build/host/lua`
+   itself since step 2), answering as `kfs.lua` does, and
    `test_kfs.lua` run against it with `KFS_IMPL=c`, with and without the
    block cache. One check differs and says why: a window of a file is one
    disk call from the Lua and at most three from the C, its run and its two
@@ -96,9 +97,19 @@ stopped being, one at a time.
    journal holds is refused at the write that would not fit rather than at
    the commit; and recovering is refused while a transaction is open, which
    nothing does.
-2. **The host tool on the C core**: `tools/kfs.lua` through that module, so
-   the QEMU disk and the stick's `/Home` are made by the code the machine
-   runs. Then `kfs.lua` has no user outside the disk server.
+2. **The host tool on the C core** - **done 29 September** (`testing.md`
+   18.280). `tools/kfs.lua` runs on `require "kfsc"`, so the QEMU disk, every
+   suite's disk and the stick's `/Home` are made by the C the disk server is
+   moving to. **The host has one Lua**: `build/host/lua` is
+   `tools/host_lua.c` - upstream's library, a `main` that runs a script as
+   `lua.c` does, collector and all, and the core - rather than upstream's
+   `lua` beside a second binary that every caller of the tool would have had
+   to be told about; nothing here ever gave the host's Lua an option or a
+   prompt. `KFS_IMPL=lua` makes a disk with `kfs.lua` for as long as it is
+   there, and `tools/test_kfs_tool.py` runs every command the tool has both
+   ways over 5 MB of real files and holds them to the same images and the
+   same words. **The Lua's only user now is the disk server**, and step 4
+   takes `KFS_IMPL=lua` and the comparison with it.
 3. **The disk server in C** (`user/servers/diskfs.c`), on `kfs.c`, speaking
    `diskproto.h`: every request above, the three names, the stick's
    partition, the block cache (`blockcache.lua`'s rules, in C) and the

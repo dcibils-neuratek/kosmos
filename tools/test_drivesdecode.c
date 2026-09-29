@@ -22,7 +22,8 @@
 
 /*
  * A kfs volume `mkfs` really wrote, made by the Makefile rule beside this
- * test with the same `tools/kfs.lua` the machine itself runs.
+ * test with `tools/kfs.lua` - on `user/servers/kfs.c`, which places every
+ * byte as the machine's `kfs.lua` does (`tools/test_kfs_cross.lua`).
  */
 #ifndef KFS_FIXTURE
 #define KFS_FIXTURE "build/host/kfs-fixture.img"
@@ -242,7 +243,8 @@ static void test_kfs(void)
      * witness rather than a comment.
      *
      * `build/host/kfs-fixture.img` is made by the Makefile rule beside this
-     * test, with the same `tools/kfs.lua` the machine itself runs.
+     * test, with `tools/kfs.lua` on the format's C core, which is held to
+     * `kfs.lua` block for block.
      */
     {
         FILE *f = fopen(KFS_FIXTURE, "rb");

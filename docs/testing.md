@@ -13067,3 +13067,43 @@ renamed to `..`, a name no path reaches. Both refused now by both, and the
 cross test's into-itself case asks both ways. Its control, the old
 comparison put back: the move answers true and `/Home/a` is gone.
 
+## 18.280 The host's disk tool on the C core
+
+`docs/diskfs.md` step 2: `tools/kfs.lua` - which makes the QEMU disk, every
+suite's disk and the stick's `/Home` - runs on `user/servers/kfs.c` through
+`require "kfsc"`. **`build/host/lua` is the one host Lua now**:
+`tools/host_lua.c`, upstream's library with a `main` of its own that runs a
+script as `lua.c` does, and the core. Step 1's `build/host/kfs-lua` was that
+binary beside upstream's, and the tool's callers - about twenty, in a
+dozen files - would each have had to be told which to use; nothing on the host ever gave its
+Lua an option, a `-e` or a prompt, so one binary is all of it.
+
+**Found making it the host's Lua**: `main` pushed a script's arguments
+without asking for the room, and Lua promises twenty slots -
+`test_filetypes.lua` is given a hundred and fifty names, and the host suite
+died with a segmentation fault in it. `lua.c` checks the stack first, and
+so does this now. And upstream's collector settings are copied - stopped
+while the libraries load, then generational - so no host script collects
+differently for the change of binary.
+
+**Kept, `tools/test_kfs_tool.py`**, 8 checks in the host suite, 0.3 s:
+every command the tool has - `create` with 34 files and 5.3 MB of the
+repository's documents and screenshots in folders nested four deep plus an
+empty file and ones of a block, three blocks and a block and a byte; `ls`,
+`put` into a folder that is not there, `get`, `getdir`, `rm` of a file and
+of one that is not there, `df`, `copy` carrying a file's attributes, and a
+disk made with the layout from before 27 September (`KFS_LAYOUT`) - run
+with the C and with the Lua (`KFS_IMPL=lua`, for as long as `kfs.lua`
+exists). The images must be the same byte for byte, every command must say
+the same words, and what `get` and `getdir` take out must be what went in.
+
+**Its controls**, each a broken `build/host/lua` built in the scratchpad
+and swapped in: the layout a script sets ignored - the old disk's listing,
+its image and its layout check fail; and a file's last block padded with
+ones instead of zeroes - all three images differ, which no listing or
+`get` would show.
+
+**And the machine is given disks from the C** from here: the gate's suites
+boot disks the tool made, `x86-disk`'s two boots of one image, the stick's
+`/Home` in the USB suites, the loader's, Cafesa3D's and the launch suite's.
+

@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The filesystem's two implementations, held to each other block for block.
 --
---   build/host/kfs-lua tools/test_kfs_cross.lua
+--   build/host/lua tools/test_kfs_cross.lua
 --
 -- **One format, two readings of it, and nothing may tell them apart**
 -- (`docs/diskfs.md` step 1). `kfs.lua` has made every disk there is, and

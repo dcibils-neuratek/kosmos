@@ -1,11 +1,20 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * Lua, on the Mac, with the filesystem's C core in it (`docs/diskfs.md` step
- * 1): `build/host/kfs-lua script [args]` runs a script as `build/host/lua`
- * does, and `require "kfsc"` answers `user/servers/kfs.c` dressed as
- * `user/lib/kfs.lua` - the same functions, taking and answering the same
- * tables, so a script written against one runs against the other.
- * `tools/test_kfs.lua` is that script, with `KFS_IMPL=c`.
+ * The Mac's Lua - `build/host/lua` - with the filesystem's C core in it
+ * (`docs/diskfs.md`). `build/host/lua script [args]` runs a script as
+ * upstream's `lua.c` runs one, and `require "kfsc"` answers
+ * `user/servers/kfs.c` dressed as `user/lib/kfs.lua`: the same functions,
+ * taking and answering the same tables, so a script written against one runs
+ * against the other. `tools/kfs.lua` makes every disk the machine is given
+ * with it, and `tools/test_kfs.lua` asks it its 87 questions with
+ * `KFS_IMPL=c`.
+ *
+ * **A script and its arguments, and nothing else.** No prompt, no `-e`, no
+ * reading a script from its input: nothing here ever asked upstream's for
+ * those, and a host Lua that is also the filesystem is one binary rather
+ * than two to keep straight. It was two in step 1 - this, as `kfs-lua`,
+ * beside upstream's - and every script that runs `tools/kfs.lua` would have
+ * had to be told which.
  *
  * **The disk is the script's `sys`**, as it is `kfs.lua`'s: every block the
  * core reads or writes goes through `sys.disk_read` and `sys.disk_write`,
@@ -38,6 +47,9 @@
 #include "../user/servers/kfs.h"
 
 static struct kfs *K;
+
+/* Where the module's own table is kept, so `mkfs` can read its `LAYOUT`. */
+#define KFSC_MODULE "kosmos.kfsc"
 
 /* What the disk callbacks need, set by whichever function called the core. */
 static struct {
@@ -1112,14 +1124,41 @@ static int l_unlink(lua_State *L)
     return answer(L, kfs_unlink(K, &sb, path, len));
 }
 
+/*
+ * The folders a disk is made with: the module's `LAYOUT`, which a script may
+ * replace as it could `kfs.lua`'s - `tools/kfs.lua` does, for `KFS_LAYOUT`.
+ * Each name stays on the stack while the core uses it.
+ */
+#define LAYOUT_MOST 16
+
 static int l_mkfs(lua_State *L)
 {
     struct kfs_super sb;
     lua_Integer sectors = luaL_checkinteger(L, 1);
+    const char *layout[LAYOUT_MOST + 1];
+    const char *const *given = NULL;
     int r;
 
+    lua_getfield(L, LUA_REGISTRYINDEX, KFSC_MODULE);
+    lua_getfield(L, -1, "LAYOUT");
+
+    if (lua_istable(L, -1)) {
+        lua_Integer n = luaL_len(L, -1);
+
+        luaL_argcheck(L, n <= LAYOUT_MOST, 1, "more folders in LAYOUT than a disk is made with");
+        luaL_checkstack(L, (int)n, "the layout's names");
+
+        for (lua_Integer i = 1; i <= n; i++) {
+            lua_rawgeti(L, -1 - (int)(i - 1), i);
+            layout[i - 1] = luaL_checkstring(L, -1);
+        }
+
+        layout[n] = NULL;
+        given = layout;
+    }
+
     enter(L);
-    r = kfs_mkfs(K, sectors > 0 ? (uint64_t)sectors : 0, opt_time(L, 2), &sb);
+    r = kfs_mkfs(K, sectors > 0 ? (uint64_t)sectors : 0, opt_time(L, 2), given, &sb);
 
     if (r != KFS_OK) {
         return answer(L, r);
@@ -1217,10 +1256,16 @@ static int luaopen_kfsc(lua_State *L)
     lua_setfield(L, -2, "J_HEADER");
 
     lua_createtable(L, 1, 0);
-    lua_pushliteral(L, "/Home");
-    lua_rawseti(L, -2, 1);
+
+    for (int i = 0; kfs_layout[i] != NULL; i++) {
+        lua_pushstring(L, kfs_layout[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+
     lua_setfield(L, -2, "LAYOUT");
 
+    lua_pushvalue(L, -1);
+    lua_setfield(L, LUA_REGISTRYINDEX, KFSC_MODULE);
     return 1;
 }
 
@@ -1256,7 +1301,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Upstream's collector, as `lua.c` sets it: stopped while the libraries
+     * load, then generational - so no script here collects differently for
+     * the change of binary. `LUA_INIT` is the one thing of `lua.c`'s left
+     * out, and nothing here sets it. */
+    lua_gc(L, LUA_GCSTOP);
     luaL_openlibs(L);
+    lua_gc(L, LUA_GCRESTART);
+    lua_gc(L, LUA_GCGEN, 0, 0);
     luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
     lua_pushcfunction(L, luaopen_kfsc);
     lua_setfield(L, -2, "kfsc");
@@ -1279,6 +1331,10 @@ int main(int argc, char **argv)
         lua_close(L);
         return 1;
     }
+
+    /* Room for them first: Lua promises twenty slots and no more, and
+     * `test_filetypes.lua` is given a hundred and fifty names. */
+    luaL_checkstack(L, argc, "too many arguments to the script");
 
     for (int i = 2; i < argc; i++) {
         lua_pushstring(L, argv[i]);
