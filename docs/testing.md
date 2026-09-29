@@ -12952,3 +12952,23 @@ With the change, five films of five alone.
 whether it ran dry: the evidence to try it again with, if it is ever tried
 again - on hardware, where a controller takes a period at a time, and not
 on the strength of QEMU.
+
+## 18.277 What is starting, listed, and started once
+
+Diego, 29 September: "When launching an app we do need some indicator of
+the app loading" - otherwise "the user might think it didn't actually
+launch and might try again, triggering a double launch". The look is drawn
+first (`docs/launching.html`, three ways for him to choose); what is under
+it is built. The window manager keeps `starting`: a program is in it from
+the request until a window arrives naming it, its launch fails, its process
+ends, or twenty seconds pass. The `windows` answer carries the list, and a
+watcher is told when it changes as it is for windows - so the Deskbar can
+draw a button for each. And a request for a program in it starts nothing
+and is answered `starting`.
+
+**Kept, `arm-launch`**, 4 checks now: while Doom loads it is listed as
+starting, and a second request for it, sent the moment it is listed, is
+answered `starting` and the log shows one launch. Its control, the refusal
+taken out: Doom launched twice, and the check fails. The two programs the
+suite runs are on the disk it makes rather than typed at the prompt: the
+pinger had grown past the kilobyte a line the shell reads stops at.

@@ -1,0 +1,241 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  An application starting, on the Deskbar: what is shown from the click to
+  its first window. Drawn on 29 September 2026, before any of it is built,
+  after Diego: "When launching an app we do need some indicator of the app
+  loading", "If not the user might think it didn't actually launch and might
+  try again, triggering a double launch", "macOS for instance will show the
+  app icon in the docker bouncing while loading". Three ways to say it,
+  animated, for him to choose from; the behaviour under them is the same.
+-->
+<title>An Application Starting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff; --chip: #e7eaf1; --bad: #c0392b;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The bar is a picture of Kosmos, in today's look, whatever the page's
+       theme: the Deskbar's face, the pressed face of the focused window, and
+       the desk under it. */
+    --bar: #e8ebf0; --face: #eef0f4; --pressed: #cfd6e2; --b-ink: #1d1f24;
+    --b-dim: #74787f; --desk: #2b3a52; --sweep: #2a55c9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14171c; --ink: #e8eaee; --muted: #9aa2ae; --rule: #2a2f38;
+      --card: #1b1f26; --accent: #7d9cf0; --chip: #232833; --bad: #ef6f61;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #14171c; --ink: #e8eaee; --muted: #9aa2ae; --rule: #2a2f38;
+    --card: #1b1f26; --accent: #7d9cf0; --chip: #232833; --bad: #ef6f61;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 28px; max-width: 74ch; }
+  h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px;
+       padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  p { max-width: 74ch; }
+  code { font-family: var(--mono); font-size: 13px; background: var(--chip);
+         padding: 1px 5px; border-radius: 4px; }
+  .cap { color: var(--muted); font-size: 13.5px; margin: 8px 0 0; max-width: 74ch; }
+
+  /* ---- the bar, at the size Kosmos draws it ---- */
+  .screen { border-radius: 8px; overflow: hidden; background: var(--desk);
+            box-shadow: 0 1px 0 rgba(0,0,0,.05), 0 8px 24px rgba(20,30,50,.12); }
+  .bar { height: 32px; background: var(--bar); display: flex; align-items: center;
+         gap: 2px; padding: 0 4px; overflow-x: auto; }
+  .menu { width: 30px; height: 28px; display: grid; place-items: center; }
+  .task { position: relative; height: 28px; min-width: 132px; display: flex;
+          align-items: center; gap: 6px; padding: 0 10px 0 4px; background: var(--face);
+          color: var(--b-ink); font: 500 13px var(--body); white-space: nowrap;
+          overflow: hidden; }
+  .task.on { background: var(--pressed); }
+  .task .ic { width: 24px; height: 24px; flex: none; border-radius: 5px; }
+  .sp { flex: 1; }
+  .ind { color: var(--b-dim); font: 500 12.5px var(--body); padding: 0 8px;
+         font-variant-numeric: tabular-nums; }
+  .desk { height: 92px; display: grid; place-items: center; color: #b9c5d8;
+          font-size: 13px; }
+
+  /* The three pictures, as coloured tiles standing for Haiku's icons. */
+  .i-tracker { background: linear-gradient(135deg, #5b8def, #2f5bb5); }
+  .i-term    { background: linear-gradient(135deg, #3b3f46, #15181c); }
+  .i-doom    { background: linear-gradient(135deg, #c84a2c, #6d1d10); }
+  .i-menu    { width: 22px; height: 22px; border-radius: 50%;
+               background: conic-gradient(#e14b3b 0 25%, #f4c542 0 50%, #3da35a 0 75%, #3a7be0 0); }
+
+  /* ---- the ways to say "starting" ---- */
+  .task.starting { color: var(--b-dim); }
+
+  /* A: the picture breathes. */
+  .a .starting .ic { animation: breathe 1.2s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* B: the picture hops, as macOS's Dock does - in a bar 32 pixels tall,
+     four pixels of it. */
+  .b .starting .ic { animation: hop .7s cubic-bezier(.3,.7,.4,1) infinite; }
+  @keyframes hop { 0%, 100% { transform: translateY(2px); } 45% { transform: translateY(-3px); } }
+
+  /* C: a line sweeps along the foot of the button. */
+  .c .starting .ic { opacity: .55; }
+  .c .starting::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px;
+                        width: 36%; background: var(--sweep);
+                        animation: sweep 1.1s ease-in-out infinite; }
+  @keyframes sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .a .starting .ic, .b .starting .ic { animation: none; opacity: .5; }
+    .c .starting::after { animation: none; width: 100%; opacity: .5; }
+  }
+
+  .options { display: grid; gap: 22px; }
+  .opt h3 { font-family: var(--display); font-size: 16px; margin: 0 0 8px;
+            display: flex; gap: 10px; align-items: baseline; }
+  .opt h3 .tag { font: 500 12px var(--body); color: var(--muted); }
+  .pick { color: var(--accent); }
+
+  /* ---- the sequence ---- */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+           gap: 14px; margin-top: 12px; }
+  .step { background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+          padding: 12px 14px; }
+  .step .when { font: 500 12px var(--mono); color: var(--muted); }
+  .step .mini { margin: 8px 0; height: 32px; background: var(--bar); display: flex;
+                align-items: center; padding: 0 4px; border-radius: 4px; }
+  .step .mini .task { min-width: 120px; }
+  .step p { margin: 0; font-size: 14px; }
+  .task.bad { color: var(--bad); }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px;
+           border-bottom: 1px solid var(--rule); }
+  th { font-family: var(--display); font-weight: 600; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>An application starting</h1>
+<p class="sub">From the click to its first window, on the Deskbar. Diego, 29 September 2026:
+&ldquo;When launching an app we do need some indicator of the app loading&rdquo; &mdash;
+otherwise &ldquo;the user might think it didn&rsquo;t actually launch and might try again,
+triggering a double launch&rdquo;. An installed application now starts in the background
+(<code>testing.md</code> 18.275), so the desktop keeps moving; what it does not yet do is say
+anything until the window arrives. Three ways to say it, animated below, and the behaviour
+under all three.</p>
+
+<h2>Three ways to say &ldquo;starting&rdquo;</h2>
+<div class="options">
+
+  <div class="opt a">
+    <h3>A &middot; The picture breathes <span class="tag pick">Diego&rsquo;s choice, 29 September</span></h3>
+    <div class="screen">
+      <div class="bar">
+        <div class="menu"><div class="i-menu"></div></div>
+        <div class="task"><div class="ic i-tracker"></div>Tracker</div>
+        <div class="task on"><div class="ic i-term"></div>Terminal</div>
+        <div class="task starting"><div class="ic i-doom"></div>Doom</div>
+        <div class="sp"></div><div class="ind">14:32</div>
+      </div>
+      <div class="desk">the Terminal has the focus; Doom is starting</div>
+    </div>
+  </div>
+
+  <div class="opt b">
+    <h3>B &middot; The picture hops, as the Dock&rsquo;s does <span class="tag">recommended</span></h3>
+    <div class="screen">
+      <div class="bar">
+        <div class="menu"><div class="i-menu"></div></div>
+        <div class="task"><div class="ic i-tracker"></div>Tracker</div>
+        <div class="task on"><div class="ic i-term"></div>Terminal</div>
+        <div class="task starting"><div class="ic i-doom"></div>Doom</div>
+        <div class="sp"></div><div class="ind">14:32</div>
+      </div>
+      <div class="desk">the Terminal has the focus; Doom is starting</div>
+    </div>
+  </div>
+
+  <div class="opt c">
+    <h3>C &middot; A line sweeps under the button <span class="tag">says &ldquo;working&rdquo; most plainly</span></h3>
+    <div class="screen">
+      <div class="bar">
+        <div class="menu"><div class="i-menu"></div></div>
+        <div class="task"><div class="ic i-tracker"></div>Tracker</div>
+        <div class="task on"><div class="ic i-term"></div>Terminal</div>
+        <div class="task starting"><div class="ic i-doom"></div>Doom</div>
+        <div class="sp"></div><div class="ind">14:32</div>
+      </div>
+      <div class="desk">the Terminal has the focus; Doom is starting</div>
+    </div>
+  </div>
+</div>
+<p class="cap">In all three the title is dimmed while the program starts, and the button is
+where it will stay: the window&rsquo;s own button takes its place, so nothing jumps. B is
+recommended because it is the one a person already knows; in a bar 32 pixels tall the hop is
+four pixels. With reduced motion asked for, each holds still at half strength.</p>
+
+<h2>From the click to the window</h2>
+<div class="steps">
+  <div class="step">
+    <div class="when">the click</div>
+    <div class="mini b"><div class="task starting"><div class="ic i-doom"></div>Doom</div></div>
+    <p><b>At once</b>, drawn by the Deskbar from what it already knows &mdash; the name and the
+    picture of what was clicked &mdash; before the window manager has answered.</p>
+  </div>
+  <div class="step">
+    <div class="when">while it starts</div>
+    <div class="mini b"><div class="task starting"><div class="ic i-doom"></div>Doom</div></div>
+    <p>The window manager reads the image a window a pass and lists it as <i>starting</i>, so
+    the Deskbar keeps the button however long that takes.</p>
+  </div>
+  <div class="step">
+    <div class="when">its first window</div>
+    <div class="mini"><div class="task on"><div class="ic i-doom"></div>Doom</div></div>
+    <p>The window opens with the focus, and the button becomes its button.</p>
+  </div>
+  <div class="step">
+    <div class="when">if it cannot start</div>
+    <div class="mini"><div class="task bad"><div class="ic i-doom" style="opacity:.5"></div>Doom did not start</div></div>
+    <p>Said on the button for three seconds &mdash; the reason is in the log and in the
+    Deskbar&rsquo;s own line &mdash; and then it goes.</p>
+  </div>
+</div>
+
+<h2>What it settles</h2>
+<table>
+<tr><th>Question</th><th>Answer</th></tr>
+<tr><td>A second click while it starts</td>
+    <td><b>Starts nothing.</b> The window manager refuses a second start of a program that is
+    still starting, from the Deskbar, a desktop icon, Tracker or anything else that asks it; the
+    click is taken as &ldquo;yes, it is coming&rdquo;. Once the first window is open, starting
+    another is what it always was.</td></tr>
+<tr><td>A program that never opens a window</td>
+    <td>Its button goes after twenty seconds, or when its process ends, whichever is first.</td></tr>
+<tr><td>What knows it is starting</td>
+    <td>The window manager: it lists starting programs beside its windows, and tells the Deskbar
+    when that list changes as it does for windows. The Deskbar draws; it keeps no second memory
+    beyond the moment between the click and the answer.</td></tr>
+<tr><td>Applications in the system&rsquo;s image</td>
+    <td>The same, and usually too quick to see: under QEMU the window manager answers
+    Calculator&rsquo;s start in 60 ms. On the M700 an installed game is the one it is for.</td></tr>
+</table>
+
+</div>
+</body>
+</html>

@@ -284,6 +284,18 @@ order above; 6zg d, the Launchkey, the next day.
    (item 3's last paragraph), in steps lived with one at a time, as every
    other server moved.
 
+**And the indicator, agreed the same day**: "When launching an app we do need
+some indicator of the app loading", "If not the user might think it didn't
+actually launch and might try again, triggering a double launch", "macOS for
+instance will show the app icon in the docker bouncing while loading". Drawn
+first as `docs/launching.html`, with three ways to say it for Diego to
+choose - **A, the picture breathes**, Diego: "I like to try the app
+breathing launcher indicator": the Deskbar shows the program's button at the moment of the click,
+starting, until its first window takes its place; the window manager lists
+programs still starting beside its windows and refuses a second start of
+one; a failure is said on the button, and a program with no window loses it
+after twenty seconds or when it ends.
+
 **And one noticed on the way, not yet done**: three drivers wait for their
 device a fixed number of loops rather than a time - `hal/virtio/blk.c`,
 `snd.c` and `gpu.c`, 100 million each - and give up with a failure while

@@ -1192,6 +1192,34 @@ local pending_pid = nil
 -- both are collected, a few hundred lines down in `handlers.open`.
 local pending_program = nil
 
+--
+-- **What is starting, until its first window opens** (Diego, 29 September:
+-- "we do need some indicator of the app loading", and a second click that
+-- starts it twice; `docs/launching.html`). A program is in here from the
+-- request until a window arrives that names it, its launch fails, its
+-- process ends, or `STARTING_FOR` passes - a program that opens no window
+-- at all. The Deskbar is told when this changes, as it is for windows, and
+-- draws a button for each; and a second request for a program in here
+-- starts nothing.
+--
+local starting = {}
+local STARTING_FOR = 20          -- seconds, for a program that never opens one
+
+-- The same, in the counter's units: `since` is `sys.ticks()`.
+local STARTING_COUNTS = STARTING_FOR
+                        * ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000)
+
+local function stop_starting(match)
+  for i, s in ipairs(starting) do
+    if match(s) then
+      table.remove(starting, i)
+      return true
+    end
+  end
+
+  return false
+end
+
 -- Decoded pictures, by name. `false` means it was tried and would not
 -- decode, which is remembered so a broken image is not re-decoded every
 -- frame for the life of the desktop.
@@ -3331,6 +3359,11 @@ handlers.open = function(req, who, cap)
   win.program = said or pending_program
   pending_program = nil
 
+  -- Its first window: no longer starting.
+  if win.program then
+    stop_starting(function(s) return s.path == win.program end)
+  end
+
   next_handle = next_handle + 1
 
   by_handle[win.handle] = win
@@ -3470,7 +3503,12 @@ local function finish_launch(l, ok, err, id)
 
   if not ok then
     reply = { ok = false, error = tostring(err) }
+    stop_starting(function(s) return s.launch == l end)
   else
+    for _, s in ipairs(starting) do
+      if s.launch == l then s.pid = id end
+    end
+
     -- Remembered so that the *next* window to open can be tied to it. There
     -- is nothing better available: a window arrives in a message and a
     -- message does not say which process sent it - the sender is a thread
@@ -3518,9 +3556,20 @@ handlers.launch = function(req, who)
   -- the number that mattered when one of them took two minutes to reach
   -- its first line.
   --
+  -- Still starting from a click a moment ago: this one starts nothing, and
+  -- the answer says so rather than failing (`docs/launching.html`).
+  for _, s in ipairs(starting) do
+    if s.path == path then
+      print(("wm: %s is already starting"):format(tostring(req.program)))
+      return { ok = true, starting = true }
+    end
+  end
+
   print(("wm: launching %s"):format(tostring(req.program)))
 
   local l = { who = who, program = req.program, path = path }
+
+  starting[#starting + 1] = { path = path, launch = l, since = sys.ticks() }
 
   l.co = coroutine.create(function()
     return run(path, req.args or "", true, { ["/Running/wm"] = ep }, nil,
@@ -3647,7 +3696,13 @@ handlers.windows = function(req)
     watcher.watching = true
   end
 
-  return { ok = true, windows = out, more = (last < #windows) and (last + 1) or nil }
+  -- And what is still starting, for the Deskbar's buttons.
+  local names = {}
+
+  for i, s in ipairs(starting) do names[i] = { program = s.path } end
+
+  return { ok = true, windows = out, starting = names,
+           more = (last < #windows) and (last + 1) or nil }
 end
 
 --
@@ -3680,7 +3735,7 @@ end
 -- pass, and it allocates nothing unless something changed - it is on the
 -- frame path.
 --
-local told = { n = 0, handle = {}, title = {}, hidden = {} }
+local told = { n = 0, handle = {}, title = {}, hidden = {}, starting = "" }
 local told_focus = nil
 
 local function already_told(win)
@@ -3711,6 +3766,20 @@ local function tell_watchers()
   end
 
   told.n = n
+
+  -- What is starting, as one string to compare: a handful of paths at most.
+  if #starting > 0 or told.starting ~= "" then
+    local now = {}
+
+    for i, s in ipairs(starting) do now[i] = s.path end
+
+    now = table.concat(now, "\n")
+
+    if now ~= told.starting then
+      told.starting = now
+      changed = true
+    end
+  end
 
   --
   -- Under `trace`, when the focus moves, stamped with the counter. With the
@@ -5930,7 +5999,22 @@ while OUT.running do
   --
   -- Non-blocking, so a desktop with nothing to collect does not stop.
   --
-  while sys.wait(true) do end
+  while true do
+    local gone = sys.wait(true)
+
+    if not gone then break end
+
+    -- A program that ended before it opened a window is no longer starting.
+    stop_starting(function(s) return s.pid == gone end)
+  end
+
+  if #starting > 0 then
+    local limit = sys.ticks() - STARTING_COUNTS
+
+    for i = #starting, 1, -1 do
+      if starting[i].since < limit then table.remove(starting, i) end
+    end
+  end
 
   if P.measuring then t, heap = P.charge("collect", t, heap) end
 
