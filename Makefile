@@ -3084,6 +3084,8 @@ $(X86_BUILD)/kosmos.bin: $(X86_SRCS) boot/x86_64/kosmos.ld
 	$(CC) $(X86_FLAGS) -T boot/x86_64/kosmos.ld -Wl,--build-id=none \
 	      -o $(X86_BUILD)/kosmos.elf $(X86_SRCS)
 	$(OBJCOPY) -O binary $(X86_BUILD)/kosmos.elf $@
+	@# What every source read, so a header alone changing rebuilds this.
+	@$(CC) $(X86_FLAGS) -MM -MP -MT $@ $(filter %.c %.S,$(X86_SRCS)) > $@.d
 	@echo "$@: $$(wc -c < $@) bytes"
 
 # Accelerate it on a machine whose processor is the one being emulated.
@@ -3885,4 +3887,22 @@ clean:
 	rm -rf build
 
 -include $(DEPS)
--include $(USER_DEPS)
+
+#
+# **Every dependency file the userland's objects have written**, whichever
+# list the object is in - not only `USER_OBJS`'s. The installed
+# applications' objects (`DOOM_OBJS`, `QUAKE_OBJS`, `SNES_OBJS`, the app
+# test's) wrote theirs with `-MMD` like everything else, and nothing read
+# them, so they were never rebuilt when a header changed. On 29 September
+# Quake died with a general protection fault on the M700 every time it
+# started: `quake_kosmos.c.o` was compiled on the 28th, before 4i-f grew
+# `struct sysinfo` to 2744 bytes, and `l_start` kept the old size on its
+# stack while the kernel wrote the new one over its return address
+# (`testing.md` 18.281). Found by the file, not by a list, so the next
+# application's objects are believed too.
+#
+-include $(shell find $(UBUILD) -name '*.d' 2>/dev/null)
+
+# And the x86 kernel's, which is one compile of every source and so wrote
+# none: its rule named its sources and none of their headers.
+-include $(X86_BUILD)/kosmos.bin.d
