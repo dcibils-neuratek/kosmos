@@ -1474,6 +1474,22 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
         break;
 
+    case SYS_SCREEN_FLUSH:
+        /*
+         * The holder of the screen, and nobody else: a process that cannot
+         * draw on it has nothing of its own to send. Clipped by the driver,
+         * and the four words are only ever read as sizes, so any values are
+         * safe to hand it.
+         */
+        if (!p->owns_screen) {
+            result = SYS_ERR_DENIED;
+        } else {
+            hal_fb_flush((unsigned)sc->arg[0], (unsigned)sc->arg[1],
+                         (unsigned)sc->arg[2], (unsigned)sc->arg[3]);
+            result = 0;
+        }
+        break;
+
     case SYS_SCREEN_TAKE:
         /*
          * "I am drawing the whole screen now; stop printing on it."

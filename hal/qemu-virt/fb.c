@@ -1,6 +1,7 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * Where this board's pixels come from: ramfb, and nothing else.
+ * Where this board's pixels come from: virtio-gpu when the machine has one
+ * (`roadmap.md` 4h a), and ramfb otherwise.
  *
  * A pass-through, and it exists for the same reason `input_bind.c` does -
  * the PC has two possible answers and has to choose between them, so the
@@ -15,20 +16,45 @@
 
 #include "hal.h"
 #include "ramfb.h"
+#include "fbpixels.h"
+#include "gpu.h"
 
 bool hal_fb_init(struct fb *out)
 {
-    return ramfb_init(out);
+    /* A machine started with virtio-gpu has asked for it, and it is the
+     * one that is shown; ramfb, when it was not. */
+    return virtio_gpu_init(out) || ramfb_init(out);
+}
+
+/* virtio-gpu is the only one of the two with something to send. */
+void hal_fb_flush(unsigned x, unsigned y, unsigned w, unsigned h)
+{
+    virtio_gpu_flush(x, y, w, h);
 }
 
 /* With where its size came from (`opt/kosmos/fb`, `roadmap.md` 6zt). */
 const char *hal_fb_describe(void)
 {
-    switch (ramfb_size_from()) {
-    case RAMFB_SIZE_ASKED:
+    if (virtio_gpu_present()) {
+        switch (fb_pixels_from()) {
+        case FB_SIZE_ASKED:
+            return "virtio-gpu, 2D, each drawn rectangle sent to the host, at "
+                   "the size opt/kosmos/fb asked";
+        case FB_SIZE_REFUSED:
+            return "virtio-gpu, 2D, each drawn rectangle sent to the host, at "
+                   "the size it was built for: opt/kosmos/fb asked for none "
+                   "it can show";
+        default:
+            return "virtio-gpu, 2D, each drawn rectangle sent to the host, at "
+                   "the size it was built for";
+        }
+    }
+
+    switch (fb_pixels_from()) {
+    case FB_SIZE_ASKED:
         return "ramfb, the way the Pi's mailbox will be, at the size "
                "opt/kosmos/fb asked";
-    case RAMFB_SIZE_REFUSED:
+    case FB_SIZE_REFUSED:
         return "ramfb, the way the Pi's mailbox will be, at the size it was "
                "built for: opt/kosmos/fb asked for none it can show";
     default:

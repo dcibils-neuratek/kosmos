@@ -2917,8 +2917,52 @@ static int l_differs(lua_State *L)
     return 1;
 }
 
+/*
+ * surface:flush([x, y, w, h]) - what was drawn in that rectangle, or in all
+ * of it, to the screen (`SYS_SCREEN_FLUSH`, `roadmap.md` 4h a).
+ *
+ * On the screen it is how a drawing gets there when the machine's display
+ * keeps a copy of the pixels - virtio-gpu does, and shows nothing it was not
+ * sent - and it costs a call that does nothing when the display scans the
+ * pixels themselves, as ramfb and a firmware screen do. On any other surface
+ * it does nothing at all, so whatever draws on a surface it was handed can
+ * say what it changed without asking which kind it has.
+ *
+ * The screen is known by its pixels: `gfx.screen()` notes where they are
+ * mapped, and a surface over them - not a view into them - is the screen.
+ */
+static uint32_t *screen_pixels;
+
+static int l_flush(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    lua_Integer x = luaL_optinteger(L, 2, 0);
+    lua_Integer y = luaL_optinteger(L, 3, 0);
+    lua_Integer w = luaL_optinteger(L, 4, (lua_Integer)s->width);
+    lua_Integer h = luaL_optinteger(L, 5, (lua_Integer)s->height);
+
+    if (screen_pixels == NULL || s->pixels != screen_pixels) {
+        return 0;
+    }
+
+    /* Clipped to the surface here as well as by the kernel, so a negative
+     * corner - a window dragged partly off the left - sends the part on it. */
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > (lua_Integer)s->width)  w = (lua_Integer)s->width - x;
+    if (y + h > (lua_Integer)s->height) h = (lua_Integer)s->height - y;
+
+    if (w > 0 && h > 0) {
+        (void)kosmos_screen_flush((unsigned)x, (unsigned)y, (unsigned)w,
+                                  (unsigned)h);
+    }
+
+    return 0;
+}
+
 static const luaL_Reg surface_methods[] = {
     { "size",   l_size },
+    { "flush",  l_flush },
     { "view",   l_view },
     { "differs", l_differs },
     { "pitch",  l_pitch },
@@ -3116,6 +3160,7 @@ static int l_screen(lua_State *L)
 
     s = lua_newuserdatauv(L, sizeof(*s), 0);
     s->pixels = (uint32_t *)(uintptr_t)info.address;
+    screen_pixels = s->pixels;
     s->width  = info.width;
     s->height = info.height;
     s->pitch  = info.pitch;

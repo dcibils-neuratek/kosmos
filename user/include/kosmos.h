@@ -665,6 +665,13 @@ static inline long kosmos_screen_take(int take)
     return sys1(SYS_SCREEN_TAKE, take ? 1 : 0);
 }
 
+/* What was drawn on the screen in that rectangle, to it (`SYS_SCREEN_FLUSH`). */
+static inline long kosmos_screen_flush(unsigned x, unsigned y, unsigned w,
+                                       unsigned h)
+{
+    return sys4(SYS_SCREEN_FLUSH, (long)x, (long)y, (long)w, (long)h);
+}
+
 static inline long kosmos_pointer(struct pointer_info *out)
 {
     return sys1(SYS_POINTER, (long)(uintptr_t)out);

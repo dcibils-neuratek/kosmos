@@ -146,6 +146,7 @@ local function draw()
   end
 
   screen:blit(back, 0, 0, W, H, 0, 0)
+  screen:flush()                          -- shown, on a display that copies
 end
 
 --------------------------------------------------------------------------

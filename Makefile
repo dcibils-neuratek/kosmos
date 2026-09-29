@@ -253,7 +253,9 @@ SRCS := boot/start.S \
         hal/qemu-virt/snd_bind.c \
         hal/fwcfg/fwcfg.c \
         hal/qemu-virt/fwcfg_mmio.c \
+        hal/fwcfg/fbpixels.c \
         hal/fwcfg/ramfb.c \
+        hal/virtio/gpu.c \
         hal/qemu-virt/fb.c \
         hal/virtio/input.c \
         hal/qemu-virt/input_bind.c \
@@ -1180,8 +1182,8 @@ $(FB_FILE):
 	@mkdir -p $(dir $@)
 	@printf '%s' '$(FB_FLAGS)' > $@
 
-$(BUILD)/hal/fwcfg/ramfb.c.o: CFLAGS += $(FB_FLAGS)
-$(BUILD)/hal/fwcfg/ramfb.c.o: $(FB_FILE)
+$(BUILD)/hal/fwcfg/fbpixels.c.o: CFLAGS += $(FB_FLAGS)
+$(BUILD)/hal/fwcfg/fbpixels.c.o: $(FB_FILE)
 
 # Upstream code is compiled without -Werror, the same allowance lua/upstream
 # gets: its warnings are not ours to fix and patching them would mean the
@@ -2590,9 +2592,17 @@ SMPWORK ?=
 
 SMPARG := $(if $(SMPWORK),-fw_cfg 'name=opt/kosmos/smp$(comma)string=$(SMPWORK)',)
 
+# **The display: ramfb, or virtio-gpu when asked** (`roadmap.md` 4h a) -
+# `make GPU=virtio qemu`. ramfb scans the guest's pixels out as they are;
+# virtio-gpu shows only what the guest sends it, which is what
+# `hal_fb_flush` exists for, and this Mac's QEMU has it without virgl.
+GPU ?= ramfb
+ARM_DISPLAY := $(if $(filter virtio,$(GPU)),-device virtio-gpu-device,-device ramfb)
+X86_DISPLAY := $(if $(filter virtio,$(GPU)),-device virtio-gpu-pci,-device ramfb)
+
 QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) $(SMPARG) \
              -global virtio-mmio.force-legacy=false \
-             -device ramfb -device virtio-keyboard-device \
+             $(ARM_DISPLAY) -device virtio-keyboard-device \
              -device virtio-tablet-device \
              $(AUDIO_FLAGS) \
              $(NET_FLAGS) \
@@ -2790,13 +2800,13 @@ RELEASE_TAG := $(if $(filter 1,$(FULL)),-full,$(if $(WEB),-web,))
 release: $(TARGET) stress
 	@mkdir -p builds
 	@for size in $(RELEASE_SIZES); do \
-	    rm -f $(BUILD)/hal/fwcfg/ramfb.c.o $(TARGET); \
+	    rm -f $(BUILD)/hal/fwcfg/fbpixels.c.o $(TARGET); \
 	    $(MAKE) --no-print-directory FB=$$size $(TARGET) >/dev/null; \
 	    cp $(TARGET) \
 	       builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size$(RELEASE_TAG).elf; \
 	    echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size$(RELEASE_TAG).elf"; \
 	done
-	@rm -f $(BUILD)/hal/fwcfg/ramfb.c.o $(TARGET)
+	@rm -f $(BUILD)/hal/fwcfg/fbpixels.c.o $(TARGET)
 	@$(MAKE) --no-print-directory $(TARGET) >/dev/null
 	@cp run-kosmos.sh builds/run-kosmos.sh
 	@ls -l builds/
@@ -2884,7 +2894,9 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/cpu_here.c \
              hal/pc/trampoline.S \
              hal/fwcfg/fwcfg.c \
+             hal/fwcfg/fbpixels.c \
              hal/fwcfg/ramfb.c \
+             hal/virtio/gpu.c \
              hal/pc/fb.c \
              hal/pc/loader_fb.c \
              hal/pc/fwcfg_port.c \
@@ -3110,7 +3122,7 @@ X86_DISPLAY := $(if $(filter Darwin,$(shell uname)),cocoa$(ZOOM_FLAG)$(FULLSCREE
 # a machine configured with the easy device would leave it untested.
 # `hal/qemu-virt/` still runs virtio-sound, so neither driver is orphaned.
 #
-X86_DEVICES := -device ramfb \
+X86_DEVICES := $(X86_DISPLAY) \
                -device virtio-tablet-pci \
                -device virtio-net-pci,netdev=n0 -netdev user,id=n0 \
                -drive file=$(DISK),format=raw,if=none,id=d0 \

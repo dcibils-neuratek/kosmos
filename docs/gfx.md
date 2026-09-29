@@ -190,9 +190,18 @@ Paint drawing a brush stroke:
 6. The server swaps the buffer index               C, one integer
 7. The compositor composes the damage rect         C
 8. A blit of the dirty rect to the framebuffer     C, uncached memory
+9. screen:flush(rect) - the rect, to the display   a system call; nothing on ramfb
 ```
 
-Eight steps, two IPC crossings, and not one of them carries a pixel inside a Lua table. That is what has to be preserved.
+Nine steps, two IPC crossings and a system call, and not one of them carries a pixel inside a Lua table. That is what has to be preserved.
+
+**Step nine arrived with virtio-gpu** (29 September 2026, `roadmap.md` 4h a).
+ramfb and a firmware screen scan out of the pixels themselves, so step eight
+was the last; virtio-gpu shows a copy the host keeps, and a rectangle reaches
+it only when it is sent (`hal_fb_flush`). The compositor flushes each
+rectangle it composed, and so does anything else that draws on the screen -
+`surface:flush` is a no-op on every surface but the screen, so a drawer need
+not know which it was handed.
 
 **The budget:** 16.6ms per frame. The Lua steps (2 and 4) are hundreds of operations, on the order of tens of microseconds. Steps 3, 7 and 8 are the real work and they are what gets measured (`testing.md` §18.4). If step 2 or step 4 ever shows up in a profile, a pixel loop has crept into Lua.
 

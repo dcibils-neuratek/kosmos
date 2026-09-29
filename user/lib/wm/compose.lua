@@ -193,6 +193,10 @@ return function(ctx)
     draw_cursor()
 
     screen:blit(back, r.x, r.y, r.w, r.h, r.x, r.y)
+
+    -- And said: on virtio-gpu nothing drawn is shown until it is sent, and
+    -- on ramfb this is a call that does nothing (`roadmap.md` 4h a).
+    screen:flush(r.x, r.y, r.w, r.h)
   end
 
   local function compose()

@@ -503,7 +503,18 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_SPAWN_IMAGE 60  /* (struct spawn_image *) -> child id or error */
 
-#define SYS_MAX         61
+/*
+ * What the holder of the screen drew in a rectangle, to the screen
+ * (`hal_fb_flush`, `roadmap.md` 4h a). Nothing on a board that scans its
+ * pixels out as they are - ramfb, a firmware framebuffer - and the whole of
+ * how anything reaches the screen on one that does not: virtio-gpu shows a
+ * copy the host keeps. Only the process that holds the screen may ask, as
+ * with `SYS_SCREEN_TAKE`; clipped to the screen, so a rectangle partly off
+ * it is sent as the part on it.
+ */
+#define SYS_SCREEN_FLUSH 61 /* (x, y, w, h)           -> 0 or error       */
+
+#define SYS_MAX         62
 
 /*
  * What a spawn may hand its child beyond capabilities.

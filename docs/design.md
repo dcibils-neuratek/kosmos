@@ -869,7 +869,11 @@ If video or a large canvas shows up, shared memory gets added as a special case.
 
 ### 7.5 Drivers
 
-Under QEMU: virtio-gpu in dumb framebuffer mode. A couple of hundred lines.
+Under QEMU: ramfb, and virtio-gpu's 2D half since 29 September 2026
+(`roadmap.md` 4h a) - `make GPU=virtio qemu`. About three hundred lines,
+and the difference that matters: virtio-gpu shows a copy of the pixels the
+host keeps, so whatever draws on the screen says what it drew
+(`hal_fb_flush`).
 
 On the Pi 5: the firmware leaves a configured framebuffer before the kernel starts. You ask for it over the mailbox and it returns physical address, width, height and pitch. That is the entire video driver; the VideoCore VII does the scanout to HDMI.
 

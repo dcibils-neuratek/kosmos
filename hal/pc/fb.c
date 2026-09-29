@@ -31,6 +31,8 @@
 #include "mmu.h"
 #include "pc.h"
 #include "ramfb.h"
+#include "fbpixels.h"
+#include "gpu.h"
 
 static const char *source = "none";
 
@@ -129,13 +131,37 @@ bool hal_fb_init(struct fb *out)
         return true;
     }
 
+    /*
+     * virtio-gpu, when QEMU was started with one (`roadmap.md` 4h a): after
+     * the loader's screen, which is the one a real machine has, and before
+     * ramfb, which a machine started with virtio-gpu did not ask for.
+     */
+    if (virtio_gpu_init(out)) {
+        switch (fb_pixels_from()) {
+        case FB_SIZE_ASKED:
+            source = "virtio-gpu, 2D, each drawn rectangle sent to the host, "
+                     "at the size opt/kosmos/fb asked";
+            break;
+        case FB_SIZE_REFUSED:
+            source = "virtio-gpu, 2D, each drawn rectangle sent to the host, "
+                     "at the size it was built for: opt/kosmos/fb asked for "
+                     "none it can show";
+            break;
+        default:
+            source = "virtio-gpu, 2D, each drawn rectangle sent to the host";
+            break;
+        }
+
+        return true;
+    }
+
     if (ramfb_init(out)) {
-        switch (ramfb_size_from()) {
-        case RAMFB_SIZE_ASKED:
+        switch (fb_pixels_from()) {
+        case FB_SIZE_ASKED:
             source = "ramfb, which is QEMU's and has no equivalent on "
                      "hardware, at the size opt/kosmos/fb asked";
             break;
-        case RAMFB_SIZE_REFUSED:
+        case FB_SIZE_REFUSED:
             source = "ramfb, which is QEMU's and has no equivalent on "
                      "hardware, at the size it was built for: opt/kosmos/fb "
                      "asked for none it can show";
@@ -164,6 +190,13 @@ bool hal_fb_init(struct fb *out)
 const char *hal_fb_describe(void)
 {
     return source;
+}
+
+/* virtio-gpu is the only source here with something to send: the loader's
+ * screen and ramfb are scanned out of the pixels themselves. */
+void hal_fb_flush(unsigned x, unsigned y, unsigned w, unsigned h)
+{
+    virtio_gpu_flush(x, y, w, h);
 }
 
 /*

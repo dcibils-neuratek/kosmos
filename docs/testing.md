@@ -12851,3 +12851,38 @@ twice in Lua over cached blocks (`kfs.spelled`, then `kfs.find`), and the
 rest the region handed over and mapped, and the one disk call for the data.
 Not a permanent test: a measurement taken to decide the next step, which
 is `roadmap.md`'s storage item 3's last paragraph.
+
+## 18.274 virtio-gpu: the screen shows only what it is sent (4h a)
+
+The kernel's screen is a virtio-gpu resource backed by the pages it always
+was (`hal/virtio/gpu.c`), chosen when the machine has the device - `make
+GPU=virtio qemu` - and ramfb otherwise; on the PC after the loader's
+screen, which is a real machine's. `hal_fb_flush` sends a rectangle:
+TRANSFER_TO_HOST_2D, then RESOURCE_FLUSH. The console grows one rectangle
+over what it paints and sends it before letting its lock go and at the end
+of every entry that draws without it; the compositor sends each rectangle it
+composed (`surface:flush`, `SYS_SCREEN_FLUSH`, only for the holder of the
+screen); `monitor` and `edit`, which draw on the screen when they are given
+it, send what they drew.
+
+**Two facts it depends on were read in QEMU 11.1.1's source, not
+remembered.** A transfer's rows are read at the host image's stride - the
+resource's width times four (`virtio_gpu_transfer_to_host_2d`) - so a
+backing whose rows are padded, as Kosmos pads them on purpose, is described
+as a resource as wide as its pitch, and SET_SCANOUT shows the screen's
+rectangle at its corner, which QEMU allows. And B8G8R8X8 is PIXMAN_x8r8g8b8
+on a little-endian host, the word 0x00RRGGBB ramfb shows too. The Lua bars
+at 200, 500 and 800 came out straight, full height and in their colours:
+the pitch check, through a resource wider than its scanout.
+
+**Kept, `arm-virtio-gpu` and `x86-virtio-gpu`**, the display harness under
+`KOSMOS_GPU=virtio`, 48 checks in 34 s each: the kernel's boot screen, what
+Lua drew, the keyboard, a program drawing its own pixels, a terminal, a
+wallpaper pixel for pixel and the desktop. Every other display suite runs on
+ramfb, which shows everything whether or not anybody flushed; these are the
+ones that can tell. Before them, the first seven phases of part one passed
+on both boards, 45 checks. Their controls, each an ARM image: the kernel's
+flush sending nothing - "the background is (0, 0, 0) ... the console did
+not clear the screen"; and the compositor's flush left out - "1 window(s)
+never appeared". The first run found the harness's own bars unflushed, a
+direct drawer like any other, and they flush now.

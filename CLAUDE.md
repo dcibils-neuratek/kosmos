@@ -692,6 +692,7 @@ unsigned long hal_ticks(void);
 unsigned long hal_ticks_missed(void);       /* deadlines that came and went */
 
 bool          hal_fb_init(struct fb *out);  /* M6; false when there is no screen */
+void          hal_fb_flush(unsigned x, unsigned y, unsigned w, unsigned h); /* 4h a */
 bool          hal_keyboard_init(void);      /* M6; false when there is none  */
 bool          hal_pointer_init(void);       /* M6; false when there is none  */
 bool          hal_pointer_poll(struct pointer_state *out);
@@ -735,7 +736,7 @@ trampoline and the local APIC's command register arrived together - which is
 why they are separate rather than one function that would have to be half
 right.
 
-`hal_fb_init` is deliberately "ask the firmware for a linear framebuffer, and let it choose where the pixels live", because that is the one operation QEMU's ramfb and the Pi's mailbox both perform. virtio-gpu does not fit it — it needs an explicit flush after drawing — and that is precisely why adding virtio-gpu is what will grow the interface a `hal_fb_flush`, with two implementations in front of it rather than one.
+`hal_fb_init` is deliberately "ask the firmware for a linear framebuffer, and let it choose where the pixels live", because that is the one operation QEMU's ramfb and the Pi's mailbox both perform. virtio-gpu does not fit it — it needs an explicit flush after drawing — and that is precisely why adding virtio-gpu grew the interface a `hal_fb_flush`, on 29 September 2026 (`roadmap.md` 4h a): ramfb and a firmware screen ignore it, virtio-gpu sends the rectangle, and whatever draws on the screen - the console, the compositor, a program handed the screen - says what it drew. It arrived with two implementations in front of it rather than one, as this paragraph said it should.
 
 ---
 

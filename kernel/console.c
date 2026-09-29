@@ -231,6 +231,59 @@ static uint32_t *pixel_row(unsigned y)
                                 + (size_t)y * screen.pitch);
 }
 
+/*
+ * **What was drawn and not yet shown** (`hal_fb_flush`, `roadmap.md` 4h a):
+ * one rectangle, grown over everything painted since the screen was last
+ * told. virtio-gpu shows a copy of the pixels the host keeps, and nothing
+ * drawn here reaches it until it is sent; ramfb and a firmware screen scan
+ * the pixels themselves and ignore the call. Sent before the console's lock
+ * is let go and at the end of each entry that draws without it - the
+ * cursor's blink, the progress bar, attaching and resuming - so a panic,
+ * with no tick coming to send it later, is on the screen when it stops.
+ *
+ * Its own lock, because the tick's cursor draws outside the console's.
+ */
+static struct spinlock dirty_lock = SPINLOCK("console-dirty");
+static unsigned dirty_x0, dirty_y0, dirty_x1, dirty_y1;   /* x1 == 0: none */
+
+static void dirty(unsigned x, unsigned y, unsigned w, unsigned h)
+{
+    unsigned long flags;
+
+    if (w == 0 || h == 0) {
+        return;
+    }
+
+    flags = spin_lock(&dirty_lock);
+
+    if (dirty_x1 == 0) {
+        dirty_x0 = x;
+        dirty_y0 = y;
+        dirty_x1 = x + w;
+        dirty_y1 = y + h;
+    } else {
+        dirty_x0 = x < dirty_x0 ? x : dirty_x0;
+        dirty_y0 = y < dirty_y0 ? y : dirty_y0;
+        dirty_x1 = x + w > dirty_x1 ? x + w : dirty_x1;
+        dirty_y1 = y + h > dirty_y1 ? y + h : dirty_y1;
+    }
+
+    spin_unlock(&dirty_lock, flags);
+}
+
+static void present(void)
+{
+    unsigned long flags = spin_lock(&dirty_lock);
+    unsigned x0 = dirty_x0, y0 = dirty_y0, x1 = dirty_x1, y1 = dirty_y1;
+
+    dirty_x1 = 0;
+    spin_unlock(&dirty_lock, flags);
+
+    if (x1 != 0) {
+        hal_fb_flush(x0, y0, x1 - x0, y1 - y0);
+    }
+}
+
 static void fill_rect(unsigned x, unsigned y, unsigned w, unsigned h,
                       uint32_t colour)
 {
@@ -244,6 +297,8 @@ static void fill_rect(unsigned x, unsigned y, unsigned w, unsigned h,
             p[i] = colour;
         }
     }
+
+    dirty(x, y, w, h);
 }
 
 static void draw_cursor(bool on)
@@ -366,6 +421,8 @@ static void paint_glyph(unsigned col, unsigned line, unsigned cp,
             p[x] = (bits & (0x80u >> x)) ? ink : paper;
         }
     }
+
+    dirty(col * GLYPH_W, line * GLYPH_H, GLYPH_W, GLYPH_H);
 }
 
 static void draw_glyph(unsigned col, unsigned line, unsigned cp)
@@ -576,6 +633,7 @@ void console_screen_resume(void)
     cx = 0;
     cy = 0;
     cursor_shown = false;
+    present();
 }
 
 void console_tick(void)
@@ -602,6 +660,8 @@ void console_tick(void)
         cursor_phase = 0;
         draw_cursor(!cursor_shown);
     }
+
+    present();
 }
 
 /* Straight to the screen, bypassing the serial port. Only for text the
@@ -734,6 +794,7 @@ void console_attach_screen(const struct fb *fb, const char *title)
     /* Nothing writes to it again, and saying so here is what makes it safe
      * for panic() to run through this file. */
     early_len = 0;
+    present();
 }
 
 /*
@@ -792,6 +853,7 @@ void console_progress(unsigned done, unsigned total)
 
     fill_rect(margin, y, w, h, 0xff21262d);                 /* the trough */
     fill_rect(margin, y, filled, h, 0xff3fb950);            /* the fill   */
+    present();
 }
 
 /*
@@ -1024,6 +1086,7 @@ void kputc(char c)
     unsigned long flags = spin_lock(&console_lock);
 
     putc_locked(c);
+    present();
     spin_unlock(&console_lock, flags);
 }
 
@@ -1053,6 +1116,7 @@ void kwrite_colour(const char *s, unsigned long len, unsigned long colour)
         colour_locked(was);
     }
 
+    present();
     spin_unlock(&console_lock, flags);
 }
 
@@ -1064,6 +1128,7 @@ void kputs(const char *s)
         putc_locked(*s);
     }
 
+    present();
     spin_unlock(&console_lock, flags);
 }
 
@@ -1099,6 +1164,7 @@ void kputu(unsigned long v)
         putc_locked(buf[--i]);
     }
 
+    present();
     spin_unlock(&console_lock, flags);
 }
 

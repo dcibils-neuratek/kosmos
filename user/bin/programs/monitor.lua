@@ -69,6 +69,7 @@ while sys.ticks() < until_ do
   screen:fill(0, top, w, h - top, 0xff161b22)
   screen:fill(0, top, w, 1, 0xff30363d)
   screen:text(4, top + gfx.font.h // 2, text, 0xff7ee787, 0xff161b22)
+  screen:flush(0, top, w, h - top)        -- shown, on a display that copies
 
   -- The wait is also where the interrupt is noticed. Asking once per pass
   -- rather than once per yield: the question is an IPC round trip to the
@@ -81,6 +82,7 @@ while sys.ticks() < until_ do
     -- Give the rows back the way they were found, or the bar stays on
     -- screen with numbers that stopped being true.
     screen:fill(0, top, w, h - top, 0xff0d1117)
+    screen:flush(0, top, w, h - top)
     return
   end
 end

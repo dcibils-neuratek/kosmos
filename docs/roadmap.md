@@ -1063,6 +1063,27 @@ processors, and still what follows USB:
    has no such engine, so every step of it would be tried on the machines;
    and the Raspberry Pi 5 has no H.264 in hardware at all - only an HEVC
    decoder - so on the target, H.264 stays software either way.
+   **The steps, from 29 September**, virtio-gpu first as Diego asked -
+   and **this Mac's QEMU has no virgl**: 11.1.1 offers `virtio-gpu-device`
+   and `virtio-gpu-pci` and no `-gl` variant, being built without
+   virglrenderer. So what can be built and tried here is virtio-gpu's 2D
+   protocol, which is the foundation virgl rides on either way:
+   - **a - BUILT on 29 September** (`testing.md` 18.274) - the kernel's framebuffer as a virtio-gpu resource backed by
+     guest pages, on both boards, chosen when the machine has the device and
+     ramfb otherwise; `hal_fb_flush(x, y, w, h)` - the entry `CLAUDE.md`
+     says virtio-gpu would earn the HAL - transfers and flushes a rectangle;
+     the console and the compositor flush what they drew. `make GPU=virtio
+     qemu`. Tests: the picture under virtio-gpu on both boards, and the
+     control that without the flush the screen keeps the old picture.
+   - **b** - the hardware cursor: the pointer moved on the cursor queue
+     without composing a frame.
+   - **c** - the screen's size from the device (`GET_DISPLAY_INFO`), and a
+     resize while running - the protocol `hal.md` put off until there were
+     two implementations to design it against.
+   - **d** - virgl, 3D on the Mac's GPU and windows as textures: needs a
+     QEMU built with virglrenderer, which is a change to this Mac's
+     toolchain and Diego's to decide.
+   - **e** - the M700's Intel GPU: its video codec and its driver.
    **A study of the effort on the M700, asked on 27 September** - Diego:
    "study the effort to integrate gpu decoding and encoding capabilities on
    m700 using intel hd graphics driver *might take it from linux*". The

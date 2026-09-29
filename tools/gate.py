@@ -373,6 +373,22 @@ for board, image in (("arm", ARM), ("x86", X86)):
         SUITES.append(Suite("%s-display-%d" % (board, n), cmd,
                             x86=(board == "x86")))
 
+#
+# **virtio-gpu, on both boards** (`roadmap.md` 4h a): the display that shows
+# only what it is sent. The console's boot screen, Lua's bars, a terminal,
+# the desktop and a wallpaper pixel for pixel - each on the screen only if
+# whatever drew it said what it drew. ramfb, which every suite above uses,
+# shows them all whether or not anybody did, which is why this one exists.
+# Its controls: the kernel's flush sending nothing leaves the screen black,
+# and the compositor's missing leaves windows that never appear.
+#
+for board, image in (("arm", ARM), ("x86", X86)):
+    SUITES.append(Suite("%s-virtio-gpu" % board,
+                        ["env", "KOSMOS_GPU=virtio", "python3",
+                         "tools/run_screenshot.py", image, "--phases",
+                         "keyboard,direct,terminal,wallpapers,desktop"],
+                        x86=(board == "x86")))
+
 
 # **No suite may hold the gate for ever.** On 25 September the host suite
 # waited 72 minutes on a test run through Rosetta that the Mac had wedged -

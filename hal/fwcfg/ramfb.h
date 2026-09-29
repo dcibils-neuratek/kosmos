@@ -11,11 +11,7 @@ struct fb;
 
 bool ramfb_init(struct fb *out);
 
-/* Where the size came from (`opt/kosmos/fb`, `roadmap.md` 6zt): asked for
- * and shown; the one the image was built with; or that one because what
- * was asked was no size it could show. */
-enum ramfb_size { RAMFB_SIZE_BUILT, RAMFB_SIZE_ASKED, RAMFB_SIZE_REFUSED };
-
-enum ramfb_size ramfb_size_from(void);
+/* Where its size came from is `fbpixels.h`'s `fb_pixels_from`, shared with
+ * virtio-gpu. */
 
 #endif

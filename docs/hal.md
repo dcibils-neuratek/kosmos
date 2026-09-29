@@ -315,9 +315,10 @@ its window. Three things do not follow:
   a particular size, and every process that called `gfx.screen()` has a
   mapping of a particular length. A mode change is a message all of them
   have to be able to receive, which is a protocol that does not exist.
-- **virtio-gpu does not work this way at all.** It is the target that earns
-  the HAL a `hal_fb_flush`, and it is also the one where a mode set is a
-  command to the device rather than a write to a config blob. Designing the
+- **virtio-gpu does not work this way at all.** It is the target that
+  earned the HAL a `hal_fb_flush` - on 29 September 2026, `roadmap.md` 4h a
+  - and it is also the one where a mode set is a command to the device
+  rather than a write to a config blob. Designing the
   runtime interface against ramfb alone would produce the shape of ramfb
   with a general name - the exact mistake `CLAUDE.md` warns about for the
   HAL as a whole.

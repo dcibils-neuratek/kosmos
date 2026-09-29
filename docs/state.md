@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 ---
 
@@ -149,9 +149,20 @@ capabilities which will then lead to us having accelerated 2d graphics".
   data - which points at `diskfs` itself, a declared struct and the walk in
   C, a project of its own and not started.
 
-**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): 4h -
-virtio-gpu under QEMU, then the M700's GPU codec and driver. 6zg d, the
-Launchkey, on 30 September.
+- **4h a, virtio-gpu's 2D half** (18.274): the screen as a virtio-gpu
+  resource on both boards when the machine has one - `make GPU=virtio qemu` -
+  and `hal_fb_flush`, which the console, the compositor, `monitor` and `edit`
+  now call with what they drew; `arm-virtio-gpu` and `x86-virtio-gpu` in the
+  gate. **This Mac's QEMU has no virgl**, so 4h d - 3D on the Mac's GPU,
+  windows as textures - needs a QEMU built with virglrenderer: Diego's call.
+
+**Next** (Diego, 29 September: "do 4i, 3 and 4 now"): 4h b and c -
+the hardware cursor on the cursor queue, and the screen's size from the
+device - then the M700's GPU codec and driver (4h e). Waiting on Diego: a
+QEMU with virglrenderer for 4h d; the M700 measurements of 4i e
+(`groove --report 30`); whether `diskfs` moves to a declared struct and C
+now (18.273). 6zg d, the Launchkey, on 30 September. Unpushed: everything
+since 0deed7b.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 

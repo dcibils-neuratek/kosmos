@@ -208,6 +208,15 @@ def extra_args(image, more):
 
 
 #
+# **Which display, when asked** (`roadmap.md` 4h a): ramfb, which scans the
+# guest's pixels out as they are, or virtio-gpu, which shows only what it is
+# sent - `KOSMOS_GPU=virtio`. An environment variable for the reason
+# `KOSMOS_SMPWORK` is one: the harness is invoked from the Makefile in five
+# places.
+#
+_VIRTIO_GPU = os.environ.get("KOSMOS_GPU") == "virtio"
+
+#
 # The devices, per board, and they are the same devices.
 #
 # QEMU gives both machines ramfb, virtio-input and virtio-blk; what differs
@@ -225,7 +234,7 @@ X86_ARGS = [
     "-fw_cfg", "name=opt/kosmos/midi,string=virtual",            # and MIDI's
     "-display", "none",
     "-vga", "none",
-    "-device", "ramfb",
+    "-device", "virtio-gpu-pci" if _VIRTIO_GPU else "ramfb",
     #
     # No virtio keyboard: q35's i8042 is this board's, so `sendkey` has to
     # reach the PS/2 controller for the check to mean anything. The tablet
@@ -286,7 +295,7 @@ QEMU_ARGS = [
     #
     "-fw_cfg", "name=opt/kosmos/midi,string=virtual",
     "-display", "none",
-    "-device", "ramfb",
+    "-device", "virtio-gpu-device" if _VIRTIO_GPU else "ramfb",
     # force-legacy=false is not optional: QEMU's virtio-mmio transports
     # report the legacy interface unless told otherwise, and the driver
     # refuses those.
@@ -354,6 +363,10 @@ DRAW = (
     "local w, h = s:size() "
     "s:fill(0, 0, w, h, 0xff000000) "
     + " ".join(f"s:fill({x}, 0, {BAR_WIDTH}, h, 0xff{c:06x}) " for x, c in BARS)
+    # And said, as anything drawing on the screen says what it drew: on
+    # virtio-gpu nothing is shown until it is sent, and on ramfb this does
+    # nothing (`roadmap.md` 4h a).
+    + "s:flush() "
 )
 
 #

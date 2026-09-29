@@ -493,6 +493,20 @@ struct fb {
 bool hal_fb_init(struct fb *out);
 
 /*
+ * **What was drawn in a rectangle, to the screen.** The entry virtio-gpu
+ * earns the HAL (`roadmap.md` 4h a), and `CLAUDE.md` said which device it
+ * would be before it existed: ramfb, a firmware framebuffer and the Pi's
+ * mailbox all scan out of the pixels themselves, and do nothing here;
+ * virtio-gpu shows a copy of them the host keeps, and a rectangle drawn
+ * reaches the screen only when it is sent. So whatever draws on the screen
+ * says what it changed - the console as it writes, the compositor for each
+ * rectangle it composed - and a board with nothing to send ignores it.
+ *
+ * Clipped to the screen here, so a caller may pass what it drew.
+ */
+void hal_fb_flush(unsigned x, unsigned y, unsigned w, unsigned h);
+
+/*
  * The same screen, asked for before there is a page allocator.
  *
  * **This exists because a laptop has no serial port.** The boot log reaches
