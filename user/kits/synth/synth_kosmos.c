@@ -16,6 +16,10 @@
  *                                      down, for the way to the ear (4i)
  *   synth.note_off(track, pitch) synth.bend(track, semitones)
  *   synth.release(track)               its held notes let go
+ *   synth.listen(page)                 a `/Devices/midi` page this thread
+ *                                      takes notes from itself (4i d)
+ *   synth.live(track, drum, drums, device, cable, session)
+ *                                      where those notes go
  *   synth.hold("t3.p.cut", true)       a person's hand on an automated knob
  *   synth.state(t)                     what is heard, into `t`
  *   synth.export(song, at, capacity)   the song as a WAV, into a region
@@ -68,6 +72,7 @@
 
 #include "audioring.h"
 #include "kosmos.h"
+#include "midiproto.h"
 #include "synth_lua.h"
 
 /* ------------------------------------------------------------ commands */
@@ -75,6 +80,7 @@
 enum cmd_kind {
     CMD_PLAY, CMD_STOP, CMD_MODE, CMD_LAUNCH_CLIP, CMD_LAUNCH_SCENE,
     CMD_STOP_CLIP, CMD_NOTE_ON, CMD_NOTE_OFF, CMD_BEND, CMD_HOLD, CMD_RELEASE,
+    CMD_LIVE,
 };
 
 struct cmd {
@@ -107,6 +113,7 @@ struct note_path {
     uint32_t ring, device;
     uint32_t ahead;                     /* periods the kit kept, then */
     uint32_t count;
+    bool     from_page;                 /* taken by this thread, not posted */
 };
 
 struct heard {
@@ -171,10 +178,11 @@ static bool ensure_engine(lua_State *L)
  * split at the server's `read` - what it has not mixed is the ring's, the
  * rest the device's. With no thread there is no ring and nothing queued.
  */
-static void noted(const struct cmd *c)
+static void noted_at(uint64_t key, uint64_t posted, bool from_page)
 {
-    note_path.key = c->key != 0 ? c->key : c->posted;
-    note_path.posted = c->posted;
+    note_path.key = key != 0 ? key : posted;
+    note_path.posted = posted;
+    note_path.from_page = from_page;
     note_path.applied = kosmos_ticks();
     note_path.ring = note_path.device = 0;
 
@@ -194,11 +202,171 @@ static void noted(const struct cmd *c)
     note_path.count++;
 }
 
+static void noted(const struct cmd *c)
+{
+    noted_at(c->key, c->posted, false);
+}
+
+/* ------------------------------------------------------------ live MIDI */
+/*
+ * **A key reaches the sound without the window** (`roadmap.md` 4i, step d).
+ * The window takes MIDI in its pass, and its pass is a frame - under load, a
+ * turn among the display band's; a note went through it and waited for it.
+ * So the window hands this thread a `/Devices/midi` page of its own
+ * (`synth.listen`) and the thread takes new events every pass, a tick at
+ * most, and starts the notes itself - in the audio band, above everything
+ * that draws. The window keeps a page of its own for what a person sees,
+ * the Launchkey's lights and recording, and no longer starts the sound.
+ *
+ * What is on the clock is done here and nothing else: notes, the sustain
+ * pedal and bend. Where a note goes is PulseMusic's rule (`groove/app.lua`,
+ * `midiEvent`), from a map the window sends when it changes (`CMD_LIVE`):
+ * a key plays the selected track, a drum track's row by its note; a pad on
+ * channel 10 plays the drum track's row; and the Launchkey's session pads,
+ * on its surface port, are the window's. Each key remembers where its note
+ * went, so a release after the selection moved still finds it.
+ *
+ * The page is read by this thread alone and its `read` is written back, the
+ * program's place the driver watches (`midiproto.h`).
+ */
+struct live_map {
+    int      track;                     /* the keys' track, 0-based; -1 none */
+    bool     drum;                      /* the keys' track is drums */
+    int      drums;                     /* the pads' track, 0-based; -1 none */
+    uint32_t surface_device;            /* the Launchkey's surface port, */
+    uint8_t  surface_cable;             /* whose session pads are not notes */
+    bool     surface_session;
+};
+
+static struct midi_ring *live_offered;  /* `listen`'s, taken by the thread */
+static struct midi_ring *live_ring;     /* the thread's alone, from here */
+static uint32_t live_read;
+static struct live_map live = { -1, false, -1, 0, 0, false };
+static int8_t live_track[16][128], live_pitch[16][128];   /* a key's note */
+static bool live_sustain, live_sustained[16][128];
+
+/* Launchkey Mini MK3's drum pads to Groove's rows, PulseMusic's `PAD_ROW`. */
+static const int8_t pad_row[128] = {
+    [36] = 1, [37] = 2, [38] = 3, [39] = 4, [44] = 5, [45] = 6, [46] = 7, [47] = 8,
+    [40] = 1, [41] = 2, [42] = 3, [43] = 4, [48] = 5, [49] = 6, [50] = 7, [51] = 8,
+};
+
+static void live_off(int ch, int key)
+{
+    if (live_track[ch][key] >= 0) {
+        synth_engine_note_off(engine, live_track[ch][key], live_pitch[ch][key]);
+    }
+
+    live_track[ch][key] = -1;
+    live_sustained[ch][key] = false;
+}
+
+static void live_event(const struct midi_ring_event *ev)
+{
+    unsigned status, kind, ch, d1, d2;
+
+    if ((ev->flags & MIDI_EVENT_SYSEX) != 0 || ev->length == 0) return;
+
+    status = ev->bytes[0];
+    kind = status >> 4;
+    ch = status & 15u;
+    d1 = ev->length > 1 ? (ev->bytes[1] & 127u) : 0;
+    d2 = ev->length > 2 ? (ev->bytes[2] & 127u) : 0;
+
+    if (kind == 0x9 && d2 == 0) kind = 0x8;
+
+    if (kind == 0x9 || kind == 0x8) {
+        /* The surface's session pads are the window's, as `LK.handle` has it. */
+        if (live.surface_session && ev->device == live.surface_device
+            && ev->cable == live.surface_cable && ch == 0
+            && ((d1 >= 96 && d1 < 104) || (d1 >= 112 && d1 < 120))) {
+            return;
+        }
+
+        if (kind == 0x8) {
+            if (live_sustain && live_track[ch][d1] >= 0) {
+                live_sustained[ch][d1] = true;
+            } else {
+                live_off((int)ch, (int)d1);
+            }
+
+            return;
+        }
+
+        if (live_track[ch][d1] >= 0 && !live_sustained[ch][d1]) return;   /* held */
+
+        if (live_sustained[ch][d1]) live_off((int)ch, (int)d1);
+
+        int track, pitch;
+
+        if (ch == 9 && pad_row[d1] != 0) {
+            track = live.drums;
+            pitch = pad_row[d1];
+        } else if (live.drum) {
+            track = live.track;
+            pitch = (int)(d1 % 12u % 8u) + 1;
+        } else {
+            track = live.track;
+            pitch = (int)d1;
+        }
+
+        if (track < 0 || track >= SYNTH_TRACKS) return;
+
+        synth_engine_note_on(engine, track, pitch, 0.25 + 0.75 * (double)d2 / 127.0);
+        live_track[ch][d1] = (int8_t)track;
+        live_pitch[ch][d1] = (int8_t)pitch;
+        noted_at(ev->counter, kosmos_ticks(), true);
+    } else if (kind == 0xB && d1 == 64) {
+        live_sustain = d2 >= 64;
+
+        if (!live_sustain) {
+            for (unsigned c = 0; c < 16; c++) {
+                for (unsigned k = 0; k < 128; k++) {
+                    if (live_sustained[c][k]) live_off((int)c, (int)k);
+                }
+            }
+        }
+    } else if (kind == 0xE && live.track >= 0) {
+        synth_engine_bend(engine, live.track,
+                          ((double)(d1 | (d2 << 7)) - 8192.0) / 8192.0 * 2.0);
+    }
+}
+
+/* Every event since the last pass, and the page's place written back. */
+static void live_take(void)
+{
+    struct midi_ring *offered = __atomic_exchange_n(&live_offered, NULL, __ATOMIC_ACQ_REL);
+
+    if (offered != NULL) {
+        /* From the page's own place, not from now: what arrived between
+         * the page being opened and its being handed here is played. */
+        live_ring = offered;
+        live_read = __atomic_load_n(&offered->read, __ATOMIC_ACQUIRE);
+
+        for (unsigned c = 0; c < 16; c++) {
+            for (unsigned k = 0; k < 128; k++) live_track[c][k] = -1;
+        }
+    }
+
+    if (live_ring == NULL || engine->song == NULL) return;
+
+    uint32_t write = __atomic_load_n(&live_ring->write, __ATOMIC_ACQUIRE);
+
+    if (write - live_read > MIDI_RING_SLOTS) live_read = write - MIDI_RING_SLOTS;
+
+    while (live_read != write) {
+        live_event(&live_ring->events[live_read % MIDI_RING_SLOTS]);
+        live_read++;
+    }
+
+    __atomic_store_n(&live_ring->read, live_read, __ATOMIC_RELEASE);
+}
+
 static void apply(const struct cmd *c)
 {
     struct synth_engine *e = engine;
 
-    if (e->song == NULL && c->kind != CMD_MODE) return;
+    if (e->song == NULL && c->kind != CMD_MODE && c->kind != CMD_LIVE) return;
 
     switch (c->kind) {
     case CMD_PLAY:         synth_engine_play(e); break;
@@ -212,6 +380,16 @@ static void apply(const struct cmd *c)
     case CMD_BEND:         synth_engine_bend(e, c->a, c->v); break;
     case CMD_HOLD:         synth_engine_hold(e, c->a, c->b != 0); break;
     case CMD_RELEASE:      synth_engine_release(e, c->a); break;
+    case CMD_LIVE:
+        /* Packed: a the keys' track, b the drum track, v 1 for a drum
+         * track; key the surface's device, cable and session bit. */
+        live.track = c->a;
+        live.drums = c->b;
+        live.drum = c->v != 0;
+        live.surface_device = (uint32_t)(c->key >> 16);
+        live.surface_cable = (uint8_t)((c->key >> 8) & 255u);
+        live.surface_session = (c->key & 1u) != 0;
+        break;
     }
 }
 
@@ -293,14 +471,12 @@ static void audio_main(unsigned long arg)
     (void)arg;
 
     /*
-     * **Above every window** (`roadmap.md` 4i, step c): the audio band,
-     * which a program declaring `kosmos: needs audio` may ask for. Without
-     * it this thread is at NORMAL, below its own window and every program -
-     * all of them in the display band - and anything drawing starves the
-     * sound. Refused for a program that did not declare it, which plays
-     * as before and says so in `synth.state().audio_band`.
+     * **Above every window** (`roadmap.md` 4i, step c): this thread is born
+     * in the audio band when its program declared `kosmos: needs audio`
+     * (`start` below). It used to ask for the band here, in its first line
+     * - and a thread at NORMAL with a display-band spinner on every core
+     * never reached its first line. `in_audio_band` is set by `start`.
      */
-    in_audio_band = kosmos_sched_set(SCHED_SET_AUDIO_BAND, 0) == 0;
 
     uint32_t period = ring->period_bytes / 4u;
     bool started = false;
@@ -335,6 +511,7 @@ static void audio_main(unsigned long arg)
 
         take_song();
         drain();
+        live_take();
 
         if (started) {
             uint32_t queued = ring->write - ring->read;
@@ -383,6 +560,7 @@ static void audio_main(unsigned long arg)
 
             /* A note asked for between two periods is played in the next. */
             drain();
+            live_take();
         }
 
         if (wrote) publish();
@@ -513,6 +691,53 @@ static int l_stop_clip(lua_State *L)
     return post(L, CMD_STOP_CLIP, track_arg(L, 1), 0, 0);
 }
 
+/*
+ * synth.listen(page) - a `/Devices/midi` page (`midi.open()`'s `at`) this
+ * thread takes notes from itself (4i d). True once the thread has it to take;
+ * false when there is no thread, and the window plays its notes as before.
+ */
+static int l_listen(lua_State *L)
+{
+    struct midi_ring *r = (struct midi_ring *)(uintptr_t)luaL_checkinteger(L, 1);
+
+    luaL_argcheck(L, r != NULL && r->slots == MIDI_RING_SLOTS, 1,
+                  "not a /Devices/midi page");
+
+    if (!running()) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    __atomic_store_n(&live_offered, r, __ATOMIC_RELEASE);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/*
+ * synth.live(track, drum, drums, device, cable, session) - where the page's
+ * notes go: the keys' track and whether it is drums, the pads' drum track
+ * (tracks 1 to 8, 0 for none), and the Launchkey's surface port - its
+ * device and cable, and whether its pads are in session mode, when they are
+ * the window's rather than notes.
+ */
+static int l_live(lua_State *L)
+{
+    lua_Integer track = luaL_checkinteger(L, 1);
+    int drum = lua_toboolean(L, 2);
+    lua_Integer drums = luaL_checkinteger(L, 3);
+    lua_Integer device = luaL_optinteger(L, 4, 0);
+    lua_Integer cable = luaL_optinteger(L, 5, 0);
+    int session = lua_toboolean(L, 6);
+
+    luaL_argcheck(L, track >= 0 && track <= SYNTH_TRACKS, 1, "a track is 1 to 8, or 0");
+    luaL_argcheck(L, drums >= 0 && drums <= SYNTH_TRACKS, 3, "a track is 1 to 8, or 0");
+    luaL_argcheck(L, device >= 0 && device <= 0xFFFFFFFF && cable >= 0 && cable < 16, 4,
+                  "a device's id and a cable");
+
+    return post_at(L, CMD_LIVE, (int)track - 1, (int)drums - 1, drum ? 1.0 : 0.0,
+                   ((uint64_t)device << 16) | ((uint64_t)cable << 8) | (session ? 1u : 0u));
+}
+
 static int l_note_on(lua_State *L)
 {
     int t = track_arg(L, 1);
@@ -586,7 +811,18 @@ static int l_start(lua_State *L)
     ring = r;
     __atomic_store_n(&quit, 0, __ATOMIC_RELEASE);
 
-    long index = kosmos_thread_start(audio_main, 0);
+    /*
+     * In the audio band from its first instruction, if this program may put
+     * a thread there; at NORMAL otherwise, as before, and it says so in
+     * `synth.state().audio_band`.
+     */
+    long index = kosmos_thread_start_audio(audio_main, 0);
+
+    in_audio_band = index >= 0;
+
+    if (index < 0) {
+        index = kosmos_thread_start(audio_main, 0);
+    }
 
     if (index < 0) {
         ring = NULL;
@@ -726,6 +962,7 @@ static int l_state(lua_State *L)
     set_integer(L, "note_ring", copy.note.ring);
     set_integer(L, "note_device", copy.note.device);
     set_integer(L, "note_ahead", copy.note.ahead);
+    set_boolean(L, "note_from_page", copy.note.from_page);
     set_integer(L, "ahead", copy.ahead);
     set_integer(L, "dry", copy.dry);
     set_boolean(L, "audio_band", copy.audio_band);
@@ -891,6 +1128,7 @@ void kosmos_synth_kit(lua_State *L)
         { "play", l_play }, { "stop", l_stop }, { "mode", l_mode },
         { "launch_clip", l_launch_clip }, { "launch_scene", l_launch_scene },
         { "stop_clip", l_stop_clip }, { "note_on", l_note_on },
+        { "listen", l_listen }, { "live", l_live },
         { "note_off", l_note_off }, { "bend", l_bend }, { "hold", l_hold },
         { "release", l_release }, { "state", l_state }, { "export", l_export },
         { NULL, NULL },

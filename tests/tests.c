@@ -7902,6 +7902,77 @@ static bool test_the_audio_band_budget(void)
         && budget_after_sleep == SCHED_PRIO_AUDIO;
 }
 
+/*
+ * **Born in the audio band, it runs under a display-band spinner** (4i): a
+ * thread that had to run to ask for the band never did, with a spinner in
+ * the display band on its core. Given the band before it first runs, it
+ * takes the processor from the spinner at once; left at NORMAL it would not
+ * run until the spinner stopped - which the spinner checks for, and gives
+ * up after its guard.
+ */
+static volatile bool born_ran, born_spun, born_seen;
+static struct thread *born_thread;
+
+static void born_audio(void *arg)
+{
+    (void)arg;
+    born_ran = true;
+    thread_exit();
+}
+
+static void born_spinner(void *arg)
+{
+    unsigned long guard;
+
+    (void)arg;
+    thread_wake(born_thread);
+
+    /* No yield: only a higher band can take this core now. */
+    for (guard = hal_ticks() + 20; !born_ran && hal_ticks() < guard; ) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    born_seen = born_ran;           /* before its guard, or not at all */
+    born_spun = true;
+    thread_exit();
+}
+
+static bool test_born_in_the_audio_band(void)
+{
+    struct thread *spinner;
+    unsigned long guard;
+    bool ran_under_it;
+
+    born_ran = born_spun = born_seen = false;
+    born_thread = thread_create_suspended("born-audio", born_audio, NULL);
+    spinner = thread_create_suspended("born-spin", born_spinner, NULL);
+
+    if (born_thread == NULL || spinner == NULL) {
+        return false;
+    }
+
+    /* One core for both, this one: on two, the thread would run whatever
+     * its band, and the test would say nothing. Homed before either is
+     * queued, which is the only time a home may be set. */
+    born_thread->sched.cpu = thread_current()->sched.cpu;
+    spinner->sched.cpu = thread_current()->sched.cpu;
+
+    thread_enter_audio_band(born_thread);
+    thread_set_priority(spinner, SCHED_PRIO_DISPLAY);
+    thread_set_priority(thread_current(), SCHED_PRIO_IDLE);
+    thread_wake(spinner);
+
+    for (guard = hal_ticks() + 60; !born_spun && hal_ticks() < guard; ) {
+        thread_yield();
+    }
+
+    /* It ran while the spinner was still spinning - seen by the spinner
+     * itself, since at NORMAL it would run too, but only after. */
+    ran_under_it = born_seen;
+    thread_set_priority(thread_current(), SCHED_PRIO_NORMAL);
+    return ran_under_it;
+}
+
 static bool test_fp_survives_a_preemption(void)
 {
     unsigned i;
@@ -9166,6 +9237,7 @@ static const struct test tests[] = {
     { "sched: the higher priority runs first", test_higher_priority_runs_first },
     { "sched: a wake preempts a lower band",   test_a_wake_preempts_a_lower_priority_thread },
     { "sched: the audio band's budget",        test_the_audio_band_budget },
+    { "sched: born in the audio band, it runs", test_born_in_the_audio_band },
     { "sched: a server inherits its caller",   test_a_server_inherits_its_callers_priority },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
 #if defined(__aarch64__)

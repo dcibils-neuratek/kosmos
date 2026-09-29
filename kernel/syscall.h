@@ -451,7 +451,18 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * siblings to leave first, because freeing the address space under a running
  * thread is the bug this design exists to avoid.
  */
-#define SYS_THREAD_CREATE 56 /* (entry, arg)          -> index or error     */
+#define SYS_THREAD_CREATE 56 /* (entry, arg, flags)   -> index or error     */
+
+/*
+ * **Born in the audio band** (`sched.h`, `roadmap.md` 4i): a thread that
+ * asked for the band in its first line had to run to ask, and a new thread
+ * starts at NORMAL - so with a display-band spinner on every core it never
+ * ran at all, and Groove's sound thread rendered nothing in nine seconds.
+ * Given by the creator, and only if its process holds `SPAWN_AUDIO_BAND`.
+ * Any other bit is refused, so a word left over in a register is never
+ * read as a request.
+ */
+#define THREAD_START_AUDIO 1u
 #define SYS_THREAD_EXIT   57 /* (code)                -> does not return    */
 #define SYS_THREAD_WAIT   58 /* (index)               -> its code or error  */
 

@@ -13,12 +13,15 @@
 --                             System Exclusive sent to a device's first
 --                             port, and what comes back - from the virtual
 --                             keyboard, all of it
---   midi play ID NOTE [CH]    once a program listens to the device, NOTE
---                             on channel CH, 1 unless said, for a tenth of
---                             a second: the virtual keyboard played into
---                             whatever is listening - `wm groove,midi:play
---                             1 36 10` is Groove's kick from the
---                             Launchkey's first pad
+--   midi play ID NOTE [CH] [N]
+--                             once N pages listen to the device, 1 unless
+--                             said, NOTE on channel CH, 1 unless said, for
+--                             a tenth of a second: the virtual keyboard
+--                             played into whatever is listening - `wm
+--                             groove,midi:play 1 36 10 2` is Groove's kick
+--                             from the Launchkey's first pad, once both of
+--                             its pages, the window's and the kit's, are
+--                             open
 --
 -- The smallest thing that uses `/Devices/midi` end to end (`usb.md` §12),
 -- through `midi.lua`, the way `sticks` uses the block protocol. With
@@ -155,6 +158,7 @@ end
 
 if words[1] == "play" then
   local id, note, channel = tonumber(words[2]), tonumber(words[3]), tonumber(words[4] or "1")
+  local wanted = math.max(1, tonumber(words[5] or "1") or 1)
 
   if not id or not note or note > 127 or not channel or channel < 1 or channel > 16 then
     print("midi: midi play ID NOTE [CHANNEL]")
@@ -170,7 +174,7 @@ if words[1] == "play" then
     all, why = midi.all()
 
     for _, d in ipairs(all) do
-      if d.id == id and d.listening > 0 then listening = d.listening end
+      if d.id == id and d.listening >= wanted then listening = d.listening end
     end
 
     if listening then break end
@@ -192,4 +196,4 @@ if words[1] == "play" then
 end
 
 print("midi: midi | midi listen [seconds] | midi send ID CABLE HEX.. | midi try ID "
-      .. "| midi play ID NOTE [CHANNEL]")
+      .. "| midi play ID NOTE [CHANNEL] [LISTENERS]")

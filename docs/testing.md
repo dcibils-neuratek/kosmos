@@ -12534,3 +12534,63 @@ count's pattern ended in `$`, which under `re.M` matches at the end of what
 has arrived, so the line was taken with its last digit still on the wire. It
 waits for the newline now. Every other `$` pattern in the harnesses has a
 later line it waits for first; this one was the last thing printed.
+
+## 18.267 A key reaches the sound without the window (4i, step d)
+
+A MIDI note went through Groove's window pass: 12 to 113 ms of a note's way
+under QEMU was the window, whose pass is a frame and under load a turn among
+everything in the display band. Now Groove opens a second `/Devices/midi` page
+and hands it to the Synth Kit (`synth.listen`); the kit's thread, in the audio
+band, takes new events every pass and starts notes, the sustain pedal and bend
+itself, sending each where PulseMusic's `midiEvent` would from a map the window
+sends when it changes (`synth.live`: the keys' track and whether it is drums,
+the pads' drum track, the Launchkey's surface port while its pads are clips).
+Each key remembers where its note went, so its release finds it after the
+selection moves. The window keeps its page for what it shows and records, and
+starts no sound.
+
+**Kept, `run_midi.py`** on ARM, 18 checks: Groove says the kit takes the
+keyboard's notes from its own page, and the pad's way to the ear says it was
+taken by the kit from its page - 5.6 ms from the key to the kit's pass in the
+first run, and nothing more to the kit. `midi play` waits for two pages now,
+since Groove listens with two. Its control: Groove never handing the kit the
+page - four checks fail.
+
+**Found**: `midi play` fired at the first page, which could be only one of
+Groove's two, so a note could reach neither the kit nor a window that no
+longer plays; it takes a number of pages to wait for. And the kit adopts its
+page from the page's own place rather than from now, so what arrived between
+the page opening and its being handed over is played.
+
+## 18.268 Born in the audio band, and a hole in strict priority
+
+**The gate found Groove's sound thread rendering nothing**: "the kit rendered
+0.00 s of sound in the 8.76 s since it began", under four display-band
+spinners. The thread asked for the audio band in its first line - and a new
+thread starts at NORMAL, so with a display-band spinner on every core it did
+not reach its first line. Earlier runs passed because it happened to start
+before the spinners did. So a thread can be *born* in the band:
+`SYS_THREAD_CREATE` takes a third word, `THREAD_START_AUDIO`, granted only to
+a process holding `SPAWN_AUDIO_BAND`, and any other bit is refused so a word
+left in a register is never read as a request (`kosmos_thread_start` passes
+0). The Synth Kit starts its thread that way. The audio server still asks in
+its first line; it starts at boot, before anything else runs.
+
+**Kept, `tests.c`**, "sched: born in the audio band, it runs": a thread given
+the band before it first runs, and a display-band thread spinning on the same
+core, which wakes it and watches whether it runs before its guard. **Its
+control would not fail at first** - left at NORMAL, the thread still ran - and
+that was the scheduler: `thread_preempt_if_needed` chose the next thread
+*before* putting the running one back, so the choice was among the others,
+and when a display-band thread's turn ended, a NORMAL thread waiting had the
+core. Strict priority, which `CLAUDE.md` says this is, held only until a
+quantum ran out. It puts the running thread back first now, then chooses: a
+peer in its band gets a turn, a lower band gets nothing. With that the control
+fails, as it should, and the whole gate passes, 57 suites in 8:52 - nothing
+was leaning on the hole.
+
+**It explains three readings before it**: the kit out of the band was away
+428 to 745 ms rather than for ever (18.263); twelve display-band spinners
+could not starve it even stepped down to LOW (18.265); and `spin`'s own note
+that three spinners in the display band made the desktop stop answering, but
+slowly rather than at once.

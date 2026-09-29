@@ -107,9 +107,21 @@ capabilities which will then lead to us having accelerated 2d graphics".
   0.10.188 moved to the Trash. Stable: the ThinkPad's 0.10.88, the M700's
   0.10.189.
 
-**Next**: 4i d, a MIDI event reaching the kit without the window's pass;
-4i e, the device's depth, on the ThinkPad. 6zg d when Diego has the
-Launchkey at hand.
+- **4i d** (18.267): the Synth Kit takes a keyboard's notes from a page of
+  its own; the pad reaches the kit in 5.6 ms under QEMU, where the window
+  took 12 to 113.
+
+- **Two kernel fixes found by the loaded suite** (18.268): a sound thread is
+  born in the audio band (`THREAD_START_AUDIO`), since one that asked in its
+  first line never ran under display-band load; and the scheduler chose the
+  next thread before re-queueing the running one, so a turn's end handed a
+  higher band's core to a lower one. Gate 57 suites, 8:52; `make bench`
+  after: context switch +4.1%, IPC +2.3% - the same as 28 September's
+  readings before any of this (6zr), so unmoved by it.
+
+**Next**: 4i d's follow-up, a note in Groove's first seconds waiting behind
+the whole ring. Then 4i e, the device's depth, on the ThinkPad. 6zg d when
+Diego has the Launchkey at hand.
 
 ## 28 September, the evening: Groove plays (6zh, steps 1 and 2)
 

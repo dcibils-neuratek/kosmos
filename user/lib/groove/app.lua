@@ -183,10 +183,11 @@ function app.update(dt, counter_hz)
     keyToEar = app.noteWay(st, hzSeen)
     if first then
       local w = keyToEar
-      print(("groove: key to ear %.1f ms - %.1f to the window's pass, %.1f to the kit, "
-             .. "%.1f in the ring (%d frames, %d periods kept), %.1f in the device (%d frames)")
-            :format(w.total, w.window, w.kit, w.ring, w.ringFrames, w.ahead or 0,
-                    w.device, w.deviceFrames))
+      print(("groove: key to ear %.1f ms - %.1f to the %s pass, %.1f to the kit, "
+             .. "%.1f in the ring (%d frames, %d periods kept), %.1f in the device (%d frames)%s")
+            :format(w.total, w.window, w.fromPage and "kit's" or "window's", w.kit,
+                    w.ring, w.ringFrames, w.ahead or 0, w.device, w.deviceFrames,
+                    w.fromPage and "; taken by the kit from its own page" or "; posted by the window"))
     end
   end
   loadT = loadT + dt
@@ -216,7 +217,8 @@ function app.noteWay(st, hz)
   local ring, device = st.note_ring / E.SR * 1000, st.note_device / E.SR * 1000
   return { total = toKit + ring + device, window = window, kit = toKit - window,
            ring = ring, device = device, ringFrames = st.note_ring,
-           deviceFrames = st.note_device, ahead = st.note_ahead }
+           deviceFrames = st.note_device, ahead = st.note_ahead,
+           fromPage = st.note_from_page }
 end
 
 function app.keyToEar() return keyToEar end
@@ -1033,11 +1035,13 @@ function app.modifiers(shift, ctrl, alt) U.shift, U.ctrl, U.alt = shift, ctrl, a
 -- One path for every live input (computer keys now, MIDI keys and pads
 -- after). id identifies the physical key so its release finds the right voice and recorded note.
 -- `key` is the counter when it went down, for the way to the ear (4i).
-local function liveNote(id, ti, pitch, vel, down, key)
+-- `silent` when the kit already played it from its own page (4i d): the
+-- rest - the row shown, the note recorded, its length - is still done here.
+local function liveNote(id, ti, pitch, vel, down, key, silent)
   if down then
     if held[id] then return false end
     local tr = E.song.tracks[ti]
-    E.noteOn(ti, pitch, vel, key)
+    if not silent then E.noteOn(ti, pitch, vel, key) end
     held[id] = { ti = ti, pitch = pitch }
     if tr.type == "drum" and ti == sel.track then sel.row = pitch end
     if recArm then
@@ -1057,7 +1061,7 @@ local function liveNote(id, ti, pitch, vel, down, key)
   else
     local k = held[id]
     if not k then return false end
-    E.noteOff(k.ti, k.pitch)
+    if not silent then E.noteOff(k.ti, k.pitch) end
     if k.note then
       local h = E.heardStep()
       if h then k.note.len = max(1, min(k.clip.len, floor(h - k.h0 + 0.5))); E.changed() end
@@ -1101,9 +1105,16 @@ end
 
 local sustain, sustained = false, {}
 
+-- **Whether the kit takes the keyboard's notes itself** (4i d), from a page
+-- of its own: then this window only keeps its books - what is shown, what
+-- is recorded - and starts no sound. Set by `/Kosmos/Apps/groove.lua`.
+local kitPlays = false
+
+function app.kitPlays(on) kitPlays = on and true or false end
+
 local function releaseLive(id)
   if sustain and held[id] and not held[id].note then sustained[id] = true; return end
-  liveNote(id, 0, 0, 0, false)
+  liveNote(id, 0, 0, 0, false, nil, kitPlays)
 end
 
 local function surfaceAction(act)
@@ -1143,11 +1154,11 @@ local function midiEvent(kind, ch, d1, d2, port, key)
     end
     if not ti then return end
     if down then
-      if sustained[id] then sustained[id] = nil; liveNote(id, 0, 0, 0, false) end
-      liveNote(id, ti, pitch, vel, true, key)
+      if sustained[id] then sustained[id] = nil; liveNote(id, 0, 0, 0, false, nil, kitPlays) end
+      liveNote(id, ti, pitch, vel, true, key, kitPlays)
     else releaseLive(id) end
   elseif kind == "bend" then
-    E.bend(sel.track, (d1 + d2 * 128 - 8192) / 8192 * BEND_RANGE)
+    if not kitPlays then E.bend(sel.track, (d1 + d2 * 128 - 8192) / 8192 * BEND_RANGE) end
   elseif kind == "pc" then
     local tr = track()
     if tr.type == "drum" then tr.kit = d1 % #P.kits + 1
@@ -1175,7 +1186,7 @@ local function midiEvent(kind, ch, d1, d2, port, key)
     elseif d1 == 64 then
       sustain = d2 >= 64
       if not sustain then
-        for id in pairs(sustained) do liveNote(id, 0, 0, 0, false) end
+        for id in pairs(sustained) do liveNote(id, 0, 0, 0, false, nil, kitPlays) end
         sustained = {}
       end
     elseif d1 == 115 and d2 > 0 then
@@ -1238,6 +1249,28 @@ midiScan = function()
   end
 end
 
+-- **Where the kit sends a keyboard's notes**, sent when it changes: the
+-- selected track and whether it is drums, the drum track the pads play, and
+-- the Launchkey's surface port while its pads are clips and scenes.
+local liveSent = ""
+
+local function sendLive()
+  if not kitPlays then return end
+  local dev, cable, session = 0, 0, false
+  if LK.active and LK.padMode == 2 then
+    for _, p in ipairs(Midi.inputs) do
+      if LK.isDawPort(p.name) then dev, cable, session = p.id, p.cable, true; break end
+    end
+  end
+  local drums = firstDrumTrack() or 0
+  local drum = track().type == "drum"
+  local now = ("%d %s %d %d %d %s"):format(sel.track, drum, drums, dev, cable, session)
+  if now ~= liveSent then
+    liveSent = now
+    E.live(sel.track, drum, drums, dev, cable, session)
+  end
+end
+
 -- Every MIDI event since the last pass, played; and the Launchkey's lights,
 -- `seconds` being the counter's. Answers how many arrived, which is whether
 -- there is anything new to draw.
@@ -1258,6 +1291,7 @@ function app.midiPoll(seconds)
   local n = Midi.poll(heard and midiEvent or firstEvent)
 
   surfaceRefresh(seconds)
+  sendLive()
   return n
 end
 

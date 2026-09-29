@@ -196,6 +196,13 @@ function E.triggerDrum(ti, row, vel) E.sync(); posted(synth.note_on(ti, row, vel
 function E.releaseTrack(ti) posted(synth.release(ti)) end
 function E.bend(ti, semis) E.rt[ti].bend = semis; posted(synth.bend(ti, semis)) end
 
+-- Where a keyboard's notes go when the kit takes them itself (4i d): the
+-- keys' track, whether it is drums, the pads' drum track (0 for none), and
+-- the Launchkey's surface port whose session pads are the window's.
+function E.live(track, drum, drums, device, cable, session)
+  posted(synth.live(track, drum, drums, device, cable, session))
+end
+
 -- The step being heard, with its fraction; the kit has already taken the
 -- sound's way to the speaker off it, which PulseMusic did with `latency`.
 function E.heardStep() return E.heard.step end

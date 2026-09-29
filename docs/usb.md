@@ -2683,6 +2683,11 @@ pads showing clips and scenes, or lighting as the drums hit.
   the path from a key to the ear.
 - **LIST says how many programs listen to a device**, which is what the
   gate's helper waits for before it plays: the thing rather than a time.
+  A number of *pages*, strictly: Groove opens two since 4i step d.
+- **The sound thread takes the notes itself** (4i d): Groove hands the Synth
+  Kit a second page, which its thread reads every pass in the audio band,
+  so a key waits for no window. The window's page is for what it shows,
+  the Launchkey's lights and recording.
 
 ## Sources
 

@@ -36,6 +36,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local synth = use("/Kosmos/Kits/synth")
+local midi = use("/Kosmos/Libraries/midi.lua")
 local E = use("/Kosmos/Libraries/groove/engine.lua")
 local U = use("/Kosmos/Libraries/groove/ui.lua")
 local Demos = use("/Kosmos/Libraries/groove/demos.lua")
@@ -208,6 +209,21 @@ end
 if not out then app.say("No sound: " .. tostring(why)) end
 
 print(("groove: %dx%d, %s"):format(W, H, out and "playing into the audio stream" or ("silent, " .. tostring(why))))
+
+-- **A keyboard's notes, taken by the kit itself** (`roadmap.md` 4i, step
+-- d): a `/Devices/midi` page of its own, every device, which the kit's
+-- thread reads each pass - so a key waits for no window. The window keeps
+-- its own page for what it shows and records. Without a sound thread, or a
+-- page, the window plays the notes as it did.
+local kitMidi = out and midi.open() or nil
+
+if kitMidi and synth.listen(kitMidi.at) then
+  app.kitPlays(true)
+  print("groove: the kit takes a keyboard's notes from its own page")
+elseif kitMidi then
+  kitMidi:close()
+  kitMidi = nil
+end
 
 if want["--play"] then E.play() end
 
@@ -466,6 +482,7 @@ end
 
 app.quit()
 synth.close()
+if kitMidi then kitMidi:close() end
 if out then out:close() end
 win:close()
 print("groove: closed")

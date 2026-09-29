@@ -460,7 +460,7 @@ static void user_thread_main(void *arg)
  * threads; nothing else may make one.
  */
 int process_thread_create(struct process *p, unsigned long entry,
-                          unsigned long arg)
+                          unsigned long arg, bool audio)
 {
     unsigned long flags;
     struct thread *t;
@@ -529,6 +529,12 @@ int process_thread_create(struct process *p, unsigned long entry,
     p->threads = t;
     p->live_threads++;
     spin_unlock(&processes_lock, flags);
+
+    /* In the audio band from its first instruction, when asked for and
+     * allowed (`THREAD_START_AUDIO`): before it is ever queued. */
+    if (audio) {
+        thread_enter_audio_band(t);
+    }
 
     thread_wake(t);
     return (int)index;

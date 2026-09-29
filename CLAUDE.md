@@ -406,7 +406,9 @@ thread that high is harmless only while it blocks, and nothing enforced
 that it did. Under spinners holding every core in the display band,
 Groove's sound thread was never away longer than 14 ms, inside the 23 ms
 the device holds; out of the band it was away 428 ms (`testing.md`
-18.263).
+18.263) - and only that, because a turn's end handed a higher band's core
+to a lower one, which is fixed: strict priority now holds when a quantum
+runs out too, and a sound thread is born in its band (18.268).
 
 **The kernel is SMP-aware, and the machine boots four processors.** Each one
 installs its own exception vector, wakes its own GIC redistributor, arms its

@@ -773,7 +773,7 @@ bool process_should_die(void);
  * wait, and hands the slot back.
  */
 int  process_thread_create(struct process *p, unsigned long entry,
-                           unsigned long arg);
+                           unsigned long arg, bool audio);
 void process_thread_ended(struct process *p, struct thread *t, int code);
 int  process_thread_wait(struct process *p, unsigned index);
 struct thread *process_thread_at(struct process *p, unsigned index);

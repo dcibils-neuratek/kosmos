@@ -171,17 +171,17 @@ def main():
         # manager keeps the prompt.
         if not x86:
             mark = len(guest.seen)
-            run("wm groove,midi:play %s 36 10" % vid, "midi: ", 120)
+            run("wm groove,midi:play %s 36 10 2" % vid, "midi: ", 120)
             time.sleep(1.5)
             guest._read_available()
             said = guest.seen[mark:]
             check("groove: MIDI in from Virtual keyboard Keys" in said,
                   "Groove did not open the virtual keyboard:\n" + said[-900:])
-            check("midi: played note 36 on channel 10 of device %s, 1 listening" % vid in said,
+            check("midi: played note 36 on channel 10 of device %s, 2 listening" % vid in said,
                   "midi play did not find Groove listening:\n" + said[-900:])
             check("groove: MIDI heard, on ch10 36 100" in said,
                   "Groove did not say it heard the pad:\n" + said[-900:])
-            way = re.search(r"groove: key to ear ([\d.]+) ms - ([\d.-]+) to the window's pass, "
+            way = re.search(r"groove: key to ear ([\d.]+) ms - ([\d.-]+) to the (?:window's|kit's) pass, "
                             r"([\d.-]+) to the kit, ([\d.]+) in the ring \((\d+) frames, "
                             r"(\d+) periods kept\), ([\d.]+) in the device \((\d+) frames\)", said)
             check(way, "Groove did not say the note's way to the ear:\n" + said[-900:])
@@ -194,6 +194,11 @@ def main():
                       "the note's way does not add up: %s" % way.group(0))
                 check(window > 0,
                       "the pad's own time did not reach the kit: %s" % way.group(0))
+                # 4i d: the pad was taken by the kit from its own page, and
+                # no window's pass stood between the key and the sound.
+                check("; taken by the kit from its own page" in said
+                      and "groove: the kit takes a keyboard's notes from its own page" in said,
+                      "the pad did not reach the kit without the window: %s" % way.group(0))
                 check(ring_frames % 256 == 0 and 2 <= kept <= 8 and ring_frames <= kept * 256,
                       "the ring's part is not whole periods within those the kit kept: %s"
                       % way.group(0))

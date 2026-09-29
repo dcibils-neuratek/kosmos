@@ -1112,6 +1112,14 @@ processors, and still what follows USB:
      Launchkey's lights and recording, and stops starting the sound
      itself. Placing a note at its own sample within the period is left
      for after.
+     **DONE on 29 September** (`testing.md` 18.267): the pad from the
+     virtual keyboard reaches the kit in 5.6 ms under QEMU, where through
+     the window it took 12 to 113. `midi play` waits for a number of pages
+     now, since Groove opens two, and the kit starts from its page's own
+     place, so nothing sent while Groove starts is lost. **Seen on the
+     way**: a note in Groove's first seconds waits behind the whole ring,
+     because the kit starts with all eight periods and comes down a period
+     a second.
    - **e** - the device's own depth and the shortest period the controller
      holds, on the ThinkPad's HD Audio; and the whole number there.
 4i-b. **WANTED since 19 September - where the fortnight went: IPC costs 70%

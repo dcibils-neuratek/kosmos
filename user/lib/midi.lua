@@ -207,7 +207,9 @@ function midi.open(id)
     return nil, "no memory for the MIDI events: " .. tostring(why)
   end
 
-  if not sys.memory_map(cap) then
+  local at = sys.memory_map(cap)
+
+  if not at then
     sys.release(cap)
     return nil, "the MIDI events' page could not be mapped"
   end
@@ -221,8 +223,12 @@ function midi.open(id)
 
   local handle = string.unpack("<I4", reply, 13)
 
+  -- `at` is where the page is in this process, for C in the same process
+  -- to read it itself - the Synth Kit takes a keyboard's notes that way
+  -- (`synth.listen`). What reads it writes its `read`, and so a stream
+  -- handed to C is not read here as well.
   return setmetatable({ cap = cap, handle = handle, device = id, read = 0,
-                        lost = 0 }, stream)
+                        lost = 0, at = at }, stream)
 end
 
 --

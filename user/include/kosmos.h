@@ -406,7 +406,16 @@ static inline void *kosmos_tls(void)
 static inline long kosmos_thread_start(void (*entry)(unsigned long),
                                        unsigned long arg)
 {
-    return sys2(SYS_THREAD_CREATE, (long)(uintptr_t)entry, (long)arg);
+    return sys3(SYS_THREAD_CREATE, (long)(uintptr_t)entry, (long)arg, 0);
+}
+
+/* The same, born in the audio band (`THREAD_START_AUDIO`): refused unless
+ * this process declared `kosmos: needs audio`. */
+static inline long kosmos_thread_start_audio(void (*entry)(unsigned long),
+                                             unsigned long arg)
+{
+    return sys3(SYS_THREAD_CREATE, (long)(uintptr_t)entry, (long)arg,
+                (long)THREAD_START_AUDIO);
 }
 
 static inline void kosmos_thread_exit(int code)

@@ -1407,7 +1407,14 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
 
     case SYS_THREAD_CREATE:
-        result = process_thread_create(p, sc->arg[0], sc->arg[1]);
+        if ((sc->arg[2] & ~(unsigned long)THREAD_START_AUDIO) != 0
+            || ((sc->arg[2] & THREAD_START_AUDIO) != 0 && !p->owns_audio_band)) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        result = process_thread_create(p, sc->arg[0], sc->arg[1],
+                                       (sc->arg[2] & THREAD_START_AUDIO) != 0);
 
         if (result < 0) {
             result = (result == -2) ? SYS_ERR_NO_ROOM : SYS_ERR_NO_ROOM;

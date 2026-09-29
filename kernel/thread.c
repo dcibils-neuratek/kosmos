@@ -1514,21 +1514,30 @@ void thread_preempt_if_needed(void)
      * touches the queue happens between these two lines and nothing else
      * does.
      */
+    /*
+     * **Back in the queue first, then the choice** - and the order is the
+     * whole of strict priority here. It chose first and put the running
+     * thread back only if something else was queued, so the choice was made
+     * among *the others*: when a thread's turn ran out, whatever waited ran
+     * next, from any band, and a display-band thread spinning handed its
+     * core to a NORMAL one every quantum. Found on 29 September by a test
+     * whose control would not fail (`testing.md` 18.268): a thread left at
+     * NORMAL ran under a display-band spinner on its own core. In the queue
+     * with the rest, the running thread is chosen again unless a peer or a
+     * higher band is waiting - a turn among equals, and nothing for lower.
+     */
     {
         unsigned      cpu   = here();
         unsigned long flags = spin_lock(&runq_lock[cpu]);
 
+        policy->enqueue(cpu, current);
         next = policy->pick_next(cpu);
-
-        if (next != NULL) {
-            policy->enqueue(cpu, current);
-        }
 
         spin_unlock(&runq_lock[cpu], flags);
     }
 
-    if (next == NULL) {
-        return;     /* nothing else wants the CPU */
+    if (next == NULL || next == current) {
+        return;     /* it is still the one that should run */
     }
 
     switch_to(next);
