@@ -221,9 +221,27 @@ capabilities which will then lead to us having accelerated 2d graphics".
 scan stays (no index); a stick with `/Home` served by C to live with before
 step 4 takes the Lua server away.
 
-**Next**: `diskfs` step 4, the Lua server, `kfs.lua` and the drive server's
-own superblock reading removed - after 0.10.193 has been used on the
-machines. Waiting on Diego: the 0.10.192 and 0.10.193 sticks on the M700. Also agreed (29 September), after it: a QEMU
+**0.10.193 on the M700** (29 September): "10.193 runs very well! make it
+the stable and delete all older builds" - renamed
+`kosmos-usb-0.10.193-stable.img`, same bytes (sha256 b0e1f001...); the
+M700's 0.10.189-stable and the development images 0.10.190 to 0.10.192
+deleted, with the build folders of every stick before it. Stable: the
+ThinkPad's 0.10.88, the M700's 0.10.193. `/Home` in C has been used on the
+machine, which is what step 4 was waiting for.
+
+**The profiler, the App Inspector's step 1** (`testing.md` 18.284), for
+Diego's "lets profile in the m700 the Lua VS C": `kernel/profile.c` and
+`SYS_PROFILE` sample every processor at every tick while a profile runs;
+`profile SECONDS` writes `/Home/profiles/<date>.kprof`; `make stick-log
+FILE=/Home/profiles/` and `make profile-report` name every address from the
+symbols a stick now keeps beside its image, into `build/profiles/<name>.html`.
+`arm-profile` and `x86-profile` hold a Lua loop to 100% Lua and a copy to
+100% C, with six controls. `binproto.h` carries eight needs (the window
+manager's came to seven with `profile`).
+
+**Next**: `profile 30` on the M700 with the desktop in use, and the answer
+to Diego's question from it. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
 cursor and the screen's size from the device. Waiting on Diego: the M700

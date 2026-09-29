@@ -26,6 +26,7 @@
 #include "syscall.h"
 #include "irq.h"
 #include "process.h"
+#include "profile.h"
 #include "sched.h"
 #include "smp.h"
 #include "thread.h"
@@ -376,6 +377,10 @@ static long spawn_allowed(struct process *p, uintptr_t caps_ptr, size_t ncaps,
         return SYS_ERR_DENIED;
     }
 
+    if ((flags & SPAWN_PROFILE) != 0 && !p->owns_profile) {
+        return SYS_ERR_DENIED;
+    }
+
     if ((flags & SPAWN_SCREEN) != 0 && !p->owns_screen) {
         return SYS_ERR_DENIED;
     }
@@ -427,6 +432,10 @@ static long spawn_finish(struct process *child, uintptr_t caps_ptr, size_t ncaps
 
     if ((flags & SPAWN_PROCCTL) != 0) {
         process_grant_procctl(child);
+    }
+
+    if ((flags & SPAWN_PROFILE) != 0) {
+        process_grant_profile(child);
     }
 
     if ((flags & SPAWN_AUDIO) != 0 && !process_grant_audio(child)) {
@@ -1472,6 +1481,10 @@ void syscall_dispatch(struct syscall_frame *sc)
             thread_wake_sleepers_now();
             result = 0;
         }
+        break;
+
+    case SYS_PROFILE:
+        result = profile_call(p, sc->arg[0], sc->arg[1], (size_t)sc->arg[2]);
         break;
 
     case SYS_SCREEN_FLUSH:

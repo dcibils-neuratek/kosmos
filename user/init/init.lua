@@ -283,6 +283,11 @@ local SPAWN_AUDIO   = 16
 -- has it to give.
 local SPAWN_AUDIO_BAND = 128
 
+-- Where every processor is, a tick at a time (`kernel/profile.c`): what
+-- `needs profile` grants, to `profile` and to whatever starts it. Not
+-- hardware, so every machine has it to give.
+local SPAWN_PROFILE = 256
+
 -- The network card. The disk's grant, pointed outwards: a process that can
 -- put a raw frame on the wire can claim any address on the network and read
 -- every frame that reaches the machine, whatever any namespace says. So one
@@ -1169,13 +1174,13 @@ local function new_namespace()
   --
   local BIN_NAME_MAX = 64                 -- has to match binproto.h
   local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
-  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c32c40"
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c16c16c32c40"
 
   assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
   -- Past the header, the icon and what it opens, 1-based.
-  local BIN_DATA = 24 + 128 + 32 + 40 + 1
+  local BIN_DATA = 24 + 160 + 32 + 40 + 1
   local BIN_OPS = { list = 1, read = 2, getattr = 3 }
   local BIN_ERRORS = {
     [1] = "no such program",
@@ -1203,7 +1208,7 @@ local function new_namespace()
     if #reply < BIN_DATA then return nil, "a /bin reply of the wrong size" end
 
     local err, count, size, length, more, windowed,
-          kind, section, n1, n2, n3, n4, n5, n6, icon, opens =
+          kind, section, n1, n2, n3, n4, n5, n6, n7, n8, icon, opens =
       string.unpack(BIN_HEAD, reply)
 
     if err ~= 0 then
@@ -1236,7 +1241,7 @@ local function new_namespace()
     if op == "getattr" then
       local needs = nil
 
-      for _, w in ipairs({ n1, n2, n3, n4, n5, n6 }) do
+      for _, w in ipairs({ n1, n2, n3, n4, n5, n6, n7, n8 }) do
         w = trim(w)
 
         if w ~= "" then
@@ -5714,6 +5719,7 @@ query. `find` and `watch` are built on exactly these two calls.
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
       if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end
+      if want == "profile" then flags = flags | SPAWN_PROFILE end
       if want == "network" and may_pass_net() then
         flags = flags | SPAWN_NET
       end
@@ -6751,7 +6757,8 @@ if role == ROLE_INIT then
                       (may_pass_screen() and SPAWN_SCREEN or 0)
                       | SPAWN_AUDIO_BAND
                       | (may_pass_net() and SPAWN_NET or 0)
-                      | SPAWN_PROCCTL)
+                      | SPAWN_PROCCTL
+                      | SPAWN_PROFILE)
 
   -- And now it does what an init does, which is outlive everything and
   -- notice when something ends.
@@ -7095,6 +7102,10 @@ if role == ROLE_RUNNER then
 
       -- A program that makes sound: its threads may take the audio band.
       if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end
+
+      -- A program that sees where every processor is: `profile`, and what
+      -- starts it - the window manager and a Terminal.
+      if want == "profile" then flags = flags | SPAWN_PROFILE end
 
       if want == "network" and may_pass_net() then
         flags = flags | SPAWN_NET

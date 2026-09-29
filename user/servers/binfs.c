@@ -456,9 +456,11 @@ static void fill_attrs(const struct source_entry *e, struct bin_reply *rep)
      * declares more than `BIN_NEEDS_MAX` gets the first few, which is the
      * one place here that quietly drops something - and the static assert
      * cannot catch it because it is the *program* that is too greedy, not
-     * the protocol. Six since 24 September: the window manager declares
+     * the protocol. Six since 24 September: the window manager declared
      * five - it holds the camera to pass it on (`usb.md` §11 8d) - and four
-     * would have dropped the last without a word.
+     * would have dropped the last without a word. Eight since 29 September,
+     * when it came to seven with `midi` and `profile`, and six would have
+     * dropped the right to profile the same way.
      */
     s = declared(e->text, e->length, "needs", &n);
 

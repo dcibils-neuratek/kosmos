@@ -23,6 +23,7 @@
 #include "cpu.h"
 #include "process.h"
 #include "sched.h"
+#include "profile.h"
 #include "thread.h"
 #include "hal.h"
 #include "mmu.h"
@@ -335,6 +336,7 @@ void trap_handle(struct trapframe *f)
          */
         if (this_cpu()->index != 0) {
             if (tick) {
+                profile_tick(f->rip, (f->cs & 3) != 0);
                 thread_tick();
             }
 
@@ -385,6 +387,7 @@ void trap_handle(struct trapframe *f)
          * both - there is nothing to reschedule once it is gone.
          */
         if (tick) {
+            profile_tick(f->rip, (f->cs & 3) != 0);
             thread_tick();
         }
         console_tick();

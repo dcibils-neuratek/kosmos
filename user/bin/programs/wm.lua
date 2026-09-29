@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: server
--- kosmos: needs processes screen network audio camera midi
+-- kosmos: needs processes screen network audio camera midi profile
 --
 -- `network` is here so the desktop can *pass it on*. The kernel refuses a
 -- spawn that hands over authority the parent does not hold, so without this
@@ -15,7 +15,10 @@
 -- Deskbar reads that from `/Devices/audio` as any client does, and the
 -- device is the audio server's alone.
 --
--- **Neither widens what an application can reach.** `init.lua` grants the
+-- And `profile` for the same reason: `profile`, run from a Terminal this
+-- starts, sees where every processor is (`kernel/profile.c`).
+--
+-- **None of them widens what an application can reach.** `init.lua` grants the
 -- network only when the machine has a card, and a child gets a grant only
 -- when its own header declares it needs one. So this is a conduit rather
 -- than a store, which is the same arrangement `network` has had since the

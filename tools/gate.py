@@ -134,6 +134,14 @@ SUITES = [
     # was afterwards.
     Suite("arm-diskwire", ["python3", "tools/run_diskwire.py", ARM]),
 
+    # **The profiler** (`roadmap.md`, the App Inspector's first step): a
+    # loop that is only the interpreter has to come out Lua and a copy that
+    # is only C has to come out C, named from the symbols that ran; about a
+    # sample a processor a tick, none lost; no right, no profile; one at a
+    # time. Both boards, because the tick is taken in each one's own trap.
+    Suite("arm-profile", ["python3", "tools/run_profile.py", ARM]),
+    Suite("x86-profile", ["python3", "tools/run_profile.py", X86], x86=True),
+
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is
     # written to kfs: R, four seconds, R, and the file read back by the video

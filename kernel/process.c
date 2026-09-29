@@ -1481,6 +1481,14 @@ bool process_grant_audio(struct process *p)
     return true;
 }
 
+/* The right to see where every processor is (`SPAWN_PROFILE`, `profile.c`). */
+void process_grant_profile(struct process *p)
+{
+    if (p != NULL) {
+        p->owns_profile = true;
+    }
+}
+
 /*
  * The right to put a thread in the audio band (`SPAWN_AUDIO_BAND`,
  * `sched.h`). Nothing moves until a thread asks.

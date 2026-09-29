@@ -823,7 +823,8 @@ every check under OVMF, which is necessary and not sufficient. So:
     never rebuilt - and that machine's stable image before it goes to the
     Trash. **There is exactly one a machine** - agreed on 26 September, "one
     per machine", with the ThinkPad's 0.10.88 and the M700's 0.10.169; the
-    M700's has been 0.10.189 since 29 September ("It works amazing") - and a
+    M700's was 0.10.189 on 29 September ("It works amazing") and 0.10.193 the
+    same evening, the first with `/Home` served by C - and a
     stick that misbehaves is written back with its machine's.
   - Each development build is the stable one plus what came since, so a stick
     that stops points at what came since.

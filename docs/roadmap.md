@@ -5400,6 +5400,49 @@ the Pi", and the Pi is not here yet.
   `docs/appinspector.html` first, changed until Diego agrees, then the code.
   The browser loading a page is the first thing to point it at.
 
+  **Step 1 agreed on 29 September - the engine, pointed at the M700.** Diego,
+  after `diskfs` went to C: "lets profile in the m700 the Lua VS C", and "Lua
+  is great but it might be best suitable for programs and apps only?" - the
+  question of which system Lua, if any, moves to C next, to be answered by
+  where the time goes on the real machine rather than by argument. No window
+  yet, so no drawing yet:
+  - **The kernel samples**, only while a profile runs: each processor, at
+    each tick (250 a second), records the process, the address it was
+    interrupted at and whether that was a program, the kernel or idle, into a
+    ring of its own that the profiler drains. Allowed only to a process
+    granted it - `SPAWN_PROFILE`, asked for by `-- kosmos: needs profile` -
+    since where every program is, is more than a program should see.
+  - **`profile SECONDS`** runs it and saves the samples, with every
+    process's name and image, in `/Home/profiles`, and says each process's
+    share at the end.
+  - **On the Mac, a report** - `make stick-log` brings the file back and
+    `tools/profile_report.py` puts every sample in its layer with the build's
+    own link map: the Lua VM, its collector, the Lua libraries, a C kit, a
+    server, a driver, the libc, a vendored engine, the kernel, idle - per
+    process and in all, as a page.
+  - Then **step 2**, a process's waiting attributed to the server it waits
+    on, and **step 3**, the window, drawn first.
+
+  **Step 1 BUILT, 29 September** (`testing.md` 18.284): `kernel/profile.c`,
+  `SYS_PROFILE`, `profile`, `make profile-report`, `arm-profile` and
+  `x86-profile`. Two things it found at once, both in the report: a
+  syscall's time lands on the instruction after it, because a syscall runs
+  with interrupts masked, and the report counts it as the kernel's; and the
+  kernel's own interrupt work is not sampled at all, for the same reason.
+  Next: `profile 30` on the M700 with the desktop in use, and the answer to
+  Diego's question from it.
+
+- **FOUND on 29 September, writing the profiler's suite - on QEMU's x86-64,
+  one processor.** Two spinners in the display band kept `profile`, asleep a
+  quarter of a second between drains in the same band, from running for
+  about 46 s of ticks (10,376 samples lost), and the one of them that asked
+  `/Temporary` something four times a second had 94% of the processor
+  against the other's 6%. And eight seconds of the counter ended in about
+  one and a half. Neither was chased: the first is a responsiveness
+  question - a program that blocks is supposed to be woken and run - and
+  wants reproducing on ARM with one core and on the M700 before any theory;
+  the second may be QEMU's x86-64 TSC under TCG and nothing of ours.
+
 ### Smaller, and wanted
 
 - **FOUND on 22 September - Music's two icons have never drawn.**

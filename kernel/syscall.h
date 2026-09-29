@@ -514,7 +514,27 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_SCREEN_FLUSH 61 /* (x, y, w, h)           -> 0 or error       */
 
-#define SYS_MAX         62
+/*
+ * **Where every processor is, a tick at a time** (`roadmap.md`, the App
+ * Inspector's first step; Diego, 29 September: "lets profile in the m700 the
+ * Lua VS C"). While a profile runs, each processor records at each tick the
+ * process it was running, the address it was interrupted at and whether that
+ * was a program, the kernel or idle - `struct profile_sample` - into a ring
+ * of its own, and `PROFILE_READ` drains them into the caller's buffer. Only
+ * for a process spawned with `SPAWN_PROFILE`, and one at a time.
+ */
+#define SYS_PROFILE     62  /* (op, buf, max)         -> count or error     */
+
+#define SYS_MAX         63
+
+#define PROFILE_START   1u
+#define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */
+#define PROFILE_STOP    3u
+#define PROFILE_LOST    4u  /* samples a full ring could not keep, so far */
+
+#define PROFILE_USER    1u  /* a program's own code */
+#define PROFILE_KERNEL  2u  /* the kernel, for a program or for itself */
+#define PROFILE_IDLE    3u
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -612,7 +632,12 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SPAWN_AUDIO_BAND 128u
 
-
+/*
+ * **The right to profile** (`SYS_PROFILE`): to see where every processor
+ * is, which is more than a program should know about the others. What
+ * `profile` declares, as `kosmos: needs profile`; passed on like the rest.
+ */
+#define SPAWN_PROFILE  256u
 
 /*
  * What SYS_SCHED_INFO reports: which policy is running, how long a turn is,
@@ -1239,6 +1264,21 @@ struct netinfo {
  * the machine boots, and the filesystem server says it has nothing to mount
  * rather than the kernel refusing to start.
  */
+/*
+ * One tick of one processor, as `SYS_PROFILE` hands it over and a profile
+ * file keeps it: sixteen bytes, no padding.
+ */
+struct profile_sample {
+    uint64_t pc;            /* where it was interrupted */
+    uint32_t pid;           /* 0 for the kernel's own threads and idle */
+    uint16_t thread;        /* the thread's slot */
+    uint8_t  cpu;
+    uint8_t  where;         /* PROFILE_USER, _KERNEL or _IDLE */
+};
+
+_Static_assert(sizeof(struct profile_sample) == 16,
+               "a profile sample is 16 bytes; profile_report.py reads it so");
+
 struct diskinfo {
     uint64_t sectors;
     uint32_t sector_size;
@@ -1260,6 +1300,7 @@ struct diskinfo {
 #define SYS_ERR_NO_DEVICE (-108)    /* this machine has nothing of that kind */
 #define SYS_NO_INTERRUPT  (-110)    /* a timed interrupt wait ran out; not an error */
 #define SYS_ERR_NOT_IMAGE (-111)    /* SYS_SPAWN_IMAGE's bytes are not an image */
+#define SYS_ERR_BUSY      (-112)    /* one at a time, and another has it */
 
 /*
  * Everything above is plain preprocessor because user programs written in
@@ -1301,6 +1342,7 @@ static inline void sys_result_codes_are_distinct(long result)
     case SYS_ERR_NO_DEVICE:
     case SYS_NO_INTERRUPT:
     case SYS_ERR_NOT_IMAGE:
+    case SYS_ERR_BUSY:
     default:
         break;
     }

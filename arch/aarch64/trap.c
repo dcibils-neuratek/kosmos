@@ -17,6 +17,7 @@
 #include "console.h"
 #include "hal.h"
 #include "percpu.h"
+#include "profile.h"
 #include "thread.h"
 #include "process.h"
 #include "syscall.h"
@@ -318,6 +319,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
          * spent. `hal.h` has the account.
          */
         if (tick) {
+            profile_tick(tf->elr, false);
             thread_tick();
         }
 
@@ -423,6 +425,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
              */
             if (this_cpu()->index != 0) {
                 if (tick) {
+                    profile_tick(tf->elr, true);
                     thread_tick();
                 }
 
@@ -442,6 +445,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
             }
 
             if (tick) {
+                profile_tick(tf->elr, true);
                 thread_tick();
             }
 

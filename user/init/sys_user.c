@@ -2247,6 +2247,94 @@ static int l_region_write(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.profile(op, ...)` - where every processor is, a tick at a time
+ * (`kernel/profile.c`), for a process spawned with `SPAWN_PROFILE`.
+ *
+ *   sys.profile("start")               -> true, or nil and why
+ *   sys.profile("read", region, at)    -> samples drained into the region
+ *                                         from byte `at`, as many as fit
+ *   sys.profile("lost")                -> samples a full ring dropped
+ *   sys.profile("stop")                -> true
+ *
+ * **Into a region and never into Lua**: a sample is sixteen bytes and a
+ * profile of eight processors is two thousand of them a second, which as
+ * strings or tables would put the collector in the thing measuring it. The
+ * region is written to a file whole, and read on the Mac.
+ */
+static int profile_refused(lua_State *L, long r)
+{
+    lua_pushnil(L);
+
+    switch (r) {
+    case SYS_ERR_DENIED:
+        lua_pushstring(L, "this program may not profile: its header says "
+                          "`kosmos: needs profile`, and whoever started it "
+                          "has to hold that too");
+        break;
+    case SYS_ERR_BUSY:
+        lua_pushstring(L, "another program is profiling");
+        break;
+    case SYS_ERR_NO_ROOM:
+        lua_pushstring(L, "no memory for the processors' rings");
+        break;
+    default:
+        lua_pushfstring(L, "the kernel refused, error %d", (int)r);
+        break;
+    }
+
+    return 2;
+}
+
+static int l_profile(lua_State *L)
+{
+    static const char *const ops[] = { "start", "read", "lost", "stop", NULL };
+    static const unsigned long codes[] = { PROFILE_START, PROFILE_READ,
+                                           PROFILE_LOST, PROFILE_STOP };
+    int which = luaL_checkoption(L, 1, NULL, ops);
+    struct profile_sample *out = NULL;
+    unsigned long room = 0;
+    long r;
+
+    if (codes[which] == PROFILE_READ) {
+        long cap = (long)luaL_checkinteger(L, 2);
+        lua_Integer at = luaL_optinteger(L, 3, 0);
+        uintptr_t base;
+        size_t bytes;
+
+        if (!region_of(cap, &base, &bytes)) {
+            lua_pushnil(L);
+            lua_pushfstring(L, "that is not a region this process can map: %s",
+                            region_fail);
+            return 2;
+        }
+
+        if (at < 0 || (size_t)at > bytes || at % (lua_Integer)sizeof *out != 0) {
+            lua_pushnil(L);
+            lua_pushstring(L, "a sample starts inside the region, on a "
+                              "multiple of sixteen bytes");
+            return 2;
+        }
+
+        out = (struct profile_sample *)(base + (uintptr_t)at);
+        room = (bytes - (size_t)at) / sizeof *out;
+    }
+
+    r = kosmos_profile(codes[which], out, room);
+
+    if (r < 0) {
+        return profile_refused(L, r);
+    }
+
+    if (codes[which] == PROFILE_START || codes[which] == PROFILE_STOP) {
+        lua_pushboolean(L, 1);
+    } else {
+        lua_pushinteger(L, (lua_Integer)r);
+    }
+
+    return 1;
+}
+
 /* `sys.region_read(cap, offset, bytes)` - and back out again. */
 static int l_region_read(lua_State *L)
 {
@@ -3157,6 +3245,7 @@ static const luaL_Reg sys_functions[] = {
     { "info",     l_info },
     { "name",     l_setname },
     { "processes", l_processes },
+    { "profile",  l_profile },
     { "pointer",  l_pointer },
     { "bus",      l_bus },
     { "cpuload",  l_cpuload },

@@ -434,6 +434,14 @@ static inline long kosmos_proctable(struct proc_info *out, unsigned long max)
     return sys2(SYS_PROCTABLE, (long)(uintptr_t)out, (long)max);
 }
 
+/* A profile: `PROFILE_START`, `_READ` up to `max` samples into `out`,
+ * `_LOST` or `_STOP` (`kernel/profile.c`). Only with `SPAWN_PROFILE`. */
+static inline long kosmos_profile(unsigned long op, struct profile_sample *out,
+                                  unsigned long max)
+{
+    return sys3(SYS_PROFILE, (long)op, (long)(uintptr_t)out, (long)max);
+}
+
 /* The granule those come in. Has to match PAGE_SIZE in the kernel; it is the
  * unit the syscall counts in. */
 #define KOSMOS_PAGE_SIZE    4096UL

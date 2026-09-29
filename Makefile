@@ -286,6 +286,7 @@ SRCS := boot/start.S \
         kernel/smp.c \
         kernel/spinlock.c \
         kernel/syscall.c \
+        kernel/profile.c \
         kernel/main.c \
         $(GEN)/init_bin.c
 
@@ -2989,6 +2990,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/smp.c \
              kernel/spinlock.c \
              kernel/syscall.c \
+             kernel/profile.c \
              kernel/main.c \
              $(X86_BUILD)/init_bin.c
 
@@ -3363,6 +3365,28 @@ x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	else \
 	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	fi
+	@# **Its symbols, beside it** (`tools/profile_report.py`): a profile taken
+	@# on the machine names its addresses from exactly these, and a rebuild
+	@# after the stick was made would name them wrongly. The system's image,
+	@# the kernel and the installed applications, unstripped.
+	@S=$(USB_IMG:.img=.symbols); rm -rf $$S && mkdir -p $$S && \
+	cp $(X86_BUILD)/kosmos.elf $$S/kernel.elf && \
+	cp $$($(MAKE) --no-print-directory -s ARCH=x86_64 FULL=$(FULL) ubuild-path)/init.elf $$S/init.elf && \
+	for a in build/user-x86_64/apps/*.elf; do [ -f "$$a" ] && cp "$$a" $$S/; done; \
+	echo "its symbols, for a profile taken on it: $$S"
+
+# Where this build's userland is, for a rule that has to name its `init.elf`.
+.PHONY: ubuild-path
+ubuild-path:
+	@echo $(UBUILD)
+
+# **A profile, named** (`roadmap.md`, the App Inspector's first step):
+# `profile` on the machine, `make stick-log FILE=/Home/profiles/` here, and
+# this reads the newest - or `KPROF=path` - against the symbols that ran,
+# into `build/profiles/<name>.html` and the terminal.
+.PHONY: profile-report
+profile-report:
+	@python3 tools/profile_report.py $(KPROF)
 
 usb: x86-usb-image
 	@bash tools/mkusb.sh $(USB_IMG)

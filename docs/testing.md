@@ -13316,3 +13316,71 @@ faster for not spelling its path first, a query of a folder is a
 millisecond, and the whole of two thousand files is six to fifteen - and
 Diego chose it the same day: "scan".
 
+## 18.284 The profiler: where every processor is, named on the Mac
+
+**The App Inspector's first step** (`roadmap.md`; Diego, 29 September:
+"lets profile in the m700 the Lua VS C"). Three parts, and the kernel's is
+thread accounting and nothing more:
+
+- **`kernel/profile.c`**: while a profile runs, each processor records at
+  each tick the process it was running, the address it was interrupted at,
+  and whether that was a program, the kernel or idle - sixteen bytes, into a
+  ring of its own, sixteen pages that come and go with the profile.
+  `SYS_PROFILE` starts, drains, counts what a full ring lost, and stops; only
+  for a process spawned with `SPAWN_PROFILE`, which `-- kosmos: needs
+  profile` asks for, and one at a time.
+- **`profile SECONDS`**, a program: drains into a region, never into Lua,
+  and writes `/Home/profiles/<date>.kprof` - a header naming every process
+  and the image it ran, then the samples - and says each process's share.
+- **`make profile-report`** (`tools/profile_report.py`): each address named
+  by `addr2line` against the image it ran in, and classed by the file it was
+  compiled from - Lua's interpreter, collector, compiler and libraries;
+  Kosmos's bindings; the allocator; the libc; kits; vendored C; servers and
+  drivers; an application's own C; the kernel. A page, and the terminal.
+  **The symbols have to be the ones that ran**: the header carries
+  `str_format`'s address as the machine had it, and an `init.elf` whose own
+  disagrees is not used. A stick's are kept beside its image, as
+  `<image>.symbols/`.
+
+**`arm-profile` and `x86-profile`, ten checks each.** Two programs whose
+answer is known run while `profile` watches: a Lua loop of arithmetic, and a
+four-megabyte `sys.region_copy` over and over. ARM, four processors: 4,018
+samples in 4.0 s and none lost; the loop 100% Lua (`luaV_execute`), the copy
+100% C (`memmove`). x86-64, one: 1,028 in 4.1 s, the same two answers. And a
+program without `needs profile` refused, a second profile refused while one
+runs, the anchor agreeing, nothing dead - and **`profile 1 term` typed in a
+Terminal** under `wm terminal`, which is where it is typed on the M700, its
+file written: the right has passed from the shell to the window manager to
+the Terminal to `profile`, each holding it only to hand it on.
+
+**Seven controls, each biting**: the Terminal without `needs profile` (no
+`term.kprof`); every sample recorded as the kernel's (both
+spinners 0% of their layer); `lvm.c` left out of Lua's files (the loop 0%
+Lua, 999 samples unknown); the right not checked (`NORIGHT true`); a second
+profile allowed (refused nowhere, and the spinners missing from the one that
+won); the shell not handed the right to pass on (`run: could not start a
+process for it`, said in two seconds rather than after a minute's wait); and
+an anchor that is not `str_format` (no `init.elf` agrees, and the report
+says so rather than naming anything).
+
+**Found by the first report: a syscall's time lands after it.** `spin`,
+whose loop is `sys.ticks()`, read 99.7% "its own code" - in `sys0`, a stub
+three instructions long. A syscall runs with interrupts masked on both
+boards (the exception masks them and nothing on the syscall path unmasks;
+x86-64's `IA32_FMASK` clears IF), so a tick that falls due during one is
+taken as the program resumes, at the instruction after `svc` or `syscall`.
+The report reads the instruction before each address out of the ELF, and an
+address after a syscall is **the kernel's, on a syscall**, named by the
+function that made it: `l_ticks (a syscall)`. The same masking means the
+kernel's own time is seen only there - an interrupt's handling and a switch
+are not sampled at all.
+
+**Found writing the suite, on QEMU's x86-64, and left for later**
+(`roadmap.md`): the spinners first timed themselves with the counter, and
+eight seconds of it ended both of them in about one and a half - before the
+profile began, so it read 99% idle. They run until the suite writes
+`/Temporary/stop` now. And in the display band, on its one processor, the
+two spinners kept `profile` - asleep a quarter of a second between drains -
+from draining for about 46 s of ticks: 10,376 samples lost. The spinners
+step down to the normal band, as `spin` does, and `profile` keeps its time.
+

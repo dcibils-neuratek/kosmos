@@ -1368,6 +1368,10 @@ void kmain(void)
          * and init hands it to whatever makes sound (`sched.h`). */
         process_grant_audio_band(init);
 
+        /* And the right to profile, which init hands to whatever asks for
+         * it in its header (`SPAWN_PROFILE`). */
+        process_grant_profile(init);
+
         /*
          * And the network card, on the same terms as the disk: init holds
          * it so it can hand it on, and hands it to exactly one process.

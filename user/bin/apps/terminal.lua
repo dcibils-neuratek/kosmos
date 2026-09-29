@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Terminal
+-- kosmos: needs profile
 -- A terminal, in a window.
 --
 --   wm terminal
@@ -27,6 +28,11 @@
 -- clever use of it: a name resolves to a capability, nothing has a global
 -- meaning, so "the console" is whatever this process was handed. BeOS could
 -- not do this; the Terminal there talked to a device.
+--
+-- `needs profile` is held to be passed on, as the window manager holds what
+-- it declares: `profile` is typed here, and the kernel refuses a spawn that
+-- hands a child a right its parent does not hold. A program run here gets
+-- it only when its own header asks.
 --
 -- What it does not do yet: no scrollback beyond the buffer, no VT100
 -- emulation, no job control. The escape sequences are M12's prerequisite

@@ -463,6 +463,9 @@ struct process {
      * this: the task manager. */
     bool              owns_procctl;
 
+    /* May see where every processor is (`SPAWN_PROFILE`, `profile.c`). */
+    bool              owns_profile;
+
     /*
      * **May claim a piece of hardware, and may ask where memory physically
      * is.**
@@ -620,6 +623,7 @@ void process_grant_console(struct process *p);
 bool process_grant_screen(struct process *p);
 bool process_grant_audio(struct process *p);
 void process_grant_audio_band(struct process *p);
+void process_grant_profile(struct process *p);
 
 /*
  * Hands a process the disk. Like the console and unlike the screen, there is
