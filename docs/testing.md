@@ -14320,3 +14320,26 @@ hold each picture a moment on the server and require two asked for at once
 refusal page to be on the screen, with its two links, before clicking - the
 log line comes when the page is committed, and a screendump taken at once
 caught the page before.
+
+## 18.303 TLS sessions taken back - and never one opened anyway
+
+**`roadmap.md` 6zz g.** The profile of gnu.org at three seconds still had the
+TLS key arithmetic (`br_i31_montymul`) as the largest thing the browser did:
+every picture's connection a full handshake with the same server. The TLS Kit
+now keeps sessions (`tls_kosmos.c`, `sessions`), thirty-two to a process by
+the name the certificate was checked against, the oldest going when it is
+full; a connection to a host already met offers its session back, and a
+server that takes it skips the key exchange - no public-key arithmetic, and a
+round trip fewer. `t:resumed()` says whether it did, and `http.lua` passes it
+on as `how.resumed`. **gnu.org live: 2.6 s, twice** (3.0 to 3.5 before, and
+10.7 this morning).
+
+**Only a session whose certificate checked out is kept.** One opened anyway
+is not, since resuming it would take a later connection past the check it was
+never given - and the test shows the hole is real: with such sessions kept,
+the untrusted server was accepted, asked plainly, with no check at all.
+
+**`arm-tls` and `x86-tls`, 9 checks**: a program on the disk fetches the same
+page twice - "RESUMED false then true" - and opens the untrusted server
+anyway, then asks it plainly - refused. Controls: no session offered, "false
+then false"; opened-anyway sessions kept, "refused false".

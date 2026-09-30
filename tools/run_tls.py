@@ -150,17 +150,42 @@ def main():
     work = scratch.directory("tls")
     pki(work)
 
+    good, expired, untrusted = serve(work, "good"), serve(work, "expired"), serve(work, "untrusted")
+
+    #
+    # **A session taken back** (`tls_kosmos.c`, `sessions`): a program
+    # fetching the same page twice, the second connection offering the
+    # session the first made - and the server, whose OpenSSL keeps sessions,
+    # taking it, so the second skips the key exchange.
+    #
+    with open(os.path.join(work, "resume.lua"), "w") as f:
+        f.write('local http = use("/Kosmos/Libraries/http.lua")\n'
+                'local der = fs.read("/Home/ca.der")\n'
+                'local url = "https://10.0.2.2:%d/hello"\n'
+                'local o = { name = "kosmos-test.local", anchors = { der } }\n'
+                'local _, _, a = http.get(url, o)\n'
+                'local _, _, b = http.get(url, o)\n'
+                'print("RESU" .. "MED " .. tostring(a and a.resumed) .. " then "'
+                ' .. tostring(b and b.resumed))\n'
+                # And never a session opened anyway: the untrusted server
+                # opened with `anyway`, then asked plainly - which must be
+                # refused, not resumed past the check it was never given.
+                'local bad = "https://10.0.2.2:%d/hello"\n'
+                'local r1 = { http.get(bad, { name = "kosmos-test.local", anyway = true }) }\n'
+                'local r2 = { http.get(bad, { name = "kosmos-test.local" }) }\n'
+                'print("ANY" .. "WAY " .. tostring(r1[1] ~= nil) .. " then refused "'
+                ' .. tostring(r2[1] == nil and r2[3].refused ~= nil))\n' % (good, untrusted))
+
     disk = os.path.join(work, "disk.img")
     subprocess.run([os.path.join(ROOT, "build", "host", "lua"),
                     os.path.join(HERE, "kfs.lua"), "create", disk, "32",
-                    os.path.join(work, "ca.der") + ":/Home/ca.der"],
+                    os.path.join(work, "ca.der") + ":/Home/ca.der",
+                    os.path.join(work, "resume.lua") + ":/Home/resume.lua"],
                    check=True, capture_output=True, cwd=ROOT)
     os.environ["KOSMOS_DISK"] = disk
 
     import run_network                                      # after the disk
     import run_screenshot as R
-
-    good, expired, untrusted = serve(work, "good"), serve(work, "expired"), serve(work, "untrusted")
     at = "https://10.0.2.2:%d/hello --name %s"
     commands = [
         (at % (good, "kosmos-test.local")) + " --cacert /Home/ca.der",
@@ -171,6 +196,7 @@ def main():
         'print("ANCH" .. "ORS " .. sys.kit("tls").anchors)',
         "--quiet " + (at % (good, "kosmos-test.local")).replace("/hello", "/big")
         + " --cacert /Home/ca.der",
+        "/Home/resume.lua",
     ]
 
     # One command at a time, each read from where it was typed to the line
@@ -194,7 +220,7 @@ def main():
         guest.wait_for("net: an address from DHCP", "a lease")
 
         for command in commands:
-            line = command if command.startswith("print") else "fetch " + command
+            line = command if command.startswith(("print", "/")) else "fetch " + command
             mark = len(guest.seen)
             guest.type(line)
             ends = "ANCHORS " if command.startswith("print") else ") ended, code"
@@ -243,10 +269,20 @@ def main():
         fails.append("a page of many TLS records, closed as soon as it was sent, "
                      "did not come whole: %r" % big[-300:])
 
+    resumed = answers.get("/Home/resume.lua", "")
+
+    if "RESUMED false then true" not in resumed:
+        fails.append("the same page fetched twice did not take its session back "
+                     "the second time: %r" % resumed[-300:])
+
+    if "ANYWAY true then refused true" not in resumed:
+        fails.append("a server opened anyway was not refused when asked again "
+                     "plainly - a session opened anyway was kept: %r" % resumed[-300:])
+
     if " died: " in transcript:
         fails.append("something died: " + transcript[transcript.find(" died: ") - 80:][:300])
 
-    checks = 7
+    checks = 9
 
     if fails:
         print("FAIL: %d of %d checks on HTTPS:" % (len(fails), checks))
@@ -259,8 +295,9 @@ def main():
     print("PASS: %d checks on HTTPS through the TLS Kit (a page fetched whole "
           "from a server on this Mac, and refused for another name, for an "
           "expired certificate, for an authority it was not given, and with no "
-          "--cacert against Mozilla's 121 roots; and 200 KB of records, closed "
-          "as it was sent, whole)." % checks)
+          "--cacert against Mozilla's 121 roots; 200 KB of records, closed "
+          "as it was sent, whole; a session taken back, and never one opened "
+          "anyway)." % checks)
     return 0
 
 

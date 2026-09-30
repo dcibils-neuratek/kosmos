@@ -16,6 +16,7 @@
  *   t:state()                                      -- "handshake", "open",
  *                                                  -- or "closed", and why
  *   t:trusted()                                    -- true, or false and why
+ *   t:resumed()                                    -- the session taken back
  *
  * Nothing here blocks. Each call moves what can move - records to the
  * connection, records from it - and returns; a caller waits on the
@@ -77,6 +78,13 @@ struct tls {
     br_x509_minimal_context xc;
     struct anyway          anyway;
     int                    insecure;
+
+    /* The session offered back to the server, if one was, and whether this
+     * connection's own has been kept for the next (`sessions` below). */
+    char                   name[256];
+    unsigned char          offered[32];
+    unsigned char          offered_len;
+    int                    kept;
     unsigned char          iobuf[BR_SSL_BUFSIZE_BIDI];
 
     br_x509_trust_anchor   anchors[TAs_NUM + EXTRA_MAX];
@@ -379,6 +387,78 @@ static const char *error_name(int err)
     }
 }
 
+/*
+ * **Sessions, kept to be offered back** (`roadmap.md` 6zz g). A connection
+ * to a host this process has already met offers the session it had, and a
+ * server that agrees skips the key exchange - no public-key arithmetic,
+ * which was the largest thing gnu.org's twelve pictures cost the browser, and
+ * a round trip fewer. BearSSL does the protocol; this keeps the sessions.
+ *
+ * Kept by the name the certificate was checked against, and **only for a
+ * connection whose certificate checked out**: a session opened anyway, whose
+ * chain did not, is never kept, since resuming it would take a later
+ * connection past the check it was never given. A cache, and bounded as one
+ * is: the oldest goes when it is full, as ARP's entries do.
+ */
+#define SESSIONS 32
+
+static struct {
+    char                       name[256];
+    br_ssl_session_parameters  params;
+    uint32_t                   used;        /* when, for the oldest */
+} sessions[SESSIONS];
+
+static uint32_t session_clock;
+
+static int session_find(const char *name)
+{
+    int i;
+
+    for (i = 0; i < SESSIONS; i++) {
+        if (sessions[i].name[0] != '\0' && strcmp(sessions[i].name, name) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+/* This connection's session, kept for its name once its handshake is done -
+ * the first time it is seen open, and only when it may be. */
+static void session_keep(struct tls *t)
+{
+    br_ssl_session_parameters p;
+    int i, oldest = 0;
+
+    if (t->kept || t->insecure || t->name[0] == '\0'
+        || (br_ssl_engine_current_state(&t->sc.eng) & (BR_SSL_SENDAPP | BR_SSL_RECVAPP)) == 0) {
+        return;
+    }
+
+    t->kept = 1;
+    br_ssl_engine_get_session_parameters(&t->sc.eng, &p);
+
+    if (p.session_id_len == 0) {
+        return;                     /* the server offers no resumption */
+    }
+
+    i = session_find(t->name);
+
+    if (i < 0) {
+        for (i = 0; i < SESSIONS; i++) {
+            if (sessions[i].used < sessions[oldest].used) {
+                oldest = i;
+            }
+        }
+
+        i = oldest;
+        strcpy(sessions[i].name, t->name);
+    }
+
+    sessions[i].params = p;
+    sessions[i].used = ++session_clock;
+}
+
 /* Whether an error is about the certificate rather than the connection:
  * the kind a person may choose to go past. */
 static int certificate_error(int err)
@@ -464,7 +544,25 @@ static int l_client(lua_State *L)
     br_ssl_engine_inject_entropy(&t->sc.eng, seed, sizeof(seed));
     memset(seed, 0, sizeof(seed));
 
-    if (!br_ssl_client_reset(&t->sc, name, 0)) {
+    /* A session this process kept for the name, offered back - never for a
+     * connection going on whatever its certificate says. */
+    {
+        int kept = t->insecure ? -1 : session_find(name);
+
+        if (strlen(name) < sizeof(t->name)) {
+            strcpy(t->name, name);
+        }
+
+        if (kept >= 0) {
+            br_ssl_engine_set_session_parameters(&t->sc.eng, &sessions[kept].params);
+            memcpy(t->offered, sessions[kept].params.session_id,
+                   sessions[kept].params.session_id_len);
+            t->offered_len = sessions[kept].params.session_id_len;
+            sessions[kept].used = ++session_clock;
+        }
+    }
+
+    if (!br_ssl_client_reset(&t->sc, name, t->offered_len > 0)) {
         return luaL_error(L, "tls.client: %s", error_name(br_ssl_engine_last_error(&t->sc.eng)));
     }
 
@@ -483,6 +581,7 @@ static int l_write(lua_State *L)
     const char *s = luaL_checklstring(L, 2, &len);
 
     pump(L, t);
+    session_keep(t);
 
     if (br_ssl_engine_current_state(&t->sc.eng) & BR_SSL_SENDAPP) {
         unsigned char *buf = br_ssl_engine_sendapp_buf(&t->sc.eng, &room);
@@ -513,6 +612,7 @@ static int l_read(lua_State *L)
     struct tls *t = check_tls(L);
 
     pump(L, t);
+    session_keep(t);
 
     if (br_ssl_engine_current_state(&t->sc.eng) & BR_SSL_RECVAPP) {
         size_t len;
@@ -536,6 +636,7 @@ static int l_state(lua_State *L)
     unsigned state;
 
     pump(L, t);
+    session_keep(t);
     state = br_ssl_engine_current_state(&t->sc.eng);
 
     if (state & BR_SSL_CLOSED) {
@@ -595,6 +696,30 @@ static int l_trusted(lua_State *L)
     return 1;
 }
 
+/*
+ * `t:resumed()` - true when the server took back the session offered, so the
+ * key exchange was skipped; false when it made a new one; nil before the
+ * handshake is done.
+ */
+static int l_resumed(lua_State *L)
+{
+    struct tls *t = check_tls(L);
+    br_ssl_session_parameters p;
+
+    pump(L, t);
+    session_keep(t);
+
+    if ((br_ssl_engine_current_state(&t->sc.eng) & (BR_SSL_SENDAPP | BR_SSL_RECVAPP)) == 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    br_ssl_engine_get_session_parameters(&t->sc.eng, &p);
+    lua_pushboolean(L, t->offered_len > 0 && p.session_id_len == t->offered_len
+                       && memcmp(p.session_id, t->offered, t->offered_len) == 0);
+    return 1;
+}
+
 /* `t:close()` - a close_notify, sent. The connection is the caller's. */
 static int l_close(lua_State *L)
 {
@@ -625,6 +750,7 @@ void kosmos_tls_kit(lua_State *L)
         { "read",  l_read },
         { "state", l_state },
         { "trusted", l_trusted },
+        { "resumed", l_resumed },
         { "close", l_close },
         { "__gc",  l_gc },
         { NULL, NULL }

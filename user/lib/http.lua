@@ -26,6 +26,8 @@
 --   how.secure      over TLS: true when the certificate checked out, false
 --                   when it was taken anyway (`anyway`); nil over plain HTTP
 --   how.reason      why it did not check out
+--   how.resumed     over TLS, the session this process had with the host
+--                   taken back, the key exchange skipped
 --   how.refused     the request was refused for its certificate, and why -
 --                   what an Open anyway would go past
 --   how.short       the body ended before the length the server gave:
@@ -318,6 +320,7 @@ function http.get(address, opts)
 
     how.secure = trusted == true
     how.reason = reason
+    how.resumed = stream.tls:resumed() == true
   end
 
   say("waiting for " .. parts.hostport .. " ...")
