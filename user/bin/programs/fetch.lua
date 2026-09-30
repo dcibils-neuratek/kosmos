@@ -92,5 +92,9 @@ if how.ended then
   print("fetch: " .. how.ended)
 end
 
+if how.short then
+  print(("fetch: cut short: %d of the %d bytes the server said"):format(how.short.got, how.short.want))
+end
+
 print(("%d bytes"):format(#reply))
 print(reply)

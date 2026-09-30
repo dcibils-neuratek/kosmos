@@ -14161,3 +14161,47 @@ region stops it at check 8; placement that never reuses a gap, at check 4.
 its 19 September baseline, and `688f3f9`, before this, moves them the same to
 the digit - so the drift is older, and is in `roadmap.md` to bisect. 75 suites
 in 8:43.
+
+## 18.299 Wikipedia's Dam article, whole, in nine seconds - and a progress bar
+
+**`roadmap.md` 6zz i and j.** Diego put Chrome's rendering of
+`https://en.wikipedia.org/wiki/Dam` beside ours and asked for pages that size:
+"1 to 10mb pages are normal", "we should be able to handle that". The article
+is 1.4 MB of HTML. It took over fifteen minutes to arrive, arrived short, and
+the parser refused it - and the same saved page served from this Mac over
+plain HTTP did the same at the same 4 KB a second, so it was not TLS.
+
+**The window was never said again.** The stack stated its receive window
+only on segments it sent anyway, so a ring that filled said zero, the program
+emptied it - two indices, and nobody told - and the sender waited out its own
+probe timer, which backs off to a minute. The stack now remembers the window
+it last gave and sends a bare acknowledgement once the room has grown by two
+segments or half the ring (`window_update`, RFC 1122 4.2.3.3), on every pass
+of its loop - which follows every message, so a program that emptied the ring
+and asks to wait or poll has the window said first. **The saved article from
+this Mac: five and a half minutes before, 0.6 s after; live over TLS, about
+two seconds.**
+
+**And three things it showed on the way.** A reply that stalled past
+`http.lua`'s fifteen quiet seconds was passed on as whole, shorter than the
+server's `Content-Length`; it is `how.short` now, which the browser says
+("Cut short at ... of ... KB") and `fetch` prints. The parser said only "the
+document could not be parsed"; it says why now, and why was
+`ENCODINGCHANGE` - the page names its encoding part way, and the parser
+expects the caller to start again with it, which NetSurf's browser does and
+this kit did not. It starts again, once. And **a progress bar** in the
+status panel, as Diego asked ("the browser needs a progress bar for loading
+pages", "somehwre in the status panel"): "Loading en.wikipedia.org - 1402 of
+1402 KB, 100%" and a bar where the page's costs go after, moved by the page
+and not by its pictures.
+
+**The standing large page** is `assets/www/dam.html`, the article as served,
+under CC BY-SA 4.0 (`LICENSE`). `arm-browser` and `x86-browser` open it from
+this Mac and require it shown whole - over 40,000 pixels, not cut short - in
+a minute: 9 s on ARM, 18 s on x86. Controls, each failing its minute: the
+window never said again, and the parser not started again.
+
+What it looks like is the next thing: in document order, since Wikipedia's
+stylesheets are not fetched and there is no box model, and cut off after
+about seven screens by the paper (`roadmap.md` 6zz j). And the parse is now
+the slow step - 5.5 s of the nine, under TCG.

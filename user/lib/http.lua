@@ -28,6 +28,8 @@
 --   how.reason      why it did not check out
 --   how.refused     the request was refused for its certificate, and why -
 --                   what an Open anyway would go past
+--   how.short       the body ended before the length the server gave:
+--                   { got = bytes, want = bytes } - never passed on as whole
 --
 -- Nothing here prints. `opts.say`, when given, is told each step as it
 -- starts, which is what the browser's status line shows.
@@ -161,6 +163,8 @@ end
 --                    address given by number (`fetch --name`)
 --   opts.say         told each step as it starts
 --   opts.agent       the User-Agent; Kosmos and its revision without one
+--   opts.progress    told `(bytes, total)` as the body arrives - total is the
+--                    server's `Content-Length`, or nil when it gave none
 --   opts.wait_ticks  how long a name may take to look up, scheduler ticks
 --
 function http.get(address, opts)
@@ -286,12 +290,37 @@ function http.get(address, opts)
   --
   local parts_in, idle, reason = {}, 0, nil
 
+  --
+  -- **How much, of how much** - the head's end found once, and its
+  -- `Content-Length` with it - for a progress bar (`roadmap.md` 6zz i) and
+  -- for the check below. Told every 32 KB rather than every read, so a page
+  -- of ten megabytes is a few hundred repaints and not thousands.
+  --
+  local got, head_at, total, told = 0, nil, nil, -1
+  local progress = opts.progress
+
   while idle < 150 do
     local text = stream:read()
 
     if text then
       parts_in[#parts_in + 1] = text
+      got = got + #text
       idle = 0
+
+      if not head_at then
+        local sofar = table.concat(parts_in)
+        local e = sofar:find("\r\n\r\n", 1, true)
+
+        if e then
+          head_at = e + 3
+          total = tonumber(sofar:sub(1, e):match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Ll][Ee][Nn][Gg][Tt][Hh]:%s*(%d+)"))
+        end
+      end
+
+      if progress and head_at and got - head_at - told >= 32768 then
+        told = got - head_at
+        progress(told, total)
+      end
     end
 
     local over, why_over = stream:done()
@@ -309,7 +338,21 @@ function http.get(address, opts)
 
   local last = stream:read()
 
-  if last then parts_in[#parts_in + 1] = last end
+  if last then
+    parts_in[#parts_in + 1] = last
+    got = got + #last
+  end
+
+  -- The head, if the last read was the one that brought it.
+  if not head_at then
+    local e = table.concat(parts_in):find("\r\n\r\n", 1, true)
+
+    if e then
+      head_at = e + 3
+      total = tonumber(table.concat(parts_in):sub(1, e)
+                       :match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Ll][Ee][Nn][Gg][Tt][Hh]:%s*(%d+)"))
+    end
+  end
 
   stream:close()
   conn:close()
@@ -317,6 +360,19 @@ function http.get(address, opts)
   local reply = table.concat(parts_in)
 
   if reply == "" then return nil, reason or "nothing came back", how end
+
+  --
+  -- **Cut short is said, and never passed on as whole.** A page that
+  -- stalled past the fifteen seconds above arrived as its first part and
+  -- was treated as all of it - Wikipedia's Dam article was 1,374,752 bytes
+  -- of 1,435,447, and the parser refused what it was given. The server said
+  -- how long it was; the length is held to that.
+  --
+  if head_at and total and got - head_at < total then
+    how.short = { got = got - head_at, want = total }
+  end
+
+  if progress and head_at then progress(got - head_at, total) end
 
   how.ended = reason
   return reply, nil, how

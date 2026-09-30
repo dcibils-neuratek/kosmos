@@ -347,6 +347,16 @@ local came
 local anyway = {}
 
 --
+-- **A page on its way**: which host, how many bytes of how many, while
+-- it arrives - nil otherwise. Diego, 30 September, watching Wikipedia's Dam
+-- article sit on "waiting for en.wikipedia.org ..." for minutes: "the
+-- browser needs a progress bar for loading pages", "somehwre in the status
+-- panel" (`roadmap.md` 6zz i).
+--
+local loading
+local BAR_W = 180
+
+--
 -- **What this browser says it is**, which is what a site decides what to
 -- send on. Diego, 30 September: "to browse websites we need to send user
 -- agent that aligns to what our browser is capable of". The engine is
@@ -513,11 +523,13 @@ local function shorter(text)
 end
 
 local function status_text()
-  local key = said .. "\0" .. timing
+  local key = said .. "\0" .. timing .. "\0" .. (loading and "bar" or "")
 
   if key == status_for then return status_cut end
 
-  local room = W - 16 - (timing ~= "" and gfx.measure(timing) + 16 or 0)
+  local right = loading and BAR_W + 16
+                or (timing ~= "" and gfx.measure(timing) + 16 or 0)
+  local room = W - 16 - right
   local text = said
 
   if gfx.measure(text) > room then
@@ -693,7 +705,22 @@ local function frame()
 
   s:text(8, sy, status_text(), theme.text_dim)
 
-  if timing ~= "" then
+  --
+  -- The bar, while a page arrives, where the last page's costs were: they
+  -- belong to the page before. Filled against the length the server gave;
+  -- with none, the words say how much so far and the bar stays empty.
+  --
+  if loading then
+    local bx, by = W - 8 - BAR_W, H - STAT + (STAT - 6) // 2
+
+    s:fill(bx, by, BAR_W, 6, theme.sunken)
+
+    if loading.total and loading.total > 0 then
+      local done = math.min(BAR_W, BAR_W * loading.got // loading.total)
+
+      s:fill(bx, by, done, 6, theme.accent)
+    end
+  elseif timing ~= "" then
     s:text(W - 8 - gfx.measure(timing), sy, timing, theme.text_dim)
   end
 
@@ -825,7 +852,19 @@ end
 -- rather than a line in the status bar - it is something to decide, not
 -- only something to know.
 --
-local function fetch(text)
+-- The words beside the bar: the host, how much of how much, and the part.
+local function loading_words()
+  local kb = function(n) return (n + 1023) // 1024 end
+
+  if loading.total and loading.total > 0 then
+    return ("Loading %s - %d of %d KB, %d%%"):format(loading.host, kb(loading.got),
+           kb(loading.total), 100 * loading.got // loading.total)
+  end
+
+  return ("Loading %s - %d KB so far"):format(loading.host, kb(loading.got))
+end
+
+local function fetch(text, page)
   for _ = 1, 5 do
     local parts, bad = http.split(text)
 
@@ -834,11 +873,25 @@ local function fetch(text)
       return nil
     end
 
+    -- Only the page itself moves the bar: its pictures, fetched after it,
+    -- would flicker it once each.
+    local progress
+
+    if page then
+      progress = function(got, total)
+        loading = { host = parts.hostport, got = got, total = total }
+        say(loading_words())
+      end
+    end
+
     local reply, why, how = http.get(parts, {
       say = say,
       agent = AGENT,
+      progress = progress,
       anyway = parts.scheme == "https" and anyway[parts.hostport] or nil,
     })
+
+    loading = nil
 
     if not reply then
       if how.refused then return refused_page(text, how.refused), how end
@@ -890,11 +943,23 @@ local function how_said(how)
 
   if how.refused then return "Refused: " .. how.refused end
 
-  if how.scheme ~= "https" then return "Not encrypted" end
+  local words
 
-  if how.secure then return "Secure" end
+  if how.scheme ~= "https" then
+    words = "Not encrypted"
+  elseif how.secure then
+    words = "Secure"
+  else
+    words = "Not secure: " .. tostring(how.reason or "the certificate did not check out")
+  end
 
-  return "Not secure: " .. tostring(how.reason or "the certificate did not check out")
+  -- A page that stopped before the length the server gave says so first.
+  if how.short then
+    words = ("Cut short at %d of %d KB - %s"):format(how.short.got // 1024,
+            how.short.want // 1024, words)
+  end
+
+  return words
 end
 
 --------------------------------------------------------------------------
@@ -1012,7 +1077,7 @@ local function load(text)
   else
     local fetch_from = sys.ticks()
 
-    body, how = fetch(text)
+    body, how = fetch(text, true)
 
     if body == nil then return false end
 
@@ -1026,7 +1091,12 @@ local function load(text)
   local parsed_ms = since(parse_from)
 
   if not fresh then
-    say(("%d bytes, and it did not parse: %s"):format(#body, tostring(bad)))
+    local short = how and how.short
+                  and (" - cut short at %d of %d KB"):format(how.short.got // 1024,
+                                                             how.short.want // 1024)
+                  or ""
+
+    say(("%d bytes%s, and it did not parse: %s"):format(#body, short, tostring(bad)))
     return false
   end
 

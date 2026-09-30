@@ -342,7 +342,18 @@ shared with `fetch`; a person's authorities in `/Home/Preferences/Authorities`
 connection's slot back - sixteen a boot - and the kit never unmapped a ring;
 both fixed, handles carry a generation, forty connections in a boot checked.
 Diego then: "we shouldnt have limits", "lua just orchestrating", "c doing the
-hard work", and SIMD in the browser. **Next** (6zz, in this order): f, the
+hard work", and SIMD in the browser.
+
+**Then, the same day**: the kernel's share window recorded - a mapping holds
+its region, holes reused (`00d8d3e`, 18.298) - and Wikipedia's Dam article,
+Diego's standing large page, from fifteen minutes and refused to nine seconds
+whole: the stack says its window again once a ring is emptied, a short reply
+is said, the parser restarts on an encoding named part way, and a **progress
+bar** in the status panel (18.299). Agreed and in the roadmap: pages of 1 to
+10 MB (6zz j), a **cache** (6zz k); proposed, Diego's to decide: NetSurf's own
+layout engine vendored for the box model and external stylesheets. Found:
+`make bench` drifted +8% on context switch and IPC since 19 September,
+before today's changes - to bisect. **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,
 profiled first; then e, resizable windows, and d, the redesign; then

@@ -267,6 +267,7 @@ struct conn {
     bool     fin_sent;
     bool     want_close;            /* asked to close; waiting for the ring */
     bool     held;                  /* the SYN waits for an address */
+    uint16_t advertised;            /* the window the far end was last told */
 
     /* The region, and where it is mapped in this process. */
     long     region;
@@ -1780,7 +1781,8 @@ static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
     put32(segment + TCP_SEQ, seq);
     put32(segment + TCP_ACK, c->rcv_nxt);
     segment[TCP_FLAGS] = (uint8_t)flags;
-    put16(segment + TCP_WINDOW, window_of(c));
+    c->advertised = window_of(c);
+    put16(segment + TCP_WINDOW, c->advertised);
 
     if ((flags & TCP_SYN) != 0) {
         /* Kind 2, length 4, then the value: 1460, which is the MTU less an
@@ -1971,6 +1973,51 @@ static void conn_die(struct conn *c, uint32_t status)
 
     c->state = ST_DEAD;
     wake_waiter(c);
+}
+
+/*
+ * **The window, said again once it has opened** (`roadmap.md` 6zz j).
+ *
+ * The far end may send only what the last segment from here said there was
+ * room for, and this end used to say so only on segments it sent anyway. A
+ * ring filled, the window said zero, the program read the ring empty - which
+ * is arithmetic on two indices and tells nobody - and the sender waited for
+ * its own probe timer, which backs off to a minute. Wikipedia's Dam article
+ * arrived at about 4 KB a second for it, plain HTTP from the Mac no faster
+ * than TLS from the internet, and a page cut short when the stall outlasted
+ * the reader's patience.
+ *
+ * So once the room has grown by two segments - or half the ring, on a ring
+ * small enough for that to be less - a bare acknowledgement says so: RFC
+ * 1122's rule for a receiver (4.2.3.3), which keeps it from announcing every
+ * few bytes. Looked at on every pass of the loop - and a pass follows every
+ * message before it is answered, so a program that has just emptied the
+ * ring and asks to wait or poll has the window said first.
+ */
+static void window_update(struct conn *c)
+{
+    uint32_t step;
+
+    if (c->ring == NULL || (c->state != ST_OPEN && c->state != ST_FIN_WAIT)) {
+        return;
+    }
+
+    step = c->ring->bytes / 2u < 2u * 1460u ? c->ring->bytes / 2u : 2u * 1460u;
+
+    if ((uint32_t)window_of(c) >= (uint32_t)c->advertised + step) {
+        (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
+    }
+}
+
+static void window_updates(void)
+{
+    unsigned i;
+
+    for (i = 0; i < NET_CONN_MAX; i++) {
+        if (net.conn[i].state != ST_FREE) {
+            window_update(&net.conn[i]);
+        }
+    }
 }
 
 /*
@@ -3350,6 +3397,7 @@ void net_server(long endpoint, long console, long frames, long frames2)
         expire(hz);
         dhcp_tick();
         release_held();
+        window_updates();
         poll_service();
 
         if (status == 0) {

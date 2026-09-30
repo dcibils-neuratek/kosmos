@@ -89,6 +89,28 @@ static dom_string *to_dom(const char *s, size_t len)
 }
 
 /*
+ * Why the parser refused, in words - it said only "could not be parsed",
+ * and Wikipedia's Dam article, cut short in transit, was refused with no
+ * more than that (`roadmap.md` 6zz j). libdom's own failures, and hubbub's
+ * carried inside `DOM_HUBBUB_HUBBUB_ERR`.
+ */
+static const char *parse_error(dom_hubbub_error e)
+{
+    switch (e) {
+    case DOM_HUBBUB_NOMEM:
+    case DOM_HUBBUB_HUBBUB_ERR_NOMEM:          return "out of memory";
+    case DOM_HUBBUB_BADPARM:
+    case DOM_HUBBUB_HUBBUB_ERR_BADPARM:        return "the parser was asked wrongly";
+    case DOM_HUBBUB_DOM:                       return "building the document failed";
+    case DOM_HUBBUB_HUBBUB_ERR_ENCODINGCHANGE: return "the page changed its encoding part way";
+    case DOM_HUBBUB_HUBBUB_ERR_INVALID:        return "the HTML is invalid past repair";
+    case DOM_HUBBUB_HUBBUB_ERR_NEEDDATA:       return "the page ends part way through";
+    case DOM_HUBBUB_HUBBUB_ERR_BADENCODING:    return "the page's encoding is not one the parser knows";
+    default:                                   return "an error the parser did not name";
+    }
+}
+
+/*
  * parse(html) -> document, or nil and why.
  *
  * One chunk, because a Lua string is already whole. The streaming shape the
@@ -102,6 +124,7 @@ static int l_parse(lua_State *L)
     dom_hubbub_parser *parser = NULL;
     dom_document *document = NULL;
     struct doc *d;
+    char charset[64];
 
     memset(&params, 0, sizeof(params));
 
@@ -112,18 +135,58 @@ static int l_parse(lua_State *L)
     params.ctx           = NULL;
     params.daf           = NULL;
 
-    if (dom_hubbub_parser_create(&params, &parser, &document) != DOM_HUBBUB_OK) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "the parser could not be created");
-        return 2;
-    }
+    /*
+     * **Twice, when the page names its encoding part way.** The parser
+     * starts on a guess and stops with `ENCODINGCHANGE` when a `<meta
+     * charset>` says otherwise; it is then the caller's to start again with
+     * that encoding stated, which NetSurf's browser does and this did not -
+     * so Wikipedia's Dam article, arrived whole, was refused (`roadmap.md`
+     * 6zz j). The first attempt's document goes, the encoding it found is
+     * kept, and a second change is not asked about again.
+     */
+    for (;;) {
+        dom_hubbub_error e;
 
-    if (dom_hubbub_parser_parse_chunk(parser, (const uint8_t *)html, len)
-        != DOM_HUBBUB_OK) {
-        dom_hubbub_parser_destroy(parser);
-        lua_pushnil(L);
-        lua_pushliteral(L, "the document could not be parsed");
-        return 2;
+        if (dom_hubbub_parser_create(&params, &parser, &document) != DOM_HUBBUB_OK) {
+            lua_pushnil(L);
+            lua_pushliteral(L, "the parser could not be created");
+            return 2;
+        }
+
+        e = dom_hubbub_parser_parse_chunk(parser, (const uint8_t *)html, len);
+
+        if (e == DOM_HUBBUB_HUBBUB_ERR_ENCODINGCHANGE && params.enc == NULL) {
+            dom_hubbub_encoding_source source;
+            const char *found = dom_hubbub_parser_get_encoding(parser, &source);
+
+            if (found != NULL && strlen(found) < sizeof(charset)) {
+                strcpy(charset, found);
+                dom_hubbub_parser_destroy(parser);
+
+                if (document != NULL) {
+                    dom_node_unref((dom_node *)document);
+                    document = NULL;
+                }
+
+                params.enc = charset;
+                continue;
+            }
+        }
+
+        if (e != DOM_HUBBUB_OK) {
+            dom_hubbub_parser_destroy(parser);
+
+            if (document != NULL) {
+                dom_node_unref((dom_node *)document);
+            }
+
+            lua_pushnil(L);
+            lua_pushfstring(L, "the document could not be parsed: %s (%d)",
+                            parse_error(e), (int)e);
+            return 2;
+        }
+
+        break;
     }
 
     (void)dom_hubbub_parser_completed(parser);

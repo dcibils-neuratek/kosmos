@@ -64,6 +64,7 @@ Usage: run_browser.py <image> --out <file.png> [--page <file.html>]
 import argparse
 import http.server
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -695,6 +696,29 @@ def main():
                "Open anyway was said to show the page and it was not drawn.",
                seconds=20)
 
+        #
+        # **A page the size the web's are** (`roadmap.md` 6zz j): Wikipedia's
+        # Dam article, 1.4 MB as it was served, from this Mac. Three things
+        # it took to show it at all, all held here: the stack saying its
+        # window again once the ring is emptied - it arrived at 4 KB a second
+        # and cut short without it - the parser started again when the page
+        # names its encoding part way, and nothing passed on shorter than the
+        # server said. Shown whole, 40,000 pixels and more, in a minute.
+        #
+        dam = "10.0.2.2:%d/dam.html" % port
+        began = time.monotonic()
+        line = showing(dam, "Wikipedia's Dam article")
+        took = time.monotonic() - began
+        whole = re.search(r'"Dam - Wikipedia", (\d+) pixels tall', line)
+
+        if whole is None or int(whole.group(1)) < 40000 or "Cut short" in line:
+            raise Failure(f"Wikipedia's Dam article was not shown whole: {line!r}")
+
+        if took > 60:
+            raise Failure(f"Wikipedia's Dam article, 1.4 MB from this Mac, took "
+                          f"{took:.0f} s to show - a window not said again is "
+                          "about five minutes")
+
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "
               f"{short} to {tall} pixels tall, it scrolled "
@@ -702,8 +726,9 @@ def main():
               f"{followed[0]}, Home rendered with nothing served, an address "
               f"typed with http:// brought the second page, Back left it, "
               f"the PNG and the JPEG were drawn, a page over TLS was Secure, "
-              f"one from an authority it does not trust was refused, and "
-              f"Open anyway showed it as Not secure.")
+              f"one from an authority it does not trust was refused, "
+              f"Open anyway showed it as Not secure, and Wikipedia's Dam "
+              f"article, 1.4 MB, was shown whole in {took:.0f} s.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)

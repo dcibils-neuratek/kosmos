@@ -102,6 +102,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       assets/ca/cacert.pem, the roots the TLS Kit trusts; where it came
       from, its hash and its licence are in the README beside it
 
+  "Dam", the Wikipedia article, by its contributors, CC BY-SA 4.0
+      assets/www/dam.html, as en.wikipedia.org served it on 30 September
+      2026 to the browser's User-Agent, unmodified: the browser's standing
+      large page. The article's history names its authors
+
   The wallpapers, photographs from Unsplash, under the Unsplash License
       assets/wallpapers/, under the LICENSE beside them, each credited to
       its photographer in the README there. Scaled to 1920x1080 by

@@ -2769,7 +2769,8 @@ processors, and still what follows USB:
       blit a scroll is: profiled first, so the vector unit goes where the
       time is, in GCC's vector types as `gfx.c` and `pack.c` are written,
       each held to its scalar self by a host test.
-   i. **A progress bar while a page loads, in the status panel** - Diego,
+   i. **BUILT 30 September (`testing.md` 18.299). A progress bar while a
+      page loads, in the status panel** - Diego,
       30 September, watching Wikipedia's Dam article sit on "waiting for
       en.wikipedia.org ..." for minutes: "the browser needs a progress bar
       for loading pages", "somehwre in the status panel". A bar that fills
@@ -2786,20 +2787,38 @@ processors, and still what follows USB:
       pages are normal", "we should be able to handle that". The article is
       1.4 MB of HTML with 70 pictures and its styles in separate files; it
       took over fifteen minutes to arrive, and the parser refused it. Four
-      things stand in the way, each its own step: **the transfer** - 10 MB
-      at today's rate is over half an hour (g, measured first); **the
-      parser** - fed the whole page as one Lua string, where it should be fed
-      as the bytes arrive, from the HTTP Kit's buffer, and say why when it
-      refuses; **the paper** - a page is painted once into a surface as tall
+      things stood in the way, each its own step: **the transfer** - BUILT
+      30 September (`testing.md` 18.299): the stack said its window again
+      once a ring was emptied, and the article came in 0.6 s from the Mac
+      and two from Wikipedia, where it had taken five minutes and more;
+      **the parser** - it says why it refuses and starts again when a page
+      names its encoding part way (BUILT, the same day), and is still fed
+      the whole page as one Lua string, where it should be fed as the bytes
+      arrive, from the HTTP Kit's buffer - it is now the slow step, 5.5 s of
+      the article's nine under TCG; **the paper** - a page is painted once into a surface as tall
       as itself, capped at 16 MB of pixels, about seven screens, so a long
       page is cut off: paint what is on screen from the laid-out boxes
       instead, as it scrolls; and **the standing test** - the Dam article as
-      served, kept beside the test page in `assets/www/`, and a page of about
-      10 MB, both measured by the status line's costs. And **the right
+      served, kept beside the test page in `assets/www/` (BUILT: shown whole
+      in a minute, in the gate), and a page of about 10 MB, both measured by
+      the status line's costs. And **the right
       format**, which the article in Chrome shows and ours cannot yet:
       external stylesheets fetched, and a layout engine with the box model,
       floats, tables and flex - proposed as NetSurf's own, vendored, since
       its parser and CSS are already ours (Diego's to decide).
+   k. **A cache**, as every browser has - Diego, 30 September: "we should
+      add a browser cache feature as well", "as all browser rely on this for
+      performance reasons". What the page costs today makes the case: gnu.org
+      fetched each of its eleven pictures anew, every Reload fetches
+      everything again, and Back reads the page from the network once more.
+      So the HTTP Kit keeps what it fetched - in memory for the session, and
+      on disk to outlive it, in a folder of `/Home` to be agreed - and holds
+      each to what the server said about it: `Cache-Control` and `Expires`
+      for how long it may be used as it is, and `ETag` or `Last-Modified` to
+      ask with `If-None-Match` or `If-Modified-Since` once it may not, where a
+      `304 Not Modified` is a few hundred bytes instead of the whole again.
+      Bounded by size, oldest first, and clearable from Settings. In C, with
+      g, since it is the HTTP Kit's to keep.
    **The order since 30 September**: f's kernel step, i, then f, g and h,
    with j's parser and paper beside g, then e and d - the browser fast
    before it is redrawn.
