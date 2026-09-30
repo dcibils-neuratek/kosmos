@@ -2850,8 +2850,39 @@ processors, and still what follows USB:
       the status line's costs. And **the right
       format**, which the article in Chrome shows and ours cannot yet:
       external stylesheets fetched, and a layout engine with the box model,
-      floats, tables and flex - proposed as NetSurf's own, vendored, since
-      its parser and CSS are already ours (Diego's to decide).
+      floats, tables and flex. **AGREED on 30 September: NetSurf's own
+      layout, vendored** - Diego, shown the article as it is (twelve screens
+      of menus and languages before it, pictures stacked, no infobox), chose
+      it over growing `web_paint.c`: "Vendor NetSurf's layout". Its parser,
+      DOM and CSS are ours already, and its layout is built on exactly
+      those. NetSurf 3.11 (`build/downloads/netsurf-3.11-src.tar.gz`, 4.3
+      MB, SHA-256 c28a626a...201cb2, no checksum published; released with
+      the libcss 0.9.2 and libdom 0.4.2 in the tree). Its layout proper -
+      box tree, layout, tables, flex, drawing the boxes - is about 16,500
+      lines, standing on its `html_content`, its CSS selection and hints,
+      and a few of its utilities; what Kosmos provides is the two tables a
+      NetSurf platform provides, **measuring text** and **plotting**, on
+      `gfx`, and the stand-ins for what the layout touches and a browser
+      without scripts or form editing does not need yet (scrollbars, text
+      areas, selection). GPLv2, so the image carrying the browser is a
+      GPLv2 work as a whole - bookkeeping, in `LICENSE`, as Doom's is. In
+      steps, each with its test:
+      - j1. **Vendored and building**: the files byte for byte in
+        `runtime/upstream/netsurf/netsurf/`, what they stand on, and the
+        stand-ins - compiled into the web kit, nothing drawn by it yet.
+      - j2. **Text and plotting on `gfx`**: widths, splitting a line,
+        drawing text, rectangles, clips and pictures.
+      - j3. **A document through it**: the parsed page into a box tree,
+        laid out at the window's width, drawn into the band - the test
+        page at least as well as `web_paint.c` draws it (its box's border
+        and ground, its table's borders, right and centre), then
+        `web_paint.c`'s layout retired.
+      - j4. **External stylesheets**: `<link rel="stylesheet">` and
+        `@import` fetched side by side and given to the cascade in order;
+        pictures as the objects the layout sizes.
+      - j5. **The Dam article as Chrome draws it**: the article at the top,
+        the infobox to the right, pictures beside the text - held by the
+        gate, and its time on the status line.
    k. **A cache**, as every browser has - Diego, 30 September: "we should
       add a browser cache feature as well", "as all browser rely on this for
       performance reasons". What the page costs today makes the case: gnu.org
@@ -2867,7 +2898,8 @@ processors, and still what follows USB:
       g, since it is the HTTP Kit's to keep.
    **The order since 30 September**: f's kernel step, i, then f, g and h,
    with j's parser and paper beside g (the paper BUILT), then e and d - the
-   browser fast before it is redrawn.
+   browser fast before it is redrawn. **Then NetSurf's layout (j1-j5)**,
+   agreed the same evening, before e and d.
    **Found on the way, not yet understood**: `make bench` has
    `context_switch` +8.1% and `ipc_roundtrip` +7.8% against the baseline of
    19 September - present at `688f3f9`, before the share window's records,

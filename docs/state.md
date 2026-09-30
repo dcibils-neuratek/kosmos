@@ -377,7 +377,16 @@ handle made with fields left as the memory had them, a page fault in the
 shell; every userdata constructor now clears first (18.308). Then **the
 cascade** (18.309): answered from what the tree holds, the class-list leak
 closed, libdom patched to split classes on white space - the Dam article 1.6 s
-from the Mac, from 2.1. **Next, the browser first**: the CSS
+from the Mac, from 2.1, and **0.9-1.0 s live** from Wikipedia (8.2 s this
+morning). Then Diego asked whether it renders the article correctly: it does
+not - twelve screens of menus and languages first (the external stylesheets
+are never fetched), pictures stacked, no infobox, `????` for other scripts, no
+SVG. **Agreed: NetSurf's own layout, vendored** (roadmap 6zz j, steps j1-j5),
+NetSurf 3.11 downloaded to `build/downloads/`; **j1 next**. The gate's audio
+flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
+and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
+next idea is `-icount`, which ties the guest's clock and QEMU's audio timer
+together. **Next, the browser first**: the CSS
 cascade, 36% of a big page's time (`web_select.c` making strings to answer
 libcss); the rest of the byte path (g, k); pictures and the parser fed while
 the page is read; then the rest of f's class (and `inflate`'s 1 MB). Diego
