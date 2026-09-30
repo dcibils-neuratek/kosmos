@@ -123,6 +123,15 @@ def _fetch(port):
 _many = {}
 
 
+# How many ask `httpd` at once: twenty, and one stuck half way - a server
+# holding more than the sixteen connections the stack once had, all in one
+# poll (`roadmap.md` 6zz f). It was six. Forty was tried and is a question
+# about throughput rather than concurrency: the single-core x86 guest,
+# sharing the Mac with the rest of a run, served ten megabytes and six
+# clients gave up waiting.
+AT_ONCE = 20
+
+
 def _at_once(port, how_many):
     """Ask the guest for the same large file `how_many` times at once.
 
@@ -143,7 +152,7 @@ def _at_once(port, how_many):
     """
     import http.client
 
-    def once(timeout=40):
+    def once(timeout=90):
         c = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
         c.request("GET", "/ui.lua")
         r = c.getresponse()
@@ -554,7 +563,14 @@ def main():
             def log_message(self, *a):
                 pass
 
-        httpd = http.server.HTTPServer(("0.0.0.0", 0), Handler)
+        # Threads and a deep backlog: the guest opens a hundred at once
+        # below, and a server that took one at a time from a queue of five
+        # would refuse most of them for reasons of its own.
+        class Many(http.server.ThreadingHTTPServer):
+            request_queue_size = 256
+            daemon_threads = True
+
+        httpd = Many(("0.0.0.0", 0), Handler)
         port = httpd.server_address[1]
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -580,11 +596,28 @@ def main():
                     'print("MANY" .. " CONNECTIONS " .. n .. " of 40, regions " .. b '
                     '.. " then " .. sys.info().regions_used)')
 
+            #
+            # **And a hundred at once** (`roadmap.md` 6zz f): opened together,
+            # a request on each, and all of them waited on with one `poll`
+            # until every one has finished - more than the sixteen slots the
+            # stack had, and more than the bitmask `poll` named them in could
+            # hold. Diego: "we shouldnt have limits".
+            #
+            at_once = ('local cs,n={},0 for i=1,100 do '
+                       f'local c=fs.connect("/Network","\\10\\0\\2\\2",{port}) '
+                       'if c then cs[#cs+1]=c c:write("GET /a HTTP/1.0\\r\\n\\r\\n") end end '
+                       'local l=cs for _=1,400 do if #l==0 then break end '
+                       'fs.poll("/Network",l,{},nil,25) local s={} '
+                       'for _,c in ipairs(l) do c:read() if c:closed() then n=n+1 c:close() '
+                       'else s[#s+1]=c end end l=s end '
+                       'print("AT".." ONCE "..#cs.." opened, "..n.." finished")')
+
             out = boot(image, [
                 "-netdev", "user,id=net0",
                 "-device", run_screenshot.device(image, "net") + ",netdev=net0",
             ], [f"fetch 10.0.2.2 {port} /hello",
-                (many, "MANY CONNECTIONS ")], seconds=120)
+                (many, "MANY CONNECTIONS "),
+                (at_once, "AT ONCE ")], seconds=180)
         finally:
             httpd.shutdown()
 
@@ -596,6 +629,17 @@ def main():
                 f"{found.group(0) if found else 'no count printed'}. A slot "
                 "that is never given back is a machine with sixteen "
                 "connections a boot.\n" + out[-900:])
+
+        checks += 1
+
+        once = re.search(r"AT ONCE (\d+) opened, (\d+) finished", out)
+
+        if once is None or once.group(1) != "100" or once.group(2) != "100":
+            raise Failure(
+                "a hundred connections at once, waited on with one poll, did "
+                f"not all open and finish: {once.group(0) if once else 'no count printed'}. "
+                "Sixteen slots, or a poll that names them in a word, is this.\n"
+                + out[-900:])
 
         checks += 1
 
@@ -753,7 +797,7 @@ def main():
             "-device", run_screenshot.device(image, "net") + ",netdev=net0",
         ], [
             "httpd 80 /Kosmos/Libraries",
-        ], seconds=240, then=lambda: _at_once(forward, 6))
+        ], seconds=240, then=lambda: _at_once(forward, AT_ONCE))
 
         single = _many.get("single")
 
@@ -772,11 +816,12 @@ def main():
 
         at_once = _many.get("at_once") or []
 
-        if len(at_once) != 6 or any(r != single for r in at_once):
+        if len(at_once) != AT_ONCE or any(r != single for r in at_once):
+            bad = [r for r in at_once if r != single]
             raise Failure(
-                "six at once, with a seventh client stuck half way through "
-                f"its request, did not all come back as {single}: "
-                f"{at_once}\n{out[-1200:]}")
+                f"{AT_ONCE} at once, with one more client stuck half way through "
+                f"its request, did not all come back as {single}: {len(bad)} "
+                f"did not, the first {bad[:1]}\n{out[-1200:]}")
 
         checks += 1
 

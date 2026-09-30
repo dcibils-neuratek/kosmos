@@ -2719,7 +2719,11 @@ processors, and still what follows USB:
       leaves a hole the next mapping can use, and an exit gives back every
       one of them.
 
-      **Then no fixed limits in the network stack.** Diego, 30 September, told
+      **BUILT 30 September** (`00d8d3e`, `testing.md` 18.298).
+
+      **Then no fixed limits in the network stack** - **BUILT the same day**
+      (`testing.md` 18.300): its tables grow, handles are 64 bits, and `poll`
+      takes a set in a region the caller sends. Diego, 30 September, told
       the sixteen: "why is 16 tcp connections a limit?", "we shouldnt have
       limits". The connection table is an array sized when `net.c` is
       compiled, and `NET_OP_POLL` names connections as bits of one word;
@@ -2728,7 +2732,7 @@ processors, and still what follows USB:
       it is full and never shrinks, as the kernel's pools have since 19
       September, with the ceiling derived from the machine's memory - a
       connection costs its 36 KB ring - and `poll` takes a list of handles
-      rather than a mask. **Next.** **And then the class**, since the rule
+      rather than a mask. **And then the class** - not yet built - since the rule
       reached the kernel's pools and not the servers' tables: `ramfs`'s
       128 files of at most 16 KB and 16 watchers - `/Temporary` - the audio
       server's 8 streams, and the USB driver's 8 devices, 2 cameras and 8

@@ -353,7 +353,11 @@ bar** in the status panel (18.299). Agreed and in the roadmap: pages of 1 to
 10 MB (6zz j), a **cache** (6zz k); proposed, Diego's to decide: NetSurf's own
 layout engine vendored for the box model and external stylesheets. Found:
 `make bench` drifted +8% on context switch and IPC since 19 September,
-before today's changes - to bisect. **Next** (6zz, in this order): f, the
+before today's changes - to bisect. And **the network stack's limits are
+gone** (18.300): tables that grow, 64-bit handles, `poll` through a region -
+a hundred connections at once in the gate. **Next**: the rest of that class
+(`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices), then 6zz g,
+the HTTP Kit in C, with the cache (k) and the parser fed as bytes arrive. **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,
 profiled first; then e, resizable windows, and d, the redesign; then

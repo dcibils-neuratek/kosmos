@@ -14205,3 +14205,38 @@ What it looks like is the next thing: in document order, since Wikipedia's
 stylesheets are not fetched and there is no box model, and cut off after
 about seven screens by the paper (`roadmap.md` 6zz j). And the parse is now
 the slow step - 5.5 s of the nine, under TCG.
+
+## 18.300 No fixed limits in the network stack
+
+**`roadmap.md` 6zz f** - Diego, told the stack held sixteen connections: "why
+is 16 tcp connections a limit?", "we shouldnt have limits". The connection
+table was an array sized when `net.c` was compiled, and `NET_OP_POLL` named
+connections as bits of one word, which is what held it to sixteen; the echoes
+in flight were eight, the names being looked up four, and the programs
+parked in a poll four.
+
+- **The tables grow** - `struct table` in `net.c`, the kernel pool's shape on
+  the userland heap: slabs from `calloc`, made when every item is taken,
+  never moved and never given back, up to a ceiling from `sysinfo` - a
+  sixteenth of the machine's memory, which for connections is counted in the
+  36 KB rings they cost. A connection keeps its slot number and its
+  generation when it is given back.
+- **A handle is 64 bits**, the slot in the low half and the generation in
+  the high (`NET_HANDLE_SLOT`, `NET_HANDLE_GEN`).
+- **`poll` takes a set in a region the caller sends** - `struct
+  net_poll_entry`, a handle and what is wanted of it, the stack writing back
+  what is so. The stack maps it only while it answers, reads each entry once
+  as untrusted, holds the count to the region's real size, and lets it go
+  when it answers, so nothing of a program's outlives it. The Network Kit
+  keeps one region a process, grown when a call needs more, and `fs.poll`'s
+  Lua is unchanged. A capability sent with anything but a poll is dropped
+  rather than kept.
+
+**`arm-network` and `x86-network`, 29 checks**: a hundred connections opened
+at once, a request on each, and all of them waited on with one poll until
+every one had finished - and `httpd` answering twenty clients at once with a
+twenty-first stuck half way through its request, where it was six. The
+control is the commit before, with today's suite: "AT ONCE 16 opened, 16
+finished". Forty at once to `httpd` was tried and was a question about
+throughput rather than concurrency - the single-core x86 guest, sharing the
+Mac with other suites, served ten megabytes and six clients gave up waiting.

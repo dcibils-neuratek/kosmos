@@ -351,9 +351,15 @@ static int l_ping(lua_State *L)
 struct ring_handle {
     struct tcp_ring *ring;
     long             cap;
-    uint32_t         handle;
+    uint64_t         handle;
     long             net_cap;
     int              closed;        /* `close` was asked for */
+
+    /* Where it is in the poll set this call is building, and which call
+     * that is, so a connection named for reading and for writing is one
+     * entry with both wants. */
+    uint32_t         poll_round;
+    uint32_t         poll_index;
 };
 
 static struct ring_handle *checkring(lua_State *L, int at)
@@ -652,7 +658,7 @@ static int l_accept(lua_State *L)
 
     memset(&req, 0, sizeof(req));
     req.op     = NET_OP_ACCEPT;
-    req.handle = (uint32_t)luaL_checkinteger(L, 2);
+    req.handle = (uint64_t)luaL_checkinteger(L, 2);
 
     /* How long to wait for somebody, in scheduler ticks; nothing means for
      * ever, which is what a program with only one thing to do wants. An
@@ -702,77 +708,142 @@ static int l_accept(lua_State *L)
 }
 
 /*
- * `net.poll(cap, handles, listener, ticks)` - wait on several at once.
- *
- * `handles` is a table of connections; the mask is built here so a caller
- * never sees one. Returns a table of the ready connections and whether the
- * listener has somebody waiting.
+ * `net.poll(cap, reading, writing, listener, ticks)` - wait on several at
+ * once, and hear which are ready and whether somebody has arrived.
  *
  * **This is the `select` the system has wanted six times** and the reason a
  * server can serve more than one request at a time here: with it, `httpd`
  * runs a coroutine per connection and resumes whichever is ready. Without
  * it, everything that needed to watch two things settled for a timer.
+ *
+ * **The set goes in a region, which this process keeps and sends with each
+ * call** (`netproto.h`, `NET_OP_POLL`): an entry a connection - its handle
+ * and what is wanted of it - and the stack writes back what is so. It was a
+ * bitmask in the request, which held a machine to sixteen connections. The
+ * region grows when a call needs more room and is otherwise the same one,
+ * so a server's loop makes no garbage and no region per pass.
  */
-/* The connections a table names, as a bitmask. */
-static uint32_t mask_of(lua_State *L, int index)
+static struct {
+    long                   region;
+    struct net_poll_entry *set;
+    unsigned long          pages;
+    uint32_t               capacity;
+    uint32_t               round;
+} pollset = { -1, NULL, 0, 0, 0 };
+
+/* Room for `want` entries, the region made larger when it has not. */
+static bool pollset_room(uint32_t want)
 {
-    uint32_t mask = 0;
-    lua_Integer n, i;
+    unsigned long pages;
+    long region, at;
+
+    if (pollset.set != NULL && want <= pollset.capacity) {
+        return true;
+    }
+
+    pages = ((unsigned long)want * sizeof(struct net_poll_entry) + 4095u) / 4096u;
+    pages = pages < 1 ? 1 : pages;
+
+    if (pages < pollset.pages * 2) {
+        pages = pollset.pages * 2;
+    }
+
+    region = kosmos_mem_create(pages);
+
+    if (region < 0) {
+        return false;
+    }
+
+    at = kosmos_mem_map(region);
+
+    if (at < 0) {
+        (void)kosmos_cap_drop(region);
+        return false;
+    }
+
+    if (pollset.set != NULL
+        && kosmos_share_unmap((unsigned long)(uintptr_t)pollset.set, pollset.pages) == 0) {
+        (void)kosmos_cap_drop(pollset.region);
+    }
+
+    pollset.region   = region;
+    pollset.set      = (struct net_poll_entry *)(uintptr_t)at;
+    pollset.pages    = pages;
+    pollset.capacity = (uint32_t)(pages * 4096u / sizeof(struct net_poll_entry));
+    return true;
+}
+
+/* The connections a list names, into the set: a new entry each, or the
+ * want added to the entry the other list made. Returns the count so far. */
+static uint32_t pollset_add(lua_State *L, int index, uint32_t want, uint32_t n)
+{
+    lua_Integer len, i;
 
     if (lua_isnoneornil(L, index)) {
-        return 0;
+        return n;
     }
 
     luaL_checktype(L, index, LUA_TTABLE);
-    n = (lua_Integer)lua_rawlen(L, index);
+    len = (lua_Integer)lua_rawlen(L, index);
 
-    for (i = 1; i <= n; i++) {
+    for (i = 1; i <= len; i++) {
         struct ring_handle *h;
 
         lua_rawgeti(L, index, i);
         h = (struct ring_handle *)luaL_testudata(L, -1, "kosmos.tcp");
+        lua_pop(L, 1);
 
-        if (h != NULL && h->ring != NULL) {
-            mask |= 1u << NET_HANDLE_SLOT(h->handle);
+        if (h == NULL || h->ring == NULL) {
+            continue;
         }
 
-        lua_pop(L, 1);
+        if (h->poll_round == pollset.round) {
+            pollset.set[h->poll_index].want |= want;
+            continue;
+        }
+
+        h->poll_round = pollset.round;
+        h->poll_index = n;
+        pollset.set[n].handle = h->handle;
+        pollset.set[n].want   = want;
+        pollset.set[n].got    = 0;
+        n++;
     }
 
-    return mask;
+    return n;
 }
 
 /*
- * Move the ready ones out of the table at `index` and into the result on
- * top of the stack, which is what lets a caller use what comes back
- * directly rather than looking numbers up in a table of its own.
- *
- * `taken` is carried between the two calls so a connection named in both
- * lists appears once.
+ * The ones of a list that are ready - what was asked of each, or over - into
+ * the result on top of the stack, once each however many lists named it.
  */
-static int collect(lua_State *L, int index, uint32_t ready,
-                   uint32_t *taken, int at)
+static int pollset_collect(lua_State *L, int index, uint32_t want, int at)
 {
-    lua_Integer n, i;
+    lua_Integer len, i;
 
     if (lua_isnoneornil(L, index)) {
         return at;
     }
 
-    n = (lua_Integer)lua_rawlen(L, index);
+    len = (lua_Integer)lua_rawlen(L, index);
 
-    for (i = 1; i <= n; i++) {
+    for (i = 1; i <= len; i++) {
         struct ring_handle *h;
-        uint32_t bit;
+        struct net_poll_entry *e;
 
         lua_rawgeti(L, index, i);
         h = (struct ring_handle *)luaL_testudata(L, -1, "kosmos.tcp");
-        bit = (h != NULL && h->ring != NULL)
-              ? 1u << NET_HANDLE_SLOT(h->handle) : 0u;
 
-        if (bit != 0 && (ready & bit) != 0 && (*taken & bit) == 0) {
-            *taken |= bit;
-            lua_rawseti(L, -2, at++);   /* moves it into the result */
+        if (h == NULL || h->ring == NULL || h->poll_round != pollset.round) {
+            lua_pop(L, 1);
+            continue;
+        }
+
+        e = &pollset.set[h->poll_index];
+
+        if ((e->got & (want | NET_GOT_OVER)) != 0 && (e->want & 0x80000000u) == 0) {
+            e->want |= 0x80000000u;     /* taken: once in the result */
+            lua_rawseti(L, -2, at++);
         } else {
             lua_pop(L, 1);
         }
@@ -794,33 +865,68 @@ static int l_poll(lua_State *L)
     long cap = (long)luaL_checkinteger(L, 1);
     struct net_request req;
     struct net_reply rep;
+    struct message msg, out;
+    uint32_t want = 0, n = 0, listener_at = 0;
+    bool listening = !lua_isnoneornil(L, 4);
+
+    if (!lua_isnoneornil(L, 2)) want += (uint32_t)lua_rawlen(L, 2);
+    if (!lua_isnoneornil(L, 3)) want += (uint32_t)lua_rawlen(L, 3);
+    if (listening) want++;
+
+    if (!pollset_room(want > 0 ? want : 1)) {
+        return failed(L, NET_ERR_FULL);
+    }
+
+    pollset.round++;
+    n = pollset_add(L, 2, NET_WANT_READ, n);
+    n = pollset_add(L, 3, NET_WANT_WRITE, n);
+
+    if (listening) {
+        listener_at = n;
+        pollset.set[n].handle = (uint64_t)luaL_checkinteger(L, 4);
+        pollset.set[n].want   = NET_WANT_ACCEPT;
+        pollset.set[n].got    = 0;
+        n++;
+    }
 
     memset(&req, 0, sizeof(req));
-
-    req.op    = NET_OP_POLL;
+    req.op         = NET_OP_POLL;
     req.wait_ticks = (uint32_t)luaL_optinteger(L, 5, 0);
+    req.length     = n;
 
-    /* The listener, plus one, so that absent is zero. */
-    req.port = lua_isnoneornil(L, 4)
-               ? 0u : (uint32_t)luaL_checkinteger(L, 4) + 1u;
+    /* Nothing to wait on is a wait for the deadline and no more. */
+    if (n == 0) {
+        req.length = 1;
+        pollset.set[0].handle = 0;
+        pollset.set[0].want   = 0;
+        pollset.set[0].got    = 0;
+    }
 
-    req.handle  = mask_of(L, 2);
-    req.writing = mask_of(L, 3);
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    msg.cap_plus_one = (uint32_t)(pollset.region + 1);
+    memcpy(msg.data, &req, sizeof(req));
 
-    if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
+    if (kosmos_call(cap, &msg, &out) != 0 || out.length < sizeof(rep)) {
+        return failed(L, ~0u);
+    }
+
+    memcpy(&rep, out.data, sizeof(rep));
+
+    if (rep.status != NET_OK) {
         return failed(L, rep.status);
     }
 
     lua_newtable(L);
 
     {
-        uint32_t taken = 0;
-        int at = collect(L, 2, rep.ready, &taken, 1);
+        int at = pollset_collect(L, 2, NET_WANT_READ, 1);
 
-        (void)collect(L, 3, rep.ready, &taken, at);
+        (void)pollset_collect(L, 3, NET_WANT_WRITE, at);
     }
 
-    lua_pushboolean(L, rep.arrived != 0);
+    lua_pushboolean(L, listening && n > 0
+                       && (pollset.set[listener_at].got & NET_WANT_ACCEPT) != 0);
     return 2;
 }
 

@@ -38,6 +38,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "kosmos.h"
@@ -218,6 +219,35 @@ struct asking {
 };
 
 /*
+ * **A table that grows** - the kernel's pools in a server (`kernel/pool.h`,
+ * `netproto.h`). Slabs of items from `calloc`, made when every item is taken,
+ * never moved - so a pointer to an item stays good while the table grows
+ * round it - and never given back, up to a ceiling from the machine's memory.
+ * Running out is still a refusal, at a number the machine decides.
+ */
+struct table {
+    void   **slab;
+    unsigned slabs;
+    unsigned per;                   /* items a slab */
+    size_t   size;                  /* bytes an item */
+    unsigned ceiling;               /* items at most */
+};
+
+/*
+ * A program parked in a poll, and the set it sent (`netproto.h`,
+ * `NET_OP_POLL`): the region mapped here only until it is answered.
+ */
+struct poller {
+    bool     used;
+    uint64_t who;
+    long     region;
+    struct net_poll_entry *set;
+    unsigned long pages;
+    uint32_t count;
+    uint64_t until;
+};
+
+/*
  * One connection.
  *
  * `snd_una` is the oldest byte this end has sent and not had acknowledged,
@@ -234,7 +264,9 @@ struct asking {
  */
 struct conn {
     unsigned state;
-    uint32_t handle;                /* its name: slot, and generation */
+    uint64_t handle;                /* its name: slot, and generation */
+    uint32_t slot;                  /* where it is in the table; kept */
+    uint32_t generation;            /* how often the slot was taken; kept */
     uint64_t opened_by;             /* the caller parked in CONNECT */
     uint64_t waiter;                /* the caller parked in WAIT, or 0 */
     uint64_t wait_until;
@@ -303,12 +335,11 @@ static struct {
     long console;                   /* where a line for the log goes, or -1 */
 
     struct arp_entry arp[ARP_CACHE];
-    struct pending   pending[NET_PENDING_MAX];
 
-    /* Names being asked about, and who to ask. Four at once, which is more
-     * than one program resolving at a time and fewer than a table worth
-     * thinking about. */
-    struct asking    asking[4];
+    /* Echoes in flight, and names being asked about - tables that grow;
+     * they were eight and four. */
+    struct table     pending;
+    struct table     asking;
     struct net_addr  dns;
     uint16_t         dns_id;        /* the last query id handed out */
 
@@ -323,29 +354,186 @@ static struct {
      */
     uint64_t tick_hz;
 
-    struct conn conn[NET_CONN_MAX];
-    uint32_t    generation[NET_CONN_MAX];   /* how often each was taken */
-
     /*
-     * Callers parked on several connections at once.
-     *
-     * A poller is not a connection - it belongs to whoever asked and names a
-     * set - so it cannot live in the connection table. Four, because it is a
-     * poller per program that serves and there are not four of those.
+     * The connections, and the callers parked on several at once - a
+     * poller is not a connection, it belongs to whoever asked, so it cannot
+     * live in the connection table. Both grow; they were sixteen and four.
      */
-    struct {
-        bool     used;
-        uint64_t who;
-        uint32_t reading;           /* watched for bytes to read */
-        uint32_t writing;           /* watched for room to write */
-        int      listener;          /* or -1 */
-        uint64_t until;
-    } poll[4];
+    struct table conns;
+    struct table pollers;
     uint16_t next_port;
     uint32_t next_seq;              /* where the next connection starts */
 
     uint8_t  frame[NET_FRAME_MAX];  /* one at a time; nothing here queues */
 } net;
+
+/*------------------------------------------------------------------------
+ * The tables, grown as they fill.
+ *----------------------------------------------------------------------*/
+
+static void table_init(struct table *t, size_t size, unsigned per,
+                       unsigned ceiling)
+{
+    memset(t, 0, sizeof(*t));
+    t->size = size;
+    t->per = per;
+    t->ceiling = ceiling < per ? per : ceiling;
+}
+
+static unsigned table_count(const struct table *t)
+{
+    return t->slabs * t->per;
+}
+
+static void *table_at(const struct table *t, unsigned i)
+{
+    return (char *)t->slab[i / t->per] + (size_t)(i % t->per) * t->size;
+}
+
+/* One more slab, zeroed - every item in it free. False at the ceiling, or
+ * when the memory is not there. */
+static bool table_grow(struct table *t)
+{
+    void **dir;
+    void *slab;
+
+    if (table_count(t) + t->per > t->ceiling) {
+        return false;
+    }
+
+    slab = calloc(t->per, t->size);
+
+    if (slab == NULL) {
+        return false;
+    }
+
+    dir = realloc(t->slab, (t->slabs + 1u) * sizeof(void *));
+
+    if (dir == NULL) {
+        free(slab);
+        return false;
+    }
+
+    dir[t->slabs++] = slab;
+    t->slab = dir;
+    return true;
+}
+
+/*
+ * The most items of `each` bytes a table may hold: as many as a sixteenth
+ * of the machine's memory would, and never fewer than `floor`. The
+ * sixteenth is the stack's share of the machine, which is a choice and
+ * says so; the connections' is what their rings cost.
+ */
+static unsigned ceiling_for(size_t each, unsigned floor)
+{
+    struct sysinfo info;
+    uint64_t n;
+
+    memset(&info, 0, sizeof(info));
+    (void)kosmos_sysinfo(&info);
+
+    n = (uint64_t)info.pages_total * 4096u / 16u / (each ? each : 1u);
+
+    if (n < floor) {
+        n = floor;
+    }
+
+    return n > 0x7fffffffu ? 0x7fffffffu : (unsigned)n;
+}
+
+static unsigned conn_count(void)
+{
+    return table_count(&net.conns);
+}
+
+static struct conn *conn_slot(unsigned i)
+{
+    return table_at(&net.conns, i);
+}
+
+static struct pending *pending_at(unsigned i)
+{
+    return table_at(&net.pending, i);
+}
+
+static struct asking *asking_at(unsigned i)
+{
+    return table_at(&net.asking, i);
+}
+
+static struct poller *poller_at(unsigned i)
+{
+    return table_at(&net.pollers, i);
+}
+
+/* Emptied, keeping only what outlives a connection: where it is and how
+ * often it has been taken. */
+static void conn_clear(struct conn *c)
+{
+    uint32_t slot = c->slot, generation = c->generation;
+
+    memset(c, 0, sizeof(*c));
+    c->slot = slot;
+    c->generation = generation;
+}
+
+/* A slot just taken, named: the slot, and one more generation of it. */
+static void conn_named(struct conn *c)
+{
+    c->generation++;
+    c->handle = ((uint64_t)c->generation << 32) | c->slot;
+}
+
+/*
+ * A free slot, cleared and named, the table grown for one when every slot
+ * is taken; NULL at the ceiling. Still `ST_FREE` until its caller says what
+ * it is, so nothing else finds it half made.
+ */
+static struct conn *conn_claim(void)
+{
+    unsigned i;
+
+    for (;;) {
+        for (i = 0; i < conn_count(); i++) {
+            struct conn *c = conn_slot(i);
+
+            if (c->state == ST_FREE) {
+                c->slot = i;
+                conn_clear(c);
+                conn_named(c);
+                return c;
+            }
+        }
+
+        if (!table_grow(&net.conns)) {
+            return NULL;
+        }
+    }
+}
+
+/* A free item of a table of items that begin with `bool used`, the table
+ * grown when there is none; NULL at the ceiling. Cleared, and not yet
+ * marked used. */
+static void *claim_used(struct table *t)
+{
+    unsigned i;
+
+    for (;;) {
+        for (i = 0; i < table_count(t); i++) {
+            bool *used = table_at(t, i);
+
+            if (!*used) {
+                memset(used, 0, t->size);
+                return used;
+            }
+        }
+
+        if (!table_grow(t)) {
+            return NULL;
+        }
+    }
+}
 
 /*------------------------------------------------------------------------
  * Numbers on the wire.
@@ -808,10 +996,10 @@ static struct pending *pending_find(uint16_t id, uint16_t seq)
 {
     unsigned i;
 
-    for (i = 0; i < NET_PENDING_MAX; i++) {
-        if (net.pending[i].used && net.pending[i].id == id
-            && net.pending[i].seq == seq) {
-            return &net.pending[i];
+    for (i = 0; i < table_count(&net.pending); i++) {
+        if (pending_at(i)->used && pending_at(i)->id == id
+            && pending_at(i)->seq == seq) {
+            return pending_at(i);
         }
     }
 
@@ -1121,24 +1309,16 @@ static unsigned dns_name(uint8_t *out, unsigned room,
 /* Somewhere to record a question. NULL when there is no room. */
 static struct asking *asking_free(void)
 {
-    unsigned i;
-
-    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
-        if (!net.asking[i].used) {
-            return &net.asking[i];
-        }
-    }
-
-    return NULL;
+    return claim_used(&net.asking);
 }
 
 static struct asking *asking_find(uint16_t id)
 {
     unsigned i;
 
-    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
-        if (net.asking[i].used && net.asking[i].id == id) {
-            return &net.asking[i];
+    for (i = 0; i < table_count(&net.asking); i++) {
+        if (asking_at(i)->used && asking_at(i)->id == id) {
+            return asking_at(i);
         }
     }
 
@@ -1680,24 +1860,21 @@ static uint16_t tcp_checksum(const struct net_addr *src,
     return (uint16_t)(~sum & 0xffffu);
 }
 
-static struct conn *conn_at(uint32_t handle)
+static struct conn *conn_at(uint64_t handle)
 {
-    struct conn *c = &net.conn[NET_HANDLE_SLOT(handle)];
+    struct conn *c;
+
+    if (NET_HANDLE_SLOT(handle) >= conn_count()) {
+        return NULL;
+    }
+
+    c = conn_slot(NET_HANDLE_SLOT(handle));
 
     if (c->state == ST_FREE || c->handle != handle) {
         return NULL;
     }
 
     return c;
-}
-
-/* A slot just taken, named: the slot, and one more generation of it. */
-static void conn_named(struct conn *c)
-{
-    unsigned slot = (unsigned)(c - net.conn);
-
-    net.generation[slot]++;
-    c->handle = slot + NET_CONN_MAX * net.generation[slot];
 }
 
 /*
@@ -1730,7 +1907,7 @@ static void conn_free(struct conn *c)
         }
     }
 
-    memset(c, 0, sizeof(*c));
+    conn_clear(c);
 }
 
 /*
@@ -1907,7 +2084,7 @@ static void hand_over(struct conn *c)
         return;
     }
 
-    listener = &net.conn[c->from_listener];
+    listener = conn_slot((unsigned)c->from_listener);
 
     if (listener->state != ST_LISTEN || listener->accepter == 0) {
         return;                     /* nobody is asking yet; it waits */
@@ -2013,9 +2190,9 @@ static void window_updates(void)
 {
     unsigned i;
 
-    for (i = 0; i < NET_CONN_MAX; i++) {
-        if (net.conn[i].state != ST_FREE) {
-            window_update(&net.conn[i]);
+    for (i = 0; i < conn_count(); i++) {
+        if (conn_slot(i)->state != ST_FREE) {
+            window_update(conn_slot(i));
         }
     }
 }
@@ -2063,8 +2240,8 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
      * tried first: a listener on port 80 must not swallow a segment for a
      * connection it produced on that same port.
      */
-    for (i = 0; i < NET_CONN_MAX; i++) {
-        struct conn *k = &net.conn[i];
+    for (i = 0; i < conn_count(); i++) {
+        struct conn *k = conn_slot(i);
 
         if (k->state != ST_FREE && k->state != ST_DEAD
             && k->state != ST_LISTEN
@@ -2086,10 +2263,10 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         long region;
         long at;
 
-        for (i = 0; i < NET_CONN_MAX; i++) {
-            if (net.conn[i].state == ST_LISTEN
-                && net.conn[i].local_port == get16(tcp + TCP_DPORT)) {
-                listener = &net.conn[i];
+        for (i = 0; i < conn_count(); i++) {
+            if (conn_slot(i)->state == ST_LISTEN
+                && conn_slot(i)->local_port == get16(tcp + TCP_DPORT)) {
+                listener = conn_slot(i);
                 break;
             }
         }
@@ -2098,15 +2275,10 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
             return;                 /* a real stack would RST */
         }
 
-        for (i = 0; i < NET_CONN_MAX; i++) {
-            if (net.conn[i].state == ST_FREE) {
-                made = &net.conn[i];
-                break;
-            }
-        }
+        made = conn_claim();
 
         /*
-         * No room. Dropped rather than refused, which is what a busy server
+         * No room - the table at its ceiling. Dropped rather than refused, which is what a busy server
          * does: the far end retries, and by then something may have closed.
          * A RST here would turn a moment of load into a refusal the client
          * reports as "connection refused", which is a different and worse
@@ -2122,10 +2294,10 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
          * in the same breath as the final ACK - and there has to be
          * somewhere to put it.
          *
-         * That does mean a flood of SYNs exhausts the pool, which is what a
-         * SYN cookie exists to prevent. With four connections the pool is
-         * exhausted by four packets either way; the answer is bounded by
-         * `NET_CONN_MAX` rather than by cleverness, and it is written down
+         * That does mean a flood of SYNs fills the table, which is what a
+         * SYN cookie exists to prevent. The table grows to a sixteenth of
+         * the machine's memory in rings and no further, so the answer is
+         * bounded by that rather than by cleverness, and it is written down
          * rather than defended against.
          */
         region = kosmos_mem_create((TCP_RING_REGION + 4095u) / 4096u);
@@ -2140,9 +2312,6 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
             (void)kosmos_cap_drop(region);
             return;
         }
-
-        memset(made, 0, sizeof(*made));
-        conn_named(made);
 
         made->region = region;
         made->ring   = (struct tcp_ring *)(uintptr_t)at;
@@ -2159,7 +2328,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         made->snd_nxt       = net.next_seq;
         made->peer_window   = get16(tcp + TCP_WINDOW);
         made->state         = ST_SYN_RCVD;
-        made->from_listener = (int)(listener - net.conn);
+        made->from_listener = (int)listener->slot;
         made->sent_at       = kosmos_ticks();
 
         net.next_seq += 0x01000000u;
@@ -2344,73 +2513,111 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
  * the far end is ready either way - **closed counts**, and has to: a client
  * waiting for the end of a response would otherwise wait for the deadline
  * instead of being told at once, which is a server that is slow for the one
- * reason it should be quick.
+ * reason it should be quick. And a listener is ready when somebody it has
+ * not handed over yet has arrived.
  *
  * Neither question can produce a spin, which is what the single mask was
- * trying to avoid and got wrong. A caller only names a connection under
- * `writing` after a write has already failed for want of room, so "there is
- * room" is news. Asking about reading is news by construction.
+ * trying to avoid and got wrong. A caller only asks about writing after a
+ * write has already failed for want of room, so "there is room" is news.
+ * Asking about reading is news by construction.
+ *
+ * **The set is the caller's region, and read as untrusted**: each entry
+ * once, into locals, and `got` the only thing written. A handle that names
+ * nothing - closed and given back, or never one - is over, which is what
+ * the caller waiting on it needs to hear.
  */
-static uint32_t poll_ready(uint32_t reading, uint32_t writing,
-                           int listener, uint32_t *arrived)
+static bool someone_arrived(const struct conn *listener)
 {
-    uint32_t out = 0;
     unsigned i;
 
-    *arrived = 0;
+    for (i = 0; i < conn_count(); i++) {
+        const struct conn *k = conn_slot(i);
 
-    for (i = 0; i < NET_CONN_MAX; i++) {
-        struct conn *c = &net.conn[i];
-        uint32_t bit = 1u << i;
-
-        if (((reading | writing) & bit) == 0 || c->state == ST_FREE) {
-            continue;
-        }
-
-        if (c->state == ST_DEAD) {
-            out |= bit;
-            continue;
-        }
-
-        if (c->ring == NULL) {
-            continue;
-        }
-
-        /* Over for good: whoever was waiting on it should stop waiting,
-         * whichever of the two things they were waiting for. */
-        if (c->ring->closed != 0) {
-            out |= bit;
-            continue;
-        }
-
-        if ((reading & bit) != 0
-            && tcp_ring_ready(c->ring->in_write,
-                              tcp_ring_acquire(&c->ring->in_read)) > 0) {
-            out |= bit;
-        }
-
-        if ((writing & bit) != 0
-            && tcp_ring_space(c->ring->bytes,
-                              tcp_ring_acquire(&c->ring->out_write),
-                              c->ring->out_read) > 0) {
-            out |= bit;
+        if (!k->handed_over && k->from_listener == (int)listener->slot
+            && (k->state == ST_OPEN || k->state == ST_CLOSE_WAIT)) {
+            return true;
         }
     }
 
-    if (listener >= 0 && listener < (int)NET_CONN_MAX
-        && net.conn[listener].state == ST_LISTEN) {
-        for (i = 0; i < NET_CONN_MAX; i++) {
-            struct conn *k = &net.conn[i];
+    return false;
+}
 
-            if (!k->handed_over && k->from_listener == listener
-                && (k->state == ST_OPEN || k->state == ST_CLOSE_WAIT)) {
-                *arrived = 1;
-                break;
+static uint32_t poll_ready(struct net_poll_entry *set, uint32_t count)
+{
+    uint32_t i, ready = 0;
+
+    for (i = 0; i < count; i++) {
+        uint64_t handle = set[i].handle;
+        uint32_t want = set[i].want;
+        uint32_t got = 0;
+        struct conn *c;
+
+        /* An entry that wants nothing is a place held: a caller with
+         * nothing to watch, waiting for its deadline and no more. */
+        if ((want & (NET_WANT_READ | NET_WANT_WRITE | NET_WANT_ACCEPT)) == 0) {
+            set[i].got = 0;
+            continue;
+        }
+
+        c = conn_at(handle);
+
+        if (c == NULL) {
+            got = NET_GOT_OVER;
+        } else if ((want & NET_WANT_ACCEPT) != 0) {
+            if (c->state != ST_LISTEN) {
+                got = NET_GOT_OVER;
+            } else if (someone_arrived(c)) {
+                got = NET_WANT_ACCEPT;
+            }
+        } else if (c->state == ST_DEAD || c->ring == NULL || c->ring->closed != 0) {
+            got = NET_GOT_OVER;
+        } else {
+            if ((want & NET_WANT_READ) != 0
+                && tcp_ring_ready(c->ring->in_write,
+                                  tcp_ring_acquire(&c->ring->in_read)) > 0) {
+                got |= NET_WANT_READ;
+            }
+
+            if ((want & NET_WANT_WRITE) != 0
+                && tcp_ring_space(c->ring->bytes,
+                                  tcp_ring_acquire(&c->ring->out_write),
+                                  c->ring->out_read) > 0) {
+                got |= NET_WANT_WRITE;
             }
         }
+
+        set[i].got = got;
+
+        if (got != 0) {
+            ready++;
+        }
     }
 
-    return out;
+    return ready;
+}
+
+/* A poller's set, let go of: unmapped, then the capability, in that order
+ * (`conn_free` says why). */
+static void poller_release(struct poller *p)
+{
+    if (p->set != NULL
+        && kosmos_share_unmap((unsigned long)(uintptr_t)p->set, p->pages) == 0) {
+        (void)kosmos_cap_drop(p->region);
+    }
+
+    memset(p, 0, sizeof(*p));
+}
+
+static void poller_answer(struct poller *p, uint32_t ready)
+{
+    struct net_reply reply;
+
+    memset(&reply, 0, sizeof(reply));
+    reply.status = NET_OK;
+    reply.ready  = ready;
+
+    answer(p->who, &reply);
+    poller_release(p);
 }
 
 /* Answer every poller that has something, or whose deadline has come. */
@@ -2419,29 +2626,19 @@ static void poll_service(void)
     uint64_t now = kosmos_ticks();
     unsigned i;
 
-    for (i = 0; i < 4; i++) {
-        struct net_reply reply;
-        uint32_t arrived = 0;
+    for (i = 0; i < table_count(&net.pollers); i++) {
+        struct poller *p = poller_at(i);
         uint32_t ready;
 
-        if (!net.poll[i].used) {
+        if (!p->used) {
             continue;
         }
 
-        ready = poll_ready(net.poll[i].reading, net.poll[i].writing,
-                           net.poll[i].listener, &arrived);
+        ready = poll_ready(p->set, p->count);
 
-        if (ready == 0 && arrived == 0 && now < net.poll[i].until) {
-            continue;
+        if (ready > 0 || now >= p->until) {
+            poller_answer(p, ready);
         }
-
-        memset(&reply, 0, sizeof(reply));
-        reply.status  = NET_OK;
-        reply.ready   = ready;
-        reply.arrived = arrived;
-
-        answer(net.poll[i].who, &reply);
-        net.poll[i].used = false;
     }
 }
 
@@ -2537,8 +2734,8 @@ static void release_held(void)
         return;
     }
 
-    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
-        struct asking *a = &net.asking[i];
+    for (i = 0; i < table_count(&net.asking); i++) {
+        struct asking *a = asking_at(i);
 
         if (!a->used || !a->held) {
             continue;
@@ -2552,8 +2749,8 @@ static void release_held(void)
         }
     }
 
-    for (i = 0; i < NET_CONN_MAX; i++) {
-        struct conn *c = &net.conn[i];
+    for (i = 0; i < conn_count(); i++) {
+        struct conn *c = conn_slot(i);
 
         if (c->held && c->state == ST_SYN_SENT
             && tcp_send(c, TCP_SYN, c->snd_una, NULL, 0)) {
@@ -2636,14 +2833,29 @@ static void serve(const struct message *msg, uint64_t sender)
 {
     struct net_request req;
     struct net_reply reply;
+    long cap = msg->cap_plus_one ? (long)msg->cap_plus_one - 1 : -1;
 
     if (msg->length < sizeof(req)) {
+        if (cap >= 0) {
+            (void)kosmos_cap_drop(cap);
+        }
+
         fail(sender, NET_ERR_BAD_OP);
         return;
     }
 
     memcpy(&req, msg->data, sizeof(req));
     memset(&reply, 0, sizeof(reply));
+
+    /*
+     * **A capability comes only with a poll** - its set's region - and one
+     * sent with anything else is let go of at once rather than kept: this
+     * process's table would otherwise fill with whatever callers sent.
+     */
+    if (cap >= 0 && req.op != NET_OP_POLL) {
+        (void)kosmos_cap_drop(cap);
+        cap = -1;
+    }
 
     switch (req.op) {
     case NET_OP_INFO:
@@ -2714,7 +2926,6 @@ static void serve(const struct message *msg, uint64_t sender)
         uint8_t echo[ICMP_HEADER + NET_PAYLOAD_MAX];
         struct pending *p = NULL;
         unsigned length;
-        unsigned i;
 
         if (!net.has_card) {
             fail(sender, NET_ERR_NO_CARD);
@@ -2726,12 +2937,7 @@ static void serve(const struct message *msg, uint64_t sender)
             return;
         }
 
-        for (i = 0; i < NET_PENDING_MAX; i++) {
-            if (!net.pending[i].used) {
-                p = &net.pending[i];
-                break;
-            }
-        }
+        p = claim_used(&net.pending);
 
         if (p == NULL) {
             fail(sender, NET_ERR_FULL);
@@ -2781,7 +2987,6 @@ static void serve(const struct message *msg, uint64_t sender)
 
     case NET_OP_CONNECT: {
         struct conn *c = NULL;
-        unsigned i;
         long region;
         long at;
 
@@ -2790,12 +2995,7 @@ static void serve(const struct message *msg, uint64_t sender)
             return;
         }
 
-        for (i = 0; i < NET_CONN_MAX; i++) {
-            if (net.conn[i].state == ST_FREE) {
-                c = &net.conn[i];
-                break;
-            }
-        }
+        c = conn_claim();
 
         if (c == NULL) {
             fail(sender, NET_ERR_FULL);
@@ -2821,9 +3021,6 @@ static void serve(const struct message *msg, uint64_t sender)
             fail(sender, NET_ERR_FULL);
             return;
         }
-
-        memset(c, 0, sizeof(*c));
-        conn_named(c);
 
         c->region = region;
         c->ring   = (struct tcp_ring *)(uintptr_t)at;
@@ -2991,21 +3188,19 @@ static void serve(const struct message *msg, uint64_t sender)
         /* Already listening on that port is not an error and not a second
          * listener: it is the same one, and answering with it means a
          * program restarted in a loop does not exhaust the pool. */
-        for (i = 0; i < NET_CONN_MAX; i++) {
-            if (net.conn[i].state == ST_LISTEN
-                && net.conn[i].local_port == (uint16_t)req.port) {
-                c = &net.conn[i];
+        for (i = 0; i < conn_count(); i++) {
+            if (conn_slot(i)->state == ST_LISTEN
+                && conn_slot(i)->local_port == (uint16_t)req.port) {
+                c = conn_slot(i);
                 break;
             }
         }
 
-        if (c == NULL) {
-            for (i = 0; i < NET_CONN_MAX; i++) {
-                if (net.conn[i].state == ST_FREE) {
-                    c = &net.conn[i];
-                    break;
-                }
-            }
+        if (c != NULL) {
+            conn_clear(c);          /* the same port again: a new name */
+            conn_named(c);
+        } else {
+            c = conn_claim();
         }
 
         if (c == NULL) {
@@ -3013,8 +3208,6 @@ static void serve(const struct message *msg, uint64_t sender)
             return;
         }
 
-        memset(c, 0, sizeof(*c));
-        conn_named(c);
         c->state         = ST_LISTEN;
         c->local_port    = (uint16_t)req.port;
         c->from_listener = -1;
@@ -3042,8 +3235,8 @@ static void serve(const struct message *msg, uint64_t sender)
          * for the next arrival, which would be a server that answers every
          * request one client late.
          */
-        for (i = 0; i < NET_CONN_MAX; i++) {
-            struct conn *k = &net.conn[i];
+        for (i = 0; i < conn_count(); i++) {
+            struct conn *k = conn_slot(i);
 
             if (!k->handed_over
                 && k->from_listener == (int)NET_HANDLE_SLOT(req.handle)
@@ -3080,45 +3273,62 @@ static void serve(const struct message *msg, uint64_t sender)
         return;                     /* parked; answered later or expired */
 
     case NET_OP_POLL: {
-        uint32_t arrived = 0;
+        struct poller *p;
+        long pages, at;
         uint32_t ready;
-        int listener = -1;
-        unsigned i;
 
-        /* The listener by its handle, plus one so that none is zero; the
-         * masks are over slots. */
-        if (req.port > 0 && conn_at(req.port - 1u) != NULL) {
-            listener = (int)NET_HANDLE_SLOT(req.port - 1u);
-        }
-
-        ready = poll_ready(req.handle, req.writing, listener, &arrived);
-
-        /* Answered at once when there is something, for the reason `wait`
-         * gives: a caller that always got parked would take a round trip to
-         * learn about bytes that had already arrived. */
-        if (ready != 0 || arrived != 0) {
-            reply.status  = NET_OK;
-            reply.ready   = ready;
-            reply.arrived = arrived;
-            answer(sender, &reply);
+        /*
+         * The set, in the region that came with the request: its size is
+         * the kernel's word, not the caller's, and the count is held to it.
+         * Mapped until this is answered - at once when something is ready,
+         * which is the round trip `wait` saves too, or when it is, or at
+         * the deadline - and let go of then.
+         */
+        if (cap < 0) {
+            fail(sender, NET_ERR_BAD_OP);
             return;
         }
 
-        for (i = 0; i < 4; i++) {
-            if (!net.poll[i].used) {
-                net.poll[i].used     = true;
-                net.poll[i].who      = sender;
-                net.poll[i].reading  = req.handle;
-                net.poll[i].writing  = req.writing;
-                net.poll[i].listener = listener;
-                net.poll[i].until    = kosmos_ticks()
-                                     + in_counter(req.wait_ticks
-                                                  ? req.wait_ticks : 25u);
-                return;
-            }
+        pages = kosmos_mem_size(cap);
+
+        if (pages <= 0 || req.length == 0
+            || req.length > (uint64_t)pages * 4096u / sizeof(struct net_poll_entry)) {
+            (void)kosmos_cap_drop(cap);
+            fail(sender, NET_ERR_BAD_ADDRESS);
+            return;
         }
 
-        fail(sender, NET_ERR_FULL);
+        at = kosmos_mem_map(cap);
+
+        if (at < 0) {
+            (void)kosmos_cap_drop(cap);
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        p = claim_used(&net.pollers);
+
+        if (p == NULL) {
+            (void)kosmos_share_unmap((unsigned long)at, (unsigned long)pages);
+            (void)kosmos_cap_drop(cap);
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        p->used   = true;
+        p->who    = sender;
+        p->region = cap;
+        p->set    = (struct net_poll_entry *)(uintptr_t)at;
+        p->pages  = (unsigned long)pages;
+        p->count  = req.length;
+        p->until  = kosmos_ticks() + in_counter(req.wait_ticks ? req.wait_ticks : 25u);
+
+        ready = poll_ready(p->set, p->count);
+
+        if (ready > 0) {
+            poller_answer(p, ready);
+        }
+
         return;
     }
 
@@ -3142,8 +3352,8 @@ static void expire(uint64_t hz)
     unsigned i;
     uint64_t now = kosmos_ticks();
 
-    for (i = 0; i < NET_PENDING_MAX; i++) {
-        struct pending *p = &net.pending[i];
+    for (i = 0; i < table_count(&net.pending); i++) {
+        struct pending *p = pending_at(i);
 
         if (p->used && now - p->sent_at > hz) {
             p->used = false;
@@ -3157,8 +3367,8 @@ static void expire(uint64_t hz)
      * process stopped for ever, and UDP gives no indication that anything
      * was lost.
      */
-    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
-        struct asking *a = &net.asking[i];
+    for (i = 0; i < table_count(&net.asking); i++) {
+        struct asking *a = asking_at(i);
 
         if (a->used && a->until != 0 && now > a->until) {
             a->used = false;
@@ -3180,8 +3390,8 @@ static void expire(uint64_t hz)
      * retrying faster makes it busier. Five attempts and then the
      * connection is dead, which is about thirty seconds.
      */
-    for (i = 0; i < NET_CONN_MAX; i++) {
-        struct conn *c = &net.conn[i];
+    for (i = 0; i < conn_count(); i++) {
+        struct conn *c = conn_slot(i);
         uint64_t wait;
 
         /* A wait whose deadline has passed, answered so the caller can look
@@ -3295,6 +3505,17 @@ void net_server(long endpoint, long console, long frames, long frames2)
 
     memset(&net, 0, sizeof(net));
     memset(&wire, 0, sizeof(wire));
+
+    /* The tables, empty: each grows a slab at a time when it fills, to a
+     * ceiling from the machine's memory (`netproto.h`). */
+    table_init(&net.conns, sizeof(struct conn), 32,
+               ceiling_for(TCP_RING_REGION + sizeof(struct conn), 64));
+    table_init(&net.pending, sizeof(struct pending), 16,
+               ceiling_for(sizeof(struct pending), 64));
+    table_init(&net.asking, sizeof(struct asking), 8,
+               ceiling_for(sizeof(struct asking), 64));
+    table_init(&net.pollers, sizeof(struct poller), 8,
+               ceiling_for(sizeof(struct poller), 64));
     net.console = console;
     wire.cap = -1;
     wire.region = -1;

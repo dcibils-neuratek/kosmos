@@ -31,9 +31,10 @@
 -- something. `fs.poll` is what makes it possible and is the `select` this
 -- system had wanted six separate times.
 --
--- So a slow client no longer blocks a fast one. What bounds it now is
--- `NET_CONN_MAX` - sixteen slots, one of them the listener - rather than the
--- shape of the loop.
+-- So a slow client no longer blocks a fast one. What bounded it next was
+-- the stack's sixteen slots, one of them the listener; since 30 September
+-- the stack's tables grow and `poll` takes a set of any size, so what bounds
+-- it is the machine (`netproto.h`) - twenty at once is in the gate.
 
 local words = {}
 

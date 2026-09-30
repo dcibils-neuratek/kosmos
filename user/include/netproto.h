@@ -99,15 +99,16 @@
  * server is actually for, on a system that has no threads and does not want
  * a lock around its interpreter.
  *
- * `handle` carries a *bitmask* of connections rather than a list, because
- * `NET_CONN_MAX` fits in a word and a mask needs no length field. `port`
- * carries the listener to watch, plus one, so that zero means none.
+ * **The set is a list in a region the caller sends** - `struct
+ * net_poll_entry` below, the count in `length`. It was a bitmask in
+ * `handle`, and a second in `writing`, which is what held a machine to
+ * sixteen connections: a mask fits in a word only while there are few.
  *
- * **Two masks, because "ready" is not one question.** `handle` is what the
- * caller wants to read from and `writing` is what it wants to write to, and
- * the answer for each is a different fact: bytes have arrived, or room has
- * appeared. One mask cannot say which, and the version that had one is worth
- * recording because it deadlocked rather than merely being imprecise.
+ * **What each entry wants, because "ready" is not one question.** Reading
+ * and writing are asked separately, and the answer for each is a different
+ * fact: bytes have arrived, or room has appeared. One question cannot say
+ * which, and the version that had one is worth recording because it
+ * deadlocked rather than merely being imprecise.
  *
  * It reported a connection writable when there was space *and* something
  * still queued - a rule written for `wait`, where the question is "has
@@ -168,43 +169,54 @@
 #define NET_ERR_NO_NAME     12u   /* the resolver said there is no such name */
 
 /*
- * How many connections at once.
+ * **How many connections at once: as many as the machine will hold.**
  *
- * Sixteen, and a fixed pool like everything else here: each carries a 36 KB
- * region, so the whole pool is 576 KB and running out is an error at a known
- * limit rather than a failure at an unknown one.
+ * It was sixteen, compiled in - "running out is an error at a known limit"
+ * - because sixteen fitted the bitmask `NET_OP_POLL` named them in. The
+ * slots were never given back either, so a machine had sixteen connections
+ * a boot and then "too many at once" for good, which the browser's suite
+ * found on its seventeenth page (30 September 2026). Diego, told: "why is 16
+ * tcp connections a limit?", "we shouldnt have limits".
  *
- * **It was four, which was the number a client needed.** A server needs one
- * slot for the port it listens on and one per conversation in flight, and
- * four meant three at a time. Sixteen because it fits in the bitmask
- * `NET_OP_POLL` uses, which is the constraint that decides it - a
- * seventeenth would need a list where a word does now.
+ * So the stack's tables grow, as the kernel's pools do (`kernel/pool.h`):
+ * slabs that never move and are never given back, up to a ceiling from the
+ * machine's memory - a connection costs its 36 KB ring - and a slot goes
+ * back when TCP is finished with it and its program has closed it. The same
+ * for the echoes in flight, the names being looked up, and the programs
+ * parked in a poll, which were eight, four and four.
+ *
+ * **A handle is a slot and a generation**, the slot in the low half and how
+ * often it has been taken in the high: a program that kept one past its
+ * connection's end names nothing, rather than whichever took the slot next.
  */
-#define NET_CONN_MAX    16u
+#define NET_HANDLE_SLOT(h)  ((uint32_t)(h))
+#define NET_HANDLE_GEN(h)   ((uint32_t)((uint64_t)(h) >> 32))
 
 /*
- * **At once, and not in a lifetime.** A connection's slot goes back to the
- * pool when TCP is finished with it and its program has closed it - which
- * it never did until 30 September, so a machine had sixteen connections a
- * boot and then "too many at once" for good: the browser's suite, opening
- * its seventeenth page, is what said so.
+ * **What `NET_OP_POLL` waits on: a list in a region the caller owns.**
  *
- * So a handle names a slot *and a generation* - `slot + NET_CONN_MAX *
- * generation` - and a program that kept one past its connection's end names
- * nothing, rather than whichever connection took the slot next. The poll
- * masks are over slots, `NET_HANDLE_SLOT`.
+ * Not a mask any more, which is what held the connections to sixteen, and
+ * not a list in the message, which would hold them to what fits in one. The
+ * caller writes an entry for each connection it waits on - its handle and
+ * what it wants to know - into a region it made, and sends that region with
+ * the request and the count in `length`. The stack maps it while it answers,
+ * writes into each entry's `got` what is so, and lets it go when it answers:
+ * nothing of the caller's is kept past that, so nothing outlives it.
+ *
+ * `NET_WANT_ACCEPT` is for a listener: somebody has arrived. `NET_GOT_OVER`
+ * is said of a connection that is finished, whichever was asked - whoever
+ * was waiting on it should stop.
  */
-#define NET_HANDLE_SLOT(h)  ((h) % NET_CONN_MAX)
+#define NET_WANT_READ    1u
+#define NET_WANT_WRITE   2u
+#define NET_WANT_ACCEPT  4u
+#define NET_GOT_OVER     8u
 
-/*
- * How many echoes may be outstanding.
- *
- * A fixed pool, like every other server here: `ramfs` has its nodes and
- * `appfs` its table, and running out is an error at a known limit rather
- * than a failure at an unknown one. Eight is more than one person pinging
- * one host, which is what this is for.
- */
-#define NET_PENDING_MAX     8u
+struct net_poll_entry {
+    uint64_t handle;
+    uint32_t want;                  /* NET_WANT_*, the caller's */
+    uint32_t got;                   /* NET_WANT_* and NET_GOT_OVER, the stack's */
+};
 
 /* The largest echo payload. A ping is conventionally 56 bytes of payload
  * and this is room for the ones that are not, without a message being
@@ -229,7 +241,7 @@ struct net_addr {
 struct net_request {
     uint32_t op;
     uint32_t seq;                   /* the echo's sequence number */
-    uint32_t handle;                /* which connection, for the TCP ops */
+    uint64_t handle;                /* which connection, for the TCP ops */
     uint32_t port;                  /* where to connect */
     /*
      * How long a request that parks may park, in **scheduler ticks** -
@@ -258,10 +270,6 @@ struct net_request {
      * name can.
      */
     uint32_t wait_ticks;
-
-    /* For NET_OP_POLL only: the connections to watch for *room to write*,
-     * where `handle` is the ones to watch for bytes to read. */
-    uint32_t writing;
     struct net_addr to;
 
     /* For NET_OP_CONFIG: this machine's address, its mask, the router to
@@ -288,16 +296,12 @@ struct net_request {
 struct net_reply {
     uint32_t status;
     uint32_t seq;
-    uint32_t handle;                /* the connection this is about */
+    uint64_t handle;                /* the connection this is about */
     uint32_t ring_bytes;            /* capacity of each direction */
     uint32_t state;                 /* NET_TCP_*, for a connection */
 
-    /*
-     * For NET_OP_POLL: which of them are ready, as the same bitmask the
-     * request used, and whether the listener has somebody waiting.
-     */
+    /* For NET_OP_POLL: how many of the entries have something to say. */
     uint32_t ready;
-    uint32_t arrived;
 
     struct net_addr from;
     uint32_t ttl;
