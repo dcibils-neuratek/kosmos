@@ -2642,6 +2642,16 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zx. **FOUND on 30 September, looking at the 0.10.199 stick by VNC - a
+   server started through the desktop sits on the Deskbar as a program
+   that is starting.** `open vncd`, and the Servers window's switches for
+   `httpd`, `telnetd` and `vncd`, go through the window manager's `launch`,
+   and the Deskbar breathes a button for whatever was launched until its
+   window opens - which a server's never does, so it breathes until the
+   starting timeout gives up on it. A launch that says it has no window,
+   or the Deskbar asking the program's header whether it is an
+   application, would leave it off.
+
 6zw. **FOUND on 29 September - `x86-film` goes silent for a moment under
    the gate's load**, twice in one day: samples of zero where FFmpeg's
    reference has sound, 1,226 of 266,240 the second time, and three passes

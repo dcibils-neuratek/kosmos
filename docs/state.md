@@ -298,7 +298,13 @@ Kit, and `test_crypto`, which `crypto.c` had claimed since 5 September and
 never had; **SIMD where possible** - `pack.c` eight pixels at a time, held
 to its scalar self; **HTTPS** proposed with BearSSL and a random source
 first (roadmap, the browser); and **lazy FP** questioned (6zv), his to
-decide. **Next**: 7b, keys and the pointer through the window manager.
+decide. **Stick 0.10.199** (`92f7674`): OVMF 32 checks, and the image
+itself booted under OVMF with an e1000e - a lease by DHCP, `open vncd` over
+Telnet, and the whole 2048x2048 screen taken from the Mac by
+`kosmos_vnc.py`, 9.95 s of raw pixels through QEMU's emulated network. The
+checklist sent with it names what to try. **Next**: 7b, keys and the
+pointer through the window manager, once its authority question is
+answered (`roadmap.md`, remote 7b).
 Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
