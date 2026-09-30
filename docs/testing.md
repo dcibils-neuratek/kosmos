@@ -14636,3 +14636,44 @@ will).
 **The gate for it**: 74 of 75 in 9:24, and `x86-film` the one again - 417
 samples of silence at 0.046 s - and three of three alone after on the same
 image: `roadmap.md` 6zw's fifth time.
+
+## 18.311 The test page laid out and drawn by NetSurf (6zz j2, j3)
+
+**`roadmap.md` 6zz j2 and j3**, together, since neither can be seen without
+the other. `web_netsurf.c` now does what NetSurf's `html.c` does between a
+parsed document and a page: a selection context with NetSurf's own default
+stylesheets (`resources/default.css` and, for a page in quirks mode,
+`quirks.css`, vendored and carried as `netsurf/default.css` and
+`netsurf/quirks.css`) and every `<style>` of the page for a screen - no cap on
+how many, where `web_style.c` took eight - then the box tree built through
+NetSurf's scheduler, laid out at a width, and drawn a band at a time through a
+plotter table on `gfx`: filled and stroked rectangles, straight lines and any
+other, polygons by scanline, discs, text on its baseline in a face chosen by
+family, weight, slant and size - asked of `gfx` once per kind and rung and
+kept - and a clip every operation honours. `web.setup`, `doc:ns_layout`,
+`doc:ns_paint` and `doc:ns_link_at` reach it; `web.log()` reads NetSurf's own
+log, kept in a ring.
+
+**Three things found making it run.** NetSurf's table of presentational hints
+is made at start-up by its `css.c` - without it, the first `align` faulted.
+Its layout gives up on a whole page when a form field has no control, and the
+stand-in had none: each field now gets one, enough to size and draw it, and a
+`<select>` keeps its options. And an asset vendored with its release date was
+older than the asset table, so the table was not remade: the stylesheets are
+in the list whose stamp says when it changes.
+
+**The test page**: 3,352 pixels tall, laid out in 50 ms and drawn in 7 under
+TCG; its table with every cell's border, the header shaded and the last cell
+spanning two columns; the CSS box with its border and ground; the form's
+fields, box and button; the quotation's rule and the code's ground - none of
+which `web_paint.c` drew. What is not there yet: pictures (their `alt` text
+stands in, 6zz j4), and the nested list's bullet `◦`, which the face has no
+glyph for.
+
+**`arm-browser` and `x86-browser`**: the page laid out by NetSurf on the
+machine and drawn whole into a surface; at least 100 pixels of the box's
+border, 1,000 of its ground and 100 of the table's cell borders, and the
+first link found under its place - "3352 862 8198 1373 .../second.html" on
+both. Control: NetSurf's colours handed to `gfx` unconverted, "0 0" for the
+border and ground. A control that did not bite: stroked rectangles not drawn -
+NetSurf draws borders filled.

@@ -53,6 +53,10 @@ mostly a camera, and a check that goes stale is worse than no check:
   * **Back leaves it**, with the server asked for nothing.
   * **NetSurf's own code runs** (`roadmap.md` 6zz j1): `web.join` resolves
     three addresses through its URL parser.
+  * **NetSurf lays the test page out and draws it** (6zz j2, j3): the CSS
+    box's border and ground and the table's cell borders on the surface -
+    none of which the browser's own layout ever drew - and the first link
+    found under its place.
   * **A class after a line break is a class**: the test page's second
     paragraph is maroon by a class that follows a newline in its attribute,
     which the cascade finds in the list libdom keeps on the element.
@@ -453,6 +457,53 @@ def main():
                           f"where {want_joined!r}")
 
         guest.wait_for(PROMPT, "the prompt once more")
+
+        #
+        # **The test page laid out and drawn by NetSurf** (`roadmap.md` 6zz
+        # j2, j3), on the machine, into a surface: its default stylesheets
+        # set up, the page laid out at the browser's width and drawn whole,
+        # and three things counted that `web_paint.c` never drew - the CSS
+        # box's blue border (#2a55c9) and pale blue ground (#eef2fb), and
+        # the table's grey cell borders (#999999) - and the link under the
+        # first link's place asked for.
+        #
+        page_url = f"http://10.0.2.2:{port}/{name}"
+        probe = ('local http = use("/Kosmos/Libraries/http.lua") local w = sys.kit("web") '
+                 'w.setup(sys.asset("netsurf/default.css"), sys.asset("netsurf/quirks.css")) '
+                 f'local r = http.get("{page_url}") local _, _, body = http.parse(r or "") '
+                 f'local doc = w.parse(body) local h, why = doc:ns_layout(868, 584, "{page_url}") '
+                 'if not h then print("NS" .. "BOX none " .. tostring(why)) return end '
+                 'local s = gfx.surface{w = 868, h = h} doc:ns_paint(s, 868, h, 0) '
+                 'local blue, ground, grid = 0, 0, 0 for y = 0, h - 1, 2 do for x = 0, 867, 2 do '
+                 'local c = s:get(x, y) & 0xffffff if c == 0x2a55c9 then blue = blue + 1 '
+                 'elseif c == 0xeef2fb then ground = ground + 1 elseif c == 0x999999 then grid = grid + 1 end end end '
+                 'print("NS" .. "BOX " .. h .. " " .. blue .. " " .. ground .. " " .. grid .. " " '
+                 '.. tostring(doc:ns_link_at(60, 165)))')
+        parts = [probe[i:i + 600] for i in range(0, len(probe), 600)]
+
+        for i, part in enumerate(parts):
+            guest.type(f'fs.write("/Temporary/nsbox{i}.lua", [==[{part}]==])')
+            guest.wait_for(PROMPT, "the probe written")
+
+        guest.type('fs.write("/Temporary/nsbox.lua", '
+                   + " .. ".join(f'fs.read("/Temporary/nsbox{i}.lua")' for i in range(len(parts)))
+                   + ')')
+        guest.wait_for(PROMPT, "the probe put together")
+        mark = len(guest.seen)
+        guest.type("/Temporary/nsbox.lua")
+        boxed = guest.wait_for_line("NSBOX ", "the page laid out by NetSurf", since=mark)
+        drawn = re.match(r"(\d+) (\d+) (\d+) (\d+) (\S+)", boxed.strip())
+
+        if (drawn is None or int(drawn.group(1)) < 2000 or int(drawn.group(2)) < 100
+                or int(drawn.group(3)) < 1000 or int(drawn.group(4)) < 100
+                or drawn.group(5) != f"http://10.0.2.2:{port}/{LINKED}"):
+            raise Failure(f"the test page laid out by NetSurf was not drawn as it asks: "
+                          f"height, the box's border, its ground, the table's borders "
+                          f"and the first link were {boxed.strip()!r}")
+
+        print(f"NetSurf drew the test page: {boxed.strip()} "
+              "(height, border, ground and table pixels, the first link)")
+        guest.wait_for(PROMPT, "the prompt after NetSurf")
 
         guest.type(f"wm browser:10.0.2.2:{port}/{name}")
 

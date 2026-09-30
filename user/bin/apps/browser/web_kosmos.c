@@ -52,6 +52,10 @@ struct doc {
      */
     struct web_page *page;
     int              page_width;
+
+    /* The same document laid out by NetSurf (`roadmap.md` 6zz j3), made
+     * the first time `ns_layout` is asked. */
+    struct web_ns_doc *ns;
 };
 
 static void forget_layout(struct doc *d)
@@ -544,11 +548,85 @@ static int l_images(lua_State *L)
     return 1;
 }
 
+/*
+ * `doc:ns_layout(width, height, address)` -> the page's height, laid out by
+ * NetSurf (`roadmap.md` 6zz j3); nil and why when it could not be. The
+ * address is the one the page came from, which its links and its
+ * stylesheets' `url()`s resolve against; the first call makes the box tree,
+ * a later one at another width lays the same tree out again.
+ */
+static int l_ns_layout(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    int width = (int)luaL_checkinteger(L, 2);
+    int height = (int)luaL_checkinteger(L, 3);
+    const char *base = luaL_optstring(L, 4, NULL);
+    int tall;
+
+    if (d->ns == NULL) {
+        d->ns = web_ns_open(d->dom, base);
+
+        if (d->ns == NULL) {
+            lua_pushnil(L);
+            lua_pushliteral(L, "NetSurf's layout is not set up: web.setup first");
+            return 2;
+        }
+    }
+
+    tall = web_ns_layout(d->ns, L, width, height);
+
+    if (tall < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, web_ns_why(d->ns));
+        return 2;
+    }
+
+    lua_pushinteger(L, tall);
+    return 1;
+}
+
+/* `doc:ns_paint(surface, width, height, from)`: the band of the page that
+ * starts `from` rows down, drawn into the surface by NetSurf. */
+static int l_ns_paint(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    struct surface *s = luaL_checkudata(L, 2, "kosmos.surface");
+    int width = (int)luaL_checkinteger(L, 3);
+    int height = (int)luaL_checkinteger(L, 4);
+    long from = (long)luaL_optinteger(L, 5, 0);
+
+    if (d->ns != NULL) {
+        web_ns_paint(d->ns, L, s, width, height, from);
+    }
+
+    return 0;
+}
+
+/* `doc:ns_link_at(x, y)` -> the address under a point of the page, whole,
+ * or nil. */
+static int l_ns_link_at(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    const char *href = d->ns == NULL ? NULL
+                       : web_ns_link_at(d->ns, (int)luaL_checkinteger(L, 2),
+                                        (int)luaL_checkinteger(L, 3));
+
+    if (href == NULL) {
+        lua_pushnil(L);
+    } else {
+        lua_pushstring(L, href);
+    }
+
+    return 1;
+}
+
 static int l_close(lua_State *L)
 {
     struct doc *d = luaL_checkudata(L, 1, DOC_HANDLE);
 
     forget_layout(d);
+    web_ns_close(d->ns);
+    d->ns = NULL;
 
     if (d->dom != NULL) {
         dom_node_unref(d->dom);
@@ -799,6 +877,8 @@ void kosmos_web_kit(lua_State *L)
         { "stylesheet", l_stylesheet },
         { "events",     l_events },
         { "join",       web_netsurf_join },
+        { "setup",      web_netsurf_setup },
+        { "log",        web_netsurf_log },
         { NULL, NULL }
     };
 
@@ -812,6 +892,9 @@ void kosmos_web_kit(lua_State *L)
         { "images", l_images },
         { "title", l_title },
         { "close", l_close },
+        { "ns_layout", l_ns_layout },
+        { "ns_paint", l_ns_paint },
+        { "ns_link_at", l_ns_link_at },
         { NULL, NULL }
     };
 

@@ -2872,13 +2872,15 @@ processors, and still what follows USB:
         `runtime/upstream/netsurf/netsurf/`, what they stand on, and the
         stand-ins in `web_netsurf.c` - compiled into the web kit, nothing
         drawn by it yet; its URL parser running, through `web.join`.
-      - j2. **Text and plotting on `gfx`**: widths, splitting a line,
-        drawing text, rectangles, clips and pictures.
-      - j3. **A document through it**: the parsed page into a box tree,
-        laid out at the window's width, drawn into the band - the test
-        page at least as well as `web_paint.c` draws it (its box's border
-        and ground, its table's borders, right and centre), then
-        `web_paint.c`'s layout retired.
+      - j2. **BUILT 30 September (`testing.md` 18.311). Text and plotting
+        on `gfx`**: widths, splitting a line, drawing text, rectangles,
+        lines, polygons, discs and clips; pictures with j4.
+      - j3. **BUILT the same evening (18.311). A document through it**: the
+        parsed page into a box tree, laid out at the window's width, drawn
+        into a band - the test page better than `web_paint.c` draws it
+        (its box's border and ground, its table's borders, its form). The
+        browser changes over with j4, when pictures come through it too,
+        and `web_paint.c`'s layout is retired then.
       - j4. **External stylesheets**: `<link rel="stylesheet">` and
         `@import` fetched side by side and given to the cascade in order;
         pictures as the objects the layout sizes.

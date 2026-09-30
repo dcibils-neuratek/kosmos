@@ -2326,8 +2326,17 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # which is the flags stamps' trick for the same kind of question.
 #
 ASSET_LIST := $(GEN)/assets.list
+
+# NetSurf's own default stylesheets, which its layout is written against
+# (`roadmap.md` 6zz j): carried as `netsurf/default.css` and
+# `netsurf/quirks.css`, and handed to the web kit by the browser. In the
+# list below so that adding them rebuilt the table: vendored with their
+# release dates, they were older than it, and make saw nothing to do.
+NETSURF_SHEETS := runtime/upstream/netsurf/netsurf/resources/default.css \
+                  runtime/upstream/netsurf/netsurf/resources/quirks.css
+
 ASSET_FILES := $(ICON_FILES) $(ICON16_FILES) $(ICON64_FILES) $(LINE_FILES) \
-               $(ART_FILES)
+               $(ART_FILES) $(NETSURF_SHEETS)
 $(shell mkdir -p $(GEN); [ "$$(cat $(ASSET_LIST) 2>/dev/null)" = '$(ASSET_FILES)' ] \
         || printf '%s' '$(ASSET_FILES)' > $(ASSET_LIST))
 
@@ -2359,10 +2368,12 @@ $(SCENE_FILES): $(GEN)/scenes/.made
 # holds that nothing in it is unreachable from the first page.
 TUTORIAL_FILES := $(wildcard docs/cafesa3d-tutorial/*.html docs/cafesa3d-tutorial/*.png)
 
+
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
                  $(ASSET_FILES) $(ASSET_LIST) LICENSE \
-                 docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES) $(TUTORIAL_FILES)
+                 docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES) $(TUTORIAL_FILES) \
+                 $(NETSURF_SHEETS)
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
 	        assets/images/test-pattern.png assets/images/test-quads.jpg \
@@ -2373,7 +2384,8 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        --prefix=64x64/ $(ICON64_FILES) \
 	        --prefix=line/ $(LINE_FILES) \
 	        --prefix=scenes/ $(SCENE_FILES) \
-	        --prefix=tutorial/cafesa3d/ $(TUTORIAL_FILES)
+	        --prefix=tutorial/cafesa3d/ $(TUTORIAL_FILES) \
+	        --prefix=netsurf/ $(NETSURF_SHEETS)
 
 # The outline fonts, embedded the same way.
 #

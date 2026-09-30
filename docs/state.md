@@ -384,9 +384,11 @@ are never fetched), pictures stacked, no infobox, `????` for other scripts, no
 SVG. **Agreed: NetSurf's own layout, vendored** (roadmap 6zz j, steps j1-j5).
 **j1 built** (18.310): 92 of NetSurf 3.11's files in
 `runtime/upstream/netsurf/netsurf/`, `web_netsurf.c` for what they call,
-building on both machines, `web.join` running its URL parser. **j2 next**:
-text measured and drawn in the right faces, rectangles, clips and pictures -
-the plotter table on `gfx`. The gate's audio
+building on both machines, `web.join` running its URL parser. **j2 and j3
+built** (18.311): the test page laid out and drawn by NetSurf on the machine -
+tables, borders, backgrounds, forms - through a plotter table on `gfx`.
+**j4 next**: pictures as NetSurf's objects, external stylesheets fetched, and
+the browser changed over to it. The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
 next idea is `-icount`, which ties the guest's clock and QEMU's audio timer
