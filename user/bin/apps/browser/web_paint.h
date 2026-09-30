@@ -23,10 +23,12 @@ struct web_page *web_page_layout(lua_State *L, void *document, int width);
 /* How tall it came out. */
 int  web_page_height(const struct web_page *p);
 
-/* Paints it into a surface `height` pixels tall, clipping what falls past
- * the bottom - a page may be laid out taller than the caller can hold. */
+/* Paints the band of it that starts `from` pixels down the page into a
+ * surface `height` pixels tall - the page's row `from` at the surface's
+ * first. A page is laid out whole and painted a band at a time, so one as
+ * long as the web's is drawn wherever it is read (`roadmap.md` 6zz j). */
 void web_page_paint(const struct web_page *p, struct surface *s,
-                    unsigned height);
+                    long from, unsigned height);
 
 /* The href of the link under a point in page coordinates, or NULL. The
  * bytes belong to the page and are not NUL-terminated. */

@@ -14343,3 +14343,57 @@ the untrusted server was accepted, asked plainly, with no check at all.
 page twice - "RESUMED false then true" - and opens the untrusted server
 anyway, then asks it plainly - refused. Controls: no session offered, "false
 then false"; opened-anyway sessions kept, "refused false".
+
+## 18.304 A page drawn to its end: laid out whole, painted a band at a time
+
+**`roadmap.md` 6zz j, the paper.** The browser painted a page once, into a
+surface as tall as the page and at most 16 MB of pixels - about eight screens
+at the window's width - and cut the rest off with "this shows the first
+4832". Wikipedia's Dam article is 52,803 pixels tall; its last forty-five
+thousand had never been drawn.
+
+Layout was already whole: `web_page_layout` keeps boxes and runs, which are
+small, for the entire page. Only the painting was bounded. So
+`web_page_paint` takes a `from` and paints the runs that reach into a band
+starting there (`web_paint.c`), `render` passes it as a fifth argument, and
+`browser.lua` keeps a band of three screens - the one being read and one
+either side - and paints the next when a scroll leaves it, centred on the
+view. **A band is 4.2 ms** under TCG, the status line says so after a key
+that painted one (`band ... ms`), and a short page is painted once, as
+before. The scrollbar and `G` now reach the page's end rather than the
+paper's.
+
+Pictures: the layout's boxes are listed when the page is laid out, and a
+band's are fetched with `http.get_many` the first time a band holding them
+is painted, decoded, and **kept scaled to their box** - so a band painted
+again blits them rather than decoding a JPEG twice, and a photograph of 4000
+by 3000 in a box of 250 keeps what the box shows. Kept within an eighth of
+the memory that would be free without them, the farthest from the band let
+go first and fetched again if the view comes back: a cost in time rather
+than a page that fails for having too many pictures. The page is shown once
+the first band's pictures are in, not the first eight screens'.
+
+**Found on the way, and fixed**: `fetch` for a picture that redirects - the
+article's `//thumb.wikimedia.org/...` answer `http` with a move to `https` -
+moved the address bar *and `here`* to the picture's address, so every link
+clicked after it resolved against the picture rather than the page. It had
+been so since pictures were fetched together (18.302). Only the page moves
+them now, and a picture's fetch says nothing on the status line; a band
+fetched while scrolling says "fetching N pictures" and then what it said
+before.
+
+Measured on the Dam article from this Mac: shown in 2.0 s; `G` to its last
+line, a band and two footer pictures fetched from Wikipedia, 1.26 s; `g`
+back to the top, a band with its pictures kept, 4.2 ms. Photographs 36
+screens down are drawn.
+
+**`arm-browser` and `x86-browser`**: a page made for the run, 2,000
+paragraphs and 48,217 pixels, with the test PNG as the last thing on it,
+from a server of its own. The page is said to be shown with no pictures and
+the server not asked for the PNG - only the first band's are fetched before
+it is shown; `G` puts the PNG's magenta on the screen; `g` takes it away and
+`G` brings it back, the server asked for it once. Controls, each failing its
+check: the browser as it was, "G on the long page did not show its last
+picture"; nothing kept between bands, "asked for ['/long.html',
+'/kosmos.png', '/kosmos.png']"; every picture fetched at load, "fetched
+before the page was shown".

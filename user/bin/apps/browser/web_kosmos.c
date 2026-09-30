@@ -421,7 +421,8 @@ static int l_blocks(lua_State *L)
 }
 
 /*
- * render(surface, width [, height]) -> the height it used.
+ * render(surface, width [, height [, from]]) -> the page's whole height; with
+ * `from`, the band of it starting that far down, painted into the surface.
  *
  * The whole page in one crossing: layout and painting both happen in C and
  * what comes back is a number. A call per box would cost more than the
@@ -459,8 +460,10 @@ static int l_render(lua_State *L)
         d->page_width = width;
     }
 
+    /* And the band: the page's row at the surface's first, so a page longer
+     * than any surface is painted a band at a time where it is read. */
     if (s != NULL) {
-        web_page_paint(d->page, s, height);
+        web_page_paint(d->page, s, (long)luaL_optinteger(L, 5, 0), height);
     }
 
     lua_pushinteger(L, web_page_height(d->page));

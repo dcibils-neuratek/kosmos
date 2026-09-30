@@ -23,11 +23,12 @@ mostly a camera, and a check that goes stale is worse than no check:
     own pixels is that the compositor would rasterise every line in one
     face. Runs of dark pixels of two clearly different heights is the
     cheapest evidence that a heading is a heading.
-  * **It scrolls.** The page is laid out once into a surface taller than the
-    window and a scroll is one blit out of it, which is the whole reason for
-    the mode - so the picture after six presses of Down has to differ from
-    the picture before them. A browser that laid out correctly and would not
-    move is a browser nobody can read the bottom of.
+  * **It scrolls.** The page is laid out once and painted a band at a time
+    into a surface taller than the window, and a scroll is one blit out of
+    it, which is the whole reason for the mode - so the picture after six
+    presses of Down has to differ from the picture before them. A browser
+    that laid out correctly and would not move is a browser nobody can read
+    the bottom of.
   * **Reload works when it is clicked.** A direct window has no widgets, so
     every control in the chrome is a rectangle this application knows the
     position of and a click is a comparison against it. Nothing else here
@@ -53,6 +54,11 @@ mostly a camera, and a check that goes stale is worse than no check:
   * **Both pictures are drawn.** The test page's PNG carries a magenta
     square and its JPEG a cyan one, and the page is paged down until both
     have been on the screen.
+  * **The end of a page longer than any band** (`roadmap.md` 6zz j): a page
+    made for the run, 2,000 paragraphs and more than forty thousand pixels,
+    with the PNG as the last thing on it. The picture is not fetched before
+    the page is shown; `G` goes to the end and its magenta has to be on the
+    screen; and `g` and `G` again show it without asking for it twice.
 
 **The page is `assets/www/index.html`**, the browser's test page and its
 page benchmark (`roadmap.md` 6zz a): every part of it says what it should
@@ -65,6 +71,7 @@ import argparse
 import http.server
 import os
 import re
+import shutil
 import ssl
 import subprocess
 import sys
@@ -83,6 +90,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # asked for once one of them is clicked: the test page's first link
 # (`assets/www/`, `roadmap.md` 6zz a).
 LINKED = "second.html"
+
+# How long the long page is, in paragraphs: a line and a bit each at the
+# window's width, about 24 pixels, so 48,000 pixels - the Dam article is
+# 52,803 - where the band the browser paints is three screens.
+LONG_PARAGRAPHS = 2000
 
 # The second page's heading, #2a55c9 - which the test page and the start
 # page do not use - and the test page's pictures' marks: a square of pure
@@ -333,6 +345,31 @@ def main():
                     os.path.join(work, "ca.der")
                     + ":/Home/Preferences/Authorities/test.der"],
                    check=True, capture_output=True)
+
+    #
+    # **A page longer than any band** (`roadmap.md` 6zz j), made here: the
+    # test PNG as the very last thing on it, from a server of its own so what
+    # it was asked for is its alone.
+    #
+    long_dir = os.path.join(work, "long")
+    os.makedirs(long_dir, exist_ok=True)
+    shutil.copy(os.path.join(os.path.dirname(HERE), "assets", "www", "kosmos.png"),
+                long_dir)
+
+    with open(os.path.join(long_dir, "long.html"), "w") as f:
+        f.write("<!doctype html>\n<html><head><title>A long page</title></head>"
+                "<body>\n<h1>A long page</h1>\n")
+
+        for i in range(1, LONG_PARAGRAPHS + 1):
+            f.write(f"<p>Paragraph {i} of {LONG_PARAGRAPHS}, on a page longer than "
+                    "any band the browser paints at once: it is laid out whole and "
+                    "painted where it is read.</p>\n")
+
+        f.write('<p><img src="kosmos.png" width="240" height="135" '
+                'alt="the last thing on the page"></p>\n</body></html>\n')
+
+    long_asked = []
+    long_httpd, long_port = serve(long_dir, long_asked)
 
     import run_screenshot
     saved = (run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS)
@@ -806,6 +843,77 @@ def main():
                           f"{took:.0f} s to show - a window not said again is "
                           "about five minutes")
 
+        #
+        # **The end of a page longer than any band** (`roadmap.md` 6zz j).
+        # The page was painted whole into one surface of at most sixteen
+        # megabytes until 30 September - about eight screens - and past that
+        # it was cut off: the Dam article's last forty-five thousand pixels
+        # were never drawn. Now it is laid out whole and painted a band of
+        # three screens at a time where it is read, and a band's pictures are
+        # fetched when it is first painted and kept.
+        #
+        # So: the picture at the end is not fetched before the page is shown;
+        # `G`, and its magenta is on the screen; `g` and `G` again, and it is
+        # again - without the server being asked for it a second time.
+        #
+        long_url = "10.0.2.2:%d/long.html" % long_port
+        line = showing(long_url, "the long page")
+        long_page = re.search(r'"A long page", (\d+) pixels tall, (\d+) pictures, '
+                         r'(\d+) missing', line)
+
+        if long_page is None or int(long_page.group(1)) < 40000:
+            raise Failure(f"the long page was not laid out whole, past forty "
+                          f"thousand pixels: {line!r}")
+
+        if "/kosmos.png" in long_asked or long_page.group(2, 3) != ("0", "0"):
+            raise Failure(f"the picture at the end of the long page was fetched "
+                          f"before the page was shown, where only the first "
+                          f"band's are: {line!r}, the server asked for "
+                          f"{long_asked!r}")
+
+        def magenta(w_, h_, px_):
+            at = reader(px_, w_)
+
+            for y in range(y0, min(h_, y0 + WIN_H - TOOL - STAT), 3):
+                for x in range(x0, min(w_, x0 + WIN_W - SBAR), 3):
+                    c = at(x, y)
+
+                    if c[0] > 235 and c[1] < 25 and c[2] > 235:
+                        return w_, h_, px_
+
+            return None
+
+        def at_the_end(what):
+            typed("G")
+
+            try:
+                return settle(guest, magenta, what, seconds=30)
+            except Failure:
+                w_, h_, px_ = parse_ppm(guest.screendump())
+
+                with open(args.out.replace(".png", "-long.png"), "wb") as f:
+                    f.write(png(w_, h_, px_))
+
+                raise Failure(f"{what}. The server was asked for {long_asked!r}; "
+                              f"wrote {args.out.replace('.png', '-long.png')}.")
+
+        we, he, pxe = at_the_end("G on the long page did not show its last "
+                                 "picture: the end of a page longer than a band "
+                                 "was not drawn")
+
+        with open(args.out.replace(".png", "-long.png"), "wb") as f:
+            f.write(png(we, he, pxe))
+
+        typed("g")
+        settle(guest, lambda w_, h_, px_: None if magenta(w_, h_, px_) else True,
+               "g on the long page did not go back to its top", seconds=20)
+        at_the_end("G a second time on the long page did not show its last "
+                   "picture again")
+
+        if long_asked.count("/kosmos.png") != 1:
+            raise Failure(f"the long page's last picture was not kept once "
+                          f"decoded: the server was asked for {long_asked!r}")
+
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "
               f"{short} to {tall} pixels tall, it scrolled "
@@ -814,8 +922,10 @@ def main():
               f"typed with http:// brought the second page, Back left it, "
               f"the PNG and the JPEG were drawn, a page over TLS was Secure, "
               f"one from an authority it does not trust was refused, "
-              f"Open anyway showed it as Not secure, and Wikipedia's Dam "
-              f"article, 1.4 MB, was shown whole in {took:.0f} s.")
+              f"Open anyway showed it as Not secure, Wikipedia's Dam "
+              f"article, 1.4 MB, was shown whole in {took:.0f} s, and the "
+              f"end of a page {long_page.group(1)} pixels tall was drawn, its "
+              f"picture fetched once.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)
@@ -843,6 +953,7 @@ def main():
         httpd.shutdown()
         https_good.shutdown()
         https_other.shutdown()
+        long_httpd.shutdown()
 
         if guest is not None:
             guest.close()

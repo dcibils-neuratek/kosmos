@@ -28,11 +28,13 @@
 -- desktop chose, which is right for a dialog and hopeless for a document
 -- that wants a heading at 28 pixels and a paragraph at 16.
 --
--- So this process owns its pixels. `web_paint.c` lays the document out and
--- paints it into a surface as tall as the whole page, once; a frame is one
--- blit of the visible band out of it. Scrolling re-runs nothing - no
--- layout, no line breaking, no glyph rasterised twice - which is the same
--- shape `pdfview` has and for the same reason.
+-- So this process owns its pixels. `web_paint.c` lays the document out
+-- once and paints a band of it, three screens tall, around where it is
+-- read; a frame is one blit of the view out of that band. Scrolling inside
+-- the band re-runs nothing, and scrolling out of it paints the next band -
+-- the runs already laid out, drawn again, with no layout and no line
+-- breaking - which is how a page as long as the web's is drawn wherever it
+-- is read (`roadmap.md` 6zz j).
 --
 -- What it costs is that there are no widgets. A direct window owns every
 -- pixel, so a button would have nothing to draw into: the chrome here is
@@ -84,15 +86,17 @@ local VIEW_W = W - SBAR
 local PAGE_W = VIEW_W - PAD * 2
 
 --
--- How tall a page may be laid out, in bytes rather than in pixels.
+-- How much of the page is painted at once: three screens, the one being
+-- read and one either side of it.
 --
--- A process may map 48 MB and this one is already holding two window
--- buffers, a Lua heap and a DOM. Sixteen megabytes of paper is about seven
--- screenfuls at this width, and a document taller than that is cut off and
--- *said to be* - which is the honest end of a fixed budget, and better than
--- a page that renders for a while and then fails to exist.
+-- This was the whole page, up to sixteen megabytes of it, which is about
+-- seven screens at this width - and a document taller than that was cut off
+-- and said to be. Wikipedia's Dam article is 52,803 pixels, thirty screens,
+-- and a page of one to ten megabytes is an ordinary page. So the page is
+-- laid out whole, which is boxes and runs rather than pixels, and painted a
+-- band at a time: six megabytes, whatever the page's length.
 --
-local PAPER_BYTES = 16 * 1024 * 1024
+local BAND_SCREENS = 3
 
 local PAPER = 0xffffffff             -- what `web_paint.c` fills a page with
 
@@ -253,10 +257,27 @@ local HOME = "about:start"
 -- State.
 --------------------------------------------------------------------------
 
-local paper                  -- the page, laid out once and scrolled by blit
+local paper                  -- a band of the page, painted and scrolled by blit
 local paper_h  = 0           -- how tall that surface is
+local band_top = 0           -- the page's row at the band's first
 local content_h = 0          -- how tall the document turned out to be
-local top      = 0           -- the pixel of it at the top of the view
+local top      = 0           -- the page's row at the top of the view
+
+--
+-- The document's pictures: where the layout put each box, where its bytes
+-- come from, and `kept` - the picture decoded and scaled to its box, false
+-- when it could not be had, nil until a band holding it is first painted.
+--
+-- Kept rather than drawn once and dropped, because a band is painted again
+-- whenever the view comes back to it, and a JPEG decoded twice is the
+-- slowest thing on the page. Scaled to the box, so what is kept is what is
+-- shown: a photograph of 4000 by 3000 in a box of 220 by 165 keeps 145 KB
+-- rather than 48 MB.
+--
+local pictures = {}
+local kept_bytes = 0
+
+local paint_band             -- below, once the pictures can be fetched
 
 --
 -- The document, kept rather than closed the moment it is painted.
@@ -318,6 +339,14 @@ end
 --
 local frame_ms, frame_worst = 0, 0
 local blit_ms, commit_ms = 0, 0
+
+--
+-- And what the key itself cost when it took the view out of the band: the
+-- next band painted, and its pictures fetched if it is the first time. Not
+-- part of a frame - it happens before one - and the only work a scroll
+-- does that is more than a blit.
+--
+local band_ms
 
 --
 -- And what a repaint *allocates*, in hundredths of a kilobyte.
@@ -566,14 +595,14 @@ end
 --------------------------------------------------------------------------
 
 local function reach()
-  return math.max(0, math.min(content_h, paper_h) - VIEW_H)
+  return math.max(0, content_h - VIEW_H)
 end
 
 -- The track the kit's pill runs in (`ui.lua`, `thumb_of`): two pixels in
 -- at each end, and a thumb never shorter than sixteen.
 local function thumb()
   local track = VIEW_H - 4
-  local shown = math.min(content_h, paper_h)
+  local shown = content_h
   local last  = reach()
 
   if track < 8 or shown <= VIEW_H then
@@ -673,10 +702,10 @@ local function frame()
   s:fill(0, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
 
   if paper then
-    local band = math.min(VIEW_H, paper_h - top)
+    local rows = math.min(VIEW_H, band_top + paper_h - top)
 
-    if band > 0 then
-      s:blit(paper, 0, top, PAGE_W, band, PAD, VIEW_Y)
+    if rows > 0 then
+      s:blit(paper, 0, top - band_top, PAGE_W, rows, PAD, VIEW_Y)
     end
   else
     local lines = web
@@ -749,13 +778,21 @@ end
 --------------------------------------------------------------------------
 -- A document, laid out.
 --
--- Measured first, into nothing, and then painted into a surface the right
--- height. The other order - guess, render, discover it did not fit, render
--- again - costs a second painting pass, and a painting pass is thousands of
--- glyphs. A measuring pass breaks the same lines without drawing them.
+-- Laid out whole, into nothing, and then painted a band at a time into a
+-- surface three screens tall. Layout is where the lines are broken and the
+-- boxes placed, and it happens once a document; painting is the glyphs,
+-- and happens for the band being read (`paint_band`, below).
 --------------------------------------------------------------------------
 
 local laid_ms, painted_ms = 0, 0
+
+local function forget_pictures()
+  for _, p in ipairs(pictures) do
+    if p.kept then p.kept:free() end
+  end
+
+  pictures, kept_bytes = {}, 0
+end
 
 local function lay_out(doc)
   if paper then
@@ -763,21 +800,22 @@ local function lay_out(doc)
     paper = nil
   end
 
-  paper_h, content_h, top = 0, 0, 0
+  forget_pictures()
+  paper_h, band_top, content_h, top = 0, 0, 0, 0
 
   --
-  -- Two calls, and the split is the measurement: the first lays the page
-  -- out and keeps the boxes, the second paints them. Timing them together
-  -- would answer "the page took 90 ms" and leave the only useful question -
-  -- *which half* - unanswered.
+  -- Timed apart from the painting, and the split is the measurement:
+  -- timing them together would answer "the page took 90 ms" and leave the
+  -- only useful question - *which half* - unanswered.
   --
   local t0 = sys.ticks()
-  local wanted = doc:render(nil, PAGE_W) + 16
 
+  content_h = doc:render(nil, PAGE_W)
   laid_ms = since(t0)
 
-  local room = PAPER_BYTES // (PAGE_W * 4)
-  local tall = math.max(VIEW_H, math.min(wanted, room))
+  -- The whole page with a margin under it when that is less than a band,
+  -- so a short page is painted once and never again.
+  local tall = math.max(VIEW_H, math.min(content_h + 16, VIEW_H * BAND_SCREENS))
 
   local made = pcall(function()
     paper = gfx.surface{ w = PAGE_W, h = tall }
@@ -785,15 +823,14 @@ local function lay_out(doc)
 
   if not made or not paper then
     paper = nil
-    return nil, ("no memory for a %dx%d page"):format(PAGE_W, tall)
+    return nil, ("no memory for a %dx%d band of the page"):format(PAGE_W, tall)
   end
 
   paper_h = tall
 
-  local t1 = sys.ticks()
-
-  content_h = doc:render(paper, PAGE_W, tall)
-  painted_ms = since(t1)
+  for _, im in ipairs(doc:images()) do
+    pictures[#pictures + 1] = { im = im, where = resolve(here or "", im.src) }
+  end
 
   return content_h
 end
@@ -865,11 +902,19 @@ local function loading_words()
 end
 
 local function fetch(text, page)
+  --
+  -- The page says each step on the status line and moves the address with
+  -- a redirect; a picture does neither. A picture that redirected used to
+  -- move both, and `here` with them - so every link on the page after it
+  -- resolved against the picture's address rather than the page's.
+  --
+  local tell = page and say or function() end
+
   for _ = 1, 5 do
     local parts, bad = http.split(text)
 
     if not parts then
-      say(bad)
+      tell(bad)
       return nil
     end
 
@@ -885,18 +930,18 @@ local function fetch(text, page)
     end
 
     local reply, why, how = http.get(parts, {
-      say = say,
+      say = page and say or nil,
       agent = AGENT,
       progress = progress,
       anyway = parts.scheme == "https" and anyway[parts.hostport] or nil,
     })
 
-    loading = nil
+    if page then loading = nil end
 
     if not reply then
-      if how.refused then return refused_page(text, how.refused), how end
+      if how.refused and page then return refused_page(text, how.refused), how end
 
-      say(why)
+      tell(why)
       return nil
     end
 
@@ -906,30 +951,32 @@ local function fetch(text, page)
       local to = head:match("\r\n[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:%s*([^\r\n]+)")
 
       if not to then
-        say(("it answered %d and said nowhere to go"):format(status))
+        tell(("it answered %d and said nowhere to go"):format(status))
         return nil
       end
 
       local next_at, wrong = resolve(text, to)
 
       if not next_at then
-        say(("it redirected to %s: %s"):format(to, tostring(wrong)))
+        tell(("it redirected to %s: %s"):format(to, tostring(wrong)))
         return nil
       end
 
-      say(("%d, following to %s"):format(status, next_at))
-
+      tell(("%d, following to %s"):format(status, next_at))
       text = next_at
-      here = next_at
-      address.text = next_at
-      address.caret = #next_at
-      address.from = 0
+
+      if page then
+        here = next_at
+        address.text = next_at
+        address.caret = #next_at
+        address.from = 0
+      end
     else
       return body, how
     end
   end
 
-  say("too many redirects")
+  tell("too many redirects")
 
   return nil
 end
@@ -981,17 +1028,8 @@ local function bytes_at(where)
 end
 
 --
--- Each one into its box, with its shape kept and centred if the box is
--- another shape. PNG or JPEG, told apart by their first bytes rather than
--- by a name, which a server is free to get wrong. One that cannot be had
--- leaves its grey box and is counted, and the page is still the page.
---
--- Bilinear when a picture is scaled, because a screenshot shrunk by nearest
--- neighbour loses whole rows of text. At its own size the two are the same.
---
---
 -- **The network's pictures together** (`roadmap.md` 6zz g): every one the
--- paper will show, fetched with `http.get_many` - side by side, names
+-- band holds, fetched with `http.get_many` - side by side, names
 -- remembered - where each was fetched after the one before. gnu.org's page
 -- spent nine seconds of ten waiting on its twelve that way. A picture that
 -- redirects is followed on its own; one the image carries or a file on this
@@ -1036,22 +1074,68 @@ local function fetch_pictures(wanted)
   return got
 end
 
-local function draw_pictures(doc)
-  local drawn, missing = 0, 0
-  local wanted = {}
+--
+-- The pictures a band holds, fetched and decoded the first time a band
+-- holding them is painted, and drawn into it.
+--
+-- Each one into its box, with its shape kept and centred if the box is
+-- another shape. PNG or JPEG, told apart by their first bytes rather than
+-- by a name, which a server is free to get wrong. One that cannot be had
+-- leaves its grey box and is counted, and the page is still the page.
+--
+-- Bilinear when a picture is scaled, because a screenshot shrunk by nearest
+-- neighbour loses whole rows of text. At its own size the two are the same.
+--
+-- Decoded once and kept, each scaled to its box, for as long as the page is
+-- open - within an eighth of the memory that would be free without them. Past
+-- that the ones farthest from the band are let go, and fetched again if the
+-- view comes back to them, which is a cost in time rather than a page that
+-- fails for having too many pictures.
+--
+local function in_band(p)
+  local im = p.im
 
-  for _, im in ipairs(doc:images()) do
-    if im.y < paper_h then
-      wanted[#wanted + 1] = { im = im, where = resolve(here or "", im.src) }
-    end
+  return im.y + im.h > band_top and im.y < band_top + paper_h
+end
+
+-- Never one the band holds, which is about to be drawn.
+local function keep_within(room)
+  if kept_bytes <= room then return end
+
+  local centre, far = band_top + paper_h // 2, {}
+
+  for _, p in ipairs(pictures) do
+    if p.kept and not in_band(p) then far[#far + 1] = p end
   end
 
-  local fetched = fetch_pictures(wanted)
+  table.sort(far, function(a, b)
+    return math.abs(a.y + a.h // 2 - centre) > math.abs(b.y + b.h // 2 - centre)
+  end)
 
-  for _, w in ipairs(wanted) do
-    local im, where = w.im, w.where
+  for _, p in ipairs(far) do
+    if kept_bytes <= room then break end
 
-    do
+    kept_bytes = kept_bytes - p.w * p.h * 4
+    p.kept:free()
+    p.kept = nil
+  end
+end
+
+local function band_pictures()
+  local wanted = {}
+
+  for _, p in ipairs(pictures) do
+    if p.kept == nil and in_band(p) then wanted[#wanted + 1] = p end
+  end
+
+  if #wanted > 0 then
+    -- The status line says so while they come, and then says again what
+    -- it said: a band painted while scrolling is not news.
+    local before = said
+    local fetched = fetch_pictures(wanted)
+
+    for _, p in ipairs(wanted) do
+      local im, where = p.im, p.where
       local bytes = where and (fetched[where] or ((where:match("^asset:")
                     or where:sub(1, 1) == "/") and bytes_at(where)))
       local decode = bytes and ((bytes:sub(1, 4) == "\x89PNG" and gfx.png)
@@ -1060,14 +1144,37 @@ local function draw_pictures(doc)
 
       if decode then ok, pic = pcall(decode, bytes) end
 
+      p.kept = false
+
       if ok and pic then
         local pw, ph = pic:size()
         local k = math.min(im.w / pw, im.h / ph)
         local w, h = math.floor(pw * k + 0.5), math.floor(ph * k + 0.5)
 
-        paper:stretch(pic, 0, 0, pw, ph, im.x + (im.w - w) // 2,
-                      im.y + (im.h - h) // 2, w, h, nil, true)
+        if w > 0 and h > 0 and pcall(function()
+             p.kept = gfx.surface{ w = w, h = h }
+           end) and p.kept then
+          p.kept:stretch(pic, 0, 0, pw, ph, 0, 0, w, h, nil, true)
+          p.x, p.y, p.w, p.h = im.x + (im.w - w) // 2, im.y + (im.h - h) // 2, w, h
+          kept_bytes = kept_bytes + w * h * 4
+        else
+          p.kept = false
+        end
+
         pic:free()
+      end
+    end
+
+    keep_within((((sys.info() or {}).pages_free or 16384) * 4096 + kept_bytes) // 8)
+    said = before
+  end
+
+  local drawn, missing = 0, 0
+
+  for _, p in ipairs(pictures) do
+    if in_band(p) then
+      if p.kept then
+        paper:blit(p.kept, 0, 0, p.w, p.h, p.x, p.y - band_top)
         drawn = drawn + 1
       else
         missing = missing + 1
@@ -1076,6 +1183,18 @@ local function draw_pictures(doc)
   end
 
   return drawn, missing
+end
+
+--
+-- The band starting `at` rows down the page, painted: its runs, which the
+-- layout already placed, and its pictures. Returns how many of those were
+-- drawn and how many could not be had.
+--
+paint_band = function(at)
+  band_top = math.max(0, math.min(at, content_h + 16 - paper_h))
+  doc:render(paper, PAGE_W, paper_h, band_top)
+
+  return band_pictures()
 end
 
 local function load(text)
@@ -1180,13 +1299,13 @@ local function load(text)
                          doc:count("h1") + doc:count("h2") + doc:count("h3"))
 
   local drawn, why_not = lay_out(doc)
-  local pictures, missing = 0, 0
+  local shown, missing = 0, 0
 
   if drawn then
-    local t2 = sys.ticks()
+    local t1 = sys.ticks()
 
-    pictures, missing = draw_pictures(doc)
-    painted_ms = painted_ms + since(t2)
+    shown, missing = paint_band(0)
+    painted_ms = since(t1)
   end
 
   if not drawn then
@@ -1204,22 +1323,19 @@ local function load(text)
            :format(tenths(fetched_ms), tenths(parsed_ms),
                    tenths(laid_ms), tenths(painted_ms))
 
-  if content_h > paper_h then
-    say(("%s - %s - %d pixels tall, and this shows the first %d")
-        :format(how_said(came), counts, content_h, paper_h))
-  else
-    say(how_said(came) .. " - " .. counts)
-  end
+  say(how_said(came) .. " - " .. counts)
 
   if missing > 0 then
     say(("%d of %d pictures could not be read or decoded"):format(missing,
-        pictures + missing))
+        shown + missing))
   end
 
   -- For whoever opened it from outside - Cafesa3D's suite asks for its
   -- tutorial and waits to hear the page arrive (`tools/run_cafesa3d.py`).
+  -- The pictures are the first band's, which are the ones fetched before
+  -- the page is shown.
   print(("browser: showing %s, \"%s\", %d pixels tall, %d pictures, %d missing, %s")
-        :format(text, title or "", content_h, pictures, missing, how_said(came)))
+        :format(text, title or "", content_h, shown, missing, how_said(came)))
   return true
 end
 
@@ -1283,6 +1399,16 @@ local function scroll_to(y)
   local was = top
 
   top = math.max(0, math.min(y, reach()))
+  band_ms = nil
+
+  -- Out of the band, and the band moves to put the view in its middle, so
+  -- the next screen either way is already painted.
+  if paper and (top < band_top or top + VIEW_H > band_top + paper_h) then
+    local t0 = sys.ticks()
+
+    paint_band(top - (paper_h - VIEW_H) // 2)
+    band_ms = since(t0)
+  end
 
   return top ~= was
 end
@@ -1390,6 +1516,7 @@ function sink:key(c)
            :format(tenths(frame_ms), tenths(blit_ms), tenths(commit_ms),
                    tenths(frame_worst),
                    ("%d.%02d"):format(frame_kb // 100, frame_kb % 100))
+           .. (band_ms and (", band %s ms"):format(tenths(band_ms)) or "")
 
   frame()
 

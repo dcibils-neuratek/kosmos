@@ -1136,7 +1136,7 @@ int web_page_height(const struct web_page *p)
 }
 
 void web_page_paint(const struct web_page *p, struct surface *s,
-                    unsigned height)
+                    long from, unsigned height)
 {
     size_t i;
 
@@ -1149,18 +1149,18 @@ void web_page_paint(const struct web_page *p, struct surface *s,
     for (i = 0; i < p->nruns; i++) {
         const struct run *r = &p->runs[i];
 
-        /* Clipped here as well as inside `gfx`, because a page is laid out
-         * taller than the surface it is painted into when the document is
-         * taller than the ceiling the caller set. */
-        if (r->y < 0 || (unsigned)r->y >= height) {
+        /* Only what reaches into the band. A run across its top or bottom
+         * edge is drawn and clipped by `gfx`, which clips fills and glyph
+         * rows alike. */
+        if ((long)r->y + r->h <= from || (long)r->y >= from + (long)height) {
             continue;
         }
 
         if (r->len == 0) {
-            gfx_draw_fill(s, r->x, r->y, r->w, r->h, r->ink);
+            gfx_draw_fill(s, r->x, r->y - from, r->w, r->h, r->ink);
         } else {
-            gfx_draw_text(s, r->face, r->x, r->y, p->text + r->at, r->len,
-                          r->ink, NULL);
+            gfx_draw_text(s, r->face, r->x, r->y - from, p->text + r->at,
+                          r->len, r->ink, NULL);
         }
     }
 }

@@ -2814,10 +2814,17 @@ processors, and still what follows USB:
       names its encoding part way (BUILT, the same day), and is still fed
       the whole page as one Lua string, where it should be fed as the bytes
       arrive, from the HTTP Kit's buffer - it is now the slow step, 5.5 s of
-      the article's nine under TCG; **the paper** - a page is painted once into a surface as tall
-      as itself, capped at 16 MB of pixels, about seven screens, so a long
-      page is cut off: paint what is on screen from the laid-out boxes
-      instead, as it scrolls; and **the standing test** - the Dam article as
+      the article's nine under TCG; **the paper** - BUILT 30 September
+      (`testing.md` 18.304): a page was painted once into a surface as tall
+      as itself, capped at 16 MB of pixels, about eight screens, so a long
+      page was cut off; it is now laid out whole and painted a band of three
+      screens at a time where it is read, 4 ms a band, its pictures fetched
+      when their band is first painted and kept decoded at their box's size -
+      the Dam article drawn to its last line, and a page of 48,000 pixels to
+      its last picture in the gate. Pictures below the first band still stall
+      the scroll that reaches them while they come; fetching them while the
+      page is read goes with the parser fed as bytes arrive, both needing the
+      network in the event loop; and **the standing test** - the Dam article as
       served, kept beside the test page in `assets/www/` (BUILT: shown whole
       in a minute, in the gate), and a page of about 10 MB, both measured by
       the status line's costs. And **the right
@@ -2839,8 +2846,8 @@ processors, and still what follows USB:
       Bounded by size, oldest first, and clearable from Settings. In C, with
       g, since it is the HTTP Kit's to keep.
    **The order since 30 September**: f's kernel step, i, then f, g and h,
-   with j's parser and paper beside g, then e and d - the browser fast
-   before it is redrawn.
+   with j's parser and paper beside g (the paper BUILT), then e and d - the
+   browser fast before it is redrawn.
    **Found on the way, not yet understood**: `make bench` has
    `context_switch` +8.1% and `ipc_roundtrip` +7.8% against the baseline of
    19 September - present at `688f3f9`, before the share window's records,

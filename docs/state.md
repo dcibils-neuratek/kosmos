@@ -362,9 +362,14 @@ libdom's unheard DOM events not made (`runtime/patches/netsurf/`), the NetSurf
 libraries built with `NDEBUG`. And gnu.org from 10 s to 3 (18.302): pictures
 together, names remembered, connect at once, and every TLS record read after
 a close (it had been shown cut short). Then TLS sessions taken back, never
-one opened anyway (18.303): gnu.org 2.6 s. **Next, the browser first**: the
-paper, so the Dam article is drawn whole (j); connections kept per host
-(HTTP/1.1); the allocator; the byte path (g, k); then the rest of f's class
+one opened anyway (18.303): gnu.org 2.6 s. Then **the paper** (j, 18.304): a
+page laid out whole and painted a band of three screens at a time, 4 ms a
+band, its pictures fetched when their band is first painted and kept - the
+Dam article drawn to its last line, where eight screens were all there was;
+and a picture's redirect no longer moves the page's address. **Next, the
+browser first**: connections kept per host (HTTP/1.1); the allocator; the
+byte path (g, k); pictures and the parser fed while the page is read; then
+the rest of f's class
 (`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices). **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,
