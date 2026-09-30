@@ -2764,9 +2764,12 @@ processors, and still what follows USB:
       rest of f's class. **Then gnu.org, from 10 s to 3** (`testing.md`
       18.302): pictures fetched side by side (`http.get_many`), names
       remembered, a connect answered at once, and every record read after
-      a TLS close - it had been shown cut short. Next, by what the profiles
-      say: connections kept per host (HTTP/1.1, so a page's pictures share
-      one handshake), then the allocator, then the byte path. **What real pages
+      a TLS close - it had been shown cut short. **Then TLS sessions taken
+      back** (`testing.md` 18.303): 2.6 s, the key exchange skipped for a
+      host already met, and never for one opened anyway. Next, by what the
+      profiles say: the paper, so a page as long as the Dam article is drawn
+      whole (j); connections kept per host (HTTP/1.1); then the allocator
+      and the byte path. **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came
