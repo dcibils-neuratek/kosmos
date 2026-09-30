@@ -575,6 +575,69 @@ def main():
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
 
+        #
+        # **Connections kept** (`http.lua`, `roadmap.md` 6zz g): a server
+        # speaking HTTP/1.1, which keeps a connection open unless told
+        # otherwise, counting the connections it is asked over. A body in
+        # chunks of every awkward size - one byte, seven, and larger than a
+        # read - and two ways a kept connection ends: `/closing` answers and
+        # then closes it, which the guest sees before it asks again, and
+        # `/drop` answers and then closes it at the *next* request without a
+        # reply, which is the race a kept connection can always lose.
+        #
+        kept_seen = {"connections": 0, "requests": [], "drop": set()}
+        chunked = b"".join(b"%05d in chunks of every size\n" % i for i in range(4000))
+        last_line = chunked[chunked.rindex(b"\n", 0, -1) + 1:-1].decode()
+
+        class Keeps(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def setup(self):
+                super().setup()
+                kept_seen["connections"] += 1
+
+            def answer(self, body):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                kept_seen["requests"].append(self.path)
+
+                if self in kept_seen["drop"]:
+                    self.close_connection = True
+                    return
+
+                if self.path == "/chunked":
+                    self.send_response(200)
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+                    at, sizes, i = 0, (1, 7, 4096, 3000, 65536, 2), 0
+
+                    while at < len(chunked):
+                        n = min(sizes[i % len(sizes)], len(chunked) - at)
+                        self.wfile.write(b"%x\r\n" % n + chunked[at:at + n] + b"\r\n")
+                        at, i = at + n, i + 1
+
+                    self.wfile.write(b"0\r\n\r\n")
+                elif self.path == "/closing":
+                    self.answer(b"closing\n")
+                    self.close_connection = True
+                elif self.path == "/drop":
+                    self.answer(b"drop\n")
+                    kept_seen["drop"].add(self)
+                else:
+                    self.answer(b"kept\n")
+
+            def log_message(self, *a):
+                pass
+
+        keeps = Many(("0.0.0.0", 0), Keeps)
+        keeps_port = keeps.server_address[1]
+        threading.Thread(target=keeps.serve_forever, daemon=True).start()
+
         try:
             # And forty more, one after another, in the same boot: each a
             # request, read to its close, and closed. The stack never gave a
@@ -640,6 +703,27 @@ def main():
             # and the program's own quotes and backslashes go in as they are.
             write_names = f'fs.write("/Temporary/names.lua", [==[{names}]==])'
 
+            # Five of the same, the chunks, the two ends, and one more after
+            # each: said as one line, the chunks by their length and ends.
+            kept = ('local http = use("/Kosmos/Libraries/http.lua") '
+                    f'local at = "http://10.0.2.2:{keeps_port}" '
+                    'local function get(p) local r, why, how = http.get(at .. p) '
+                    'local _, _, b = http.parse(r or "") return b, how or {}, why end '
+                    'local ok, reused = 0, 0 '
+                    'for _ = 1, 5 do local b, how = get("/k") '
+                    'if b == "kept\\n" then ok = ok + 1 end '
+                    'if how.kept then reused = reused + 1 end end '
+                    'local c, chow = get("/chunked") '
+                    'get("/closing") sys.sleep(300) '
+                    'local a = get("/k") get("/drop") '
+                    'local d, _, dwhy = get("/k") '
+                    'print("KE" .. "PT " .. ok .. " of 5, " .. reused .. " kept, chunked " '
+                    f'.. #c .. " " .. c:sub(1, 5) .. " " .. c:sub({-len(last_line) - 1}, -2) '
+                    '.. (chow.short and " short" or "") '
+                    '.. ", after a close " .. tostring(a == "kept\\n") '
+                    '.. ", after a drop " .. tostring(d == "kept\\n") .. " " .. tostring(dwhy))')
+            write_kept = f'fs.write("/Temporary/kept.lua", [==[{kept}]==])'
+
             out = boot(image, [
                 "-netdev", "user,id=net0",
                 "-device", run_screenshot.device(image, "net") + ",netdev=net0",
@@ -648,9 +732,12 @@ def main():
                 (at_once, "AT ONCE "),
                 (opening, "CONNECT AT ONCE "),
                 write_names,
-                ("/Temporary/names.lua", "NAMES ASKED ")], seconds=180)
+                ("/Temporary/names.lua", "NAMES ASKED "),
+                write_kept,
+                ("/Temporary/kept.lua", "KEPT ")], seconds=180)
         finally:
             httpd.shutdown()
+            keeps.shutdown()
 
         found = re.search(r"MANY CONNECTIONS (\d+) of 40, regions (\d+) then (\d+)", out)
 
@@ -677,6 +764,36 @@ def main():
             raise Failure(
                 "five fetches from one name did not ask the resolver once: "
                 f"{found_n.group(0) if found_n else 'nothing printed'}\n" + out[-600:])
+
+        checks += 1
+
+        #
+        # Eleven requests, three connections: the first for the five, the
+        # chunks and `/closing`; the second, after that close, for the next,
+        # `/drop` and the request the drop swallowed; the third for that one
+        # made again. The chunks put together, 120,000 bytes, first line to
+        # last.
+        #
+        want_kept = (f"KEPT 5 of 5, 4 kept, chunked {len(chunked)} 00000 {last_line}, "
+                     "after a close true, after a drop true nil")
+        kept_line = re.search(r"KEPT [^\n]*", out)
+
+        if kept_line is None or kept_line.group(0).strip() != want_kept:
+            raise Failure(
+                "connections kept for the next request did not hold: the "
+                f"guest said {kept_line.group(0) if kept_line else 'nothing'!r}, "
+                f"where {want_kept!r}; the server saw "
+                f"{kept_seen['connections']} connections for "
+                f"{kept_seen['requests']!r}\n" + out[-600:])
+
+        checks += 1
+
+        if kept_seen["connections"] != 3 or len(kept_seen["requests"]) != 11:
+            raise Failure(
+                f"eleven requests went over {kept_seen['connections']} connections "
+                f"({kept_seen['requests']!r}), where a server that keeps them "
+                "needs three: one, a new one after it closed, and one more "
+                "after it dropped the request")
 
         checks += 1
 

@@ -8,15 +8,13 @@
 --   fetch 10.0.2.2 8000 /                      (the form it had first)
 --
 -- **The smallest thing that exercises a whole connection**: open it, send
--- bytes, read bytes, notice the far end hang up. Telnet needs a person and
--- a keyboard; this needs neither, which is what makes it the thing a test
+-- bytes, read bytes, notice the reply end. Telnet needs a person and a
+-- keyboard; this needs neither, which is what makes it the thing a test
 -- can drive.
 --
--- HTTP/1.0 on purpose. 1.1 keeps the connection open and would need this to
--- understand `Content-Length` or chunked encoding to know when to stop;
--- 1.0's answer is that the server closes, which is exactly the event the
--- ring's `closed` flag reports. A protocol that ends by ending is the right
--- one to test a stack with.
+-- HTTP/1.1 since 30 September, through `http.lua`, which knows where a
+-- reply ends from its head - `Content-Length`, or chunks - rather than
+-- from the server closing, and keeps the connection for the next request.
 --
 -- **`https://` through the TLS Kit** (`roadmap.md`, the browser: TLS, step
 -- 4): the same request, written into a TLS connection laid over the TCP
@@ -95,8 +93,10 @@ if how.ended then
   print("fetch: " .. how.ended)
 end
 
-if how.short then
+if how.short and how.short.want then
   print(("fetch: cut short: %d of the %d bytes the server said"):format(how.short.got, how.short.want))
+elseif how.short then
+  print(("fetch: cut short: %d bytes, and not the last chunk"):format(how.short.got))
 end
 
 print(("%d bytes"):format(#reply))

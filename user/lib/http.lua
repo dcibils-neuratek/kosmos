@@ -7,20 +7,23 @@
 -- **One place for what `fetch` and the browser both do** (`roadmap.md` 6zz
 -- c): an address taken apart, a name looked up, a connection made, TLS laid
 -- over it when the address says `https`, a request written until it has all
--- gone and a reply read until the far end closes. Each had its own copy of
+-- gone and a reply read until it is whole. Each had its own copy of
 -- the plain half, and HTTPS would have made two copies of the harder one.
 --
--- HTTP/1.0 on purpose, as `fetch` has always spoken it: 1.1 keeps the
--- connection open and would need this to understand `Content-Length` and
--- chunked encoding to know when to stop; 1.0's answer is that the server
--- closes, which is exactly what the connection reports.
+-- HTTP/1.1, and the connection kept for the next request to the same
+-- place (`keep`, below). It was 1.0 on purpose, as `fetch` had always
+-- spoken it: 1.0's answer to when a reply ends is that the server closes,
+-- which is exactly what the connection reports - and every request paid a
+-- lookup, a connection and a handshake for it. So a reply now ends where
+-- its head says - its `Content-Length`, its last chunk - and the connection
+-- goes on.
 --
 -- **Whom it trusts**: the roots the image carries - Mozilla's, in the TLS
 -- Kit - and every certificate in `/Home/Preferences/Authorities`, in DER, a
 -- person's own: a network's authority, or a test's. Nothing else.
 --
--- What comes back is the reply as it arrived, head and all, and a table
--- saying how it came:
+-- What comes back is the reply, head and all, and a table saying how it
+-- came:
 --
 --   how.scheme      "http" or "https"
 --   how.secure      over TLS: true when the certificate checked out, false
@@ -30,8 +33,12 @@
 --                   taken back, the key exchange skipped
 --   how.refused     the request was refused for its certificate, and why -
 --                   what an Open anyway would go past
---   how.short       the body ended before the length the server gave:
---                   { got = bytes, want = bytes } - never passed on as whole
+--   how.short       the body ended before the length the server gave, or
+--                   before its last chunk: { got = bytes, want = bytes },
+--                   `want` nil for chunks - never passed on as whole
+--   how.kept        it went over a connection kept from a request before
+--
+-- A body sent in chunks comes back put together, its head as it came.
 --
 -- Nothing here prints. `opts.say`, when given, is told each step as it
 -- starts, which is what the browser's status line shows.
@@ -111,13 +118,17 @@ end
 local names = {}
 local counter_hz
 
+-- The counter's rate, read once: what a `sys.ticks()` difference is in.
+local function counter()
+  counter_hz = counter_hz or (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  return counter_hz
+end
+
 local function lookup(host, wait_ticks, hz)
   local now = sys.ticks()
   local known = names[host]
 
-  counter_hz = counter_hz or (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
-
-  if known and now - known.at < 60 * counter_hz then
+  if known and now - known.at < 60 * counter() then
     return known.address
   end
 
@@ -186,6 +197,171 @@ local function secure(conn, t)
 end
 
 --
+-- **Connections kept** (`roadmap.md` 6zz g). HTTP/1.1, and a connection the
+-- server keeps open is kept here too, for the next request to the same
+-- place: no lookup, no connection and no handshake - where gnu.org's twelve
+-- pictures were twelve of each. Kept by where it goes and how it was
+-- checked - the scheme, the host and port, the name the certificate was
+-- held to, and whether it was opened anyway - so a connection is only ever
+-- taken back by a request that would have opened the same one. A request
+-- with authorities of its own (`fetch --cacert`) neither keeps one nor
+-- takes one: what it trusts is not what the next request trusts.
+--
+-- A kept connection the server has since closed is let go when it is next
+-- looked at. One it closed as the request went - a race nobody can win -
+-- answers with nothing at all, and the request is made once more on a new
+-- connection, as every browser does for a GET.
+--
+-- For half a minute, which is less than most servers keep one open (nginx
+-- 75 seconds; Apache 5, and a server that closes is noticed), and eight to
+-- a place at most - the number `get_many` has going at once.
+--
+local kept = {}
+local KEEP_SECONDS = 30
+local KEEP_EACH = 8
+
+local function let_go(k)
+  k.stream:close()
+  k.conn:close()
+end
+
+local function stale(k, now)
+  return k.conn:closed() or now - k.at >= KEEP_SECONDS * counter()
+end
+
+local function take_kept(key)
+  local list = kept[key]
+  local now = sys.ticks()
+
+  while list and #list > 0 do
+    local k = table.remove(list)
+
+    if not stale(k, now) then return k end
+
+    let_go(k)
+  end
+
+  return nil
+end
+
+local function keep(key, conn, stream)
+  local now = sys.ticks()
+
+  -- The stale ones anywhere, while here: a place never asked again would
+  -- otherwise hold its connections for as long as the process lives.
+  for _, list in pairs(kept) do
+    for i = #list, 1, -1 do
+      if stale(list[i], now) then let_go(table.remove(list, i)) end
+    end
+  end
+
+  local list = kept[key] or {}
+
+  kept[key] = list
+
+  if #list >= KEEP_EACH then
+    let_go({ conn = conn, stream = stream })
+  else
+    list[#list + 1] = { conn = conn, stream = stream, at = now }
+  end
+end
+
+--
+-- **A body in chunks** - `Transfer-Encoding: chunked`, which is how a
+-- server says it is done without knowing the length when it started: each
+-- chunk's length in hex on a line of its own, its bytes, a line's end, and
+-- a length of 0 for the last. Fed the bytes in whatever pieces they came
+-- in, sliced rather than looked at one by one.
+--
+-- `state` is "done" at the last chunk's end and "bad" at anything that is
+-- not a chunk; `extra` says bytes came after the end, which a connection
+-- that is to be used again must not have.
+--
+local function dechunk()
+  local d = { got = 0, state = "size", extra = false }
+  local out, line, need = {}, "", 0
+
+  function d.feed(s)
+    local i, n = 1, #s
+
+    while i <= n and d.state ~= "done" and d.state ~= "bad" do
+      if d.state == "data" then
+        local take = math.min(need, n - i + 1)
+
+        out[#out + 1] = s:sub(i, i + take - 1)
+        d.got, need, i = d.got + take, need - take, i + take
+
+        if need == 0 then d.state = "gap" end
+      else
+        local e = s:find("\n", i, true)
+
+        if not e then
+          line = line .. s:sub(i)
+          i = n + 1
+
+          -- A length, or a trailer, is a line and not a page.
+          if #line > 4096 then d.state = "bad" end
+        else
+          local l = (line .. s:sub(i, e - 1)):gsub("\r$", "")
+
+          line, i = "", e + 1
+
+          if d.state == "gap" then
+            d.state = (l == "") and "size" or "bad"
+          elseif d.state == "size" then
+            local size = tonumber(l:match("^%s*(%x+)") or "", 16)
+
+            if not size then
+              d.state = "bad"
+            elseif size == 0 then
+              d.state = "trailer"
+            else
+              need, d.state = size, "data"
+            end
+          elseif l == "" then
+            d.state = "done"
+          end
+        end
+      end
+    end
+
+    if d.state == "done" and i <= n then d.extra = true end
+  end
+
+  function d.body() return table.concat(out) end
+
+  return d
+end
+
+--
+-- How a reply's body ends, from its head: `length` bytes, `chunked`, `none`
+-- - the statuses that never have one - or at the `close`; and whether the
+-- connection may be used again after it. 1.1 keeps unless it says close,
+-- 1.0 closes unless it says keep-alive, and a body that ends at the close
+-- ends the connection with it.
+--
+local function framing(head)
+  local version = head:match("^HTTP/(%d%.%d)")
+  local status = tonumber(head:match("^HTTP/%d%.%d%s+(%d%d%d)")) or 200
+  local low = head:lower()
+  local said = low:match("\r\nconnection:%s*([^\r\n]*)") or ""
+  local again = (version == "1.1" and not said:find("close", 1, true))
+                or (version == "1.0" and said:find("keep-alive", 1, true) ~= nil)
+  local encoding = low:match("\r\ntransfer%-encoding:%s*([^\r\n]*)")
+  local length = tonumber(low:match("\r\ncontent%-length:%s*(%d+)"))
+
+  if encoding and encoding:find("chunked", 1, true) then
+    return "chunked", nil, again
+  elseif status < 200 or status == 204 or status == 304 then
+    return "none", 0, again
+  elseif length then
+    return "length", length, again
+  end
+
+  return "close", nil, false
+end
+
+--
 -- `http.get(address [, opts])`.
 --
 --   opts.anyway      over TLS, go on whatever the certificate says - or a
@@ -201,6 +377,235 @@ end
 --                    `http.get_many` passes one that yields to its scheduler
 --   opts.wait_ticks  how long a name may take to look up, scheduler ticks
 --
+
+--
+-- One request over a connection that is open, and its reply. The fourth
+-- value says the connection was a kept one that turned out to be closed -
+-- nothing written, or nothing back - and the request should go again on a
+-- new one.
+--
+local function exchange(parts, opts, conn, stream, key, was_kept, how)
+  local say = opts.say or function() end
+  local hz = (sys.info() or {}).tick_hz or 250
+
+  --
+  -- `Host` because every server since 1.1 wants one, and HTTP/1.1 so that
+  -- the server may keep the connection for the next request (above).
+  --
+  -- Written as it is taken: over TLS nothing is taken until the handshake is
+  -- done, so the request waits for it here, and a handshake that ends
+  -- instead says why - the certificate's reason, when it was that.
+  --
+  -- **And who is asking.** Wikipedia answers a request that does not say
+  -- with 126 bytes of refusal, and it is not alone. `opts.agent` is the
+  -- caller's to choose - a browser names the engine sites should write for
+  -- - and without one this is Kosmos and its revision, which is what
+  -- `fetch` is.
+  local tick = math.max(1, hz // 10)
+  local pause = opts.pause or function(c) c:wait(tick) end
+
+  local request = ("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
+                   .. "Accept: text/html, */*\r\n\r\n")
+                  :format(parts.path, opts.name or parts.hostport,
+                          opts.agent or http.agent())
+  local sent = 0
+
+  for _ = 1, 150 do
+    if sent >= #request then break end
+
+    local n = stream:write(request:sub(sent + 1))
+
+    sent = sent + n
+
+    if n == 0 then
+      local over, reason, certificate = stream:done()
+
+      if over then
+        let_go({ conn = conn, stream = stream })
+
+        if was_kept and sent == 0 then return nil, nil, how, true end
+
+        if certificate then how.refused = reason end
+
+        return nil, reason or "the connection closed before the request went", how
+      end
+
+      pause(conn)
+    end
+  end
+
+  if sent < #request then
+    let_go({ conn = conn, stream = stream })
+    return nil, ("only %d of %d bytes of the request went"):format(sent, #request), how
+  end
+
+  stream:flush()
+
+  if stream.tls then
+    local trusted, reason = stream.tls:trusted()
+
+    how.secure = trusted == true
+    how.reason = reason
+    how.resumed = not was_kept and stream.tls:resumed() == true
+  end
+
+  how.kept = was_kept or nil
+
+  say("waiting for " .. parts.hostport .. " ...")
+
+  --
+  -- Until the body is whole, or the far end closes, or fifteen seconds pass
+  -- with nothing new.
+  --
+  -- Bounded by quiet rather than by count: a large page arrives in many
+  -- pieces and every one of them is progress, while a server that has
+  -- stopped is the thing to give up on.
+  --
+  -- **Whole** is the head's to say (`framing`): its length, its chunks, or
+  -- the close. The head is found once, in what has come so far; what came
+  -- after it is the body's.
+  --
+  local pre, head = "", nil          -- head: false when there is none
+  local rule, want, again
+  local chunks, body, got = nil, {}, 0
+  local idle, reason, ended = 0, nil, false
+
+  --
+  -- **How much, of how much**, for a progress bar (`roadmap.md` 6zz i) and
+  -- for the check below. Told every 32 KB rather than every read, so a page
+  -- of ten megabytes is a few hundred repaints and not thousands.
+  --
+  local progress, told = opts.progress, -1
+
+  local function take(text)
+    if head == nil then
+      local from = math.max(1, #pre - 2)
+
+      pre = pre .. text
+
+      local e = pre:find("\r\n\r\n", from, true)
+
+      -- A head is a few hundred bytes. Sixty-four kilobytes without the
+      -- end of one is a reply that has none, kept as it came.
+      if not e and #pre > 65536 then
+        head, rule, text, pre = false, "close", pre, nil
+      elseif not e then
+        return
+      else
+        head = pre:sub(1, e + 3)
+        rule, want, again = framing(head)
+        text, pre = pre:sub(e + 4), nil
+
+        if rule == "chunked" then chunks = dechunk() end
+      end
+    end
+
+    if chunks then
+      chunks.feed(text)
+      got = chunks.got
+    elseif text ~= "" then
+      body[#body + 1] = text
+      got = got + #text
+    end
+
+    if progress and got - told >= 32768 then
+      told = got
+      progress(told, want)
+    end
+  end
+
+  local function whole()
+    if not head then return false end
+    if chunks then return chunks.state == "done" or chunks.state == "bad" end
+    if rule == "close" then return false end
+
+    return got >= want
+  end
+
+  while idle < 150 do
+    local text = stream:read()
+
+    if text then
+      take(text)
+      idle = 0
+    end
+
+    if whole() then break end
+
+    local over, why_over = stream:done()
+
+    if over then
+      reason, ended = why_over, true
+      break
+    end
+
+    if not text then
+      idle = idle + 1
+      pause(conn)
+    end
+  end
+
+  --
+  -- **Everything still in hand, not one read of it**, once it has ended by
+  -- closing. Over TLS a read gives one record, and the connection can close
+  -- with several decrypted and waiting: gnu.org arrived 24 KB of 30 on 30
+  -- September, the rest left in the engine.
+  --
+  if ended then
+    for _ = 1, 4096 do
+      local last = stream:read()
+
+      if not last then break end
+
+      take(last)
+    end
+  end
+
+  if not head then
+    let_go({ conn = conn, stream = stream })
+
+    local reply = head == false and table.concat(body) or pre
+
+    if reply == "" then
+      if was_kept then return nil, nil, how, true end
+
+      return nil, reason or "nothing came back", how
+    end
+
+    how.ended = reason
+    return reply, nil, how
+  end
+
+  local text = chunks and chunks.body() or table.concat(body)
+  local over = chunks and chunks.extra or (want and #text > want)
+
+  if want and #text > want then text = text:sub(1, want) end
+
+  --
+  -- **Cut short is said, and never passed on as whole.** A page that
+  -- stalled arrived as its first part and was treated as all of it -
+  -- Wikipedia's Dam article was 1,374,752 bytes of 1,435,447, and the
+  -- parser refused what it was given. A length is held to; chunks are held
+  -- to their last.
+  --
+  if chunks and chunks.state ~= "done" then
+    how.short = { got = chunks.got }
+  elseif rule == "length" and got < want then
+    how.short = { got = got, want = want }
+  end
+
+  if progress then progress(#text, want) end
+
+  if key and again and whole() and not ended and not over and not how.short then
+    keep(key, conn, stream)
+  else
+    let_go({ conn = conn, stream = stream })
+  end
+
+  how.ended = reason
+  return head .. text, nil, how
+end
+
 function http.get(address, opts)
   opts = opts or {}
 
@@ -210,6 +615,27 @@ function http.get(address, opts)
   if type(address) ~= "table" then parts, bad = http.split(address) end
 
   if not parts then return nil, bad, {} end
+
+  local name = opts.name or parts.host
+
+  -- Yes or no, or asked of each address - a browser opening pictures from
+  -- hosts some of which it was told to open anyway.
+  local anyway = opts.anyway
+
+  if type(anyway) == "function" then anyway = anyway(parts) end
+
+  local key = not (opts.anchors and #opts.anchors > 0)
+              and table.concat({ parts.scheme, parts.hostport, name,
+                                 anyway and "anyway" or "checked" }, " ")
+              or nil
+  local k = key and take_kept(key)
+
+  if k then
+    local reply, why, how, again = exchange(parts, opts, k.conn, k.stream, key, true,
+                                            { scheme = parts.scheme })
+
+    if not again then return reply, why, how end
+  end
 
   local how = { scheme = parts.scheme }
   local hz = (sys.info() or {}).tick_hz or 250
@@ -238,16 +664,9 @@ function http.get(address, opts)
   if not conn then return nil, said or tostring(why), how end
 
   local stream = plain(conn)
-  local name = opts.name or parts.host
 
   if parts.scheme == "https" then
     local tls = use("/Kosmos/Kits/tls")
-
-    -- Yes or no, or asked of each address - a browser opening pictures from
-    -- hosts some of which it was told to open anyway.
-    local anyway = opts.anyway
-
-    if type(anyway) == "function" then anyway = anyway(parts) end
     local anchors = http.authorities()
 
     for _, der in ipairs(opts.anchors or {}) do anchors[#anchors + 1] = der end
@@ -263,173 +682,7 @@ function http.get(address, opts)
     stream = secure(conn, t)
   end
 
-  --
-  -- `Host` because every server since 1.1 wants one even from a 1.0 client,
-  -- and `Connection: close` because saying so is politer than relying on the
-  -- version to imply it.
-  --
-  -- Written as it is taken: over TLS nothing is taken until the handshake is
-  -- done, so the request waits for it here, and a handshake that ends
-  -- instead says why - the certificate's reason, when it was that.
-  --
-  -- **And who is asking.** Wikipedia answers a request that does not say
-  -- with 126 bytes of refusal, and it is not alone. `opts.agent` is the
-  -- caller's to choose - a browser names the engine sites should write for
-  -- - and without one this is Kosmos and its revision, which is what
-  -- `fetch` is.
-  local tick = math.max(1, hz // 10)
-  local pause = opts.pause or function(c) c:wait(tick) end
-
-  local request = ("GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: %s\r\n"
-                   .. "Accept: text/html, */*\r\nConnection: close\r\n\r\n")
-                  :format(parts.path, opts.name or parts.hostport,
-                          opts.agent or http.agent())
-  local sent = 0
-
-  for _ = 1, 150 do
-    if sent >= #request then break end
-
-    local n = stream:write(request:sub(sent + 1))
-
-    sent = sent + n
-
-    if n == 0 then
-      local over, reason, certificate = stream:done()
-
-      if over then
-        conn:close()
-
-        if certificate then how.refused = reason end
-
-        return nil, reason or "the connection closed before the request went", how
-      end
-
-      pause(conn)
-    end
-  end
-
-  if sent < #request then
-    conn:close()
-    return nil, ("only %d of %d bytes of the request went"):format(sent, #request), how
-  end
-
-  stream:flush()
-
-  if stream.tls then
-    local trusted, reason = stream.tls:trusted()
-
-    how.secure = trusted == true
-    how.reason = reason
-    how.resumed = stream.tls:resumed() == true
-  end
-
-  say("waiting for " .. parts.hostport .. " ...")
-
-  --
-  -- Until the far end closes, or fifteen seconds pass with nothing new.
-  --
-  -- Bounded by quiet rather than by count: a large page arrives in many
-  -- pieces and every one of them is progress, while a server that has
-  -- stopped is the thing to give up on. The read after the loop is not
-  -- redundant - the close and the last bytes can arrive together.
-  --
-  local parts_in, idle, reason = {}, 0, nil
-
-  --
-  -- **How much, of how much** - the head's end found once, and its
-  -- `Content-Length` with it - for a progress bar (`roadmap.md` 6zz i) and
-  -- for the check below. Told every 32 KB rather than every read, so a page
-  -- of ten megabytes is a few hundred repaints and not thousands.
-  --
-  local got, head_at, total, told = 0, nil, nil, -1
-  local progress = opts.progress
-
-  while idle < 150 do
-    local text = stream:read()
-
-    if text then
-      parts_in[#parts_in + 1] = text
-      got = got + #text
-      idle = 0
-
-      if not head_at then
-        local sofar = table.concat(parts_in)
-        local e = sofar:find("\r\n\r\n", 1, true)
-
-        if e then
-          head_at = e + 3
-          total = tonumber(sofar:sub(1, e):match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Ll][Ee][Nn][Gg][Tt][Hh]:%s*(%d+)"))
-        end
-      end
-
-      if progress and head_at and got - head_at - told >= 32768 then
-        told = got - head_at
-        progress(told, total)
-      end
-    end
-
-    local over, why_over = stream:done()
-
-    if over then
-      reason = why_over
-      break
-    end
-
-    if not text then
-      idle = idle + 1
-      pause(conn)
-    end
-  end
-
-  --
-  -- **Everything still in hand, not one read of it.** Over TLS a read gives
-  -- one record, and the connection can close with several decrypted and
-  -- waiting: gnu.org arrived 24 KB of 30 on 30 September, the rest left in
-  -- the engine. Over TCP one read took the whole ring, which is why this was
-  -- one read and seemed enough.
-  --
-  for _ = 1, 4096 do
-    local last = stream:read()
-
-    if not last then break end
-
-    parts_in[#parts_in + 1] = last
-    got = got + #last
-  end
-
-  -- The head, if the last read was the one that brought it.
-  if not head_at then
-    local e = table.concat(parts_in):find("\r\n\r\n", 1, true)
-
-    if e then
-      head_at = e + 3
-      total = tonumber(table.concat(parts_in):sub(1, e)
-                       :match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Ll][Ee][Nn][Gg][Tt][Hh]:%s*(%d+)"))
-    end
-  end
-
-  stream:close()
-  conn:close()
-
-  local reply = table.concat(parts_in)
-
-  if reply == "" then return nil, reason or "nothing came back", how end
-
-  --
-  -- **Cut short is said, and never passed on as whole.** A page that
-  -- stalled past the fifteen seconds above arrived as its first part and
-  -- was treated as all of it - Wikipedia's Dam article was 1,374,752 bytes
-  -- of 1,435,447, and the parser refused what it was given. The server said
-  -- how long it was; the length is held to that.
-  --
-  if head_at and total and got - head_at < total then
-    how.short = { got = got - head_at, want = total }
-  end
-
-  if progress and head_at then progress(got - head_at, total) end
-
-  how.ended = reason
-  return reply, nil, how
+  return exchange(parts, opts, conn, stream, key, false, how)
 end
 
 --

@@ -2766,10 +2766,16 @@ processors, and still what follows USB:
       remembered, a connect answered at once, and every record read after
       a TLS close - it had been shown cut short. **Then TLS sessions taken
       back** (`testing.md` 18.303): 2.6 s, the key exchange skipped for a
-      host already met, and never for one opened anyway. Next, by what the
-      profiles say: the paper, so a page as long as the Dam article is drawn
-      whole (j); connections kept per host (HTTP/1.1); then the allocator
-      and the byte path. **What real pages
+      host already met, and never for one opened anyway. **Then the paper**
+      (j, BUILT, `testing.md` 18.304), and **connections kept per host**
+      (`testing.md` 18.305): HTTP/1.1, a reply ending where its head says -
+      `Content-Length` or its last chunk - and the connection kept half a
+      minute for the next request to the same place; gnu.org from 2.7-3.9 s
+      to 0.9-1.5 live. The Dam article did not move - 2.1 s, of which the
+      fetch is 1.0 for its 1.4 MB, parse 0.3 and layout 0.66 - so **gzip is
+      next for a page like it**: asked for, and inflated in C through the
+      Compression Kit, which is this item's already. Then the allocator
+      and the rest of the byte path. **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came

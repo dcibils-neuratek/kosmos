@@ -1002,8 +1002,9 @@ local function how_said(how)
 
   -- A page that stopped before the length the server gave says so first.
   if how.short then
-    words = ("Cut short at %d of %d KB - %s"):format(how.short.got // 1024,
-            how.short.want // 1024, words)
+    words = ("Cut short at %d%s KB - %s"):format(how.short.got // 1024,
+            how.short.want and (" of %d"):format(how.short.want // 1024) or "",
+            words)
   end
 
   return words
@@ -1269,8 +1270,8 @@ local function load(text)
 
   if not fresh then
     local short = how and how.short
-                  and (" - cut short at %d of %d KB"):format(how.short.got // 1024,
-                                                             how.short.want // 1024)
+                  and (" - cut short at %d%s KB"):format(how.short.got // 1024,
+                       how.short.want and (" of %d"):format(how.short.want // 1024) or "")
                   or ""
 
     say(("%d bytes%s, and it did not parse: %s"):format(#body, short, tostring(bad)))

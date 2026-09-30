@@ -366,10 +366,13 @@ one opened anyway (18.303): gnu.org 2.6 s. Then **the paper** (j, 18.304): a
 page laid out whole and painted a band of three screens at a time, 4 ms a
 band, its pictures fetched when their band is first painted and kept - the
 Dam article drawn to its last line, where eight screens were all there was;
-and a picture's redirect no longer moves the page's address. **Next, the
-browser first**: connections kept per host (HTTP/1.1); the allocator; the
-byte path (g, k); pictures and the parser fed while the page is read; then
-the rest of f's class
+and a picture's redirect no longer moves the page's address. Then
+**connections kept** (g, 18.305): HTTP/1.1, a reply ending where its head
+says, chunks put together, the connection kept for the next request -
+gnu.org 0.9-1.5 s live from 2.7-3.9. **Next, the browser first**: gzip asked
+for and inflated in C (the Dam article's 2.1 s is 1.0 fetch for its 1.4 MB);
+the allocator; the rest of the byte path (g, k); pictures and the parser fed
+while the page is read; then the rest of f's class
 (`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices). **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,

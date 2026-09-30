@@ -14397,3 +14397,53 @@ check: the browser as it was, "G on the long page did not show its last
 picture"; nothing kept between bands, "asked for ['/long.html',
 '/kosmos.png', '/kosmos.png']"; every picture fetched at load, "fetched
 before the page was shown".
+
+## 18.305 Connections kept: HTTP/1.1, and a reply that ends where its head says
+
+**`roadmap.md` 6zz g.** `http.lua` spoke HTTP/1.0 on purpose: a reply ended
+when the server closed, which is exactly what a connection reports - and every
+request paid a lookup, a TCP handshake and a TLS one for it. It speaks 1.1 now.
+A reply ends where its head says (`framing`): at its `Content-Length`, at its
+last chunk, at once for a 204 or 304, and at the close only when the head says
+neither. A body in chunks is put together as the pieces come (`dechunk`), cut
+by slicing rather than looked at a byte at a time, and a chunked reply that
+stops before its last chunk is cut short and said to be.
+
+A connection the server keeps open is kept too (`keep`), for half a minute and
+eight to a place, by the scheme, host and port, the name the certificate was
+held to, and whether it was opened anyway - so only a request that would have
+opened the same connection takes it back. A request with authorities of its
+own (`fetch --cacert`) neither keeps nor takes one. A kept connection the
+server has since closed is let go when next looked at; one it closes as the
+request goes - the race a kept connection can always lose - answers with
+nothing, and the request goes once more on a new one, as browsers do for a GET.
+`how.kept` says a reply came over a kept connection.
+
+**Live, in one boot each** (QEMU, TCG, through slirp): gnu.org 2.3 then 0.9 s
+and 1.7 then 1.5 s kept, 2.7 then 3.9 s with requests in 1.0. Wikipedia's Dam
+article did not move - 2.1-2.2 s either way - since its time is its 1.4 MB and
+not its connections: fetch 999 ms, parse 289, layout 662, paint 52. Asking for
+gzip is what would move that, and is next in g.
+
+**`arm-network` and `x86-network`, 33 checks**: a server speaking HTTP/1.1 that
+counts its connections, and a program asking it eleven things: `/k` five times,
+120,000 bytes in chunks of 1, 7, 4096, 3000, 65536 and 2 bytes, `/closing` -
+answered, then closed without saying - and `/k` after it, `/drop` - answered,
+then the next request on that connection closed with no reply - and `/k` after
+that. The guest must say "KEPT 5 of 5, 4 kept, chunked 120000 00000 03999 in
+chunks of every size, after a close true, after a drop true nil", and the
+server must have seen eleven requests over three connections. Controls, each
+failing it: requests in 1.0, "0 kept" and ten connections; no second try after
+the drop, "after a drop false"; chunks not understood, "chunked 120077 1".
+
+Also found writing it: the check's own output counted towards an older check
+of the suite, which counts "the quick brown fox" in everything the guest
+printed - so the chunked body says something else.
+
+**The gate for it, 30 September**: 74 of 75 in 8:58, and `x86-sound` the one -
+in the quiet phase, alone, with a shape it had not had: not an underrun but
+the tone stretched, "401 Hz and `beep` played 440", "379 ms and `beep` played
+333", about a tenth slow both ways. Run alone three times after on the same
+image, 14 of 14 each; nothing in this change is on the sound path. 18.127's
+rule, and a new shape of the same thing: what the capture measures is the
+host's clock as well as the guest's.
