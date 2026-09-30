@@ -271,10 +271,13 @@ timed while a profile runs and the question drains once a tick: OVMF 32
 checks. **Remote, by Telnet** (`testing.md` 18.288; Diego: "Can we just implement
 a Telnet server and client?"): DHCP in the stack, `telnetd` started by a
 development stick, `tools/kosmos_telnet.py` (`find`, `run`, `get`) and `make
-remote-profile`; a program that fails ends with code 1 now. **Next**: stick
-0.10.197 in place of 0.10.196 - the M700's lease from its router, then
-commands from here, starting with the timed profile 0.10.196 was for. Then
-the VNC server (`roadmap.md`, remote step 5). Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+remote-profile`; a program that fails ends with code 1 now. **Stick 0.10.197**
+(`49629e1` and the bump; DHCP, `telnetd`, push, the spinlock): OVMF 32
+checks, and the image itself booted under OVMF with an e1000e forwarded to
+the Mac - a lease by DHCP through the driver, `telnetd` started by the
+stick, and `neofetch` run from here 21 s after power-on. In place of
+0.10.196, which Diego had not written. **Next**: the Servers app, as
+`docs/servers.html` draws it; then the VNC server. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
