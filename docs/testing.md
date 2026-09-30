@@ -13589,3 +13589,46 @@ could not tell a program that died of an error from one that finished. It
 ends with code 1 now, attached or detached - which the failure check is the
 control for, since it failed that way first.
 
+## 18.289 Lua apps pushed from the Mac, and a spinlock that waits a second
+
+**Push** - Diego, 29 September: "We could also even write Lua apps in the
+Mac and push them to the m700". Three pieces on what 18.288 built:
+
+- **`put <path> <size>` in `telnetd`**, `get`'s mirror: the file in base64
+  a line at a time, then `END`; the folders on the way made, the file
+  written whole from a region, and its length said back. The region is kept
+  and grown when a larger file comes, since one is not given back.
+- **`open`**, a program asking the window manager to start an application
+  - `launch` to `/Running/wm`, which every process can reach - since a
+  program run at a prompt or over Telnet is not the desktop's child. With no
+  desktop it says so and fails.
+- **`kosmos_telnet.py push`**: a Lua file, or an application's folder, into
+  `/Home/Apps/<name>/`, then opened if its header says `kosmos:
+  application` and run in the session otherwise, so a program's output comes
+  back.
+
+**`arm-telnetd` and `x86-telnetd`, thirteen checks now**: every byte value
+`put` into folders that were not there and read back; a program pushed and
+its output heard; `open` with no desktop refused; and **the M700's own
+boot** - the desktop by itself, `telnetd` beside it - with an application
+written on the Mac pushed and the window manager's `wm: launched
+/Home/Apps/hellowin/hellowin.lua -> true`. Its control, `put` answering and
+never writing, fails three.
+
+**The spinlock's patience in time** (`kernel/spinlock.h`, `roadmap.md`,
+FOUND three times): a waiter spins its ten million, then goes on until a
+second of the counter has passed since it first had to - ten million spins
+was about ten milliseconds under TCG, less than a busy Mac may pause a
+guest's thread, and a paused holder tripped the panic as a deadlock would.
+And **a lock says who took it**: `spin_lock` is a macro that passes its
+caller's `__func__`, one store on each acquisition, and the panic prints
+`taken in <function>` beside the holder - the one thing the three chases
+lacked, since a holder cannot be asked what it is doing while it holds a
+lock with interrupts masked.
+
+**The kernel suite, 194 on ARM and 192 on x86-64**: the lock test also
+checks the taker is its own function, and `lock: a waiter waits a second of
+the counter` holds the patience - still patient at once and at half a
+second, not at a second and a half. Its control, a waiter that gives up at
+once, fails it.
+

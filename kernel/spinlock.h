@@ -3,6 +3,7 @@
 #define KERNEL_SPINLOCK_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "cpu.h"
 #include "percpu.h"
@@ -64,6 +65,15 @@ struct spinlock {
     /* For the panic. A pointer to a literal, so it costs nothing to carry
      * and there is no way for it to be stale. */
     const char *name;
+
+    /*
+     * **Where it was last taken**, for the panic too: the function that
+     * called `spin_lock`, its name a literal. A holder cannot be asked
+     * what it is doing - it holds the lock with interrupts masked, so it
+     * would answer after letting go - and "held by 1" alone sent three
+     * chases of this panic to guessing (`roadmap.md`, FOUND three times).
+     */
+    const char *taker;
 };
 
 /*
@@ -71,7 +81,7 @@ struct spinlock {
  *
  *   static struct spinlock threads_lock = SPINLOCK("threads");
  */
-#define SPINLOCK(n)     { 0u, SPIN_NOBODY, (n) }
+#define SPINLOCK(n)     { 0u, SPIN_NOBODY, (n), NULL }
 
 /*
  * How long a lock may be contended before this is a deadlock rather than a
@@ -92,16 +102,29 @@ struct spinlock {
 void spin_panic(const struct spinlock *lock);
 
 /*
+ * **Patience in time, and not only in spins.** Ten million spins is about
+ * ten milliseconds on AArch64 under TCG - less than a Mac running a gate's
+ * guests may pause one of them - so a holder whose host thread was paused
+ * tripped the panic exactly as a deadlock would, three times
+ * (`testing.md` 18.134, 18.287). So a waiter that has spun its ten million
+ * asks this, and goes on until a second of the counter has passed since it
+ * first asked: a second is a deadlock on any machine and a paused thread on
+ * none. `since` starts at zero.
+ */
+bool spin_patient(uint64_t *since);
+
+/*
  * Take the lock, and return what the interrupt state was.
  *
  * The flags go back to `spin_unlock`, which is why they are returned rather
  * than kept in the lock: two cores hold two different previous states, and a
  * field in the lock would be one of them overwriting the other.
  */
-static inline unsigned long spin_lock(struct spinlock *lock)
+static inline unsigned long spin_lock_at(struct spinlock *lock, const char *taker)
 {
     unsigned long flags = cpu_interrupts_save();
     unsigned long spins;
+    uint64_t since = 0;
 
     /*
      * A machine that is halting takes no locks. `panic.h` says why, and it
@@ -112,21 +135,27 @@ static inline unsigned long spin_lock(struct spinlock *lock)
         return flags;
     }
 
-    for (spins = 0; spins < SPIN_GIVE_UP; spins++) {
-        if (cpu_lock_try(&lock->locked)) {
-            lock->holder = this_cpu()->index;
-            return flags;
-        }
+    do {
+        for (spins = 0; spins < SPIN_GIVE_UP; spins++) {
+            if (cpu_lock_try(&lock->locked)) {
+                lock->holder = this_cpu()->index;
+                lock->taker = taker;
+                return flags;
+            }
 
-        /* Not only a pause: on x86 a waiting core answers TLB shootdowns
-         * here, because with interrupts masked it cannot take the IPI that
-         * asks - and the core asking may hold this very lock. */
-        cpu_lock_wait();
-    }
+            /* Not only a pause: on x86 a waiting core answers TLB shootdowns
+             * here, because with interrupts masked it cannot take the IPI
+             * that asks - and the core asking may hold this very lock. */
+            cpu_lock_wait();
+        }
+    } while (spin_patient(&since));
 
     spin_panic(lock);
     return flags;
 }
+
+/* Every caller's name goes with it, for the panic: `taker` above. */
+#define spin_lock(lock) spin_lock_at((lock), __func__)
 
 static inline void spin_unlock(struct spinlock *lock, unsigned long flags)
 {

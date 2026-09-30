@@ -11,6 +11,16 @@ rather than seen: it is the next prompt.
   kosmos_telnet.py find                        which machines here run telnetd
   kosmos_telnet.py ADDRESS run "profile 30"    run it, print what it printed
   kosmos_telnet.py ADDRESS get PATH [OUT]      a file, whole, into OUT
+  kosmos_telnet.py ADDRESS put FILE PATH       a file of this Mac's, to PATH
+  kosmos_telnet.py ADDRESS push APP            an application written here,
+                                               into /Home/Apps, and started
+
+`push` takes a Lua file or a folder. A file `hello.lua` goes to
+`/Home/Apps/hello/hello.lua`; a folder `Hello/` goes to `/Home/Apps/Hello/`
+whole, its program the Lua file named after it. It is then opened on the
+desktop if its header says `kosmos: application`, and run here otherwise,
+so a program's output comes back (Diego, 29 September: "We could also even
+write Lua apps in the Mac and push them to the m700").
 
 ADDRESS may be `host:port`; the port is 23 otherwise. `run` exits with the
 program's own exit code, which `telnetd` says when it is not zero.
@@ -76,6 +86,20 @@ class Session:
             raise IOError("%s: %d bytes arrived of %s" % (path, len(data), found.group(1).decode()))
 
         return data
+
+    def put(self, data, path):
+        """`data`, whole, to `path` on the machine; what it said back."""
+        text = base64.b64encode(data)
+        lines = [text[at:at + 76] for at in range(0, len(text), 76)]
+        self.sock.sendall(("put %s %d\r\n" % (path, len(data))).encode()
+                          + b"".join(line + b"\r\n" for line in lines)
+                          + b"END\r\n")
+        said = self.until_prompt().decode(errors="replace")
+
+        if ("put: %s, %d bytes" % (path, len(data))) not in said:
+            raise IOError(said.strip())
+
+        return said
 
     def close(self):
         try:
@@ -165,10 +189,65 @@ def main(argv):
             print("%s: %d bytes -> %s" % (argv[2], len(data), out))
             return 0
 
+        if verb == "put" and len(argv) > 3:
+            with open(argv[2], "rb") as f:
+                sys.stdout.write(session.put(f.read(), argv[3]))
+            return 0
+
+        if verb == "push":
+            return push(session, argv[2])
+
         print(__doc__)
         return 2
     finally:
         session.close()
+
+
+def push(session, local):
+    """An application from this Mac into /Home/Apps, then started."""
+    local = local.rstrip("/")
+    name = os.path.splitext(os.path.basename(local))[0]
+    folder = "/Home/Apps/" + name
+
+    if os.path.isdir(local):
+        files = []
+
+        for top, _, names in os.walk(local):
+            for n in sorted(names):
+                if not n.startswith("."):
+                    files.append(os.path.join(top, n))
+
+        program = os.path.join(local, name.lower() + ".lua")
+
+        if program not in files:
+            program = next((f for f in files if f.endswith(".lua")), None)
+    else:
+        files = [local]
+        program = local
+
+    if not program:
+        print("push: %s has no Lua file to run" % local)
+        return 2
+
+    for f in files:
+        remote = folder + "/" + os.path.relpath(f, local if os.path.isdir(local)
+                                                else os.path.dirname(f))
+
+        with open(f, "rb") as h:
+            sys.stdout.write(session.put(h.read(), remote))
+
+    remote_program = folder + "/" + os.path.relpath(program, local if os.path.isdir(local)
+                                                    else os.path.dirname(program))
+
+    with open(program, "rb") as h:
+        head = h.read(2048).decode(errors="replace")
+
+    windowed = re.search(r"^--\s*kosmos:\s*application\b", head, re.M) is not None
+    said = session.run(("open " if windowed else "") + remote_program)
+    sys.stdout.write(said.decode(errors="replace"))
+    code = re.search(rb"\(exit code (-?\d+)\)\s*$", said)
+
+    return int(code.group(1)) if code else 0
 
 
 if __name__ == "__main__":

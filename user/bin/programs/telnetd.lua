@@ -36,7 +36,7 @@
 -- **And a file back, as text**: `get <path>` prints it in base64 between a
 -- `BEGIN` and an `END` line. Telnet is text - a byte of 255 means something
 -- to it - and one port serving both is simpler than a second server beside
--- this one. `kosmos_telnet.py get` undoes it.
+-- this one. `kosmos_telnet.py get` undoes it; `put` is the other way.
 
 local con = use("/Kosmos/Kits/console")
 
@@ -240,6 +240,99 @@ local function get(s, path)
 end
 
 --------------------------------------------------------------------------
+-- A file sent here, as base64 - `put`, `get`'s mirror.
+--
+-- `put <path> <size>`, then the file in base64 a line at a time, then a line
+-- saying `END`: so a Lua application written on the Mac lands in `/Home/Apps`
+-- and runs (`roadmap.md`, remote; Diego: "We could also even write Lua apps
+-- in the Mac and push them to the m700"). The folders on the way are made.
+-- Written whole, from a region, as a file is written here; the region is
+-- kept and grown when a larger file comes, since one is not given back.
+--------------------------------------------------------------------------
+
+local VALUE = {}
+
+for k = 0, 63 do VALUE[ALPHABET:byte(k + 1)] = k end
+
+local function unbase64(text)
+  local out = {}
+  local n, bits = 0, 0
+
+  for at = 1, #text do
+    local v = VALUE[text:byte(at)]
+
+    if v then
+      n = (n << 6) | v
+      bits = bits + 6
+
+      if bits >= 8 then
+        bits = bits - 8
+        out[#out + 1] = string.char((n >> bits) & 255)
+        n = n & ((1 << bits) - 1)
+      end
+    end
+  end
+
+  return table.concat(out)
+end
+
+local incoming, incoming_pages = nil, 0
+
+local function folders_for(path)
+  local at = 1
+
+  while true do
+    local slash = path:find("/", at + 1, true)
+
+    if not slash then return end
+
+    local folder = path:sub(1, slash - 1)
+
+    if folder ~= "" and not fs.getattr(folder) then
+      fs.send(folder, { type = "mkdir" })
+    end
+
+    at = slash
+  end
+end
+
+local function put_done(s)
+  local p = s.receiving
+  local bytes = unbase64(table.concat(p.parts))
+
+  s.receiving = nil
+
+  if #bytes ~= p.size then
+    send(s, ("put: %s: %d bytes arrived of %d; not written\n"):format(p.path, #bytes, p.size))
+    return
+  end
+
+  local pages = #bytes // 4096 + 1
+
+  if pages > incoming_pages then
+    incoming, incoming_pages = sys.memory(pages), pages
+  end
+
+  if not incoming then
+    incoming_pages = 0
+    send(s, "put: no room for " .. #bytes .. " bytes\n")
+    return
+  end
+
+  if #bytes > 0 then sys.region_write(incoming, 0, bytes) end
+
+  folders_for(p.path)
+
+  local wrote, why = fs.write_from(p.path, incoming, #bytes)
+
+  if wrote then
+    send(s, ("put: %s, %d bytes\n"):format(p.path, #bytes))
+  else
+    send(s, "put: " .. p.path .. ": " .. tostring(why) .. "\n")
+  end
+end
+
+--------------------------------------------------------------------------
 -- A line typed: a word this process answers, or a program.
 --------------------------------------------------------------------------
 
@@ -295,6 +388,19 @@ local function launch(s, text)
   if name == "get" then
     get(s, resolve(s, rest))
     return prompt(s)
+  end
+
+  if name == "put" then
+    local where, size = rest:match("^(%S+)%s+(%d+)$")
+
+    if not where or tonumber(size) > 64 * 1024 * 1024 then
+      send(s, "put: put <path> <size>, then the file in base64, then END\n")
+      return prompt(s)
+    end
+
+    -- The lines that follow are the file's, until END.
+    s.receiving = { path = resolve(s, where), size = tonumber(size), parts = {} }
+    return
   end
 
   local path
@@ -437,8 +543,22 @@ while true do
 
     serve_console(s)
 
+    -- A file coming in takes every line until its END.
+    while s.receiving and #s.lines > 0 do
+      local line = table.remove(s.lines, 1)
+
+      if line == "END" then
+        put_done(s)
+        prompt(s)
+      else
+        s.receiving.parts[#s.receiving.parts + 1] = line
+      end
+    end
+
     -- A line for a program that asked, or for this session to run.
-    if s.reader and #s.lines > 0 then
+    if s.receiving then
+      -- still arriving
+    elseif s.reader and #s.lines > 0 then
       pcall(sys.reply_raw, s.reader,
             con.encode_reply({ line = table.remove(s.lines, 1) }))
       s.reader = nil

@@ -485,6 +485,9 @@ void thread_wait_input_until(uint64_t deadline);
  */
 uint64_t thread_deadline_in(unsigned long ticks);
 
+/* The counter's ticks a second, as the deadlines above use it. */
+uint64_t thread_counter_hz(void);
+
 /* Wakes every sleeper whose deadline has arrived. Called from the tick. */
 void thread_wake_sleepers(void);
 

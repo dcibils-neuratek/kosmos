@@ -7331,6 +7331,12 @@ static bool test_a_spinlock_excludes_and_masks(void)
         return false;
     }
 
+    /* And who took it, for the panic that has only this to go on. */
+    if (probe.taker == NULL || strcmp(probe.taker, __func__) != 0) {
+        spin_unlock(&probe, flags);
+        return false;
+    }
+
     if (probe.holder != this_cpu()->index) {
         spin_unlock(&probe, flags);
         return false;
@@ -7364,6 +7370,39 @@ static bool test_a_spinlock_excludes_and_masks(void)
 
     /* And the interrupt state came back as it was, not merely enabled. */
     return true;
+}
+
+/*
+ * **A waiter's patience is a second of the counter** (`spinlock.h`): ten
+ * million spins, then on until a second has passed since it first asked -
+ * the panic that fired three times in loaded gates was a paused host thread
+ * holding a lock for longer than ten million spins take under TCG, and a
+ * second is a deadlock on any machine and a pause on none.
+ */
+static bool test_a_waiter_waits_a_second(void)
+{
+    uint64_t hz = thread_counter_hz();
+    uint64_t since = 0;
+
+    if (hz == 0) {
+        return false;
+    }
+
+    /* The first asking starts the clock, and a moment later is still patient. */
+    if (!spin_patient(&since) || since == 0 || !spin_patient(&since)) {
+        return false;
+    }
+
+    /* Half a second in, still; a second and a half, not. */
+    since = cpu_cycles() - hz / 2;
+
+    if (!spin_patient(&since)) {
+        return false;
+    }
+
+    since = cpu_cycles() - hz - hz / 2;
+
+    return !spin_patient(&since);
 }
 
 static bool test_every_processor_takes_its_own_ticks(void)
@@ -9251,6 +9290,7 @@ static const struct test tests[] = {
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
     { "lock: a spinlock excludes, names its holder and masks", test_a_spinlock_excludes_and_masks },
+    { "lock: a waiter waits a second of the counter, not ten million spins", test_a_waiter_waits_a_second },
     { "cpu: the machine says how many processors it has", test_the_machine_says_how_many_processors_it_has },
     { "cpu: every processor claimed its own slot", test_every_processor_claimed_its_own_slot },
     { "cpu: every processor takes its own ticks",  test_every_processor_takes_its_own_ticks },

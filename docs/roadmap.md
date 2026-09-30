@@ -154,7 +154,8 @@ answers to its three questions, the same day:
    and `kosmos_telnet.py push`, a file or an application's folder into
    `/Home/Apps`, then opened. Pushed again on each save, later, if it earns
    it. Nothing in `/Kosmos` changes this way: that is the image, and still
-   a stick.
+   a stick. **BUILT the same evening** (`testing.md` 18.289): `put`, `open`
+   and `push`, held on the M700's own boot under QEMU.
 6. **A Servers application** - Diego, the same evening: "We might want a
    servers app that hold all servers like web, telnet, vnc, etc like the
    preferences app but with servers configuration so we can config and
@@ -5544,7 +5545,10 @@ the Pi", and the Pi is not here yet.
   trips it as a deadlock would, and the line cannot say which. The fix
   18.134 named: **a bound in counter time** - a second is a deadlock on any
   machine, and not a paused thread - and **the holder asked for its PC**
-  when it does fire, so the next one says what it was doing.
+  when it does fire, so the next one says what it was doing. **DONE the
+  same evening** (`testing.md` 18.289): the second, and - since a holder
+  with interrupts masked cannot be asked anything - the lock records the
+  function that took it, and the panic prints it.
 - **FOUND on 29 September, by a sixty-second profile on the M700 - Doom's
   sleep is a spin.** `DG_SleepMs` (`user/installed/Doom/doom_kosmos.c`)
   waits by yielding until the counter passes the deadline, and a yield on

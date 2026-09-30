@@ -46,6 +46,7 @@ PROBES = {
 }
 
 results = {}
+WORK = None
 
 
 def talk(port):
@@ -93,7 +94,98 @@ def talk(port):
     results["spin"] = session.until_prompt().decode(errors="replace")
 
     results["nothing"] = session.run("no-such-thing").decode(errors="replace")
+
+    # **Sent the other way**: every byte value, into folders that are not
+    # there yet, and read back (`put`, Diego: "write Lua apps in the Mac and
+    # push them to the m700").
+    try:
+        session.put(bytes(reversed(BLOB)), "/Home/up/deep/up.bin")
+        results["up"] = session.get("/Home/up/deep/up.bin")
+    except Exception as e:                  # noqa: BLE001 - said below
+        results["up_error"] = str(e)
+
+    # A program written here, pushed, and run there: its output comes back.
+    import contextlib
+    import io
+
+    pushed = os.path.join(WORK, "pushed.lua")
+
+    with open(pushed, "w") as f:
+        f.write('print("PUSHED " .. 6 * 7)\n')
+
+    heard = io.StringIO()
+
+    with contextlib.redirect_stdout(heard):
+        results["push_code"] = K.push(session, pushed)
+
+    results["push"] = heard.getvalue()
+
+    # And `open` with no desktop says so, and fails.
+    results["open"] = session.run("open tracker").decode(errors="replace")
     session.close()
+
+
+def on_the_desktop(image, port):
+    """**The M700's own boot**: the desktop by itself and `telnetd` beside
+    it. An application written here is pushed and opened on its screen -
+    `open` asking the window manager, as the Deskbar does."""
+    import kosmos_telnet as K
+    import run_screenshot as R
+    import contextlib
+    import io
+
+    board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
+    saved = getattr(R, board)
+    setattr(R, board, saved + [
+        "-netdev", "user,id=net0,hostfwd=tcp::%d-:23" % port,
+        "-device", R.device(image, "net") + ",netdev=net0",
+        "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
+        "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+    ])
+
+    try:
+        guest = R.Guest(image, 120)
+    finally:
+        setattr(R, board, saved)
+
+    app = os.path.join(WORK, "hellowin.lua")
+
+    with open(os.path.join(ROOT, "user", "bin", "apps", "hello-win.lua")) as f:
+        source = f.read()
+
+    with open(app, "w") as f:
+        f.write(source)
+
+    try:
+        guest.wait_for("net: an address from DHCP", "a lease")
+        guest.wait_for("wm: window", "the desktop's first window")
+
+        deadline = time.monotonic() + 30
+
+        while True:
+            try:
+                session = K.Session("127.0.0.1:%d" % port, timeout=60)
+                break
+            except (ConnectionError, OSError):
+                if time.monotonic() > deadline:
+                    raise
+
+                time.sleep(0.5)
+
+        heard = io.StringIO()
+
+        with contextlib.redirect_stdout(heard):
+            K.push(session, app)
+
+        results["desktop_push"] = heard.getvalue()
+        session.close()
+        guest.wait_for("wm: launched /Home/Apps/hellowin/hellowin.lua -> true",
+                       "the pushed application launched")
+        results["desktop"] = True
+    except Exception as e:                  # noqa: BLE001 - said below
+        results["desktop_error"] = "%s: %s" % (type(e).__name__, e)
+    finally:
+        guest.close()
 
 
 def wait_for(session, text, seconds=30):
@@ -110,7 +202,10 @@ def wait_for(session, text, seconds=30):
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+    global WORK
+
     work = scratch.directory("telnetd")
+    WORK = work
     disk = os.path.join(work, "disk.img")
     pairs = []
 
@@ -189,10 +284,31 @@ def main():
     if "no such program" not in results.get("nothing", ""):
         fails.append("a name that is no program: %r" % results.get("nothing"))
 
+    on_the_desktop(image, random.randint(20000, 60000))
+
+    if not results.get("desktop") or "open: started" not in results.get("desktop_push", ""):
+        fails.append("an application pushed to a machine running its desktop "
+                     "did not open there: %s %r" % (results.get("desktop_error", ""),
+                                                     results.get("desktop_push")))
+
+    if results.get("up") != bytes(reversed(BLOB)):
+        fails.append("a file put there did not come back as it was: %s"
+                     % (results.get("up_error") or "%d bytes" % len(results.get("up") or b"")))
+
+    if ("PUSHED 42" not in results.get("push", "")
+            or "/Home/Apps/pushed/pushed.lua, " not in results.get("push", "")):
+        fails.append("a program pushed from here did not land and run: %r"
+                     % results.get("push"))
+
+    if ("the desktop is not running" not in results.get("open", "")
+            or "(exit code" not in results.get("open", "")):
+        fails.append("open with no desktop did not say so and fail: %r"
+                     % results.get("open"))
+
     if " died: " in out:
         fails.append("something died: " + out[out.find(" died: ") - 80:][:400])
 
-    checks = 9
+    checks = 13
 
     if fails:
         print("FAIL: %d of %d checks on telnetd:" % (len(fails), checks))
@@ -205,7 +321,9 @@ def main():
     print("PASS: %d checks on telnetd, through the Mac's own client (the banner "
           "and a prompt; a program's output; cd and pwd; %d bytes with every "
           "value in them, whole; a read given the next line typed; a failure's "
-          "exit code; Control-C as Telnet's interrupt; no such program; "
+          "exit code; Control-C as Telnet's interrupt; no such program; a file "
+          "put into new folders and back; a program pushed and run; open with "
+          "no desktop refused; and one pushed to a desktop, opened there; "
           "nothing dead)." % (checks, len(BLOB)))
     return 0
 

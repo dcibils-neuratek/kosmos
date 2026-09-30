@@ -1889,6 +1889,11 @@ static uint64_t counter_hz(void)
     return hz;
 }
 
+uint64_t thread_counter_hz(void)
+{
+    return counter_hz();
+}
+
 uint64_t thread_deadline_in(unsigned long ticks)
 {
     return cpu_cycles() + (uint64_t)ticks * counter_hz() / TICK_HZ;

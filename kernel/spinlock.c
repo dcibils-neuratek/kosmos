@@ -10,6 +10,7 @@
 #include "hal.h"
 #include "panic.h"
 #include "spinlock.h"
+#include "thread.h"
 
 /*
  * Straight to the serial line, past the console.
@@ -79,9 +80,26 @@ void spin_panic(const struct spinlock *lock)
         raw_num(lock->holder);
     }
 
+    if (lock->taker != NULL) {
+        raw(", taken in ");
+        raw(lock->taker);
+    }
+
     raw(", wanted by ");
     raw_num(this_cpu()->index);
-    raw("\n");
+    raw(" for a second\n");
 
     panic("spinlock: gave up waiting");
+}
+
+bool spin_patient(uint64_t *since)
+{
+    uint64_t now = cpu_cycles();
+
+    if (*since == 0) {
+        *since = now;
+        return true;
+    }
+
+    return now - *since < thread_counter_hz();
 }
