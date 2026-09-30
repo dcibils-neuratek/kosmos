@@ -588,14 +588,24 @@ local function frame()
   local ty = URL.y + (URL.h - gfx.height()) // 2
   local shown, from = field_view()
 
-  s:text(URL.x + 5, ty, shown, theme.text)
+  --
+  -- **All of it selected**, after Control-L: drawn in the caret's colours,
+  -- as `ui.field` draws its select-all, so it is plain that what is typed
+  -- next replaces it.
+  --
+  if address.focus and address.all and shown ~= "" then
+    s:fill(URL.x + 5, ty, gfx.measure(shown), gfx.height(), theme.ring)
+    s:text(URL.x + 5, ty, shown, theme.sunken)
+  else
+    s:text(URL.x + 5, ty, shown, theme.text)
+  end
 
   --
   -- The caret. Drawn only when the field has the keys, because a caret in a
   -- field that is not listening is the thing that makes a person type into
   -- the wrong place.
   --
-  if address.focus then
+  if address.focus and not address.all then
     local at = URL.x + 5
                + gfx.measure(address.text:sub(from + 1, address.caret))
 
@@ -763,10 +773,10 @@ local function fetch(text)
       -- `host` was written, passed the documented unit, and every lookup
       -- after the first one timed out. `netproto.h` has the whole account.
       --
-      local addr, why = fs.resolve(name, TICK_HZ * 5)
+      local addr, why, said = fs.resolve(name, TICK_HZ * 5)
 
       if not addr then
-        say(("cannot look up %s: %s"):format(name, tostring(why)))
+        say(("cannot look up %s: %s"):format(name, said or tostring(why)))
         return nil
       end
 
@@ -780,15 +790,10 @@ local function fetch(text)
 
     say("connecting to " .. text .. " ...")
 
-    local conn, why = fs.connect("/Network", where, port)
+    local conn, why, said = fs.connect("/Network", where, port)
 
     if not conn then
-      local because = ({ [4] = "no route to it",
-                         [7] = "it refused the connection",
-                         [9] = "it did not answer",
-                         [5] = "too many connections" })[why]
-
-      say(because or ("could not connect: " .. tostring(why)))
+      say("could not connect: " .. (said or tostring(why)))
       return nil
     end
 
@@ -1153,6 +1158,25 @@ local sink = ui.view{ x = 0, y = 0, w = W, h = H }
 sink.focusable = true
 
 local function url_key(c)
+  --
+  -- **What Control-L selected goes when something is typed**, as in every
+  -- browser: the whole address was selected, so a character replaces it and
+  -- Backspace empties it. It put the caret at the end instead, and a typed
+  -- address went on the end of the old one - `run_browser.py` found it,
+  -- typing `http://10.0.2.2/second.html` into a bar that already held a page.
+  --
+  if address.all then
+    address.all = false
+
+    if c == 8 or c == 127 then
+      address.text, address.caret = "", 0
+      frame()
+      return true
+    elseif c >= 32 and c < 127 then
+      address.text, address.caret = "", 0
+    end
+  end
+
   if c == 13 or c == 10 then
     address.focus = false
     visit(address.text)
@@ -1204,6 +1228,7 @@ function sink:key(c)
   elseif c == 12 then                                -- Control-L
     address.focus = true
     address.caret = #address.text
+    address.all = true
   elseif c == 114 then reload()                      -- r
   elseif c == 91 then go_back()                      -- [
   elseif c == 93 then go_forward()                   -- ]

@@ -285,6 +285,64 @@ def boot(image, extra, commands, seconds=90, then=None, after=None):
         guest.close()
 
 
+def before_the_lease(image, body):
+    """A `fetch` typed while the machine is still asking for its address,
+    and what came of it once the link was put back."""
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    httpd = http.server.HTTPServer(("0.0.0.0", 0), Handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    board = ("X86_ARGS" if run_screenshot.machine(image) == "x86_64"
+             else "QEMU_ARGS")
+    saved = getattr(run_screenshot, board)
+    setattr(run_screenshot, board, saved + [
+        "-S",
+        "-netdev", "user,id=net0",
+        "-device", run_screenshot.device(image, "net") + ",netdev=net0",
+    ])
+
+    try:
+        guest = run_screenshot.Guest(image, 120)
+    finally:
+        setattr(run_screenshot, board, saved)
+
+    try:
+        guest._qmp("set_link", {"name": "net0", "up": False})
+        guest._qmp("cont", {})
+        guest.wait_for(run_screenshot.PROMPT, "the prompt")
+
+        # A name as well as a connection, since the resolver's address is
+        # part of the lease too. `&` so both are asked before the link is
+        # back; twenty seconds so the lookup outlives the wait for the lease.
+        mark = len(guest.seen)
+        guest.type("host example.com 20 &")
+        guest.type(f"fetch http://10.0.2.2:{port}/held")
+
+        # Long enough for an unheld connect to have been refused, which is
+        # immediate: a refusal is one message to the stack and back.
+        time.sleep(3)
+        guest._qmp("set_link", {"name": "net0", "up": True})
+        guest.wait_for_line("(fetch) ended, code", "the fetch to end", since=mark)
+        guest.wait_for_line("(host) ended, code", "the lookup to end", since=mark)
+        return guest.seen[mark:].replace("\r", "")
+    except run_screenshot.Failure as e:
+        return "the machine stopped: %s\n%s" % (e, guest.seen[-1500:])
+    finally:
+        guest.close()
+        httpd.shutdown()
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
     checks = 0
@@ -528,6 +586,44 @@ def main():
                 "the body came back in pieces: %d of the 8 lines arrived. "
                 "The close and the last bytes can be in one segment."
                 % out.count("the quick brown fox"))
+
+        checks += 1
+
+        # ---- and asked for before the machine has its address ----
+        #
+        # A machine asks DHCP for its address as it boots, and whatever a
+        # person opens first races the answer: on x86 the browser lost about
+        # one boot in three and said "could not connect: 3" for a page it
+        # would have had a second later. The stack now holds a connection
+        # asked for while it is still asking, and sends it once the lease
+        # arrives (`net.c`, `still_asking`).
+        #
+        # **Made certain rather than hoped for**: QEMU starts paused (`-S`),
+        # the link is pulled before the guest runs an instruction, so every
+        # DISCOVER goes nowhere; `fetch` is typed at the prompt, given time to
+        # be refused, and only then is the link put back. The lease line has
+        # to come after the command, and the page after the lease.
+        #
+        held = before_the_lease(image, body)
+
+        if "net: an address from DHCP" not in held or "the quick brown fox" not in held:
+            raise Failure(
+                "a fetch typed before the machine had its address did not "
+                "wait for it: the stack refused the connection rather than "
+                "holding it until the lease.\n" + held[-900:])
+
+        # Whatever the resolver made of the name - an address, no such name,
+        # or silence on a machine with no way out - is fine; being told
+        # there is no resolver, or no route to one, is the refusal.
+        if "host: example.com: no r" in held:
+            raise Failure(
+                "a name looked up before the machine had its address was "
+                "refused rather than held for the lease.\n" + held[-900:])
+
+        if held.find("net: an address from DHCP") < held.find("fetch http://"):
+            raise Failure(
+                "the lease arrived before the fetch was typed, with the link "
+                "pulled, so this proved nothing.\n" + held[-900:])
 
         checks += 1
 

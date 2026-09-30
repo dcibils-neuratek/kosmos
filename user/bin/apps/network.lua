@@ -256,7 +256,7 @@ local function test_gateway()
   end
 
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
-  local reply, why = fs.ping("/Network", a, 1, "kosmos network settings test")
+  local reply, why, said = fs.ping("/Network", a, 1, "kosmos network settings test")
 
   if reply then
     local us = reply.ticks * 1000000 // hz
@@ -264,7 +264,7 @@ local function test_gateway()
     status.text = ("the gateway answered in %d.%03d ms")
                   :format(us // 1000, us % 1000)
   else
-    status.text = "no answer from the gateway (" .. tostring(why) .. ")"
+    status.text = "no answer from the gateway: " .. (said or tostring(why))
   end
 end
 

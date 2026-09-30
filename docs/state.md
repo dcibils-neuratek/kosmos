@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-29
+Last updated: 2026-09-30
 
 ---
 
@@ -325,9 +325,17 @@ qemu` for reaching `make qemu` from the Mac. **The browser, redrawn**:
 `docs/browser.html`, agreed ("great! it looks amazing") with Open anyway,
 favorites as files, tabs, costs always shown, DuckDuckGo/Google search; and
 "the browser needs to be fast" - measured first. JavaScript for later.
-**Next** (6zz): the test page and the browser in the gate, then resizable
-windows that draw their own pixels, then the redesign and HTTPS in it; then
-loopback (6zy).
+
+**The browser in the gate, 6zz a and b** (`testing.md` 18.295): the test
+page in `assets/www/` (`make www` puts it in `/Home/www`, QEMU quit first),
+`arm-browser`/`x86-browser` typing an address, going Back and looking for
+both pictures. Found and fixed: Control-L appended rather than replaced; and
+on x86 one boot in three, a page asked for before the lease refused - the
+stack holds connections and lookups while DHCP is still asking now, held to
+a paused boot with the link pulled in `arm-network`/`x86-network`. The
+Network Kit gives a sentence with every failure. **Next** (6zz): HTTPS in
+the browser (c), resizable windows that draw their own pixels (e), then the
+redesign (d); then loopback (6zy).
 Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU

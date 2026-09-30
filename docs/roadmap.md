@@ -2657,17 +2657,23 @@ processors, and still what follows USB:
    our page benchmark tool for the browser" - and "the brower has the old
    window chrome and old ui". Agreed, in this order, after `fetch` speaks
    HTTPS:
-   a. **The page**: `assets/www/`, a page of every kind of thing a document
-      has - titles, headings, text and its styles, lists, a table, images,
-      labels and a form, quotes, code, CSS - each part saying what it should
-      look like, so a person reads it as a checklist. Put in `/Home/www` on
-      the QEMU disk, and served by the harness. **The benchmark**: the
+   a. **BUILT 30 September (`testing.md` 18.295). The page**:
+      `assets/www/`, a page of every kind of thing a document has - titles,
+      headings, text and its styles, lists, a table, images, labels and a
+      form, quotes, code, CSS - each part saying what it should look like,
+      so a person reads it as a checklist. `make www` puts it in `/Home/www`
+      on the QEMU disk, and the harness serves it. **The benchmark**: the
       browser already times a page - fetch, parse, layout, paint - and this
-      is the page those numbers are for.
-   b. **The browser in the gate** (`run_browser.py`, which exists and was
-      never gated), on that page: an address typed into the bar, `http://`
-      and all, a link followed, Back, the images drawn, the title the
-      window's.
+      is the page those numbers are for. What it shows the renderer cannot
+      do yet: the body's background (the box model, below), and the form's
+      fields.
+   b. **BUILT 30 September (`testing.md` 18.295). The browser in the gate**
+      (`arm-browser`, `x86-browser`), on that page: an address typed into
+      the bar after Control-L, `http://` and all, a link followed, Back, the
+      images drawn. It found Control-L appending rather than replacing, and
+      on x86 a page asked for before the machine had its address refused -
+      which the network stack now holds until the lease, for every program
+      rather than for the browser.
    c. **HTTPS in the browser**, through the TLS Kit, held by the same suite.
    d. **The new chrome** - the kit's header, the title bar the look
       decides - drawn as `docs/browser.html` first, for Diego to look at

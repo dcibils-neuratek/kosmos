@@ -71,6 +71,46 @@ static void push_addr(lua_State *L, const struct net_addr *a)
 }
 
 /*
+ * A failure, as its number and as a sentence.
+ *
+ * The number is what a program compares - `net.ERR_NO_ROUTE` - and the
+ * sentence what it shows a person. Every program that showed one kept its
+ * own table of them, and three of those tables - `fetch`, `telnet` and the
+ * browser's - called 4 "no route", which is 3; so the browser said "could
+ * not connect: 3" for the one failure everybody meets, a page asked for
+ * before the machine had its address. Said once, here, beside the numbers
+ * `netproto.h` gives them.
+ */
+static const char *sentence(uint32_t status)
+{
+    switch (status) {
+    case NET_ERR_BAD_OP:      return "the network stack did not understand the request";
+    case NET_ERR_NO_CARD:     return "this machine has no network";
+    case NET_ERR_NO_ROUTE:    return "no route to it: this machine has no address, "
+                                     "or nothing here knows the way";
+    case NET_ERR_UNREACHABLE: return "nobody answered for that address";
+    case NET_ERR_FULL:        return "too many at once";
+    case NET_ERR_BAD_ADDRESS: return "that is not an address";
+    case NET_ERR_REFUSED:     return "connection refused";
+    case NET_ERR_CLOSED:      return "the connection is over";
+    case NET_ERR_TIMEOUT:     return "nobody answered in time";
+    case NET_ERR_NO_HANDLE:   return "no such connection";
+    case NET_ERR_NO_RESOLVER: return "no DNS server is configured";
+    case NET_ERR_NO_NAME:     return "there is no such name";
+    default:                  return "the network stack did not answer";
+    }
+}
+
+/* nil, the number, and the sentence. */
+static int failed(lua_State *L, uint32_t status)
+{
+    lua_pushnil(L);
+    lua_pushinteger(L, (lua_Integer)status);
+    lua_pushstring(L, sentence(status));
+    return 3;
+}
+
+/*
  * One exchange with the stack, in C.
  *
  * The reply comes back into the caller's table rather than a fresh one, the
@@ -93,6 +133,7 @@ static long exchange(lua_State *L, long cap, const struct net_request *req,
     status = kosmos_call(cap, &msg, &rep);
 
     if (status != 0 || rep.length < sizeof(*out)) {
+        out->status = ~0u;              /* no answer: a number, not garbage */
         return -1;
     }
 
@@ -169,9 +210,7 @@ static int l_dhcp(lua_State *L)
     req.op = NET_OP_DHCP;
 
     if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     lua_pushboolean(L, 1);
@@ -207,9 +246,7 @@ static int l_resolve(lua_State *L)
     memcpy(req.payload, name, len);
 
     if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     lua_pushlstring(L, (const char *)rep.address.byte, 4);
@@ -231,9 +268,7 @@ static int l_configure(lua_State *L)
     take_addr(L, 5, &req.dns);
 
     if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     lua_pushboolean(L, 1);
@@ -282,9 +317,7 @@ static int l_ping(lua_State *L)
     }
 
     if (rep.status != NET_OK) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     lua_createtable(L, 0, 5);
@@ -359,9 +392,7 @@ static int l_connect(lua_State *L)
     memcpy(&rep, out.data, sizeof(rep));
 
     if (rep.status != NET_OK) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     if (out.cap_plus_one == 0) {
@@ -548,9 +579,7 @@ static int l_listen(lua_State *L)
     req.port = (uint32_t)luaL_checkinteger(L, 2);
 
     if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     lua_pushinteger(L, (lua_Integer)rep.handle);
@@ -597,9 +626,7 @@ static int l_accept(lua_State *L)
     memcpy(&rep, out.data, sizeof(rep));
 
     if (rep.status != NET_OK || out.cap_plus_one == 0) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     region = (long)out.cap_plus_one - 1;
@@ -733,9 +760,7 @@ static int l_poll(lua_State *L)
     req.writing = mask_of(L, 3);
 
     if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
-        lua_pushnil(L);
-        lua_pushinteger(L, (lua_Integer)rep.status);
-        return 2;
+        return failed(L, rep.status);
     }
 
     lua_newtable(L);

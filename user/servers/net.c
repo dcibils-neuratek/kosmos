@@ -209,6 +209,12 @@ struct asking {
     uint64_t who;
     uint16_t id;
     uint64_t until;                 /* counter ticks, or 0 for no deadline */
+
+    /* Asked while this machine was still asking for its address, and not
+     * sent yet: the name is kept here until it can be (`release_held`). */
+    bool     held;
+    uint16_t length;
+    uint8_t  name[NET_PAYLOAD_MAX];
 };
 
 /*
@@ -259,6 +265,7 @@ struct conn {
     uint32_t tries;
     bool     fin_sent;
     bool     want_close;            /* asked to close; waiting for the ring */
+    bool     held;                  /* the SYN waits for an address */
 
     /* The region, and where it is mapped in this process. */
     long     region;
@@ -2392,6 +2399,71 @@ static void drain(void)
  *----------------------------------------------------------------------*/
 
 /*
+ * Whether this machine is still asking DHCP for its address.
+ *
+ * **A connection or a name asked for then waits for the address** rather
+ * than being refused with "no route". A machine asks for its lease as it
+ * boots, and whatever a person opens first - the browser, most often -
+ * raced it: on x86 under TCG the browser lost about one boot in three and
+ * showed "could not connect: 3" for a page it would have had a second
+ * later. Each program could wait for the lease itself, and each would have
+ * to know to; held here, every one of them is right without knowing.
+ *
+ * Bounded as everything parked here is: a connection by its own five turns,
+ * about thirty seconds, and a name by its caller's wait or thirty seconds.
+ * An address given by hand, or none asked for, is refused at once as before.
+ */
+static bool still_asking(void)
+{
+    return net.has_card && !net.configured
+        && net.addressed_by == NET_ADDRESS_ASKING;
+}
+
+/*
+ * From the loop: whatever was held for an address, sent once there is one.
+ *
+ * Not at the moment the lease arrives, because a send needs the router's
+ * MAC and the question for it goes out in the same breath as the lease is
+ * taken - so the first try would fail. Each pass tries what is held and
+ * keeps what did not go, which is DHCP's own "not sent is not asked"; the
+ * deadlines in `expire` end whatever never goes.
+ */
+static void release_held(void)
+{
+    unsigned i;
+
+    if (!net.configured) {
+        return;
+    }
+
+    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
+        struct asking *a = &net.asking[i];
+
+        if (!a->used || !a->held) {
+            continue;
+        }
+
+        if (net.dns.byte[0] == 0) {     /* a lease that named no resolver */
+            a->used = a->held = false;
+            fail(a->who, NET_ERR_NO_RESOLVER);
+        } else if (dns_ask((const char *)a->name, a->length, a->id)) {
+            a->held = false;
+        }
+    }
+
+    for (i = 0; i < NET_CONN_MAX; i++) {
+        struct conn *c = &net.conn[i];
+
+        if (c->held && c->state == ST_SYN_SENT
+            && tcp_send(c, TCP_SYN, c->snd_una, NULL, 0)) {
+            c->held    = false;
+            c->tries   = 0;             /* its whole budget, from now */
+            c->sent_at = kosmos_ticks();
+        }
+    }
+}
+
+/*
  * A name, asked about on the caller's behalf.
  *
  * Parks them the way `accept` does: the sender is kept and answered when
@@ -2408,13 +2480,15 @@ static void resolve(const struct net_request *req, uint64_t sender)
         return;
     }
 
-    if (net.dns.byte[0] == 0) {
-        fail(sender, NET_ERR_NO_RESOLVER);
+    if (req->length == 0 || req->length > NET_PAYLOAD_MAX) {
+        fail(sender, NET_ERR_BAD_ADDRESS);
         return;
     }
 
-    if (req->length == 0 || req->length > NET_PAYLOAD_MAX) {
-        fail(sender, NET_ERR_BAD_ADDRESS);
+    /* Which resolver to ask is part of the lease, so a name asked for
+     * before it arrives waits for it rather than hearing there is none. */
+    if (net.dns.byte[0] == 0 && !still_asking()) {
+        fail(sender, NET_ERR_NO_RESOLVER);
         return;
     }
 
@@ -2422,6 +2496,19 @@ static void resolve(const struct net_request *req, uint64_t sender)
 
     if (a == NULL) {
         fail(sender, NET_ERR_FULL);
+        return;
+    }
+
+    if (!net.configured) {
+        a->used   = true;
+        a->held   = true;
+        a->who    = sender;
+        a->id     = ++net.dns_id;
+        a->length = (uint16_t)req->length;
+        memcpy(a->name, req->payload, req->length);
+        a->until  = kosmos_ticks() + (req->wait_ticks
+                                      ? in_counter(req->wait_ticks)
+                                      : net.hz * 30u);
         return;
     }
 
@@ -2597,7 +2684,7 @@ static void serve(const struct message *msg, uint64_t sender)
         long region;
         long at;
 
-        if (!net.has_card || !net.configured) {
+        if (!net.has_card || (!net.configured && !still_asking())) {
             fail(sender, net.has_card ? NET_ERR_NO_ROUTE : NET_ERR_NO_CARD);
             return;
         }
@@ -2667,6 +2754,15 @@ static void serve(const struct message *msg, uint64_t sender)
         c->sent_at     = kosmos_ticks();
 
         net.next_seq += 0x01000000u;
+
+        /* Asked for before this machine has an address: the connection is
+         * made and the SYN waits for one (`release_held`), with the caller
+         * parked exactly as it would be for an answer. */
+        if (!net.configured) {
+            c->held = true;
+            c->snd_nxt++;
+            return;
+        }
 
         if (!tcp_send(c, TCP_SYN, c->snd_nxt, NULL, 0)) {
             (void)kosmos_cap_drop(region);
@@ -2957,7 +3053,8 @@ static void expire(uint64_t hz)
 
         if (a->used && a->until != 0 && now > a->until) {
             a->used = false;
-            fail(a->who, NET_ERR_TIMEOUT);
+            fail(a->who, a->held ? NET_ERR_NO_ROUTE : NET_ERR_TIMEOUT);
+            a->held = false;
         }
     }
 
@@ -2996,6 +3093,22 @@ static void expire(uint64_t hz)
         }
 
         if (c->state == ST_FREE || c->state == ST_DEAD) {
+            continue;
+        }
+
+        /* Waiting for an address rather than for an answer: the same
+         * backoff and the same five turns, and nothing sent, since there is
+         * nothing yet to send it from. What ends it is said as what it is. */
+        if (c->held) {
+            if (now - c->sent_at >= (hz << (c->tries > 3 ? 3 : c->tries))) {
+                c->sent_at = now;
+
+                if (++c->tries > 5) {
+                    c->held = false;
+                    conn_die(c, NET_ERR_NO_ROUTE);
+                }
+            }
+
             continue;
         }
 
@@ -3163,6 +3276,7 @@ void net_server(long endpoint, long console, long frames, long frames2)
         drain();
         expire(hz);
         dhcp_tick();
+        release_held();
         poll_service();
 
         if (status == 0) {

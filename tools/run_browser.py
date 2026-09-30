@@ -13,7 +13,7 @@ the guest without a packet leaving the machine: deterministic, offline, and
 about the renderer rather than about somebody else's uptime. It is the same
 arrangement `run_network.py` uses for `fetch`.
 
-Two things are checked and neither is subtle, which is deliberate - this is
+What is checked is none of it subtle, which is deliberate - this is
 mostly a camera, and a check that goes stale is worse than no check:
 
   * **The page area has ink on it.** A window that opened and rendered
@@ -45,6 +45,18 @@ mostly a camera, and a check that goes stale is worse than no check:
     things at once: boxes kept, the click turned into a page coordinate, the
     run found, the relative address resolved, the fetch made, and the result
     laid out.
+  * **An address can be typed** (`roadmap.md` 6zz b). Control-L selects the
+    bar and what is typed replaces it, `http://` and all - which the first
+    try found appending to the old address - and the second page's blue
+    heading has to appear.
+  * **Back leaves it**, with the server asked for nothing.
+  * **Both pictures are drawn.** The test page's PNG carries a magenta
+    square and its JPEG a cyan one, and the page is paged down until both
+    have been on the screen.
+
+**The page is `assets/www/index.html`**, the browser's test page and its
+page benchmark (`roadmap.md` 6zz a): every part of it says what it should
+look like, and `make www` puts it in the QEMU disk's `/Home/www`.
 
 Usage: run_browser.py <image> --out <file.png> [--page <file.html>]
 """
@@ -65,8 +77,17 @@ from run_gallery import png                                      # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # What the page's own links point at, and therefore what the server must be
-# asked for once one of them is clicked.
-LINKED = "test_linked.html"
+# asked for once one of them is clicked: the test page's first link
+# (`assets/www/`, `roadmap.md` 6zz a).
+LINKED = "second.html"
+
+# The second page's heading, #2a55c9 - which the test page and the start
+# page do not use - and the test page's pictures' marks: a square of pure
+# magenta in the PNG and of pure cyan in the JPEG. Not the second page's
+# pale yellow ground, which the browser does not paint yet (the box model,
+# `roadmap.md`, the browser) - the page says it should, which is what a
+# checklist is for.
+SECOND_BLUE = (42, 85, 201)
 
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
@@ -218,7 +239,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("image")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--page", default=os.path.join(HERE, "test_page.html"))
+    ap.add_argument("--page", default=os.path.join(os.path.dirname(HERE), "assets",
+                                                   "www", "index.html"))
     ap.add_argument("--timeout", type=int, default=240)
     args = ap.parse_args()
 
@@ -424,14 +446,150 @@ def main():
                 f"which is the one page that cannot blame the network. "
                 f"Wrote {args.out}.")
 
+        #
+        # **An address typed into the bar** (`roadmap.md` 6zz b): Control-L,
+        # then the whole URL, `http://` and all - which the bar once took
+        # for a machine called "http:" - and Return. The server must be
+        # asked for the second page, and its pale yellow must be what the
+        # page area shows. Typed on the serial line, which reaches the
+        # focused window as a keyboard's characters do.
+        #
+        def typed(text):
+            for ch in text:
+                guest.proc.stdin.write(ch.encode())
+                guest.proc.stdin.flush()
+                time.sleep(0.05)
+
+        def second_page(px_, w_):
+            """How many of the page's pixels are the second page's heading's blue."""
+            at = reader(px_, w_)
+            n = 0
+
+            for y in range(y0, y0 + 90, 2):
+                for x in range(x0, x0 + WIN_W - SBAR, 2):
+                    if at(x, y) == SECOND_BLUE:
+                        n += 1
+
+            return n
+
+        before_typed = len(asked)
+        typed("\x0c")
+        time.sleep(0.4)
+        typed("http://10.0.2.2:%d/%s\n" % (port, LINKED))
+
+        try:
+            settle(
+                guest,
+                lambda w_, h_, px_: True if second_page(px_, w_) >= 10 else None,
+                "an address typed into the bar did not bring the second page: its "
+                "blue heading never appeared. The server was asked for "
+                f"{asked[before_typed:]!r}.",
+                seconds=30)
+        except Failure:
+            wt, ht, pxt = parse_ppm(guest.screendump())
+
+            with open(args.out.replace(".png", "-typed.png"), "wb") as f:
+                f.write(png(wt, ht, pxt))
+
+            raise
+
+        if not any(LINKED in p for p in asked[before_typed:]):
+            raise Failure(f"the typed address asked for {asked[before_typed:]!r}, "
+                          f"not {LINKED}. Wrote {args.out}.")
+
+        #
+        # **Back**, the first button in the row: to the start page Home
+        # opened, which is compiled in - so the yellow goes and nothing is
+        # asked of the server.
+        #
+        before_back = len(asked)
+        guest.mouse_to(*_to_tablet(x0 + 15, y0 - TOOL + 16, w5, h5))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+
+        settle(
+            guest,
+            lambda w_, h_, px_: True if second_page(px_, w_) == 0 else None,
+            "Back did not leave the second page: its blue heading stayed.",
+            seconds=20)
+
+        if len(asked) != before_back:
+            raise Failure(f"Back to the start page asked the server for "
+                          f"{asked[before_back:]!r}. Wrote {args.out}.")
+
+        #
+        # **The pictures drawn**: the test page again, and pages down until
+        # the PNG's magenta square is on the screen, and the JPEG's cyan one.
+        # Both are fetched as files of their own, so the server must be
+        # asked for each as well.
+        #
+        typed("\x0c")
+        time.sleep(0.4)
+        typed("http://10.0.2.2:%d/%s\n" % (port, name))
+        time.sleep(3.0)
+        seen_colours = set()
+
+        for _ in range(14):
+            wi, hi, pxi = parse_ppm(guest.screendump())
+            at = reader(pxi, wi)
+
+            for y in range(y0, min(hi, y0 + WIN_H - TOOL - STAT), 3):
+                for x in range(x0, min(wi, x0 + WIN_W - SBAR), 3):
+                    c = at(x, y)
+
+                    if c[0] > 235 and c[1] < 25 and c[2] > 235:
+                        seen_colours.add("magenta")
+                    elif c[0] < 25 and c[1] > 235 and c[2] > 235:
+                        seen_colours.add("cyan")
+
+            if seen_colours == {"magenta", "cyan"}:
+                break
+
+            guest.sendkey("spc")
+            time.sleep(0.8)
+
+        with open(args.out.replace(".png", "-images.png"), "wb") as f:
+            f.write(png(wi, hi, pxi))
+
+        pictures = [p for p in asked if p.endswith((".png", ".jpg"))]
+
+        if seen_colours != {"magenta", "cyan"}:
+            raise Failure(
+                "the test page's pictures were not drawn: of the PNG's magenta "
+                f"and the JPEG's cyan the screen showed {sorted(seen_colours) or 'neither'}; "
+                f"the server was asked for {pictures!r}. Wrote "
+                f"{args.out.replace('.png', '-images.png')}.")
+
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "
               f"{short} to {tall} pixels tall, it scrolled "
               f"({moved} rows changed), Reload asked again, a link led to "
-              f"{followed[0]}, and Home rendered with nothing served.")
+              f"{followed[0]}, Home rendered with nothing served, an address "
+              f"typed with http:// brought the second page, Back left it, "
+              f"and the PNG and the JPEG were drawn.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)
+
+        # What the screen held when the harness gave up, whichever phase that
+        # was: a failure that says "never showed a page" is otherwise a
+        # sentence about a picture nobody can see.
+        if guest is not None:
+            try:
+                w_, h_, px_ = parse_ppm(guest.screendump())
+                last = os.path.splitext(args.out)[0] + "-failed.png"
+                os.makedirs(os.path.dirname(last) or ".", exist_ok=True)
+
+                with open(last, "wb") as f:
+                    f.write(png(w_, h_, px_))
+
+                print("the screen then: " + last, file=sys.stderr)
+                print(guest.seen[-1500:], file=sys.stderr)
+            except Exception as e:              # noqa: BLE001 - a dead guest
+                print("and no picture of it: %s" % e, file=sys.stderr)
+
         return 1
     finally:
         run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS = saved

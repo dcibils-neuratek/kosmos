@@ -45,17 +45,14 @@ end
 
 print(("connecting to %s port %d"):format(words[1], port))
 
-local conn, why = fs.connect("/Network", where, port)
+local conn, why, said = fs.connect("/Network", where, port)
 
 if not conn then
   --
-  -- The refusals worth telling apart, by the numbers `netproto.h` gives
-  -- them. "Refused" and "timed out" are different facts about the far end
-  -- and a person debugging needs to know which.
+  -- The refusals worth telling apart - "refused" and "timed out" are
+  -- different facts about the far end, and a person debugging needs to know
+  -- which - in the Network Kit's words for them, which are `netproto.h`'s.
   --
-  local said = ({ [4] = "no route to it", [7] = "connection refused",
-                  [9] = "timed out", [5] = "too many connections open" })[why]
-
   print("telnet: " .. (said or tostring(why)))
   return
 end

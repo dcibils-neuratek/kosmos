@@ -149,10 +149,6 @@ SUITES = [
     Suite("arm-telnetd", ["python3", "tools/run_telnetd.py", ARM]),
     Suite("x86-telnetd", ["python3", "tools/run_telnetd.py", X86], x86=True),
 
-    # **The Servers window** (`roadmap.md`, remote step 6): opened over
-    # Telnet on the M700's own boot, seeing the session that opened it, a
-    # Disconnect ending that session, and the web server it kept to start
-    # with the machine serving a page after the next boot.
     # **Randomness, from every source a machine can have and none** (HTTPS
     # step 1): virtio-rng on both boards, RDRAND on x86's `max` processor,
     # and a machine with neither refusing rather than pretending.
@@ -164,8 +160,22 @@ SUITES = [
     Suite("arm-tls", ["python3", "tools/run_tls.py", ARM]),
     Suite("x86-tls", ["python3", "tools/run_tls.py", X86], x86=True),
 
+    # **The Servers window** (`roadmap.md`, remote step 6): opened over
+    # Telnet on the M700's own boot, seeing the session that opened it, a
+    # Disconnect ending that session, and the web server it kept to start
+    # with the machine serving a page after the next boot.
     Suite("arm-servers", ["python3", "tools/run_servers.py", ARM]),
     Suite("x86-servers", ["python3", "tools/run_servers.py", X86], x86=True),
+
+    # **The browser, browsing** (`roadmap.md` 6zz a, b): the test page in
+    # `assets/www/` served from this Mac - drawn, scrolled, reloaded, a link
+    # followed, Home with nothing served, an address typed after Control-L,
+    # Back, and both pictures on the screen. Diego, 30 September: "make sure
+    # your gate tests now include browser tests".
+    Suite("arm-browser", ["python3", "tools/run_browser.py", ARM,
+                          "--out", "build/browser.png"]),
+    Suite("x86-browser", ["python3", "tools/run_browser.py", X86,
+                          "--out", "build/x86_64/browser.png"], x86=True),
 
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is

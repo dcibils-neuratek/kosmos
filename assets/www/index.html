@@ -1,0 +1,143 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos - the browser test page</title>
+<!--
+  The browser's test page, and its page benchmark (roadmap.md 6zz a).
+  Diego, 30 September 2026: "lets put a html there that tests the html
+  capabilities", "images, labels, titles, tables,etc", "that will be our
+  page benchmark tool for the browser". Every part is numbered and says
+  what it should look like, so a person reads the page as a checklist; the
+  browser's status line says what it cost to fetch, parse, lay out and
+  paint, so the same page is also the number to watch. Served from
+  /Home/www by httpd, and by the test harness from this Mac.
+-->
+<style>
+  body { font-family: serif; color: #1c1c1c; background: #ffffff; margin: 24px; }
+  h1 { color: #8b1e1e; }
+  h2 { color: #8b1e1e; border-bottom: 1px solid #cccccc; }
+  .said { color: #666666; font-style: italic; font-size: 90%; }
+  .box { border: 2px solid #2a55c9; background: #eef2fb; padding: 10px; margin: 8px 0; }
+  .right { text-align: right; }
+  .centre { text-align: center; }
+  .big { font-size: 150%; }
+  .small { font-size: 75%; }
+  #green { color: #2f8a55; }
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #999999; padding: 4px 10px; }
+  th { background: #eeeeee; }
+  code, pre { font-family: monospace; }
+  pre { background: #f4f4f4; padding: 8px; }
+  blockquote { border-left: 4px solid #cccccc; margin-left: 0; padding-left: 12px; color: #444444; }
+</style>
+</head>
+<body>
+
+<h1>Kosmos &mdash; the browser test page</h1>
+<p class="said">Every kind of thing a document has, each saying what it should look like. The window's title should read "Kosmos - the browser test page".</p>
+
+<p><a href="second.html">The second page</a> &middot; <a href="#tables">down to the tables</a> &middot; <a href="missing.html">a page that is not there</a></p>
+
+<h2>1. Headings</h2>
+<p class="said">Six sizes, each smaller than the one before, the first as large as this page's title.</p>
+<h1>Heading one</h1>
+<h2>Heading two</h2>
+<h3>Heading three</h3>
+<h4>Heading four</h4>
+<h5>Heading five</h5>
+<h6>Heading six</h6>
+
+<h2>2. Text and its styles</h2>
+<p class="said">Each word looking like what it says.</p>
+<p>A paragraph with <b>bold</b>, <strong>strong</strong>, <i>italic</i>, <em>emphasis</em>, <u>underlined</u>, <s>struck through</s>, <code>code</code>, <kbd>Super T</kbd>, <mark>marked</mark>, <small>small</small>, H<sub>2</sub>O and E = mc<sup>2</sup>.</p>
+<p>A line broken here<br>and carrying on here, on a line of its own.</p>
+<p>Letters beyond ASCII: caf&eacute;, ma&ntilde;ana, &Uuml;ber, &laquo;quotes&raquo;, &ldquo;curly quotes&rdquo;, an em dash &mdash; and &copy; 2026.</p>
+
+<h2>3. Lists</h2>
+<p class="said">Bullets, numbers from one, a list inside a list indented further, and terms with their meanings under them.</p>
+<ul>
+  <li>The kernel: threads, address spaces, IPC, capabilities</li>
+  <li>The servers, each a process of its own
+    <ul>
+      <li>the console</li>
+      <li>the disk</li>
+    </ul>
+  </li>
+  <li>The desktop</li>
+</ul>
+<ol>
+  <li>Boot</li>
+  <li>Log in</li>
+  <li>Open the browser</li>
+</ol>
+<dl>
+  <dt>Nebula</dt><dd>The microkernel.</dd>
+  <dt>Kosmos</dt><dd>The system that runs on it.</dd>
+</dl>
+
+<h2 id="tables">4. Tables</h2>
+<p class="said">A caption, a header row shaded grey, borders round every cell, and the last row's second cell spanning two columns.</p>
+<table>
+  <caption>What a page costs</caption>
+  <tr><th>Stage</th><th>What it does</th><th>Where</th></tr>
+  <tr><td>fetch</td><td>the bytes off the network</td><td>the Network Kit</td></tr>
+  <tr><td>parse</td><td>HTML and CSS into a document</td><td>NetSurf's libraries</td></tr>
+  <tr><td>layout</td><td>boxes into places</td><td>web_paint.c</td></tr>
+  <tr><td>paint</td><td colspan="2">places into pixels, once, then scrolled by blits</td></tr>
+</table>
+
+<h2>5. Images</h2>
+<p class="said">A PNG, 240 by 135, blue into gold with a magenta square in its top right; a JPEG of the same size, grey stripes with a cyan square; and a picture that is not there, shown by its words.</p>
+<p><img src="kosmos.png" width="240" height="135" alt="the Kosmos test picture"></p>
+<p><img src="photo.jpg" width="240" height="135" alt="stripes, as a JPEG"></p>
+<p><img src="nothing-here.png" alt="a picture that is not there"></p>
+
+<h2>6. Labels and a form</h2>
+<p class="said">Each label beside its field; a box that can be ticked; a choice of three; a button. Nothing here is sent anywhere.</p>
+<form action="#">
+  <p><label for="name">Name</label> <input id="name" type="text" value="Diego"></p>
+  <p><label for="machine">Machine</label> <select id="machine"><option>M700</option><option>ThinkPad T14</option><option>QEMU</option></select></p>
+  <p><input id="tick" type="checkbox" checked> <label for="tick">Remember this machine</label></p>
+  <p><label for="note">A note</label><br><textarea id="note" rows="3" cols="40">Several lines of text.</textarea></p>
+  <p><button type="button">Send nothing</button></p>
+</form>
+
+<h2>7. Quotes and code</h2>
+<p class="said">A quotation set in from a grey rule, and code on a grey ground keeping its spaces.</p>
+<blockquote>A desktop should feel instant on hardware that exists now.</blockquote>
+<pre>
+local tls = use("/Kosmos/Kits/tls")
+local t = tls.client(conn, "example.com")
+t:write("GET / HTTP/1.0\r\n\r\n")
+</pre>
+
+<h2>8. CSS</h2>
+<p class="said">A blue-bordered box on a pale blue ground; one line to the right, one in the middle; one larger, one smaller; one green by its id.</p>
+<div class="box">A box with a border, a background and room inside it.</div>
+<p class="right">To the right.</p>
+<p class="centre">In the middle.</p>
+<p class="big">Larger than the rest.</p>
+<p class="small">Smaller than the rest.</p>
+<p id="green">Green, by its id.</p>
+<p style="color: #b23b2e; font-weight: bold;">Red and bold, by a style of its own.</p>
+
+<h2>9. A horizontal rule</h2>
+<p class="said">A line across the page, and then the end.</p>
+<hr>
+
+<h2>10. Length</h2>
+<p class="said">Enough of the page to scroll: every paragraph below is the same, numbered.</p>
+<p>1. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+<p>2. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+<p>3. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+<p>4. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+<p>5. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+<p>6. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+<p>7. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+<p>8. A page is laid out once into a surface as tall as itself, and scrolling is one blit out of it.</p>
+
+<p class="said">The end of the test page. <a href="second.html">The second page</a>.</p>
+</body>
+</html>

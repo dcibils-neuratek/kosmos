@@ -606,8 +606,8 @@ make browser PAGE=/some.html   # the same, on a page of your own
 ```
 
 Both boot a `WEB=1` image - the ordinary one, since `FULL=1` turns the web
-kit on - and `make test` builds an image of its own without it, so neither
-is part of `make test`.
+kit on. `make browser` is in `make test` since 30 September, as `arm-browser`
+and `x86-browser` on the gate's full images (18.295); `make web` is not.
 
 `make web` asks the guest to parse things and answers over serial: a title
 out of a tree, a `p` counted through a walk rather than a token count, `&amp;`
@@ -621,8 +621,8 @@ points the browser at it and looks at the screen. What it is mostly is a
 camera, and `build/browser.png` is written whether it passes or fails,
 because a failure is exactly when the picture is wanted.
 
-The three checks are deliberately blunt, because a check that goes stale is
-worse than no check:
+The checks are deliberately blunt, because a check that goes stale is worse
+than no check:
 
 | check | what it catches |
 | ----- | --------------- |
@@ -631,6 +631,10 @@ worse than no check:
 | six presses of Down change the picture | the page is laid out once into a surface taller than the window and scrolled by blitting a band out of it. A browser that lays out correctly and will not move is one nobody can read the bottom of |
 | clicking Reload asks the server again | a direct window has no widgets, so every control in the chrome is a rectangle the application knows the position of and a click is a comparison against it. Nothing else here exercises that arithmetic |
 | a link, found by its colour, leads to the other page | six things at once: the layout kept its boxes, the click became a page coordinate, the run under it was found, its relative address resolved, the fetch happened, and the result was laid out. Finding it *by colour* also establishes that the run knew it was inside an `<a>` |
+| Home renders with nothing served | `about:start` is compiled into the browser, so a new build can be tried without a web server anywhere |
+| an address typed after Control-L brings the second page | Control-L selects the whole bar and what is typed replaces it, `http://` and all; the second page's heading is a blue nothing else uses |
+| Back leaves it, asking for nothing | history kept, and a page gone back to comes from what was kept |
+| both pictures are drawn | the test page's PNG has a magenta square and its JPEG a cyan one; the page is paged down until both have been on the screen |
 
 Six presses rather than one, and for the same reason the detached-program
 check sleeps 3.3 seconds rather than 3: a line is forty pixels and the check
@@ -640,11 +644,11 @@ cannot.
 
 **What is deliberately not checked is what the page says.** Comparing
 against a reference rendering would be a check that fails every time the
-layout improves, which is every time somebody does the work. The page in
-`tools/test_page.html` describes what it is testing in its own text, so the
+layout improves, which is every time somebody does the work. The page,
+`assets/www/index.html`, describes what it is testing in its own text, so the
 picture is readable by a person and the harness only has to establish that
-there is a picture at all. `tools/test_linked.html` is the other end of its
-links, and lists what the renderer still cannot do.
+there is a picture at all. `assets/www/second.html` is the other end of its
+links.
 
 Two pictures come out, not one: `build/browser.png` is the page it started
 on and `build/browser-linked.png` is the page it arrived at. The server
@@ -13951,3 +13955,70 @@ boundary to fall inside the character, which under a gate's load it did - and
 it is the failure seen once earlier the same day and not explained then. One
 incremental decoder for the whole stream now (`run_screenshot.py`, `_drain`),
 which every runner shares.
+
+## 18.295 The browser in the gate, its test page, and a page asked for before the lease
+
+**`roadmap.md` 6zz a and b.** Diego, 30 September: "make sure your gate
+tessts now include browser tests so we make sure the browser can navigate to
+urls and browse dociuments", and of a page to test with, "images, labels,
+titles, tables,etc", "that will be our page benchmark tool for the browser".
+
+- **The test page** is `assets/www/index.html`, with `second.html`, a PNG
+  and a JPEG beside it: ten numbered parts - headings, text and its styles,
+  lists, a table with a caption and a spanning cell, the two pictures and one
+  that is not there, labels and a form, a quotation and code, CSS by class,
+  id and `style`, a rule, and enough length to scroll - each saying what it
+  should look like, so a person reads the page as a checklist, and the
+  status line's fetch, parse, layout and paint make it the benchmark.
+  `make www` puts it into the QEMU disk's `/Home/www`, where the Servers
+  window's web server serves it; QEMU must be quit first, and it refuses
+  otherwise.
+- **`arm-browser` and `x86-browser`** (`tools/run_browser.py`, the suite that
+  was `make browser`): the page served from this Mac, drawn in more than one
+  size, scrolled, reloaded, a link followed, Home with nothing served, then
+  **an address typed** after Control-L - `http://10.0.2.2:port/second.html` -
+  bringing the second page, **Back** leaving it with nothing asked, and the
+  page paged down until **both pictures** have been on the screen. About 35
+  seconds each; the gate that took them in, 75 suites in 8:58.
+
+**What the new checks found, in the browser:** Control-L put the caret at the
+end of the address rather than selecting it, so a typed address went on the
+end of the old one; and `http://` typed in the bar was looked up as a host
+called `http:`, which is what Diego's screenshot showed as "cannot look up
+http:: 12". Control-L selects the whole bar now, drawn selected, and a key
+replaces it; the scheme is taken off before the host is read. Control: without
+the select-all, the second page's heading never appears.
+
+**And what running it on x86 found, in the network stack.** The first x86
+run failed with no page; four side by side failed one in three. The harness
+now keeps the screen when it gives up (`browser-failed.png`), and the screen
+said "could not connect: 3": the browser had asked for the page before DHCP
+had given the machine its address - the lease line came after the window's
+in the log - and the stack refused with `NET_ERR_NO_ROUTE`. Anything opened
+first at boot races the lease the same way, `fetch` and `telnet` too.
+
+So **the stack holds what is asked for while it is still asking**
+(`net.c`, `still_asking`, `release_held`): a connection is made and its SYN
+waits, a name is kept and its question waits, each sent on the first pass of
+the loop after there is an address and a MAC to send it to, and each bounded
+- the connection by its own five turns, a name by its caller's wait or
+thirty seconds - and then refused as before. An address given by hand, or
+none asked for, is refused at once, as it was.
+
+**`arm-network` and `x86-network` gain a check, 26 now**, and it does not
+depend on luck: QEMU starts paused (`-S`), the link is pulled over QMP
+before the guest runs an instruction, `host example.com 20 &` and `fetch` are
+typed at the prompt, three seconds pass - a refusal is immediate - and only
+then is the link put back. The lease must come after the command, the page
+must arrive, and the lookup must not be told there is no resolver. Controls,
+one for each half: connect refusing again says "no route to it" and the page
+never comes; resolve refusing again says "no resolver is configured". After
+it, the x86 browser suite passed four runs side by side out of four.
+`_connect_qmp` waits for QEMU's socket now, since nothing had spoken to it
+before the guest was running.
+
+**And the words for it.** The Network Kit returns a sentence beside every
+failure's number (`net_kosmos.c`, `sentence`), and `fetch`, `telnet`, the
+browser and the Network panel show it rather than keeping tables of their
+own - three of which called 4 "no route to it", when `netproto.h` gives that
+to 3 and calls 4 nobody answering for the address.

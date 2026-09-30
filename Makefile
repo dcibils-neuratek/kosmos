@@ -2813,6 +2813,20 @@ bump-major:
 
 disk: $(DISK)
 
+# **The browser's test page into `/Home/www` on the QEMU disk**
+# (`assets/www/`, `roadmap.md` 6zz a), where the Servers window's web server
+# serves it - Diego, 30 September: "put a sample doc in /www so you can try".
+# The disk is formatted by its first boot, so this is for one that has been
+# booted, and never while QEMU has it open.
+.PHONY: www
+www: $(HOSTDIR)/lua
+	@test -s $(DISK) || { echo "$(DISK): boot it once first (make qemu), so it is formatted"; exit 1; }
+	@if pgrep -f "qemu-system.*$(DISK)" >/dev/null; then echo "QEMU has $(DISK) open: quit it first"; exit 1; fi
+	@for f in $(wildcard assets/www/*.html assets/www/*.png assets/www/*.jpg); do \
+	    $(HOSTDIR)/lua tools/kfs.lua put $(DISK) $$f /Home/www/$$(basename $$f) || exit 1; \
+	done
+	@echo "the test page is in /Home/www: switch Web on in Servers, and make HTTP=8080 qemu serves it at localhost:8080"
+
 #
 # A Dock icon you can drop files on, and they land in the image's /Home.
 #

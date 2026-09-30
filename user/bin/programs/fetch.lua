@@ -69,10 +69,10 @@ local where = address(host)
 
 if not where and host and host ~= "" then
   local hz = (sys.info() or {}).tick_hz or 250
-  local found, why = fs.resolve(host, 5 * hz)
+  local found, why, said = fs.resolve(host, 5 * hz)
 
   if not found then
-    print("fetch: " .. host .. ": " .. tostring(why))
+    print("fetch: " .. host .. ": " .. (said or tostring(why)))
     return
   end
 
@@ -84,12 +84,9 @@ if not where then
   return
 end
 
-local conn, why = fs.connect("/Network", where, port)
+local conn, why, said = fs.connect("/Network", where, port)
 
 if not conn then
-  local said = ({ [4] = "no route to it", [7] = "connection refused",
-                  [9] = "timed out", [5] = "too many connections open" })[why]
-
   print("fetch: " .. (said or tostring(why)))
   return
 end

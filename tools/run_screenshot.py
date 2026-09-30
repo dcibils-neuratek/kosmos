@@ -611,6 +611,14 @@ class Guest:
         if self.qmp is not None:
             return
 
+        # QEMU makes the socket a moment after it starts, and a harness that
+        # speaks to it before the guest runs - `-S`, then `cont` - is there
+        # first (`run_network.py`, before the lease).
+        deadline = time.monotonic() + 10
+
+        while not os.path.exists(self.qmppath) and time.monotonic() < deadline:
+            time.sleep(0.05)
+
         self.qmp = socket.socket(socket.AF_UNIX)
         self.qmp.settimeout(self.timeout)
         self.qmp.connect(self.qmppath)
