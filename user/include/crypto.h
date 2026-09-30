@@ -46,4 +46,14 @@ void x25519_base(uint8_t out[32], const uint8_t scalar[32]);
  * to stay secret. */
 void des_encrypt(const uint8_t key[8], const uint8_t in[8], uint8_t out[8]);
 
+/* A generator: ChaCha20 with fast key erasure, seeded from the hardware
+ * (`SYS_ENTROPY`) by whoever holds one - `crypto.random` in a process. */
+struct drbg {
+    uint8_t key[32];
+};
+
+void drbg_seed(struct drbg *d, const uint8_t seed[32]);
+void drbg_reseed(struct drbg *d, const uint8_t fresh[32]);
+void drbg_generate(struct drbg *d, uint8_t *out, size_t bytes);
+
 #endif /* KOSMOS_CRYPTO_H */

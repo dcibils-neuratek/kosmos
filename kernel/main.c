@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "entropy.h"
 #include "console.h"
 #include "trap.h"
 #include "pmm.h"
@@ -1086,6 +1087,17 @@ void kmain(void)
             boot_fact("no network card it can drive; this machine is on its own");
         }
     }
+
+    /*
+     * And randomness, which HTTPS stands on (`kernel/entropy.c`). Found here
+     * with the other devices so the log says which source a machine has -
+     * or that it has none, which on a machine that should is the first
+     * thing to know about why a secure connection would not start.
+     */
+    boot_fact_begin();
+    kputs(entropy_init() ? "entropy: " : "no entropy: ");
+    kputs(hal_entropy_describe());
+    boot_fact_end();
 
     thread_init();
     boot_stage("threads");

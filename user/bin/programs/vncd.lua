@@ -36,9 +36,8 @@
 -- chooses the security: none, or VNC Authentication when the Servers
 -- window has a password - read at each connection, so a password set there
 -- holds for the next viewer without a restart. VNC Authentication is DES
--- over a challenge, in C (`/Kosmos/Kits/crypto`), and it is weak: eight
--- characters, a cipher broken since 1998, and a challenge made from the
--- counter since Kosmos has no source of randomness yet. It keeps out a
+-- over a random challenge, both in C (`/Kosmos/Kits/crypto`), and it is
+-- weak: eight characters and a cipher broken since 1998. It keeps out a
 -- visitor on the network, which is what it is for here.
 --
 -- **Raw pixels**, packed in C into the format the viewer asks for
@@ -358,18 +357,15 @@ local function translate(held, keysym, down)
   return code, string.char(c)
 end
 
--- Sixteen bytes a viewer must answer. From the counter, mixed: Kosmos has
--- no randomness to take them from yet, which the header says.
+-- Sixteen bytes a viewer must answer, from the Crypto Kit's generator -
+-- which the hardware seeds - so a challenge cannot be guessed and an
+-- answer seen once cannot be played again. Nil on a machine with no source,
+-- and then no password is asked for at all: a challenge anyone can predict
+-- would be a lock that only looks locked.
 local function challenge()
-  local t = sys.ticks()
-  local out = {}
+  local ok, bytes = pcall(crypto.random, 16)
 
-  for i = 1, 16 do
-    t = t * 6364136223846793005 + 1442695040888963407
-    out[i] = string.char((t >> 33) & 0xFF)
-  end
-
-  return table.concat(out)
+  return ok and bytes or nil
 end
 
 -- VNC's key is the password with each byte's bits reversed - the one quirk
@@ -529,6 +525,13 @@ local function take(v)
       local pass, control = settings()
 
       v.control = control
+
+      if pass and not challenge() then
+        note(dotted(v.from) .. "  refused: a password is kept and this machine "
+             .. "has no randomness to ask it with")
+        send(v, string.pack(">I4", 0) .. string.pack(">s4", "no randomness for a challenge"))
+        return false, "no randomness"
+      end
 
       if pass then
         v.challenge = challenge()

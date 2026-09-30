@@ -1111,3 +1111,74 @@ void des_encrypt(const uint8_t key[8], const uint8_t in[8], uint8_t out[8])
         out[i] = (uint8_t)(v >> (56 - 8 * i));
     }
 }
+
+/*------------------------------------------------------------------------
+ * A generator. ChaCha20 with fast key erasure.
+ *
+ * **What `crypto.random` hands out**, and what TLS's randomness will come
+ * from (`roadmap.md`, the browser: TLS, step 1). Seeded from the hardware
+ * through the kernel's health test; everything after that is this.
+ *
+ * Each request runs ChaCha20 from counter zero under the current key: the
+ * first 32 bytes of that keystream become the next key and the rest is the
+ * output, so the key that made a given output is gone once it is handed
+ * over - a process whose memory is read later cannot be run backwards to
+ * what it already gave. The construction OpenBSD's `arc4random` has used
+ * since 2014, and the one Bernstein named. A kilobyte at a time, each with
+ * its own key.
+ *
+ * Held by `test_crypto` to OpenSSL's ChaCha20 keystream, which is the
+ * whole of what this is: the same bytes, in the same order, cut there.
+ *----------------------------------------------------------------------*/
+
+void drbg_seed(struct drbg *d, const uint8_t seed[32])
+{
+    memcpy(d->key, seed, sizeof(d->key));
+}
+
+/* Fresh bytes mixed in rather than the key replaced: a reseed from a source
+ * that has turned bad cannot take away what the key already had. */
+void drbg_reseed(struct drbg *d, const uint8_t fresh[32])
+{
+    struct sha256 mix;
+
+    sha256_init(&mix);
+    sha256_update(&mix, d->key, sizeof(d->key));
+    sha256_update(&mix, fresh, 32);
+    sha256_final(&mix, d->key);
+    memset(&mix, 0, sizeof(mix));
+}
+
+void drbg_generate(struct drbg *d, uint8_t *out, size_t bytes)
+{
+    static const uint8_t nonce[12] = { 0 };
+
+    while (bytes > 0) {
+        size_t chunk = bytes < 1024 ? bytes : 1024;
+        uint8_t block[64], next[32];
+        uint32_t counter = 0;
+        size_t done, take;
+
+        chacha20_block(d->key, counter++, nonce, block);
+        memcpy(next, block, 32);
+
+        take = chunk < 32 ? chunk : 32;
+        memcpy(out, block + 32, take);
+        done = take;
+
+        while (done < chunk) {
+            chacha20_block(d->key, counter++, nonce, block);
+            take = (chunk - done < 64) ? chunk - done : 64;
+            memcpy(out + done, block, take);
+            done += take;
+        }
+
+        memcpy(d->key, next, sizeof(d->key));
+        memset(block, 0, sizeof(block));
+        memset(next, 0, sizeof(next));
+
+        out += chunk;
+        bytes -= chunk;
+    }
+}
+

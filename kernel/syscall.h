@@ -525,7 +525,17 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_PROFILE     62  /* (op, buf, max)         -> count or error     */
 
-#define SYS_MAX         63
+/*
+ * **The hardware's randomness** (`roadmap.md`, the browser: TLS, step 1):
+ * up to `ENTROPY_MAX` bytes of it, held to a health test first
+ * (`kernel/entropy.c`). Any process may ask - it is a device read and grants
+ * nothing - and `SYS_ERR_NO_DEVICE` is a machine with no source, or one the
+ * test retired. A program wants the Crypto Kit's generator, seeded from
+ * this, rather than this.
+ */
+#define SYS_ENTROPY     63  /* (buf, len)             -> len or error       */
+
+#define SYS_MAX         64
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */

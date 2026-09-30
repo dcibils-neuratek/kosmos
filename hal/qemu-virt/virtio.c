@@ -17,6 +17,7 @@
 #include "syscall.h"
 #include "qemu-virt.h"
 #include "snd.h"
+#include "rng.h"
 #include "virtio.h"
 #include "mmio.h"
 
@@ -254,6 +255,7 @@ unsigned hal_bus_scan(struct bus_device *out, unsigned max)
         case VIRTIO_ID_BLOCK: out[n].claimed = hal_blk_present()  ? 1u : 0u; break;
         case VIRTIO_ID_INPUT: out[n].claimed = keyboard_present() ? 1u : 0u; break;
         case VIRTIO_ID_SOUND: out[n].claimed = virtio_snd_present()  ? 1u : 0u; break;
+        case VIRTIO_ID_RNG:   out[n].claimed = virtio_rng_present()  ? 1u : 0u; break;
         default:              out[n].claimed = 0; break;
         }
 

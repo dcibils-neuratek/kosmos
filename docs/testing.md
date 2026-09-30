@@ -13862,3 +13862,46 @@ a core sitting idle. `--at-once` is seven now. And the Servers suite gave back
 its own: its new waits poll for what they wait for - the cursor's corner, on
 the bare desk above the version line, since a corner a Terminal covered blinks
 by itself on x86 - and it is about fifty seconds a board.
+
+## 18.293 Randomness: a source in the HAL, a health test in the kernel, a generator in the Crypto Kit
+
+**HTTPS, step 1** (`roadmap.md`, the browser: TLS) - Diego, 30 September:
+"Keep building, go for https". TLS over bad randomness still works and is
+not secure, so the source came first.
+
+- **`hal_entropy`**, with two sources: **RDRAND** on a PC whose CPUID says it
+  has it (the M700's Skylake does), retried ten times as Intel's guidance
+  has it, and **virtio-rng** (`hal/virtio/rng.c`, device 4: one queue, a
+  buffer the device writes) under QEMU on both boards - a Cortex-A72 has no
+  RNDR and QEMU's default x86 model no RDRAND. The harness, `make qemu`,
+  `make x86` and `run-kosmos.sh` give the machines the device. The boot says
+  which: `entropy: virtio-rng`, `entropy: RDRAND`, or `no entropy: ...`.
+- **`kernel/entropy.c`**: SP 800-90B's repetition count test on 64-bit words.
+  A word equal to the one before it - once in 2^64 for a working source, the
+  next word for a stuck one - retires the source for good, and says so once.
+  **`SYS_ENTROPY`** hands out up to 256 bytes through a kernel buffer, so the
+  test sees them before the process does; any process may ask.
+- **`crypto.random(n)`**: ChaCha20 with fast key erasure in `crypto.c` -
+  each request's first 32 bytes of keystream the next key - seeded from
+  `SYS_ENTROPY` on first use and mixed with fresh bytes, through SHA-256,
+  after each megabyte. An error, never weaker bytes, with no source.
+  `test_crypto` holds it to OpenSSL's ChaCha20 keystream: 20 checks.
+- **VNC's challenge comes from it now**, where it came from the counter; with
+  no source a password is not asked with a guessable challenge - the viewer
+  is refused, with a reason.
+- **`sys.entropy`'s refusal said "unknown error"**, and so had every
+  `SYS_ERR_NO_DEVICE`, `_BUSY`, `_NOT_IMAGE` and `_BADCALL` for as long as
+  those existed: the table of reasons had fallen behind `syscall.h`. It has
+  all of them now.
+
+**`entropy`, eight checks, both boards in one suite** (`tools/run_entropy.py`,
+about 5 s - four boots to the shell and a line typed there): virtio-rng on
+ARM and x86 and RDRAND on x86's `max` processor, each said at boot, each two
+different 256-byte answers of sixty-four different words and two different
+answers from the generator; and x86 with neither saying so, `sys.entropy`
+refused with "this machine has nothing of that kind" and `crypto.random`
+raising. **Controls**: a stuck source (the kernel's buffer zeroed after the
+read) answers nothing on all three - the health test retires it; a generator
+that never rekeys gives the same answer twice on all three, and fails
+`test_crypto`'s second request. The probe itself catches every error, so a
+machine that has lost its randomness answers at once rather than timing out.

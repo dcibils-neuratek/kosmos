@@ -859,6 +859,23 @@ bool hal_key_event(unsigned *code, bool *down);
 unsigned long hal_rtc_seconds(void);
 
 /*
+ * Randomness, from the hardware (`roadmap.md`, the browser: TLS, step 1).
+ *
+ * **Two real sources behind it, which is what earns it a place here**:
+ * RDRAND on a PC whose processor has it - the M700's does, and CPUID says -
+ * and virtio-rng under QEMU on both boards, whose processors have no such
+ * instruction. `hal_entropy` fills what it can and says how much; the
+ * kernel holds what comes back to a health test before any process sees a
+ * byte of it (`kernel/entropy.c`), since a source that has broken still
+ * answers, and answers the same thing.
+ *
+ * Found at boot, and described there, like the disk and the sound.
+ */
+bool          hal_entropy_init(void);
+size_t        hal_entropy(void *buf, size_t bytes);
+const char   *hal_entropy_describe(void);
+
+/*
  * Sound: PCM out, and the deadline that comes with it.
  *
  * The format is fixed here rather than negotiated per caller, and that is

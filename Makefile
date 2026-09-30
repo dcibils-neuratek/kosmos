@@ -264,6 +264,8 @@ SRCS := boot/start.S \
         hal/qemu-virt/input_describe.c \
         hal/virtio/blk.c \
         hal/qemu-virt/blk_bind.c \
+        hal/virtio/rng.c \
+        hal/qemu-virt/entropy_bind.c \
         hal/qemu-virt/devices.c \
         kernel/console.c \
         kernel/screen.c \
@@ -287,6 +289,7 @@ SRCS := boot/start.S \
         kernel/spinlock.c \
         kernel/syscall.c \
         kernel/profile.c \
+        kernel/entropy.c \
         kernel/main.c \
         $(GEN)/init_bin.c
 
@@ -2646,7 +2649,18 @@ ACCEL := $(if $(FAST),-accel hvf -cpu host,-cpu cortex-a72)
 # `make HTTP=8080 qemu` then `curl localhost:8080` reaches `httpd` on port 80
 # inside the guest - which is what makes the HTTP server testable at all.
 #
-FORWARD := $(if $(HTTP),$(comma)hostfwd=tcp::$(HTTP)-:80,)
+FORWARD := $(if $(HTTP),$(comma)hostfwd=tcp::$(HTTP)-:80,)$(if $(TELNET),$(comma)hostfwd=tcp::$(TELNET)-:23,)$(if $(VNC),$(comma)hostfwd=tcp::$(VNC)-:5900,)
+
+# **`TELNET=2323` and `VNC=5901`, the same way**, for the command line and
+# the screen (`telnetd` on 23 inside, `vncd` on 5900). Diego, 30 September,
+# with the Servers window open in `make qemu`: "how can i telnet into the
+# kosmos qemu instance?" - 10.0.2.15 is slirp's address for the guest and
+# this computer cannot reach it. `TELNET=` also starts `telnetd` at boot, as
+# a development stick does, so `make TELNET=2323 qemu` and then `telnet
+# localhost 2323` is the whole of it. `VNC=` forwards only: the screen is
+# switched on in Servers, since it lends the desktop. 5901 rather than 5900
+# on this side, which macOS's own Screen Sharing may hold.
+TELNETARG := $(if $(TELNET),-fw_cfg 'name=opt/kosmos/telnetd$(comma)string=23',)
 
 NET_FLAGS := $(if $(NONET),,-netdev user$(comma)id=net0$(FORWARD) \
                             -device virtio-net-device$(comma)netdev=net0)
@@ -2689,11 +2703,12 @@ QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) $(SMPARG) \
              -global virtio-mmio.force-legacy=false \
              $(ARM_DISPLAY) -device virtio-keyboard-device \
              -device virtio-tablet-device \
+             -device virtio-rng-device \
              $(AUDIO_FLAGS) \
              $(NET_FLAGS) \
              -drive file=$(DISK),format=raw,if=none,id=disk \
              -device virtio-blk-device,drive=disk \
-             $(BOOTARG) \
+             $(BOOTARG) $(TELNETARG) \
              -display cocoa$(ZOOM_FLAG)$(FULLSCREEN_FLAG) -serial mon:stdio \
              -kernel $(TARGET)
 
@@ -2706,7 +2721,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) $(SMPARG)
                     $(NET_FLAGS) \
                     -drive file=$(DISK),format=raw,if=none,id=disk \
                     -device virtio-blk-device,drive=disk \
-                    $(BOOTARG) \
+                    $(BOOTARG) $(TELNETARG) \
                     -kernel $(TARGET)
 
 .PHONY: all bump bump-minor bump-major qemu fast serial test droplet disktest powertest stress screenshot shot prepush frames bench bench-record debug disasm size clean dist release disk
@@ -2996,6 +3011,8 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/nvme.c \
              hal/pc/memdisk.c \
              hal/pc/blk_bind.c \
+             hal/virtio/rng.c \
+             hal/pc/entropy_bind.c \
              hal/pc/devices.c \
              hal/virtio/net.c \
              hal/virtio/input.c \
@@ -3031,6 +3048,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/spinlock.c \
              kernel/syscall.c \
              kernel/profile.c \
+             kernel/entropy.c \
              kernel/main.c \
              $(X86_BUILD)/init_bin.c
 
@@ -3213,7 +3231,8 @@ X86_DISPLAY := $(if $(filter Darwin,$(shell uname)),cocoa$(ZOOM_FLAG)$(FULLSCREE
 #
 X86_DEVICES := $(X86_DISPLAY) \
                -device virtio-tablet-pci \
-               -device virtio-net-pci,netdev=n0 -netdev user,id=n0 \
+               -device virtio-rng-pci \
+               -device virtio-net-pci,netdev=n0 -netdev user,id=n0$(FORWARD) \
                -drive file=$(DISK),format=raw,if=none,id=d0 \
                -device nvme,drive=d0,serial=kosmos \
                -device ich9-intel-hda -device hda-output,audiodev=a0 \
@@ -3477,6 +3496,7 @@ x86: x86-build $(DISK)
 	  $(if $(SERIAL),-nographic,-display $(X86_DISPLAY) -serial mon:stdio) \
 	  $(X86_DEVICES) \
 	  $(if $(BOOT),-fw_cfg name=opt/kosmos/boot$(comma)string=$(BOOT)) \
+	  $(TELNETARG) \
 	  -kernel $(X86_BUILD)/kosmos.bin
 
 # The same machine, running on this Mac's own cores. See ACCEL above for

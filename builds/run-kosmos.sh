@@ -332,6 +332,7 @@ else
                 -device ramfb \
                 -device virtio-keyboard-device \
                 -device virtio-tablet-device \
+                -device virtio-rng-device \
                 -display "$display" -serial mon:stdio
 fi
 

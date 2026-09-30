@@ -45,6 +45,13 @@ static const char *ipc_error(long status)
     case SYS_ERR_NO_CHILD: return "there is nothing to wait for";
     case SYS_ERR_NO_ROOM:  return "the machine is out of memory or processes";
     case SYS_ERR_NO_CAPS:  return "this process holds too many capabilities";
+    /* The rest of `syscall.h`'s list, which this had fallen behind: a
+     * machine with no source of randomness said "unknown error" when it was
+     * the first to be asked why (`testing.md` 18.293). */
+    case SYS_ERR_BADCALL:   return "the kernel has no such call";
+    case SYS_ERR_NO_DEVICE: return "this machine has nothing of that kind";
+    case SYS_ERR_NOT_IMAGE: return "those bytes are not a program image";
+    case SYS_ERR_BUSY:      return "one at a time, and another has it";
     default:   return "unknown error";
     }
 }
@@ -2288,6 +2295,33 @@ static int profile_refused(lua_State *L, long r)
     return 2;
 }
 
+/*
+ * `sys.entropy(n)` - `n` bytes of the hardware's randomness, 1 to 256, as a
+ * string; nil and why when the machine has no source or the kernel retired
+ * it. For diagnosis and the test: a program that wants random bytes wants
+ * `crypto.random`, a generator seeded from this, in C.
+ */
+static int l_entropy(lua_State *L)
+{
+    lua_Integer n = luaL_checkinteger(L, 1);
+    char bytes[256];
+    long r;
+
+    if (n < 1 || n > (lua_Integer)sizeof(bytes)) {
+        return luaL_error(L, "sys.entropy: 1 to 256 bytes, not %d", (int)n);
+    }
+
+    r = kosmos_entropy(bytes, (unsigned long)n);
+
+    if (r != (long)n) {
+        return fail(L, r < 0 ? r : SYS_ERR_NO_DEVICE);
+    }
+
+    lua_pushlstring(L, bytes, (size_t)n);
+    memset(bytes, 0, sizeof(bytes));
+    return 1;
+}
+
 static int l_profile(lua_State *L)
 {
     static const char *const ops[] = { "start", "read", "lost", "stop",
@@ -3279,6 +3313,7 @@ static const luaL_Reg sys_functions[] = {
     { "info",     l_info },
     { "name",     l_setname },
     { "processes", l_processes },
+    { "entropy",     l_entropy },
     { "profile",  l_profile },
     { "pointer",  l_pointer },
     { "bus",      l_bus },

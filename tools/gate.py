@@ -153,6 +153,11 @@ SUITES = [
     # Telnet on the M700's own boot, seeing the session that opened it, a
     # Disconnect ending that session, and the web server it kept to start
     # with the machine serving a page after the next boot.
+    # **Randomness, from every source a machine can have and none** (HTTPS
+    # step 1): virtio-rng on both boards, RDRAND on x86's `max` processor,
+    # and a machine with neither refusing rather than pretending.
+    Suite("entropy", ["python3", "tools/run_entropy.py", ARM, X86], x86=True),
+
     Suite("arm-servers", ["python3", "tools/run_servers.py", ARM]),
     Suite("x86-servers", ["python3", "tools/run_servers.py", X86], x86=True),
 

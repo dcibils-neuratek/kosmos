@@ -73,6 +73,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       README.kosmos.md beside it; and the SHA-1 it carries, under
       src/luacheck/vendor/sha1/LICENSE
 
+  BearSSL 0.6, by Thomas Pornin, MIT
+      runtime/upstream/bearssl/LICENSE.txt, with the vendoring recorded in
+      README.kosmos.md beside it; the TLS Kit's protocol, and its brssl
+      tool built on the Mac to turn the roots below into trust anchors
+
   LakeSnes, by angelo_wf and contributors, the CX4 by dink, MIT
       runtime/upstream/lakesnes/LICENSE.txt, with the vendoring recorded
       in README.kosmos.md beside it. Not in the system's image: `make
@@ -92,6 +97,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
   The Haiku icons, by Haiku, Inc., MIT
       assets/icons/, under the LICENSE beside them. The Haiku logo and
       leaf are Haiku, Inc.'s trademarks, and neither is among them
+
+  Mozilla's root certificates, as curl publishes them, MPL 2.0
+      assets/ca/cacert.pem, the roots the TLS Kit trusts; where it came
+      from, its hash and its licence are in the README beside it
 
   The wallpapers, photographs from Unsplash, under the Unsplash License
       assets/wallpapers/, under the LICENSE beside them, each credited to

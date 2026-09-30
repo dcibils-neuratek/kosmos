@@ -312,10 +312,13 @@ as a mouse's and a keyboard's, the Servers window's switch. The gate seven
 suites at a time: 70 in 8:40. **Stick 0.10.200** (`5748316`): OVMF 32, and
 the image booted with an e1000e - control kept over Telnet, `open vncd`, a
 whole frame taken and a click from the Mac logged by the window manager at
-exactly 300,300. Handed over in place of 0.10.199. **Next**: HTTPS - a
-random source first (virtio-rng under QEMU on both boards, RDRAND on the
-M700), then BearSSL, whose 0.6 tarball is in `build/downloads`, held to
-nixpkgs's hash.
+exactly 300,300. Handed over in place of 0.10.199.
+
+**HTTPS step 1, randomness** (`testing.md` 18.293; Diego: "Keep building, go
+for https"): `hal_entropy` (RDRAND, virtio-rng), the kernel's repetition test
+and `SYS_ENTROPY`, `crypto.random` in the Crypto Kit, VNC's challenge from
+it. **Next**: step 2, BearSSL 0.6 in a `tls` kit - its tarball is in
+`build/downloads`, held to nixpkgs's hash.
 Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU

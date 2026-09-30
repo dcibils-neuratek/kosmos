@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "syscall.h"
+#include "entropy.h"
 #include "irq.h"
 #include "process.h"
 #include "profile.h"
@@ -659,6 +660,32 @@ static long sys_disk(struct process *p, bool writing, uint64_t sector,
  * is the same division `design.md` §1 draws everywhere else, and it means a
  * new processor needs no kernel change to be described properly.
  */
+/*
+ * Randomness, into the caller's buffer (`SYS_ENTROPY`, `kernel/entropy.c`).
+ * Through a buffer of the kernel's own, so the health test sees the bytes
+ * before the process does and a retired source hands out nothing at all.
+ */
+static long sys_entropy(struct process *p, uintptr_t ptr, size_t len)
+{
+    uint8_t bytes[ENTROPY_MAX];
+
+    if (len == 0 || len > ENTROPY_MAX) {
+        return SYS_ERR_FAULT;
+    }
+
+    if (!process_may_write(p, ptr, len)) {
+        return SYS_ERR_FAULT;
+    }
+
+    if (entropy_read(bytes, len) != len) {
+        return SYS_ERR_NO_DEVICE;
+    }
+
+    memcpy((void *)ptr, bytes, len);
+    memset(bytes, 0, sizeof(bytes));
+    return (long)len;
+}
+
 static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
 {
     struct sysinfo info;
@@ -1488,6 +1515,10 @@ void syscall_dispatch(struct syscall_frame *sc)
 
     case SYS_PROFILE:
         result = profile_call(p, sc->arg[0], sc->arg[1], (size_t)sc->arg[2]);
+        break;
+
+    case SYS_ENTROPY:
+        result = sys_entropy(p, sc->arg[0], (size_t)sc->arg[1]);
         break;
 
     case SYS_SCREEN_FLUSH:

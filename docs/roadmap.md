@@ -5518,6 +5518,7 @@ the Pi", and the Pi is not here yet.
      what can be checked: the generator against a fixed key's known output,
      and the source against the health tests SP 800-90B names (no run of
      one value, no stuck output), with a control that hands it zeros.
+     **BUILT on 30 September** (`testing.md` 18.293).
   2. **BearSSL 0.6**, vendored in `runtime/upstream/bearssl` as released -
      the tarball fetched from bearssl.org on 30 September is the one
      nixpkgs records (sha256 `6705bba1...ff14`) - in a `tls` kit: a

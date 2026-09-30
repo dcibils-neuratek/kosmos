@@ -386,6 +386,31 @@ static void check_des(void)
     }
 }
 
+/*
+ * The generator: from a seed of 0..31, 64 bytes and then 16, as OpenSSL's
+ * ChaCha20 keystream has them - the first request is keystream bytes 32 to
+ * 96 under the seed, and the second, bytes 32 to 48 under the key the first
+ * left, which was that keystream's first 32.
+ */
+static void check_drbg(void)
+{
+    uint8_t seed[32], got[64], want[64];
+    struct drbg d;
+    unsigned i;
+
+    for (i = 0; i < 32; i++) seed[i] = (uint8_t)i;
+
+    drbg_seed(&d, seed);
+    drbg_generate(&d, got, 64);
+    unhex("2b23cce7a26023ab3f0eef693ac87f64258235eab1f7a32dc22762a0485b410c"
+          "18b84231ade6a6d113615c61af434e27f8b1f3f5e1ad5b5cecf8fc122a35755c", want);
+    same("the generator's first 64 bytes, as OpenSSL's keystream", got, want, 64);
+
+    drbg_generate(&d, got, 16);
+    unhex("2d41a59c90e41a8e7a4dccaa1c460699", want);
+    same("its next 16, under the key the first left", got, want, 16);
+}
+
 int main(void)
 {
     check_sha256();
@@ -393,6 +418,7 @@ int main(void)
     check_chacha_poly();
     check_x25519();
     check_des();
+    check_drbg();
 
     if (failures) {
         printf("FAIL: %d of %d checks on the Crypto Kit's primitives\n",
@@ -402,6 +428,6 @@ int main(void)
 
     printf("PASS: %d checks on the Crypto Kit's primitives against their "
            "specifications' vectors (SHA-256, HMAC-SHA-256, ChaCha20, "
-           "Poly1305, X25519, DES)\n", checks);
+           "Poly1305, X25519, DES, and the generator)\n", checks);
     return 0;
 }

@@ -244,6 +244,12 @@ X86_ARGS = [
     # `tools/run_x86.py` clicks through it with no tablet at all.
     #
     "-device", "virtio-tablet-pci",
+    #
+    # Randomness, which QEMU's default processor has no instruction for
+    # (`hal/pc/entropy_bind.c`): the M700 answers from RDRAND, this machine
+    # from the host through virtio-rng.
+    #
+    "-device", "virtio-rng-pci",
 ] + ([
     "-drive", "file=%s,format=raw,if=none,id=disk" % _DISK,
     "-device", "virtio-blk-pci,drive=disk",
@@ -302,6 +308,8 @@ QEMU_ARGS = [
     "-global", "virtio-mmio.force-legacy=false",
     "-device", "virtio-keyboard-device",
     "-device", "virtio-tablet-device",
+    # Randomness: a Cortex-A72 has no RNDR (`hal/qemu-virt/entropy_bind.c`).
+    "-device", "virtio-rng-device",
 
 ] + ([
     "-drive", "file=%s,format=raw,if=none,id=disk" % _DISK,

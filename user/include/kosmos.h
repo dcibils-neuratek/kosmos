@@ -442,6 +442,14 @@ static inline long kosmos_profile(unsigned long op, void *out, unsigned long max
     return sys3(SYS_PROFILE, (long)op, (long)(uintptr_t)out, (long)max);
 }
 
+/* The hardware's randomness, `len` bytes of it up to `ENTROPY_MAX` (256),
+ * held to the kernel's health test first (`kernel/entropy.c`). Returns `len`
+ * or an error. A program wants `crypto.random`, seeded from this. */
+static inline long kosmos_entropy(void *out, unsigned long len)
+{
+    return sys2(SYS_ENTROPY, (long)(uintptr_t)out, (long)len);
+}
+
 /* The granule those come in. Has to match PAGE_SIZE in the kernel; it is the
  * unit the syscall counts in. */
 #define KOSMOS_PAGE_SIZE    4096UL

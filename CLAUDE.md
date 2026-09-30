@@ -726,6 +726,9 @@ bool          hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long ctx);
 bool          hal_irq_available(unsigned intid);            /* drivers at EL0 */
 void          hal_irq_set_masked(unsigned intid, bool masked);
 bool          hal_device_find(unsigned kind, unsigned index, struct hal_device *out);
+
+bool          hal_entropy_init(void);                       /* HTTPS step 1 */
+size_t        hal_entropy(void *buf, size_t bytes);
 ```
 
 The last three arrived together, with the first driver outside the kernel -
@@ -747,6 +750,13 @@ This paragraph used to say merging always meant choosing, "a choice that does no
 `hal/hal.h` is the authority. If this list and that file disagree, that file is right and this one is stale — say so.
 
 **Do not expand the HAL speculatively.** The right interface appears once there is a second real target. Writing it now with a single target produces the shape of QEMU with generic names.
+
+`hal_entropy` arrived with HTTPS (30 September 2026), with two sources
+behind it from the start: RDRAND on a PC whose processor has it - the M700's
+does - and virtio-rng under QEMU on both boards, whose processors have no
+such instruction. What it returns is held to a repetition test in
+`kernel/entropy.c` before any process sees it, since a broken source still
+answers; the Crypto Kit's generator is seeded from it through `SYS_ENTROPY`.
 
 The two `hal_cpu_*` entries arrived with `docs/smp.md` step three, and they
 are the board's half of a split worth naming: **the board knows how to
