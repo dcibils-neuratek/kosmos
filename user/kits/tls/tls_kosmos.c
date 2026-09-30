@@ -15,6 +15,7 @@
  *   t:read()                                       -- plaintext, or nil
  *   t:state()                                      -- "handshake", "open",
  *                                                  -- or "closed", and why
+ *   t:trusted()                                    -- true, or false and why
  *
  * Nothing here blocks. Each call moves what can move - records to the
  * connection, records from it - and returns; a caller waits on the
@@ -25,7 +26,9 @@
  * (`assets/ca/cacert.pem`), turned into BearSSL's anchors when the image is
  * built (`build/gen/tls_anchors.c`, by BearSSL's own `brssl ta`), plus any a
  * caller hands in as DER - a test's own authority, or a person's. The
- * certificate's dates are held to the machine's clock. **Its randomness**
+ * certificate's dates are held to the machine's clock - and a caller may
+ * ask for the connection **whatever the certificate says**, `insecure =
+ * true`, which is the browser's Open anyway. **Its randomness**
  * comes from the hardware through the kernel's health test (`SYS_ENTROPY`):
  * a machine with none gets an error, not a connection.
  */
@@ -52,9 +55,28 @@ struct extra_anchor {
     unsigned char key[1100];        /* RSA-4096's modulus and exponent fit */
 };
 
+/*
+ * **Open anyway** (`roadmap.md` 6zz c) - Diego, on the browser's drawing:
+ * "add a button that says 'open anyways' as well so i can browse it
+ * anyway". The chain is still checked, by the same engine against the same
+ * roots and the same clock, and its verdict kept for `t:trusted()` to say;
+ * what changes is that a chain which fails is taken, the handshake done
+ * with the key in the server's own certificate. Nothing here remembers that
+ * a host was let through - that is the caller's to decide, per connection.
+ */
+struct anyway {
+    const br_x509_class     *vtable;
+    br_x509_minimal_context *check;     /* the real one, for its verdict */
+    br_x509_decoder_context  leaf;      /* the server's own certificate */
+    int                      certs;     /* how many have begun */
+    int                      verdict;   /* what `check` said; -1 before */
+};
+
 struct tls {
     br_ssl_client_context  sc;
     br_x509_minimal_context xc;
+    struct anyway          anyway;
+    int                    insecure;
     unsigned char          iobuf[BR_SSL_BUFSIZE_BIDI];
 
     br_x509_trust_anchor   anchors[TAs_NUM + EXTRA_MAX];
@@ -135,6 +157,96 @@ static int anchor_from_der(struct extra_anchor *e, br_x509_trust_anchor *ta,
 
     return 1;
 }
+
+/*------------------------------------------------------------------------
+ * A chain checked, and taken whatever the check said.
+ *----------------------------------------------------------------------*/
+
+static struct anyway *anyway_of(const br_x509_class **ctx)
+{
+    return (struct anyway *)(void *)ctx;
+}
+
+static void aw_start_chain(const br_x509_class **ctx, const char *server_name)
+{
+    struct anyway *a = anyway_of(ctx);
+
+    a->check->vtable->start_chain(&a->check->vtable, server_name);
+    br_x509_decoder_init(&a->leaf, NULL, NULL);
+    a->certs = 0;
+    a->verdict = -1;
+}
+
+static void aw_start_cert(const br_x509_class **ctx, uint32_t length)
+{
+    struct anyway *a = anyway_of(ctx);
+
+    a->check->vtable->start_cert(&a->check->vtable, length);
+    a->certs++;
+}
+
+/* Every certificate to the check; the first, the server's, to the decoder
+ * as well, for its key. */
+static void aw_append(const br_x509_class **ctx, const unsigned char *buf, size_t len)
+{
+    struct anyway *a = anyway_of(ctx);
+
+    a->check->vtable->append(&a->check->vtable, buf, len);
+
+    if (a->certs == 1) {
+        br_x509_decoder_push(&a->leaf, buf, len);
+    }
+}
+
+static void aw_end_cert(const br_x509_class **ctx)
+{
+    struct anyway *a = anyway_of(ctx);
+
+    a->check->vtable->end_cert(&a->check->vtable);
+}
+
+static unsigned aw_end_chain(const br_x509_class **ctx)
+{
+    struct anyway *a = anyway_of(ctx);
+
+    a->verdict = (int)a->check->vtable->end_chain(&a->check->vtable);
+
+    /* A chain whose server certificate could not even be read has no key to
+     * go on with, so that one is refused whatever was asked. */
+    if (a->verdict != 0 && br_x509_decoder_get_pkey(&a->leaf) == NULL) {
+        return (unsigned)a->verdict;
+    }
+
+    return 0;
+}
+
+static const br_x509_pkey *aw_get_pkey(const br_x509_class *const *ctx, unsigned *usages)
+{
+    struct anyway *a = (struct anyway *)(void *)ctx;
+    const br_x509_pkey *pk = a->check->vtable->get_pkey(&a->check->vtable, usages);
+
+    /* The check hands its key over only for a chain it accepted, or one
+     * that fails only for want of a root. Otherwise, the server's own. */
+    if (pk != NULL) {
+        return pk;
+    }
+
+    if (usages != NULL) {
+        *usages = BR_KEYTYPE_KEYX | BR_KEYTYPE_SIGN;
+    }
+
+    return br_x509_decoder_get_pkey(&a->leaf);
+}
+
+static const br_x509_class anyway_class = {
+    sizeof(struct anyway),
+    aw_start_chain,
+    aw_start_cert,
+    aw_append,
+    aw_end_cert,
+    aw_end_chain,
+    aw_get_pkey
+};
 
 /*------------------------------------------------------------------------
  * The connection, reached through its own methods.
@@ -267,10 +379,18 @@ static const char *error_name(int err)
     }
 }
 
+/* Whether an error is about the certificate rather than the connection:
+ * the kind a person may choose to go past. */
+static int certificate_error(int err)
+{
+    return err > BR_ERR_X509_OK && err <= BR_ERR_X509_NOT_TRUSTED;
+}
+
 /*
- * `tls.client(conn, name [, { anchors = { der, ... } }])` - the handshake
- * begun on a connection that is already open; `name` is both the name the
- * certificate must carry and the one sent in SNI.
+ * `tls.client(conn, name [, { anchors = { der, ... }, insecure = true }])` -
+ * the handshake begun on a connection that is already open; `name` is both
+ * the name the certificate must carry and the one sent in SNI. `insecure`
+ * checks the certificate all the same and goes on whatever it finds.
  */
 static int l_client(lua_State *L)
 {
@@ -313,9 +433,20 @@ static int l_client(lua_State *L)
         }
 
         lua_pop(L, 1);
+
+        lua_getfield(L, 3, "insecure");
+        t->insecure = lua_toboolean(L, -1);
+        lua_pop(L, 1);
     }
 
     br_ssl_client_init_full(&t->sc, &t->xc, t->anchors, n);
+
+    if (t->insecure) {
+        t->anyway.vtable = &anyway_class;
+        t->anyway.check = &t->xc;
+        t->anyway.verdict = -1;
+        br_ssl_engine_set_x509(&t->sc.eng, &t->anyway.vtable);
+    }
     br_ssl_engine_set_buffer(&t->sc.eng, t->iobuf, sizeof(t->iobuf), 1);
 
     /* The certificate's dates against this machine's clock: days since 1
@@ -397,7 +528,8 @@ static int l_read(lua_State *L)
     return 1;
 }
 
-/* `t:state()` - "handshake", "open" or "closed", and when closed, why. */
+/* `t:state()` - "handshake", "open" or "closed", and when closed, why, the
+ * error's number, and whether it was the certificate. */
 static int l_state(lua_State *L)
 {
     struct tls *t = check_tls(L);
@@ -412,10 +544,54 @@ static int l_state(lua_State *L)
         lua_pushstring(L, "closed");
         lua_pushstring(L, error_name(err));
         lua_pushinteger(L, err);
-        return 3;
+        lua_pushboolean(L, certificate_error(err));
+        return 4;
     }
 
     lua_pushstring(L, (state & (BR_SSL_SENDAPP | BR_SSL_RECVAPP)) ? "open" : "handshake");
+    return 1;
+}
+
+/*
+ * `t:trusted()` - true when the certificate checked out; false and why when
+ * it did not, which only a connection asked for `insecure` gets as far as
+ * being open with; nil while nobody knows yet.
+ */
+static int l_trusted(lua_State *L)
+{
+    struct tls *t = check_tls(L);
+    unsigned state;
+
+    pump(L, t);
+    state = br_ssl_engine_current_state(&t->sc.eng);
+
+    if (t->insecure && t->anyway.verdict >= 0) {
+        if (t->anyway.verdict == 0) {
+            lua_pushboolean(L, 1);
+            return 1;
+        }
+
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, error_name(t->anyway.verdict));
+        return 2;
+    }
+
+    if (!t->insecure && (state & (BR_SSL_SENDAPP | BR_SSL_RECVAPP))) {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+
+    if (state & BR_SSL_CLOSED) {
+        int err = br_ssl_engine_last_error(&t->sc.eng);
+
+        if (certificate_error(err)) {
+            lua_pushboolean(L, 0);
+            lua_pushstring(L, error_name(err));
+            return 2;
+        }
+    }
+
+    lua_pushnil(L);
     return 1;
 }
 
@@ -448,6 +624,7 @@ void kosmos_tls_kit(lua_State *L)
         { "flush", l_flush },
         { "read",  l_read },
         { "state", l_state },
+        { "trusted", l_trusted },
         { "close", l_close },
         { "__gc",  l_gc },
         { NULL, NULL }

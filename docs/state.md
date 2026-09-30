@@ -333,9 +333,20 @@ both pictures. Found and fixed: Control-L appended rather than replaced; and
 on x86 one boot in three, a page asked for before the lease refused - the
 stack holds connections and lookups while DHCP is still asking now, held to
 a paused boot with the link pulled in `arm-network`/`x86-network`. The
-Network Kit gives a sentence with every failure. **Next** (6zz): HTTPS in
-the browser (c), resizable windows that draw their own pixels (e), then the
-redesign (d); then loopback (6zy).
+Network Kit gives a sentence with every failure.
+
+**HTTPS in the browser, 6zz c** (`testing.md` 18.296): Secure, Refused with Go
+back and Open anyway (the TLS Kit's `insecure`), Not secure; `user/lib/http.lua`
+shared with `fetch`; a person's authorities in `/Home/Preferences/Authorities`
+(agreed by Diego). Found: the network stack never gave a
+connection's slot back - sixteen a boot - and the kit never unmapped a ring;
+both fixed, handles carry a generation, forty connections in a boot checked.
+Diego then: "we shouldnt have limits", "lua just orchestrating", "c doing the
+hard work", and SIMD in the browser. **Next** (6zz, in this order): f, the
+network stack's pools growing with no fixed number; g, an HTTP Kit in C so
+the bytes never become Lua strings; h, SIMD in the browser's pixels,
+profiled first; then e, resizable windows, and d, the redesign; then
+loopback (6zy).
 Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU

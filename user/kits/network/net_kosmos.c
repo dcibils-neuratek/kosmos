@@ -341,13 +341,19 @@ static int l_ping(lua_State *L)
  * `tcpring.h` says why that matters before the first one moved.
  *----------------------------------------------------------------------*/
 
-/* The region a connection's rings live in, mapped in this process. Held in
- * a Lua userdata so it goes when the handle does. */
+/*
+ * The region a connection's rings live in, mapped in this process. Held in
+ * a Lua userdata so it goes when the handle does - which this comment said
+ * for months with nothing to make it true: there was no `__gc`, so every
+ * connection a program ever made stayed mapped in it, 36 KB and a
+ * capability each. `l_gc` below is that.
+ */
 struct ring_handle {
     struct tcp_ring *ring;
     long             cap;
     uint32_t         handle;
     long             net_cap;
+    int              closed;        /* `close` was asked for */
 };
 
 static struct ring_handle *checkring(lua_State *L, int at)
@@ -541,11 +547,13 @@ static int l_closed(lua_State *L)
     return 1;
 }
 
-static int l_close(lua_State *L)
+/* This end is done sending: the FIN, once the ring has gone. */
+static void send_close(struct ring_handle *h)
 {
-    struct ring_handle *h = checkring(L, 1);
     struct net_request req;
     struct message msg, out;
+
+    h->closed = 1;
 
     memset(&req, 0, sizeof(req));
     req.op     = NET_OP_CLOSE;
@@ -556,9 +564,43 @@ static int l_close(lua_State *L)
     memcpy(msg.data, &req, sizeof(req));
 
     (void)kosmos_call(h->net_cap, &msg, &out);
+}
+
+static int l_close(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+
+    if (h->ring != NULL) {
+        send_close(h);
+    }
 
     lua_pushboolean(L, 1);
     return 1;
+}
+
+/*
+ * The connection gone from Lua: closed, if its program never said so, and
+ * its ring let go - unmapped first and the capability dropped after, since
+ * a region's pages live as long as a capability does and not a mapping.
+ * The stack gives its slot back once TCP is finished with it too.
+ */
+static int l_gc(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+
+    if (h->ring == NULL) {
+        return 0;
+    }
+
+    if (!h->closed) {
+        send_close(h);
+    }
+
+    (void)kosmos_unmap((unsigned long)(uintptr_t)h->ring,
+                       (TCP_RING_REGION + 4095u) / 4096u);
+    (void)kosmos_cap_drop(h->cap);
+    h->ring = NULL;
+    return 0;
 }
 
 /*
@@ -685,8 +727,8 @@ static uint32_t mask_of(lua_State *L, int index)
         lua_rawgeti(L, index, i);
         h = (struct ring_handle *)luaL_testudata(L, -1, "kosmos.tcp");
 
-        if (h != NULL && h->handle < NET_CONN_MAX) {
-            mask |= 1u << h->handle;
+        if (h != NULL && h->ring != NULL) {
+            mask |= 1u << NET_HANDLE_SLOT(h->handle);
         }
 
         lua_pop(L, 1);
@@ -720,7 +762,8 @@ static int collect(lua_State *L, int index, uint32_t ready,
 
         lua_rawgeti(L, index, i);
         h = (struct ring_handle *)luaL_testudata(L, -1, "kosmos.tcp");
-        bit = (h != NULL && h->handle < NET_CONN_MAX) ? 1u << h->handle : 0u;
+        bit = (h != NULL && h->ring != NULL)
+              ? 1u << NET_HANDLE_SLOT(h->handle) : 0u;
 
         if (bit != 0 && (ready & bit) != 0 && (*taken & bit) == 0) {
             *taken |= bit;
@@ -798,6 +841,7 @@ void kosmos_net_kit(lua_State *L)
         { "wait",   l_wait },
         { "closed", l_closed },
         { "close",  l_close },
+        { "__gc",   l_gc },
         { NULL, NULL }
     };
 

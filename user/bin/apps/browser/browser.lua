@@ -12,6 +12,7 @@
 --                                    a page the image carries
 --   wm browser:10.0.2.2:8000/        a server on the host running QEMU
 --   wm browser:188.184.67.127/       somewhere on the internet, by number
+--   wm browser:https://example.com/  over TLS
 --
 --   arrows            scroll a line
 --   space / b         a screen down, a screen up
@@ -49,9 +50,12 @@
 -- reason.
 --
 -- **Names work**, through `/Network`'s resolver - a query, a reply, and the
--- compression pointers a real server answers with. What does not is TLS, so
--- `https` is out, and that alone is why the reachable web is smaller than
--- the web.
+-- compression pointers a real server answers with. **So does `https`**
+-- (`roadmap.md` 6zz c), through the TLS Kit: the request is `http.lua`'s,
+-- shared with `fetch`, and a certificate that does not check out is refused
+-- with a page saying why and an **Open anyway** - for this window only,
+-- remembered nowhere, and the page then says Not secure for as long as it
+-- is open (`docs/browser.html`).
 --
 -- This comment said "no DNS, so a remote address is four numbers" for
 -- months after the resolver was written, and so did the help page below and
@@ -60,6 +64,7 @@
 -- the prose.
 
 local ui    = use("/Kosmos/Libraries/ui.lua")
+local http  = use("/Kosmos/Libraries/http.lua")
 local theme = ui.theme
 
 --------------------------------------------------------------------------
@@ -116,54 +121,13 @@ if not win:surface() then
 end
 
 --------------------------------------------------------------------------
--- An address, which is four numbers and a path.
+-- Addresses.
+--
+-- Taken apart by `http.split`, which `fetch` uses too: a scheme or none -
+-- `http://` typed or left off, `https://` - a host, a port and a path. It
+-- used to be split here, and `http://` typed in the bar was looked up as a
+-- machine called `http:` (Diego, 30 September: "cannot look up http:: 12").
 --------------------------------------------------------------------------
-
-local function split(text)
-  local rest = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-
-  --
-  -- **`http://` typed as well as left off.** The bar wanted an address
-  -- without it, and with it looked up `http:` as the name of a machine -
-  -- Diego, 30 September, with the web server running in the same machine:
-  -- "cannot look up http:: 12". A scheme is the one part of a URL everybody
-  -- types, so it is taken off here rather than asked to be left out.
-  --
-  rest = rest:gsub("^[Hh][Tt][Tt][Pp]://", "")
-
-  local hostport, path = rest:match("^([^/]+)(/.*)$")
-
-  hostport = hostport or rest
-  path = path or "/"
-
-  local host, port = hostport:match("^([^:]+):(%d+)$")
-
-  host = host or hostport
-  port = tonumber(port) or 80
-
-  local a, b, c, d = tostring(host):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
-
-  if a then
-    a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
-
-    if a > 255 or b > 255 or c > 255 or d > 255 then
-      return nil, "those are not four numbers under 256"
-    end
-
-    return string.char(a, b, c, d), port, path, hostport
-  end
-
-  --
-  -- A name. This does not look it up.
-  --
-  -- Splitting an address is arithmetic on a string and asking a resolver is
-  -- a message to another process; keeping the second out of here is what
-  -- lets this be called from anywhere, and the caller is the one that knows
-  -- how long it is prepared to wait. The name comes back as the fifth
-  -- value, which is the caller's cue to go and ask.
-  --
-  return nil, port, path, hostport, host
-end
 
 --
 -- A link's address, against the page it was found on.
@@ -171,8 +135,9 @@ end
 -- Enough of RFC 3986 to follow a link and no more: a scheme this browser
 -- does not speak is refused by name rather than attempted, an absolute path
 -- keeps the host, and a relative one is taken from the directory the page
--- came from. `..` is not collapsed, which a real resolver does and which no
--- page here has needed yet.
+-- came from - each keeping the page's scheme, so a link on an `https` page
+-- stays `https`. `..` is not collapsed, which a real resolver does and which
+-- no page here has needed yet.
 --
 local function resolve(base, href)
   href = tostring(href or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -188,22 +153,33 @@ local function resolve(base, href)
   local scheme = href:match("^(%a[%w+.%-]*):")
 
   if scheme then
-    if scheme:lower() == "asset" then return href end
+    scheme = scheme:lower()
 
-    if scheme:lower() ~= "http" then
-      return nil, ("this browser speaks http, not %s"):format(scheme)
+    if scheme == "asset" then return href end
+
+    if scheme ~= "http" and scheme ~= "https" then
+      return nil, ("this browser speaks http and https, not %s"):format(scheme)
     end
 
-    href = href:gsub("^%a[%w+.%-]*:", "")
+    local rest = href:gsub("^%a[%w+.%-]*:", ""):gsub("^//", "")
+
+    return (scheme == "https" and "https://" or "") .. rest
   end
 
-  if href:sub(1, 2) == "//" then return href:sub(3) end
+  -- The page's own scheme, kept for whatever it links to.
+  local prefix, rest = base:match("^(%a[%w+.%-]*://)(.*)$")
 
-  local host = base:match("^([^/]+)") or base
+  if not prefix then prefix, rest = "", base end
 
-  if href:sub(1, 1) == "/" then return host .. href end
+  if prefix:lower() == "http://" then prefix = "" end
 
-  return (base:match("^(.*/)") or (host .. "/")) .. href
+  if href:sub(1, 2) == "//" then return prefix .. href:sub(3) end
+
+  local host = rest:match("^([^/]+)") or rest
+
+  if href:sub(1, 1) == "/" then return prefix .. host .. href end
+
+  return prefix .. ((rest:match("^(.*/)") or (host .. "/")) .. href)
 end
 
 --------------------------------------------------------------------------
@@ -248,6 +224,7 @@ engine, so if you can read this then the engine works.</p>
 Return. A file on this machine works too - anything beginning with a slash
 is read from the namespace rather than the network:</p>
 <pre>  example.com/              a name, looked up through /Network
+  https://example.com/      the same, over TLS
   10.0.2.2:8000/            a server on the computer running QEMU
   188.184.67.127/           somewhere on the internet, by number
   /Home/notes.html          a file on this machine</pre>
@@ -257,8 +234,8 @@ will not answer.</p>
 
 <h2>What it cannot do</h2>
 <ul>
-  <li><strong>No https.</strong> There is no TLS, and most of the web now
-      refuses to speak anything else.</li>
+  <li><strong>No HTTP/2, no cookies, no JavaScript.</strong> https works,
+      TLS 1.2 through BearSSL, checked against Mozilla's roots.</li>
   <li><strong>Half a cascade.</strong> Colours, faces and sizes are the
       stylesheet's; margins, widths and floats are parsed and not used.</li>
   <li>Pictures, PNG and JPEG, each on a line of its own; no forms, no box
@@ -357,6 +334,28 @@ local address = { text = HOME, caret = #HOME, from = 0,
                   focus = false }
 local here                                          -- what is on screen
 local back, forward = {}, {}
+
+--
+-- How the page on screen came - `http.lua`'s table, or nil for one from
+-- this machine - and the hosts this window was told to open anyway.
+--
+-- **Open anyway is this window's and nobody else's**, and it is forgotten
+-- when the window closes: the drawing agreed "for this tab only ... and
+-- nothing is remembered". A table in this process is exactly that.
+--
+local came
+local anyway = {}
+
+--
+-- **What this browser says it is**, which is what a site decides what to
+-- send on. Diego, 30 September: "to browse websites we need to send user
+-- agent that aligns to what our browser is capable of". The engine is
+-- NetSurf's - hubbub, libcss and libdom as NetSurf 3.11 released them - so
+-- its token is the true one, and the one sites already know means HTML and
+-- CSS without JavaScript: the same shape as NetSurf's own `NetSurf/3.11
+-- (Linux)`, with Kosmos where the system goes.
+--
+local AGENT = ("NetSurf/3.11 (Kosmos %s)"):format((sys.build and sys.build() or {}).version or "0")
 
 local dragging               -- the scrollbar thumb, while it is held
 
@@ -492,6 +491,45 @@ local function field_view()
   end
 
   return address.text:sub(from + 1, upto), from
+end
+
+--
+-- What the status line says, cut to end before the timings begin.
+--
+-- It ran underneath them once a page's line began with how it came -
+-- "Refused: the certificate is signed by nobody this machine trusts" and
+-- then the counts. Cut a character at a time, never inside one, and worked
+-- out again only when the words or the timings change rather than every
+-- frame of a scroll.
+--
+local status_for, status_cut = nil, ""
+
+local function shorter(text)
+  local n = #text
+
+  while n > 0 and (text:byte(n) & 0xC0) == 0x80 do n = n - 1 end
+
+  return text:sub(1, n - 1)
+end
+
+local function status_text()
+  local key = said .. "\0" .. timing
+
+  if key == status_for then return status_cut end
+
+  local room = W - 16 - (timing ~= "" and gfx.measure(timing) + 16 or 0)
+  local text = said
+
+  if gfx.measure(text) > room then
+    while text ~= "" and gfx.measure(text .. "...") > room do
+      text = shorter(text)
+    end
+
+    text = text .. "..."
+  end
+
+  status_for, status_cut = key, text
+  return text
 end
 
 local function draw_button(s, b, label_colour)
@@ -653,7 +691,7 @@ local function frame()
 
   local sy = H - STAT + (STAT - gfx.height()) // 2
 
-  s:text(8, sy, said, theme.text_dim)
+  s:text(8, sy, status_text(), theme.text_dim)
 
   if timing ~= "" then
     s:text(W - 8 - gfx.measure(timing), sy, timing, theme.text_dim)
@@ -750,102 +788,66 @@ end
 -- there fetches twenty-one bytes and paints an empty page, which is what
 -- this did. Bounded, because a pair of pages can point at each other.
 --
+--
+-- A page refused for its certificate, as a page of its own.
+--
+-- Laid out by the same engine as any other, so it needs nothing the
+-- browser does not already have; its two links are the browser's own
+-- (`kosmos:back`, `kosmos:anyway`), which a click answers rather than
+-- fetches. The words are `docs/browser.html`'s.
+--
+local function escaped(text)
+  return (tostring(text):gsub("[&<>\"]", { ["&"] = "&amp;", ["<"] = "&lt;",
+                                           [">"] = "&gt;", ['"'] = "&quot;" }))
+end
+
+local function refused_page(text, reason)
+  local why = tostring(reason):gsub("^the certificate", "its certificate")
+
+  return ([[<!doctype html>
+<html><head><meta charset="utf-8"><title>Not opened</title></head><body>
+<h1>This page was not opened: %s</h1>
+<p>You asked for <b>%s</b>, and the certificate the server answered with
+did not check out. Anybody between here and there could be answering
+instead, so nothing was sent to it.</p>
+<p><a href="kosmos:back">Go back</a></p>
+<p><a href="kosmos:anyway">Open anyway</a></p>
+<p>Open anyway loads it for this window only; it says Not secure for as
+long as it is open, and nothing is remembered.</p>
+</body></html>]]):format(escaped(why), escaped(text))
+end
+
+--
+-- A page's bytes from the network, and how they came, following redirects.
+--
+-- The request is `http.lua`'s. What this adds is the browser's half: a
+-- redirect followed, and a certificate refusal turned into the page above
+-- rather than a line in the status bar - it is something to decide, not
+-- only something to know.
+--
 local function fetch(text)
   for _ = 1, 5 do
-    local where, port, path, host, name = split(text)
+    local parts, bad = http.split(text)
 
-    if not where and name then
-      --
-      -- Looked up per hop rather than cached: a redirect can move to
-      -- another host, and a cache that answered the old name for the new
-      -- one would be wrong in exactly the case it was meant to help with.
-      -- One datagram, and the resolver is next door.
-      --
-      say("looking up " .. name .. " ...")
-
-      --
-      -- Five seconds, in *scheduler* ticks.
-      --
-      -- This passed `HZ`, the counter's frequency, and that was wrong in a
-      -- way that worked: `/Network` was adding the number to a counter value
-      -- without converting, so the only caller of the resolver and the only
-      -- reader of the field agreed on the wrong unit and nothing noticed.
-      -- `host` was written, passed the documented unit, and every lookup
-      -- after the first one timed out. `netproto.h` has the whole account.
-      --
-      local addr, why, said = fs.resolve(name, TICK_HZ * 5)
-
-      if not addr then
-        say(("cannot look up %s: %s"):format(name, said or tostring(why)))
-        return nil
-      end
-
-      where = addr
-    end
-
-    if not where then
-      say("that is not an address this can reach")
+    if not parts then
+      say(bad)
       return nil
     end
 
-    say("connecting to " .. text .. " ...")
+    local reply, why, how = http.get(parts, {
+      say = say,
+      agent = AGENT,
+      anyway = parts.scheme == "https" and anyway[parts.hostport] or nil,
+    })
 
-    local conn, why, said = fs.connect("/Network", where, port)
+    if not reply then
+      if how.refused then return refused_page(text, how.refused), how end
 
-    if not conn then
-      say("could not connect: " .. (said or tostring(why)))
+      say(why)
       return nil
     end
 
-    --
-    -- `Host` is the address that was asked for, and it used to be the
-    -- literal string "kosmos".
-    --
-    -- Not cosmetic. HTTP/1.0 made the header optional and the web stopped
-    -- being like that twenty years ago: one address serves hundreds of
-    -- sites and this header is how a server knows which was wanted. A name
-    -- no server has heard of gets the default site, an error, or a
-    -- redirect - so every real host answered the wrong thing, and the only
-    -- server that ever looked right was one serving a single site out of a
-    -- directory. Which is exactly what it was tested against.
-    --
-    -- `fetch.lua` had this right from the start and the browser did not.
-    --
-    conn:write(("GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n")
-               :format(path, host))
-
-    local parts, total = {}, 0
-
-    for _ = 1, 400 do
-      local piece = conn:read()
-
-      if piece then
-        parts[#parts + 1] = piece
-        total = total + #piece
-      end
-
-      if conn:closed() then break end
-
-      conn:wait(25)
-    end
-
-    local last = conn:read()
-
-    if last then
-      parts[#parts + 1] = last
-      total = total + #last
-    end
-
-    conn:close()
-
-    if total == 0 then
-      say("nothing came back")
-      return nil
-    end
-
-    local reply = table.concat(parts)
-    local status = tonumber(reply:match("^HTTP/%d%.%d%s+(%d%d%d)")) or 200
-    local head = reply:match("^(.-)\r\n\r\n") or ""
+    local status, head, body = http.parse(reply)
 
     if status >= 300 and status < 400 then
       local to = head:match("\r\n[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:%s*([^\r\n]+)")
@@ -855,10 +857,10 @@ local function fetch(text)
         return nil
       end
 
-      local next_at, bad = resolve(text, to)
+      local next_at, wrong = resolve(text, to)
 
       if not next_at then
-        say(("it redirected to %s: %s"):format(to, tostring(bad)))
+        say(("it redirected to %s: %s"):format(to, tostring(wrong)))
         return nil
       end
 
@@ -870,13 +872,29 @@ local function fetch(text)
       address.caret = #next_at
       address.from = 0
     else
-      return reply:match("\r\n\r\n(.*)$") or reply
+      return body, how
     end
   end
 
   say("too many redirects")
 
   return nil
+end
+
+--
+-- How a page came, in the drawing's words: Secure, Not secure, Not
+-- encrypted, Refused - or from this machine, which no network had a part in.
+--
+local function how_said(how)
+  if how == nil then return "From this machine" end
+
+  if how.refused then return "Refused: " .. how.refused end
+
+  if how.scheme ~= "https" then return "Not encrypted" end
+
+  if how.secure then return "Secure" end
+
+  return "Not secure: " .. tostring(how.reason or "the certificate did not check out")
 end
 
 --------------------------------------------------------------------------
@@ -956,7 +974,7 @@ local function load(text)
   address.caret = #text
   address.from = 0
 
-  local body, fetched_ms
+  local body, fetched_ms, how
 
   if text == HOME then
     say("the page inside this image")
@@ -994,7 +1012,7 @@ local function load(text)
   else
     local fetch_from = sys.ticks()
 
-    body = fetch(text)
+    body, how = fetch(text)
 
     if body == nil then return false end
 
@@ -1017,6 +1035,7 @@ local function load(text)
   if doc then doc:close() end
 
   doc = fresh
+  came = how
 
   local title = doc:title()
 
@@ -1058,10 +1077,10 @@ local function load(text)
                    tenths(laid_ms), tenths(painted_ms))
 
   if content_h > paper_h then
-    say(("%s - %d pixels tall, and this shows the first %d")
-        :format(counts, content_h, paper_h))
+    say(("%s - %s - %d pixels tall, and this shows the first %d")
+        :format(how_said(came), counts, content_h, paper_h))
   else
-    say(counts)
+    say(how_said(came) .. " - " .. counts)
   end
 
   if missing > 0 then
@@ -1071,8 +1090,8 @@ local function load(text)
 
   -- For whoever opened it from outside - Cafesa3D's suite asks for its
   -- tutorial and waits to hear the page arrive (`tools/run_cafesa3d.py`).
-  print(("browser: showing %s, \"%s\", %d pixels tall, %d pictures, %d missing")
-        :format(text, title or "", content_h, pictures, missing))
+  print(("browser: showing %s, \"%s\", %d pixels tall, %d pictures, %d missing, %s")
+        :format(text, title or "", content_h, pictures, missing, how_said(came)))
   return true
 end
 
@@ -1358,6 +1377,22 @@ local function page_press(x, y)
   local href = doc:link_at(x - PAD, y - VIEW_Y + top)
 
   if not href then return end
+
+  -- The refused page's two links, which are this browser's rather than
+  -- anybody's address.
+  if href == "kosmos:back" then
+    go_back()
+    return
+  elseif href == "kosmos:anyway" then
+    local parts = here and http.split(here)
+
+    if parts and parts.scheme == "https" then
+      anyway[parts.hostport] = true
+      reload()
+    end
+
+    return
+  end
 
   local where, why = resolve(here or address.text, href)
 

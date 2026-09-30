@@ -183,6 +183,20 @@
 #define NET_CONN_MAX    16u
 
 /*
+ * **At once, and not in a lifetime.** A connection's slot goes back to the
+ * pool when TCP is finished with it and its program has closed it - which
+ * it never did until 30 September, so a machine had sixteen connections a
+ * boot and then "too many at once" for good: the browser's suite, opening
+ * its seventeenth page, is what said so.
+ *
+ * So a handle names a slot *and a generation* - `slot + NET_CONN_MAX *
+ * generation` - and a program that kept one past its connection's end names
+ * nothing, rather than whichever connection took the slot next. The poll
+ * masks are over slots, `NET_HANDLE_SLOT`.
+ */
+#define NET_HANDLE_SLOT(h)  ((h) % NET_CONN_MAX)
+
+/*
  * How many echoes may be outstanding.
  *
  * A fixed pool, like every other server here: `ramfs` has its nodes and

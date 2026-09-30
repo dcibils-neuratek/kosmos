@@ -42,9 +42,10 @@ def openssl(*args, cwd):
     subprocess.run(["openssl", *args], cwd=cwd, check=True, capture_output=True)
 
 
-def pki(work):
-    """An authority, a certificate for kosmos-test.local it signed, the same
-    out of its dates, and one another authority signed."""
+def pki(work, name="kosmos-test.local"):
+    """An authority, a certificate for `name` it signed, the same out of its
+    dates, and one another authority signed. The browser's suite asks for
+    one for 10.0.2.2, the address it types."""
     for ca in ("ca", "other"):
         openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3",
                 "-subj", "/CN=Kosmos test authority " + ca,
@@ -52,22 +53,22 @@ def pki(work):
                 "-addext", "keyUsage=critical,keyCertSign,cRLSign",
                 "-keyout", ca + ".key", "-out", ca + ".pem", cwd=work)
 
-    openssl("req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=kosmos-test.local",
+    openssl("req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + name,
             "-keyout", "server.key", "-out", "server.csr", cwd=work)
 
     with open(os.path.join(work, "ext.cnf"), "w") as f:
-        f.write("subjectAltName=DNS:kosmos-test.local\n"
+        f.write("subjectAltName=DNS:" + name + "\n"
                 "basicConstraints=CA:FALSE\n"
                 "keyUsage=critical,digitalSignature,keyEncipherment\n"
                 "extendedKeyUsage=serverAuth\n")
 
-    for name, ca, dates in (("good", "ca", ["-days", "2"]),
+    for cert, ca, dates in (("good", "ca", ["-days", "2"]),
                             ("expired", "ca", ["-not_before", "20200101000000Z",
                                                "-not_after", "20201231000000Z"]),
                             ("untrusted", "other", ["-days", "2"])):
         openssl("x509", "-req", "-in", "server.csr", "-CA", ca + ".pem",
                 "-CAkey", ca + ".key", "-CAcreateserial", "-extfile", "ext.cnf",
-                *dates, "-out", name + ".pem", cwd=work)
+                *dates, "-out", cert + ".pem", cwd=work)
 
     openssl("x509", "-in", "ca.pem", "-outform", "DER", "-out", "ca.der", cwd=work)
 

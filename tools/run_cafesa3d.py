@@ -924,9 +924,11 @@ def main():
         index = "asset:tutorial/cafesa3d/index.html"
         foot = (ox + vw + 300, oy + 46 + vh + 15)
 
+        # The line ends with how the page came (`roadmap.md` 6zz c), and a
+        # page the image carries came from nowhere else.
         def showed(shown):
             m = re.match(re.escape(index) + r', "Cafesa3D tutorial", \d+ pixels tall, '
-                         r"(\d+) pictures, (\d+) missing$", shown or "")
+                         r"(\d+) pictures, (\d+) missing, From this machine$", shown or "")
             return m and int(m.group(1)) > 0 and int(m.group(2)) == 0
 
         mark = len(guest.seen)

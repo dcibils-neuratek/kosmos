@@ -261,6 +261,14 @@ def boot(image, extra, commands, seconds=90, then=None, after=None):
         transcript = ""
 
         for command in commands:
+            # A command may name the line it ends with, for one whose own
+            # answer comes after a prompt could: the empty line typed after
+            # each prints one early.
+            until = run_screenshot.PROMPT
+
+            if isinstance(command, tuple):
+                command, until = command
+
             guest.seen = ""
             guest.type(command + "\n")
 
@@ -270,7 +278,11 @@ def boot(image, extra, commands, seconds=90, then=None, after=None):
                 transcript += guest.seen
                 break
 
-            guest.wait_for(run_screenshot.PROMPT, command)
+            if until is run_screenshot.PROMPT:
+                guest.wait_for(until, command)
+            else:
+                guest.wait_for_line(until, command)
+
             transcript += guest.seen
 
         if then is not None:
@@ -530,7 +542,9 @@ def main():
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                served["path"] = self.path
+                if served["path"] is None:      # the fetch's, not the forty's
+                    served["path"] = self.path
+
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain")
                 self.send_header("Content-Length", str(len(body)))
@@ -546,12 +560,35 @@ def main():
         thread.start()
 
         try:
+            # And forty more, one after another, in the same boot: each a
+            # request, read to its close, and closed. The stack never gave a
+            # connection's slot back, so a machine had sixteen a boot and then
+            # "too many at once" for good - found on 30 September by the
+            # browser's suite, whose seventeenth page was refused.
+            many = ('local n = 0 for i = 1, 40 do '
+                    f'local c = fs.connect("/Network", "\\10\\0\\2\\2", {port}) '
+                    'if c then c:write("GET /again HTTP/1.0\\r\\n\\r\\n") '
+                    'for _ = 1, 200 do if c:closed() then break end c:wait(25) end '
+                    'c:close() n = n + 1 end end '
+                    'print("MANY" .. " CONNECTIONS " .. n .. " of 40")')
+
             out = boot(image, [
                 "-netdev", "user,id=net0",
                 "-device", run_screenshot.device(image, "net") + ",netdev=net0",
-            ], [f"fetch 10.0.2.2 {port} /hello"], seconds=120)
+            ], [f"fetch 10.0.2.2 {port} /hello",
+                (many, "MANY CONNECTIONS ")], seconds=120)
         finally:
             httpd.shutdown()
+
+        if "MANY CONNECTIONS 40 of 40" not in out:
+            found = re.search(r"MANY CONNECTIONS \d+ of 40", out)
+            raise Failure(
+                "forty connections one after another did not all open: "
+                f"{found.group(0) if found else 'no count printed'}. A slot "
+                "that is never given back is a machine with sixteen "
+                "connections a boot.\n" + out[-900:])
+
+        checks += 1
 
         if "connection refused" in out or "timed out" in out:
             raise Failure(

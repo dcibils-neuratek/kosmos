@@ -234,6 +234,7 @@ struct asking {
  */
 struct conn {
     unsigned state;
+    uint32_t handle;                /* its name: slot, and generation */
     uint64_t opened_by;             /* the caller parked in CONNECT */
     uint64_t waiter;                /* the caller parked in WAIT, or 0 */
     uint64_t wait_until;
@@ -322,6 +323,7 @@ static struct {
     uint64_t tick_hz;
 
     struct conn conn[NET_CONN_MAX];
+    uint32_t    generation[NET_CONN_MAX];   /* how often each was taken */
 
     /*
      * Callers parked on several connections at once.
@@ -1679,11 +1681,39 @@ static uint16_t tcp_checksum(const struct net_addr *src,
 
 static struct conn *conn_at(uint32_t handle)
 {
-    if (handle >= NET_CONN_MAX || net.conn[handle].state == ST_FREE) {
+    struct conn *c = &net.conn[NET_HANDLE_SLOT(handle)];
+
+    if (c->state == ST_FREE || c->handle != handle) {
         return NULL;
     }
 
-    return &net.conn[handle];
+    return c;
+}
+
+/* A slot just taken, named: the slot, and one more generation of it. */
+static void conn_named(struct conn *c)
+{
+    unsigned slot = (unsigned)(c - net.conn);
+
+    net.generation[slot]++;
+    c->handle = slot + NET_CONN_MAX * net.generation[slot];
+}
+
+/*
+ * A slot given back: its region let go - unmapped here and this process's
+ * capability dropped, in that order, since a region's pages live as long as
+ * a capability to it does and not a mapping. The program's own capability
+ * keeps the ring readable to it until it lets go too.
+ */
+static void conn_free(struct conn *c)
+{
+    if (c->ring != NULL) {
+        (void)kosmos_unmap((unsigned long)(uintptr_t)c->ring,
+                           (TCP_RING_REGION + 4095u) / 4096u);
+        (void)kosmos_cap_drop(c->region);
+    }
+
+    memset(c, 0, sizeof(*c));
 }
 
 /*
@@ -1867,7 +1897,7 @@ static void hand_over(struct conn *c)
 
     memset(&reply, 0, sizeof(reply));
     reply.status     = NET_OK;
-    reply.handle     = (uint32_t)(c - net.conn);
+    reply.handle     = c->handle;
     reply.ring_bytes = TCP_RING_BYTES;
     reply.state      = NET_TCP_OPEN;
     reply.from       = c->remote;
@@ -1897,7 +1927,7 @@ static void wake_waiter(struct conn *c)
 
     memset(&reply, 0, sizeof(reply));
     reply.status = NET_OK;
-    reply.handle = (uint32_t)(c - net.conn);
+    reply.handle = c->handle;
     reply.state  = (c->state == ST_OPEN || c->state == ST_FIN_WAIT)
                    ? NET_TCP_OPEN : NET_TCP_CLOSED;
 
@@ -1907,9 +1937,16 @@ static void wake_waiter(struct conn *c)
 
 static void conn_die(struct conn *c, uint32_t status)
 {
+    /* One nobody was ever handed - refused, timed out, or never accepted -
+     * has nobody to close it, so it is closed here and given back. */
     if (c->opened_by != 0) {
         fail(c->opened_by, status);
         c->opened_by = 0;
+        c->want_close = true;
+    }
+
+    if (c->from_listener >= 0 && !c->handed_over) {
+        c->want_close = true;
     }
 
     if (c->ring != NULL) {
@@ -2042,6 +2079,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         }
 
         memset(made, 0, sizeof(*made));
+        conn_named(made);
 
         made->region = region;
         made->ring   = (struct tcp_ring *)(uintptr_t)at;
@@ -2122,7 +2160,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
         memset(&reply, 0, sizeof(reply));
         reply.status     = NET_OK;
-        reply.handle     = (uint32_t)(c - net.conn);
+        reply.handle     = c->handle;
         reply.ring_bytes = TCP_RING_BYTES;
         reply.state      = NET_TCP_OPEN;
 
@@ -2722,6 +2760,7 @@ static void serve(const struct message *msg, uint64_t sender)
         }
 
         memset(c, 0, sizeof(*c));
+        conn_named(c);
 
         c->region = region;
         c->ring   = (struct tcp_ring *)(uintptr_t)at;
@@ -2765,8 +2804,7 @@ static void serve(const struct message *msg, uint64_t sender)
         }
 
         if (!tcp_send(c, TCP_SYN, c->snd_nxt, NULL, 0)) {
-            (void)kosmos_cap_drop(region);
-            memset(c, 0, sizeof(*c));
+            conn_free(c);
             fail(sender, NET_ERR_UNREACHABLE);
             return;
         }
@@ -2913,12 +2951,13 @@ static void serve(const struct message *msg, uint64_t sender)
         }
 
         memset(c, 0, sizeof(*c));
+        conn_named(c);
         c->state         = ST_LISTEN;
         c->local_port    = (uint16_t)req.port;
         c->from_listener = -1;
 
         reply.status = NET_OK;
-        reply.handle = (uint32_t)(c - net.conn);
+        reply.handle = c->handle;
         answer(sender, &reply);
         return;
     }
@@ -2943,7 +2982,8 @@ static void serve(const struct message *msg, uint64_t sender)
         for (i = 0; i < NET_CONN_MAX; i++) {
             struct conn *k = &net.conn[i];
 
-            if (!k->handed_over && k->from_listener == (int)req.handle
+            if (!k->handed_over
+                && k->from_listener == (int)NET_HANDLE_SLOT(req.handle)
                 && (k->state == ST_OPEN || k->state == ST_CLOSE_WAIT)) {
                 hand_over(k);
                 return;
@@ -2979,8 +3019,14 @@ static void serve(const struct message *msg, uint64_t sender)
     case NET_OP_POLL: {
         uint32_t arrived = 0;
         uint32_t ready;
-        int listener = (req.port > 0) ? (int)req.port - 1 : -1;
+        int listener = -1;
         unsigned i;
+
+        /* The listener by its handle, plus one so that none is zero; the
+         * masks are over slots. */
+        if (req.port > 0 && conn_at(req.port - 1u) != NULL) {
+            listener = (int)NET_HANDLE_SLOT(req.port - 1u);
+        }
 
         ready = poll_ready(req.handle, req.writing, listener, &arrived);
 
@@ -3090,6 +3136,17 @@ static void expire(uint64_t hz)
             c->accepter     = 0;
             c->accept_until = 0;
             fail(who, NET_ERR_TIMEOUT);
+        }
+
+        /*
+         * **Given back** once TCP is finished with it and its program has
+         * closed it, and not before: until then the program may still ask
+         * about it, and a slot reused under a live handle would answer for
+         * somebody else's connection.
+         */
+        if (c->state == ST_DEAD && c->want_close && c->waiter == 0) {
+            conn_free(c);
+            continue;
         }
 
         if (c->state == ST_FREE || c->state == ST_DEAD) {

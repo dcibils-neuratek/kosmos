@@ -635,6 +635,8 @@ than no check:
 | an address typed after Control-L brings the second page | Control-L selects the whole bar and what is typed replaces it, `http://` and all; the second page's heading is a blue nothing else uses |
 | Back leaves it, asking for nothing | history kept, and a page gone back to comes from what was kept |
 | both pictures are drawn | the test page's PNG has a magenta square and its JPEG a cyan one; the page is paged down until both have been on the screen |
+| a page over TLS is Secure | its certificate signed by an authority made for the run and put in the guest's `/Home/Preferences/Authorities` |
+| one from another authority is Refused, and Open anyway opens it Not secure | the refusal page's last link clicked; nothing is sent to the refused server before it |
 
 Six presses rather than one, and for the same reason the detached-program
 check sleeps 3.3 seconds rather than 3: a line is forty pixels and the check
@@ -14022,3 +14024,81 @@ failure's number (`net_kosmos.c`, `sentence`), and `fetch`, `telnet`, the
 browser and the Network panel show it rather than keeping tables of their
 own - three of which called 4 "no route to it", when `netproto.h` gives that
 to 3 and calls 4 nobody answering for the address.
+
+## 18.296 HTTPS in the browser, and connections given back
+
+**`roadmap.md` 6zz c.** The TLS Kit gains `insecure = true` - the chain still
+checked by BearSSL against the same roots and clock, its verdict kept for
+`t:trusted()`, and the handshake done with the server certificate's own key
+- which is the browser's **Open anyway** (Diego, on the drawing: "add a button
+that says 'open anyways' as well"). `user/lib/http.lua` is the request for
+`fetch` and the browser both: an address split, a name looked up, TLS laid
+over the connection for `https`, the request written as it is taken and the
+reply read to the close, bounded by quiet rather than by count. It trusts the
+image's roots and every DER certificate in `/Home/Preferences/Authorities`.
+The browser speaks `https://`, keeps a page's scheme for its links, and says
+how a page came first on its status line and last on its log line: Secure,
+Not secure, Not encrypted, Refused, or From this machine. A certificate
+refusal is a page of its own with Go back and Open anyway, the host
+remembered in a table of that window's and nowhere else.
+
+**`arm-browser` and `x86-browser` gain three checks**: the second page from a
+TLS server on this Mac whose certificate the run's authority signed, that
+authority on a disk made for the run - Secure, and drawn; the same page from
+one another authority signed - Refused, with nothing sent to it; and the
+refusal page's Open anyway clicked - Not secure, and drawn. Controls, each
+biting: `http.lua` ignoring the Authorities folder refuses the first; the kit
+ignoring `insecure` leaves Open anyway refused.
+
+**What the click found was not the browser's.** The first Open anyway went
+nowhere, and the screen said "too many at once": the network stack had never
+given a connection's slot back. A connection went to `ST_DEAD` and stayed
+there with its 36 KB region, so a machine had **sixteen TCP connections a
+boot**, and then none - the browser's suite, counting its pages, reloads and
+pictures, reached sixteen exactly at the click. It had passed before by
+making fourteen. And every program kept each connection's ring mapped for
+its life, since the kit's connection had no `__gc`, whatever its comment said.
+
+So a slot goes back once TCP is finished with it and its program has closed
+it (`conn_free`), and one nobody was ever handed - refused, timed out, never
+accepted - as soon as it dies. **A handle is a slot and a generation**,
+`slot + NET_CONN_MAX * generation` (`NET_HANDLE_SLOT`), so a program that
+kept one past its connection names nothing rather than the next connection
+in its slot. The Network Kit closes a connection its program forgot and lets
+go of the ring when Lua collects it, unmapping before it drops the
+capability, since a region's pages live as long as a capability does and not
+a mapping.
+
+**`arm-network` and `x86-network`, 27 checks**: forty connections one after
+another in one boot, each a request read to its close. Control: the slot
+never given back opens 15 of the 40 - the `fetch` before them was the
+sixteenth. `boot()` lets a command name the line its answer ends with, since
+the empty line typed after each prints a prompt early. The status line cuts
+its words before the timings now, which the refusal's longer line ran under.
+
+**The first gate failed `arm-cafesa3d` and `x86-cafesa3d`**, two checks each:
+Cafesa3D's harness read the browser's line to its end with `missing$`, and
+the line now ends with how the page came. It reads `, From this machine`
+there now, which is also a check worth having - the tutorial is the image's.
+
+The gate that took it: 75 suites in 8:57, once the Mac had disk enough
+for `x86-usb-2`'s stick images.
+
+Diego, told of the sixteen: "why is 16 tcp connections a limit?", "we
+shouldnt have limits" - next, the stack's pools growing as the kernel's do
+(`roadmap.md` 6zz f).
+
+**And real pages, the first ones Diego asked to see.** `https://duckduckgo.com/`
+arrived Secure - Mozilla's roots, the machine's clock - and drew nothing: its
+front page is a JavaScript application, 225 KB that lays out to eight pixels
+without it. It also took **50 seconds** to arrive, about 4.5 KB a second, and
+not in the handshake: Wikipedia's first answer took 257 ms, handshake and all.
+That answer was 126 bytes of refusal, because the request named nobody; the
+browser now sends **`NetSurf/3.11 (Kosmos 0.10.200)`** - its engine's token,
+NetSurf 3.11's libraries being what it is made of, and the one sites know
+means HTML and CSS without JavaScript - and `fetch` sends `Kosmos/0.10.200`.
+With it, `https://www.gnu.org/` came in 9.6 s from the command, 3121 pixels
+tall with its eleven pictures, of which the status line's "paint 8089 ms" is
+the pictures fetched one after another over a TLS connection each. Neither
+the speed nor the attribution is a suite yet; both are `roadmap.md` 6zz g's
+first measurements.

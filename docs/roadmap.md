@@ -2674,7 +2674,15 @@ processors, and still what follows USB:
       on x86 a page asked for before the machine had its address refused -
       which the network stack now holds until the lease, for every program
       rather than for the browser.
-   c. **HTTPS in the browser**, through the TLS Kit, held by the same suite.
+   c. **BUILT 30 September (`testing.md` 18.296). HTTPS in the browser**,
+      through the TLS Kit, held by the same suite: Secure for a certificate
+      that checks out, Refused on a page saying why with **Go back** and
+      **Open anyway** for that window only, and Not secure while it is
+      open. The request is `user/lib/http.lua`'s, shared with `fetch`; a
+      person's own authorities go in `/Home/Preferences/Authorities` (Diego,
+      30 September: "personal cerrtificate location is ok"). It found the network stack never
+      giving a connection's slot back - sixteen a boot, then "too many at
+      once" - which is fixed.
    d. **The new chrome** - the kit's header, the title bar the look
       decides - drawn as `docs/browser.html` first, for Diego to look at
       before any code (5zn has it among the windows still to move). And
@@ -2697,6 +2705,58 @@ processors, and still what follows USB:
       kit's widgets already paint into such a surface (`ui.paint_view`, as
       Cafesa3D's do), so the browser keeps its own page and wears the new
       components.
+   f. **No fixed limits in the network stack.** Diego, 30 September, told
+      the sixteen: "why is 16 tcp connections a limit?", "we shouldnt have
+      limits". The connection table is an array sized when `net.c` is
+      compiled, and `NET_OP_POLL` names connections as bits of one word;
+      the pings in flight (8), names asked at once (4) and programs polling
+      at once (4) are the same shape. So: each table grows by a slab when
+      it is full and never shrinks, as the kernel's pools have since 19
+      September, with the ceiling derived from the machine's memory - a
+      connection costs its 36 KB ring - and `poll` takes a list of handles
+      rather than a mask. **Next.** **And then the class**, since the rule
+      reached the kernel's pools and not the servers' tables: `ramfs`'s
+      128 files of at most 16 KB and 16 watchers - `/Temporary` - the audio
+      server's 8 streams, and the USB driver's 8 devices, 2 cameras and 8
+      opens. What stays is what is a fact rather than a budget: HID's six
+      keys a report, xHCI's 255 ports, a card's own ring, a cache that
+      evicts (ARP's).
+   g. **The HTTP Kit, in C: Lua orchestrating, C doing the hard work.**
+      Diego, 30 September: "are we doing all in c in this? as this needs to
+      be fast", "lua just orchestrating", "c doing the hard work", "crypto,
+      compression, ssl, byte loops, encoding, image porocessing, etc". The
+      arithmetic is C already - BearSSL, the parser, layout, painting,
+      PNG and JPEG - but the *bytes* cross Lua between the stages: a Lua
+      string per ring read, another out of the TLS Kit, a table of pieces
+      joined and the body copied out by a pattern, four or five copies of
+      every page and all of them garbage. So a kit that reads the
+      connection's ring itself, feeds BearSSL from it in the same C, keeps
+      the reply in one buffer, parses the head there - status, redirects,
+      `Content-Length`, chunked - inflates `gzip` through the Compression
+      Kit, and hands the body to the parser and the decoders without it
+      ever becoming a Lua string. `http.lua` stays as the face, deciding
+      what to fetch and what a redirect or a refusal means. Measured on the
+      test page's own status line, before and after. **What real pages
+      showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
+      front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
+      second, and not the handshake, since Wikipedia's first answer came
+      in 257 ms with one - so the bulk transfer is the first thing to
+      measure: TLS under TCG, the Lua byte path, or a window that does not
+      reopen once the ring is drained. And gnu.org's "paint 8089 ms" is its
+      eleven pictures fetched one after another, each over a TLS connection
+      of its own, and counted as painting: one connection kept per host,
+      pictures fetched side by side, and their time given a number of its
+      own. DuckDuckGo's front page itself is a JavaScript application that
+      draws nothing without it, and its HTML search answers a client it
+      does not recognise with 202 - both for the search work in d.
+   h. **SIMD in the browser's pixels** - Diego, the same afternoon: "make
+      sure we use vector simd on the browser when useful", "to make it
+      faster". `web_paint.c`'s fills and text, the pictures' scaling, and the
+      blit a scroll is: profiled first, so the vector unit goes where the
+      time is, in GCC's vector types as `gfx.c` and `pack.c` are written,
+      each held to its scalar self by a host test.
+   **The order since 30 September**: f, g and h, then e and d - the
+   browser fast before it is redrawn.
 
 6zy. **FOUND on 30 September - Kosmos cannot reach itself.** Diego, with the
    web server switched on in `make qemu` and the browser inside it at

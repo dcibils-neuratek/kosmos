@@ -64,6 +64,8 @@ Usage: run_browser.py <image> --out <file.png> [--page <file.html>]
 import argparse
 import http.server
 import os
+import ssl
+import subprocess
 import sys
 import threading
 import time
@@ -110,12 +112,13 @@ def reader(px, width):
     return at
 
 
-def serve(directory, asked):
+def serve(directory, asked, tls=None):
     """An HTTP server on an ephemeral port, in a thread. Returns the port.
 
     `asked` is a list the handler appends every path to, which is how the
     Reload check knows the button did something rather than merely looking
-    pressed.
+    pressed. `tls`, an `ssl.SSLContext`, makes it HTTPS: a handshake the
+    browser refuses fails inside `accept`, which the server shrugs off.
     """
     class Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -129,6 +132,10 @@ def serve(directory, asked):
             pass
 
     httpd = http.server.HTTPServer(("0.0.0.0", 0), Handler)
+
+    if tls is not None:
+        httpd.socket = tls.wrap_socket(httpd.socket, server_side=True)
+
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
 
@@ -177,8 +184,9 @@ def runs_of_ink(rows, floor=2):
     return out
 
 
-def find_link(px, width, x0, y0, w, h):
-    """The middle of the first stretch of link-blue text, or None.
+def find_link(px, width, x0, y0, w, h, last=False):
+    """The middle of the first stretch of link-blue text, or None - or of the
+    last, from the bottom up, when `last`.
 
     By colour rather than by position: `web_paint.c` paints a run inside an
     `<a>` in a blue nothing else on a page uses, so finding one is also the
@@ -187,8 +195,30 @@ def find_link(px, width, x0, y0, w, h):
     a stem are the ink itself.
     """
     at = reader(px, width)
+    rows = range(y0 + h - 1, y0 - 1, -1) if last else range(y0, y0 + h)
 
-    for y in range(y0, y0 + h):
+    def blue_at(x, y):
+        r, g, b = at(x, y)
+        return b > 130 and b > r + 60 and b > g + 40
+
+    # From the bottom the first blue is the underline, which lies below the
+    # word's box and so is not the link: the middle of the word is, found by
+    # climbing through its letters, across the gap above the underline.
+    def middle(bottom, left, right):
+        top, empty = bottom, 0
+
+        for y in range(bottom - 1, max(y0, bottom - 40), -1):
+            if any(blue_at(x, y) for x in range(left, right)):
+                top, empty = y, 0
+            else:
+                empty += 1
+
+                if empty > 3:
+                    break
+
+        return (top + bottom) // 2
+
+    for y in rows:
         run = None
 
         for x in range(x0, x0 + w):
@@ -200,7 +230,7 @@ def find_link(px, width, x0, y0, w, h):
                     run = x
             elif run is not None:
                 if x - run >= 6:
-                    return (run + x) // 2, y
+                    return (run + x) // 2, middle(y, run, x) if last else y
                 run = None
 
     return None
@@ -250,11 +280,44 @@ def main():
     asked = []
     httpd, port = serve(directory, asked)
 
+    #
+    # **And over TLS** (`roadmap.md` 6zz c): an authority made for the run,
+    # a certificate for 10.0.2.2 it signed and one another authority signed,
+    # the same page served under each - and the first authority in the
+    # guest's `/Home/Preferences/Authorities`, on a disk made for the run,
+    # which is how a person adds one of their own.
+    #
+    import run_tls
+    import scratch
+
+    work = scratch.directory("browser-tls")
+    run_tls.pki(work, "10.0.2.2")
+
+    def context(cert):
+        c = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        c.minimum_version = ssl.TLSVersion.TLSv1_2
+        c.load_cert_chain(os.path.join(work, cert + ".pem"),
+                          os.path.join(work, "server.key"))
+        return c
+
+    tls_asked = []
+    https_good, good_port = serve(directory, tls_asked, context("good"))
+    https_other, other_port = serve(directory, tls_asked, context("untrusted"))
+
+    disk = os.path.join(work, "disk.img")
+    subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
+                    os.path.join(HERE, "kfs.lua"), "create", disk, "16",
+                    os.path.join(work, "ca.der")
+                    + ":/Home/Preferences/Authorities/test.der"],
+                   check=True, capture_output=True)
+
     import run_screenshot
     saved = (run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS)
     run_screenshot.extra_args(args.image, [
         "-netdev", "user,id=net0",
         "-device", run_screenshot.device(args.image, "net") + ",netdev=net0",
+        "-drive", f"file={disk},format=raw,if=none,id=disk",
+        "-device", run_screenshot.device(args.image, "blk") + ",drive=disk",
     ])
 
     guest = None
@@ -562,13 +625,85 @@ def main():
                 f"the server was asked for {pictures!r}. Wrote "
                 f"{args.out.replace('.png', '-images.png')}.")
 
+        #
+        # **HTTPS** (`roadmap.md` 6zz c). The second page from the server
+        # whose certificate the guest's authority signed: drawn, and said to
+        # be Secure. Then from the one another authority signed: refused, on
+        # a page saying why - and its Open anyway, the last link on it,
+        # clicked: drawn, and said to be Not secure.
+        #
+        def showing(url, what):
+            mark = len(guest.seen)
+            typed("\x0c")
+            time.sleep(0.4)
+            typed(url + "\n")
+            return guest.wait_for_line("browser: showing " + url, what, since=mark)
+
+        good = "https://10.0.2.2:%d/%s" % (good_port, LINKED)
+        line = showing(good, "the page over TLS")
+
+        if not line.rstrip().endswith(", Secure"):
+            raise Failure(f"a page over TLS, its certificate signed by an authority "
+                          f"in /Home/Preferences/Authorities, was not Secure: {line!r}")
+
+        settle(guest,
+               lambda w_, h_, px_: True if second_page(px_, w_) >= 10 else None,
+               "the second page over TLS was said to be shown and was not drawn.",
+               seconds=20)
+
+        other = "https://10.0.2.2:%d/%s" % (other_port, LINKED)
+        refused_before = len(tls_asked)
+        line = showing(other, "the refusal")
+        refusal = "Refused: the certificate is signed by nobody this machine trusts"
+
+        if not line.rstrip().endswith(refusal):
+            raise Failure(f"a certificate from an authority the guest does not "
+                          f"trust was not refused for it: {line!r}")
+
+        if len(tls_asked) != refused_before:
+            raise Failure(f"the refused server was sent a request anyway: "
+                          f"{tls_asked[refused_before:]!r}")
+
+        wr, hr, pxr = parse_ppm(guest.screendump())
+
+        with open(args.out.replace(".png", "-refused.png"), "wb") as f:
+            f.write(png(wr, hr, pxr))
+
+        anyway = find_link(pxr, wr, x0 + 4, y0, WIN_W - SBAR - 8,
+                           min(WIN_H - TOOL - STAT, hr - y0 - 2), last=True)
+
+        if anyway is None:
+            raise Failure("the refusal page has no link to click: no Open anyway. "
+                          f"Wrote {args.out.replace('.png', '-refused.png')}.")
+
+        mark = len(guest.seen)
+        guest.mouse_to(*_to_tablet(anyway[0], anyway[1], wr, hr))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+
+        line = guest.wait_for_line("browser: showing " + other, "Open anyway",
+                                   since=mark)
+
+        if not line.rstrip().endswith("Not secure: the certificate is signed by "
+                                      "nobody this machine trusts"):
+            raise Failure(f"Open anyway did not show the page as Not secure: {line!r}")
+
+        settle(guest,
+               lambda w_, h_, px_: True if second_page(px_, w_) >= 10 else None,
+               "Open anyway was said to show the page and it was not drawn.",
+               seconds=20)
+
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "
               f"{short} to {tall} pixels tall, it scrolled "
               f"({moved} rows changed), Reload asked again, a link led to "
               f"{followed[0]}, Home rendered with nothing served, an address "
               f"typed with http:// brought the second page, Back left it, "
-              f"and the PNG and the JPEG were drawn.")
+              f"the PNG and the JPEG were drawn, a page over TLS was Secure, "
+              f"one from an authority it does not trust was refused, and "
+              f"Open anyway showed it as Not secure.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)
@@ -594,6 +729,8 @@ def main():
     finally:
         run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS = saved
         httpd.shutdown()
+        https_good.shutdown()
+        https_other.shutdown()
 
         if guest is not None:
             guest.close()
