@@ -565,12 +565,20 @@ def main():
             # connection's slot back, so a machine had sixteen a boot and then
             # "too many at once" for good - found on 30 September by the
             # browser's suite, whose seventeenth page was refused.
-            many = ('local n = 0 for i = 1, 40 do '
+            #
+            # **And every ring let go at both ends.** The regions in use are
+            # counted before and after, the connections collected in between:
+            # a ring that would not unmap keeps its capability - at either
+            # end - and so its region, which is how the day `kosmos_unmap`
+            # was called for a share-window address would have shown.
+            many = ('local b = sys.info().regions_used local n = 0 for i = 1, 40 do '
                     f'local c = fs.connect("/Network", "\\10\\0\\2\\2", {port}) '
                     'if c then c:write("GET /again HTTP/1.0\\r\\n\\r\\n") '
                     'for _ = 1, 200 do if c:closed() then break end c:wait(25) end '
                     'c:close() n = n + 1 end end '
-                    'print("MANY" .. " CONNECTIONS " .. n .. " of 40")')
+                    'collectgarbage() collectgarbage() sys.sleep(250) '
+                    'print("MANY" .. " CONNECTIONS " .. n .. " of 40, regions " .. b '
+                    '.. " then " .. sys.info().regions_used)')
 
             out = boot(image, [
                 "-netdev", "user,id=net0",
@@ -580,13 +588,25 @@ def main():
         finally:
             httpd.shutdown()
 
-        if "MANY CONNECTIONS 40 of 40" not in out:
-            found = re.search(r"MANY CONNECTIONS \d+ of 40", out)
+        found = re.search(r"MANY CONNECTIONS (\d+) of 40, regions (\d+) then (\d+)", out)
+
+        if found is None or found.group(1) != "40":
             raise Failure(
                 "forty connections one after another did not all open: "
                 f"{found.group(0) if found else 'no count printed'}. A slot "
                 "that is never given back is a machine with sixteen "
                 "connections a boot.\n" + out[-900:])
+
+        checks += 1
+
+        before, after = int(found.group(2)), int(found.group(3))
+
+        if after > before + 2 or "would not unmap" in out:
+            raise Failure(
+                f"forty connections closed and collected left {after - before} "
+                f"regions behind ({before} before, {after} after): a ring that "
+                "would not unmap keeps its region, at the stack's end or the "
+                "program's.\n" + out[-900:])
 
         checks += 1
 

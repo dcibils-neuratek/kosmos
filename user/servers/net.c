@@ -1704,13 +1704,29 @@ static void conn_named(struct conn *c)
  * capability dropped, in that order, since a region's pages live as long as
  * a capability to it does and not a mapping. The program's own capability
  * keeps the ring readable to it until it lets go too.
+ *
+ * **`kosmos_share_unmap`, and never `kosmos_unmap`**, which this called for
+ * a day: a region lands in the share window and `SYS_UNMAP` refuses any
+ * address outside its own, so the ring stayed mapped, the capability went,
+ * and once the program let go as well the pages were freed under two live
+ * mappings. Nothing touched them, which is why nothing said so - so a
+ * refusal here is said now rather than ignored, and the capability is kept
+ * when the mapping could not be let go of: a leak is safe, and the other
+ * is not.
  */
 static void conn_free(struct conn *c)
 {
     if (c->ring != NULL) {
-        (void)kosmos_unmap((unsigned long)(uintptr_t)c->ring,
-                           (TCP_RING_REGION + 4095u) / 4096u);
-        (void)kosmos_cap_drop(c->region);
+        if (kosmos_share_unmap((unsigned long)(uintptr_t)c->ring,
+                               (TCP_RING_REGION + 4095u) / 4096u) == 0) {
+            (void)kosmos_cap_drop(c->region);
+        } else {
+            struct say_line line;
+
+            say_begin(&line);
+            say_text(&line, "net: a connection's ring would not unmap; kept");
+            say_send(net.console, &line);
+        }
     }
 
     memset(c, 0, sizeof(*c));

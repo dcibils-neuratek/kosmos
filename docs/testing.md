@@ -14102,3 +14102,32 @@ tall with its eleven pictures, of which the status line's "paint 8089 ms" is
 the pictures fetched one after another over a TLS connection each. Neither
 the speed nor the attribution is a suite yet; both are `roadmap.md` 6zz g's
 first measurements.
+
+## 18.297 A ring unmapped from the window it is in
+
+**Found reading the kernel for `roadmap.md` 6zz f, the day after 18.296 went
+in.** `conn_free` in the stack and the Network Kit's `__gc` let go of a
+connection's ring with `kosmos_unmap` - and a region is mapped into the
+*share* window, which `SYS_UNMAP` refuses: it answered `SYS_ERR_FAULT`, which
+nothing read, the ring stayed mapped, and the capability was dropped anyway.
+A region's pages live as long as a capability to it does and not a mapping,
+so once both ends had let go the pages went back to the machine **under two
+live mappings**. Nothing touched them, which is why no suite said so.
+
+Both call `kosmos_share_unmap` now, and both keep the capability when the
+unmap is refused - a leak is safe and the other is not - and the stack says
+so on its console.
+
+**`arm-network` and `x86-network`, 28 checks**: the forty connections count
+the kernel's regions in use before and after, collected in between. A ring
+that will not unmap keeps its capability and so its region. Controls, one an
+end, each putting `kosmos_unmap` back: the stack's, "40 regions behind (2
+before, 42 after)"; the kit's, "40 regions behind (1 before, 41 after)".
+
+**What it leaves, and it is the kernel's**: any program can map a region,
+drop its last capability and keep the mapping, onto pages the kernel will
+give to somebody else - a hole in what a capability means, reachable on
+purpose and not only by mistake. And the share window gets its addresses
+back only when the newest mapping is the one returned, so a server holding
+many and letting them go out of order fills its window for good. Both are
+`roadmap.md` 6zz f's first step.

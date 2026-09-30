@@ -2705,7 +2705,21 @@ processors, and still what follows USB:
       kit's widgets already paint into such a surface (`ui.paint_view`, as
       Cafesa3D's do), so the browser keeps its own page and wears the new
       components.
-   f. **No fixed limits in the network stack.** Diego, 30 September, told
+   f. **First, the kernel's share window** (`testing.md` 18.297): a
+      region's pages are held by capabilities and not by mappings, so a
+      program that drops its last capability keeps a mapping onto pages the
+      kernel will hand to somebody else - a hole in what a capability
+      means, found when the stack was doing it by mistake. And the window's
+      addresses come back only when the newest mapping is returned, so a
+      server that lets rings go out of order runs out of window however
+      little memory it uses - about 116,000 connections a boot. **One fix
+      for both**: the kernel keeps a record of each process's share
+      mappings - where, how big, which region - in a pool that grows as the
+      others do. A mapping then holds its region, unmapping lets it go and
+      leaves a hole the next mapping can use, and an exit gives back every
+      one of them.
+
+      **Then no fixed limits in the network stack.** Diego, 30 September, told
       the sixteen: "why is 16 tcp connections a limit?", "we shouldnt have
       limits". The connection table is an array sized when `net.c` is
       compiled, and `NET_OP_POLL` names connections as bits of one word;

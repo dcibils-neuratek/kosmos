@@ -596,9 +596,14 @@ static int l_gc(lua_State *L)
         send_close(h);
     }
 
-    (void)kosmos_unmap((unsigned long)(uintptr_t)h->ring,
-                       (TCP_RING_REGION + 4095u) / 4096u);
-    (void)kosmos_cap_drop(h->cap);
+    /* The share window's call: `kosmos_unmap` refuses a region's address,
+     * and dropping the capability of a region still mapped is how its pages
+     * come to be freed under a mapping (`net.c`, `conn_free`). */
+    if (kosmos_share_unmap((unsigned long)(uintptr_t)h->ring,
+                           (TCP_RING_REGION + 4095u) / 4096u) == 0) {
+        (void)kosmos_cap_drop(h->cap);
+    }
+
     h->ring = NULL;
     return 0;
 }

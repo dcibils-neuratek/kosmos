@@ -578,11 +578,10 @@ int main(unsigned long arg)
 #endif
 
     /*
-     * The heap is memory the kernel mapped at a fixed address, not memory
-     * asked for. A process cannot grow its own heap yet and does not need
-     * to: `design.md` §5.2 wants a bounded one anyway, because a small heap
-     * collects fast and the maximum GC pause is what decides whether the
-     * system stutters.
+     * The heap's first arena, which the kernel mapped at a fixed address.
+     * Past it `malloc` asks for more, 256 KB at a time (`runtime/libc/
+     * malloc.c`, `grow`) - this said a process could not grow its heap for
+     * long after one could, and was found saying so on 30 September.
      */
     heap_init((void *)USER_HEAP, USER_HEAP_SIZE);
 
