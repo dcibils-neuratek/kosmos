@@ -29,6 +29,7 @@ times: a machine with no card must still reach a prompt. Every device grant
 in `init.lua` carries a comment about the time it did not.
 """
 
+import gzip
 import http.server
 import os
 import re
@@ -585,9 +586,15 @@ def main():
         # `/drop` answers and then closes it at the *next* request without a
         # reply, which is the race a kept connection can always lose.
         #
-        kept_seen = {"connections": 0, "requests": [], "drop": set()}
+        kept_seen = {"connections": 0, "requests": [], "drop": set(), "gzip": None}
         chunked = b"".join(b"%05d in chunks of every size\n" % i for i in range(4000))
         last_line = chunked[chunked.rindex(b"\n", 0, -1) + 1:-1].decode()
+
+        # **And gzip** (`gzip.c`): a page sent compressed to a client that
+        # says it takes it, and plainly to one that does not.
+        page = b"".join(b"<p>%05d a page, sent gzipped when asked</p>\n" % i
+                        for i in range(3000))
+        zipped = gzip.compress(page, mtime=0)
 
         class Keeps(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -628,6 +635,17 @@ def main():
                 elif self.path == "/drop":
                     self.answer(b"drop\n")
                     kept_seen["drop"].add(self)
+                elif self.path == "/gzip":
+                    kept_seen["gzip"] = self.headers.get("Accept-Encoding")
+
+                    if "gzip" in (kept_seen["gzip"] or ""):
+                        self.send_response(200)
+                        self.send_header("Content-Encoding", "gzip")
+                        self.send_header("Content-Length", str(len(zipped)))
+                        self.end_headers()
+                        self.wfile.write(zipped)
+                    else:
+                        self.answer(page)
                 else:
                     self.answer(b"kept\n")
 
@@ -717,11 +735,13 @@ def main():
                     'get("/closing") sys.sleep(300) '
                     'local a = get("/k") get("/drop") '
                     'local d, _, dwhy = get("/k") '
+                    'local z, zhow = get("/gzip") '
                     'print("KE" .. "PT " .. ok .. " of 5, " .. reused .. " kept, chunked " '
                     f'.. #c .. " " .. c:sub(1, 5) .. " " .. c:sub({-len(last_line) - 1}, -2) '
                     '.. (chow.short and " short" or "") '
                     '.. ", after a close " .. tostring(a == "kept\\n") '
-                    '.. ", after a drop " .. tostring(d == "kept\\n") .. " " .. tostring(dwhy))')
+                    '.. ", after a drop " .. tostring(d == "kept\\n") .. " " .. tostring(dwhy) '
+                    '.. ", gzip " .. #z .. " from " .. tostring(zhow.gzip) .. " " .. z:sub(-18, -6))')
             write_kept = f'fs.write("/Temporary/kept.lua", [==[{kept}]==])'
 
             out = boot(image, [
@@ -768,14 +788,16 @@ def main():
         checks += 1
 
         #
-        # Eleven requests, three connections: the first for the five, the
+        # Twelve requests, three connections: the first for the five, the
         # chunks and `/closing`; the second, after that close, for the next,
         # `/drop` and the request the drop swallowed; the third for that one
-        # made again. The chunks put together, 120,000 bytes, first line to
+        # made again, and the page sent gzipped - 135,000 bytes from 7,624,
+        # its last line whole. The chunks put together, 120,000 bytes, first line to
         # last.
         #
         want_kept = (f"KEPT 5 of 5, 4 kept, chunked {len(chunked)} 00000 {last_line}, "
-                     "after a close true, after a drop true nil")
+                     f"after a close true, after a drop true nil, gzip {len(page)} from "
+                     f"{len(zipped)} {page[-18:-5].decode()}")
         kept_line = re.search(r"KEPT [^\n]*", out)
 
         if kept_line is None or kept_line.group(0).strip() != want_kept:
@@ -788,9 +810,9 @@ def main():
 
         checks += 1
 
-        if kept_seen["connections"] != 3 or len(kept_seen["requests"]) != 11:
+        if kept_seen["connections"] != 3 or len(kept_seen["requests"]) != 12:
             raise Failure(
-                f"eleven requests went over {kept_seen['connections']} connections "
+                f"twelve requests went over {kept_seen['connections']} connections "
                 f"({kept_seen['requests']!r}), where a server that keeps them "
                 "needs three: one, a new one after it closed, and one more "
                 "after it dropped the request")

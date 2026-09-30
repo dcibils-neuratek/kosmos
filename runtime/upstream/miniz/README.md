@@ -17,18 +17,24 @@ compressor rather than write one (`docs/rightclick.html`, answer 4;
 
 ## What of it is used
 
-Only `tdefl`, the deflater, and `mz_crc32`. miniz also reads and writes whole
-zip archives, but through `malloc` and `stdio`, and this system moves a file
-through regions (`fs.read_into`, `fs.write_from`) with a 2 MB heap in each
-process. So it is built with
+`tdefl`, the deflater, `tinfl`, the inflater, and `mz_crc32`. miniz also
+reads and writes whole zip archives, but through `malloc` and `stdio`, and
+this system moves a file through regions (`fs.read_into`, `fs.write_from`).
+So it is built with
 
     -DMINIZ_NO_STDIO -DMINIZ_NO_TIME -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES
-    -DMINIZ_NO_MALLOC -DMINIZ_NO_INFLATE_APIS
+    -DMINIZ_NO_MALLOC -DMINIZ_NO_ARCHIVE_APIS
 
-(the Makefile's `MINIZ_FLAGS`; no inflater takes the archive code with it,
-`miniz.h` says so itself), and `user/kits/compress/deflate.c` runs the
+(the Makefile's `MINIZ_FLAGS`), and `user/kits/compress/deflate.c` runs the
 deflater over two regions with its state in pages of its own. The zip's
 structure is `user/lib/zip.lua`'s; reading one inflates with `puff`.
+
+**The inflater since 30 September**: gzip, for the web's pages
+(`user/kits/compress/gzip.c`, `roadmap.md` 6zz g). It was left out while
+`puff` was the only inflater wanted - and `-DMINIZ_NO_INFLATE_APIS` took the
+archive code with it, which is why `-DMINIZ_NO_ARCHIVE_APIS` is now said
+instead. `tinfl` decodes once, into a window that wraps; `puff` decodes a
+stream twice to learn its size first.
 
 ## The rule this follows
 

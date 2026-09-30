@@ -369,10 +369,12 @@ Dam article drawn to its last line, where eight screens were all there was;
 and a picture's redirect no longer moves the page's address. Then
 **connections kept** (g, 18.305): HTTP/1.1, a reply ending where its head
 says, chunks put together, the connection kept for the next request -
-gnu.org 0.9-1.5 s live from 2.7-3.9. **Next, the browser first**: gzip asked
-for and inflated in C (the Dam article's 2.1 s is 1.0 fetch for its 1.4 MB);
-the allocator; the rest of the byte path (g, k); pictures and the parser fed
-while the page is read; then the rest of f's class
+gnu.org 0.9-1.5 s live from 2.7-3.9. Then **gzip** (g, 18.306), inflated in
+C by miniz's `tinfl`: the Dam article 1.3-1.4 s from 2.1, its fetch 999 ms to
+340. **Next, the browser first**: layout, now the largest part (687 ms of the
+article, in C) - profiled first; the allocator; the rest of the byte path (g,
+k); pictures and the parser fed while the page is read; then the rest of f's
+class (and `inflate`'s 1 MB)
 (`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices). **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,

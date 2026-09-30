@@ -2736,7 +2736,10 @@ processors, and still what follows USB:
       reached the kernel's pools and not the servers' tables: `ramfs`'s
       128 files of at most 16 KB and 16 watchers - `/Temporary` - the audio
       server's 8 streams, and the USB driver's 8 devices, 2 cameras and 8
-      opens. What stays is what is a fact rather than a budget: HID's six
+      opens - and the Compression Kit's `inflate`, which refuses to inflate
+      past 1 MB because "a process has a 2 MB heap by design", a heap the
+      browser has long since outgrown (found 30 September, writing
+      `gunzip`, which takes its ceiling from the caller). What stays is what is a fact rather than a budget: HID's six
       keys a report, xHCI's 255 ports, a card's own ring, a cache that
       evicts (ARP's).
    g. **The HTTP Kit, in C: Lua orchestrating, C doing the hard work.**
@@ -2772,10 +2775,12 @@ processors, and still what follows USB:
       `Content-Length` or its last chunk - and the connection kept half a
       minute for the next request to the same place; gnu.org from 2.7-3.9 s
       to 0.9-1.5 live. The Dam article did not move - 2.1 s, of which the
-      fetch is 1.0 for its 1.4 MB, parse 0.3 and layout 0.66 - so **gzip is
-      next for a page like it**: asked for, and inflated in C through the
-      Compression Kit, which is this item's already. Then the allocator
-      and the rest of the byte path. **What real pages
+      fetch is 1.0 for its 1.4 MB, parse 0.3 and layout 0.66 - so **gzip**
+      (`testing.md` 18.306): asked for, and inflated in C by the
+      Compression Kit's `gunzip` with miniz's `tinfl`; the article 1.3-1.4 s,
+      its fetch 340 ms. **Layout is now the largest part** of a big page -
+      687 ms of it, in C already - so a profile of `web_page_layout` is
+      next, then the allocator and the rest of the byte path. **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came
@@ -2896,7 +2901,13 @@ processors, and still what follows USB:
    gate that took the Dam article's profile fixes - and three passes of
    three alone again, with nothing on the film's path calling `time()`,
    the one thing that commit changed under it. The flake, not the change;
-   still to be found.
+   still to be found. **A fourth, the same evening**: 1,196 samples at
+   2.29 s, in the gate that brought gzip, and three of three alone after -
+   and the gate before it lost `x86-sound` the same way, a tone stretched a
+   tenth. Four in two days is a gate that is red one run in two for a
+   reason nobody has looked at, which costs a rerun every time; **to be
+   looked at next after the browser's layout**, before it is taken for
+   normal.
 
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need

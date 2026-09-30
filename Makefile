@@ -805,6 +805,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gfx/docfont.c \
              user/kits/compress/inflate.c \
              user/kits/compress/deflate.c \
+             user/kits/compress/gzip.c \
              user/kits/synth/synth_dsp.c \
              user/kits/synth/synth_engine.c \
              user/kits/synth/synth_lua.c \
@@ -1112,17 +1113,16 @@ endif
 USER_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(USER_SRCS)))
 USER_DEPS := $(USER_OBJS:.o=.d)
 
-# miniz, for its deflater and nothing else (`runtime/upstream/miniz/README.md`,
-# `roadmap.md` 6v): no stdio, no time, no archives, no inflater - `puff` is
-# that - and no allocator. On every userland file, since `miniz.h` reads them
-# wherever it is included and the kit that includes it has to agree with the
-# file that defines it.
-# `MINIZ_NO_INFLATE_APIS` takes the archive code with it, in `miniz.h`
-# itself - which defines `MINIZ_NO_ARCHIVE_APIS` then, and a second
-# definition here is one the kit's `-Werror` refuses.
+# miniz, for its deflater and its inflater (`runtime/upstream/miniz/README.md`,
+# `roadmap.md` 6v and 6zz g): no stdio, no time, no archives and no
+# allocator. On every userland file, since `miniz.h` reads them wherever it
+# is included and the kit that includes it has to agree with the file that
+# defines it. The inflater, `tinfl`, is gzip's (`user/kits/compress/gzip.c`)
+# since 30 September; it was left out while `puff` was the only one wanted,
+# and leaving it out took the archive code with it - which is now said here.
 MINIZ_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
                -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES -DMINIZ_NO_MALLOC \
-               -DMINIZ_NO_INFLATE_APIS
+               -DMINIZ_NO_ARCHIVE_APIS
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
@@ -1867,6 +1867,16 @@ $(HOSTDIR)/test_pack: tools/test_pack.c user/kits/gfx/pack.c user/kits/gfx/pack.
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/gfx -o $@ \
 	        tools/test_pack.c user/kits/gfx/pack.c
+
+# **gzip, read** (`user/kits/compress/gzip.c`): a stream Python wrote, every
+# header flag, two members, a megabyte, every way of being cut short, checks
+# that lie and a caller that says stop (`roadmap.md` 6zz g).
+#
+$(HOSTDIR)/test_gunzip: tools/test_gunzip.c user/kits/compress/gzip.c user/kits/compress/gzip.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $(MINIZ_FLAGS) \
+	        -Iuser/kits/compress -Iruntime/upstream/miniz -o $@ \
+	        tools/test_gunzip.c user/kits/compress/gzip.c runtime/upstream/miniz/miniz.c
 
 $(HOSTDIR)/test_pack_x86: tools/test_pack.c user/kits/gfx/pack.c user/kits/gfx/pack.h
 	@mkdir -p $(dir $@)
@@ -3612,7 +3622,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3740,6 +3750,7 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	$(HOSTDIR)/test_yuv_x86
 	$(HOSTDIR)/test_pack
 	$(HOSTDIR)/test_pack_x86
+	$(HOSTDIR)/test_gunzip
 	@# Broken-down time, which FFmpeg's option parser and logger reach.
 	$(HOSTDIR)/test_time
 	@# And the H.264 Kit's decoder: eighteen conformance streams, every

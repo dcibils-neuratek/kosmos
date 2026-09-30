@@ -14447,3 +14447,56 @@ the tone stretched, "401 Hz and `beep` played 440", "379 ms and `beep` played
 image, 14 of 14 each; nothing in this change is on the sound path. 18.127's
 rule, and a new shape of the same thing: what the capture measures is the
 host's clock as well as the guest's.
+
+## 18.306 gzip: the Dam article's fetch from 999 ms to 340
+
+**`roadmap.md` 6zz g.** With connections kept, the Dam article did not move:
+2.1 s, of which the fetch was a second - 1.4 MB of HTML over TLS. Every server
+compresses a page for a client that says it can take it, and a fifth of the
+bytes is a fifth of the TLS and of the ring. So `http.lua` says
+`Accept-Encoding: gzip`, and a reply whose head says `Content-Encoding: gzip`
+comes back inflated, `how.gzip` saying how many bytes it came as.
+
+The inflating is C, in the Compression Kit: `compress.gunzip(bytes [, most])`
+over `gzip.c`, which reads RFC 1952 - every header flag, one member or
+several, bytes after the end ignored as `gzip` ignores them - and holds each
+member to its CRC-32 and length. **The inflater is miniz's `tinfl`**, already
+vendored beside the deflater the zip writer uses and compiled out until now
+(`MINIZ_NO_INFLATE_APIS`), run into a 32 KB window that wraps: nothing is sized
+from the trailer, and the caller says how much is too much - `http.lua`, half
+the memory free. `puff`, which `inflate` uses, decodes twice to learn the size
+and refuses past 1 MB, a limit written for a 2 MB heap the browser outgrew
+long ago (now on f's list). A stream cut short or failing its check passes on
+what it inflated to, said to be cut short.
+
+**Live, the Dam article: 1.3 and 1.4 s** after the first load, from 2.1-2.2 -
+fetch 340 ms, parse 262, layout 687, paint 50. **Layout is now the largest
+part.**
+
+**`test_gunzip`** (host, in `make test`'s `host`), 17 checks: a stream
+Python's `gzip` wrote with a name in its header; a megabyte with every flag,
+put a window at a time; cut short from the header to the
+trailer - every byte of the first 64, then half as far again each time - what was put always the text's beginning; two members; zeros after
+the end; a CRC and a length one bit off; HTML, a reserved flag, method 7 and
+data of 0xff; and a caller that stops at 100,000 bytes. Control: the check not
+made, "a CRC one bit off: whole", "a length that lies: whole".
+
+**`arm-network` and `x86-network`**: the HTTP/1.1 server of 18.305 also sends
+a page of 135,000 bytes as 7,624 gzipped to a client that asks, and plainly to
+one that does not; the guest must say "gzip 135000 from 7624" and the page's
+last words. Controls: gzip not asked for, "from nil"; not inflated, "gzip 7624".
+
+**And what was found on the way.** One load of gnu.org took 6.2 s, its fetch
+5.4 over a kept connection - about Apache's keep-alive timeout, as though the
+request had waited for the server to give the connection up. It was not seen
+again: a program fetching gnu.org twice with pauses of 1, 3, 4.5 and 6 s took
+the kept connection at 180 ms each time and a new one after the server closed
+it; and the browser against a server on this Mac closing idle connections at
+three seconds, as Apache does, reloaded the test page in 0.11-0.22 s at pauses
+of 1, 2.9, 3.1 and 4 s. A few minutes later gnu.org stopped answering this Mac
+at all - curl too - after a day of tests, so the likeliest cause is it slowing
+this address down first. Recorded rather than explained.
+
+**The gate for it**: 74 of 75 in 9:38, and `x86-film` the one - 1,196 samples
+of silence at 2.29 s where FFmpeg's reference has sound, `roadmap.md` 6zw's
+shape for the fourth time - and three of three alone after, on the same image.

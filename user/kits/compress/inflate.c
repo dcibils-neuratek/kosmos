@@ -30,6 +30,7 @@
 
 #include "kosmos.h"
 #include "puff.h"
+#include "gzip.h"
 
 /*
  * The ceiling on one call.
@@ -265,6 +266,73 @@ static int l_inflated_size(lua_State *L)
 }
 
 /*
+ * `compress.gunzip(bytes [, most]) -> text [, why]`
+ *
+ * A gzip stream inflated (`gzip.c`) - a web page, when the server was told
+ * it may send one compressed. `text` alone when every member inflated and
+ * checked out; `text` and why when it stopped - cut short, a check that
+ * does not match, data that is not deflate - `text` being what it inflated
+ * to before it did; nil and why for bytes that are not gzip at all.
+ *
+ * `most`, the most it may inflate to, is the caller's: a few kilobytes can
+ * say they are gigabytes, and only the caller knows how much it can hold.
+ * Without it, as much as the stream says.
+ *
+ * Into a Lua string, since that is what the parser is handed today; the
+ * HTTP Kit that keeps a page's bytes out of Lua (`roadmap.md` 6zz g) will
+ * put them somewhere else, and `gzip.c` does not care where.
+ */
+struct gunzip_into {
+    luaL_Buffer *b;
+    size_t       most, got;
+};
+
+static int put_into(void *user, const uint8_t *bytes, size_t n)
+{
+    struct gunzip_into *into = user;
+
+    if (into->most != 0 && into->got + n > into->most) {
+        return 0;
+    }
+
+    luaL_addlstring(into->b, (const char *)bytes, n);
+    into->got += n;
+
+    return 1;
+}
+
+static int l_gunzip(lua_State *L)
+{
+    size_t len = 0;
+    const uint8_t *src = (const uint8_t *)luaL_checklstring(L, 1, &len);
+    lua_Integer most = luaL_optinteger(L, 2, 0);
+
+    /* The inflater's state and window, about 43 KB, on the Lua heap and
+     * collected with the call - pushed before the buffer, which owns the
+     * stack above it until it is done. */
+    struct gunzip_work *work = lua_newuserdatauv(L, sizeof(*work), 0);
+    luaL_Buffer b;
+    struct gunzip_into into = { &b, most > 0 ? (size_t)most : 0, 0 };
+    size_t out = 0;
+    int result;
+
+    luaL_buffinit(L, &b);
+    result = kosmos_gunzip(src, len, work, put_into, &into, &out);
+    luaL_pushresult(&b);
+
+    if (result == GUNZIP_WHOLE) {
+        return 1;
+    }
+
+    if (result == GUNZIP_NOT_GZIP) {
+        lua_pushnil(L);
+    }
+
+    lua_pushstring(L, kosmos_gunzip_said(result));
+    return 2;
+}
+
+/*
  * The compression kit: `use("/Kosmos/Kits/compress")`.
  *
  * It was in `sys` for an evening, next to `pack` and `fnv1a`, and it did not
@@ -296,4 +364,7 @@ void kosmos_compress_kit(lua_State *L)
 
     lua_pushcfunction(L, l_inflated_size);
     lua_setfield(L, -2, "inflated_size");
+
+    lua_pushcfunction(L, l_gunzip);
+    lua_setfield(L, -2, "gunzip");
 }

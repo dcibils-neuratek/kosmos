@@ -37,8 +37,10 @@
 --                   before its last chunk: { got = bytes, want = bytes },
 --                   `want` nil for chunks - never passed on as whole
 --   how.kept        it went over a connection kept from a request before
+--   how.gzip        it came gzipped: how many bytes it was, compressed
 --
--- A body sent in chunks comes back put together, its head as it came.
+-- A body sent in chunks comes back put together, and one sent gzipped comes
+-- back inflated; the head is as it came.
 --
 -- Nothing here prints. `opts.say`, when given, is told each step as it
 -- starts, which is what the browser's status line shows.
@@ -392,6 +394,11 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   -- `Host` because every server since 1.1 wants one, and HTTP/1.1 so that
   -- the server may keep the connection for the next request (above).
   --
+  -- **And gzip**, which every server on the web will send a client that
+  -- says it takes it: Wikipedia's Dam article is 1.4 MB as HTML and a
+  -- fifth of that compressed. Inflated in C, by the Compression Kit
+  -- (`gzip.c`), below.
+  --
   -- Written as it is taken: over TLS nothing is taken until the handshake is
   -- done, so the request waits for it here, and a handshake that ends
   -- instead says why - the certificate's reason, when it was that.
@@ -405,7 +412,7 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   local pause = opts.pause or function(c) c:wait(tick) end
 
   local request = ("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
-                   .. "Accept: text/html, */*\r\n\r\n")
+                   .. "Accept: text/html, */*\r\nAccept-Encoding: gzip\r\n\r\n")
                   :format(parts.path, opts.name or parts.hostport,
                           opts.agent or http.agent())
   local sent = 0
@@ -595,6 +602,35 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   end
 
   if progress then progress(#text, want) end
+
+  --
+  -- **Inflated, when it came gzipped** - in C, the Compression Kit's
+  -- `gunzip`, each member held to its CRC and its length. What it inflates
+  -- to is let as far as half the memory free and no further, so a small
+  -- reply that would inflate to more than the machine has is refused
+  -- rather than obeyed. A stream that stops or does not check out passes
+  -- on what it inflated to, said to be cut short, as a body that stopped
+  -- early is.
+  --
+  local coding = head:lower():match("\r\ncontent%-encoding:%s*([^\r\n]*)")
+
+  if coding and coding:find("gzip", 1, true) then
+    local compress = use("/Kosmos/Kits/compress")
+    local room = ((sys.info() or {}).pages_free or 16384) * 4096 // 2
+    local inflated, why = compress.gunzip(text, room)
+
+    if inflated then
+      how.gzip = #text
+      text = inflated
+
+      if why then
+        how.short = how.short or { got = #inflated }
+        reason = reason or why
+      end
+    else
+      reason = reason or why
+    end
+  end
 
   if key and again and whole() and not ended and not over and not how.short then
     keep(key, conn, stream)
