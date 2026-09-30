@@ -308,8 +308,14 @@ why we neee this" (answered: a speed trick; measure eager, 6zv).
 
 **7b, the desktop lent** (`testing.md` 18.292): `/Running/wm/remote` for a
 program of the image that says `needs desktop`, a viewer's pointer and keys
-as a mouse's and a keyboard's, the Servers window's switch. **Next**: the
-0.10.200 stick with it, then HTTPS - BearSSL, and a random source first.
+as a mouse's and a keyboard's, the Servers window's switch. The gate seven
+suites at a time: 70 in 8:40. **Stick 0.10.200** (`5748316`): OVMF 32, and
+the image booted with an e1000e - control kept over Telnet, `open vncd`, a
+whole frame taken and a click from the Mac logged by the window manager at
+exactly 300,300. Handed over in place of 0.10.199. **Next**: HTTPS - a
+random source first (virtio-rng under QEMU on both boards, RDRAND on the
+M700), then BearSSL, whose 0.6 tarball is in `build/downloads`, held to
+nixpkgs's hash.
 Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
