@@ -2404,7 +2404,10 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
             msg.cap_plus_one = (uint32_t)c->region + 1u;
             memcpy(msg.data, &reply, sizeof(reply));
 
-            (void)kosmos_reply(c->opened_by, &msg);
+            /* Nobody waiting when it was answered at once. */
+            if (c->opened_by != 0) {
+                (void)kosmos_reply(c->opened_by, &msg);
+            }
         }
 
         c->opened_by = 0;
@@ -3060,17 +3063,43 @@ static void serve(const struct message *msg, uint64_t sender)
         if (!net.configured) {
             c->held = true;
             c->snd_nxt++;
-            return;
-        }
-
-        if (!tcp_send(c, TCP_SYN, c->snd_nxt, NULL, 0)) {
+        } else if (!tcp_send(c, TCP_SYN, c->snd_nxt, NULL, 0)) {
             conn_free(c);
             fail(sender, NET_ERR_UNREACHABLE);
             return;
+        } else {
+            c->snd_nxt++;           /* our SYN takes one sequence number */
         }
 
-        /* Our SYN takes one sequence number. */
-        c->snd_nxt++;
+        /*
+         * **At once, when asked** (`NET_CONNECT_AT_ONCE`): the rings now,
+         * the connection still opening. Nobody is left parked, so the
+         * answer to the SYN has nobody to reply to, and a connection that
+         * never opens ends as any does - its ring closed.
+         */
+        if ((req.flags & NET_CONNECT_AT_ONCE) != 0) {
+            struct message msg;
+
+            c->opened_by = 0;
+
+            memset(&reply, 0, sizeof(reply));
+            reply.status     = NET_OK;
+            reply.handle     = c->handle;
+            reply.ring_bytes = TCP_RING_BYTES;
+            reply.state      = NET_TCP_OPENING;
+
+            memset(&msg, 0, sizeof(msg));
+            msg.length = sizeof(reply);
+            msg.cap_plus_one = (uint32_t)c->region + 1u;
+            memcpy(msg.data, &reply, sizeof(reply));
+
+            (void)kosmos_reply(sender, &msg);
+            return;
+        }
+
+        if (c->held) {
+            return;
+        }
 
         /*
          * And no reply. The caller stays parked until the far end answers,

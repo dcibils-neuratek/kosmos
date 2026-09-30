@@ -14279,3 +14279,44 @@ What is left of the browser's time on that page is the allocator - `malloc`,
 the heap growing a mapping at a time, `free` - and then CSS selection and the
 Lua, each a few per cent. And for a page with pictures, fetching them one
 after another over a connection each.
+
+## 18.302 gnu.org from 10 seconds to 3: its pictures together, and all of its page
+
+**`roadmap.md` 6zz g.** Profiled next to the Dam article, gnu.org said
+something else: the browser was busy 0.9 s of a 9.6 s load, the TLS
+arithmetic 0.2 s of that, and the rest was **waiting** - a lookup, a
+connection and a handshake to a server across an ocean, twelve times in a row.
+And the new length check caught what no suite had: **"Cut short at 24 of 30
+KB"**. Over TLS a read gives one record, a server on the internet closes the
+moment it has sent, and the one read after the close left the rest of the
+records in the engine - so gnu.org had been shown without its end all along,
+3214 pixels and eleven pictures where it is 3502 and twelve.
+
+- **Everything in hand after the close**, read until none is left
+  (`http.lua`).
+- **Names remembered** for a minute (`lookup`): twelve pictures from one host
+  were twelve questions to the resolver.
+- **A connect answered at once** (`NET_CONNECT_AT_ONCE`): the rings back
+  while the handshake is under way, what is written waiting in them, a
+  connection that never opens ending as any does, its ring closed.
+- **`http.get_many`**: each fetch `http.get` in a coroutine whose waiting
+  yields its connection, one `fs.poll` over all of them waking whichever have
+  news, eight at a time; the browser fetches the pictures the paper will
+  show that way, then decodes and draws them.
+
+**gnu.org, live over TLS: 10.2 and 10.7 s before, 3.0 and 3.1 after, whole.**
+
+Checks, each with a control that fails it: `arm-tls` and `x86-tls` ask a
+server that closes as soon as it has sent - without `unwrap`, which waits for
+the other side and so never let the close overtake the records - for 200 KB
+in records of 512 bytes, and require it whole (a single read after the close:
+"cut short: 191488 of the 204800 bytes"); `arm-network` and `x86-network`, 31
+checks, connect at once to a port where nothing listens and require a
+connection that then closes (without it: "refused"), and run a program that
+counts `fs.resolve` while fetching from one made-up name five times (without
+the memory: "NAMES ASKED 5 for five"); and `arm-browser` and `x86-browser`
+hold each picture a moment on the server and require two asked for at once
+(one at a time: "at most 1"). The browser's suite also waits now for the
+refusal page to be on the screen, with its two links, before clicking - the
+log line comes when the page is committed, and a screendump taken at once
+caught the page before.

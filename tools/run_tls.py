@@ -37,6 +37,12 @@ import scratch                                              # noqa: E402
 
 PAGE = b"served over TLS to Kosmos\n"
 
+# And a page of many TLS records - 200 KB, 512 bytes to a record - closed as
+# soon as it is sent: every record the engine holds when the far end goes
+# has to come out, and they did not (`http.lua`, 30 September: gnu.org
+# arrived 24 KB of 30).
+BIG = bytes(range(256)) * 800
+
 
 def openssl(*args, cwd):
     subprocess.run(["openssl", *args], cwd=cwd, check=True, capture_output=True)
@@ -104,8 +110,27 @@ def serve(work, cert):
 
                     asked += piece
 
-                conn.sendall(b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n"
-                             b"Content-Length: %d\r\n\r\n" % len(PAGE) + PAGE)
+                body = BIG if b"GET /big " in asked else PAGE
+                head = (b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n"
+                        b"Content-Length: %d\r\n\r\n" % len(body))
+
+                if body is BIG:
+                    # In records of 512 bytes, a write each, and the
+                    # connection closed the moment they are sent - without
+                    # `unwrap`, which waits for the other side's close and so
+                    # never lets the close overtake the records. A server on
+                    # the internet does not wait: gnu.org's close arrived
+                    # with records still in hand, and a single read after it
+                    # took one.
+                    conn.sendall(head)
+
+                    for at in range(0, len(body), 512):
+                        conn.sendall(body[at:at + 512])
+
+                    conn.close()
+                    continue
+                else:
+                    conn.sendall(head + body)
 
                 try:
                     conn.unwrap()           # a close_notify, as a server should
@@ -144,6 +169,8 @@ def main():
         (at % (untrusted, "kosmos-test.local")) + " --cacert /Home/ca.der",
         at % (good, "kosmos-test.local"),
         'print("ANCH" .. "ORS " .. sys.kit("tls").anchors)',
+        "--quiet " + (at % (good, "kosmos-test.local")).replace("/hello", "/big")
+        + " --cacert /Home/ca.der",
     ]
 
     # One command at a time, each read from where it was typed to the line
@@ -208,10 +235,18 @@ def main():
         fails.append("the image did not carry Mozilla's 121 roots: %r"
                      % answers.get(commands[5], "")[-200:])
 
+    big = answer_to("fetch " + commands[6])
+    want = len(b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n"
+               b"Content-Length: %d\r\n\r\n" % len(BIG)) + len(BIG)
+
+    if ("%d bytes" % want) not in big or "cut short" in big:
+        fails.append("a page of many TLS records, closed as soon as it was sent, "
+                     "did not come whole: %r" % big[-300:])
+
     if " died: " in transcript:
         fails.append("something died: " + transcript[transcript.find(" died: ") - 80:][:300])
 
-    checks = 6
+    checks = 7
 
     if fails:
         print("FAIL: %d of %d checks on HTTPS:" % (len(fails), checks))
@@ -224,7 +259,8 @@ def main():
     print("PASS: %d checks on HTTPS through the TLS Kit (a page fetched whole "
           "from a server on this Mac, and refused for another name, for an "
           "expired certificate, for an authority it was not given, and with no "
-          "--cacert against Mozilla's 121 roots)." % checks)
+          "--cacert against Mozilla's 121 roots; and 200 KB of records, closed "
+          "as it was sent, whole)." % checks)
     return 0
 
 

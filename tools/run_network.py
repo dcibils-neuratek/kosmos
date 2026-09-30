@@ -612,12 +612,43 @@ def main():
                        'else s[#s+1]=c end end l=s end '
                        'print("AT".." ONCE "..#cs.." opened, "..n.." finished")')
 
+            #
+            # **A connect answered at once** (`NET_CONNECT_AT_ONCE`): to a
+            # port on this Mac where nothing listens, it comes back as a
+            # connection - still opening - and then says it is closed,
+            # where a connect that waited comes back refused.
+            #
+            opening = ('local c = fs.connect("/Network","\\10\\0\\2\\2",9,true) '
+                       'local t = 0 while c and not c:closed() and t < 50 do '
+                       'c:wait(25) t = t + 1 end '
+                       'print("CONNECT AT".." ONCE "..(c and "given" or "refused")'
+                       '..", closed "..tostring(c and c:closed()))')
+
+            #
+            # **Names remembered** (`http.lua`, `lookup`): a program with
+            # `fs.resolve` counted, fetching from one made-up name five
+            # times, asks the resolver once. Written to /Temporary and run
+            # by its file, since a program has `use` and the prompt does not.
+            #
+            names = ('local http = use("/Kosmos/Libraries/http.lua") '
+                     'local asked, real = 0, fs.resolve '
+                     'fs.resolve = function() asked = asked + 1 return "\\10\\0\\2\\2" end '
+                     f'for _ = 1, 5 do http.get("http://names.test:{port}/names") end '
+                     'fs.resolve = real '
+                     'print("NAMES " .. "ASKED " .. asked .. " for five")')
+            # One line, in long brackets: the shell reads a line at a time,
+            # and the program's own quotes and backslashes go in as they are.
+            write_names = f'fs.write("/Temporary/names.lua", [==[{names}]==])'
+
             out = boot(image, [
                 "-netdev", "user,id=net0",
                 "-device", run_screenshot.device(image, "net") + ",netdev=net0",
             ], [f"fetch 10.0.2.2 {port} /hello",
                 (many, "MANY CONNECTIONS "),
-                (at_once, "AT ONCE ")], seconds=180)
+                (at_once, "AT ONCE "),
+                (opening, "CONNECT AT ONCE "),
+                write_names,
+                ("/Temporary/names.lua", "NAMES ASKED ")], seconds=180)
         finally:
             httpd.shutdown()
 
@@ -629,6 +660,23 @@ def main():
                 f"{found.group(0) if found else 'no count printed'}. A slot "
                 "that is never given back is a machine with sixteen "
                 "connections a boot.\n" + out[-900:])
+
+        checks += 1
+
+        if "CONNECT AT ONCE given, closed true" not in out:
+            found_c = re.search(r"CONNECT AT ONCE [^\n]*", out)
+            raise Failure(
+                "a connect asked to answer at once, to a port where nothing "
+                "listens, did not come back as a connection that then closed: "
+                f"{found_c.group(0) if found_c else 'nothing printed'}\n" + out[-600:])
+
+        checks += 1
+
+        if "NAMES ASKED 1 for five" not in out:
+            found_n = re.search(r"NAMES ASKED [^\n]*", out)
+            raise Failure(
+                "five fetches from one name did not ask the resolver once: "
+                f"{found_n.group(0) if found_n else 'nothing printed'}\n" + out[-600:])
 
         checks += 1
 

@@ -100,6 +100,35 @@ function http.agent()
 end
 
 --
+-- **Names, remembered for a minute.** Every fetch looked its host up again:
+-- gnu.org's twelve pictures were twelve questions to the resolver about one
+-- name, each a round trip before anything else could start (`roadmap.md`
+-- 6zz g). The resolver gives no lifetime back, so a minute is this side's,
+-- and a failed lookup is not remembered.
+--
+local names = {}
+local counter_hz
+
+local function lookup(host, wait_ticks, hz)
+  local now = sys.ticks()
+  local known = names[host]
+
+  counter_hz = counter_hz or (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+
+  if known and now - known.at < 60 * counter_hz then
+    return known.address
+  end
+
+  local found, why, said = fs.resolve(host, wait_ticks or 5 * hz)
+
+  if found then
+    names[host] = { address = found, at = now }
+  end
+
+  return found, why, said
+end
+
+--
 -- The certificates this machine's person has said to trust, as DER.
 --
 function http.authorities()
@@ -157,7 +186,8 @@ end
 --
 -- `http.get(address [, opts])`.
 --
---   opts.anyway      over TLS, go on whatever the certificate says
+--   opts.anyway      over TLS, go on whatever the certificate says - or a
+--                    function of the address's parts that says it for each
 --   opts.anchors     certificates in DER to trust besides the others
 --   opts.name        the name to hold the certificate to and send, for an
 --                    address given by number (`fetch --name`)
@@ -165,6 +195,8 @@ end
 --   opts.agent       the User-Agent; Kosmos and its revision without one
 --   opts.progress    told `(bytes, total)` as the body arrives - total is the
 --                    server's `Content-Length`, or nil when it gave none
+--   opts.pause       called with the connection where this would wait for it;
+--                    `http.get_many` passes one that yields to its scheduler
 --   opts.wait_ticks  how long a name may take to look up, scheduler ticks
 --
 function http.get(address, opts)
@@ -186,7 +218,7 @@ function http.get(address, opts)
   if not where then
     say("looking up " .. parts.host .. " ...")
 
-    local found, why, said = fs.resolve(parts.host, opts.wait_ticks or 5 * hz)
+    local found, why, said = lookup(parts.host, opts.wait_ticks, hz)
 
     if not found then
       return nil, ("cannot look up %s: %s"):format(parts.host, said or tostring(why)), how
@@ -197,7 +229,9 @@ function http.get(address, opts)
 
   say("connecting to " .. parts.hostport .. " ...")
 
-  local conn, why, said = fs.connect("/Network", where, parts.port)
+  -- At once when something else schedules the waiting: the handshake goes
+  -- on while the others' do, and what is written waits in the ring.
+  local conn, why, said = fs.connect("/Network", where, parts.port, opts.pause ~= nil)
 
   if not conn then return nil, said or tostring(why), how end
 
@@ -206,12 +240,18 @@ function http.get(address, opts)
 
   if parts.scheme == "https" then
     local tls = use("/Kosmos/Kits/tls")
+
+    -- Yes or no, or asked of each address - a browser opening pictures from
+    -- hosts some of which it was told to open anyway.
+    local anyway = opts.anyway
+
+    if type(anyway) == "function" then anyway = anyway(parts) end
     local anchors = http.authorities()
 
     for _, der in ipairs(opts.anchors or {}) do anchors[#anchors + 1] = der end
 
     local ok, t = pcall(tls.client, conn, name, { anchors = anchors,
-                                                  insecure = opts.anyway })
+                                                  insecure = anyway })
 
     if not ok then
       conn:close()
@@ -235,12 +275,14 @@ function http.get(address, opts)
   -- caller's to choose - a browser names the engine sites should write for
   -- - and without one this is Kosmos and its revision, which is what
   -- `fetch` is.
+  local tick = math.max(1, hz // 10)
+  local pause = opts.pause or function(c) c:wait(tick) end
+
   local request = ("GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: %s\r\n"
                    .. "Accept: text/html, */*\r\nConnection: close\r\n\r\n")
                   :format(parts.path, opts.name or parts.hostport,
                           opts.agent or http.agent())
   local sent = 0
-  local tick = math.max(1, hz // 10)
 
   for _ = 1, 150 do
     if sent >= #request then break end
@@ -260,7 +302,7 @@ function http.get(address, opts)
         return nil, reason or "the connection closed before the request went", how
       end
 
-      conn:wait(tick)
+      pause(conn)
     end
   end
 
@@ -332,13 +374,22 @@ function http.get(address, opts)
 
     if not text then
       idle = idle + 1
-      conn:wait(tick)
+      pause(conn)
     end
   end
 
-  local last = stream:read()
+  --
+  -- **Everything still in hand, not one read of it.** Over TLS a read gives
+  -- one record, and the connection can close with several decrypted and
+  -- waiting: gnu.org arrived 24 KB of 30 on 30 September, the rest left in
+  -- the engine. Over TCP one read took the whole ring, which is why this was
+  -- one read and seemed enough.
+  --
+  for _ = 1, 4096 do
+    local last = stream:read()
 
-  if last then
+    if not last then break end
+
     parts_in[#parts_in + 1] = last
     got = got + #last
   end
@@ -376,6 +427,87 @@ function http.get(address, opts)
 
   how.ended = reason
   return reply, nil, how
+end
+
+--
+-- **Several at once** (`roadmap.md` 6zz g): `http.get_many(addresses [,
+-- opts])` -> a list of `{ reply, why, how }` in the same order.
+--
+-- gnu.org's page waited, it did not work: twelve pictures in a row, each a
+-- lookup, a connection and a handshake to a server across an ocean, and the
+-- processor idle for nine seconds of ten. Here each fetch is `http.get` in a
+-- coroutine whose waiting yields the connection it waits on, and one
+-- `fs.poll` over all of them wakes whichever have news - so the round trips
+-- overlap rather than add up. Eight at a time, as browsers keep to about
+-- that many at once; each finishing starts the next.
+--
+local AT_ONCE = 8
+
+function http.get_many(addresses, opts)
+  local results, waiting, queue = {}, {}, {}
+  local hz = (sys.info() or {}).tick_hz or 250
+  local tick = math.max(1, hz // 10)
+
+  for i, address in ipairs(addresses) do queue[#queue + 1] = { at = i, address = address } end
+
+  -- One step of one fetch: to its next wait, or to its end.
+  local function step(job)
+    local ok, a, b, c = coroutine.resume(job.co)
+
+    if not ok then
+      results[job.at] = { nil, tostring(a), {} }
+    elseif coroutine.status(job.co) == "dead" then
+      results[job.at] = { a, b, c }
+    else
+      job.conn = a
+      waiting[#waiting + 1] = job
+    end
+  end
+
+  -- As many running as there is room for: a fetch that ends on its first
+  -- step - a name that will not resolve - makes room at once.
+  local function fill()
+    while #waiting < AT_ONCE and #queue > 0 do
+      local job = table.remove(queue, 1)
+      local mine = {}
+
+      for k, v in pairs(opts or {}) do mine[k] = v end
+
+      mine.pause = function(conn) coroutine.yield(conn) end
+      job.co = coroutine.create(function() return http.get(job.address, mine) end)
+      step(job)
+    end
+  end
+
+  fill()
+
+  while #waiting > 0 do
+    local conns = {}
+
+    for _, job in ipairs(waiting) do conns[#conns + 1] = job.conn end
+
+    local ready = fs.poll("/Network", conns, {}, nil, tick) or {}
+    local news = {}
+
+    for _, c in ipairs(ready) do news[c] = true end
+
+    -- A pass with news steps those that have it; a quiet one steps them all,
+    -- which is how each counts its own quiet towards giving up.
+    local these = waiting
+    waiting = {}
+
+    for _, job in ipairs(these) do
+      if #ready == 0 or news[job.conn] then
+        step(job)
+      else
+        waiting[#waiting + 1] = job
+      end
+    end
+
+    fill()
+  end
+
+  return results
 end
 
 --

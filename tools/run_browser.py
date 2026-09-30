@@ -113,6 +113,12 @@ def reader(px, width):
     return at
 
 
+# How many requests for a picture were being answered at once, at most: the
+# pictures are held a moment each, so ones fetched one after another never
+# overlap and ones fetched together do (`http.get_many`, `roadmap.md` 6zz g).
+PICTURES = {"now": 0, "peak": 0, "lock": threading.Lock()}
+
+
 def serve(directory, asked, tls=None):
     """An HTTP server on an ephemeral port, in a thread. Returns the port.
 
@@ -127,12 +133,28 @@ def serve(directory, asked, tls=None):
 
         def do_GET(self):
             asked.append(self.path)
-            super().do_GET()
+
+            if not self.path.endswith((".png", ".jpg")):
+                super().do_GET()
+                return
+
+            with PICTURES["lock"]:
+                PICTURES["now"] += 1
+                PICTURES["peak"] = max(PICTURES["peak"], PICTURES["now"])
+
+            try:
+                time.sleep(0.4)
+                super().do_GET()
+            finally:
+                with PICTURES["lock"]:
+                    PICTURES["now"] -= 1
 
         def log_message(self, *a):
             pass
 
-    httpd = http.server.HTTPServer(("0.0.0.0", 0), Handler)
+    # Threads, so pictures asked for together are answered together.
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+    httpd.daemon_threads = True
 
     if tls is not None:
         httpd.socket = tls.wrap_socket(httpd.socket, server_side=True)
@@ -652,6 +674,12 @@ def main():
 
         pictures = [p for p in asked if p.endswith((".png", ".jpg"))]
 
+        if PICTURES["peak"] < 2:
+            raise Failure(
+                "the test page's pictures were fetched one after another: at "
+                f"most {PICTURES['peak']} was asked for at once, of "
+                f"{pictures!r}. They are fetched together (`http.get_many`).")
+
         if seen_colours != {"magenta", "cyan"}:
             raise Failure(
                 "the test page's pictures were not drawn: of the PNG's magenta "
@@ -698,7 +726,33 @@ def main():
             raise Failure(f"the refused server was sent a request anyway: "
                           f"{tls_asked[refused_before:]!r}")
 
-        wr, hr, pxr = parse_ppm(guest.screendump())
+        #
+        # **The page on the screen, not only said to be.** The log line comes
+        # when the browser has drawn and committed; the window manager puts
+        # it up a moment after, and a screendump taken at once can be the
+        # page before - which is what happened on 30 September, the harness
+        # clicking the second page's one link. So: the screen until two looks
+        # agree and it shows two links, Go back above Open anyway.
+        #
+        def refusal_shown(w_, h_, px_):
+            band = min(WIN_H - TOOL - STAT, h_ - y0 - 2)
+            first = find_link(px_, w_, x0 + 4, y0, WIN_W - SBAR - 8, band)
+            final = find_link(px_, w_, x0 + 4, y0, WIN_W - SBAR - 8, band, last=True)
+
+            if first is None or final is None or final[1] - first[1] < 12:
+                return None
+
+            return w_, h_, px_
+
+        previous = [None]
+
+        def held(w_, h_, px_):
+            same = previous[0] == px_
+            previous[0] = px_
+            return refusal_shown(w_, h_, px_) if same else None
+
+        wr, hr, pxr = settle(guest, held, "the refusal page was said to be shown "
+                             "and was not put up with its two links", seconds=30)
 
         with open(args.out.replace(".png", "-refused.png"), "wb") as f:
             f.write(png(wr, hr, pxr))

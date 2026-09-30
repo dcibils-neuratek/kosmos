@@ -2761,9 +2761,12 @@ processors, and still what follows USB:
       NetSurf libraries built with `NDEBUG` - none of which was the byte
       path. Diego, the same afternoon: "make the browser fast please, a
       slow browser is unusable" - so the browser's speed is ahead of the
-      rest of f's class. Next, by what the profiles say: pictures fetched
-      side by side over connections kept per host, names remembered, then
-      the allocator, then the byte path. **What real pages
+      rest of f's class. **Then gnu.org, from 10 s to 3** (`testing.md`
+      18.302): pictures fetched side by side (`http.get_many`), names
+      remembered, a connect answered at once, and every record read after
+      a TLS close - it had been shown cut short. Next, by what the profiles
+      say: connections kept per host (HTTP/1.1, so a page's pictures share
+      one handshake), then the allocator, then the byte path. **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came

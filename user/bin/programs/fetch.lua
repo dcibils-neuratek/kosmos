@@ -4,6 +4,7 @@
 --   fetch https://example.com/
 --   fetch http://10.0.2.2:8000/hello
 --   fetch https://10.0.2.2:8443/ --name test.local --cacert /Home/ca.der
+--   fetch --quiet https://example.com/        the size and the status, no body
 --   fetch 10.0.2.2 8000 /                      (the form it had first)
 --
 -- **The smallest thing that exercises a whole connection**: open it, send
@@ -29,7 +30,7 @@
 -- so the two cannot disagree about what a reply is or whom to trust - the
 -- image's roots and `/Home/Preferences/Authorities`.
 
-local words, named, cacert = {}, nil, nil
+local words, named, cacert, quiet = {}, nil, nil, false
 local given = {}
 
 for w in tostring(args or ""):gmatch("%S+") do given[#given + 1] = w end
@@ -42,6 +43,8 @@ do
       named, i = given[i + 1], i + 2
     elseif given[i] == "--cacert" then
       cacert, i = given[i + 1], i + 2
+    elseif given[i] == "--quiet" then
+      quiet, i = true, i + 1
     else
       words[#words + 1], i = given[i], i + 1
     end
@@ -97,4 +100,9 @@ if how.short then
 end
 
 print(("%d bytes"):format(#reply))
-print(reply)
+
+if quiet then
+  print(reply:match("^[^\r\n]*") or "")
+else
+  print(reply)
+end

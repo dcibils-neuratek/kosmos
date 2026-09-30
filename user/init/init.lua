@@ -1493,12 +1493,14 @@ local function new_namespace()
   -- one, which is the same rule as everything else here - there is no
   -- number to guess and no table to index.
   --
-  function ns.connect(path, to, port)
+  -- `at_once`: back while it is still opening, for a program opening
+  -- several (`netproto.h`, `NET_CONNECT_AT_ONCE`).
+  function ns.connect(path, to, port, at_once)
     local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
-    return net.connect(capability, to, port)
+    return net.connect(capability, to, port, at_once)
   end
 
   -- Answering on a port, and taking whoever arrives. The listener is a

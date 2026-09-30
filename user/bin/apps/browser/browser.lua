@@ -989,13 +989,71 @@ end
 -- Bilinear when a picture is scaled, because a screenshot shrunk by nearest
 -- neighbour loses whole rows of text. At its own size the two are the same.
 --
+--
+-- **The network's pictures together** (`roadmap.md` 6zz g): every one the
+-- paper will show, fetched with `http.get_many` - side by side, names
+-- remembered - where each was fetched after the one before. gnu.org's page
+-- spent nine seconds of ten waiting on its twelve that way. A picture that
+-- redirects is followed on its own; one the image carries or a file on this
+-- machine is read as before.
+--
+local function fetch_pictures(wanted)
+  local urls, seen, got = {}, {}, {}
+
+  for _, w in ipairs(wanted) do
+    local where = w.where
+
+    if where and not where:match("^asset:") and where:sub(1, 1) ~= "/"
+       and not seen[where] then
+      seen[where] = true
+      urls[#urls + 1] = where
+    end
+  end
+
+  if #urls == 0 then return got end
+
+  say(("fetching %d pictures ..."):format(#urls))
+
+  local results = http.get_many(urls, {
+    agent = AGENT,
+    anyway = function(parts)
+      return parts.scheme == "https" and anyway[parts.hostport] or nil
+    end,
+  })
+
+  for i, r in ipairs(results) do
+    if r[1] then
+      local status, _, body = http.parse(r[1])
+
+      if status >= 300 and status < 400 then
+        got[urls[i]] = fetch(urls[i])
+      elseif status >= 200 and status < 300 and not (r[3] and r[3].short) then
+        got[urls[i]] = body
+      end
+    end
+  end
+
+  return got
+end
+
 local function draw_pictures(doc)
   local drawn, missing = 0, 0
+  local wanted = {}
 
   for _, im in ipairs(doc:images()) do
     if im.y < paper_h then
-      local where = resolve(here or "", im.src)
-      local bytes = where and bytes_at(where)
+      wanted[#wanted + 1] = { im = im, where = resolve(here or "", im.src) }
+    end
+  end
+
+  local fetched = fetch_pictures(wanted)
+
+  for _, w in ipairs(wanted) do
+    local im, where = w.im, w.where
+
+    do
+      local bytes = where and (fetched[where] or ((where:match("^asset:")
+                    or where:sub(1, 1) == "/") and bytes_at(where)))
       local decode = bytes and ((bytes:sub(1, 4) == "\x89PNG" and gfx.png)
                                 or (bytes:sub(1, 2) == "\xff\xd8" and gfx.jpeg))
       local ok, pic = false, nil

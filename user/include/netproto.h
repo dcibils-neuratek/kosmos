@@ -69,6 +69,16 @@
  * both were cheaper than the note predicting them suggested.
  */
 #define NET_OP_CONNECT   5u       /* open one, and get its rings */
+
+/*
+ * **Answered at once**, rather than when the far end answers: the rings come
+ * back while the handshake is still under way, whatever is written waits in
+ * them until the connection opens, and one that never does ends as any
+ * connection ends - its ring closed. What lets a program open twelve at once
+ * rather than one round trip after another (`http.get_many`, the browser's
+ * pictures; `roadmap.md` 6zz g).
+ */
+#define NET_CONNECT_AT_ONCE  1u
 #define NET_OP_PUSH      6u       /* there is something in `out` */
 #define NET_OP_WAIT      7u       /* block until bytes arrive or it closes */
 #define NET_OP_CLOSE     8u       /* this end is done sending */
@@ -270,6 +280,9 @@ struct net_request {
      * name can.
      */
     uint32_t wait_ticks;
+
+    /* For NET_OP_CONNECT: `NET_CONNECT_AT_ONCE` below, or nothing. */
+    uint32_t flags;
     struct net_addr to;
 
     /* For NET_OP_CONFIG: this machine's address, its mask, the router to

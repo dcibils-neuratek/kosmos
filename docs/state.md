@@ -359,9 +359,11 @@ a hundred connections at once in the gate. Then Diego: "make the browser
 fast please, a slow browser is unusable" - and the profile (18.301) took the
 Dam article from 8.2 s to 2.0: `time()` reading `sysinfo` once a minute,
 libdom's unheard DOM events not made (`runtime/patches/netsurf/`), the NetSurf
-libraries built with `NDEBUG`. **Next, the browser's speed first**: pictures
-side by side over connections kept per host and names remembered, the
-allocator, the byte path (6zz g, k); then the rest of f's class
+libraries built with `NDEBUG`. And gnu.org from 10 s to 3 (18.302): pictures
+together, names remembered, connect at once, and every TLS record read after
+a close (it had been shown cut short). **Next, the browser's speed first**:
+connections kept per host (HTTP/1.1), the allocator, the byte path (6zz g,
+k); then the rest of f's class
 (`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices). **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,
