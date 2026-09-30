@@ -28,6 +28,7 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <dom/dom.h>
@@ -73,12 +74,37 @@ static bool intern_all(void)
     return true;
 }
 
+/*
+ * **Lowered names, remembered by the name they were lowered from**
+ * (`roadmap.md` 6zz g). libcss asks an element's name for nearly every
+ * selector it tries - its own, and its ancestors' and siblings' for every
+ * `a b` and `a > b` - and each answer was a copy lowered and interned:
+ * two allocations and a hash, thousands of times a page. The profile of
+ * Wikipedia's Dam article put the cascade and the strings it made at a
+ * third of the browser's time.
+ *
+ * A name is interned once (`dom_string_intern` turns the node's own string
+ * into a reference to the interned one, so the second time is a count), and
+ * an interned string is one pointer for every element of that name - so a
+ * table indexed by that pointer finds the lowered one without lowering.
+ * Direct-mapped and small, since a page has a few dozen names: two that
+ * land in one slot take it in turns, which is a lowering and not a mistake.
+ * The table's references keep both strings alive, so a slot can never hold
+ * a pointer to something freed and reused.
+ */
+#define LOWERED 64u
+
+static struct {
+    lwc_string *raw;
+    lwc_string *lower;
+} lowered[LOWERED];
+
 /* An element's name, lowered and interned. See the note about case above. */
 static css_error name_of(dom_node *node, lwc_string **out)
 {
     dom_string *name = NULL;
-    dom_string *lower = NULL;
-    lwc_error e;
+    lwc_string *raw = NULL;
+    unsigned slot;
 
     *out = NULL;
 
@@ -86,18 +112,35 @@ static css_error name_of(dom_node *node, lwc_string **out)
         return CSS_NOMEM;
     }
 
-    if (dom_string_tolower(name, true, &lower) != DOM_NO_ERR || lower == NULL) {
+    if (dom_string_intern(name, &raw) != DOM_NO_ERR) {
         dom_string_unref(name);
         return CSS_NOMEM;
     }
 
     dom_string_unref(name);
+    slot = (unsigned)(((uintptr_t)raw >> 4) % LOWERED);
 
-    e = lwc_intern_string(dom_string_data(lower),
-                          dom_string_byte_length(lower), out);
-    dom_string_unref(lower);
+    if (lowered[slot].raw == raw) {
+        lwc_string_unref(raw);
+    } else {
+        lwc_string *lower = NULL;
 
-    return (e == lwc_error_ok) ? CSS_OK : CSS_NOMEM;
+        if (lwc_string_tolower(raw, &lower) != lwc_error_ok) {
+            lwc_string_unref(raw);
+            return CSS_NOMEM;
+        }
+
+        if (lowered[slot].raw != NULL) {
+            lwc_string_unref(lowered[slot].raw);
+            lwc_string_unref(lowered[slot].lower);
+        }
+
+        lowered[slot].raw = raw;            /* the table's reference now */
+        lowered[slot].lower = lower;
+    }
+
+    *out = lwc_string_ref(lowered[slot].lower);
+    return CSS_OK;
 }
 
 /* Is this node an element? Text and comments are asked about too. */
@@ -157,77 +200,34 @@ static css_error h_node_name(void *pw, void *node, css_qname *qname)
     return name_of(node, &qname->name);
 }
 
+/*
+ * **The element's own list**, as NetSurf's handler answers: libdom splits
+ * the `class` attribute into interned strings when it is set and keeps them
+ * on the element, and libcss takes a reference to each and gives it back.
+ *
+ * This used to split the attribute again for every question, into an
+ * array it allocated - and libcss never frees the array, only the strings
+ * in it, since what NetSurf hands it is the element's. So every element
+ * with a class leaked its list each time the cascade asked (found 30
+ * September, reading why the allocator was a quarter of a page's time).
+ *
+ * libdom split on spaces alone, where HTML splits on any white space; that
+ * is patched (`runtime/patches/netsurf/libdom/src/core/element.c.patch`).
+ */
 static css_error h_node_classes(void *pw, void *node,
                                 lwc_string ***classes, uint32_t *n_classes)
 {
-    dom_string *value;
-    const char *at;
-    size_t len;
-    uint32_t count = 0;
-    lwc_string **out = NULL;
-    size_t i, start;
-
     (void)pw;
 
     *classes = NULL;
     *n_classes = 0;
 
-    value = attr_of(node, dom_class);
-
-    if (value == NULL) {
+    if (!is_element(node)) {
         return CSS_OK;
     }
 
-    at = dom_string_data(value);
-    len = dom_string_byte_length(value);
-
-    /* Counted first, then filled: the list is handed to libcss whole and
-     * growing it a word at a time would be an allocation per class. */
-    for (i = 0, start = 0; i <= len; i++) {
-        bool blank = (i == len) || at[i] == ' ' || at[i] == '\t'
-                     || at[i] == '\n' || at[i] == '\r';
-
-        if (blank) {
-            if (i > start) { count++; }
-            start = i + 1;
-        }
-    }
-
-    if (count == 0) {
-        dom_string_unref(value);
-        return CSS_OK;
-    }
-
-    out = malloc(count * sizeof(*out));
-
-    if (out == NULL) {
-        dom_string_unref(value);
-        return CSS_NOMEM;
-    }
-
-    count = 0;
-
-    for (i = 0, start = 0; i <= len; i++) {
-        bool blank = (i == len) || at[i] == ' ' || at[i] == '\t'
-                     || at[i] == '\n' || at[i] == '\r';
-
-        if (blank) {
-            if (i > start
-                && lwc_intern_string(at + start, i - start,
-                                     &out[count]) == lwc_error_ok) {
-                count++;
-            }
-
-            start = i + 1;
-        }
-    }
-
-    dom_string_unref(value);
-
-    *classes = out;
-    *n_classes = count;
-
-    return CSS_OK;
+    return dom_element_get_classes((dom_element *)node, classes, n_classes)
+           == DOM_NO_ERR ? CSS_OK : CSS_NOMEM;
 }
 
 static css_error h_node_id(void *pw, void *node, lwc_string **id)
@@ -241,8 +241,12 @@ static css_error h_node_id(void *pw, void *node, lwc_string **id)
         return CSS_OK;
     }
 
-    (void)lwc_intern_string(dom_string_data(value),
-                            dom_string_byte_length(value), id);
+    /* The attribute's own string, interned where it lies: a reference the
+     * second time rather than a hash and a lookup every time. */
+    if (dom_string_intern(value, id) != DOM_NO_ERR) {
+        *id = NULL;
+    }
+
     dom_string_unref(value);
 
     return CSS_OK;
@@ -421,31 +425,19 @@ static css_error h_node_has_name(void *pw, void *node,
     return CSS_OK;
 }
 
+/* libdom's own test over the same list: exact in a standards document and
+ * without regard to case in quirks mode, as CSS says a class matches. */
 static css_error h_node_has_class(void *pw, void *node,
                                   lwc_string *name, bool *match)
 {
-    lwc_string **classes = NULL;
-    uint32_t n = 0, i;
-
+    (void)pw;
     *match = false;
 
-    if (h_node_classes(pw, node, &classes, &n) != CSS_OK) {
+    if (!is_element(node)) {
         return CSS_OK;
     }
 
-    for (i = 0; i < n; i++) {
-        bool same = false;
-
-        (void)lwc_string_isequal(classes[i], name, &same);
-
-        if (same) {
-            *match = true;
-        }
-
-        lwc_string_unref(classes[i]);
-    }
-
-    free(classes);
+    (void)dom_element_has_class((dom_element *)node, name, match);
     return CSS_OK;
 }
 

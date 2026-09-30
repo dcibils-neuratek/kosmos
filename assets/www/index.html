@@ -19,6 +19,7 @@
   h1 { color: #8b1e1e; }
   h2 { color: #8b1e1e; border-bottom: 1px solid #cccccc; }
   .said { color: #666666; font-style: italic; font-size: 90%; }
+  .broken { color: #b03060; }
   .box { border: 2px solid #2a55c9; background: #eef2fb; padding: 10px; margin: 8px 0; }
   .right { text-align: right; }
   .centre { text-align: center; }
@@ -37,6 +38,8 @@
 
 <h1>Kosmos &mdash; the browser test page</h1>
 <p class="said">Every kind of thing a document has, each saying what it should look like. The window's title should read "Kosmos - the browser test page".</p>
+<p class="said
+broken">Maroon rather than grey: its second class comes after a line break in the attribute, and HTML splits classes on any white space.</p>
 
 <p><a href="second.html">The second page</a> &middot; <a href="#tables">down to the tables</a> &middot; <a href="missing.html">a page that is not there</a></p>
 

@@ -14560,3 +14560,42 @@ read. The rest set every field or clear the struct first; the ten that set
 theirs one by one - the surfaces, the GL context, the Game Kit's, the H.264 and
 AAC decoders - now clear it first as well, so a field added later starts at
 zero rather than at what was there.
+
+## 18.309 The cascade answers from what the tree holds
+
+**`roadmap.md` 6zz g.** After the allocator, the profile of the Dam article put
+the CSS cascade and what it asked of the tree at a third of the browser's time:
+libcss asks an element's name for nearly every selector it tries - its own,
+and its ancestors' and siblings' for every `a b` and `a > b` - and
+`web_select.c` answered each by copying the name, lowering the copy and
+interning that: two allocations and a hash, thousands of times a page. An
+element's classes were split from the attribute again for every question.
+
+- **Names**: the node's own name interned where it lies (`dom_string_intern`,
+  a count the second time), and the lowered one remembered in a small table by
+  the interned pointer - one per tag name, not one per question.
+- **Classes**: the list libdom keeps on the element, as NetSurf's own handler
+  answers. **This was also a leak**: the handler allocated an array for libcss
+  every time, and libcss frees only the strings in it, never the array - since
+  what NetSurf hands it is the element's.
+- **Has this class**: libdom's own test, which also matches without regard to
+  case in quirks mode, as CSS says.
+- **Ids**: interned where they lie.
+
+libdom split `class` on spaces alone; HTML splits on any white space, so
+`class="a⏎b"` was one class that matched nothing. Patched, as the NetSurf
+libraries are (`runtime/patches/netsurf/libdom/src/core/element.c.patch`).
+
+**The Dam article from this Mac: shown in 1.6 s from 2.1**; the browser's
+samples in its load 236, from 289 after the allocator and 325 before it -
+interning from 16 to 1.
+
+**`arm-browser` and `x86-browser`**: the test page's second paragraph has
+`class="said⏎broken"`, and `.broken` makes it maroon; the first screen must
+hold at least 100 pixels of that colour's shape - red well above green, blue
+above green by three-eighths of red's lead, which is what #b03060 keeps as its
+italic edges blend into the white, and what the headings' dark red and the
+links' blue do not. 1,893 with the patch. Control: the upstream element.c,
+0 - after a first control that "passed" because taking a file out of
+`WEB_PATCHED` relinked nothing (the old image is newer than every object in
+the shorter list); the userland image removed first, it failed as it should.

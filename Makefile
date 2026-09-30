@@ -1032,7 +1032,8 @@ WEB_SRCS += $(NS)/libdom/bindings/hubbub/parser.c
 # `$(GEN)/netsurf/%.c` has a rule that gives libcss's include paths, and Mac's
 # make 3.81 would take whichever pattern it met first.
 #
-WEB_PATCHED := libdom/src/events/event_target.c libdom/src/events/dispatch.c
+WEB_PATCHED := libdom/src/events/event_target.c libdom/src/events/dispatch.c \
+               libdom/src/core/element.c
 WEB_SRCS := $(filter-out $(addprefix $(NS)/,$(WEB_PATCHED)),$(WEB_SRCS)) \
             $(addprefix $(GEN)/nspatched/,$(WEB_PATCHED))
 

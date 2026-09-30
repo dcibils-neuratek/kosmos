@@ -6,6 +6,18 @@ that way - the rule `lua/upstream/` keeps. What Kosmos changes in it is here,
 as a patch a file, applied by the Makefile into `build/` and compiled in place
 of the upstream file (`WEB_PATCHED`). Each one says what it does and why.
 
+## `libdom/src/core/element.c`: a class after any white space
+
+libdom keeps an element's classes as interned strings, split from its `class`
+attribute when the attribute is set - which is what lets the cascade ask an
+element for its classes without making a single string (`web_select.c`,
+`roadmap.md` 6zz g). It split on spaces alone. HTML splits a class attribute
+on ASCII white space - space, tab, line feed, form feed, carriage return - so
+`class="said
+broken"`, which pages written by hand and by templates both have, was one
+class that matched nothing. The test page has that paragraph, and the
+browser's suite looks for its colour.
+
 ## `libdom/src/events/`: no event nobody can hear
 
 libdom fires DOM mutation events - `DOMNodeInserted`, `DOMSubtreeModified` and

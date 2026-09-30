@@ -374,7 +374,10 @@ C by miniz's `tinfl`: the Dam article 1.3-1.4 s from 2.1, its fetch 999 ms to
 340. Then **the allocator** (18.307): a bit for each bin, `alloc_table` -17.8%,
 the browser's allocator share 23% to 16% - and its gate found a connection
 handle made with fields left as the memory had them, a page fault in the
-shell; every userdata constructor now clears first (18.308). **Next, the browser first**: the CSS
+shell; every userdata constructor now clears first (18.308). Then **the
+cascade** (18.309): answered from what the tree holds, the class-list leak
+closed, libdom patched to split classes on white space - the Dam article 1.6 s
+from the Mac, from 2.1. **Next, the browser first**: the CSS
 cascade, 36% of a big page's time (`web_select.c` making strings to answer
 libcss); the rest of the byte path (g, k); pictures and the parser fed while
 the page is read; then the rest of f's class (and `inflate`'s 1 MB). Diego

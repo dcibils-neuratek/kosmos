@@ -1,0 +1,56 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. - runtime/patches/netsurf/README.md says why.
+--- a/libdom/src/core/element.c	2026-09-30 17:54:59.168346402 -0300
++++ b/libdom/src/core/element.c	2026-09-30 17:54:59.198029810 -0300
+@@ -89,6 +89,15 @@
+  *
+  * Destroys any existing cached classes.
+  */
++/* Kosmos: HTML splits a class attribute on ASCII white space - space, tab,
++ * line feed, form feed, carriage return - and this split on spaces alone,
++ * so `class="a\nb"` was one class that matched nothing
++ * (runtime/patches/netsurf/README.md). */
++static inline bool _dom_element_class_space(char c)
++{
++	return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
++}
++
+ static dom_exception _dom_element_create_classes(struct dom_element *ele,
+ 		const char *value)
+ {
+@@ -101,12 +110,12 @@
+ 
+ 	/* Count number of classes */
+ 	for (pos = value; *pos != '\0'; ) {
+-		if (*pos != ' ') {
+-			while (*pos != ' ' && *pos != '\0')
++		if (!_dom_element_class_space(*pos)) {
++			while (!_dom_element_class_space(*pos) && *pos != '\0')
+ 				pos++;
+ 			n_classes++;
+ 		} else {
+-			while (*pos == ' ')
++			while (_dom_element_class_space(*pos))
+ 				pos++;
+ 		}
+ 	}
+@@ -119,16 +128,17 @@
+ 
+ 		for (pos = value, n_classes = 0;
+ 				*pos != '\0'; ) {
+-			if (*pos != ' ') {
++			if (!_dom_element_class_space(*pos)) {
+ 				const char *s = pos;
+-				while (*pos != ' ' && *pos != '\0')
++				while (!_dom_element_class_space(*pos) &&
++						*pos != '\0')
+ 					pos++;
+ 				if (lwc_intern_string(s, pos - s, 
+ 						&classes[n_classes++]) !=
+ 						lwc_error_ok)
+ 					goto error;
+ 			} else {
+-				while (*pos == ' ')
++				while (_dom_element_class_space(*pos))
+ 					pos++;
+ 			}
+ 		}

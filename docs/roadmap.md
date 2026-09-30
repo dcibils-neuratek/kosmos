@@ -2783,11 +2783,13 @@ processors, and still what follows USB:
       cascade and what it asks of the tree, about 36% of the browser's time,
       and the allocator, 23%. **The allocator** (`testing.md` 18.307): a bit
       for each bin, so `malloc` stops walking empty ones - 16% after,
-      `alloc_table` -17.8%. **Next, the cascade**: `web_select.c` answers
-      libcss by making strings - a name lowered and interned for every
-      question about an element, an attribute copied to be split into
-      classes - where NetSurf's own handler answers from what the tree
-      already holds. Then the rest of the byte path. **What real pages
+      `alloc_table` -17.8%. **The cascade** (`testing.md` 18.309):
+      `web_select.c` answered libcss by making strings - a name lowered and
+      interned for every question, an attribute split into an array that
+      leaked - and now answers from what the tree holds, as NetSurf's own
+      handler does; libdom patched to split classes on any white space. The
+      Dam article 1.6 s from this Mac, from 2.1. Next: libcss itself, the
+      parser, and the rest of the byte path. **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came

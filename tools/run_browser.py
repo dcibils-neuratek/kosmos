@@ -51,6 +51,9 @@ mostly a camera, and a check that goes stale is worse than no check:
     try found appending to the old address - and the second page's blue
     heading has to appear.
   * **Back leaves it**, with the server asked for nothing.
+  * **A class after a line break is a class**: the test page's second
+    paragraph is maroon by a class that follows a newline in its attribute,
+    which the cascade finds in the list libdom keeps on the element.
   * **Both pictures are drawn.** The test page's PNG carries a magenta
     square and its JPEG a cyan one, and the page is paged down until both
     have been on the screen.
@@ -103,6 +106,10 @@ LONG_PARAGRAPHS = 2000
 # `roadmap.md`, the browser) - the page says it should, which is what a
 # checklist is for.
 SECOND_BLUE = (42, 85, 201)
+
+# The test page's maroon, #b03060: the `broken` class, which follows a line
+# break in its paragraph's attribute. Nothing else on the page is this colour.
+CLASS_MAROON = (176, 48, 96)
 
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
@@ -467,6 +474,33 @@ def main():
                 f"every line of text is {short}-{tall} pixels tall, so the "
                 "page is being drawn in one face. That is what the direct "
                 f"window exists to avoid. Wrote {args.out}.")
+
+        #
+        # **A class after a line break** (`web_select.c`, `roadmap.md` 6zz
+        # g): the cascade answers from the class list libdom keeps on the
+        # element, which split on spaces alone until it was patched to split
+        # on any white space, as HTML does. The paragraph whose second class
+        # follows a line break is maroon only if both are right.
+        #
+        # By the colour's shape rather than its value: italic text at 90% is
+        # nearly all edge, blended into the white, where #b03060 keeps blue
+        # above green by three-eighths of red's lead - which the headings'
+        # dark red (blue equal to green) and the links' blue do not.
+        def maroonish(c):
+            lead = c[0] - c[1]
+            return lead > 40 and abs((c[2] - c[1]) - lead * 3 / 8) <= lead / 8
+
+        at = reader(px, w_)
+        maroon = sum(1 for y in range(y0, y0 + band)
+                     for x in range(x0, x0 + WIN_W - SBAR)
+                     if maroonish(at(x, y)))
+
+        if maroon < 100:
+            raise Failure(
+                f"the paragraph whose class follows a line break is not maroon: "
+                f"{maroon} pixels of #b03060's colour on the first screen. Either the "
+                "classes were not split on white space, or the cascade does not "
+                f"answer from the element's list. Wrote {args.out}.")
 
         #
         # And that it moves.
