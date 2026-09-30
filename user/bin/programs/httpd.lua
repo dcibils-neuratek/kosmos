@@ -61,7 +61,8 @@ end
 -- **In `/Temporary` rather than printed, because a manager cannot read a
 -- console.** The desktop launches this as a process of its own and its
 -- output goes wherever that process's console goes, which is not a window.
--- So the state and the log are *written*, and `webserver` reads them - the
+-- So the state and the log are *written*, and the Servers window reads them
+-- (`servers.lua`, which took the Web Server window's place) - the
 -- same arrangement any service manager has with any service, and the reason
 -- daemons have log files rather than shouting.
 --

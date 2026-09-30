@@ -91,13 +91,18 @@ ABS = 32767
 # window, so `tile` gives it two cells by two as it gives Cafesa3D, and the
 # corner that shows is PulseMusic's top bar over the first tracks' clips.
 #
+#
+# **And Servers** (`roadmap.md`, remote step 6), on its first page: the web
+# server, the command line and the screen, each with its switch - all
+# stopped here, since the picture's machine has no network to serve.
+#
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "cube3d",
         "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
-        "texteditor:/Temporary/Grooves.md", "groove:--play"]
+        "texteditor:/Temporary/Grooves.md", "groove:--play", "servers"]
 
 # `tile` last, told how many windows to wait for: sixteen applications
-# starting at once under QEMU do not all open inside the three still
+# starting at once under QEMU - seventeen now - do not all open inside the three still
 # seconds it otherwise takes for "done", and on 28 September Groove,
 # maximised, opened after the rest were arranged and lay over all of them.
 OPEN.append("tile:%d" % len(OPEN))

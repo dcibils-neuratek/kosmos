@@ -81,7 +81,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - How Disk Benchmark should look, before it is built: `docs/diskbench.html`
 - How Music should look, after VOX, before it is built: `docs/music.html`
 - What Tracker's right click offers - Pin to sidebar, Compress, Info, Open with, File types - before it is built: `docs/rightclick.html`
-- The Servers app - Web, Command line by Telnet, Screen by VNC - before it is built: `docs/servers.html`
+- The Servers app - Web, Command line by Telnet, Screen by VNC - as drawn and then built (the screen still to come): `docs/servers.html`
 - How Cafesa3D renders across several machines, before it is built: `docs/renderfarm.md`
 - Video in hardware on the M700 - what it takes, for Diego to decide: `docs/m700-gpu.md`
 - `diskfs` in C and speaking a declared shape, written before it is built: `docs/diskfs.md`

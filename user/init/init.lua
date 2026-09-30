@@ -6126,6 +6126,40 @@ query. `find` and `watch` are built on exactly these two calls.
     end
   end
 
+  --
+  -- **And the servers the Servers window marked to start with the machine**
+  -- (`/Home/Preferences/servers`, `user/bin/apps/servers.lua`): each by its
+  -- program, in the background, before the desktop. The command line is not
+  -- started twice when a development stick's option started it above.
+  --
+  local servers = ns.read("/Home/Preferences/servers")
+
+  if type(servers) == "table" then
+    local STARTS = {
+      web = function(c)
+        return "httpd", ("%d %s"):format(tonumber(c.port) or 80, tostring(c.folder or "/Home/www"))
+      end,
+      telnet = function(c) return "telnetd", tostring(tonumber(c.port) or 23) end,
+    }
+
+    for _, id in ipairs({ "web", "telnet" }) do
+      local c = servers[id]
+
+      if type(c) == "table" and c.at_start == true
+         and not (id == "telnet" and telnet_port and telnet_port ~= "") then
+        local program, argument = STARTS[id](c)
+
+        out("starting " .. program .. " " .. argument .. "\n")
+
+        local ok, why = run_program(program, argument, true)
+
+        if not ok then
+          out("boot: " .. program .. ": " .. tostring(why) .. "\n")
+        end
+      end
+    end
+  end
+
   local autostart = sys.boot("opt/kosmos/boot")
 
   if autostart and autostart ~= "" then

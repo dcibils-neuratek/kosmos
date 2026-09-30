@@ -70,6 +70,18 @@ end
 -- whenever somebody connects.
 print(("telnetd: on port %d, at %s"):format(port, dotted(info.address)))
 
+--
+-- **A name in `/Running`, for the Servers window's Disconnect**: a request
+-- `{ type = "disconnect", from = "<address>" }` on it ends that address's
+-- sessions. Tables, since this is a program's own name rather than a
+-- server's wire (`CLAUDE.md`, a declared shape).
+--
+local control = sys.endpoint()
+
+if control then
+  fs.send("/Running", { type = "register", name = "telnetd" }, control)
+end
+
 --------------------------------------------------------------------------
 -- Who may connect: this machine's own subnet, and nobody else.
 --------------------------------------------------------------------------
@@ -103,6 +115,42 @@ local IP = 244                      -- Telnet's "interrupt process"
 local PROMPT = "kosmos> "
 
 local sessions = {}
+
+--------------------------------------------------------------------------
+-- What the Servers window reads (`user/bin/apps/servers.lua`): the state and
+-- the sessions under `/Temporary/telnetd`, and its last lines - written when
+-- they change, since this does not know a window is watching. The same
+-- arrangement `httpd` has with it.
+--------------------------------------------------------------------------
+
+local STATUS = "/Temporary/telnetd/status"
+local LOG = "/Temporary/telnetd/log"
+local LOG_LINES = 40
+local lines_said = {}
+
+fs.send("/Temporary/telnetd", { type = "mkdir" })
+
+local function publish()
+  local list = {}
+
+  for _, s in ipairs(sessions) do
+    list[#list + 1] = { from = dotted(s.from), cwd = s.cwd,
+                        running = s.running_name }
+  end
+
+  fs.write(STATUS, { state = "running", port = port, sessions = list })
+end
+
+local function note(text)
+  local clock = sys.ticks() // math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 1))
+
+  lines_said[#lines_said + 1] = ("%5ds  %s"):format(clock, text)
+
+  while #lines_said > LOG_LINES do table.remove(lines_said, 1) end
+
+  fs.write(LOG, lines_said)
+  print("telnetd: " .. text)
+end
 
 local function send(s, text)
   -- A console's lines end in a newline; a Telnet line ends in both.
@@ -385,6 +433,21 @@ local function launch(s, text)
     return prompt(s)
   end
 
+  if name == "help" then
+    local out = {}
+
+    for _, dir in ipairs({ "/Kosmos/Programs", "/Kosmos/Apps" }) do
+      for _, f in ipairs(fs.list(dir) or {}) do
+        out[#out + 1] = f:gsub("%.lua$", "")
+      end
+    end
+
+    send(s, "this session's own: cd pwd get put help exit\n"
+            .. "programs, and applications to `open`:\n  "
+            .. table.concat(out, "  ") .. "\n")
+    return prompt(s)
+  end
+
   if name == "get" then
     get(s, resolve(s, rest))
     return prompt(s)
@@ -424,6 +487,9 @@ local function launch(s, text)
 
   if ok then
     s.child = id
+    s.running_name = name
+    note(dotted(s.from) .. "  " .. text:match("^%s*(.-)%s*$"))
+    publish()
   else
     send(s, name .. ": " .. tostring(err) .. "\n")
     prompt(s)
@@ -482,7 +548,8 @@ local function open(conn, from)
   end
 
   sessions[#sessions + 1] = s
-  print("telnetd: " .. dotted(from) .. " connected")
+  note(dotted(from) .. "  connected")
+  publish()
 
   -- What machine this is, as a Terminal starts; the prompt comes when it ends.
   launch(s, "neofetch")
@@ -494,7 +561,8 @@ local function close(at)
   s.conn:close()
   sys.destroy(s.ep)
   table.remove(sessions, at)
-  print("telnetd: " .. dotted(s.from) .. " gone")
+  note(dotted(s.from) .. "  gone")
+  publish()
 end
 
 --------------------------------------------------------------------------
@@ -525,7 +593,7 @@ while true do
     local conn, from = fs.accept("/Network", listener, 1)
 
     if conn and not neighbour(from) then
-      print("telnetd: refused " .. dotted(from) .. ", not on this network")
+      note(dotted(from) .. "  refused, not on this network")
       conn:close()
     elseif conn then
       open(conn, from)
@@ -579,6 +647,27 @@ while true do
     end
   end
 
+  -- A request from the Servers window: end an address's sessions.
+  while control do
+    local req, who = sys.receive(control, true)
+
+    if not req then break end
+
+    local ended = 0
+
+    if type(req) == "table" and req.type == "disconnect" then
+      for at = #sessions, 1, -1 do
+        if dotted(sessions[at].from) == tostring(req.from) then
+          sessions[at].out = sessions[at].out .. "\r\ndisconnected from this machine\r\n"
+          sessions[at].leaving = true
+          ended = ended + 1
+        end
+      end
+    end
+
+    pcall(sys.reply, who, { ok = ended > 0, ended = ended })
+  end
+
   -- Whichever child ended, the session it was running in has a prompt.
   local id, code = sys.wait(true)
 
@@ -587,6 +676,8 @@ while true do
       if s.child == id then
         serve_console(s)
         s.child = nil
+        s.running_name = nil
+        publish()
 
         if s.reader then
           pcall(sys.reply_raw, s.reader, con.encode_reply({ error = con.ERR_BAD_OP }))

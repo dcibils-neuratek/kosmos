@@ -276,8 +276,17 @@ remote-profile`; a program that fails ends with code 1 now. **Stick 0.10.197**
 checks, and the image itself booted under OVMF with an e1000e forwarded to
 the Mac - a lease by DHCP through the driver, `telnetd` started by the
 stick, and `neofetch` run from here 21 s after power-on. In place of
-0.10.196, which Diego had not written. **Next**: the Servers app, as
-`docs/servers.html` draws it; then the VNC server. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+0.10.196, which Diego had not written.
+
+**Servers** (`testing.md` 18.290; Diego on the drawing: "The mockup looks
+great", then "Keep building" while he was away): the window as
+`docs/servers.html` draws it, `telnetd`'s sessions, log and Disconnect, the
+settings in `/Home/Preferences/servers` and the shell starting what they
+mark at boot; the Web Server window folded in and removed. `arm-servers`
+and `x86-servers`, seven checks from the Mac's own client, and Servers in
+the gallery's picture. **Next**: the VNC server - two things to settle
+first, reading the screen as a grant the window manager holds, and keys
+and the pointer coming back. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware

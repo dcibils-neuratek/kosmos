@@ -149,6 +149,13 @@ SUITES = [
     Suite("arm-telnetd", ["python3", "tools/run_telnetd.py", ARM]),
     Suite("x86-telnetd", ["python3", "tools/run_telnetd.py", X86], x86=True),
 
+    # **The Servers window** (`roadmap.md`, remote step 6): opened over
+    # Telnet on the M700's own boot, seeing the session that opened it, a
+    # Disconnect ending that session, and the web server it kept to start
+    # with the machine serving a page after the next boot.
+    Suite("arm-servers", ["python3", "tools/run_servers.py", ARM]),
+    Suite("x86-servers", ["python3", "tools/run_servers.py", X86], x86=True),
+
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is
     # written to kfs: R, four seconds, R, and the file read back by the video

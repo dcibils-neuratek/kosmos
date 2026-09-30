@@ -3647,20 +3647,41 @@ def check_budget(guest):
     mark = len(guest.seen)
     guest.type("wm desktop,deskbar,terminal,logview,photo:test-screen.jpg")
     started(guest)
-    time.sleep(25)
-    guest._read_available()
+
+    #
+    # **Waited for, not slept on.** This was 25 seconds, sized for the slowest
+    # start anybody had seen, and it stood in for three things: the Terminal
+    # placed, Log View open, and the picture decoded - the decode being what
+    # this check is about, since its scratch is what the drag has to fit
+    # beside. The window manager says each of them now; the Terminal's grid
+    # is then looked for until it is drawn.
+    #
+    for text, what in (("wm: window Terminal at", "placed the Terminal"),
+                       ("wm: window Log at", "placed Log View"),
+                       ("wm: decoded test-screen.jpg", "decoded the picture")):
+        deadline = time.monotonic() + 60
+
+        while text not in guest.seen[mark:]:
+            if time.monotonic() > deadline:
+                raise Failure(f"the window manager never {what} within 60 s.")
+
+            time.sleep(0.2)
+            guest._read_available()
 
     placed = re.findall(r"wm: window Terminal at (\d+),(\d+) (\d+)x(\d+)",
                         guest.seen[mark:])
-
-    if not placed:
-        raise Failure("the Terminal never opened, so there is nothing to resize.")
-
     x, y, w, h = (int(v) for v in placed[-1])
-    width, height, px = parse_ppm(guest.screendump())
-    # From the Terminal's corner, because Log View is on this screen too and
-    # draws on the same black.
-    before = _terminal_grid(width, height, px, x, y)
+    deadline = time.monotonic() + 20
+    before = None
+
+    while before is None and time.monotonic() < deadline:
+        width, height, px = parse_ppm(guest.screendump())
+        # From the Terminal's corner, because Log View is on this screen too
+        # and draws on the same black.
+        before = _terminal_grid(width, height, px, x, y)
+
+        if before is None:
+            time.sleep(0.5)
 
     if before is None:
         raise Failure("the Terminal opened and its grid is not on the screen.")

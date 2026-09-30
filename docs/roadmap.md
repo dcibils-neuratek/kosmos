@@ -168,19 +168,52 @@ answers to its three questions, the same day:
    overview; the Web Server application folded into it; a mark on the
    Deskbar while the screen is watched. Each server a program of its own
    that writes its state to `/Temporary/<name>`, as `httpd` does, and the
-   window a manager of them, as the Web Server window is.
+   window a manager of them, as the Web Server window is. **BUILT the same
+   night** (`testing.md` 18.290): the window, `telnetd`'s sessions and log
+   and a Disconnect through its name in `/Running`, the settings in
+   `/Home/Preferences/servers` and the shell starting what they mark at
+   boot; the Web Server window folded in and removed. The Deskbar's mark
+   waits for the screen server, which is what it marks.
 7. **Then a VNC server**, for the desktop itself - Diego, the same evening:
    "We can do a vnc server after Telnetd so we can remote access the desktop
    with a simple vnc client". RFB (RFC 6143) is a standard the Mac already
-   speaks (Screen Sharing, `vnc://`), so again no client of ours. Two
-   questions to settle before it is built: **reading the screen** is an
-   authority - every window's pixels - and so a grant like the others, held
-   by the window manager and asked of it rather than taken from the
-   framebuffer; and **keys and the pointer coming back**, which the kernel
-   already takes from a process (`hal_pointer_move`, `hal_key_push`, the
-   USB mouse's and keyboard's path). Frames over TCP are a stream the
-   network carries, the one kind of recurring data that has to leave the
-   machine.
+   speaks (Screen Sharing, `vnc://`), so again no client of ours. Frames
+   over TCP are a stream the network carries, the one kind of recurring
+   data that has to leave the machine.
+
+   **How, settled on 29 September while Diego was away** - "Keep building"
+   - and so his to change when he is back:
+
+   - **The screen is asked of the window manager**, which owns every
+     pixel, and never read from the framebuffer. `vncd` hands it a region
+     the screen's size (`watch`); after each pass the window manager copies
+     into it what it composed - the damaged rectangles and nothing else -
+     and answers `watched` with the rectangles since it was last asked.
+     Control by message, data by shared memory. Nothing is copied while
+     nobody watches, and a region not asked about for five seconds is let
+     go. Today this grants nothing new - init hands every program the
+     screen, and its own comment calls that wrong - and when that grant
+     narrows, `watch` is one of the things it gates.
+   - **RFB 3.3**, which every client speaks and in which the server
+     chooses the security: none, or VNC Authentication when the Servers
+     window sets a password (the drawing's "optional"). The Mac's own
+     client hangs against 3.7 and later with no password - it skips
+     ClientInit and waits for ServerInit - and a server that says 3.6 or
+     less is the answer libvncserver records.
+   - **Keys and the pointer through the window manager as well**, not the
+     kernel. A viewer's pointer is absolute, which is what the window
+     manager speaks and what `SYS_POINTER_MOVE` is not (relative, and
+     refused under QEMU's tablet); and the right to push keys into the
+     kernel is `SPAWN_DEVICES`, a driver's, far more than a program facing
+     the network should hold. A viewer only looks unless the Servers window
+     says it may control - the drawing's default.
+   - **In steps.** 7a, the screen, looked at: `watch` in the window
+     manager, `surface:pack` in the gfx kit - a rectangle into a viewer's
+     pixel format, which is a loop over pixels and so C - `vncd`, the Raw
+     encoding, and the Screen page's switch and password. 7b, keys and the
+     pointer. 7c, a compressed encoding - zlib, through the miniz the
+     compress kit already carries - when the M700 says Raw is too slow on
+     its network. 7d, the Deskbar's mark while the screen is watched.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's
@@ -2596,6 +2629,18 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zu. **FOUND on 29 September, reading the window manager for the VNC
+   server - a window's shared surface is wrapped at the size the
+   application says, and never held to the region's.** `handlers.open`
+   (`wm.lua`) maps the capability it was handed and wraps two surfaces of
+   `gfx.bytes(w, h)` each over it, without asking `sys.memory_size` how
+   many pages the region has. An application that hands over a region
+   smaller than it claims - by a mistake, or on purpose - has the desktop
+   read past its mapping on the next compose, and the fault is the window
+   manager's, which takes every window with it. The same check `watch`
+   makes (remote step 7a): the region's pages against what will be
+   wrapped, refused when short. A server receives what it expects.
+
 6zt. **ASKED on 28 September - one image at any screen size.** Diego,
    running the release at 3840x2160: "why is that images need to be built
    for specific resolutions? cant that just be a parameter and kosmos
@@ -2698,7 +2743,12 @@ processors, and still what follows USB:
    a library change compiled six userlands and the images took 100 s. The
    gate links them against the test userland it builds anyway now; 9:30,
    images 62 s. The compositor budget's 25 s sleep is still there - it
-   waits for Photo's decode, which nothing reports yet.
+   waits for Photo's decode, which nothing reports yet. **Gone on 29
+   September**, when the Servers suites took the gate to 10:04: the window
+   manager says a large decode (`wm: decoded test-screen.jpg, 1920x1080, in
+   N ms`), the check waits for that, the Terminal and Log, and the phase
+   alone is 17 s from power-on. Its control, the flat 48 MB budget, still
+   fails it (`testing.md` 18.290).
    **28 September, later: 10:06, then 10:08 with nothing changed** - Groove
    added about eight seconds of suites, and a gate with nothing to rebuild
    still spent 96 s on its images, compiling both ARM kernels, 127 objects.
@@ -5390,7 +5440,25 @@ the Pi", and the Pi is not here yet.
   forms both wait on it.
 - **Images.** `stb_image` is already vendored for the PDF reader.
 - **Forms**, which need a box that takes keys.
-- **TLS**, without which most of the web refuses to speak.
+- **TLS**, without which most of the web refuses to speak. **ASKED on 29
+  September** - Diego: "can we reuse all these openssl, tls libraries for
+  our browser so it can access https?" - while VNC was being built, and
+  waiting for his yes and its place in the order. What was proposed:
+  **BearSSL**, vendored in `runtime/upstream/`, rather than OpenSSL, which
+  is half a million lines built on sockets, threads, files and
+  `/dev/urandom` - the personality Kosmos patches out of a port. BearSSL
+  was written for small machines: no `malloc`, no system calls, bytes fed
+  in and taken out by its caller, which is the TCP ring's shape. It checks
+  certificates - X.509, RSA, ECDSA, the large half of TLS and the half
+  `crypto.c` has none of - and speaks TLS 1.2 and not 1.3, which nearly
+  every site still accepts; mbedTLS is the answer if 1.3 is wanted, at
+  more size and with `malloc`. What would be Kosmos's own: **a random
+  source first** - there is none (found writing VNC's challenge), and TLS
+  over bad randomness works and is not secure - RDRAND on the M700, RNDR
+  or virtio-rng under QEMU, in the HAL, served as `/Devices/random`;
+  Mozilla's root certificates converted to C at build time, as the fonts
+  are; and a `tls` kit in C that the browser, `fetch` and a Discord
+  client (6ze) all go through.
 
 ### The system
 

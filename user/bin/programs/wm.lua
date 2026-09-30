@@ -1297,10 +1297,25 @@ local function picture_named(name)
 
   picture = false
 
+  local began = sys.ticks()
   local made = picture_from(name)
 
   if made then
     picture = made
+
+    --
+    -- **A large one is said, with what it cost** - a wallpaper, a
+    -- photograph - and an icon is not, or a boot would print forty. Once a
+    -- picture, since it is cached: what a decode takes on the machine it
+    -- ran on, in the log, and the line the display harness waits for rather
+    -- than a sleep sized for the slowest decode anybody has seen.
+    --
+    local w_, h_ = made:size()
+
+    if w_ * h_ >= 512 * 512 then
+      print(("wm: decoded %s, %dx%d, in %d ms"):format(
+        name, w_, h_, (sys.ticks() - began) * 1000 // COUNTER_HZ))
+    end
 
     -- Only a file goes on `remember_picture`'s list, which keeps a bounded
     -- number of them and frees the oldest; the image's own pictures are

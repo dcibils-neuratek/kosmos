@@ -13632,3 +13632,66 @@ the counter` holds the patience - still patient at once and at half a
 second, not at a second and a half. Its control, a waiter that gives up at
 once, fails it.
 
+
+## 18.290 The Servers window, and the servers it keeps starting at boot
+
+**Built as `docs/servers.html` draws it** (`roadmap.md`, remote step 6) -
+Diego, 29 September: "a servers app that hold all servers like web, telnet,
+vnc, etc like the preferences app but with servers configuration so we can
+config and activate/deactivate network servers", and on the drawing, "The
+mockup looks great". `user/bin/apps/servers.lua`, Preferences' shape: a
+list on the left - All servers, Web, Command line, Screen - and a page of
+cards on the right.
+
+- **A manager, not the servers.** `httpd` and `telnetd` stay programs that
+  write their state and last lines under `/Temporary/<name>`; the window
+  starts one through the desktop (`launch` to `/Running/wm`), ends one the
+  same way (`end_process`), and reads what it wrote. Running is a process
+  of that name existing, never what a file last said, since a server that
+  was ended writes nothing on the way out. **The Web Server window is gone**,
+  folded into this, as the drawing had it.
+- **`telnetd` says what it is doing**: its sessions - from where, in which
+  folder, running what - and its log in `/Temporary/telnetd`, and **a name
+  in `/Running`** that answers `{ type = "disconnect", from = <address> }`
+  by ending that address's sessions, each told "disconnected from this
+  machine". The Telnet page's Disconnect buttons send it. And a `help` of
+  its own, since `ps` and the rest of the shell's builtins are not a
+  session's: `cd pwd get put help exit`.
+- **What is kept is `/Home/Preferences/servers`**, a table a server, and
+  the shell starts at boot what is marked to start with the machine -
+  `starting httpd 8080 /Home/www` on the console - before the desktop.
+  The command line is not started twice when a development stick's option
+  already started it.
+- **The screen is on the list and says "Not built yet"**, with no switch:
+  a control that moves and does nothing is the thing this window must not
+  have.
+
+**`arm-servers` and `x86-servers`, seven checks** (`tools/run_servers.py`,
+24 s and 19 s), two boots of the M700's own shape - the desktop by itself,
+`telnetd` beside it - driven from here by the Mac's own client, since that
+is what it is for: `help` over Telnet; `open servers` opening the window,
+which says the command line is running with the one session that opened
+it, the web server stopped and the screen not built; the settings kept with
+the web server to start on port 8080; the window's Disconnect ending the
+very session that sent it; and the same disk booted again, the web server
+started by itself and its page fetched by the Mac.
+
+**Its control** - the shell announcing a kept server and not starting it,
+and `telnetd` not knowing the word `disconnect` - fails the two checks it
+should and no other.
+
+**And the picture has it** (`tools/run_gallery.py`): Servers on its first
+page, all three stopped, since the gallery's machine has no network to
+serve.
+
+**And the gate, which the two suites took to 10:04** - 70 suites, 3,332
+seconds of them six at a time, so every suite-second is a sixth of one on
+the clock. The rule says fix that before anything lands, and the first
+thing `roadmap.md` 6zp named was the compositor budget's 25-second sleep,
+standing in for the Terminal, Log View and a picture's decode. The window
+manager now says a large decode and what it cost - `wm: decoded
+test-screen.jpg, 1920x1080, in N ms`, once a picture since it is cached,
+and the M700's log gains the number - and the check waits for the three
+lines and then for the Terminal's grid. The phase alone is 17 s from
+power-on, on both boards. Its control, `map_budget` flat at 48 MB again,
+still fails it: `no room for a 1825x1035 surface (7439 KB)`.
