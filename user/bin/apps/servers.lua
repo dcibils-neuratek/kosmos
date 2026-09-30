@@ -25,9 +25,10 @@
 --
 -- **Its settings are `/Home/Preferences/servers`**, a table a server; the
 -- shell starts what is marked to start with the machine, at boot. The
--- screen is `vncd` (`roadmap.md` remote 7a), which reads its password from
--- there at each connection; a viewer only looks until keys and the pointer
--- are built (7b), so that row says so rather than offering a choice.
+-- screen is `vncd` (`roadmap.md` remote 7), which reads its password and
+-- whether a viewer may use the keyboard and the pointer from there at each
+-- connection - and which the window manager starts, not the shell, since
+-- it is what lends it the desktop.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
@@ -62,7 +63,7 @@ local SERVERS = {
     reach = function(a, c) return ("telnet %s%s"):format(a, c.port == 23 and "" or (" " .. c.port)) end },
   { id = "vnc", name = "Screen", icon = "display", program = "vncd",
     what = "VNC", status = "/Temporary/vncd/status", log = "/Temporary/vncd/log",
-    defaults = { port = 5900, at_start = false, password = "" },
+    defaults = { port = 5900, at_start = false, password = "", control = false },
     args = function(c) return tostring(c.port) end,
     reach = function(a, c) return ("vnc://%s%s"):format(a, c.port == 5900 and "" or (":" .. c.port)) end },
 }
@@ -378,8 +379,13 @@ local function page_vnc(s)
         { label = "Running", note = state_of(s), control = run_switch(s) } } },
     { name = "Set up", rows = {
         { label = "Port", control = field(s, "port", 80, true) },
-        { label = "A viewer may", value = "Only look",
-          note = "Using the keyboard and the pointer comes next" },
+        { label = "A viewer may use it",
+          note = "The keyboard and the pointer; off, a viewer only looks",
+          control = ui.switch{ on = config(s).control == true,
+                               on_change = function(_, on)
+                                 config(s).control = on
+                                 keep()
+                               end } },
         { label = "Password",
           note = "Eight characters at most; none lets this network look",
           control = password_field(s) },

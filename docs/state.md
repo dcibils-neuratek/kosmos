@@ -302,9 +302,14 @@ decide. **Stick 0.10.199** (`92f7674`): OVMF 32 checks, and the image
 itself booted under OVMF with an e1000e - a lease by DHCP, `open vncd` over
 Telnet, and the whole 2048x2048 screen taken from the Mac by
 `kosmos_vnc.py`, 9.95 s of raw pixels through QEMU's emulated network. The
-checklist sent with it names what to try. **Next**: 7b, keys and the
-pointer through the window manager, once its authority question is
-answered (`roadmap.md`, remote 7b).
+checklist sent with it names what to try. Diego on 30 September: the
+Trash his to empty, 7b "yes agreee", HTTPS "Go for it", lazy FP "Not sure
+why we neee this" (answered: a speed trick; measure eager, 6zv).
+
+**7b, the desktop lent** (`testing.md` 18.292): `/Running/wm/remote` for a
+program of the image that says `needs desktop`, a viewer's pointer and keys
+as a mouse's and a keyboard's, the Servers window's switch. **Next**: the
+0.10.200 stick with it, then HTTPS - BearSSL, and a random source first.
 Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU

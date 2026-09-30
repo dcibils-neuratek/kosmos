@@ -2823,13 +2823,29 @@ end
 local handlers = {}
 
 --
+-- **What this process lends: the desktop, to one who works it from
+-- elsewhere** (`vncd`; `roadmap.md` remote 7b - Diego, 30 September: "yes
+-- agreee"). Reading every window's pixels and typing into every window are
+-- authorities, and `/Running/wm` is a name every process can reach, where
+-- nothing a request carries is checked. So they are not requests there:
+-- they are an endpoint of their own, mounted as `/Running/wm/remote` in a
+-- program this process launches whose header says `kosmos: needs
+-- desktop`, and in nothing else. What you were not handed, you cannot
+-- reach. Whether a viewer may do more than look is the Servers window's
+-- setting, which `vncd` keeps; holding this is what makes it possible at
+-- all.
+--
+local remote = { ep = sys.endpoint(), handlers = {}, moved = false,
+                 physical = { x = -1, y = -1, buttons = -1 } }
+
+--
 -- `watch`: without a region, the size one must be; with one, the screen
 -- copied into it from now on - the whole of it at once, so the watcher
 -- starts from a complete picture. **The region is held to its size** before
 -- anything is wrapped over it: a region smaller than it says would have this
 -- process write past its mapping, and a fault here is every window's.
 --
-handlers.watch = function(req, who, cap)
+remote.handlers.watch = function(req, who, cap)
   local bytes = gfx.bytes(W, H)
 
   if not cap or cap < 0 then
@@ -2866,7 +2882,7 @@ end
 -- `watched`: the rectangles since last asked, eight bytes each - x, y, w, h
 -- as big-endian sixteen-bit numbers - and a new list begun.
 --
-handlers.watched = function()
+remote.handlers.watched = function()
   if not watcher then return { ok = false, error = "nothing is watched" } end
 
   local parts = {}
@@ -3725,9 +3741,19 @@ handlers.launch = function(req, who)
   stop_starting(function(s) return s.path == path end)
   starting[#starting + 1] = { path = path, launch = l, since = sys.ticks() }
 
+  -- The desktop lent, to a program that declares it needs it (above).
+  local shares = { ["/Running/wm"] = ep }
+  local attrs = remote.ep and fs.getattr(path)
+
+  for _, word in ipairs(type(attrs) == "table" and attrs.needs or {}) do
+    if word == "desktop" then
+      shares["/Running/wm/remote"] = remote.ep
+      print(("wm: lending the desktop to %s"):format(tostring(req.program)))
+    end
+  end
+
   l.co = coroutine.create(function()
-    return run(path, req.args or "", true, { ["/Running/wm"] = ep }, nil,
-               coroutine.yield)
+    return run(path, req.args or "", true, shares, nil, coroutine.yield)
   end)
 
   launching[#launching + 1] = l
@@ -5862,6 +5888,69 @@ do
   end
 end
 
+--
+-- **A viewer's pointer and keys, on the lent endpoint** (`vncd`, 7b).
+--
+-- The pointer is where on the screen, in pixels - which is what a viewer
+-- sends and what this process speaks - through the same `pointer_pass` a
+-- mouse goes through, with the screen as its range. A press, a drag and
+-- the wheel (`wheel`, notches) mean what they mean from a mouse.
+--
+-- A key is the key's code, down or up, as a keyboard's event, and the
+-- characters it made - what the kernel makes of a keyboard's keys, which
+-- `vncd` makes of a viewer's - through the same two paths the console's
+-- input takes: the event to the chord, the volume and machine keys and the
+-- focused window, and each character to `key`. The desktop cannot tell it
+-- from the keyboard, which is the point.
+--
+remote.handlers.pointer = function(req)
+  local x = math.floor(tonumber(req.x) or -1)
+  local y = math.floor(tonumber(req.y) or -1)
+  local buttons = math.floor(tonumber(req.buttons) or 0)
+
+  if x < 0 or y < 0 or x >= W or y >= H or buttons < 0 or buttons > 7 then
+    return { ok = false, error = "a pointer is inside the screen, with three buttons" }
+  end
+
+  pointer_pass({ x = x, y = y, buttons = buttons,
+                 wheel = math.max(-8, math.min(8, math.floor(tonumber(req.wheel) or 0))),
+                 min_x = 0, max_x = W - 1, min_y = 0, max_y = H - 1 })
+
+  -- The mouse at rest must not take the pointer straight back (the loop).
+  remote.moved = true
+
+  return { ok = true }
+end
+
+remote.handlers.key = function(req)
+  local code = math.floor(tonumber(req.code) or 0)
+  local chars = type(req.chars) == "string" and req.chars or ""
+
+  if code < 0 or code > 0x3FF or #chars > 16 then
+    return { ok = false, error = "a key is a code to 1023 and a few characters" }
+  end
+
+  if code > 0 then
+    local down = req.down == true
+
+    OUT.chord.held[code] = down or nil
+
+    if (code == 125 or code == 126) and down then
+      OUT.chord.super_moved = false
+    end
+
+    if not volume_key(code, down) and not machine_keys.take(code, down) then
+      raw_to_focused(code, down)
+    end
+  end
+
+  for i = 1, #chars do
+    key(chars:byte(i))
+  end
+
+  return { ok = true }
+end
+
 for entry in wanted:gmatch("[^,]+") do
   entry = entry:match("^%s*(.-)%s*$")
 
@@ -5883,6 +5972,22 @@ for entry in wanted:gmatch("[^,]+") do
       print(("wm: started %s as %s"):format(path, tostring(id)))
       pending_pid = id
     end
+  end
+end
+
+--
+-- **The screen's server, when the Servers window keeps it to start with the
+-- machine** - started here and not by the shell with the others, because
+-- this is what lends it the desktop, and a `vncd` the shell started would
+-- hold nothing to show (`remote`, above).
+--
+do
+  local kept = fs.read("/Home/Preferences/servers")
+  local vnc = type(kept) == "table" and kept.vnc
+
+  if type(vnc) == "table" and vnc.at_start == true then
+    handlers.launch({ program = "vncd", wait = false,
+                      args = tostring(math.floor(tonumber(vnc.port) or 5900)) })
   end
 end
 
@@ -6083,6 +6188,30 @@ while OUT.running do
 
   if P.measuring then t, heap = P.charge("messages", t, heap) end
 
+  -- 2b. What was lent (`remote`, above): a viewer's screen, pointer and
+  -- keys. Answered here, before the pointer's own pass, so a viewer's click
+  -- lands in the same pass a mouse's would.
+  while remote.ep do
+    local req, who, cap = sys.receive(remote.ep, true)
+
+    if not req then break end
+
+    local handler = type(req) == "table" and remote.handlers[req.type]
+    local reply
+
+    if not handler then
+      if cap and cap >= 0 then sys.release(cap) end
+
+      reply = { ok = false, error = "not something lent: " .. tostring(type(req) == "table" and req.type) }
+    else
+      local ok, result = pcall(handler, req, who, cap)
+
+      reply = ok and result or { ok = false, error = tostring(result) }
+    end
+
+    pcall(sys.reply, who, reply)
+  end
+
   step("pointer")
   -- 3. The pointer, before the picture: a click can raise a window and a
   -- drag can move one, and both are damage that this pass should draw.
@@ -6135,7 +6264,27 @@ while OUT.running do
     end
   end
 
-  pointer_pass(input.pointer)
+  --
+  -- **The mouse, unless a viewer has the pointer and the mouse is at rest.**
+  -- `pointer_pass` goes by what it saw last, from wherever it came, so a
+  -- mouse lying still would put the pointer back where the mouse is on the
+  -- next pass after every move a viewer made. So after a viewer's move the
+  -- mouse is passed only once it moves, presses or turns its wheel - and
+  -- with no viewer, every pass, as always.
+  --
+  local mouse, seen = input.pointer, remote.physical
+
+  if mouse then
+    local still = mouse.x == seen.x and mouse.y == seen.y
+                  and mouse.buttons == seen.buttons and (mouse.wheel or 0) == 0
+
+    seen.x, seen.y, seen.buttons = mouse.x, mouse.y, mouse.buttons
+
+    if not (remote.moved and still) then
+      remote.moved = false
+      pointer_pass(mouse)
+    end
+  end
 
   if P.measuring then t, heap = P.charge("pointer", t, heap) end
 

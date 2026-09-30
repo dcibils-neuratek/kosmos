@@ -110,6 +110,32 @@ class Viewer:
                                       1 if big else 0, 1, rmax, gmax, bmax,
                                       rshift, gshift, bshift))
 
+    def key(self, keysym, down):
+        self.sock.sendall(struct.pack(">BBxxI", 4, 1 if down else 0, keysym))
+
+    def pointer(self, x, y, mask=0):
+        self.sock.sendall(struct.pack(">BBHH", 5, mask, x, y))
+
+    def type_text(self, text):
+        """Keys as a viewer sends them: Shift held round a capital or a
+        shifted mark, Return for a newline."""
+        for ch in text:
+            if ch == "\n":
+                self.key(0xff0d, True)
+                self.key(0xff0d, False)
+                continue
+
+            shifted = ch.isupper() or ch in '~!@#$%^&*()_+{}|:"<>?'
+
+            if shifted:
+                self.key(0xffe1, True)
+
+            self.key(ord(ch), True)
+            self.key(ord(ch), False)
+
+            if shifted:
+                self.key(0xffe1, False)
+
     def request(self, incremental, x=0, y=0, w=None, h=None):
         self.sock.sendall(struct.pack(">BBHHHH", 3, 1 if incremental else 0, x, y,
                                       self.width if w is None else w,

@@ -224,7 +224,12 @@ answers to its three questions, the same day:
      on it is a viewer's pointer (absolute, which the window manager
      speaks) or a key (an X keysym, turned into the key event and the
      character a keyboard gives). The Deskbar's mark (7d) says whenever
-     that endpoint is held. 7c, a compressed encoding - zlib, through the miniz the
+     that endpoint is held. **Diego, 30 September: "yes agreee"** -
+     **BUILT the same day** (`testing.md` 18.292): `/Running/wm/remote`,
+     lent to a program of the image that declares `needs desktop`, with
+     `watch` moved onto it; a viewer's pointer and keys; the Servers
+     window's switch; and `vncd` started by the window manager when kept.
+     7c and 7d stay. 7c, a compressed encoding - zlib, through the miniz the
      compress kit already carries - when the M700 says Raw is too slow on
      its network. 7d, the Deskbar's mark while the screen is watched.
 
@@ -860,7 +865,8 @@ processors, and still what follows USB:
    checks timing - alone at the end; then waits for the thing in place of
    fixed sleeps. **What it took** (`testing.md` 18.97): `make test` is
    `tools/gate.py`, which builds every image first and runs every suite side
-   by side, six at once, longest first; `run_x86.py` runs as four groups of
+   by side, six at once (seven since 30 September, 18.292), longest first;
+   `run_x86.py` runs as four groups of
    its parts and the display harness as four parts per board. 18:28 with
    the harness whole, then 4:37 - the same checks, counted. The sleeps were
    not needed for it and are still there, as is the room they leave.
@@ -2678,7 +2684,10 @@ processors, and still what follows USB:
    switches on a busy desktop meet a thread that uses FP. Proposed: eager
    on x86 whatever the numbers, for the leak; ARM by what they say. The
    kernel's own `-mgeneral-regs-only` is a separate choice either way.
-   Diego's to decide.
+   Diego's to decide. **Diego, 30 September: "Not sure why we neee
+   this"** - answered: it is a speed trick, not a need, and the proposal
+   is to measure eager save with `make bench` and go eager if the cost is
+   small, which is simpler and closes the leak. Waits its turn.
 
 6zu. **FOUND on 29 September, reading the window manager for the VNC
    server - a window's shared surface is wrapped at the size the
@@ -2789,7 +2798,9 @@ processors, and still what follows USB:
    again with whatever replaces it, or the check stops biting; the image
    build, which compiles each variant's userland C separately; and whether
    seven at once is faster or only more contended on this Mac's four
-   performance cores. Never by dropping checks (`CLAUDE.md`).
+   performance cores - **faster, measured on 30 September**: 601 s six at
+   once and 520 s seven, the suites' own seconds unchanged (`testing.md`
+   18.292). Never by dropping checks (`CLAUDE.md`).
    **28 September, 10:06 and back**: tonight's app images had added two
    userlands built for them alone (lean ARM and lean x86) to every gate, so
    a library change compiled six userlands and the images took 100 s. The
@@ -5494,8 +5505,34 @@ the Pi", and the Pi is not here yet.
 - **Forms**, which need a box that takes keys.
 - **TLS**, without which most of the web refuses to speak. **ASKED on 29
   September** - Diego: "can we reuse all these openssl, tls libraries for
-  our browser so it can access https?" - while VNC was being built, and
-  waiting for his yes and its place in the order. What was proposed:
+  our browser so it can access https?" - while VNC was being built.
+  **Agreed on 30 September: "Go for it"**, after VNC's keys and pointer
+  (remote 7b). **The steps**, each with its test and its control:
+
+  1. **Randomness.** `hal_entropy`, with two real sources behind it: RDRAND
+     on a PC that has it (the M700's Skylake does; CPUID says), and
+     virtio-rng under QEMU on both boards, which the harness adds. A
+     syscall hands a process at most a few hundred bytes of it, and the
+     Crypto Kit keeps a ChaCha20 generator seeded from it - `crypto.random`
+     - since the kernel's job is the source, not the stream. Checked for
+     what can be checked: the generator against a fixed key's known output,
+     and the source against the health tests SP 800-90B names (no run of
+     one value, no stuck output), with a control that hands it zeros.
+  2. **BearSSL 0.6**, vendored in `runtime/upstream/bearssl` as released -
+     the tarball fetched from bearssl.org on 30 September is the one
+     nixpkgs records (sha256 `6705bba1...ff14`) - in a `tls` kit: a
+     connection from the Network Kit wrapped, BearSSL's engine fed and
+     drained through its ring, `read`, `write` and `close` in Lua.
+  3. **Whom to trust**: Mozilla's roots as curl publishes them, held to
+     their published hash, turned into BearSSL's trust anchors at build
+     time by BearSSL's own `brssl ta` built on the Mac - a build step, as
+     the fonts are. And the date from the machine's clock, since a
+     certificate's validity is a date.
+  4. **`fetch` and the browser speak `https://`** through it.
+  5. **The test**: a TLS server on the Mac, reached from the guest through
+     QEMU's network, with a certificate authority made for the test and
+     added to the guest's anchors - a page fetched whole, and refused: the
+     wrong host name, an expired certificate, one no anchor signed. What was proposed:
   **BearSSL**, vendored in `runtime/upstream/`, rather than OpenSSL, which
   is half a million lines built on sockets, threads, files and
   `/dev/urandom` - the personality Kosmos patches out of a port. BearSSL

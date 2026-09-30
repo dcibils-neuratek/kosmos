@@ -61,11 +61,28 @@ PROBES = {
     # the screen.
     "kick.lua": ('local r = fs.send("/Running/telnetd", { type = "disconnect", from = "10.0.2.2" })\n'
                  'print("KICKED " .. tostring(r and r.ended))\n'),
+    # Who is lent the desktop: a program launched by the window manager
+    # without `needs desktop`, and one on the disk that says it - which is
+    # refused as well, since a program's needs are read from the image alone
+    # (`binfs`): a header in `/Home` is words anybody could have written, and
+    # grants nothing. `vncd`, in the image, is lent it (below). Neither may
+    # watch through the public name any more.
+    "reach.lua": ('local r = fs.send("/Running/wm/remote", { type = "watch" })\n'
+                  'local p = fs.send("/Running/wm", { type = "watch" })\n'
+                  'print("REACH plain " .. tostring(type(r) == "table" and r.ok == true) '
+                  '.. " public " .. tostring(type(p) == "table" and p.ok == true))\n'),
+    "reach2.lua": ('-- kosmos: needs desktop\n'
+                   'local r = fs.send("/Running/wm/remote", { type = "watch" })\n'
+                   'local p = fs.send("/Running/wm", { type = "watch" })\n'
+                   'print("REACH lent " .. tostring(type(r) == "table" and r.ok == true) '
+                   '.. " public " .. tostring(type(p) == "table" and p.ok == true))\n'),
     "vnckick.lua": ('local r = fs.send("/Running/vncd", { type = "disconnect", from = "10.0.2.2" })\n'
                     'print("VNCKICKED " .. tostring(r and r.ended))\n'),
-    # A password typed on the Screen page, as the window keeps it.
+    # A password typed on the Screen page, and its switch for a viewer to
+    # use the keyboard and the pointer, as the window keeps them.
     "vncpass.lua": ('local all = fs.read("/Home/Preferences/servers")\n'
                     'all.vnc.password = "Kosmos"\n'
+                    'all.vnc.control = true\n'
                     'fs.write("/Home/Preferences/servers", all)\n'
                     'print("PASSWORD " .. fs.read("/Home/Preferences/servers").vnc.password)\n'),
 }
@@ -199,6 +216,22 @@ def look(guest, telnet, vnc, seen, fails):
         fails.append("the viewer was told %dx%d and the display is %dx%d"
                      % (viewer.width, viewer.height, width, height))
 
+    # Lent to a program that says it needs the desktop, and to no other.
+    session = connect(telnet)
+    session.run("open /Home/reach.lua")
+    session.run("open /Home/reach2.lua")
+
+    for want, what in (("REACH plain false public false",
+                        "a program that does not say it needs the desktop reached it"),
+                       ("REACH lent false public false",
+                        "a program on the disk was lent the desktop for saying "
+                        "it needs it")):
+        try:
+            guest.wait_for(want, "the probe's answer")
+        except Exception:                   # noqa: BLE001 - said as a failure
+            fails.append(what + ": " + " | ".join(l for l in guest.seen.splitlines()
+                                                  if "REACH" in l)[:200])
+
     # A whole frame, against what QEMU scans out and held still around it.
     _, _, before = R.parse_ppm(guest.screendump())
     viewer.request(False)
@@ -220,7 +253,6 @@ def look(guest, telnet, vnc, seen, fails):
                      % (seen["whole"], where_differs(viewer.frame, width, height, px), kept))
 
     # A window opened after: it arrives as an update of what changed.
-    session = connect(telnet)
     mark = len(guest.seen)
     session.run("open calc")
     guest.wait_for("wm: window Calculator at", "the Calculator's window")
@@ -270,6 +302,15 @@ def look(guest, telnet, vnc, seen, fails):
 
     if good < 0.99 * 64000:
         fails.append("a region in 565 was %.2f%% the screen" % (100 * good / 64000.0))
+
+    # With no control kept, a viewer only looks: its click goes nowhere.
+    viewer.pointer(211, 311, 1)
+    viewer.pointer(211, 311, 0)
+    time.sleep(1)
+    guest._read_available()
+
+    if "wm: button down at 211,311" in guest.seen:
+        fails.append("a viewer with no control kept clicked the desktop")
 
     # The Servers window's Disconnect, to the screen.
     said = session.run("/Home/vnckick.lua").decode(errors="replace")
@@ -327,6 +368,79 @@ def look(guest, telnet, vnc, seen, fails):
         viewer.update()
         width, height, px = R.parse_ppm(guest.screendump())
         share, _ = still_share(viewer.frame, width, before, px)
+
+        # Control kept: the viewer's keys, as a keyboard's, into a Terminal -
+        # a command that makes a file - and its click, at its own place.
+        session.run("open terminal")
+        guest.wait_for("wm: window Terminal at", "the Terminal's window")
+        time.sleep(2)
+        viewer.type_text("touch /Home/typed-by-a-viewer\n")
+        deadline = time.monotonic() + 30
+        listing = ""
+
+        while time.monotonic() < deadline and "typed-by-a-viewer" not in listing:
+            time.sleep(1)
+            listing = session.run("ls /Home").decode(errors="replace")
+
+        if "typed-by-a-viewer" not in listing:
+            fails.append("keys typed by a viewer did not run a command in the "
+                         "Terminal: %r" % listing[-300:])
+
+        viewer.pointer(200, 300, 0)
+        viewer.pointer(200, 300, 1)
+        viewer.pointer(200, 300, 0)
+
+        try:
+            guest.wait_for("wm: button down at 200,300", "a viewer's click")
+        except Exception:                   # noqa: BLE001 - said as a failure
+            fails.append("a viewer's click did not reach the desktop at 200,300")
+
+        # **And the pointer stays where the viewer left it**, with the mouse
+        # lying still: the cursor drawn at a place, then gone from there when
+        # moved away, then back. A mouse at rest that took the pointer back
+        # each pass would leave that corner the same all three times. The
+        # place is the bare desk near the bottom right, above the version
+        # line and below where any window here opens - a corner a Terminal
+        # covers blinks by itself, which on x86 it did.
+        cx, cy = viewer.width - 80, viewer.height - 120
+
+        def corner():
+            viewer.request(False, cx - 10, cy - 10, 40, 40)
+            viewer.update()
+            return b"".join(bytes(viewer.frame[((y * viewer.width) + cx - 10) * 3:
+                                              ((y * viewer.width) + cx + 30) * 3])
+                            for y in range(cy - 10, cy + 30))
+
+        # Each look repeated until the corner is what it should become, for
+        # at most three seconds - so a step costs what the cursor takes to
+        # move, and only a pointer that never arrives waits the whole time.
+        # The corner bare, then with the cursor, bare again when it has gone,
+        # and with it again when it is back.
+        def until(settled):
+            deadline = time.monotonic() + 3
+            crop = corner()
+
+            while not settled(crop) and time.monotonic() < deadline:
+                time.sleep(0.1)
+                crop = corner()
+
+            return crop, settled(crop)
+
+        bare = corner()
+        steps = []
+        viewer.pointer(cx, cy, 0)
+        cursor, ok = until(lambda c: c != bare)
+        steps.append(("the cursor arrived", ok))
+        viewer.pointer(cx - 300, cy, 0)
+        steps.append(("the cursor left", until(lambda c: c == bare)[1]))
+        viewer.pointer(cx, cy, 0)
+        steps.append(("the cursor came back", until(lambda c: c == cursor)[1]))
+        missed = [what for what, ok in steps if not ok]
+
+        if missed:
+            fails.append("the pointer did not stay where the viewer put it - "
+                         "at %d,%d the corner never showed that " % (cx, cy)
+                         + ", ".join(missed))
 
         if share < 0.999:
             os.makedirs(os.path.join(ROOT, "build", "servers"), exist_ok=True)
@@ -493,11 +607,12 @@ def main():
         if " died: " in out:
             fails.append("something died: " + out[out.find(" died: ") - 80:][:400])
 
-    for line in ("wm: the screen is watched", "vncd: 10.0.2.2  connected"):
+    for line in ("wm: lending the desktop to vncd", "wm: the screen is watched",
+                 "vncd: 10.0.2.2  connected"):
         if line not in guest.seen:
             fails.append("the log never said %r" % line)
 
-    checks = 16
+    checks = 23
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))
@@ -515,8 +630,12 @@ def main():
           "the web server kept to start with the machine serving its page "
           "after a boot; and the screen by VNC started with it - its size, a "
           "whole frame as QEMU scans it out (%s), a window opened after "
-          "arriving as an update (%s), 565 (%s), a Disconnect, the copy let "
-          "go, and a password refused wrong and admitted right)."
+          "arriving as an update (%s), 565 (%s), a click that went nowhere "
+          "with no control kept, a Disconnect, the copy let go, a password "
+          "refused wrong and admitted right, and with control kept a command "
+          "typed into a Terminal, a click at its own place and the pointer "
+          "staying there with the mouse at rest; the desktop "
+          "lent to vncd and to nothing else)."
           % (checks, seen.get("whole"), seen.get("update"), seen.get("565")))
     return 0
 

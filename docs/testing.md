@@ -5463,7 +5463,8 @@ test` is now `tools/gate.py`, and `make host-check` and `make gate-images`
 are its halves:
 
 1. every image the suites boot is built first, each variant with `-j`;
-2. every suite - the host checks included - runs side by side, six at once,
+2. every suite - the host checks included - runs side by side, six at once
+   (seven since 30 September, 18.292),
    the longest first by what each took last time (`build/gate/times.json`),
    each writing its own log in `build/gate/`;
 3. the two that were most of it run in parts: `run_x86.py`, some thirty
@@ -13803,3 +13804,61 @@ password.
 266,240 samples silent at 2.15 s, a gap rather than a wrong sample - and
 passing three times of three alone (18.127). It is the second time today
 under a gate's load (`roadmap.md` 6zw).
+
+## 18.292 The desktop lent: a viewer's keys and pointer, as a capability
+
+**VNC step 7b** (`roadmap.md` remote 7b) - Diego, 30 September, on input
+being a capability the window manager hands out rather than a request on
+its public name: "yes agreee".
+
+- **What the window manager lends is an endpoint of its own**,
+  `/Running/wm/remote`, mounted in a program it launches whose header says
+  `kosmos: needs desktop`, and in nothing else. `watch` and `watched` moved
+  there from `/Running/wm`, which every process can reach and where nothing
+  a request carries is checked; `pointer` and `key` arrived beside them. A
+  kept `vncd` is started by the window manager when it starts, not by the
+  shell, since it is what lends it the screen.
+- **A program's needs are read from the image alone** (`binfs`). A program
+  on the disk that says it needs the desktop is refused it: a header in
+  `/Home` is words anybody could have written. That was already how every
+  need worked - the installed games declare none - and the probe that
+  expected otherwise was the thing corrected.
+- **A viewer's pointer** goes through the same `pointer_pass` a mouse does,
+  in the screen's pixels as its range; RFB's middle and right buttons are
+  the other way round from here, its fourth and fifth are the wheel, and a
+  move with nothing else changed replaces the move before it, so a fast
+  viewer is a position rather than a queue. **The mouse lying still no
+  longer takes the pointer back**: `pointer_pass` goes by what it saw last,
+  so after a viewer's move the mouse is passed only once it moves, presses
+  or turns its wheel.
+- **A viewer's keys become what a keyboard's would**: the key's code for
+  the event, and the characters the kernel's own table and xterm's
+  sequences make of it (`hal/keys.c`) - Control with a letter its control
+  character, arrows and the function keys their sequences with the
+  modifier number, Super tapped alone the menu's sequence - through the
+  same two paths the console's input takes.
+- **Whether a viewer may use them is the Servers window's switch**, off by
+  default, read by `vncd` at each connection.
+
+**`arm-servers` and `x86-servers`, twenty-three checks now**: the desktop
+lent to `vncd`; a probe launched without the need refused it, and one on the
+disk that declares it refused as well, and neither able to watch through the
+public name; with no control kept, a viewer's click going nowhere; with it
+kept, `touch /Home/typed-by-a-viewer` typed into a Terminal making the file,
+a click logged by the window manager at exactly the pixel it was sent to,
+and the cursor staying where the viewer put it - its corner changing when
+moved away and the same when it came back. **Controls, together in one
+build**: the desktop lent to every program fails both probes; `vncd`
+forwarding input whatever the setting says fails the click with no control;
+the mouse always passed fails the pointer staying put.
+
+**And the gate, which 7b took to 10:01.** It is bound by its slots: 3,301
+seconds of suites six at a time is 550 s, before the images and the suites
+that run alone. Seven at a time - asked in `roadmap.md` 6zp since 28
+September, whether it would be faster or only more contended on this Mac's
+four fast cores and six efficient ones - ran the same 70 suites in **520 s
+(8:40)**, the suites' own seconds 3,310 against 3,301: the seventh slot was
+a core sitting idle. `--at-once` is seven now. And the Servers suite gave back
+its own: its new waits poll for what they wait for - the cursor's corner, on
+the bare desk above the version line, since a corner a Terminal covered blinks
+by itself on x86 - and it is about fifty seconds a board.

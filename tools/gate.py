@@ -548,7 +548,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4,
                         help="compiles at once, for the images")
-    parser.add_argument("--at-once", type=int, default=6,
+    # **Seven, measured** (`testing.md` 18.292): 70 suites took 601 s six at
+    # a time and 520 s seven at a time on 30 September, with the suites' own
+    # seconds the same - 3,301 and 3,310 - so the seventh slot was a core
+    # sitting idle, not one more guest fighting for the others. This Mac has
+    # ten: four fast, six efficient. `roadmap.md` 6zp had asked since 28
+    # September; the answer came when the gate stood at 10:01.
+    parser.add_argument("--at-once", type=int, default=7,
                         help="suites at once, before the quiet ones")
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")
