@@ -3352,6 +3352,14 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 #
 USB_BOOT ?= wm
 
+# **And its command line on the network**, by Telnet (`roadmap.md`, remote;
+# Diego, 29 September - "no key, local network only", and started by itself
+# on a development stick): `telnetd` on port 23, before the desktop.
+# `USB_TELNETD=` makes a stick without it. A stick made stable is the same
+# bytes renamed, so it keeps it.
+#
+USB_TELNETD ?= 23
+
 # **And the installed applications** (`docs/elf.md` step 5): Doom, Quake
 # and the Super Nintendo, each its Lua and its image, stripped, into
 # `/Home/Apps/<name>` - the build's, over anything the folder has there -
@@ -3371,7 +3379,7 @@ x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	    python3 tools/homeimage.py "$(HOME_DIR)" $(STICK_HOME) $(STICK_HOME_MB) \
 	        $$(python3 tools/installed.py x86_64 "$(HOME_DIR)") && \
 	    echo "$(HOME_DIR) goes on the stick as /Home, $(STICK_HOME_MB) MB, in a partition of its own" && \
-	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --home $(STICK_HOME) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --home $(STICK_HOME) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(if $(USB_TELNETD),opt/kosmos/telnetd=$(USB_TELNETD)) $(KOSMOS_ARGS); \
 	elif [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
 	    echo "$(DISK) goes on the stick too: the loader reads it and Kosmos mounts it"; \
 	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --disk $(DISK) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
@@ -3387,6 +3395,17 @@ x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	cp $$($(MAKE) --no-print-directory -s ARCH=x86_64 FULL=$(FULL) ubuild-path)/init.elf $$S/init.elf && \
 	for a in build/user-x86_64/apps/*.elf; do [ -f "$$a" ] && cp "$$a" $$S/; done; \
 	echo "its symbols, for a profile taken on it: $$S"
+
+# **The M700 from here, by Telnet** (`tools/kosmos_telnet.py`): a profile
+# taken there, fetched and read, in one command. `HOST` is its address -
+# `python3 tools/kosmos_telnet.py find` says which - and `SECONDS` how long.
+.PHONY: remote-profile
+remote-profile:
+	@test -n "$(HOST)" || { echo "HOST=<address>; python3 tools/kosmos_telnet.py find says which"; exit 1; }
+	@mkdir -p build/stick-profiles
+	python3 tools/kosmos_telnet.py $(HOST) run "profile $(if $(SECONDS),$(SECONDS),30) remote"
+	python3 tools/kosmos_telnet.py $(HOST) get /Home/profiles/remote.kprof build/stick-profiles/remote.kprof
+	python3 tools/profile_report.py build/stick-profiles/remote.kprof
 
 # Where this build's userland is, for a rule that has to name its `init.elf`.
 .PHONY: ubuild-path

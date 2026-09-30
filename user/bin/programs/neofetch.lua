@@ -281,7 +281,13 @@ if driven[1] or (info.net_mtu or 0) > 0 then
 
   if type(address) == "string" and #address == 4
      and address ~= "\0\0\0\0" then
-    row("Network", ("%s at %d.%d.%d.%d"):format(card, address:byte(1, 4)))
+    local a, b, c, d = address:byte(1, 4)
+
+    row("Network", ("%s at %d.%d.%d.%d%s"):format(card, a, b, c, d,
+        net.addressed_by == "dhcp" and ", from DHCP" or ""))
+  elseif net and net.card and net.addressed_by == "asking" then
+    -- DHCP, and no answer yet: the banner at boot usually comes first.
+    row("Network", card .. ", asking the network for an address")
   elseif net and net.card then
     row("Network", card .. ", no address configured")
   else

@@ -112,7 +112,7 @@ unblocks.
 
 ### Being built now
 
-**Remote: the Mac runs commands on the M700 over the network.** Diego, 29
+**Remote: the Mac runs commands on the M700 over the network, by Telnet.** Diego, 29
 September, after a day of sticks carried back and forth for a log and a
 profile: "why dont we build a python app that can run on this mac that
 connects through the network to the m700 and just run commands on it", "the
@@ -123,19 +123,63 @@ answers to its three questions, the same day:
    `/Home/Preferences/network` still able to set one by hand. The M700 came
    up as QEMU's `10.0.2.15` on a `192.168.0.x` network. QEMU's own DHCP
    server tests it.
-2. **`remote`, a program on Kosmos, and `tools/kosmos_remote.py` on the
-   Mac.** A command is run as a Terminal runs one - `remote` is its console,
-   and its output and exit code go back over TCP - and a file is fetched or
-   sent whole. A declared, length-prefixed frame on the wire. Tested by the
-   real client against the real server under QEMU, through the `hostfwd`
-   `run_network.py` already uses for `httpd`.
+2. **`telnetd`, a Telnet server on Kosmos** - Diego, the same evening:
+   "Can we just implement a Telnet server and client?" - rather than a
+   protocol of our own. A standard protocol needs no client of ours: `nc`
+   on the Mac, or Homebrew's `telnet`, and a small script for what is run
+   from here. The shell is run as a Terminal runs one - `telnetd` is its
+   console, over TCP - and files come back through `httpd`, which already
+   exists and speaks binary, where Telnet is text. Kosmos's own `telnet`
+   is the client on the other side. Tested under QEMU through the
+   `hostfwd` `run_network.py` already uses for `httpd`.
 3. **No key**: "no key, local network only" - anything on the M700's own
    network may run commands while a development stick is booted, nothing
-   beyond it can, and `remote` refuses a connection from outside its subnet.
+   beyond it can, and `telnetd` refuses a connection from outside its
+   subnet. Telnet has no login and no encryption, which is the same choice.
    Chosen knowing the cost, for a machine on a home network. **Started by
    itself on development sticks only**, never on a stable one.
 4. Then the round trip as one command on the Mac - profile, fetch, report -
    and `diagnose` the same way.
+
+   **Steps 1 to 4 BUILT on 29 September** (`testing.md` 18.288): DHCP in the
+   stack, `telnetd`, `tools/kosmos_telnet.py` with `find`, `run` and `get`,
+   `make remote-profile`, and development sticks starting it. Waiting on
+   the M700: its first lease from a real router, and the first command
+   from here.
+5. **Lua apps written on the Mac and pushed to the M700** - Diego, the same
+   evening: "We could also even write Lua apps in the Mac and push them to
+   the m700". `put` in `telnetd`, `get`'s mirror, base64 in; an `open`
+   program asking the window manager to start an application, as Tracker
+   and the Deskbar ask it (`/Running/wm`, which every process can reach);
+   and `kosmos_telnet.py push`, a file or an application's folder into
+   `/Home/Apps`, then opened. Pushed again on each save, later, if it earns
+   it. Nothing in `/Kosmos` changes this way: that is the image, and still
+   a stick.
+6. **A Servers application** - Diego, the same evening: "We might want a
+   servers app that hold all servers like web, telnet, vnc, etc like the
+   preferences app but with servers configuration so we can config and
+   activate/deactivate network servers". **Drawn as `docs/servers.html`**,
+   and Diego's word on it the same evening: "The mockup looks great". Its
+   four open choices built as drawn unless he says otherwise - the screen's
+   password optional, a viewer only looking by default, three servers, the
+   Web Server application folded in. The drawing: a page a server - Web, Command line, Screen - each
+   with its switch, its settings, who is connected and its log, and an
+   overview; the Web Server application folded into it; a mark on the
+   Deskbar while the screen is watched. Each server a program of its own
+   that writes its state to `/Temporary/<name>`, as `httpd` does, and the
+   window a manager of them, as the Web Server window is.
+7. **Then a VNC server**, for the desktop itself - Diego, the same evening:
+   "We can do a vnc server after Telnetd so we can remote access the desktop
+   with a simple vnc client". RFB (RFC 6143) is a standard the Mac already
+   speaks (Screen Sharing, `vnc://`), so again no client of ours. Two
+   questions to settle before it is built: **reading the screen** is an
+   authority - every window's pixels - and so a grant like the others, held
+   by the window manager and asked of it rather than taken from the
+   framebuffer; and **keys and the pointer coming back**, which the kernel
+   already takes from a process (`hal_pointer_move`, `hal_key_push`, the
+   USB mouse's and keyboard's path). Frames over TCP are a stream the
+   network carries, the one kind of recurring data that has to leave the
+   machine.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's

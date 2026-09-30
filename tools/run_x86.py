@@ -3369,10 +3369,15 @@ def machine_report(image, check):
 
 
 def row(out, label):
-    """The value of one of `neofetch`'s rows, or None."""
-    found = re.search(r"^%s +(.+?)\r?$" % label, out, re.MULTILINE)
+    """The value of one of `neofetch`'s rows, or None - **the last one**.
 
-    return found.group(1) if found else None
+    The shell runs `neofetch` as its banner, so a boot that types it again
+    prints the rows twice, and the one asked for is the second: the banner
+    was printed before a lease arrived by DHCP, and said it was asking.
+    """
+    found = re.findall(r"^%s +(.+?)\r?$" % label, out, re.MULTILINE)
+
+    return found[-1] if found else None
 
 
 def identity(image, check):
@@ -3399,7 +3404,14 @@ def identity(image, check):
     The first boot is QEMU saying it is QEMU, which is the half that stops a
     fix from being "print something else".
     """
-    out = boot(image, None, 120.0, typed=("neofetch",))
+    #
+    # **Asked once the lease is in**: the address is DHCP's since 29
+    # September, and on this card it comes through a driver that is a
+    # process of its own, up a moment after the stack - the M700's shape.
+    # Waiting for the stack's line is the check that it came at all.
+    #
+    out = boot(image, None, 120.0, typed=("neofetch",),
+               after="net: an address from DHCP")
 
     if out is None:
         check(False, "the machine would not boot to be asked what it is")
@@ -3422,7 +3434,8 @@ def identity(image, check):
     # the card's name and the address slirp handed it, not the "not driven"
     # sentence this asked for until 0.10.127. The second boot below keeps
     # that sentence tested with a card nothing here drives.
-    check(re.match(r"Intel 8086:10d3 at \d+\.\d+\.\d+\.\d+$", network)
+    # **From DHCP** since 29 September, which says how the address came.
+    check(re.match(r"Intel 8086:10d3 at \d+\.\d+\.\d+\.\d+, from DHCP$", network)
           is not None,
           "neofetch's Network is %r on a machine whose e1000e this system "
           "drives" % network)

@@ -1443,6 +1443,16 @@ local function new_namespace()
     return net.configure(capability, address, netmask, gateway, dns)
   end
 
+  -- An address from the network, by DHCP: asked for here and given later,
+  -- which `net_info`'s `addressed_by` says.
+  function ns.net_dhcp(path)
+    local net, capability, why = net_at(path or "/Network")
+
+    if not net then return nil, why end
+
+    return net.dhcp(capability)
+  end
+
   --
   -- A name, as four bytes.
   --
@@ -6098,6 +6108,24 @@ query. `find` and `watch` are built on exactly these two calls.
   -- reach a prompt because of something written in a file is a machine you
   -- cannot fix from the prompt.
   --------------------------------------------------------------------------
+  --
+  -- **And this command line on the network**, when the machine was told to:
+  -- `opt/kosmos/telnetd=23`, which a development stick carries (`roadmap.md`,
+  -- remote). In the background and before the desktop, so the Mac can reach
+  -- a machine whose screen is the window manager's.
+  --
+  local telnet_port = sys.boot("opt/kosmos/telnetd")
+
+  if telnet_port and telnet_port ~= "" then
+    out("starting telnetd on port " .. telnet_port .. "\n")
+
+    local ok, why = run_program("telnetd", telnet_port, true)
+
+    if not ok then
+      out("boot: telnetd: " .. tostring(why) .. "\n")
+    end
+  end
+
   local autostart = sys.boot("opt/kosmos/boot")
 
   if autostart and autostart ~= "" then
@@ -6559,7 +6587,11 @@ if role == ROLE_INIT then
   -- **The card on the bus before the adapter in a socket.** A machine may
   -- have both, and a socket is the one somebody may want for something else.
   --
-  local wires = { NET_EP }
+  --
+  -- The console second, whatever wires follow: the stack says in the log
+  -- what DHCP gave it (`net_server`'s second argument).
+  --
+  local wires = { NET_EP, CONSOLE_EP }
 
   if ether_driver then wires[#wires + 1] = PCI_FRAMES_EP end
   if usb_driver then wires[#wires + 1] = FRAMES_EP end
@@ -6621,14 +6653,15 @@ if role == ROLE_INIT then
         { DRIVES_EP, BLOCKS_EP, CONSOLE_EP })
 
   --
-  -- And its address, which init has to give it because the stack has no
-  -- namespace to read one from.
+  -- And its address, which init asks for or gives because the stack has no
+  -- namespace to read a setting from.
   --
-  -- **Static, because DHCP needs UDP** and there is none yet. The defaults
-  -- are QEMU's user-mode network, which is what this machine boots on:
-  -- 10.0.2.15 behind a NAT with the router and the DNS at 10.0.2.2 and
-  -- 10.0.2.3. `/Home/Preferences/network` overrides them, so a real board is a file
-  -- rather than a rebuild - the same arrangement `.appearance` has.
+  -- **From the network by DHCP, since 29 September**; it was written in -
+  -- QEMU's 10.0.2.15, with the router and the resolver at 10.0.2.2 and
+  -- 10.0.2.3 - for as long as the stack had no UDP, and the M700 sat on a
+  -- network of 192.168.0 under that address. `/Home/Preferences/network`
+  -- still names one by hand, so a machine that must have a fixed address is
+  -- a file rather than a rebuild - the same arrangement `.appearance` has.
   --
   -- **Given whether or not the kernel found a card**, which it was not until
   -- 22 September. An address is the *stack's*, not a card's: a machine whose
@@ -6652,14 +6685,11 @@ if role == ROLE_INIT then
     if DISKFS_EP then mine.mount("/Home", DISKFS_EP, "/Home", "disk") end
 
     --
-    -- 10.0.2.3 is where QEMU's own NAT puts a resolver, the way 10.0.2.2 is
-    -- where it puts this computer. A default that works on the one machine
-    -- this runs on today is worth more than a blank field somebody has to
-    -- know to fill in - and `.network` overrides it the moment there is a
-    -- second machine.
+    -- Nothing by default: an address, a router and a resolver come from
+    -- DHCP unless `.network` names them.
     --
-    local address, netmask, gateway = "10.0.2.15", "255.255.255.0", "10.0.2.2"
-    local dns = "10.0.2.3"
+    local address, netmask, gateway = nil, "255.255.255.0", nil
+    local dns = nil
     --
     -- In `/Home/Preferences` since 28 September (`roadmap.md` 6s d), and at
     -- the top of `/Home` before: this runs before the shell has moved it,
@@ -6689,9 +6719,23 @@ if role == ROLE_INIT then
                          tonumber(c) % 256, tonumber(d) % 256)
     end
 
-    local ok, why = mine.net_configure("/Network", bytes(address),
-                                       bytes(netmask), bytes(gateway),
-                                       bytes(dns))
+    --
+    -- **From the network, unless the file says otherwise** (`roadmap.md`,
+    -- remote; Diego, 29 September). An address in `.network` is used as it
+    -- always was; without one the stack asks by DHCP, and says in the log
+    -- what it was given. Under QEMU that is 10.0.2.15 with the router at
+    -- 10.0.2.2 and the resolver at 10.0.2.3 - what was written here before -
+    -- from QEMU's own DHCP server; on the M700, what its router gives.
+    --
+    local ok, why
+
+    if address then
+      ok, why = mine.net_configure("/Network", bytes(address), bytes(netmask),
+                                   bytes(gateway or "0.0.0.0"),
+                                   bytes(dns or "0.0.0.0"))
+    else
+      ok, why = mine.net_dhcp("/Network")
+    end
 
     if not ok then
       line("init: the network stack would not take its address: "
@@ -7386,6 +7430,12 @@ if role == ROLE_RUNNER then
       -- inside the program, three lines away, to see the difference.
       --
       out(path .. ": " .. tostring(e) .. "\n")
+
+      -- **And ended as a failure.** It ended with code 0 whatever
+      -- happened, so whoever collects it - the shell, the IDE, `telnetd`
+      -- saying "(exit code 1)" to the Mac - could not tell a program that
+      -- died of an error from one that finished.
+      sys.exit(1)
     end
 
     return
@@ -7393,10 +7443,13 @@ if role == ROLE_RUNNER then
 
   -- pcall, so a program that raises reports it instead of taking this
   -- process down without a word. It is its own process either way; this
-  -- just means the shell hears why.
+  -- just means the shell hears why - and its code says it failed.
   local ok, e = pcall(chunk)
 
   sys.reply(who, { ok = ok, error = not ok and tostring(e) or nil })
+
+  if not ok then sys.exit(1) end
+
   return
 end
 

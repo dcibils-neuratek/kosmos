@@ -13519,3 +13519,73 @@ among those timed, in microseconds, and every processor counted. Its
 control - the kernel never calling `profile_syscall` - fails "no timed
 SYS_TICKS". Under QEMU the console's two calls are 3.6 to 9 us each.
 
+## 18.288 Remote: DHCP, and the Mac running commands on Kosmos by Telnet
+
+**Diego, 29 September**, after a day of sticks carried back and forth for a
+log and a profile: "why dont we build a python app that can run on this mac
+that connects through the network to the m700 and just run commands on it",
+and then "Can we just implement a Telnet server and client?" (`roadmap.md`,
+remote). Two pieces, and a fix found by the second.
+
+**DHCP, in the network stack** (`user/servers/net.c`, `NET_OP_DHCP`). The
+stack came up at QEMU's 10.0.2.15 on every machine - `init` wrote it in -
+and the M700 sat on a network of 192.168.0 where the Mac could not reach
+it. It asks now: DISCOVER to everybody, the OFFER, a REQUEST, the ACK with
+the mask, the router and the resolver; again at half the lease, and the
+address given up if the lease ends unanswered. `init` asks unless
+`/Home/Preferences/network` names an address; the stack says in the log
+what it was given, and `neofetch` says ", from DHCP". Under QEMU the lease
+arrives 0.2 to 0.6 s after boot - which the boot banner used to beat, so it
+says "asking the network for an address" when it does.
+
+**`arm-network` and `x86-network`, 25 checks now**: the Network row says
+`virtio-net at 10.0.2.15, from DHCP` - QEMU's server gives the address the
+old default was, so the address alone cannot tell - and the capture holds a
+DHCP DISCOVER from this card, UDP 68 to 67, to everybody, message type 1.
+Its control, `init` writing 10.0.2.15 in as before, fails both, each on its
+own: "the capture holds no DHCP DISCOVER", and the row without its suffix.
+
+**`telnetd`** (`user/bin/programs/telnetd.lua`): a Terminal whose window is
+a TCP connection. A program run in it is handed it as `/Devices/console` -
+what it writes goes down the connection, a line typed is what its `read`
+gets, Telnet's interrupt is Control-C - and `get` prints a file in base64
+between `BEGIN` and `END`, since Telnet is text. Every option a client
+offers is refused, so the conversation stays a line in and lines out. No
+login, as Diego chose - "no key, local network only" - and a connection
+from outside the machine's subnet closed. A development stick starts it
+(`opt/kosmos/telnetd=23`, `USB_TELNETD`); `kill` ends it, and it never asks
+the console for Control-C, which on the M700 would be the keyboard
+controller asked ten times a second (18.287).
+
+**The Mac's half is `tools/kosmos_telnet.py`**: `find`, which looks for a
+Kosmos banner on this Mac's /24; `run`, which ends at the next prompt and
+exits with the program's code; `get`, which checks the length it was told.
+`make remote-profile HOST=... SECONDS=...` is a profile on the M700,
+fetched and read, in one command.
+
+**`arm-telnetd` and `x86-telnetd`, nine checks each**, the real client
+through a port QEMU forwards, `telnetd` started by the boot option as a
+stick starts it: the banner and a prompt; `hello`'s output; `cd` and `pwd`;
+76,800 bytes with every value in them, whole; a program's read given the
+next line typed; a failure's exit code; Control-C as Telnet's IAC IP
+reaching a program that asks; no such program; nothing dead. Controls:
+Telnet's interrupt ignored (the program never stops, the client times out)
+and base64 a bit off (the file comes back different at its first byte).
+Not held: the refusal of a connection from another subnet, which QEMU's
+network cannot make.
+
+**And the tests that raced it.** The gate found three places that typed
+at the prompt and read the address before the lease had come - on a Mac
+running the whole gate, that is later than the prompt: `run_network.py`'s
+banner, and `run_x86.py`'s machine report twice over, since it also read
+the *first* `Network` row it saw, which is the boot banner's and printed
+before any lease. `run_network.boot` now waits for the stack's DHCP line
+whenever the guest has a card, the report waits for it too, and `row`
+reads the last row printed.
+
+**Found by it: a program that failed ended with code 0.** The runner
+printed the error and returned, so the shell, the IDE and now `telnetd`
+could not tell a program that died of an error from one that finished. It
+ends with code 1 now, attached or detached - which the failure check is the
+control for, since it failed that way first.
+

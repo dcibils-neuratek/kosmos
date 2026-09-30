@@ -142,6 +142,13 @@ SUITES = [
     Suite("arm-profile", ["python3", "tools/run_profile.py", ARM]),
     Suite("x86-profile", ["python3", "tools/run_profile.py", X86], x86=True),
 
+    # **The Mac runs commands on a Kosmos machine, by Telnet** (`roadmap.md`,
+    # remote): `telnetd` started as a development stick starts it, and the
+    # Mac's own `kosmos_telnet.py` through a forwarded port - output, a line
+    # read, an exit code, Control-C, and a file with every byte value, whole.
+    Suite("arm-telnetd", ["python3", "tools/run_telnetd.py", ARM]),
+    Suite("x86-telnetd", ["python3", "tools/run_telnetd.py", X86], x86=True),
+
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is
     # written to kfs: R, four seconds, R, and the file read back by the video

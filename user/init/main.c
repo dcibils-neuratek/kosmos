@@ -67,7 +67,7 @@ void binfs_server(long endpoint, int libraries);
 void appfs_server(long endpoint);
 void console_server(long endpoint);
 void ramfs_server(long endpoint);
-void net_server(long endpoint, long frames, long frames2);
+void net_server(long endpoint, long console, long frames, long frames2);
 
 /* Not a server anyone asks, and handed the console's endpoint rather than an
  * endpoint of its own: it is a driver, and it reports as a client. */
@@ -640,7 +640,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_NET) {
         named("net");
-        net_server(0, 1, 2);
+        net_server(0, 1, 2, 3);
     }
 
     if (arg == ROLE_POWERBUTTON) {

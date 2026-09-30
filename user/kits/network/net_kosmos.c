@@ -140,7 +140,41 @@ static int l_info(lua_State *L)
     lua_setfield(L, -2, "netmask");
     push_addr(L, &rep.gateway);
     lua_setfield(L, -2, "gateway");
+    push_addr(L, &rep.dns);
+    lua_setfield(L, -2, "dns");
 
+    /* How the address was come by, as a word, and a lease's length. */
+    lua_pushstring(L, rep.addressed_by == NET_ADDRESS_GIVEN  ? "given"
+                    : rep.addressed_by == NET_ADDRESS_ASKING ? "asking"
+                    : rep.addressed_by == NET_ADDRESS_LEASED ? "dhcp" : "none");
+    lua_setfield(L, -2, "addressed_by");
+    set_int(L, "lease_seconds", (lua_Integer)rep.lease_seconds);
+    push_addr(L, &rep.lease_from);
+    lua_setfield(L, -2, "lease_from");
+
+    return 1;
+}
+
+/*
+ * `net.dhcp(cap)` - ask the network for an address. Answered at once;
+ * `net.info` says when there is one.
+ */
+static int l_dhcp(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+
+    memset(&req, 0, sizeof(req));
+    req.op = NET_OP_DHCP;
+
+    if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)rep.status);
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
     return 1;
 }
 
@@ -723,6 +757,7 @@ void kosmos_net_kit(lua_State *L)
     static const luaL_Reg api[] = {
         { "info",      l_info },
         { "configure", l_configure },
+        { "dhcp",      l_dhcp },
         { "ping",      l_ping },
         { "connect",   l_connect },
         { "listen",    l_listen },

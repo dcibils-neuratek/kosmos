@@ -1,0 +1,583 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Servers: every network server this machine can run, in one window - the
+  web server, the command line by Telnet and the screen by VNC - each
+  switched on and off, set up, and watched. Drawn on 29 September 2026 for
+  Diego to change, before the Servers app or the VNC server is built;
+  roadmap.md, remote. Diego: "Can you mockup the vnc server app?", "As well
+  as Telnet server config?", then "We might want a servers app that hold all
+  servers like web, telnet, vnc, etc like the preferences app but with
+  servers configuration so we can config and activate/deactivate network
+  servers". In preferences.html's window and style; every address, session
+  and number on it is an example.
+-->
+<title>Kosmos Servers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The window, as preferences.html draws it; the same in either theme. */
+    --w-desk: #3d63b8;
+    --w-side: #f1f2f4;
+    --w-body: #fafafb;
+    --w-card: #ffffff;
+    --w-line: #e0e2e6;
+    --w-ink: #1d1f24;
+    --w-dim: #74787f;
+    --w-sel: #dfe3ea;
+    --w-accent: #2a55c9;
+    --w-head: #ffffff;
+    --w-live: #2f8a55;
+    --w-live-ground: #e8f4ec;
+    --w-warn: #a4570e;
+    --w-warn-ground: #fdf3e6;
+    --w-stop: #b23b2e;
+
+    /* The Deskbar, and a terminal on the Mac. */
+    --bar: #d9d9d5;
+    --bar-ink: #1e1e1e;
+    --tab: #f2c230;
+    --term: #16181d;
+    --term-ink: #d7dae0;
+    --term-dim: #7d8594;
+    --term-green: #7fd08f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14171c;
+      --ink: #e8eaee;
+      --muted: #9aa2ae;
+      --rule: #2a2f38;
+      --card: #1b1f26;
+      --accent: #85a8ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #14171c;
+    --ink: #e8eaee;
+    --muted: #9aa2ae;
+    --rule: #2a2f38;
+    --card: #1b1f26;
+    --accent: #85a8ff;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 30px; max-width: 70ch; }
+  h2 {
+    font-family: var(--display); font-size: 19px; margin: 42px 0 10px;
+    padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance;
+  }
+  p { max-width: 72ch; }
+  code { font-family: var(--mono); font-size: .88em; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+
+  .note {
+    background: var(--card); border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 14px 18px; margin: 18px 0;
+  }
+  .note p { margin: 0; }
+
+  /* ---------------------------------------------------- the window */
+
+  .stage {
+    background: var(--w-desk);
+    background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+    padding: 34px 24px; border-radius: 12px; display: flex; justify-content: center;
+  }
+
+  .win {
+    width: 860px; max-width: 100%; background: var(--w-body); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+    display: grid; grid-template-columns: 220px 1fr; font-size: 13.5px; color: var(--w-ink);
+  }
+
+  .side { background: var(--w-side); border-right: 1px solid var(--w-line); padding: 10px 8px 14px; min-height: 560px; }
+  .side-title { font-weight: 600; font-size: 14px; text-align: center; height: 36px; line-height: 26px; }
+
+  .srv {
+    display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 9px;
+    padding: 8px 10px; border-radius: 7px; cursor: pointer; user-select: none;
+  }
+  .srv:hover { background: rgba(0,0,0,.05); }
+  .srv.on { background: var(--w-sel); }
+  .srv svg { width: 17px; height: 17px; color: var(--w-dim); }
+  .srv.on svg { color: var(--w-accent); }
+  .srv .n b { display: block; font-weight: 500; }
+  .srv .n span { display: block; color: var(--w-dim); font-size: 11.5px; line-height: 1.3; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #c3c6cc; }
+  .dot.live { background: var(--w-live); box-shadow: 0 0 0 3px rgba(47,138,85,.16); }
+  .side-gap { height: 10px; }
+  .side-note { color: var(--w-dim); font-size: 11.5px; padding: 6px 12px 0; line-height: 1.4; }
+
+  .pane { display: flex; flex-direction: column; min-width: 0; }
+  .head {
+    height: 46px; background: var(--w-head); border-bottom: 1px solid var(--w-line);
+    display: flex; align-items: center; padding: 0 18px; font-weight: 600; font-size: 14px;
+  }
+  .body { padding: 20px 26px 28px; }
+  .body-inner { max-width: 520px; margin: 0 auto; }
+
+  .page { display: none; }
+  .page.on { display: block; }
+
+  /* The one line that says whether it runs, and where it is reached. */
+  .hero {
+    display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+    background: var(--w-card); border: 1px solid var(--w-line); border-radius: 12px;
+  }
+  .hero .big { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; flex: none; background: #eef2fb; color: var(--w-accent); }
+  .hero .big svg { width: 22px; height: 22px; }
+  .hero .what { flex: 1; min-width: 0; }
+  .hero .what b { display: block; font-size: 15px; font-weight: 600; }
+  .hero .what span { display: block; color: var(--w-dim); font-size: 12.5px; }
+  .hero .what code { color: var(--w-ink); font-size: 12px; background: var(--w-side); padding: 1px 5px; border-radius: 4px; }
+  .pill {
+    font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 2px 8px; border-radius: 999px;
+    background: #eceef1; color: var(--w-dim); margin-left: 6px; vertical-align: 1px;
+  }
+  .pill.live { background: var(--w-live-ground); color: var(--w-live); }
+
+  .grouplabel { font-weight: 600; font-size: 12.5px; margin: 20px 0 7px 3px; }
+  .group { background: var(--w-card); border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; }
+
+  .row {
+    display: flex; align-items: center; gap: 14px; padding: 10px 14px;
+    border-bottom: 1px solid var(--w-line); min-height: 46px;
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .label { flex: 1; min-width: 0; }
+  .row .label b { font-weight: 500; display: block; }
+  .row .label span { color: var(--w-dim); font-size: 12px; display: block; line-height: 1.4; }
+  .row .label code { font-size: 11.5px; color: var(--w-ink); }
+
+  .row.warn { background: var(--w-warn-ground); }
+  .row.warn .label b { color: var(--w-warn); }
+  .row.warn > svg { width: 16px; height: 16px; color: var(--w-warn); flex: none; }
+
+  .sw {
+    width: 40px; height: 23px; border-radius: 12px; background: #cdd0d6;
+    position: relative; flex: none; cursor: pointer;
+  }
+  .sw.on { background: var(--w-accent); }
+  .sw::after {
+    content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.28); transition: left .12s;
+  }
+  .sw.on::after { left: 19px; }
+  .sw:focus-visible, .btn:focus-visible, .srv:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+
+  .drop {
+    display: flex; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid var(--w-line);
+    border-radius: 7px; background: #fff; font-size: 12.5px; flex: none; color: var(--w-ink);
+  }
+  .drop svg { width: 11px; height: 11px; color: var(--w-dim); }
+  .field {
+    font-family: var(--mono); font-size: 12.5px; padding: 5px 9px; width: 72px; flex: none;
+    border: 1px solid var(--w-line); border-radius: 7px; background: #fff; text-align: right; color: var(--w-ink);
+  }
+  .field.wide { width: 150px; text-align: left; }
+  .value { color: var(--w-dim); font-size: 12.5px; flex: none; font-variant-numeric: tabular-nums; }
+  .btn {
+    font: 500 12px var(--body); padding: 5px 11px; border-radius: 7px; border: 1px solid var(--w-line);
+    background: #fff; color: var(--w-ink); flex: none; cursor: pointer;
+  }
+  .btn.stop { color: var(--w-stop); border-color: #efc9c3; }
+
+  .who { width: 30px; height: 30px; border-radius: 8px; flex: none; display: grid; place-items: center; background: #eef2fb; color: var(--w-accent); }
+  .who svg { width: 16px; height: 16px; }
+
+  .log {
+    font: 11.5px/1.6 var(--mono); color: var(--w-ink); background: var(--w-card);
+    border: 1px solid var(--w-line); border-radius: 10px; padding: 10px 12px; overflow-x: auto; white-space: pre;
+  }
+  .log .d { color: var(--w-dim); }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat { background: var(--w-card); border: 1px solid var(--w-line); border-radius: 10px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--w-dim); font-size: 11.5px; }
+
+  .lives { font-family: var(--mono); font-size: 10.5px; color: #9aa0ab; padding: 6px 4px 0; }
+
+  /* the overview */
+  .ov { display: grid; gap: 10px; }
+  .ov .card {
+    display: grid; grid-template-columns: 38px 1fr auto; gap: 12px; align-items: center;
+    padding: 12px 14px; background: var(--w-card); border: 1px solid var(--w-line); border-radius: 12px;
+  }
+  .ov .card .big { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: #eef2fb; color: var(--w-accent); }
+  .ov .card .big svg { width: 20px; height: 20px; }
+  .ov .card b { font-weight: 600; }
+  .ov .card span { display: block; color: var(--w-dim); font-size: 12px; }
+  .ov .card span.pill { display: inline; font-size: 11px; }
+  .ov .card .sub-line { margin-top: 2px; }
+
+  /* ---------------------------------------------------- the Deskbar */
+
+  .barstage {
+    background: var(--w-desk);
+    background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+    border-radius: 12px; padding: 0 0 26px; overflow: hidden;
+  }
+  .bar {
+    background: var(--bar); color: var(--bar-ink); height: 34px; display: flex; align-items: center;
+    gap: 14px; padding: 0 12px; font-size: 13px; border-bottom: 1px solid #b9b9b5; overflow: hidden; white-space: nowrap;
+  }
+  .bar .brand { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .bar .brand i { width: 14px; height: 14px; background: var(--tab); border-radius: 3px; display: block; }
+  .bar .spacer { flex: 1; }
+  .bar .shared {
+    display: flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px;
+    background: #fff4d1; border: 1px solid #e3c35c; font-weight: 500; font-size: 12px;
+  }
+  .bar .shared svg { width: 15px; height: 15px; color: #8a6400; }
+  .bar .clock { font-variant-numeric: tabular-nums; }
+  .pop {
+    margin: 8px 12px 0 auto; width: 300px; max-width: calc(100% - 24px); background: #fff; color: var(--w-ink);
+    border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.28); font-size: 13px; overflow: hidden;
+  }
+  .pop .ph { padding: 11px 14px 4px; font-weight: 600; }
+  .pop .pl { padding: 0 14px 10px; color: var(--w-dim); font-size: 12px; }
+  .pop .pi { padding: 9px 14px; border-top: 1px solid var(--w-line); display: flex; justify-content: space-between; }
+  .pop .pi.red { color: var(--w-stop); font-weight: 500; }
+
+  /* ---------------------------------------------------- the Mac */
+
+  .term {
+    background: var(--term); color: var(--term-ink); border-radius: 10px; font: 12.5px/1.55 var(--mono);
+    padding: 14px 16px; overflow-x: auto; box-shadow: 0 10px 24px rgba(0,0,0,.18);
+  }
+  .term .t-bar { display: flex; gap: 6px; margin-bottom: 10px; }
+  .term .t-bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f48; display: block; }
+  .term .dim { color: var(--term-dim); }
+  .term .me { color: var(--term-green); }
+  .term pre { margin: 0; font: inherit; white-space: pre; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: var(--display); font-weight: 600; }
+  .tablewrap { overflow-x: auto; }
+  ol.qs { padding-left: 22px; }
+  ol.qs li { margin: 0 0 12px; max-width: 72ch; }
+
+  @media (max-width: 760px) {
+    .win { grid-template-columns: 1fr; }
+    .side { min-height: 0; border-right: 0; border-bottom: 1px solid var(--w-line); display: flex; overflow-x: auto; gap: 4px; padding: 8px; }
+    .side-title, .side-gap, .side-note { display: none; }
+    .srv { grid-template-columns: 18px auto 8px; flex: none; }
+    .srv .n span { display: none; }
+    .body { padding: 16px 14px 22px; }
+    .stage { padding: 18px 10px; }
+    .two { grid-template-columns: 1fr; }
+    .row { flex-wrap: wrap; }
+    .stats { grid-template-columns: 1fr 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Kosmos Servers</h1>
+<p class="sub">Every network server this machine can run, in one window: switched on and off, set up,
+and watched. Laid out like Preferences, with a server where Preferences has a part. The Web Server
+application becomes its first page; the command line by Telnet exists since 0.10.197; the screen by
+VNC is drawn here before any of it is built. Drawn on 29 September 2026 for Diego to change; every
+address, session and number is an example. <b>Press a server in its list.</b></p>
+
+<div class="stage">
+<div class="win" role="application" aria-label="The Servers application">
+  <div class="side" id="side">
+    <div class="side-title">Servers</div>
+
+    <div class="srv on" data-p="all" tabindex="0">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 3h11v4h-11zM2.5 9h11v4h-11zM5 5h.01M5 11h.01"/></svg>
+      <div class="n"><b>All servers</b><span>2 of 3 running</span></div><i></i>
+    </div>
+    <div class="side-gap"></div>
+    <div class="srv" data-p="web" tabindex="0">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></svg>
+      <div class="n"><b>Web</b><span>HTTP &middot; port 80</span></div><i class="dot live"></i>
+    </div>
+    <div class="srv" data-p="telnet" tabindex="0">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v10H2zM4.5 6.5l2 1.5-2 1.5M8 10h3"/></svg>
+      <div class="n"><b>Command line</b><span>Telnet &middot; port 23</span></div><i class="dot live"></i>
+    </div>
+    <div class="srv" data-p="vnc" tabindex="0">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v8H2zM5 14h6M8 11v3"/></svg>
+      <div class="n"><b>Screen</b><span>VNC &middot; port 5900</span></div><i class="dot"></i>
+    </div>
+    <div class="side-note">A server is a program of its own; this window starts it, ends it and reads what it writes down.</div>
+  </div>
+
+  <div class="pane">
+    <div class="head" id="title">All servers</div>
+    <div class="body"><div class="body-inner" id="pages">
+
+      <!-- ======================= all -->
+      <div class="page on" id="p-all">
+        <div class="ov">
+          <div class="card">
+            <div class="big"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></svg></div>
+            <div><b>Web</b> <span class="pill live">Running</span><span>http://192.168.0.57 &middot; /Home/www &middot; 214 served today</span></div>
+            <div class="sw on" role="switch" aria-checked="true" tabindex="0" aria-label="Run the web server"></div>
+          </div>
+          <div class="card">
+            <div class="big"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v10H2zM4.5 6.5l2 1.5-2 1.5M8 10h3"/></svg></div>
+            <div><b>Command line</b> <span class="pill live">Running</span><span>telnet 192.168.0.57 &middot; 1 session</span></div>
+            <div class="sw on" role="switch" aria-checked="true" tabindex="0" aria-label="Run the Telnet server"></div>
+          </div>
+          <div class="card">
+            <div class="big"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v8H2zM5 14h6M8 11v3"/></svg></div>
+            <div><b>Screen</b> <span class="pill">Stopped</span><span>vnc://192.168.0.57 when running</span></div>
+            <div class="sw" role="switch" aria-checked="false" tabindex="0" aria-label="Run the VNC server"></div>
+          </div>
+        </div>
+        <div class="grouplabel">This machine</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Address</b><span>From the router, by DHCP &middot; a lease of 24 hours</span></div><div class="value">192.168.0.57</div></div>
+          <div class="row"><div class="label"><b>Name</b><span>What it tells the router it is called</span></div><input class="field wide" value="kosmos" aria-label="Name"></div>
+          <div class="row"><div class="label"><b>Who may connect, to all of them</b><span>A connection from anywhere else is closed unanswered</span></div><div class="drop">This network only<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div></div>
+        </div>
+        <div class="lives">/Home/Preferences/servers &middot; the network stack's NET_OP_INFO</div>
+      </div>
+
+      <!-- ======================= web -->
+      <div class="page" id="p-web">
+        <div class="hero">
+          <div class="big"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></svg></div>
+          <div class="what"><b>Web <span class="pill live">Running</span></b><span>Files from a folder, to any browser: <code>http://192.168.0.57</code></span></div>
+          <div class="sw on" role="switch" aria-checked="true" tabindex="0" aria-label="Run the web server"></div>
+        </div>
+        <div class="grouplabel">Set up</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Port</b></div><input class="field" value="80" aria-label="Web port"></div>
+          <div class="row"><div class="label"><b>Folder</b><span>What is served; nothing outside it can be asked for</span></div><div class="drop">/Home/www<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div></div>
+          <div class="row"><div class="label"><b>Who may connect</b></div><div class="drop">This network only<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div></div>
+          <div class="row"><div class="label"><b>Start with the machine</b></div><div class="sw" role="switch" aria-checked="false" tabindex="0" aria-label="Start the web server with the machine"></div></div>
+        </div>
+        <div class="grouplabel">Since it started</div>
+        <div class="stats">
+          <div class="stat"><b>214</b><span>served</span></div>
+          <div class="stat"><b>3</b><span>refused</span></div>
+          <div class="stat"><b>18.4 MB</b><span>sent</span></div>
+        </div>
+        <div class="grouplabel">Asked for</div>
+        <div class="log"><span class="d">21:12:04</span>  192.168.0.47  GET /            -&gt; 200, 1 204 bytes
+<span class="d">21:12:04</span>  192.168.0.47  GET /photo.jpg   -&gt; 200, 412 877 bytes
+<span class="d">21:12:09</span>  192.168.0.47  GET /../.super   -&gt; 403
+<span class="d">21:13:30</span>  192.168.0.61  GET /music/      -&gt; 404</div>
+        <div class="lives">httpd &middot; /Temporary/httpd/status and log, as the Web Server app reads them</div>
+      </div>
+
+      <!-- ======================= telnet -->
+      <div class="page" id="p-telnet">
+        <div class="hero">
+          <div class="big"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v10H2zM4.5 6.5l2 1.5-2 1.5M8 10h3"/></svg></div>
+          <div class="what"><b>Command line <span class="pill live">Running</span></b><span>Programs run from another machine, as from a Terminal here: <code>telnet 192.168.0.57</code></span></div>
+          <div class="sw on" role="switch" aria-checked="true" tabindex="0" aria-label="Run the Telnet server"></div>
+        </div>
+        <div class="grouplabel">Set up</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Port</b></div><input class="field" value="23" aria-label="Telnet port"></div>
+          <div class="row"><div class="label"><b>Who may connect</b></div><div class="drop">This network only<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div></div>
+          <div class="row warn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l6.5 11.5h-13zM8 6.5v3.2M8 11.8h.01"/></svg><div class="label"><b>No password</b><span>Anyone on this network can run any program. Telnet has no login, and nothing on the wire is secret.</span></div></div>
+          <div class="row"><div class="label"><b>Start with the machine</b><span>A development stick always starts it</span></div><div class="sw on" role="switch" aria-checked="true" tabindex="0" aria-label="Start Telnet with the machine"></div></div>
+        </div>
+        <div class="grouplabel">Sessions</div>
+        <div class="group">
+          <div class="row"><div class="who"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v8H2zM5 14h6"/></svg></div><div class="label"><b>192.168.0.47</b><span>Since 21:04 &middot; in /Home &middot; running <code>profile 30</code></span></div><button class="btn stop">Disconnect</button></div>
+        </div>
+        <div class="grouplabel">Asked for</div>
+        <div class="log"><span class="d">21:04:11</span>  192.168.0.47  connected
+<span class="d">21:04:15</span>  192.168.0.47  diagnose
+<span class="d">21:05:02</span>  192.168.0.47  get /Home/diagnose.txt
+<span class="d">21:06:40</span>  10.8.0.3       refused, not on this network</div>
+        <div class="lives">telnetd &middot; /Temporary/telnetd/status and log, to write &middot; boot option telnetd=23</div>
+      </div>
+
+      <!-- ======================= vnc -->
+      <div class="page" id="p-vnc">
+        <div class="hero">
+          <div class="big"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v8H2zM5 14h6M8 11v3"/></svg></div>
+          <div class="what"><b>Screen <span class="pill">Stopped</span></b><span>This screen, seen and used from another machine: <code>vnc://192.168.0.57</code></span></div>
+          <div class="sw" role="switch" aria-checked="false" tabindex="0" aria-label="Run the VNC server"></div>
+        </div>
+        <div class="grouplabel">Set up</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Port</b></div><input class="field" value="5900" aria-label="VNC port"></div>
+          <div class="row"><div class="label"><b>A viewer may</b><span>Only look, or use the keyboard and the pointer too</span></div><div class="drop">View only<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div></div>
+          <div class="row"><div class="label"><b>Password</b><span>VNC&rsquo;s own, eight characters at most; macOS&rsquo;s Screen Sharing asks for one</span></div><button class="btn">Set&hellip;</button></div>
+          <div class="row"><div class="label"><b>Picture</b><span>Only what changed is sent; fewer colours when the network is slow</span></div><div class="drop">Full colour<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div></div>
+          <div class="row"><div class="label"><b>Who may connect</b></div><div class="drop">This network only<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></div></div>
+          <div class="row"><div class="label"><b>Start with the machine</b><span>Off: a screen shared by itself is easy to forget</span></div><div class="sw" role="switch" aria-checked="false" tabindex="0" aria-label="Start VNC with the machine"></div></div>
+        </div>
+        <div class="grouplabel">Viewers</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Nobody</b><span>When somebody is, they are listed here with a Disconnect, and the Deskbar says so</span></div></div>
+        </div>
+        <div class="lives">the VNC server, to build &middot; /Temporary/vnc/status and log</div>
+      </div>
+
+    </div></div>
+  </div>
+</div>
+</div>
+<p class="hint">The switches work, and so does the list on the left; nothing else on the page does.</p>
+
+<!-- ============================================================ the Deskbar -->
+
+<h2>While someone can see the screen, the Deskbar says so</h2>
+<p>A screen being watched is not something to find out about afterwards. For as long as a VNC viewer
+is connected, the Deskbar carries a yellow mark with who it is; pressing it says since when and what
+they may do, and stops them. A Telnet session has no mark, since it cannot see the screen &mdash; it
+is on the Servers window&rsquo;s Command line page instead.</p>
+
+<div class="barstage" role="img" aria-label="The Deskbar while the screen is shared">
+  <div class="bar">
+    <div class="brand"><i></i>Kosmos</div>
+    <span>Tracker</span><span>Terminal</span><span>Music</span>
+    <div class="spacer"></div>
+    <div class="shared"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>Shared with 192.168.0.47</div>
+    <span class="clock">21:14</span>
+  </div>
+  <div class="pop">
+    <div class="ph">This screen is shared</div>
+    <div class="pl">192.168.0.47, by Screen Sharing, since 21:10. They can see everything; they cannot type.</div>
+    <div class="pi"><span>Let them use the keyboard and pointer</span><span>&#8250;</span></div>
+    <div class="pi"><span>Servers&hellip;</span><span>&#8250;</span></div>
+    <div class="pi red"><span>Stop sharing</span></div>
+  </div>
+</div>
+
+<!-- ============================================================ the Mac -->
+
+<h2>From the Mac</h2>
+<p>None of the three needs a program of ours on the other side: a browser for the web server, any
+terminal for the command line, macOS&rsquo;s own Screen Sharing for the screen. For what is run from a
+script, <code>tools/kosmos_telnet.py</code> knows where a command&rsquo;s output ends, and fetches files.</p>
+
+<div class="two">
+  <div class="term" role="img" aria-label="A Telnet session from the Mac">
+    <div class="t-bar"><i></i><i></i><i></i></div>
+<pre><span class="dim">~/Code/kosmos $</span> python3 tools/kosmos_telnet.py find
+192.168.0.57  Kosmos 0.10.197
+<span class="dim">~/Code/kosmos $</span> nc 192.168.0.57 23
+Kosmos 0.10.197
+Host       LENOVO ThinkCentre M700
+Network    Intel 8086:15b8 at 192.168.0.57, from DHCP
+<span class="me">kosmos&gt;</span> profile 30
+profile: 30 s on 8 processors, to /Home/profiles/...</pre>
+  </div>
+  <div class="term" role="img" aria-label="The screen and the web from the Mac">
+    <div class="t-bar"><i></i><i></i><i></i></div>
+<pre><span class="dim">~/Code/kosmos $</span> open vnc://192.168.0.57
+<span class="dim"># Screen Sharing: the M700's desktop in
+# a window, and its keyboard and mouse
+# when the Screen page allows it.</span>
+<span class="dim">~/Code/kosmos $</span> open http://192.168.0.57
+<span class="dim">~/Code/kosmos $</span> make remote-profile HOST=192.168.0.57
+<span class="dim">... profiled there, fetched, and the
+report opened here.</span></pre>
+  </div>
+</div>
+
+<!-- ============================================================ decisions -->
+
+<h2>What is Diego&rsquo;s to decide</h2>
+<ol class="qs">
+  <li><b>A password for the screen.</b> The command line has none, by his choice. VNC&rsquo;s
+  protocol offers none or its own password; macOS&rsquo;s Screen Sharing asks for one and may refuse
+  a server that offers none. So the Screen page has a Password row: required, or allowed to be
+  empty the way the command line is.</li>
+  <li><b>A viewer may look, or control too, by default.</b> Drawn as <em>View only</em>, with the
+  Deskbar&rsquo;s mark letting one viewer type when that is wanted.</li>
+  <li><b>What else is a server here.</b> Three to start. Candidates later: files to another machine
+  (a folder of <code>/Home</code> over SMB or WebDAV, so the Mac&rsquo;s Finder mounts it), and the
+  Lua push this session&rsquo;s roadmap already has, which rides on the command line.</li>
+  <li><b>The Web Server application goes</b>, its page here taking its place, rather than two ways
+  to do one thing.</li>
+</ol>
+
+<h2>How it works</h2>
+<div class="tablewrap">
+<table>
+  <tr><th>Part</th><th>What it is</th></tr>
+  <tr><td>A server</td><td>A program of its own, as <code>httpd</code> and <code>telnetd</code> are now, which writes its state and its last lines to <code>/Temporary/&lt;name&gt;</code>. It does not know a window is watching.</td></tr>
+  <tr><td>This window</td><td>A manager, as the Web Server app is: it starts a server, ends it, and reads what it wrote. Running is a process of that name existing, not what a file last said.</td></tr>
+  <tr><td>Its settings</td><td><code>/Home/Preferences/servers</code>, one table a server; what starts with the machine is read from it at boot, and a development stick&rsquo;s <code>telnetd=23</code> still starts the command line whatever it says.</td></tr>
+  <tr><td>The screen</td><td>RFB 3.8 (RFC 6143), a server in C: the window manager&rsquo;s composed screen lent to it to read &mdash; every window&rsquo;s pixels, so a grant like the others &mdash; only the rectangles that changed sent, and keys and the pointer coming back the way the USB keyboard and mouse do.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<p>What exists today: <code>httpd</code> and its Web Server window, and the command line &mdash;
+<code>telnetd</code>, <code>tools/kosmos_telnet.py</code> and <code>make remote-profile</code>, started by
+itself on a development stick. The Servers window and the screen are this drawing, to be changed
+until it is right.</p>
+</div>
+
+</div>
+<script>
+const side = document.getElementById("side");
+const title = document.getElementById("title");
+
+function show(el) {
+  side.querySelectorAll(".srv").forEach(s => s.classList.remove("on"));
+  el.classList.add("on");
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("on"));
+  document.getElementById("p-" + el.dataset.p).classList.add("on");
+  title.textContent = el.querySelector("b").textContent;
+}
+
+side.addEventListener("click", e => {
+  const el = e.target.closest(".srv");
+  if (el) show(el);
+});
+side.addEventListener("keydown", e => {
+  const el = e.target.closest(".srv");
+  if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); show(el); }
+});
+
+document.addEventListener("click", e => {
+  const s = e.target.closest(".sw");
+  if (!s) return;
+  s.classList.toggle("on");
+  s.setAttribute("aria-checked", s.classList.contains("on") ? "true" : "false");
+});
+document.addEventListener("keydown", e => {
+  const s = e.target.closest && e.target.closest(".sw");
+  if (s && (e.key === " " || e.key === "Enter")) { e.preventDefault(); s.click(); }
+});
+</script>
+</body>
+</html>

@@ -268,8 +268,13 @@ syscalls - the controller not retired, so probably not 0xff. The log's line: 6.4
 read of an empty status, 2,400 a second - SMM, and 1.5% of a processor,
 not 30% (`testing.md` 18.287). **Stick 0.10.196**, with every syscall
 timed while a profile runs and the question drains once a tick: OVMF 32
-checks. **Next**: its profile on the M700 - the console's calls, timed -
-then remote (`roadmap.md`, Being built now): DHCP first. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+checks. **Remote, by Telnet** (`testing.md` 18.288; Diego: "Can we just implement
+a Telnet server and client?"): DHCP in the stack, `telnetd` started by a
+development stick, `tools/kosmos_telnet.py` (`find`, `run`, `get`) and `make
+remote-profile`; a program that fails ends with code 1 now. **Next**: stick
+0.10.197 in place of 0.10.196 - the M700's lease from its router, then
+commands from here, starting with the timed profile 0.10.196 was for. Then
+the VNC server (`roadmap.md`, remote step 5). Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware

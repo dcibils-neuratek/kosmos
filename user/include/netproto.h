@@ -138,6 +138,21 @@
  */
 #define NET_OP_RESOLVE  12u       /* a name -> an address */
 
+/*
+ * **An address from the network: DHCP** (RFC 2131). The stack asks for one
+ * and keeps it - renewing it at half its lease - until `NET_OP_CONFIG`
+ * sets one by hand. Answered at once; `NET_OP_INFO` says when it has one.
+ * Diego, 29 September: the M700 came up as QEMU's 10.0.2.15 on a network
+ * of 192.168.0, and remote needs it where the Mac can reach it.
+ */
+#define NET_OP_DHCP     13u
+
+/* How the address in `NET_OP_INFO` was come by. */
+#define NET_ADDRESS_NONE    0u      /* none yet */
+#define NET_ADDRESS_GIVEN   1u      /* `NET_OP_CONFIG`, by hand */
+#define NET_ADDRESS_ASKING  2u      /* DHCP, and no answer yet */
+#define NET_ADDRESS_LEASED  3u      /* DHCP, and a lease */
+
 #define NET_OK               0u
 #define NET_ERR_BAD_OP       1u
 #define NET_ERR_NO_CARD      2u   /* this machine has no network */
@@ -282,6 +297,12 @@ struct net_reply {
     struct net_addr gateway;
     struct net_addr dns;
     uint32_t mtu;
+
+    /* For NET_OP_INFO: how the address was come by (`NET_ADDRESS_*`), and
+     * for a lease, who gave it and for how many seconds from when. */
+    uint32_t addressed_by;
+    uint32_t lease_seconds;
+    struct net_addr lease_from;
 
     uint32_t length;
     uint8_t  payload[NET_PAYLOAD_MAX];

@@ -192,12 +192,15 @@ def _at_once(port, how_many):
         pass
 
 
-def boot(image, extra, commands, seconds=90, then=None):
+def boot(image, extra, commands, seconds=90, then=None, after=None):
     """One run, with whatever QEMU arguments the caller wants added.
 
     `then` runs while the guest is still up, after the commands have been
     typed - which is what a server needs: the last command does not return,
     because the server is still serving.
+
+    `after` is a line to see before typing anything: the address comes by
+    DHCP since 29 September, a moment after the prompt on a busy Mac.
     """
     #
     # Whichever board's list this image is for, and that is the whole of
@@ -218,6 +221,14 @@ def boot(image, extra, commands, seconds=90, then=None):
 
     try:
         guest.wait_for(run_screenshot.PROMPT, "the prompt")
+
+        # A machine given a card asks for its address; everything typed here
+        # uses it, so everything waits for it.
+        if after is None and any("-netdev" in a for a in extra):
+            after = "net: an address from DHCP"
+
+        if after is not None:
+            guest.wait_for(after, after)
 
         #
         # **`seen` is cleared before every command, and that is the whole of
@@ -296,6 +307,30 @@ def main():
         checks += 1
 
         #
+        # **And the question on the wire**: a DHCP DISCOVER from this card -
+        # UDP from 68 to 67, to everybody, its message type 1 - which is what
+        # the Network row above cannot show, that the stack asked rather
+        # than being told.
+        #
+        def discover(f):
+            dst, _, kind, payload, _ = f
+
+            if kind != 0x0800 or len(payload) < 20 + 8 + 240 or payload[9] != 17:
+                return False
+
+            udp = payload[(payload[0] & 0x0f) * 4:]
+
+            return (dst == "ff:ff:ff:ff:ff:ff" and udp[0:2] == b"\x00\x44"
+                    and udp[2:4] == b"\x00\x43"
+                    and b"\x35\x01\x01" in udp[8 + 240:])
+
+        if not any(discover(f) for f in frames(pcap)):
+            raise Failure("the capture holds no DHCP DISCOVER from this "
+                          "machine: it never asked for its address.")
+
+        checks += 1
+
+        #
         # **And the machine says which card, and where it is.** `neofetch`
         # said `virtio-net at 0.0.0.0` on a ThinkPad with no virtio-net, so
         # the half that must still be true is this one: a driven card, named
@@ -316,10 +351,15 @@ def main():
 
         found = re.search(r"^Network +(.+?)$", banner, re.MULTILINE)
 
-        if not found or found.group(1) != "virtio-net at 10.0.2.15":
+        #
+        # **From DHCP** since 29 September (`roadmap.md`, remote): QEMU's own
+        # server gives the address `init` used to write in, so the address
+        # alone cannot say which happened - the row says how it was come by.
+        #
+        if not found or found.group(1) != "virtio-net at 10.0.2.15, from DHCP":
             raise Failure(
-                "neofetch's Network row on a machine with a configured "
-                f"virtio-net is {found.group(1) if found else None!r}.\n"
+                "neofetch's Network row on a machine with a virtio-net that "
+                f"asked by DHCP is {found.group(1) if found else None!r}.\n"
                 + banner[-800:])
 
         checks += 1

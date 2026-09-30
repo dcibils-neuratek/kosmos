@@ -45,6 +45,7 @@
 #include "ethring.h"
 #include "netproto.h"
 #include "tcpring.h"
+#include "../init/say.h"
 
 /*------------------------------------------------------------------------
  * The wire, as offsets.
@@ -101,6 +102,10 @@
 
 /* Defined below, beside DNS - the only thing that sends one. */
 static void udp_receive(const uint8_t *packet, unsigned total);
+static void dhcp_receive(const uint8_t *m, unsigned length);
+
+#define DHCP_SERVER_PORT  67u
+#define DHCP_CLIENT_PORT  68u
 
 /*
  * RFC 793, and the twenty-byte header this stack builds.
@@ -270,6 +275,24 @@ static struct {
     struct net_addr gateway;
     bool     configured;
 
+    /* How the address was come by, `NET_ADDRESS_*`, and DHCP's part in it. */
+    uint32_t addressed_by;
+
+    struct {
+        bool     on;                /* asking for a lease, or keeping one */
+        uint8_t  stage;             /* DHCP_DISCOVER, _REQUEST, _BOUND, _RENEW */
+        uint8_t  tries;             /* questions sent since the last answer */
+        uint32_t xid;               /* this conversation's, in every message */
+        struct net_addr offered;
+        struct net_addr server;
+        uint32_t lease;             /* seconds */
+        uint64_t next_at;           /* counter: ask again */
+        uint64_t renew_at;          /* counter: half the lease */
+        uint64_t ends_at;           /* counter: the lease is gone */
+    } dhcp;
+
+    long console;                   /* where a line for the log goes, or -1 */
+
     struct arp_entry arp[ARP_CACHE];
     struct pending   pending[NET_PENDING_MAX];
 
@@ -372,6 +395,13 @@ static bool same_addr(const struct net_addr *a, const struct net_addr *b)
  *----------------------------------------------------------------------*/
 
 static const uint8_t BROADCAST[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
+/* 255.255.255.255: everybody on this wire, which DHCP speaks to and from. */
+static bool everybody(const struct net_addr *a)
+{
+    return a->byte[0] == 255 && a->byte[1] == 255 && a->byte[2] == 255
+        && a->byte[3] == 255;
+}
 
 static struct arp_entry *arp_find(const struct net_addr *ip)
 {
@@ -717,10 +747,15 @@ static bool send_ip(const struct net_addr *to, uint8_t protocol,
         return false;
     }
 
-    hop = next_hop(to);
-    e = arp_find(hop);
+    /*
+     * **To everybody: a broadcast, which asks nobody where it is.** DHCP's
+     * questions go to 255.255.255.255 before this machine has an address
+     * to be answered at, and an ARP for "everybody" has no answer.
+     */
+    hop = everybody(to) ? to : next_hop(to);
+    e = everybody(to) ? NULL : arp_find(hop);
 
-    if (e == NULL) {
+    if (e == NULL && !everybody(to)) {
         /*
          * Nobody knows where that is yet. The question goes out and this
          * fails - it does not queue the packet waiting for an answer.
@@ -755,7 +790,8 @@ static bool send_ip(const struct net_addr *to, uint8_t protocol,
 
     memcpy(packet + IP_HEADER, body, length);
 
-    return send_frame(e->mac, ETHERTYPE_IP, packet, IP_HEADER + length);
+    return send_frame(e != NULL ? e->mac : BROADCAST, ETHERTYPE_IP, packet,
+                      IP_HEADER + length);
 }
 
 static struct pending *pending_find(uint16_t id, uint16_t seq)
@@ -927,7 +963,9 @@ static void ip_receive(const uint8_t *packet, unsigned length)
     memcpy(from.byte, packet + IP_SRC, 4);
     memcpy(to.byte, packet + IP_DST, 4);
 
-    if (net.configured && !same_addr(&to, &net.address)) {
+    /* To everybody is ours as well: a DHCP server's answer is, while a
+     * lease is renewed. */
+    if (net.configured && !same_addr(&to, &net.address) && !everybody(&to)) {
         return;                     /* somebody else's, on a shared wire */
     }
 
@@ -979,7 +1017,9 @@ static uint64_t in_counter(uint32_t wait_ticks)
 static bool udp_send(const struct net_addr *to, uint16_t from_port,
                      uint16_t to_port, const uint8_t *body, unsigned length)
 {
-    uint8_t datagram[UDP_HEADER + 256];
+    /* A DHCP message may be 548 bytes, the most a client has to take
+     * (RFC 2131 2); a DNS question is much less. */
+    uint8_t datagram[UDP_HEADER + 548];
     uint32_t sum = 0;
     unsigned total = UDP_HEADER + length;
     unsigned i;
@@ -1246,8 +1286,13 @@ static void udp_receive(const uint8_t *packet, unsigned total)
         return;
     }
 
-    /* The only port this stack listens on, because DNS is the only thing
-     * that sends from it. */
+    /* The two ports this stack listens on: DNS's answers, and DHCP's. */
+    if (get16(udp + UDP_DST) == DHCP_CLIENT_PORT
+        && get16(udp + UDP_SRC) == DHCP_SERVER_PORT) {
+        dhcp_receive(udp + UDP_HEADER, length - UDP_HEADER);
+        return;
+    }
+
     if (get16(udp + UDP_DST) != DNS_FROM) {
         return;
     }
@@ -1286,6 +1331,301 @@ static void put32(uint8_t *at, uint32_t v)
 static bool seq_ge(uint32_t a, uint32_t b)
 {
     return (int32_t)(a - b) >= 0;
+}
+
+/*------------------------------------------------------------------------
+ * DHCP: an address from the network (RFC 2131), as a client and no more.
+ *
+ * **Asked for, not assumed.** The stack came up at QEMU's 10.0.2.15 on
+ * every machine, because DHCP needed UDP and there was none; `init` gave it
+ * that address unless `/Home/Preferences/network` said another. The M700
+ * sat on a network of 192.168.0 as 10.0.2.15, where the Mac could not reach
+ * it - and remote needs the Mac to (`roadmap.md`, Diego, 29 September).
+ *
+ * Four messages: DISCOVER to everybody, an OFFER back, a REQUEST for what
+ * was offered, and an ACK with the lease - the mask, the router and the
+ * resolver with it. Asked for again at half the lease, and given up when
+ * the lease ends unanswered. Everything goes to and comes from
+ * 255.255.255.255 with the BROADCAST flag set, since until the ACK this
+ * machine has no address to be answered at; and every answer has to carry
+ * this conversation's number and this card's MAC, or it is somebody else's.
+ *----------------------------------------------------------------------*/
+
+#define DHCP_FIXED      236u        /* op to file, before the options */
+#define DHCP_COOKIE     0x63825363u
+
+#define DHCP_DISCOVER   1u
+#define DHCP_OFFER      2u
+#define DHCP_REQUEST    3u
+#define DHCP_ACK        5u
+#define DHCP_NAK        6u
+
+/* The client's stages: `dhcp.stage`. REQUEST and RENEW both send one. */
+#define DHCP_ASKING     1u          /* DISCOVER until an OFFER */
+#define DHCP_CHOSEN     2u          /* REQUEST until an ACK */
+#define DHCP_BOUND      3u          /* a lease, until half of it is gone */
+#define DHCP_RENEWING   4u          /* REQUEST again, until an ACK or the end */
+
+static const struct net_addr EVERYBODY = { { 255, 255, 255, 255 } };
+
+static bool dhcp_send(unsigned type)
+{
+    uint8_t m[DHCP_FIXED + 4 + 64];
+    unsigned n;
+
+    memset(m, 0, sizeof(m));
+    m[0] = 1;                       /* a request */
+    m[1] = 1;                       /* Ethernet */
+    m[2] = 6;                       /* its addresses' length */
+    put32(m + 4, net.dhcp.xid);
+    put16(m + 10, 0x8000u);         /* answer to everybody: see above */
+
+    /* Renewing, the address being renewed; otherwise there is none. */
+    if (net.dhcp.stage == DHCP_RENEWING) {
+        memcpy(m + 12, net.address.byte, 4);
+    }
+
+    memcpy(m + 28, net.mac, 6);
+    put32(m + DHCP_FIXED, DHCP_COOKIE);
+    n = DHCP_FIXED + 4;
+
+    m[n++] = 53;                    /* which message this is */
+    m[n++] = 1;
+    m[n++] = (uint8_t)type;
+
+    if (type == DHCP_REQUEST && net.dhcp.stage == DHCP_CHOSEN) {
+        m[n++] = 50;                /* the address offered */
+        m[n++] = 4;
+        memcpy(m + n, net.dhcp.offered.byte, 4);
+        n += 4;
+        m[n++] = 54;                /* and who offered it */
+        m[n++] = 4;
+        memcpy(m + n, net.dhcp.server.byte, 4);
+        n += 4;
+    }
+
+    m[n++] = 55;                    /* what to be told: mask, router, DNS, lease */
+    m[n++] = 4;
+    m[n++] = 1;
+    m[n++] = 3;
+    m[n++] = 6;
+    m[n++] = 51;
+
+    m[n++] = 12;                    /* this machine's name, for the router's list */
+    m[n++] = 6;
+    memcpy(m + n, "kosmos", 6);
+    n += 6;
+
+    m[n++] = 255;
+
+    return udp_send(&EVERYBODY, DHCP_CLIENT_PORT, DHCP_SERVER_PORT, m, n);
+}
+
+static void say_addr(struct say_line *line, const struct net_addr *a)
+{
+    unsigned i;
+
+    for (i = 0; i < 4; i++) {
+        say_dec(line, a->byte[i]);
+
+        if (i < 3) {
+            say_text(line, ".");
+        }
+    }
+}
+
+static void dhcp_start(void)
+{
+    uint64_t now = kosmos_ticks();
+
+    net.dhcp.on = true;
+    net.dhcp.stage = DHCP_ASKING;
+    net.dhcp.xid = (uint32_t)now ^ ((uint32_t)net.mac[2] << 24)
+                 ^ ((uint32_t)net.mac[3] << 16) ^ ((uint32_t)net.mac[4] << 8)
+                 ^ net.mac[5];
+    net.dhcp.next_at = now;
+    net.dhcp.tries = 0;
+
+    if (!net.configured) {
+        net.addressed_by = NET_ADDRESS_ASKING;
+    }
+}
+
+/* From the loop: whatever is due - a question again, or a renewal. */
+static void dhcp_tick(void)
+{
+    uint64_t now = kosmos_ticks();
+
+    if (!net.dhcp.on) {
+        return;
+    }
+
+    if (net.dhcp.stage == DHCP_BOUND) {
+        if (now < net.dhcp.renew_at) {
+            return;
+        }
+
+        net.dhcp.stage = DHCP_RENEWING;
+        net.dhcp.next_at = now;
+    }
+
+    /* The lease ran out with nobody answering: the address is not ours. */
+    if (net.dhcp.stage == DHCP_RENEWING && now >= net.dhcp.ends_at) {
+        struct say_line line;
+
+        say_begin(&line);
+        say_text(&line, "net: the lease on ");
+        say_addr(&line, &net.address);
+        say_text(&line, " ended unrenewed; asking again");
+        say_send(net.console, &line);
+
+        memset(&net.address, 0, sizeof(net.address));
+        net.configured = false;
+        net.addressed_by = NET_ADDRESS_ASKING;
+        net.dhcp.stage = DHCP_ASKING;
+    }
+
+    if (now < net.dhcp.next_at) {
+        return;
+    }
+
+    /*
+     * **Not sent is not asked.** The card may be a driver that has not
+     * attached yet - the e1000's is a process of its own, up a moment after
+     * this one - and a question that went nowhere waited four seconds for
+     * an answer that could not come. So a quarter of a second then; and once
+     * one has gone, a second, two, then four between them, as RFC 2131 4.1
+     * begins; renewing, half a minute, since the lease is still good.
+     */
+    if (!dhcp_send(net.dhcp.stage == DHCP_ASKING ? DHCP_DISCOVER : DHCP_REQUEST)) {
+        net.dhcp.next_at = now + net.hz / 4u;
+        return;
+    }
+
+    if (net.dhcp.stage == DHCP_RENEWING) {
+        net.dhcp.next_at = now + net.hz * 30u;
+    } else {
+        net.dhcp.next_at = now + net.hz * (net.dhcp.tries < 2 ? 1u << net.dhcp.tries : 4u);
+        net.dhcp.tries++;
+    }
+}
+
+static void dhcp_receive(const uint8_t *m, unsigned length)
+{
+    unsigned type = 0, i;
+    struct net_addr mask, router, dns, server;
+    uint32_t lease = 0;
+    struct say_line line;
+
+    if (!net.dhcp.on || length < DHCP_FIXED + 4 || m[0] != 2
+        || get32(m + 4) != net.dhcp.xid || memcmp(m + 28, net.mac, 6) != 0
+        || get32(m + DHCP_FIXED) != DHCP_COOKIE) {
+        return;
+    }
+
+    memset(&mask, 0, sizeof(mask));
+    memset(&router, 0, sizeof(router));
+    memset(&dns, 0, sizeof(dns));
+    memset(&server, 0, sizeof(server));
+
+    /* The options, each code, length and value - bounded by the datagram. */
+    for (i = DHCP_FIXED + 4; i < length && m[i] != 255; ) {
+        unsigned code = m[i], len;
+
+        if (code == 0) {            /* padding */
+            i++;
+            continue;
+        }
+
+        if (i + 2 > length || i + 2u + m[i + 1] > length) {
+            return;
+        }
+
+        len = m[i + 1];
+
+        if (code == 53 && len == 1) {
+            type = m[i + 2];
+        } else if (code == 1 && len == 4) {
+            memcpy(mask.byte, m + i + 2, 4);
+        } else if (code == 3 && len >= 4) {
+            memcpy(router.byte, m + i + 2, 4);
+        } else if (code == 6 && len >= 4) {
+            memcpy(dns.byte, m + i + 2, 4);
+        } else if (code == 51 && len == 4) {
+            lease = get32(m + i + 2);
+        } else if (code == 54 && len == 4) {
+            memcpy(server.byte, m + i + 2, 4);
+        }
+
+        i += 2u + len;
+    }
+
+    if (type == DHCP_OFFER && net.dhcp.stage == DHCP_ASKING) {
+        memcpy(net.dhcp.offered.byte, m + 16, 4);
+        net.dhcp.server = server;
+        net.dhcp.stage = DHCP_CHOSEN;
+        net.dhcp.tries = 0;
+        net.dhcp.next_at = kosmos_ticks();      /* the REQUEST, from the loop */
+        return;
+    }
+
+    if (type == DHCP_NAK) {
+        net.dhcp.stage = DHCP_ASKING;
+        net.dhcp.next_at = kosmos_ticks();
+        return;
+    }
+
+    if (type != DHCP_ACK || (net.dhcp.stage != DHCP_CHOSEN
+                             && net.dhcp.stage != DHCP_RENEWING)) {
+        return;
+    }
+
+    /* A lease of no length, or none said, is taken as an hour. */
+    if (lease == 0 || lease == 0xffffffffu) {
+        lease = 3600;
+    }
+
+    {
+        bool renewed = net.dhcp.stage == DHCP_RENEWING;
+        uint64_t now = kosmos_ticks();
+
+        memcpy(net.address.byte, m + 16, 4);
+        net.netmask = mask;
+        net.gateway = router;
+        net.dns = dns;
+        net.configured = true;
+        net.addressed_by = NET_ADDRESS_LEASED;
+        net.dhcp.lease = lease;
+        net.dhcp.server = server;
+        net.dhcp.stage = DHCP_BOUND;
+        net.dhcp.tries = 0;
+        net.dhcp.renew_at = now + net.hz * (uint64_t)(lease / 2u);
+        net.dhcp.ends_at = now + net.hz * (uint64_t)lease;
+
+        (void)arp_ask(&net.gateway);
+
+        if (net.dns.byte[0] != 0) {
+            (void)arp_ask(&net.dns);
+        }
+
+        if (renewed) {
+            return;
+        }
+    }
+
+    say_begin(&line);
+    say_text(&line, "net: an address from DHCP: ");
+    say_addr(&line, &net.address);
+    say_text(&line, " mask ");
+    say_addr(&line, &net.netmask);
+    say_text(&line, ", router ");
+    say_addr(&line, &net.gateway);
+    say_text(&line, ", from ");
+    say_addr(&line, &net.dhcp.server);
+    say_text(&line, " for ");
+    say_dec(&line, lease);
+    say_text(&line, " s");
+    say_send(net.console, &line);
 }
 
 /*
@@ -2127,11 +2467,23 @@ static void serve(const struct message *msg, uint64_t sender)
         reply.netmask  = net.netmask;
         reply.gateway  = net.gateway;
         memcpy(reply.mac, net.mac, sizeof(reply.mac));
+        reply.addressed_by  = net.addressed_by;
+        reply.lease_seconds = net.addressed_by == NET_ADDRESS_LEASED
+                              ? net.dhcp.lease : 0;
+        reply.lease_from    = net.dhcp.server;
 
         answer(sender, &reply);
         return;
 
+    case NET_OP_DHCP:
+        dhcp_start();
+        reply.status = NET_OK;
+        answer(sender, &reply);
+        return;
+
     case NET_OP_CONFIG:
+        net.dhcp.on    = false;         /* an address by hand ends asking */
+        net.addressed_by = NET_ADDRESS_GIVEN;
         net.address    = req.address;
         net.netmask    = req.netmask;
         net.gateway    = req.gateway;
@@ -2703,13 +3055,14 @@ static void expire(uint64_t hz)
     }
 }
 
-void net_server(long endpoint, long frames, long frames2)
+void net_server(long endpoint, long console, long frames, long frames2)
 {
     struct netinfo card;
     uint64_t hz;
 
     memset(&net, 0, sizeof(net));
     memset(&wire, 0, sizeof(wire));
+    net.console = console;
     wire.cap = -1;
     wire.region = -1;
 
@@ -2809,6 +3162,7 @@ void net_server(long endpoint, long frames, long frames2)
 
         drain();
         expire(hz);
+        dhcp_tick();
         poll_service();
 
         if (status == 0) {
