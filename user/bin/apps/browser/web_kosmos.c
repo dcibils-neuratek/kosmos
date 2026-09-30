@@ -755,6 +755,21 @@ static int l_style(lua_State *L)
     return 1;
 }
 
+/*
+ * events() -> made, skipped: the DOM mutation events libdom has made and
+ * dispatched, and those it did not make because nothing could hear them
+ * (`runtime/patches/netsurf/README.md`). A browser without JavaScript
+ * should make none; the browser's suite holds it to that.
+ */
+static int l_events(lua_State *L)
+{
+    extern unsigned long _dom_events_made, _dom_events_skipped;
+
+    lua_pushinteger(L, (lua_Integer)_dom_events_made);
+    lua_pushinteger(L, (lua_Integer)_dom_events_skipped);
+    return 2;
+}
+
 /* stylesheet(css) -> true, or nil and why. */
 static int l_stylesheet(lua_State *L)
 {
@@ -778,6 +793,7 @@ void kosmos_web_kit(lua_State *L)
     static const luaL_Reg api[] = {
         { "parse",      l_parse },
         { "stylesheet", l_stylesheet },
+        { "events",     l_events },
         { NULL, NULL }
     };
 

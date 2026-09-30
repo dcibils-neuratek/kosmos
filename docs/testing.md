@@ -14240,3 +14240,42 @@ control is the commit before, with today's suite: "AT ONCE 16 opened, 16
 finished". Forty at once to `httpd` was tried and was a question about
 throughput rather than concurrency - the single-core x86 guest, sharing the
 Mac with other suites, served ten megabytes and six clients gave up waiting.
+
+## 18.301 The profile of a page: 8.2 seconds to 2.0
+
+**`roadmap.md` 6zz g, its first measurement** - Diego: "make the browser
+fast please, a slow browser is unusable". `profile 25 dam &` beside the
+browser loading Wikipedia's Dam article from this Mac, the `.kprof` brought
+back off the disk and named by `tools/profile_report.py`. It said something
+nobody would have guessed:
+
+- **66% of the machine's busy time was `time()`.** The libc's `time()` asked
+  the kernel for the whole of `sysinfo` - every processor's counts, the bus,
+  the memory - to read one number, 31 us a call under TCG, 6,813 calls a
+  second. The caller was libdom, which stamps every DOM event with
+  `time(NULL)`. Now `time()` reads `sysinfo` once a minute and counts the
+  counter between (`user/init/clock_user.c`), and **the page went from 8.2 s
+  to 2.4**. `tools/test_clock.c` holds it on the Mac against a stand-in
+  `kosmos.h` that counts calls: a thousand calls in ten seconds read
+  `sysinfo` once, the seconds follow the counter, a minute on it is read
+  again, and no clock is zero; the control, reading every call, fails two.
+- **The events themselves were the next largest thing.** libdom fires DOM
+  mutation events for every node the parser inserts - made, stamped,
+  dispatched through the ancestors and freed - and a browser without
+  JavaScript has no listener. `runtime/patches/netsurf/` is new: upstream
+  stays as released, and two of libdom's files are patched as the build
+  makes them, counting the listeners that exist and not making an event
+  while there are none and the document has no default actions. **2.0 s.**
+  The web kit's `events()` reports made and skipped; the browser's suite
+  parses a list at the prompt and requires none made - the control, a patch
+  that never skips, made 16 for a list of two.
+- **And the NetSurf libraries had been built without `NDEBUG`** from the
+  start: hubbub's tree builder printed its state's name for every token -
+  "a slightly nasty debugging hook" - and every `assert` ran. `WEB_CFLAGS`
+  has it now, as NetSurf's builds do; the suite refuses an image carrying
+  the debugging `printf`'s string, and does, for one built before.
+
+What is left of the browser's time on that page is the allocator - `malloc`,
+the heap growing a mapping at a time, `free` - and then CSS selection and the
+Lua, each a few per cent. And for a page with pictures, fetching them one
+after another over a connection each.

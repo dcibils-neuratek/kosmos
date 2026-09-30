@@ -1,0 +1,89 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. - runtime/patches/netsurf/README.md says why.
+--- a/libdom/src/events/dispatch.c	2026-09-30 15:00:35.187729711 -0300
++++ b/libdom/src/events/dispatch.c	2026-09-30 15:05:05.831391571 -0300
+@@ -23,10 +23,37 @@
+  * \param success  Whether this event's default action get called
+  * \return DOM_NO_ERR on success, appropriate dom_exception on failure.
+  */
++/* Kosmos: an event nobody can hear - no listener anywhere in the process
++ * (event_target.c counts them) and no default actions for the document -
++ * is not made, stamped, dispatched and freed for nothing. The parser fires
++ * several for every node it inserts, and a browser without JavaScript has
++ * no listener (runtime/patches/netsurf/README.md). */
++extern unsigned long _dom_event_listeners_live;
++
++/* Counted, for the web kit to report and a test to hold it to. */
++unsigned long _dom_events_made = 0;
++unsigned long _dom_events_skipped = 0;
++
++static bool _dom_events_unheard(dom_document *doc)
++{
++	if (_dom_event_listeners_live == 0 && doc->dei.actions == NULL) {
++		_dom_events_skipped++;
++		return true;
++	}
++
++	_dom_events_made++;
++	return false;
++}
++
+ dom_exception __dom_dispatch_node_change_event(dom_document *doc,
+ 		dom_event_target *et, dom_event_target *related, 
+ 		dom_mutation_type change, bool *success)
+ {
++	if (_dom_events_unheard(doc)) {
++		*success = true;
++		return DOM_NO_ERR;
++	}
++
+ 	struct dom_mutation_event *evt;
+ 	dom_string *type = NULL;
+ 	dom_exception err;
+@@ -73,6 +100,11 @@
+ dom_exception __dom_dispatch_node_change_document_event(dom_document *doc,
+ 		dom_event_target *et, dom_mutation_type change, bool *success)
+ {
++	if (_dom_events_unheard(doc)) {
++		*success = true;
++		return DOM_NO_ERR;
++	}
++
+ 	struct dom_mutation_event *evt;
+ 	dom_string *type = NULL;
+ 	dom_exception err;
+@@ -124,6 +156,11 @@
+ 		dom_event_target *related, dom_string *attr_name, 
+ 		dom_mutation_type change, bool *success)
+ {
++	if (_dom_events_unheard(doc)) {
++		*success = true;
++		return DOM_NO_ERR;
++	}
++
+ 	struct dom_mutation_event *evt;
+ 	dom_string *type = NULL;
+ 	dom_exception err;
+@@ -168,6 +205,11 @@
+ 		dom_document *doc, dom_event_target *et,
+ 		dom_string *prev, dom_string *new, bool *success)
+ {
++	if (_dom_events_unheard(doc)) {
++		*success = true;
++		return DOM_NO_ERR;
++	}
++
+ 	struct dom_mutation_event *evt;
+ 	dom_string *type = NULL;
+ 	dom_exception err;
+@@ -204,6 +246,11 @@
+ dom_exception __dom_dispatch_subtree_modified_event(dom_document *doc,
+ 		dom_event_target *et, bool *success)
+ {
++	if (_dom_events_unheard(doc)) {
++		*success = true;
++		return DOM_NO_ERR;
++	}
++
+ 	struct dom_mutation_event *evt;
+ 	dom_string *type = NULL;
+ 	dom_exception err;

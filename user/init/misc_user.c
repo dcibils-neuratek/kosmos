@@ -3,10 +3,10 @@
  * The pieces of the libc that differ inside a process.
  *
  * errno and the locale are the same in shape and different in where they
- * live. What is absent is time(): a process has no clock, cannot read the
- * counter, and has nothing to ask yet. Lua's uses of it are redirected in
- * kosmos_lua.h, and anything else calling it is a link error, which is the
- * right answer to a question the system cannot answer.
+ * live. `time()` is `clock_user.c`'s, the wall clock from `sysinfo`; Lua's
+ * uses of it are redirected in kosmos_lua.h to the monotonic counter. This
+ * said a process had no clock and `time()` was a link error, long after it
+ * had both.
  */
 
 #include <errno.h>
@@ -237,45 +237,7 @@ float logf(float x)
     return (float)log((double)x);
 }
 
-/*
- * What time it is, for a process.
- *
- * `runtime/libc/misc.c` has a `time` too and the user image does not compile
- * that file - it is the kernel side's, and the comment at the top of this
- * section records the link error that taught the difference once already.
- *
- * `sysinfo.epoch` is seconds since 1970 from the board's clock, read fresh
- * on every call, and zero on a machine that has none. Zero is the honest
- * answer there rather than a number counted from boot: a caller can tell
- * "this machine does not know" from a date, and cannot tell it from a date
- * that is wrong.
- *
- * Wanted by the NetSurf libraries, which stamp what they cache.
- *
- * **The `#undef` is not decoration.** `kosmos_lua.h` is forced in front of
- * every user translation unit and defines `time(t)` as `kosmos_lua_time(t)`,
- * so without this the definition below would compile as a second
- * `kosmos_lua_time` and collide with the real one in `lua_glue.c` - which is
- * exactly how this was found. Its own comment claims the redirection reaches
- * only Lua's files; `kosmos_lua.h` now records that it does not.
- */
-#undef time
-
-time_t time(time_t *t)
-{
-    struct sysinfo info;
-    time_t now = 0;
-
-    if (kosmos_sysinfo(&info) == 0) {
-        now = (time_t)info.epoch;
-    }
-
-    if (t != NULL) {
-        *t = now;
-    }
-
-    return now;
-}
+/* `time()` is in `clock_user.c`, where it can be tested on the Mac. */
 
 /*
  * Processor time, which a process here is not told.

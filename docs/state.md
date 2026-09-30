@@ -355,9 +355,14 @@ layout engine vendored for the box model and external stylesheets. Found:
 `make bench` drifted +8% on context switch and IPC since 19 September,
 before today's changes - to bisect. And **the network stack's limits are
 gone** (18.300): tables that grow, 64-bit handles, `poll` through a region -
-a hundred connections at once in the gate. **Next**: the rest of that class
-(`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices), then 6zz g,
-the HTTP Kit in C, with the cache (k) and the parser fed as bytes arrive. **Next** (6zz, in this order): f, the
+a hundred connections at once in the gate. Then Diego: "make the browser
+fast please, a slow browser is unusable" - and the profile (18.301) took the
+Dam article from 8.2 s to 2.0: `time()` reading `sysinfo` once a minute,
+libdom's unheard DOM events not made (`runtime/patches/netsurf/`), the NetSurf
+libraries built with `NDEBUG`. **Next, the browser's speed first**: pictures
+side by side over connections kept per host and names remembered, the
+allocator, the byte path (6zz g, k); then the rest of f's class
+(`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices). **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,
 profiled first; then e, resizable windows, and d, the redesign; then

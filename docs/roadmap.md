@@ -2754,7 +2754,16 @@ processors, and still what follows USB:
       Kit, and hands the body to the parser and the decoders without it
       ever becoming a Lua string. `http.lua` stays as the face, deciding
       what to fetch and what a redirect or a refusal means. Measured on the
-      test page's own status line, before and after. **What real pages
+      test page's own status line, before and after. **The profile came
+      first, on 30 September, and moved the order** (`testing.md` 18.301):
+      the Dam article from 8.2 s to 2.0 by a `time()` that no longer asks
+      the kernel for everything, libdom's unheard events not made, and the
+      NetSurf libraries built with `NDEBUG` - none of which was the byte
+      path. Diego, the same afternoon: "make the browser fast please, a
+      slow browser is unusable" - so the browser's speed is ahead of the
+      rest of f's class. Next, by what the profiles say: pictures fetched
+      side by side over connections kept per host, names remembered, then
+      the allocator, then the byte path. **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came
@@ -2864,6 +2873,11 @@ processors, and still what follows USB:
    it was given a quiet machine (18.127). Either it too runs `alone`, which
    is about 25 s on a gate at its edge, or the player's sound thread is not
    yet in the audio band on x86 and should be - to find out first.
+   **A third time on 30 September**: 1,098 samples of zero at 1.02 s, in the
+   gate that took the Dam article's profile fixes - and three passes of
+   three alone again, with nothing on the film's path calling `time()`,
+   the one thing that commit changed under it. The flake, not the change;
+   still to be found.
 
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need

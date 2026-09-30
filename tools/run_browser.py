@@ -323,9 +323,42 @@ def main():
 
     guest = None
 
+    #
+    # **The NetSurf libraries built as NetSurf builds them**, with `NDEBUG`:
+    # without it hubbub prints its state's name for every token, and the
+    # browser had been built that way from the start (`Makefile`,
+    # `WEB_CFLAGS`). The name of one of those states, with the newline the
+    # debugging `printf` gives it, is in the image only when it is.
+    #
+    with open(args.image, "rb") as f:
+        if b"AFTER_AFTER_FRAMESET\n" in f.read():
+            print("FAIL: the NetSurf libraries in this image were built without "
+                  "NDEBUG: hubbub prints its state for every token", file=sys.stderr)
+            return 1
+
     try:
         guest = Guest(args.image, args.timeout)
         guest.wait_for(PROMPT, "reached a shell")
+
+        #
+        # **No DOM event nobody can hear** (`runtime/patches/netsurf/`): a
+        # page parsed at the prompt, and libdom's count of the mutation
+        # events it made and the ones it did not. With no listener anywhere
+        # it made none - they were, with the clock each one read, most of
+        # what parsing Wikipedia's Dam article cost.
+        #
+        mark = len(guest.seen)
+        guest.type('local w = sys.kit("web") local d = w.parse("<ul><li>a</li><li>b</li></ul>") '
+                   'local m, k = w.events() print("DOM EV" .. "ENTS made " .. m .. ", skipped " .. k)')
+        events = guest.wait_for_line("DOM EVENTS made ", "counted its DOM events", since=mark)
+        made_skipped = re.match(r"(\d+), skipped (\d+)", events)
+
+        if made_skipped is None or made_skipped.group(1) != "0" \
+                or int(made_skipped.group(2)) == 0:
+            raise Failure(f"parsing a list made DOM events nobody could hear, or "
+                          f"skipped none: made {events!r}")
+
+        guest.wait_for(PROMPT, "the prompt again")
 
         guest.type(f"wm browser:10.0.2.2:{port}/{name}")
 
