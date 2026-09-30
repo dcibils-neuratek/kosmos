@@ -466,6 +466,7 @@ static int l_new(lua_State *L)
     pixels = (void *)(uintptr_t)mapped;      /* the kernel zeroed it */
 
     s = lua_newuserdatauv(L, sizeof(*s), 0);
+    memset(s, 0, sizeof(*s));
     s->pixels = pixels;
     s->width  = (unsigned)width;
     s->height = (unsigned)height;
@@ -2946,6 +2947,7 @@ static int l_view(lua_State *L)
     }
 
     v = lua_newuserdatauv(L, sizeof(*v), 1);
+    memset(v, 0, sizeof(*v));
     v->pixels = row_of(s, (unsigned)y) + x;
     v->width  = (unsigned)w;
     v->height = (unsigned)h;
@@ -3143,6 +3145,7 @@ static int l_wrap(lua_State *L)
     pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
 
     s = lua_newuserdatauv(L, sizeof(*s), 0);
+    memset(s, 0, sizeof(*s));
     s->pixels = (uint32_t *)(uintptr_t)at;
     s->width  = (unsigned)width;
     s->height = (unsigned)height;
@@ -3240,6 +3243,7 @@ static int l_screen(lua_State *L)
     }
 
     s = lua_newuserdatauv(L, sizeof(*s), 0);
+    memset(s, 0, sizeof(*s));
     s->pixels = (uint32_t *)(uintptr_t)info.address;
     screen_pixels = s->pixels;
     s->width  = info.width;

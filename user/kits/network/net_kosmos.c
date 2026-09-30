@@ -362,6 +362,17 @@ struct ring_handle {
     uint32_t         poll_index;
 };
 
+/*
+ * **Made with nothing in it.** A handle is Lua userdata, and Lua does not
+ * clear the memory it hands out: every field not set is what the memory
+ * held before. `closed`, `poll_round` and `poll_index` were not set, so a
+ * stale round that equalled a poll's own made a stale index a place in the
+ * set - and the shell died of a page fault in `x86-network` under the
+ * gate's load on 30 September, once the allocator reused memory
+ * differently. Both constructors clear the whole handle first
+ * (`tools/run_network.py`, FRESH POLL, reproduces it on purpose).
+ */
+
 static struct ring_handle *checkring(lua_State *L, int at)
 {
     return (struct ring_handle *)luaL_checkudata(L, at, "kosmos.tcp");
@@ -430,6 +441,7 @@ static int l_connect(lua_State *L)
     }
 
     h = (struct ring_handle *)lua_newuserdatauv(L, sizeof(*h), 0);
+    memset(h, 0, sizeof(*h));           /* userdata is not cleared: see above */
     h->ring    = (struct tcp_ring *)(uintptr_t)at;
     h->cap     = region;
     h->handle  = rep.handle;
@@ -699,6 +711,7 @@ static int l_accept(lua_State *L)
     }
 
     h = (struct ring_handle *)lua_newuserdatauv(L, sizeof(*h), 0);
+    memset(h, 0, sizeof(*h));           /* userdata is not cleared: see above */
     h->ring    = (struct tcp_ring *)(uintptr_t)at;
     h->cap     = region;
     h->handle  = rep.handle;

@@ -744,6 +744,30 @@ def main():
                     '.. ", gzip " .. #z .. " from " .. tostring(zhow.gzip) .. " " .. z:sub(-18, -6))')
             write_kept = f'fs.write("/Temporary/kept.lua", [==[{kept}]==])'
 
+            #
+            # **A connection starts with nothing in it** (`net_kosmos.c`,
+            # 30 September). Its handle is Lua userdata, which Lua does not
+            # clear, and the poll set's round and index in it were left as
+            # the memory had them - so a stale round equal to this poll's
+            # took a stale index as its place in the set, and the shell died
+            # of a page fault in `x86-network` under the gate's load. Here
+            # the memory is made to hold that on purpose: freed strings of
+            # the 32-bit value 1, in a fresh process whose first poll is
+            # round 1 - and only what `poll` says is ready is counted.
+            #
+            fresh = ('local junk = {} for i = 1, 4000 do junk[i] = ("\\1\\0\\0\\0"):rep(12 + i % 16) end '
+                     'junk = nil collectgarbage() collectgarbage() '
+                     'local cs = {} for i = 1, 24 do '
+                     f'local c = fs.connect("/Network", "\\10\\0\\2\\2", {port}) '
+                     'if c then c:write("GET /fresh HTTP/1.0\\r\\n\\r\\n") cs[#cs + 1] = c end end '
+                     'local left, done = cs, 0 for _ = 1, 400 do if #left == 0 then break end '
+                     'local ready = fs.poll("/Network", left, {}, nil, 25) or {} local is = {} '
+                     'for _, c in ipairs(ready) do is[c] = true end local keep = {} '
+                     'for _, c in ipairs(left) do c:read() if is[c] and c:closed() then done = done + 1 c:close() '
+                     'else keep[#keep + 1] = c end end left = keep end '
+                     'print("FRESH " .. "POLL " .. #cs .. " opened, " .. done .. " seen to finish by poll")')
+            write_fresh = f'fs.write("/Temporary/fresh.lua", [==[{fresh}]==])'
+
             out = boot(image, [
                 "-netdev", "user,id=net0",
                 "-device", run_screenshot.device(image, "net") + ",netdev=net0",
@@ -754,7 +778,9 @@ def main():
                 write_names,
                 ("/Temporary/names.lua", "NAMES ASKED "),
                 write_kept,
-                ("/Temporary/kept.lua", "KEPT ")], seconds=180)
+                ("/Temporary/kept.lua", "KEPT "),
+                write_fresh,
+                ("/Temporary/fresh.lua", "FRESH POLL ")], seconds=180)
         finally:
             httpd.shutdown()
             keeps.shutdown()
@@ -816,6 +842,18 @@ def main():
                 f"({kept_seen['requests']!r}), where a server that keeps them "
                 "needs three: one, a new one after it closed, and one more "
                 "after it dropped the request")
+
+        checks += 1
+
+        polled = re.search(r"FRESH POLL (\d+) opened, (\d+) seen to finish by poll", out)
+
+        if polled is None or polled.group(1) != "24" or polled.group(2) != "24":
+            raise Failure(
+                "connections made in memory that held other things were not "
+                "all seen to finish by poll: "
+                f"{polled.group(0) if polled else 'nothing printed'}. A handle "
+                "whose poll round and index are left as the memory had them "
+                "takes a stale place in the set.\n" + out[-900:])
 
         checks += 1
 

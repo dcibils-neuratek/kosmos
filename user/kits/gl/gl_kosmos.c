@@ -123,6 +123,7 @@ static int l_context(lua_State *L)
     }
 
     g = lua_newuserdatauv(L, sizeof(*g), 0);
+    memset(g, 0, sizeof(*g));
     g->ctx = NULL;
     g->width = w;
     g->height = h;

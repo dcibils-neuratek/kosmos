@@ -371,10 +371,16 @@ and a picture's redirect no longer moves the page's address. Then
 says, chunks put together, the connection kept for the next request -
 gnu.org 0.9-1.5 s live from 2.7-3.9. Then **gzip** (g, 18.306), inflated in
 C by miniz's `tinfl`: the Dam article 1.3-1.4 s from 2.1, its fetch 999 ms to
-340. **Next, the browser first**: layout, now the largest part (687 ms of the
-article, in C) - profiled first; the allocator; the rest of the byte path (g,
-k); pictures and the parser fed while the page is read; then the rest of f's
-class (and `inflate`'s 1 MB)
+340. Then **the allocator** (18.307): a bit for each bin, `alloc_table` -17.8%,
+the browser's allocator share 23% to 16% - and its gate found a connection
+handle made with fields left as the memory had them, a page fault in the
+shell; every userdata constructor now clears first (18.308). **Next, the browser first**: the CSS
+cascade, 36% of a big page's time (`web_select.c` making strings to answer
+libcss); the rest of the byte path (g, k); pictures and the parser fed while
+the page is read; then the rest of f's class (and `inflate`'s 1 MB). Diego
+asked on 30 September whether the new interface (d) and resizing (e) were
+being worked on during gates: not yet - speed first, as agreed - and offered
+to take e and d next if he wants them sooner; his answer decides the order.
 (`/Temporary`'s 128 files, audio's 8 streams, USB's 8 devices). **Next** (6zz, in this order): f, the
 network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,

@@ -193,6 +193,7 @@ static int l_jpeg(lua_State *L)
     stbi_image_free(rgba);
 
     s = lua_newuserdatauv(L, sizeof(*s), 0);
+    memset(s, 0, sizeof(*s));
     s->pixels = pixels;
     s->width  = (unsigned)width;
     s->height = (unsigned)height;

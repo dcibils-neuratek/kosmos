@@ -2779,8 +2779,15 @@ processors, and still what follows USB:
       (`testing.md` 18.306): asked for, and inflated in C by the
       Compression Kit's `gunzip` with miniz's `tinfl`; the article 1.3-1.4 s,
       its fetch 340 ms. **Layout is now the largest part** of a big page -
-      687 ms of it, in C already - so a profile of `web_page_layout` is
-      next, then the allocator and the rest of the byte path. **What real pages
+      687 ms of it, in C already - and the profile says what it is: the CSS
+      cascade and what it asks of the tree, about 36% of the browser's time,
+      and the allocator, 23%. **The allocator** (`testing.md` 18.307): a bit
+      for each bin, so `malloc` stops walking empty ones - 16% after,
+      `alloc_table` -17.8%. **Next, the cascade**: `web_select.c` answers
+      libcss by making strings - a name lowered and interned for every
+      question about an element, an attribute copied to be split into
+      classes - where NetSurf's own handler answers from what the tree
+      already holds. Then the rest of the byte path. **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came

@@ -28,6 +28,7 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -62,6 +63,7 @@ static int l_decoder(lua_State *L)
     struct decoder *dec;
 
     dec = (struct decoder *)lua_newuserdatauv(L, sizeof *dec, 0);
+    memset(dec, 0, sizeof *dec);
     dec->d = NULL;
     luaL_setmetatable(L, AAC_MT);
 

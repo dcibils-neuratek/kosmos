@@ -1654,6 +1654,7 @@ static int l_new(lua_State *L)
     }
 
     s = lua_newuserdatauv(L, sizeof *s, 1);
+    memset(s, 0, sizeof *s);
     s->pixels = NULL;
     s->pitch = pitch;
     s->w = w;

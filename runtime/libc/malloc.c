@@ -93,6 +93,21 @@ struct link {
 
 static struct block *bins[BINS];
 static struct block *first;
+
+/*
+ * **Which bins hold anything, a bit each** (`roadmap.md` 6zz g, the
+ * allocator). `malloc` used to try every bin from the size's own upwards,
+ * one at a time, to find one that was not empty - and while a heap grows,
+ * which is what parsing a page is, the small bins are empty and the free
+ * space is one large block at the top, so nearly every allocation walked
+ * forty-odd empty bins to reach it. The profile of Wikipedia's Dam article
+ * had `malloc` itself as the browser's largest function, 14% of it. With a
+ * bit for each bin, the nearest one above that holds a block is one
+ * count-trailing-zeros away.
+ */
+static uint64_t filled;
+
+_Static_assert(BINS <= 64, "a bin is a bit of `filled`");
 static size_t total;
 static size_t used;
 
@@ -123,6 +138,7 @@ static void bin_insert(struct block *b)
     }
 
     bins[k] = b;
+    filled |= (uint64_t)1 << k;
 }
 
 static void bin_remove(struct block *b)
@@ -133,7 +149,13 @@ static void bin_remove(struct block *b)
     if (p != NULL) {
         LINK(p)->next = n;
     } else {
-        bins[bin_of(b->size)] = n;
+        unsigned k = bin_of(b->size);
+
+        bins[k] = n;
+
+        if (n == NULL) {
+            filled &= ~((uint64_t)1 << k);
+        }
     }
 
     if (n != NULL) {
@@ -153,6 +175,7 @@ void heap_init(void *base, size_t size)
         bins[k] = NULL;
     }
 
+    filled = 0;
     first = base;
     first->size = ALIGN_UP(size - HEADER) - ALIGNMENT;
     first->prev = NULL;
@@ -281,6 +304,17 @@ static bool grow(size_t want)
 
 #endif
 
+/* Takes a free block out of its bin and makes it `want` bytes, in use. */
+static void *take(struct block *b, size_t want)
+{
+    bin_remove(b);
+    split(b, want);
+    b->free = 0;
+    used += b->size;
+
+    return PAYLOAD(b);
+}
+
 void *malloc(size_t n)
 {
     size_t want;
@@ -295,23 +329,29 @@ void *malloc(size_t n)
     want = ALIGN_UP(n);
 
     /*
-     * The bin the size belongs to, then upwards. An exact small bin's first
-     * block always fits; a large bin holds a range, so the size is still
-     * checked. Either way this walks free blocks only, and usually one.
+     * The bin the size belongs to, and then the nearest above it that holds
+     * anything. An exact small bin's first block always fits; a large bin
+     * holds a range, so its blocks are checked. Every block in a *higher*
+     * bin is bigger than any size this one holds - the bins are ordered by
+     * size and do not overlap - so the first block there fits, and which
+     * bin that is comes from `filled` rather than from looking.
      */
     for (;;) {
-        for (k = bin_of(want); k < BINS; k++) {
-            struct block *b;
+        uint64_t above;
+        struct block *b;
 
-            for (b = bins[k]; b != NULL; b = LINK(b)->next) {
-                if (b->size >= want) {
-                    bin_remove(b);
-                    split(b, want);
-                    b->free = 0;
-                    used += b->size;
-                    return PAYLOAD(b);
-                }
+        k = bin_of(want);
+
+        for (b = bins[k]; b != NULL; b = LINK(b)->next) {
+            if (b->size >= want) {
+                return take(b, want);
             }
+        }
+
+        above = filled & ~(((uint64_t)2 << k) - 1);
+
+        if (above != 0) {
+            return take(bins[__builtin_ctzll(above)], want);
         }
 
         /* Nothing fits. Ask for more and look once more; if the kernel says

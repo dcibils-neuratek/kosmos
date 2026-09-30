@@ -3670,6 +3670,82 @@ static bool test_heap_exhaustion_returns_null(void)
     return true;
 }
 
+/*
+ * **Many sizes, freed and grown in no order** (`roadmap.md` 6zz g, the
+ * allocator): three thousand steps over 96 slots, each block filled with a
+ * byte of its own and checked when it is freed or grown, and the heap back
+ * where it began at the end.
+ *
+ * What it holds the bins' bitmap to (`malloc.c`, `filled`): that a bin
+ * found by its bit really has a block in it, and that every bin with a
+ * block has its bit. A bit left on an empty bin hands out a block that is
+ * not there; one never set makes a heap that cannot grow - and this one
+ * cannot, at EL1 - say it is full with room to spare.
+ */
+static bool test_heap_many_sizes_in_no_order(void)
+{
+    enum { SLOTS = 96, STEPS = 3000 };
+    static unsigned char *slot[SLOTS];
+    static size_t size[SLOTS];
+    size_t before = heap_used();
+    uint32_t seed = 2026;
+    bool ok = true;
+    unsigned step, i;
+
+    for (step = 0; step < STEPS && ok; step++) {
+        unsigned at;
+        size_t n, keep;
+
+        seed = seed * 1103515245u + 12345u;
+        at = (seed >> 8) % SLOTS;
+        seed = seed * 1103515245u + 12345u;
+        n = ((seed >> 8) % 10 < 8) ? 1 + (seed >> 12) % 512
+                                   : 513 + (seed >> 12) % 3500;
+
+        if (slot[at] != NULL) {
+            for (i = 0; i < size[at]; i++) {
+                if (slot[at][i] != (unsigned char)(at + size[at])) {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if (step % 3 != 0) {
+                free(slot[at]);
+                slot[at] = NULL;
+                continue;
+            }
+
+            keep = size[at] < n ? size[at] : n;
+            slot[at] = realloc(slot[at], n);
+
+            for (i = 0; slot[at] != NULL && i < keep; i++) {
+                if (slot[at][i] != (unsigned char)(at + size[at])) {
+                    ok = false;
+                    break;
+                }
+            }
+        } else {
+            slot[at] = malloc(n);
+        }
+
+        if (slot[at] == NULL) {
+            ok = false;
+            break;
+        }
+
+        size[at] = n;
+        memset(slot[at], (unsigned char)(at + n), n);
+    }
+
+    for (i = 0; i < SLOTS; i++) {
+        free(slot[i]);
+        slot[i] = NULL;
+    }
+
+    return ok && heap_used() == before;
+}
+
 static bool str_is(const char *a, const char *b)
 {
     return strcmp(a, b) == 0;
@@ -9436,6 +9512,7 @@ static const struct test tests[] = {
     { "heap: free coalesces both ways",        test_heap_coalesces_in_both_directions },
     { "heap: realloc preserves contents",      test_heap_realloc_preserves_contents },
     { "heap: exhaustion returns NULL",         test_heap_exhaustion_returns_null },
+    { "heap: many sizes, in no order",         test_heap_many_sizes_in_no_order },
     { "snprintf: integers and strings",        test_snprintf_integers_and_strings },
     { "snprintf: a width and a precision of *", test_snprintf_star },
     { "snprintf: truncates, reports full len", test_snprintf_truncates_and_reports_the_full_length },

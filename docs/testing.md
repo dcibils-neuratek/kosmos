@@ -14500,3 +14500,63 @@ this address down first. Recorded rather than explained.
 **The gate for it**: 74 of 75 in 9:38, and `x86-film` the one - 1,196 samples
 of silence at 2.29 s where FFmpeg's reference has sound, `roadmap.md` 6zw's
 shape for the fourth time - and three of three alone after, on the same image.
+
+## 18.307 The allocator finds a bin by its bit
+
+**`roadmap.md` 6zz g, the allocator.** With gzip in, the profile of the Dam
+article loading in the browser put the allocator at 23% of the browser's time,
+`malloc` itself its largest function at 14%. `malloc` looked for a free block
+in the size's own bin and then in every bin above it, one at a time - and while
+a heap grows, which is what parsing a page is, the small bins are empty and
+the free space is one large block at the top, so nearly every allocation
+walked forty-odd empty bins to reach it. A bit for each bin (`filled`), set
+when a block goes into it and cleared when its last one leaves, and the
+nearest bin above that holds anything is one count-trailing-zeros away. Any
+block there fits, since the bins are ordered by size and do not overlap.
+
+**The same profile after**: the browser 289 samples from 325, the allocator 45
+from 74, `malloc` and the block-taking it now calls 18 from 46. `make bench`:
+`alloc_table` 292.3 from 355.7 (-17.8%), `serialize` 833.3 from 897.7 (-7.2%) -
+the baselines not raised yet, since the run also carries the context switch and
+IPC drift (+8%, `roadmap.md` 6zz) that was there before and is still to be
+bisected. What the allocator still costs is mostly the kernel zeroing fresh
+pages as the heap grows.
+
+**The profile says where a big page's time is now**: the CSS cascade and what
+it asks of the tree - libcss, `web_select.c`, interning and libdom's strings -
+about 36% of the browser's; the allocator 16%; the parser 10%; Lua 7%. The
+layout's own code is 1.2%.
+
+**`arm-kernel` and `x86-kernel`**: "heap: many sizes, in no order", three
+thousand steps over 96 slots of 1 to 4,012 bytes, freed, grown and checked, and
+the heap back where it began. Control: the large bins' bits never set - it
+fails, with the other heap tests and everything that runs Lua.
+
+## 18.308 A connection starts with nothing in it
+
+**Found by the gate for 18.307**: `x86-network` failed - the shell died of a
+page fault in the middle of the hundred-connections check, in `pollset_add`
+(`net_kosmos.c:807`, found from the fault's address and `x86_64-elf-addr2line`)
+- and passed three times of three alone on the same image. A fault in a
+single-threaded Lua process is not a flake to wave through.
+
+A connection's handle is Lua userdata, and Lua does not clear the memory it
+hands out. The two constructors set four of the handle's fields; `closed`,
+`poll_round` and `poll_index` - the last two added today with the poll set -
+were whatever the memory held. When a stale round equalled the poll's own,
+the handle took its stale index as its place in the set, and read or wrote
+wherever that pointed. The new allocator did not cause it: it reuses freed
+memory differently, and that is what showed it.
+
+**Made to happen on purpose**: a program in a fresh process, whose first poll
+is round 1, fills and frees memory with strings of the 32-bit value 1, opens
+24 connections and counts only what `poll` says has finished. On the image
+before the fix it dies every time - "data abort from a lower EL", in
+`pollset_add` at the same line. After: "FRESH POLL 24 opened, 24 seen to
+finish by poll", `arm-network` and `x86-network` 34 checks each.
+
+**The class, not the instance**: every constructor of userdata in the kits was
+read. The rest set every field or clear the struct first; the ten that set
+theirs one by one - the surfaces, the GL context, the Game Kit's, the H.264 and
+AAC decoders - now clear it first as well, so a field added later starts at
+zero rather than at what was there.

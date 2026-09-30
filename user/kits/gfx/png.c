@@ -647,6 +647,7 @@ static int l_png(lua_State *L)
     kosmos_unmap((uintptr_t)idat, idat_pages);
 
     s = lua_newuserdatauv(L, sizeof(*s), 0);
+    memset(s, 0, sizeof(*s));
     s->pixels = pixels;
     s->width  = (unsigned)width;
     s->height = (unsigned)height;
