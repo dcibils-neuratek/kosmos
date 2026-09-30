@@ -121,6 +121,16 @@ end
 
 local function split(text)
   local rest = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+  --
+  -- **`http://` typed as well as left off.** The bar wanted an address
+  -- without it, and with it looked up `http:` as the name of a machine -
+  -- Diego, 30 September, with the web server running in the same machine:
+  -- "cannot look up http:: 12". A scheme is the one part of a URL everybody
+  -- types, so it is taken off here rather than asked to be left out.
+  --
+  rest = rest:gsub("^[Hh][Tt][Tt][Pp]://", "")
+
   local hostport, path = rest:match("^([^/]+)(/.*)$")
 
   hostport = hostport or rest

@@ -158,6 +158,12 @@ SUITES = [
     # and a machine with neither refusing rather than pretending.
     Suite("entropy", ["python3", "tools/run_entropy.py", ARM, X86], x86=True),
 
+    # **HTTPS, through the TLS Kit** (BearSSL): `fetch https://` from a TLS
+    # server on this Mac - a page whole, and refused for another name, an
+    # expired certificate, an authority it was not given, and no --cacert.
+    Suite("arm-tls", ["python3", "tools/run_tls.py", ARM]),
+    Suite("x86-tls", ["python3", "tools/run_tls.py", X86], x86=True),
+
     Suite("arm-servers", ["python3", "tools/run_servers.py", ARM]),
     Suite("x86-servers", ["python3", "tools/run_servers.py", X86], x86=True),
 

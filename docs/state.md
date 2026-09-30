@@ -317,8 +317,17 @@ exactly 300,300. Handed over in place of 0.10.199.
 **HTTPS step 1, randomness** (`testing.md` 18.293; Diego: "Keep building, go
 for https"): `hal_entropy` (RDRAND, virtio-rng), the kernel's repetition test
 and `SYS_ENTROPY`, `crypto.random` in the Crypto Kit, VNC's challenge from
-it. **Next**: step 2, BearSSL 0.6 in a `tls` kit - its tarball is in
-`build/downloads`, held to nixpkgs's hash.
+it.
+
+**HTTPS for `fetch`** (`testing.md` 18.294): BearSSL in the TLS Kit, Mozilla's
+roots, `fetch https://`, `arm-tls`/`x86-tls`. `make TELNET=2323 VNC=5901
+qemu` for reaching `make qemu` from the Mac. **The browser, redrawn**:
+`docs/browser.html`, agreed ("great! it looks amazing") with Open anyway,
+favorites as files, tabs, costs always shown, DuckDuckGo/Google search; and
+"the browser needs to be fast" - measured first. JavaScript for later.
+**Next** (6zz): the test page and the browser in the gate, then resizable
+windows that draw their own pixels, then the redesign and HTTPS in it; then
+loopback (6zy).
 Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU

@@ -988,7 +988,7 @@ user/           everything at EL0:
                   net/ usb/ display/ power/
   kits/           C that runs inside your own process, one directory per
                   kit: gfx/ gl/ pdf/ compress/ game/ network/ console/
-                  mp3/ record/ 3d/ ffmpeg/ crypto/ - an app's own engine C lives
+                  mp3/ record/ 3d/ ffmpeg/ crypto/ tls/ - an app's own engine C lives
                   with the app, in bin/apps/browser/ and installed/
   lib/            the same position, in Lua. All .lua and nothing else
   include/        the protocol headers both sides compile against

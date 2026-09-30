@@ -106,6 +106,7 @@ Usage: run_screenshot.py <image.elf> [--png OUT] [--timeout SECONDS]
 """
 
 import argparse
+import codecs
 import fcntl
 import json
 import re
@@ -492,6 +493,16 @@ class Guest:
         """
         fd = self.proc.stdout.fileno()
 
+        # **One decoder for the whole stream, not one a read.** A character
+        # of two bytes - the "·" the Servers window prints between a state
+        # and its count - split across two reads was decoded as two halves,
+        # each a replacement character, and a check waiting for the "·" waited
+        # its whole timeout for text the guest had printed correctly. It
+        # failed only when a read's boundary fell inside the character, which
+        # under a gate's load it did (`testing.md` 18.294). An incremental
+        # decoder keeps the first half until the second arrives.
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
         while True:
             try:
                 ready, _, _ = select.select([fd], [], [], 0.2)
@@ -507,7 +518,7 @@ class Guest:
                     return
 
                 with self._lock:
-                    self.seen += chunk.decode("utf-8", errors="replace")
+                    self.seen += decoder.decode(chunk)
             except (BlockingIOError, OSError, ValueError):
                 return
 

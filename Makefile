@@ -715,6 +715,18 @@ RECORD_CFLAGS := -w -Wno-error
 UFBX_CONFIG := -Iruntime/upstream/ufbx -Iuser/kits/3d '-DUFBX_CONFIG_HEADER="k3d_ufbx.h"'
 UFBX_CFLAGS := -w -Wno-error $(UFBX_CONFIG)
 
+# BearSSL (`runtime/upstream/bearssl/`), the TLS Kit's protocol, on its own
+# terms: `-w`, as vendored code is, and the parts that would reach an
+# operating system switched off by `-D` rather than by an edit - its
+# randomness is injected from `SYS_ENTROPY` and a certificate's dates are
+# held to the machine's clock, both by the kit (`user/kits/tls/`).
+BEARSSL_SRCS   := $(sort $(wildcard runtime/upstream/bearssl/src/*.c \
+                                    runtime/upstream/bearssl/src/*/*.c))
+BEARSSL_IFLAGS := -Iruntime/upstream/bearssl/inc
+BEARSSL_CFLAGS := -w -Wno-error -Iruntime/upstream/bearssl/src \
+                  -DBR_USE_URANDOM=0 -DBR_USE_GETENTROPY=0 -DBR_USE_UNIX_TIME=0 \
+                  -DBR_USE_WIN32_RAND=0 -DBR_USE_WIN32_TIME=0 -DBR_RDRAND=0
+
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
                  -Iruntime/upstream/tinygl/source
@@ -806,6 +818,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(MUSL_SRCS) \
              runtime/upstream/puff/puff.c \
              runtime/upstream/miniz/miniz.c \
+             $(BEARSSL_SRCS) \
+             user/kits/tls/tls_kosmos.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \
              user/kits/gl/gl_demos.c \
@@ -1251,6 +1265,15 @@ $(UBUILD)/user/kits/record/record_mp4.c.o: user/kits/record/record_mp4.c $(UFLAG
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(RECORD_CFLAGS) -MMD -MP -c $< -o $@
 
+# BearSSL, and the TLS Kit with its headers and the anchors the roots make.
+$(UBUILD)/runtime/upstream/bearssl/%.c.o: runtime/upstream/bearssl/%.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) $(BEARSSL_CFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/kits/tls/tls_kosmos.c.o: user/kits/tls/tls_kosmos.c $(HOSTDIR)/tls_anchors.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(BEARSSL_IFLAGS) -I$(HOSTDIR) $(UCFLAGS) -MMD -MP -c $< -o $@
+
 # ufbx and the 3D Kit's reader of it, against the same switches.
 $(UBUILD)/runtime/upstream/ufbx/ufbx.c.o: runtime/upstream/ufbx/ufbx.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
@@ -1630,6 +1653,23 @@ $(HOSTDIR)/test_apicdecode: tools/test_apicdecode.c hal/pc/apic_decode.c hal/pc/
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_apicdecode.c hal/pc/apic_decode.c
+
+#
+# **BearSSL's own `brssl`, on the Mac, for one command**: `brssl ta`, which
+# turns Mozilla's roots (`assets/ca/cacert.pem`) into the trust anchors the
+# TLS Kit is compiled with - a build step, as the fonts are, rather than a
+# converter of our own that would have to agree with BearSSL about DER.
+# Built from the vendored sources whole, in one command, since it is built
+# once; BearSSL's own randomness and clock are left on here, on the Mac.
+#
+$(HOSTDIR)/brssl: $(BEARSSL_SRCS) $(wildcard runtime/upstream/bearssl/tools/*.c runtime/upstream/bearssl/tools/*.h)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -O2 -w -Iruntime/upstream/bearssl/inc -Iruntime/upstream/bearssl/src \
+	        -o $@ $(BEARSSL_SRCS) $(wildcard runtime/upstream/bearssl/tools/*.c)
+
+$(HOSTDIR)/tls_anchors.c: assets/ca/cacert.pem $(HOSTDIR)/brssl
+	$(HOSTDIR)/brssl ta assets/ca/cacert.pem > $@.tmp 2> /dev/null
+	mv $@.tmp $@
 
 #
 # **The keyboard controller's drain, with the test as the controller**

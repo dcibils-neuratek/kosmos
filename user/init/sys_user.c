@@ -3175,6 +3175,7 @@ void kosmos_3d_kit(lua_State *L);
 void kosmos_synth_kit(lua_State *L);
 void kosmos_net_kit(lua_State *L);
 void kosmos_crypto_kit(lua_State *L);
+void kosmos_tls_kit(lua_State *L);
 #ifdef KOSMOS_WEB
 void kosmos_web_kit(lua_State *L);
 #endif
@@ -3218,6 +3219,8 @@ static const struct {
     { "network",  kosmos_net_kit, 0 },
     /* Encryption, in C and nowhere else: VNC's DES first (`crypto.c`). */
     { "crypto",   kosmos_crypto_kit, 0 },
+    /* TLS, BearSSL's, on a Network Kit connection (`user/kits/tls/`). */
+    { "tls",      kosmos_tls_kit, 0 },
 #ifdef KOSMOS_WEB
     { "web",      kosmos_web_kit, 0 },
 #endif

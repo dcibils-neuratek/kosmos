@@ -2648,6 +2648,64 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zz. **ASKED on 30 September - the browser, tested and benchmarked on a page
+   of our own, and wearing the new look.** Diego, with the browser open in
+   `make qemu`: "make sure your gate tessts now include browser tests so we
+   make sure the browser can navigate to urls and browse dociuments", "put a
+   sample doc in /www so you can try", "lets put a html there that tests the
+   html capabilities", "images, labels, titles, tables,etc", "that will be
+   our page benchmark tool for the browser" - and "the brower has the old
+   window chrome and old ui". Agreed, in this order, after `fetch` speaks
+   HTTPS:
+   a. **The page**: `assets/www/`, a page of every kind of thing a document
+      has - titles, headings, text and its styles, lists, a table, images,
+      labels and a form, quotes, code, CSS - each part saying what it should
+      look like, so a person reads it as a checklist. Put in `/Home/www` on
+      the QEMU disk, and served by the harness. **The benchmark**: the
+      browser already times a page - fetch, parse, layout, paint - and this
+      is the page those numbers are for.
+   b. **The browser in the gate** (`run_browser.py`, which exists and was
+      never gated), on that page: an address typed into the bar, `http://`
+      and all, a link followed, Back, the images drawn, the title the
+      window's.
+   c. **HTTPS in the browser**, through the TLS Kit, held by the same suite.
+   d. **The new chrome** - the kit's header, the title bar the look
+      decides - drawn as `docs/browser.html` first, for Diego to look at
+      before any code (5zn has it among the windows still to move). And
+      what he added the same afternoon: "it needs favorites, history, some
+      settings, tabs", and "we sghould find a way to be resizable as needed
+      asa browser usually are rezued all the time" - **drawn, and agreed**
+      ("great! it looks amazing"): a bad certificate refused with an **Open
+      anyway** for that tab; favorites as files in `/Home/Favorites`; tabs;
+      the page's costs always in the status line; searching from the field,
+      DuckDuckGo by default and Google in Settings. **And fast** - "the
+      browser needs to be fast!! we might need to do it mostly in C wiuth
+      just LUA as the orqhestrator?": the parser, styles, layout and
+      painting are C already; the test page and the profiler decide what
+      else moves, measured on the M700 and not on QEMU.
+   e. **Windows that draw their own pixels, resizable** - the browser's,
+      Cafesa3D's, Camera's, Video's: the window manager refuses today
+      ("its surface is shared and has a size"). On letting go of the grip
+      it tells the program its new size, the program makes a surface that
+      size and hands it over, and the window manager shows the new one. The
+      kit's widgets already paint into such a surface (`ui.paint_view`, as
+      Cafesa3D's do), so the browser keeps its own page and wears the new
+      components.
+
+6zy. **FOUND on 30 September - Kosmos cannot reach itself.** Diego, with the
+   web server switched on in `make qemu` and the browser inside it at
+   `http://10.0.2.15`: "i cant access the localhost in the browser althought
+   the server is on". Two things. The browser's bar looked up `http:` as a
+   machine's name - it wanted the address without the scheme - and takes
+   `http://` off now. And **the network stack has no loopback**: nothing in
+   `net.c` delivers a packet addressed to this machine, or to 127.0.0.1, to
+   its own receive path, so a connection to its own address goes out through
+   the card, and QEMU - like a switch - does not send it back. Loopback is
+   the fix: a frame for ourselves turned round before the driver, and
+   `localhost` a name the resolver answers without asking anybody. After
+   HTTPS, which is halfway through when this was found. Meanwhile the Mac
+   reaches the server: `make HTTP=8080 qemu`, `http://localhost:8080`.
+
 6zx. **FOUND on 30 September, looking at the 0.10.199 stick by VNC - a
    server started through the desktop sits on the Deskbar as a program
    that is starting.** `open vncd`, and the Servers window's switches for
@@ -5499,6 +5557,13 @@ the Pi", and the Pi is not here yet.
 
 ### The browser
 
+- **JavaScript, later.** Diego, 30 September, told there is none - NetSurf's
+  libraries here parse `<script>` into the document and nothing runs it:
+  "yes add it for later". After the browser is fast and redrawn (6zz). The
+  engine is the smaller half: QuickJS - small, current, C - in a kit, as
+  BearSSL is. The larger half is joining it to the page: the DOM's bindings,
+  events and timers. Until then documents work and applications do not, and
+  the search setting uses DuckDuckGo's page for browsers without it.
 - **A box model.** Margins, padding, borders, `width`, floats. Images and
   forms both wait on it.
 - **Images.** `stb_image` is already vendored for the PDF reader.
@@ -5519,7 +5584,8 @@ the Pi", and the Pi is not here yet.
      and the source against the health tests SP 800-90B names (no run of
      one value, no stuck output), with a control that hands it zeros.
      **BUILT on 30 September** (`testing.md` 18.293).
-  2. **BearSSL 0.6**, vendored in `runtime/upstream/bearssl` as released -
+  2. **BUILT on 30 September, with 3 and 4 for `fetch`** (`testing.md`
+     18.294) - the browser's half of 4 is 6zz c. **BearSSL 0.6**, vendored in `runtime/upstream/bearssl` as released -
      the tarball fetched from bearssl.org on 30 September is the one
      nixpkgs records (sha256 `6705bba1...ff14`) - in a `tls` kit: a
      connection from the Network Kit wrapped, BearSSL's engine fed and

@@ -1,0 +1,594 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Browser: the web browser redrawn with the new components - tabs, the
+  kit's header as the title bar, an address field that says how the page
+  came, favorites, history, settings, a status line that is the page
+  benchmark - and resizable like any browser. Drawn on 30 September 2026
+  for Diego to change before any of it is built; roadmap.md 6zz. Diego:
+  "the brower has the old window chrome and old ui", "we should redesign
+  the browser ui with the new ui components", "lets mokup the browser
+  first", "it needs favorites, history, some settings, tabs", and "we
+  sghould find a way to be resizable as needed asa browser usually are
+  rezued all the time". In servers.html's window and style; every page,
+  address and number on it is an example.
+-->
+<title>Kosmos Browser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Serif:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --serif: "IBM Plex Serif", Georgia, serif;
+
+    /* The window, as servers.html draws it; the same in either theme. */
+    --w-desk: #3d63b8;
+    --w-side: #f1f2f4;
+    --w-body: #fafafb;
+    --w-card: #ffffff;
+    --w-line: #e0e2e6;
+    --w-ink: #1d1f24;
+    --w-dim: #74787f;
+    --w-sel: #dfe3ea;
+    --w-accent: #2a55c9;
+    --w-live: #2f8a55;
+    --w-live-ground: #e8f4ec;
+    --w-warn: #a4570e;
+    --w-warn-ground: #fdf3e6;
+    --w-stop: #b23b2e;
+    --w-stop-ground: #fbecea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14171c; --ink: #e8eaee; --muted: #9aa2ae; --rule: #2a2f38; --card: #1b1f26; --accent: #85a8ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #14171c; --ink: #e8eaee; --muted: #9aa2ae; --rule: #2a2f38; --card: #1b1f26; --accent: #85a8ff;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 26px; max-width: 72ch; }
+  h2 { font-family: var(--display); font-size: 19px; margin: 42px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  p { max-width: 72ch; }
+  code { font-family: var(--mono); font-size: .88em; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+
+  /* ------------------------------------------------ which state is shown */
+  .states { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .states button {
+    font: 500 13px var(--body); padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--rule); background: var(--card); color: var(--ink);
+  }
+  .states button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .states button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ------------------------------------------------------- the desk */
+  .stage {
+    background: var(--w-desk);
+    background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+    padding: 30px 22px; border-radius: 12px; display: flex; justify-content: center; overflow-x: auto;
+  }
+
+  /* ------------------------------------------------------ the window */
+  .win {
+    width: 1000px; max-width: 100%; min-width: 760px; background: var(--w-body); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+    font-size: 13px; color: var(--w-ink); position: relative;
+  }
+
+  /* The tabs are the title bar: the window is moved by the strip between
+     and after them, and the three are at its end, as every Kosmos window's. */
+  .tabs { display: flex; align-items: flex-end; gap: 2px; height: 40px; padding: 0 10px 0 8px; background: #e9ebef; }
+  .tab {
+    display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 11px;
+    width: 206px; min-width: 90px; border-radius: 9px 9px 0 0; color: var(--w-dim); cursor: default;
+  }
+  .tab:hover { background: rgba(255,255,255,.55); }
+  .tab.on { background: #fff; color: var(--w-ink); box-shadow: 0 -1px 0 var(--w-line) inset; }
+  .tab .fav { width: 14px; height: 14px; border-radius: 3px; flex: none; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: #fff; }
+  .tab .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab .x { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; color: var(--w-dim); opacity: .7; }
+  .tab .x:hover { background: rgba(0,0,0,.08); opacity: 1; }
+  .tab .x svg { width: 11px; height: 11px; }
+  .tab .spin { width: 13px; height: 13px; border: 2px solid #c8cdd6; border-top-color: var(--w-accent); border-radius: 50%; flex: none; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .tab .spin { animation: none; } }
+  .newtab { width: 28px; height: 28px; margin: 0 4px 3px; border-radius: 7px; display: grid; place-items: center; color: var(--w-dim); }
+  .newtab:hover { background: rgba(0,0,0,.06); }
+  .newtab svg { width: 15px; height: 15px; }
+  .drag { flex: 1; }
+  .lights { display: flex; gap: 8px; margin: 0 2px 13px 0; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+  /* The header: the kit's, one row. */
+  .bar { display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 10px; background: #fff; border-bottom: 1px solid var(--w-line); }
+  .ib { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; color: #4a4f57; flex: none; }
+  .ib:hover { background: #eef0f3; }
+  .ib.dim { color: #b7bbc2; }
+  .ib.on { background: var(--w-sel); color: var(--w-accent); }
+  .ib svg { width: 17px; height: 17px; }
+  .addr {
+    flex: 1; min-width: 0; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 10px;
+    background: #f1f2f5; border: 1px solid transparent; border-radius: 8px; font-size: 13px;
+  }
+  .addr.focus { background: #fff; border-color: var(--w-accent); box-shadow: 0 0 0 3px rgba(42,85,201,.14); }
+  .addr .how { display: flex; align-items: center; gap: 5px; flex: none; font-size: 12px; font-weight: 500; padding: 2px 7px 2px 5px; border-radius: 6px; }
+  .addr .how svg { width: 14px; height: 14px; }
+  .how.secure { color: var(--w-live); background: var(--w-live-ground); }
+  .how.plain { color: var(--w-dim); background: #e6e8ec; }
+  .how.bad { color: var(--w-stop); background: var(--w-stop-ground); }
+  .addr .url { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--w-dim); }
+  .addr .url b { color: var(--w-ink); font-weight: 500; }
+  .addr .url .caret { display: inline-block; width: 1px; height: 15px; background: var(--w-accent); vertical-align: -3px; margin-left: 1px; }
+  .addr .star { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--w-dim); }
+  .addr .star.on { color: #d49b17; }
+  .addr .star svg { width: 16px; height: 16px; }
+
+  /* The favorites, under the header when shown. */
+  .favs { display: flex; align-items: center; gap: 2px; height: 30px; padding: 0 10px; background: #fff; border-bottom: 1px solid var(--w-line); font-size: 12.5px; }
+  .favs span { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; color: #3c4149; white-space: nowrap; }
+  .favs span:hover { background: #eef0f3; }
+  .favs .fav { width: 13px; height: 13px; border-radius: 3px; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: #fff; }
+  .favs .folder svg { width: 14px; height: 14px; color: #6b8fd6; }
+
+  /* The loading line, under the header. */
+  .progress { height: 2px; background: transparent; position: relative; }
+  .progress i { position: absolute; left: 0; top: 0; bottom: 0; width: 42%; background: var(--w-accent); }
+
+  /* The body: an optional side, and the page. */
+  .body { display: flex; height: 520px; }
+  .sideb { width: 268px; flex: none; background: var(--w-side); border-right: 1px solid var(--w-line); display: flex; flex-direction: column; }
+  .seg { display: flex; margin: 10px 10px 8px; background: #e3e5e9; border-radius: 8px; padding: 2px; }
+  .seg b { flex: 1; text-align: center; font-weight: 500; font-size: 12.5px; padding: 4px 0; border-radius: 6px; color: var(--w-dim); }
+  .seg b.on { background: #fff; color: var(--w-ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .search { margin: 0 10px 8px; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 9px; background: #fff; border: 1px solid var(--w-line); border-radius: 7px; color: var(--w-dim); font-size: 12.5px; }
+  .search svg { width: 14px; height: 14px; }
+  .list { flex: 1; overflow: hidden; padding: 0 6px 8px; }
+  .list .day { font-weight: 600; font-size: 11.5px; color: var(--w-dim); padding: 10px 8px 4px; }
+  .list .it { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 6px; }
+  .list .it:hover { background: rgba(0,0,0,.05); }
+  .list .it.sel { background: var(--w-sel); }
+  .list .it .fav { width: 14px; height: 14px; border-radius: 3px; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: #fff; }
+  .list .it .fav.fold { background: none; color: #6b8fd6; }
+  .list .it .fav.fold svg { width: 15px; height: 15px; }
+  .list .it b { font-weight: 500; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list .it small { color: var(--w-dim); font-size: 11px; }
+  .list .it .u { grid-column: 2 / 4; color: var(--w-dim); font-size: 11px; margin-top: -3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .page { flex: 1; min-width: 0; overflow: hidden; background: #fff; position: relative; }
+
+  /* The status line: where a link goes, and what the page cost. */
+  .status { display: flex; align-items: center; gap: 12px; height: 26px; padding: 0 12px; background: var(--w-side); border-top: 1px solid var(--w-line); font-size: 11.5px; color: var(--w-dim); }
+  .status .left { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status .times { font-family: var(--mono); font-size: 11px; display: flex; gap: 10px; cursor: pointer; padding: 2px 6px; border-radius: 5px; }
+  .status .times:hover { background: #e3e5e9; }
+  .status .times b { color: var(--w-ink); font-weight: 500; }
+
+  /* A page, as a document draws: serif body, the sample's own styles. */
+  .doc { padding: 26px 34px; font-family: var(--serif); color: #1c1c1c; font-size: 15px; line-height: 1.6; }
+  .doc h1 { font-family: var(--serif); font-size: 28px; margin: 0 0 4px; }
+  .doc .lede { color: #555; font-style: italic; margin: 0 0 16px; }
+  .doc h2 { font-family: var(--serif); font-size: 19px; border: 0; padding: 0; margin: 20px 0 6px; color: #8b1e1e; }
+  .doc a { color: #1a4fc4; }
+  .doc table { border-collapse: collapse; font-family: var(--body); font-size: 13px; margin: 8px 0; }
+  .doc th, .doc td { border: 1px solid #cfd3da; padding: 5px 10px; text-align: left; }
+  .doc th { background: #f1f3f6; }
+  .doc .img { width: 150px; height: 84px; border-radius: 6px; background: linear-gradient(135deg, #3d63b8, #9b5ad1 55%, #f2c230); display: inline-block; vertical-align: middle; margin-right: 12px; }
+  .doc .row2 { display: flex; align-items: center; gap: 10px; }
+  .doc .form { font-family: var(--body); font-size: 13px; display: grid; grid-template-columns: 110px 220px; gap: 7px 10px; align-items: center; margin-top: 8px; }
+  .doc .form input { font: inherit; padding: 4px 7px; border: 1px solid #b9bec7; border-radius: 4px; }
+
+  /* The refusal, as a page of its own. */
+  .refuse { max-width: 560px; margin: 70px auto 0; font-family: var(--body); color: var(--w-ink); }
+  .refuse .mark { width: 46px; height: 46px; border-radius: 12px; background: var(--w-stop-ground); color: var(--w-stop); display: grid; place-items: center; margin-bottom: 14px; }
+  .refuse .mark svg { width: 24px; height: 24px; }
+  .refuse h3 { font-size: 21px; margin: 0 0 6px; font-weight: 600; }
+  .refuse p { color: #3f444c; margin: 0 0 12px; font-size: 14px; }
+  .refuse .facts { background: var(--w-side); border: 1px solid var(--w-line); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 14px 0; }
+  .refuse .facts div { display: grid; grid-template-columns: 130px 1fr; gap: 10px; padding: 3px 0; }
+  .refuse .facts span { color: var(--w-dim); }
+  .btn { font: 500 13px var(--body); padding: 6px 13px; border-radius: 7px; border: 1px solid var(--w-line); background: #fff; color: var(--w-ink); cursor: pointer; }
+  .btn.primary { background: var(--w-accent); border-color: var(--w-accent); color: #fff; }
+
+  /* A new tab: the favorites as tiles, and what was open lately. */
+  .start { padding: 40px 48px; font-family: var(--body); }
+  .start h3 { font-size: 13px; color: var(--w-dim); font-weight: 600; margin: 0 0 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 30px; }
+  .tile { background: var(--w-side); border: 1px solid var(--w-line); border-radius: 11px; padding: 14px 10px 10px; text-align: center; font-size: 12px; }
+  .tile .fav { width: 34px; height: 34px; border-radius: 9px; margin: 0 auto 8px; display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 14px; }
+  .tile small { display: block; color: var(--w-dim); font-size: 10.5px; }
+  .recent .it { display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 7px 4px; border-bottom: 1px solid var(--w-line); font-size: 13px; }
+  .recent .it:last-child { border-bottom: 0; }
+  .recent .it .fav { width: 14px; height: 14px; border-radius: 3px; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: #fff; }
+  .recent .it small { color: var(--w-dim); }
+
+  /* Settings: a page of the browser's own, Preferences' cards. */
+  .set { padding: 22px 30px; font-family: var(--body); overflow: hidden; height: 100%; }
+  .set h3 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+  .set .grouplabel { font-weight: 600; font-size: 12.5px; margin: 16px 0 6px 3px; }
+  .group { background: var(--w-card); border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 14px; padding: 9px 14px; border-bottom: 1px solid var(--w-line); min-height: 44px; }
+  .row:last-child { border-bottom: 0; }
+  .row .label { flex: 1; min-width: 0; }
+  .row .label b { font-weight: 500; display: block; }
+  .row .label span { color: var(--w-dim); font-size: 12px; display: block; line-height: 1.4; }
+  .field { font: 12.5px var(--body); padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; width: 220px; color: var(--w-ink); }
+  .drop { display: flex; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px; flex: none; }
+  .drop svg { width: 12px; height: 12px; color: var(--w-dim); }
+  .sw { width: 40px; height: 23px; border-radius: 12px; background: #cdd0d6; position: relative; flex: none; }
+  .sw.on { background: var(--w-accent); }
+  .sw::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
+  .sw.on::after { left: 19px; }
+  .setcols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+
+  /* Popovers: the certificate, the page's timings, the menu. */
+  .pop { position: absolute; background: #fff; border: 1px solid var(--w-line); border-radius: 11px; box-shadow: 0 12px 30px rgba(0,0,0,.18); font-size: 12.5px; z-index: 5; }
+  .pop h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .pop .p { padding: 12px 14px; }
+  .pop .sep { height: 1px; background: var(--w-line); }
+  .cert { top: 92px; left: 120px; width: 330px; }
+  .cert .ok { display: flex; gap: 10px; align-items: center; }
+  .cert .ok .mk { width: 30px; height: 30px; border-radius: 8px; background: var(--w-live-ground); color: var(--w-live); display: grid; place-items: center; flex: none; }
+  .cert .ok .mk svg { width: 17px; height: 17px; }
+  .cert dl { display: grid; grid-template-columns: 96px 1fr; gap: 4px 10px; margin: 0; }
+  .cert dt { color: var(--w-dim); }
+  .cert dd { margin: 0; }
+  .times-pop { bottom: 34px; right: 12px; width: 340px; }
+  .bars { display: grid; grid-template-columns: 58px 1fr 54px; gap: 6px 10px; align-items: center; font-family: var(--mono); font-size: 11.5px; }
+  .bars .b { height: 9px; border-radius: 3px; background: #e6e9ef; overflow: hidden; }
+  .bars .b i { display: block; height: 100%; background: var(--w-accent); border-radius: 3px; }
+  .bars span:last-child, .bars .v { text-align: right; }
+  .menu { top: 88px; right: 10px; width: 230px; padding: 6px; }
+  .menu .m { display: flex; align-items: center; justify-content: space-between; padding: 6px 9px; border-radius: 6px; }
+  .menu .m:hover { background: var(--w-sel); }
+  .menu .m kbd { font-family: var(--mono); font-size: 11px; color: var(--w-dim); }
+  .menu .sep { margin: 5px 4px; }
+
+  /* The grip, and the outline a resize draws. */
+  .grip { position: absolute; right: 3px; bottom: 3px; width: 12px; height: 12px; color: #9ba1aa; }
+  .ghost { position: absolute; inset: -1px -120px -70px -1px; border: 2px dashed rgba(255,255,255,.85); border-radius: 12px; pointer-events: none; }
+  .ghost-note { position: absolute; right: -118px; bottom: -64px; background: rgba(20,24,32,.82); color: #fff; font: 500 11.5px var(--mono); padding: 5px 8px; border-radius: 6px; }
+
+  .qs { padding-left: 20px; }
+  .qs li { margin: 0 0 10px; max-width: 76ch; }
+  .keys { display: grid; grid-template-columns: 170px 1fr; gap: 4px 14px; font-size: 14px; max-width: 640px; }
+  .keys kbd { font-family: var(--mono); font-size: 12.5px; background: var(--card); border: 1px solid var(--rule); border-radius: 5px; padding: 1px 6px; }
+
+  [hidden] { display: none !important; }
+  @media (max-width: 720px) { .wrap { padding: 24px 16px 60px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Browser, redrawn</h1>
+  <p class="sub">The browser in the new components: tabs as the title bar, the kit's header with an address field that says how a page came, favorites, history, settings, and the status line as the page benchmark. <strong>Resizable, like every browser</strong> &mdash; which a window that draws its own pixels cannot be yet, and the last section says how it becomes one. Every page, address and number here is an example.</p>
+
+  <div class="states" role="tablist" aria-label="What the window shows">
+    <button class="on" data-state="page">A page, over HTTPS</button>
+    <button data-state="loading">Loading</button>
+    <button data-state="refused">A certificate refused</button>
+    <button data-state="newtab">A new tab</button>
+    <button data-state="history">Favorites and history</button>
+    <button data-state="settings">Settings</button>
+    <button data-state="timings">The page's timings</button>
+    <button data-state="resize">Being resized</button>
+  </div>
+
+  <div class="stage">
+    <div class="win" id="win">
+      <!-- ============================================= the tabs, the title bar -->
+      <div class="tabs">
+        <div class="tab on" id="tab1"><span class="fav" style="background:#8b1e1e">K</span><span class="t" id="tab1t">Kosmos &mdash; the browser test page</span><span class="x"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l6 6M9 3l-6 6"/></svg></span></div>
+        <div class="tab"><span class="fav" style="background:#1a1a1a">W</span><span class="t">Wikipedia, the free encyclopedia</span><span class="x"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l6 6M9 3l-6 6"/></svg></span></div>
+        <div class="tab"><span class="fav" style="background:#2f8a55">H</span><span class="t">Hacker News</span><span class="x"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l6 6M9 3l-6 6"/></svg></span></div>
+        <div class="newtab" title="New tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3v10M3 8h10"/></svg></div>
+        <div class="drag"></div>
+        <div class="lights"><i style="background:#3dbb4e"></i><i style="background:#f3b53c"></i><i style="background:#ed5f55"></i></div>
+      </div>
+
+      <!-- ============================================= the header -->
+      <div class="bar">
+        <div class="ib" title="Back"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4l-5 5 5 5"/></svg></div>
+        <div class="ib dim" title="Forward"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l5 5-5 5"/></svg></div>
+        <div class="ib" id="reload" title="Reload"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13 2.5v3h-3"/></svg></div>
+        <div class="addr" id="addr">
+          <span class="how secure" id="how"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="6.2" width="8" height="5.8" rx="1.3"/><path d="M4.8 6.2V4.6a2.2 2.2 0 0 1 4.4 0v1.6"/></svg><span id="howt">Secure</span></span>
+          <span class="url" id="url"><b>kosmos-test.local</b>/www/index.html</span>
+          <span class="star on" id="star" title="A favorite"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.6l1.9 4 4.3.5-3.2 2.9.9 4.3L8 11.1 4.1 13.3 5 9 1.8 6.1l4.3-.5z"/></svg></span>
+        </div>
+        <div class="ib" id="sidebtn" title="Favorites and history"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="3" width="13" height="12" rx="2"/><path d="M7 3v12"/></svg></div>
+        <div class="ib" id="menubtn" title="More"><svg viewBox="0 0 18 18" fill="currentColor"><circle cx="4" cy="9" r="1.4"/><circle cx="9" cy="9" r="1.4"/><circle cx="14" cy="9" r="1.4"/></svg></div>
+      </div>
+      <div class="progress" id="progress" hidden><i></i></div>
+
+      <!-- ============================================= favorites bar -->
+      <div class="favs" id="favs">
+        <span><i class="fav" style="background:#8b1e1e">K</i>Test page</span>
+        <span><i class="fav" style="background:#1a1a1a">W</i>Wikipedia</span>
+        <span><i class="fav" style="background:#2f8a55">H</i>Hacker News</span>
+        <span><i class="fav" style="background:#c0392b">L</i>lua.org</span>
+        <span class="folder"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/></svg>Kosmos docs</span>
+      </div>
+
+      <!-- ============================================= the body -->
+      <div class="body">
+        <aside class="sideb" id="side" hidden>
+          <div class="seg"><b id="segf">Favorites</b><b class="on" id="segh">History</b></div>
+          <div class="search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3"/></svg>Search history</div>
+          <div class="list" id="histlist">
+            <div class="day">Today</div>
+            <div class="it sel"><i class="fav" style="background:#8b1e1e">K</i><b>Kosmos &mdash; the browser test page</b><small>13:21</small><span class="u">kosmos-test.local/www/index.html</span></div>
+            <div class="it"><i class="fav" style="background:#2f8a55">H</i><b>Hacker News</b><small>12:58</small><span class="u">news.ycombinator.com</span></div>
+            <div class="it"><i class="fav" style="background:#1a1a1a">W</i><b>Microkernel &mdash; Wikipedia</b><small>12:40</small><span class="u">en.wikipedia.org/wiki/Microkernel</span></div>
+            <div class="day">Yesterday</div>
+            <div class="it"><i class="fav" style="background:#c0392b">L</i><b>Lua 5.4 Reference Manual</b><small>22:10</small><span class="u">www.lua.org/manual/5.4/</span></div>
+            <div class="it"><i class="fav" style="background:#555">B</i><b>BeOS: The Media OS</b><small>21:47</small><span class="u">example.org/beos</span></div>
+            <div class="it"><i class="fav" style="background:#2a55c9">Q</i><b>QNX Neutrino IPC</b><small>21:30</small><span class="u">example.org/qnx-ipc</span></div>
+          </div>
+          <div class="list" id="favlist" hidden>
+            <div class="it"><i class="fav fold"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/></svg></i><b>Favorites bar</b><small>5</small></div>
+            <div class="it"><i class="fav fold"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/></svg></i><b>Kosmos docs</b><small>3</small></div>
+            <div class="it sel"><i class="fav" style="background:#8b1e1e">K</i><b>Test page</b><small></small><span class="u">kosmos-test.local/www/index.html</span></div>
+            <div class="it"><i class="fav" style="background:#1a1a1a">W</i><b>Wikipedia</b><small></small><span class="u">en.wikipedia.org</span></div>
+            <div class="it"><i class="fav" style="background:#c0392b">L</i><b>lua.org</b><small></small><span class="u">www.lua.org</span></div>
+          </div>
+        </aside>
+
+        <main class="page" id="page">
+          <!-- a page -->
+          <div class="doc" id="p-page">
+            <h1>Kosmos &mdash; the browser test page</h1>
+            <p class="lede">Every kind of thing a document has, each saying what it should look like.</p>
+            <h2>1. Text</h2>
+            <p>A paragraph with <b>bold</b>, <i>italic</i>, <u>underline</u>, <code>code</code> and a <a href="#">link to the second page</a>.</p>
+            <h2>2. An image</h2>
+            <div class="row2"><span class="img" role="img" aria-label="the test picture"></span><span>A PNG, 150 by 84, blue into violet into gold.</span></div>
+            <h2>3. A table</h2>
+            <table><caption style="caption-side:top;text-align:left;font-style:italic;color:#555;padding-bottom:4px">Stages of a page</caption>
+              <tr><th>Stage</th><th>What it does</th><th>ms</th></tr>
+              <tr><td>fetch</td><td>the bytes off the network</td><td>3.3</td></tr>
+              <tr><td>parse</td><td>HTML and CSS into boxes</td><td>72.7</td></tr>
+            </table>
+            <h2>4. Labels and a form</h2>
+            <div class="form"><label>Name</label><input value="Diego"><label>Machine</label><input value="M700"></div>
+          </div>
+
+          <!-- refused -->
+          <div id="p-refused" hidden>
+            <div class="refuse">
+              <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 3.5v5.5c0 4.5-3.4 7.8-8 9-4.6-1.2-8-4.5-8-9V6.5z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg></div>
+              <h3>This page was not opened: its certificate is for another name</h3>
+              <p>You asked for <b>example.com</b>, and the server answered with a certificate that names <b>shop.example.net</b>. Anybody between here and there could be answering instead, so nothing was sent to it.</p>
+              <div class="facts">
+                <div><span>Asked for</span><b>https://example.com/</b></div>
+                <div><span>The certificate names</span>shop.example.net</div>
+                <div><span>Signed by</span>DigiCert Global Root G2 &mdash; one of the 121 this machine trusts</div>
+                <div><span>Valid</span>until 12 March 2027</div>
+              </div>
+              <div style="display:flex;gap:8px"><button class="btn primary">Go back</button><button class="btn">Show the certificate</button><button class="btn" style="margin-left:auto;color:var(--w-stop)">Open anyway</button></div>
+              <p style="font-size:12px;color:var(--w-dim);margin-top:10px">Open anyway loads it for this tab only; the field says <b style="color:var(--w-stop)">Not secure</b> for as long as it is open, and nothing is remembered.</p>
+            </div>
+          </div>
+
+          <!-- new tab -->
+          <div class="start" id="p-newtab" hidden>
+            <h3>Favorites</h3>
+            <div class="tiles">
+              <div class="tile"><div class="fav" style="background:#8b1e1e">K</div>Test page<small>kosmos-test.local</small></div>
+              <div class="tile"><div class="fav" style="background:#1a1a1a">W</div>Wikipedia<small>wikipedia.org</small></div>
+              <div class="tile"><div class="fav" style="background:#2f8a55">H</div>Hacker News<small>ycombinator.com</small></div>
+              <div class="tile"><div class="fav" style="background:#c0392b">L</div>lua.org<small>lua.org</small></div>
+              <div class="tile"><div class="fav" style="background:#555">B</div>BeOS<small>example.org</small></div>
+              <div class="tile"><div class="fav" style="background:#2a55c9">Q</div>QNX IPC<small>example.org</small></div>
+            </div>
+            <h3>Lately</h3>
+            <div class="recent">
+              <div class="it"><i class="fav" style="background:#2f8a55">H</i>Hacker News<small>12:58</small></div>
+              <div class="it"><i class="fav" style="background:#1a1a1a">W</i>Microkernel &mdash; Wikipedia<small>12:40</small></div>
+              <div class="it"><i class="fav" style="background:#c0392b">L</i>Lua 5.4 Reference Manual<small>yesterday</small></div>
+            </div>
+          </div>
+
+          <!-- settings -->
+          <div class="set" id="p-settings" hidden>
+            <h3>Settings</h3>
+            <div class="setcols">
+              <div>
+                <div class="grouplabel">Starting</div>
+                <div class="group">
+                  <div class="row"><div class="label"><b>Home page</b></div><input class="field" value="about:start"></div>
+                  <div class="row"><div class="label"><b>When the browser opens</b></div><div class="drop">The tabs it had<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></div></div>
+                  <div class="row"><div class="label"><b>Show the favorites bar</b></div><div class="sw on"></div></div>
+                </div>
+                <div class="grouplabel">Pages</div>
+                <div class="group">
+                  <div class="row"><div class="label"><b>Text size</b></div><div class="drop">100%<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></div></div>
+                  <div class="row"><div class="label"><b>Load images</b></div><div class="sw on"></div></div>
+                  <div class="row"><div class="label"><b>What each page cost</b><span>Fetch, parse, layout, paint, in the status line</span></div><div class="sw on"></div></div>
+                </div>
+              </div>
+              <div>
+                <div class="grouplabel">Searching</div>
+                <div class="group">
+                  <div class="row"><div class="label"><b>Search with</b><span>Words typed in the address field that are not an address</span></div><div class="drop">DuckDuckGo<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></div></div>
+                </div>
+                <div class="grouplabel">History</div>
+                <div class="group">
+                  <div class="row"><div class="label"><b>Keep history for</b></div><div class="drop">30 days<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></div></div>
+                  <div class="row"><div class="label"><b>Clear history</b><span>Every page visited, from every tab</span></div><button class="btn">Clear&hellip;</button></div>
+                </div>
+                <div class="grouplabel">Security</div>
+                <div class="group">
+                  <div class="row"><div class="label"><b>Trusted authorities</b><span>Mozilla&rsquo;s 121, as of 25 September 2026</span></div><button class="btn">Show</button></div>
+                  <div class="row"><div class="label"><b>Added here</b><span>Kosmos test authority &mdash; from /Home/ca.der</span></div><button class="btn">Add&hellip;</button></div>
+                  <div class="row"><div class="label"><b>A page with a bad certificate</b><span>Refused, with the reason and an Open anyway for that tab</span></div></div>
+                </div>
+                <div class="grouplabel">Downloads</div>
+                <div class="group">
+                  <div class="row"><div class="label"><b>Save into</b></div><input class="field" value="/Home/Downloads" style="width:160px"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- ============================================= the status line -->
+      <div class="status">
+        <span class="left" id="statusl">kosmos-test.local/www/second.html</span>
+        <span class="times" id="times" title="What this page cost">fetch <b>3.3</b> parse <b>72.7</b> layout <b>34.5</b> paint <b>10.4</b> ms</span>
+      </div>
+
+      <!-- ============================================= popovers -->
+      <div class="pop cert" id="certpop" hidden>
+        <div class="p ok"><span class="mk"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9.5l3 3 7-7"/></svg></span><div><h4>Secure: the certificate checks out</h4><span style="color:var(--w-dim)">TLS 1.2, ECDHE-RSA with AES-GCM</span></div></div>
+        <div class="sep"></div>
+        <div class="p"><dl><dt>Issued to</dt><dd>kosmos-test.local</dd><dt>By</dt><dd>Kosmos test authority &mdash; added here</dd><dt>Valid until</dt><dd>2 October 2026</dd></dl></div>
+      </div>
+
+      <div class="pop times-pop" id="timespop" hidden>
+        <div class="p"><h4>What this page cost</h4><span style="color:var(--w-dim)">The test page, the third time it was opened</span></div>
+        <div class="sep"></div>
+        <div class="p bars">
+          <span>fetch</span><span class="b"><i style="width:3%"></i></span><span class="v">3.3 ms</span>
+          <span>parse</span><span class="b"><i style="width:60%"></i></span><span class="v">72.7 ms</span>
+          <span>layout</span><span class="b"><i style="width:29%"></i></span><span class="v">34.5 ms</span>
+          <span>paint</span><span class="b"><i style="width:9%"></i></span><span class="v">10.4 ms</span>
+          <span><b>total</b></span><span></span><span class="v"><b>120.9 ms</b></span>
+        </div>
+        <div class="sep"></div>
+        <div class="p" style="color:var(--w-dim);font-size:12px">12.4 KB of HTML and CSS, 164 boxes, 2 images, 1,380 by 2,210 pixels painted. <span style="color:var(--w-accent)">Copy as a line for the log</span></div>
+      </div>
+
+      <div class="pop menu" id="menupop" hidden>
+        <div class="m">New tab <kbd>Super T</kbd></div>
+        <div class="m">Close tab <kbd>Super W</kbd></div>
+        <div class="sep"></div>
+        <div class="m">Add to favorites <kbd>Super D</kbd></div>
+        <div class="m">Favorites and history <kbd>Super Y</kbd></div>
+        <div class="m">Find on the page <kbd>Super F</kbd></div>
+        <div class="sep"></div>
+        <div class="m">What this page cost</div>
+        <div class="m">Text size: 100% <kbd>Super + &minus;</kbd></div>
+        <div class="sep"></div>
+        <div class="m">Settings <kbd>Super ,</kbd></div>
+      </div>
+
+      <svg class="grip" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M11 5L5 11M11 8.5L8.5 11"/></svg>
+      <div class="ghost" id="ghost" hidden></div>
+      <div class="ghost-note" id="ghostnote" hidden>1120 &times; 690 &mdash; laid out again on letting go</div>
+    </div>
+  </div>
+  <p class="hint">The buttons above change what the window shows; nothing inside it works.</p>
+
+  <h2>What the window is made of</h2>
+  <ul>
+    <li><b>Tabs as the title bar.</b> Each one a page with its own back and forward; the window is dragged by the strip after them, and the three circles close, minimise and zoom as on every window. A new tab opens on favorites and what was open lately.</li>
+    <li><b>The kit&rsquo;s header</b>: back, forward, reload (stop while loading), the address field, the sidebar, and the menu. The field says how the page came before anything else: <span style="color:#2f8a55;font-weight:600">Secure</span> for a certificate that checked out, <span style="color:#74787f;font-weight:600">Not encrypted</span> for plain HTTP, <span style="color:#b23b2e;font-weight:600">Refused</span> when a certificate did not. Clicking it shows the certificate. The host is dark and the rest dim, so the part that matters is the part that is read.</li>
+    <li><b>Favorites</b>: the star in the field adds or removes one; the bar under the header shows the first ones and folders of them; the sidebar has all of them. <b>Each favorite a file</b> in <code>/Home/Favorites</code> with its address as an attribute &mdash; NetPositive&rsquo;s way, so Tracker files, renames and moves them, and a folder there is a folder on the bar.</li>
+    <li><b>History</b>: the sidebar&rsquo;s other half, by day, searched as typed; kept thirty days unless Settings says otherwise, in <code>/Home/Preferences/browser</code>.</li>
+    <li><b>Settings</b>, a page of the browser&rsquo;s own in Preferences&rsquo; cards: the home page, what opens at start, the favorites bar, text size, images, the page&rsquo;s costs, how long history is kept, the authorities trusted and any added, where downloads go.</li>
+    <li><b>The status line is the page benchmark.</b> Where a link under the pointer goes on the left; on the right, what the page cost - fetch, parse, layout, paint. Clicking it opens the breakdown, and the test page (<code>assets/www/</code>) is the page those numbers are measured on.</li>
+  </ul>
+
+  <h2>Resizable, like every browser</h2>
+  <p>Today the browser is a window that draws its own pixels, and the window manager refuses to resize one: its surface is shared and has a size. That changes for every such window at once, the browser first:</p>
+  <ol class="qs">
+    <li>Dragging the grip draws an outline, as any window&rsquo;s does; the page stays as it was until the pointer lets go.</li>
+    <li>On letting go, the window manager tells the program its new size; the program makes a surface that size, lays the page out again in it, and hands it over; the window manager shows the new one from the next frame.</li>
+    <li>Cafesa3D, Camera, Video and Doom get the same, since it is the window manager&rsquo;s and the kit&rsquo;s rather than the browser&rsquo;s.</li>
+  </ol>
+  <p>The toolbar, the field, the tabs and the sidebar are the kit&rsquo;s own widgets, painted into the window&rsquo;s surface by <code>ui.paint_view</code> as Cafesa3D&rsquo;s are &mdash; so a window can draw its own page and still wear the new components.</p>
+
+  <h2>Keys</h2>
+  <div class="keys">
+    <kbd>Super L</kbd><span>the address field, with what is in it selected</span>
+    <kbd>Super T</kbd> <span>a new tab</span>
+    <kbd>Super W</kbd><span>close this tab</span>
+    <kbd>Super Tab</kbd><span>the next tab (with Shift, the one before)</span>
+    <kbd>Super [ and ]</kbd><span>back and forward</span>
+    <kbd>Super R</kbd><span>reload</span>
+    <kbd>Super D</kbd><span>this page a favorite, or not</span>
+    <kbd>Super Y</kbd><span>favorites and history</span>
+    <kbd>Super F</kbd><span>find on the page</span>
+  </div>
+
+  <h2>What Diego decided, 30 September</h2>
+  <p>&ldquo;great! it looks amazing.&rdquo; And:</p>
+  <ol class="qs">
+    <li><b>A bad certificate is refused, with an Open anyway</b> &mdash; &ldquo;yes but add a button that says &lsquo;open anyways&rsquo; as well so i can browse it anyway&rdquo;. For that tab only, the field saying <b>Not secure</b> while it is open, nothing remembered.</li>
+    <li><b>Favorites as files</b> in <code>/Home/Favorites</code>, NetPositive&rsquo;s way &mdash; &ldquo;yes&rdquo;.</li>
+    <li><b>Tabs</b>.</li>
+    <li><b>The page&rsquo;s costs always in the status line</b> &mdash; &ldquo;yes&rdquo;.</li>
+    <li><b>Searching from the address field</b>, DuckDuckGo by default and Google as the other, chosen in Settings &mdash; &ldquo;duck duck go as default, or google as well. put the options in settings as default search engine&rdquo;.</li>
+  </ol>
+  <p><b>And fast</b>: &ldquo;the browser needs to be fast!! we might need to do it mostly in C wiuth just LUA as the orqhestrator?&rdquo; &mdash; the parser, the styles, layout and painting are C already, `browser.lua` deciding what to fetch and draw; the test page and the profiler say what else moves.</p>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const pages = ["p-page", "p-refused", "p-newtab", "p-settings"];
+
+  function show(state) {
+    document.querySelectorAll(".states button").forEach(b => b.classList.toggle("on", b.dataset.state === state));
+    const page = { page: "p-page", loading: "p-page", refused: "p-refused", newtab: "p-newtab",
+                   history: "p-page", settings: "p-settings", timings: "p-page", resize: "p-page" }[state];
+    pages.forEach(p => $(p).hidden = p !== page);
+    $("side").hidden = state !== "history";
+    $("progress").hidden = state !== "loading";
+    $("certpop").hidden = state !== "page";
+    $("timespop").hidden = state !== "timings";
+    $("menupop").hidden = true;
+    $("ghost").hidden = $("ghostnote").hidden = state !== "resize";
+    $("sidebtn").classList.toggle("on", state === "history");
+
+    const how = $("how"), howt = $("howt");
+    how.className = "how " + ({ refused: "bad", newtab: "plain", settings: "plain" }[state] || "secure");
+    howt.textContent = { refused: "Refused", newtab: "New tab", settings: "Settings" }[state] || (state === "loading" ? "Secure" : "Secure");
+    $("addr").classList.toggle("focus", state === "newtab");
+    $("url").innerHTML = {
+      refused: "<b>example.com</b>/",
+      newtab: '<span class="caret"></span>',
+      settings: "<b>about:settings</b>",
+      loading: "<b>en.wikipedia.org</b>/wiki/BeOS",
+    }[state] || "<b>kosmos-test.local</b>/www/index.html";
+    $("star").classList.toggle("on", state === "page" || state === "timings" || state === "history" || state === "resize");
+    $("statusl").textContent = {
+      loading: "Connecting to en.wikipedia.org … the certificate checked, 42%",
+      refused: "Refused: the certificate is for another name",
+      newtab: "", settings: "",
+    }[state] ?? "kosmos-test.local/www/second.html";
+    const t1 = $("tab1");
+    t1.querySelector(".fav").outerHTML;
+    $("tab1t").textContent = { loading: "en.wikipedia.org", refused: "Refused — example.com",
+      newtab: "New tab", settings: "Settings" }[state] || "Kosmos — the browser test page";
+    $("reload").innerHTML = state === "loading"
+      ? '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 5l8 8M13 5l-8 8"/></svg>'
+      : '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13 2.5v3h-3"/></svg>';
+  }
+
+  document.querySelectorAll(".states button").forEach(b => b.addEventListener("click", () => show(b.dataset.state)));
+  $("menubtn").addEventListener("click", () => { $("menupop").hidden = !$("menupop").hidden; });
+  $("segf").addEventListener("click", () => { $("segf").classList.add("on"); $("segh").classList.remove("on"); $("favlist").hidden = false; $("histlist").hidden = true; });
+  $("segh").addEventListener("click", () => { $("segh").classList.add("on"); $("segf").classList.remove("on"); $("favlist").hidden = true; $("histlist").hidden = false; });
+  show("page");
+</script>
+</body>
+</html>

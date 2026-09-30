@@ -13905,3 +13905,49 @@ read) answers nothing on all three - the health test retires it; a generator
 that never rekeys gives the same answer twice on all three, and fails
 `test_crypto`'s second request. The probe itself catches every error, so a
 machine that has lost its randomness answers at once rather than timing out.
+
+## 18.294 HTTPS: BearSSL in a TLS Kit, and `fetch https://`
+
+**HTTPS, steps 2 to 4 for `fetch`** (`roadmap.md`, the browser: TLS).
+
+- **BearSSL 0.6**, vendored whole and unmodified (`runtime/upstream/bearssl`),
+  held to the hash nixpkgs records for the tarball, and built into every
+  userland image with its system parts off by `-D` - its randomness injected
+  from `SYS_ENTROPY`, a certificate's dates held to the machine's clock. All
+  277 of its files compiled freestanding against Kosmos's own headers on
+  both boards at the first try.
+- **Mozilla's 121 roots** (`assets/ca/cacert.pem`, as curl publishes them,
+  held to curl's hash, MPL 2.0) turned into BearSSL's trust anchors when the
+  image is built, by BearSSL's own `brssl ta` built on the Mac.
+- **The TLS Kit** (`user/kits/tls/`, `/Kosmos/Kits/tls`): `tls.client(conn,
+  name, { anchors })` over a Network Kit connection - the engine fed and
+  drained through the connection's own `read` and `write`, nothing blocking
+  - with `write`, `flush`, `read`, `state` and `close`, and a refusal named
+  the way a person would want it: "the certificate is for another name",
+  "out of its dates", "signed by nobody this machine trusts".
+- **`fetch` speaks URLs**, `https://` among them, with curl's `--cacert` and
+  a `--name` to hold a certificate to when an address is given; names are
+  resolved. The old `fetch <address> <port> <path>` stays.
+
+**`arm-tls` and `x86-tls`, six checks, about two seconds each**
+(`tools/run_tls.py`): an authority, a certificate for `kosmos-test.local`
+and two bad ones made with OpenSSL each run; three TLS servers on this Mac
+reached at 10.0.2.2; the page fetched whole; refused for another name, for a
+certificate out of its dates, for one signed by an authority the guest was
+never given, and for the right server with no `--cacert`, since Mozilla's
+roots do not include a test's; and the image's anchors counted, 121. Its
+control, the kit giving BearSSL no name to check, serves the wrong-name page.
+It worked the first time it ran; what took three tries was the harness, whose
+answers had been read up to the next prompt - which an empty line typed
+after a command prints early, putting every later answer one command out.
+Each is read to the line the shell prints when its process ends now.
+
+**And the gate that first ran it failed `arm-servers`** - the Servers window's
+line arrived as `telnet=running �� 1 session`, and the check waiting for
+"running · 1 session" waited its 120 s twice. The window printed it right: the
+harness decoded the serial line a read at a time, and a two-byte "·" split
+across two reads became two replacement characters. It needed a read's
+boundary to fall inside the character, which under a gate's load it did - and
+it is the failure seen once earlier the same day and not explained then. One
+incremental decoder for the whole stream now (`run_screenshot.py`, `_drain`),
+which every runner shares.
