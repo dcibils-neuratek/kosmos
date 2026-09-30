@@ -20,6 +20,7 @@
 #include "sched.h"
 #include "ipc.h"
 #include "memobj.h"
+#include "sharemap.h"
 #include "process.h"
 #include "hal.h"
 #include "boot.h"
@@ -4048,6 +4049,71 @@ static bool test_a_fault_while_joined(void)
 static bool test_the_first_thread_leaves(void)
 {
     return ends_from_anywhere(CTEST_FIRST_LEAVES, 5);
+}
+
+/*
+ * **The share window, recorded** (`sharemap.h`, `roadmap.md` 6zz f).
+ *
+ * Has to match `user/init/main.c`, `CTEST_SHARE`, whose code names the
+ * first check that failed: a hole reused, an unmapping that names no whole
+ * mapping refused, and a region held by its mapping past its last
+ * capability and let go with the mapping. It ends still mapping three
+ * regions and holding their capabilities, and here, after it has gone:
+ * every region, every record and every page is back.
+ */
+#define CTEST_SHARE 907UL
+
+static bool test_the_share_window_is_recorded(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned regions_before = memobj_in_use();
+    unsigned maps_before = sharemap_in_use();
+    size_t pages_before = pmm_free_pages();
+    struct process *p;
+    unsigned i;
+    int code;
+
+    p = process_create("t-share", init_image, (size_t)init_image_len,
+                       CTEST_SHARE);
+
+    if (p == NULL) {
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
+    for (i = 0; i < LUATEST_SLICES && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    if (code != 0) {
+        kputs("\n   (the share role stopped at check ");
+        kputu((unsigned)code);
+        kputs(")\n");
+    }
+
+    if (memobj_in_use() != regions_before || sharemap_in_use() != maps_before
+        || pmm_free_pages() != pages_before) {
+        kputs("\n   (left behind: regions ");
+        kputu(memobj_in_use() - regions_before);
+        kputs(", records ");
+        kputu(sharemap_in_use() - maps_before);
+        kputs(", pages ");
+        kputu(pages_before - pmm_free_pages());
+        kputs(")\n");
+    }
+
+    return code == 0 && memobj_in_use() == regions_before
+        && sharemap_in_use() == maps_before && pmm_free_pages() == pages_before;
 }
 
 /*
@@ -9319,6 +9385,7 @@ static const struct test tests[] = {
     { "thread: a worker faults while the first waits", test_a_fault_while_joined },
     { "thread: the first returns, a worker asleep", test_the_first_thread_leaves },
     { "proc: the table says its threads and its file", test_the_table_says_threads_and_file },
+    { "memory: the share window is recorded, a mapping holds its region", test_the_share_window_is_recorded },
     { "ipc: endpoints and regions grow past their old pools", test_endpoints_and_regions_grow },
     { "cap: a table holds more than it has room for", test_a_table_holds_more_than_it_has_room_for },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },

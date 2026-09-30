@@ -762,6 +762,25 @@ struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
 }
 
 /*
+ * A region, resolved and held in one step, for a mapping to keep
+ * (`sharemap.h`). The reference is taken only if the capability still names
+ * the region it named when it was read - another thread of the process can
+ * drop it in between, and the generation is what says so - and it is the
+ * caller's to let go of.
+ */
+struct memobj *ipc_hold_memory(struct thread *t, cap_t index)
+{
+    unsigned generation = 0;
+    struct memobj *m = resolve_memory_as(t, index, &generation);
+
+    if (m == NULL || !memobj_ref_as(m, generation)) {
+        return NULL;
+    }
+
+    return m;
+}
+
+/*
  * An interrupt line, out of and into a capability table.
  *
  * The same shape as the memory pair above and for the same reasons, with one

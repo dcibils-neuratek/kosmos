@@ -248,6 +248,10 @@ void ipc_timed_out(struct thread *t);
 /* Capabilities to shared memory: the same two operations endpoints have. */
 struct memobj *ipc_resolve_memory(struct thread *t, cap_t index);
 
+/* A region, resolved and referenced; NULL if the capability no longer names
+ * one. The reference is the caller's to let go of. */
+struct memobj *ipc_hold_memory(struct thread *t, cap_t index);
+
 /* The same pair for an interrupt line. `kernel/irq.h` is the argument, and
  * `ipc.c` has the one difference: a line has no reference count, because it
  * belongs to the process that claimed it rather than to its capabilities. */

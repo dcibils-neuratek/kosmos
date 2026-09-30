@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct sharemap;
 struct addrspace;
 struct thread;
 
@@ -515,13 +516,15 @@ struct process {
 
 
     /*
-     * The same for shared regions, in the window that says the pages are
-     * not this process's to free. Counted separately as well as mapped
-     * separately: a region's pages are already charged to whoever created
-     * it, and charging every process that maps it would mean two processes
-     * sharing one surface pay for it twice.
+     * And what it has mapped in the window that says the pages are not
+     * this process's to free: shared regions and devices' windows, a record
+     * each, in address order (`sharemap.h`). Not charged to it - a region's
+     * pages are already charged to whoever created it, and charging every
+     * process that maps it would mean two processes sharing one surface pay
+     * for it twice. It was a bump pointer, `next_share`, and a mapping did
+     * not hold its region.
      */
-    uintptr_t         next_share;
+    struct sharemap  *shares;
 
     /*
      * Timer ticks this process was charged, kept here as well as on its

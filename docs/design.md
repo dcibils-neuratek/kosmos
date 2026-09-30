@@ -107,8 +107,8 @@ Rejected on purpose:
 ### 4.1 Kernel
 
 Runs at EL1. Freestanding C11, and **no heap for kernel objects**: threads,
-processes, address spaces, endpoints, shared regions and interrupt claims live
-in pools. Pages are allocated - the physical page allocator is in the list
+processes, address spaces, endpoints, shared regions, the share window's
+mappings and interrupt claims live in pools. Pages are allocated - the physical page allocator is in the list
 below, and always was - but no kernel object is ever `kmalloc`ed and freed,
 which is what keeps a slot bounded in time, unable to fragment, and refusable
 cleanly at the syscall.
@@ -285,6 +285,8 @@ A process cannot name what you did not hand it. There is no global table to enum
 **The table belongs to the process**, since 19 September 2026 (`threads.md` step 1). It was the thread's, which was the same thing while a process had one thread and the wrong thing as soon as it had two - a capability one thread received would be a number its sibling could not use. A kernel thread, which belongs to no process, keeps a table of its own.
 
 **Thirty-two in the table, and pages beyond them.** An ordinary process holds a handful and allocates nothing; one that needs more takes a page of capabilities at a time, to 52,224. The wall is the machine's rather than a number's: a chunk is a page like any other and the reserve refuses one to a program eating it.
+
+**A mapping holds its region, as a capability does** (30 September 2026, `kernel/sharemap.h`). A region's pages were held by capabilities alone, so a process could map one, drop its last capability and keep reading and writing pages the kernel would give to somebody else - a capability system with a hole in it, found when the network stack did it by mistake (`testing.md` 18.297). Now each mapping in a process's share window is a record that holds a reference: a region lives while anything names it *or maps it*, `SYS_SHARE_UNMAP` must name a whole mapping, and an exit lets go of every one after the address space. The same records keep the window's holes, so an unmapped range is the next mapping's - the window had been a bump pointer lowered only newest-first, and a server that let its clients' rings go out of order ran out of addresses.
 
 **The lock is on writers only.** Two threads of a process can reach one table at once, so filling or emptying a slot takes the table's lock. Reading does not: a slot's kind is written last when it is filled and first when it is emptied, with release, and read with acquire - so a reader sees a slot finished or empty, never half written. That matters because every message resolves a capability: with the lock on that path an IPC round trip cost ten per cent more, measured (`testing.md` 18.118).
 

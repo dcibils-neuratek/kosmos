@@ -340,6 +340,91 @@ static int spawn_image_role(void)
     return 0;
 }
 
+/*
+ * **The share window, recorded** (`kernel/sharemap.h`, `roadmap.md` 6zz f).
+ * A hole left by an unmapping is the next mapping's; an unmapping that names
+ * no whole mapping is refused; and a mapping holds its region, so the region
+ * outlives its last capability for as long as it is mapped - and is let go
+ * with the mapping. Ends still holding three, for the suite to see given
+ * back at exit. Its code names the first check that failed.
+ */
+#define CTEST_SHARE             907UL
+
+static unsigned long regions_in_use(void)
+{
+    struct sysinfo info;
+
+    memset(&info, 0, sizeof info);
+    (void)kosmos_sysinfo(&info);
+    return info.regions_used;
+}
+
+static int share_role(void)
+{
+    long a = kosmos_mem_create(1), b = kosmos_mem_create(1);
+    long c = kosmos_mem_create(1), d = kosmos_mem_create(1);
+    long e = kosmos_mem_create(1);
+    long at_a, at_b, at_c, at_d, at_e;
+    unsigned long held;
+
+    if (a < 0 || b < 0 || c < 0 || d < 0 || e < 0) {
+        return 1;
+    }
+
+    at_a = kosmos_mem_map(a);
+    at_b = kosmos_mem_map(b);
+    at_c = kosmos_mem_map(c);
+
+    if (at_a < 0 || at_b < 0 || at_c < 0) {
+        return 2;
+    }
+
+    /* The middle one out, and the next one of its size in its place. */
+    if (kosmos_share_unmap((unsigned long)at_b, 1) != 0) {
+        return 3;
+    }
+
+    at_d = kosmos_mem_map(d);
+
+    if (at_d != at_b) {
+        return 4;
+    }
+
+    /* Not a whole mapping: more pages than it has, and where none begins. */
+    if (kosmos_share_unmap((unsigned long)at_c, 2) != SYS_ERR_FAULT
+        || kosmos_share_unmap((unsigned long)at_c + 4096UL * 64UL, 1) != SYS_ERR_FAULT) {
+        return 5;
+    }
+
+    /*
+     * Held by its mapping: its only capability dropped, the region still
+     * counted and still what was written there - and let go of when the
+     * mapping is.
+     */
+    at_e = kosmos_mem_map(e);
+
+    if (at_e < 0) {
+        return 6;
+    }
+
+    *(volatile unsigned long *)at_e = 0x5ea5e5eaUL;
+    held = regions_in_use();
+
+    if (kosmos_cap_drop(e) != 0) {
+        return 7;
+    }
+
+    if (regions_in_use() != held || *(volatile unsigned long *)at_e != 0x5ea5e5eaUL) {
+        return 8;
+    }
+
+    if (kosmos_share_unmap((unsigned long)at_e, 1) != 0 || regions_in_use() != held - 1) {
+        return 9;
+    }
+
+    return 0;           /* a, c and d still mapped: the suite sees them go */
+}
+
 static struct proc_info table[64];
 static volatile unsigned long released;
 
@@ -574,6 +659,10 @@ int main(unsigned long arg)
 
     if (arg == CTEST_SPAWN_IMAGE) {
         return spawn_image_role();
+    }
+
+    if (arg == CTEST_SHARE) {
+        return share_role();
     }
 #endif
 

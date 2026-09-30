@@ -2769,8 +2769,45 @@ processors, and still what follows USB:
       blit a scroll is: profiled first, so the vector unit goes where the
       time is, in GCC's vector types as `gfx.c` and `pack.c` are written,
       each held to its scalar self by a host test.
-   **The order since 30 September**: f, g and h, then e and d - the
-   browser fast before it is redrawn.
+   i. **A progress bar while a page loads, in the status panel** - Diego,
+      30 September, watching Wikipedia's Dam article sit on "waiting for
+      en.wikipedia.org ..." for minutes: "the browser needs a progress bar
+      for loading pages", "somehwre in the status panel". A bar that fills
+      as the bytes arrive, against the `Content-Length` the server gave,
+      with the host, the kilobytes and the percentage beside it; without a
+      length, the kilobytes so far. `docs/browser.html` drew it as a line
+      under the header and the percentage in the status text; the status
+      panel is where he wants it. **Next after the kernel's step of f**,
+      being small and wanted now; it moves into the HTTP Kit with g.
+   j. **Pages of 1 to 10 MB, loaded and drawn.** Diego, 30 September, with
+      Wikipedia's Dam article next to Chrome's rendering of it: "this is a
+      good test for the browser as it is a big page with lots of content
+      but its what a browser needs to be capable of rendering", "1 to 10mb
+      pages are normal", "we should be able to handle that". The article is
+      1.4 MB of HTML with 70 pictures and its styles in separate files; it
+      took over fifteen minutes to arrive, and the parser refused it. Four
+      things stand in the way, each its own step: **the transfer** - 10 MB
+      at today's rate is over half an hour (g, measured first); **the
+      parser** - fed the whole page as one Lua string, where it should be fed
+      as the bytes arrive, from the HTTP Kit's buffer, and say why when it
+      refuses; **the paper** - a page is painted once into a surface as tall
+      as itself, capped at 16 MB of pixels, about seven screens, so a long
+      page is cut off: paint what is on screen from the laid-out boxes
+      instead, as it scrolls; and **the standing test** - the Dam article as
+      served, kept beside the test page in `assets/www/`, and a page of about
+      10 MB, both measured by the status line's costs. And **the right
+      format**, which the article in Chrome shows and ours cannot yet:
+      external stylesheets fetched, and a layout engine with the box model,
+      floats, tables and flex - proposed as NetSurf's own, vendored, since
+      its parser and CSS are already ours (Diego's to decide).
+   **The order since 30 September**: f's kernel step, i, then f, g and h,
+   with j's parser and paper beside g, then e and d - the browser fast
+   before it is redrawn.
+   **Found on the way, not yet understood**: `make bench` has
+   `context_switch` +8.1% and `ipc_roundtrip` +7.8% against the baseline of
+   19 September - present at `688f3f9`, before the share window's records,
+   so from something in the eleven days between. To be bisected, and the
+   baseline raised only once the cause is known.
 
 6zy. **FOUND on 30 September - Kosmos cannot reach itself.** Diego, with the
    web server switched on in `make qemu` and the browser inside it at

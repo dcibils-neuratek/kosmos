@@ -20,6 +20,7 @@
 #include "hal.h"
 #include "pool.h"
 #include "memobj.h"
+#include "sharemap.h"
 
 
 /*
@@ -1024,7 +1025,7 @@ static struct process *create(const char *name, const void *image,
     }
 
     p->next_map     = USER_MAP_VA;
-    p->next_share   = USER_SHARE_VA;
+    p->shares       = NULL;
     p->mapped_pages = 0;
 
     if (as_map(p->space, USER_HEAP_VA, virt_to_phys(p->heap_pages),
@@ -1940,10 +1941,16 @@ static void release_memory(struct process *p)
     }
 
     p->next_map     = USER_MAP_VA;
-    p->next_share   = USER_SHARE_VA;
     p->mapped_pages = 0;
 
     as_destroy(p->space);
+
+    /*
+     * **And every region it mapped, let go of now** - after the address
+     * space, since a mapping holds its region (`sharemap.h`) and the pages
+     * must not go back while a page table still points at them.
+     */
+    sharemap_release_all(p);
 
     /* An image from a file, once nothing maps it: its pages go back when the
      * last process made from it has gone the same way. */

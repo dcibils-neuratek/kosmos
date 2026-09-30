@@ -33,6 +33,7 @@
 #include "thread.h"
 #include "ipc.h"
 #include "memobj.h"
+#include "sharemap.h"
 #include "console.h"
 #include "screen.h"
 #include "cpu.h"
@@ -1827,8 +1828,14 @@ void syscall_dispatch(struct syscall_frame *sc)
          * same limit, so a process cannot map its way past what it is
          * allowed to have by asking for regions instead of pages.
          */
-        struct memobj *m = ipc_resolve_memory(thread_current(),
-                                              (cap_t)sc->arg[0]);
+        /*
+         * **Held, not only resolved**: the mapping keeps a reference to the
+         * region for as long as it exists (`sharemap.h`), so dropping every
+         * capability to a region no longer frees pages a page table still
+         * points at.
+         */
+        struct memobj *m = ipc_hold_memory(thread_current(), (cap_t)sc->arg[0]);
+        struct sharemap *s;
         uintptr_t base;
         size_t i;
 
@@ -1842,14 +1849,18 @@ void syscall_dispatch(struct syscall_frame *sc)
          * charged to whoever created the region; charging them again to
          * everybody who maps it would mean a compositor and an app sharing
          * one surface pay for it twice, and the second one to ask would be
-         * refused memory that is already allocated.
+         * refused memory that is already allocated. The lowest gap in the
+         * window that fits, so a hole left by an unmapping is used again.
          */
-        if (p->next_share + m->pages * PAGE_SIZE > USER_SHARE_END) {
+        s = sharemap_place(p, m->pages, m);
+
+        if (s == NULL) {
+            memobj_unref(m);
             result = SYS_ERR_NO_ROOM;
             break;
         }
 
-        base = p->next_share;
+        base = s->va;
 
         for (i = 0; i < m->pages; i++) {
             if (as_map(p->space, base + i * PAGE_SIZE,
@@ -1866,12 +1877,13 @@ void syscall_dispatch(struct syscall_frame *sc)
                 as_unmap(p->space, base + j * PAGE_SIZE, 1);
             }
 
+            sharemap_forget(p, s);
+            memobj_unref(m);
             result = SYS_ERR_NO_ROOM;
             break;
         }
 
-        p->next_share += m->pages * PAGE_SIZE;
-
+        sharemap_ready(s);
         result = (long)base;
         break;
     }
@@ -1902,6 +1914,7 @@ void syscall_dispatch(struct syscall_frame *sc)
          */
         uintptr_t phys = (uintptr_t)sc->arg[0];
         size_t pages = (size_t)sc->arg[1];
+        struct sharemap *s;
         uintptr_t base;
         size_t i;
 
@@ -1915,12 +1928,15 @@ void syscall_dispatch(struct syscall_frame *sc)
             break;
         }
 
-        if (p->next_share + pages * PAGE_SIZE > USER_SHARE_END) {
+        /* Recorded like a region's, with no region to hold. */
+        s = sharemap_place(p, pages, NULL);
+
+        if (s == NULL) {
             result = SYS_ERR_NO_ROOM;
             break;
         }
 
-        base = p->next_share;
+        base = s->va;
 
         for (i = 0; i < pages; i++) {
             if (as_map(p->space, base + i * PAGE_SIZE, phys + i * PAGE_SIZE,
@@ -1936,12 +1952,12 @@ void syscall_dispatch(struct syscall_frame *sc)
                 as_unmap(p->space, base + j * PAGE_SIZE, 1);
             }
 
+            sharemap_forget(p, s);
             result = SYS_ERR_NO_ROOM;
             break;
         }
 
-        p->next_share += pages * PAGE_SIZE;
-
+        sharemap_ready(s);
         result = (long)base;
         break;
     }
@@ -2351,48 +2367,45 @@ void syscall_dispatch(struct syscall_frame *sc)
             break;
         }
 
-        if (va < USER_SHARE_VA
-            || va + pages * PAGE_SIZE > p->next_share) {
-            result = SYS_ERR_FAULT;
-            break;
-        }
-
-        result = (as_unmap(p->space, va, pages) == AS_OK) ? 0 : SYS_ERR_FAULT;
-
         /*
-         * **And the address space comes back, when it was the last thing
-         * handed out.**
+         * **Exactly one mapping, by the record** (`sharemap.h`). Taken out
+         * of the process's list first, so no other thread of it can unmap
+         * it too; then the page tables; and only then the region let go,
+         * so its pages cannot go back while anything here still maps them.
          *
-         * `next_share` only ever climbed. Unmapping returned the *pages*
-         * to whoever owned them and kept the *addresses* spent for ever,
-         * so a process that maps and unmaps in a loop marches up the
-         * window until nothing more will fit - and then cannot map
-         * anything, ever again, however little memory the machine is
-         * using.
+         * The addresses come back with it: the record is gone, and the gap
+         * it leaves is the next mapping's if it fits. This was a bump
+         * pointer lowered only when the topmost mapping went back - "LIFO,
+         * and a deliberate half-measure", since the kernel had nowhere to
+         * keep the holes - and a server letting its clients' rings go out
+         * of order ran out of window. Before that it only climbed, and one
+         * ten-second film spent a gigabyte of it (Diego, 21 September:
+         * "the video player ran once ... but not a second time").
          *
-         * That is not a slow leak in a corner. The filesystem server maps
-         * the caller's whole buffer on every `read_into`, and the video
-         * player's buffer is four megabytes, so one ten-second film spends
-         * more than a gigabyte of window. Diego found it on 21 September:
-         * "the video player ran once with the mp4 mjpeg video but not a
-         * second time... it looks something remained in memory". What
-         * remained was addresses.
-         *
-         * **LIFO, and that is a deliberate half-measure.** A free list
-         * over the window would need somewhere to keep the holes, and this
-         * kernel has no allocator to keep them in; a bitmap would be 128 KB
-         * a process for a 4 GB window. Lowering the mark when the topmost
-         * mapping is the one going back costs two lines and one branch,
-         * and it is exactly the shape every server here actually has: map
-         * the caller's buffer, answer, unmap, wait for the next request.
-         * One at a time, so the top is always the one being returned.
-         *
-         * A server that held two and released the older first keeps the
-         * old behaviour for that range - no worse than before, and it
-         * recovers the moment the newer one goes.
+         * Anything other than a whole mapping is refused, and said: a
+         * caller unmapping less than it mapped, or where it did not, has
+         * made a mistake that would otherwise leave a region held for good.
          */
-        if (result == 0 && va + pages * PAGE_SIZE == p->next_share) {
-            p->next_share = va;
+        {
+            struct memobj *m = NULL;
+
+            if (!sharemap_take(p, va, pages, &m)) {
+                kputs("kernel: share unmap of ");
+                kputu((unsigned)pages);
+                kputs(" pages at ");
+                kputx(va, 10);
+                kputs(" names no mapping of that size\n");
+                result = SYS_ERR_FAULT;
+                break;
+            }
+
+            result = (as_unmap(p->space, va, pages) == AS_OK) ? 0 : SYS_ERR_FAULT;
+
+            /* A page table that would not let go keeps the region too: held
+             * for good is a leak, and let go under a mapping is not. */
+            if (m != NULL && result == 0) {
+                memobj_unref(m);
+            }
         }
 
         break;

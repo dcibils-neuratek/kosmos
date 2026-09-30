@@ -22,6 +22,7 @@
 #include "sched.h"
 #include "ipc.h"
 #include "memobj.h"
+#include "sharemap.h"
 #include "irq.h"
 #include "process.h"
 #include "screen.h"
@@ -1112,6 +1113,7 @@ void kmain(void)
 
     ipc_init();
     memobj_init();
+    sharemap_init();
     irq_init();
     boot_stage("IPC and capabilities");
     boot_why("How processes talk, and the only way they can. Nothing is buffered.");

@@ -14131,3 +14131,33 @@ purpose and not only by mistake. And the share window gets its addresses
 back only when the newest mapping is the one returned, so a server holding
 many and letting them go out of order fills its window for good. Both are
 `roadmap.md` 6zz f's first step.
+
+## 18.298 A mapping holds its region, and the share window keeps its holes
+
+**`roadmap.md` 6zz f, the kernel's step first.** Each mapping in a process's
+share window is a record now (`kernel/sharemap.c`): where, how many pages,
+and which region, in a pool that grows as the others do with a ceiling of one
+for every page of memory. `SYS_MEM_MAP` holds its region through
+`ipc_hold_memory` - resolved and referenced in one step, against the
+capability's generation, so a sibling thread dropping it in between is
+refused rather than raced - and places it in the lowest gap that fits.
+`SYS_DEV_MAP` records a device's window the same way, holding nothing.
+`SYS_SHARE_UNMAP` must name one whole, finished mapping: the record comes out
+first, then the page tables, then the region is let go of - and anything else
+is refused and said on the console. `release_memory` lets go of every record
+after `as_destroy`, since the pages must not go back while a page table points
+at them.
+
+**`memory: the share window is recorded, a mapping holds its region`**, in
+the kernel suite on both boards (195 and 193): `CTEST_SHARE` maps three
+one-page regions, unmaps the middle one and gets its address back for the
+next; is refused unmapping two pages of a one-page mapping and a page where
+none begins; maps a fifth, writes it, drops its only capability, and finds
+the region still counted and still holding what it wrote - and gone from the
+count once unmapped. It ends mapping three, and the suite finds every region,
+record and page back after it. Controls: a mapping that does not hold its
+region stops it at check 8; placement that never reuses a gap, at check 4.
+`make bench` moved `context_switch` +8.1% and `ipc_roundtrip` +7.8% against
+its 19 September baseline, and `688f3f9`, before this, moves them the same to
+the digit - so the drift is older, and is in `roadmap.md` to bisect. 75 suites
+in 8:43.
