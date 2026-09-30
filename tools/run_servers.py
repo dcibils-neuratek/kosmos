@@ -10,13 +10,21 @@ desktop by itself, `telnetd` beside it - driven from here by the Mac's own
 client, since this is what it is for:
 
   1. `open servers` over Telnet opens the window, which says the command
-     line is running with the one session that opened it, the web server
-     stopped, and the screen not built; `telnetd`'s name in `/Running`
-     answers a Disconnect by ending the session asked about; and the web
-     server is set to start with the machine on port 8080, as the window
-     keeps it, in `/Home/Preferences/servers`.
+     line is running with the one session that opened it and the web
+     server and the screen stopped; `telnetd`'s name in `/Running` answers
+     a Disconnect by ending the session asked about; and the web server
+     (port 8080) and the screen are set to start with the machine, as the
+     window keeps them, in `/Home/Preferences/servers`.
   2. The same disk booted again: the web server started by itself, and a
-     page fetched from it by this Mac.
+     page fetched from it by this Mac; and **the screen by VNC**
+     (`vncd`, `roadmap.md` remote 7a), started by itself too and looked at
+     by `tools/kosmos_vnc.py`: the size the display has, a whole frame as
+     QEMU's own screendump has it, a window opened afterwards arriving as
+     an update of what changed, a region in 16-bit 565, a Disconnect from
+     the Servers window's side, the window manager letting its copy go when
+     nobody has looked for five seconds, and a password - refused wrong,
+     admitted right, the right answer computed by OpenSSL's DES rather than
+     by the one it checks.
 
 Usage: run_servers.py IMAGE
 """
@@ -41,21 +49,110 @@ PROBES = {
     # the web server, written as it writes it.
     "keep.lua": ('fs.send("/Home/Preferences", { type = "mkdir" })\n'
                  'fs.write("/Home/Preferences/servers", { web = { port = 8080, '
-                 'folder = "/Home/www", at_start = true } })\n'
+                 'folder = "/Home/www", at_start = true }, '
+                 'vnc = { port = 5900, at_start = true, password = "" } })\n'
+                 # And a quiet desktop for the second boot: Processes re-sorts
+                 # every second, and two rows that swap and swap back between
+                 # two screendumps pass for still while a frame caught them
+                 # swapped - which failed a correct frame under a gate's load.
+                 'fs.write("/Home/Preferences/startup", { items = { "tracker" } })\n'
                  'print("KEPT " .. tostring(fs.read("/Home/Preferences/servers").web.port))\n'),
-    # The window's Disconnect, as it sends it.
+    # The window's Disconnect, as it sends it - to the command line, and to
+    # the screen.
     "kick.lua": ('local r = fs.send("/Running/telnetd", { type = "disconnect", from = "10.0.2.2" })\n'
                  'print("KICKED " .. tostring(r and r.ended))\n'),
+    "vnckick.lua": ('local r = fs.send("/Running/vncd", { type = "disconnect", from = "10.0.2.2" })\n'
+                    'print("VNCKICKED " .. tostring(r and r.ended))\n'),
+    # A password typed on the Screen page, as the window keeps it.
+    "vncpass.lua": ('local all = fs.read("/Home/Preferences/servers")\n'
+                    'all.vnc.password = "Kosmos"\n'
+                    'fs.write("/Home/Preferences/servers", all)\n'
+                    'print("PASSWORD " .. fs.read("/Home/Preferences/servers").vnc.password)\n'),
 }
 
 
-def boot(image, telnet, web):
+def same_share(frame, width, height, px):
+    """How much of a viewer's frame is what QEMU scans out, row by row."""
+    same = 0
+    row = width * 3
+
+    for y in range(height):
+        a, b = frame[y * row:(y + 1) * row], px[y * row:(y + 1) * row]
+
+        if a == b:
+            same += width
+            continue
+
+        for x in range(0, row, 3):
+            if a[x:x + 3] == b[x:x + 3]:
+                same += 1
+
+    return same / float(width * height)
+
+
+def still_share(frame, width, before, after):
+    """How much of the screen that held still is in the viewer's frame.
+
+    The desktop is alive - Processes re-sorts every second, Monitor draws a
+    column - so a frame and a screendump taken after it may honestly
+    differ. What held still in a screendump before the frame and one after
+    it is what the frame must have: a region the window manager failed to
+    copy is still, and shows. Returns the share, and how much held still.
+    """
+    still = same = 0
+    row = width * 3
+
+    for y in range(len(after) // row):
+        a, b, c = before[y * row:(y + 1) * row], after[y * row:(y + 1) * row], frame[y * row:(y + 1) * row]
+
+        if a == b == c:
+            still += width
+            same += width
+            continue
+
+        for x in range(0, row, 3):
+            if a[x:x + 3] == b[x:x + 3]:
+                still += 1
+
+                if c[x:x + 3] == b[x:x + 3]:
+                    same += 1
+
+    return same / float(max(1, still)), still
+
+
+def where_differs(frame, width, height, px):
+    """The rectangle round the pixels that differ, for a failure to name."""
+    xs, ys = [], []
+    row = width * 3
+
+    for y in range(height):
+        a, b = frame[y * row:(y + 1) * row], px[y * row:(y + 1) * row]
+
+        if a != b:
+            ys.append(y)
+
+            for x in range(0, row, 3):
+                if a[x:x + 3] != b[x:x + 3]:
+                    xs.append(x // 3)
+
+    if not ys:
+        return "nowhere"
+
+    return "%d,%d to %d,%d" % (min(xs), min(ys), max(xs), max(ys))
+
+
+def boot(image, telnet, web, vnc=None):
     import run_screenshot as R
 
     board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
     saved = getattr(R, board)
+    forward = "hostfwd=tcp::%d-:23,hostfwd=tcp::%d-:8080" % (telnet, web)
+
+    if vnc:
+        forward += ",hostfwd=tcp::%d-:5900" % vnc
+
     setattr(R, board, saved + [
-        "-netdev", "user,id=net0,hostfwd=tcp::%d-:23,hostfwd=tcp::%d-:8080" % (telnet, web),
+        "-netdev", "user,id=net0," + forward,
         "-device", R.device(image, "net") + ",netdev=net0",
         "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
         "-fw_cfg", "name=opt/kosmos/boot,string=wm",
@@ -80,6 +177,171 @@ def connect(port, seconds=40):
                 raise
 
             time.sleep(0.5)
+
+
+def look(guest, telnet, vnc, seen, fails):
+    """The screen by VNC, on the boot that started it by itself."""
+    import kosmos_vnc as V
+    import run_screenshot as R
+
+    address = "127.0.0.1:%d" % vnc
+    guest.wait_for("wm: window", "the desktop")
+    time.sleep(2)
+
+    # No password kept: security type 1, and the display's own size.
+    viewer = V.Viewer(address)
+    width, height, px = R.parse_ppm(guest.screendump())
+
+    if viewer.security != 1:
+        fails.append("with no password the security type was %d, not none" % viewer.security)
+
+    if (viewer.width, viewer.height) != (width, height):
+        fails.append("the viewer was told %dx%d and the display is %dx%d"
+                     % (viewer.width, viewer.height, width, height))
+
+    # A whole frame, against what QEMU scans out and held still around it.
+    _, _, before = R.parse_ppm(guest.screendump())
+    viewer.request(False)
+    viewer.update()
+    width, height, px = R.parse_ppm(guest.screendump())
+    whole, still = still_share(viewer.frame, width, before, px)
+    seen["whole"] = "%.2f%% of the %.0f%% that held still" % (
+        100 * whole, 100.0 * still / (width * height))
+
+    if whole < 0.999 or still < 0.5 * width * height:
+        # Both pictures kept, since the difference is the evidence - in
+        # `build/`, which outlives the run as a scratch folder does not.
+        os.makedirs(os.path.join(ROOT, "build", "servers"), exist_ok=True)
+        kept = os.path.join(ROOT, "build", "servers", "whole-")
+        V.png(kept + "viewer.png", width, height, viewer.frame)
+        V.png(kept + "screen.png", width, height, px)
+        fails.append("a whole frame was %s of the screen QEMU scans out, the "
+                     "difference within %s (both in %s*.png)"
+                     % (seen["whole"], where_differs(viewer.frame, width, height, px), kept))
+
+    # A window opened after: it arrives as an update of what changed.
+    session = connect(telnet)
+    mark = len(guest.seen)
+    session.run("open calc")
+    guest.wait_for("wm: window Calculator at", "the Calculator's window")
+    deadline, best, partial = time.monotonic() + 40, 0.0, False
+
+    while time.monotonic() < deadline:
+        viewer.request(True)
+
+        try:
+            rects = viewer.update()
+        except OSError:
+            fails.append("no update came after the Calculator opened")
+            break
+
+        partial = partial or any(w * h < width * height for _, _, w, h in rects)
+        width, height, px = R.parse_ppm(guest.screendump())
+        best = same_share(viewer.frame, width, height, px)
+
+        if best >= 0.995 and "Calculator" in guest.seen[mark:]:
+            break
+
+    seen["update"] = "%.2f%%" % (100 * best)
+
+    if (best < 0.995 or not partial) and "no update came" not in " ".join(fails):
+        fails.append("after the Calculator opened, the viewer's frame was %.2f%% "
+                     "the screen, %s" % (100 * best, "by rectangles of what changed"
+                                          if partial else "and no update was of "
+                                          "less than the whole screen"))
+
+    # A region in 565, each channel rounded as the viewer will widen it.
+    viewer.set_format(16, False, 31, 63, 31, 11, 5, 0)
+    viewer.request(False, 0, 0, 320, 200)
+    viewer.update()
+    width, height, px = R.parse_ppm(guest.screendump())
+    good = 0
+
+    for y in range(200):
+        for x in range(320):
+            at = (y * width + x) * 3
+            want = bytes(((c * m + 127) // 255) * 255 // m
+                         for c, m in zip(px[at:at + 3], (31, 63, 31)))
+
+            if viewer.frame[at:at + 3] == want:
+                good += 1
+
+    seen["565"] = "%.2f%%" % (100 * good / 64000.0)
+
+    if good < 0.99 * 64000:
+        fails.append("a region in 565 was %.2f%% the screen" % (100 * good / 64000.0))
+
+    # The Servers window's Disconnect, to the screen.
+    said = session.run("/Home/vnckick.lua").decode(errors="replace")
+    viewer.sock.settimeout(10)
+
+    try:
+        closed = viewer.sock.recv(65536) == b""
+
+        while not closed:
+            closed = viewer.sock.recv(65536) == b""
+    except OSError:
+        closed = False
+
+    if "VNCKICKED 1" not in said or not closed:
+        fails.append("a Disconnect did not end the viewer: %r, closed %s" % (said, closed))
+
+    # Nobody looking: the window manager lets its copy go.
+    try:
+        guest.wait_for("wm: the screen is no longer watched (not asked for five seconds)",
+                       "let the screen's copy go")
+    except Exception as e:                  # noqa: BLE001 - said as a failure
+        fails.append("the window manager kept copying the screen with nobody "
+                     "looking: " + str(e).splitlines()[0])
+
+    # **Something new while nobody looks**, which then holds still: the next
+    # viewer's first frame has to have it. Without this a copy the window
+    # manager had let go would pass for the screen, since everything that
+    # moved is left out of the comparison and nothing else had changed.
+    mark = len(guest.seen)
+    session.run("open about")
+    guest.wait_for("wm: window About Kosmos at", "About's window")
+    time.sleep(1.5)
+
+    # A password: refused wrong, admitted right.
+    said = session.run("/Home/vncpass.lua").decode(errors="replace")
+
+    if "PASSWORD Kosmos" not in said:
+        fails.append("the password was not kept: %r" % said)
+
+    try:
+        V.Viewer(address, password="wrong")
+        fails.append("a wrong password was admitted")
+    except V.RFBError as e:
+        if "refused" not in str(e):
+            fails.append("a wrong password failed oddly: %s" % e)
+
+    try:
+        viewer = V.Viewer(address, password="Kosmos")
+
+        if viewer.security != 2:
+            fails.append("with a password kept the security type was %d" % viewer.security)
+
+        _, _, before = R.parse_ppm(guest.screendump())
+        viewer.request(False)
+        viewer.update()
+        width, height, px = R.parse_ppm(guest.screendump())
+        share, _ = still_share(viewer.frame, width, before, px)
+
+        if share < 0.999:
+            os.makedirs(os.path.join(ROOT, "build", "servers"), exist_ok=True)
+            kept = os.path.join(ROOT, "build", "servers", "password-")
+            V.png(kept + "viewer.png", width, height, viewer.frame)
+            V.png(kept + "screen.png", width, height, px)
+            fails.append("the frame after the password was %.2f%% the screen "
+                         "that held still, the difference within %s (both in %s*.png)"
+                         % (100 * share, where_differs(viewer.frame, width, height, px), kept))
+
+        viewer.close()
+    except V.RFBError as e:
+        fails.append("the right password was not admitted: %s" % e)
+
+    session.close()
 
 
 def main():
@@ -117,6 +379,31 @@ def main():
 
         session = connect(telnet)
         said["help"] = session.run("help").decode(errors="replace")
+
+        # An application written here, pushed and opened on this desktop -
+        # `open` asking the window manager, as the Deskbar does. Moved here
+        # from `run_telnetd.py`'s boot of its own, which was this boot.
+        import contextlib
+        import io
+        import kosmos_telnet as K
+
+        app = os.path.join(work, "hellowin.lua")
+
+        with open(os.path.join(ROOT, "user", "bin", "apps", "hello-win.lua")) as f:
+            source = f.read()
+
+        with open(app, "w") as f:
+            f.write(source)
+
+        heard = io.StringIO()
+
+        with contextlib.redirect_stdout(heard):
+            K.push(session, app)
+
+        said["push"] = heard.getvalue()
+        guest.wait_for("wm: launched /Home/Apps/hellowin/hellowin.lua -> true",
+                       "the pushed application launched")
+
         said["open"] = session.run("open servers").decode(errors="replace")
         guest.wait_for("servers: web=", "the Servers window's first look")
         guest.wait_for("telnet=running · 1 session", "the window seeing this session")
@@ -148,16 +435,20 @@ def main():
 
     first = guest.seen
 
+    if "open: started" not in said.get("push", ""):
+        fails.append("an application pushed to a machine running its desktop "
+                     "did not open there: %r" % said.get("push"))
+
     if "this session's own:" not in said.get("help", ""):
         fails.append("help did not list the session's own words: %r" % said.get("help"))
 
     if "open: started servers" not in said.get("open", ""):
         fails.append("open servers did not start the window: %r" % said.get("open"))
 
-    if "vnc=not built yet" not in first or "web=stopped" not in first:
-        fails.append("the window did not say the web server stopped and the "
-                     "screen not built:\n" + "\n".join(l for l in first.splitlines()
-                                                       if "servers:" in l)[:600])
+    if "vnc=stopped" not in first or "web=stopped" not in first:
+        fails.append("the window did not say the web server and the screen "
+                     "stopped:\n" + "\n".join(l for l in first.splitlines()
+                                                if "servers:" in l)[:600])
 
     if "KEPT 8080" not in said.get("keep", ""):
         fails.append("the settings were not kept: %r" % said.get("keep"))
@@ -165,13 +456,16 @@ def main():
     if "disconnected from this machine" not in said.get("kick", ""):
         fails.append("a Disconnect did not end the session: %r" % said.get("kick", "")[-300:])
 
-    # ---- 2: the same disk again, the web server started by itself ----
-    guest = boot(image, random.randint(20000, 40000), web)
+    # ---- 2: the same disk again, the web server and the screen by themselves ----
+    telnet, vnc = random.randint(20000, 40000), random.randint(60001, 64000)
+    guest = boot(image, telnet, web, vnc)
     fetched = {}
+    seen = {}
 
     try:
         guest.wait_for("net: an address from DHCP", "a lease")
         guest.wait_for("starting httpd 8080 /Home/www", "the web server started at boot")
+        guest.wait_for("vncd: on port 5900", "the screen's server started at boot")
 
         for _ in range(20):
             try:
@@ -184,6 +478,8 @@ def main():
             except Exception as e:          # noqa: BLE001 - any means retry
                 fetched = {"error": repr(e)}
                 time.sleep(1)
+
+        look(guest, telnet, vnc, seen, fails)
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the second boot stopped: %s: %s" % (type(e).__name__, e))
     finally:
@@ -197,7 +493,11 @@ def main():
         if " died: " in out:
             fails.append("something died: " + out[out.find(" died: ") - 80:][:400])
 
-    checks = 7
+    for line in ("wm: the screen is watched", "vncd: 10.0.2.2  connected"):
+        if line not in guest.seen:
+            fails.append("the log never said %r" % line)
+
+    checks = 16
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))
@@ -208,11 +508,16 @@ def main():
         return 1
 
     print("PASS: %d checks on the Servers window, on the M700's own boot and "
-          "from the Mac's client (help; the window opened by open; the "
-          "command line running with this session, the web server stopped, "
-          "the screen not built; the settings kept; a Disconnect ending a "
-          "session; and the web server kept to start with the machine "
-          "serving its page after a boot)." % checks)
+          "from the Mac's clients (help; an application pushed from here and "
+          "opened on the desktop; the window opened by open; the "
+          "command line running with this session, the web server and the "
+          "screen stopped; the settings kept; a Disconnect ending a session; "
+          "the web server kept to start with the machine serving its page "
+          "after a boot; and the screen by VNC started with it - its size, a "
+          "whole frame as QEMU scans it out (%s), a window opened after "
+          "arriving as an update (%s), 565 (%s), a Disconnect, the copy let "
+          "go, and a password refused wrong and admitted right)."
+          % (checks, seen.get("whole"), seen.get("update"), seen.get("565")))
     return 0
 
 

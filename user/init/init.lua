@@ -6140,9 +6140,12 @@ query. `find` and `watch` are built on exactly these two calls.
         return "httpd", ("%d %s"):format(tonumber(c.port) or 80, tostring(c.folder or "/Home/www"))
       end,
       telnet = function(c) return "telnetd", tostring(tonumber(c.port) or 23) end,
+      -- Before the desktop, like the others: it asks the window manager for
+      -- the screen when a viewer comes, not when it starts.
+      vnc = function(c) return "vncd", tostring(tonumber(c.port) or 5900) end,
     }
 
-    for _, id in ipairs({ "web", "telnet" }) do
+    for _, id in ipairs({ "web", "telnet", "vnc" }) do
       local c = servers[id]
 
       if type(c) == "table" and c.at_start == true

@@ -30,6 +30,7 @@
  * happens once, in the final blit, so that a new target changes one file.
  */
 
+#include "pack.h"
 #include "shadow.h"
 #include "yuv.h"
 #include "cameraproto.h"
@@ -2415,6 +2416,85 @@ static int l_get(lua_State *L)
     return 1;
 }
 
+/*
+ * `surface:pack(x, y, w, h, format)` - a rectangle's pixels as bytes, in a
+ * pixel format somebody else chose (`pack.h`): `format` is `{ bpp = 8 |
+ * 16 | 32, big = bool, rmax =, gmax =, bmax =, rshift =, gshift =, bshift
+ * = }`, true colour as RFB's SetPixelFormat describes it, which `vncd`
+ * hands here as a viewer sent it (`roadmap.md`, remote 7a).
+ *
+ * The loop is `pack.c`'s, eight pixels at a time. A rectangle not inside
+ * the surface is an error rather than clipped: the caller said where, and a
+ * clipped answer would be bytes for somewhere it did not ask about, which a
+ * protocol then sends as though it had.
+ */
+static int l_pack(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    lua_Integer x = luaL_checkinteger(L, 2);
+    lua_Integer y = luaL_checkinteger(L, 3);
+    lua_Integer w = luaL_checkinteger(L, 4);
+    lua_Integer h = luaL_checkinteger(L, 5);
+    lua_Integer bpp, rmax, gmax, bmax, rs, gs, bs;
+    struct gfx_pack_format f;
+    size_t per, bytes;
+    luaL_Buffer b;
+    uint8_t *out;
+    lua_Integer row;
+
+    luaL_checktype(L, 6, LUA_TTABLE);
+
+    lua_getfield(L, 6, "bpp");    bpp  = luaL_optinteger(L, -1, 32);
+    lua_getfield(L, 6, "rmax");   rmax = luaL_optinteger(L, -1, 255);
+    lua_getfield(L, 6, "gmax");   gmax = luaL_optinteger(L, -1, 255);
+    lua_getfield(L, 6, "bmax");   bmax = luaL_optinteger(L, -1, 255);
+    lua_getfield(L, 6, "rshift"); rs   = luaL_optinteger(L, -1, 16);
+    lua_getfield(L, 6, "gshift"); gs   = luaL_optinteger(L, -1, 8);
+    lua_getfield(L, 6, "bshift"); bs   = luaL_optinteger(L, -1, 0);
+    lua_getfield(L, 6, "big");
+    f.big = lua_toboolean(L, -1);
+    lua_pop(L, 8);
+
+    if (bpp != 8 && bpp != 16 && bpp != 32) {
+        return luaL_error(L, "pack: a pixel is 8, 16 or 32 bits, not %d", (int)bpp);
+    }
+
+    if (rmax < 1 || gmax < 1 || bmax < 1 || rmax > 65535 || gmax > 65535
+        || bmax > 65535 || rs < 0 || gs < 0 || bs < 0
+        || rs > 31 || gs > 31 || bs > 31) {
+        return luaL_error(L, "pack: a channel's largest value is 1 to 65535 "
+                          "and its shift 0 to 31");
+    }
+
+    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > (lua_Integer)s->width
+        || y + h > (lua_Integer)s->height) {
+        return luaL_error(L, "pack: %dx%d at %d,%d is not inside this %ux%u "
+                          "surface", (int)w, (int)h, (int)x, (int)y,
+                          s->width, s->height);
+    }
+
+    f.bpp = (unsigned)bpp;
+    f.rmax = (uint32_t)rmax;
+    f.gmax = (uint32_t)gmax;
+    f.bmax = (uint32_t)bmax;
+    f.rshift = (unsigned)rs;
+    f.gshift = (unsigned)gs;
+    f.bshift = (unsigned)bs;
+
+    per = (size_t)w * ((size_t)bpp / 8u);
+    bytes = per * (size_t)h;
+
+    out = (uint8_t *)luaL_buffinitsize(L, &b, bytes);
+
+    for (row = 0; row < h; row++) {
+        gfx_pack_row(row_of(s, (unsigned)(y + row)) + x, out + (size_t)row * per,
+                     (unsigned)w, &f);
+    }
+
+    luaL_pushresultsize(&b, bytes);
+    return 1;
+}
+
 static int l_set(lua_State *L)
 {
     struct surface *s = check_surface(L, 1);
@@ -2985,6 +3065,7 @@ static const luaL_Reg surface_methods[] = {
     { "text",   l_text },
     { "get",    l_get },
     { "set",    l_set },
+    { "pack",   l_pack },
     { "free",   l_free },
     { NULL, NULL }
 };

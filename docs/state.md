@@ -284,9 +284,22 @@ great", then "Keep building" while he was away): the window as
 settings in `/Home/Preferences/servers` and the shell starting what they
 mark at boot; the Web Server window folded in and removed. `arm-servers`
 and `x86-servers`, seven checks from the Mac's own client, and Servers in
-the gallery's picture. **Next**: the VNC server - two things to settle
-first, reading the screen as a grant the window manager holds, and keys
-and the pointer coming back. Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
+the gallery's picture. **Stick 0.10.198** (`1c8e5dd`: DHCP, `telnetd`,
+push, Servers): OVMF 32 checks, handed over with a checklist of what to
+try. The old development sticks and stale build folders went to the Trash
+at Diego's word, 4.6 GB, for him to empty.
+
+**The screen by VNC, 7a** (`testing.md` 18.291), settled while Diego was
+away and his to change (`roadmap.md` remote 7): the screen asked of the
+window manager (`watch`, `watched`), `vncd` in RFB 3.3 with Raw pixels
+and an optional password, the Screen page of Servers, `tools/kosmos_vnc.py`
+on the Mac. On his asks the same night: **encryption in C** - the Crypto
+Kit, and `test_crypto`, which `crypto.c` had claimed since 5 September and
+never had; **SIMD where possible** - `pack.c` eight pixels at a time, held
+to its scalar self; **HTTPS** proposed with BearSSL and a random source
+first (roadmap, the browser); and **lazy FP** questioned (6zv), his to
+decide. **Next**: 7b, keys and the pointer through the window manager.
+Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
 server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware

@@ -13695,3 +13695,111 @@ and the M700's log gains the number - and the check waits for the three
 lines and then for the Terminal's grid. The phase alone is 17 s from
 power-on, on both boards. Its control, `map_budget` flat at 48 MB again,
 still fails it: `no room for a 1825x1035 surface (7439 KB)`.
+
+## 18.291 The screen by VNC, the Crypto Kit and the test it never had, and pixels packed eight at a time
+
+**The screen, looked at from another machine** (`roadmap.md` remote 7a) -
+Diego, 29 September: "We can do a vnc server after Telnetd so we can remote
+access the desktop with a simple vnc client", and later "i can use any other
+open vnc clients in the mac". `vncd`, a program: RFB 3.3, the Raw encoding,
+security none or VNC Authentication from the Servers window's password, the
+subnet rule `telnetd` keeps, a status and log under `/Temporary/vncd`, and a
+name in `/Running` for the Screen page's Disconnect.
+
+- **The screen is asked of the window manager.** `watch` hands it a region
+  the screen's size - held to its size before anything is wrapped over it,
+  the check `open` lacks (`roadmap.md` 6zu) - and it copies the whole
+  screen there at once; after that, every composed rectangle is copied too
+  and kept, and `watched` hands the list back, eight bytes a rectangle.
+  Nothing is copied while nobody looks: not asked for five seconds, the
+  region is let go, and `vncd` watches again when a viewer comes.
+- **Encryption is C** - Diego: "shouldnt we write all encryption in c
+  instead of lua? it should be super fast". A DES written in Lua for the
+  password check went unused; DES joined `crypto.c`, which moved out of the
+  network kit into **the Crypto Kit**, `/Kosmos/Kits/crypto`, whose one Lua
+  function so far is `crypto.des`.
+- **`crypto.c` had said since 5 September that `cryptotest` checked every
+  primitive in `make test`, and nothing by that name ever existed.**
+  `tools/test_crypto.c` is it now, in `host-check`: 18 checks, the vectors
+  cut out of the RFCs' own text by a script and each cross-checked against
+  Python's `hashlib`/`hmac` and OpenSSL the day it was written - SHA-256
+  (FIPS 180-4, a million "a" in pieces of seven), HMAC-SHA-256 (RFC 4231
+  cases 1, 2, 6), ChaCha20 and Poly1305 (RFC 8439), X25519 (RFC 7748, and
+  Alice and Bob's exchange), DES (FIPS 46's example, a VNC challenge, and
+  1,024 blocks under four keys hashed). Every primitive passed. **The two
+  classic DES vectors missed a wrong S-box entry** - an entry is read only
+  when its six bits come round - so the wide check was added, and it
+  catches one. Controls: a wrong SHA-256 constant fails seven, a wrong
+  S-box entry fails the wide check.
+- **Pixels packed eight at a time** - Diego: "Make sure we use simd vector
+  arithmetic when possible in all you code". `surface:pack` puts a
+  rectangle into a viewer's pixel format in C; its loop is
+  `user/kits/gfx/pack.c`, GCC's vector types as `gfx.c`'s blend is written,
+  NEON and SSE2 from one source (76 vector instructions on x86, 40 on
+  AArch64, counted in the objects). `tools/test_pack.c` holds it to its
+  scalar self for every row width to 40 in eight formats and checks the
+  divide-by-255 identity the lanes use for every channel value and largest
+  value - natively and through Rosetta. On this Mac's cores, a 1920x1080
+  frame in the surface's own format is 0.4-0.5 ms against 5.8 a pixel at a
+  time; 565 and big-endian about 1.5 ms against 3.4, the rounding's
+  multiplies being the work. Its control, the identity off by one bit,
+  fails six formats. A 32-byte vector cannot be returned from a function
+  on x86-64 without AVX, so the lane arithmetic is written in the loop.
+- **`tools/kosmos_vnc.py`**, a viewer without a window: the screen as a
+  PNG from the Mac (`kosmos_vnc.py <address> shot out.png`), and the
+  suite's client. It answers a password with OpenSSL's DES, a second
+  implementation beside the one `vncd` checks with.
+
+**`arm-servers` and `x86-servers`, fifteen checks now** (46 s and 53 s):
+the second boot starts `vncd` because the window kept it, and a viewer
+from the Mac gets the display's size; a whole frame 100% of the screen that
+held still between a screendump before it and one after - Processes
+re-sorts every second, which on x86 once made a correct frame read as
+96.9% against a screendump taken after, and both pictures are kept in
+`build/servers/` when it differs; a window opened afterwards arriving as an
+update smaller than the screen; a region in 565 exact to the rounding; the
+Screen page's Disconnect; the window manager letting its copy go after five
+seconds with nobody looking; **About opened while nobody looks**, which the
+next viewer's first frame must have; and a password refused wrong and
+admitted right. Controls: the compositor not copying to the watcher fails
+the frames; the window manager not copying the whole screen when watched
+again fails four, the frame after the password among them. A re-watch
+added to `vncd` for the first viewer after a quiet spell had no control
+that bit - the pass a viewer finishes its handshake already finds a copy
+let go, before it can ask for a frame - so it was taken out, and the loop
+says why.
+
+**The first gate with it failed `x86-servers`**, the frame after the
+password at 98.37% of the screen that held still. The comparison has a hole:
+Processes re-sorts every second, and two rows that swap and swap back between
+the screendump before a frame and the one after it pass for still while the
+frame caught them swapped. So the first boot keeps a quiet desktop for the
+second - Tracker alone, in `/Home/Preferences/startup` - and a frame that
+differs now leaves both pictures in `build/servers/`. The control that makes
+the window manager skip its whole copy still fails four checks on it.
+
+**And the gate at 10:06 with all of it** - 70 suites passing, six seconds
+over. What gave the time back is a boot rather than a check: `run_telnetd.py`
+booted the M700's shape - the desktop with `telnetd` beside it - only to push
+an application and see it open, and `run_servers.py`'s first boot is that
+machine already. The check moved there, whole; Telnet's suite is twelve
+checks and about fifty seconds a board rather than seventy, and Servers is
+sixteen.
+
+**Moving it found a bug the old check could not see.** `hello-win`, the
+pushed application and the example of a window in raw protocol, polled the
+window manager with no wait and yielded, for ever - the spin `ui.lua`'s own
+loop was cured of long ago. On ARM's four processors it took one quietly; on
+x86's one, the window manager spent its time answering it, and the Servers
+window opened after it never drew its first frame, so the suite timed out.
+The old check asked only that it launched. It waits a second of ticks for
+its events now. Its control, the spinning loop put back, fails the x86 run.
+
+**And a field that hides what is typed**: `ui.field{ secret = true }`
+draws a star a character and will not copy or cut, for the Screen page's
+password.
+
+**The gate: 70 suites in 9:57**, with `x86-film` failing once - 1,226 of
+266,240 samples silent at 2.15 s, a gap rather than a wrong sample - and
+passing three times of three alone (18.127). It is the second time today
+under a gate's load (`roadmap.md` 6zw).

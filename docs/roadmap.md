@@ -210,8 +210,21 @@ answers to its three questions, the same day:
    - **In steps.** 7a, the screen, looked at: `watch` in the window
      manager, `surface:pack` in the gfx kit - a rectangle into a viewer's
      pixel format, which is a loop over pixels and so C - `vncd`, the Raw
-     encoding, and the Screen page's switch and password. 7b, keys and the
-     pointer. 7c, a compressed encoding - zlib, through the miniz the
+     encoding, and the Screen page's switch and password. **7a BUILT on
+     29 September** (`testing.md` 18.291), with the Crypto Kit for its
+     password and `tools/kosmos_vnc.py` from the Mac. 7b, keys and the
+     pointer - **with one question to settle first, and it is about
+     authority**: every process can reach `/Running/wm`, and the window
+     manager checks nothing a request carries, so a `remote input` request
+     there would let any program type into every window. Proposed: input
+     is **a capability the window manager hands out**, not a request on its
+     public name - an endpoint of its own, given at launch only to a
+     program whose header says `kosmos: needs desktop input` and only when
+     the Servers window has said a viewer may control; everything arriving
+     on it is a viewer's pointer (absolute, which the window manager
+     speaks) or a key (an X keysym, turned into the key event and the
+     character a keyboard gives). The Deskbar's mark (7d) says whenever
+     that endpoint is held. 7c, a compressed encoding - zlib, through the miniz the
      compress kit already carries - when the M700 says Raw is too slow on
      its network. 7d, the Deskbar's mark while the screen is watched.
 
@@ -2629,6 +2642,34 @@ processors, and still what follows USB:
    are untouched until one opens a window in Plex - so it is a question of
    whether the harness should run in Plex, since it is the look Diego uses.
 
+6zw. **FOUND on 29 September - `x86-film` goes silent for a moment under
+   the gate's load**, twice in one day: samples of zero where FFmpeg's
+   reference has sound, 1,226 of 266,240 the second time, and three passes
+   of three alone each time. A gap, not a wrong sample - the film's sound
+   thread away longer than the ring holds, the shape `x86-sound` had until
+   it was given a quiet machine (18.127). Either it too runs `alone`, which
+   is about 25 s on a gate at its edge, or the player's sound thread is not
+   yet in the audio band on x86 and should be - to find out first.
+
+6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
+   Diego, asking for SIMD "when possible in all you code": "Why do we need
+   lazy fp saving?" What it buys (`CLAUDE.md`, Build): a switch does not
+   copy the vector registers - 512 bytes and two control registers on
+   AArch64 - but disarms them, and the first FP instruction after it traps
+   and swaps; `context_switch` 29.9% and `ipc_roundtrip` 16.2% faster, for
+   a kernel that never touches those registers. **Two reasons to measure
+   it again**: the win shrinks as SIMD spreads - every Lua program uses FP
+   already, its numbers being doubles, and the vectorised kits add more -
+   and **on Intel it is LazyFP, CVE-2018-3665**: a process can read the
+   previous owner's FP and SIMD registers speculatively before the trap,
+   which is why Linux went eager on x86 in 2018. The M700 is Intel, and
+   crypto is in C now. **To do before deciding**: eager save on both
+   boards, `context_switch` and `ipc_roundtrip` against today, and how many
+   switches on a busy desktop meet a thread that uses FP. Proposed: eager
+   on x86 whatever the numbers, for the leak; ARM by what they say. The
+   kernel's own `-mgeneral-regs-only` is a separate choice either way.
+   Diego's to decide.
+
 6zu. **FOUND on 29 September, reading the window manager for the VNC
    server - a window's shared surface is wrapped at the size the
    application says, and never held to the region's.** `handlers.open`
@@ -2640,6 +2681,7 @@ processors, and still what follows USB:
    manager's, which takes every window with it. The same check `watch`
    makes (remote step 7a): the region's pages against what will be
    wrapped, refused when short. A server receives what it expects.
+   **`watch` has it since 29 September; `open` still does not.**
 
 6zt. **ASKED on 28 September - one image at any screen size.** Diego,
    running the release at 3840x2160: "why is that images need to be built

@@ -6,12 +6,12 @@
 #include <stdint.h>
 
 /*
- * The primitives SSH needs.
+ * The Crypto Kit's primitives (`user/kits/crypto/`).
  *
  * `crypto.c` says why the discipline here is different from the rest of the
  * tree: this is the one place where a bug is silent, so every one of these
  * is checked against the vectors in its own specification and the check is
- * in `make test`.
+ * in `make test` (`tools/test_crypto.c`).
  */
 
 struct sha256 {
@@ -41,5 +41,9 @@ void poly1305(const uint8_t key[32], const void *data, size_t bytes,
 void x25519(uint8_t out[32], const uint8_t scalar[32],
             const uint8_t point[32]);
 void x25519_base(uint8_t out[32], const uint8_t scalar[32]);
+
+/* One block of DES (FIPS 46-3), for VNC Authentication and nothing that has
+ * to stay secret. */
+void des_encrypt(const uint8_t key[8], const uint8_t in[8], uint8_t out[8]);
 
 #endif /* KOSMOS_CRYPTO_H */

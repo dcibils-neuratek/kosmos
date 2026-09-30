@@ -125,69 +125,6 @@ def talk(port):
     session.close()
 
 
-def on_the_desktop(image, port):
-    """**The M700's own boot**: the desktop by itself and `telnetd` beside
-    it. An application written here is pushed and opened on its screen -
-    `open` asking the window manager, as the Deskbar does."""
-    import kosmos_telnet as K
-    import run_screenshot as R
-    import contextlib
-    import io
-
-    board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
-    saved = getattr(R, board)
-    setattr(R, board, saved + [
-        "-netdev", "user,id=net0,hostfwd=tcp::%d-:23" % port,
-        "-device", R.device(image, "net") + ",netdev=net0",
-        "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
-        "-fw_cfg", "name=opt/kosmos/boot,string=wm",
-    ])
-
-    try:
-        guest = R.Guest(image, 120)
-    finally:
-        setattr(R, board, saved)
-
-    app = os.path.join(WORK, "hellowin.lua")
-
-    with open(os.path.join(ROOT, "user", "bin", "apps", "hello-win.lua")) as f:
-        source = f.read()
-
-    with open(app, "w") as f:
-        f.write(source)
-
-    try:
-        guest.wait_for("net: an address from DHCP", "a lease")
-        guest.wait_for("wm: window", "the desktop's first window")
-
-        deadline = time.monotonic() + 30
-
-        while True:
-            try:
-                session = K.Session("127.0.0.1:%d" % port, timeout=60)
-                break
-            except (ConnectionError, OSError):
-                if time.monotonic() > deadline:
-                    raise
-
-                time.sleep(0.5)
-
-        heard = io.StringIO()
-
-        with contextlib.redirect_stdout(heard):
-            K.push(session, app)
-
-        results["desktop_push"] = heard.getvalue()
-        session.close()
-        guest.wait_for("wm: launched /Home/Apps/hellowin/hellowin.lua -> true",
-                       "the pushed application launched")
-        results["desktop"] = True
-    except Exception as e:                  # noqa: BLE001 - said below
-        results["desktop_error"] = "%s: %s" % (type(e).__name__, e)
-    finally:
-        guest.close()
-
-
 def wait_for(session, text, seconds=30):
     deadline = time.monotonic() + seconds
 
@@ -284,12 +221,10 @@ def main():
     if "no such program" not in results.get("nothing", ""):
         fails.append("a name that is no program: %r" % results.get("nothing"))
 
-    on_the_desktop(image, random.randint(20000, 60000))
-
-    if not results.get("desktop") or "open: started" not in results.get("desktop_push", ""):
-        fails.append("an application pushed to a machine running its desktop "
-                     "did not open there: %s %r" % (results.get("desktop_error", ""),
-                                                     results.get("desktop_push")))
+    # An application pushed to a machine running its desktop, and opened
+    # there, is checked on `run_servers.py`'s first boot, which is that
+    # machine already: a boot of its own here cost the gate twenty seconds a
+    # board, when the gate stood at ten minutes (`testing.md` 18.291).
 
     if results.get("up") != bytes(reversed(BLOB)):
         fails.append("a file put there did not come back as it was: %s"
@@ -308,7 +243,7 @@ def main():
     if " died: " in out:
         fails.append("something died: " + out[out.find(" died: ") - 80:][:400])
 
-    checks = 13
+    checks = 12
 
     if fails:
         print("FAIL: %d of %d checks on telnetd:" % (len(fails), checks))
@@ -323,8 +258,7 @@ def main():
           "value in them, whole; a read given the next line typed; a failure's "
           "exit code; Control-C as Telnet's interrupt; no such program; a file "
           "put into new folders and back; a program pushed and run; open with "
-          "no desktop refused; and one pushed to a desktop, opened there; "
-          "nothing dead)." % (checks, len(BLOB)))
+          "no desktop refused; nothing dead)." % (checks, len(BLOB)))
     return 0
 
 

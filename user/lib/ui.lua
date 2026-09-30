@@ -2268,6 +2268,14 @@ function ui.field(spec)
     local from = math.max(1, self.caret - room + 1)
     local shown = self.text:sub(from, from + room - 1)
 
+    --
+    -- **`secret`: a password's field**, drawn as a star a character. What
+    -- is typed is held as ever and only the drawing hides it, and copy and
+    -- cut refuse below - a password shown in the clipboard is a password
+    -- shown (`servers.lua`'s VNC password is the first).
+    --
+    if self.secret then shown = ("*"):rep(#shown) end
+
     local ty = centred(self.h)
 
     if self.all and self.text ~= "" then
@@ -2377,7 +2385,7 @@ function ui.field(spec)
     end
 
     if kind == "copy" or kind == "cut" then
-      if self.text == "" then return false end
+      if self.text == "" or self.secret then return false end
       if not wmproto.copy(self.text) then return false end
 
       if kind == "cut" then

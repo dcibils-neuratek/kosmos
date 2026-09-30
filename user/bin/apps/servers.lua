@@ -25,8 +25,9 @@
 --
 -- **Its settings are `/Home/Preferences/servers`**, a table a server; the
 -- shell starts what is marked to start with the machine, at boot. The
--- screen by VNC is on the list and says it is not built, rather than being
--- left off a page that was drawn with it.
+-- screen is `vncd` (`roadmap.md` remote 7a), which reads its password from
+-- there at each connection; a viewer only looks until keys and the pointer
+-- are built (7b), so that row says so rather than offering a choice.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local theme = ui.theme
@@ -59,9 +60,11 @@ local SERVERS = {
     defaults = { port = 23, at_start = false },
     args = function(c) return tostring(c.port) end,
     reach = function(a, c) return ("telnet %s%s"):format(a, c.port == 23 and "" or (" " .. c.port)) end },
-  { id = "vnc", name = "Screen", icon = "display", program = nil,
-    what = "VNC", defaults = { port = 5900, at_start = false, view_only = true },
-    reach = function(a) return "vnc://" .. a end },
+  { id = "vnc", name = "Screen", icon = "display", program = "vncd",
+    what = "VNC", status = "/Temporary/vncd/status", log = "/Temporary/vncd/log",
+    defaults = { port = 5900, at_start = false, password = "" },
+    args = function(c) return tostring(c.port) end,
+    reach = function(a, c) return ("vnc://%s%s"):format(a, c.port == 5900 and "" or (":" .. c.port)) end },
 }
 
 local BY_ID = {}
@@ -269,6 +272,12 @@ local function state_of(s)
     return ("running · %d session%s"):format(n, n == 1 and "" or "s"), status
   end
 
+  if s.id == "vnc" then
+    local n = #(status.viewers or {})
+
+    return ("running · %d viewer%s"):format(n, n == 1 and "" or "s"), status
+  end
+
   return "running", status
 end
 
@@ -348,16 +357,56 @@ local function page_telnet(s)
   return groups
 end
 
+-- The screen's password: kept as typed, emptied as well - an empty one is
+-- the choice to have none - and eight characters at most, which is all
+-- VNC's own authentication reads.
+local function password_field(s)
+  local c = config(s)
+
+  return ui.field{ w = 120, text = tostring(c.password or ""), secret = true,
+                   hint = "none",
+                   on_change = function(_, text)
+                     c.password = text:sub(1, 8)
+                     keep()
+                   end }
+end
+
 local function page_vnc(s)
-  return {
+  local _, status = state_of(s)
+  local groups = {
     { name = "", rows = {
-        { label = "Not built yet",
-          note = "The screen by VNC is drawn (docs/servers.html) and comes next" } } },
-    { name = "As it will be", rows = {
-        { label = "Port", value = tostring(config(s).port) },
-        { label = "A viewer may", value = "Only look" },
-        { label = "Start with the machine", value = "Off" } } },
+        { label = "Running", note = state_of(s), control = run_switch(s) } } },
+    { name = "Set up", rows = {
+        { label = "Port", control = field(s, "port", 80, true) },
+        { label = "A viewer may", value = "Only look",
+          note = "Using the keyboard and the pointer comes next" },
+        { label = "Password",
+          note = "Eight characters at most; none lets this network look",
+          control = password_field(s) },
+        { label = "Start with the machine",
+          note = "Off: a screen shared by itself is easy to forget",
+          control = start_switch(s) } } },
   }
+
+  local viewers = {}
+
+  for _, who in ipairs(status.viewers or {}) do
+    local from = tostring(who.from)
+
+    viewers[#viewers + 1] = {
+      label = from,
+      note = ("%d bits a pixel, as it asked"):format(tonumber(who.bpp) or 32),
+      control = ui.button{ text = "Disconnect", on_click = function()
+        fs.send("/Running/vncd", { type = "disconnect", from = from })
+      end } }
+  end
+
+  if #viewers == 0 then
+    viewers[1] = { label = "Nobody", note = "A viewer is listed here, with a Disconnect" }
+  end
+
+  groups[#groups + 1] = { name = "Viewers", rows = viewers }
+  return groups
 end
 
 local PAGES = { all = page_all, web = page_web, telnet = page_telnet, vnc = page_vnc }

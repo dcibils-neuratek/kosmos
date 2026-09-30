@@ -764,13 +764,15 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/drivers/power/powerbutton.c \
              user/init/say.c \
              user/kits/network/net_kosmos.c \
-             user/kits/network/crypto.c \
+             user/kits/crypto/crypto.c \
+             user/kits/crypto/crypto_kosmos.c \
              user/init/lua_glue.c \
              user/init/sys_user.c \
              user/init/elfimage.c \
              user/kits/gfx/gfx.c \
              user/kits/gfx/shadow.c \
              user/kits/gfx/yuv.c \
+             user/kits/gfx/pack.c \
              user/kits/game/game.c \
              user/kits/game/gamesoft.c \
              user/kits/3d/k3d_mesh.c \
@@ -1639,6 +1641,17 @@ $(HOSTDIR)/test_i8042drain: tools/test_i8042drain.c hal/pc/i8042_drain.c hal/pc/
 	        tools/test_i8042drain.c hal/pc/i8042_drain.c
 
 #
+# **The Crypto Kit against its specifications' vectors** (`user/kits/crypto/`):
+# SHA-256, HMAC, ChaCha20, Poly1305, X25519 and DES. `crypto.c` said this
+# check existed from the day it arrived; it was written on 29 September,
+# with DES for VNC (`testing.md` 18.291).
+#
+$(HOSTDIR)/test_crypto: tools/test_crypto.c user/kits/crypto/crypto.c user/include/crypto.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include -o $@ \
+	        tools/test_crypto.c user/kits/crypto/crypto.c
+
+#
 # And what SMBIOS says the machine is called, for the same reason from the
 # other side: QEMU can be told to put a ThinkPad's name in its table, and
 # `run_x86.py` does, but it cannot be made to produce a *malformed* table -
@@ -1760,6 +1773,20 @@ $(HOSTDIR)/test_storagedecode: tools/test_storagedecode.c user/drivers/usb/stora
 # A camera's YUY2 into the screen's pixels (`roadmap.md` 6d): every Y, U
 # and V against BT.601 in floating point, and a frame straight and mirrored.
 #
+# **A surface in a viewer's pixel format** (`user/kits/gfx/pack.c`): eight
+# pixels at a time held to one at a time, natively for NEON and through
+# Rosetta for SSE2, with a frame timed both ways - VNC's packing (18.291).
+#
+$(HOSTDIR)/test_pack: tools/test_pack.c user/kits/gfx/pack.c user/kits/gfx/pack.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/gfx -o $@ \
+	        tools/test_pack.c user/kits/gfx/pack.c
+
+$(HOSTDIR)/test_pack_x86: tools/test_pack.c user/kits/gfx/pack.c user/kits/gfx/pack.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -arch x86_64 -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/gfx -o $@ \
+	        tools/test_pack.c user/kits/gfx/pack.c
+
 $(HOSTDIR)/test_yuv: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
@@ -3467,7 +3494,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3582,6 +3609,7 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache
 	$(HOSTDIR)/test_efiboot
 	$(HOSTDIR)/test_apicdecode
 	$(HOSTDIR)/test_i8042drain
+	$(HOSTDIR)/test_crypto
 	$(HOSTDIR)/test_snesblit
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv
@@ -3591,6 +3619,8 @@ host-check: $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache
 	$(HOSTDIR)/test_fbx
 	$(HOSTDIR)/test_trace
 	$(HOSTDIR)/test_yuv_x86
+	$(HOSTDIR)/test_pack
+	$(HOSTDIR)/test_pack_x86
 	@# Broken-down time, which FFmpeg's option parser and logger reach.
 	$(HOSTDIR)/test_time
 	@# And the H.264 Kit's decoder: eighteen conformance streams, every

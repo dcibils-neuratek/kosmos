@@ -81,7 +81,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - How Disk Benchmark should look, before it is built: `docs/diskbench.html`
 - How Music should look, after VOX, before it is built: `docs/music.html`
 - What Tracker's right click offers - Pin to sidebar, Compress, Info, Open with, File types - before it is built: `docs/rightclick.html`
-- The Servers app - Web, Command line by Telnet, Screen by VNC - as drawn and then built (the screen still to come): `docs/servers.html`
+- The Servers app - Web, Command line by Telnet, Screen by VNC - as drawn and then built (the screen looked at; keys and the pointer next): `docs/servers.html`
 - How Cafesa3D renders across several machines, before it is built: `docs/renderfarm.md`
 - Video in hardware on the M700 - what it takes, for Diego to decide: `docs/m700-gpu.md`
 - `diskfs` in C and speaking a declared shape, written before it is built: `docs/diskfs.md`
@@ -678,6 +678,10 @@ Reload used to be the other half of this, and is not any more - there is nothing
 
 The legitimate exception is pixel loops: never in Lua. Lua decides what gets drawn and where, the loop happens inside a surface, in C.
 
+**And in C, a loop over pixels, samples or bytes is written for the vector unit where it can be.** Diego, 29 September 2026: "Make sure we use simd vector arithmetic when possible in all you code". GCC's own vector types (`uint32_t __attribute__((vector_size(16 or 32)))`), one source the compiler turns into NEON and SSE2, as `gfx.c`'s blend and `pack.c` are written - with the scalar loop kept as the tail and as the reference a host test holds the vector one to, natively and through Rosetta (`tools/test_pack.c`, `tools/test_yuv.c`), and the speed measured on real cores, never under TCG. **The kernel is the exception and stays one**: `-mgeneral-regs-only` is what lazy FP save stands on (roadmap 6zv asks whether that still earns its place).
+
+**Encryption is C, all of it** - Diego, the same night: "shouldnt we write all encryption in c instead of lua?". It lives in the Crypto Kit (`user/kits/crypto/`, `/Kosmos/Kits/crypto`), every primitive held to its specification's vectors by `tools/test_crypto.c`, and a program in Lua is handed the operation and never the arithmetic. A cipher is a loop over bits, and the one kind of code whose mistakes are silent.
+
 **Those C libraries are kits**, and they are reached through the namespace: `use("/Kosmos/Kits/pdf")` gets a table the runtime built, exactly as `use("/Kosmos/Libraries/ui.lua")` gets one a Lua file returned. The caller writes the same line either way, because which language something is written in is not a fact its user should have to know - and a library whose hot loop later moves into C should not change a single call site.
 
 The name is BeOS's and so is the idea (Interface Kit, Storage Kit, Media Kit, Translation Kit). Reaching them through the namespace rather than as globals keeps the rule everything else obeys: **what you were not given, you do not have.** `kits` at the prompt lists them.
@@ -974,7 +978,7 @@ user/           everything at EL0:
                   net/ usb/ display/ power/
   kits/           C that runs inside your own process, one directory per
                   kit: gfx/ gl/ pdf/ compress/ game/ network/ console/
-                  mp3/ record/ 3d/ ffmpeg/ - an app's own engine C lives
+                  mp3/ record/ 3d/ ffmpeg/ crypto/ - an app's own engine C lives
                   with the app, in bin/apps/browser/ and installed/
   lib/            the same position, in Lua. All .lua and nothing else
   include/        the protocol headers both sides compile against

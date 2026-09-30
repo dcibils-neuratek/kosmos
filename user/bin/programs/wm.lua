@@ -2469,6 +2469,63 @@ local osd = use("/Kosmos/Libraries/wm/osd.lua"){
   reserved_top = function() return reserved_top end,
 }
 
+--------------------------------------------------------------------------
+-- The screen, for somebody watching it (`vncd`; `roadmap.md` remote 7a).
+--
+-- **Asked of this process, which owns every pixel, and never read from the
+-- framebuffer.** A watcher hands over a region the screen's size (`watch`);
+-- after each rectangle is composed it is copied there too, and the
+-- rectangle kept, and `watched` hands the list back and starts a new one.
+-- Control by message, data by shared memory: the pixels never travel, and
+-- what a message carries is where they changed.
+--
+-- One watcher, and nothing copied while there is none: a region not asked
+-- about for five seconds is let go, which is also what happens when the
+-- watcher dies. `vncd` watches again when a viewer comes.
+--------------------------------------------------------------------------
+
+local watcher = nil         -- { cap, surface, rects, asked }
+local WATCH_RECTS = 32
+local WATCH_LAPSE = 5 * COUNTER_HZ
+
+local function watch_add(x, y, w, h)
+  local list = watcher.rects
+
+  -- A list without end is a reply that does not fit a message; past its
+  -- length, one rectangle round everything.
+  if #list >= WATCH_RECTS then
+    local x0, y0, x1, y1 = x, y, x + w, y + h
+
+    for _, r in ipairs(list) do
+      x0, y0 = math.min(x0, r[1]), math.min(y0, r[2])
+      x1, y1 = math.max(x1, r[1] + r[3]), math.max(y1, r[2] + r[4])
+    end
+
+    watcher.rects = { { x0, y0, x1 - x0, y1 - y0 } }
+  else
+    list[#list + 1] = { x, y, w, h }
+  end
+end
+
+local function unwatch(why)
+  if not watcher then return end
+
+  -- The surface is a view of the region, not its owner; the release is
+  -- what unmaps it, and nothing may draw into it after.
+  watcher.surface = nil
+  sys.release(watcher.cap)
+  watcher = nil
+  print("wm: the screen is no longer watched (" .. why .. ")")
+end
+
+-- After a rectangle is composed: into the watcher's copy as well.
+local function mirror(r)
+  if not watcher then return end
+
+  watcher.surface:blit(back, r.x, r.y, r.w, r.h, r.x, r.y)
+  watch_add(r.x, r.y, r.w, r.h)
+end
+
 -- Compositing - `/Kosmos/Libraries/wm/compose.lua` (`roadmap.md` 6zn).
 --
 local compose = use("/Kosmos/Libraries/wm/compose.lua"){
@@ -2478,6 +2535,7 @@ local compose = use("/Kosmos/Libraries/wm/compose.lua"){
   PT = PT,
   back = back,
   damage = damage,
+  mirror = mirror,
   draw_cursor = draw_cursor,
   draw_desktop = draw_desktop,
   draw_window = draw_window,
@@ -2763,6 +2821,65 @@ local function raise(win)
 end
 
 local handlers = {}
+
+--
+-- `watch`: without a region, the size one must be; with one, the screen
+-- copied into it from now on - the whole of it at once, so the watcher
+-- starts from a complete picture. **The region is held to its size** before
+-- anything is wrapped over it: a region smaller than it says would have this
+-- process write past its mapping, and a fault here is every window's.
+--
+handlers.watch = function(req, who, cap)
+  local bytes = gfx.bytes(W, H)
+
+  if not cap or cap < 0 then
+    return { ok = true, w = W, h = H, bytes = bytes }
+  end
+
+  local function refuse(text)
+    sys.release(cap)
+    return { ok = false, error = text, w = W, h = H, bytes = bytes }
+  end
+
+  local pages = sys.memory_size(cap)
+
+  if not pages or pages * 4096 < bytes then
+    return refuse(("the screen is %dx%d, %d bytes, and that region holds %d")
+                  :format(W, H, bytes, (pages or 0) * 4096))
+  end
+
+  local at, why = sys.memory_map(cap)
+
+  if not at then return refuse("could not map it: " .. tostring(why)) end
+
+  unwatch("another asked")
+  watcher = { cap = cap, surface = gfx.wrap{ at = at, w = W, h = H },
+              rects = {}, asked = sys.ticks() }
+  watcher.surface:blit(back, 0, 0, W, H, 0, 0)
+  watch_add(0, 0, W, H)
+  print(("wm: the screen is watched, %dx%d"):format(W, H))
+
+  return { ok = true, w = W, h = H }
+end
+
+--
+-- `watched`: the rectangles since last asked, eight bytes each - x, y, w, h
+-- as big-endian sixteen-bit numbers - and a new list begun.
+--
+handlers.watched = function()
+  if not watcher then return { ok = false, error = "nothing is watched" } end
+
+  local parts = {}
+
+  for i, r in ipairs(watcher.rects) do
+    parts[i] = string.pack(">I2I2I2I2", r[1], r[2], r[3], r[4])
+  end
+
+  watcher.rects = {}
+  watcher.asked = sys.ticks()
+
+  return { ok = true, rects = table.concat(parts) }
+end
 
 --------------------------------------------------------------------------
 -- A window whose pixels the application draws itself.
@@ -6069,6 +6186,11 @@ while OUT.running do
 
   step("compose")
   osd.tick()
+
+  if watcher and sys.ticks() - watcher.asked > WATCH_LAPSE then
+    unwatch("not asked for five seconds")
+  end
+
   -- 6. The picture, cursor included.
   compose()
 

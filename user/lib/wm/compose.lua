@@ -11,6 +11,7 @@ return function(ctx)
     ctx.OUT, ctx.OUTLINE, ctx.P, ctx.PT
   local back, damage, draw_cursor, draw_desktop =
     ctx.back, ctx.damage, ctx.draw_cursor, ctx.draw_desktop
+  local mirror = ctx.mirror
   local draw_window, focused_colour, frame_of, menus =
     ctx.draw_window, ctx.focused_colour, ctx.frame_of, ctx.menus
   local osd, screen, subtract_into, tabs =
@@ -197,6 +198,10 @@ return function(ctx)
     -- And said: on virtio-gpu nothing drawn is shown until it is sent, and
     -- on ramfb this is a call that does nothing (`roadmap.md` 4h a).
     screen:flush(r.x, r.y, r.w, r.h)
+
+    -- And to whoever watches the screen (`vncd`): the same rectangle, the
+    -- same frame, cursor included.
+    mirror(r)
   end
 
   local function compose()

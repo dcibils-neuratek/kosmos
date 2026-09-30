@@ -55,11 +55,17 @@ end
 
 draw()
 
--- No blocking anywhere. The window manager queues events and hands them
--- over when asked; asking is a round trip and the answer is usually empty,
--- which is what the yield below is for.
+-- **Asking, and waiting for the answer.** The window manager holds a poll
+-- until an event comes or the wait runs out, so between keys this process
+-- is blocked rather than running. This asked with no wait and yielded, for
+-- ever - the spin `ui.lua`'s own loop was cured of long before - and on a
+-- machine with one processor the window manager spent its time answering
+-- it: a window opened after it never drew its first frame (`testing.md`
+-- 18.291). The wait is in scheduler ticks, a second of them.
+local second = (sys.info() or {}).tick_hz or 250
+
 while true do
-  local reply = wmproto.poll(handle, 0)
+  local reply = wmproto.poll(handle, second)
 
   if not reply then return end            -- the manager went away
 
@@ -67,6 +73,4 @@ while true do
     presses = presses + #reply.events
     draw()
   end
-
-  sys.yield()
 end
