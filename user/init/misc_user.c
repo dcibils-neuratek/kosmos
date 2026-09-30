@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "kosmos.h"
@@ -359,6 +360,30 @@ void *bsearch(const void *key, const void *base, size_t count, size_t size,
     }
 
     return NULL;
+}
+
+/*
+ * **Two more for NetSurf's layout** (`roadmap.md` 6zz j), which its box
+ * builder and its memory pool reach for.
+ *
+ * `bzero` is BSD's `memset(p, 0, n)` under the name 4.2BSD gave it, kept in
+ * `<strings.h>` as `strcasecmp` is.
+ *
+ * `atexit` says it could not: nothing runs when a Kosmos process ends,
+ * because a process ends when its main returns or it is killed, and
+ * neither calls anybody back. Refusing is the honest answer - saying yes
+ * would be a promise to call something that is never called. talloc asks
+ * only when its leak report is switched on, which it is not here.
+ */
+void bzero(void *p, size_t n)
+{
+    memset(p, 0, n);
+}
+
+int atexit(void (*fn)(void))
+{
+    (void)fn;
+    return -1;
 }
 
 /*

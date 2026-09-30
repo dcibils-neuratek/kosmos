@@ -2867,9 +2867,11 @@ processors, and still what follows USB:
       areas, selection). GPLv2, so the image carrying the browser is a
       GPLv2 work as a whole - bookkeeping, in `LICENSE`, as Doom's is. In
       steps, each with its test:
-      - j1. **Vendored and building**: the files byte for byte in
+      - j1. **BUILT 30 September (`testing.md` 18.310). Vendored and
+        building**: the files byte for byte in
         `runtime/upstream/netsurf/netsurf/`, what they stand on, and the
-        stand-ins - compiled into the web kit, nothing drawn by it yet.
+        stand-ins in `web_netsurf.c` - compiled into the web kit, nothing
+        drawn by it yet; its URL parser running, through `web.join`.
       - j2. **Text and plotting on `gfx`**: widths, splitting a line,
         drawing text, rectangles, clips and pictures.
       - j3. **A document through it**: the parsed page into a box tree,
@@ -2948,7 +2950,11 @@ processors, and still what follows USB:
    tenth. Four in two days is a gate that is red one run in two for a
    reason nobody has looked at, which costs a rerun every time; **to be
    looked at next after the browser's layout**, before it is taken for
-   normal.
+   normal. **A fifth**, in the gate for 6zz j1: 417 samples at 0.046 s, three
+   of three alone after. Not reproduced by loading this Mac's cores (10 and
+   30 busy loops, `x86-film` passed twice each), so host CPU alone is not
+   it; the next idea is `-icount`, which ties QEMU's audio timer to the
+   guest's instructions.
 
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need

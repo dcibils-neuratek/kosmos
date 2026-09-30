@@ -71,4 +71,20 @@
 #define PRIuPTR     "lu"
 #define PRIxPTR     "lx"
 
+/*
+ * And the ones `scanf` reads with, which arrived with NetSurf's option
+ * table (`roadmap.md` 6zz j): it reads a colour as `%x` into a `uint32_t`.
+ * `int` is thirty-two bits and `long` sixty-four here, as the rows above
+ * already say.
+ */
+#define SCNd32      "d"
+#define SCNi32      "i"
+#define SCNu32      "u"
+#define SCNx32      "x"
+
+#define SCNd64      "ld"
+#define SCNi64      "li"
+#define SCNu64      "lu"
+#define SCNx64      "lx"
+
 #endif /* INTTYPES_H */

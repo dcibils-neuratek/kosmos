@@ -241,3 +241,10 @@ double strtod(const char *s, char **end)
 
     return negative ? -value : value;
 }
+
+/* The same text to a `float`, which NetSurf's layout reads a table cell's
+ * relative width with (`roadmap.md` 6zz j). Rounded once, from the double. */
+float strtof(const char *s, char **end)
+{
+    return (float)strtod(s, end);
+}

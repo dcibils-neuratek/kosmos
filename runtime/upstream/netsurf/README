@@ -8,7 +8,9 @@ selection engine, a DOM, and the two pieces they both stand on. Vendored for
 the browser, and useful on their own.
 
 Every one of them is MIT, checked against the COPYING each tarball ships
-rather than against the website. The browser itself is GPLv2 and is NOT here.
+rather than against the website. The browser itself is GPLv2, and its layout
+engine is here too since 30 September 2026, in netsurf/, with its own
+README.kosmos.md saying which files and why.
 
     library          version   from download.netsurf-browser.org/libs/releases
     ---------------------------------------------------------------------

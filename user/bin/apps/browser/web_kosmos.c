@@ -34,6 +34,7 @@
 
 #include "web_select.h"
 #include "web_paint.h"
+#include "web_netsurf.h"
 
 #define DOC_HANDLE  "kosmos.dom"
 
@@ -797,6 +798,7 @@ void kosmos_web_kit(lua_State *L)
         { "parse",      l_parse },
         { "stylesheet", l_stylesheet },
         { "events",     l_events },
+        { "join",       web_netsurf_join },
         { NULL, NULL }
     };
 

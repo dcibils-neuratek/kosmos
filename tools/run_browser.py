@@ -51,6 +51,8 @@ mostly a camera, and a check that goes stale is worse than no check:
     try found appending to the old address - and the second page's blue
     heading has to appear.
   * **Back leaves it**, with the server asked for nothing.
+  * **NetSurf's own code runs** (`roadmap.md` 6zz j1): `web.join` resolves
+    three addresses through its URL parser.
   * **A class after a line break is a class**: the test page's second
     paragraph is maroon by a class that follows a newline in its attribute,
     which the cascade finds in the list libdom keeps on the element.
@@ -425,6 +427,32 @@ def main():
                           f"skipped none: made {events!r}")
 
         guest.wait_for(PROMPT, "the prompt again")
+
+        #
+        # **NetSurf's own code, running on the machine** (`roadmap.md` 6zz
+        # j1): its URL parser, compiled for Kosmos with the rest of its
+        # layout, reached through `web.join` - a Wikipedia link climbing out
+        # with `..` and keeping its fragment, a picture's scheme-relative
+        # address with `.` and `..` in its path, and a host in capitals,
+        # lowered as NetSurf normalises one.
+        #
+        mark = len(guest.seen)
+        guest.type('local w = sys.kit("web") print("JOIN" .. "ED " '
+                   '.. tostring(w.join("https://en.wikipedia.org/wiki/Dam", '
+                   '"../w/index.php?title=Dam&action=edit#top")) .. " " '
+                   '.. tostring(w.join("http://10.0.2.2:8000/a/b.html", '
+                   '"//thumb.wikimedia.org/x/./y/../z.png")) .. " " '
+                   '.. tostring(w.join("http://10.0.2.2:8000/", '
+                   '"HTTPS://WWW.Example.COM/A")))')
+        joined = guest.wait_for_line("JOINED ", "joined three addresses", since=mark)
+        want_joined = ("https://en.wikipedia.org/w/index.php?title=Dam&action=edit#top "
+                       "http://thumb.wikimedia.org/x/z.png https://www.example.com/A")
+
+        if joined.strip() != want_joined:
+            raise Failure(f"NetSurf's URL code joined wrongly: {joined!r}, "
+                          f"where {want_joined!r}")
+
+        guest.wait_for(PROMPT, "the prompt once more")
 
         guest.type(f"wm browser:10.0.2.2:{port}/{name}")
 

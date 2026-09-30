@@ -70,6 +70,10 @@ void   qsort(void *base, size_t count, size_t size,
 void  *bsearch(const void *key, const void *base, size_t count, size_t size,
                int (*compare)(const void *, const void *));
 
+/* Always refused: nothing is called when a Kosmos process ends
+ * (`user/init/misc_user.c`). */
+int    atexit(void (*fn)(void));
+
 /*
  * The standard pseudo-random pair.
  *
@@ -104,6 +108,7 @@ void   exit(int status) __attribute__((noreturn));
 
 /* Lua parses its own integers; strtod is what it uses for float literals. */
 double strtod(const char *s, char **end);
+float  strtof(const char *s, char **end);
 
 #define EXIT_SUCCESS    0
 #define EXIT_FAILURE    1

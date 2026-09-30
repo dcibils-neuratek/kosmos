@@ -28,5 +28,9 @@
 int strcasecmp(const char *a, const char *b);
 int strncasecmp(const char *a, const char *b, size_t n);
 
+/* `memset(p, 0, n)` by its 4.2BSD name, for NetSurf's layout. Userland only
+ * (`user/init/misc_user.c`). */
+void bzero(void *p, size_t n);
+
 
 #endif /* STRINGS_H */

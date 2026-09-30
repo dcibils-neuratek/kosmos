@@ -52,6 +52,7 @@ void   clearerr(FILE *f);
 int    fflush(FILE *f);
 int    getc(FILE *f);
 int    fgetc(FILE *f);
+char  *fgets(char *s, int size, FILE *f);
 int    ungetc(int c, FILE *f);
 
 /*

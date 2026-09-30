@@ -100,6 +100,14 @@ double ceil(double x)
     return t;
 }
 
+/* Through the double, which holds every float exactly - for NetSurf's
+ * layout, rounding a scaled length up to a whole pixel (`roadmap.md`
+ * 6zz j). */
+float ceilf(float x)
+{
+    return (float)ceil((double)x);
+}
+
 double frexp(double x, int *exponent)
 {
     dbits b;

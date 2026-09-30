@@ -381,8 +381,12 @@ from the Mac, from 2.1, and **0.9-1.0 s live** from Wikipedia (8.2 s this
 morning). Then Diego asked whether it renders the article correctly: it does
 not - twelve screens of menus and languages first (the external stylesheets
 are never fetched), pictures stacked, no infobox, `????` for other scripts, no
-SVG. **Agreed: NetSurf's own layout, vendored** (roadmap 6zz j, steps j1-j5),
-NetSurf 3.11 downloaded to `build/downloads/`; **j1 next**. The gate's audio
+SVG. **Agreed: NetSurf's own layout, vendored** (roadmap 6zz j, steps j1-j5).
+**j1 built** (18.310): 92 of NetSurf 3.11's files in
+`runtime/upstream/netsurf/netsurf/`, `web_netsurf.c` for what they call,
+building on both machines, `web.join` running its URL parser. **j2 next**:
+text measured and drawn in the right faces, rectangles, clips and pictures -
+the plotter table on `gfx`. The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
 next idea is `-icount`, which ties the guest's clock and QEMU's audio timer

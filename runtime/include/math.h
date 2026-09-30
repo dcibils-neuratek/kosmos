@@ -136,6 +136,7 @@ double fabs(double x);
 double trunc(double x);
 double floor(double x);
 double ceil(double x);
+float  ceilf(float x);
 double frexp(double x, int *exponent);
 double ldexp(double x, int exponent);
 

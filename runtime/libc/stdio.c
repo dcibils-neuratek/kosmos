@@ -215,6 +215,35 @@ int  getc(FILE *f)
 /* The same function as `getc`, which the standard allows to be a macro and
  * this is not; Quake's savegame loader spells it this way. */
 int  fgetc(FILE *f)          { return getc(f); }
+
+/*
+ * A line of a provided file, its newline kept, as the standard has it:
+ * at most `size - 1` bytes and a NUL, and NULL at the end of the file with
+ * nothing read. NetSurf's option table reads its file this way.
+ */
+char *fgets(char *s, int size, FILE *f)
+{
+    int n = 0, c;
+
+    if (s == NULL || size <= 0) {
+        return NULL;
+    }
+
+    while (n < size - 1 && (c = getc(f)) != EOF) {
+        s[n++] = (char)c;
+
+        if (c == '\n') {
+            break;
+        }
+    }
+
+    if (n == 0) {
+        return NULL;
+    }
+
+    s[n] = '\0';
+    return s;
+}
 int  ungetc(int c, FILE *f) { (void)c; (void)f; return EOF; }
 
 char *strerror(int errnum)

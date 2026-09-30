@@ -1043,7 +1043,38 @@ WEB_SRCS := $(filter-out $(addprefix $(NS)/,$(WEB_PATCHED)),$(WEB_SRCS)) \
 # Kosmos's own side of it, held to the ordinary flags rather than the
 # vendored ones - it is not vendored.
 WEB_SRCS += user/bin/apps/browser/web_kosmos.c user/bin/apps/browser/web_select.c user/bin/apps/browser/web_style.c \
-            user/bin/apps/browser/web_paint.c
+            user/bin/apps/browser/web_paint.c user/bin/apps/browser/web_netsurf.c
+
+#
+# **NetSurf's layout** (`roadmap.md` 6zz j): the box tree, layout, tables,
+# flex and the drawing of boxes, with the CSS selection and the utilities
+# they use - NetSurf 3.11's own files, as released, in
+# `runtime/upstream/netsurf/netsurf/` (its README says which and why).
+# What they call of the browser around them is `web_netsurf.c`.
+#
+# GPLv2, so an image carrying the browser is a GPLv2 work as a whole
+# (`LICENSE`); Kosmos's own sources stay MIT.
+#
+# Two build switches that are NetSurf's own: the filters its log reads
+# its level from, which `utils/nsoption.c` names in its option table.
+#
+NSB := $(NS)/netsurf
+WEB_NETSURF := \
+    content/handlers/html/box_construct.c content/handlers/html/box_inspect.c \
+    content/handlers/html/box_manipulate.c content/handlers/html/box_normalise.c \
+    content/handlers/html/box_special.c content/handlers/html/font.c \
+    content/handlers/html/layout.c content/handlers/html/layout_flex.c \
+    content/handlers/html/redraw.c content/handlers/html/redraw_border.c \
+    content/handlers/html/table.c \
+    content/handlers/css/select.c content/handlers/css/hints.c \
+    content/handlers/css/internal.c content/handlers/css/dump.c \
+    desktop/plot_style.c desktop/system_colour.c \
+    utils/corestrings.c utils/nsoption.c utils/talloc.c \
+    utils/nsurl/nsurl.c utils/nsurl/parse.c
+WEB_SRCS += $(addprefix $(NSB)/,$(WEB_NETSURF))
+WEB_NSB_CFLAGS := -I$(NSB) -I$(NSB)/include -I$(NSB)/content/handlers \
+                  '-DNETSURF_BUILTIN_LOG_FILTER="level:WARNING"' \
+                  '-DNETSURF_BUILTIN_VERBOSE_FILTER="level:VERBOSE"'
 
 # The property names, read out of the same file their own build reads.
 WEB_PROPS   := $(shell sed -n 's/^\([^\#][^:]*\):.*/\1/p' \
@@ -1197,7 +1228,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags-$(ARCH)
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) $(WEB_NSB_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1347,6 +1378,13 @@ $(UBUILD)/$(MUSL)/src/math/%.c.o: $(MUSL)/src/math/%.c $(UFLAGS_FILE)
 # The generated headers are order-only prerequisites: the sources include
 # them, and `make` cannot know that from the source alone.
 #
+# NetSurf's layout first, since Mac's make 3.81 takes the first pattern that
+# matches and the one below would give it a library's `src` instead.
+$(UBUILD)/runtime/upstream/netsurf/netsurf/%.c.o: runtime/upstream/netsurf/netsurf/%.c \
+                                                 $(UFLAGS_FILE) | $(WEB_GEN)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(WEB_CFLAGS) $(WEB_NSB_CFLAGS) -MMD -MP -c $< -o $@
+
 $(UBUILD)/runtime/upstream/netsurf/%.c.o: runtime/upstream/netsurf/%.c \
                                          $(UFLAGS_FILE) | $(WEB_GEN)
 	@mkdir -p $(dir $@)
@@ -1363,7 +1401,7 @@ $(UBUILD)/user/bin/apps/browser/web_%.c.o: user/bin/apps/browser/web_%.c $(UFLAG
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) \
 	      $(foreach l,$(WEB_LIBS),-Iruntime/upstream/netsurf/$(l)/include) \
-	      -I$(GEN)/netsurf -MMD -MP -c $< -o $@
+	      $(WEB_NSB_CFLAGS) -I$(GEN)/netsurf -MMD -MP -c $< -o $@
 
 # A patched file: upstream's, copied and patched (`WEB_PATCHED` above).
 $(GEN)/nspatched/%.c: $(NS)/%.c runtime/patches/netsurf/%.c.patch

@@ -14599,3 +14599,40 @@ links' blue do not. 1,893 with the patch. Control: the upstream element.c,
 0 - after a first control that "passed" because taking a file out of
 `WEB_PATCHED` relinked nothing (the old image is newer than every object in
 the shorter list); the userland image removed first, it failed as it should.
+
+## 18.310 NetSurf's layout, vendored and running (6zz j1)
+
+**`roadmap.md` 6zz j1.** Diego chose NetSurf's own layout engine for the
+browser (the decision is `README.md`'s row and 6zz j). Step one is the engine
+in the tree and building on both machines, and its code running there.
+
+NetSurf 3.11's layout proper - box construction, normalisation, layout,
+flex, tables and the drawing of boxes - is 16,500 lines; compiled on this Mac
+against its own headers and the libraries already here, it called 162 names
+from the rest of NetSurf. Some were NetSurf's own small files, vendored
+unchanged beside it: CSS selection and hints, interned names, `talloc`, the
+URL parser, the plot styles, the option table. The rest are
+`user/bin/apps/browser/web_netsurf.c`, Kosmos's own: the scheduler NetSurf
+builds its box tree through, measuring text on `gfx`, and stand-ins for what
+a browser without scripts or form editing does not do - scrollbars inside a
+page, text areas, selection, visited links. Three files were left out
+(`runtime/upstream/netsurf/netsurf/README.kosmos.md`): `utils.c`, mostly the
+POSIX stand-ins Kosmos has decided not to have; `idna.c`, which wants
+utf8proc; `utf8.c`, which nothing here reaches. The libc gained what the rest
+asked for and C99 has: `strtof`, `ceilf`, `fgets`, the `SCN` formats, BSD's
+`bzero`, and an `atexit` that refuses, since nothing is called when a Kosmos
+process ends. 92 files, 1.4 MB of source, 254 KB of image.
+
+**`arm-browser` and `x86-browser`**: `web.join` resolves three addresses
+through NetSurf's URL parser, on the machine - a Wikipedia link climbing out
+with `..` and keeping its fragment, a picture's scheme-relative address with
+`.` and `..`, a host in capitals. Control: the binding handing back the page
+rather than the join. Two controls that did not bite, and why, since what a
+check does not hold is worth knowing: the glue's host names not lowered
+(NetSurf lowers a host itself when it normalises a URL), and NetSurf's
+interned names never made (the URL parser does not use them; the layout
+will).
+
+**The gate for it**: 74 of 75 in 9:24, and `x86-film` the one again - 417
+samples of silence at 0.046 s - and three of three alone after on the same
+image: `roadmap.md` 6zw's fifth time.
