@@ -2862,10 +2862,16 @@ processors, and still what follows USB:
       it at its own size, which is the compositor's row blend, four pixels
       at a time. Wikipedia's band 12.6 ms to 8.5.
 
-      **Next in h**: the scroll's copy - `blit` is `memcpy` a row, and the
-      libc's `memcpy` is eight bytes at a time and its `memmove` one, shared
-      with the kernel, which may not use the vector unit. Then text, now
-      the largest kind on Wikipedia (2.1 ms of 8.5), measured again.
+      **And there h stops, by the same measurement.** A band's whole paint
+      is now 3 to 9 ms under QEMU - about a millisecond on real cores - and
+      the scroll's copy, `blit` a row through `memcpy`, is 2.7 ms a frame
+      under QEMU against a 16 ms frame. Vector copies in `string.c`, which
+      the kernel shares and may not, would have to meet the alignment ARM
+      asks of a framebuffer, for a gain no one would see. Recorded rather
+      than built: **the libc's `memmove` is a byte at a time** and its
+      `memcpy` eight, and the day a profile names them, `KOSMOS_USER` is
+      where userland's would differ from the kernel's. A page's time is now
+      fetching it and its pictures - which is k.
    i. **BUILT 30 September (`testing.md` 18.299). A progress bar while a
       page loads, in the status panel** - Diego,
       30 September, watching Wikipedia's Dam article sit on "waiting for
