@@ -3298,6 +3298,70 @@ local function scrollbar_drag(y)
 end
 
 --
+-- **A select's menu** (`roadmap.md` 6zz j6): the kit's, under the control,
+-- each option marked when it is chosen. A press on a `<select>` says so
+-- (`ns_click`), its options are asked for, and the one chosen goes back
+-- through NetSurf's own code, which writes it into the control and has it
+-- drawn again. Longer than the screen holds, its options are grouped into
+-- submenus that fit (`longmenu.lua`) - no list too long to choose from.
+--
+local longmenu = use("/Kosmos/Libraries/longmenu.lua")
+
+-- Every menu says where it opened, a submenu too - the kit opens those on
+-- its own, and the window manager moves one that would leave the screen -
+-- for whoever presses in one from outside (`tools/run_browser.py`).
+do
+  local push = win.push_menu
+
+  win.push_menu = function(self, x, y, items)
+    local m = push(self, x, y, items)
+
+    if m then
+      print(("browser: a menu at %d,%d, %d by %d, rows of %d"):format(m.x, m.y, m.w,
+            m.h, m.row))
+    end
+
+    return m
+  end
+end
+
+local function select_menu()
+  local s = current.doc and current.doc:ns_select()
+
+  if not s or #s.options == 0 then return end
+
+  local row = ui.theme.metrics.row
+  local screen = fs.read("/Devices/screen") or {}
+  local fit = math.max(4, (screen.height or 768) // row - 2)
+  local doc, items = current.doc, {}
+
+  for i, o in ipairs(s.options) do
+    items[i] = { text = o.text, mark = o.chosen, on_choose = function()
+      if current.doc ~= doc or not doc:ns_select_choose(i) then return end
+
+      -- What the control holds now, read back - not what was pressed.
+      local now, held = doc:ns_select(), {}
+
+      for _, h in ipairs(now and now.options or {}) do
+        if h.chosen then held[#held + 1] = h.text end
+      end
+
+      print(("browser: chose \"%s\", option %d of %d")
+            :format(table.concat(held, ", "), i, #s.options))
+      form_changed()
+      frame()
+    end }
+  end
+
+  local shown = longmenu.grouped(items, fit)
+
+  print(("browser: a select's menu, %d options in %d rows, %d to a menu")
+        :format(#items, #shown, fit))
+  win:open_menu((win.origin_x or 0) + VIEW_X + PAD + s.x,
+                (win.origin_y or 0) + VIEW_Y + s.y + s.h - current.top, shown)
+end
+
+--
 -- A click on the page, which may be a click on a link.
 --
 -- The layout kept its boxes, so this is a comparison rather than a search:
@@ -3316,6 +3380,8 @@ local function page_press(x, y)
     local did = current.doc:ns_click(x - VIEW_X - PAD, y - VIEW_Y + current.top)
 
     form_changed()
+
+    if did == "select" then select_menu() end
 
     if did then return end
   end

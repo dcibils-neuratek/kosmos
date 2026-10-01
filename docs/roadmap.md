@@ -3196,7 +3196,9 @@ processors, and still what follows USB:
         since January 2025.
 
         **Still to come**, in this order: a `<select>`'s menu (NetSurf
-        draws its own, `form_open_select_menu`, and wants a scrollbar);
+        draws its own, `form_open_select_menu`, and wants a scrollbar) -
+        **BUILT 1 October** (`testing.md` 18.333), the kit's menu, a long
+        list grouped into submenus that fit (`longmenu.lua`);
         controls CSS hides drawn as squares - Wikipedia's menu checkboxes;
         the desktop's clipboard rather than the browser's own; a caret that
         blinks; dragging to select a field's text; and a file chooser for

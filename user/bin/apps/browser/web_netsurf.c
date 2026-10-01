@@ -1332,6 +1332,11 @@ struct web_ns_doc {
     unsigned char      pending[4];  /* a character arriving byte by byte */
     int                have, need;
 
+    /* The select pressed, whose menu the browser shows, and where it is on
+     * the page - its box's border edges. */
+    struct form_control *select_open;
+    int                select_x, select_y, select_w, select_h;
+
     struct web_ns_costs costs;      /* what the last paint spent */
 };
 
@@ -2010,6 +2015,27 @@ const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y)
         did = "toggled";
         break;
 
+    /*
+     * **A select's menu is the browser's** (`roadmap.md` 6zz j6): the
+     * kit's, on the window, as NetSurf's GTK front end opens one of its own
+     * rather than the menu `form.c` draws into the page - which wants a
+     * scrollbar this browser does not have. So a press says where it is,
+     * the browser asks for its options (`web_ns_select`), and a choice
+     * comes back through NetSurf's own `form_select_process_selection`.
+     */
+    case GADGET_SELECT:
+        d->select_open = gadget;
+        d->select_x = gx - gadget_box->border[LEFT].width;
+        d->select_y = gy - gadget_box->border[TOP].width;
+        d->select_w = gadget_box->border[LEFT].width + gadget_box->padding[LEFT]
+                      + gadget_box->width + gadget_box->padding[RIGHT]
+                      + gadget_box->border[RIGHT].width;
+        d->select_h = gadget_box->border[TOP].width + gadget_box->padding[TOP]
+                      + gadget_box->height + gadget_box->padding[BOTTOM]
+                      + gadget_box->border[BOTTOM].width;
+        did = "select";
+        break;
+
     case GADGET_IMAGE:
         gadget->data.image.mx = x - gx;
         gadget->data.image.my = y - gy;
@@ -2031,6 +2057,70 @@ const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y)
     acting = NULL;
     faces_L = NULL;
     return did;
+}
+
+/*
+ * The select pressed last: a table of where it is on the page, whether it
+ * takes several, and its options in order, each its text and whether it is
+ * chosen - or nothing when no select was pressed.
+ */
+int web_ns_select(struct web_ns_doc *d, lua_State *L)
+{
+    struct form_control *s = d->select_open;
+    struct form_option *o;
+    lua_Integer n = 0;
+
+    if (s == NULL || s->type != GADGET_SELECT) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_createtable(L, 0, 6);
+    lua_pushinteger(L, d->select_x);
+    lua_setfield(L, -2, "x");
+    lua_pushinteger(L, d->select_y);
+    lua_setfield(L, -2, "y");
+    lua_pushinteger(L, d->select_w);
+    lua_setfield(L, -2, "w");
+    lua_pushinteger(L, d->select_h);
+    lua_setfield(L, -2, "h");
+    lua_pushboolean(L, s->data.select.multiple);
+    lua_setfield(L, -2, "multiple");
+
+    lua_createtable(L, (int)s->data.select.num_items, 0);
+
+    for (o = s->data.select.items; o != NULL; o = o->next) {
+        lua_createtable(L, 0, 2);
+        lua_pushstring(L, o->text != NULL ? o->text : "");
+        lua_setfield(L, -2, "text");
+        lua_pushboolean(L, o->selected);
+        lua_setfield(L, -2, "chosen");
+        lua_rawseti(L, -2, ++n);
+    }
+
+    lua_setfield(L, -2, "options");
+    return 1;
+}
+
+/* The `i`th option of the select pressed last chosen - or, in one that takes
+ * several, turned over. False when there is no such select or option. */
+bool web_ns_select_choose(struct web_ns_doc *d, lua_State *L, int i)
+{
+    struct form_control *s = d->select_open;
+    nserror e;
+
+    if (s == NULL || s->type != GADGET_SELECT || i < 1
+        || i > s->data.select.num_items) {
+        return false;
+    }
+
+    faces_L = L;
+    acting = d;
+    e = form_select_process_selection(s, i - 1);
+    acting = NULL;
+    faces_L = NULL;
+
+    return e == NSERROR_OK;
 }
 
 /* A form sent, taken: its address, and its body and type when POSTed. */

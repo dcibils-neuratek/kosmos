@@ -15819,3 +15819,47 @@ Escape never stopped the load.
 
 **Run as the new rule has it**: the full gate, 80 suites in 9:46 - the kit, the key decoder,
 the window manager and `http.lua` are every application's.
+
+## 18.333 A select's menu (6zz j6, the plan's item 3)
+
+**What it fixes**: a press on a `<select>` did nothing - NetSurf draws a
+menu of its own into the page (`form_open_select_menu`) and wants a
+scrollbar this browser does not have, so the stand-in said nothing and the
+control kept its first option.
+
+**The kit's menu instead**, as NetSurf's GTK front end opens one of its
+own: a press on a select says so (`ns_click` answers "select", where it is
+on the page kept), the browser asks for its options (`doc:ns_select()`),
+and opens the kit's menu under the control, each option marked when it is
+chosen. A choice goes back through NetSurf's own
+`form_select_process_selection` (`doc:ns_select_choose(i)`), which writes it
+into the control and has its box drawn again; the browser reads the control
+back to say what it holds.
+
+**A list longer than the screen** - a country picker - would run off the
+bottom of a menu, which is as tall as its items, and what is past the edge
+cannot be chosen. `user/lib/longmenu.lua` groups options into submenus of as
+many as fit the screen, each named by its first and last, grouped again
+while there are more groups than fit: no list too long, the shallowest
+nesting, and nothing of the kit's menus changed - a submenu is what they
+already have. `tools/test_longmenu.lua`, 11 checks: three that fit left as
+they are; 120 at 48 in three groups, named by their ends; 3,000 at 40 three
+deep, no menu taller than 40, every option reached once and in order; a
+long name cut at a character. Its control - groups one item too long - failed
+six of them.
+
+**In the guest** (`run_browser.py --part 1`): a page of its own, a select of
+three machines, one of 120 options and a Send button, each a colour to be
+found by. The machines' menu opens with three rows and its third chooses
+QEMU; the long one's menu is four groups of up to 31 on this screen, the
+last group pressed opens its submenu - which the window manager moves up to
+stay on the screen, so every menu now says where it opened - and its last
+row chooses Option 120. Send: the server is asked for
+`/chosen.html?machine=QEMU&n=Option+120`. **The control bit**: the option's
+index handed to NetSurf one off - the control held nothing, and the first
+choice said so. (A slide - pressed on a group, let go on an option - did
+not choose: the release goes to the menu the press began in. Two presses
+do; recorded for the kit's menus.)
+
+**Run as the new rule has it**: the browser's four halves and the host
+suite - the browser and a library only it uses.

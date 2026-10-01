@@ -3857,6 +3857,9 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# And its settings: read back as written, false included, and what is
 	@# not one of the choices the default (6zz d5).
 	$(HOSTDIR)/lua tools/test_browserprefs.lua
+	@# A menu longer than the screen grouped into submenus that fit, every
+	@# item reached once and in order (a select's options, 6zz j6).
+	$(HOSTDIR)/lua tools/test_longmenu.lua
 	@# The IDE's editor: the text it edits, every edit undoable, and Lua
 	@# coloured a line at a time with what carries across lines (6n, step 1).
 	$(HOSTDIR)/lua tools/test_textbuf.lua

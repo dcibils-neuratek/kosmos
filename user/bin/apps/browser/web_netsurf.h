@@ -73,6 +73,8 @@ void        web_ns_close(struct web_ns_doc *d, lua_State *L);
  */
 const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y);
 bool        web_ns_key(struct web_ns_doc *d, lua_State *L, int key);
+int         web_ns_select(struct web_ns_doc *d, lua_State *L);
+bool        web_ns_select_choose(struct web_ns_doc *d, lua_State *L, int i);
 bool        web_ns_focused(struct web_ns_doc *d);
 void        web_ns_blur(struct web_ns_doc *d, lua_State *L);
 bool        web_ns_sent(struct web_ns_doc *d, char **url, char **body,

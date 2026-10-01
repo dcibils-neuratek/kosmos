@@ -1044,6 +1044,31 @@ static int l_ns_click(lua_State *L)
     return 1;
 }
 
+/* `doc:ns_select()` -> the select pressed last: where it is on the page,
+ * `multiple`, and `options`, each `{ text, chosen }` - or nil. */
+static int l_ns_select(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+
+    if (d->ns == NULL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    return web_ns_select(d->ns, L);
+}
+
+/* `doc:ns_select_choose(i)` -> whether its `i`th option was chosen. */
+static int l_ns_select_choose(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+
+    lua_pushboolean(L, d->ns != NULL
+                       && web_ns_select_choose(d->ns, L,
+                                               (int)luaL_checkinteger(L, 2)));
+    return 1;
+}
+
 /* `doc:ns_key(key)` -> whether the field with the caret took it; the key is
  * the kit's number for it (`keys.lua`). */
 static int l_ns_key(lua_State *L)
@@ -1466,6 +1491,8 @@ void kosmos_web_kit(lua_State *L)
         { "ns_picture", l_ns_picture },
         { "charset", l_charset },
         { "ns_click", l_ns_click },
+        { "ns_select", l_ns_select },
+        { "ns_select_choose", l_ns_select_choose },
         { "ns_key", l_ns_key },
         { "ns_focused", l_ns_focused },
         { "ns_blur", l_ns_blur },

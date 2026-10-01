@@ -152,6 +152,22 @@ def _arrives_page():
 
 ARRIVES_PAGE = _arrives_page()
 
+# Two selects and a button (`roadmap.md` 6zz j6), each a colour of its own
+# to be found by: three machines, and a hundred and twenty options - more
+# than any screen's menu holds, so they come grouped into submenus.
+SELECT_PAGE = ("<!doctype html><html><head><title>Choose</title><style>"
+               "#machine { background: #2b6f9e; color: #ffffff; }"
+               "#long { background: #9e2b6f; color: #ffffff; }"
+               "#send { background: #6f9e2b; color: #ffffff; }"
+               "</style></head><body><form action=\"chosen.html\" method=\"get\">"
+               "<p><select id=\"machine\" name=\"machine\"><option>M700</option>"
+               "<option>ThinkPad T14</option><option>QEMU</option></select></p>"
+               "<p><select id=\"long\" name=\"n\">"
+               + "".join("<option>Option %d</option>" % i for i in range(1, 121))
+               + "</select></p><p><input id=\"send\" type=\"submit\" value=\"Send\">"
+               "</p></form></body></html>")
+MACHINE, LONG, SEND = (43, 111, 158), (158, 43, 111), (111, 158, 43)
+
 # A page that takes thirty seconds to come (`roadmap.md` 6zz l3), and is
 # never meant to be shown: Escape stops it first.
 SLOW_PAGE = ("<!doctype html><html><head><title>Slow</title></head><body>"
@@ -279,6 +295,14 @@ def serve(directory, asked, tls=None):
             # The test page's first form, sent: what it asked for, said back.
             if self.path.startswith("/found.html?"):
                 self.answer("asked for " + self.path)
+                return
+
+            if self.path.startswith("/chosen.html?"):
+                self.answer("chose " + self.path)
+                return
+
+            if self.path == "/select.html":
+                self.answer_page(SELECT_PAGE)
                 return
 
             # The cache (`roadmap.md` 6zz k): a page asked about every time
@@ -1566,6 +1590,101 @@ def main():
             print(f"loading: the page on screen scrolled while another came "
                   f"({moved_loading} rows), Escape stopped it and let it go, Reload "
                   f"loaded the one on screen", flush=True)
+
+            #
+            # **A select's menu** (`roadmap.md` 6zz j6): pressed, the kit's menu
+            # opens under it with its options, and the third pressed is chosen.
+            # The long one, a hundred and twenty: its menu is groups that fit
+            # the screen, and the last option is reached by pressing the last
+            # group - its submenu opens beside it - and then the option in it.
+            # Send: the server is asked for both.
+            # Where each menu opened is what the browser says, since the window
+            # manager moves one that would leave the screen.
+            #
+            go_to("select.html", "the page of selects")
+            time.sleep(1.0)
+
+            def menu_at(since):
+                m = re.search(r"browser: a menu at (-?\d+),(-?\d+), (\d+) by (\d+), "
+                              r"rows of (\d+)", guest.seen[since:])
+                return tuple(int(v) for v in m.groups()) if m else None
+
+            def opened(since, what):
+                guest.wait_for_line("browser: a menu at ", what, since=since)
+                time.sleep(0.3)
+                return menu_at(since)
+
+            def chose(since, what):
+                return guest.wait_for_line("browser: chose ", what, since=since)
+
+            machine = box_of(MACHINE)
+
+            if machine is None:
+                raise Failure(f"the select of machines, #2b6f9e, is not on the "
+                              f"screen. Wrote {args.out}.")
+
+            mark = len(guest.seen)
+            press((machine[0] + machine[2]) // 2, (machine[1] + machine[3]) // 2)
+            said = guest.wait_for_line("browser: a select's menu, ", "the machines' menu",
+                                       since=mark)
+            mx, my, mw, mh, row = opened(mark, "the machines' menu opening")
+
+            if not said.startswith("3 options in 3 rows"):
+                raise Failure(f"the machines' menu was not its three options: {said!r}")
+
+            mark = len(guest.seen)
+            press(mx + 20, my + 2 + 2 * row + row // 2)
+            picked = chose(mark, "QEMU chosen from the menu")
+
+            if not picked.startswith('"QEMU", option 3 of 3'):
+                raise Failure(f"the third row of the machines' menu chose {picked!r}")
+
+            long_box = box_of(LONG)
+
+            if long_box is None:
+                raise Failure(f"the long select, #9e2b6f, is not on the screen. "
+                              f"Wrote {args.out}.")
+
+            mark = len(guest.seen)
+            press((long_box[0] + long_box[2]) // 2, (long_box[1] + long_box[3]) // 2)
+            said = guest.wait_for_line("browser: a select's menu, ", "the long menu",
+                                       since=mark)
+            grouped = re.match(r"120 options in (\d+) rows, (\d+) to a menu", said)
+
+            if grouped is None or int(grouped.group(1)) < 2:
+                raise Failure(f"a hundred and twenty options were not grouped into "
+                              f"submenus that fit: {said!r}")
+
+            groups, fit = int(grouped.group(1)), int(grouped.group(2))
+            mx, my, mw, mh, row = opened(mark, "the long menu opening")
+            last = 120 - (groups - 1) * fit
+            mark = len(guest.seen)
+            press(mx + 20, my + 2 + (groups - 1) * row + row // 2)
+            sx, sy, sw, sh, srow = opened(mark, "the last group's submenu")
+            press(sx + 20, sy + 2 + (last - 1) * srow + srow // 2)
+            picked = chose(mark, "the hundred and twentieth chosen from its group")
+
+            # NetSurf keeps an option's spaces as no-break spaces, as it draws
+            # them; the words are what is compared.
+            if not picked.replace("\xa0", " ").startswith('"Option 120", option 120 of 120'):
+                raise Failure(f"the last option of the last group chose {picked!r}")
+
+            time.sleep(1.0)
+            send = box_of(SEND)
+
+            if send is None:
+                raise Failure(f"the Send button, #6f9e2b, is not on the screen. "
+                              f"Wrote {args.out}.")
+
+            press((send[0] + send[2]) // 2, (send[1] + send[3]) // 2)
+            sent = asked_for(lambda p_: p_.startswith("/chosen.html?"))
+
+            if sent != "/chosen.html?machine=QEMU&n=Option+120":
+                raise Failure(f"the form did not send what was chosen: the server "
+                              f"was asked for {sent!r}")
+
+            print(f"select: QEMU from three, Option 120 from {groups} groups of up to "
+                  f"{fit}, sent as {sent}", flush=True)
 
             #
             # **The cache, in the browser** (`roadmap.md` 6zz k): a page sent

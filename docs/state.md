@@ -470,9 +470,11 @@ NetSurf document freeing through a kept `lua_State` (a crash, now through
 the closing state), Escape held by both the kit's decoder and the window
 manager until the next key (both flush at the end of what was read), and the
 net server saying a window again only on a message (a stepped wait is a
-wait of a tick). **Item 2 is done.** Next, item 3: select menus in forms,
-favorites dragged on the bar, a serif face, other scripts' glyphs,
-`@import`.
+wait of a tick). **Item 2 is done.** Item 3: **select menus built**
+(18.333) - the kit's menu under the control, a choice through NetSurf's own
+code, a list longer than the screen grouped into submenus that fit
+(`longmenu.lua`). Next in item 3: favorites dragged on the bar, a serif
+face, other scripts' glyphs, `@import`.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
