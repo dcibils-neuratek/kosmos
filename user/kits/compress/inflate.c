@@ -333,6 +333,74 @@ static int l_gunzip(lua_State *L)
 }
 
 /*
+ * `compress.gunzip_stream([most]) -> g`, the same read as the bytes arrive
+ * (`roadmap.md` 6zz l1), for a page handed to the parser while it comes.
+ *
+ *   g:feed(bytes) -> text, or nil and why once it has failed
+ *   g:finish()    -> true, or false and why: what `gunzip` would have said
+ *
+ * `text` is what these bytes inflated to - often nothing, when a piece
+ * ends inside a header or a block - and `most` the ceiling on all of it
+ * together, as `gunzip`'s is. The state and the 32 KB window live in the
+ * userdata, so nothing is allocated past it and nothing needs freeing.
+ */
+#define GUNZIP_STREAM "kosmos.gunzip_stream"
+
+struct gunzip_lua {
+    struct gunzip_stream s;
+    size_t               most;
+};
+
+static int l_gunzip_stream(lua_State *L)
+{
+    lua_Integer most = luaL_optinteger(L, 1, 0);
+    struct gunzip_lua *g = lua_newuserdatauv(L, sizeof(*g), 0);
+
+    kosmos_gunzip_begin(&g->s);
+    g->most = most > 0 ? (size_t)most : 0;
+    luaL_setmetatable(L, GUNZIP_STREAM);
+
+    return 1;
+}
+
+static int l_gunzip_feed(lua_State *L)
+{
+    struct gunzip_lua *g = luaL_checkudata(L, 1, GUNZIP_STREAM);
+    size_t len = 0;
+    const uint8_t *src = (const uint8_t *)luaL_checklstring(L, 2, &len);
+    luaL_Buffer b;
+    struct gunzip_into into = { &b, g->most, g->s.out };
+    int result;
+
+    luaL_buffinit(L, &b);
+    result = kosmos_gunzip_feed(&g->s, src, len, put_into, &into);
+    luaL_pushresult(&b);
+
+    if (result == GUNZIP_WHOLE) {
+        return 1;
+    }
+
+    lua_pushnil(L);
+    lua_pushstring(L, kosmos_gunzip_said(result));
+    return 2;
+}
+
+static int l_gunzip_finish(lua_State *L)
+{
+    struct gunzip_lua *g = luaL_checkudata(L, 1, GUNZIP_STREAM);
+    int result = kosmos_gunzip_end(&g->s);
+
+    lua_pushboolean(L, result == GUNZIP_WHOLE);
+
+    if (result == GUNZIP_WHOLE) {
+        return 1;
+    }
+
+    lua_pushstring(L, kosmos_gunzip_said(result));
+    return 2;
+}
+
+/*
  * The compression kit: `use("/Kosmos/Kits/compress")`.
  *
  * It was in `sys` for an evening, next to `pack` and `fnv1a`, and it did not
@@ -367,4 +435,21 @@ void kosmos_compress_kit(lua_State *L)
 
     lua_pushcfunction(L, l_gunzip);
     lua_setfield(L, -2, "gunzip");
+
+    if (luaL_newmetatable(L, GUNZIP_STREAM)) {
+        static const luaL_Reg stream[] = {
+            { "feed",   l_gunzip_feed },
+            { "finish", l_gunzip_finish },
+            { NULL, NULL }
+        };
+
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -2, "__index");
+        luaL_setfuncs(L, stream, 0);
+    }
+
+    lua_pop(L, 1);
+
+    lua_pushcfunction(L, l_gunzip_stream);
+    lua_setfield(L, -2, "gunzip_stream");
 }

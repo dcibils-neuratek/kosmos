@@ -455,9 +455,13 @@ instructions under `-icount`, the cascade 14%, parse 5% (and parse 7%
 slower in TCG's wall time, recorded). Left, and why: the kernel's clearing
 of a process's new pages (`sys_map`, `grow` 3-4% of the browser) - on real
 cores it is bound by memory bandwidth, and what `DC ZVA` would win is TCG's.
-**Next in item 2, 6zz l, the page read as it arrives**: l1 a load the
-window lives through, l2 the parser fed as the bytes come, l3 the rest of
-the pictures while the page is read.
+**Item 2's last, 6zz l, the page read as it arrives**: **l1 built**
+(18.330) - `http.get`'s `on_body`, the Compression Kit's `gunzip_stream`,
+`web.parser` (which `web.parse` is now built on), and the Dam article's
+parse inside its fetch, 0.1 ms left after the last byte. Next l2, the rest
+of the pictures while the page is read - its `http.lua` half drafted: quiet
+counted in time, and `get_many` stepped by whoever passes it `opts.pause` -
+then l3, a load the window lives through.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

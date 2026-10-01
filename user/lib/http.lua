@@ -329,9 +329,10 @@ end
 --
 -- `state` is "done" at the last chunk's end and "bad" at anything that is
 -- not a chunk; `extra` says bytes came after the end, which a connection
--- that is to be used again must not have.
+-- that is to be used again must not have. `emit`, when there is one, is
+-- handed each piece of the body as it is sliced out (`roadmap.md` 6zz l1).
 --
-local function dechunk()
+local function dechunk(emit)
   local d = { got = 0, state = "size", extra = false }
   local out, line, need = {}, "", 0
 
@@ -342,8 +343,12 @@ local function dechunk()
       if d.state == "data" then
         local take = math.min(need, n - i + 1)
 
-        out[#out + 1] = s:sub(i, i + take - 1)
+        local piece = s:sub(i, i + take - 1)
+
+        out[#out + 1] = piece
         d.got, need, i = d.got + take, need - take, i + take
+
+        if emit then emit(piece) end
 
         if need == 0 then d.state = "gap" end
       else
@@ -434,6 +439,11 @@ end
 --   opts.headers     more fields for the request, by name
 --   opts.cache       a cache (`httpcache.lua`) to answer from and keep in;
 --                    `opts.revalidate` asks the server even when it is fresh
+--   opts.on_body     called with the head when it arrives; may return a
+--                    function, which is handed the body as it comes - its
+--                    chunks undone and inflated when it came gzipped, never
+--                    past the length the head gave. `how.streamed` says it
+--                    was handed exactly the body returned (6zz l1)
 --
 
 --
@@ -559,6 +569,56 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   local idle, reason, ended = 0, nil, false
 
   --
+  -- **The body handed on as it comes** (`roadmap.md` 6zz l1), to whoever
+  -- asked with `opts.on_body` - a browser feeding its parser while the rest
+  -- arrives. The same bytes this returns, and only those: never past the
+  -- head's length, its chunks undone, and inflated as a stream when it came
+  -- gzipped, the pieces kept so the whole need not be inflated again.
+  -- `handed` stays true only while that holds; anything that would make
+  -- the body returned differ from what was handed on clears it, and the
+  -- caller then reads the body returned instead.
+  --
+  local sink, inflating, inflated, handed = nil, nil, {}, false
+  local sent_on = 0
+
+  local function hand_on(piece)
+    if not handed or piece == "" then return end
+
+    if inflating then
+      local text, why = inflating:feed(piece)
+
+      if not text then
+        handed = false
+        how.stream_said = why
+        return
+      end
+
+      if text == "" then return end
+
+      inflated[#inflated + 1] = text
+      piece = text
+    end
+
+    sink(piece)
+  end
+
+  local function begin_handing()
+    sink = opts.on_body and opts.on_body(head) or nil
+
+    if not sink then return end
+
+    handed = true
+
+    local coding = head:lower():match("\r\ncontent%-encoding:%s*([^\r\n]*)")
+
+    if coding and coding:find("gzip", 1, true) then
+      local room = ((sys.info() or {}).pages_free or 16384) * 4096 // 2
+
+      inflating = use("/Kosmos/Kits/compress").gunzip_stream(room)
+    end
+  end
+
+  --
   -- **How much, of how much**, for a progress bar (`roadmap.md` 6zz i) and
   -- for the check below. Told every 32 KB rather than every read, so a page
   -- of ten megabytes is a few hundred repaints and not thousands.
@@ -584,7 +644,9 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
         rule, want, again = framing(head)
         text, pre = pre:sub(e + 4), nil
 
-        if rule == "chunked" then chunks = dechunk() end
+        begin_handing()
+
+        if rule == "chunked" then chunks = dechunk(sink and hand_on) end
       end
     end
 
@@ -594,6 +656,17 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
     elseif text ~= "" then
       body[#body + 1] = text
       got = got + #text
+
+      -- Never past the length the head gave: the body returned is cut
+      -- there, so what is handed on is too.
+      if sink then
+        local piece = text
+
+        if want then piece = text:sub(1, math.max(0, want - sent_on)) end
+
+        sent_on = sent_on + #piece
+        hand_on(piece)
+      end
     end
 
     if progress and got - told >= 32768 then
@@ -698,23 +771,44 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   -- Only a body there is: a 304 says the encoding of the one it stands for
   -- and brings none, and nothing inflated is not a stream cut short - which
   -- is what a page from the cache said, until it was told apart (6zz k).
-  if coding and coding:find("gzip", 1, true) and #text > 0 then
+  --
+  -- Already inflated, as it came, when it was handed on and the stream
+  -- came out whole: the pieces are the body, and inflating the whole of it
+  -- again would be the same work twice. Anything else - a stream that
+  -- stopped short or did not check out - is inflated here as it always was,
+  -- so what is returned does not depend on whether anybody was handed it.
+  --
+  local streamed_whole = false
+
+  if inflating and handed and #text > 0 then
+    if inflating:finish() then
+      how.gzip = #text
+      text = table.concat(inflated)
+      streamed_whole = true
+    else
+      handed = false
+    end
+  end
+
+  if not streamed_whole and coding and coding:find("gzip", 1, true) and #text > 0 then
     local compress = use("/Kosmos/Kits/compress")
     local room = ((sys.info() or {}).pages_free or 16384) * 4096 // 2
-    local inflated, why = compress.gunzip(text, room)
+    local inflated_now, why = compress.gunzip(text, room)
 
-    if inflated then
+    if inflated_now then
       how.gzip = #text
-      text = inflated
+      text = inflated_now
 
       if why then
-        how.short = how.short or { got = #inflated }
+        how.short = how.short or { got = #inflated_now }
         reason = reason or why
       end
     else
       reason = reason or why
     end
   end
+
+  how.streamed = sink ~= nil and handed or nil
 
   if key and again and whole() and not ended and not over and not how.short then
     keep(key, conn, stream)

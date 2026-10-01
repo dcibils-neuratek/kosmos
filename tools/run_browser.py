@@ -79,6 +79,7 @@ Usage: run_browser.py <image> --out <file.png> [--page <file.html>]
 """
 
 import argparse
+import gzip
 import html
 import http.server
 import os
@@ -126,6 +127,29 @@ LINKED_GREEN = (63, 160, 106)
 # A page whose server says ISO-8859-1 and whose <meta> says UTF-8, with a
 # title and a field's value outside ASCII - Google's Spanish page, in small
 # (`roadmap.md` 6zz j7). The header is right about the bytes, and wins.
+# A page that arrives as the web's do (`roadmap.md` 6zz l1): gzipped, in
+# chunks with a pause between them - and with no charset in its header and
+# its <meta charset> past the first kilobyte, behind words that do not
+# compress to nothing, so the parser fed as it comes has begun on a guess and
+# must start again in UTF-8 from what it kept. Read any other way, its title
+# is not "Señal ñandú".
+def _arrives_page():
+    seed, words = 7, []
+
+    for _ in range(600):
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        words.append("".join(chr(97 + (seed >> s) % 26) for s in (3, 8, 13, 18, 23)))
+
+    return ("<!doctype html><html><head><!-- " + " ".join(words) + " -->"
+            "<meta charset=\"utf-8\"><title>Se\u00f1al \u00f1and\u00fa</title></head>"
+            "<body><h1>Se\u00f1al</h1>"
+            + "".join("<p>Paragraph %d of a page that arrives in pieces.</p>" % i
+                      for i in range(400))
+            + "</body></html>")
+
+
+ARRIVES_PAGE = _arrives_page()
+
 LATIN1_PAGE = (
     "<!doctype html><html><head><meta charset=\"utf-8\">"
     "<title>B\u00fasqueda</title>"
@@ -293,6 +317,25 @@ def serve(directory, asked, tls=None):
             if self.path in ("/refresh.html", "/later.html"):
                 self.answer_page(REFRESH_PAGE if self.path == "/refresh.html"
                                  else LATER_PAGE)
+                return
+
+            # Gzipped, chunked, a pause between the pieces (6zz l1): written
+            # by hand, since this server speaks HTTP/1.0 and a chunk is 1.1's.
+            if self.path == "/arrives.html":
+                body = gzip.compress(ARRIVES_PAGE.encode("utf-8"))
+                self.close_connection = True
+                self.wfile.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
+                                 b"Content-Encoding: gzip\r\n"
+                                 b"Transfer-Encoding: chunked\r\n"
+                                 b"Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
+
+                for at in range(0, len(body), 384):
+                    piece = body[at:at + 384]
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(piece), piece))
+                    self.wfile.flush()
+                    time.sleep(0.15)
+
+                self.wfile.write(b"0\r\n\r\n")
                 return
 
             # A page in ISO-8859-1 by its header and UTF-8 by its <meta>, as
@@ -1375,6 +1418,42 @@ def main():
                   flush=True)
 
             #
+            # **A page parsed as it comes** (`roadmap.md` 6zz l1): gzipped and
+            # chunked, its pieces a sixth of a second apart, so the parser is
+            # handed it a piece at a time while the rest is on its way - in as
+            # many pieces as it came in, inflated as a stream - and its
+            # <meta charset>, past the first kilobyte, makes it start again in
+            # UTF-8 from the bytes it kept. Its title is "Señal ñandú" only if
+            # all of that held.
+            #
+            mark = len(guest.seen)
+            typed("\x0c")
+            time.sleep(0.4)
+            typed("http://10.0.2.2:%d/arrives.html\n" % port)
+            shown = guest.wait_for_line("browser: showing http://10.0.2.2:%d/arrives.html"
+                                        % port, "the page that arrives in pieces",
+                                        since=mark)
+            fed = re.search(r"browser: parsed as it came - (\d+) pieces",
+                            guest.seen[mark:])
+
+            if '"Se\u00f1al \u00f1and\u00fa"' not in shown:
+                raise Failure(
+                    "a page that arrived gzipped and in pieces, its <meta charset> "
+                    f"past the first kilobyte, was not read in UTF-8: {shown!r}, "
+                    "where its title is \"Se\u00f1al \u00f1and\u00fa\". "
+                    f"Wrote {args.out}.")
+
+            if fed is None or int(fed.group(1)) < 4:
+                raise Failure(
+                    "a page that arrived in pieces a sixth of a second apart was "
+                    "not parsed as it came: "
+                    + (f"{fed.group(0)!r}" if fed else "no 'parsed as it came' said")
+                    + f". Wrote {args.out}.")
+
+            print(f"arrives: read in UTF-8 after its <meta>, {fed.group(0)[9:]}",
+                  flush=True)
+
+            #
             # **The cache, in the browser** (`roadmap.md` 6zz k): a page sent
             # with its ETag and `no-cache`, its picture with ten minutes. Gone
             # to, left, and gone to again: the second time the server is asked
@@ -1638,12 +1717,22 @@ def main():
             # server said. Shown whole, 40,000 pixels and more, in a minute.
             #
             began = time.monotonic()
+            mark = len(guest.seen)
             line = showing(dam, "Wikipedia's Dam article")
             took = time.monotonic() - began
             whole = re.search(r'"Dam - Wikipedia", (\d+) pixels tall', line)
 
             if whole is None or int(whole.group(1)) < 40000 or "Cut short" in line:
                 raise Failure(f"Wikipedia's Dam article was not shown whole: {line!r}")
+
+            # And parsed while it came rather than after (6zz l1): 1.4 MB
+            # arrives in many reads, and each was handed to the parser.
+            fed = re.search(r"browser: parsed as it came - (\d+) pieces",
+                            guest.seen[mark:])
+
+            if fed is None or int(fed.group(1)) < 2:
+                raise Failure("Wikipedia's Dam article was not parsed as it came: "
+                              + (f"{fed.group(0)!r}" if fed else "nothing said of it"))
 
             if took > 60:
                 raise Failure(f"Wikipedia's Dam article, 1.4 MB from this Mac, took "

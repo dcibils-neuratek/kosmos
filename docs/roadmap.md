@@ -3256,23 +3256,32 @@ processors, and still what follows USB:
       holds the window: nothing answers while it comes but the progress
       line, and the parse - 250 ms of the Dam article under TCG - starts
       only when the last byte is in. In steps:
-      - l1. **A load the window lives through.** The page, its stylesheets
-        and its first pictures fetched by a coroutine the window steps on
-        each pass, as `get_many` steps its eight (`http.get` already waits
-        through `opts.pause`), the window's wait shortened to a tick while
-        one runs. Keys, the pointer and the strip answer while a page
-        comes; Escape stops it, and so does a new address, Back, or showing
-        another tab - a load is the tab's it was asked for.
-      - l2. **The parser fed as the bytes come.** `http.get` hands the body
+      - l1. **BUILT 1 October (`testing.md` 18.330). The parser fed as the
+        bytes come.** `http.get` hands the body
         on as it arrives - its chunks undone, and inflated as a stream when
-        it came gzipped, which the Compression Kit's inflater learns - and
+        it came gzipped, which the Compression Kit learns - and
         `web.parser` gives each piece to hubbub, starting once more from the
         bytes it kept when a `<meta>` names another encoding, as `web.parse`
-        does now. The parse goes on under the fetch rather than after it.
-      - l3. **The rest of the pictures while the page is read.** After the
-        first band is shown, the page's other pictures are fetched in the
-        background, so a scroll that reaches them finds them instead of
-        stopping for them.
+        does now. The parse goes on under the fetch rather than after it,
+        inside the same `http.get` - it needs nothing of l2 or l3. The Dam
+        article's 285-306 ms of parsing now inside its fetch, and 0.1 ms
+        left after the last byte.
+      - l2. **The rest of the pictures while the page is read.** After the
+        first band is shown, the page's other pictures are fetched by a
+        coroutine the window steps on each pass, as `get_many` steps its
+        eight (`http.get` already waits through `opts.pause`), so a scroll
+        that reaches them finds them instead of stopping for them.
+      - l3. **A load the window lives through.** The page itself fetched the
+        same way: keys, the pointer and the strip answer while it comes;
+        Escape stops it, and so does a new address, Back, or showing
+        another tab - a load is the tab's it was asked for, and its
+        history is as it was if it is stopped.
+      **In that order** because the window stepping a load is where the
+      hazards are - a scroll or a zoom painting while a load is suspended
+      half way through a page - and they are smallest with pictures, after
+      the page is shown, and largest with the page itself; and l3's
+      `http.lua` counts its quiet in time rather than in waits, since a
+      wait is a pass of the window there and not a tenth of a second.
    **The order since 30 September**: f's kernel step, i, then f, g and h,
    with j's parser and paper beside g (the paper BUILT), then e and d - the
    browser fast before it is redrawn. **Then NetSurf's layout (j1-j5)**,

@@ -21,6 +21,7 @@
  */
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lua.h"
@@ -121,10 +122,17 @@ static const char *parse_error(dom_hubbub_error e)
 }
 
 /*
- * parse(html [, charset]) -> document, or nil and why.
+ * **A document read as it arrives** (`roadmap.md` 6zz l1).
  *
- * One chunk, because a Lua string is already whole. The streaming shape the
- * parser offers is what a fetch wants and this is not one.
+ *   web.parser([charset]) -> p, or nil and why
+ *   p:feed(bytes)         -> true, or nil and why once it has failed
+ *   p:finish()            -> document, or nil and why
+ *
+ * hubbub takes a page in whatever pieces it comes in - a tag or a
+ * character cut in two at a piece's end included - so the browser hands it
+ * each piece as the network does, and the parse goes on while the rest is
+ * still arriving rather than after the last byte. `web.parse` is the same
+ * thing fed once.
  *
  * **`charset` is what the server said** in the page's `Content-Type`, and it
  * is held to: HTML ranks the header above anything the page says of itself
@@ -134,99 +142,207 @@ static const char *parse_error(dom_hubbub_error e)
  * the other way, "Búsqueda" was "B?squeda" (`roadmap.md` 6zz j7). A name the
  * parser does not know is read as no name at all, and the page's own word
  * is taken instead.
+ *
+ * **And once more, when the page names its encoding part way.** Without a
+ * charset from the header the parser starts on a guess and stops with
+ * `ENCODINGCHANGE` when a `<meta charset>` says otherwise; it is then the
+ * caller's to start again with that encoding stated, which NetSurf's
+ * browser does - so Wikipedia's Dam article, arrived whole, was refused
+ * until this did too (`roadmap.md` 6zz j). Fed in pieces, starting again
+ * means every byte so far: so they are kept while a change is still
+ * possible, and let go once the encoding is settled - from the start, when
+ * the header said it. A second change is not asked about again.
  */
-static int l_parse(lua_State *L)
+#define PARSING_HANDLE "kosmos.parsing"
+
+struct parsing {
+    dom_hubbub_parser        *parser;    /* NULL once finished or failed */
+    dom_document             *document;
+    dom_hubbub_parser_params  params;
+    char                      charset[64];
+    bool                      from_header;
+
+    /* Every byte fed, while a `<meta>` may still change the encoding. */
+    uint8_t                  *kept;
+    size_t                    kept_len, kept_cap;
+
+    const char               *failed;    /* why, once it has */
+    int                       code;
+};
+
+static void parsing_drop(struct parsing *p)
 {
-    size_t len = 0;
-    const char *html = luaL_checklstring(L, 1, &len);
-    const char *said = luaL_optstring(L, 2, NULL);
-    dom_hubbub_parser_params params;
-    dom_hubbub_parser *parser = NULL;
-    dom_document *document = NULL;
+    if (p->parser != NULL) {
+        dom_hubbub_parser_destroy(p->parser);
+        p->parser = NULL;
+    }
+
+    if (p->document != NULL) {
+        dom_node_unref((dom_node *)p->document);
+        p->document = NULL;
+    }
+
+    free(p->kept);
+    p->kept = NULL;
+    p->kept_len = p->kept_cap = 0;
+}
+
+static bool parsing_start(struct parsing *p)
+{
+    while (dom_hubbub_parser_create(&p->params, &p->parser, &p->document)
+           != DOM_HUBBUB_OK) {
+        if (!p->from_header) {
+            p->failed = "the parser could not be created";
+            return false;
+        }
+
+        p->params.enc = NULL;       /* a name it does not know */
+        p->from_header = false;
+    }
+
+    return true;
+}
+
+static bool parsing_begin(struct parsing *p, const char *said)
+{
+    memset(p, 0, sizeof(*p));
+
+    p->params.enc           = NULL;  /* detect it, which is what a browser does */
+    p->params.fix_enc       = true;
+    p->params.enable_script = false; /* there is no interpreter to enable */
+
+    if (said != NULL && said[0] != '\0' && strlen(said) < sizeof(p->charset)) {
+        strcpy(p->charset, said);
+        p->params.enc = p->charset;
+        p->from_header = true;
+    }
+
+    return parsing_start(p);
+}
+
+static bool parsing_keep(struct parsing *p, const uint8_t *bytes, size_t len)
+{
+    if (p->kept_len + len > p->kept_cap) {
+        size_t cap = p->kept_cap ? p->kept_cap : 65536;
+        uint8_t *more;
+
+        while (cap < p->kept_len + len) {
+            cap *= 2;
+        }
+
+        more = realloc(p->kept, cap);
+
+        if (more == NULL) {
+            return false;
+        }
+
+        p->kept = more;
+        p->kept_cap = cap;
+    }
+
+    memcpy(p->kept + p->kept_len, bytes, len);
+    p->kept_len += len;
+
+    return true;
+}
+
+static bool parsing_feed(struct parsing *p, const uint8_t *bytes, size_t len)
+{
+    dom_hubbub_error e;
+
+    if (p->failed != NULL) {
+        return false;
+    }
+
+    if (p->params.enc == NULL && !parsing_keep(p, bytes, len)) {
+        p->failed = "out of memory";
+        parsing_drop(p);
+        return false;
+    }
+
+    e = dom_hubbub_parser_parse_chunk(p->parser, bytes, len);
+
+    if (e == DOM_HUBBUB_HUBBUB_ERR_ENCODINGCHANGE && p->params.enc == NULL) {
+        dom_hubbub_encoding_source source;
+        const char *found = dom_hubbub_parser_get_encoding(p->parser, &source);
+
+        if (found != NULL && strlen(found) < sizeof(p->charset)) {
+            uint8_t *kept = p->kept;
+            size_t kept_len = p->kept_len;
+
+            strcpy(p->charset, found);
+            p->kept = NULL;
+            parsing_drop(p);
+            p->params.enc = p->charset;
+
+            if (!parsing_start(p)) {
+                free(kept);
+                return false;
+            }
+
+            e = dom_hubbub_parser_parse_chunk(p->parser, kept, kept_len);
+            free(kept);
+        }
+    }
+
+    /* Settled: nothing can ask to start again, so nothing is kept. */
+    if (p->params.enc != NULL && p->kept != NULL) {
+        free(p->kept);
+        p->kept = NULL;
+        p->kept_len = p->kept_cap = 0;
+    }
+
+    if (e != DOM_HUBBUB_OK) {
+        p->failed = parse_error(e);
+        p->code = (int)e;
+        parsing_drop(p);
+        return false;
+    }
+
+    return true;
+}
+
+static int parsing_said(lua_State *L, struct parsing *p)
+{
+    lua_pushnil(L);
+
+    if (p->code != 0) {
+        lua_pushfstring(L, "the document could not be parsed: %s (%d)",
+                        p->failed, p->code);
+    } else {
+        lua_pushstring(L, p->failed);
+    }
+
+    return 2;
+}
+
+/* The parse ended, and its document as a `kosmos.dom`, or nil and why. */
+static int parsing_finish(lua_State *L, struct parsing *p)
+{
     dom_hubbub_encoding_source source;
+    dom_document *document;
+    char used[64];
     struct doc *d;
-    char charset[64], used[64];
-    bool from_header = false;
 
-    memset(&params, 0, sizeof(params));
-
-    params.enc           = NULL;     /* detect it, which is what a browser does */
-    params.fix_enc       = true;
-
-    if (said != NULL && said[0] != '\0' && strlen(said) < sizeof(charset)) {
-        strcpy(charset, said);
-        params.enc = charset;
-        from_header = true;
-    }
-    params.enable_script = false;    /* there is no interpreter to enable */
-    params.msg           = NULL;
-    params.ctx           = NULL;
-    params.daf           = NULL;
-
-    /*
-     * **Twice, when the page names its encoding part way.** The parser
-     * starts on a guess and stops with `ENCODINGCHANGE` when a `<meta
-     * charset>` says otherwise; it is then the caller's to start again with
-     * that encoding stated, which NetSurf's browser does and this did not -
-     * so Wikipedia's Dam article, arrived whole, was refused (`roadmap.md`
-     * 6zz j). The first attempt's document goes, the encoding it found is
-     * kept, and a second change is not asked about again.
-     */
-    for (;;) {
-        dom_hubbub_error e;
-
-        if (dom_hubbub_parser_create(&params, &parser, &document) != DOM_HUBBUB_OK) {
-            if (from_header) {
-                params.enc = NULL;      /* a name it does not know */
-                from_header = false;
-                continue;
-            }
-
-            lua_pushnil(L);
-            lua_pushliteral(L, "the parser could not be created");
-            return 2;
-        }
-
-        e = dom_hubbub_parser_parse_chunk(parser, (const uint8_t *)html, len);
-
-        if (e == DOM_HUBBUB_HUBBUB_ERR_ENCODINGCHANGE && params.enc == NULL) {
-            dom_hubbub_encoding_source source;
-            const char *found = dom_hubbub_parser_get_encoding(parser, &source);
-
-            if (found != NULL && strlen(found) < sizeof(charset)) {
-                strcpy(charset, found);
-                dom_hubbub_parser_destroy(parser);
-
-                if (document != NULL) {
-                    dom_node_unref((dom_node *)document);
-                    document = NULL;
-                }
-
-                params.enc = charset;
-                continue;
-            }
-        }
-
-        if (e != DOM_HUBBUB_OK) {
-            dom_hubbub_parser_destroy(parser);
-
-            if (document != NULL) {
-                dom_node_unref((dom_node *)document);
-            }
-
-            lua_pushnil(L);
-            lua_pushfstring(L, "the document could not be parsed: %s (%d)",
-                            parse_error(e), (int)e);
-            return 2;
-        }
-
-        break;
+    if (p->failed != NULL) {
+        return parsing_said(L, p);
     }
 
-    (void)dom_hubbub_parser_completed(parser);
+    if (p->parser == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "this parse has finished already");
+        return 2;
+    }
+
+    (void)dom_hubbub_parser_completed(p->parser);
     (void)snprintf(used, sizeof(used), "%s",
-                   dom_hubbub_parser_get_encoding(parser, &source));
-    dom_hubbub_parser_destroy(parser);
+                   dom_hubbub_parser_get_encoding(p->parser, &source));
+    dom_hubbub_parser_destroy(p->parser);
+    p->parser = NULL;
+
+    document = p->document;
+    p->document = NULL;
+    parsing_drop(p);
 
     if (document == NULL) {
         lua_pushnil(L);
@@ -243,6 +359,74 @@ static int l_parse(lua_State *L)
     luaL_setmetatable(L, DOC_HANDLE);
 
     return 1;
+}
+
+static struct parsing *new_parsing(lua_State *L, const char *said)
+{
+    struct parsing *p = lua_newuserdatauv(L, sizeof(*p), 0);
+
+    /* Begun before the metatable, so `__gc` never sees it half made. */
+    (void)parsing_begin(p, said);
+    luaL_setmetatable(L, PARSING_HANDLE);
+
+    return p;
+}
+
+/* `web.parser([charset])` */
+static int l_parser(lua_State *L)
+{
+    struct parsing *p = new_parsing(L, luaL_optstring(L, 1, NULL));
+
+    if (p->failed != NULL) {
+        return parsing_said(L, p);
+    }
+
+    return 1;
+}
+
+/* `p:feed(bytes)` */
+static int l_parsing_feed(lua_State *L)
+{
+    struct parsing *p = luaL_checkudata(L, 1, PARSING_HANDLE);
+    size_t len = 0;
+    const char *bytes = luaL_checklstring(L, 2, &len);
+
+    if (!parsing_feed(p, (const uint8_t *)bytes, len)) {
+        return parsing_said(L, p);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* `p:finish()` */
+static int l_parsing_finish(lua_State *L)
+{
+    return parsing_finish(L, luaL_checkudata(L, 1, PARSING_HANDLE));
+}
+
+static int l_parsing_gc(lua_State *L)
+{
+    parsing_drop(luaL_checkudata(L, 1, PARSING_HANDLE));
+    return 0;
+}
+
+/*
+ * parse(html [, charset]) -> document, or nil and why: the whole page fed
+ * at once, for a page that is already whole - from the cache, the disk, or
+ * this image.
+ */
+static int l_parse(lua_State *L)
+{
+    size_t len = 0;
+    const char *html = luaL_checklstring(L, 1, &len);
+    struct parsing *p = new_parsing(L, luaL_optstring(L, 2, NULL));
+
+    if (p->failed != NULL || !parsing_feed(p, (const uint8_t *)html, len)) {
+        return parsing_said(L, p);
+    }
+
+    return parsing_finish(L, p);
 }
 
 /* `doc:charset()` -> the charset the page was read in. */
@@ -1237,6 +1421,7 @@ void kosmos_web_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
         { "parse",      l_parse },
+        { "parser",     l_parser },
         { "stylesheet", l_stylesheet },
         { "events",     l_events },
         { "join",       web_netsurf_join },
@@ -1276,12 +1461,26 @@ void kosmos_web_kit(lua_State *L)
         { NULL, NULL }
     };
 
+    static const luaL_Reg parsing[] = {
+        { "feed",   l_parsing_feed },
+        { "finish", l_parsing_finish },
+        { NULL, NULL }
+    };
+
     luaL_newmetatable(L, DOC_HANDLE);
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");
     lua_pushcfunction(L, l_close);
     lua_setfield(L, -2, "__gc");
     luaL_setfuncs(L, doc, 0);
+    lua_pop(L, 1);
+
+    luaL_newmetatable(L, PARSING_HANDLE);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+    lua_pushcfunction(L, l_parsing_gc);
+    lua_setfield(L, -2, "__gc");
+    luaL_setfuncs(L, parsing, 0);
     lua_pop(L, 1);
 
     web_svg_kit(L);

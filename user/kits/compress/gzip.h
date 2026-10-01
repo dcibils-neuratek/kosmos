@@ -44,4 +44,38 @@ int kosmos_gunzip(const uint8_t *src, size_t len, struct gunzip_work *work,
 /* The sentence for a result, for an error a person reads. */
 const char *kosmos_gunzip_said(int result);
 
+/*
+ * **The same stream, read as it arrives** (`roadmap.md` 6zz l1): fed in
+ * whatever pieces the network gave, putting what each inflates to, and
+ * coming to exactly what `kosmos_gunzip` comes to over the same bytes. The
+ * caller's, as `gunzip_work` is; nothing allocated.
+ */
+struct gunzip_stream {
+    struct gunzip_work work;
+    int                state;       /* where in the stream (`gzip.c`)      */
+    int                result;      /* how it failed, once it has          */
+    int                inflating;   /* the member's deflate begun          */
+    uint8_t            flags;       /* the member's header flags           */
+    uint32_t           field;       /* bytes of the header field to go     */
+    unsigned           have;        /* bytes of a length or trailer so far */
+    uint8_t            trailer[8];  /* the member's CRC-32 and length      */
+    size_t             window_at;
+    mz_ulong           crc;
+    uint32_t           member_out;
+    unsigned           members;     /* members whole and checked           */
+    size_t             out;         /* bytes put, every member             */
+};
+
+void kosmos_gunzip_begin(struct gunzip_stream *s);
+
+/* The next `len` bytes, their output put as it comes. `GUNZIP_WHOLE` while
+ * nothing has gone wrong - which is not yet "whole", since more may come -
+ * and the failure otherwise, which every later call returns again. */
+int kosmos_gunzip_feed(struct gunzip_stream *s, const uint8_t *src, size_t len,
+                       gunzip_put put, void *user);
+
+/* The bytes have ended: what the stream came to, as `kosmos_gunzip`
+ * would say it. */
+int kosmos_gunzip_end(struct gunzip_stream *s);
+
 #endif

@@ -8,6 +8,10 @@
  * written by hand, for every flag the header has, two members, bytes after
  * the end, a megabyte, every way of being cut short, a CRC and a length
  * that lie, data that is not deflate, and a caller that says stop.
+ *
+ * **And each of those read as it arrives** (`roadmap.md` 6zz l1): the
+ * stream form fed the same bytes a byte at a time and in pieces of several
+ * sizes, held to the whole form's answer and bytes every time.
  */
 
 #include <stdio.h>
@@ -123,17 +127,71 @@ static int put(void *user, const uint8_t *p, size_t n)
 }
 
 static struct gunzip_work work;
+static struct gunzip_stream stream;
 static tdefl_compressor deflater;
+
+/*
+ * The stream form over the same bytes, fed `piece` at a time: what it put
+ * and how it ended. A ceiling the sink was given is kept.
+ */
+static int run_stream(const uint8_t *gz, size_t len, size_t piece,
+                      struct sink *s)
+{
+    size_t at = 0, stop_after = s->stop_after;
+    int r = GUNZIP_WHOLE;
+
+    memset(s, 0, sizeof(*s));
+    s->stop_after = stop_after;
+    kosmos_gunzip_begin(&stream);
+
+    while (at < len && r == GUNZIP_WHOLE) {
+        size_t n = len - at < piece ? len - at : piece;
+
+        r = kosmos_gunzip_feed(&stream, gz + at, n, put, s);
+        at += n;
+    }
+
+    return r == GUNZIP_WHOLE ? kosmos_gunzip_end(&stream) : r;
+}
+
+/*
+ * Every case, both ways (`roadmap.md` 6zz l1): the whole form, and the
+ * stream form fed a byte at a time and in pieces of several sizes - each
+ * held to the whole form's answer and to its bytes, exactly. A byte at a
+ * time only where that is quick; the megabyte's cuts in two sizes.
+ */
+static int stream_checks;
 
 static int run(const uint8_t *gz, size_t len, struct sink *s)
 {
-    size_t out = 0;
+    static const size_t SMALL[] = { 1, 2, 7, 333, 4096 };
+    static const size_t LARGE[] = { 333, 65536 };
+    const size_t *pieces = len <= 100000 ? SMALL : LARGE;
+    size_t count = len <= 100000 ? sizeof(SMALL) / sizeof(SMALL[0])
+                                 : sizeof(LARGE) / sizeof(LARGE[0]);
+    size_t out = 0, i;
     int r;
 
     memset(s, 0, sizeof(*s));
     r = kosmos_gunzip(gz, len, &work, put, s, &out);
 
     CHECK(out == s->n, "reported %zu bytes out and put %zu", out, s->n);
+
+    for (i = 0; i < count; i++) {
+        struct sink t = { 0 };
+        int rs = run_stream(gz, len, pieces[i], &t);
+
+        CHECK(rs == r, "%zu bytes fed %zu at a time: %s, where whole: %s",
+              len, pieces[i], kosmos_gunzip_said(rs), kosmos_gunzip_said(r));
+        CHECK(t.n == s->n && (t.n == 0 || memcmp(t.bytes, s->bytes, t.n) == 0),
+              "%zu bytes fed %zu at a time put %zu bytes, where whole put %zu",
+              len, pieces[i], t.n, s->n);
+        CHECK(stream.out == t.n, "the stream reported %zu bytes and put %zu",
+              stream.out, t.n);
+        stream_checks += 3;
+        free(t.bytes);
+    }
+
     return r;
 }
 
@@ -228,6 +286,25 @@ int main(void)
     checks += 3;
     free(s.bytes);
 
+    /* Each flag alone, so each field is reached straight from the ten
+     * fixed bytes - the header's CRC with nothing before it included. */
+    {
+        static const uint8_t ALONE[] = { 0x02, 0x04, 0x08, 0x10 };
+        size_t f;
+
+        for (f = 0; f < sizeof(ALONE); f++) {
+            size_t one = member(text, 20000, ALONE[f], gz, sizeof(gz));
+
+            r = run(gz, one, &s);
+            CHECK(r == GUNZIP_WHOLE && s.n == 20000 && memcmp(s.bytes, text, 20000) == 0,
+                  "flag 0x%02x alone: %s, %zu bytes", ALONE[f], kosmos_gunzip_said(r), s.n);
+            free(s.bytes);
+            checks++;
+        }
+    }
+
+    len = member(text, n, 0x04 | 0x08 | 0x10 | 0x02, gz, sizeof(gz));
+
     /* Every way of being cut short: in the header, the name, the data and
      * the trailer - and what was put is the text's beginning. */
     for (cut = 1; cut < len; cut = cut < 64 ? cut + 1 : cut * 3 / 2) {
@@ -264,7 +341,20 @@ int main(void)
     CHECK(r == GUNZIP_WHOLE && s.n == 8000,
           "sixteen zeros after the end: %s, %zu bytes", kosmos_gunzip_said(r), s.n);
     free(s.bytes);
-    checks += 2;
+
+    /* Bytes after the end that begin as a header would and are not one:
+     * still the end, since a member came before them - and the same bytes
+     * with no member before them are not gzip. */
+    gz[len] = 0x1f;
+    r = run(gz, len + 16, &s);
+    CHECK(r == GUNZIP_WHOLE && s.n == 8000,
+          "0x1f and zeros after the end: %s, %zu bytes", kosmos_gunzip_said(r), s.n);
+    free(s.bytes);
+    r = run(gz + len, 16, &s);
+    CHECK(r == GUNZIP_NOT_GZIP && s.n == 0,
+          "0x1f and zeros alone: %s", kosmos_gunzip_said(r));
+    free(s.bytes);
+    checks += 4;
 
     /* A CRC that lies, a length that lies. */
     len = member(text, 5000, 0, gz, sizeof(gz));
@@ -317,13 +407,26 @@ int main(void)
     CHECK(r == GUNZIP_REFUSED && s.n <= 100000,
           "stopped at 100000: %s, %zu bytes", kosmos_gunzip_said(r), s.n);
     free(s.bytes);
-    checks += 1;
+
+    /* And the stream form told stop: refused, and refused again after. */
+    memset(&s, 0, sizeof(s));
+    s.stop_after = 100000;
+    r = run_stream(gz, len, 4096, &s);
+    CHECK(r == GUNZIP_REFUSED && s.n <= 100000
+          && kosmos_gunzip_feed(&stream, gz, 1, put, &s) == GUNZIP_REFUSED
+          && kosmos_gunzip_end(&stream) == GUNZIP_REFUSED,
+          "the stream stopped at 100000: %s, %zu bytes", kosmos_gunzip_said(r), s.n);
+    free(s.bytes);
+    checks += 2;
+
+    checks += stream_checks;
 
     if (failures) {
         printf("test_gunzip: %d of %d checks failed\n", failures, checks);
         return 1;
     }
 
-    printf("test_gunzip: %d checks passed\n", checks);
+    printf("test_gunzip: %d checks passed, %d of them the stream form against "
+           "the whole\n", checks, stream_checks);
     return 0;
 }

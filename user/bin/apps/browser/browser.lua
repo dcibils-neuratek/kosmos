@@ -1724,6 +1724,14 @@ local function loading_words()
   return ("Loading %s - %d KB so far"):format(loading.host, kb(loading.got))
 end
 
+-- The charset the server said a page is in, from its head: the parser
+-- holds to it over anything the page says of itself (`roadmap.md` 6zz j7).
+local function charset_of(head)
+  return head:match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Tt][Yy][Pp][Ee]:"
+                    .. "[^\r\n]-[Cc][Hh][Aa][Rr][Ss][Ee][Tt]%s*=%s*\"?"
+                    .. "([%w%-_:%.]+)")
+end
+
 local function fetch(text, page, post)
   --
   -- The page says each step on the status line and moves the address with
@@ -1752,10 +1760,48 @@ local function fetch(text, page, post)
       end
     end
 
+    --
+    -- **The page parsed as it comes** (`roadmap.md` 6zz l1): a parser
+    -- made the moment the head says what the page is in, and handed each
+    -- piece of the body as `http.get` has it - so the parse goes on under
+    -- the fetch rather than after it. Not for a redirect, whose body is
+    -- nobody's page; and only kept when `http.get` says it was handed
+    -- exactly the body it returned, since otherwise the body is the truth
+    -- and is parsed whole, as it always was.
+    --
+    local parsing
+
+    local function on_body(head)
+      local status = tonumber(head:match("^HTTP/%d%.%d%s+(%d%d%d)"))
+
+      if not page or not web.parser or (status and status >= 300 and status < 400) then
+        return nil
+      end
+
+      local p = web.parser(charset_of(head))
+
+      if not p then return nil end
+
+      parsing = { parser = p, ms = 0, pieces = 0 }
+
+      return function(piece)
+        if not parsing.parser then return end
+
+        local began = sys.ticks()
+        local ok = parsing.parser:feed(piece)
+
+        parsing.ms = parsing.ms + since(began)
+        parsing.pieces = parsing.pieces + 1
+
+        if not ok then parsing.parser = nil end
+      end
+    end
+
     local reply, why, how = http.get(parts, {
       say = page and say or nil,
       agent = AGENT,
       progress = progress,
+      on_body = page and on_body or nil,
       anyway = parts.scheme == "https" and current.anyway[parts.hostport] or nil,
       body = post and post.body,
       content_type = post and post.type,
@@ -1804,10 +1850,10 @@ local function fetch(text, page, post)
       end
     else
       -- The charset the server said the page is in, which the parser holds
-      -- to over anything the page says of itself (`roadmap.md` 6zz j7).
-      how.charset = head:match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Tt][Yy][Pp][Ee]:"
-                               .. "[^\r\n]-[Cc][Hh][Aa][Rr][Ss][Ee][Tt]%s*=%s*\"?"
-                               .. "([%w%-_:%.]+)")
+      -- to over anything the page says of itself (`roadmap.md` 6zz j7) -
+      -- and the parse that was fed as it came, when it was fed all of it.
+      how.charset = charset_of(head)
+      how.parsing = how.streamed and parsing and parsing.parser and parsing or nil
       return body, how
     end
   end
@@ -2413,9 +2459,27 @@ of these.</p>
 
   say(("parsing %d bytes..."):format(#body))
 
+  --
+  -- Finished, when it was parsed as it came (6zz l1): what is left is
+  -- the parser's end, and the parse's own time was spent under the fetch.
+  -- Parsed whole otherwise - from the cache, the disk, this image.
+  --
   local parse_from = sys.ticks()
-  local fresh, bad = web.parse(body, how and how.charset)
+  local fed = how and how.parsing
+  local fresh, bad
+
+  if fed then
+    fresh, bad = fed.parser:finish()
+  else
+    fresh, bad = web.parse(body, how and how.charset)
+  end
+
   local parsed_ms = since(parse_from)
+
+  if fed then
+    print(("browser: parsed as it came - %d pieces, %s ms of it while the page "
+           .. "arrived, %s ms after"):format(fed.pieces, tenths(fed.ms), tenths(parsed_ms)))
+  end
 
   if not fresh then
     local short = how and how.short
@@ -2485,8 +2549,15 @@ of these.</p>
   -- knowing which of the five to work on - and the band's pictures are
   -- their own, since fetching them was being read as painting.
   --
+  --
+  -- A page parsed as it came says how much of its parse the fetch hid
+  -- (6zz l1): the fetch's own number includes it.
+  --
+  local parse_words = fed and ("%s (%s as it came)"):format(tenths(parsed_ms), tenths(fed.ms))
+                      or tenths(parsed_ms)
+
   current.timing = ("fetch %s  parse %s  layout %s  pictures %s  paint %s ms")
-           :format(tenths(fetched_ms), tenths(parsed_ms), tenths(current.laid_ms),
+           :format(tenths(fetched_ms), parse_words, tenths(current.laid_ms),
                    tenths(current.pictures_ms),
                    tenths(math.max(0, current.painted_ms - current.pictures_ms)))
 

@@ -174,6 +174,300 @@ int kosmos_gunzip(const uint8_t *src, size_t len, struct gunzip_work *work,
     }
 }
 
+/*
+ * **The same, as the bytes arrive** (`roadmap.md` 6zz l1): a page is
+ * inflated while it comes and handed on to the parser a piece at a time,
+ * rather than inflated whole once the last byte is in. Fed whatever the
+ * network gave, in whatever pieces, and it comes to exactly what
+ * `kosmos_gunzip` does over the same bytes - which `tools/test_gunzip.c`
+ * holds it to, every case of that test fed one byte at a time and in
+ * pieces of several sizes.
+ *
+ * The header is walked a byte at a time, so a name or an extra field of
+ * any length costs nothing to keep; the deflate goes to `tinfl` told more
+ * may come; the trailer's eight bytes are gathered wherever they fall.
+ */
+
+/* Where in the stream: the header's fields in order, then the data, the
+ * trailer, the gap before another member, and the end. */
+enum {
+    AT_ID1, AT_ID2, AT_METHOD, AT_FLAGS, AT_REST, AT_XLEN, AT_EXTRA,
+    AT_NAME, AT_COMMENT, AT_HCRC, AT_DATA, AT_TRAILER, AT_BETWEEN,
+    AT_AFTER, AT_FAILED
+};
+
+void kosmos_gunzip_begin(struct gunzip_stream *s)
+{
+    s->state = AT_ID1;
+    s->result = GUNZIP_SHORT;
+    s->inflating = 0;
+    s->flags = 0;
+    s->field = 0;
+    s->have = 0;
+    s->window_at = 0;
+    s->crc = MZ_CRC32_INIT;
+    s->member_out = 0;
+    s->members = 0;
+    s->out = 0;
+}
+
+/* A header that is not one: no stream at all before the first member, and
+ * bytes after the end - which gzip ignores - after it. */
+static void not_a_header(struct gunzip_stream *s)
+{
+    if (s->members == 0) {
+        s->state = AT_FAILED;
+        s->result = GUNZIP_NOT_GZIP;
+    } else {
+        s->state = AT_AFTER;
+    }
+}
+
+/* On from the field just ended to the next one the flags name, or to the
+ * data - each field entered with what it counts. */
+static void next_field(struct gunzip_stream *s)
+{
+    int was = s->state;
+
+    s->field = 0;
+    s->have = 0;
+
+    if (was < AT_EXTRA && (s->flags & 0x04)) {
+        s->state = AT_XLEN;
+    } else if (was < AT_NAME && (s->flags & 0x08)) {
+        s->state = AT_NAME;
+    } else if (was < AT_COMMENT && (s->flags & 0x10)) {
+        s->state = AT_COMMENT;
+    } else if (was < AT_HCRC && (s->flags & 0x02)) {
+        s->state = AT_HCRC;
+        s->field = 2;
+    } else {
+        s->state = AT_DATA;
+    }
+}
+
+int kosmos_gunzip_feed(struct gunzip_stream *s, const uint8_t *src, size_t len,
+                       gunzip_put put, void *user)
+{
+    size_t at = 0;
+
+    while (at < len) {
+        uint8_t b = src[at];
+
+        switch (s->state) {
+        case AT_FAILED:
+            return s->result;
+
+        case AT_AFTER:
+            return GUNZIP_WHOLE;
+
+        case AT_BETWEEN:
+            /* Another member's first byte, or the end and what gzip
+             * ignores after it. */
+            if (b != 0x1f) {
+                s->state = AT_AFTER;
+                return GUNZIP_WHOLE;
+            }
+
+            s->state = AT_ID2;
+            at++;
+            break;
+
+        case AT_ID1:
+            if (b != 0x1f) { not_a_header(s); break; }
+            s->state = AT_ID2;
+            at++;
+            break;
+
+        case AT_ID2:
+            if (b != 0x8b) { not_a_header(s); break; }
+            s->state = AT_METHOD;
+            at++;
+            break;
+
+        case AT_METHOD:
+            if (b != 8) { not_a_header(s); break; }
+            s->state = AT_FLAGS;
+            at++;
+            break;
+
+        case AT_FLAGS:
+            s->flags = b;
+            s->field = 6;                   /* the time, XFL and OS */
+            s->state = AT_REST;
+            at++;
+            break;
+
+        case AT_REST: {
+            size_t take = len - at < s->field ? len - at : s->field;
+
+            at += take;
+            s->field -= (uint32_t)take;
+
+            if (s->field == 0) {
+                /* Reserved flags refused once the ten bytes are here, as
+                 * the whole form refuses them. */
+                if (s->flags & 0xe0) { not_a_header(s); break; }
+
+                next_field(s);
+            }
+            break;
+        }
+
+        case AT_XLEN:
+            s->field |= (uint32_t)b << (8 * s->have);
+            at++;
+
+            if (++s->have == 2) {
+                s->state = AT_EXTRA;
+            }
+            break;
+
+        case AT_EXTRA: {
+            size_t take = len - at < s->field ? len - at : s->field;
+
+            at += take;
+            s->field -= (uint32_t)take;
+
+            if (s->field == 0) {
+                next_field(s);
+            }
+            break;
+        }
+
+        case AT_NAME:
+        case AT_COMMENT: {
+            const uint8_t *end = memchr(src + at, 0, len - at);
+
+            if (end == NULL) {
+                at = len;
+                break;
+            }
+
+            at = (size_t)(end - src) + 1;
+            next_field(s);
+            break;
+        }
+
+        case AT_HCRC:
+            at++;
+
+            if (--s->field == 0) {
+                s->state = AT_DATA;
+            }
+            break;
+
+        case AT_DATA:
+            break;
+
+        case AT_TRAILER:
+            s->trailer[s->have++] = b;
+            at++;
+
+            if (s->have == 8) {
+                if (le32(s->trailer) != (uint32_t)s->crc
+                    || le32(s->trailer + 4) != s->member_out) {
+                    s->state = AT_FAILED;
+                    s->result = GUNZIP_BAD_CHECK;
+                    return s->result;
+                }
+
+                s->members++;
+                s->state = AT_BETWEEN;
+            }
+            break;
+        }
+
+        if (s->state == AT_FAILED) {
+            return s->result;
+        }
+
+        if (s->state == AT_AFTER) {
+            return GUNZIP_WHOLE;
+        }
+
+        /* The data: from the header's end, to the deflate's. */
+        if (s->state == AT_DATA) {
+            if (!s->inflating) {
+                tinfl_init(&s->work.inflater);
+                s->inflating = 1;
+                s->window_at = 0;
+                s->crc = MZ_CRC32_INIT;
+                s->member_out = 0;
+            }
+
+            for (;;) {
+                size_t in = len - at;
+                size_t room = TINFL_LZ_DICT_SIZE - s->window_at;
+                tinfl_status status;
+
+                status = tinfl_decompress(&s->work.inflater, src + at, &in,
+                                          s->work.window,
+                                          s->work.window + s->window_at, &room,
+                                          TINFL_FLAG_HAS_MORE_INPUT);
+                at += in;
+
+                if (room > 0) {
+                    s->crc = mz_crc32(s->crc, s->work.window + s->window_at, room);
+                    s->member_out += (uint32_t)room;
+                    s->out += room;
+
+                    if (!put(user, s->work.window + s->window_at, room)) {
+                        s->state = AT_FAILED;
+                        s->result = GUNZIP_REFUSED;
+                        return s->result;
+                    }
+                }
+
+                s->window_at = (s->window_at + room) & (TINFL_LZ_DICT_SIZE - 1);
+
+                if (status == TINFL_STATUS_DONE) {
+                    s->inflating = 0;
+                    s->state = AT_TRAILER;
+                    s->have = 0;
+                    break;
+                }
+
+                if (status == TINFL_STATUS_HAS_MORE_OUTPUT) {
+                    continue;
+                }
+
+                /* Everything given taken, and waiting for the rest - or, in
+                 * case it ever stops short of the end, called again while
+                 * it is still moving. */
+                if (status == TINFL_STATUS_NEEDS_MORE_INPUT) {
+                    if (at == len) {
+                        return GUNZIP_WHOLE;
+                    }
+
+                    if (in > 0 || room > 0) {
+                        continue;
+                    }
+                }
+
+                s->state = AT_FAILED;
+                s->result = GUNZIP_BAD_DATA;
+                return s->result;
+            }
+        }
+    }
+
+    return GUNZIP_WHOLE;
+}
+
+int kosmos_gunzip_end(struct gunzip_stream *s)
+{
+    if (s->state == AT_FAILED) {
+        return s->result;
+    }
+
+    if (s->state == AT_BETWEEN || s->state == AT_AFTER) {
+        return GUNZIP_WHOLE;
+    }
+
+    return GUNZIP_SHORT;
+}
+
 const char *kosmos_gunzip_said(int result)
 {
     switch (result) {

@@ -15632,3 +15632,67 @@ bandwidth either way, and this project does not optimise against QEMU.
 
 **Run as the new rule has it**: the full gate, `string.c` being in every
 process and in the kernel.
+
+## 18.330 The page parsed as it comes (6zz l1)
+
+**What was asked**: the last of Diego's item 2, "pictures and the parser
+fed while the page arrives" - the parse, 250 ms of the Dam article under
+TCG, began only once its last byte was in.
+
+**Now the parser is handed the page as `http.get` has it.** `http.get`
+takes `opts.on_body`, called with the head the moment it arrives; what it
+returns is handed the body as it comes - its chunks undone as `dechunk`
+slices them, never past the length the head gave, and inflated as a stream
+when it came gzipped. The browser answers with a parser made in the charset
+the head names (`web.parser`), and feeds it each piece. `how.streamed` says
+the sink was handed exactly the body returned; the browser keeps the fed
+parse only then, and otherwise - from the cache, a 304, a gzip stream that
+stopped short - parses the body whole, as it always did. A gzipped body that
+came out whole is not inflated a second time: the pieces are the body.
+
+**Two pieces of C to make it possible.** The Compression Kit's
+`gunzip_stream`: the same reading `gunzip` does, fed in whatever pieces -
+the header walked a byte at a time, so a name of any length costs nothing,
+`tinfl` told more may come, the trailer's eight bytes gathered wherever they
+fall. And `web.parser`, which `web.parse` is now built on: a page fed in
+pieces, and **started again from the bytes it kept** when a `<meta charset>`
+names another encoding part way - NetSurf's answer, which `web.parse` had
+for a page fed whole; the bytes are kept only while a change is possible,
+and let go once the encoding is settled, from the start when the header said
+it.
+
+**Measured, the Dam article from this Mac, under TCG, three loads**: before,
+fetch 600-1300 ms and then parse 246-264; now fetch 585-834 ms with the
+parse inside it - 285-306 ms of parsing done in 163-172 pieces while the
+page arrived, and 0.0-0.1 ms left after the last byte. The status line says
+so: `parse 0.0 (285.2 as it came)`.
+
+**The tests.** `tools/test_gunzip.c` holds the stream form to the whole one
+in every case it had - Python's stream, every header flag, two members, a
+megabyte, every cut, a CRC and a length that lie, data that is not deflate,
+a caller that says stop - fed a byte at a time and in pieces of 2, 7, 333
+and 4096 (333 and 65536 for the megabyte's cuts), the answer and every byte
+the same; and with two cases it lacked, for both forms: each header flag
+alone, so each field is entered straight from the ten fixed bytes, and bytes
+after the end that begin as a header would. 1,545 checks, 1,521 of them the
+stream against the whole. Five controls bit - the trailer not checked, the
+header's CRC entered with nothing to count, deflate told no more comes, a
+name's end not looked for, and members not counted, which bit only once the
+case for bytes beginning as a header was added.
+
+**In the guest** (`run_browser.py --part 1`): `/arrives.html`, written by
+hand since the suite's server speaks HTTP/1.0 - gzipped, chunked in ten
+pieces a sixth of a second apart, no charset in its header, and its `<meta
+charset="utf-8">` behind 3.6 KB of words that do not compress away, so it
+inflates with the seventh piece: the parser has begun on a guess and must
+start again from what it kept. Its title must read "Señal ñandú" and it
+must be parsed as it came in at least four pieces - ten, on both machines.
+And the Dam article must be parsed as it came, in more than one piece.
+**Both controls bit**: the restart not fed the kept bytes again - the page
+lost everything before the `<meta>`, its title empty; and a browser that
+hands `http.get` no sink - the title right, parsed whole, and the suite
+saying it was not parsed as it came.
+
+**Run as the new rule has it**: the browser's four halves, the TLS and
+network suites - `fetch` is `http.lua` too - and the host suite: 9 suites in
+2:40.
