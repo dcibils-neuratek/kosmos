@@ -1925,6 +1925,33 @@ end
 -- redirects is followed on its own; one the image carries or a file on this
 -- machine is read as before.
 --
+--
+-- **A page's pictures fetched while it is read** (`roadmap.md` 6zz l2):
+-- after it is shown, the ones no band has asked for yet are fetched by a
+-- coroutine the window steps at the start of each pass - `get_many` told
+-- to wait by yielding, `opts.pause` - and their bytes kept on the tab, so
+-- a scroll that reaches them decodes them rather than stopping to fetch
+-- them. Bytes only: decoding and laying out stay with the band, so nothing
+-- a scroll or a zoom also touches is touched by it. One a tab, let go when
+-- the tab shows another page or closes.
+--
+local ahead_jobs = {}
+
+-- One step of a fetch ahead; false once it has ended.
+local function ahead_step(job)
+  local ok, why = coroutine.resume(job.co)
+
+  if ok and coroutine.status(job.co) ~= "dead" then return true end
+
+  job.co = nil
+
+  if not ok then print("browser: fetching ahead stopped: " .. tostring(why)) end
+
+  print(("browser: fetched %d of %d pictures ahead, %d KB")
+        :format(job.got, job.count, (job.tab.ahead_bytes or 0) // 1024))
+  return false
+end
+
 local function fetch_pictures(wanted, noun)
   local urls, seen, got = {}, {}, {}
 
@@ -1936,6 +1963,45 @@ local function fetch_pictures(wanted, noun)
       seen[where] = true
       urls[#urls + 1] = where
     end
+  end
+
+  --
+  -- What is on its way ahead is waited for rather than asked for twice -
+  -- the fetch ahead stepped here until those have ended - and what came
+  -- ahead is taken: let go of there, since the band keeps it decoded.
+  --
+  local job = current.ahead_job
+
+  if job and job.co then
+    local function on_its_way()
+      for _, u in ipairs(urls) do
+        if job.pending[u] then return true end
+      end
+
+      return false
+    end
+
+    while job.co and on_its_way() do
+      if ahead_step(job) and on_its_way() then sys.sleep(1) end
+    end
+  end
+
+  if current.ahead then
+    local rest = {}
+
+    for _, u in ipairs(urls) do
+      local bytes = current.ahead[u]
+
+      if bytes then
+        got[u] = bytes
+        current.ahead[u] = nil
+        current.ahead_bytes = current.ahead_bytes - #bytes
+      else
+        rest[#rest + 1] = u
+      end
+    end
+
+    urls = rest
   end
 
   if #urls == 0 then return got end
@@ -1964,6 +2030,84 @@ local function fetch_pictures(wanted, noun)
   end
 
   return got
+end
+
+--
+-- The fetch ahead begun, for the page `t` shows: every picture its layout
+-- asked for that no band has, from the network, at most a sixteenth of the
+-- memory free kept. The window waits a fiftieth of a second at most between
+-- passes while one goes on, rather than a quarter.
+--
+local function look_ahead(t)
+  if not (t.ns_doc and t.doc and t.ahead and setting.images) then return end
+
+  local urls, seen = {}, {}
+
+  for k, o in ipairs(t.doc:ns_objects()) do
+    local where = not o.arrived and not t.ns_tried[k] and from_ns(o.url)
+
+    if where and not where:match("^asset:") and where:sub(1, 1) ~= "/"
+       and not seen[where] and not t.ahead[where] then
+      seen[where] = true
+      urls[#urls + 1] = where
+    end
+  end
+
+  if #urls == 0 then return end
+
+  local room = ((sys.info() or {}).pages_free or 16384) * 4096 // 16
+  local job = { tab = t, doc = t.doc, count = #urls, got = 0, pending = {} }
+
+  for _, u in ipairs(urls) do job.pending[u] = true end
+
+  job.co = coroutine.create(function()
+    http.get_many(urls, {
+      agent = AGENT,
+      anyway = function(parts)
+        return parts.scheme == "https" and t.anyway[parts.hostport] or nil
+      end,
+      cache = CACHE,
+      pause = coroutine.yield,
+      each = function(i, reply, _, how)
+        job.pending[urls[i]] = nil
+
+        if not reply or not t.ahead then return end
+
+        local status, _, body = http.parse(reply)
+
+        if status >= 200 and status < 300 and not (how and how.short)
+           and t.ahead_bytes + #body <= room then
+          t.ahead[urls[i]] = body
+          t.ahead_bytes = t.ahead_bytes + #body
+          job.got = job.got + 1
+        end
+      end,
+    })
+  end)
+
+  t.ahead_job = job
+  ahead_jobs[#ahead_jobs + 1] = job
+  win.poll_wait_ticks = math.max(1, ((sys.info() or {}).tick_hz or 250) // 50)
+  print(("browser: fetching %d pictures ahead"):format(#urls))
+end
+
+-- Each fetch ahead a step, at the start of a pass; one whose tab shows
+-- another page now, or has closed, let go.
+local function step_ahead()
+  local i = 1
+
+  while i <= #ahead_jobs do
+    local job = ahead_jobs[i]
+
+    if job.co and job.tab.ahead and job.tab.doc == job.doc and ahead_step(job) then
+      i = i + 1
+    else
+      job.co = nil
+      table.remove(ahead_jobs, i)
+    end
+  end
+
+  if #ahead_jobs == 0 then win.poll_wait_ticks = nil end
 end
 
 --
@@ -2469,6 +2613,7 @@ of these.</p>
   local fresh, bad
 
   if fed then
+    fed.refed = fed.parser:refed()
     fresh, bad = fed.parser:finish()
   else
     fresh, bad = web.parse(body, how and how.charset)
@@ -2478,7 +2623,8 @@ of these.</p>
 
   if fed then
     print(("browser: parsed as it came - %d pieces, %s ms of it while the page "
-           .. "arrived, %s ms after"):format(fed.pieces, tenths(fed.ms), tenths(parsed_ms)))
+           .. "arrived, %s ms after, %d bytes fed again for its encoding")
+          :format(fed.pieces, tenths(fed.ms), tenths(parsed_ms), fed.refed))
   end
 
   if not fresh then
@@ -2496,6 +2642,7 @@ of these.</p>
   if current.doc then current.doc:close() end
 
   current.doc = fresh
+  current.ahead, current.ahead_bytes, current.ahead_job = {}, 0, nil
   current.came = how
 
   local title = current.doc:title()
@@ -2610,6 +2757,9 @@ of these.</p>
            .. "placed at the width %s")
           :format(tenths(current.laid_ms), ms(c.boxes.ticks), ms(c.layout.ticks)))
   end
+
+  -- And the rest of its pictures while it is read (6zz l2).
+  look_ahead(current)
 
   return true
 end
@@ -3302,7 +3452,7 @@ local function blank_tab()
               said = "", timing = "", anyway = {},
               address = { text = "", caret = 0, from = 0 },
               back = {}, forward = {}, laid_ms = 0, painted_ms = 0,
-              pictures_ms = 0 }
+              pictures_ms = 0, ahead = {}, ahead_bytes = 0 }
 
   t.view = tab_view(t)
   return t
@@ -3381,6 +3531,7 @@ local function forget_tab(t)
   end
 
   t.doc, t.pictures, t.ns_raster, t.ns_svgs = nil, nil, nil, nil
+  t.ahead, t.ahead_job = nil, nil
 end
 
 close_tab = function(t)
@@ -3472,6 +3623,8 @@ do
   -- And a refresh that is due, on the page that asked for it (`load`).
   --
   win.on_frame = function()
+    if #ahead_jobs > 0 then step_ahead() end
+
     local r = current and current.refresh
 
     if r and sys.ticks() >= r.at then

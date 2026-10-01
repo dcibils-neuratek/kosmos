@@ -15696,3 +15696,66 @@ saying it was not parsed as it came.
 **Run as the new rule has it**: the browser's four halves, the TLS and
 network suites - `fetch` is `http.lua` too - and the host suite: 9 suites in
 2:40.
+
+**And on x86, slower - which is this Mac's QEMU, measured to be sure.** The
+Dam article on the x86 machine under TCG: before, fetch 8.25-8.29 s and then
+parse 246-257 ms; with the parse fed, fetch 9.31-9.65 s with 866-951 ms of
+it parsing. Two explanations, and a measurement for each. **Did the parser
+do more?** A scratch program parsed the article in the guest with no
+network - whole, and fed in pieces of 64, 16 and 4 KB: 255.6 ms whole and
+254.6 in pieces on x86, 225.7 and 222 on ARM. The same work. The encoding
+started again once, at 15.8 KB (`p:refed()`, now on the log's line). **So the
+wall time**: QEMU runs an x86 guest's processors on one host thread here -
+its memory order is stronger than this Mac's, so TCG cannot run them side by
+side - and a parse on one core is time the network's cores do not get. The
+x86 profile's samples doubled in hubbub for the same reason: a sample
+falls on whoever is current, and the parse was current while the network's
+work was interleaved with it. On ARM, whose cores QEMU does run side by
+side, the overlap is real.
+
+**And one remedy tried and taken back**: the body handed on only when the
+next read would wait, the connection drained first, as the usual answer to
+a slow consumer has it. x86 did not move (10.2-10.5 s), and on ARM, two
+rounds alternated with the image before it, it was worse by about the
+parse's own time: fetch 817-1282 ms against 516-809. Each piece handed on
+as it comes, as built.
+
+## 18.331 The rest of a page's pictures while it is read (6zz l2)
+
+**What it fixes**: a band's pictures were fetched the first time the band
+was painted, so a scroll that reached a band with pictures stopped there
+while they came - a round trip each, and over TLS a handshake.
+
+**Now, once a page is shown, the pictures no band has asked for are fetched
+in the background** - `look_ahead`, a coroutine running `http.get_many` that
+the window steps at the start of each pass, its wait cut to a fiftieth of a
+second while one runs. Their bytes are kept on the tab (`ahead`), at most a
+sixteenth of the memory free; decoding and laying out stay with the band, so
+the fetch ahead touches nothing a scroll or a zoom also touches. A band that
+needs a picture takes its bytes, or - if it is still on its way - steps the
+fetch ahead until it has come, rather than asking the server twice. A tab
+that shows another page, or closes, lets its fetch go.
+
+**What `http.lua` needed**: `get_many` waits by calling `opts.pause` when it
+is given one, rather than in `fs.poll` - stepping each fetch then, since no
+poll answers at once and a read of an empty ring costs nothing - and tells
+`opts.each` of each fetch as it ends, so a picture is usable before the
+slowest is in. And **quiet is measured in time**: a request was given up
+after a hundred and fifty waits of a tenth of a second, and stepped by a
+window a wait is one pass - fifteen seconds became half of one. It is
+fifteen seconds on the counter now, however the waiting is done.
+
+**The test** (`run_browser.py --part 1`): the long page, its one picture at
+its end, 76,000 pixels down. Once it is shown, with no scroll, the browser
+says it is fetching one picture ahead - after the line that says the page is
+shown - and then that it fetched it; the server has been asked for it once
+more than before the page was shown (it was shown once earlier, while an
+address was typed over it, and may have begun the same then). `G`, and the
+picture is on the screen, and the server has not been asked again. The
+suite's server holds every picture 0.4 s, which a band reaching it would
+otherwise have stopped for. **The control bit**: a band that neither takes
+what came ahead nor waits for it - the server asked a second time.
+
+**Run as the new rule has it**: the browser's four halves, the TLS and
+network suites - `http.lua`'s waiting changed for `fetch` too - and the
+host suite.

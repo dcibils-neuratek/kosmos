@@ -458,10 +458,13 @@ cores it is bound by memory bandwidth, and what `DC ZVA` would win is TCG's.
 **Item 2's last, 6zz l, the page read as it arrives**: **l1 built**
 (18.330) - `http.get`'s `on_body`, the Compression Kit's `gunzip_stream`,
 `web.parser` (which `web.parse` is now built on), and the Dam article's
-parse inside its fetch, 0.1 ms left after the last byte. Next l2, the rest
-of the pictures while the page is read - its `http.lua` half drafted: quiet
-counted in time, and `get_many` stepped by whoever passes it `opts.pause` -
-then l3, a load the window lives through.
+parse inside its fetch, 0.1 ms left after the last byte (on ARM; on x86
+the fetch is slower under this Mac's QEMU, which runs an x86 guest's cores
+on one thread - the parser measured to cost the same in pieces, 18.330).
+**l2 built** (18.331): a page's other pictures fetched in the background
+once it is shown, stepped by the window, their bytes kept on the tab; a
+band takes them or waits for them, never asks twice. Next l3, a load the
+window lives through.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

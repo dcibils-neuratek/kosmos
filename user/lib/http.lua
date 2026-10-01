@@ -178,6 +178,20 @@ local function counter()
   return counter_hz
 end
 
+--
+-- **Fifteen seconds with nothing new** is when a request is given up on -
+-- measured on the counter, not counted in waits. It was a hundred and fifty
+-- waits of a tenth of a second each, which is what a wait is when this
+-- waits for itself; a window stepping a fetch between its passes
+-- (`roadmap.md` 6zz l2) waits a pass at a time, and a hundred and fifty of
+-- those is half a second.
+--
+local QUIET_SECONDS = 15
+
+local function quiet_for(since_ticks)
+  return sys.ticks() - since_ticks >= QUIET_SECONDS * counter()
+end
+
 local function lookup(host, wait_ticks, hz)
   local now = sys.ticks()
   local known = names[host]
@@ -433,7 +447,11 @@ end
 --   opts.progress    told `(bytes, total)` as the body arrives - total is the
 --                    server's `Content-Length`, or nil when it gave none
 --   opts.pause       called with the connection where this would wait for it;
---                    `http.get_many` passes one that yields to its scheduler
+--                    `http.get_many` passes one that yields to its scheduler,
+--                    and takes one itself, called where it would wait for
+--                    any of its fetches - a window stepping it (6zz l2);
+--                    `get_many`'s `opts.each` is told `(i, reply, why, how)`
+--                    as each one ends
 --   opts.wait_ticks  how long a name may take to look up, scheduler ticks
 --   opts.body        sent as a POST, `opts.content_type` its type
 --   opts.headers     more fields for the request, by name
@@ -506,14 +524,14 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
                                               or "application/x-www-form-urlencoded",
                                               #opts.body) or "",
                           fields, opts.body or "")
-  local sent = 0
+  local sent, moved = 0, sys.ticks()
 
-  for _ = 1, 150 do
-    if sent >= #request then break end
-
+  while sent < #request and not quiet_for(moved) do
     local n = stream:write(request:sub(sent + 1))
 
     sent = sent + n
+
+    if n > 0 then moved = sys.ticks() end
 
     if n == 0 then
       local over, reason, certificate = stream:done()
@@ -566,7 +584,7 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   local pre, head = "", nil          -- head: false when there is none
   local rule, want, again
   local chunks, body, got = nil, {}, 0
-  local idle, reason, ended = 0, nil, false
+  local heard, reason, ended = sys.ticks(), nil, false
 
   --
   -- **The body handed on as it comes** (`roadmap.md` 6zz l1), to whoever
@@ -683,12 +701,12 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
     return got >= want
   end
 
-  while idle < 150 do
+  while not quiet_for(heard) do
     local text = stream:read()
 
     if text then
       take(text)
-      idle = 0
+      heard = sys.ticks()
     end
 
     if whole() then break end
@@ -700,10 +718,7 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
       break
     end
 
-    if not text then
-      idle = idle + 1
-      pause(conn)
-    end
+    if not text then pause(conn) end
   end
 
   --
@@ -989,14 +1004,20 @@ function http.get_many(addresses, opts)
 
   for i, address in ipairs(addresses) do queue[#queue + 1] = { at = i, address = address } end
 
+  -- Each told as it ends, to a caller who can use it before the slowest
+  -- is in - a page's pictures, decoded as they come (6zz l2).
+  local each = opts and opts.each
+
   -- One step of one fetch: to its next wait, or to its end.
   local function step(job)
     local ok, a, b, c = coroutine.resume(job.co)
 
     if not ok then
       results[job.at] = { nil, tostring(a), {} }
+      if each then each(job.at, nil, tostring(a), {}) end
     elseif coroutine.status(job.co) == "dead" then
       results[job.at] = { a, b, c }
+      if each then each(job.at, a, b, c) end
     else
       job.conn = a
       waiting[#waiting + 1] = job
@@ -1020,12 +1041,30 @@ function http.get_many(addresses, opts)
 
   fill()
 
+  --
+  -- **Stepped by somebody else** (`roadmap.md` 6zz l2): given `opts.pause`,
+  -- this waits by calling it, rather than in `fs.poll` - a window fetching
+  -- a page's pictures between its own passes, and back at the next one. No
+  -- poll answers at once, so then each fetch is simply stepped: a read of a
+  -- ring that holds nothing is a look at two numbers, and quiet is measured
+  -- in time, so stepping often gives nothing up sooner.
+  --
+  local outer = opts and opts.pause
+
   while #waiting > 0 do
-    local conns = {}
+    local ready
 
-    for _, job in ipairs(waiting) do conns[#conns + 1] = job.conn end
+    if outer then
+      outer()
+      ready = {}
+    else
+      local conns = {}
 
-    local ready = fs.poll("/Network", conns, {}, nil, tick) or {}
+      for _, job in ipairs(waiting) do conns[#conns + 1] = job.conn end
+
+      ready = fs.poll("/Network", conns, {}, nil, tick) or {}
+    end
+
     local news = {}
 
     for _, c in ipairs(ready) do news[c] = true end

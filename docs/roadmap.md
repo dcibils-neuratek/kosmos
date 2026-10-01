@@ -3266,7 +3266,8 @@ processors, and still what follows USB:
         inside the same `http.get` - it needs nothing of l2 or l3. The Dam
         article's 285-306 ms of parsing now inside its fetch, and 0.1 ms
         left after the last byte.
-      - l2. **The rest of the pictures while the page is read.** After the
+      - l2. **BUILT 1 October (`testing.md` 18.331). The rest of the
+        pictures while the page is read.** After the
         first band is shown, the page's other pictures are fetched by a
         coroutine the window steps on each pass, as `get_many` steps its
         eight (`http.get` already waits through `opts.pause`), so a scroll

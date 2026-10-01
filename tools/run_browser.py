@@ -1752,6 +1752,17 @@ def main():
             # `G`, and its magenta is on the screen; `g` and `G` again, and it is
             # again - without the server being asked for it a second time.
             #
+            #
+            # **And the rest of its pictures while it is read** (`roadmap.md`
+            # 6zz l2): once it is shown, and without a scroll, the picture at
+            # its end is fetched - once - and `G` then draws it without the
+            # server being asked again: its band took the bytes that came
+            # ahead, or waited for them, rather than asking twice. Counted
+            # from here: the long page was shown once before, while an
+            # address was typed over it, and may have begun the same then.
+            #
+            mark = len(guest.seen)
+            asked_before = long_asked.count("/kosmos.png")
             line = showing(long_url, "the long page")
             long_page = re.search(r'"A long page", (\d+) pixels tall, (\d+) pictures, '
                              r'(\d+) missing', line)
@@ -1760,11 +1771,29 @@ def main():
                 raise Failure(f"the long page was not laid out whole, past forty "
                               f"thousand pixels: {line!r}")
 
-            if "/kosmos.png" in long_asked or long_page.group(2, 3) != ("0", "0"):
-                raise Failure(f"the picture at the end of the long page was fetched "
-                              f"before the page was shown, where only the first "
-                              f"band's are: {line!r}, the server asked for "
-                              f"{long_asked!r}")
+            if long_page.group(2, 3) != ("0", "0"):
+                raise Failure(f"the picture at the end of the long page was "
+                              f"counted in its first band: {line!r}")
+
+            # Read from its own showing on: the page before it - the Dam
+            # article, whose pictures this server does not have - may still
+            # be fetching its own ahead, and say so after the mark.
+            shown_at = guest.seen.index("browser: showing " + long_url, mark)
+            ahead = guest.wait_for_line("browser: fetched ", "the long page's other "
+                                        "pictures fetched while it was read",
+                                        since=shown_at)
+            said_ahead = guest.seen[mark:]
+            began_ahead = said_ahead.find("browser: fetching 1 pictures ahead")
+
+            if began_ahead < 0 or began_ahead < said_ahead.find("browser: showing " + long_url):
+                raise Failure("the long page's other pictures were not fetched after "
+                              "it was shown, where only its first band's are before")
+
+            if not ahead.startswith("1 of 1 pictures ahead") \
+               or long_asked.count("/kosmos.png") != asked_before + 1:
+                raise Failure(f"the picture at the end of the long page was not "
+                              f"fetched while it was read: {ahead!r}, the server "
+                              f"asked for {long_asked!r}")
 
 
 
@@ -1781,9 +1810,12 @@ def main():
             at_the_end("G a second time on the long page did not show its last "
                        "picture again")
 
-            if long_asked.count("/kosmos.png") != 1:
-                raise Failure(f"the long page's last picture was not kept once "
+            if long_asked.count("/kosmos.png") != asked_before + 1:
+                raise Failure(f"the long page's last picture was asked for again - "
+                              f"when its band was painted, or after it was kept "
                               f"decoded: the server was asked for {long_asked!r}")
+
+            print(f"ahead: fetched {ahead}, its band drawn from it", flush=True)
 
         #
         # **The later half's own start** (`--part 2`): the Dam article shown,

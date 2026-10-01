@@ -168,6 +168,9 @@ struct parsing {
 
     const char               *failed;    /* why, once it has */
     int                       code;
+
+    /* How many bytes were fed again when the encoding changed, or none. */
+    size_t                    refed;
 };
 
 static void parsing_drop(struct parsing *p)
@@ -281,6 +284,7 @@ static bool parsing_feed(struct parsing *p, const uint8_t *bytes, size_t len)
             }
 
             e = dom_hubbub_parser_parse_chunk(p->parser, kept, kept_len);
+            p->refed = kept_len;
             free(kept);
         }
     }
@@ -396,6 +400,16 @@ static int l_parsing_feed(lua_State *L)
     }
 
     lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* `p:refed()` -> the bytes fed again when a `<meta>` changed the
+ * encoding part way, or 0: what starting again cost. */
+static int l_parsing_refed(lua_State *L)
+{
+    struct parsing *p = luaL_checkudata(L, 1, PARSING_HANDLE);
+
+    lua_pushinteger(L, (lua_Integer)p->refed);
     return 1;
 }
 
@@ -1464,6 +1478,7 @@ void kosmos_web_kit(lua_State *L)
     static const luaL_Reg parsing[] = {
         { "feed",   l_parsing_feed },
         { "finish", l_parsing_finish },
+        { "refed",  l_parsing_refed },
         { NULL, NULL }
     };
 
