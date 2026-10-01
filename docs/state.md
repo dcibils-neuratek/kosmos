@@ -496,9 +496,20 @@ as it is, `/Home` or a stick carries them); or only the small scripts now.
 **Item 4**: **`diskfs` step 4 done** (18.337) - `kfs.lua`, `blockcache.lua`
 and the Lua disk server out of the tree (`init.lua` 7,554 lines to 5,999),
 and the drive server reading a volume through `kfs.c`'s own
-`kfs_super_decode` and `kfs_bitmap_free`. Next in item 4: a QEMU with
-virglrenderer (4h d), the M700's GPU codec (measurements first), the
-hardware cursor (4h b).
+`kfs_super_decode` and `kfs_bitmap_free`. **The virgl QEMU (4h d), begun
+and paused on the disk**: Homebrew's `virglrenderer` 1.3.0, `libepoxy` and
+`sdl2-compat` installed for it - which brought `mesa` and, under it, `llvm`,
+1.9 GB, more than expected - and QEMU 11.1.1's source in `build/downloads`,
+its signature good (Michael Roth's key, `...3353C9CEF108B584`). The build
+itself, into `build/qemu-virgl` beside the installed QEMU, waits: this Mac's
+volume is at 98%, 4.4 GB free, and a QEMU build tree beside the gate's own
+images would leave too little. **Diego's**: room on the disk. `build/` is
+6.4 GB, and 2.1 GB of it the three sticks in `build/x86_64` - 0.10.88 and
+0.10.193 stable, which stay, and 0.10.200 development, which is his to keep
+or not; the rest is in use. `llvm` and `mesa` can go again if virgl is not
+wanted yet. Nothing was deleted but this session's own scratch images. The M700's codec waits on the M700 (`groove --report
+30` and the 1080p film's numbers from the 0.10.190 stick). Next: the hardware
+cursor (4h b), which needs no toolchain.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
