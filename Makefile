@@ -790,6 +790,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gfx/shadow.c \
              user/kits/gfx/yuv.c \
              user/kits/gfx/pack.c \
+             user/kits/gfx/rows.c \
              user/kits/game/game.c \
              user/kits/game/gamesoft.c \
              user/kits/3d/k3d_mesh.c \
@@ -1991,6 +1992,23 @@ $(HOSTDIR)/test_raster: tools/test_raster.c user/bin/apps/browser/web_raster.c u
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(RASTER_TEST_FLAGS) -o $@ \
 	        tools/test_raster.c user/bin/apps/browser/web_raster.c
+
+#
+# **Filling, and a glyph over a row** (`user/kits/gfx/rows.c`, `roadmap.md`
+# 6zz h): four pixels at a time held to one, every coverage over every ink
+# and ground, natively for NEON and through Rosetta for SSE2 - built as the
+# rasteriser's test is, its vectorisers off so the scalar loop is one.
+#
+ROWS_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -O2 -fno-vectorize \
+                   -fno-slp-vectorize -Iuser/kits/gfx
+
+$(HOSTDIR)/test_rows: tools/test_rows.c user/kits/gfx/rows.c user/kits/gfx/rows.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(ROWS_TEST_FLAGS) -o $@ tools/test_rows.c user/kits/gfx/rows.c
+
+$(HOSTDIR)/test_rows_x86: tools/test_rows.c user/kits/gfx/rows.c user/kits/gfx/rows.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -arch x86_64 $(ROWS_TEST_FLAGS) -o $@ tools/test_rows.c user/kits/gfx/rows.c
 
 $(HOSTDIR)/test_raster_x86: tools/test_raster.c user/bin/apps/browser/web_raster.c user/bin/apps/browser/web_raster.h
 	@mkdir -p $(dir $@)
@@ -3748,7 +3766,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3878,6 +3896,8 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	$(HOSTDIR)/test_pack_x86
 	$(HOSTDIR)/test_raster
 	$(HOSTDIR)/test_raster_x86
+	$(HOSTDIR)/test_rows
+	$(HOSTDIR)/test_rows_x86
 	$(HOSTDIR)/test_gunzip
 	@# Broken-down time, which FFmpeg's option parser and logger reach.
 	$(HOSTDIR)/test_time

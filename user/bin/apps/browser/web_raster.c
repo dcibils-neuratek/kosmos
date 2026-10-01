@@ -212,9 +212,9 @@ static float magnitude(float v)
 {
     uint32_t bits;
 
-    memcpy(&bits, &v, sizeof(bits));
+    __builtin_memcpy(&bits, &v, sizeof(bits));
     bits &= 0x7fffffffu;
-    memcpy(&v, &bits, sizeof(v));
+    __builtin_memcpy(&v, &bits, sizeof(v));
     return v;
 }
 
@@ -242,6 +242,13 @@ static uint32_t lay(float sum, uint32_t d, float cr, float cg, float cb)
          | (uint32_t)(b + 0.5f);
 }
 
+/*
+ * The lanes load and store through `__builtin_memcpy` of a vector's size,
+ * which GCC makes one instruction. Plain `memcpy` was a call: under
+ * `-ffreestanding` GCC may not take `memcpy` to be the C library's, so on
+ * ARM every sixteen bytes went through the libc's loop - which a test on
+ * the Mac, whose compiler inlines it, could not show (`roadmap.md` 6zz h).
+ */
 typedef float    f32x4 __attribute__((vector_size(16)));
 typedef uint32_t u32x4 __attribute__((vector_size(16)));
 typedef int32_t  i32x4 __attribute__((vector_size(16)));
@@ -266,7 +273,7 @@ static void lay4(uint32_t *out, f32x4 s, f32x4 cr, f32x4 cg, f32x4 cb)
     f32x4 c, da, keep, oa, inv, r, g, b;
     u32x4 d, a, ri, gi, bi;
 
-    memcpy(&d, out, sizeof(d));
+    __builtin_memcpy(&d, out, sizeof(d));
 
     c = (f32x4)((i32x4)s & 0x7fffffff);
     c = choose(c < one, c, one);
@@ -285,7 +292,7 @@ static void lay4(uint32_t *out, f32x4 s, f32x4 cr, f32x4 cg, f32x4 cb)
     gi = __builtin_convertvector(g + half, u32x4);
     bi = __builtin_convertvector(b + half, u32x4);
     d = a << 24 | ri << 16 | gi << 8 | bi;
-    memcpy(out, &d, sizeof(d));
+    __builtin_memcpy(out, &d, sizeof(d));
 }
 
 /*
@@ -342,7 +349,7 @@ void raster_paint(struct raster *r, uint32_t *pixels, unsigned pitch,
             for (; x + 4 <= end; x += 4) {
                 f32x4 v;
 
-                memcpy(&v, row + x, sizeof(v));
+                __builtin_memcpy(&v, row + x, sizeof(v));
                 v = running4(v, carry);
                 carry = __builtin_shufflevector(v, v, 3, 3, 3, 3);
                 lay4(out + x, v, vr, vg, vb);
@@ -354,7 +361,7 @@ void raster_paint(struct raster *r, uint32_t *pixels, unsigned pitch,
                 float v[4];
                 int k;
 
-                memcpy(v, row + x, sizeof(v));
+                __builtin_memcpy(v, row + x, sizeof(v));
                 running1(v, sum);
                 sum = v[3];
 

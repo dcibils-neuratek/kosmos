@@ -76,4 +76,20 @@ bool        web_ns_sent(struct web_ns_doc *d, char **url, char **body,
 bool        web_ns_dirty(struct web_ns_doc *d, int *x, int *y, int *w,
                          int *h);
 
+/*
+ * What the last paint spent, by kind, in counter ticks and calls
+ * (`roadmap.md` 6zz h): fills (rectangles and the straight lines that are
+ * borders), text, pictures, the other shapes, the rest (clips), and the
+ * whole paint - whose remainder is NetSurf walking its boxes.
+ */
+struct web_ns_cost {
+    unsigned long ticks, calls;
+};
+
+struct web_ns_costs {
+    struct web_ns_cost whole, fills, text, pictures, shapes, other;
+};
+
+const struct web_ns_costs *web_ns_costs(struct web_ns_doc *d);
+
 #endif

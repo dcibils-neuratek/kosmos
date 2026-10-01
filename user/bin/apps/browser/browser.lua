@@ -806,6 +806,11 @@ end
 
 local laid_ms, painted_ms = 0, 0
 
+-- Of the paint, what went on the band's pictures: fetched, decoded and the
+-- page laid out again around them. It was counted as painting, and on
+-- Wikipedia it was nearly all of it (`roadmap.md` 6zz h).
+local pictures_ms = 0
+
 --
 -- An address as NetSurf takes one, and one it gives back as this browser
 -- writes it. NetSurf joins links by the rules for URLs, so a file of this
@@ -1444,12 +1449,21 @@ paint_band = function(at)
 
   if ns_doc then
     doc:ns_paint(paper, PAGE_W, paper_h, band_top)
-    return ns_band_pictures()
+  else
+    doc:render(paper, PAGE_W, paper_h, band_top)
   end
 
-  doc:render(paper, PAGE_W, paper_h, band_top)
+  local t0 = sys.ticks()
+  local shown, missing
 
-  return band_pictures()
+  if ns_doc then
+    shown, missing = ns_band_pictures()
+  else
+    shown, missing = band_pictures()
+  end
+
+  pictures_ms = since(t0)
+  return shown, missing
 end
 
 --
@@ -1605,14 +1619,16 @@ local function load(text, post)
   end
 
   --
-  -- Four numbers, in the order the bytes go through them. Read as
+  -- Five numbers, in the order the bytes go through them. Read as
   -- proportions rather than as speeds: this is QEMU, and `CLAUDE.md` is
   -- clear about what a number from QEMU is worth. What it is worth is
-  -- knowing which of the four to work on.
+  -- knowing which of the five to work on - and the band's pictures are
+  -- their own, since fetching them was being read as painting.
   --
-  timing = ("fetch %s  parse %s  layout %s  paint %s ms")
-           :format(tenths(fetched_ms), tenths(parsed_ms),
-                   tenths(laid_ms), tenths(painted_ms))
+  timing = ("fetch %s  parse %s  layout %s  pictures %s  paint %s ms")
+           :format(tenths(fetched_ms), tenths(parsed_ms), tenths(laid_ms),
+                   tenths(pictures_ms),
+                   tenths(math.max(0, painted_ms - pictures_ms)))
 
   say(how_said(came) .. " - " .. counts)
 
@@ -1627,6 +1643,27 @@ local function load(text, post)
   -- the page is shown.
   print(("browser: showing %s, \"%s\", %d pixels tall, %d pictures, %d missing, %s")
         :format(text, title or "", content_h, shown, missing, how_said(came)))
+
+  --
+  -- And what drawing its first band spent, by kind (`roadmap.md` 6zz h):
+  -- the band last painted, which with pictures is the last of up to three.
+  -- What is left of the whole is NetSurf walking its boxes.
+  --
+  local c = ns_doc and doc:ns_costs()
+
+  if c then
+    local function ms(t) return tenths((t * 10000) // HZ) end
+    local rest = c.whole.ticks - c.fills.ticks - c.text.ticks
+                 - c.pictures.ticks - c.shapes.ticks - c.other.ticks
+
+    print(("browser: painted in %s ms - fills %s (%d), text %s (%d), "
+           .. "pictures %s (%d), shapes %s (%d), clips %s (%d), boxes %s")
+          :format(ms(c.whole.ticks), ms(c.fills.ticks), c.fills.calls,
+                  ms(c.text.ticks), c.text.calls, ms(c.pictures.ticks),
+                  c.pictures.calls, ms(c.shapes.ticks), c.shapes.calls,
+                  ms(c.other.ticks), c.other.calls, ms(rest)))
+  end
+
   return true
 end
 

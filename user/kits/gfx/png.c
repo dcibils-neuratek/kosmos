@@ -276,15 +276,17 @@ static bool unfilter(unsigned char *rows, unsigned height, size_t stride,
             }
 
             if (bpp == 4) {
+                /* `__builtin_memcpy`, not `memcpy`: under -ffreestanding
+                 * GCC called the libc for each (`rows.c` says more). */
                 typedef unsigned char u8x16 __attribute__((vector_size(16)));
 
                 for (i = 0; i + 16 <= stride; i += 16) {
                     u8x16 d, u;
 
-                    memcpy(&d, data + i, sizeof d);
-                    memcpy(&u, previous + i, sizeof u);
+                    __builtin_memcpy(&d, data + i, sizeof d);
+                    __builtin_memcpy(&u, previous + i, sizeof u);
                     d = d + u;
-                    memcpy(data + i, &d, sizeof d);
+                    __builtin_memcpy(data + i, &d, sizeof d);
                 }
             } else {
                 i = 0;

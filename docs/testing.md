@@ -14890,3 +14890,66 @@ UTF-8 whatever the page was read in, `q=%C3%B1and%C3%BA`.
 **Live**: Google's front page reads "Imágenes" and "Búsqueda avanzada".
 
 **The gate**: 75 of 75, in 8:58.
+
+## 18.316 A page's paint by kind, and fills and glyphs in lanes (6zz h)
+
+**`roadmap.md` 6zz h** - SIMD in the browser's pixels, profiled first.
+
+**The measurement.** Every plotter NetSurf draws through is timed by kind -
+fills (rectangles, and the straight lines that are borders), text,
+pictures (where they are drawn, `content_redraw`, since `plot_bitmap` is
+not their path), shapes, clips - and the whole paint, whose remainder is
+NetSurf walking its boxes; the browser prints it after a page is shown
+(`browser: painted in ...`). Under QEMU, the last band painted:
+
+    page                  whole   fills   text   pictures  clips  boxes
+    test page              7.4     4.1     1.5     0.2      0.4    0.9
+    Dam article (saved)    7.1     2.2     1.0     0.0      1.5    2.3
+    Wikipedia, live       16.9     4.1     3.4     4.6      1.8    2.9
+    Google, live           3.5     1.9     0.1     0.4      0.2    0.7
+
+And the status line's "paint" had not been painting: Wikipedia's 857 ms was
+its band's pictures fetched, decoded and the page laid out again around
+them. They are `pictures` now, beside `paint`.
+
+**Fills and glyphs four pixels at a time** (`user/kits/gfx/rows.c`):
+`gfx_fill_row`, which every fill in `gfx.c` goes through - `surface:fill`,
+a line, a text's ground, `gfx_draw_fill` - and `gfx_cover_row`, a glyph's
+coverage over a row, clipped once a row rather than tested a pixel at a
+time. The mix rounds by the identity `pack.c` uses, which is the scalar
+`(x + 127) / 255` for every value a mix can make, 255 being odd.
+
+**And the lanes were first slower**: under QEMU the test page's fills went
+from 4.1 ms to 12.1. Every sixteen-byte load and store was a call to the
+libc's `memcpy`: `-ffreestanding` lets GCC take nothing about `memcpy` to
+be the C library's, so it does not inline it - and it had been so in
+`pack.c`, the compositor's blend and PNG's unfiltering since they were
+written, on ARM and on x86, where the call shows only in the relocations.
+clang on the Mac inlines it, so the host tests never saw it.
+`__builtin_memcpy` is the instruction. After:
+
+    page                  whole   fills   text   pictures
+    test page              3.4     0.9     0.8     0.2
+    Dam article (saved)    5.2     0.7     0.6     0.0
+    Wikipedia, live       12.7     1.3     2.1     4.6
+    Google, live           2.2     0.4     0.1     0.5
+
+**`host`**: `test_rows` and `test_rows_x86`, 6 checks each - every coverage
+over every ink and ground, 16.7 million mixes, the lanes against the scalar
+loop and both against `gfx.c`'s `mix`; random glyph rows and fills of every
+width from 0 to 40, nothing past a row's end touched; and a 1920x1080 frame
+of each timed: natively a fill 3.6x and a glyph's coverage 3.0x, through
+Rosetta 0.9x and 2.3x. Control: the lanes' rounding off by one, 2 of 6 fail
+at coverage 1 over ground 127.
+
+**`lanes`**, a suite of its own (`tools/check_lanes.py`): the objects these
+images were built from - `rows.c`, `pack.c`, the SVG rasteriser whole and
+`gfx.c`'s `l_blend` - call no `memcpy`, ARM and x86 both, read from their
+relocations. 8 objects. Control: one load in `gfx_cover_row` back to
+`memcpy`, and it names that function.
+
+**`arm-browser` and `x86-browser`**: every check as before, the same counts -
+1,176 pixels of the SVG's disc, 272 of the typed letters - since the mix is
+the scalar one to the bit.
+
+**The gate**: 76 of 76, `lanes` the new one, in 9:03.

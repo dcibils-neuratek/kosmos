@@ -2835,6 +2835,30 @@ processors, and still what follows USB:
       one does. 2.7x natively and 1.8x through Rosetta once both were done.
       And clang turns a scalar reference into lanes by itself, so a host
       test that times the two builds with its vectorisers off.
+
+      **Measured, and the first two BUILT 1 October** (`testing.md`
+      18.316). A band's paint by kind, under QEMU: on the test page fills
+      4.1 ms of 7.4 and text 1.5; on Wikipedia's front page fills 4.1, text
+      3.4 and pictures 4.6 of 16.9 - and NetSurf walking its boxes most of
+      the rest. And the status line's "paint" was mostly not painting: it
+      held the band's pictures fetched, decoded and laid out around, and on
+      Wikipedia that was nearly all of it - it is two numbers now. **Fills
+      and glyphs are four pixels at a time** (`rows.c`), every fill in
+      `gfx.c` and every glyph through them: the test page's paint 7.4 ms to
+      3.4, Wikipedia's 16.9 to 12.7, natively 3.6x and 3.0x.
+
+      **And the class it found**: the lanes were first three times
+      *slower* under QEMU, because `-ffreestanding` lets GCC assume nothing
+      of `memcpy`, and every sixteen bytes a lane loaded or stored was a
+      call into the libc - in the compositor's blend and VNC's packing as
+      well, on ARM and x86, since they were written. `__builtin_memcpy` is
+      the instruction; the gate's `lanes` suite holds the objects to it.
+
+      **Next in h, by the same measurement**: pictures scaled and laid over
+      (`stretch_into`, 4.6 ms on Wikipedia's six), then the scroll's copy -
+      `blit` is `memcpy` a row, and the libc's `memcpy` is eight bytes at a
+      time and its `memmove` one, shared with the kernel, which may not use
+      the vector unit.
    i. **BUILT 30 September (`testing.md` 18.299). A progress bar while a
       page loads, in the status panel** - Diego,
       30 September, watching Wikipedia's Dam article sit on "waiting for

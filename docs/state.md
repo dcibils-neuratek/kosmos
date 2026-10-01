@@ -406,8 +406,13 @@ form sent by GET or POST - Wikipedia's search answers live; Google answers
 that it needs JavaScript. Diego agreed the order on 1 October ("Let's
 continue with the plan"): **j7 charset - built** (18.315: the header's
 charset held to over a `<meta>`, forms sent in the page's charset; Google
-reads "Imágenes" now), then **h next** (SIMD in the browser's drawing, profiled
-first), k the cache, then e (resizing) and d (the new chrome).
+reads "Imágenes" now), then **h** (SIMD in the browser's drawing, profiled
+first): **measured, and fills and glyphs in lanes** (18.316) - a paint by
+kind printed after every page, the status line's pictures apart from its
+paint, and `__builtin_memcpy` for every lane's load and store, which had
+been a libc call on both machines (the gate's `lanes` suite). Rest of h:
+pictures scaled (`stretch_into`), then the scroll's copy (`memcpy`). Then k
+the cache, then e (resizing) and d (the new chrome).
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

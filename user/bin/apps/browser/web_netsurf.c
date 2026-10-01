@@ -41,6 +41,7 @@
 #include <strings.h>
 
 #include "lauxlib.h"
+#include <kosmos.h>
 
 #include <dom/dom.h>
 #include <parserutils/charset/codec.h>
@@ -1056,16 +1057,98 @@ static nserror plot_text(const struct redraw_context *ctx,
     return NSERROR_OK;
 }
 
+/*
+ * **What a paint spent, by kind** (`roadmap.md` 6zz h): fills, text,
+ * pictures and the other shapes, each timed as NetSurf asks for it - so the
+ * vector unit goes where the time is, which is the order 6zz h was agreed
+ * in. Two readings of the counter a call, which is nothing beside drawing.
+ * What the paint spent outside them all is NetSurf walking its boxes.
+ */
+static struct web_ns_costs costs;
+
+#define TIMED(kind, call)                                                  \
+    do {                                                                   \
+        unsigned long t0_ = kosmos_ticks();                                \
+        nserror e_ = (call);                                               \
+                                                                           \
+        costs.kind.ticks += kosmos_ticks() - t0_;                          \
+        costs.kind.calls++;                                                \
+        return e_;                                                         \
+    } while (0)
+
+static nserror timed_clip(const struct redraw_context *ctx,
+                          const struct rect *clip)
+{
+    TIMED(other, plot_clip(ctx, clip));
+}
+
+static nserror timed_arc(const struct redraw_context *ctx,
+                         const plot_style_t *style, int x, int y, int radius,
+                         int angle1, int angle2)
+{
+    TIMED(shapes, plot_arc(ctx, style, x, y, radius, angle1, angle2));
+}
+
+static nserror timed_disc(const struct redraw_context *ctx,
+                          const plot_style_t *style, int x, int y,
+                          int radius)
+{
+    TIMED(shapes, plot_disc(ctx, style, x, y, radius));
+}
+
+static nserror timed_line(const struct redraw_context *ctx,
+                          const plot_style_t *style, const struct rect *line)
+{
+    TIMED(fills, plot_line(ctx, style, line));
+}
+
+static nserror timed_rectangle(const struct redraw_context *ctx,
+                               const plot_style_t *style,
+                               const struct rect *rect)
+{
+    TIMED(fills, plot_rectangle(ctx, style, rect));
+}
+
+static nserror timed_polygon(const struct redraw_context *ctx,
+                             const plot_style_t *style, const int *p,
+                             unsigned int n)
+{
+    TIMED(shapes, plot_polygon(ctx, style, p, n));
+}
+
+static nserror timed_path(const struct redraw_context *ctx,
+                          const plot_style_t *pstyle, const float *p,
+                          unsigned int n, const float transform[6])
+{
+    TIMED(shapes, plot_path(ctx, pstyle, p, n, transform));
+}
+
+static nserror timed_bitmap(const struct redraw_context *ctx,
+                            struct bitmap *bitmap, int x, int y, int width,
+                            int height, colour bg,
+                            bitmap_flags_t flags)
+{
+    TIMED(pictures, plot_bitmap(ctx, bitmap, x, y, width, height, bg,
+                                flags));
+}
+
+static nserror timed_text(const struct redraw_context *ctx,
+                          const struct plot_font_style *fstyle, int x, int y,
+                          const char *text, size_t length)
+{
+    TIMED(text, plot_text(ctx, fstyle, x, y, text, length));
+}
+
 static const struct plotter_table plotters = {
-    .clip = plot_clip,
-    .arc = plot_arc,
-    .disc = plot_disc,
-    .line = plot_line,
-    .rectangle = plot_rectangle,
-    .polygon = plot_polygon,
-    .path = plot_path,
-    .bitmap = plot_bitmap,
-    .text = plot_text,
+    .clip = timed_clip,
+    .arc = timed_arc,
+    .disc = timed_disc,
+    .line = timed_line,
+    .rectangle = timed_rectangle,
+    .polygon = timed_polygon,
+    .path = timed_path,
+    .bitmap = timed_bitmap,
+    .text = timed_text,
     .option_knockout = false,
 };
 
@@ -1209,7 +1292,14 @@ struct web_ns_doc {
     char               sent_type[96];               /* the body's type */
     unsigned char      pending[4];  /* a character arriving byte by byte */
     int                have, need;
+
+    struct web_ns_costs costs;      /* what the last paint spent */
 };
+
+const struct web_ns_costs *web_ns_costs(struct web_ns_doc *d)
+{
+    return &d->costs;
+}
 
 /* The box tree finished: NetSurf says whether it was made. The document is
  * the one `web_ns_layout` is waiting on, which is the only one there is
@@ -2441,9 +2531,14 @@ void web_ns_paint(struct web_ns_doc *d, lua_State *L, struct surface *s,
     data.background_colour = 0xffffff;
     data.scale = 1.0f;
 
+    memset(&costs, 0, sizeof(costs));
+    costs.whole.calls = 1;
+    costs.whole.ticks = kosmos_ticks();
     faces_L = L;
     (void)html_redraw(&d->html.base, &data, &clip, &ctx);
     faces_L = NULL;
+    costs.whole.ticks = kosmos_ticks() - costs.whole.ticks;
+    d->costs = costs;
 
     if (d->focus != NULL) {
         long cx = d->caret_x, cy = d->caret_y - from, ch = d->caret_h;
@@ -2740,6 +2835,7 @@ bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
     int cx1 = clip->x1 < p->clip.x1 ? clip->x1 : p->clip.x1;
     int cy1 = clip->y1 < p->clip.y1 ? clip->y1 : p->clip.y1;
     int x0 = data->x, y0 = data->y, x, y;
+    unsigned long began = kosmos_ticks();
 
     if (h->pic == NULL || data->width <= 0 || data->height <= 0
         || cx0 >= cx1 || cy0 >= cy1) {
@@ -2771,5 +2867,9 @@ bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
         }
     }
 
+    /* A page's pictures come here and not through `plot_bitmap`, so they
+     * are counted here (`costs`, above). */
+    costs.pictures.ticks += kosmos_ticks() - began;
+    costs.pictures.calls++;
     return true;
 }

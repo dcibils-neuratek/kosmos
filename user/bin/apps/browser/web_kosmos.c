@@ -834,6 +834,42 @@ static int l_ns_sent(lua_State *L)
     return 3;
 }
 
+/* One kind of cost into the table on top: `{ ticks, calls }`. */
+static void push_cost(lua_State *L, const char *name,
+                      const struct web_ns_cost *cost)
+{
+    lua_createtable(L, 0, 2);
+    lua_pushinteger(L, (lua_Integer)cost->ticks);
+    lua_setfield(L, -2, "ticks");
+    lua_pushinteger(L, (lua_Integer)cost->calls);
+    lua_setfield(L, -2, "calls");
+    lua_setfield(L, -2, name);
+}
+
+/* `doc:ns_costs()` -> what the last paint spent, by kind - `whole`, `fills`,
+ * `text`, `pictures`, `shapes`, `other`, each `{ ticks, calls }` in counter
+ * ticks (`roadmap.md` 6zz h). */
+static int l_ns_costs(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    const struct web_ns_costs *c;
+
+    if (d->ns == NULL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    c = web_ns_costs(d->ns);
+    lua_createtable(L, 0, 6);
+    push_cost(L, "whole", &c->whole);
+    push_cost(L, "fills", &c->fills);
+    push_cost(L, "text", &c->text);
+    push_cost(L, "pictures", &c->pictures);
+    push_cost(L, "shapes", &c->shapes);
+    push_cost(L, "other", &c->other);
+    return 1;
+}
+
 /* `doc:ns_dirty()` -> x, y, w, h of what changed on the page since last
  * asked, or nil. */
 static int l_ns_dirty(lua_State *L)
@@ -1158,6 +1194,7 @@ void kosmos_web_kit(lua_State *L)
         { "ns_blur", l_ns_blur },
         { "ns_sent", l_ns_sent },
         { "ns_dirty", l_ns_dirty },
+        { "ns_costs", l_ns_costs },
         { NULL, NULL }
     };
 

@@ -31,6 +31,7 @@
  */
 
 #include "pack.h"
+#include "rows.h"
 #include "shadow.h"
 #include "yuv.h"
 #include "cameraproto.h"
@@ -299,6 +300,13 @@ static inline uint32_t over(uint32_t src, uint32_t dst, uint32_t global)
  * The tail is the scalar loop. A row is rarely a multiple of four and a
  * branch at the end costs nothing next to what the body saves.
  */
+/*
+ * The lanes load and store through `__builtin_memcpy` of a vector's size,
+ * which GCC makes one instruction. Plain `memcpy` was a call: under
+ * `-ffreestanding` GCC may not take `memcpy` to be the C library's, so on
+ * ARM every sixteen bytes went through the libc's loop - which a test on
+ * the Mac, whose compiler inlines it, could not show (`roadmap.md` 6zz h).
+ */
 typedef uint32_t u32x4 __attribute__((vector_size(16)));
 
 static inline u32x4 mul255v(u32x4 x, u32x4 a)
@@ -342,7 +350,7 @@ static void blend_row(uint32_t *dp, const uint32_t *sp, long w,
     for (; i + 4 <= w; i += 4) {
         u32x4 s, d;
 
-        memcpy(&s, sp + i, sizeof s);
+        __builtin_memcpy(&s, sp + i, sizeof s);
 
         /* The two cases `over` short-circuits, asked of four pixels. Only
          * when the global alpha is opaque, because otherwise the source's
@@ -353,7 +361,7 @@ static void blend_row(uint32_t *dp, const uint32_t *sp, long w,
             if (a[0] == 255u && a[1] == 255u && a[2] == 255u && a[3] == 255u) {
                 u32x4 opaque = s | 0xff000000u;
 
-                memcpy(dp + i, &opaque, sizeof opaque);
+                __builtin_memcpy(dp + i, &opaque, sizeof opaque);
                 continue;
             }
 
@@ -362,7 +370,7 @@ static void blend_row(uint32_t *dp, const uint32_t *sp, long w,
             }
         }
 
-        memcpy(&d, dp + i, sizeof d);
+        __builtin_memcpy(&d, dp + i, sizeof d);
 
         /*
          * **The vector path assumes the destination is opaque**, which is
@@ -380,7 +388,7 @@ static void blend_row(uint32_t *dp, const uint32_t *sp, long w,
             if (da[0] == 255u && da[1] == 255u
                 && da[2] == 255u && da[3] == 255u) {
                 d = over4(s, d, gv);
-                memcpy(dp + i, &d, sizeof d);
+                __builtin_memcpy(dp + i, &d, sizeof d);
                 continue;
             }
         }
@@ -559,12 +567,7 @@ static int l_fill(lua_State *L)
     }
 
     for (row = 0; row < h; row++) {
-        uint32_t *p = row_of(s, (unsigned)(y + row)) + x;
-        long i;
-
-        for (i = 0; i < w; i++) {
-            p[i] = colour;
-        }
+        gfx_fill_row(row_of(s, (unsigned)(y + row)) + x, w, colour, true);
     }
 
     return 0;
@@ -844,7 +847,6 @@ static int l_span(lua_State *L)
     long len = (long)luaL_checkinteger(L, 4);
     uint32_t colour = (uint32_t)luaL_checkinteger(L, 5);
     long h = 1;
-    long i;
     uint32_t *p;
 
     if (!clip(s, &x, &y, &len, &h, NULL, NULL)) {
@@ -852,10 +854,7 @@ static int l_span(lua_State *L)
     }
 
     p = row_of(s, (unsigned)y) + x;
-
-    for (i = 0; i < len; i++) {
-        p[i] = colour;
-    }
+    gfx_fill_row(p, len, colour, true);
 
     return 0;
 }
@@ -2046,12 +2045,8 @@ static void draw_outline_text(struct surface *s, const struct outline_font *f,
                 long row;
 
                 for (row = 0; row < bh; row++) {
-                    uint32_t *p = row_of(s, (unsigned)(by + row)) + bx;
-                    long n;
-
-                    for (n = 0; n < bw; n++) {
-                        p[n] = *bg;
-                    }
+                    gfx_fill_row(row_of(s, (unsigned)(by + row)) + bx, bw,
+                                 *bg, true);
                 }
             }
         }
@@ -2063,27 +2058,22 @@ static void draw_outline_text(struct surface *s, const struct outline_font *f,
 
         for (gy = 0; gy < gl->h && gl->coverage != NULL; gy++) {
             long py = baseline + gl->yoff + gy;
-            uint32_t *row;
-            int gx;
+            long left = pen + gl->xoff;
+            long from = left < 0 ? -left : 0;
+            long to = left + gl->w > (long)s->width ? (long)s->width - left
+                                                    : gl->w;
 
-            if (py < 0 || py >= (long)s->height) {
+            if (py < 0 || py >= (long)s->height || from >= to) {
                 continue;
             }
 
-            row = row_of(s, (unsigned)py);
-
-            for (gx = 0; gx < gl->w; gx++) {
-                long px_ = pen + gl->xoff + gx;
-                unsigned a = gl->coverage[gy * gl->w + gx];
-
-                if (px_ < 0 || px_ >= (long)s->width || a == 0) {
-                    continue;
-                }
-
-                /* Blended, which is the whole point: coverage is what an
-                 * outline produces and a threshold would throw it away. */
-                row[px_] = (a == 255) ? fg : mix(row[px_], fg, a);
-            }
+            /* Blended, which is the whole point: coverage is what an
+             * outline produces and a threshold would throw it away. Clipped
+             * once a row, and laid over four pixels at a time (`rows.c`,
+             * `roadmap.md` 6zz h). */
+            gfx_cover_row(row_of(s, (unsigned)py) + (left + from),
+                          gl->coverage + gy * gl->w + from, to - from, fg,
+                          true);
         }
 
         pen += gl->advance;
@@ -3321,12 +3311,7 @@ void gfx_draw_fill(struct surface *s, long x, long y, long w, long h,
     }
 
     for (row = 0; row < h; row++) {
-        uint32_t *p = row_of(s, (unsigned)(y + row)) + x;
-        long n;
-
-        for (n = 0; n < w; n++) {
-            p[n] = colour;
-        }
+        gfx_fill_row(row_of(s, (unsigned)(y + row)) + x, w, colour, true);
     }
 }
 

@@ -126,6 +126,12 @@ SUITES = [
     # asked of make without building anything.
     Suite("rebuilds", ["python3", "tools/test_rebuilds.py"]),
 
+    # **The lanes are instructions, not calls** (`roadmap.md` 6zz h): the
+    # vector loops' loads and stores, in the objects these images were built
+    # from, call no `memcpy` - which under `-ffreestanding` every one of
+    # them did, on both machines, and no test on the Mac could see.
+    Suite("lanes", ["python3", "tools/check_lanes.py"]),
+
     # **The disk server's wire** (`docs/diskfs.md` step 3): `/Home` speaks
     # `diskproto.h`, and fifteen requests it cannot say - the wrong size, no
     # such operation, a path with no end, lengths past their fields, tables

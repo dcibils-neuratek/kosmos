@@ -37,6 +37,13 @@
 
 #include "pack.h"
 
+/*
+ * The lanes load and store through `__builtin_memcpy` of a vector's size,
+ * which GCC makes one instruction. Plain `memcpy` was a call: under
+ * `-ffreestanding` GCC may not take `memcpy` to be the C library's, so on
+ * ARM every sixteen bytes went through the libc's loop - which a test on
+ * the Mac, whose compiler inlines it, could not show (`roadmap.md` 6zz h).
+ */
 typedef uint32_t u32x8 __attribute__((vector_size(32)));
 typedef uint16_t u16x8 __attribute__((vector_size(16)));
 typedef uint8_t  u8x8  __attribute__((vector_size(8)));
@@ -99,9 +106,9 @@ void gfx_pack_row(const uint32_t *src, uint8_t *out, unsigned width,
         for (; i + 8 <= width; i += 8) {
             u32x8 p;
 
-            memcpy(&p, src + i, sizeof(p));
+            __builtin_memcpy(&p, src + i, sizeof(p));
             p &= 0xFFFFFFu;
-            memcpy(out + i * 4u, &p, sizeof(p));
+            __builtin_memcpy(out + i * 4u, &p, sizeof(p));
         }
 
         gfx_pack_row_scalar(src + i, out + i * 4u, width - i, f);
@@ -114,7 +121,7 @@ void gfx_pack_row(const uint32_t *src, uint8_t *out, unsigned width,
         for (; i + 8 <= width; i += 8) {
             u32x8 p, r, g, b, v;
 
-            memcpy(&p, src + i, sizeof(p));
+            __builtin_memcpy(&p, src + i, sizeof(p));
 
             /* `round(c * max / 255)`, exact while `c * max` fits 16 bits.
              * Written out here rather than as a function: a 32-byte vector
@@ -134,7 +141,7 @@ void gfx_pack_row(const uint32_t *src, uint8_t *out, unsigned width,
                       | ((v << 8) & 0xFF0000u) | (v << 24);
                 }
 
-                memcpy(out + i * per, &v, sizeof(v));
+                __builtin_memcpy(out + i * per, &v, sizeof(v));
             } else if (f->bpp == 16) {
                 u16x8 n;
 
@@ -143,11 +150,11 @@ void gfx_pack_row(const uint32_t *src, uint8_t *out, unsigned width,
                 }
 
                 n = __builtin_convertvector(v, u16x8);
-                memcpy(out + i * per, &n, sizeof(n));
+                __builtin_memcpy(out + i * per, &n, sizeof(n));
             } else {
                 u8x8 n = __builtin_convertvector(v, u8x8);
 
-                memcpy(out + i * per, &n, sizeof(n));
+                __builtin_memcpy(out + i * per, &n, sizeof(n));
             }
         }
 
