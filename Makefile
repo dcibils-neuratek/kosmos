@@ -3812,6 +3812,9 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# The browser's cache: HTTP's dates, what a reply says of keeping it,
 	@# and the store over an fs in memory (`roadmap.md` 6zz k).
 	$(HOSTDIR)/lua tools/test_httpcache.lua
+	@# The browser's favorites as files: names from titles, the order they
+	@# were starred, folders, and removed wherever kept (`roadmap.md` 6zz d3).
+	$(HOSTDIR)/lua tools/test_favorites.lua
 	@# The IDE's editor: the text it edits, every edit undoable, and Lua
 	@# coloured a line at a time with what carries across lines (6n, step 1).
 	$(HOSTDIR)/lua tools/test_textbuf.lua

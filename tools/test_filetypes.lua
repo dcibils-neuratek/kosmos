@@ -244,6 +244,23 @@ check(how and how.program == "texteditor" and how.args == "/Home/notes.txt",
 check(types.how_to_open("/Home/nothing") == nil,
       "and a file nothing claims still opens in nothing")
 
+-- **A browser's favorite** (`roadmap.md` 6zz d3): an empty file with no
+-- extension, what it is in its attributes - the browser opens it, handed
+-- its path, and it is called what it is.
+do
+  local kept = { kind = "file", type = "favorite",
+                 address = "https://en.wikipedia.org/wiki/Dam" }
+  local fav = types.how_to_open("/Home/Favorites/Dam - Wikipedia", kept)
+
+  check(fav and fav.program == "browser"
+        and fav.args == "/Home/Favorites/Dam - Wikipedia",
+        "a favorite does not open in the browser, handed its file")
+  check(types.how_to_open("/Home/Favorites/Dam - Wikipedia") == nil,
+        "the same file without its attributes is claimed by something")
+  check(types.describe("/Home/Favorites/Dam - Wikipedia", kept) == "Favorite",
+        "a favorite is not called a Favorite")
+end
+
 check(types.opener("/Home/diego.lua") == "ide",
       "the IDE is what handles a .lua, for Edit - not Text Editor (6zs)")
 

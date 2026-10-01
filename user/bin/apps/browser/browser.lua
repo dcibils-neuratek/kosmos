@@ -2,7 +2,7 @@
 -- kosmos: icon App_NetSurf
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: needs network
--- kosmos: opens html
+-- kosmos: opens html favorite
 --
 -- A web browser.
 --
@@ -75,6 +75,7 @@ local ui    = use("/Kosmos/Libraries/ui.lua")
 local http  = use("/Kosmos/Libraries/http.lua")
 local httpcache = use("/Kosmos/Libraries/httpcache.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
+local favorites = use("/Kosmos/Libraries/favorites.lua")
 local theme = ui.theme
 
 --
@@ -99,18 +100,33 @@ local STAT = 26                      -- the status line along the bottom
 local SBAR = 16                      -- the scrollbar down the right
 local PAD  = 8                       -- white margin either side of the page
 
-local VIEW_Y = TABS + HEAD
-local VIEW_H, VIEW_W, PAGE_W
+local FAVS = 30                      -- the favorites bar, under the header
+local SIDE = 268                     -- the sidebar of favorites and history
+
+local VIEW_X, VIEW_Y, VIEW_H, VIEW_W, PAGE_W
+
+--
+-- **The favorites** (`roadmap.md` 6zz d3), read from `/Home/Favorites`:
+-- every one's address, for the star, and the folder's own entries, for the
+-- bar - which is shown while there is anything to show on it. Whether the
+-- sidebar is open is the window's, as the drawing has it.
+--
+local kept = {}
+local bar_list = {}
+local side_open = false
 
 --
 -- **The window's size, and what follows from it**: set as it opens, and
 -- again whenever it is resized (`roadmap.md` 6zz e - Diego, 1 October: "make
--- sure our browser new design is resizable").
+-- sure our browser new design is resizable") - or the favorites bar comes
+-- or goes, or the sidebar opens or closes, each of which moves the page.
 --
 local function geometry(w, h)
   W, H = w, h
-  VIEW_H = H - TABS - HEAD - STAT
-  VIEW_W = W - SBAR
+  VIEW_X = side_open and SIDE or 0
+  VIEW_Y = TABS + HEAD + ((#bar_list > 0) and FAVS or 0)
+  VIEW_H = H - VIEW_Y - STAT
+  VIEW_W = W - VIEW_X - SBAR
   PAGE_W = VIEW_W - PAD * 2
 end
 
@@ -473,6 +489,26 @@ local AGENT = ("NetSurf/3.11 (Kosmos %s)"):format((sys.build and sys.build() or 
 
 local dragging               -- the scrollbar thumb, while it is held
 
+-- Text a character shorter, never inside one; and text cut to a width with
+-- an ellipsis - a tab's title, a favorite's name, the status line.
+local function shorter(text)
+  local n = #text
+
+  while n > 0 and (text:byte(n) & 0xC0) == 0x80 do n = n - 1 end
+
+  return text:sub(1, n - 1)
+end
+
+local function cut_to(text, room)
+  if gfx.measure(text) <= room then return text end
+
+  while text ~= "" and gfx.measure(text .. "...") > room do
+    text = shorter(text)
+  end
+
+  return text .. "..."
+end
+
 --------------------------------------------------------------------------
 -- **The header, in the kit's own widgets** (`roadmap.md` 6zz d1, as
 -- `docs/browser.html` draws it).
@@ -505,11 +541,32 @@ end
 local back_b   = ui.iconbutton{ icon = "back" }
 local fwd_b    = ui.iconbutton{ icon = "forward" }
 local reload_b = ui.iconbutton{ icon = "reload" }
-local side_b   = ui.iconbutton{ icon = "sidebar", disabled = true }
+local side_b   = ui.iconbutton{ icon = "sidebar" }
 local menu_b   = ui.iconbutton{ icon = "more" }
 local field    = ui.field{ text = HOME }
 
-for _, v in ipairs({ back_b, fwd_b, reload_b, field, side_b, menu_b }) do
+--
+-- **The star**, at the field's right end (`docs/browser.html`): filled and
+-- gold when the page is a favorite, a dim outline when it is not, and a
+-- press makes it one or not (6zz d3). Not there while the field is typed
+-- in, or on a page there is nothing to keep of.
+--
+local star_b = ui.iconbutton{ icon = "star" }
+
+function star_b:draw(g)
+  local on = here ~= nil and kept[here] ~= nil
+
+  if self.pressed then g:fill_round(0, 0, self.w, self.h, theme.line_soft, 6) end
+
+  if self.focused and self.keyed then
+    g:frame_round(0, 0, self.w, self.h, theme.ring, 6)
+  end
+
+  g:line_icon((self.w - 15) // 2, (self.h - 15) // 2, on and "starred" or "star",
+              on and 0xffd49b17 or theme.text_dim)        -- the drawing's gold
+end
+
+for _, v in ipairs({ back_b, fwd_b, reload_b, field, star_b, side_b, menu_b }) do
   header:add(v)
 end
 
@@ -563,11 +620,18 @@ function field:draw(g)
     x = 4 + bw + 8
   end
 
+  -- Cut to end before the star, which sits inside the field's right end.
   local host, rest = address_parts(address.text)
+  local room = self.w - x - (star_b.hidden and 8 or (star_b.w + 8))
+  local hw = gfx.measure(host, "label")
+
+  if hw > room then
+    host = cut_to(host, room)
+    hw, rest = gfx.measure(host, "label"), ""
+  end
 
   g:text(x, (h - gfx.height("label")) // 2, host, theme.text, nil, "label")
-  g:text(x + gfx.measure(host, "label"), (h - gfx.height()) // 2, rest,
-         theme.text_dim)
+  g:text(x + hw, (h - gfx.height()) // 2, cut_to(rest, room - hw), theme.text_dim)
 end
 
 --
@@ -598,14 +662,17 @@ local function lay_out_header()
   field.w = math.max(40, r - 4 - field.x)
   field.y = (HEAD - 1 - field.h) // 2
 
+  star_b.x = field.x + field.w - star_b.w - 3
+  star_b.y = field.y + (field.h - star_b.h) // 2
+
   local function at(v)
     return ("%d,%d"):format(v.x + v.w // 2, header.y + v.y + v.h // 2)
   end
 
-  print(("browser: header back %s forward %s reload %s field %s menu %s, %d tall, "
-         .. "below tabs %d tall")
-        :format(at(back_b), at(fwd_b), at(reload_b), at(field), at(menu_b), HEAD,
-                TABS))
+  print(("browser: header back %s forward %s reload %s field %s menu %s star %s "
+         .. "side %s, %d tall, below tabs %d tall")
+        :format(at(back_b), at(fwd_b), at(reload_b), at(field), at(menu_b),
+                at(star_b), at(side_b), HEAD, TABS))
 end
 
 --
@@ -622,13 +689,6 @@ end
 local pointing               -- the link under the pointer, while it is
 local status_for, status_cut = nil, ""
 
-local function shorter(text)
-  local n = #text
-
-  while n > 0 and (text:byte(n) & 0xC0) == 0x80 do n = n - 1 end
-
-  return text:sub(1, n - 1)
-end
 
 local function status_text()
   local left = pointing or said
@@ -716,8 +776,8 @@ end
 local FAVICON = { 0xff8b1e1e, 0xff1a1a1a, 0xff2f8a55, 0xffc0392b,
                   0xff555555, 0xff2a55c9, 0xff7a4fb5, 0xffb7791f }
 
-local function favicon(t)
-  local at = t.going or tab_at(t) or NEWTAB
+local function favicon_of(at)
+  at = at or NEWTAB
 
   if at == HOME or at == NEWTAB then return "K", FAVICON[1] end
 
@@ -730,6 +790,20 @@ local function favicon(t)
   for i = 1, #host do sum = (sum * 31 + host:byte(i)) % 65521 end
 
   return (host:match("%w") or "?"):upper(), FAVICON[sum % #FAVICON + 1]
+end
+
+local function favicon(t)
+  return favicon_of(t.going or tab_at(t))
+end
+
+-- A favicon drawn: its square and its letter, `size` pixels.
+local function draw_favicon(g, x, y, size, at)
+  local letter, ground = favicon_of(at)
+  local face = ui.sized("label", size <= 13 and 9 or 10)
+
+  g:fill_round(x, y, size, size, ground, 3)
+  g:text(x + (size - gfx.measure(letter, face)) // 2,
+         y + (size - gfx.height(face)) // 2, letter, 0xffffffff, nil, face)
 end
 
 local strip = ui.view{ x = 0, y = 0, w = W, h = TABS }
@@ -760,15 +834,6 @@ local new_b = ui.iconbutton{ icon = "plus" }
 
 strip:add(new_b)
 
-local function cut_to(text, room)
-  if gfx.measure(text) <= room then return text end
-
-  while text ~= "" and gfx.measure(text .. "...") > room do
-    text = shorter(text)
-  end
-
-  return text .. "..."
-end
 
 local function tab_view(t)
   local v = ui.view{ x = 0, y = 0, w = TAB_MOST, h = TABS }
@@ -794,14 +859,9 @@ local function tab_view(t)
       g:fill(self.w - 1, top + 9, 1, h - 18, theme.line)
     end
 
-    local letter, ground = favicon(t)
-    local face = ui.sized("label", 10)
     local fx = (self.w < 60) and (self.w - 14) // 2 or 10
-    local fy = top + (h - 14) // 2
 
-    g:fill_round(fx, fy, 14, 14, ground, 3)
-    g:text(fx + (14 - gfx.measure(letter, face)) // 2,
-           fy + (14 - gfx.height(face)) // 2, letter, 0xffffffff, nil, face)
+    draw_favicon(g, fx, top + (h - 14) // 2, 14, t.going or tab_at(t))
 
     if self.w < 60 then return end
 
@@ -888,6 +948,200 @@ local function lay_out_tabs()
 end
 
 --------------------------------------------------------------------------
+-- **The favorites bar and the sidebar** (`roadmap.md` 6zz d3, as
+-- `docs/browser.html` draws them).
+--
+-- The bar is under the header while `/Home/Favorites` has anything in it:
+-- each favorite its favicon and its name, a folder its folder and its name -
+-- pressed, a favorite is shown and a folder opens as a menu of what it
+-- holds - and what does not fit behind the dots at its end. The sidebar is
+-- down the left, opened by its button or Super Y: the favorites as a tree,
+-- folders and all, and what was open lately, a press on either showing it.
+-- Both are the kit's views, painted into this window's pixels as the header
+-- is; what a press on them does is further down, where `visit` is.
+--------------------------------------------------------------------------
+
+local open_entry, open_address           -- filled in further down
+local toggle_favorite, toggle_side
+
+local favbar = ui.view{ x = 0, y = TABS + HEAD, w = W, h = FAVS }
+favbar.hidden = true
+
+function favbar:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+  g:fill(0, self.h - 1, self.w, 1, theme.line)
+end
+
+local bar_more = ui.iconbutton{ icon = "more" }
+local bar_rest = {}                      -- what the bar had no room for
+local lay_out_bar
+
+--
+-- `do`, here and below, so that what only one function uses ends with it:
+-- Lua holds a chunk to two hundred locals at once, and this one is near it.
+--
+do
+  local BAR_NAME = 150                     -- the widest a name on the bar is drawn
+
+  local function bar_item(e)
+    local name = cut_to(e.name, BAR_NAME)
+    local v = ui.view{ x = 0, y = 3, w = 8 + 14 + 6 + gfx.measure(name) + 8,
+                       h = FAVS - 7 }
+
+    v.entry = e
+
+    function v:draw(g)
+      if self.pressed then g:fill_round(0, 0, self.w, self.h, theme.line_soft, 6) end
+
+      if e.folder then
+        g:line_icon(7, (self.h - 15) // 2, "folder", theme.accent)
+      else
+        draw_favicon(g, 8, (self.h - 13) // 2, 13, e.address)
+      end
+
+      g:text(8 + 14 + 6, (self.h - gfx.height()) // 2, name, theme.text)
+    end
+
+    -- Shown on letting go over it, as a button is.
+    function v:mouse(action, x, y)
+      if action == "press" then
+        self.pressed = true
+        return true
+      elseif action == "release" then
+        self.pressed = false
+
+        if x >= 0 and x < self.w and y >= 0 and y < self.h then open_entry(e, self) end
+
+        return true
+      end
+
+      return false
+    end
+
+    return v
+  end
+
+  --
+  -- Placed along the width there is - again when that or the favorites
+  -- change - and said, for whoever drives the window from outside.
+  --
+  function lay_out_bar()
+    favbar.hidden = #bar_list == 0
+    favbar.y, favbar.w = TABS + HEAD, W
+    favbar.children = {}
+    bar_rest = {}
+
+    if favbar.hidden then return end
+
+    local items = {}
+
+    for _, e in ipairs(bar_list) do items[#items + 1] = bar_item(e) end
+
+    local all = 8
+
+    for _, v in ipairs(items) do all = all + v.w + 2 end
+
+    local room = (all <= W - 8) and (W - 8) or (W - 8 - bar_more.w - 6)
+    local x = 8
+
+    for i, v in ipairs(items) do
+      if x + v.w > room then
+        for j = i, #items do bar_rest[#bar_rest + 1] = items[j].entry end
+        break
+      end
+
+      v.x = x
+      favbar:add(v)
+      x = x + v.w + 2
+    end
+
+    if #bar_rest > 0 then
+      bar_more.x, bar_more.y = W - 8 - bar_more.w, (FAVS - bar_more.h) // 2
+      favbar:add(bar_more)
+    end
+
+    local first = favbar.children[1]
+
+    print(("browser: favorites bar %d of %d, the first at %d,%d")
+          :format(#bar_list - #bar_rest, #bar_list,
+                  first and first.x + first.w // 2 or 0, favbar.y + FAVS // 2))
+  end
+end
+
+local side = ui.view{ x = 0, y = 0, w = SIDE, h = 100 }
+side.hidden = true
+
+function side:draw(g)
+  g:fill(0, 0, self.w, self.h, strip_ground())
+  g:fill(self.w - 1, 0, 1, self.h, theme.line)
+end
+
+local side_seg = ui.segments{ items = { "Favorites", "History" } }
+local side_tree = ui.tree{}
+
+side_seg:fit()
+side:add(side_seg)
+side:add(side_tree)
+
+local function lay_out_side()
+  side.hidden = not side_open
+  side.y, side.h = VIEW_Y, VIEW_H
+  side_seg.x, side_seg.y = (SIDE - side_seg.w) // 2, 10
+  side_tree.x, side_tree.y = 8, side_seg.y + side_seg.h + 8
+  side_tree.w, side_tree.h = SIDE - 16, math.max(40, side.h - side_tree.y - 8)
+end
+
+local fill_side
+
+do
+  -- The favorites as the tree's rows, a folder's asked for when it opens.
+  local function fav_nodes(dir)
+    local out = {}
+
+    for _, e in ipairs(favorites.read(dir)) do
+      if e.folder then
+        out[#out + 1] = { text = e.name, children = function() return fav_nodes(e.path) end }
+      else
+        local host = address_parts(e.address)
+
+        out[#out + 1] = { text = e.name, note = host ~= "" and host or nil,
+                          address = e.address }
+      end
+    end
+
+    if #out == 0 and not dir then
+      out[1] = { text = "None yet: the star keeps one", quiet = true }
+    end
+
+    return out
+  end
+
+  -- And what was open lately, newest first, with when.
+  local function lately_nodes()
+    local out = {}
+
+    for _, l in ipairs(lately) do
+      out[#out + 1] = { text = l.title ~= "" and l.title or l.at, note = l.when,
+                        address = l.at }
+    end
+
+    if #out == 0 then out[1] = { text = "Nothing opened yet", quiet = true } end
+
+    return out
+  end
+
+  function fill_side()
+    side_tree.roots = (side_seg.on == 1) and fav_nodes() or lately_nodes()
+    side_tree.top = 1
+  end
+end
+
+side_seg.on_change = function() fill_side() end
+side_tree.on_select = function(_, node)
+  if node.address then open_address(node.address) end
+end
+
+--------------------------------------------------------------------------
 -- The scrollbar, which is also where scrolling is bounded.
 --------------------------------------------------------------------------
 
@@ -957,11 +1211,17 @@ local function frame()
 
   field.had = field.focused
 
+  -- The star, on a page there is something to keep of and while nobody is
+  -- typing an address over it.
+  star_b.hidden = field.focused or here == nil or here == NEWTAB
+
   -- The tabs, then the header - which paints over the foot of the shown
   -- tab, so the two read as one.
   lay_out_tabs()
   ui.paint_view(strip, s, 0, 0)
   ui.paint_view(header, s, 0, TABS)
+
+  if not favbar.hidden then ui.paint_view(favbar, s, 0, TABS + HEAD) end
 
   -- A page on its way, along the header's rule: filled against the length
   -- the server gave; with none, the status line's words say how much.
@@ -978,13 +1238,13 @@ local function frame()
   -- nothing and takes room on the line from the two that do.
   local drew_chrome = sys.ticks()
 
-  s:fill(0, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
+  s:fill(VIEW_X, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
 
   if paper then
     local rows = math.min(VIEW_H, band_top + paper_h - top)
 
     if rows > 0 then
-      s:blit(paper, 0, top - band_top, PAGE_W, rows, PAD, VIEW_Y)
+      s:blit(paper, 0, top - band_top, PAGE_W, rows, VIEW_X + PAD, VIEW_Y)
     end
   else
     local lines = web
@@ -996,10 +1256,12 @@ local function frame()
                         "builds one that has them." }
 
     for i, line in ipairs(lines) do
-      s:text(PAD + 4, VIEW_Y + 16 + (i - 1) * (gfx.height() + 4), line,
+      s:text(VIEW_X + PAD + 4, VIEW_Y + 16 + (i - 1) * (gfx.height() + 4), line,
              theme.text_dim)
     end
   end
+
+  if side_open then ui.paint_view(side, s, 0, VIEW_Y) end
 
   draw_scrollbar(s)
 
@@ -1209,13 +1471,25 @@ as it is open, and nothing is remembered.</p>
 end
 
 --
--- **A new tab's page**: what was open lately, newest first, each a link -
--- laid out by the same engine as any other page, and its links followed
--- the same way. An address as NetSurf takes one, so a file of this machine
--- comes back as the path it was.
+-- **A new tab's page**: the favorites as tiles, the folder's own as the bar
+-- shows them, and what was open lately, newest first - each a link, laid
+-- out by the same engine as any other page and followed the same way. An
+-- address as NetSurf takes one, so a file of this machine comes back as the
+-- path it was.
 --
 local function newtab_page()
-  local rows = {}
+  local tiles, rows = {}, {}
+
+  for _, e in ipairs(bar_list) do
+    if e.address then
+      local letter, ground = favicon_of(e.address)
+
+      tiles[#tiles + 1] = ('<a class="tile" href="%s"><span class="fav" '
+                           .. 'style="background: #%06x">%s</span>%s</a>')
+                          :format(escaped(ns_address(e.address)), ground & 0xffffff,
+                                  escaped(letter), escaped(e.name))
+    end
+  end
 
   for _, l in ipairs(lately) do
     local host = address_parts(l.at)
@@ -1230,8 +1504,13 @@ local function newtab_page()
     rows[1] = "<p>Nothing yet: the pages this window opens are listed here.</p>"
   end
 
-  print(("browser: a new tab's page, %d lately, the newest %s")
-        :format(#lately, lately[1] and lately[1].at or "none"))
+  print(("browser: a new tab's page, %d favorites, %d lately, the newest %s")
+        :format(#tiles, #lately, lately[1] and lately[1].at or "none"))
+
+  local favs = #tiles > 0
+               and ("<h3>Favorites</h3>\n<p class=\"tiles\">" .. table.concat(tiles, "\n")
+                    .. "</p>\n")
+               or ""
 
   return ([[<!doctype html>
 <html><head><meta charset="utf-8"><title>New tab</title>
@@ -1241,11 +1520,17 @@ h3 { font-size: 13px; color: #74787f; margin: 0 0 10px 0; }
 p.it { margin: 0; padding: 7px 4px; border-bottom: 1px solid #e3e5e9; }
 small { color: #74787f; }
 a { color: #1d1f24; text-decoration: none; }
+p.tiles { margin: 0 0 26px 0; }
+a.tile { display: inline-block; width: 104px; margin: 0 10px 10px 0;
+         padding: 12px 6px 10px 6px; text-align: center; font-size: 12px;
+         background: #f4f5f7; border: 1px solid #e3e5e9; vertical-align: top; }
+a.tile span.fav { display: block; width: 34px; height: 34px; margin: 0 auto 8px auto;
+                  line-height: 34px; color: #ffffff; font-weight: bold; font-size: 14px; }
 </style></head><body>
-<h3>Lately</h3>
+%s<h3>Lately</h3>
 %s
 <p><small>Or type an address above. <a href="about:start">The page inside this image</a>.</small></p>
-</body></html>]]):format(table.concat(rows, "\n"))
+</body></html>]]):format(favs, table.concat(rows, "\n"))
 end
 
 --
@@ -2023,6 +2308,12 @@ end
 -- title is the host's until the page arrives with one of its own.
 --
 local function load(text, post)
+  -- A favorite's file - Tracker hands the browser one it opens - is the
+  -- page it keeps.
+  if type(text) == "string" and text:sub(1, 1) == "/" then
+    text = favorites.address_of(text) or text
+  end
+
   current.going = text
   frame()
 
@@ -2311,7 +2602,7 @@ local function page_press(x, y)
   -- A form's field first: a click there is the field's, and a click
   -- anywhere else takes the caret out of whichever had it.
   if ns_doc then
-    local did = doc:ns_click(x - PAD, y - VIEW_Y + top)
+    local did = doc:ns_click(x - VIEW_X - PAD, y - VIEW_Y + top)
 
     form_changed()
 
@@ -2321,9 +2612,9 @@ local function page_press(x, y)
   local href
 
   if ns_doc then
-    href = doc:ns_link_at(x - PAD, y - VIEW_Y + top)
+    href = doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + top)
   else
-    href = doc:link_at(x - PAD, y - VIEW_Y + top)
+    href = doc:link_at(x - VIEW_X - PAD, y - VIEW_Y + top)
   end
 
   if not href then return end
@@ -2400,9 +2691,9 @@ end
 
 function sink:mouse(action, x, y)
   if action == "press" then
-    if y < VIEW_Y + VIEW_H and x >= W - SBAR then
+    if y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= W - SBAR then
       scrollbar_press(y)
-    elseif y < VIEW_Y + VIEW_H then
+    elseif y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= VIEW_X then
       page_press(x, y)
     elseif timing ~= "" and x >= W - 10 - gfx.measure(timing) then
       breakdown(x)
@@ -2465,6 +2756,11 @@ menu_b.on_click = function()
     { text = "New tab", on_choose = function() new_tab() end },
     { text = "Close tab", on_choose = function() close_tab(current) end },
     { separator = true },
+    { text = (here and kept[here]) and "Remove from favorites" or "Add to favorites",
+      on_choose = function() toggle_favorite() end },
+    { text = side_open and "Hide favorites and history" or "Favorites and history",
+      on_choose = function() toggle_side() end },
+    { separator = true },
     { text = "Home", on_choose = function() go_home() end },
     { text = "Reload", on_choose = function() reload() end },
     { separator = true },
@@ -2477,6 +2773,8 @@ end
 
 win:add(strip)
 win:add(header)
+win:add(favbar)
+win:add(side)
 
 --
 -- **This window's own paint** (`on_paint`): the kit calls it whenever an
@@ -2496,8 +2794,9 @@ use("/Kosmos/Libraries/wmproto.lua").track(win.handle, true)
 win.on_hover = function(_, x, y)
   local now = nil
 
-  if ns_doc and doc and y >= VIEW_Y and y < VIEW_Y + VIEW_H and x < W - SBAR then
-    local href = doc:ns_link_at(x - PAD, y - VIEW_Y + top)
+  if ns_doc and doc and y >= VIEW_Y and y < VIEW_Y + VIEW_H
+     and x >= VIEW_X and x < W - SBAR then
+    local href = doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + top)
 
     now = href and from_ns(href) or nil
   end
@@ -2514,12 +2813,23 @@ end
 -- the browser's half: its geometry from the new size, the toolbar laid out
 -- along the new width, the status line cut to it, and the page reflowed.
 --
-win.on_resize = function(_, w, h)
-  geometry(w, h)
+--
+-- **The page's room changed** - the window resized, the favorites bar come
+-- or gone, the sidebar opened or closed - so everything placed from the
+-- size is placed again and the page laid out at its new width.
+--
+local function room_changed(w, h)
+  geometry(w or W, h or H)
   sink.w, sink.h = W, H
   lay_out_header()
+  lay_out_bar()
+  lay_out_side()
   status_for = nil
   reflow()
+end
+
+win.on_resize = function(_, w, h)
+  room_changed(w, h)
 end
 
 --------------------------------------------------------------------------
@@ -2672,6 +2982,153 @@ end
 
 new_b.on_click = function() new_tab() end
 
+--------------------------------------------------------------------------
+-- **Favorites, read and kept** (`roadmap.md` 6zz d3).
+--
+-- Read when the window opens, after the star makes or unmakes one, when
+-- the sidebar opens, and every few seconds while the window runs - Tracker
+-- renames, moves and deletes them, and nothing tells a window that a
+-- folder changed. What was read is compared with what was shown, so a
+-- read that finds nothing new draws nothing.
+--------------------------------------------------------------------------
+
+local read_favorites
+
+do
+  local fav_read_at, fav_said = 0, nil
+
+  function read_favorites()
+    fav_read_at = sys.ticks()
+
+    local all, list = favorites.all(), favorites.read()
+    local parts, addresses = {}, {}
+
+    for _, e in ipairs(list) do
+      parts[#parts + 1] = e.name .. "\1" .. (e.address or "/")
+    end
+
+    for a in pairs(all) do addresses[#addresses + 1] = a end
+
+    table.sort(addresses)
+
+    local said = table.concat(parts, "\2") .. "\3" .. table.concat(addresses, "\2")
+
+    if said == fav_said then return false end
+
+    local had_bar = #bar_list > 0
+
+    fav_said, kept, bar_list = said, all, list
+
+    -- The bar coming or going moves the page; otherwise only the bar changes.
+    if had_bar ~= (#bar_list > 0) then room_changed() else lay_out_bar() end
+
+    if side_open and side_seg.on == 1 then fill_side() end
+
+    return true
+  end
+
+  win.on_frame = function()
+    if sys.ticks() - fav_read_at < HZ * 3 then return false end
+
+    return read_favorites()
+  end
+end
+
+--
+-- **The star, pressed** - or Super D, or the menu: the page on screen a
+-- favorite, at the end of the folder, or not one any more, wherever it was
+-- kept.
+--
+toggle_favorite = function()
+  if here == nil or here == NEWTAB then return end
+
+  if kept[here] then
+    local n = favorites.remove(here)
+
+    say("not a favorite any more")
+    print(("browser: %s is not a favorite, %d removed"):format(here, n))
+  else
+    local path, why = favorites.add(here, current.title)
+
+    if path then
+      say("a favorite, in " .. path)
+      print(("browser: a favorite, %s, of %s"):format(path, here))
+    else
+      say("it could not be kept: " .. tostring(why))
+    end
+  end
+
+  read_favorites()
+end
+
+toggle_side = function()
+  side_open = not side_open
+
+  if side_open then
+    read_favorites()
+    fill_side()
+  end
+
+  room_changed()
+
+  local row = ui.theme.metrics.row
+
+  print(("browser: the sidebar %s, its first row at %d,%d")
+        :format(side_open and "open" or "closed", side_tree.x + 40,
+                VIEW_Y + side_tree.y + 2 + row // 2))
+end
+
+open_address = function(address)
+  win:focus_on(sink)
+  visit(address)
+end
+
+do
+  -- A folder's favorites as a menu, a folder in it as a menu of its own.
+  local function menu_of(dir)
+    local items = {}
+
+    for _, e in ipairs(favorites.read(dir)) do
+      if e.folder then
+        items[#items + 1] = { text = e.name, submenu = menu_of(e.path) }
+      else
+        items[#items + 1] = { text = e.name,
+                              on_choose = function() open_address(e.address) end }
+      end
+    end
+
+    if #items == 0 then items[1] = { text = "Nothing in it" } end
+
+    return items
+  end
+
+  open_entry = function(e, v)
+    if e.folder then
+      win:open_menu(v.x, TABS + HEAD + FAVS - 2, menu_of(e.path))
+    else
+      open_address(e.address)
+    end
+  end
+
+  bar_more.on_click = function()
+    local items = {}
+
+    for _, e in ipairs(bar_rest) do
+      if e.folder then
+        items[#items + 1] = { text = e.name, submenu = menu_of(e.path) }
+      else
+        items[#items + 1] = { text = e.name,
+                              on_choose = function() open_address(e.address) end }
+      end
+    end
+
+    win:open_menu(math.max(0, W - 220), TABS + HEAD + FAVS - 2, items)
+  end
+end
+
+star_b.on_click = then_page(function() toggle_favorite() end)
+side_b.on_click = then_page(function() toggle_side() end)
+
 --
 -- **The browser's keys, with Super** (`docs/browser.html`): the window
 -- manager keeps the ones it has a binding for - Super Tab goes round the
@@ -2695,6 +3152,8 @@ win.on_key = function(_, c)
   elseif k == 114 or k == 82 then reload()                      -- R
   elseif k == 91 then go_back()                                 -- [
   elseif k == 93 then go_forward()                              -- ]
+  elseif k == 100 or k == 68 then toggle_favorite()             -- D
+  elseif k == 121 or k == 89 then toggle_side()                 -- Y
   else return false end
 
   return true
@@ -2702,7 +3161,11 @@ end
 
 --------------------------------------------------------------------------
 
+read_favorites()
+geometry(W, H)
 lay_out_header()
+lay_out_bar()
+lay_out_side()
 
 --
 -- An address on the command line, which `wm browser:10.0.2.2:8000/` passes

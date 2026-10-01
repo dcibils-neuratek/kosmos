@@ -426,9 +426,12 @@ as the page benchmark; **d2 built** (18.321) - tabs as the title bar, each
 with its own history and its band painted again when shown, a new tab on
 what was open lately, the three at the strip's end in Plex, and Super keys
 reaching a window (Super Tab stays the window manager's, so tabs go round
-on Super Shift ] and [); **d3 next**, favorites as files in
-`/Home/Favorites`; then d4 history, d5 Settings, d6 searching from the
-field.
+on Super Shift ] and [); **d3 built** (18.322) - favorites as files in
+`/Home/Favorites`, the star, the bar, the sidebar and the new tab's tiles,
+and Tracker opening a file by its type; **d4 next**, history on the disk in
+`/Home/Preferences/browser`, by day, searched as typed; then d5 Settings, d6
+searching from the field. `browser.lua` is near Lua's 200 locals - new
+helpers go in `do` blocks.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

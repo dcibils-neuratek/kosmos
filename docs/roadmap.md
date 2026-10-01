@@ -2747,6 +2747,26 @@ processors, and still what follows USB:
       go until it is done). Past about thirty tabs in a 900-wide window
       they are favicons and then cut off at the right; nothing limits how
       many.
+
+      **d3 BUILT 1 October** (`testing.md` 18.322): favorites as files in
+      `/Home/Favorites`, NetPositive's way - an empty file named by the
+      page's title whose attributes are `type = "favorite"`, `address` and
+      `order` (`user/lib/favorites.lua`), so Tracker shows, renames, moves
+      and deletes them, draws them as web pages, and opens one in the
+      browser (`-- kosmos: opens favorite`). In the order they were
+      starred, as Places are in the order they were pinned; one put there
+      by hand comes first. The star in the field, gold on a favorite, or
+      Super D; the bar under the header while there are any, a folder a
+      menu and what does not fit behind the dots; the sidebar, by its
+      button or Super Y, the favorites as a tree beside the page - and its
+      History half what this window opened lately, until d4 puts history on
+      the disk; and a new tab's page with the favorites as tiles. Read
+      again every three seconds, since nothing tells a window that Tracker
+      changed a folder. **And a fix it needed**: Tracker opened a file
+      without its attributes, so a file's type decided its Kind column and
+      Open with and never what opening it did. Not yet: a favorite dragged
+      on the bar, or onto it from the field; a folder made from the
+      browser; the sidebar searched (with d4).
    e. **Windows that draw their own pixels, resizable** - the browser's,
       Cafesa3D's, Camera's, Video's: the window manager refuses today
       ("its surface is shared and has a size"). On letting go of the grip

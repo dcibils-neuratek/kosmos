@@ -224,6 +224,7 @@ filetypes.names = {
   wad = "Doom level", sfc = "Super Nintendo cartridge",
   smc = "Super Nintendo cartridge", zip = "Archive", theme = "Look",
   scene = "Cafesa3D scene", gltf = "3D scene", glb = "3D scene",
+  favorite = "Favorite",
 }
 
 function filetypes.describe(path, attrs)
@@ -265,13 +266,14 @@ filetypes.GROUPS = {
   { "Pictures", { "png", "jpg", "jpeg" } },
   { "Sound and film", { "mp3", "wav", "mp4" } },
   { "Games", { "wad", "sfc", "smc" } },
-  { "Kosmos", { "zip", "launcher" } },
+  { "Kosmos", { "zip", "launcher", "favorite" } },
 }
 
 -- What only a sentence says about a type: opening a Lua file runs it.
 local TOLD = {
   lua = "Opening runs it; this is what Edit uses",
   launcher = "Opening starts it; Edit uses this",
+  favorite = "A page kept in /Home/Favorites; opening shows it",
   zip = "Opening extracts it",
 }
 

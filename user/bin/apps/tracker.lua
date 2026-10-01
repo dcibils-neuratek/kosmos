@@ -1467,14 +1467,21 @@ local function open_selected()
     -- a file is somebody else's job and that something knows whose. A Lua
     -- file is a program and runs, which needs its opening comment to say
     -- whether it is an application; nothing else is read.
+    --
+    -- **With its attributes**, which say what it is when its name does not:
+    -- a browser's favorite is an empty file with no extension and
+    -- `type = "favorite"`. They were left out, so a file's type decided its
+    -- Kind column and Open with and never what opening it did - and a
+    -- favorite was "nothing claims" it (`roadmap.md` 6zz d3).
+    --
     local full = path_of(e)
-    local source = types.kind_of(full) == "lua" and fs.read(full) or nil
-    local how = types.how_to_open(full, nil,
+    local source = types.kind_of(full, e.attrs) == "lua" and fs.read(full) or nil
+    local how = types.how_to_open(full, e.attrs,
                                   type(source) == "string" and source or nil)
 
     if not how then
       status.text = e.name .. ": nothing claims a ."
-                    .. tostring(types.kind_of(full) or "?") .. " file"
+                    .. tostring(types.kind_of(full, e.attrs) or "?") .. " file"
       return
     end
 

@@ -134,7 +134,14 @@ ICONS = {
     "star":       ("star", None),
     "sidebar":    ("panel-left", None),
     "plus":       ("plus", None),
+
+    # A page that is a favorite (6zz d3): the same star, filled.
+    "starred":    ("star", None),
 }
+
+# The ones drawn filled as well as stroked - Lucide's shapes are outlines,
+# and a star that says yes is a solid one.
+FILLED = {"starred"}
 
 
 def body(lucide):
@@ -161,10 +168,11 @@ def sheet(size):
     for i, (name, (lucide, width)) in enumerate(sorted(ICONS.items())):
         cells.append(
             '<svg style="position:absolute;left:%dpx;top:0" width="%d" '
-            'height="%d" viewBox="0 0 24 24" fill="none" stroke="#000" '
+            'height="%d" viewBox="0 0 24 24" fill="%s" stroke="#000" '
             'stroke-width="%s" stroke-linecap="round" '
             'stroke-linejoin="round">%s</svg>'
-            % (i * STEP, size, size, width or "2", body(lucide)))
+            % (i * STEP, size, size, "#000" if name in FILLED else "none",
+               width or "2", body(lucide)))
 
     return ('<!doctype html><html><head><style>html,body{margin:0;'
             'background:transparent}</style></head><body>%s</body></html>'

@@ -1577,7 +1577,7 @@ def main():
         chord("meta_l", "t")
         tab_said("tab 2 of 2, new", "Super T to open a second tab", mark)
         offered = tab_said("a new tab's page, ", "the new tab's page", mark)
-        newest = re.match(r"(\d+) lately, the newest (\S+)", offered)
+        newest = re.match(r"\d+ favorites, (\d+) lately, the newest (\S+)", offered)
 
         if not newest or newest.group(2) != long_url or int(newest.group(1)) < 4:
             raise Failure(
@@ -1648,6 +1648,115 @@ def main():
               f"end with its picture kept; Back in the second was its own; "
               f"Super Shift ] and [ went round; closed by its cross and by "
               f"Super W", flush=True)
+
+        #
+        # **Favorites, as files** (`roadmap.md` 6zz d3, `docs/browser.html`):
+        # the star pressed on the long page keeps it as a file in
+        # `/Home/Favorites`, and the star is gold; the bar appears under the
+        # header, and its favorite pressed on another page shows the long
+        # page; the sidebar, opened by Super Y, has it too and shows it when
+        # pressed - the page laid out narrower beside it; a new tab offers
+        # it; and Super D makes it not a favorite, the bar gone again.
+        #
+        wtop = y0 - TOOL
+        heads = re.findall(r"browser: header back .*? star (\d+),(\d+) side (\d+),(\d+)",
+                           guest.seen)
+
+        if not heads:
+            raise Failure("the browser did not say where its star is")
+
+        sx, sy = (int(v) for v in heads[-1][:2])
+
+        def gold():
+            wg, hg, pxg = parse_ppm(guest.screendump())
+            at_ = reader(pxg, wg)
+            n = 0
+
+            for y in range(wtop + sy - 10, wtop + sy + 10):
+                for x in range(x0 + sx - 10, x0 + sx + 10):
+                    r, g, b = at_(x, y)
+
+                    if abs(r - 0xd4) < 40 and abs(g - 0x9b) < 40 and b < 90:
+                        n += 1
+
+            return n
+
+        unlit = gold()
+        mark = len(guest.seen)
+        press(x0 + sx, wtop + sy)
+        made = tab_said("a favorite, ", "the star to keep the long page", mark)
+
+        if not made.startswith("/Home/Favorites/A long page, of " + long_url):
+            raise Failure(f"the star did not keep the long page as a file in "
+                          f"/Home/Favorites: {made.strip()!r}")
+
+        bar = tab_said("favorites bar 1 of 1, the first at ",
+                       "the favorites bar to show the new favorite", mark)
+        bx, by = (int(v) for v in re.match(r"(\d+),(\d+)", bar).groups())
+        time.sleep(1.0)
+        lit = gold()
+
+        if unlit > 5 or lit < 30:
+            raise Failure(f"the star is not gold on a favorite and dim on a page "
+                          f"that is not one: {lit} gold pixels lit, {unlit} not")
+
+        # Another page, then the bar's favorite.
+        go_to(LINKED, "the second page, to leave the favorite")
+        mark = len(guest.seen)
+        press(x0 + bx, wtop + by)
+        tab_said("showing " + long_url, "the bar's favorite pressed", mark)
+
+        # The sidebar: the page beside it narrower, and its favorite shown.
+        go_to(LINKED, "the second page again")
+        mark = len(guest.seen)
+        chord("meta_l", "y")
+        opened = tab_said("the sidebar open, its first row at ",
+                          "Super Y to open the sidebar", mark)
+        narrower = tab_said("laid out again at ",
+                            "the page laid out beside the sidebar", mark)
+
+        if not narrower.startswith("600x"):
+            raise Failure(f"the page beside the sidebar was not laid out 600 "
+                          f"wide: {narrower.strip()!r}")
+
+        rx, ry = (int(v) for v in re.match(r"(\d+),(\d+)", opened).groups())
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        press(x0 + rx, wtop + ry)
+        tab_said("showing " + long_url, "the sidebar's favorite pressed", mark)
+        chord("meta_l", "y")
+        tab_said("the sidebar closed", "Super Y to close the sidebar", mark)
+
+        # A new tab offers it, and is closed.
+        mark = len(guest.seen)
+        chord("meta_l", "t")
+        offered = tab_said("a new tab's page, ", "a new tab with a favorite", mark)
+
+        if not offered.startswith("1 favorites"):
+            raise Failure(f"the new tab's page did not offer the favorite: "
+                          f"{offered.strip()!r}")
+
+        chord("meta_l", "w")
+        tab_said("tab 1 of 1, shown", "Super W on the new tab", mark)
+
+        # Super D: not a favorite, and the bar gone with the page back up.
+        mark = len(guest.seen)
+        chord("meta_l", "d")
+        tab_said(long_url + " is not a favorite, 1 removed",
+                 "Super D to make the long page not a favorite", mark)
+        tab_said("laid out again at ", "the page laid out with no bar", mark)
+
+        # The page's paper where it began before there was a bar - the long
+        # page at its top, since the bar and the sidebar opened it afresh.
+        settle(guest,
+               lambda w_, h_, px_: True if find_page(w_, h_, px_) == (x0, y0) else None,
+               "the page did not move back up to where it began when the bar "
+               "went", seconds=20)
+
+        print(f"favorites: the star kept the long page as a file, gold "
+              f"({lit} pixels, {unlit} before); the bar showed it and opened "
+              f"it; the sidebar did, the page 600 wide beside it; a new tab "
+              f"offered it; Super D let it go", flush=True)
 
         #
         # **Resized** (`roadmap.md` 6zz e) - Diego, 1 October: "make sure our
@@ -1761,6 +1870,9 @@ def main():
         # empty band.
         #
         mark = len(guest.seen)
+        chord("meta_l", "d")
+        tab_said("a favorite, /Home/Favorites/A long page", "Super D to keep the "
+                 "long page again, for Tracker to open", mark)
         chord("meta_l", "w")
         tab_said("the last tab closed, and the window with it",
                  "Super W on the last tab", mark)
@@ -1787,8 +1899,29 @@ def main():
                    'print("plex" .. "-set")')
         guest.wait_for("plex-set", "Plex chosen for the window manager")
 
+        # Tracker on /Home/Favorites, and its first row - the favorite,
+        # selected when the folder is shown - clicked: the browser opens on
+        # the page it keeps. Tracker passed a file's attributes to nothing
+        # when it opened one, and a favorite has no extension.
         mark = len(guest.seen)
-        guest.type("wm browser")
+        guest.type("wm tracker:/Home/Favorites")
+        tline = guest.wait_for_line("wm: window Tracker at ",
+                                    "Tracker to open on the favorites", since=mark)
+        content = guest.wait_for_line("tracker: content at ",
+                                      "Tracker to say where its list is", since=mark)
+        tx, ty = (int(v) for v in re.match(r"(\d+),(\d+)", tline).groups())
+        row_y = int(re.match(r"(\d+)", content).group(1)) + 32 + 1 + 16
+        time.sleep(2.0)
+        wp, hp, _ = parse_ppm(guest.screendump())
+        mark = len(guest.seen)
+        guest.mouse_to(*_to_tablet(tx + 260, ty + row_y, wp, hp))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.1)
+        guest.mouse_button(False)
+        guest.wait_for_line("browser: showing " + long_url,
+                            "the favorite opened from Tracker to show its page",
+                            since=mark)
         opened = guest.wait_for_line("wm: window Browser at ",
                                      "the browser to open in Plex", since=mark)
 
@@ -1842,8 +1975,9 @@ def main():
             raise Failure(f"the browser dragged by its tabs' band by 120,80 "
                           f"from {wx},{wy} moved to: {dragged.strip()!r}")
 
-        print(f"title bar: in Plex the tabs are the browser's title bar, the "
-              f"three at {lx},{ly}, and the strip's band moved the window to "
+        print(f"title bar: a favorite opened from Tracker showed its page; in "
+              f"Plex the tabs are the browser's title bar, the three at "
+              f"{lx},{ly}, and the strip's band moved the window to "
               f"{to.group(1)},{to.group(2)}", flush=True)
 
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
@@ -1858,7 +1992,8 @@ def main():
               f"article, 1.4 MB, was shown whole in {took:.0f} s, the "
               f"end of a page {long_page.group(1)} pixels tall was drawn, its "
               f"picture fetched once, tabs kept their pages and histories, "
-              f"and in Plex they were the title bar.")
+              f"a favorite was a file the star, the bar and the sidebar kept "
+              f"and Tracker opened, and in Plex the tabs were the title bar.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)

@@ -15213,3 +15213,59 @@ failing.
   browser opened in Plex wearing a title bar".
 
 **The gate**: 76 of 76, in 9:14.
+
+## 18.322 Favorites as files (6zz d3)
+
+**`roadmap.md` 6zz d3**, as `docs/browser.html` draws it and Diego agreed:
+favorites as files in `/Home/Favorites`, NetPositive's way.
+
+- **`user/lib/favorites.lua`**: a favorite is an empty file named by its
+  page's title - slashes and control characters made spaces, no leading
+  dot, cut at a character to the 64 bytes `/Home` keeps - with `type =
+  "favorite"`, `address` and `order` as its attributes. In the order they
+  were starred, as Places are pinned; one with no order first, by name. A
+  page kept once; a name another page has, numbered. Removed wherever it is
+  kept, folders and all.
+- **Tracker**: opened a file without its attributes, so `type` decided the
+  Kind column and Open with and never what opening it did. It passes them
+  now, and the browser declares `opens favorite`; `files.icon` reads a
+  file's type before its extension, and a favorite is drawn as a web page.
+- **The browser**: the star in the field, gold and filled on a favorite
+  (`starred`, rendered filled by `tools/lineicons.py`); the bar under the
+  header while there are any - a folder a menu, a folder in it a submenu,
+  what does not fit behind the dots; the sidebar down the left by its button
+  or Super Y, the page laid out narrower beside it, the favorites as a tree
+  and what was open lately; the new tab's page with the favorites as tiles;
+  a favorite's file handed to it opening as its page. Read again every three
+  seconds, comparing what was read with what is shown.
+- **`browser.lua` is near Lua's limit of 200 locals in a chunk** (199 when
+  this landed): what only one function uses is in a `do` block now, which
+  gives the slots back - 188.
+
+**`tools/test_favorites.lua`**, 18 checks on the Mac over an `fs` in memory:
+names from titles, the file and its attributes, kept once, numbered, the
+order with one made by hand and a folder first, a folder's own, every
+address through the folders, a file opened as its page only when it is a
+favorite, and removed wherever kept. Control: the order ignored - "Dam -
+Wikipedia,Kosmos docs,Lua,Lua 2,Zed".
+
+**`tools/test_filetypes.lua`**, 52 checks: a favorite opens in the browser,
+handed its file; the same file without its attributes in nothing; called a
+Favorite. Control: the browser not declaring `favorite`.
+
+**`arm-browser` and `x86-browser`**:
+
+- The star pressed on the long page: `/Home/Favorites/A long page`, of its
+  address; the star gold, 89 pixels of it, and 0 before. Control: the star
+  never drawn filled - "0 gold pixels lit".
+- The bar shows it, and pressed on the second page opens it; the sidebar, by
+  Super Y, lays the page out 600 wide beside it and its row opens it; a new
+  tab offers one favorite; Super D removes it, and the page's paper moves
+  back up to where it began.
+- After the resize, Super D keeps it again; the desktop stopped, Plex chosen,
+  Tracker started on `/Home/Favorites` and its first row clicked: the browser
+  opens on the long page, and its tabs are the title bar there. Control:
+  Tracker's open path without the attributes - "the favorite opened from
+  Tracker to show its page" never came.
+
+**The gate**: 76 of 76, in 9:26.

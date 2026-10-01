@@ -408,6 +408,10 @@ local ICONS = {
   ttf  = "Prefs_Fonts",
   otf  = "Prefs_Fonts",
   bdf  = "Prefs_Fonts",
+
+  -- A type a file's attributes give rather than its name: a browser's
+  -- favorite is an empty file with no extension (`favorites.lua`).
+  favorite = "File_HTML",
 }
 
 -- Two directories that are not just directories. Every desktop since the
@@ -451,9 +455,13 @@ function files.icon(g, x, y, entry, path, size)
 
     name = said:match("^[%w_%-]+$") and said or "App_Generic"
   else
+    -- The type its attributes give first, as `filetypes.kind_of` reads
+    -- it, and then its name's extension.
+    local said = entry.attrs and entry.attrs.type
     local ext = tostring(entry.name):sub(2):match("%.([%w]+)$")
 
-    name = ext and ICONS[ext:lower()] or "File_Generic"
+    name = (said and ICONS[tostring(said)])
+           or (ext and ICONS[ext:lower()]) or "File_Generic"
   end
 
   g:icon(x, y, name .. ".png", size)
