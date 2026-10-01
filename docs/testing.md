@@ -14953,3 +14953,38 @@ relocations. 8 objects. Control: one load in `gfx_cover_row` back to
 the scalar one to the bit.
 
 **The gate**: 76 of 76, `lanes` the new one, in 9:03.
+
+## 18.317 A picture scaled once, not on every paint (6zz h)
+
+**`roadmap.md` 6zz h.** With fills and glyphs in lanes, Wikipedia's front
+page still spent 4.1 ms of a 12.6 ms band on pictures - and splitting the
+count showed whose: three pictures *scaled*, its logo 100 pixels shown at
+50, and every paint of the band scaled them again. Pictures at their own
+size cost 0.0.
+
+- **Scaled once**: `browser.lua` keeps each raster picture as decoded, and
+  once the layout has given it a box of another size, scales it to that box
+  and hands NetSurf the copy (`pictures_to_boxes`, which the SVGs already
+  went through). Again only when the box changes, and from the picture as
+  decoded, so nothing is lost twice. Backgrounds are left as they are -
+  they tile at their own size.
+- **A picture at its own size is a row blend**: `stretch_into` takes the
+  compositor's `blend_row` - `over` to the bit, four pixels at a time - or a
+  row copied, wherever nothing would be clamped.
+- **Counted apart**: a paint's account has `pictures` at their own size and
+  `scaled` beside it (`gfx_draw_size`, so the glue can ask a surface its
+  size).
+
+    page                  whole   pictures  scaled
+    Wikipedia, before     12.6      0.0      4.1 (3)
+    Wikipedia, after       8.5      0.2      0.0
+    Google                 1.7      0.1      0.0
+
+**`arm-browser` and `x86-browser`**: the test PNG at a quarter of its size
+below the forms - not above the links, since its blue was taken by
+`find_link` for one and clicked, the first place it was put. Its magenta
+square on the first screen, 100 pixels; and the first paint's own account,
+which the browser prints, saying `scaled 0.0 (0)`. Control: rasters not
+scaled to their boxes, `scaled 0.5 (1)` of a 5.7 ms paint.
+
+**The gate**: 76 of 76, in 8:57.

@@ -2836,6 +2836,7 @@ bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
     int cy1 = clip->y1 < p->clip.y1 ? clip->y1 : p->clip.y1;
     int x0 = data->x, y0 = data->y, x, y;
     unsigned long began = kosmos_ticks();
+    unsigned pw, ph;
 
     if (h->pic == NULL || data->width <= 0 || data->height <= 0
         || cx0 >= cx1 || cy0 >= cy1) {
@@ -2868,8 +2869,17 @@ bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
     }
 
     /* A page's pictures come here and not through `plot_bitmap`, so they
-     * are counted here (`costs`, above). */
-    costs.pictures.ticks += kosmos_ticks() - began;
-    costs.pictures.calls++;
+     * are counted here (`costs`, above) - scaled apart from those at their
+     * own size, which are a row blended and cost far less. */
+    gfx_draw_size(h->pic, &pw, &ph);
+
+    if (data->width == (int)pw && data->height == (int)ph) {
+        costs.pictures.ticks += kosmos_ticks() - began;
+        costs.pictures.calls++;
+    } else {
+        costs.scaled.ticks += kosmos_ticks() - began;
+        costs.scaled.calls++;
+    }
+
     return true;
 }

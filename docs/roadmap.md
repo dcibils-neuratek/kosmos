@@ -2854,11 +2854,18 @@ processors, and still what follows USB:
       well, on ARM and x86, since they were written. `__builtin_memcpy` is
       the instruction; the gate's `lanes` suite holds the objects to it.
 
-      **Next in h, by the same measurement**: pictures scaled and laid over
-      (`stretch_into`, 4.6 ms on Wikipedia's six), then the scroll's copy -
-      `blit` is `memcpy` a row, and the libc's `memcpy` is eight bytes at a
-      time and its `memmove` one, shared with the kernel, which may not use
-      the vector unit.
+      **Pictures BUILT the same day** (`testing.md` 18.317), and the
+      measurement chose something better than lanes: Wikipedia's 4.6 ms was
+      three pictures *scaled*, again on every paint - its logo is 100 pixels
+      shown at 50. Each is scaled to its box once when it comes, and again
+      only when its box changes, from the picture as decoded; painting draws
+      it at its own size, which is the compositor's row blend, four pixels
+      at a time. Wikipedia's band 12.6 ms to 8.5.
+
+      **Next in h**: the scroll's copy - `blit` is `memcpy` a row, and the
+      libc's `memcpy` is eight bytes at a time and its `memmove` one, shared
+      with the kernel, which may not use the vector unit. Then text, now
+      the largest kind on Wikipedia (2.1 ms of 8.5), measured again.
    i. **BUILT 30 September (`testing.md` 18.299). A progress bar while a
       page loads, in the status panel** - Diego,
       30 September, watching Wikipedia's Dam article sit on "waiting for

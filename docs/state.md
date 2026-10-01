@@ -410,9 +410,10 @@ reads "Imágenes" now), then **h** (SIMD in the browser's drawing, profiled
 first): **measured, and fills and glyphs in lanes** (18.316) - a paint by
 kind printed after every page, the status line's pictures apart from its
 paint, and `__builtin_memcpy` for every lane's load and store, which had
-been a libc call on both machines (the gate's `lanes` suite). Rest of h:
-pictures scaled (`stretch_into`), then the scroll's copy (`memcpy`). Then k
-the cache, then e (resizing) and d (the new chrome).
+been a libc call on both machines (the gate's `lanes` suite); and
+**pictures scaled once** (18.317), not on every paint - Wikipedia's band
+12.6 ms to 8.5. Rest of h: the scroll's copy (`memcpy`), then text measured
+again. Then k the cache, then e (resizing) and d (the new chrome).
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

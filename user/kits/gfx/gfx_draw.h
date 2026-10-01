@@ -47,6 +47,11 @@ void gfx_draw_stretch(struct surface *dst, const struct surface *src,
                       long dx, long dy, long dw, long dh,
                       long cx0, long cy0, long cx1, long cy1);
 
+/* How wide and tall a surface is - for a caller in C that is handed one
+ * and needs to know whether drawing it at a size scales it. */
+void gfx_draw_size(const struct surface *s, unsigned *width,
+                   unsigned *height);
+
 long gfx_draw_measure(int face, const char *str, size_t len);
 int  gfx_draw_height(int face);
 

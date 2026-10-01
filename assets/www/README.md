@@ -21,6 +21,9 @@ browser".
   gold with a pure magenta square, the JPEG grey stripes with a pure cyan
   one, so a check can find each on the screen by a colour nothing else on
   the page uses.
+- `kosmos.png` also appears at a quarter of its size below the forms,
+  scaled to its box once when it comes, and the suite checks that the first
+  paint scaled nothing.
 - `mark.svg` - 48 by 24, drawn at twice that: an orange disc and a purple
   curve on a ground of nothing, so the paragraph's pale yellow shows round
   them - the SVG drawn, and drawn over the page rather than instead of it.

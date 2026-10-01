@@ -701,6 +701,39 @@ def main():
               f"own, {curve} of its curve", flush=True)
 
         #
+        # **A picture scaled once** (`roadmap.md` 6zz h): the test PNG at a
+        # quarter of its size beside the SVG, its magenta square on the
+        # first screen - and the first paint's account of itself, which the
+        # browser prints, saying it scaled nothing: the picture was scaled
+        # to its box when it came, and painting draws it at its own size.
+        # It was scaled again every time its band was painted.
+        #
+        purple_free = sum(1 for y in range(y0, y0 + band)
+                          for x in range(x0, x0 + WIN_W - SBAR)
+                          if at(x, y)[0] > 235 and at(x, y)[1] < 25
+                          and at(x, y)[2] > 235)
+
+        if purple_free < 15:
+            raise Failure(
+                f"the test picture at a quarter of its size is not drawn: "
+                f"{purple_free} pixels of its magenta square on the first "
+                f"screen. Wrote {args.out}.")
+
+        painted = re.search(r"browser: painted in [^\r\n]*", guest.seen)
+        scaled = painted and re.search(r"scaled [\d.]+ \((\d+)\)",
+                                       painted.group(0))
+
+        if not scaled or int(scaled.group(1)) != 0:
+            raise Failure(
+                "the test page's first paint scaled a picture as it painted: "
+                f"{painted.group(0) if painted else 'no account of it'!r}. A "
+                "picture is scaled to its box once, when it comes. "
+                f"Wrote {args.out}.")
+
+        print(f"pictures: {purple_free} pixels of the quarter-size picture's "
+              f"magenta; {painted.group(0)}", flush=True)
+
+        #
         # And that it moves.
         #
         # Six presses rather than one: a line is forty pixels and the check

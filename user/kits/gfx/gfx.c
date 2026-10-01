@@ -2759,6 +2759,30 @@ static void stretch_into(struct surface *d, const struct surface *s,
         return;
     }
 
+    /*
+     * **At its own size**, which is how a page's pictures nearly always come
+     * - a thumbnail is fetched at the size it is shown, an SVG drawn at its
+     * box's (`roadmap.md` 6zz h): a row of source-over, four pixels at a
+     * time (`blend_row`, which is `over` to the bit), or a row copied. Only
+     * where nothing would be clamped, so the answer is the loop's below.
+     */
+    if (!smooth && sw == dw && sh == dh && sx >= 0 && sy >= 0
+        && sx + sw <= (long)s->width && sy + sh <= (long)s->height) {
+        for (y = y0; y < y1; y++) {
+            const uint32_t *sp = row_of(s, (unsigned)(sy + (y - dy)))
+                                 + sx + (x0 - dx);
+            uint32_t *dp = row_of(d, (unsigned)y) + x0;
+
+            if (global < 0) {
+                memcpy(dp, sp, (size_t)(x1 - x0) * 4);
+            } else {
+                blend_row(dp, sp, x1 - x0, (uint32_t)global);
+            }
+        }
+
+        return;
+    }
+
     xstep = (uint32_t)((sw << 16) / dw);
     ystep = (uint32_t)((sh << 16) / dh);
 
@@ -3365,6 +3389,13 @@ void gfx_draw_text(struct surface *s, int face, long x, long y,
     }
 
     draw_outline_text(s, f, x, y, str, len, fg, bg);
+}
+
+void gfx_draw_size(const struct surface *s, unsigned *width,
+                   unsigned *height)
+{
+    *width = s != NULL ? s->width : 0;
+    *height = s != NULL ? s->height : 0;
 }
 
 long gfx_draw_measure(int face, const char *str, size_t len)

@@ -297,6 +297,14 @@ local ns_tried = {}
 -- to it, so a box that changes size has it drawn again.
 local ns_svgs = {}
 
+-- And the rest of its pictures, by number: each as it was decoded, its own
+-- size, and the size it was last scaled to. A picture shown at a size not
+-- its own - Wikipedia's logo is 100 pixels drawn at 50 - was scaled again
+-- every time its band was painted, which was most of a band's pictures'
+-- cost (`roadmap.md` 6zz h); it is scaled once, to its box, and the band
+-- draws it at its own size.
+local ns_raster = {}
+
 local paint_band             -- below, once the pictures can be fetched
 
 --
@@ -858,7 +866,7 @@ local function lay_out(doc)
 
   forget_pictures()
   paper_h, band_top, content_h, top = 0, 0, 0, 0
-  ns_doc, ns_tried, ns_svgs = false, {}, {}
+  ns_doc, ns_tried, ns_svgs, ns_raster = false, {}, {}, {}
 
   --
   -- Timed apart from the painting, and the split is the measurement:
@@ -1304,7 +1312,7 @@ end
 -- column of 250 does not keep 48 MB - and its own size said beside it,
 -- which is what the layout measures a picture the page gave no size to by.
 -- An SVG is drawn at its own size here, and at its box's once the layout
--- has given it one (`svgs_to_boxes`); `k` is which picture it is.
+-- has given it one (`pictures_to_boxes`); `k` is which picture it is.
 --
 local function picture_of(bytes, k)
   if bytes and web and bytes:sub(1, 1024):find("<svg", 1, true) then
@@ -1347,14 +1355,16 @@ end
 --
 -- Each SVG drawn again at its box's size, where the layout gave it one that
 -- is not the size it was drawn at: its own, or the page's width, until the
--- page said otherwise. Its natural size goes back unchanged, so the layout
--- does not move.
+-- page said otherwise; and each other picture scaled to its box once. The
+-- natural size goes back unchanged, so the layout does not move.
 --
-local function svgs_to_boxes()
-  if not next(ns_svgs) then return end
+local function pictures_to_boxes()
+  if not next(ns_svgs) and not next(ns_raster) then return end
+
+  local most = math.max(PAGE_W, VIEW_H) * 2
 
   for k, o in ipairs(doc:ns_objects()) do
-    local s = ns_svgs[k]
+    local s, r = ns_svgs[k], ns_raster[k]
 
     if s and o.w > 0 and o.h > 0 and (o.w ~= s.w or o.h ~= s.h) then
       local pic = svg_surface(s.svg, o.w, o.h)
@@ -1364,6 +1374,20 @@ local function svgs_to_boxes()
 
         doc:ns_picture(k, pic, sw, sh)
         s.w, s.h = o.w, o.h
+      end
+    elseif r and not o.background and o.w > 0 and o.h > 0
+           and o.w <= most and o.h <= most
+           and (o.w ~= r.w or o.h ~= r.h) then
+      -- Scaled from the picture as decoded, not from the last scaling,
+      -- so a box that changes size again loses nothing.
+      local made, scaled = pcall(gfx.surface, { w = o.w, h = o.h })
+
+      if made and scaled then
+        local sw, sh = r.pic:size()
+
+        scaled:stretch(r.pic, 0, 0, sw, sh, 0, 0, o.w, o.h, nil, true)
+        doc:ns_picture(k, scaled, r.pw, r.ph)
+        r.w, r.h = o.w, o.h
       end
     end
   end
@@ -1407,6 +1431,12 @@ local function ns_band_pictures()
 
       if pic and doc:ns_picture(w.k, pic, pw, ph) then
         arrived = arrived + 1
+
+        if not ns_svgs[w.k] then
+          local sw, sh = pic:size()
+
+          ns_raster[w.k] = { pic = pic, pw = pw, ph = ph, w = sw, h = sh }
+        end
       end
     end
 
@@ -1420,7 +1450,7 @@ local function ns_band_pictures()
 
     band_top = math.max(0, math.min(band_top, content_h + 16 - paper_h))
     top = math.max(0, math.min(top, math.max(0, content_h - VIEW_H)))
-    svgs_to_boxes()
+    pictures_to_boxes()
     doc:ns_paint(paper, PAGE_W, paper_h, band_top)
   end
 
@@ -1654,13 +1684,16 @@ local function load(text, post)
   if c then
     local function ms(t) return tenths((t * 10000) // HZ) end
     local rest = c.whole.ticks - c.fills.ticks - c.text.ticks
-                 - c.pictures.ticks - c.shapes.ticks - c.other.ticks
+                 - c.pictures.ticks - c.scaled.ticks - c.shapes.ticks
+                 - c.other.ticks
 
     print(("browser: painted in %s ms - fills %s (%d), text %s (%d), "
-           .. "pictures %s (%d), shapes %s (%d), clips %s (%d), boxes %s")
+           .. "pictures %s (%d), scaled %s (%d), shapes %s (%d), "
+           .. "clips %s (%d), boxes %s")
           :format(ms(c.whole.ticks), ms(c.fills.ticks), c.fills.calls,
                   ms(c.text.ticks), c.text.calls, ms(c.pictures.ticks),
-                  c.pictures.calls, ms(c.shapes.ticks), c.shapes.calls,
+                  c.pictures.calls, ms(c.scaled.ticks), c.scaled.calls,
+                  ms(c.shapes.ticks), c.shapes.calls,
                   ms(c.other.ticks), c.other.calls, ms(rest)))
   end
 

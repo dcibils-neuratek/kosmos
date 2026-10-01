@@ -847,7 +847,7 @@ static void push_cost(lua_State *L, const char *name,
 }
 
 /* `doc:ns_costs()` -> what the last paint spent, by kind - `whole`, `fills`,
- * `text`, `pictures`, `shapes`, `other`, each `{ ticks, calls }` in counter
+ * `text`, `pictures`, `scaled`, `shapes`, `other`, each `{ ticks, calls }` in counter
  * ticks (`roadmap.md` 6zz h). */
 static int l_ns_costs(lua_State *L)
 {
@@ -865,6 +865,7 @@ static int l_ns_costs(lua_State *L)
     push_cost(L, "fills", &c->fills);
     push_cost(L, "text", &c->text);
     push_cost(L, "pictures", &c->pictures);
+    push_cost(L, "scaled", &c->scaled);
     push_cost(L, "shapes", &c->shapes);
     push_cost(L, "other", &c->other);
     return 1;
