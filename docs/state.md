@@ -414,9 +414,12 @@ been a libc call on both machines (the gate's `lanes` suite); and
 **pictures scaled once** (18.317), not on every paint - Wikipedia's band
 12.6 ms to 8.5. **h stops there, measured**: a band is about a millisecond
 on real cores and the scroll's copy 2.7 ms a frame under QEMU; `memmove` a
-byte at a time is recorded for the day a profile names it. **k the cache
-next** - a page's time is fetching it and its pictures - then e (resizing)
-and d (the new chrome).
+byte at a time is recorded for the day a profile names it. **k the cache,
+built** (18.318): `/Home/Cache/Browser`, Diego's choice, HTTP's rules in
+`httpcache.lua` and `http.get` through it - the Dam article's second visit
+fetches in 138 ms from 547. **e next** (windows that draw their own pixels,
+resizable - Diego asked again on 1 October when the new design comes: after
+k, e then d), then d (the new chrome, `docs/browser.html`).
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

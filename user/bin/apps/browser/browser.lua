@@ -67,7 +67,18 @@
 
 local ui    = use("/Kosmos/Libraries/ui.lua")
 local http  = use("/Kosmos/Libraries/http.lua")
+local httpcache = use("/Kosmos/Libraries/httpcache.lua")
 local theme = ui.theme
+
+--
+-- **What was fetched, kept** (`roadmap.md` 6zz k): pages and pictures, in
+-- `/Home/Cache/Browser` - Diego's choice - and used again for as long as
+-- their servers said they may be, or asked about with their validators.
+-- One for the process, so a picture on every page of a site is fetched
+-- once. Reload asks the server about everything it shows (`reloading`).
+--
+local CACHE = httpcache.open{ dir = "/Home/Cache/Browser" }
+local reloading = false
 
 --------------------------------------------------------------------------
 -- The window, and what is where in it.
@@ -1019,6 +1030,8 @@ local function fetch(text, page, post)
       anyway = parts.scheme == "https" and anyway[parts.hostport] or nil,
       body = post and post.body,
       content_type = post and post.type,
+      cache = CACHE,
+      revalidate = reloading,
     })
 
     if page then loading = nil end
@@ -1094,6 +1107,13 @@ local function how_said(how)
     words = "Not secure: " .. tostring(how.reason or "the certificate did not check out")
   end
 
+  -- Kept from before: as it was, or after the server said it still is.
+  if how.cached == "fresh" then
+    words = words .. ", from the cache"
+  elseif how.cached == "revalidated" then
+    words = words .. ", from the cache, checked"
+  end
+
   -- A page that stopped before the length the server gave says so first.
   if how.short then
     words = ("Cut short at %d%s KB - %s"):format(how.short.got // 1024,
@@ -1152,6 +1172,8 @@ local function fetch_pictures(wanted, noun)
     anyway = function(parts)
       return parts.scheme == "https" and anyway[parts.hostport] or nil
     end,
+    cache = CACHE,
+    revalidate = reloading,
   })
 
   for i, r in ipairs(results) do
@@ -1674,6 +1696,10 @@ local function load(text, post)
   print(("browser: showing %s, \"%s\", %d pixels tall, %d pictures, %d missing, %s")
         :format(text, title or "", content_h, shown, missing, how_said(came)))
 
+  -- Its costs as the status line has them, for whoever measures from
+  -- outside - a page from the cache is a fetch of nothing (6zz k).
+  print("browser: took " .. timing)
+
   --
   -- And what drawing its first band spent, by kind (`roadmap.md` 6zz h):
   -- the band last painted, which with pictures is the last of up to three.
@@ -1743,7 +1769,9 @@ go_forward = function()
 end
 
 reload = function()
+  reloading = true
   load(here or address.text)
+  reloading = false
 end
 
 go_home = function()

@@ -381,6 +381,10 @@ end
 --   opts.pause       called with the connection where this would wait for it;
 --                    `http.get_many` passes one that yields to its scheduler
 --   opts.wait_ticks  how long a name may take to look up, scheduler ticks
+--   opts.body        sent as a POST, `opts.content_type` its type
+--   opts.headers     more fields for the request, by name
+--   opts.cache       a cache (`httpcache.lua`) to answer from and keep in;
+--                    `opts.revalidate` asks the server even when it is fresh
 --
 
 --
@@ -420,8 +424,21 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   -- `opts.content_type`.
   --
   local posting = opts.body ~= nil
+
+  -- And the caller's own fields - the cache's validators, asking whether
+  -- what it kept is still right (`httpcache.lua`) - in a fixed order.
+  local fields, names = "", {}
+
+  for name in pairs(opts.headers or {}) do names[#names + 1] = name end
+
+  table.sort(names)
+
+  for _, name in ipairs(names) do
+    fields = fields .. name .. ": " .. tostring(opts.headers[name]) .. "\r\n"
+  end
+
   local request = ("%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
-                   .. "Accept: text/html, */*\r\nAccept-Encoding: gzip\r\n%s\r\n%s")
+                   .. "Accept: text/html, */*\r\nAccept-Encoding: gzip\r\n%s%s\r\n%s")
                   :format(posting and "POST" or "GET", parts.path,
                           opts.name or parts.hostport,
                           opts.agent or http.agent(),
@@ -429,7 +446,7 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
                                       :format(opts.content_type
                                               or "application/x-www-form-urlencoded",
                                               #opts.body) or "",
-                          opts.body or "")
+                          fields, opts.body or "")
   local sent = 0
 
   for _ = 1, 150 do
@@ -629,7 +646,10 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   --
   local coding = head:lower():match("\r\ncontent%-encoding:%s*([^\r\n]*)")
 
-  if coding and coding:find("gzip", 1, true) then
+  -- Only a body there is: a 304 says the encoding of the one it stands for
+  -- and brings none, and nothing inflated is not a stream cut short - which
+  -- is what a page from the cache said, until it was told apart (6zz k).
+  if coding and coding:find("gzip", 1, true) and #text > 0 then
     local compress = use("/Kosmos/Kits/compress")
     local room = ((sys.info() or {}).pages_free or 16384) * 4096 // 2
     local inflated, why = compress.gunzip(text, room)
@@ -657,7 +677,7 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   return head .. text, nil, how
 end
 
-function http.get(address, opts)
+local function get_uncached(address, opts)
   opts = opts or {}
 
   local say = opts.say or function() end
@@ -737,6 +757,72 @@ function http.get(address, opts)
   end
 
   return exchange(parts, opts, conn, stream, key, false, how)
+end
+
+--
+-- **`http.get`, through the cache when it is given one** (`opts.cache`,
+-- `httpcache.lua`, `roadmap.md` 6zz k). A reply kept and still fresh is
+-- answered from it, with no request at all; one kept and stale is asked
+-- about with its validators, and a `304` means the kept one is used again
+-- for as long as the 304 says; a new `200` is kept if it says it may be.
+-- `how.cached` is "fresh" or "revalidated" when the cache answered.
+-- `opts.revalidate` asks even about a fresh one - Reload.
+--
+-- A POST is never answered from the cache, and nothing is without the
+-- time of day, which is what freshness is measured against.
+--
+function http.get(address, opts)
+  opts = opts or {}
+
+  local c = opts.cache
+
+  if c == nil or opts.body ~= nil then return get_uncached(address, opts) end
+
+  local parts, bad = address, nil
+
+  if type(address) ~= "table" then parts, bad = http.split(address) end
+
+  if not parts then return nil, bad, {} end
+
+  local clock = fs.read("/Devices/clock")
+  local now = type(clock) == "table" and clock.epoch or nil
+
+  if not now then return get_uncached(parts, opts) end
+
+  local url = parts.scheme .. "://" .. parts.hostport .. parts.path
+  local kept = c:lookup(url, now)
+
+  if kept and kept.fresh and not opts.revalidate then
+    c:used(url, now)
+
+    return kept.reply, nil, { scheme = parts.scheme, cached = "fresh",
+                              secure = parts.scheme == "https"
+                                       and kept.secure or nil }
+  end
+
+  local asking = opts
+
+  if kept and (kept.etag or kept.last_modified) then
+    asking = setmetatable({ headers = { ["If-None-Match"] = kept.etag,
+                                        ["If-Modified-Since"] = kept.last_modified } },
+                          { __index = opts })
+  end
+
+  local reply, why, how = get_uncached(parts, asking)
+
+  if reply then
+    local status = tonumber(reply:match("^HTTP/%d%.%d%s+(%d%d%d)"))
+
+    if status == 304 and kept then
+      c:revalidated(url, kept, reply:match("^(.-)\r\n\r\n") or reply, now)
+      how.cached = "revalidated"
+      return kept.reply, nil, how
+    elseif status == 200 then
+      c:store(url, reply, how, now)
+    end
+  end
+
+  return reply, why, how
 end
 
 --

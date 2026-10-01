@@ -3809,6 +3809,9 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# The kit's keys: every sequence the board makes read back whole, as
 	@# its key and its modifiers, and nothing typed that was not (6n, step 0).
 	$(HOSTDIR)/lua tools/test_keys.lua
+	@# The browser's cache: HTTP's dates, what a reply says of keeping it,
+	@# and the store over an fs in memory (`roadmap.md` 6zz k).
+	$(HOSTDIR)/lua tools/test_httpcache.lua
 	@# The IDE's editor: the text it edits, every edit undoable, and Lua
 	@# coloured a line at a time with what carries across lines (6n, step 1).
 	$(HOSTDIR)/lua tools/test_textbuf.lua

@@ -14988,3 +14988,74 @@ which the browser prints, saying `scaled 0.0 (0)`. Control: rasters not
 scaled to their boxes, `scaled 0.5 (1)` of a 5.7 ms paint.
 
 **The gate**: 76 of 76, in 8:57.
+
+## 18.318 The browser's cache (6zz k)
+
+**`roadmap.md` 6zz k** - Diego, 30 September: "we should add a browser cache
+feature as well", "as all browser rely on this for performance reasons". He
+chose on 1 October where - `/Home/Cache/Browser`, a new place for what can
+always be fetched again - and when: now, in `http.lua`, its store moving into
+C with the HTTP Kit.
+
+- **`user/lib/httpcache.lua`**: HTTP's caching, the part a browser for one
+  person needs (RFC 9111). How long a reply may be used - `max-age` less
+  `Age`, or `Expires` against the reply's own `Date`, or a tenth of the time
+  since `Last-Modified`, a day at most; `no-store` never kept, `no-cache`
+  always asked about, only a 200, only a GET, nothing taken over a
+  certificate that did not check out. `Vary` is ignored but for `*`: this
+  browser sends the same fields every time - it said "anything but the
+  encoding is not kept" at first, and Wikipedia, which varies by `Cookie`,
+  was never kept.
+- **The store**: a file a reply, named by its address's FNV-1a hash and
+  holding the reply as `http.get` returns it; what the cache knows of it -
+  the address, until when it is fresh, its ETag and Last-Modified, when it
+  was last used - its attributes. Bounded at an eighth of the disk, 256 MB at
+  most, the least lately used let go first; the last few used held in
+  memory too.
+- **`http.get` through it**, given `opts.cache`: fresh is answered with no
+  request, stale is asked about with `If-None-Match` and
+  `If-Modified-Since`, a 304 is the kept reply and how much longer it may be
+  used. `get_many` passes it on, so pictures go through it too. Reload asks
+  about everything (`opts.revalidate`).
+- **Found by measuring it live**: a 304 names the encoding of what it stands
+  for and brings no body, and inflating nothing was taken for a stream cut
+  short - the status said "Cut short at 0 KB - Secure, from the cache,
+  checked". A body is inflated only when there is one.
+
+**`host`**: `test_httpcache.lua`, 36 checks - HTTP's dates in their three
+forms, the leap day and the epoch; `max-age`, `Age`, `Expires` against `Date`,
+an `Expires` that is no date, a tenth of ten days and of two; `no-store`,
+`no-cache`, nothing to keep it by, `Vary` by the encoding, by a cookie and by
+`*`; only a 200; a 304's head over a kept one; and the store over an `fs` in
+memory - kept, found, stale past its time, found again by a cache holding
+nothing, refused over a bad certificate, a file whose address is another's,
+a 304 making it fresh on the disk, the least lately used let go first, a
+reply larger than the whole refused, and emptied. Control: `Age` not taken
+off and the eviction order reversed, 3 of 36 fail.
+
+**`arm-browser` and `x86-browser`**: a probe at the shell before the browser
+opens - a reply kept in the guest's own `/Home/Cache/Browser` and found again
+by a cache holding nothing, fresh, whole, its ETag kept. Then in the browser:
+a page with an ETag and `no-cache`, its picture with ten minutes; gone to,
+left, gone to again - the server asked with `If-None-Match "v1"`, answering
+304 with `Content-Encoding: gzip` as Wikipedia does, the status line "from
+the cache, checked" and not cut short, and the picture fetched once. The
+suite's own files now say `no-cache`, so the checks that count what the
+server is asked keep counting: Python's server sends `Last-Modified`, and the
+cache answered the second visit to `second.html` without asking - rightly.
+Controls: validators not sent, the 304 never asked for; fresh never used,
+the picture fetched twice; the empty 304 inflated, "Cut short at 0 KB".
+
+**Live, on a 64 MB disk**:
+
+    page                    fetch   pictures   status
+    Dam article, first       547      462      Secure
+    Dam article, again       138      114      Secure, from the cache, checked
+    Google, first            290      164      Secure
+    Google, again            155       11      Secure
+
+Google's page itself is `private, max-age=0` with no validator, so it is
+fetched again whole; its pictures are not. Wikipedia's front page changes by
+the second: kept, asked about, and new each time, which is right.
+
+**The gate**: 76 of 76, in 8:58.

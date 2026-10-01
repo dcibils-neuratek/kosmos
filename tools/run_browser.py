@@ -136,6 +136,13 @@ LATIN1_PAGE = (
     "</body></html>")
 ASK = (138, 90, 0)
 
+# The cache's page: asked about every time, by its ETag, with a picture on it
+# that may be used for ten minutes (`roadmap.md` 6zz k).
+CHECKED_PAGE = ("<!doctype html><html><head><title>Kept</title></head><body>"
+                "<h1>Kept, and asked about</h1>"
+                "<p><img src=\"cached.png\" width=\"240\" height=\"135\"></p>"
+                "</body></html>")
+
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
 # adds a title bar above them, which `find_window` finds.
@@ -185,12 +192,73 @@ def serve(directory, asked, tls=None):
             self.end_headers()
             self.wfile.write(page)
 
+        # **Every file asked about, every time** (`roadmap.md` 6zz k): the
+        # checks here count what the server is asked, and the browser's cache
+        # would otherwise answer a second visit from what it kept - rightly:
+        # this server sends `Last-Modified`, and a tenth of a file's age is
+        # fresh. `no-cache` keeps it asking, which a 304 then answers. The
+        # cache's own pages say what they mean instead (`_said_cache`).
+        def end_headers(self):
+            if not getattr(self, "_said_cache", False):
+                self.send_header("Cache-Control", "no-cache")
+
+            super().end_headers()
+
+        def send_header(self, name, value):
+            if name.lower() == "cache-control":
+                self._said_cache = True
+
+            super().send_header(name, value)
+
         def do_GET(self):
+            self._said_cache = False
             asked.append(self.path)
 
             # The test page's first form, sent: what it asked for, said back.
             if self.path.startswith("/found.html?"):
                 self.answer("asked for " + self.path)
+                return
+
+            # The cache (`roadmap.md` 6zz k): a page asked about every time
+            # by its ETag, answered 304 when it has not changed - the request
+            # kept with the header it came with - and a picture that may be
+            # used for ten minutes without asking.
+            if self.path == "/checked.html":
+                inm = self.headers.get("If-None-Match")
+
+                if inm:
+                    asked[-1] = "/checked.html If-None-Match " + inm
+
+                # And, as Wikipedia's 304 does, the encoding of what it stands
+                # for - with no body to inflate.
+                if inm == '"v1"':
+                    self.send_response(304)
+                    self.send_header("ETag", '"v1"')
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Content-Encoding", "gzip")
+                    self.end_headers()
+                    return
+
+                page = CHECKED_PAGE.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("ETag", '"v1"')
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Content-Length", str(len(page)))
+                self.end_headers()
+                self.wfile.write(page)
+                return
+
+            if self.path == "/cached.png":
+                with open(os.path.join(directory, "kosmos.png"), "rb") as f:
+                    picture = f.read()
+
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "max-age=600")
+                self.send_header("Content-Length", str(len(picture)))
+                self.end_headers()
+                self.wfile.write(picture)
                 return
 
             # A page in ISO-8859-1 by its header and UTF-8 by its <meta>, as
@@ -557,6 +625,45 @@ def main():
         print(f"NetSurf drew the test page: {boxed.strip()} "
               "(height, border, ground and table pixels, the first link)")
         guest.wait_for(PROMPT, "the prompt after NetSurf")
+
+        #
+        # **The cache on the disk** (`httpcache.lua`, `roadmap.md` 6zz k): a
+        # reply kept in `/Home/Cache/Browser`, then found by a cache that
+        # starts with nothing held - so from the file and its attributes,
+        # on the guest's own filesystem, which the Mac's test stands in for.
+        #
+        probe = ('local hc = use("/Kosmos/Libraries/httpcache.lua") '
+                 'local t = fs.read("/Devices/clock").epoch '
+                 'local r = "HTTP/1.1 200 OK\\r\\nCache-Control: max-age=600'
+                 '\\r\\nETag: \\"p1\\"\\r\\n\\r\\n" .. ("probe"):rep(300) '
+                 'local ok, why = hc.open{}:store("http://probe/x", r, '
+                 '{ scheme = "http" }, t) '
+                 'local h = hc.open{}:lookup("http://probe/x", t + 5) '
+                 'print("CA" .. "CHE", ok, why, h and h.fresh, '
+                 'h and h.reply == r, h and h.etag)')
+        parts = [probe[i:i + 600] for i in range(0, len(probe), 600)]
+
+        for i, part in enumerate(parts):
+            guest.type(f'fs.write("/Temporary/cache{i}.lua", [==[{part}]==])')
+            guest.wait_for(PROMPT, "the cache's probe written")
+
+        guest.type('fs.write("/Temporary/cacheprobe.lua", '
+                   + " .. ".join(f'fs.read("/Temporary/cache{i}.lua")'
+                                 for i in range(len(parts)))
+                   + ')')
+        guest.wait_for(PROMPT, "the cache's probe put together")
+        mark = len(guest.seen)
+        guest.type("/Temporary/cacheprobe.lua")
+        kept = guest.wait_for_line("CACHE\t", "the cache's probe", since=mark)
+
+        if kept.split()[0:3] != ["true", "nil", "true"] or 'true\t"p1"' not in kept:
+            raise Failure(
+                "a reply kept in /Home/Cache/Browser was not found again from "
+                f"the disk, fresh and whole: {kept.strip()!r}. Wrote {args.out}.")
+
+        print(f"cache: kept and found again from the disk ({kept.strip()})",
+              flush=True)
+        guest.wait_for(PROMPT, "the prompt after the cache's probe")
 
         guest.type(f"wm browser:10.0.2.2:{port}/{name}")
 
@@ -1154,6 +1261,45 @@ def main():
 
         print(f"charset: the title read as B\u00fasqueda, the form sent as {sent}",
               flush=True)
+
+        #
+        # **The cache, in the browser** (`roadmap.md` 6zz k): a page sent
+        # with its ETag and `no-cache`, its picture with ten minutes. Gone
+        # to, left, and gone to again: the second time the server is asked
+        # about the page with its ETag and answers 304 - the page is the one
+        # kept, and the status line says so - and the picture is not asked
+        # for at all.
+        #
+        def go_to(path, what):
+            mark_ = len(guest.seen)
+            typed("\x0c")
+            time.sleep(0.4)
+            typed("http://10.0.2.2:%d/%s\n" % (port, path))
+            return guest.wait_for_line("browser: showing http://10.0.2.2:%d/%s"
+                                       % (port, path), what, since=mark_)
+
+        go_to("checked.html", "the page the cache keeps")
+        go_to(LINKED, "the second page, between")
+        again = go_to("checked.html", "the kept page, again")
+        pictures = asked.count("/cached.png")
+
+        if '/checked.html If-None-Match "v1"' not in asked:
+            raise Failure(
+                "going back to a page kept with its ETag did not ask about it "
+                f"with it: the server was asked {asked[-6:]!r}. Wrote {args.out}.")
+
+        if "from the cache, checked" not in again or "Cut short" in again:
+            raise Failure(
+                f"the page the server said was unchanged was not shown from "
+                f"the cache, whole: {again.strip()!r}. Wrote {args.out}.")
+
+        if pictures != 1:
+            raise Failure(
+                f"a picture that may be used for ten minutes was fetched "
+                f"{pictures} times. Wrote {args.out}.")
+
+        print("cache: asked about the page by its ETag, answered 304 and shown "
+              "from the cache; its picture fetched once", flush=True)
 
         #
         # **HTTPS** (`roadmap.md` 6zz c). The second page from the server

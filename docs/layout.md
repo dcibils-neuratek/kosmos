@@ -154,6 +154,7 @@ the image.
 | `/Home` | the disk Kosmos started from, journalled - or memory, on a machine with none | done |
 | a person's preferences | `/Home/Preferences`: the look, the keyboard, Tracker's, the Terminal's, what starts at login, what opens what - moved there from dotfiles at the top of `/Home` by the shell, once (6s d) | done |
 | a person's places | Home, Desktop, Documents, Photos, Movies, Captures, Music, what they pin, the Trash (6w) | done |
+| what can be fetched again | `/Home/Cache`, a folder an application each - the browser's in `/Home/Cache/Browser` (6zz k): nothing in it is anybody's work, so it can be emptied whole, and it outlives a restart where `/Temporary` does not. Diego's choice, 1 October 2026 | the browser's, being built |
 | `/Temporary` | the ramfs | done |
 | fonts and pictures | inside the image | files, when the image stops carrying them |
 

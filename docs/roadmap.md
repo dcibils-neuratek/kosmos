@@ -3027,6 +3027,27 @@ processors, and still what follows USB:
       `304 Not Modified` is a few hundred bytes instead of the whole again.
       Bounded by size, oldest first, and clearable from Settings. In C, with
       g, since it is the HTTP Kit's to keep.
+
+      **Decided by Diego, 1 October**: on disk in **`/Home/Cache/Browser`**
+      - a new place, `/Home/Cache`, for what can always be fetched again,
+      never mixed with a person's files or settings and emptied whole
+      (`layout.md`) - and **built now, in `http.lua`**, rather than after
+      g: the rules - how long a reply may be used, asking again with its
+      validators, a 304 for a few hundred bytes - work today, and the
+      store moves into C when the byte path does.
+
+      **BUILT 1 October** (`testing.md` 18.318): `user/lib/httpcache.lua`,
+      through which `http.get` answers when it is given one - pages and
+      pictures both, `get_many` included. Fresh is answered with no request;
+      stale is asked about with its validators; a 304 is the kept reply,
+      fresh again as long as the 304 says. Reload asks about everything.
+      The status line says "from the cache", or "from the cache, checked".
+      Wikipedia's Dam article the second time: fetch 547 ms to 138, its
+      pictures 462 to 114; Google's pictures 164 to 11. **Still to come**:
+      emptying it from Settings, with the redesign's Settings page (d); and
+      on a machine with no disk, `/Home` is `ramfs`, whose files are 16 KB
+      at most - a page does not fit, which is that server's fixed limit,
+      already on the no-limits list.
    **The order since 30 September**: f's kernel step, i, then f, g and h,
    with j's parser and paper beside g (the paper BUILT), then e and d - the
    browser fast before it is redrawn. **Then NetSurf's layout (j1-j5)**,
