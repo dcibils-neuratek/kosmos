@@ -146,9 +146,11 @@ CHECKED_PAGE = ("<!doctype html><html><head><title>Kept</title></head><body>"
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
 # adds a title bar above them, which `find_window` finds.
-# `TOOL` is the header now - the kit's, `ui.layout.head` (`roadmap.md`
-# 6zz d1) - and the status line is the drawing's 26.
-TOOL, STAT, SBAR, PAD = 46, 26, 16, 8
+# `TOOL` is everything above the page: the tabs (`roadmap.md` 6zz d2) and
+# under them the header - the kit's, `ui.layout.head` (6zz d1) - and the
+# status line is the drawing's 26.
+TABS, HEAD = 40, 46
+TOOL, STAT, SBAR, PAD = TABS + HEAD, 26, 16, 8
 WIN_W, WIN_H = 900, 640
 
 
@@ -1354,7 +1356,7 @@ def main():
             at_ = reader(pxb, wb)
             n = 0
 
-            for y in range(y0 - TOOL + 6, y0 - 6):
+            for y in range(y0 - HEAD + 6, y0 - 6):
                 for x in range(x0 + 100, x0 + 330):
                     r, g, b = at_(x, y)
 
@@ -1538,11 +1540,121 @@ def main():
                           f"decoded: the server was asked for {long_asked!r}")
 
         #
+        # **Tabs** (`roadmap.md` 6zz d2, `docs/browser.html`): Super T opens
+        # one beside the shown one, on a page offering what was open lately
+        # with the address field waiting - an address typed goes to it - and
+        # the long page's tab, pressed, comes back where it was read: at its
+        # end, its last picture on the screen and not fetched again. Each tab
+        # has its own history - Back in the second goes to its new tab's
+        # page, not to the first's Dam article - and Super Shift ] and [ go
+        # round them. The second closed by its cross, a third opened and
+        # closed by Super W, and the long page is shown again each time.
+        #
+        # The keys are the board's: Super held through QMP, as a person
+        # holds it, so the window manager reads them and hands on what it
+        # has no binding for.
+        #
+        def chord(*names):
+            for n in names:
+                guest._qmp("input-send-event", {"events": [
+                    {"type": "key", "data": {"down": True,
+                                             "key": {"type": "qcode", "data": n}}}]})
+                time.sleep(0.08)
+
+            for n in reversed(names):
+                guest._qmp("input-send-event", {"events": [
+                    {"type": "key", "data": {"down": False,
+                                             "key": {"type": "qcode", "data": n}}}]})
+                time.sleep(0.08)
+
+        def tab_said(prefix, what, mark_):
+            return guest.wait_for_line("browser: " + prefix, what, since=mark_)
+
+        def no_magenta(w_, h_, px_):
+            return None if magenta(w_, h_, px_) else True
+
+        mark = len(guest.seen)
+        chord("meta_l", "t")
+        tab_said("tab 2 of 2, new", "Super T to open a second tab", mark)
+        offered = tab_said("a new tab's page, ", "the new tab's page", mark)
+        newest = re.match(r"(\d+) lately, the newest (\S+)", offered)
+
+        if not newest or newest.group(2) != long_url or int(newest.group(1)) < 4:
+            raise Failure(
+                f"the new tab did not offer what was open lately, the long page "
+                f"newest: {offered.strip()!r}. Wrote {args.out}.")
+
+        laid = re.search(r"browser: tabs 2, each (\d+) wide, the first at (\d+),(\d+)",
+                         guest.seen[mark:])
+
+        if not laid:
+            raise Failure("the browser did not say where its two tabs are")
+
+        each, fx, fy = (int(v) for v in laid.groups())
+        settle(guest, no_magenta, "the new tab still shows the long page", seconds=20)
+
+        # Its address field has the keyboard: the second page, typed.
+        typed("http://10.0.2.2:%d/%s\n" % (port, LINKED))
+        tab_said("showing http://10.0.2.2:%d/%s" % (port, LINKED),
+                 "an address typed into the new tab's field", mark)
+
+        # The first tab, pressed: the long page at its end again.
+        mark = len(guest.seen)
+        press(x0 + fx, y0 - TOOL + fy)
+        tab_said("tab 1 of 2, shown, showing " + long_url,
+                 "a press on the first tab to show it", mark)
+        settle(guest, magenta,
+               "the long page's tab, shown again, is not where it was read - "
+               "its last picture is not on the screen", seconds=20)
+
+        if long_asked.count("/kosmos.png") != 1:
+            raise Failure(f"showing the long page's tab again fetched its picture "
+                          f"again: the server was asked for {long_asked!r}")
+
+        # Round to the second, and Back there is its own.
+        mark = len(guest.seen)
+        chord("meta_l", "shift", "bracket_right")
+        tab_said("tab 2 of 2, shown", "Super Shift ] to the next tab", mark)
+        chord("meta_l", "bracket_left")
+        tab_said("showing about:newtab",
+                 "Super [ in the second tab to go back to its own first page",
+                 mark)
+        chord("meta_l", "shift", "bracket_left")
+        tab_said("tab 1 of 2, shown, showing " + long_url,
+                 "Super Shift [ to the tab before", mark)
+
+        # The second closed by its cross, while the first is shown.
+        cross_x = x0 + 8 + each + 2 + each - 16
+        press(cross_x, y0 - TOOL + 22)
+        tab_said("a tab closed, 1 left", "a press on the second tab's cross",
+                 mark)
+
+        # And one opened and closed by the keys: the long page again.
+        mark = len(guest.seen)
+        chord("meta_l", "t")
+        tab_said("tab 2 of 2, new", "Super T again", mark)
+        settle(guest, no_magenta, "the third tab still shows the long page",
+               seconds=20)
+        chord("meta_l", "w")
+        tab_said("tab 1 of 1, shown, showing " + long_url,
+                 "Super W to close the shown tab and show the one left", mark)
+        tab_said("a tab closed, 1 left", "Super W", mark)
+        settle(guest, magenta,
+               "the long page is not back where it was read after Super W",
+               seconds=20)
+
+        print(f"tabs: Super T opened one offering the long page lately, an "
+              f"address typed into it; the long page's tab came back at its "
+              f"end with its picture kept; Back in the second was its own; "
+              f"Super Shift ] and [ went round; closed by its cross and by "
+              f"Super W", flush=True)
+
+        #
         # **Resized** (`roadmap.md` 6zz e) - Diego, 1 October: "make sure our
         # browser new design is resizable". The grip, the window's bottom
         # right corner, dragged 300 pixels left and 100 up: the window manager
         # resizes the frame, the kit hands over a region the new size, and
-        # the browser lays the page out again - at 568 by 484, the new page
+        # the browser lays the page out again - at 568 by 428, the new page
         # width and view, and taller than it was, since its lines now wrap
         # sooner. And on the screen, the page's white is the new width.
         #
@@ -1568,10 +1680,10 @@ def main():
         size = re.match(r"(\d+)x(\d+), (\d+) pixels tall, drawn at (\d+)x(\d+)",
                         again)
 
-        if not size or (int(size.group(1)), int(size.group(2))) != (568, 468):
+        if not size or (int(size.group(1)), int(size.group(2))) != (568, 428):
             raise Failure(
                 f"the grip dragged 300 left and 100 up did not lay the page "
-                f"out at 568x468: {again.strip()!r}. Wrote {args.out}.")
+                f"out at 568x428: {again.strip()!r}. Wrote {args.out}.")
 
         if (int(size.group(4)), int(size.group(5))) != (600, 540):
             raise Failure(
@@ -1640,6 +1752,100 @@ def main():
               f"edge where the new width puts it on {whole} of 20 rows, its "
               f"lines reaching {reach} pixels in", flush=True)
 
+        #
+        # **The tabs are the title bar** in a look with none (`roadmap.md`
+        # 6zz d2, 6zj): the last tab closed by Super W, and the window with
+        # it; the desktop stopped, Plex chosen, the browser opened again -
+        # and the window manager says its header is its title bar, draws the
+        # three at the strip's right end, and moves the window by the strip's
+        # empty band.
+        #
+        mark = len(guest.seen)
+        chord("meta_l", "w")
+        tab_said("the last tab closed, and the window with it",
+                 "Super W on the last tab", mark)
+        time.sleep(1.0)
+
+        # A prompt *after* the desktop stopped: `wait_for` finds any, and
+        # one from before had the line below typed while the desktop was
+        # still going, its first half lost.
+        stopped = len(guest.seen)
+        guest.proc.stdin.write(b"\x17q")
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 30
+
+        while PROMPT not in guest.seen[stopped:]:
+            if time.monotonic() > deadline:
+                raise Failure("the desktop did not stop for Plex to be chosen")
+
+            guest._read_available()
+            time.sleep(0.3)
+
+        time.sleep(0.5)
+        guest.type('fs.send("/Home/Preferences", { type = "mkdir" }) '
+                   'fs.write("/Home/Preferences/appearance", { palette = "plex" }) '
+                   'print("plex" .. "-set")')
+        guest.wait_for("plex-set", "Plex chosen for the window manager")
+
+        mark = len(guest.seen)
+        guest.type("wm browser")
+        opened = guest.wait_for_line("wm: window Browser at ",
+                                     "the browser to open in Plex", since=mark)
+
+        if "its header the title bar" not in opened:
+            raise Failure(f"the browser opened in Plex wearing a title bar: "
+                          f"{opened.strip()!r}")
+
+        wx, wy, ww, wh = (int(v) for v in
+                          re.match(r"(\d+),(\d+) (\d+)x(\d+)", opened).groups())
+        three = guest.wait_for_line("wm: Browser's three at ",
+                                    "the three placed in the browser's tabs",
+                                    since=mark)
+        lx, ly = (int(v) for v in re.match(r"(\d+),(\d+)", three).groups())
+
+        if (lx, ly) != (ww - 12 - 62, (TABS - 18) // 2):
+            raise Failure(f"the browser's three are at {lx},{ly} in a window "
+                          f"{ww} wide - wanted {ww - 74},{(TABS - 18) // 2}, the "
+                          f"strip's right end")
+
+        band = re.search(r"browser: tabs 1, each \d+ wide, the first at \d+,\d+, "
+                         r"new \d+,\d+, band (\d+),(\d+)", guest.seen[mark:])
+
+        if not band:
+            raise Failure("the browser in Plex did not say where its band is")
+
+        if int(band.group(1)) >= lx:
+            raise Failure(f"the browser's band, at {band.group(1)}, is not left "
+                          f"of the three at {lx}")
+
+        bx, by = wx + int(band.group(1)), wy + int(band.group(2))
+        wp, hp, _ = parse_ppm(guest.screendump())
+        held = len(guest.seen)
+        guest.mouse_to(*_to_tablet(bx, by, wp, hp))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+
+        for k in range(1, 7):
+            guest.mouse_to(*_to_tablet(bx + 120 * k // 6, by + 80 * k // 6, wp, hp))
+            time.sleep(0.15)
+
+        time.sleep(0.4)
+        guest.mouse_button(False)
+        dragged = guest.wait_for_line("wm: moved Browser",
+                                      "the browser to move by its tabs' band",
+                                      since=held)
+        to = re.search(r"by its header to (\d+),(\d+)", dragged)
+
+        if not to or abs(int(to.group(1)) - (wx + 120)) > 3 \
+                or abs(int(to.group(2)) - (wy + 80)) > 3:
+            raise Failure(f"the browser dragged by its tabs' band by 120,80 "
+                          f"from {wx},{wy} moved to: {dragged.strip()!r}")
+
+        print(f"title bar: in Plex the tabs are the browser's title bar, the "
+              f"three at {lx},{ly}, and the strip's band moved the window to "
+              f"{to.group(1)},{to.group(2)}", flush=True)
+
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "
               f"{short} to {tall} pixels tall, it scrolled "
@@ -1649,9 +1855,10 @@ def main():
               f"the PNG and the JPEG were drawn, a page over TLS was Secure, "
               f"one from an authority it does not trust was refused, "
               f"Open anyway showed it as Not secure, Wikipedia's Dam "
-              f"article, 1.4 MB, was shown whole in {took:.0f} s, and the "
+              f"article, 1.4 MB, was shown whole in {took:.0f} s, the "
               f"end of a page {long_page.group(1)} pixels tall was drawn, its "
-              f"picture fetched once.")
+              f"picture fetched once, tabs kept their pages and histories, "
+              f"and in Plex they were the title bar.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)

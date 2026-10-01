@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-30
+Last updated: 2026-10-01
 
 ---
 
@@ -422,8 +422,13 @@ own pixels and says `resizable` is resized by a new region the kit hands
 over (`surface`), the browser first - its page laid out again at the new
 width. **d, in steps** (roadmap 6zz d): **d1 built** (18.320) - the header
 in the kit's widgets, the field saying how the page came, the status line
-as the page benchmark; **d2 next**, tabs as the title bar; then d3
-favorites, d4 history, d5 Settings, d6 searching from the field.
+as the page benchmark; **d2 built** (18.321) - tabs as the title bar, each
+with its own history and its band painted again when shown, a new tab on
+what was open lately, the three at the strip's end in Plex, and Super keys
+reaching a window (Super Tab stays the window manager's, so tabs go round
+on Super Shift ] and [); **d3 next**, favorites as files in
+`/Home/Favorites`; then d4 history, d5 Settings, d6 searching from the
+field.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

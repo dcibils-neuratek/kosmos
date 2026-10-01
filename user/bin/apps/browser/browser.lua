@@ -20,6 +20,12 @@
 --   Control-L         type an address
 --   r                 load it again
 --
+--   Super T, Super W      a new tab, and this one closed
+--   Super Shift ] and [   the next tab, and the one before
+--   Super 1 to 9          a tab by its place, 9 the last
+--   Super L, Super R      type an address, load it again
+--   Super [ and ]         back and forward
+--
 -- **A direct window** (`gfx.md` 19.4), and that is the whole difference
 -- between this and what it replaced. The first version showed a page as a
 -- list of wrapped lines in a widget, every line the same size in the same
@@ -68,6 +74,7 @@
 local ui    = use("/Kosmos/Libraries/ui.lua")
 local http  = use("/Kosmos/Libraries/http.lua")
 local httpcache = use("/Kosmos/Libraries/httpcache.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
 local theme = ui.theme
 
 --
@@ -86,12 +93,13 @@ local reloading = false
 
 local W, H                           -- the window's size, which changes
 
+local TABS = 40                      -- the tabs along the top: the title bar
 local HEAD = ui.layout.head          -- the header: buttons, the address, its rule
 local STAT = 26                      -- the status line along the bottom
 local SBAR = 16                      -- the scrollbar down the right
 local PAD  = 8                       -- white margin either side of the page
 
-local VIEW_Y = HEAD
+local VIEW_Y = TABS + HEAD
 local VIEW_H, VIEW_W, PAGE_W
 
 --
@@ -101,7 +109,7 @@ local VIEW_H, VIEW_W, PAGE_W
 --
 local function geometry(w, h)
   W, H = w, h
-  VIEW_H = H - HEAD - STAT
+  VIEW_H = H - TABS - HEAD - STAT
   VIEW_W = W - SBAR
   PAGE_W = VIEW_W - PAD * 2
 end
@@ -143,9 +151,16 @@ local UA_SHEET = sys.asset("netsurf/default.css")
 local NS = web ~= nil and web.setup ~= nil and UA_SHEET ~= nil
            and web.setup(UA_SHEET, sys.asset("netsurf/quirks.css")) == true
 
+--
+-- **Its tabs are its title bar** (`roadmap.md` 6zz d2, `docs/browser.html`):
+-- in a look with no title bars - Plex's - the window manager draws close,
+-- minimise and zoom at the strip's right end and a press on its empty band
+-- moves the window, as Groove's bar does; in a look that keeps them, the
+-- window wears its tab above like anything else.
+--
 local win, err = ui.window{
   title = "Browser", w = W, h = H, x = 80, y = 60, direct = true,
-  resizable = true,
+  resizable = true, header = true,
 }
 
 if not win then
@@ -286,6 +301,16 @@ selection all attach. That is why layout keeps its runs.</blockquote>
 ]]
 
 local HOME = "about:start"
+
+--
+-- **The page a new tab opens on** (`docs/browser.html`): what was open
+-- lately, each a link, newest first - and favorites above them once they
+-- are files (d3). Lately is this window's for now, the pages shown since it
+-- opened; history on the disk (d4) is where it goes next.
+--
+local NEWTAB = "about:newtab"
+local lately = {}
+local LATELY_SHOWN = 12
 
 --------------------------------------------------------------------------
 -- State.
@@ -470,7 +495,7 @@ local dragging               -- the scrollbar thumb, while it is held
 
 local go_back, go_forward, go_home, reload      -- filled in further down
 
-local header = ui.view{ x = 0, y = 0, w = W, h = HEAD }
+local header = ui.view{ x = 0, y = TABS, w = W, h = HEAD }
 
 function header:draw(g)
   g:fill(0, 0, self.w, self.h, theme.window)
@@ -495,7 +520,7 @@ end
 -- network had a part in - and nothing for the page inside the image.
 --
 local function how_came()
-  if here == nil or here == HOME then return nil end
+  if here == nil or here == HOME or here == NEWTAB then return nil end
   if came == nil then return "plain", "This machine" end
   if came.refused then return "refused", "Refused" end
   if came.scheme ~= "https" then return "plain", "Not encrypted" end
@@ -573,10 +598,14 @@ local function lay_out_header()
   field.w = math.max(40, r - 4 - field.x)
   field.y = (HEAD - 1 - field.h) // 2
 
-  local function at(v) return ("%d,%d"):format(v.x + v.w // 2, v.y + v.h // 2) end
+  local function at(v)
+    return ("%d,%d"):format(v.x + v.w // 2, header.y + v.y + v.h // 2)
+  end
 
-  print(("browser: header back %s forward %s reload %s field %s menu %s, %d tall")
-        :format(at(back_b), at(fwd_b), at(reload_b), at(field), at(menu_b), HEAD))
+  print(("browser: header back %s forward %s reload %s field %s menu %s, %d tall, "
+         .. "below tabs %d tall")
+        :format(at(back_b), at(fwd_b), at(reload_b), at(field), at(menu_b), HEAD,
+                TABS))
 end
 
 --
@@ -621,6 +650,241 @@ local function status_text()
 
   status_for, status_cut = key, text
   return text
+end
+
+--------------------------------------------------------------------------
+-- **Tabs, and they are the title bar** (`roadmap.md` 6zz d2, as
+-- `docs/browser.html` draws them).
+--
+-- Each tab is a page with its own back and forward: everything above that
+-- says which page is shown - the document, its band, where it is read, its
+-- pictures, how it came, what was opened anyway - is the shown tab's, and a
+-- tab not shown keeps its own in its table (`stow`, `unstow`). What it does
+-- not keep is its band, which is three screens of pixels: that is painted
+-- again when the tab is shown, from the layout and the pictures it kept,
+-- and laid out again only if the window changed size meanwhile.
+--
+-- The strip is the kit's views, painted into this window's pixels as the
+-- header is; a press on a tab shows it, on its cross closes it, and on the
+-- strip's empty band moves the window, where the look has no title bars
+-- (`moves_window`). The window manager draws the three at its right end,
+-- told where by `place_lights`.
+--------------------------------------------------------------------------
+
+local show_tab, close_tab, new_tab           -- filled in further down
+
+local tabs, current = {}, nil
+
+-- As wide as the drawing's and no wider, and narrower as more are open: at
+-- the least, a tab is its favicon.
+local TAB_MOST, TAB_LEAST, TAB_GAP = 206, 28, 2
+
+local function index_of(t)
+  for i, u in ipairs(tabs) do
+    if u == t then return i end
+  end
+end
+
+-- A tab's page: the shown one's is in the locals above, the others' in
+-- their tables.
+local function tab_at(t)
+  if t == current then return here end
+  return t.here
+end
+
+--
+-- What a tab is called: the host it is on its way to while a page arrives,
+-- then the page's title, and the address when the page has none.
+--
+local function tab_name(t)
+  local at = t.going or tab_at(t)
+
+  if not t.going and t.title and t.title ~= "" then return t.title end
+  if at == nil or at == NEWTAB then return "New tab" end
+
+  local host = address_parts(at)
+
+  return host ~= "" and host or at
+end
+
+--
+-- **A favicon until there are favicons**: the host's first letter on a
+-- colour the host chooses, the same one every time - which is all a
+-- favicon is for, telling tabs apart at a glance. The page inside the image
+-- and a new tab are Kosmos's.
+--
+local FAVICON = { 0xff8b1e1e, 0xff1a1a1a, 0xff2f8a55, 0xffc0392b,
+                  0xff555555, 0xff2a55c9, 0xff7a4fb5, 0xffb7791f }
+
+local function favicon(t)
+  local at = t.going or tab_at(t) or NEWTAB
+
+  if at == HOME or at == NEWTAB then return "K", FAVICON[1] end
+
+  local host = address_parts(at):gsub("^www%.", "")
+
+  if host == "" then host = at:match("([^/]+)/*$") or at end
+
+  local sum = 0
+
+  for i = 1, #host do sum = (sum * 31 + host:byte(i)) % 65521 end
+
+  return (host:match("%w") or "?"):upper(), FAVICON[sum % #FAVICON + 1]
+end
+
+local strip = ui.view{ x = 0, y = 0, w = W, h = TABS }
+strip.moves_window = true
+
+--
+-- The strip a shade darker than the window, so the shown tab stands out of
+-- it in the header's own colour and runs into the header without a line -
+-- darker by more in a dark look, whose window is nearly black already. Not
+-- `sunken`, which is white in the light looks: the strip came out lighter
+-- than the header, the drawing upside down, and the suite took it for the
+-- page's paper.
+--
+local function strip_ground()
+  local w = theme.window
+  local lum = (((w >> 16) & 0xff) * 299 + ((w >> 8) & 0xff) * 587
+               + (w & 0xff) * 114) // 1000
+
+  return theme.mix(w, 0xff000000, lum > 128 and 65 or 250)
+end
+
+function strip:draw(g)
+  g:fill(0, 0, self.w, self.h, strip_ground())
+  g:fill(0, self.h - 1, self.w, 1, theme.line)
+end
+
+local new_b = ui.iconbutton{ icon = "plus" }
+
+strip:add(new_b)
+
+local function cut_to(text, room)
+  if gfx.measure(text) <= room then return text end
+
+  while text ~= "" and gfx.measure(text .. "...") > room do
+    text = shorter(text)
+  end
+
+  return text .. "..."
+end
+
+local function tab_view(t)
+  local v = ui.view{ x = 0, y = 0, w = TAB_MOST, h = TABS }
+
+  v.tab = t
+
+  -- Its cross: on the shown tab always, and on the others while they are
+  -- wide enough to say what they are as well.
+  local function crossed(self)
+    return self.w >= 60 and (t == current or self.w >= 90)
+  end
+
+  function v:draw(g)
+    local on = t == current
+    local top = 6
+    local h = TABS - top
+
+    if on then
+      -- Rounded above, square where it meets the header, which paints over
+      -- what reaches below the strip.
+      g:fill_round(0, top, self.w, h + 8, theme.window, 8)
+    else
+      g:fill(self.w - 1, top + 9, 1, h - 18, theme.line)
+    end
+
+    local letter, ground = favicon(t)
+    local face = ui.sized("label", 10)
+    local fx = (self.w < 60) and (self.w - 14) // 2 or 10
+    local fy = top + (h - 14) // 2
+
+    g:fill_round(fx, fy, 14, 14, ground, 3)
+    g:text(fx + (14 - gfx.measure(letter, face)) // 2,
+           fy + (14 - gfx.height(face)) // 2, letter, 0xffffffff, nil, face)
+
+    if self.w < 60 then return end
+
+    local cross = crossed(self)
+    local room = self.w - 32 - (cross and 26 or 10)
+
+    g:text(32, top + (h - gfx.height()) // 2, cut_to(tab_name(t), room),
+           on and theme.text or theme.text_dim)
+
+    if cross then
+      g:line_icon(self.w - 24, top + (h - 15) // 2, "close", theme.text_dim)
+    end
+  end
+
+  -- A press shows it; a click on its cross closes it, and only if the
+  -- pointer is still on the cross when it lets go.
+  function v:mouse(action, x, y)
+    local on_cross = crossed(self) and x >= self.w - 28 and x < self.w
+                     and y >= 0 and y < self.h
+
+    if action == "press" then
+      self.crossing = on_cross
+
+      if not on_cross then show_tab(t) end
+
+      return true
+    elseif action == "release" then
+      if self.crossing and on_cross then close_tab(t) end
+
+      self.crossing = nil
+      return true
+    end
+
+    return false
+  end
+
+  return v
+end
+
+--
+-- Placed along the width the window has, and again only when that, the
+-- number of tabs or the title bar changes - every frame asks, so a look
+-- that takes the title bars off moves the tabs out of the three's way.
+-- Said, for whoever drives the window from outside, as places in it: the
+-- first tab's middle, the new tab button's and the empty band's.
+--
+local tabs_laid = {}
+
+local function lay_out_tabs()
+  local lights = win.headed and win.lights or nil
+
+  if tabs_laid.w == W and tabs_laid.n == #tabs and tabs_laid.lights == lights then
+    return
+  end
+
+  tabs_laid.w, tabs_laid.n, tabs_laid.lights = W, #tabs, lights
+  strip.w = W
+
+  local right = lights and (W - ui.layout.lights_in - lights.w - 12) or (W - 8)
+  local room = right - 8 - (new_b.w + 8)
+  local n = math.max(1, #tabs)
+  local each = math.max(TAB_LEAST, math.min(TAB_MOST,
+                                            (room - TAB_GAP * (n - 1)) // n))
+  local x = 8
+
+  for _, t in ipairs(tabs) do
+    t.view.x, t.view.y, t.view.w, t.view.h = x, 0, each, TABS
+    x = x + each + TAB_GAP
+  end
+
+  new_b.x = math.min(x + 2, right - new_b.w)
+  new_b.y = (TABS - new_b.h) // 2
+
+  if lights then
+    win:place_lights(strip, W - ui.layout.lights_in - lights.w,
+                     (TABS - lights.h) // 2)
+  end
+
+  print(("browser: tabs %d, each %d wide, the first at %d,%d, new %d,%d, "
+         .. "band %d,%d")
+        :format(#tabs, each, 8 + each // 2, TABS // 2,
+                new_b.x + new_b.w // 2, new_b.y + new_b.h // 2,
+                (new_b.x + new_b.w + right) // 2, TABS // 2))
 end
 
 --------------------------------------------------------------------------
@@ -692,12 +956,17 @@ local function frame()
   end
 
   field.had = field.focused
-  ui.paint_view(header, s, 0, 0)
+
+  -- The tabs, then the header - which paints over the foot of the shown
+  -- tab, so the two read as one.
+  lay_out_tabs()
+  ui.paint_view(strip, s, 0, 0)
+  ui.paint_view(header, s, 0, TABS)
 
   -- A page on its way, along the header's rule: filled against the length
   -- the server gave; with none, the status line's words say how much.
   if loading and loading.total and loading.total > 0 then
-    s:fill(0, HEAD - 2, math.min(W, W * loading.got // loading.total), 2,
+    s:fill(0, TABS + HEAD - 2, math.min(W, W * loading.got // loading.total), 2,
            theme.accent)
   end
 
@@ -784,6 +1053,10 @@ end
 
 local laid_ms, painted_ms = 0, 0
 
+-- The size the document was laid out at, so a tab shown again after the
+-- window changed size knows to lay it out again.
+local laid_for
+
 -- Of the paint, what went on the band's pictures: fetched, decoded and the
 -- page laid out again around them. It was counted as painting, and on
 -- Wikipedia it was nearly all of it (`roadmap.md` 6zz h).
@@ -863,6 +1136,7 @@ local function lay_out(doc)
   end
 
   laid_ms = since(t0)
+  laid_for = PAGE_W * 65536 + VIEW_H
 
   -- The whole page with a margin under it when that is less than a band,
   -- so a short page is painted once and never again.
@@ -929,9 +1203,49 @@ did not check out. Anybody between here and there could be answering
 instead, so nothing was sent to it.</p>
 <p><a href="kosmos:back">Go back</a></p>
 <p><a href="kosmos:anyway">Open anyway</a></p>
-<p>Open anyway loads it for this window only; it says Not secure for as
-long as it is open, and nothing is remembered.</p>
+<p>Open anyway loads it for this tab only; it says Not secure for as long
+as it is open, and nothing is remembered.</p>
 </body></html>]]):format(escaped(why), escaped(text))
+end
+
+--
+-- **A new tab's page**: what was open lately, newest first, each a link -
+-- laid out by the same engine as any other page, and its links followed
+-- the same way. An address as NetSurf takes one, so a file of this machine
+-- comes back as the path it was.
+--
+local function newtab_page()
+  local rows = {}
+
+  for _, l in ipairs(lately) do
+    local host = address_parts(l.at)
+
+    rows[#rows + 1] = ('<p class="it"><a href="%s">%s</a> <small>%s, %s</small></p>')
+                      :format(escaped(ns_address(l.at)),
+                              escaped(l.title ~= "" and l.title or l.at),
+                              escaped(host ~= "" and host or l.at), escaped(l.when))
+  end
+
+  if #rows == 0 then
+    rows[1] = "<p>Nothing yet: the pages this window opens are listed here.</p>"
+  end
+
+  print(("browser: a new tab's page, %d lately, the newest %s")
+        :format(#lately, lately[1] and lately[1].at or "none"))
+
+  return ([[<!doctype html>
+<html><head><meta charset="utf-8"><title>New tab</title>
+<style>
+body { margin: 36px 48px; font-family: sans-serif; color: #1d1f24; }
+h3 { font-size: 13px; color: #74787f; margin: 0 0 10px 0; }
+p.it { margin: 0; padding: 7px 4px; border-bottom: 1px solid #e3e5e9; }
+small { color: #74787f; }
+a { color: #1d1f24; text-decoration: none; }
+</style></head><body>
+<h3>Lately</h3>
+%s
+<p><small>Or type an address above. <a href="about:start">The page inside this image</a>.</small></p>
+</body></html>]]):format(table.concat(rows, "\n"))
 end
 
 --
@@ -1508,7 +1822,7 @@ local function fetch_sheets(d)
   return n
 end
 
-local function load(text, post)
+local function load_page(text, post)
   if web == nil then
     say("this image has no web kit - build it with `make WEB=1`")
     return false
@@ -1523,8 +1837,8 @@ local function load(text, post)
   -- what this arrangement exists to fix.
   --
   here = text
-  address.text = text
-  address.caret = #text
+  address.text = (text == NEWTAB) and "" or text
+  address.caret = #address.text
   address.from = 0
 
   local body, fetched_ms, how
@@ -1532,6 +1846,10 @@ local function load(text, post)
   if text == HOME then
     say("the page inside this image")
     body, fetched_ms = START, 0
+
+  elseif text == NEWTAB then
+    say("a new tab")
+    body, fetched_ms = newtab_page(), 0
 
   elseif text:match("^asset:") then
     --
@@ -1596,6 +1914,21 @@ local function load(text, post)
   came = how
 
   local title = doc:title()
+
+  current.title = title
+
+  -- What was open lately, for a new tab to offer: the newest first and
+  -- each address once.
+  if text ~= NEWTAB then
+    for i = #lately, 1, -1 do
+      if lately[i].at == text then table.remove(lately, i) end
+    end
+
+    table.insert(lately, 1, { at = text, title = title or "",
+                              when = clock.time_string(clock.now()) })
+
+    while #lately > LATELY_SHOWN do table.remove(lately) end
+  end
 
   --
   -- `retitle`, not `win.title = ...`. The title bar belongs to the desktop
@@ -1683,6 +2016,20 @@ local function load(text, post)
   end
 
   return true
+end
+
+--
+-- One load, with the tab saying where it is going while it goes - its
+-- title is the host's until the page arrives with one of its own.
+--
+local function load(text, post)
+  current.going = text
+  frame()
+
+  local ok = load_page(text, post)
+
+  current.going = nil
+  return ok
 end
 
 --------------------------------------------------------------------------
@@ -1811,17 +2158,12 @@ end
 -- pictures kept and scaled once to their new boxes, the band made again
 -- for the new view, and painted around where the page was being read.
 --
-local function reflow()
-  if not doc then return end
-
-  if ns_doc then
-    local tall = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
-
-    if tall then content_h = tall end
-  else
-    content_h = doc:render(nil, PAGE_W) or content_h
-  end
-
+--
+-- The band made for the view as it is, and painted around where the page is
+-- read: after a reflow, and when a tab is shown again, whose band went when
+-- another was shown.
+--
+local function make_band()
   if paper then
     paper:free()
     paper = nil
@@ -1835,15 +2177,31 @@ local function reflow()
   if not made or not paper then
     paper, paper_h = nil, 0
     say(("no memory for a %dx%d band of the page"):format(PAGE_W, tall))
-    return
+    return false
   end
 
   paper_h = tall
   top = math.max(0, math.min(top, math.max(0, content_h - VIEW_H)))
+  paint_band(top - (paper_h - VIEW_H) // 2)
+  return true
+end
+
+local function reflow()
+  if not doc then return end
+
+  if ns_doc then
+    local tall = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
+
+    if tall then content_h = tall end
+  else
+    content_h = doc:render(nil, PAGE_W) or content_h
+  end
+
+  laid_for = PAGE_W * 65536 + VIEW_H
 
   if ns_doc then pictures_to_boxes() end
 
-  paint_band(top - (paper_h - VIEW_H) // 2)
+  if not make_band() then return end
 
   -- Said, for whoever is watching it happen (`tools/run_browser.py`) -
   -- and what it is drawn into, which is the region the kit handed over.
@@ -2103,7 +2461,10 @@ end
 
 menu_b.on_click = function()
   win:focus_on(sink)
-  win:open_menu(menu_b.x, HEAD - 2, {
+  win:open_menu(menu_b.x, TABS + HEAD - 2, {
+    { text = "New tab", on_choose = function() new_tab() end },
+    { text = "Close tab", on_choose = function() close_tab(current) end },
+    { separator = true },
     { text = "Home", on_choose = function() go_home() end },
     { text = "Reload", on_choose = function() reload() end },
     { separator = true },
@@ -2114,6 +2475,7 @@ menu_b.on_click = function()
   })
 end
 
+win:add(strip)
 win:add(header)
 
 --
@@ -2161,26 +2523,197 @@ win.on_resize = function(_, w, h)
 end
 
 --------------------------------------------------------------------------
+-- **The tabs, kept and shown.**
+--
+-- `stow` writes the shown tab's page out of the locals into its table and
+-- lets its band go; `unstow` reads one back. Every name either touches is
+-- one the page above is drawn, scrolled and clicked from, which is why
+-- they are listed here and nowhere else: a new piece of a page's state is
+-- a line in each.
+--------------------------------------------------------------------------
+
+local function stow(t)
+  if paper then paper:free() end
+
+  paper, paper_h = nil, 0
+
+  t.band_top, t.content_h, t.top = band_top, content_h, top
+  t.pictures, t.kept_bytes = pictures, kept_bytes
+  t.ns_doc, t.ns_tried, t.ns_svgs, t.ns_raster = ns_doc, ns_tried, ns_svgs, ns_raster
+  t.doc, t.said, t.timing, t.came, t.anyway = doc, said, timing, came, anyway
+  t.address, t.here, t.back, t.forward = address, here, back, forward
+  t.laid_for, t.laid_ms, t.painted_ms, t.pictures_ms = laid_for, laid_ms,
+                                                       painted_ms, pictures_ms
+end
+
+local function unstow(t)
+  band_top, content_h, top = t.band_top, t.content_h, t.top
+  pictures, kept_bytes = t.pictures, t.kept_bytes
+  ns_doc, ns_tried, ns_svgs, ns_raster = t.ns_doc, t.ns_tried, t.ns_svgs, t.ns_raster
+  doc, said, timing, came, anyway = t.doc, t.said, t.timing, t.came, t.anyway
+  address, here, back, forward = t.address, t.here, t.back, t.forward
+  laid_for, laid_ms, painted_ms, pictures_ms = t.laid_for, t.laid_ms,
+                                               t.painted_ms, t.pictures_ms
+
+  -- What belongs to the moment rather than the page.
+  pointing, band_ms, dragging, status_for = nil, nil, nil, nil
+end
+
+-- A tab with nothing in it yet.
+local function blank_tab()
+  local t = { band_top = 0, content_h = 0, top = 0, pictures = {}, kept_bytes = 0,
+              ns_doc = false, ns_tried = {}, ns_svgs = {}, ns_raster = {},
+              said = "", timing = "", anyway = {},
+              address = { text = "", caret = 0, from = 0 },
+              back = {}, forward = {}, laid_ms = 0, painted_ms = 0,
+              pictures_ms = 0 }
+
+  t.view = tab_view(t)
+  return t
+end
+
+local function say_tab(how)
+  print(("browser: tab %d of %d, %s, showing %s"):format(index_of(current), #tabs,
+        how, tostring(here)))
+end
+
+show_tab = function(t)
+  if t == current then return end
+
+  if current then stow(current) end
+
+  current = t
+  unstow(t)
+  win:retitle(t.title and ("Browser - " .. t.title) or "Browser")
+
+  -- Its band painted again from what it kept - laid out again first if
+  -- the window is not the size it was laid out at.
+  if doc then
+    if laid_for == PAGE_W * 65536 + VIEW_H then make_band() else reflow() end
+  end
+
+  if here == NEWTAB then win:focus_on(field) else win:focus_on(sink) end
+
+  say_tab("shown")
+end
+
+--
+-- A new tab, beside the shown one, as every browser opens one: on a new
+-- tab's page with the address field waiting, or on `where`.
+--
+new_tab = function(where)
+  local t = blank_tab()
+  local at = current and index_of(current) or 0
+
+  table.insert(tabs, at + 1, t)
+  strip:add(t.view)
+
+  if current then stow(current) end
+
+  current = t
+  unstow(t)
+  say_tab("new")
+  visit(where or NEWTAB)
+
+  if not where then win:focus_on(field) end
+end
+
+--
+-- A tab closed: its document and its pictures let go, its page kept among
+-- what was open lately, and the one after it shown - or the one before, at
+-- the end. The last one closes the window, as in every browser.
+--
+local function forget_tab(t)
+  if t.doc then t.doc:close() end
+
+  for _, p in ipairs(t.pictures or {}) do
+    if p.kept then p.kept:free() end
+  end
+
+  t.doc, t.pictures, t.ns_raster, t.ns_svgs = nil, nil, nil, nil
+end
+
+close_tab = function(t)
+  local i = t and index_of(t)
+
+  if not i then return end
+
+  if #tabs == 1 then
+    print("browser: the last tab closed, and the window with it")
+    win:close()
+    return
+  end
+
+  if t == current then
+    stow(t)
+    current = nil
+  end
+
+  table.remove(tabs, i)
+  strip:remove(t.view)
+  forget_tab(t)
+
+  if current == nil then show_tab(tabs[math.min(i, #tabs)]) end
+
+  print(("browser: a tab closed, %d left"):format(#tabs))
+end
+
+-- The next tab or the one before, round the ends; and one by its place,
+-- 9 being the last whatever there are, as other browsers have it.
+local function step_tab(by)
+  show_tab(tabs[(index_of(current) - 1 + by) % #tabs + 1])
+end
+
+local function pick_tab(n)
+  local t = (n == 9) and tabs[#tabs] or tabs[n]
+
+  if t then show_tab(t) end
+end
+
+new_b.on_click = function() new_tab() end
+
+--
+-- **The browser's keys, with Super** (`docs/browser.html`): the window
+-- manager keeps the ones it has a binding for - Super Tab goes round the
+-- windows, which is why the tabs go round on Super Shift ] and [, as
+-- Safari's and Chrome's do on a Mac - and hands this window the rest,
+-- whichever of its parts has the keyboard.
+--
+win.on_key = function(_, c)
+  local k, mods = ui.keyparts(c)
+
+  if mods ~= ui.SUPER then return false end
+
+  if k == 116 or k == 84 then new_tab()                         -- T
+  elseif k == 119 or k == 87 then close_tab(current)            -- W
+  elseif k == 125 then step_tab(1)                              -- Shift ]
+  elseif k == 123 then step_tab(-1)                             -- Shift [
+  elseif k >= 49 and k <= 57 then pick_tab(k - 48)              -- 1 to 9
+  elseif k == 108 or k == 76 then                               -- L
+    page_blur()
+    win:focus_on(field)
+  elseif k == 114 or k == 82 then reload()                      -- R
+  elseif k == 91 then go_back()                                 -- [
+  elseif k == 93 then go_forward()                              -- ]
+  else return false end
+
+  return true
+end
+
+--------------------------------------------------------------------------
 
 lay_out_header()
 
 --
 -- An address on the command line, which `wm browser:10.0.2.2:8000/` passes
--- through. Loaded before the first pass rather than after, so the window is
--- drawn once, with the page already in it.
+-- through, in the first tab.
+--
+-- With no address, the page inside the image. A browser that opened on
+-- nothing could not be tried without a server running somewhere, which is
+-- a thing an operating system has no business asking for.
 --
 local start = tostring(args or ""):match("^%s*(.-)%s*$")
 
-if web == nil then
-  said = "no web kit in this image"
-  frame()
-else
-  frame()
-
-  -- With no address, the page inside the image. A browser that opened on
-  -- nothing could not be tried without a server running somewhere, which is
-  -- a thing an operating system has no business asking for.
-  visit(start ~= "" and start or HOME)
-end
+new_tab(start ~= "" and start or HOME)
 
 win:run()

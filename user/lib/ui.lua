@@ -968,7 +968,7 @@ ui.UP, ui.DOWN, ui.RIGHT, ui.LEFT = keys.UP, keys.DOWN, keys.RIGHT, keys.LEFT
 ui.HOME, ui.END, ui.PAGEUP, ui.PAGEDOWN = keys.HOME, keys.END,
                                           keys.PAGEUP, keys.PAGEDOWN
 ui.INSERT, ui.DELETE, ui.F = keys.INSERT, keys.DELETE, keys.F
-ui.SHIFT, ui.ALT, ui.CTRL = keys.SHIFT, keys.ALT, keys.CTRL
+ui.SHIFT, ui.ALT, ui.CTRL, ui.SUPER = keys.SHIFT, keys.ALT, keys.CTRL, keys.SUPER
 ui.keyparts, ui.keywith = keys.parts, keys.with
 ui.key_decoder = keys.decoder
 

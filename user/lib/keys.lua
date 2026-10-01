@@ -35,8 +35,9 @@ keys.INSERT, keys.DELETE = -9, -10
 keys.F = {}
 for n = 1, 12 do keys.F[n] = -10 - n end
 
--- xterm's modifier bits, the number in a sequence less one.
-keys.SHIFT, keys.ALT, keys.CTRL = 1, 2, 4
+-- xterm's modifier bits, the number in a sequence less one - and Super's,
+-- which is 9 in `ESC [ 1 ; 9 x` and so 8 here.
+keys.SHIFT, keys.ALT, keys.CTRL, keys.SUPER = 1, 2, 4, 8
 
 keys.TAB, keys.ENTER, keys.ESCAPE, keys.SPACE = 9, 13, 27, 32
 keys.BACKSPACE = 8
@@ -94,8 +95,8 @@ local function csi(params, final)
   local p = numbers(params)
   local mods = math.max(0, (p[2] or 1) - 1)
 
-  -- Super, `ESC [ 1 ; 9 x`, is the window manager's; one it has no binding
-  -- for is handed on and means nothing to a window.
+  -- Super's own shape is read whole by the decoder below; anything else
+  -- carrying it is nothing the board makes.
   if mods >= 8 then return nil end
 
   if final == 126 then                                        -- ~
@@ -186,10 +187,23 @@ function keys.decoder()
     end
 
     if state == "super" then
-      -- The character after `ESC [ 1 ; 9`, whatever it is - Super held with
-      -- a digit makes a digit the last byte - and the window manager's.
+      --
+      -- **The character after `ESC [ 1 ; 9`, whatever it is** - Super held
+      -- with a digit makes a digit the last byte - held with Super. The
+      -- window manager keeps the combinations it has a binding for and hands
+      -- on the rest, and a window may answer one: the browser's Super T is
+      -- a new tab (`roadmap.md` 6zz d2). It was dropped here, so a binding
+      -- the manager did not have reached no window at all.
+      --
+      -- Shift is already in the character - Super Shift ] is `}` - so the
+      -- modifier is Super alone. `~` is Super tapped by itself, the menu,
+      -- which is the manager's always.
+      --
       state = nil
-      return nil
+
+      if c == 126 then return nil end
+
+      return keys.with(c, keys.SUPER)
     end
 
     if state == "csi" then

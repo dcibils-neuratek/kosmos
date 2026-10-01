@@ -197,6 +197,18 @@ key on a PC keyboard and the Command key on an Apple one - the same HID usage
 Super owns the desktop commands. What is left behind the prefix is the small
 set that has to work on a keyboard with no Super key at all.
 
+**And a Super key the window manager has no binding for reaches the window,
+held with Super** (1 October 2026, `roadmap.md` 6zz d2). The manager always
+handed such a combination on - its reader buffers `ESC [ 1 ; 9` and flushes
+it through - but the kit's decoder then dropped the whole sequence, so no
+window could have a Super key of its own. It is the character with
+`keys.SUPER` (`ui.SUPER`) now, negative like every modified key so that no
+widget types it, and Super tapped alone stays the manager's. The browser's
+tabs are the first to answer: Super T and W, Super Shift ] and [, Super 1 to
+9. **The manager's come first**: Super Tab goes round the windows, which is
+why the tabs go round on Super Shift ] and [ rather than the drawing's Super
+Tab - a window's key may not shadow a system one.
+
 **Keys with their modifiers** (26 September, `roadmap.md` 6n step 0). The
 input language is a byte stream, and until the IDE needed them Shift and
 Control were consumed at the board: Shift with an arrow was an arrow, and

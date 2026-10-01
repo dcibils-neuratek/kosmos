@@ -2724,6 +2724,29 @@ processors, and still what follows USB:
       while a page arrives. Reload is not yet Stop while loading - a load
       is one call that does not let go until it is done, so there is
       nothing to stop yet.
+
+      **d2 BUILT 1 October** (`testing.md` 18.321): tabs as the title bar,
+      in the kit's views painted into the window's pixels - each a page
+      with its own back and forward, what it shows kept in its table when
+      another is shown and its band painted again on return (laid out
+      again only if the window changed size meanwhile); a favicon until
+      there are favicons, the host's letter on a colour the host chooses;
+      a new tab beside the shown one, on a page of what was open lately
+      with the address field waiting; and in a look with no title bars the
+      window manager's three at the strip's right end and its empty band
+      moving the window. **The keys**: Super T and W, Super Shift ] and [
+      for the next and the one before, Super 1 to 9, and Super L, R, [ and
+      ] as the drawing has them - which needed the kit's decoder to stop
+      dropping a Super key the window manager hands on (`keys.SUPER`).
+      **One departure from the drawing**: Super Tab is the window
+      manager's, round the windows, so the tabs go round on Super Shift ]
+      and [, as Safari's and Chrome's do on a Mac. Lately is this window's
+      until history is on the disk (d4), and favorites join the new tab's
+      page with d3. Not yet: a tab dragged to another place, a middle click
+      closing one, and a spinner while a page arrives (a load does not let
+      go until it is done). Past about thirty tabs in a 900-wide window
+      they are favicons and then cut off at the right; nothing limits how
+      many.
    e. **Windows that draw their own pixels, resizable** - the browser's,
       Cafesa3D's, Camera's, Video's: the window manager refuses today
       ("its surface is shared and has a size"). On letting go of the grip

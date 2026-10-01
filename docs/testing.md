@@ -15147,3 +15147,69 @@ charset, the cache, the resize, now 568 by 468 with the taller header - as
 it was.
 
 **The gate**: 76 of 76, in 9:05.
+
+## 18.321 Tabs as the browser's title bar, and Super keys reaching windows (6zz d2)
+
+**`roadmap.md` 6zz d2**, the new chrome's second step, as `docs/browser.html`
+draws it.
+
+- **Tabs**: a strip of the kit's views above the header, painted into the
+  window's pixels by `ui.paint_view` - a favicon (the host's letter on a
+  colour the host picks), the title cut to fit, a cross, and a plus for a
+  new one. The shown tab is the window's colour and runs into the header;
+  the strip is a shade darker than the window, more in the dark looks.
+  Each tab is a page with its own history: `stow` writes what the shown
+  page is drawn, scrolled and clicked from into its table and lets its band
+  go, `unstow` reads another back, and its band is painted again from the
+  layout and pictures it kept - laid out again only if the window changed
+  size while it was hidden.
+- **A new tab** opens beside the shown one, on a page of what was open
+  lately (this window's, newest first, until history is on the disk in d4)
+  with the address field waiting.
+- **The title bar**: the window says it has a header (`header = true`); in
+  a look with no title bars the window manager draws the three at the
+  strip's right end, told where by `place_lights`, and a press on the
+  strip's empty band moves the window.
+- **Super keys, for windows**: `keys.lua` dropped every `ESC [ 1 ; 9 x` it
+  was handed, so a combination the window manager has no binding for - and
+  hands on - reached no window. It is the character with `keys.SUPER` now,
+  negative so no widget types it; the tap stays the manager's. The browser
+  answers Super T, W, Shift ] and [, 1 to 9, L, R, [ and ]. Super Tab is the
+  manager's, so the tabs go round on Super Shift ] and [ rather than the
+  drawing's Super Tab.
+
+**What the suite found**: the strip was first drawn in `sunken`, which is
+white in the light looks - lighter than the header, the drawing upside down -
+and `find_page` took its top row for the page's paper, so every control was
+pressed 86 pixels too high. And the Plex phase typed its line after a prompt
+from before the desktop stopped, losing its first half: it waits for a
+prompt after the stop now.
+
+**`tools/test_keys.lua`**, 59 checks: Super T, Super 1 and Super Shift ]
+decoded as the character with Super, between two letters that stay
+letters; Super tapped alone reaching nobody; and every key and modifier up
+to Super taken apart as it was made. Control: the old drop, three checks
+failing.
+
+**`arm-browser` and `x86-browser`**, with the tabs and the header now
+86 pixels above the page:
+
+- Super T, through QMP as a person holds the key: a second tab, its page
+  offering twelve pages lately with the long page newest; an address typed
+  goes to its field and is shown in it.
+- The first tab pressed: the long page back at its end, its last picture on
+  the screen and the server not asked for it again. Control: the band not
+  painted again on return - "the long page's tab, shown again, is not where
+  it was read".
+- Super Shift ] to the second; Super [ there goes back to its own new-tab
+  page, not to the first's history; Super Shift [ to the first.
+- The second closed by its cross; a third opened by Super T and closed by
+  Super W, the long page shown again.
+- The resize, now 568 by 428 for the taller chrome.
+- Super W on the last tab closes the window; the desktop stopped, Plex
+  chosen, the browser opened again: its header the title bar, the three at
+  826,11 - the strip's right end - and the strip's band dragged 120,80
+  moving the window by exactly that. Control: no `header = true` - "the
+  browser opened in Plex wearing a title bar".
+
+**The gate**: 76 of 76, in 9:14.

@@ -114,13 +114,25 @@ check(same(decode("a\27[99;5zb"), { 97, 98 }),
 check(same(decode("a\27[99~b"), { 97, 98 }),
       "an unknown number was not dropped whole: " .. show(decode("a\27[99~b")))
 
--- Super's, which the window manager hands on when it has no binding, is
--- the window manager's - even with a digit as its last byte.
-check(same(decode("a\27[1;9qb"), { 97, 98 }),
-      "Super+Q reached a window: " .. show(decode("a\27[1;9qb")))
-check(same(decode("a\27[1;91b"), { 97, 98 }),
-      "Super+1 reached a window, or ate the key after it: "
+-- Super's, which the window manager hands on when it has no binding: the
+-- character held with Super, never the character - even with a digit as its
+-- last byte, and with Shift already in it (`roadmap.md` 6zz d2). Super
+-- tapped alone is the manager's, and reaches nobody.
+local SUPER = keys.SUPER
+
+check(same(decode("a\27[1;9tb"), { 97, keys.with(116, SUPER), 98 }),
+      "Super+T did not reach a window as Super+T: " .. show(decode("a\27[1;9tb")))
+check(same(decode("a\27[1;91b"), { 97, keys.with(49, SUPER), 98 }),
+      "Super+1 did not reach a window, or ate the key after it: "
       .. show(decode("a\27[1;91b")))
+check(same(decode("a\27[1;9}b"), { 97, keys.with(125, SUPER), 98 }),
+      "Super+Shift+] is not Super+}: " .. show(decode("a\27[1;9}b")))
+check(same(decode("a\27[1;9~b"), { 97, 98 }),
+      "Super tapped alone reached a window: " .. show(decode("a\27[1;9~b")))
+local super_t = decode("\27[1;9t")[1]
+
+check(super_t and super_t < 0 and select(2, keys.parts(super_t)) == SUPER,
+      "Super+T is a number a widget could type, or not Super when taken apart")
 
 -- Escape, alone and doubled, and an Escape that starts nothing: the key
 -- itself and the byte after it, both, in order.
@@ -146,7 +158,7 @@ end
 local round = true
 
 for key = -64, 255 do
-  for mods = 0, 7 do
+  for mods = 0, 15 do
     local k, m = keys.parts(keys.with(key, mods))
 
     if k ~= key or m ~= mods then round = false end
@@ -164,5 +176,5 @@ end
 
 print(("PASS: %d checks on the keys (%d sequences the board makes, each read "
        .. "back as its key and modifiers; nothing typed that was not; unknown "
-       .. "and Super's dropped whole; every key's number taken apart as it was "
-       .. "made)"):format(passed, #SEQUENCES))
+       .. "dropped whole; Super's held with Super, its tap the manager's; every "
+       .. "key's number taken apart as it was made)"):format(passed, #SEQUENCES))
