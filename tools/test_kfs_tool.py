@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""The host's disk tool on the C core, held to the same tool on the Lua.
+"""The host's disk tool, on the C core, through every command it has.
 
 `tools/kfs.lua` makes every disk the machine is given - the QEMU disk, a
-suite's disk, the stick's `/Home` - and since `docs/diskfs.md` step 2 it
-does it with `user/servers/kfs.c`, which the host's `lua` carries. The Lua
-it used before is what the machine still runs, and `KFS_IMPL=lua` makes a
-disk with it for as long as it exists.
+suite's disk, the stick's `/Home` - with `user/servers/kfs.c`, which the
+host's `lua` carries and the disk server runs (`docs/diskfs.md`).
 
-`tools/test_kfs_cross.lua` holds the two cores to each other operation by
-operation. This holds the two *tools* to each other, over what the tool is
-used for: every command it has, run once with each, over real files - the
-repository's documents and screenshots, some megabytes, in folders nested
-several deep, an empty file, a file whose size is a whole number of blocks -
-and **the images each makes must be the same, byte for byte, and each
-command must have said the same thing**. Then what `get` and `getdir` take
-out is what went in, and `copy` carries a file's attributes with it.
+Every command it has, over real files - the repository's documents and
+screenshots, some megabytes, in folders nested several deep, an empty file,
+a file whose size is a whole number of blocks - **run twice, and the two
+runs must make the same images, byte for byte, and say the same thing**:
+the tool gives every time as 0 so that an image can be diffed against
+yesterday's. Then what `get` and `getdir` take out is what went in, and
+`copy` carries a file's attributes with it.
+
+Until `docs/diskfs.md` step 4 it ran each command once on the C and once on
+`kfs.lua` and held the two tools to one image; the Lua went when nothing
+ran it.
 
 Usage: test_kfs_tool.py
 """
@@ -47,9 +48,9 @@ def check(ok, what):
         print("  FAIL: " + what)
 
 
-def tool(impl, where, *words, env=None):
-    """The tool, run with one implementation from `where`, and what it said."""
-    e = dict(os.environ, KFS_IMPL=impl, **(env or {}))
+def tool(where, *words, env=None):
+    """The tool, run from `where`, and what it said."""
+    e = dict(os.environ, **(env or {}))
     tool_path = os.path.join(HERE, "kfs.lua")
     done = subprocess.run([LUA, tool_path] + list(words), cwd=where, env=e,
                           capture_output=True, text=True)
@@ -74,8 +75,7 @@ function sys.disk_write(sector, data)
 end
 function sys.pack(t) return "kind=" .. t.kind end
 function sys.unpack(s) return { kind = s:match("kind=(.*)") } end
-local kfs = os.getenv("KFS_IMPL") == "lua"
-            and assert(loadfile("user/lib/kfs.lua"))() or require("kfsc")
+local kfs = require("kfsc")
 local sb = assert(kfs.mount())
 local number, node = assert(kfs.find(sb, path))
 assert(kfs.write_attrs(sb, number, node, { kind = "launcher" }))
@@ -111,14 +111,14 @@ def main():
     total = sum(os.path.getsize(p.split(":", 1)[0]) for p in pairs)
     said = {}
 
-    for impl in ("lua", "c"):
-        work = os.path.join(base, impl)
+    for run in ("one", "two"):
+        work = os.path.join(base, run)
         os.makedirs(os.path.join(work, "out"))
         os.symlink(os.path.join(ROOT, "user"), os.path.join(work, "user"))
         steps = []
 
         def step(*words, env=None):
-            code, out = tool(impl, work, *words, env=env)
+            code, out = tool(work, *words, env=env)
             steps.append("%s -> %d\n%s" % (" ".join(words[:2]), code, out))
             return code, out
 
@@ -138,34 +138,35 @@ def main():
             f.write(ATTRS)
 
         subprocess.run([LUA, "attrs.lua", "disk.img", "/Home/Sizes/blocks"],
-                       cwd=work, env=dict(os.environ, KFS_IMPL=impl), check=True)
+                       cwd=work, check=True)
         step("create", "copy.img", "96")
         step("copy", "disk.img", "copy.img")
         step("create", "old.img", "16", env={"KFS_LAYOUT": "/system,/user,/home"})
         step("ls", "old.img", "/")
 
-        said[impl] = "\n".join(steps).replace(work, "<work>")
+        said[run] = "\n".join(steps).replace(work, "<work>")
 
-    lua_dir, c_dir = os.path.join(base, "lua"), os.path.join(base, "c")
+    one_dir, c_dir = os.path.join(base, "one"), os.path.join(base, "two")
 
-    check(said["lua"] == said["c"],
-          "every command said the same with the C as with the Lua")
+    check(said["one"] == said["two"], "every command said the same both times")
 
-    if said["lua"] != said["c"]:
-        for a, b in zip(said["lua"].splitlines(), said["c"].splitlines()):
+    if said["one"] != said["two"]:
+        for a, b in zip(said["one"].splitlines(), said["two"].splitlines()):
             if a != b:
-                print("    lua: %s\n    c:   %s" % (a, b))
+                print("    one: %s\n    two: %s" % (a, b))
                 break
+
+    said["c"] = said["two"]
 
     check("-> 1" in said["c"] and said["c"].count("-> 0") == 13,
           "and every command did what it was asked, but the removal of a "
           "file that is not there")
 
     for image in ("disk.img", "copy.img", "old.img"):
-        with open(os.path.join(lua_dir, image), "rb") as a, \
+        with open(os.path.join(one_dir, image), "rb") as a, \
              open(os.path.join(c_dir, image), "rb") as b:
             check(a.read() == b.read(),
-                  "%s is the same image from the C as from the Lua" % image)
+                  "%s is the same image both times" % image)
 
     def same(path, original):
         with open(path, "rb") as a, open(original, "rb") as b:
@@ -191,9 +192,9 @@ def main():
         return 1
 
     print("PASS: %d checks on the host's disk tool on the C core (%d files, "
-          "%.1f MB, through every command it has: the same images and the "
-          "same words as the tool on the Lua)." % (passed, len(pairs),
-                                                   total / 1048576))
+          "%.1f MB, through every command it has, twice: the same images "
+          "and the same words both times)." % (passed, len(pairs),
+                                                total / 1048576))
     return 0
 
 

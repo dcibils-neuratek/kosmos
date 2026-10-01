@@ -6,22 +6,25 @@
  * The on-disk filesystem in C: its format, and every operation on it
  * (`docs/diskfs.md` step 1).
  *
- * **The format is `user/lib/kfs.lua`'s, to the byte.** A superblock, a
- * bitmap, 128-byte inodes of up to twelve extents, directories as ordinary
- * files, attributes in a block of their own, and a journal of 256 blocks
- * whose commit is checksummed with FNV-1a. Every decision that places a
- * byte - which block a file takes, what a rewritten directory holds, the
- * order a commit writes in - is the one `kfs.lua` makes, and
- * `tools/test_kfs_cross.lua` holds the two to that: the same operations,
- * the same disk, block for block. `kfs.lua` has the reasoning behind each
- * part of the format, beside the part, and it is not repeated here.
+ * **The format is the one `user/lib/kfs.lua` made, to the byte.** A
+ * superblock, a bitmap, 128-byte inodes of up to twelve extents, directories
+ * as ordinary files, attributes in a block of their own, and a journal of 256
+ * blocks whose commit is checksummed with FNV-1a. Every decision that places
+ * a byte - which block a file takes, what a rewritten directory holds, the
+ * order a commit writes in - is the one `kfs.lua` made, and the two were held
+ * to that block for block until nothing ran the Lua.
+ *
+ * **Where a comment here says `kfs.lua` has the reasoning**, it is the Lua as
+ * it was when `docs/diskfs.md` step 4 removed it - `git show
+ * 48ebe67:user/lib/kfs.lua` - whose comments are the format's long-form
+ * argument, beside each part. They are not repeated here.
  *
  * **No system calls, no Lua and no allocator.** It reads and writes through
  * a disk it is handed as two functions, and works in a `struct kfs` its
  * owner provides - the disk server's is static, the host's module's is
  * allocated once. That is `fat_decode.c`'s arrangement and for its reason:
- * the same file compiles on the Mac, and `tools/test_kfs.lua` asks it the
- * same 87 questions it asks the Lua.
+ * the same file compiles on the Mac, and `tools/test_kfs.lua` asks it the 87
+ * questions it asked the Lua.
  *
  * **Two functions and not four.** `kfs.lua` has four - a read and a write
  * through a string, and a read into and a write from a region - because a
@@ -215,6 +218,23 @@ void kfs_init(struct kfs *k, const struct kfs_disk *disk);
 
 /* The superblock, read and held to what one must be. */
 int kfs_mount(struct kfs *k, struct kfs_super *sb);
+
+/*
+ * **For a reader that only recognises a volume** - the drive server, which
+ * lists a stick's partitions and their free space and has no `struct kfs`
+ * to mount one with (`docs/diskfs.md` step 4). It read the superblock and
+ * the bitmap with checks and a layout of its own, a second reading of the
+ * format that had to be kept in step with this one by hand; these are this
+ * one's.
+ *
+ * Block 0's bytes, `size` of them, as a superblock - held to every check a
+ * mount makes. `KFS_OK`, or why not.
+ */
+int kfs_super_decode(const uint8_t *block, size_t size, struct kfs_super *sb);
+
+/* Free blocks among the first `bits` bits of an allocation bitmap - a zero
+ * bit is a free block - for a caller holding the bitmap's bytes itself. */
+uint64_t kfs_bitmap_free(const uint8_t *map, uint64_t bits);
 
 /*
  * A new filesystem over `sectors`, with the folders a Kosmos disk has made in

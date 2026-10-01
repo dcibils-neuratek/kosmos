@@ -18,11 +18,9 @@
 -- that manages the disk inside the machine manages the image outside it.
 --
 -- **That code is `user/servers/kfs.c`**, which the host's `lua` carries as
--- `require "kfsc"` (`docs/diskfs.md` step 2) and the disk server is moving
--- to. It was `kfs.lua` until then, which the machine still runs; the two
--- place every byte alike (`tools/test_kfs_cross.lua`), and `KFS_IMPL=lua`
--- makes a disk with the Lua for as long as it exists, so
--- `tools/test_kfs_tool.py` can hold the two tools to one image.
+-- `require "kfsc"` (`docs/diskfs.md` step 2) and the disk server runs. It
+-- was `kfs.lua` until then, held to the C block for block until nothing ran
+-- it, and removed in step 4.
 --
 -- **One implementation, not two.** A separate host tool that understood
 -- the format would be a second copy to keep in step, and the two would
@@ -82,13 +80,7 @@ end
 -- Every time given below is 0, so two runs over the same inputs produce the
 -- same image: one that differs because it was built at a different second
 -- cannot be diffed against yesterday's to see what actually changed.
-local kfs
-
-if os.getenv("KFS_IMPL") == "lua" then
-  kfs = assert(loadfile("user/lib/kfs.lua"))()
-else
-  kfs = require("kfsc")
-end
+local kfs = require("kfsc")
 
 local function die(message)
   io.stderr:write("kfs: " .. message .. "\n")

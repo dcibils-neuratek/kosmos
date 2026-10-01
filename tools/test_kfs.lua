@@ -2,14 +2,15 @@
 -- The filesystem format, tested on this machine instead of the target.
 --
 --   build/host/lua tools/test_kfs.lua
---   KFS_IMPL=c build/host/lua tools/test_kfs.lua
+--   KFS_CACHE=1 build/host/lua tools/test_kfs.lua
 --
--- **Both implementations, the same questions** (`docs/diskfs.md` step 1).
--- `kfs.lua` is the one the machine runs today and `kfs.c` the one it is
--- moving to; the host's `lua` has the C inside it, answering as `kfs.lua`
--- does (`tools/host_lua.c`). One check differs, and says why where it is.
+-- **`kfs.c`, the format and its operations** (`docs/diskfs.md`), as the
+-- disk server runs them: the host's `lua` has the C core inside it
+-- (`tools/host_lua.c`, `require "kfsc"`). These were written against
+-- `kfs.lua`, which the core was held to block for block and which went in
+-- step 4 once nothing ran it.
 --
--- `kfs.lua` is pure arithmetic over blocks. The only thing it wants from
+-- The core is pure arithmetic over blocks. The only thing it wants from
 -- the system is a way to read and write one, so given those as stubs over
 -- a string it can be exercised here in a fraction of a second.
 --
@@ -133,26 +134,20 @@ end
 
 --
 -- **Through the disk server's cache, when asked** (`KFS_CACHE=1`). kfs runs
--- through `blockcache.lua` on the machine, so this whole suite runs through
--- it a second time: the journal, recovery and the power losses below are
+-- through the cache in C on the machine (`user/servers/diskcache.c`), so
+-- this whole suite runs through it a second time: the journal, recovery and
+-- the power losses below are
 -- the cases a cache that answered with something the disk no longer holds
 -- would get wrong. It is told when this test changes the disk behind kfs's
 -- back - four places, each marked - which nothing on the machine does.
 --
 local cache = nil
-local IMPL = os.getenv("KFS_IMPL") == "c" and "c" or "lua"
 
 if os.getenv("KFS_CACHE") then
-  if IMPL == "c" then
-    -- The C core through the cache in C, as the disk server runs the two
-    -- (`user/servers/diskcache.c`, `docs/diskfs.md` step 3).
-    local kfsc = require("kfsc")
+  local kfsc = require("kfsc")
 
-    kfsc.use_cache(64, 4)
-    cache = { clear = kfsc.cache_clear }
-  else
-    cache = assert(loadfile("user/lib/blockcache.lua"))().wrap(sys, 64, 4)
-  end
+  kfsc.use_cache(64, 4)
+  cache = { clear = kfsc.cache_clear }
 end
 
 local function disk_changed()
@@ -207,13 +202,7 @@ end
 
 --------------------------------------------------------------------------
 
-local kfs
-
-if IMPL == "c" then
-  kfs = require("kfsc")
-else
-  kfs = assert(loadfile("user/lib/kfs.lua"))()
-end
+local kfs = require("kfsc")
 
 local passed, failed = 0, 0
 
@@ -306,12 +295,11 @@ check(reads <= 2,
       ("a 40-block file is read in at most 2 disk calls, 31 blocks a call, "
        .. "not %d"):format(reads))
 
--- One call from the Lua, which reads the window's blocks as one string and
--- cuts it. The C reads whole blocks straight to where they are going and a
--- block entered or left part way through a block of its own - on the
--- machine the whole blocks land in the caller's region with no copy - so
--- the window is its run and its two ends.
-local window_calls = IMPL == "c" and 3 or 1
+-- The core reads whole blocks straight to where they are going and a block
+-- entered or left part way through a block of its own - on the machine the
+-- whole blocks land in the caller's region with no copy - so the window is
+-- its run and its two ends: three calls at most.
+local window_calls = 3
 
 reads = 0
 check(kfs.read_range(sb, forty_node, 4000, 100000) == big:sub(4001, 104000),
@@ -944,11 +932,11 @@ end
 --------------------------------------------------------------------------
 
 if failed > 0 then
-  print(("\nFAIL: %d of %d checks on the format failed (kfs.%s%s).")
-        :format(failed, passed + failed, IMPL,
+  print(("\nFAIL: %d of %d checks on the format failed (kfs.c%s).")
+        :format(failed, passed + failed,
                 cache and ", through the block cache" or ""))
   os.exit(1)
 end
 
-print(("PASS: %d checks on the filesystem format, on this machine (kfs.%s%s).")
-      :format(passed, IMPL, cache and ", through the block cache" or ""))
+print(("PASS: %d checks on the filesystem format, on this machine (kfs.c%s).")
+      :format(passed, cache and ", through the block cache" or ""))

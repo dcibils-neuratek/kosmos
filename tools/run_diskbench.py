@@ -56,7 +56,7 @@ RANDOM_WRITE = "not yet: a write replaces the whole file"
 # `testing.md` 18.271). It was six and one carried the bytes: while an index
 # exists the path is walked twice - `kfs.spelled`, then `kfs.find` - and each
 # walk read the root's inode block and its directory from the disk again. The
-# disk server keeps its small reads now (`blockcache.lua`), and a read into a
+# disk server keeps its small reads now (`diskcache.c`), and a read into a
 # region goes past it, so what is left is the file's own block. The read
 # before the fifty is the one that finds the path.
 #

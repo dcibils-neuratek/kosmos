@@ -492,6 +492,13 @@ shaper and bidi (HarfBuzz and FriBidi, or our own) and are a step of their
 own; their fonts are a few hundred KB. Options: all four CJK in the image;
 the CJK fonts on the disk, loaded when a page needs them (the image stays
 as it is, `/Home` or a stick carries them); or only the small scripts now.
+
+**Item 4**: **`diskfs` step 4 done** (18.337) - `kfs.lua`, `blockcache.lua`
+and the Lua disk server out of the tree (`init.lua` 7,554 lines to 5,999),
+and the drive server reading a volume through `kfs.c`'s own
+`kfs_super_decode` and `kfs_bitmap_free`. Next in item 4: a QEMU with
+virglrenderer (4h d), the M700's GPU codec (measurements first), the
+hardware cursor (4h b).
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

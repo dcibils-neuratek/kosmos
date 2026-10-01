@@ -34,6 +34,7 @@
 #include "drivesproto.h"
 #include "drives_decode.h"
 #include "fat_decode.h"
+#include "kfs.h"
 #include "drivers/usb/storage_decode.h"
 #include "init/say.h"
 
@@ -319,17 +320,23 @@ static void measure_free(struct volume *v)
     v->free_exact = false;
 
     if (v->fs == FS_KIND_KFS) {
+        const uint64_t per = (uint64_t)KFS_BLOCK * 8u;   /* blocks a bitmap block maps */
         struct kfs_super sb;
-        const char *why = NULL;
-        uint32_t free = 0, block;
+        uint64_t free = 0;
+        uint32_t block;
 
-        /* kfs's block is 4096 and a sector is 512, so block N is sector 8N. */
+        /* kfs's block is 4096 and a sector is 512, so block N is sector 8N.
+         * The superblock and the bitmap read as `kfs.c` reads them, which is
+         * the format's one reading (`docs/diskfs.md` step 4). */
         if (!read_sectors(v->unit, v->first, KFS_BLOCK / SECTOR)
-            || !kfs_super_from(region, KFS_BLOCK, &sb, &why)) {
+            || kfs_super_decode(region, KFS_BLOCK, &sb) != KFS_OK) {
             return;
         }
 
-        for (block = 0; block < sb.bitmap_blocks; block++) {
+        for (block = 0; block < sb.bitmap_blocks
+                        && (uint64_t)block * per < sb.blocks; block++) {
+            uint64_t left = sb.blocks - (uint64_t)block * per;
+
             if (!read_sectors(v->unit,
                               v->first + (uint64_t)(sb.bitmap_at + block)
                               * (KFS_BLOCK / SECTOR),
@@ -337,10 +344,10 @@ static void measure_free(struct volume *v)
                 return;
             }
 
-            free = kfs_free_in(region, KFS_BLOCK, free, sb.blocks);
+            free += kfs_bitmap_free(region, left < per ? left : per);
         }
 
-        v->free_bytes = (uint64_t)free * KFS_BLOCK;
+        v->free_bytes = free * KFS_BLOCK;
         v->free_exact = true;
         return;
     }
@@ -420,14 +427,14 @@ static bool identify(struct volume *v)
 
     /* kfs keeps its superblock in block 0, which is eight sectors. */
     if (read_sectors(v->unit, v->first, KFS_BLOCK / SECTOR)
-        && kfs_super_from(region, KFS_BLOCK, &sb, &why)) {
+        && kfs_super_decode(region, KFS_BLOCK, &sb) == KFS_OK) {
         v->fs = FS_KIND_KFS;
 
         /*
-         * **Listed, and not yet opened.** kfs's reader is `user/lib/kfs.lua`
-         * and this server is C, so its contents come through `/Home` where
-         * they already are. Reading one here means kfs in C, which is its own
-         * piece of work and is on the roadmap behind Disk Benchmark.
+         * **Listed, and not yet opened.** Its contents come through `/Home`,
+         * where they already are, from the disk server - which reads them
+         * with `kfs.c` too, now that the format is C (`docs/diskfs.md`).
+         * Opening another Kosmos volume here is a piece of work of its own.
          */
         v->readable = false;
         drives_label_name(v->name, sizeof(v->name), "");

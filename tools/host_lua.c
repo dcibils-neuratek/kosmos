@@ -3,11 +3,13 @@
  * The Mac's Lua - `build/host/lua` - with the filesystem's C core in it
  * (`docs/diskfs.md`). `build/host/lua script [args]` runs a script as
  * upstream's `lua.c` runs one, and `require "kfsc"` answers
- * `user/servers/kfs.c` dressed as `user/lib/kfs.lua`: the same functions,
- * taking and answering the same tables, so a script written against one runs
- * against the other. `tools/kfs.lua` makes every disk the machine is given
- * with it, and `tools/test_kfs.lua` asks it its 87 questions with
- * `KFS_IMPL=c`.
+ * `user/servers/kfs.c` dressed as `user/lib/kfs.lua` was: the same
+ * functions, taking and answering the same tables, which is how the scripts
+ * written against the Lua ran against the C and were held to it until
+ * `docs/diskfs.md` step 4 removed the Lua (`git show 48ebe67:user/lib/kfs.lua`
+ * where a comment here names it). `tools/kfs.lua` makes every disk the
+ * machine is given with it, and `tools/test_kfs.lua` asks it its 87
+ * questions.
  *
  * **A script and its arguments, and nothing else.** No prompt, no `-e`, no
  * reading a script from its input: nothing here ever asked upstream's for

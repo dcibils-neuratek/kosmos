@@ -2,11 +2,13 @@
 /*
  * The on-disk filesystem in C (`kfs.h`, `docs/diskfs.md` step 1).
  *
- * Laid out as `user/lib/kfs.lua` is, part for part, so the two can be read
- * side by side: the superblock, inodes, talking to the disk, the
+ * Laid out as `user/lib/kfs.lua` was, part for part, so the two could be
+ * read side by side: the superblock, inodes, talking to the disk, the
  * transaction and the journal, the bitmap, the inode table, file contents,
  * directories, paths, attributes, the operations, formatting. Where this
- * does something the Lua does not, it says so and why.
+ * does something the Lua did not, it says so and why; where it says the Lua
+ * has the reasoning, that is `git show 48ebe67:user/lib/kfs.lua`, the
+ * last revision that had it (`kfs.h`).
  */
 
 #include "kfs.h"
@@ -93,7 +95,7 @@ void kfs_init(struct kfs *k, const struct kfs_disk *disk)
 
 /*
  * ------------------------------------------------------------------------
- * The superblock. `kfs.lua`'s SUPER: ten 32-bit fields and the time.
+ * The superblock: ten 32-bit fields and the time.
  * ------------------------------------------------------------------------
  */
 
@@ -791,13 +793,32 @@ int kfs_free_run(struct kfs *k, const struct kfs_super *sb, uint32_t first,
 }
 
 /* Counted out of the bitmap, only for blocks the disk has (`kfs.lua`). */
+uint64_t kfs_bitmap_free(const uint8_t *map, uint64_t bits)
+{
+    uint64_t whole = bits / 8, n = 0;
+
+    for (uint64_t byte = 0; byte < whole; byte++) {
+        uint8_t v = map[byte];
+
+        for (uint32_t bit = 0; bit < 8; bit++) {
+            n += (v >> bit & 1u) == 0;
+        }
+    }
+
+    for (uint64_t bit = 0; bit < bits % 8; bit++) {
+        n += (map[whole] >> bit & 1u) == 0;
+    }
+
+    return n;
+}
+
 int kfs_free_blocks(struct kfs *k, const struct kfs_super *sb, uint64_t *count)
 {
     const uint64_t per = (uint64_t)KFS_BLOCK * 8;
     uint64_t n = 0;
 
     for (uint32_t at = 0; at < sb->bitmap_blocks; at++) {
-        uint64_t bits, whole;
+        uint64_t bits;
         int r;
 
         if ((uint64_t)at * per >= sb->blocks) {
@@ -811,19 +832,7 @@ int kfs_free_blocks(struct kfs *k, const struct kfs_super *sb, uint64_t *count)
             return r;
         }
 
-        whole = bits / 8;
-
-        for (uint64_t byte = 0; byte < whole; byte++) {
-            uint8_t v = k->map[byte];
-
-            for (uint32_t bit = 0; bit < 8; bit++) {
-                n += (v >> bit & 1u) == 0;
-            }
-        }
-
-        for (uint64_t bit = 0; bit < bits % 8; bit++) {
-            n += (k->map[whole] >> bit & 1u) == 0;
-        }
+        n += kfs_bitmap_free(k->map, bits);
     }
 
     *count = n;
@@ -1979,6 +1988,16 @@ int kfs_mkfs(struct kfs *k, uint64_t sectors, uint64_t now,
     }
 
     return KFS_OK;
+}
+
+int kfs_super_decode(const uint8_t *block, size_t size, struct kfs_super *sb)
+{
+    /* Ten 32-bit fields and the time: 48 bytes of the block. */
+    if (block == NULL || size < 48) {
+        return KFS_E_NOT_KFS;
+    }
+
+    return unpack_super(block, sb);
 }
 
 int kfs_mount(struct kfs *k, struct kfs_super *sb)

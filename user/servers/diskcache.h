@@ -4,7 +4,8 @@
 
 /*
  * **The disk's small reads, kept**, for the disk server in C (`docs/diskfs.md`
- * step 3) - `user/lib/blockcache.lua`'s rules, and `design.md` 8.3d's reason:
+ * step 3) - the rules `blockcache.lua` kept for the disk server in Lua until
+ * step 4 removed both, and `design.md` 8.3d's reason:
  * a 4 KB read of a file in `/Home` was six disk calls, and all but one were
  * its path - inode blocks and directories read again for every request.
  *
@@ -22,7 +23,7 @@
  *   twice.
  * - **Bounded**: `most` blocks, the least recently used going first.
  *
- * `tools/test_diskcache.c` holds it to the checks `test_blockcache.lua` holds
+ * `tools/test_diskcache.c` holds it to the checks `test_blockcache.lua` held
  * the Lua to.
  */
 

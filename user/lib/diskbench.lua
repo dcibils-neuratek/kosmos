@@ -68,7 +68,6 @@ local QUEUED = "not yet: one command at a time"
 -- this found. Since 24 September a file's bytes go once, outside the
 -- journal (`design.md` 8.3b), and a write is bounded by the disk.
 --
-local kfs = use("/Kosmos/Libraries/kfs.lua")
 local FILE_BYTES = 1024 * 1024
 local FILE_DIR = "/Home/.diskbench"
 

@@ -3,7 +3,8 @@
  * The disk server's cache of small reads in C, on this machine
  * (`user/servers/diskcache.c`, `docs/diskfs.md` step 3).
  *
- * `test_blockcache.lua`'s checks, over a disk of memory that counts every
+ * `test_blockcache.lua`'s checks (the Lua cache's, removed with it in
+ * `docs/diskfs.md` step 4), over a disk of memory that counts every
  * call that reached it: what the cache must never do is answer with
  * anything the disk does not hold; what it is for is answering a small read
  * twice with one call. Two of the Lua's checks do not carry over, and why is
@@ -12,7 +13,7 @@
  * a write here updates what is kept, and the rule that replaces those two is
  * that a write never adds a block.
  *
- * And `test_kfs.lua` runs its 87 through it with `KFS_IMPL=c KFS_CACHE=1`.
+ * And `test_kfs.lua` runs its 87 through it with `KFS_CACHE=1`.
  */
 
 #include "../user/servers/diskcache.h"

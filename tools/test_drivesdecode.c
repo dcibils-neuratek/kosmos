@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "../user/servers/drives_decode.h"
+#include "../user/servers/kfs.h"
 
 /*
  * A kfs volume `mkfs` really wrote, made by the Makefile rule beside this
@@ -227,7 +228,6 @@ static void test_kfs(void)
 {
     unsigned char block[4096];
     struct kfs_super sb;
-    const char *why = NULL;
     unsigned char bitmap[8];
 
     /*
@@ -236,15 +236,14 @@ static void test_kfs(void)
      * This test first hand-assembled one from the constants in
      * `drives_decode.h`, and it passed while agreeing with nothing: a 32 MB
      * volume's real `inode_count` is 512, its journal starts at 18 and its
-     * data at 274, where the invented numbers were 64, 40 and 64. The layout
-     * check accepts both, so the mistake was invisible - and the C header is
-     * the *second* copy of a layout whose authority is `string.pack` in
-     * `user/lib/kfs.lua`, which is exactly the arrangement that needs a
-     * witness rather than a comment.
+     * data at 274, where the invented numbers were 64, 40 and 64. That header
+     * was a second copy of a layout written down first in `kfs.lua`, and
+     * since `docs/diskfs.md` step 4 there is no second copy: the drive
+     * server reads a volume with `kfs.c`'s own `kfs_super_decode` and
+     * `kfs_bitmap_free`, and these checks are of those.
      *
      * `build/host/kfs-fixture.img` is made by the Makefile rule beside this
-     * test, with `tools/kfs.lua` on the format's C core, which is held to
-     * `kfs.lua` block for block.
+     * test, with `tools/kfs.lua` on the same core.
      */
     {
         FILE *f = fopen(KFS_FIXTURE, "rb");
@@ -259,58 +258,62 @@ static void test_kfs(void)
               "the kfs fixture volume was there to read");
     }
 
-    check(kfs_super_from(block, sizeof(block), &sb, &why),
+    check(kfs_super_decode(block, sizeof(block), &sb) == KFS_OK,
           "a superblock mkfs wrote is recognised");
-    check(sb.block_size == KFS_BLOCK && sb.version == KFS_VERSION,
-          "the C header's block size and version are the ones mkfs used");
-    check(sb.bitmap_at > 0u && sb.inodes_at > sb.bitmap_at
-          && sb.data_at > sb.inodes_at && sb.data_at < sb.blocks,
-          "and its regions are in the order the layout check requires");
+    check(sb.block_size == KFS_BLOCK && sb.version == KFS_VERSION
+          && sb.inode_count == 512u && sb.journal_at == 18u && sb.data_at == 274u,
+          "and read as mkfs made a 32 MB volume: 512 inodes, the journal at "
+          "18, the data at 274");
 
     put32(block, 0x12345678u);
-    check(!kfs_super_from(block, sizeof(block), &sb, &why)
-          && strcmp(why, "not a kosmos filesystem") == 0,
+    check(kfs_super_decode(block, sizeof(block), &sb) == KFS_E_NOT_KFS,
           "a block with the wrong magic is refused, and says so");
     put32(block, KFS_MAGIC);
 
     put32(block + 4, 99u);
-    check(!kfs_super_from(block, sizeof(block), &sb, &why),
+    check(kfs_super_decode(block, sizeof(block), &sb) == KFS_E_VERSION,
           "a version this does not understand is refused");
     put32(block + 4, KFS_VERSION);
 
     /* Regions out of order: the check that stops a plausible wrong number
      * being used as an offset. */
     put32(block + 36, 1u);              /* data_at below inodes_at */
-    check(!kfs_super_from(block, sizeof(block), &sb, &why),
+    check(kfs_super_decode(block, sizeof(block), &sb) == KFS_E_LAYOUT,
           "a superblock whose regions are out of order is refused");
-    put32(block + 36, 64u);
 
     put32(block + 36, 9000u);           /* data_at past the volume's end */
-    check(!kfs_super_from(block, sizeof(block), &sb, &why),
+    check(kfs_super_decode(block, sizeof(block), &sb) == KFS_E_LAYOUT,
           "a superblock whose data starts past its end is refused");
-    put32(block + 36, 64u);
+    put32(block + 36, 274u);
 
-    check(!kfs_super_from(block, 8u, &sb, &why),
+    check(kfs_super_decode(block, sizeof(block), &sb) == KFS_OK,
+          "and put back, it is a superblock again");
+    check(kfs_super_decode(block, 8u, &sb) != KFS_OK,
           "a short superblock is refused rather than read past");
 
-    /* Free blocks: a zero bit is free, and the cap stops the padding at the
-     * end of a bitmap block being counted as space that does not exist. */
+    /* Free blocks: a zero bit is free, and only as many bits as the volume
+     * has blocks are counted - the padding at the end of a bitmap block is
+     * not space that exists. */
     memset(bitmap, 0, sizeof(bitmap));
-    check(kfs_free_in(bitmap, sizeof(bitmap), 0u, 1000u) == 64u,
+    check(kfs_bitmap_free(bitmap, 64u) == 64u,
           "an empty bitmap counts every bit free");
 
     memset(bitmap, 0xFFu, sizeof(bitmap));
-    check(kfs_free_in(bitmap, sizeof(bitmap), 0u, 1000u) == 0u,
-          "a full bitmap counts none free");
+    check(kfs_bitmap_free(bitmap, 64u) == 0u, "a full bitmap counts none free");
 
     memset(bitmap, 0, sizeof(bitmap));
     bitmap[0] = 0x0Fu;                  /* four used, four free, in byte 0 */
-    check(kfs_free_in(bitmap, 1u, 0u, 1000u) == 4u,
+    check(kfs_bitmap_free(bitmap, 8u) == 4u,
           "a part-used byte counts only its zero bits");
 
     memset(bitmap, 0, sizeof(bitmap));
-    check(kfs_free_in(bitmap, sizeof(bitmap), 0u, 10u) == 10u,
+    check(kfs_bitmap_free(bitmap, 10u) == 10u,
           "the count stops at the blocks the volume really has");
+
+    memset(bitmap, 0xFFu, sizeof(bitmap));
+    bitmap[1] = 0xF0u;                  /* bits 8-11 free, 12-15 used */
+    check(kfs_bitmap_free(bitmap, 10u) == 2u,
+          "a count that stops part way through a byte counts only up to it");
 }
 
 static void test_fsinfo(void)

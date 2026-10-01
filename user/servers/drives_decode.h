@@ -139,54 +139,11 @@ bool gpt_entry_array(const uint8_t *header, unsigned size, unsigned most_bytes,
                      uint64_t *at, unsigned *entry_size, unsigned *count);
 
 /*
- * kfs's superblock, block 0 of a Kosmos volume.
- *
- * The layout is `user/lib/kfs.lua`'s `SUPER` - ten 32-bit words and a 64-bit
- * time - and this is the *second* place it is written, which is the thing to
- * be uneasy about. It is here rather than shared because the other copy is
- * Lua and there is no way to share a `string.pack` format with C; the check
- * that keeps them honest is `tools/test_drivesdecode.c` reading a superblock
- * that `mkfs` really wrote.
+ * A Kosmos volume is read with `kfs.c`'s own `kfs_super_decode` and
+ * `kfs_bitmap_free` (`kfs.h`). This file read the superblock and the bitmap
+ * itself, with a layout and checks written down a second time beside
+ * `kfs.lua`'s - which `docs/diskfs.md` step 4 retired with `kfs.lua`.
  */
-#define KFS_MAGIC               0x4b464f53u     /* "KFOS", little endian */
-#define KFS_VERSION             1u
-#define KFS_BLOCK               4096u
-
-struct kfs_super {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t block_size;
-    uint32_t blocks;
-    uint32_t bitmap_at;
-    uint32_t bitmap_blocks;
-    uint32_t inodes_at;
-    uint32_t inode_count;
-    uint32_t journal_at;
-    uint32_t data_at;
-};
-
-/*
- * The superblock `block` holds, held to the same checks `kfs.unpack_super`
- * makes: the magic, the version this understands, a block size this
- * understands, and a layout whose regions are in order and inside the volume.
- * False with `why` otherwise.
- */
-bool kfs_super_from(const uint8_t *block, unsigned size,
-                    struct kfs_super *out, const char **why);
-
-/*
- * Free blocks counted out of `n` bytes of the allocation bitmap, added to
- * `already`. A zero bit is a free block, which is `kfs.free_blocks`'s rule.
- *
- * **Counted, because nothing keeps the number.** kfs's superblock has no free
- * count - `df` says so in as many words - so the only honest answer is to add
- * up the bitmap, and a bitmap is small: a 32 MB volume's is one block.
- *
- * `cap` is how many blocks the volume has, so that padding at the end of the
- * last bitmap block is not counted as free space that does not exist.
- */
-uint32_t kfs_free_in(const uint8_t *bytes, unsigned n, uint32_t already,
-                     uint32_t cap);
 
 /*
  * FAT32's FSInfo sector: a *hint* at how many clusters are free.

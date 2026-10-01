@@ -15954,3 +15954,41 @@ again, whose own import of `inner.css` was handed back empty. **The control
 bit**: every import handed back empty - nothing imported, nothing said.
 
 **Run as the new rule has it**: the browser's four halves.
+
+## 18.337 The Lua filesystem removed (`docs/diskfs.md` step 4)
+
+**What it was**: since step 3 the disk server is C, started by `main.c`
+before the interpreter opens, and the Lua it replaced was still in the tree
+and in every image - `user/lib/kfs.lua`, `blockcache.lua`, and in `init.lua`
+the server itself, unreachable. And the drive server read a Kosmos volume
+with a superblock layout and checks of its own, a second copy of the format.
+
+**Removed**: `kfs.lua` and `blockcache.lua` (nothing else used the cache;
+Disk Benchmark loaded `kfs.lua` and never called it), and 1,555 lines of
+`init.lua` - `diskfs_handlers`, `/Home` on a stick's partition,
+`diskfs_main` and its exit codes, and with them a stale header for an audio
+server long since C. The role's dispatch says, as the others do, that there
+is no branch for it. `init.lua` is 5,999 lines from 7,554.
+
+**One reading of the format**: `kfs.c` exports `kfs_super_decode` - block
+0's bytes as a superblock, held to every check a mount makes, stricter than
+the drive server's own were - and `kfs_bitmap_free`, which `kfs_free_blocks`
+now counts through too. The drive server asks them; its `struct kfs_super`,
+`kfs_super_from` and `kfs_free_in` are gone, and so is a difference nobody
+had noticed: `kfs_free_in` stopped when the *count* reached the volume's
+blocks, where the core stops at the volume's last *block*.
+
+**The tests**: `test_kfs.lua`'s 87 checks run on the C core alone, plain and
+through the cache in C; `test_kfs_cross.lua` and `test_blockcache.lua`, which
+held the C to the Lua, are gone with it, and `KFS_IMPL`; `test_kfs_tool.py`
+runs every command of the host tool twice and holds the two runs to the same
+images and the same words - 8 checks over 34 files and 5.6 MB.
+`test_drivesdecode.c` holds `kfs_super_decode` to the volume `mkfs` wrote -
+exactly 512 inodes, the journal at 18, the data at 274, where it only
+checked an order before - and the refusals by their codes, and
+`kfs_bitmap_free` to a count that stops part way through a byte: 54 checks.
+
+**Run as the new rule has it**: the full gate - `init.lua` and a server
+changed. 79 of 80 in 9:52; `x86-sound` heard its tone 8-11% slow (406 Hz
+for 440, 371 ms for 333) while 142 MB downloaded beside it - QEMU's audio
+clock under the host's load, the flake 6zw records - and passed run alone.

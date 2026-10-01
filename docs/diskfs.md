@@ -127,6 +127,22 @@ stopped being, one at a time.
    the bitmap written to `kfs.lua`'s layout; it should ask `kfs.h`, and the
    two headers cannot both be included in one file until it does.
 
+   **Done 1 October** (`testing.md` 18.337). `user/lib/kfs.lua` and
+   `blockcache.lua` gone - nothing used the cache but the Lua server, and
+   Disk Benchmark loaded `kfs.lua` and never called it - and from
+   `init.lua` the whole Lua disk server: `diskfs_handlers`, `/Home` on a
+   stick's partition, the exit codes it died with and `diskfs_main`, 1,555
+   lines that `main.c` had made unreachable by starting the C server before
+   the interpreter opens. `kfs.c` exports what a reader that only
+   recognises a volume needs - `kfs_super_decode`, held to every check a
+   mount makes, and `kfs_bitmap_free` - and the drive server asks it, so
+   there is one reading of the format; `kfs_free_blocks` counts through the
+   same function. The tests that held the C to the Lua went with it -
+   `test_kfs_cross.lua`, `test_blockcache.lua`, `KFS_IMPL` - and the host
+   tool's test holds it to itself instead: every command run twice, the
+   same images and the same words. Where the C's comments say `kfs.lua` has
+   the reasoning, they name the revision that last had it.
+
 Each step ends with `make test` green, the checks it added and their
 controls, and the documents saying what it became. Step 1 is the largest and
 the one everything rests on; it is also the one that can be finished and

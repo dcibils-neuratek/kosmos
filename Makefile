@@ -2205,14 +2205,12 @@ $(HOSTDIR)/fatls: tools/fatls.c user/servers/fat_decode.c user/servers/fat_decod
 # no label, and a repeated label numbered in arrival order.
 #
 # **The kfs half is held to a volume `mkfs` really wrote**, and that is the
-# point of the fixture rather than a convenience. `drives_decode.h` is the
-# *second* place kfs's superblock layout is written down - the first is
-# `string.pack` in `user/lib/kfs.lua`, and there is no way to share a format
-# string between Lua and C. This test first built a superblock by hand from
-# the C header's own constants and passed while agreeing with nothing: a real
-# 32 MB volume has 512 inodes, its journal at block 18 and its data at 274,
-# where the invented numbers were 64, 40 and 64. The layout check accepts
-# both. So the fixture is made by the same `tools/kfs.lua` the machine runs.
+# point of the fixture rather than a convenience. This test first built a
+# superblock by hand and passed while agreeing with nothing: a real 32 MB
+# volume has 512 inodes, its journal at block 18 and its data at 274, where
+# the invented numbers were 64, 40 and 64. The drive server reads a volume
+# with `kfs.c` itself since `docs/diskfs.md` step 4 - there is no second
+# copy of the layout - and the fixture is made by `tools/kfs.lua` on it.
 #
 $(HOSTDIR)/kfs-fixture.img: tools/kfs.lua $(HOSTDIR)/lua
 	@mkdir -p $(dir $@)
@@ -2222,13 +2220,15 @@ $(HOSTDIR)/kfs-fixture.img: tools/kfs.lua $(HOSTDIR)/lua
 $(HOSTDIR)/test_drivesdecode: tools/test_drivesdecode.c \
 	        user/servers/drives_decode.c user/servers/drives_decode.h \
 	        user/servers/fat_decode.c user/servers/fat_decode.h \
+	        user/servers/kfs.c user/servers/kfs.h \
 	        user/drivers/usb/storage_decode.c user/drivers/usb/storage_decode.h \
 	        $(HOSTDIR)/kfs-fixture.img
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser -o $@ \
 	        -DKFS_FIXTURE='"$(HOSTDIR)/kfs-fixture.img"' \
 	        tools/test_drivesdecode.c user/servers/drives_decode.c \
-	        user/servers/fat_decode.c user/drivers/usb/storage_decode.c
+	        user/servers/fat_decode.c user/servers/kfs.c \
+	        user/drivers/usb/storage_decode.c
 
 #
 # And whether the userland image's canary works, which is the same argument
@@ -2298,7 +2298,8 @@ $(HOSTDIR)/diskcache.o: user/servers/diskcache.c user/servers/diskcache.h user/s
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -c -o $@ user/servers/diskcache.c
 
-# The same cache, asked `test_blockcache.lua`'s questions in C.
+# The disk server's cache, asked the questions `blockcache.lua`'s test asked
+# of the Lua cache it replaced (`docs/diskfs.md` step 3).
 $(HOSTDIR)/test_diskcache: tools/test_diskcache.c user/servers/diskcache.c \
                            user/servers/diskcache.h user/servers/kfs.h
 	@mkdir -p $(dir $@)
@@ -3818,24 +3819,19 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	    exit 1; \
 	fi
 	@echo "cglobals: no C sets a Lua global outside kosmos_lua_open"
-	@# The format, on this machine, before anything is booted. It is the
-	@# fastest of the three and the one that fails first when the disk
-	@# layout is wrong.
+	@# The format, `kfs.c`, on this machine before anything is booted - the
+	@# fastest of these and the one that fails first when the disk layout is
+	@# wrong - plain and through the disk server's cache (`docs/diskfs.md`).
 	$(HOSTDIR)/lua tools/test_kfs.lua
 	KFS_CACHE=1 $(HOSTDIR)/lua tools/test_kfs.lua
-	@# And the same questions of the C the disk server is moving to, and
-	@# the two held to each other block for block (`docs/diskfs.md` step 1).
-	KFS_IMPL=c $(HOSTDIR)/lua tools/test_kfs.lua
-	KFS_IMPL=c KFS_CACHE=1 $(HOSTDIR)/lua tools/test_kfs.lua
-	$(HOSTDIR)/lua tools/test_kfs_cross.lua
-	@# And the host's disk tool on the C, held to itself on the Lua: the
-	@# same images and the same words from every command (step 2).
+	@# And the host's disk tool through every command, twice: the same
+	@# images and the same words both times (step 2; held to the Lua's until
+	@# step 4 took the Lua out).
 	python3 tools/test_kfs_tool.py
 	@# The disk server's reader of `sys.pack`'s tables, held to the
 	@# serialiser itself (step 3).
 	$(HOSTDIR)/lua tools/test_packflat.lua
 	$(HOSTDIR)/test_diskcache
-	$(HOSTDIR)/lua tools/test_blockcache.lua
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.
 	$(HOSTDIR)/lua tools/test_tags.lua
