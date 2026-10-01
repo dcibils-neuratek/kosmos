@@ -437,8 +437,11 @@ caret) and the browser's menus in screen coordinates. Then, asked for on 1
 October and built (18.325): meta refresh (DuckDuckGo's front page), Zoom in
 four steps replacing Text size, and the user agent in Settings (Lynx by
 default, measured). The browser suite is two halves now (`--part`).
-**Next**: d6, searching from the address field - DuckDuckGo's page without
-scripts, `html.duckduckgo.com/html/?q=`, which answers either name. `browser.lua` is near Lua's 200 locals - new
+**d6 built** (18.326): searching from the address field, DuckDuckGo's page
+without scripts - **the new design (6zz d1-d6) is done**. Next for the browser,
+from the roadmap: the page's state as one table per tab (Lua's 200 locals),
+favorites dragged on the bar, select menus in forms, the rest of j5 (a serif
+face, other scripts' glyphs, `@import`). `browser.lua` is near Lua's 200 locals - new
 helpers go in `do` blocks.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10

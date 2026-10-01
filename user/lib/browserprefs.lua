@@ -202,4 +202,58 @@ function prefs.tabs(file)
   return list, math.max(1, math.min(shown, #list))
 end
 
+--
+-- **Searching from the address field** (`roadmap.md` 6zz d6): the engines'
+-- pages for a search, `%s` the words as a form sends them. DuckDuckGo's is
+-- its page without scripts, which answers this browser whatever it says it
+-- is; Google's is offered because the drawing offers it, and answers no
+-- browser without scripts now.
+--
+prefs.SEARCH = {
+  duckduckgo = "https://html.duckduckgo.com/html/?q=%s",
+  google = "https://www.google.com/search?q=%s",
+}
+
+-- Words as a form sends them: a space a +, letters, digits and -_.~ as
+-- they are, every other byte %XX - so `ñandú` is its UTF-8, encoded.
+function prefs.form_encode(words)
+  return (tostring(words):gsub("[^%w%-_.~ ]", function(c)
+    return ("%%%02X"):format(c:byte())
+  end):gsub(" ", "+"))
+end
+
+local SCHEMES = { http = true, https = true, about = true, asset = true,
+                  file = true, kosmos = true }
+
+--
+-- **Where what is typed goes**: an address when it looks like one - a
+-- scheme this browser speaks, a path on this machine, `localhost`, four
+-- numbers, or a host with a dot and a name of letters after it, a port and
+-- a path allowed - and otherwise a search at the engine Settings chose.
+-- Anything with a space in it is words. Returns the address, and whether
+-- it is a search.
+--
+function prefs.destination(text, engine)
+  local t = tostring(text or ""):match("^%s*(.-)%s*$")
+
+  if t == "" then return nil end
+
+  if not t:find("%s") then
+    local scheme = t:match("^(%a[%w+.%-]*):")
+
+    if (scheme and SCHEMES[scheme:lower()]) or t:sub(1, 1) == "/" then
+      return t, false
+    end
+
+    local name = (t:match("^([^/?#]+)") or ""):gsub(":%d+$", "")
+
+    if name:lower() == "localhost" or name:match("^%d+%.%d+%.%d+%.%d+$")
+       or (name:match("^[%w%-.]+$") and name:match("%.%a[%a%-]*$")) then
+      return t, false
+    end
+  end
+
+  return (prefs.SEARCH[engine] or prefs.SEARCH.duckduckgo):format(prefs.form_encode(t)), true
+end
+
 return prefs

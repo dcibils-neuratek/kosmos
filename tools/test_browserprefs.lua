@@ -149,6 +149,34 @@ do
         .. "the shown one within it")
 end
 
+do
+  local function to(text, engine)
+    local where, searched = prefs.destination(text, engine or "duckduckgo")
+
+    return tostring(where) .. (searched and " (search)" or "")
+  end
+
+  check(to("wikipedia.org") == "wikipedia.org"
+        and to("en.wikipedia.org/wiki/Uruguay") == "en.wikipedia.org/wiki/Uruguay"
+        and to("example.com:8080/x?y=1") == "example.com:8080/x?y=1",
+        "a host with a dot and a name of letters is an address, its port and path too")
+  check(to("10.0.2.2:8000/") == "10.0.2.2:8000/" and to("localhost:8080") == "localhost:8080",
+        "four numbers, and localhost, are addresses")
+  check(to("https://duckduckgo.com") == "https://duckduckgo.com"
+        and to("about:start") == "about:start" and to("/Home/notes.html") == "/Home/notes.html",
+        "a scheme this browser speaks, and a path, are addresses")
+  check(to("kosmos rocks") == "https://html.duckduckgo.com/html/?q=kosmos+rocks (search)",
+        "words are a search, at DuckDuckGo's page without scripts: " .. to("kosmos rocks"))
+  check(to("uruguay") == "https://html.duckduckgo.com/html/?q=uruguay (search)"
+        and to("3.14") == "https://html.duckduckgo.com/html/?q=3.14 (search)",
+        "one word, and a number with a dot, are searches")
+  check(to("ñandú & co?") == "https://html.duckduckgo.com/html/?q=%C3%B1and%C3%BA+%26+co%3F (search)",
+        "the words encoded as a form sends them: " .. to("ñandú & co?"))
+  check(to("lua manual", "google") == "https://www.google.com/search?q=lua+manual (search)",
+        "Google when Settings says Google")
+  check(to("   ") == "nil", "nothing typed goes nowhere")
+end
+
 if failures == 0 then
   print(("PASS: %d checks on the browser's settings, on this machine."):format(checks))
   os.exit(0)

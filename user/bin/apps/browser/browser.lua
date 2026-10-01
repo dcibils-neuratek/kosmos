@@ -587,7 +587,7 @@ local hb = {
   side    = ui.iconbutton{ icon = "sidebar" },
   menu    = ui.iconbutton{ icon = "more" },
 }
-local field    = ui.field{ text = HOME }
+local field    = ui.field{ text = HOME, hint = "Search, or type an address" }
 
 --
 -- **The star**, at the field's right end (`docs/browser.html`): filled and
@@ -639,6 +639,29 @@ local function address_parts(text)
   local host = bare:match("^[^/]*") or ""
 
   return host, bare:sub(#host + 1)
+end
+
+-- **Taken to be typed in**: the page's address, all of it chosen, so what
+-- is typed replaces it.
+function field:take_address()
+  self.text = address.text
+  self.caret = #self.text + 1
+  self.all = true
+end
+
+--
+-- **And given the keys**, by Control-L, Super L or a new tab: it takes the
+-- address the moment it is given them. It took it when a frame next found
+-- it newly focused, and a frame runs after a batch of keys - while a page
+-- arrived, the keys typed after Control-L came as one batch, and either
+-- went into the old text and were written over or, the field's own flag
+-- not settled yet, were put on the end of it (6zz d6's checks found both).
+-- A press on the field is still the frame's to notice, as it always was.
+--
+function field:take_keys()
+  win:focus_on(self)
+  self:take_address()
+  self.had = true
 end
 
 do
@@ -1334,11 +1357,7 @@ local function frame()
   hb.back.disabled = #back == 0
   hb.forward.disabled = #forward == 0
 
-  if field.focused and not field.had then
-    field.text = address.text
-    field.caret = #field.text + 1
-    field.all = true
-  end
+  if field.focused and not field.had then field:take_address() end
 
   field.had = field.focused
 
@@ -1677,7 +1696,7 @@ a.tile span.fav { display: block; width: 34px; height: 34px; margin: 0 auto 8px 
 </style></head><body>
 %s<h3>Lately</h3>
 %s
-<p><small>Or type an address above. <a href="about:start">The page inside this image</a>.</small></p>
+<p><small>Or search, or type an address, above. <a href="about:start">The page inside this image</a>.</small></p>
 </body></html>]]):format(favs, table.concat(rows, "\n"))
 end
 
@@ -2801,7 +2820,7 @@ function sink:key(c)
   elseif c == 71 then scroll_to(reach())             -- G
   elseif c == 12 then                                -- Control-L
     page_blur()
-    win:focus_on(field)
+    field:take_keys()
   elseif c == 114 then reload()                      -- r
   elseif c == 91 then go_back()                      -- [
   elseif c == 93 then go_forward()                   -- ]
@@ -3002,9 +3021,25 @@ hb.back.on_click = then_page(function() go_back() end)
 hb.forward.on_click = then_page(function() go_forward() end)
 hb.reload.on_click = then_page(function() reload() end)
 
+--
+-- **An address, or words to search for** (`roadmap.md` 6zz d6): what looks
+-- like an address is gone to, and anything else searched for at the engine
+-- Settings chose - DuckDuckGo's page without scripts unless it says Google
+-- (`browserprefs.destination`).
+--
 field.on_enter = function(_, text)
+  local where, searched = prefs.destination(text, setting.search)
+
+  if not where then return end
+
   win:focus_on(sink)
-  visit(text)
+
+  if searched then
+    print(("browser: searching for \"%s\" at %s")
+          :format(tostring(text):match("^%s*(.-)%s*$"), where))
+  end
+
+  visit(where)
 end
 
 -- Escape gives the page the keys back, the address as it was.
@@ -3012,6 +3047,14 @@ do
   local field_key = field.key
 
   function field:key(c)
+    -- A press on the field and typing in the same batch of keys: the
+    -- address taken before the first of them rather than at the frame after
+    -- (`take_keys` says why that is too late).
+    if not self.had then
+      self:take_address()
+      self.had = true
+    end
+
     if c == 27 then
       win:focus_on(sink)
       return true
@@ -3201,7 +3244,7 @@ show_tab = function(t)
 
   if here == prefs.PAGE then fill_settings() end
 
-  if here == NEWTAB then win:focus_on(field) else win:focus_on(sink) end
+  if here == NEWTAB then field:take_keys() else win:focus_on(sink) end
 
   say_tab("shown")
 
@@ -3232,7 +3275,7 @@ new_tab = function(where)
   say_tab("new")
   visit(where or NEWTAB)
 
-  if not where then win:focus_on(field) end
+  if not where then field:take_keys() end
 end
 
 --
@@ -3736,7 +3779,7 @@ win.on_key = function(_, c)
   -- well as the page - since the address is the window's, not the page's.
   if c == 12 then
     page_blur()
-    win:focus_on(field)
+    field:take_keys()
     return true
   end
 
@@ -3749,7 +3792,7 @@ win.on_key = function(_, c)
   elseif k >= 49 and k <= 57 then pick_tab(k - 48)              -- 1 to 9
   elseif k == 108 or k == 76 then                               -- L
     page_blur()
-    win:focus_on(field)
+    field:take_keys()
   elseif k == 114 or k == 82 then reload()                      -- R
   elseif k == 91 then go_back()                                 -- [
   elseif k == 93 then go_forward()                              -- ]

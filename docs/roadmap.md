@@ -2852,6 +2852,21 @@ processors, and still what follows USB:
       send simpler pages, a TV's was refused by Google, and Google sends
       results to none of them now that it wants scripts.
 
+      **d6 BUILT 1 October** (`testing.md` 18.326), and with it the new
+      design's six steps: what is typed in the address field goes where
+      it looks like it should (`browserprefs.destination`) - a scheme this
+      browser speaks, a path, `localhost`, four numbers, a host with a dot
+      and a name of letters, a port and a path allowed - and anything else
+      is searched for at the engine Settings chose: DuckDuckGo's page
+      without scripts, `html.duckduckgo.com/html/?q=`, which answers this
+      browser whatever it says it is, or Google's, which answers none
+      without scripts now. The field says "Search, or type an address".
+      **And a bug the check found**: the field took the page's address
+      when a frame next found it focused, and keys typed while a page
+      arrived came after Control-L as one batch - written over, or put on
+      the end of the old address. It takes the address the moment it is
+      given the keys now.
+
       **A follow-up, noticed building d2 to d5**: `browser.lua` is near
       Lua's two hundred locals in a chunk (186 slots after d5), held there
       by `do` blocks and two tables. The page a tab shows is twenty-five

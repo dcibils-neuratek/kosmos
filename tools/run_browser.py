@@ -1463,6 +1463,51 @@ def main():
             print(f"agent: {said_agent}", flush=True)
 
             #
+            # **Searching from the address field** (`roadmap.md` 6zz d6): words
+            # typed there are a search at DuckDuckGo's page without scripts,
+            # the words encoded as a form sends them. Checked by the address
+            # the browser says before it asks for it, so the gate does not
+            # wait on a server it does not run; an address typed is gone to,
+            # as every check here already types one.
+            #
+            mark_ = len(guest.seen)
+            typed("\x0c")
+            time.sleep(0.4)
+            typed("kosmos & rocks\n")
+            sought = guest.wait_for_line('browser: searching for "kosmos & rocks" at ',
+                                         "words typed in the field, searched for",
+                                         since=mark_)
+
+            if sought.strip() != "https://html.duckduckgo.com/html/?q=kosmos+%26+rocks":
+                raise Failure(f"words typed in the address field were searched for "
+                              f"at {sought.strip()!r}")
+
+            print(f"search: {sought.strip()}", flush=True)
+
+            #
+            # **An address typed while a page arrives** keeps its first
+            # characters: keys come to the window in a batch once it is free,
+            # and the field took the page's address at the next frame, after
+            # the batch - writing over `https://1` and searching for the rest.
+            # The long page takes seconds to lay out; the second page's
+            # address is typed meanwhile.
+            #
+            mark_ = len(guest.seen)
+            typed("\x0c")
+            time.sleep(0.4)
+            typed(long_url + "\n")
+            time.sleep(0.3)
+            typed("\x0c")
+            typed("http://10.0.2.2:%d/%s\n" % (port, LINKED))
+            guest.wait_for_line("browser: showing http://10.0.2.2:%d/%s" % (port, LINKED),
+                                "an address typed while the long page arrived",
+                                since=mark_)
+
+            if "browser: searching for" in guest.seen[mark_:]:
+                raise Failure("an address typed while a page arrived lost its first "
+                              "characters and was searched for")
+
+            #
             # **HTTPS** (`roadmap.md` 6zz c). The second page from the server
             # whose certificate the guest's authority signed: drawn, and said to
             # be Secure. Then from the one another authority signed: refused, on

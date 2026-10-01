@@ -15447,3 +15447,44 @@ in Plex. The one suite had reached 198 seconds and the gate 9:39.
   176423".
 
 **The gate**: 78 of 78, in 9:36 - the browser halves 98 to 134 s, side by side; the slowest suite is now `x86-cafesa3d` at 335 s, which with the images' build is most of the nine and a half minutes.
+
+## 18.326 Searching from the address field (6zz d6)
+
+**`roadmap.md` 6zz d6**, the new design's last step: what is typed in the
+address field goes where it looks like it should, and anything else is
+searched for.
+
+- **`browserprefs.destination(text, engine)`**: an address when it is one -
+  a scheme this browser speaks, a path on this machine, `localhost`, four
+  numbers, or a host with a dot and a name of letters, a port and a path
+  allowed - and otherwise a search: DuckDuckGo's page without scripts,
+  `html.duckduckgo.com/html/?q=`, which answered ten results to either name
+  the browser can say it is, or Google's when Settings says Google. Words as
+  a form sends them: a space a `+`, every other byte that is not a letter,
+  digit or `-_.~` as `%XX`. The empty field says "Search, or type an
+  address".
+- **The field took the address too late.** It took the page's address,
+  chosen, when a frame next found it focused - and a window busy with a page
+  is handed the keys typed meanwhile as one batch, Control-L and all, with
+  the frame after it. The check's own next address, typed while DuckDuckGo's
+  results arrived, lost its first characters and was searched for; made to
+  happen every time, typed while the long page laid out, it was put on the
+  end of the long page's address, the field's focus not yet settled. It
+  takes the address the moment the browser gives it the keys (`take_keys`:
+  Control-L, Super L, a new tab), and at the first key after a press on it.
+
+**`tools/test_browserprefs.lua`**, 23 checks: hosts, ports and paths,
+numbers and `localhost`, schemes and paths are addresses; words, one word
+and `3.14` are searches; `ñandú & co?` encoded; Google when chosen; nothing
+typed goes nowhere. Control: a host's last part allowed to be digits - `3.14`
+became an address.
+
+**`arm-browser-1` and `x86-browser-1`**: "kosmos & rocks" typed in the field
+is searched for at `https://html.duckduckgo.com/html/?q=kosmos+%26+rocks`,
+checked by the address the browser says before it asks, so the gate does
+not wait on DuckDuckGo; and the second page's address typed while the long
+page is laid out is shown, not searched for. Controls: Return going to the
+words as typed - no search said; the keys given without the address - the
+second address never shown.
+
+**The gate**: 78 of 78, in 9:38.
