@@ -400,9 +400,13 @@ other scripts' glyphs, `@import`, and `web_paint.c` retired. Diego asked on
 6zz h - not yet in the browser's text, fills or picture scaling, which is
 where NetSurf's drawing spends its time. And "make sure our browser new
 design is resizable": **e comes before d**, so the chrome is built on a
-window that already resizes. Proposed order now: j6 forms (Google's field is
-deaf, Wikipedia's hidden checkboxes are drawn as squares), j7 charset, h,
-k the cache, then e and d. The gate's audio
+window that already resizes. **j6 built, forms that work** (18.314):
+NetSurf's own form and text-area code, a caret, typing, checkboxes, and a
+form sent by GET or POST - Wikipedia's search answers live; Google answers
+that it needs JavaScript. Diego agreed the order on 1 October ("Let's
+continue with the plan"): **j7 charset next**, then h (SIMD in the
+browser's drawing), k the cache, then e (resizing) and d (the new chrome).
+What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
 next idea is `-icount`, which ties the guest's clock and QEMU's audio timer

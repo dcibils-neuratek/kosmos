@@ -971,7 +971,7 @@ local function loading_words()
   return ("Loading %s - %d KB so far"):format(loading.host, kb(loading.got))
 end
 
-local function fetch(text, page)
+local function fetch(text, page, post)
   --
   -- The page says each step on the status line and moves the address with
   -- a redirect; a picture does neither. A picture that redirected used to
@@ -1004,6 +1004,8 @@ local function fetch(text, page)
       agent = AGENT,
       progress = progress,
       anyway = parts.scheme == "https" and anyway[parts.hostport] or nil,
+      body = post and post.body,
+      content_type = post and post.type,
     })
 
     if page then loading = nil end
@@ -1034,6 +1036,10 @@ local function fetch(text, page)
 
       tell(("%d, following to %s"):format(status, next_at))
       text = next_at
+
+      -- A form POSTed and answered "see over there" is fetched from there
+      -- with a GET, as every browser does; 307 and 308 send it again.
+      if status ~= 307 and status ~= 308 then post = nil end
 
       if page then
         here = next_at
@@ -1472,7 +1478,7 @@ local function fetch_sheets(d)
   return n
 end
 
-local function load(text)
+local function load(text, post)
   if web == nil then
     say("this image has no web kit - build it with `make WEB=1`")
     return false
@@ -1529,7 +1535,7 @@ local function load(text)
   else
     local fetch_from = sys.ticks()
 
-    body, how = fetch(text, true)
+    body, how = fetch(text, true, post)
 
     if body == nil then return false end
 
@@ -1627,11 +1633,16 @@ end
 -- throws that stack away. Nothing here knows about the network.
 --------------------------------------------------------------------------
 
-local function visit(text)
+--
+-- `post`, for a form sent by POST, is its body and type. History keeps the
+-- address alone, so Back to such a page asks for it again with a GET - as a
+-- page that came by a link would be.
+--
+local function visit(text, post)
   if here then back[#back + 1] = here end
 
   forward = {}
-  load(text)
+  load(text, post)
 end
 
 go_back = function()
@@ -1707,6 +1718,37 @@ end
 -- events arrive at.
 --------------------------------------------------------------------------
 
+--
+-- **What a form did** (`roadmap.md` 6zz j6): the part of the page it
+-- changed drawn again - a field's text and its caret, a checkbox - and a
+-- form it sent fetched, as a link is followed. NetSurf's own form code
+-- keeps the fields, edits their text and encodes what is sent; the page
+-- says what changed and what was sent, and this is the browser doing what
+-- it says.
+--
+local function form_changed()
+  if not (doc and ns_doc) then return end
+
+  local x, y, w, h = doc:ns_dirty()
+
+  if x and paper then doc:ns_paint(paper, PAGE_W, paper_h, band_top, x, y, w, h) end
+
+  local url, body, kind = doc:ns_sent()
+
+  if url then
+    say(("sending the form to %s"):format(url))
+    visit(from_ns(url), body and { body = body, type = kind } or nil)
+  end
+end
+
+-- The caret out of the page's field, for the address bar to have it.
+local function page_blur()
+  if doc and ns_doc then
+    doc:ns_blur()
+    form_changed()
+  end
+end
+
 local sink = ui.view{ x = 0, y = 0, w = W, h = H }
 sink.focusable = true
 
@@ -1770,6 +1812,14 @@ end
 function sink:key(c)
   if address.focus then return url_key(c) end
 
+  -- A field on the page with the caret has the keyboard - every letter,
+  -- space and arrow - and what it does not want (Control-L) goes on.
+  if ns_doc and doc and doc:ns_focused() and doc:ns_key(c) then
+    form_changed()
+    frame()
+    return true
+  end
+
   local screen = VIEW_H - gfx.height() * 2
 
   if c == ui.UP then scroll_by(-40)
@@ -1779,6 +1829,7 @@ function sink:key(c)
   elseif c == 103 then scroll_to(0)                  -- g
   elseif c == 71 then scroll_to(reach())             -- G
   elseif c == 12 then                                -- Control-L
+    page_blur()
     address.focus = true
     address.caret = #address.text
     address.all = true
@@ -1826,6 +1877,7 @@ end
 
 local function toolbar_press(x, y)
   address.focus = false
+  page_blur()
 
   for _, b in ipairs(BUTTONS) do
     if inside(b, x, y) then
@@ -1908,6 +1960,16 @@ local function page_press(x, y)
   address.focus = false
 
   if not doc or not paper then return end
+
+  -- A form's field first: a click there is the field's, and a click
+  -- anywhere else takes the caret out of whichever had it.
+  if ns_doc then
+    local did = doc:ns_click(x - PAD, y - VIEW_Y + top)
+
+    form_changed()
+
+    if did then return end
+  end
 
   local href
 

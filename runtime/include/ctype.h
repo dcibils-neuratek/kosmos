@@ -25,4 +25,8 @@ static inline int ispunct(int c)  { return isgraph(c) && !isalnum(c); }
 static inline int tolower(int c)  { return isupper(c) ? c + 32 : c; }
 static inline int toupper(int c)  { return islower(c) ? c - 32 : c; }
 
+/* Not C's but POSIX's and every libc's: NetSurf's URL escaping asks it
+ * (`roadmap.md` 6zz j6). */
+static inline int isascii(int c)  { return c >= 0 && c < 128; }
+
 #endif /* CTYPE_H */

@@ -688,8 +688,9 @@ static int l_ns_picture(lua_State *L)
     return 1;
 }
 
-/* `doc:ns_paint(surface, width, height, from)`: the band of the page that
- * starts `from` rows down, drawn into the surface by NetSurf. */
+/* `doc:ns_paint(surface, width, height, from [, x, y, w, h])`: the band of
+ * the page that starts `from` rows down, drawn into the surface by NetSurf -
+ * all of it, or where it meets that area of the page. */
 static int l_ns_paint(lua_State *L)
 {
     struct doc *d = checkdoc(L);
@@ -697,12 +698,119 @@ static int l_ns_paint(lua_State *L)
     int width = (int)luaL_checkinteger(L, 3);
     int height = (int)luaL_checkinteger(L, 4);
     long from = (long)luaL_optinteger(L, 5, 0);
+    int area[4];
+    bool some = !lua_isnoneornil(L, 6);
+
+    if (some) {
+        area[0] = (int)luaL_checkinteger(L, 6);
+        area[1] = (int)luaL_checkinteger(L, 7);
+        area[2] = (int)luaL_checkinteger(L, 8);
+        area[3] = (int)luaL_checkinteger(L, 9);
+    }
 
     if (d->ns != NULL) {
-        web_ns_paint(d->ns, L, s, width, height, from);
+        web_ns_paint(d->ns, L, s, width, height, from, some ? area : NULL);
     }
 
     return 0;
+}
+
+/* `doc:ns_click(x, y)` -> what a press there did to a form field - "field",
+ * "toggled", "sent" - or nil (`roadmap.md` 6zz j6). */
+static int l_ns_click(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    const char *did = d->ns == NULL ? NULL
+                      : web_ns_click(d->ns, L, (int)luaL_checkinteger(L, 2),
+                                     (int)luaL_checkinteger(L, 3));
+
+    if (did == NULL) {
+        lua_pushnil(L);
+    } else {
+        lua_pushstring(L, did);
+    }
+
+    return 1;
+}
+
+/* `doc:ns_key(key)` -> whether the field with the caret took it; the key is
+ * the kit's number for it (`keys.lua`). */
+static int l_ns_key(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+
+    lua_pushboolean(L, d->ns != NULL
+                       && web_ns_key(d->ns, L,
+                                     (int)luaL_checkinteger(L, 2)));
+    return 1;
+}
+
+/* `doc:ns_focused()` -> whether a field has the caret. */
+static int l_ns_focused(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+
+    lua_pushboolean(L, d->ns != NULL && web_ns_focused(d->ns));
+    return 1;
+}
+
+/* `doc:ns_blur()`: the caret out of its field. */
+static int l_ns_blur(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+
+    if (d->ns != NULL) {
+        web_ns_blur(d->ns, L);
+    }
+
+    return 0;
+}
+
+/* `doc:ns_sent()` -> a form sent - its address, and for a POST its body and
+ * its type - or nil; taken, so it is answered once. */
+static int l_ns_sent(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    char *url = NULL, *body = NULL;
+    const char *type = NULL;
+
+    if (d->ns == NULL || !web_ns_sent(d->ns, &url, &body, &type)) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushstring(L, url);
+
+    if (body != NULL) {
+        lua_pushstring(L, body);
+        lua_pushstring(L, type != NULL ? type : "");
+    } else {
+        lua_pushnil(L);
+        lua_pushnil(L);
+    }
+
+    free(url);
+    free(body);
+    return 3;
+}
+
+/* `doc:ns_dirty()` -> x, y, w, h of what changed on the page since last
+ * asked, or nil. */
+static int l_ns_dirty(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    int x, y, w, h;
+
+    if (d->ns == NULL || !web_ns_dirty(d->ns, &x, &y, &w, &h)) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushinteger(L, x);
+    lua_pushinteger(L, y);
+    lua_pushinteger(L, w);
+    lua_pushinteger(L, h);
+    return 4;
 }
 
 /* `doc:ns_link_at(x, y)` -> the address under a point of the page, whole,
@@ -1003,6 +1111,12 @@ void kosmos_web_kit(lua_State *L)
         { "ns_sheet", l_ns_sheet },
         { "ns_objects", l_ns_objects },
         { "ns_picture", l_ns_picture },
+        { "ns_click", l_ns_click },
+        { "ns_key", l_ns_key },
+        { "ns_focused", l_ns_focused },
+        { "ns_blur", l_ns_blur },
+        { "ns_sent", l_ns_sent },
+        { "ns_dirty", l_ns_dirty },
         { NULL, NULL }
     };
 

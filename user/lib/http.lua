@@ -44,6 +44,9 @@
 --
 -- Nothing here prints. `opts.say`, when given, is told each step as it
 -- starts, which is what the browser's status line shows.
+--
+-- A GET unless `opts.body` is given: then a POST of that body, with
+-- `opts.content_type` its type - a form sent (`roadmap.md` 6zz j6).
 
 local http = {}
 
@@ -411,10 +414,22 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   local tick = math.max(1, hz // 10)
   local pause = opts.pause or function(c) c:wait(tick) end
 
-  local request = ("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
-                   .. "Accept: text/html, */*\r\nAccept-Encoding: gzip\r\n\r\n")
-                  :format(parts.path, opts.name or parts.hostport,
-                          opts.agent or http.agent())
+  --
+  -- **A body makes it a POST** (`roadmap.md` 6zz j6): a form sent, its
+  -- fields encoded by whoever sent it and said what they are with
+  -- `opts.content_type`.
+  --
+  local posting = opts.body ~= nil
+  local request = ("%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
+                   .. "Accept: text/html, */*\r\nAccept-Encoding: gzip\r\n%s\r\n%s")
+                  :format(posting and "POST" or "GET", parts.path,
+                          opts.name or parts.hostport,
+                          opts.agent or http.agent(),
+                          posting and ("Content-Type: %s\r\nContent-Length: %d\r\n")
+                                      :format(opts.content_type
+                                              or "application/x-www-form-urlencoded",
+                                              #opts.body) or "",
+                          opts.body or "")
   local sent = 0
 
   for _ = 1, 150 do
@@ -664,7 +679,10 @@ function http.get(address, opts)
               and table.concat({ parts.scheme, parts.hostport, name,
                                  anyway and "anyway" or "checked" }, " ")
               or nil
-  local k = key and take_kept(key)
+
+  -- Never a POST on a kept connection: one the server has closed is tried
+  -- again, which for a form would be sending it twice.
+  local k = key and opts.body == nil and take_kept(key)
 
   if k then
     local reply, why, how, again = exchange(parts, opts, k.conn, k.stream, key, true,

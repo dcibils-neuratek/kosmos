@@ -572,3 +572,24 @@ char *strdup(const char *s)
 
     return out;
 }
+
+/* At most `n` bytes of `s`, and a NUL - POSIX's, which NetSurf's forms keep
+ * a field's text with (`roadmap.md` 6zz j6). Here for `strdup`'s reason. */
+char *strndup(const char *s, size_t n)
+{
+    size_t len = 0;
+    char *out;
+
+    while (len < n && s[len] != '\0') {
+        len++;
+    }
+
+    out = malloc(len + 1);
+
+    if (out != NULL) {
+        memcpy(out, s, len);
+        out[len] = '\0';
+    }
+
+    return out;
+}

@@ -2943,6 +2943,26 @@ processors, and still what follows USB:
         (k) and the redesign (d). Wikipedia shows the stand-ins' other
         cost: its menus open from checkboxes CSS hides, and here each is an
         empty square on the page.
+
+        **BUILT 1 October** (`testing.md` 18.314): `forms.c`, `form.c`,
+        `box_textarea.c` and `desktop/textarea.c` vendored; a click puts the
+        caret in a field, keys type into it - letters beyond ASCII put
+        together from their bytes, Tab to the next field, Escape out, cut
+        and paste within the browser - a checkbox ticks, a radio button is
+        chosen, and Return or a submit button sends the form: GET as an
+        address with its query, POST through `http.lua` with its body,
+        multipart put together for an `enctype` that asks. A keystroke
+        repaints the field and nothing else. Wikipedia's search, live:
+        "Dam", Return, its results. Google takes the query and answers
+        that it needs JavaScript, which it has asked of every browser
+        since January 2025.
+
+        **Still to come**, in this order: a `<select>`'s menu (NetSurf
+        draws its own, `form_open_select_menu`, and wants a scrollbar);
+        controls CSS hides drawn as squares - Wikipedia's menu checkboxes;
+        the desktop's clipboard rather than the browser's own; a caret that
+        blinks; dragging to select a field's text; and a file chooser for
+        `<input type="file">`, which sends an empty file until then.
       - j7. **A page's charset as its server says it**: Google's Spanish
         page came as ISO-8859-1, said in its `Content-Type`, and the parser
         was handed the bytes without that - "B?squeda", "Im?genes". The

@@ -14808,3 +14808,57 @@ links `math.c` without musl, and `lroundf` called `round` - and the second
 lost `x86-cafesa3d`'s Rotation Z scrub, 16 degrees for 20, the last of five
 drag moves lost against the release in that suite's slowest run (410 s); 122
 of 122 alone after on the same image (`roadmap.md` 6zw).
+
+## 18.314 Forms that work (6zz j6)
+
+**`roadmap.md` 6zz j6** - Diego, 1 October: "google renders nicely but text
+entry does not work". The fields were j1's stand-ins: drawn, and deaf.
+
+- **NetSurf's own form code**, vendored unmodified: `forms.c` finds a page's
+  forms and makes a control for each field, `form.c` keeps their values and
+  encodes what is sent, `box_textarea.c` joins a field's box to
+  `desktop/textarea.c`, the widget - caret, selection, cut and paste, a line
+  that scrolls with its text - and `utils/url.c` escapes what goes in an
+  address. The page's forms are made before its box tree, actions joined to
+  its address, as NetSurf's `html.c` does.
+- **The browser's half**, in `web_netsurf.c`: where the caret is and drawing
+  it, what to draw again, a clipboard, `utf8.c`'s helpers over
+  libparserutils, a form's text into the charset it is sent in through
+  libparserutils' encoders, and `web_ns_click` and `web_ns_key` - the form
+  half of NetSurf's `interaction.c`: a field takes the caret where it was
+  pressed, a checkbox ticks, a radio button is chosen, a submit button or
+  Return sends the form. A key arrives as the kit's number for it, and a
+  letter beyond ASCII byte by byte, put back together before NetSurf sees
+  it.
+- **Sent, and fetched**: NetSurf hands the browser an address, and for a
+  POST a body; `browser.lua` fetches it as it follows a link, and `http.lua`
+  sends a body as a POST with its type and length - never on a kept
+  connection, which is tried again when the server has closed it and would
+  send a form twice. A redirect after a POST is followed with a GET.
+- **A keystroke repaints the field** and nothing else: the page says what
+  changed, and the band is drawn again only there.
+
+`fetch.h`, which `form.c` includes, asks for `sys/socket.h` through
+`utils/inet.h` for one declaration about NetSurf's fetchers; it is patched as
+the build makes it - the first header the patches change - rather than
+answered with empty socket headers. And the libc gained `strndup` and
+`isascii`.
+
+**`arm-browser` and `x86-browser`**: the test page's two new forms. The
+first's field, found by its border, #c06000: a click in it draws a caret -
+at least 12 black pixels in the field, 20 here, once the pointer is moved
+off it, since the pointer is black too and was first counted as the caret
+(51); "kosmos rocks" typed puts at least 60 pixels of letters in it (272);
+and Return asks the server for exactly `/found.html?q=kosmos+rocks`. Then
+`[` back to the page, and the second form's button, #5f6f1f, POSTs exactly
+`note=from+Kosmos&tick=yes`. Controls: the caret not drawn, 0 pixels; keys
+not given to the field, no letters (and the space in "kosmos rocks"
+scrolled the page); `http.lua` sending no body, nothing POSTed.
+
+**Live**: Wikipedia's search page - "Dam" typed, Return, and "Dam - Search
+results - Wikipedia", 110,516 of them, the query in the box. Google takes
+`q=kosmos+operating+system` with its hidden fields and answers with its
+page for a browser without JavaScript, which it has required since January
+2025.
+
+**The gate**: 75 of 75, in 9:30.

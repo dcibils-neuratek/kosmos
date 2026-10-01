@@ -21,6 +21,9 @@
   .said { color: #666666; font-style: italic; font-size: 90%; }
   .broken { color: #b03060; }
   .vector { background: #fdf1c7; padding: 4px; }
+  #q { border: 2px solid #c06000; }
+  #find { background: #1f7a8c; color: #ffffff; }
+  #postit { background: #5f6f1f; color: #ffffff; }
   .box { border: 2px solid #2a55c9; background: #eef2fb; padding: 10px; margin: 8px 0; }
   .right { text-align: right; }
   .centre { text-align: center; }
@@ -46,6 +49,12 @@ broken">Maroon rather than grey: its second class comes after a line break in th
 <p class="vector"><img src="mark.svg" width="96" height="48" alt="an orange disc and a purple curve, as an SVG"> An SVG, drawn at twice its own size: an orange disc and a purple curve, with this paragraph's pale yellow all round them.</p>
 
 <p><a href="second.html">The second page</a> &middot; <a href="#tables">down to the tables</a> &middot; <a href="missing.html">a page that is not there</a></p>
+<form action="found.html" method="get">
+<p><input id="q" type="text" name="q" size="24"> <input id="find" type="submit" value="Find"> <span class="said">typed into, and sent by Return: the address it asks for says what was typed</span></p>
+</form>
+<form action="posted.html" method="post">
+<p><input type="text" name="note" value="from Kosmos"> <input type="checkbox" name="tick" value="yes" checked> <input id="postit" type="submit" value="Post it"> <span class="said">sent by its button, as a POST</span></p>
+</form>
 
 <h2>1. Headings</h2>
 <p class="said">Six sizes, each smaller than the one before, the first as large as this page's title.</p>
@@ -102,7 +111,7 @@ broken">Maroon rather than grey: its second class comes after a line break in th
 <p><img src="nothing-here.png" alt="a picture that is not there"></p>
 
 <h2>6. Labels and a form</h2>
-<p class="said">Each label beside its field; a box that can be ticked; a choice of three; a button. Nothing here is sent anywhere.</p>
+<p class="said">Each label beside its field; a box that can be ticked; a choice of three; a button. Nothing here is sent anywhere - the two forms near the top are the ones that send.</p>
 <form action="#">
   <p><label for="name">Name</label> <input id="name" type="text" value="Diego"></p>
   <p><label for="machine">Machine</label> <select id="machine"><option>M700</option><option>ThinkPad T14</option><option>QEMU</option></select></p>

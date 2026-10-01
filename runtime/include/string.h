@@ -44,6 +44,7 @@ char   *strncat(char *dst, const char *src, size_t n);
 int     strcasecmp(const char *a, const char *b);
 int     strncasecmp(const char *a, const char *b, size_t n);
 char   *strdup(const char *s);
+char   *strndup(const char *s, size_t n);
 
 /* The message for an errno value. There are two of them, both from libm. */
 char *strerror(int errnum);

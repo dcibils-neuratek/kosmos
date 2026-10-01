@@ -79,6 +79,7 @@ Usage: run_browser.py <image> --out <file.png> [--page <file.html>]
 """
 
 import argparse
+import html
 import http.server
 import os
 import re
@@ -161,8 +162,23 @@ def serve(directory, asked, tls=None):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=directory, **kw)
 
+        def answer(self, said):
+            page = ("<!doctype html><html><head><title>Answered</title></head>"
+                    "<body><h1>Answered</h1><p>%s</p></body></html>"
+                    % html.escape(said)).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.end_headers()
+            self.wfile.write(page)
+
         def do_GET(self):
             asked.append(self.path)
+
+            # The test page's first form, sent: what it asked for, said back.
+            if self.path.startswith("/found.html?"):
+                self.answer("asked for " + self.path)
+                return
 
             if not self.path.endswith((".png", ".jpg")):
                 super().do_GET()
@@ -178,6 +194,13 @@ def serve(directory, asked, tls=None):
             finally:
                 with PICTURES["lock"]:
                     PICTURES["now"] -= 1
+
+        # The test page's second form: a POST, kept as "POST path body".
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(n).decode("latin-1") if n > 0 else ""
+            asked.append("POST %s %s" % (self.path, body))
+            self.answer("posted " + body)
 
         def log_message(self, *a):
             pass
@@ -908,6 +931,132 @@ def main():
                 f"and the JPEG's cyan the screen showed {sorted(seen_colours) or 'neither'}; "
                 f"the server was asked for {pictures!r}. Wrote "
                 f"{args.out.replace('.png', '-images.png')}.")
+
+        #
+        # **Forms that work** (`roadmap.md` 6zz j6) - Diego, 1 October:
+        # "google renders nicely but text entry does not work". The test
+        # page's first form is a field and a button, found on the screen by
+        # the field's border, #c06000, which nothing else on the page has: a
+        # click in it puts a caret there, typing puts the letters in it, and
+        # Return sends the form - the server asked for `found.html` with what
+        # was typed in its query. The second, sent by its button, #5f6f1f, is
+        # a POST, and the server is given its fields as its body.
+        #
+        FIELD, POST_IT = (192, 96, 0), (95, 111, 31)
+
+        def box_of(colour):
+            wb, hb, pxb = parse_ppm(guest.screendump())
+            at_ = reader(pxb, wb)
+            spots = [(x, y) for y in range(y0, y0 + band)
+                     for x in range(x0, x0 + WIN_W - SBAR)
+                     if at_(x, y) == colour]
+
+            if len(spots) < 40:
+                return None
+
+            return (min(x for x, _ in spots), min(y for _, y in spots),
+                    max(x for x, _ in spots), max(y for _, y in spots))
+
+        def ink_in(box, colour=None):
+            wb, hb, pxb = parse_ppm(guest.screendump())
+            at_ = reader(pxb, wb)
+            n = 0
+
+            for y in range(box[1] + 3, box[3] - 2):
+                for x in range(box[0] + 3, box[2] - 2):
+                    c = at_(x, y)
+
+                    if (c == colour) if colour else sum(c) < 300:
+                        n += 1
+
+            return n
+
+        # And the pointer out of the way after, since it is drawn black and
+        # would be counted as the caret.
+        def press(x, y):
+            guest.mouse_to(*_to_tablet(x, y, w4, h4))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            time.sleep(0.4)
+            guest.mouse_to(*_to_tablet(w4 - 30, h4 - 30, w4, h4))
+            time.sleep(1.0)
+
+        def asked_for(test, seconds=20):
+            end = time.monotonic() + seconds
+
+            while time.monotonic() < end:
+                for p in asked:
+                    if test(p):
+                        return p
+
+                time.sleep(0.3)
+
+            return None
+
+        guest.sendkey("g")
+        time.sleep(1.5)
+        field = box_of(FIELD)
+
+        if field is None:
+            raise Failure(
+                "the test page's search field is not on its first screen: no "
+                f"border of #c06000. Wrote {args.out}.")
+
+        empty = ink_in(field)
+        press(field[0] + 8, (field[1] + field[3]) // 2)
+        caret = ink_in(field, (0, 0, 0))
+
+        if caret < 12:
+            raise Failure(
+                f"a click in the search field drew no caret: {caret} black "
+                f"pixels in it. Wrote {args.out}.")
+
+        typed("kosmos rocks")
+        time.sleep(1.5)
+        letters = ink_in(field)
+        wf, hf, pxf = parse_ppm(guest.screendump())
+
+        with open(args.out.replace(".png", "-form.png"), "wb") as f:
+            f.write(png(wf, hf, pxf))
+
+        if letters < empty + 60:
+            raise Failure(
+                "typing into the search field put nothing in it: "
+                f"{letters} dark pixels against {empty} before. Wrote {args.out}.")
+
+        typed("\n")
+        found = asked_for(lambda p: p.startswith("/found.html?"))
+
+        if found != "/found.html?q=kosmos+rocks":
+            raise Failure(
+                "Return in the search field did not send the form as typed: "
+                f"the server was asked for {found!r}, not "
+                f"'/found.html?q=kosmos+rocks'. Wrote {args.out}.")
+
+        print(f"forms: a caret of {caret} pixels, {letters - empty} pixels "
+              f"of letters typed, sent as {found}", flush=True)
+
+        typed("[")
+        time.sleep(3.0)
+        post_it = box_of(POST_IT)
+
+        if post_it is None:
+            raise Failure(
+                "Back from the form's answer did not bring the test page back: "
+                f"no Post it button, #5f6f1f. Wrote {args.out}.")
+
+        press((post_it[0] + post_it[2]) // 2, (post_it[1] + post_it[3]) // 2)
+        posted = asked_for(lambda p: p.startswith("POST "))
+
+        if posted != "POST /posted.html note=from+Kosmos&tick=yes":
+            raise Failure(
+                "the Post it button did not POST its form: the server was "
+                f"given {posted!r}, not 'POST /posted.html "
+                f"note=from+Kosmos&tick=yes'. Wrote {args.out}.")
+
+        print(f"forms: {posted}", flush=True)
 
         #
         # **HTTPS** (`roadmap.md` 6zz c). The second page from the server

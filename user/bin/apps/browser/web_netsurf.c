@@ -18,11 +18,14 @@
  *     mostly something else: `utils.c`, which is POSIX stand-ins this
  *     system does not have and does not want (`stat`, `scandir`, `uname`),
  *     and `idna.c`, which needs a Unicode library that is not here.
- *   - **Stand-ins**, for what a browser without scripts or form editing
- *     does not do yet: scrollbars inside a page, text areas, the text
- *     selection, visited links. Each does nothing and says so, so that
- *     what the layout does with its answer is what it does with a browser
- *     that has none of those - which is a case its authors handle.
+ *   - **Stand-ins**, for what a browser without scripts does not do yet:
+ *     scrollbars inside a page, the page's text selection, visited links,
+ *     a select's menu. Each does nothing and says so, so that what the
+ *     layout does with its answer is what it does with a browser that has
+ *     none of those - which is a case its authors handle.
+ *   - **Forms**, since j6: NetSurf's own form and text-area code, and the
+ *     browser's half of it here - the caret, what to draw again, what a
+ *     click and a key do to a field, and a form sent kept for Lua to fetch.
  *
  * **j1** (`roadmap.md` 6zz j1): enough for it all to link. Nothing calls it
  * yet; j2 gives the text real faces and j3 drives a document through it.
@@ -40,6 +43,8 @@
 #include "lauxlib.h"
 
 #include <dom/dom.h>
+#include <parserutils/charset/codec.h>
+#include <parserutils/charset/utf8.h>
 #include <libcss/libcss.h>
 #include <libcss/fpmath.h>
 
@@ -52,7 +57,11 @@
 #include "utils/string.h"
 #include "utils/nsoption.h"
 #include "utils/talloc.h"
+#include "utils/utf8.h"
 #include "netsurf/browser_window.h"
+#include "netsurf/clipboard.h"
+#include "netsurf/keypress.h"
+#include "netsurf/mouse.h"
 #include "netsurf/content.h"
 #include "netsurf/content_type.h"
 #include "netsurf/layout.h"
@@ -61,6 +70,7 @@
 #include "netsurf/plotters.h"
 #include "netsurf/url_db.h"
 #include "content/content_factory.h"
+#include "content/fetch.h"
 #include "content/textsearch.h"
 #include "desktop/gui_internal.h"
 #include "desktop/gui_table.h"
@@ -95,18 +105,10 @@
 
 static bool ready;
 
-/* Two attribute names the form stand-ins below ask about, which are not
- * among NetSurf's own. */
-static dom_string *dom_checked, *dom_multiple;
-
 static bool netsurf_ready(void)
 {
     if (!ready && corestrings_init() == NSERROR_OK
-        && css_hint_init() == NSERROR_OK
-        && dom_string_create((const uint8_t *)"checked", 7, &dom_checked)
-           == DOM_NO_ERR
-        && dom_string_create((const uint8_t *)"multiple", 8, &dom_multiple)
-           == DOM_NO_ERR) {
+        && css_hint_init() == NSERROR_OK) {
         ready = true;
     }
 
@@ -391,9 +393,12 @@ static struct gui_layout_table layout_table = {
     .split = measure_split,
 };
 
+static struct gui_clipboard_table clipboard_table;
+
 static struct netsurf_table netsurf_table = {
     .misc = &misc_table,
     .layout = &layout_table,
+    .clipboard = &clipboard_table,
 };
 
 struct netsurf_table *guit = &netsurf_table;
@@ -767,257 +772,6 @@ void html_overflow_scroll_callback(void *client_data,
 {
     (void)client_data;
     (void)scrollbar_data;
-}
-
-/*
- * Forms: each field a control, so the layout can size and draw it - a text
- * field's value, a button's label, a select's chosen option - and nothing
- * that edits or sends. NetSurf's `form.c` and `forms.c` are three thousand
- * lines of that, which a browser that submits nothing does not need yet;
- * without a control the layout gives up on the whole page (it did, on the
- * test page's form, found on 30 September).
- *
- * A control is made the first time an element's is asked for, and the
- * same one is handed back after that; they are kept in a list, and leave
- * it when the layout frees them.
- */
-static struct form_control *controls;
-
-/* An attribute's value, copied, or "" when there is none. */
-static char *attribute_copy(dom_node *node, dom_string *name)
-{
-    dom_string *value = NULL;
-    char *out;
-
-    if (dom_element_get_attribute(node, name, &value) != DOM_NO_ERR
-        || value == NULL) {
-        return strdup("");
-    }
-
-    out = malloc(dom_string_byte_length(value) + 1);
-
-    if (out != NULL) {
-        memcpy(out, dom_string_data(value), dom_string_byte_length(value));
-        out[dom_string_byte_length(value)] = '\0';
-    }
-
-    dom_string_unref(value);
-    return out;
-}
-
-static bool has_attribute(dom_node *node, dom_string *name)
-{
-    bool has = false;
-
-    return dom_element_has_attribute(node, name, &has) == DOM_NO_ERR && has;
-}
-
-/* What an `<input>` is, by its `type`, as NetSurf's `forms.c` reads it. */
-static form_control_type input_type(dom_node *node)
-{
-    static const struct {
-        const char *name;
-        form_control_type type;
-    } TYPES[] = {
-        { "password", GADGET_PASSWORD }, { "file", GADGET_FILE },
-        { "hidden", GADGET_HIDDEN }, { "checkbox", GADGET_CHECKBOX },
-        { "radio", GADGET_RADIO }, { "submit", GADGET_SUBMIT },
-        { "reset", GADGET_RESET }, { "button", GADGET_BUTTON },
-        { "image", GADGET_IMAGE },
-    };
-    char *type = attribute_copy(node, corestring_dom_type);
-    form_control_type out = GADGET_TEXTBOX;
-    size_t i;
-
-    for (i = 0; type != NULL && i < sizeof(TYPES) / sizeof(TYPES[0]); i++) {
-        if (strcasecmp(type, TYPES[i].name) == 0) {
-            out = TYPES[i].type;
-        }
-    }
-
-    free(type);
-    return out;
-}
-
-struct form_control *html_forms_get_control_for_node(struct form *forms,
-                                                     dom_node *node)
-{
-    struct form_control *c;
-    dom_string *tag = NULL;
-    form_control_type type = GADGET_HIDDEN;
-
-    (void)forms;
-
-    for (c = controls; c != NULL; c = c->next) {
-        if (c->node == node) {
-            return c;
-        }
-    }
-
-    if (dom_node_get_node_name(node, &tag) == DOM_NO_ERR && tag != NULL) {
-        if (dom_string_caseless_lwc_isequal(tag, corestring_lwc_input)) {
-            type = input_type(node);
-        } else if (dom_string_caseless_lwc_isequal(tag,
-                                                   corestring_lwc_button)) {
-            char *kind = attribute_copy(node, corestring_dom_type);
-
-            type = kind == NULL ? GADGET_SUBMIT
-                   : strcasecmp(kind, "reset") == 0 ? GADGET_RESET
-                   : strcasecmp(kind, "button") == 0 ? GADGET_BUTTON
-                   : GADGET_SUBMIT;
-            free(kind);
-        } else if (dom_string_caseless_lwc_isequal(tag,
-                                                   corestring_lwc_textarea)) {
-            type = GADGET_TEXTAREA;
-        } else if (dom_string_caseless_lwc_isequal(tag,
-                                                   corestring_lwc_select)) {
-            type = GADGET_SELECT;
-        }
-
-        dom_string_unref(tag);
-    }
-
-    c = calloc(1, sizeof(*c));
-
-    if (c == NULL) {
-        return NULL;
-    }
-
-    c->node = node;
-    c->type = type;
-    c->name = attribute_copy(node, corestring_dom_name);
-    c->value = attribute_copy(node, corestring_dom_value);
-    c->initial_value = c->value != NULL ? strdup(c->value) : NULL;
-    c->selected = has_attribute(node, dom_checked);
-    c->data.select.multiple = has_attribute(node, dom_multiple);
-
-    if (c->name == NULL || c->value == NULL || c->initial_value == NULL) {
-        form_free_control(c);
-        return NULL;
-    }
-
-    c->next = controls;
-    controls = c;
-    return c;
-}
-
-/* An option of a select, its strings the control's from now on - as
- * NetSurf's own takes them. */
-bool form_add_option(struct form_control *control, char *value, char *text,
-                     bool selected, void *node)
-{
-    struct form_option *o = calloc(1, sizeof(*o));
-
-    if (o == NULL) {
-        return false;
-    }
-
-    o->node = node;
-    o->value = value;
-    o->text = text;
-    o->selected = o->initial_selected = selected;
-
-    if (control->data.select.last_item != NULL) {
-        control->data.select.last_item->next = o;
-    } else {
-        control->data.select.items = o;
-    }
-
-    control->data.select.last_item = o;
-    control->data.select.num_items++;
-
-    if (selected) {
-        control->data.select.num_selected++;
-        control->data.select.current = o;
-    }
-
-    return true;
-}
-
-void form_free_control(struct form_control *control)
-{
-    struct form_control **link;
-    struct form_option *o, *next;
-
-    if (control == NULL) {
-        return;
-    }
-
-    for (link = &controls; *link != NULL; link = &(*link)->next) {
-        if (*link == control) {
-            *link = control->next;
-            break;
-        }
-    }
-
-    for (o = control->data.select.items; o != NULL; o = next) {
-        next = o->next;
-        free(o->value);
-        free(o->text);
-        free(o);
-    }
-
-    free(control->name);
-    free(control->value);
-    free(control->initial_value);
-    free(control);
-}
-
-bool form_clip_inside_select_menu(struct form_control *control, float scale,
-                                  const struct rect *clip)
-{
-    (void)control;
-    (void)scale;
-    (void)clip;
-    return false;
-}
-
-bool form_redraw_select_menu(struct form_control *control, int x, int y,
-                             float scale, const struct rect *clip,
-                             const struct redraw_context *ctx)
-{
-    (void)control;
-    (void)x;
-    (void)y;
-    (void)scale;
-    (void)clip;
-    (void)ctx;
-    return true;
-}
-
-bool box_textarea_create_textarea(struct html_content *html, struct box *box,
-                                  struct dom_node *node)
-{
-    (void)html;
-    (void)box;
-    (void)node;
-    return true;
-}
-
-void textarea_set_layout(struct textarea *ta, const plot_font_style_t *fstyle,
-                         int width, int height, int top, int right,
-                         int bottom, int left)
-{
-    (void)ta;
-    (void)fstyle;
-    (void)width;
-    (void)height;
-    (void)top;
-    (void)right;
-    (void)bottom;
-    (void)left;
-}
-
-void textarea_redraw(struct textarea *ta, int x, int y, colour bg, float scale,
-                     const struct rect *clip, const struct redraw_context *ctx)
-{
-    (void)ta;
-    (void)x;
-    (void)y;
-    (void)bg;
-    (void)scale;
-    (void)clip;
-    (void)ctx;
 }
 
 /*--------------------------------------------------------------------------
@@ -1444,6 +1198,17 @@ struct web_ns_doc {
     bool               built;
     bool               converted;   /* the box tree was made */
     const char        *why;         /* why the last layout failed */
+
+    /* Forms (`roadmap.md` 6zz j6). */
+    struct box        *focus;       /* the field with the caret, or NULL */
+    int                caret_x, caret_y, caret_h;   /* on the page */
+    struct rect        dirty;       /* what changed since it was asked */
+    bool               is_dirty;
+    char              *sent_url;    /* a form sent, for the browser to get */
+    char              *sent_body;   /* what it POSTs, or NULL for a GET */
+    char               sent_type[96];               /* the body's type */
+    unsigned char      pending[4];  /* a character arriving byte by byte */
+    int                have, need;
 };
 
 /* The box tree finished: NetSurf says whether it was made. The document is
@@ -1458,6 +1223,716 @@ static void converted(html_content *c, bool success)
     if (converting != NULL) {
         converting->converted = success;
     }
+}
+
+/*--------------------------------------------------------------------------
+ * Forms (`roadmap.md` 6zz j6).
+ *
+ * NetSurf's own `forms.c`, `form.c`, `box_textarea.c` and `textarea.c` keep
+ * a page's forms, edit a field's text, move its caret and encode what is
+ * sent. What they ask of the browser around them is here: where the caret
+ * is, what to draw again, a clipboard, a few of `utf8.c`'s helpers, and
+ * what to do with a form that was sent - which is to keep it for the
+ * browser, whose fetching is Lua's (`browser.lua`).
+ *
+ * What NetSurf's `interaction.c` does with a click and a key is done by
+ * `web_ns_click` and `web_ns_key` below, for the form fields alone: its
+ * other half is selection, frames, image maps and scripts, which this
+ * browser does not have.
+ *------------------------------------------------------------------------*/
+
+/* A browser window for the form code to hand back. It asks whether there
+ * is one before it reports a caret, and never looks inside. */
+static char the_window;
+#define THE_WINDOW ((struct browser_window *)(void *)&the_window)
+
+/* The document a click or a key is being given to, which is where a form
+ * it sends is kept: the window above is every document's. */
+static struct web_ns_doc *acting;
+
+static struct web_ns_doc *doc_of(html_content *h)
+{
+    return (struct web_ns_doc *)(void *)h;     /* `html` is its first */
+}
+
+/* `area`, in page coordinates, to be drawn again. */
+static void dirty_add(struct web_ns_doc *d, int x, int y, int w, int h)
+{
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
+    if (!d->is_dirty) {
+        d->dirty.x0 = x;
+        d->dirty.y0 = y;
+        d->dirty.x1 = x + w;
+        d->dirty.y1 = y + h;
+        d->is_dirty = true;
+        return;
+    }
+
+    if (x < d->dirty.x0) d->dirty.x0 = x;
+    if (y < d->dirty.y0) d->dirty.y0 = y;
+    if (x + w > d->dirty.x1) d->dirty.x1 = x + w;
+    if (y + h > d->dirty.y1) d->dirty.y1 = y + h;
+}
+
+void content__request_redraw(struct content *c, int x, int y, int width,
+                             int height)
+{
+    dirty_add(doc_of((html_content *)(void *)c), x, y, width, height);
+}
+
+void html__redraw_a_box(html_content *htmlc, struct box *box)
+{
+    int x, y;
+
+    box_coords(box, &x, &y);
+    dirty_add(doc_of(htmlc), x, y,
+              box->border[LEFT].width + box->padding[LEFT] + box->width
+              + box->padding[RIGHT] + box->border[RIGHT].width,
+              box->border[TOP].width + box->padding[TOP] + box->height
+              + box->padding[BOTTOM] + box->border[BOTTOM].width);
+}
+
+struct nsurl *content_get_url(struct content *c)
+{
+    return ((html_content *)(void *)c)->base_url;
+}
+
+/*
+ * The caret, as the text area reports it: where in its box, or hidden. A
+ * field with a caret has the keyboard; a hidden one has given it up, which
+ * is how a click elsewhere, Escape and Tab all end in the same state.
+ */
+void html_set_focus(html_content *html, html_focus_type focus_type,
+                    union html_focus_owner focus_owner, bool hide_caret,
+                    int x, int y, int height, const struct rect *clip)
+{
+    struct web_ns_doc *d = doc_of(html);
+    int bx, by;
+
+    (void)clip;
+
+    if (d->focus != NULL) {
+        dirty_add(d, d->caret_x - 1, d->caret_y, 3, d->caret_h);
+    }
+
+    html->focus_type = focus_type;
+    html->focus_owner = focus_owner;
+
+    if (focus_type != HTML_FOCUS_TEXTAREA || hide_caret) {
+        if (focus_type != HTML_FOCUS_TEXTAREA
+            || focus_owner.textarea == d->focus) {
+            d->focus = NULL;
+        }
+
+        return;
+    }
+
+    box_coords(focus_owner.textarea, &bx, &by);
+    d->focus = focus_owner.textarea;
+    d->caret_x = bx + x;
+    d->caret_y = by + y;
+    d->caret_h = height;
+    dirty_add(d, d->caret_x - 1, d->caret_y, 3, d->caret_h);
+}
+
+void html_set_drag_type(html_content *html, html_drag_type drag_type,
+                        union html_drag_owner drag_owner,
+                        const struct rect *rect)
+{
+    (void)rect;
+    html->drag_type = drag_type;
+    html->drag_owner = drag_owner;
+}
+
+void html_set_selection(html_content *html,
+                        html_selection_type selection_type,
+                        union html_selection_owner selection_owner,
+                        bool read_only)
+{
+    html->selection_type = selection_type;
+    html->selection_owner = selection_owner;
+    (void)read_only;
+}
+
+void browser_window_set_drag_type(struct browser_window *bw,
+                                  browser_drag_type type,
+                                  const struct rect *rect)
+{
+    (void)bw;
+    (void)type;
+    (void)rect;
+}
+
+/*
+ * A form sent: kept for the browser, which fetches it as it fetches
+ * anything (`browser.lua`). A GET is an address with its query; a POST is
+ * an address and a body, URL-encoded as NetSurf made it or multipart as it
+ * is put together here.
+ */
+static char *multipart(const struct fetch_multipart_data *items,
+                       const char *boundary)
+{
+    const struct fetch_multipart_data *i;
+    size_t room = strlen(boundary) + 8, at = 0;
+    char *out;
+
+    for (i = items; i != NULL; i = i->next) {
+        room += strlen(boundary) + strlen(i->name) + strlen(i->value)
+                + (i->rawfile != NULL ? strlen(i->rawfile) : 0) + 160;
+    }
+
+    out = malloc(room);
+
+    if (out == NULL) {
+        return NULL;
+    }
+
+    for (i = items; i != NULL; i = i->next) {
+        if (i->file) {
+            /* No file is sent: a browser with no file chooser has none to
+             * send, and says so with an empty one, as a form left empty
+             * does. */
+            at += (size_t)snprintf(out + at, room - at,
+                "--%s\r\nContent-Disposition: form-data; name=\"%s\"; "
+                "filename=\"\"\r\nContent-Type: application/octet-stream"
+                "\r\n\r\n\r\n", boundary, i->name);
+        } else {
+            at += (size_t)snprintf(out + at, room - at,
+                "--%s\r\nContent-Disposition: form-data; name=\"%s\""
+                "\r\n\r\n%s\r\n", boundary, i->name, i->value);
+        }
+    }
+
+    (void)snprintf(out + at, room - at, "--%s--\r\n", boundary);
+    return out;
+}
+
+nserror browser_window_navigate(struct browser_window *bw, struct nsurl *url,
+                                struct nsurl *referrer,
+                                enum browser_window_nav_flags flags,
+                                char *post_urlenc,
+                                struct fetch_multipart_data *post_multipart,
+                                struct hlcache_handle *parent)
+{
+    struct web_ns_doc *d = acting;
+
+    (void)bw;
+    (void)referrer;
+    (void)flags;
+    (void)parent;
+
+    if (d == NULL) {
+        return NSERROR_BAD_PARAMETER;
+    }
+
+    free(d->sent_url);
+    free(d->sent_body);
+    d->sent_url = strdup(nsurl_access(url));
+    d->sent_body = NULL;
+    d->sent_type[0] = '\0';
+
+    if (post_urlenc != NULL) {
+        d->sent_body = strdup(post_urlenc);
+        (void)snprintf(d->sent_type, sizeof(d->sent_type),
+                       "application/x-www-form-urlencoded");
+    } else if (post_multipart != NULL) {
+        static const char boundary[] = "----KosmosFormBoundary7MA4YWxk";
+
+        d->sent_body = multipart(post_multipart, boundary);
+        (void)snprintf(d->sent_type, sizeof(d->sent_type),
+                       "multipart/form-data; boundary=%s", boundary);
+    }
+
+    return d->sent_url != NULL ? NSERROR_OK : NSERROR_NOMEM;
+}
+
+void fetch_multipart_data_destroy(struct fetch_multipart_data *list)
+{
+    struct fetch_multipart_data *next;
+
+    for (; list != NULL; list = next) {
+        next = list->next;
+        free(list->name);
+        free(list->value);
+        free(list->rawfile);
+        free(list);
+    }
+}
+
+/*
+ * The scrollbars a text area makes when its text outgrows it: made by the
+ * stand-ins above, and these are the rest of what it asks of them. Its
+ * text scrolls with its caret all the same; there is no bar to drag.
+ */
+void scrollbar_set(struct scrollbar *s, int value, bool bar_pos)
+{
+    (void)s;
+    (void)value;
+    (void)bar_pos;
+}
+
+bool scrollbar_scroll(struct scrollbar *s, int change)
+{
+    (void)s;
+    (void)change;
+    return false;
+}
+
+scrollbar_mouse_status scrollbar_mouse_action(struct scrollbar *s,
+                                              browser_mouse_state mouse,
+                                              int x, int y)
+{
+    (void)s;
+    (void)mouse;
+    (void)x;
+    (void)y;
+    return SCROLLBAR_MOUSE_NONE;
+}
+
+void scrollbar_mouse_drag_end(struct scrollbar *s, browser_mouse_state mouse,
+                              int x, int y)
+{
+    (void)s;
+    (void)mouse;
+    (void)x;
+    (void)y;
+}
+
+const char *scrollbar_mouse_status_to_message(scrollbar_mouse_status status)
+{
+    (void)status;
+    return "";
+}
+
+/*
+ * The clipboard the text area cuts, copies and pastes through - its own,
+ * for now, within the browser; the desktop's is a step of its own.
+ */
+static char *clip;
+static size_t clip_length;
+
+static void clipboard_get(char **buffer, size_t *length)
+{
+    *buffer = NULL;
+    *length = 0;
+
+    if (clip != NULL && (*buffer = malloc(clip_length + 1)) != NULL) {
+        memcpy(*buffer, clip, clip_length);
+        (*buffer)[clip_length] = '\0';
+        *length = clip_length;
+    }
+}
+
+static void clipboard_set(const char *buffer, size_t length,
+                          nsclipboard_styles styles[], int n_styles)
+{
+    (void)styles;
+    (void)n_styles;
+
+    free(clip);
+    clip = malloc(length + 1);
+    clip_length = 0;
+
+    if (clip != NULL) {
+        memcpy(clip, buffer, length);
+        clip[length] = '\0';
+        clip_length = length;
+    }
+}
+
+static struct gui_clipboard_table clipboard_table = {
+    .get = clipboard_get,
+    .set = clipboard_set,
+};
+
+/*
+ * `utils/utf8.c`'s helpers that the text area and the forms use, as NetSurf
+ * writes them, over libparserutils - the file itself wants `iconv`, which
+ * is not here (`README.kosmos.md`).
+ */
+uint32_t utf8_to_ucs4(const char *s_in, size_t l)
+{
+    uint32_t ucs4;
+    size_t len;
+
+    if (parserutils_charset_utf8_to_ucs4((const uint8_t *)s_in, l, &ucs4,
+                                         &len) != PARSERUTILS_OK) {
+        ucs4 = 0xfffd;
+    }
+
+    return ucs4;
+}
+
+size_t utf8_from_ucs4(uint32_t c, char *s)
+{
+    uint8_t *in = (uint8_t *)s;
+    size_t len = 6;
+
+    if (parserutils_charset_utf8_from_ucs4(c, &in, &len) != PARSERUTILS_OK) {
+        s[0] = (char)0xef;
+        s[1] = (char)0xbf;
+        s[2] = (char)0xbd;
+        return 3;
+    }
+
+    return 6 - len;
+}
+
+size_t utf8_bounded_length(const char *s, size_t l)
+{
+    size_t len;
+
+    if (parserutils_charset_utf8_length((const uint8_t *)s, l, &len)
+        != PARSERUTILS_OK) {
+        return 0;
+    }
+
+    return len;
+}
+
+size_t utf8_length(const char *s)
+{
+    return utf8_bounded_length(s, strlen(s));
+}
+
+size_t utf8_prev(const char *s, size_t o)
+{
+    uint32_t prev = 0;
+
+    (void)parserutils_charset_utf8_prev((const uint8_t *)s, (uint32_t)o,
+                                        &prev);
+    return prev;
+}
+
+size_t utf8_next(const char *s, size_t l, size_t o)
+{
+    uint32_t next = (uint32_t)l;
+
+    (void)parserutils_charset_utf8_next((const uint8_t *)s, (uint32_t)l,
+                                        (uint32_t)o, &next);
+    return next;
+}
+
+size_t utf8_bounded_byte_length(const char *s, size_t l, size_t c)
+{
+    size_t len = 0;
+
+    while (len < l && c-- > 0) {
+        len = utf8_next(s, l, len);
+    }
+
+    return len;
+}
+
+/*
+ * UTF-8 into the charset a form is sent in, through libparserutils' own
+ * encoders - the ones its parser reads pages with, ISO-8859 and Windows'
+ * code pages among them. `//TRANSLIT` on the name asks for a stand-in
+ * where a character has none, which is what these do anyway: a `?`.
+ */
+nserror utf8_to_enc(const char *string, const char *encname, size_t len,
+                    char **result)
+{
+    parserutils_charset_codec *codec = NULL;
+    parserutils_charset_codec_optparams loose;
+    char name[64];
+    const char *cut = strstr(encname, "//");
+    size_t n = cut != NULL ? (size_t)(cut - encname) : strlen(encname);
+    size_t at = 0, room;
+    uint8_t *out, *dest;
+    size_t destlen;
+
+    if (len == 0) {
+        len = strlen(string);
+    }
+
+    if (n >= sizeof(name)) {
+        return NSERROR_BAD_ENCODING;
+    }
+
+    memcpy(name, encname, n);
+    name[n] = '\0';
+
+    if (strcasecmp(name, "UTF-8") == 0 || strcasecmp(name, "UTF8") == 0) {
+        *result = strndup(string, len);
+        return *result != NULL ? NSERROR_OK : NSERROR_NOMEM;
+    }
+
+    if (parserutils_charset_codec_create(name, &codec) != PARSERUTILS_OK) {
+        return NSERROR_BAD_ENCODING;
+    }
+
+    loose.error_mode.mode = PARSERUTILS_CHARSET_CODEC_ERROR_LOOSE;
+    (void)parserutils_charset_codec_setopt(codec,
+                                           PARSERUTILS_CHARSET_CODEC_ERROR_MODE,
+                                           &loose);
+
+    room = len * 4 + 8;
+    out = malloc(room);
+
+    if (out == NULL) {
+        parserutils_charset_codec_destroy(codec);
+        return NSERROR_NOMEM;
+    }
+
+    dest = out;
+    destlen = room - 1;
+
+    while (at < len) {
+        uint32_t c = utf8_to_ucs4(string + at, len - at);
+        uint8_t be[4] = { (uint8_t)(c >> 24), (uint8_t)(c >> 16),
+                          (uint8_t)(c >> 8), (uint8_t)c };
+        const uint8_t *src = be;
+        size_t srclen = sizeof(be);
+        size_t next = utf8_next(string, len, at);
+
+        (void)parserutils_charset_codec_encode(codec, &src, &srclen, &dest,
+                                               &destlen);
+        at = next > at ? next : len;
+    }
+
+    *dest = '\0';
+    parserutils_charset_codec_destroy(codec);
+    *result = (char *)out;
+    return NSERROR_OK;
+}
+
+/*
+ * What a key is to NetSurf, from what the kit makes of it (`keys.lua`): a
+ * character is itself - a byte, so a letter beyond ASCII arrives in two to
+ * four and is put back together here - and every other key a small
+ * negative number, less 1024 for each step of its modifiers. 0 for a key a
+ * field has no use for, or a character not yet whole.
+ */
+static uint32_t ns_key_of(struct web_ns_doc *d, int c)
+{
+    int mods = (255 - c) / 1024;
+    int key = c + 1024 * mods;
+    bool ctrl = (mods & 4) != 0, shift = (mods & 1) != 0;
+
+    if (c >= 0x80 && c <= 0xff) {
+        if (d->need == 0 || (c & 0xc0) != 0x80) {
+            d->need = c >= 0xf0 ? 4 : c >= 0xe0 ? 3 : c >= 0xc0 ? 2 : 0;
+            d->have = 0;
+
+            if (d->need == 0) {
+                return 0;               /* a continuation with no start */
+            }
+        }
+
+        d->pending[d->have++] = (unsigned char)c;
+
+        if (d->have < d->need) {
+            return 0;
+        }
+
+        d->need = 0;
+        return utf8_to_ucs4((const char *)d->pending, (size_t)d->have);
+    }
+
+    d->need = 0;
+
+    if (key >= 32 && key < 127 && mods == 0) {
+        return (uint32_t)key;
+    }
+
+    switch (key) {
+    case 8: case 127: return NS_KEY_DELETE_LEFT;
+    case 9:           return shift ? NS_KEY_SHIFT_TAB : NS_KEY_TAB;
+    case 10: case 13: return NS_KEY_NL;
+    case 27:          return NS_KEY_ESCAPE;
+    case 1:           return NS_KEY_SELECT_ALL;
+    case 3:           return NS_KEY_COPY_SELECTION;
+    case 21:          return NS_KEY_DELETE_LINE;
+    case 22:          return NS_KEY_PASTE;
+    case 24:          return NS_KEY_CUT_SELECTION;
+    case -1:          return NS_KEY_UP;
+    case -2:          return NS_KEY_DOWN;
+    case -3:          return ctrl ? NS_KEY_WORD_RIGHT : NS_KEY_RIGHT;
+    case -4:          return ctrl ? NS_KEY_WORD_LEFT : NS_KEY_LEFT;
+    case -5:          return ctrl ? NS_KEY_TEXT_START : NS_KEY_LINE_START;
+    case -6:          return ctrl ? NS_KEY_TEXT_END : NS_KEY_LINE_END;
+    case -7:          return NS_KEY_PAGE_UP;
+    case -8:          return NS_KEY_PAGE_DOWN;
+    case -10:         return NS_KEY_DELETE_RIGHT;
+    default:          return 0;
+    }
+}
+
+bool web_ns_focused(struct web_ns_doc *d)
+{
+    return d->focus != NULL;
+}
+
+/* The caret taken out of its field, which gives the keyboard back. */
+void web_ns_blur(struct web_ns_doc *d, lua_State *L)
+{
+    struct box *had = d->focus;
+
+    if (had != NULL && had->gadget != NULL
+        && had->gadget->data.text.ta != NULL) {
+        faces_L = L;
+        acting = d;
+        textarea_set_caret(had->gadget->data.text.ta, -1);
+        acting = NULL;
+        faces_L = NULL;
+    }
+
+    d->focus = NULL;
+}
+
+/* A key for the field with the caret: whether it was taken. */
+bool web_ns_key(struct web_ns_doc *d, lua_State *L, int key)
+{
+    uint32_t ns;
+
+    if (d->focus == NULL || d->focus->gadget == NULL) {
+        return false;
+    }
+
+    ns = ns_key_of(d, key);
+
+    if (ns == 0) {
+        return d->need != 0;            /* half a character is taken */
+    }
+
+    if (ns == NS_KEY_ESCAPE) {
+        web_ns_blur(d, L);
+        return true;
+    }
+
+    faces_L = L;
+    acting = d;
+    (void)box_textarea_keypress(&d->html, d->focus, ns);
+    acting = NULL;
+    faces_L = NULL;
+    return true;
+}
+
+/*
+ * A press at (x, y) on the page, for a form field there - as NetSurf's
+ * `html_mouse_action` treats one: a text field takes the caret where the
+ * press was, a checkbox turns over, a radio button is chosen from its
+ * group, and a submit button sends its form. What it did, or NULL when
+ * there is no field there - which takes the caret out of any that had it.
+ */
+const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y)
+{
+    struct box *box = d->html.layout, *gadget_box = NULL;
+    struct form_control *gadget;
+    int bx = 0, by = 0, gx = 0, gy = 0;
+    const char *did = NULL;
+
+    if (box == NULL) {
+        return NULL;
+    }
+
+    while ((box = box_at_point(&d->html.unit_len_ctx, box, x, y, &bx, &by))
+           != NULL) {
+        if (box->gadget != NULL) {
+            gadget_box = box;
+            gx = bx;
+            gy = by;
+        }
+    }
+
+    if (gadget_box == NULL) {
+        web_ns_blur(d, L);
+        return NULL;
+    }
+
+    gadget = gadget_box->gadget;
+
+    if (d->focus != NULL && d->focus != gadget_box) {
+        web_ns_blur(d, L);
+    }
+
+    faces_L = L;
+    acting = d;
+
+    switch (gadget->type) {
+    case GADGET_TEXTBOX:
+    case GADGET_TEXTAREA:
+    case GADGET_PASSWORD:
+        if (gadget->data.text.ta != NULL) {
+            (void)textarea_mouse_action(gadget->data.text.ta,
+                                        BROWSER_MOUSE_PRESS_1, x - gx,
+                                        y - gy);
+            (void)textarea_mouse_action(gadget->data.text.ta,
+                                        BROWSER_MOUSE_CLICK_1, x - gx,
+                                        y - gy);
+            did = "field";
+        }
+        break;
+
+    case GADGET_CHECKBOX:
+        gadget->selected = !gadget->selected;
+        (void)dom_html_input_element_set_checked(
+            (dom_html_input_element *)gadget->node, gadget->selected);
+        html__redraw_a_box(&d->html, gadget_box);
+        did = "toggled";
+        break;
+
+    case GADGET_RADIO:
+        form_radio_set(gadget);
+        did = "toggled";
+        break;
+
+    case GADGET_IMAGE:
+        gadget->data.image.mx = x - gx;
+        gadget->data.image.my = y - gy;
+        /* fall through - an image button sends its form, and where */
+
+    case GADGET_SUBMIT:
+        if (gadget->form != NULL
+            && form_submit(d->html.base_url, THE_WINDOW, gadget->form,
+                           gadget) == NSERROR_OK
+            && d->sent_url != NULL) {
+            did = "sent";
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    acting = NULL;
+    faces_L = NULL;
+    return did;
+}
+
+/* A form sent, taken: its address, and its body and type when POSTed. */
+bool web_ns_sent(struct web_ns_doc *d, char **url, char **body,
+                 const char **type)
+{
+    if (d->sent_url == NULL) {
+        return false;
+    }
+
+    *url = d->sent_url;
+    *body = d->sent_body;
+    *type = d->sent_type[0] != '\0' ? d->sent_type : NULL;
+    d->sent_url = NULL;
+    d->sent_body = NULL;
+    return true;
+}
+
+/* What changed on the page since this was last asked, taken. */
+bool web_ns_dirty(struct web_ns_doc *d, int *x, int *y, int *w, int *h)
+{
+    if (!d->is_dirty) {
+        return false;
+    }
+
+    *x = d->dirty.x0;
+    *y = d->dirty.y0;
+    *w = d->dirty.x1 - d->dirty.x0;
+    *h = d->dirty.y1 - d->dirty.y0;
+    d->is_dirty = false;
+    return true;
 }
 
 const char *web_ns_why(struct web_ns_doc *d)
@@ -1777,6 +2252,43 @@ static bool make_cascade(struct web_ns_doc *d)
     return true;
 }
 
+/*
+ * The page's forms, before its box tree, which makes a control for each
+ * field and asks for the form it belongs to - as NetSurf's `html.c` does,
+ * every action made absolute against the page's address, an empty one
+ * being the page's own (HTML 4.10.22.3, step 9).
+ */
+static bool page_forms(struct web_ns_doc *d)
+{
+    html_content *h = &d->html;
+    struct form *f;
+
+    h->bw = THE_WINDOW;
+    h->forms = html_forms_get_forms(h->encoding != NULL ? h->encoding
+                                                        : "UTF-8",
+                                    (dom_html_document *)h->document);
+
+    for (f = h->forms; f != NULL; f = f->prev) {
+        nsurl *action = NULL;
+        const char *against = f->action != NULL && f->action[0] != '\0'
+                              ? f->action : nsurl_access(h->base_url);
+
+        if (nsurl_join(h->base_url, against, &action) != NSERROR_OK) {
+            return false;
+        }
+
+        free(f->action);
+        f->action = strdup(nsurl_access(action));
+        nsurl_unref(action);
+
+        if (f->action == NULL) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /* Laid out at `width`; the page's whole height, or -1. The box tree is
  * built the first time, and a new width lays the same tree out again. */
 int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
@@ -1811,6 +2323,13 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
         h->media.height = INTTOFIX(height);
         h->unit_len_ctx.viewport_width = INTTOFIX(width);
         h->unit_len_ctx.viewport_height = INTTOFIX(height);
+
+        if (!page_forms(d)) {
+            d->why = "no memory for the page's forms";
+            dom_node_unref(root);
+            faces_L = NULL;
+            return -1;
+        }
 
         converting = d;
         e = dom_to_box(root, h, converted, &h->box_conversion_context);
@@ -1866,9 +2385,14 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
     return tall;
 }
 
-/* The band of the page starting `from` rows down, drawn into `s`. */
+/*
+ * The band of the page starting `from` rows down, drawn into `s` - all of
+ * it, or only where it meets `area` ({ x, y, w, h } on the page), which is
+ * what a keystroke in a field asks for. The caret is drawn here, since a
+ * form's field leaves it to the browser, as every NetSurf front end has it.
+ */
 void web_ns_paint(struct web_ns_doc *d, lua_State *L, struct surface *s,
-                  int width, int height, long from)
+                  int width, int height, long from, const int *area)
 {
     struct paint p;
     struct redraw_context ctx;
@@ -1877,6 +2401,20 @@ void web_ns_paint(struct web_ns_doc *d, lua_State *L, struct surface *s,
 
     if (d->html.layout == NULL) {
         return;
+    }
+
+    if (area != NULL) {
+        int x0 = area[0], y0 = (int)(area[1] - from);
+        int x1 = x0 + area[2], y1 = y0 + area[3];
+
+        if (x0 > clip.x0) clip.x0 = x0;
+        if (y0 > clip.y0) clip.y0 = y0;
+        if (x1 < clip.x1) clip.x1 = x1;
+        if (y1 < clip.y1) clip.y1 = y1;
+
+        if (clip.x0 >= clip.x1 || clip.y0 >= clip.y1) {
+            return;
+        }
     }
 
     memset(&p, 0, sizeof(p));
@@ -1902,6 +2440,16 @@ void web_ns_paint(struct web_ns_doc *d, lua_State *L, struct surface *s,
     faces_L = L;
     (void)html_redraw(&d->html.base, &data, &clip, &ctx);
     faces_L = NULL;
+
+    if (d->focus != NULL) {
+        long cx = d->caret_x, cy = d->caret_y - from, ch = d->caret_h;
+        long top = cy < clip.y0 ? clip.y0 : cy;
+        long bottom = cy + ch > clip.y1 ? clip.y1 : cy + ch;
+
+        if (cx >= clip.x0 && cx < clip.x1 && top < bottom) {
+            gfx_draw_fill(s, cx, top, 1, bottom - top, 0xff000000u);
+        }
+    }
 }
 
 /* The address of the link under a point of the page, or NULL: the deepest
@@ -1926,10 +2474,27 @@ const char *web_ns_link_at(struct web_ns_doc *d, int x, int y)
     return href;
 }
 
+/* The fields outside any form, which nothing else frees: a form frees its
+ * own (`form_free`), and these belong to none. NetSurf lets them go with
+ * the page's memory; a page here is one of many a session opens. */
+static void free_lone_controls(struct box *box)
+{
+    for (; box != NULL; box = box->next) {
+        if (box->gadget != NULL && box->gadget->form == NULL
+            && box->gadget->box == box) {
+            form_free_control(box->gadget);
+            box->gadget = NULL;
+        }
+
+        free_lone_controls(box->children);
+    }
+}
+
 void web_ns_close(struct web_ns_doc *d)
 {
     html_content *h;
     struct hlcache_handle *o, *next;
+    struct form *f, *g;
     size_t i;
 
     if (d == NULL) {
@@ -1964,6 +2529,17 @@ void web_ns_close(struct web_ns_doc *d)
         nsurl_unref(o->url);
         free(o);
     }
+
+    /* The forms before the boxes, as NetSurf's `html_destroy` has it. */
+    free_lone_controls(h->layout);
+
+    for (f = h->forms; f != NULL; f = g) {
+        g = f->prev;
+        form_free(f);
+    }
+
+    free(d->sent_url);
+    free(d->sent_body);
 
     if (h->bctx != NULL) {
         talloc_free(h->bctx);

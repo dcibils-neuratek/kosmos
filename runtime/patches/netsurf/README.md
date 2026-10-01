@@ -38,3 +38,18 @@ So `event_target.c` counts the listeners that exist in the process, and
 there are none and the document has no default actions. The moment anything
 adds a listener - a script engine, one day - every event is made and
 dispatched exactly as upstream does.
+
+## `netsurf/content/fetch.h`: no sockets
+
+NetSurf's form code (`form.c`, `roadmap.md` 6zz j6) includes `fetch.h` for
+the list a multipart form is sent as. `fetch.h` includes `utils/inet.h` for
+one declaration - `fetch_fdset`, the fetchers' sockets as `fd_set`s for a
+`select` loop - and `inet.h` includes `sys/socket.h`, `netinet/in.h`,
+`arpa/inet.h` and `sys/select.h`. Kosmos has none of them: sockets and
+`select` are the POSIX personality it does not take (`CLAUDE.md`), and the
+rule there is to patch the port. So the include and that declaration go;
+NetSurf's fetchers are not in this tree, and nothing here asks for them.
+
+A header is replaced by being found first: the patched copy is made in
+`build/gen-<variant>/nspatched/netsurf/`, which is on the include path ahead
+of `runtime/upstream/netsurf/netsurf/` (`WEB_PATCHED_H`, `WEB_NSB_CFLAGS`).

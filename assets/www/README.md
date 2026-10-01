@@ -12,6 +12,11 @@ browser".
   tables, images, labels and a form, quotes and code, CSS, a rule, and
   enough length to scroll. The browser's status line says what it cost.
 - `second.html` - where its links lead, on a pale yellow ground.
+- Two forms near the top of `index.html` that send: a search field whose
+  Return asks for `found.html?q=...`, and a POST to `posted.html` of a field
+  and a ticked box. Neither page is here - `tools/run_browser.py`'s server
+  answers both, saying what it was asked - so under `make www` they are a
+  page that is not there, which is still a form sent.
 - `kosmos.png` and `photo.jpg` - 240 by 135, made for it: the PNG blue into
   gold with a pure magenta square, the JPEG grey stripes with a pure cyan
   one, so a check can find each on the screen by a colour nothing else on

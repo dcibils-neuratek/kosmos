@@ -36,7 +36,8 @@ struct web_ns_doc *web_ns_open(void *document, const char *base);
 int         web_ns_layout(struct web_ns_doc *d, lua_State *L, int width,
                           int height);
 void        web_ns_paint(struct web_ns_doc *d, lua_State *L,
-                         struct surface *s, int width, int height, long from);
+                         struct surface *s, int width, int height, long from,
+                         const int *area);
 const char *web_ns_link_at(struct web_ns_doc *d, int x, int y);
 const char *web_ns_why(struct web_ns_doc *d);
 
@@ -57,5 +58,21 @@ bool   web_ns_object(struct web_ns_doc *d, size_t k, const char **url,
 bool   web_ns_picture(struct web_ns_doc *d, lua_State *L, size_t k,
                       int width, int height);
 void        web_ns_close(struct web_ns_doc *d);
+
+/*
+ * Its forms (`roadmap.md` 6zz j6). A press on the page - what it did:
+ * "field" when a text field took the caret, "toggled", "sent" when a form
+ * was sent, or NULL where there is no field. A key for the field with the
+ * caret - whether it was taken. A form sent, taken: its address, and for a
+ * POST its body and type. And what changed on the page since last asked.
+ */
+const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y);
+bool        web_ns_key(struct web_ns_doc *d, lua_State *L, int key);
+bool        web_ns_focused(struct web_ns_doc *d);
+void        web_ns_blur(struct web_ns_doc *d, lua_State *L);
+bool        web_ns_sent(struct web_ns_doc *d, char **url, char **body,
+                        const char **type);
+bool        web_ns_dirty(struct web_ns_doc *d, int *x, int *y, int *w,
+                         int *h);
 
 #endif

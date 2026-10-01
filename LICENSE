@@ -129,7 +129,8 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
   NetSurf's layout engine, by the NetSurf Browser Project, GPLv2
       runtime/upstream/netsurf/netsurf/, in COPYING, with the vendoring
       recorded in README.kosmos.md beside it: NetSurf 3.11's box tree,
-      layout, tables, flex and box drawing, unmodified. In the browser,
+      layout, tables, flex, box drawing, forms and its text-entry widget,
+      unmodified but for one header patched as it is built. In the browser,
       which the system's image carries when it is built with the web kit
       (`make qemu`'s default), so that image is a GPLv2 work.
 

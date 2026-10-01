@@ -24,23 +24,41 @@ in `runtime/upstream/netsurf/`.
 ## What is here
 
 **Unmodified, byte for byte**, each file where it sits in the release - the
-rule `lua/upstream/` keeps. Twenty-two sources and the headers they include,
-found by compiling them and reading what they include, and nothing else:
+rule `lua/upstream/` keeps. Twenty-seven sources and the headers they
+include, found by compiling them and reading what they include, and nothing
+else:
 
     content/handlers/html/   box_construct box_inspect box_manipulate
                              box_normalise box_special font layout
                              layout_flex redraw redraw_border table
+                             forms form box_textarea
     content/handlers/css/    select hints internal dump
-    desktop/                 plot_style system_colour
-    utils/                   corestrings nsoption talloc
+    desktop/                 plot_style system_colour textarea
+    utils/                   corestrings nsoption talloc url
     utils/nsurl/             nsurl parse
+
+The last five arrived with forms that work (`roadmap.md` 6zz j6, 1 October
+2026): `forms.c` finds a page's forms and makes a control for each field,
+`form.c` keeps their values and encodes what is sent, `box_textarea.c` joins
+a field's box to the text-editing widget, `desktop/textarea.c` is that
+widget - caret, selection, cutting and pasting, scrolling its text - and
+`utils/url.c` escapes a form's fields for its address.
+
+**One header is changed as it is built**, by a patch in
+`runtime/patches/netsurf/netsurf/content/fetch.h.patch`: `fetch.h`, which
+`form.c` includes for its multipart data, includes `utils/inet.h` for one
+declaration about the fetchers' sockets - and `inet.h` asks for
+`sys/socket.h`. Kosmos has no sockets and is not going to (`CLAUDE.md`,
+compatibility), so the port is patched: the include and that declaration,
+of fetchers that are not here, taken out. The copy is made under `build/`
+and found ahead of this one.
 
 ## What is not, and what stands in for it
 
 What the layout calls of the browser around it - fetching a picture, a
 scrollbar, measuring a word, running work later - is
-`user/bin/apps/browser/web_netsurf.c`, Kosmos's own. Three of NetSurf's files
-were left out and their few functions written there instead:
+`user/bin/apps/browser/web_netsurf.c`, Kosmos's own. These of NetSurf's files
+were left out, and what of them is used written there instead:
 
 - `utils/utils.c`: two string functions the layout uses, beside POSIX
   stand-ins (`stat`, `scandir`, `uname`, `realpath`) this system does not
@@ -48,7 +66,14 @@ were left out and their few functions written there instead:
 - `utils/idna.c` and `utils/punycode.c`: host names in other scripts, through
   utf8proc, which is not here. ASCII names are lowered, others refused - and
   NetSurf's URL parser then keeps the name as written, its own fallback.
-- `utils/utf8.c`: nothing that is here reaches it, and it wants `iconv`.
+- `utils/utf8.c`: it wants `iconv`. The helpers the text area and the forms
+  use are written over libparserutils, as NetSurf's own are, and a form's
+  text goes into the charset it is sent in through libparserutils' own
+  encoders.
+- `content/handlers/html/interaction.c`: what a click and a key do on a page.
+  Its form half is `web_ns_click` and `web_ns_key`; its other half is text
+  selection, frames, image maps and scripts, which this browser does not
+  have.
 
 ## Built with
 
