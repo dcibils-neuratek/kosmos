@@ -146,7 +146,9 @@ CHECKED_PAGE = ("<!doctype html><html><head><title>Kept</title></head><body>"
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
 # adds a title bar above them, which `find_window` finds.
-TOOL, STAT, SBAR, PAD = 34, 22, 16, 8
+# `TOOL` is the header now - the kit's, `ui.layout.head` (`roadmap.md`
+# 6zz d1) - and the status line is the drawing's 26.
+TOOL, STAT, SBAR, PAD = 46, 26, 16, 8
 WIN_W, WIN_H = 900, 640
 
 
@@ -677,6 +679,32 @@ def main():
 
         x0, y0 = found
 
+        #
+        # **The header's controls, where the browser says they are** (`roadmap.md`
+        # 6zz d1): the kit's widgets, placed by the kit's measures, so the
+        # browser says where each one's centre is rather than this file
+        # working it out from a font - in the window, from its top left,
+        # which is the page's corner less the header.
+        #
+        placed = re.search(r"browser: header back (\d+),(\d+) forward (\d+),(\d+) "
+                           r"reload (\d+),(\d+) field (\d+),(\d+) menu (\d+),(\d+)",
+                           guest.seen)
+
+        if not placed:
+            raise Failure("the browser did not say where its header's controls are")
+
+        def control(name):
+            i = ("back", "forward", "reload", "field", "menu").index(name) * 2 + 1
+            return (x0 + int(placed.group(i)), y0 - TOOL + int(placed.group(i + 1)))
+
+        # Typed on the serial line, which reaches the focused window as a
+        # keyboard's characters do.
+        def typed(text):
+            for ch in text:
+                guest.proc.stdin.write(ch.encode())
+                guest.proc.stdin.flush()
+                time.sleep(0.05)
+
         # Out of the way, so the arrow is not sitting on the page.
         w_, h_, px = parse_ppm(guest.screendump())
         guest.mouse_to((w_ - 30) * 32767 // w_, (h_ - 30) * 32767 // h_)
@@ -869,16 +897,11 @@ def main():
         #
         # And that the chrome is wired to something.
         #
-        # `Reload` sits third in the row: two arrow buttons 30 wide with 4
-        # between them, so it starts 74 pixels in whatever the interface
-        # font is, and is at least 34 wide for any font that can spell the
-        # word. The toolbar is the band above the page, and `x0, y0` is the
-        # page's top-left corner, so both coordinates come from what was
-        # found rather than from where the window was expected to be.
+        # Reload, third in the header, where the browser said it is.
         #
         before_asked = len(asked)
 
-        cx, cy = x0 + 108, y0 - TOOL + 16
+        cx, cy = control("reload")
         tx, ty = _to_tablet(cx, cy, w2, h2)
 
         guest.mouse_to(tx, ty)
@@ -943,20 +966,17 @@ def main():
         #
         # And that Home needs nothing outside the image.
         #
-        # Same row as Reload and measured the same way: the server must be
-        # asked for *nothing* and a page must still be on screen. A browser
-        # that could only show remote pages could not be tried without
-        # starting a server first, which an operating system has no business
-        # asking of the computer running it.
+        # The server must be asked for *nothing* and a page must still be on
+        # screen. A browser that could only show remote pages could not be
+        # tried without starting a server first, which an operating system
+        # has no business asking of the computer running it. Home is in the
+        # menu now, as the drawing has it, and the page it opens is
+        # `about:start` - typed, which is the same visit.
         #
         before_home = len(asked)
-        hx, hy = x0 + 108 + 60, y0 - TOOL + 16
-
-        guest.mouse_to(*_to_tablet(hx, hy, w4, h4))
+        typed("\x0c")
         time.sleep(0.4)
-        guest.mouse_button(True)
-        time.sleep(0.2)
-        guest.mouse_button(False)
+        typed("about:start\n")
         time.sleep(2.5)
 
         if len(asked) != before_home:
@@ -982,11 +1002,6 @@ def main():
         # page area shows. Typed on the serial line, which reaches the
         # focused window as a keyboard's characters do.
         #
-        def typed(text):
-            for ch in text:
-                guest.proc.stdin.write(ch.encode())
-                guest.proc.stdin.flush()
-                time.sleep(0.05)
 
         def second_page(px_, w_):
             """How many of the page's pixels are the second page's heading's blue."""
@@ -1031,7 +1046,7 @@ def main():
         # asked of the server.
         #
         before_back = len(asked)
-        guest.mouse_to(*_to_tablet(x0 + 15, y0 - TOOL + 16, w5, h5))
+        guest.mouse_to(*_to_tablet(*control("back"), w5, h5))
         time.sleep(0.4)
         guest.mouse_button(True)
         time.sleep(0.2)
@@ -1327,6 +1342,37 @@ def main():
                "the second page over TLS was said to be shown and was not drawn.",
                seconds=20)
 
+        #
+        # **The field says how the page came, first** (`roadmap.md` 6zz d1,
+        # `docs/browser.html`): Secure, with a lock, in the look's `good` -
+        # green in every look this image carries - before the address.
+        # Counted by the colour's shape, since the word is drawn smooth:
+        # green well above red and blue, in the header, left of the host.
+        #
+        def badge_green():
+            wb, hb, pxb = parse_ppm(guest.screendump())
+            at_ = reader(pxb, wb)
+            n = 0
+
+            for y in range(y0 - TOOL + 6, y0 - 6):
+                for x in range(x0 + 100, x0 + 330):
+                    r, g, b = at_(x, y)
+
+                    if g > r + 40 and g > b + 30:
+                        n += 1
+
+            return n
+
+        green = badge_green()
+
+        if green < 30:
+            raise Failure(
+                f"the field did not say the page over TLS was Secure: {green} "
+                f"pixels of its green in the header. Wrote {args.out}.")
+
+        print(f"header: Secure said in the field, {green} pixels of its green",
+              flush=True)
+
         other = "https://10.0.2.2:%d/%s" % (other_port, LINKED)
         refused_before = len(tls_asked)
         line = showing(other, "the refusal")
@@ -1522,10 +1568,10 @@ def main():
         size = re.match(r"(\d+)x(\d+), (\d+) pixels tall, drawn at (\d+)x(\d+)",
                         again)
 
-        if not size or (int(size.group(1)), int(size.group(2))) != (568, 484):
+        if not size or (int(size.group(1)), int(size.group(2))) != (568, 468):
             raise Failure(
                 f"the grip dragged 300 left and 100 up did not lay the page "
-                f"out at 568x484: {again.strip()!r}. Wrote {args.out}.")
+                f"out at 568x468: {again.strip()!r}. Wrote {args.out}.")
 
         if (int(size.group(4)), int(size.group(5))) != (600, 540):
             raise Failure(

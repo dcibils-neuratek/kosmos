@@ -420,10 +420,10 @@ built** (18.318): `/Home/Cache/Browser`, Diego's choice, HTTP's rules in
 fetches in 138 ms from 547. **e, built** (18.319): a window that draws its
 own pixels and says `resizable` is resized by a new region the kit hands
 over (`surface`), the browser first - its page laid out again at the new
-width. **d next**: the new chrome as `docs/browser.html` draws it - tabs,
-the field that says how a page came, favorites in `/Home/Favorites`,
-history, Settings (search engine, emptying the cache), the page's costs in
-the status line.
+width. **d, in steps** (roadmap 6zz d): **d1 built** (18.320) - the header
+in the kit's widgets, the field saying how the page came, the status line
+as the page benchmark; **d2 next**, tabs as the title bar; then d3
+favorites, d4 history, d5 Settings, d6 searching from the field.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

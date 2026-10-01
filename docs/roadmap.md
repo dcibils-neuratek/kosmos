@@ -2713,6 +2713,17 @@ processors, and still what follows USB:
       long history is kept, the authorities, emptying the cache; **d6**
       searching from the address field, DuckDuckGo unless Settings says
       Google.
+
+      **d1 BUILT 1 October** (`testing.md` 18.320): the header in the
+      kit's widgets - back, forward, reload, the field saying how the page
+      came before its address, the sidebar (waiting for d3 and d4) and the
+      menu (Home, Reload, Empty the cache) - painted by `ui.paint_view`
+      and pressed through the kit; the status line the page benchmark, the
+      link under the pointer on its left and the costs on its right, a
+      click opening the breakdown; and the line along the header's rule
+      while a page arrives. Reload is not yet Stop while loading - a load
+      is one call that does not let go until it is done, so there is
+      nothing to stop yet.
    e. **Windows that draw their own pixels, resizable** - the browser's,
       Cafesa3D's, Camera's, Video's: the window manager refuses today
       ("its surface is shared and has a size"). On letting go of the grip

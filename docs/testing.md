@@ -15103,3 +15103,47 @@ white in this look, and a window of 480 to 578 let the old page squashed
 through.
 
 **The gate**: 76 of 76, in 9:00.
+
+## 18.320 The browser's header in the kit's widgets (6zz d1)
+
+**`roadmap.md` 6zz d1**, the new chrome's first step, as `docs/browser.html`
+draws it - on a window that resizes (e).
+
+- **The header**: `ui.iconbutton`s for back, forward and reload, the
+  kit's `ui.field` for the address, and the sidebar and the menu at the far
+  end, in a header view laid out along the window's width (`lay_out_header`,
+  again on a resize). The field, when nobody is typing in it, is drawn as
+  the drawing has it: a badge saying how the page came - Secure with a lock
+  in the look's `good`, Not encrypted, Refused or Not secure in its `bad`,
+  This machine - then the host in the label's face and the rest dim. Taken
+  to be typed in, it is the kit's field, the whole address chosen; Return
+  goes there and Escape gives the page the keys back.
+- **The kit's half**: a direct window has nothing for the kit to draw, so
+  `window:paint` settles the focus and calls the window's `on_paint` -
+  the browser's `frame`, which paints the header with `ui.paint_view` - and
+  a pointer passing over a window that asked (`track`) goes to its
+  `on_hover`.
+- **The status line**, the page benchmark: the link under the pointer, or
+  what the browser last said, on its left; the costs on its right, and a
+  click there opens the breakdown - the five numbers, and the last paint by
+  kind. And the line along the header's rule while a page arrives.
+- **Line icons for it**: `secure`, `plain`, `refused`, `star`, `sidebar`,
+  `plus`, from Lucide by `tools/lineicons.py` - the run renders every icon
+  again a shade differently, so only the new ones were kept, as the tool's
+  note says.
+
+**What the suite found**: a header button pressed kept the keyboard, and
+the next space - meant to scroll the page - pressed it again: Back, fourteen
+times, so the test page's pictures were never reached. A press on a header
+control gives the page the keys back, as every browser does.
+
+**`arm-browser` and `x86-browser`**: the browser says where its controls
+are (`browser: header back x,y ...`), and the suite presses Reload and Back
+there rather than where a font once put them; Home, which the drawing keeps
+in the menu, is reached by its address. And on the page over TLS, the field
+says Secure: 239 pixels of the look's green in the header, left of the host.
+Control: the badge not drawn, 0. Every check before it - the forms, the
+charset, the cache, the resize, now 568 by 468 with the taller header - as
+it was.
+
+**The gate**: 76 of 76, in 9:05.

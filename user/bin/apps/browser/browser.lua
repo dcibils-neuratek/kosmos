@@ -86,12 +86,12 @@ local reloading = false
 
 local W, H                           -- the window's size, which changes
 
-local TOOL = 34                      -- the row of buttons and the address
-local STAT = 22                      -- the status line along the bottom
+local HEAD = ui.layout.head          -- the header: buttons, the address, its rule
+local STAT = 26                      -- the status line along the bottom
 local SBAR = 16                      -- the scrollbar down the right
 local PAD  = 8                       -- white margin either side of the page
 
-local VIEW_Y = TOOL
+local VIEW_Y = HEAD
 local VIEW_H, VIEW_W, PAGE_W
 
 --
@@ -101,7 +101,7 @@ local VIEW_H, VIEW_W, PAGE_W
 --
 local function geometry(w, h)
   W, H = w, h
-  VIEW_H = H - TOOL - STAT
+  VIEW_H = H - HEAD - STAT
   VIEW_W = W - SBAR
   PAGE_W = VIEW_W - PAD * 2
 end
@@ -411,8 +411,7 @@ local band_ms
 --
 local frame_kb = 0
 
-local address = { text = HOME, caret = #HOME, from = 0,
-                  focus = false }
+local address = { text = HOME, caret = #HOME, from = 0 }
 local here                                          -- what is on screen
 local back, forward = {}, {}
 
@@ -435,7 +434,6 @@ local anyway = {}
 -- panel" (`roadmap.md` 6zz i).
 --
 local loading
-local BAR_W = 180
 
 --
 -- **What this browser says it is**, which is what a site decides what to
@@ -451,148 +449,148 @@ local AGENT = ("NetSurf/3.11 (Kosmos %s)"):format((sys.build and sys.build() or 
 local dragging               -- the scrollbar thumb, while it is held
 
 --------------------------------------------------------------------------
--- The chrome, drawn.
+-- **The header, in the kit's own widgets** (`roadmap.md` 6zz d1, as
+-- `docs/browser.html` draws it).
 --
--- `theme` rather than colours of its own: the shape is NetSurf's and the
--- palette is the desktop's, so a browser window does not become the one
--- thing on screen that ignores the appearance setting. The *page* is white
--- whatever the desktop is, because that is what the document asked for.
---------------------------------------------------------------------------
-
-local function bevel(s, x, y, w, h, sunken)
-  local hi = sunken and theme.edge_dark or theme.edge_light
-  local lo = sunken and theme.edge_light or theme.edge_dark
-
-  s:fill(x, y, w, 1, hi)
-  s:fill(x, y, 1, h, hi)
-  s:fill(x, y + h - 1, w, 1, lo)
-  s:fill(x + w - 1, y, 1, h, lo)
-end
-
+-- Back, forward and reload as the kit's line-icon buttons; the address in
+-- the kit's own field, drawn - when nobody is typing in it - as the drawing
+-- has it: how the page came first, then the host dark and the rest dim;
+-- and at the far end the sidebar, for favorites and history (d3, d4), and
+-- the menu. Painted into this window's own pixels by `ui.paint_view`, as
+-- Cafesa3D's panels are, and pressed and typed into through the kit's own
+-- routing - so they behave as every other window's widgets do, and follow
+-- the look. They replace a row of bevelled buttons and a well this file
+-- drew itself, and the keys it took for the well by hand.
 --
--- A triangle, out of one-pixel rectangles.
---
--- There is no line and no polygon on a surface - `fill`, `blit` and `text`
--- is the whole of it - and an arrow drawn as text would need a glyph the
--- interface font may not have. Eleven fills is cheaper than that argument.
---
-local function arrow(s, cx, cy, size, dir, colour)
-  for i = 0, size do
-    if dir == "left" then
-      s:fill(cx + i, cy - i, 1, 2 * i + 1, colour)
-    elseif dir == "right" then
-      s:fill(cx - i, cy - i, 1, 2 * i + 1, colour)
-    elseif dir == "up" then
-      s:fill(cx - i, cy + i, 2 * i + 1, 1, colour)
-    else
-      s:fill(cx - i, cy - i, 2 * i + 1, 1, colour)
-    end
-  end
-end
-
---------------------------------------------------------------------------
--- The toolbar's buttons.
---
--- Laid out from their labels rather than from numbers typed in, so the row
--- still fits when the desktop is set to a font that is not the one this was
--- written against. `enabled` is asked at every repaint, because whether you
--- can go back is not a fact about the button.
+-- `theme` throughout: the palette is the desktop's, so a browser window is
+-- not the one thing on screen that ignores the appearance setting. The
+-- *page* is white whatever the desktop is, because that is what the
+-- document asked for.
 --------------------------------------------------------------------------
 
 local go_back, go_forward, go_home, reload      -- filled in further down
 
-local BUTTONS = {
-  { name = "back",    arrow = "left",  wide = 30,
-    enabled = function() return #back > 0 end },
-  { name = "forward", arrow = "right", wide = 30,
-    enabled = function() return #forward > 0 end },
-  { name = "reload",  text = "Reload" },
-  { name = "home",    text = "Home" },
-}
+local header = ui.view{ x = 0, y = 0, w = W, h = HEAD }
 
-local URL = {}
-local GO  = { text = "Go" }
-
-local function lay_out_toolbar()
-  local x = 6
-
-  for _, b in ipairs(BUTTONS) do
-    b.x = x
-    b.w = b.wide or (gfx.measure(b.text) + 20)
-    b.y = 4
-    b.h = TOOL - 9
-    x = x + b.w + 4
-  end
-
-  GO.w = gfx.measure(GO.text) + 20
-  GO.h = TOOL - 9
-  GO.y = 4
-  GO.x = W - 6 - GO.w
-
-  URL.x = x + 6
-  URL.y = 4
-  URL.h = TOOL - 9
-  URL.w = math.max(40, GO.x - 6 - URL.x)
+function header:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+  g:fill(0, self.h - 1, self.w, 1, theme.line)
 end
 
-local function inside(b, x, y)
-  return b.x and x >= b.x and x < b.x + b.w
-         and y >= b.y and y < b.y + b.h
+local back_b   = ui.iconbutton{ icon = "back" }
+local fwd_b    = ui.iconbutton{ icon = "forward" }
+local reload_b = ui.iconbutton{ icon = "reload" }
+local side_b   = ui.iconbutton{ icon = "sidebar", disabled = true }
+local menu_b   = ui.iconbutton{ icon = "more" }
+local field    = ui.field{ text = HOME }
+
+for _, v in ipairs({ back_b, fwd_b, reload_b, field, side_b, menu_b }) do
+  header:add(v)
 end
 
 --
--- What of the address is visible, and from which byte.
+-- How the page on screen came, in the field's words and with its icon:
+-- Secure for a certificate that checked out, Not encrypted for plain HTTP,
+-- Refused, Not secure for one opened anyway, This machine for a page no
+-- network had a part in - and nothing for the page inside the image.
 --
--- A well is a fixed width and a URL is not, and `s:text` clips against the
--- *surface* rather than against anything smaller - so a long address drawn
--- whole would run straight over the Go button and out of the toolbar. The
--- field scrolls instead: enough is dropped from the front to keep the caret
--- in view, and enough from the back to stay inside the well.
---
--- Quadratic in the length of a URL and run once per repaint, which is once
--- per event rather than once per frame. Sixty characters is a few thousand
--- glyph advances and this window does not animate.
---
-local function field_view()
-  local room = URL.w - 10
-  local from = address.from or 0
+local function how_came()
+  if here == nil or here == HOME then return nil end
+  if came == nil then return "plain", "This machine" end
+  if came.refused then return "refused", "Refused" end
+  if came.scheme ~= "https" then return "plain", "Not encrypted" end
+  if came.secure then return "secure", "Secure" end
 
-  if from > address.caret then from = address.caret end
+  return "refused", "Not secure"
+end
 
-  -- Back, when there is room again. A short address loaded after a long one
-  -- would otherwise keep the old offset and hide its first characters in a
-  -- well with space to spare.
-  while from > 0
-        and gfx.measure(address.text:sub(from, #address.text)) <= room do
-    from = from - 1
+-- The address in two: the host, which is what matters and is drawn dark,
+-- and the rest, drawn dim. The scheme goes, since the field has just said
+-- how the page came.
+local function address_parts(text)
+  local bare = tostring(text or ""):gsub("^%a[%w+.-]*://", "")
+  local host = bare:match("^[^/]*") or ""
+
+  return host, bare:sub(#host + 1)
+end
+
+local field_draw = field.draw
+
+function field:draw(g)
+  if self.focused then return field_draw(self, g) end
+
+  local h = self.h
+
+  g:fill_round(0, 0, self.w, h, theme.sunken, 7)
+  g:frame_round(0, 0, self.w, h, theme.line_soft, 7)
+
+  local x = 9
+  local kind, words = how_came()
+
+  if kind then
+    local ink = kind == "secure" and theme.good
+                or kind == "refused" and theme.bad or theme.text_dim
+    local bw = 4 + 15 + 5 + gfx.measure(words, "label") + 7
+
+    g:fill_round(4, 3, bw, h - 6, theme.mix(theme.sunken, ink, 140), 6)
+    g:line_icon(8, (h - 15) // 2, kind, ink)
+    g:text(28, (h - gfx.height("label")) // 2, words, ink, nil, "label")
+    x = 4 + bw + 8
   end
 
-  while from < address.caret
-        and gfx.measure(address.text:sub(from + 1, address.caret)) > room do
-    from = from + 1
-  end
+  local host, rest = address_parts(address.text)
 
-  address.from = from
-
-  local upto = #address.text
-
-  while upto > from
-        and gfx.measure(address.text:sub(from + 1, upto)) > room do
-    upto = upto - 1
-  end
-
-  return address.text:sub(from + 1, upto), from
+  g:text(x, (h - gfx.height("label")) // 2, host, theme.text, nil, "label")
+  g:text(x + gfx.measure(host, "label"), (h - gfx.height()) // 2, rest,
+         theme.text_dim)
 end
 
 --
--- What the status line says, cut to end before the timings begin.
+-- Placed along the window's width, and again whenever it changes: three at
+-- the start, two at the end, the field between them taking what is left.
+-- Said, for whoever drives the window from outside (`tools/run_browser.py`),
+-- as centres in the window.
+--
+local function lay_out_header()
+  local gap, edge = ui.layout.head_gap, ui.layout.head_edge
+  local x = edge
+
+  header.w = W
+
+  for _, b in ipairs({ back_b, fwd_b, reload_b }) do
+    b.x, b.y = x, (HEAD - 1 - b.h) // 2
+    x = x + b.w + gap
+  end
+
+  local r = W - edge
+
+  for _, b in ipairs({ menu_b, side_b }) do
+    b.x, b.y = r - b.w, (HEAD - 1 - b.h) // 2
+    r = b.x - gap
+  end
+
+  field.x = x + 4
+  field.w = math.max(40, r - 4 - field.x)
+  field.y = (HEAD - 1 - field.h) // 2
+
+  local function at(v) return ("%d,%d"):format(v.x + v.w // 2, v.y + v.h // 2) end
+
+  print(("browser: header back %s forward %s reload %s field %s menu %s, %d tall")
+        :format(at(back_b), at(fwd_b), at(reload_b), at(field), at(menu_b), HEAD))
+end
+
+--
+-- What the status line says on its left - where the link under the
+-- pointer goes, or what the browser last said - cut to end before the
+-- page's costs begin on its right.
 --
 -- It ran underneath them once a page's line began with how it came -
 -- "Refused: the certificate is signed by nobody this machine trusts" and
 -- then the counts. Cut a character at a time, never inside one, and worked
--- out again only when the words or the timings change rather than every
+-- out again only when the words or the costs change rather than every
 -- frame of a scroll.
 --
+local pointing               -- the link under the pointer, while it is
 local status_for, status_cut = nil, ""
 
 local function shorter(text)
@@ -604,14 +602,14 @@ local function shorter(text)
 end
 
 local function status_text()
-  local key = said .. "\0" .. timing .. "\0" .. (loading and "bar" or "")
+  local left = pointing or said
+  local key = left .. "\0" .. timing .. "\0" .. W
 
   if key == status_for then return status_cut end
 
-  local right = loading and BAR_W + 16
-                or (timing ~= "" and gfx.measure(timing) + 16 or 0)
-  local room = W - 16 - right
-  local text = said
+  local right = timing ~= "" and gfx.measure(timing) + 20 or 0
+  local room = W - 20 - right
+  local text = left
 
   if gfx.measure(text) > room then
     while text ~= "" and gfx.measure(text .. "...") > room do
@@ -623,23 +621,6 @@ local function status_text()
 
   status_for, status_cut = key, text
   return text
-end
-
-local function draw_button(s, b, label_colour)
-  local ink = label_colour or theme.text
-
-  s:fill(b.x, b.y, b.w, b.h, theme.raised)
-  bevel(s, b.x, b.y, b.w, b.h, b.down)
-
-  local shift = b.down and 1 or 0
-
-  if b.arrow then
-    arrow(s, b.x + b.w // 2 + (b.arrow == "left" and -3 or 3) + shift,
-          b.y + b.h // 2 + shift, 5, b.arrow, ink)
-  else
-    s:text(b.x + (b.w - gfx.measure(b.text)) // 2 + shift,
-           b.y + (b.h - gfx.height()) // 2 + shift, b.text, ink)
-  end
 end
 
 --------------------------------------------------------------------------
@@ -697,50 +678,27 @@ local function frame()
   local held = collectgarbage("count")
 
   --
-  -- The toolbar.
+  -- The header: the kit's widgets, painted into these pixels - back and
+  -- forward dim when there is nowhere to go, and the field told the page's
+  -- address whenever it is taken to be typed in, all of it chosen.
   --
-  s:fill(0, 0, W, TOOL, theme.window)
-  s:fill(0, TOOL - 1, W, 1, theme.line)
+  back_b.disabled = #back == 0
+  fwd_b.disabled = #forward == 0
 
-  for _, b in ipairs(BUTTONS) do
-    local on = (b.enabled == nil) or b.enabled()
-
-    draw_button(s, b, on and theme.text or theme.text_dim)
+  if field.focused and not field.had then
+    field.text = address.text
+    field.caret = #field.text + 1
+    field.all = true
   end
 
-  draw_button(s, GO)
+  field.had = field.focused
+  ui.paint_view(header, s, 0, 0)
 
-  --
-  -- The address, in a well.
-  --
-  s:fill(URL.x, URL.y, URL.w, URL.h, theme.sunken)
-  bevel(s, URL.x, URL.y, URL.w, URL.h, true)
-
-  local ty = URL.y + (URL.h - gfx.height()) // 2
-  local shown, from = field_view()
-
-  --
-  -- **All of it selected**, after Control-L: drawn in the caret's colours,
-  -- as `ui.field` draws its select-all, so it is plain that what is typed
-  -- next replaces it.
-  --
-  if address.focus and address.all and shown ~= "" then
-    s:fill(URL.x + 5, ty, gfx.measure(shown), gfx.height(), theme.ring)
-    s:text(URL.x + 5, ty, shown, theme.sunken)
-  else
-    s:text(URL.x + 5, ty, shown, theme.text)
-  end
-
-  --
-  -- The caret. Drawn only when the field has the keys, because a caret in a
-  -- field that is not listening is the thing that makes a person type into
-  -- the wrong place.
-  --
-  if address.focus and not address.all then
-    local at = URL.x + 5
-               + gfx.measure(address.text:sub(from + 1, address.caret))
-
-    s:fill(at, ty, 1, gfx.height(), theme.text)
+  -- A page on its way, along the header's rule: filled against the length
+  -- the server gave; with none, the status line's words say how much.
+  if loading and loading.total and loading.total > 0 then
+    s:fill(0, HEAD - 2, math.min(W, W * loading.got // loading.total), 2,
+           theme.accent)
   end
 
   --
@@ -777,32 +735,20 @@ local function frame()
   draw_scrollbar(s)
 
   --
-  -- The status line.
+  -- The status line, the page's benchmark (`docs/browser.html`): where the
+  -- link under the pointer goes, or what the browser last said, on its
+  -- left; what the page cost on its right - a click on it opens the
+  -- breakdown.
   --
   s:fill(0, H - STAT, W, STAT, theme.window)
   s:fill(0, H - STAT, W, 1, theme.line)
 
   local sy = H - STAT + (STAT - gfx.height()) // 2
 
-  s:text(8, sy, status_text(), theme.text_dim)
+  s:text(10, sy, status_text(), theme.text_dim)
 
-  --
-  -- The bar, while a page arrives, where the last page's costs were: they
-  -- belong to the page before. Filled against the length the server gave;
-  -- with none, the words say how much so far and the bar stays empty.
-  --
-  if loading then
-    local bx, by = W - 8 - BAR_W, H - STAT + (STAT - 6) // 2
-
-    s:fill(bx, by, BAR_W, 6, theme.sunken)
-
-    if loading.total and loading.total > 0 then
-      local done = math.min(BAR_W, BAR_W * loading.got // loading.total)
-
-      s:fill(bx, by, done, 6, theme.accent)
-    end
-  elseif timing ~= "" then
-    s:text(W - 8 - gfx.measure(timing), sy, timing, theme.text_dim)
+  if timing ~= "" then
+    s:text(W - 10 - gfx.measure(timing), sy, timing, theme.text_dim)
   end
 
   local drew_all = sys.ticks()
@@ -1791,13 +1737,6 @@ go_home = function()
   visit(HOME)
 end
 
-local ACTIONS = {
-  back = function() go_back() end,
-  forward = function() go_forward() end,
-  reload = function() reload() end,
-  home = function() go_home() end,
-}
-
 --------------------------------------------------------------------------
 -- Scrolling.
 --------------------------------------------------------------------------
@@ -1917,54 +1856,6 @@ end
 local sink = ui.view{ x = 0, y = 0, w = W, h = H }
 sink.focusable = true
 
-local function url_key(c)
-  --
-  -- **What Control-L selected goes when something is typed**, as in every
-  -- browser: the whole address was selected, so a character replaces it and
-  -- Backspace empties it. It put the caret at the end instead, and a typed
-  -- address went on the end of the old one - `run_browser.py` found it,
-  -- typing `http://10.0.2.2/second.html` into a bar that already held a page.
-  --
-  if address.all then
-    address.all = false
-
-    if c == 8 or c == 127 then
-      address.text, address.caret = "", 0
-      frame()
-      return true
-    elseif c >= 32 and c < 127 then
-      address.text, address.caret = "", 0
-    end
-  end
-
-  if c == 13 or c == 10 then
-    address.focus = false
-    visit(address.text)
-  elseif c == 27 then
-    address.focus = false
-  elseif c == 8 or c == 127 then
-    if address.caret > 0 then
-      address.text = address.text:sub(1, address.caret - 1)
-                     .. address.text:sub(address.caret + 1)
-      address.caret = address.caret - 1
-    end
-  elseif c == ui.LEFT then
-    address.caret = math.max(0, address.caret - 1)
-  elseif c == ui.RIGHT then
-    address.caret = math.min(#address.text, address.caret + 1)
-  elseif c >= 32 and c < 127 then
-    address.text = address.text:sub(1, address.caret) .. string.char(c)
-                   .. address.text:sub(address.caret + 1)
-    address.caret = address.caret + 1
-  else
-    return false
-  end
-
-  frame()
-
-  return true
-end
-
 --
 -- The wheel: three lines of the page a notch - forty pixels each, as an
 -- arrow moves it - away from the person up (`roadmap.md` 5zv).
@@ -1975,8 +1866,6 @@ function sink:wheel(n)
 end
 
 function sink:key(c)
-  if address.focus then return url_key(c) end
-
   -- A field on the page with the caret has the keyboard - every letter,
   -- space and arrow - and what it does not want (Control-L) goes on.
   if ns_doc and doc and doc:ns_focused() and doc:ns_key(c) then
@@ -1995,9 +1884,7 @@ function sink:key(c)
   elseif c == 71 then scroll_to(reach())             -- G
   elseif c == 12 then                                -- Control-L
     page_blur()
-    address.focus = true
-    address.caret = #address.text
-    address.all = true
+    win:focus_on(field)
   elseif c == 114 then reload()                      -- r
   elseif c == 91 then go_back()                      -- [
   elseif c == 93 then go_forward()                   -- ]
@@ -2014,70 +1901,9 @@ function sink:key(c)
                    ("%d.%02d"):format(frame_kb // 100, frame_kb % 100))
            .. (band_ms and (", band %s ms"):format(tenths(band_ms)) or "")
 
-  frame()
-
+  -- Returned as taken, so the kit repaints - which is this window's
+  -- `frame`, below (`on_paint`).
   return true
-end
-
---
--- Where in the address a click landed.
---
--- Measured prefix by prefix rather than divided by a cell width, because
--- the interface font is whatever the desktop was set to and only two of the
--- ones in this image are fixed width. Over what is *shown* rather than over
--- the whole address, and offset by where the field is scrolled to, or a
--- click in a scrolled field would place the caret near the start of a URL
--- whose start is not on screen.
---
-local function caret_from(px)
-  local shown, from = field_view()
-  local best = 0
-
-  for i = 0, #shown do
-    if gfx.measure(shown:sub(1, i)) <= px then best = i else break end
-  end
-
-  return from + best
-end
-
-local function toolbar_press(x, y)
-  address.focus = false
-  page_blur()
-
-  for _, b in ipairs(BUTTONS) do
-    if inside(b, x, y) then
-      b.down = true
-      return
-    end
-  end
-
-  if inside(GO, x, y) then
-    GO.down = true
-    return
-  end
-
-  if inside(URL, x, y) then
-    address.focus = true
-    address.caret = caret_from(x - URL.x - 5)
-  end
-end
-
-local function toolbar_release(x, y)
-  for _, b in ipairs(BUTTONS) do
-    if b.down then
-      b.down = nil
-
-      if inside(b, x, y) and ((b.enabled == nil) or b.enabled()) then
-        ACTIONS[b.name]()
-      end
-    end
-  end
-
-  if GO.down then
-    GO.down = nil
-
-    if inside(GO, x, y) then visit(address.text) end
-  end
 end
 
 local function scrollbar_press(y)
@@ -2122,8 +1948,6 @@ end
 -- Following it is a `visit`, so it joins the history like anything typed.
 --
 local function page_press(x, y)
-  address.focus = false
-
   if not doc or not paper then return end
 
   -- A form's field first: a click there is the field's, and a click
@@ -2185,30 +2009,142 @@ local function page_press(x, y)
   visit(where)
 end
 
+--
+-- The page's costs, broken down: opened by a click on the right of the
+-- status line, where they are - the five numbers the line shows, and what
+-- the last paint spent by kind (`roadmap.md` 6zz h).
+--
+local function breakdown(x)
+  local items = {}
+
+  for part in timing:gmatch("[^%s][^%s]*%s+[%d.]+") do
+    items[#items + 1] = { text = part .. " ms" }
+  end
+
+  local c = ns_doc and doc and doc:ns_costs()
+
+  if c then
+    local function ms(t) return tenths((t * 10000) // HZ) end
+
+    items[#items + 1] = { separator = true }
+    items[#items + 1] = { text = ("painting %s ms, of which"):format(ms(c.whole.ticks)) }
+
+    for _, k in ipairs({ "fills", "text", "pictures", "scaled", "shapes" }) do
+      items[#items + 1] = { text = ("    %s %s ms, %d"):format(k, ms(c[k].ticks),
+                                                           c[k].calls) }
+    end
+  end
+
+  if #items > 0 then
+    win:open_menu(math.max(0, x - 120), H - STAT - 24 * #items - 8, items)
+  end
+end
+
 function sink:mouse(action, x, y)
   if action == "press" then
-    if y < TOOL then
-      toolbar_press(x, y)
-    elseif y < VIEW_Y + VIEW_H and x >= W - SBAR then
+    if y < VIEW_Y + VIEW_H and x >= W - SBAR then
       scrollbar_press(y)
     elseif y < VIEW_Y + VIEW_H then
       page_press(x, y)
-    else
-      address.focus = false
+    elseif timing ~= "" and x >= W - 10 - gfx.measure(timing) then
+      breakdown(x)
     end
   elseif action == "move" then
     if dragging then scrollbar_drag(y) end
   elseif action == "release" then
     dragging = nil
-    toolbar_release(x, y)
   end
 
-  frame()
-
+  -- Taken, so the kit repaints: `on_paint`, below.
   return true
 end
 
 win:add(sink)
+
+--
+-- **The header's widgets, wired**, now that what they do exists: going
+-- back and forward, reloading, an address typed and Return pressed, and
+-- the menu - home, reload, and the cache emptied (`roadmap.md` 6zz k).
+-- Added after the page, so a press on them is theirs.
+--
+--
+-- **And the keyboard back to the page** after a press on one, as every
+-- browser does: a button that kept the focus took the next space for a
+-- press of itself, and the page that should have scrolled went back
+-- instead - which is how the suite found it.
+--
+local function then_page(act)
+  return function(...)
+    win:focus_on(sink)
+    act(...)
+  end
+end
+
+back_b.on_click = then_page(function() go_back() end)
+fwd_b.on_click = then_page(function() go_forward() end)
+reload_b.on_click = then_page(function() reload() end)
+
+field.on_enter = function(_, text)
+  win:focus_on(sink)
+  visit(text)
+end
+
+-- Escape gives the page the keys back, the address as it was.
+local field_key = field.key
+
+function field:key(c)
+  if c == 27 then
+    win:focus_on(sink)
+    return true
+  end
+
+  return field_key(self, c)
+end
+
+menu_b.on_click = function()
+  win:focus_on(sink)
+  win:open_menu(menu_b.x, HEAD - 2, {
+    { text = "Home", on_choose = function() go_home() end },
+    { text = "Reload", on_choose = function() reload() end },
+    { separator = true },
+    { text = "Empty the cache", on_choose = function()
+        CACHE:empty()
+        say("the cache is empty")
+      end },
+  })
+end
+
+win:add(header)
+
+--
+-- **This window's own paint** (`on_paint`): the kit calls it whenever an
+-- event changed something - a press on a header button, a key - since a
+-- window that draws its own pixels has nothing for the kit to draw.
+--
+win.on_paint = function() frame() end
+
+--
+-- **Where a link goes, said as the pointer passes over it** (`docs/
+-- browser.html`): the window asks to be told where the pointer is while it
+-- has the focus (`track`), and the status line's left says the address of
+-- the link under it.
+--
+use("/Kosmos/Libraries/wmproto.lua").track(win.handle, true)
+
+win.on_hover = function(_, x, y)
+  local now = nil
+
+  if ns_doc and doc and y >= VIEW_Y and y < VIEW_Y + VIEW_H and x < W - SBAR then
+    local href = doc:ns_link_at(x - PAD, y - VIEW_Y + top)
+
+    now = href and from_ns(href) or nil
+  end
+
+  if now == pointing then return false end
+
+  pointing = now
+  return true
+end
 
 --
 -- **Resized**, by the grip or by the window manager's maximise (6zz e). The
@@ -2219,15 +2155,14 @@ win:add(sink)
 win.on_resize = function(_, w, h)
   geometry(w, h)
   sink.w, sink.h = W, H
-  lay_out_toolbar()
+  lay_out_header()
   status_for = nil
   reflow()
-  frame()
 end
 
 --------------------------------------------------------------------------
 
-lay_out_toolbar()
+lay_out_header()
 
 --
 -- An address on the command line, which `wm browser:10.0.2.2:8000/` passes

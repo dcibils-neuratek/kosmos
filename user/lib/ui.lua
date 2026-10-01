@@ -6668,9 +6668,18 @@ function window:paint()
   --
   -- A window whose pixels the application draws has nothing to send. Its
   -- views, if it has any, would be drawing into the compositor's copy -
-  -- which is not the one on screen.
+  -- which is not the one on screen. So it is told instead (`on_paint`),
+  -- with the focus settled first: a direct window that wears the kit's
+  -- widgets - the browser's header (`roadmap.md` 6zz d1) - paints them
+  -- itself with `ui.paint_view`, and a press on one changes how it looks.
   --
-  if self.region then return end
+  if self.region then
+    apply_focus(self)
+
+    if self.on_paint then self.on_paint(self) end
+
+    return
+  end
 
   apply_focus(self)
 
@@ -6912,6 +6921,15 @@ local function dispatch_mouse(self, ev)
   end
 
   local g = self.grab
+
+  --
+  -- **The pointer passing over, no button held**: sent only to a window
+  -- that asked (`wmproto.track`), and handed to its `on_hover` - the
+  -- browser's status line saying where a link goes (`roadmap.md` 6zz d1).
+  --
+  if not g and ev.hover then
+    return self.on_hover ~= nil and self.on_hover(self, ev.x, ev.y) == true
+  end
 
   if not g then return false end
 

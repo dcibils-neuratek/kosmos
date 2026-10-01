@@ -124,6 +124,16 @@ ICONS = {
     "battery-medium":   ("battery-medium", None),
     "battery-low":      ("battery-low", None),
     "battery-charging": ("battery-charging", None),
+
+    # The browser's header (`docs/browser.html`, `roadmap.md` 6zz d): how a
+    # page came - checked, plain, refused - a favorite, the sidebar of
+    # favorites and history, and a new tab.
+    "secure":     ("lock", None),
+    "plain":      ("lock-open", None),
+    "refused":    ("shield-x", None),
+    "star":       ("star", None),
+    "sidebar":    ("panel-left", None),
+    "plus":       ("plus", None),
 }
 
 
