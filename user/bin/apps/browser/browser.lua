@@ -77,6 +77,14 @@ local httpcache = use("/Kosmos/Libraries/httpcache.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local favorites = use("/Kosmos/Libraries/favorites.lua")
 local history = use("/Kosmos/Libraries/history.lua")
+local prefs = use("/Kosmos/Libraries/browserprefs.lua")
+
+--
+-- **Its settings** (`roadmap.md` 6zz d5), from `/Home/Preferences/browser/
+-- settings`: read as the window opens, and changed and written by the
+-- Settings page, which is a tab like any other (`about:settings`).
+--
+local setting = prefs.read()
 local theme = ui.theme
 
 --
@@ -125,7 +133,7 @@ local side_open = false
 local function geometry(w, h)
   W, H = w, h
   VIEW_X = side_open and SIDE or 0
-  VIEW_Y = TABS + HEAD + ((#bar_list > 0) and FAVS or 0)
+  VIEW_Y = TABS + HEAD + ((#bar_list > 0 and setting.bar) and FAVS or 0)
   VIEW_H = H - VIEW_Y - STAT
   VIEW_W = W - VIEW_X - SBAR
   PAGE_W = VIEW_W - PAD * 2
@@ -154,9 +162,13 @@ local PAPER = 0xffffffff             -- what `web_paint.c` fills a page with
 -- build it is running on. An application that raised here would be a broken
 -- entry in the Deskbar of every ordinary image.
 --
-local have, web = pcall(use, "/Kosmos/Kits/web")
+local web
 
-if not have or type(web) ~= "table" then web = nil end
+do
+  local have, kit = pcall(use, "/Kosmos/Kits/web")
+
+  if have and type(kit) == "table" then web = kit end
+end
 
 --
 -- **NetSurf's layout** (`roadmap.md` 6zz j): the page laid out and drawn by
@@ -164,9 +176,17 @@ if not have or type(web) ~= "table" then web = nil end
 -- own default stylesheets. Without them - an image built before they were
 -- carried - the pages are laid out by `web_paint.c`, as they were.
 --
-local UA_SHEET = sys.asset("netsurf/default.css")
-local NS = web ~= nil and web.setup ~= nil and UA_SHEET ~= nil
-           and web.setup(UA_SHEET, sys.asset("netsurf/quirks.css")) == true
+local NS
+
+do
+  local sheet = sys.asset("netsurf/default.css")
+
+  NS = web ~= nil and web.setup ~= nil and sheet ~= nil
+       and web.setup(sheet, sys.asset("netsurf/quirks.css")) == true
+
+  -- The text size Settings chose, for every page this window opens.
+  if NS and web.text_size then web.text_size(16 * setting.text // 100) end
+end
 
 --
 -- **Its tabs are its title bar** (`roadmap.md` 6zz d2, `docs/browser.html`):
@@ -175,14 +195,20 @@ local NS = web ~= nil and web.setup ~= nil and UA_SHEET ~= nil
 -- moves the window, as Groove's bar does; in a look that keeps them, the
 -- window wears its tab above like anything else.
 --
-local win, err = ui.window{
-  title = "Browser", w = W, h = H, x = 80, y = 60, direct = true,
-  resizable = true, header = true,
-}
+local win
 
-if not win then
-  print("browser: " .. tostring(err))
-  return
+do
+  local made, why = ui.window{
+    title = "Browser", w = W, h = H, x = 80, y = 60, direct = true,
+    resizable = true, header = true,
+  }
+
+  if not made then
+    print("browser: " .. tostring(why))
+    return
+  end
+
+  win = made
 end
 
 if not win:surface() then
@@ -328,12 +354,9 @@ local NEWTAB = "about:newtab"
 local LATELY_SHOWN = 12
 
 --
--- **How long history is kept**, in days: thirty, until Settings says
--- otherwise (d5) - and what a day is called where it is shown: Today,
--- Yesterday, or its date.
+-- What a day of history is called where it is shown: Today, Yesterday, or
+-- its date.
 --
-local HISTORY_DAYS = 30
-
 local function day_words(day)
   local now = clock.now()
 
@@ -416,9 +439,6 @@ local timing = ""
 
 local HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
--- The other clock. Every timeout in this system is in these.
-local TICK_HZ = (sys.info() or {}).tick_hz or 250
-
 -- Tenths of a millisecond, because a frame is single-digit milliseconds and
 -- whole ones would round most of this to zero.
 local function since(t0)
@@ -448,8 +468,10 @@ end
 -- The worst case rather than the average, because responsiveness is a
 -- promise about the worst case and always was.
 --
-local frame_ms, frame_worst = 0, 0
-local blit_ms, commit_ms = 0, 0
+-- In tenths of a millisecond: the frame, its page, its commit, the worst
+-- frame so far - and `kb`, below, in one table, since a chunk of Lua holds
+-- two hundred locals at most and this one is near it.
+local frame_cost = { ms = 0, worst = 0, blit = 0, commit = 0, kb = 0 }
 
 --
 -- And what the key itself cost when it took the view out of the band: the
@@ -460,7 +482,7 @@ local blit_ms, commit_ms = 0, 0
 local band_ms
 
 --
--- And what a repaint *allocates*, in hundredths of a kilobyte.
+-- And what a repaint *allocates*, in hundredths of a kilobyte: `frame_cost.kb`.
 --
 -- `CLAUDE.md` records why this is measured next to the time rather than
 -- instead of it: the desktop's frame profile found the language question
@@ -468,7 +490,6 @@ local band_ms
 -- times the worst-case collector pause. A process on a deadline is judged
 -- by `gc_pause_max`, and the collector runs when it chooses.
 --
-local frame_kb = 0
 
 local address = { text = HOME, caret = #HOME, from = 0 }
 local here                                          -- what is on screen
@@ -556,11 +577,14 @@ function header:draw(g)
   g:fill(0, self.h - 1, self.w, 1, theme.line)
 end
 
-local back_b   = ui.iconbutton{ icon = "back" }
-local fwd_b    = ui.iconbutton{ icon = "forward" }
-local reload_b = ui.iconbutton{ icon = "reload" }
-local side_b   = ui.iconbutton{ icon = "sidebar" }
-local menu_b   = ui.iconbutton{ icon = "more" }
+-- In one table, for the reason `frame_cost` gives.
+local hb = {
+  back    = ui.iconbutton{ icon = "back" },
+  forward = ui.iconbutton{ icon = "forward" },
+  reload  = ui.iconbutton{ icon = "reload" },
+  side    = ui.iconbutton{ icon = "sidebar" },
+  menu    = ui.iconbutton{ icon = "more" },
+}
 local field    = ui.field{ text = HOME }
 
 --
@@ -584,7 +608,7 @@ function star_b:draw(g)
               on and 0xffd49b17 or theme.text_dim)        -- the drawing's gold
 end
 
-for _, v in ipairs({ back_b, fwd_b, reload_b, field, star_b, side_b, menu_b }) do
+for _, v in ipairs({ hb.back, hb.forward, hb.reload, field, star_b, hb.side, hb.menu }) do
   header:add(v)
 end
 
@@ -596,6 +620,7 @@ end
 --
 local function how_came()
   if here == nil or here == HOME or here == NEWTAB then return nil end
+  if here == prefs.PAGE then return "settings", "Settings" end
   if came == nil then return "plain", "This machine" end
   if came.refused then return "refused", "Refused" end
   if came.scheme ~= "https" then return "plain", "Not encrypted" end
@@ -614,42 +639,44 @@ local function address_parts(text)
   return host, bare:sub(#host + 1)
 end
 
-local field_draw = field.draw
+do
+  local field_draw = field.draw
 
-function field:draw(g)
-  if self.focused then return field_draw(self, g) end
+  function field:draw(g)
+    if self.focused then return field_draw(self, g) end
 
-  local h = self.h
+    local h = self.h
 
-  g:fill_round(0, 0, self.w, h, theme.sunken, 7)
-  g:frame_round(0, 0, self.w, h, theme.line_soft, 7)
+    g:fill_round(0, 0, self.w, h, theme.sunken, 7)
+    g:frame_round(0, 0, self.w, h, theme.line_soft, 7)
 
-  local x = 9
-  local kind, words = how_came()
+    local x = 9
+    local kind, words = how_came()
 
-  if kind then
-    local ink = kind == "secure" and theme.good
-                or kind == "refused" and theme.bad or theme.text_dim
-    local bw = 4 + 15 + 5 + gfx.measure(words, "label") + 7
+    if kind then
+      local ink = kind == "secure" and theme.good
+                  or kind == "refused" and theme.bad or theme.text_dim
+      local bw = 4 + 15 + 5 + gfx.measure(words, "label") + 7
 
-    g:fill_round(4, 3, bw, h - 6, theme.mix(theme.sunken, ink, 140), 6)
-    g:line_icon(8, (h - 15) // 2, kind, ink)
-    g:text(28, (h - gfx.height("label")) // 2, words, ink, nil, "label")
-    x = 4 + bw + 8
+      g:fill_round(4, 3, bw, h - 6, theme.mix(theme.sunken, ink, 140), 6)
+      g:line_icon(8, (h - 15) // 2, kind, ink)
+      g:text(28, (h - gfx.height("label")) // 2, words, ink, nil, "label")
+      x = 4 + bw + 8
+    end
+
+    -- Cut to end before the star, which sits inside the field's right end.
+    local host, rest = address_parts(address.text)
+    local room = self.w - x - (star_b.hidden and 8 or (star_b.w + 8))
+    local hw = gfx.measure(host, "label")
+
+    if hw > room then
+      host = cut_to(host, room)
+      hw, rest = gfx.measure(host, "label"), ""
+    end
+
+    g:text(x, (h - gfx.height("label")) // 2, host, theme.text, nil, "label")
+    g:text(x + hw, (h - gfx.height()) // 2, cut_to(rest, room - hw), theme.text_dim)
   end
-
-  -- Cut to end before the star, which sits inside the field's right end.
-  local host, rest = address_parts(address.text)
-  local room = self.w - x - (star_b.hidden and 8 or (star_b.w + 8))
-  local hw = gfx.measure(host, "label")
-
-  if hw > room then
-    host = cut_to(host, room)
-    hw, rest = gfx.measure(host, "label"), ""
-  end
-
-  g:text(x, (h - gfx.height("label")) // 2, host, theme.text, nil, "label")
-  g:text(x + hw, (h - gfx.height()) // 2, cut_to(rest, room - hw), theme.text_dim)
 end
 
 --
@@ -664,14 +691,14 @@ local function lay_out_header()
 
   header.w = W
 
-  for _, b in ipairs({ back_b, fwd_b, reload_b }) do
+  for _, b in ipairs({ hb.back, hb.forward, hb.reload }) do
     b.x, b.y = x, (HEAD - 1 - b.h) // 2
     x = x + b.w + gap
   end
 
   local r = W - edge
 
-  for _, b in ipairs({ menu_b, side_b }) do
+  for _, b in ipairs({ hb.menu, hb.side }) do
     b.x, b.y = r - b.w, (HEAD - 1 - b.h) // 2
     r = b.x - gap
   end
@@ -689,8 +716,8 @@ local function lay_out_header()
 
   print(("browser: header back %s forward %s reload %s field %s menu %s star %s "
          .. "side %s, %d tall, below tabs %d tall")
-        :format(at(back_b), at(fwd_b), at(reload_b), at(field), at(menu_b),
-                at(star_b), at(side_b), HEAD, TABS))
+        :format(at(hb.back), at(hb.forward), at(hb.reload), at(field), at(hb.menu),
+                at(star_b), at(hb.side), HEAD, TABS))
 end
 
 --
@@ -710,11 +737,11 @@ local status_for, status_cut = nil, ""
 
 local function status_text()
   local left = pointing or said
-  local key = left .. "\0" .. timing .. "\0" .. W
+  local key = left .. "\0" .. timing .. "\0" .. W .. tostring(setting.costs)
 
   if key == status_for then return status_cut end
 
-  local right = timing ~= "" and gfx.measure(timing) + 20 or 0
+  local right = (timing ~= "" and setting.costs) and gfx.measure(timing) + 20 or 0
   local room = W - 20 - right
   local text = left
 
@@ -763,7 +790,7 @@ end
 -- their tables.
 local function tab_at(t)
   if t == current then return here end
-  return t.here
+  return t.here or t.pending
 end
 
 --
@@ -796,7 +823,9 @@ do
   function favicon_of(at)
     at = at or NEWTAB
 
-    if at == HOME or at == NEWTAB then return "K", FAVICON[1] end
+    -- The browser's own pages - the one inside the image, a new tab,
+    -- Settings - are Kosmos's.
+    if at == HOME or at == NEWTAB or at:match("^about:") then return "K", FAVICON[1] end
 
     local host = address_parts(at):gsub("^www%.", "")
 
@@ -988,7 +1017,7 @@ end
 --------------------------------------------------------------------------
 
 local open_entry, open_address           -- filled in further down
-local toggle_favorite, toggle_side
+local toggle_favorite, toggle_side, open_settings
 
 local favbar = ui.view{ x = 0, y = TABS + HEAD, w = W, h = FAVS }
 favbar.hidden = true
@@ -1052,7 +1081,7 @@ do
   -- change - and said, for whoever drives the window from outside.
   --
   function lay_out_bar()
-    favbar.hidden = #bar_list == 0
+    favbar.hidden = #bar_list == 0 or not setting.bar
     favbar.y, favbar.w = TABS + HEAD, W
     favbar.children = {}
     bar_rest = {}
@@ -1213,6 +1242,35 @@ side_tree.on_select = function(_, node)
 end
 
 --------------------------------------------------------------------------
+-- **Settings** (`roadmap.md` 6zz d5, `docs/browser.html`): a page of the
+-- browser's own, in a tab like any other - `about:settings` - in
+-- Preferences' cards (`ui.cards`), two columns as the drawing has them, one
+-- in a narrow window, and scrolled together by the wheel when they are
+-- taller than the page. What its rows do is further down
+-- (`fill_settings`), where everything they change is.
+--------------------------------------------------------------------------
+
+local settings_page = ui.view{ x = 0, y = 0, w = 100, h = 100 }
+settings_page.hidden = true
+settings_page.scroll, settings_page.tall = 0, 0
+
+local fill_settings                      -- below
+
+function settings_page:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+end
+
+function settings_page:wheel(n)
+  local most = math.max(0, self.tall - self.h)
+
+  self.scroll = math.max(0, math.min(most, self.scroll - n * 48))
+
+  for _, c in ipairs(self.children) do c.y = c.top - self.scroll end
+
+  return true
+end
+
+--------------------------------------------------------------------------
 -- The scrollbar, which is also where scrolling is bounded.
 --------------------------------------------------------------------------
 
@@ -1271,8 +1329,8 @@ local function frame()
   -- forward dim when there is nowhere to go, and the field told the page's
   -- address whenever it is taken to be typed in, all of it chosen.
   --
-  back_b.disabled = #back == 0
-  fwd_b.disabled = #forward == 0
+  hb.back.disabled = #back == 0
+  hb.forward.disabled = #forward == 0
 
   if field.focused and not field.had then
     field.text = address.text
@@ -1309,32 +1367,39 @@ local function frame()
   -- nothing and takes room on the line from the two that do.
   local drew_chrome = sys.ticks()
 
-  s:fill(VIEW_X, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
+  -- Settings in place of a page, its own widgets over the whole of it.
+  settings_page.hidden = here ~= prefs.PAGE
 
-  if paper then
-    local rows = math.min(VIEW_H, band_top + paper_h - top)
-
-    if rows > 0 then
-      s:blit(paper, 0, top - band_top, PAGE_W, rows, VIEW_X + PAD, VIEW_Y)
-    end
+  if not settings_page.hidden then
+    ui.paint_view(settings_page, s, VIEW_X, VIEW_Y)
   else
-    local lines = web
-                  and { "Nothing loaded." }
-                  or  { "This image was built without the web libraries.",
-                        "",
-                        "    make WEB=1 qemu",
-                        "",
-                        "builds one that has them." }
+    s:fill(VIEW_X, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
 
-    for i, line in ipairs(lines) do
-      s:text(VIEW_X + PAD + 4, VIEW_Y + 16 + (i - 1) * (gfx.height() + 4), line,
-             theme.text_dim)
+    if paper then
+      local rows = math.min(VIEW_H, band_top + paper_h - top)
+
+      if rows > 0 then
+        s:blit(paper, 0, top - band_top, PAGE_W, rows, VIEW_X + PAD, VIEW_Y)
+      end
+    else
+      local lines = web
+                    and { "Nothing loaded." }
+                    or  { "This image was built without the web libraries.",
+                          "",
+                          "    make WEB=1 qemu",
+                          "",
+                          "builds one that has them." }
+
+      for i, line in ipairs(lines) do
+        s:text(VIEW_X + PAD + 4, VIEW_Y + 16 + (i - 1) * (gfx.height() + 4), line,
+               theme.text_dim)
+      end
     end
   end
 
   if side_open then ui.paint_view(side, s, 0, VIEW_Y) end
 
-  draw_scrollbar(s)
+  if settings_page.hidden then draw_scrollbar(s) end
 
   --
   -- The status line, the page's benchmark (`docs/browser.html`): where the
@@ -1349,25 +1414,25 @@ local function frame()
 
   s:text(10, sy, status_text(), theme.text_dim)
 
-  if timing ~= "" then
+  if timing ~= "" and setting.costs then
     s:text(W - 10 - gfx.measure(timing), sy, timing, theme.text_dim)
   end
 
   local drew_all = sys.ticks()
 
-  blit_ms = ((drew_all - drew_chrome) * 10000) // HZ
+  frame_cost.blit = ((drew_all - drew_chrome) * 10000) // HZ
 
   win:commit()
 
-  commit_ms = since(drew_all)
-  frame_ms = since(began)
+  frame_cost.commit = since(drew_all)
+  frame_cost.ms = since(began)
 
   -- A negative delta means the collector ran inside this frame, which says
   -- nothing about what the frame allocated. Kept rather than clamped,
   -- because seeing one is itself the answer to a question.
-  frame_kb = math.floor((collectgarbage("count") - held) * 100)
+  frame_cost.kb = math.floor((collectgarbage("count") - held) * 100)
 
-  if frame_ms > frame_worst then frame_worst = frame_ms end
+  if frame_cost.ms > frame_cost.worst then frame_cost.worst = frame_cost.ms end
 end
 
 local function say(text)
@@ -1401,21 +1466,25 @@ local pictures_ms = 0
 -- machine's goes to it as a `file:` URL; what comes back loses `http://`,
 -- which the address bar has never shown, and `file://` becomes the path.
 --
-local KNOWN = { http = true, https = true, asset = true, about = true,
-                file = true, kosmos = true }
+local ns_address
 
-local function ns_address(text)
-  if text == nil then return nil end
-  if text:sub(1, 1) == "/" then return "file://" .. text end
+do
+  local KNOWN = { http = true, https = true, asset = true, about = true,
+                  file = true, kosmos = true }
 
-  local scheme = text:match("^(%a[%w+.%-]*):")
+  function ns_address(text)
+    if text == nil then return nil end
+    if text:sub(1, 1) == "/" then return "file://" .. text end
 
-  -- An address the bar keeps without its scheme is http's - and a host
-  -- with a port looks like a scheme to the pattern, so only the ones this
-  -- browser speaks count as one.
-  if scheme and KNOWN[scheme:lower()] then return text end
+    local scheme = text:match("^(%a[%w+.%-]*):")
 
-  return "http://" .. text
+    -- An address the bar keeps without its scheme is http's - and a host
+    -- with a port looks like a scheme to the pattern, so only the ones this
+    -- browser speaks count as one.
+    if scheme and KNOWN[scheme:lower()] then return text end
+
+    return "http://" .. text
+  end
 end
 
 local function from_ns(url)
@@ -1879,7 +1948,7 @@ local function band_pictures()
     if p.kept == nil and in_band(p) then wanted[#wanted + 1] = p end
   end
 
-  if #wanted > 0 then
+  if #wanted > 0 and setting.images then
     -- The status line says so while they come, and then says again what
     -- it said: a band painted while scrolling is not news.
     local before = said
@@ -2071,7 +2140,8 @@ local function ns_band_pictures()
       end
     end
 
-    if #wanted == 0 then break end
+    -- Settings' Load images off: the boxes laid out, nothing asked for.
+    if #wanted == 0 or not setting.images then break end
 
     local before = said
     local fetched = fetch_pictures(wanted)
@@ -2198,11 +2268,32 @@ local function load_page(text, post)
   -- what this arrangement exists to fix.
   --
   here = text
-  address.text = (text == NEWTAB) and "" or text
+  address.text = (text == NEWTAB or text == prefs.PAGE) and "" or text
   address.caret = #address.text
   address.from = 0
 
   local body, fetched_ms, how
+
+  --
+  -- **Settings is no document**: the browser's own widgets, over the page
+  -- (`settings_page`). What was shown is let go as any page is when the
+  -- next one comes, and Back goes to it.
+  --
+  if text == prefs.PAGE then
+    if doc then doc:close() end
+
+    if paper then paper:free() end
+
+    forget_pictures()
+    doc, came, paper, paper_h, band_top, content_h, top = nil, nil, nil, 0, 0, 0, 0
+    ns_doc, ns_tried, ns_svgs, ns_raster = false, {}, {}, {}
+    current.title, timing = "Settings", ""
+    win:retitle("Browser - Settings")
+    fill_settings()
+    say("Settings")
+    print("browser: showing about:settings, Settings")
+    return true
+  end
 
   if text == HOME then
     say("the page inside this image")
@@ -2211,6 +2302,42 @@ local function load_page(text, post)
   elseif text == NEWTAB then
     say("a new tab")
     body, fetched_ms = newtab_page(), 0
+
+  elseif text == prefs.ROOTS then
+    --
+    -- **The authorities this machine trusts**, Settings' Show: the names
+    -- the build read out of Mozilla's bundle (`ca/roots.txt`), and the
+    -- ones a person added in `/Home/Preferences/Authorities`.
+    --
+    local names = sys.asset("ca/roots.txt") or ""
+    local rows, as_of = {}, nil
+
+    for line in names:gmatch("[^\n]+") do
+      if not as_of and line:match("^as of ") then
+        as_of = line:sub(7)
+      else
+        rows[#rows + 1] = "<li>" .. escaped(line) .. "</li>"
+      end
+    end
+
+    local own = {}
+
+    for _, name in ipairs(fs.list(http.AUTHORITIES) or {}) do
+      own[#own + 1] = "<li>" .. escaped(name) .. "</li>"
+    end
+
+    body, fetched_ms = ([[<!doctype html>
+<html><head><meta charset="utf-8"><title>Trusted authorities</title></head><body>
+<h1>Trusted authorities</h1>
+<p>A page over HTTPS is shown as Secure when its certificate was signed by one
+of these.</p>
+<h2>Added here, in /Home/Preferences/Authorities</h2>
+<ul>%s</ul>
+<h2>Mozilla's %d, as of %s</h2>
+<ul>%s</ul>
+</body></html>]]):format(#own > 0 and table.concat(own) or "<li>None</li>", #rows,
+                      escaped(as_of or "the build"), table.concat(rows)), 0
+    say("the authorities this machine trusts")
 
   elseif text:match("^asset:") then
     --
@@ -2280,7 +2407,7 @@ local function load_page(text, post)
 
   -- **In the history** (d4), on the disk: every page shown in any tab,
   -- but a new tab's own and one refused for its certificate.
-  if text ~= NEWTAB and not (came and came.refused) then
+  if text ~= NEWTAB and text ~= prefs.ROOTS and not (came and came.refused) then
     history.record(text, title, clock.now())
   end
 
@@ -2373,6 +2500,28 @@ local function load_page(text, post)
 end
 
 --
+-- **The tabs that are open, kept** (d5), for "When the browser opens: The
+-- tabs it had": their addresses and which is shown, written as they change
+-- - a page shown, a tab closed - whatever Settings says now, so choosing it
+-- later has something to open. A new tab's own page is nothing to keep.
+--
+local function keep_tabs()
+  local list, shown = {}, 1
+
+  for _, t in ipairs(tabs) do
+    local at = (t == current) and here or (t.here or t.pending)
+
+    if at and at ~= NEWTAB then
+      list[#list + 1] = at
+
+      if t == current then shown = #list end
+    end
+  end
+
+  prefs.save_tabs(list, shown)
+end
+
+--
 -- One load, with the tab saying where it is going while it goes - its
 -- title is the host's until the page arrives with one of its own.
 --
@@ -2389,6 +2538,7 @@ local function load(text, post)
   local ok = load_page(text, post)
 
   current.going = nil
+  keep_tabs()
   return ok
 end
 
@@ -2441,7 +2591,7 @@ reload = function()
 end
 
 go_home = function()
-  visit(HOME)
+  visit(setting.home)
 end
 
 --------------------------------------------------------------------------
@@ -2614,9 +2764,9 @@ function sink:key(c)
   -- while a key is held down one frame behind is the same number.
   --
   timing = ("frame %s (page %s, commit %s) worst %s ms, %s KB")
-           :format(tenths(frame_ms), tenths(blit_ms), tenths(commit_ms),
-                   tenths(frame_worst),
-                   ("%d.%02d"):format(frame_kb // 100, frame_kb % 100))
+           :format(tenths(frame_cost.ms), tenths(frame_cost.blit),
+                   tenths(frame_cost.commit), tenths(frame_cost.worst),
+                   ("%d.%02d"):format(frame_cost.kb // 100, frame_cost.kb % 100))
            .. (band_ms and (", band %s ms"):format(tenths(band_ms)) or "")
 
   -- Returned as taken, so the kit repaints - which is this window's
@@ -2754,7 +2904,8 @@ local function breakdown(x)
   end
 
   if #items > 0 then
-    win:open_menu(math.max(0, x - 120), H - STAT - 24 * #items - 8, items)
+    win:open_menu((win.origin_x or 0) + math.max(0, x - 120),
+                  (win.origin_y or 0) + H - STAT - 24 * #items - 8, items)
   end
 end
 
@@ -2764,7 +2915,7 @@ function sink:mouse(action, x, y)
       scrollbar_press(y)
     elseif y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= VIEW_X then
       page_press(x, y)
-    elseif timing ~= "" and x >= W - 10 - gfx.measure(timing) then
+    elseif timing ~= "" and setting.costs and x >= W - 10 - gfx.measure(timing) then
       breakdown(x)
     end
   elseif action == "move" then
@@ -2798,9 +2949,9 @@ local function then_page(act)
   end
 end
 
-back_b.on_click = then_page(function() go_back() end)
-fwd_b.on_click = then_page(function() go_forward() end)
-reload_b.on_click = then_page(function() reload() end)
+hb.back.on_click = then_page(function() go_back() end)
+hb.forward.on_click = then_page(function() go_forward() end)
+hb.reload.on_click = then_page(function() reload() end)
 
 field.on_enter = function(_, text)
   win:focus_on(sink)
@@ -2808,20 +2959,29 @@ field.on_enter = function(_, text)
 end
 
 -- Escape gives the page the keys back, the address as it was.
-local field_key = field.key
+do
+  local field_key = field.key
 
-function field:key(c)
-  if c == 27 then
-    win:focus_on(sink)
-    return true
+  function field:key(c)
+    if c == 27 then
+      win:focus_on(sink)
+      return true
+    end
+
+    return field_key(self, c)
   end
-
-  return field_key(self, c)
 end
 
-menu_b.on_click = function()
+hb.menu.on_click = function()
   win:focus_on(sink)
-  win:open_menu(menu_b.x, TABS + HEAD - 2, {
+  --
+  -- **On the screen, from the window's corner**: `open_menu` places a
+  -- window of its own, so it takes the screen's coordinates, as every other
+  -- application's call adds `origin_x` to say. These four said the window's,
+  -- and opened displaced by wherever the window was - nothing had pressed
+  -- one where it shows until Settings was reached through this one (d5).
+  --
+  win:open_menu((win.origin_x or 0) + hb.menu.x, (win.origin_y or 0) + TABS + HEAD - 2, {
     { text = "New tab", on_choose = function() new_tab() end },
     { text = "Close tab", on_choose = function() close_tab(current) end },
     { separator = true },
@@ -2829,6 +2989,8 @@ menu_b.on_click = function()
       on_choose = function() toggle_favorite() end },
     { text = side_open and "Hide favorites and history" or "Favorites and history",
       on_choose = function() toggle_side() end },
+    { separator = true },
+    { text = "Settings", on_choose = function() open_settings() end },
     { separator = true },
     { text = "Home", on_choose = function() go_home() end },
     { text = "Reload", on_choose = function() reload() end },
@@ -2844,6 +3006,7 @@ win:add(strip)
 win:add(header)
 win:add(favbar)
 win:add(side)
+win:add(settings_page)
 
 --
 -- **This window's own paint** (`on_paint`): the kit calls it whenever an
@@ -2895,6 +3058,8 @@ local function room_changed(w, h)
   lay_out_side()
   status_for = nil
   reflow()
+
+  if here == prefs.PAGE then fill_settings() end
 end
 
 win.on_resize = function(_, w, h)
@@ -2971,9 +3136,19 @@ show_tab = function(t)
     if laid_for == PAGE_W * 65536 + VIEW_H then make_band() else reflow() end
   end
 
+  if here == prefs.PAGE then fill_settings() end
+
   if here == NEWTAB then win:focus_on(field) else win:focus_on(sink) end
 
   say_tab("shown")
+
+  -- One the browser opened on and has not shown yet: its page now.
+  if t.pending then
+    local a = t.pending
+
+    t.pending = nil
+    visit(a)
+  end
 end
 
 --
@@ -3034,6 +3209,7 @@ close_tab = function(t)
 
   if current == nil then show_tab(tabs[math.min(i, #tabs)]) end
 
+  keep_tabs()
   print(("browser: a tab closed, %d left"):format(#tabs))
 end
 
@@ -3177,7 +3353,8 @@ do
 
   open_entry = function(e, v)
     if e.folder then
-      win:open_menu(v.x, TABS + HEAD + FAVS - 2, menu_of(e.path))
+      win:open_menu((win.origin_x or 0) + v.x,
+                    (win.origin_y or 0) + TABS + HEAD + FAVS - 2, menu_of(e.path))
     else
       open_address(e.address)
     end
@@ -3195,12 +3372,237 @@ do
       end
     end
 
-    win:open_menu(math.max(0, W - 220), TABS + HEAD + FAVS - 2, items)
+    win:open_menu((win.origin_x or 0) + math.max(0, W - 220),
+                  (win.origin_y or 0) + TABS + HEAD + FAVS - 2, items)
   end
 end
 
 star_b.on_click = then_page(function() toggle_favorite() end)
-side_b.on_click = then_page(function() toggle_side() end)
+hb.side.on_click = then_page(function() toggle_side() end)
+
+--------------------------------------------------------------------------
+-- **Settings' rows, and what each one does** (`roadmap.md` 6zz d5).
+--
+-- Built again whenever the page is shown or its room changes - the rows are
+-- what the browser knows, so the page is made from them rather than edited.
+-- Each change is written to `/Home/Preferences/browser/settings` as it is
+-- made, and takes effect at once where it can: the favorites bar comes or
+-- goes, the costs leave the status line, history is let go. Text size is
+-- the size pages opened after it start from.
+--------------------------------------------------------------------------
+
+-- The days history is kept, as Settings says, and the older let go.
+local function prune_history()
+  local now = clock.now()
+
+  if now then
+    return history.prune(history.day_of(clock.at(now.epoch
+                         - (setting.history_days - 1) * 86400)))
+  end
+
+  return 0
+end
+
+do
+  -- Where a view is in the window, walking up through what holds it.
+  local function in_window(v)
+    local x, y, at = v.x, v.y, v.parent
+
+    while at do x, y, at = x + (at.x or 0), y + (at.y or 0), at.parent end
+
+    return x, y
+  end
+
+  -- A menu under a button, on the screen (`open_menu`'s coordinates).
+  local function menu_under(v, items)
+    local x, y = in_window(v)
+
+    win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y + v.h, items)
+  end
+
+  local function save(key, value, after)
+    setting[key] = value
+    prefs.write(setting)
+    print(("browser: set %s %s"):format(key, tostring(value)))
+
+    if after then after(value) end
+  end
+
+  local function switch(key, after)
+    return ui.switch{ on = setting[key],
+                      on_change = function(_, on) save(key, on, after) end }
+  end
+
+  local function choice(key, after)
+    return ui.dropdown{ choices = prefs.CHOICES[key], value = setting[key],
+                        on_change = function(_, v) save(key, v, after) end }
+  end
+
+  local function button(text, act)
+    local b = ui.button{ text = text }
+
+    if b.fit then b:fit() end
+
+    b.on_click = act
+    return b
+  end
+
+  function fill_settings()
+    local page = settings_page
+
+    page.x, page.y, page.w, page.h = VIEW_X, VIEW_Y, W - VIEW_X, VIEW_H
+    page.children = {}
+
+    local home = ui.field{ text = setting.home, w = 220 }
+
+    home.on_change = function(_, text)
+      if text ~= "" then
+        setting.home = text
+        prefs.write(setting)
+      end
+    end
+
+    local clear = button("Clear...", function(b)
+      menu_under(b, { { text = "Clear every page visited, from every tab",
+                        on_choose = function()
+                          local days = #history.days()
+
+                          history.clear()
+                          say("history cleared")
+                          print(("browser: history cleared, %d days"):format(days))
+
+                          if side_open and side_seg.on == 2 then fill_side() end
+                        end } })
+    end)
+
+    -- Mozilla's roots, as the build read their names, and the date.
+    local roots = sys.asset("ca/roots.txt") or ""
+    local count, as_of = 0, nil
+
+    for line in roots:gmatch("[^\n]+") do
+      if not as_of and line:match("^as of ") then as_of = line:sub(7) else count = count + 1 end
+    end
+
+    -- "Fri Sep 25 03:12:01 2026 GMT", as curl writes it, as a person would.
+    local mon, day, year = tostring(as_of):match("^%a+ (%a+) +(%d+) [%d:]+ (%d+)")
+
+    for i, m in ipairs(clock.MONTHS) do
+      if m == mon then as_of = ("%d %s %s"):format(tonumber(day), clock.FULL_MONTHS[i], year) end
+    end
+
+    local own = fs.list(http.AUTHORITIES) or {}
+    local kept = fs.list(CACHE.dir) or {}
+
+    local open_own = button("Open", function()
+      if not fs.getattr(http.AUTHORITIES) then
+        fs.send(http.AUTHORITIES, { type = "mkdir" })
+      end
+
+      fs.send("/Running/wm", { type = "launch", program = "tracker",
+                               args = http.AUTHORITIES })
+    end)
+
+    local empty = button("Empty", function()
+      CACHE:empty()
+      say("the cache is empty")
+      fill_settings()
+    end)
+
+    local text = choice("text", function(v)
+      if web and web.text_size then web.text_size(16 * v // 100) end
+    end)
+
+    local costs = switch("costs", function() status_for = nil end)
+    local images = switch("images")
+    local opens = choice("opens")
+
+    local groups = {
+      { name = "Starting", rows = {
+          { label = "Home page", control = home },
+          { label = "When the browser opens", control = opens },
+          { label = "Show the favorites bar",
+            control = switch("bar", function() room_changed() end) } } },
+      { name = "Pages", rows = {
+          { label = "Text size", note = "Where a page leaves it to the browser",
+            control = text },
+          { label = "Load images", control = images },
+          { label = "What each page cost",
+            note = "Fetch, parse, layout, paint, in the status line",
+            control = costs } } },
+      { name = "Searching", rows = {
+          { label = "Search with",
+            note = "Words typed that are not an address",
+            control = choice("search") } } },
+      { name = "History", rows = {
+          { label = "Keep history for",
+            control = choice("history_days", function() prune_history() end) },
+          { label = "Clear history", note = "Every page visited, from every tab",
+            control = clear } } },
+      { name = "Security", rows = {
+          { label = "Trusted authorities",
+            note = ("Mozilla's %d, as of %s"):format(count, as_of or "the build"),
+            control = button("Show", function() new_tab(prefs.ROOTS) end) },
+          { label = "Added here",
+            note = #own > 0 and table.concat(own, ", ")
+                   or "None - a certificate in DER put in /Home/Preferences/Authorities is trusted too",
+            control = open_own },
+          { label = "A page with a bad certificate",
+            note = "Refused, with the reason and an Open anyway for that tab" } } },
+      { name = "Cache", rows = {
+          { label = "Kept to be used again",
+            note = ("%d replies, %d KB, in /Home/Cache/Browser")
+                   :format(#kept, (CACHE:count() + 1023) // 1024),
+            control = empty } } },
+    }
+
+    -- Two columns when there is room for two, as the drawing has them.
+    local two = page.w >= 860
+    local columns = two and { { groups[1], groups[2] }, { groups[3], groups[4],
+                                groups[5], groups[6] } } or { groups }
+    local each = page.w // #columns
+
+    page.tall = 0
+
+    for i, list in ipairs(columns) do
+      local c = ui.cards{ x = (i - 1) * each, y = 0, w = each, h = 4000,
+                          groups = list, width = 440 }
+
+      c.h = c.content_h + 16
+      c.top = 0
+      page:add(c)
+      page.tall = math.max(page.tall, c.h)
+    end
+
+    page.scroll = math.max(0, math.min(page.scroll, page.tall - page.h))
+
+    for _, c in ipairs(page.children) do c.y = c.top - page.scroll end
+
+    -- Said, for whoever drives the page from outside: where its controls
+    -- are in the window.
+    local function at(v)
+      local x, y = in_window(v)
+
+      return ("%d,%d"):format(x + v.w // 2, y + v.h // 2)
+    end
+
+    print(("browser: settings, %d columns, %d tall, costs %s, text %s, opens %s, "
+           .. "clear %s, empty %s, images %s")
+          :format(#columns, page.tall, at(costs), at(text), at(opens), at(clear),
+                  at(empty), at(images)))
+  end
+end
+
+-- Settings, in the tab that shows it or a new one.
+open_settings = function()
+  for _, t in ipairs(tabs) do
+    if tab_at(t) == prefs.PAGE then
+      show_tab(t)
+      return
+    end
+  end
+
+  new_tab(prefs.PAGE)
+end
 
 --
 -- **The browser's keys, with Super** (`docs/browser.html`): the window
@@ -3211,6 +3613,14 @@ side_b.on_click = then_page(function() toggle_side() end)
 --
 win.on_key = function(_, c)
   local k, mods = ui.keyparts(c)
+
+  -- Control-L, whichever part has the keyboard - Settings' switches as
+  -- well as the page - since the address is the window's, not the page's.
+  if c == 12 then
+    page_blur()
+    win:focus_on(field)
+    return true
+  end
 
   if mods ~= ui.SUPER then return false end
 
@@ -3227,6 +3637,7 @@ win.on_key = function(_, c)
   elseif k == 93 then go_forward()                              -- ]
   elseif k == 100 or k == 68 then toggle_favorite()             -- D
   elseif k == 121 or k == 89 then toggle_side()                 -- Y
+  elseif k == 44 then open_settings()                           -- ,
   else return false end
 
   return true
@@ -3236,30 +3647,48 @@ end
 
 read_favorites()
 
--- The days of history older than are kept, let go as the window opens.
-do
-  local now = clock.now()
-
-  if now then
-    history.prune(history.day_of(clock.at(now.epoch - (HISTORY_DAYS - 1) * 86400)))
-  end
-end
 
 geometry(W, H)
 lay_out_header()
 lay_out_bar()
 lay_out_side()
 
---
--- An address on the command line, which `wm browser:10.0.2.2:8000/` passes
--- through, in the first tab.
---
--- With no address, the page inside the image. A browser that opened on
--- nothing could not be tried without a server running somewhere, which is
--- a thing an operating system has no business asking for.
---
-local start = tostring(args or ""):match("^%s*(.-)%s*$")
+do
+  --
+  -- An address on the command line, which `wm browser:10.0.2.2:8000/` passes
+  -- through, in the first tab.
+  --
+  -- With no address, the page inside the image. A browser that opened on
+  -- nothing could not be tried without a server running somewhere, which is
+  -- a thing an operating system has no business asking for.
+  --
+  local start = tostring(args or ""):match("^%s*(.-)%s*$")
 
-new_tab(start ~= "" and start or HOME)
+  -- The days of history older than Settings keeps, let go as the window opens.
+  prune_history()
+
+  --
+  -- **Or the tabs it had**, when Settings says it opens on them and there
+  -- are any (d5): every one made, and only the one that was shown loaded -
+  -- the others load when they are shown, so opening is one page's wait
+  -- rather than all of theirs.
+  --
+  local had, had_shown = prefs.tabs()
+
+  if start == "" and setting.opens == "tabs" and #had > 0 then
+    for _, a in ipairs(had) do
+      local t = blank_tab()
+
+      t.pending = a
+      tabs[#tabs + 1] = t
+      strip:add(t.view)
+    end
+
+    print(("browser: opened on the tabs it had, %d"):format(#had))
+    show_tab(tabs[had_shown])
+  else
+    new_tab(start ~= "" and start or setting.home)
+  end
+end
 
 win:run()

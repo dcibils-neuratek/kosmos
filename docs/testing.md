@@ -15314,3 +15314,69 @@ once".
   favorites, 1 lately".
 
 **The gate**: 76 of 76, in 9:25.
+
+## 18.324 The browser's Settings (6zz d5), and the kit's field measured
+
+**`roadmap.md` 6zz d5**: Settings, a page of the browser's own in a tab -
+`about:settings`, from the menu or Super , - in Preferences' cards
+(`ui.cards`), two columns as `docs/browser.html` draws them, scrolled
+together by the wheel.
+
+- **`user/lib/browserprefs.lua`**: `/Home/Preferences/browser/settings`, one
+  table through the serialiser, read for what the browser can use - each
+  key it knows, of the kind it should be and one of its choices - and the
+  rest its default; written as each row changes. And `browser/tabs`, the
+  tabs that are open and which is shown, kept as they change.
+- **The rows**: the home page; when the browser opens - the home page, or
+  the tabs it had, every one made and only the shown one loaded; the
+  favorites bar; text size, libcss's default size for pages opened after
+  (`web.text_size`); loading images; the costs in the status line; the
+  search engine (d6); how long history is kept, and clearing it from a menu
+  under the button; the authorities - Mozilla's, named in a page of their
+  own from `ca/roots.txt`, which the build reads out of curl's bundle, and
+  those added in `/Home/Preferences/Authorities`, opened in Tracker; and
+  the cache, emptied. Control-L is the window's now, so it works from
+  Settings' switches as from the page.
+- **The menus opened in the wrong place**: `open_menu` takes the screen's
+  coordinates, as every other application's call adds `origin_x` to say,
+  and the browser's four - its menu, the costs' breakdown, a folder of
+  favorites, the bar's overflow - passed the window's. Nothing had pressed
+  one where it shows until Settings was reached through the menu.
+- **`browser.lua` and Lua's 200 locals**: 194 slots with Settings; the
+  window's kit and stylesheet, the field's saved functions and `KNOWN` went
+  into `do` blocks, the frame's timings and the header's buttons into a
+  table each, and `TICK_HZ`, which nothing read, went - 186.
+
+**And the kit's field, measured** - Diego, 1 October: "the cursor is off by
+some characters". `ui.field` put its caret, its room, its selection and a
+click by `GW`, the 8-pixel cell of the bitmap font it was written against,
+while drawing in the look's proportional face: a 13-character address had
+its caret 104 pixels in, at the end of 13 cells. It measures in the face it
+draws in now, keeps where the shown text starts so typing at the end of a
+long address does not shuffle it, and places a click at the nearest
+character - in every application's fields, not only the browser's.
+
+**`tools/test_browserprefs.lua`**, 11 checks on the Mac: the defaults, read
+back as written - `false` included, which `ok and v or default` loses -
+the folders made, a choice that is not one and a value of the wrong kind
+refused, a key nobody knows neither read nor written, a choice's name, and
+the open tabs kept with which was shown. Control: the `and`/`or` idiom
+back - "false read back as false, not as the default".
+
+**`arm-browser` and `x86-browser`**:
+
+- The caret 2 pixels after the last ink of an address typed into a new
+  tab's field. Control: the caret counted in cells.
+- The menu opened under its button. Control: the window's coordinates.
+- Super , opens Settings in two columns; the costs switched off leave the
+  status line - 0 dark pixels there, 141 when on. Control: the costs drawn
+  whatever Settings says.
+- Load images off: the test page asks for no pictures; the text at 150%:
+  the long page 176,288 pixels tall from 76,236. Control: the size never
+  handed to the kit.
+- History cleared from its menu: a new tab offers only the two pages shown
+  since.
+- When the browser opens, the tabs it had: the browser started again with
+  no address opens on the long page. Control: the setting ignored at start.
+
+**The gate**: 76 of 76, in 9:39 - the browser suites 187 and 198 s, near enough the ten-minute budget that they are split before more is added to them.

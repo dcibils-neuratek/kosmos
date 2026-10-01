@@ -24,6 +24,10 @@ int web_netsurf_log(lua_State *L);
  * stylesheets, once, before any document is laid out by it. */
 int web_netsurf_setup(lua_State *L);
 
+/* `web.text_size(px)`: the text size a page leaves to the browser, for the
+ * documents opened after (`roadmap.md` 6zz d5). */
+int web_netsurf_text_size(lua_State *L);
+
 /*
  * A document laid out and drawn by NetSurf (`roadmap.md` 6zz j3): opened
  * over a parsed DOM and the address it came from, laid out at a width -

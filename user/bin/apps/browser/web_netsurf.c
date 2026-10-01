@@ -1201,13 +1201,37 @@ static css_stylesheet *sheet_of(const char *text, size_t len,
     return sheet;
 }
 
-/* NetSurf's options at their defaults, but for the text size: 12 point,
- * which is 16 pixels, what every browser starts from. */
+/*
+ * **The text size a page leaves to the browser** (`roadmap.md` 6zz d5): 16
+ * pixels, what every browser starts from, and Settings' Text size scales
+ * it. It is libcss's default - what "medium", `em` and `rem` are reckoned
+ * from - and NetSurf's `font_size` option, in tenths of a point, which an
+ * old page's `<font size>` is; a size a page gives in pixels stays its own.
+ * Taken by each document as it is opened, so a page shown already keeps
+ * the size it was laid out at until it is opened again.
+ */
+static int text_px = 16;
+
+/* NetSurf's options at their defaults, but for the text size. */
 static nserror option_defaults(struct nsoption_s *defaults)
 {
     (void)defaults;
-    nsoption_set_int(font_size, 120);
+    nsoption_set_int(font_size, text_px * 15 / 2);
     return NSERROR_OK;
+}
+
+/* `web.text_size(px)`: the size the next document opened starts from. */
+int web_netsurf_text_size(lua_State *L)
+{
+    lua_Integer px = luaL_checkinteger(L, 1);
+
+    if (px < 6 || px > 96) {
+        return luaL_error(L, "a text size of %d pixels", (int)px);
+    }
+
+    text_px = (int)px;
+    nsoption_set_int(font_size, text_px * 15 / 2);
+    return 0;
 }
 
 int web_netsurf_setup(lua_State *L)
@@ -2303,7 +2327,7 @@ struct web_ns_doc *web_ns_open(void *document, const char *base,
     h->font_func = &layout_table;
     h->bctx = talloc_zero(NULL, int);
     h->unit_len_ctx.device_dpi = nscss_screen_dpi;
-    h->unit_len_ctx.font_size_default = INTTOFIX(16);
+    h->unit_len_ctx.font_size_default = INTTOFIX(text_px);
     h->unit_len_ctx.font_size_minimum = INTTOFIX(6);
 
     if (lwc_intern_string("*", 1, &h->universal) != lwc_error_ok

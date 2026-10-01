@@ -1166,6 +1166,7 @@ void kosmos_web_kit(lua_State *L)
         { "events",     l_events },
         { "join",       web_netsurf_join },
         { "setup",      web_netsurf_setup },
+        { "text_size",  web_netsurf_text_size },
         { "log",        web_netsurf_log },
         { "svg",        web_svg },
         { NULL, NULL }

@@ -2781,6 +2781,67 @@ processors, and still what follows USB:
       date - and searches titles and addresses as they are typed; a new
       tab's Lately is the newest pages of it, each once; thirty days are
       kept, the older let go as the window opens.
+
+      **d5 BUILT 1 October** (`testing.md` 18.324): Settings, a page of the
+      browser's own in a tab - `about:settings`, by the menu or Super , -
+      in Preferences' cards (`ui.cards`), two columns as drawn: the home
+      page, when the browser opens (the home page, or the tabs it had,
+      kept as they change and only the shown one loaded), the favorites
+      bar, text size (libcss's default size, for pages opened after),
+      loading images, the costs in the status line, which engine searches
+      (for d6), how long history is kept and clearing it, the authorities -
+      Mozilla's, named in a page of their own, and those added in
+      `/Home/Preferences/Authorities`, opened in Tracker - and the cache,
+      emptied. Written to `/Home/Preferences/browser/settings` as each is
+      changed (`user/lib/browserprefs.lua`). **Found on the way**: the
+      browser's menus opened in the window's coordinates where `open_menu`
+      takes the screen's, so the menu and the breakdown opened displaced by
+      the window's place since d1 - nothing had pressed one. **Not yet**:
+      Downloads, until there are downloads; a certificate added from
+      Settings rather than dropped in the folder by Tracker.
+
+      **Zoom, like Chrome's** - Diego, 1 October, with Chrome's menu
+      beside it: "we need a way to zoom the page likke chrome does to
+      increase or decrease sizes of all fonts, etc", "just put 4 options":
+      **100% normal, 125% larger, 150% even larger, 200% largest**. All of
+      the page - text, pictures, boxes, margins - not only the text a page
+      leaves to the browser, which is what d5's Text size does; so Zoom
+      takes Text size's place in Settings, as the size pages open at, and
+      the menu has it too, with Super = and Super - stepping through the
+      four and Super 0 back to 100%.
+
+      **Meta refresh** - Diego, 1 October: "duckduckgo.com is not loading
+      at all". DuckDuckGo's front page is a script; for a browser that runs
+      none, its `<noscript>` hides the body and says `<meta
+      http-equiv="refresh" content="0; url=https://html.duckduckgo.com/html">`
+      - its own page without scripts - and this browser never followed a
+      refresh, so it showed the hidden body: nothing. A refresh is followed
+      as a redirect is, after the seconds it gives.
+
+      **What the browser says it is, chosen in Settings** - Diego, 1
+      October: "we need a way to change the user agent in the settings as
+      we might need to tweak it as we go", "different sites might behave
+      differently by user agent received", "we have a very basic browser so
+      we need to announce that to the server", "dont send complex sites,
+      send simple ones", "so we might use a user agent that mimics that of
+      simple browsers like smart tvs, game consoles, etc which are basic
+      most fo the time. then as we grow our browser we can keep changing
+      the user agent". A row in Settings: a few that ask for simple pages -
+      measured against real sites before one is offered, not guessed - this
+      browser's own true one, and words of one's own; and the default the
+      one that brings the simplest pages that are still whole.
+
+      **The kit's field counted cells** - Diego, 1 October: "the cursor is
+      off by some characters". Every `ui.field` in every application put
+      its caret, its room, its selection and a click by the bitmap font's
+      8-pixel cell while drawing in the look's proportional face; fixed with
+      d5, measured in the face it draws in.
+
+      **A follow-up, noticed building d2 to d5**: `browser.lua` is near
+      Lua's two hundred locals in a chunk (186 slots after d5), held there
+      by `do` blocks and two tables. The page a tab shows is twenty-five
+      locals that `stow` and `unstow` copy in and out; as one table per tab
+      they would be a swap, and the limit far away.
    e. **Windows that draw their own pixels, resizable** - the browser's,
       Cafesa3D's, Camera's, Video's: the window manager refuses today
       ("its surface is shared and has a size"). On letting go of the grip

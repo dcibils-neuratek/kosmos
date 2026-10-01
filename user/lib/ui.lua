@@ -2194,6 +2194,45 @@ function ui.stepper(spec)
   return v
 end
 
+--
+-- **Where a field's shown text starts**: the earliest character from which
+-- the text up to the caret still fits in `room` pixels - so the caret is
+-- always in view - kept in `self.from` between paints, so typing at the end
+-- of a long address does not shuffle what is shown, and walked back again
+-- when the text gets shorter. On character boundaries, never inside one.
+--
+local function field_next(text, i)
+  i = i + 1
+
+  while i <= #text and (text:byte(i) & 0xC0) == 0x80 do i = i + 1 end
+
+  return i
+end
+
+local function field_prev(text, i)
+  i = i - 1
+
+  while i > 1 and (text:byte(i) & 0xC0) == 0x80 do i = i - 1 end
+
+  return i
+end
+
+local function field_from(self, room)
+  local text, caret = self.text, self.caret
+  local from = math.max(1, math.min(self.from or 1, caret))
+
+  while from > 1 and gfx.measure(text:sub(field_prev(text, from), caret - 1)) <= room do
+    from = field_prev(text, from)
+  end
+
+  while from < caret and gfx.measure(text:sub(from, caret - 1)) > room do
+    from = field_next(text, from)
+  end
+
+  self.from = from
+  return from
+end
+
 function ui.field(spec)
   local v = ui.view(spec)
   --
@@ -2245,8 +2284,19 @@ function ui.field(spec)
     -- The drawings' `.field`: a one-pixel rule and 9 of padding inside it -
     -- and with an `icon`, the icon there and the words 7 after it: Finder's
     -- search field, Tracker's since 24 September (`roadmap.md` 5zy).
+    --
+    -- **Measured in the face it is drawn in, not counted in cells.** This
+    -- was `// GW` and `* GW` - the 8-pixel cell of the bitmap font the field
+    -- was written against - for the room, the selection, the caret and the
+    -- click, while the words have been drawn in the look's own proportional
+    -- face since the looks arrived: the caret sat a character or more past
+    -- the end of an address in the browser (Diego, 1 October: "the cursor
+    -- is off by some characters"). `gc:text` was taught the same thing
+    -- once ("Clipped by measuring, which it did by counting cells"), and
+    -- the field kept counting.
+    --
     local inset = self:text_inset()
-    local room = (self.w - inset - 10) // GW
+    local room = self.w - inset - 10
 
     if self.icon then
       g:line_icon(9, (self.h - 15) // 2, self.icon, theme.text_dim)
@@ -2260,13 +2310,13 @@ function ui.field(spec)
     -- box, and a box does not say what it searches.
     --
     if self.hint and self.text == "" and not self.focused then
-      g:text(inset, centred(self.h), tostring(self.hint):sub(1, room),
-             theme.text_dim, theme.sunken)
+      g:text(inset, centred(self.h), tostring(self.hint), theme.text_dim,
+             theme.sunken)
       return
     end
 
-    local from = math.max(1, self.caret - room + 1)
-    local shown = self.text:sub(from, from + room - 1)
+    local from = field_from(self, room)
+    local shown = self.text:sub(from)
 
     --
     -- **`secret`: a password's field**, drawn as a star a character. What
@@ -2282,7 +2332,7 @@ function ui.field(spec)
       -- The caret's own colours, for the reason `ui.editor` uses them: a
       -- selection is a widened cursor, and every palette has already had
       -- to make those two readable against each other.
-      g:fill(inset, ty, #shown * GW, gfx.height(), theme.ring)
+      g:fill(inset, ty, math.min(room, gfx.measure(shown)), gfx.height(), theme.ring)
       g:text(inset, ty, shown, theme.sunken, theme.ring)
       return
     end
@@ -2290,7 +2340,7 @@ function ui.field(spec)
     g:text(inset, ty, shown, theme.text, theme.sunken)
 
     if self.focused then
-      local cx = inset + (self.caret - from) * GW
+      local cx = inset + gfx.measure(self.text:sub(from, self.caret - 1))
       g:fill(cx, ty, 1, gfx.height(), theme.ring)
     end
   end
@@ -2425,12 +2475,27 @@ function ui.field(spec)
   -- The caret where the click was, clamped to the end of the text: clicking
   -- past the last character puts it after the last character, which is what
   -- every text field does and what nobody notices until it does not.
+  --
+  -- The boundary nearest the press, measured from the first character
+  -- shown - the field may be scrolled - and never inside a character.
+  --
   function v:mouse(action, x, y)
     if action == "press" then
-      local col = (x - self:text_inset()) // GW
+      local want = x - self:text_inset()
+      local from = self.from or 1
+      local at = from
 
-      if col < 0 then col = 0 end
-      self.caret = math.min(col + 1, #self.text + 1)
+      while at <= #self.text do
+        local after = field_next(self.text, at)
+        local left = gfx.measure(self.text:sub(from, at - 1))
+        local right = gfx.measure(self.text:sub(from, after - 1))
+
+        if want < (left + right) / 2 then break end
+
+        at = after
+      end
+
+      self.caret = at
       self.all = false
     end
 

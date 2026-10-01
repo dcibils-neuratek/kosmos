@@ -93,7 +93,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from run_screenshot import (Guest, Failure, PROMPT, _to_tablet,  # noqa: E402
-                            parse_ppm, settle)
+                            menu_row_middle, parse_ppm, settle)
 from run_gallery import png                                      # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1594,9 +1594,40 @@ def main():
         settle(guest, no_magenta, "the new tab still shows the long page", seconds=20)
 
         # Its address field has the keyboard: the second page, typed.
-        typed("http://10.0.2.2:%d/%s\n" % (port, LINKED))
+        typed("http://10.0.2.2:%d/%s" % (port, LINKED))
+        time.sleep(1.5)
+
+        # **The caret at the end of what was typed** - Diego, 1 October:
+        # "the cursor is off by some characters". The field counted 8-pixel
+        # cells and drew in the look's proportional face. Along the field's
+        # middle, the rightmost mark is the caret, and the words' last ink
+        # is a pixel or two before it - not a character or more.
+        fcx, fcy = control("field")
+        wf, hf, pxf = parse_ppm(guest.screendump())
+        at_ = reader(pxf, wf)
+        inked = []
+
+        for x in range(x0 + 120, fcx + (fcx - x0) - 150):
+            for y in range(fcy - 7, fcy + 8):
+                r, g, b = at_(x, y)
+
+                if r + g + b < 620:
+                    inked.append(x)
+                    break
+
+        caret = max(inked) if inked else 0
+        words = max((x for x in inked if x < caret - 1), default=0)
+
+        if not inked or caret - words > 5:
+            raise Failure(f"the caret in the address field is {caret - words} "
+                          f"pixels past the end of the typed address, at {caret} "
+                          f"where the words end at {words}")
+
+        typed("\n")
         tab_said("showing http://10.0.2.2:%d/%s" % (port, LINKED),
                  "an address typed into the new tab's field", mark)
+        print(f"caret: {caret - words} pixels after the typed address's last ink",
+              flush=True)
 
         # The first tab, pressed: the long page at its end again.
         mark = len(guest.seen)
@@ -1803,6 +1834,137 @@ def main():
               f"offered it; Super D let it go", flush=True)
 
         #
+        # **Settings** (`roadmap.md` 6zz d5): the menu under its button -
+        # where the button is, which it was not - and Super , opening the
+        # page, its switches and choices written as they are pressed: the
+        # costs off the status line, pictures not loaded, the text at 150%
+        # making the second page taller, the browser to open on its tabs,
+        # and the history cleared; then put back.
+        #
+        def menu_opened(mark_, what):
+            line = guest.wait_for_line("wm: menu of Browser", what, since=mark_)
+            m = re.search(r"at (\d+),(\d+) \d+x\d+", line)
+            return int(m.group(1)), int(m.group(2))
+
+        def status_ink():
+            ws, hs, pxs = parse_ppm(guest.screendump())
+            at_ = reader(pxs, ws)
+            n = 0
+
+            for y in range(wtop + WIN_H - STAT + 4, wtop + WIN_H - 4):
+                for x in range(x0 + WIN_W - 260, x0 + WIN_W - 10):
+                    r, g, b = at_(x, y)
+
+                    if r + g + b < 400:
+                        n += 1
+
+            return n
+
+        ink_on = status_ink()
+        menu_cx = int(placed.group(9))
+        mark = len(guest.seen)
+        press(*control("menu"))
+        ax, ay = menu_opened(mark, "the menu to open under its button")
+
+        if abs(ax - (x0 + menu_cx - 13)) > 3 or abs(ay - (wtop + TOOL - 2)) > 3:
+            raise Failure(f"the menu opened at {ax},{ay}, not under its button at "
+                          f"{x0 + menu_cx - 13},{wtop + TOOL - 2}")
+
+        press(x0 + 20, wtop + WIN_H - 10)          # and closed, by a press elsewhere
+
+        mark = len(guest.seen)
+        chord("meta_l", "comma")
+        tab_said("showing about:settings", "Super , to open Settings", mark)
+        laid = tab_said("settings, ", "Settings to say where its rows are", mark)
+        rows = re.match(r"(\d+) columns, (\d+) tall, costs (\d+),(\d+), text (\d+),(\d+), "
+                        r"opens (\d+),(\d+), clear (\d+),(\d+), empty (\d+),(\d+), "
+                        r"images (\d+),(\d+)", laid)
+
+        if not rows or rows.group(1) != "2":
+            raise Failure(f"Settings is not two columns in a window 900 wide: "
+                          f"{laid.strip()!r}")
+
+        def at_row(i):
+            return x0 + int(rows.group(i)), wtop + int(rows.group(i + 1))
+
+        def chosen(i, row, what):
+            mark_ = len(guest.seen)
+            press(*at_row(i))
+            mx_, my_ = menu_opened(mark_, what)
+            time.sleep(0.6)
+            press(mx_ + 30, menu_row_middle(my_, row))
+
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        press(*at_row(3))
+        tab_said("set costs false", "the costs switched off", mark)
+        press(*at_row(13))
+        tab_said("set images false", "Load images switched off", mark)
+        chosen(5, 6, "the text size's menu")
+        tab_said("set text 150", "the text at 150%", mark)
+        chosen(7, 2, "When the browser opens' menu")
+        tab_said("set opens tabs", "the browser to open on the tabs it had", mark)
+        chosen(9, 1, "Clear history's menu")
+        tab_said("history cleared, ", "the history cleared", mark)
+
+        # The long page at 150%, taller - two thousand paragraphs of text the
+        # page leaves to the browser; no costs on the status line; and the
+        # test page with no pictures asked for.
+        before = int(long_page.group(1))
+        bigger = showing(long_url, "the long page at 150%")
+        after = int(re.search(r"(\d+) pixels tall", bigger).group(1))
+        time.sleep(1.0)
+        ink_off = status_ink()
+
+        if after < before * 1.2:
+            raise Failure(f"the long page at 150% is {after} pixels tall, not "
+                          f"taller than {before} at 100% by a fifth")
+
+        if ink_on < 30 or ink_off > 5:
+            raise Failure(f"the costs did not leave the status line when switched "
+                          f"off: {ink_off} dark pixels where they were, {ink_on} "
+                          f"when on")
+
+        plain = go_to(name, "the test page with no pictures")
+
+        if not re.search(r", 0 pictures, 0 missing", plain):
+            raise Failure(f"the test page asked for pictures with Load images off: "
+                          f"{plain.strip()!r}")
+
+        mark = len(guest.seen)
+        chord("meta_l", "t")
+        offered = tab_said("a new tab's page, ", "a new tab after the clear", mark)
+
+        if not offered.startswith("0 favorites, 2 lately"):
+            raise Failure(f"the history was not cleared - a new tab offers "
+                          f"{offered.strip()!r}, where two pages were shown since")
+
+        chord("meta_l", "w")
+        chord("meta_l", "w")
+        tab_said("tab 1 of 1, shown, showing " + long_url, "back to the long page",
+                 mark)
+
+        # Put back: the costs, the pictures and the text.
+        mark = len(guest.seen)
+        chord("meta_l", "comma")
+        tab_said("settings, ", "Settings again", mark)
+        time.sleep(1.0)
+        press(*at_row(3))
+        press(*at_row(13))
+        chosen(5, 3, "the text size's menu again")
+        tab_said("set text 100", "the text back at 100%", mark)
+        tab_said("set images true", "Load images back on", mark)
+        tab_said("set costs true", "the costs back on", mark)
+        chord("meta_l", "w")
+        tab_said("tab 1 of 1, shown, showing " + long_url, "the long page again",
+                 mark)
+
+        print(f"settings: the menu under its button; the costs off the status "
+              f"line ({ink_off} dark pixels, {ink_on} on), no pictures, the "
+              f"long page {after} pixels tall at 150% from {before}, the "
+              f"history cleared, and put back", flush=True)
+
+        #
         # **Resized** (`roadmap.md` 6zz e) - Diego, 1 October: "make sure our
         # browser new design is resizable". The grip, the window's bottom
         # right corner, dragged 300 pixels left and 100 up: the window manager
@@ -1925,19 +2087,22 @@ def main():
         # A prompt *after* the desktop stopped: `wait_for` finds any, and
         # one from before had the line below typed while the desktop was
         # still going, its first half lost.
-        stopped = len(guest.seen)
-        guest.proc.stdin.write(b"\x17q")
-        guest.proc.stdin.flush()
-        deadline = time.monotonic() + 30
+        def stop_desktop(what):
+            stopped = len(guest.seen)
+            guest.proc.stdin.write(b"\x17q")
+            guest.proc.stdin.flush()
+            deadline = time.monotonic() + 30
 
-        while PROMPT not in guest.seen[stopped:]:
-            if time.monotonic() > deadline:
-                raise Failure("the desktop did not stop for Plex to be chosen")
+            while PROMPT not in guest.seen[stopped:]:
+                if time.monotonic() > deadline:
+                    raise Failure("the desktop did not stop " + what)
 
-            guest._read_available()
-            time.sleep(0.3)
+                guest._read_available()
+                time.sleep(0.3)
 
-        time.sleep(0.5)
+            time.sleep(0.5)
+
+        stop_desktop("for Plex to be chosen")
         guest.type('fs.send("/Home/Preferences", { type = "mkdir" }) '
                    'fs.write("/Home/Preferences/appearance", { palette = "plex" }) '
                    'print("plex" .. "-set")')
@@ -2028,7 +2193,7 @@ def main():
                            "started", mark)
         back_from_disk = re.match(r"(\d+) favorites, (\d+) lately", offered)
 
-        if not back_from_disk or int(back_from_disk.group(2)) < 5:
+        if not back_from_disk or int(back_from_disk.group(2)) < 2:
             raise Failure(f"a new browser's new tab did not offer the history the "
                           f"last one wrote: {offered.strip()!r}")
 
@@ -2036,6 +2201,26 @@ def main():
               f"Plex the tabs are the browser's title bar, the three at "
               f"{lx},{ly}, and the strip's band moved the window to "
               f"{to.group(1)},{to.group(2)}", flush=True)
+
+        # **The tabs it had** (6zz d5): Settings said the browser opens on
+        # them. This one closed - its new tab, then the long page, which is
+        # the last and closes the window - and the browser started again
+        # with no address opens on the long page.
+        mark = len(guest.seen)
+        chord("meta_l", "w")
+        tab_said("tab 1 of 1, shown, showing " + long_url, "the new tab closed", mark)
+        chord("meta_l", "w")
+        tab_said("the last tab closed, and the window with it",
+                 "the long page's tab closed, and the window", mark)
+        time.sleep(1.0)
+        stop_desktop("for the browser to be started again")
+        mark = len(guest.seen)
+        guest.type("wm browser")
+        tab_said("opened on the tabs it had, 1",
+                 "the browser to open on the tabs it had", mark)
+        tab_said("showing " + long_url, "the tab it had, its page shown", mark)
+        print("restored: the browser started with no address opened on the tab "
+              "it had", flush=True)
 
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "

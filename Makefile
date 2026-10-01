@@ -2462,11 +2462,22 @@ $(SCENE_FILES): $(GEN)/scenes/.made
 TUTORIAL_FILES := $(wildcard docs/cafesa3d-tutorial/*.html docs/cafesa3d-tutorial/*.png)
 
 
+# **Whom the TLS Kit trusts, by name**, for the browser's Settings (`roadmap.md`
+# 6zz d5): the date of Mozilla's bundle and each root's name, read out of
+# curl's file, where every certificate follows its name underlined with `=`.
+# A few kilobytes where the bundle is 225, which the image does not carry -
+# BearSSL's anchors are made from it at build time (`tls_anchors.c`).
+ROOT_NAMES := $(GEN)/ca/roots.txt
+
+$(ROOT_NAMES): assets/ca/cacert.pem
+	@mkdir -p $(dir $@)
+	awk '/^## Certificate data from Mozilla as of:/ { sub(/^## Certificate data from Mozilla as of: /, ""); print "as of " $$0 } prev != "" && /^=+$$/ { print prev } { prev = $$0 }' $< > $@
+
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
                  $(ASSET_FILES) $(ASSET_LIST) LICENSE \
                  docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES) $(TUTORIAL_FILES) \
-                 $(NETSURF_SHEETS)
+                 $(NETSURF_SHEETS) $(ROOT_NAMES)
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
 	        assets/images/test-pattern.png assets/images/test-quads.jpg \
@@ -2478,7 +2489,8 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        --prefix=line/ $(LINE_FILES) \
 	        --prefix=scenes/ $(SCENE_FILES) \
 	        --prefix=tutorial/cafesa3d/ $(TUTORIAL_FILES) \
-	        --prefix=netsurf/ $(NETSURF_SHEETS)
+	        --prefix=netsurf/ $(NETSURF_SHEETS) \
+	        --prefix=ca/ $(ROOT_NAMES)
 
 # The outline fonts, embedded the same way.
 #
@@ -3818,6 +3830,9 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# And its history on the disk, a file a day: recorded once a day each,
 	@# lately across days, searched, and let go after its days (6zz d4).
 	$(HOSTDIR)/lua tools/test_history.lua
+	@# And its settings: read back as written, false included, and what is
+	@# not one of the choices the default (6zz d5).
+	$(HOSTDIR)/lua tools/test_browserprefs.lua
 	@# The IDE's editor: the text it edits, every edit undoable, and Lua
 	@# coloured a line at a time with what carries across lines (6n, step 1).
 	$(HOSTDIR)/lua tools/test_textbuf.lua

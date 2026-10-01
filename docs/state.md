@@ -431,8 +431,11 @@ on Super Shift ] and [); **d3 built** (18.322) - favorites as files in
 and Tracker opening a file by its type; **d4 built** (18.323) - history on
 the disk, a file a day in `/Home/Preferences/browser/history/`, the
 sidebar's History half by day and searched as typed, a new tab's Lately
-from it; **d5 next**, Settings in `/Home/Preferences/browser/settings`; then
-d6 searching from the field. `browser.lua` is near Lua's 200 locals - new
+from it; **d5 built** (18.324) - Settings, a page of the browser's own in
+Preferences' cards; with it the kit's field measured in its face (Diego's
+caret) and the browser's menus in screen coordinates. **Next**, asked for on
+1 October: meta refresh (DuckDuckGo's front page is blank without it), Zoom
+in four steps replacing Text size, then d6 searching from the field. `browser.lua` is near Lua's 200 locals - new
 helpers go in `do` blocks.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
