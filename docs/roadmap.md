@@ -1279,8 +1279,11 @@ processors, and still what follows USB:
      the console and the compositor flush what they drew. `make GPU=virtio
      qemu`. Tests: the picture under virtio-gpu on both boards, and the
      control that without the flush the screen keeps the old picture.
-   - **b** - the hardware cursor: the pointer moved on the cursor queue
-     without composing a frame.
+   - **b - BUILT on 1 October** (`testing.md` 18.338) - the hardware
+     cursor: the pointer moved on the cursor queue without composing a
+     frame - `hal_cursor_set`/`_move`/`_hide`, `SYS_SCREEN_CURSOR`,
+     `gfx.cursor`, and the window manager handing its arrow over when the
+     display takes it.
    - **c** - the screen's size from the device (`GET_DISPLAY_INFO`), and a
      resize while running - the protocol `hal.md` put off until there were
      two implementations to design it against.

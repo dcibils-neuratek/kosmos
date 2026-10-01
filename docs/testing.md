@@ -15992,3 +15992,49 @@ checked an order before - and the refusals by their codes, and
 changed. 79 of 80 in 9:52; `x86-sound` heard its tone 8-11% slow (406 Hz
 for 440, 371 ms for 333) while 142 MB downloaded beside it - QEMU's audio
 clock under the host's load, the flake 6zw records - and passed run alone.
+
+## 18.338 The pointer drawn by the display (4h b)
+
+**What it changes**: the window manager composited its arrow into every
+frame, so a move of the pointer was two rectangles of damage - where it was,
+where it is - composed and, on virtio-gpu, sent to the host: the commonest
+thing a person does with a desktop cost a frame each time.
+
+**Now a display with a pointer of its own draws it.** virtio-gpu has one:
+a second resource, 64 by 64 with its alpha (`B8G8R8A8_UNORM`, the word
+0xAARRGGBB), backed by 16 KB in the kernel's image, and the cursor queue,
+whose `UPDATE_CURSOR` gives the picture and its hot spot and `MOVE_CURSOR`
+the place - everything checked against QEMU 11.1.1's `virtio_gpu.h` and
+`virtio-gpu.c` (a cursor is 64 by 64 and nothing else; its pixels are copied
+from the host's image of the resource, so they are transferred first; a move
+carries the resource too, since QEMU hides the pointer when it is 0; a
+cursor command is handed back with nothing written). `hal_cursor_set`,
+`_move` and `_hide` - the HAL's second entry virtio-gpu earns, with both
+boards behind it - and `SYS_SCREEN_CURSOR` for the holder of the screen and
+nobody else, `SYS_ERR_NO_DEVICE` from a display with no pointer.
+`gfx.cursor(surface, hot_x, hot_y, x, y)`, `gfx.cursor_move`,
+`gfx.cursor_hide`. The window manager hands its arrow over as it starts and,
+when the display took it, sends each move and draws no arrow; a drag's badge
+stays its own, beside it. It says which: "the pointer drawn by the display",
+or "composited" on ramfb, which has no pointer and composites as before.
+
+**The test** (`run_screenshot.py`'s desktop phase, in the third display part
+and in both virtio-gpu suites, once the desktop is up - a phase of its own
+cost half a minute a board starting and stopping the same desktop): QEMU's
+screendump is the device's image
+without its cursor - QEMU's display draws that over it - so the frame is
+what is checked: the same 10 by 16 spot with the pointer on it and with it
+away. Under virtio-gpu, on both machines, the window manager says the display
+draws it and 0 of 160 pixels differ; on ramfb it says composited and 77
+differ. **Both controls bit**: the arrow never handed over - "composited"
+said under virtio-gpu; and handed over but still composited - 77 pixels
+differ where the display was said to draw it.
+
+**And the gate back inside ten minutes.** With the cursor's phase and the
+browser's checks of today the full gate ran 80 suites in 10:05, past the
+budget (`CLAUDE.md`). The same checks, in less time: the cursor's check
+folded into the desktop phase, whose desktop it needs; and the select test's
+six presses made clicks - the suite's `press` moves the pointer away and
+lets the page settle for two seconds after, which a menu whose answers are
+waited for does not need - the browser's first half 141 s to 131 on ARM,
+156 to 145 on x86. The full gate: 80 suites in 9:44.

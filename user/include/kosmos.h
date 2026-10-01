@@ -688,6 +688,29 @@ static inline long kosmos_screen_flush(unsigned x, unsigned y, unsigned w,
     return sys4(SYS_SCREEN_FLUSH, (long)x, (long)y, (long)w, (long)h);
 }
 
+/*
+ * The pointer drawn by the display (`SYS_SCREEN_CURSOR`, `roadmap.md` 4h b):
+ * a 64 by 64 picture of 0xAARRGGBB words and its hot spot, where it is, and
+ * then places. `SYS_ERR_NO_DEVICE` from a display with no pointer of its own.
+ */
+static inline long kosmos_cursor_set(const uint32_t *argb, unsigned hot_x,
+                                     unsigned hot_y, unsigned x, unsigned y)
+{
+    return sys5(SYS_SCREEN_CURSOR, (long)CURSOR_SET, (long)(uintptr_t)argb,
+                (long)((hot_x & 0xffffu) | (hot_y & 0xffffu) << 16), (long)x,
+                (long)y);
+}
+
+static inline long kosmos_cursor_move(unsigned x, unsigned y)
+{
+    return sys5(SYS_SCREEN_CURSOR, (long)CURSOR_MOVE, (long)x, (long)y, 0, 0);
+}
+
+static inline long kosmos_cursor_hide(void)
+{
+    return sys5(SYS_SCREEN_CURSOR, (long)CURSOR_HIDE, 0, 0, 0, 0);
+}
+
 static inline long kosmos_pointer(struct pointer_info *out)
 {
     return sys1(SYS_POINTER, (long)(uintptr_t)out);

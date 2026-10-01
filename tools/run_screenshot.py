@@ -4775,6 +4775,71 @@ def stop_desktop(guest):
         time.sleep(0.3)
 
 
+def cursor_held(guest, mark):
+    """**The pointer, drawn by the display when it can** (`roadmap.md` 4h b),
+    asked of the desktop `check_desktop` has up.
+
+    Under virtio-gpu the window manager hands its arrow to the device once and
+    from then on sends only the pointer's place: the device draws it over the
+    screen, so a move composes no frame and the arrow is in no frame at all.
+    On ramfb, which has no pointer of its own, it composites the arrow into
+    every frame as it always did.
+
+    QEMU's screendump is the device's image without its cursor - QEMU's
+    display draws that on top - so the check is the frame: the same spot
+    with the pointer on it and then away from it. Drawn by the display, the
+    two are the same pixels; composited, the arrow is in the first and not
+    the second. And the window manager says which it is doing, which must be
+    the display's under virtio-gpu and composited on ramfb.
+
+    Part of the desktop's phase rather than one of its own: it needs the
+    same desktop, and starting and stopping one for it cost the gate half a
+    minute a board.
+    """
+    said = None
+
+    for line in guest.seen[mark:].splitlines():
+        if line.startswith("wm: the pointer "):
+            said = line.strip()
+
+    expected = ("wm: the pointer drawn by the display" if _VIRTIO_GPU
+                else "wm: the pointer composited")
+
+    if said != expected:
+        raise Failure(f"the window manager should have said {expected!r} on "
+                      f"{'virtio-gpu' if _VIRTIO_GPU else 'ramfb'}, and said "
+                      f"{said!r}.\n" + guest.seen[mark:][-800:])
+
+    w, h, _ = parse_ppm(guest.screendump())
+    spot = (w // 2, h // 2 + 40)
+
+    def frame_at():
+        _, _, at = pixel_reader(guest.screendump())
+        return [at(spot[0] + dx, spot[1] + dy) for dy in range(16) for dx in range(10)]
+
+    guest.mouse_to(*_to_tablet(spot[0], spot[1], w, h))
+    time.sleep(1.0)
+    on = frame_at()
+    guest.mouse_to(*_to_tablet(40, h - 40, w, h))
+    time.sleep(1.0)
+    away = frame_at()
+    changed = sum(1 for a, b in zip(on, away) if a != b)
+
+    if _VIRTIO_GPU and changed:
+        raise Failure(f"the arrow is in the frame: {changed} of 160 pixels where "
+                      f"the pointer was differ from the same spot with it away - "
+                      f"composited, where the display was said to draw it")
+
+    if not _VIRTIO_GPU and changed < 40:
+        raise Failure(f"the composited arrow is not in the frame: {changed} of 160 "
+                      f"pixels where the pointer was differ from the same spot "
+                      f"with it away")
+
+    print(f"cursor: {said[4:]}, {changed} of 160 pixels where it was differ "
+          f"without it", flush=True)
+    return 1
+
+
 def check_starting(guest):
     """**What is starting breathes on the Deskbar** (`docs/launching.html`).
 
@@ -10337,6 +10402,10 @@ def check_desktop(guest):
 
     checks += 1
 
+    # The pointer, while the desktop is up: drawn by the display under
+    # virtio-gpu, composited on ramfb (4h b).
+    checks += cursor_held(guest, mark)
+
     DESK = (0x1c, 0x25, 0x30)          # the dark palette's `desktop`
     CELL_W, CELL_H = 112, 56 + GLYPH_H  # tracker.lua's cell
 
@@ -11571,7 +11640,8 @@ def main():
           f"{focus_checks} on the Deskbar showing where the focus went at "
           f"once, {starting_checks} on a program that is starting breathing "
           f"on the Deskbar until its window opens, "
-          f"{desktop_checks} on the desktop below the strip and an icon "
+          f"{desktop_checks} on the desktop below the strip, the pointer "
+          f"drawn by the display or composited, and an icon "
           f"staying where it is dragged, "
           f"{icon_size_checks} on the icon size chosen on the desktop and "
           f"kept, "

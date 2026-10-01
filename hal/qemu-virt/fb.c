@@ -32,6 +32,23 @@ void hal_fb_flush(unsigned x, unsigned y, unsigned w, unsigned h)
     virtio_gpu_flush(x, y, w, h);
 }
 
+/* And its pointer: virtio-gpu's, or none (`roadmap.md` 4h b). */
+bool hal_cursor_set(const uint32_t *argb, unsigned hot_x, unsigned hot_y,
+                    unsigned x, unsigned y)
+{
+    return virtio_gpu_cursor_set(argb, hot_x, hot_y, x, y);
+}
+
+void hal_cursor_move(unsigned x, unsigned y)
+{
+    virtio_gpu_cursor_move(x, y);
+}
+
+void hal_cursor_hide(void)
+{
+    virtio_gpu_cursor_hide();
+}
+
 /* With where its size came from (`opt/kosmos/fb`, `roadmap.md` 6zt). */
 const char *hal_fb_describe(void)
 {

@@ -535,7 +535,23 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_ENTROPY     63  /* (buf, len)             -> len or error       */
 
-#define SYS_MAX         64
+/*
+ * **The pointer, drawn by the display** (`roadmap.md` 4h b), for the holder
+ * of the screen - the compositor - and nobody else. `CURSOR_SET` gives it a
+ * picture, 64 by 64 words of 0xAARRGGBB at `ptr`, the hot spot packed as
+ * `hot_x | hot_y << 16`, and where it is; `CURSOR_MOVE` a place; and
+ * `CURSOR_HIDE` takes it away. `SYS_ERR_NO_DEVICE` from a display with no
+ * pointer of its own - ramfb, a firmware screen - which leaves the caller to
+ * draw one, as it always did.
+ */
+#define SYS_SCREEN_CURSOR 64 /* (op, ptr|x, hot|y, x, y) -> 0 or error     */
+
+#define CURSOR_SET      1u
+#define CURSOR_MOVE     2u
+#define CURSOR_HIDE     3u
+#define CURSOR_SIDE     64u
+
+#define SYS_MAX         65
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */

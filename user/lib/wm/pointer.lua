@@ -94,6 +94,10 @@ return function(ctx)
       PT.x, PT.y = nx, ny
       add_damage(PT.x, PT.y, cw, ch)
 
+      -- The display's pointer, when it draws it (4h b): its place, and no
+      -- frame - `cursor_size` is nothing then, but a drag's badge.
+      if OUT.hw_cursor then gfx.cursor_move(nx, ny) end
+
       -- The title bar's three show their glyphs while the pointer is over
       -- them: repaint the three it left and the three it reached.
       local over = OUT.boxes_under(nx, ny)

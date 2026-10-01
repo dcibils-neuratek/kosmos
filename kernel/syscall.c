@@ -1538,6 +1538,41 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
         break;
 
+    case SYS_SCREEN_CURSOR:
+        /*
+         * The holder of the screen, as for a flush. The picture is read
+         * where it lies, once checked, as `SYS_WRITE` reads a line: this
+         * process is the one running, so nothing unmaps it in between. A
+         * hot spot or a place out of range is the driver's to refuse or
+         * clip, and every word is only ever read as a size.
+         */
+        if (!p->owns_screen) {
+            result = SYS_ERR_DENIED;
+        } else if (sc->arg[0] == CURSOR_SET) {
+            uintptr_t at = sc->arg[1];
+            size_t bytes = CURSOR_SIDE * CURSOR_SIDE * sizeof(uint32_t);
+
+            if (!process_may_read(p, at, bytes)) {
+                result = SYS_ERR_FAULT;
+            } else if (!hal_cursor_set((const uint32_t *)at,
+                                       (unsigned)(sc->arg[2] & 0xffffu),
+                                       (unsigned)(sc->arg[2] >> 16 & 0xffffu),
+                                       (unsigned)sc->arg[3], (unsigned)sc->arg[4])) {
+                result = SYS_ERR_NO_DEVICE;
+            } else {
+                result = 0;
+            }
+        } else if (sc->arg[0] == CURSOR_MOVE) {
+            hal_cursor_move((unsigned)sc->arg[1], (unsigned)sc->arg[2]);
+            result = 0;
+        } else if (sc->arg[0] == CURSOR_HIDE) {
+            hal_cursor_hide();
+            result = 0;
+        } else {
+            result = SYS_ERR_BADCALL;        /* no such operation */
+        }
+        break;
+
     case SYS_SCREEN_TAKE:
         /*
          * "I am drawing the whole screen now; stop printing on it."

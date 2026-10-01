@@ -2249,14 +2249,20 @@ end
 local function cursor_size()
   local bw, bh = badge_size()
 
-  if bw == 0 then return CURSOR_W, CURSOR_H end
+  -- The display draws the arrow (`OUT.hw_cursor`, below): nothing of it is
+  -- in a frame, so a move damages nothing but a drag's badge.
+  if bw == 0 then
+    if OUT.hw_cursor then return 0, 0 end
+
+    return CURSOR_W, CURSOR_H
+  end
 
   return math.max(CURSOR_W, BADGE_DX + bw),
          math.max(CURSOR_H, BADGE_DY + bh)
 end
 
 local function draw_cursor()
-  for row = 0, CURSOR_H - 1 do
+  for row = 0, OUT.hw_cursor and -1 or CURSOR_H - 1 do
     local line = CURSOR[row + 1]
     local col = 0
 
@@ -2297,6 +2303,36 @@ local function draw_cursor()
               PT.y + BADGE_DY + BADGE_PAD // 2,
               PT.drag.label, theme.text, theme.raised)
   end
+end
+
+--
+-- **The pointer drawn by the display, when it can** (`roadmap.md` 4h b): the
+-- arrow handed over once, a 64 by 64 picture with its alpha, and from then on
+-- only its place - so a move composes no frame and sends no pixels, and the
+-- arrow is in no frame at all. A drag's badge stays here, drawn beside it. A
+-- display with no pointer of its own - ramfb, a firmware screen - says no,
+-- and the arrow is composited as it always was. Said, for whoever reads the
+-- log (`tools/run_screenshot.py`'s cursor phase).
+--
+do
+  local picture = gfx.surface{ w = 64, h = 64 }       -- zeroed: transparent
+
+  for row = 0, CURSOR_H - 1 do
+    local line = CURSOR[row + 1]
+
+    for col = 0, CURSOR_W - 1 do
+      local ch = line:sub(col + 1, col + 1)
+
+      if ch ~= "." then
+        picture:fill(col, row, 1, 1, (ch == "X") and 0xff000000 or 0xffffffff)
+      end
+    end
+  end
+
+  OUT.hw_cursor = gfx.cursor and gfx.cursor(picture, 0, 0, PT.x, PT.y) == true
+  picture:free()
+  print(OUT.hw_cursor and "wm: the pointer drawn by the display"
+        or "wm: the pointer composited")
 end
 
 --------------------------------------------------------------------------
@@ -6469,7 +6505,10 @@ while OUT.running do
 end
 
 -- Given back, which repaints: the console has no scrollback, so it starts
--- again from the top rather than restoring something nobody kept.
+-- again from the top rather than restoring something nobody kept - and the
+-- display's pointer with it, which the console has no use for.
+if OUT.hw_cursor then gfx.cursor_hide() end
+
 sys.screen_take(false)
 
 back:free()

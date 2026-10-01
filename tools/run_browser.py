@@ -1647,6 +1647,16 @@ def main():
             go_to("select.html", "the page of selects")
             time.sleep(1.0)
 
+            # A click, and no more: `press` moves the pointer away and lets the
+            # page settle after, which a menu - whose answers are waited for -
+            # does not need, and five of them were ten seconds of the gate's.
+            def click(x, y):
+                guest.mouse_to(*_to_tablet(x, y, w4, h4))
+                time.sleep(0.25)
+                guest.mouse_button(True)
+                time.sleep(0.1)
+                guest.mouse_button(False)
+
             def menu_at(since):
                 m = re.search(r"browser: a menu at (-?\d+),(-?\d+), (\d+) by (\d+), "
                               r"rows of (\d+)", guest.seen[since:])
@@ -1667,7 +1677,7 @@ def main():
                               f"screen. Wrote {args.out}.")
 
             mark = len(guest.seen)
-            press((machine[0] + machine[2]) // 2, (machine[1] + machine[3]) // 2)
+            click((machine[0] + machine[2]) // 2, (machine[1] + machine[3]) // 2)
             said = guest.wait_for_line("browser: a select's menu, ", "the machines' menu",
                                        since=mark)
             mx, my, mw, mh, row = opened(mark, "the machines' menu opening")
@@ -1676,7 +1686,7 @@ def main():
                 raise Failure(f"the machines' menu was not its three options: {said!r}")
 
             mark = len(guest.seen)
-            press(mx + 20, my + 2 + 2 * row + row // 2)
+            click(mx + 20, my + 2 + 2 * row + row // 2)
             picked = chose(mark, "QEMU chosen from the menu")
 
             if not picked.startswith('"QEMU", option 3 of 3'):
@@ -1689,7 +1699,7 @@ def main():
                               f"Wrote {args.out}.")
 
             mark = len(guest.seen)
-            press((long_box[0] + long_box[2]) // 2, (long_box[1] + long_box[3]) // 2)
+            click((long_box[0] + long_box[2]) // 2, (long_box[1] + long_box[3]) // 2)
             said = guest.wait_for_line("browser: a select's menu, ", "the long menu",
                                        since=mark)
             grouped = re.match(r"120 options in (\d+) rows, (\d+) to a menu", said)
@@ -1702,9 +1712,9 @@ def main():
             mx, my, mw, mh, row = opened(mark, "the long menu opening")
             last = 120 - (groups - 1) * fit
             mark = len(guest.seen)
-            press(mx + 20, my + 2 + (groups - 1) * row + row // 2)
+            click(mx + 20, my + 2 + (groups - 1) * row + row // 2)
             sx, sy, sw, sh, srow = opened(mark, "the last group's submenu")
-            press(sx + 20, sy + 2 + (last - 1) * srow + srow // 2)
+            click(sx + 20, sy + 2 + (last - 1) * srow + srow // 2)
             picked = chose(mark, "the hundred and twentieth chosen from its group")
 
             # NetSurf keeps an option's spaces as no-break spaces, as it draws
@@ -1719,7 +1729,7 @@ def main():
                 raise Failure(f"the Send button, #6f9e2b, is not on the screen. "
                               f"Wrote {args.out}.")
 
-            press((send[0] + send[2]) // 2, (send[1] + send[3]) // 2)
+            click((send[0] + send[2]) // 2, (send[1] + send[3]) // 2)
             sent = asked_for(lambda p_: p_.startswith("/chosen.html?"))
 
             if sent != "/chosen.html?machine=QEMU&n=Option+120":

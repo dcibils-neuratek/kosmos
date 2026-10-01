@@ -507,6 +507,24 @@ bool hal_fb_init(struct fb *out);
 void hal_fb_flush(unsigned x, unsigned y, unsigned w, unsigned h);
 
 /*
+ * **The pointer, drawn by the display** (`roadmap.md` 4h b). A display that
+ * keeps its own copy of the screen - virtio-gpu - can also keep a pointer
+ * of its own and draw it over the screen itself, so that moving the pointer
+ * composes no frame and sends no pixels. ramfb and a firmware screen have no
+ * such thing, and say false.
+ *
+ * `argb` is 64 by 64 words of 0xAARRGGBB, `hot_x` and `hot_y` the point of
+ * the picture that is the pointer's position, `x` and `y` where it is now.
+ * Arrived with its second implementation in front of it, as `hal_fb_flush`
+ * did: virtio-gpu on both boards, and the Pi's mailbox cursor when there is
+ * a Pi.
+ */
+bool hal_cursor_set(const uint32_t *argb, unsigned hot_x, unsigned hot_y,
+                    unsigned x, unsigned y);
+void hal_cursor_move(unsigned x, unsigned y);
+void hal_cursor_hide(void);
+
+/*
  * The same screen, asked for before there is a page allocator.
  *
  * **This exists because a laptop has no serial port.** The boot log reaches

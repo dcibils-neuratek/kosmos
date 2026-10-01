@@ -3094,6 +3094,65 @@ static int l_flush(lua_State *L)
     return 0;
 }
 
+/*
+ * **The pointer, drawn by the display** (`roadmap.md` 4h b).
+ *
+ *   gfx.cursor(surface, hot_x, hot_y, x, y) -> true when the display took it
+ *   gfx.cursor_move(x, y)
+ *   gfx.cursor_hide()
+ *
+ * `surface` is the picture, 64 by 64 with its alpha - a fresh surface is
+ * all transparent - and the display draws it over the screen at each place
+ * it is told, so moving the pointer composes no frame and sends no pixels.
+ * False from a display with no pointer of its own (ramfb, a firmware
+ * screen) or for a process that does not hold the screen: the compositor
+ * then draws the pointer itself, as it always did.
+ */
+static uint32_t cursor_picture[64 * 64];
+
+static int l_cursor(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    lua_Integer hot_x = luaL_checkinteger(L, 2);
+    lua_Integer hot_y = luaL_checkinteger(L, 3);
+    lua_Integer x = luaL_optinteger(L, 4, 0);
+    lua_Integer y = luaL_optinteger(L, 5, 0);
+    unsigned row;
+
+    luaL_argcheck(L, s->width == 64 && s->height == 64, 1,
+                  "a pointer's picture is 64 by 64");
+    luaL_argcheck(L, hot_x >= 0 && hot_x < 64 && hot_y >= 0 && hot_y < 64, 2,
+                  "the hot spot is inside the picture");
+
+    /* Row by row: a surface's pitch is its own, and the display's picture
+     * is 64 words a row exactly. */
+    for (row = 0; row < 64; row++) {
+        __builtin_memcpy(&cursor_picture[row * 64], row_of(s, row), 64 * 4);
+    }
+
+    lua_pushboolean(L, kosmos_cursor_set(cursor_picture, (unsigned)hot_x,
+                                         (unsigned)hot_y,
+                                         x < 0 ? 0u : (unsigned)x,
+                                         y < 0 ? 0u : (unsigned)y) == 0);
+    return 1;
+}
+
+static int l_cursor_move(lua_State *L)
+{
+    lua_Integer x = luaL_checkinteger(L, 1);
+    lua_Integer y = luaL_checkinteger(L, 2);
+
+    (void)kosmos_cursor_move(x < 0 ? 0u : (unsigned)x, y < 0 ? 0u : (unsigned)y);
+    return 0;
+}
+
+static int l_cursor_hide(lua_State *L)
+{
+    (void)L;
+    (void)kosmos_cursor_hide();
+    return 0;
+}
+
 static const luaL_Reg surface_methods[] = {
     { "size",   l_size },
     { "flush",  l_flush },
@@ -3436,6 +3495,9 @@ static const luaL_Reg gfx_functions[] = {
     { "wrap",    l_wrap },
     { "bytes",   l_surface_bytes },
     { "screen",  l_screen },
+    { "cursor",  l_cursor },
+    { "cursor_move", l_cursor_move },
+    { "cursor_hide", l_cursor_hide },
     { "encode_png", l_encode_png },
     { NULL, NULL }
 };

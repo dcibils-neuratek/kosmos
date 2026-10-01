@@ -508,8 +508,9 @@ images would leave too little. **Diego's**: room on the disk. `build/` is
 0.10.193 stable, which stay, and 0.10.200 development, which is his to keep
 or not; the rest is in use. `llvm` and `mesa` can go again if virgl is not
 wanted yet. Nothing was deleted but this session's own scratch images. The M700's codec waits on the M700 (`groove --report
-30` and the 1080p film's numbers from the 0.10.190 stick). Next: the hardware
-cursor (4h b), which needs no toolchain.
+30` and the 1080p film's numbers from the 0.10.190 stick). **The hardware
+cursor built** (4h b, 18.338): under virtio-gpu the display draws the
+pointer and a move composes no frame; ramfb composites it as before.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
