@@ -15059,3 +15059,47 @@ fetched again whole; its pictures are not. Wikipedia's front page changes by
 the second: kept, asked about, and new each time, which is right.
 
 **The gate**: 76 of 76, in 8:58.
+
+## 18.319 A window that draws its own pixels, resized (6zz e)
+
+**`roadmap.md` 6zz e** - Diego, 1 October: "make sure our browser new design
+is resizable", so resizing comes before the new chrome rather than after.
+
+Why it could not be: such a window's pixels are a region the application
+made once, two surfaces of one size, mapped by the window manager at open;
+nothing could replace it, and the kit did not even keep the region's
+capability.
+
+- **The window manager**: a window that said `resizable` at open gets the
+  grip and the maximise light. A resize changes the frame and shows the
+  picture it has stretched into it - the compositor stretches whenever the
+  buffer is not the frame's size - and tells the application the size of its
+  own pixels, less a menu bar. `surface`, a new message: a region of two
+  surfaces at the new size, held to holding them, mapped and kept aside
+  until the first frame drawn in it is committed - so the window shows the
+  old picture until there is a new one - then the old region let go.
+- **The kit**: `direct_region` makes a region, `take_size` hands one over
+  and lets the old go, a `resize` event to a direct window takes a region
+  the new size before `on_resize`; the window keeps its capability and lets
+  it go at `close`; and `window:resize` reads a refusal as one - it took a
+  refusal's missing fields as the new size.
+- **The browser**: its geometry a function of the size, the toolbar laid
+  out along the new width, the address field never narrower than 40, and
+  `reflow` - the box tree NetSurf built laid out again at the new width,
+  its pictures scaled to their new boxes, the band made for the new view
+  and painted where the page was being read.
+
+**`arm-browser` and `x86-browser`**, at the end, on the long page: the grip
+dragged 300 left and 100 up. The browser says it laid the page out again at
+568 by 484 - the new page width and view - 118,236 pixels tall where it was
+76,236, since its lines wrap sooner, drawn into a surface 600 by 540; the
+window's right edge is where the new width puts it, on 20 rows of 20; and
+the page's lines end 564 pixels in - within a word of 568, where the old
+picture squashed into the new frame ends at 488. Controls: no region handed
+over, "drawn at 900x640"; the new region never swapped in, the lines
+reaching 488. The first two tries at a screen check were what the
+controls proved blind: a white run counts the scrollbar's track, which is
+white in this look, and a window of 480 to 578 let the old page squashed
+through.
+
+**The gate**: 76 of 76, in 9:00.

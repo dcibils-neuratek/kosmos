@@ -146,7 +146,7 @@ CHECKED_PAGE = ("<!doctype html><html><head><title>Kept</title></head><body>"
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
 # adds a title bar above them, which `find_window` finds.
-TOOL, STAT, SBAR = 34, 22, 16
+TOOL, STAT, SBAR, PAD = 34, 22, 16, 8
 WIN_W, WIN_H = 900, 640
 
 
@@ -1490,6 +1490,109 @@ def main():
         if long_asked.count("/kosmos.png") != 1:
             raise Failure(f"the long page's last picture was not kept once "
                           f"decoded: the server was asked for {long_asked!r}")
+
+        #
+        # **Resized** (`roadmap.md` 6zz e) - Diego, 1 October: "make sure our
+        # browser new design is resizable". The grip, the window's bottom
+        # right corner, dragged 300 pixels left and 100 up: the window manager
+        # resizes the frame, the kit hands over a region the new size, and
+        # the browser lays the page out again - at 568 by 484, the new page
+        # width and view, and taller than it was, since its lines now wrap
+        # sooner. And on the screen, the page's white is the new width.
+        #
+        typed("g")
+        time.sleep(1.5)
+        mark = len(guest.seen)
+        gx, gy = x0 + WIN_W - 6, y0 - TOOL + WIN_H - 6
+        guest.mouse_to(*_to_tablet(gx, gy, w4, h4))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+
+        for step in range(1, 6):
+            guest.mouse_to(*_to_tablet(gx - 60 * step, gy - 20 * step, w4, h4))
+            time.sleep(0.15)
+
+        guest.mouse_button(False)
+        time.sleep(0.4)
+        guest.mouse_to(*_to_tablet(w4 - 30, h4 - 30, w4, h4))
+        again = guest.wait_for_line("browser: laid out again at ",
+                                    "the page laid out at the new size",
+                                    since=mark)
+        size = re.match(r"(\d+)x(\d+), (\d+) pixels tall, drawn at (\d+)x(\d+)",
+                        again)
+
+        if not size or (int(size.group(1)), int(size.group(2))) != (568, 484):
+            raise Failure(
+                f"the grip dragged 300 left and 100 up did not lay the page "
+                f"out at 568x484: {again.strip()!r}. Wrote {args.out}.")
+
+        if (int(size.group(4)), int(size.group(5))) != (600, 540):
+            raise Failure(
+                f"the browser is not drawing into a surface the window's new "
+                f"size, 600x540: {again.strip()!r} - the kit did not hand over "
+                f"a new region. Wrote {args.out}.")
+
+        if int(size.group(3)) <= int(long_page.group(1)):
+            raise Failure(
+                f"the page laid out narrower is not taller: {size.group(3)} "
+                f"pixels against {long_page.group(1)} before - its lines did "
+                f"not wrap again. Wrote {args.out}.")
+
+        time.sleep(2.0)
+        wr, hr, pxr = parse_ppm(guest.screendump())
+
+        with open(args.out.replace(".png", "-resized.png"), "wb") as f:
+            f.write(png(wr, hr, pxr))
+
+        # The window's new right edge, row by row down the page: just inside
+        # it is white - the scrollbar's track is, in this look - and just
+        # past it is the frame and the desktop, as is where the window used
+        # to reach.
+        at_ = reader(pxr, wr)
+        edge = x0 + 600
+        whole = 0
+
+        def white_at(x, y):
+            r, g, b = at_(x, y)
+            return r > 245 and g > 245 and b > 245
+
+        for row in range(y0 + 20, y0 + 220, 10):
+            if (white_at(edge - 4, row) and not white_at(edge + 4, row)
+                    and not white_at(x0 + 750, row)):
+                whole += 1
+
+        if whole < 18:
+            raise Failure(
+                f"after the resize the window's right edge is not at {edge}: "
+                f"{whole} of 20 rows showed it there - the window shows the old "
+                f"size, or nothing. Wrote {args.out.replace('.png', '-resized.png')}.")
+
+        # And what is in it: the page's lines end where lines wrapped at 568
+        # do - within a word of it, past 516, where the old page squashed
+        # into the new frame ends at about 490 (its paragraphs were one line
+        # of about 730, at two thirds) - and inside 578, so it is not a wider
+        # page cropped.
+        reach = 0
+
+        for row in range(y0 + 80, y0 + 400, 2):
+            for x in range(x0 + 300, min(wr, x0 + 600)):
+                r, g, b = at_(x, row)
+
+                if r + g + b < 300:
+                    reach = max(reach, x - x0)
+
+        if not PAD + 508 < reach <= PAD + 568 + 2:
+            raise Failure(
+                f"after the resize the page's lines reach {reach} pixels in, "
+                f"not between {PAD + 508} and {PAD + 570}: it is the old picture "
+                f"squashed, or a page laid out wider and cropped. Wrote "
+                f"{args.out.replace('.png', '-resized.png')}.")
+
+        print(f"resized: laid out again at {size.group(1)}x{size.group(2)}, "
+              f"{size.group(3)} pixels tall from {long_page.group(1)}; its right "
+              f"edge where the new width puts it on {whole} of 20 rows, its "
+              f"lines reaching {reach} pixels in", flush=True)
 
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "

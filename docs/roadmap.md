@@ -2697,6 +2697,22 @@ processors, and still what follows USB:
       just LUA as the orqhestrator?": the parser, styles, layout and
       painting are C already; the test page and the profiler decide what
       else moves, measured on the M700 and not on QEMU.
+
+      **In steps, from 1 October** - each built, tested and gated before
+      the next, on the window that resizes (e): **d1** the header in the
+      kit's widgets - back, forward, reload or stop, the address field
+      saying how the page came before anything else, the sidebar and the
+      menu - and the status line as the page benchmark, the link under the
+      pointer on its left and the page's costs on its right, opening the
+      breakdown when clicked; **d2** tabs as the title bar, each with its
+      own history, a new one opening on favorites and what was open lately,
+      and their keys; **d3** favorites as files in `/Home/Favorites` - the
+      star, the bar, the sidebar; **d4** history in
+      `/Home/Preferences/browser`, by day, searched as typed, thirty days;
+      **d5** Settings - the home page, the search engine, text size, how
+      long history is kept, the authorities, emptying the cache; **d6**
+      searching from the address field, DuckDuckGo unless Settings says
+      Google.
    e. **Windows that draw their own pixels, resizable** - the browser's,
       Cafesa3D's, Camera's, Video's: the window manager refuses today
       ("its surface is shared and has a size"). On letting go of the grip
@@ -2713,6 +2729,22 @@ processors, and still what follows USB:
       browser's half small - a new width is `layout_document` again at
       that width, which is what a reflow is - and the chrome's widgets
       are laid out by the kit, so they follow without code of their own.
+
+      **BUILT 1 October** (`testing.md` 18.319). A window that draws its
+      own pixels and says `resizable` gets a grip; the window manager
+      resizes the frame, shows the old picture stretched into it, and tells
+      the application its new size; the kit makes a region of two surfaces
+      that size and hands it over (`surface`, a new message), and the
+      window manager keeps it aside until the first frame in it is
+      committed, then lets the old one go - never a blank window between.
+      The kit now keeps its region's capability, and lets it go when the
+      window closes: before, a direct window's region was the process's
+      until the process ended. The browser opts in: its geometry follows
+      the new size, the toolbar lays out along it, and the page is laid out
+      again at the new width. **Still to come**: Cafesa3D, Camera and Video
+      opting in - each lays out for its size already, as Cafesa3D's full
+      screen does by opening a second window - and the grip's outline
+      drawn as `docs/browser.html` draws it.
    f. **First, the kernel's share window** (`testing.md` 18.297): a
       region's pages are held by capabilities and not by mappings, so a
       program that drops its last capability keeps a mapping onto pages the

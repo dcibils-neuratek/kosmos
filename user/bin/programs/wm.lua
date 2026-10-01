@@ -2684,6 +2684,28 @@ local function swap_surface(win, w, h)
   damage_window(win)
 
   --
+  -- **One that draws its own pixels** (`roadmap.md` 6zz e): the frame takes
+  -- its new size now, and the picture it has is shown stretched into it
+  -- (`drawwindow`, which stretches whenever `src_w` is not the width) until
+  -- the application hands over a region the new size and draws in it. It
+  -- is told the size of its own pixels, in its points - the window less a
+  -- menu bar - which is what it makes the region for.
+  --
+  if win.shared then
+    win.w, win.h = w, h
+
+    if win.menubar then
+      win.menubar.surface:free()
+      win.menubar.surface = gfx.surface{ w = w, h = win.menubar.h }
+      strips.paint(win)
+    end
+
+    damage_window(win)
+    post(win, { type = "resize", w = w, h = h - strips.below(win) })
+    return true
+  end
+
+  --
   -- `pcall`, because `gfx.surface` *raises* when the kernel refuses the
   -- pages rather than returning nil - and this used to check for nil, which
   -- is a check that could never fire.
@@ -3116,6 +3138,11 @@ handlers.open = function(req, who, cap)
         [2] = gfx.wrap{ at = at + bytes, w = src_w, h = src_h },
         live = 1,
       }
+
+      -- And whether it can make a region at another size when told one
+      -- (`handlers.surface`, `roadmap.md` 6zz e): it asked, so it gets a
+      -- grip.
+      win.resizes_itself = req.resizable == true
     else
       -- Said rather than silently ignored. A window that quietly refuses a
       -- shared surface is a window that opens, stays blank, and gives the
@@ -4080,6 +4107,22 @@ handlers.commit = function(req)
     return { ok = false, error = "that window does not have a shared surface" }
   end
 
+  --
+  -- **The first frame in a region handed over at a new size** (6zz e): it
+  -- takes the old one's place now, and not when it was handed over, so the
+  -- window showed the old picture until there was a new one to show. It
+  -- was drawn into its first buffer, which is the one shown.
+  --
+  if win.shared_next then
+    local old = win.shared
+
+    win.shared, win.shared_next = win.shared_next, nil
+    win.src_w, win.src_h = win.shared.w, win.shared.h
+    win.shared.live = 2
+    sys.release(old.cap)
+    damage_window(win)
+  end
+
   win.shared.live = (win.shared.live == 1) and 2 or 1
 
   -- In the buffer's own coordinates, which start below a menu bar when
@@ -4197,6 +4240,56 @@ handlers.picture = function(req, who, cap)
   return done({ ok = true, w = w, h = h })
 end
 
+--
+-- **A region at a new size, from a window that draws its own pixels**
+-- (`roadmap.md` 6zz e): `{ window, w, h }` and the region's capability -
+-- two surfaces that size, in its points, made after it was told its new
+-- size. Held to holding them, as `watch` holds a viewer's region, mapped,
+-- and kept aside until the first frame drawn in it is committed
+-- (`handlers.commit`). The reply says which buffer to draw into: the
+-- first.
+--
+handlers.surface = function(req, _, cap)
+  local win = by_handle[req.window]
+
+  local function refuse(why)
+    if cap and cap >= 0 then sys.release(cap) end
+    return { ok = false, error = why }
+  end
+
+  if not win or not win.shared then
+    return refuse("that window does not draw its own pixels")
+  end
+
+  local w, h = math.tointeger(tonumber(req.w)), math.tointeger(tonumber(req.h))
+
+  if not w or not h or w < 1 or h < 1 or not cap or cap < 0 then
+    return refuse("a new surface needs a size and a region")
+  end
+
+  local bytes = gfx.bytes(w, h)
+
+  if (sys.memory_size(cap) or 0) * 4096 < bytes * 2 then
+    return refuse("that region does not hold two surfaces that size")
+  end
+
+  local at, why = sys.memory_map(cap)
+
+  if not at then return refuse("it could not be mapped: " .. tostring(why)) end
+
+  -- One handed over before this and never drawn in goes; this replaces it.
+  if win.shared_next then sys.release(win.shared_next.cap) end
+
+  win.shared_next = {
+    cap = cap, w = w, h = h,
+    [1] = gfx.wrap{ at = at, w = w, h = h },
+    [2] = gfx.wrap{ at = at + bytes, w = w, h = h },
+    live = 1,
+  }
+
+  return { ok = true, draw_into = 1 }
+end
+
 handlers.resize = function(req)
   local win = by_handle[req.window]
 
@@ -4212,9 +4305,10 @@ handlers.resize = function(req)
   -- own request in silence. A window that draws its own pixels still
   -- cannot be resized, because its surface is shared and has a size.
   --
-  if win.shared ~= nil or win.backdrop then
+  if (win.shared ~= nil and not win.resizes_itself) or win.backdrop then
     return { ok = false,
-             error = "a window that draws its own pixels cannot be resized yet" }
+             error = "a window that draws its own pixels and did not say it "
+                     .. "can make another region cannot be resized" }
   end
 
   local pct = win.pct or 100
@@ -4791,6 +4885,12 @@ handlers.close = function(req)
     win.shared = nil
   end
 
+  -- And a region handed over at a new size and never drawn in (6zz e).
+  if win.shared_next then
+    sys.release(win.shared_next.cap)
+    win.shared_next = nil
+  end
+
   return { ok = true }
 end
 
@@ -5122,17 +5222,15 @@ end
 --
 -- Whether a window can be resized at all.
 --
--- One that draws its own pixels cannot, yet. Its buffers are a region the
--- *application* allocated and handed over, sized for exactly these
--- dimensions and holding two of them - so this process cannot make them
--- bigger, and pretending otherwise would mean compositing from memory that
--- was never mapped. Giving it back a new region needs a message in the
--- protocol and a round trip through an application that may be hung, which
--- is a second piece of work and not this one.
---
--- Until then the grip is not drawn on those windows, which is the honest
--- way to say no: a control that is not there cannot be pressed and be
--- ignored.
+-- One that draws its own pixels can when it said it can (`resizable`, at
+-- open). Its buffers are a region the *application* allocated, sized for
+-- exactly its dimensions, so this process cannot make them bigger: it
+-- changes the frame, goes on showing the old picture stretched into it,
+-- tells the application, and the application hands over a region the new
+-- size (`handlers.surface`, `roadmap.md` 6zz e). An application that did
+-- not say so may not be listening for that, and gets no grip - which is the
+-- honest way to say no: a control that is not there cannot be pressed and
+-- be ignored.
 --
 function resizable(win)
   --
@@ -5153,7 +5251,7 @@ function resizable(win)
   --
   if win.backdrop or win.strip then return false end
 
-  return win.shared == nil
+  return win.shared == nil or win.resizes_itself == true
 end
 
 --

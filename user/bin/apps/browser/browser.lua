@@ -84,7 +84,7 @@ local reloading = false
 -- The window, and what is where in it.
 --------------------------------------------------------------------------
 
-local W, H = 900, 640
+local W, H                           -- the window's size, which changes
 
 local TOOL = 34                      -- the row of buttons and the address
 local STAT = 22                      -- the status line along the bottom
@@ -92,9 +92,21 @@ local SBAR = 16                      -- the scrollbar down the right
 local PAD  = 8                       -- white margin either side of the page
 
 local VIEW_Y = TOOL
-local VIEW_H = H - TOOL - STAT
-local VIEW_W = W - SBAR
-local PAGE_W = VIEW_W - PAD * 2
+local VIEW_H, VIEW_W, PAGE_W
+
+--
+-- **The window's size, and what follows from it**: set as it opens, and
+-- again whenever it is resized (`roadmap.md` 6zz e - Diego, 1 October: "make
+-- sure our browser new design is resizable").
+--
+local function geometry(w, h)
+  W, H = w, h
+  VIEW_H = H - TOOL - STAT
+  VIEW_W = W - SBAR
+  PAGE_W = VIEW_W - PAD * 2
+end
+
+geometry(900, 640)
 
 --
 -- How much of the page is painted at once: three screens, the one being
@@ -133,6 +145,7 @@ local NS = web ~= nil and web.setup ~= nil and UA_SHEET ~= nil
 
 local win, err = ui.window{
   title = "Browser", w = W, h = H, x = 80, y = 60, direct = true,
+  resizable = true,
 }
 
 if not win then
@@ -519,7 +532,7 @@ local function lay_out_toolbar()
   URL.x = x + 6
   URL.y = 4
   URL.h = TOOL - 9
-  URL.w = GO.x - 6 - URL.x
+  URL.w = math.max(40, GO.x - 6 - URL.x)
 end
 
 local function inside(b, x, y)
@@ -1852,6 +1865,55 @@ local function page_blur()
   end
 end
 
+--
+-- **The page laid out again at the window's new size** (6zz e): the same
+-- box tree NetSurf already built, at the new width - which is what a
+-- reflow is, and the reason resizing waited for NetSurf's layout - its
+-- pictures kept and scaled once to their new boxes, the band made again
+-- for the new view, and painted around where the page was being read.
+--
+local function reflow()
+  if not doc then return end
+
+  if ns_doc then
+    local tall = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
+
+    if tall then content_h = tall end
+  else
+    content_h = doc:render(nil, PAGE_W) or content_h
+  end
+
+  if paper then
+    paper:free()
+    paper = nil
+  end
+
+  local tall = math.max(VIEW_H, math.min(content_h + 16, VIEW_H * BAND_SCREENS))
+  local made = pcall(function()
+    paper = gfx.surface{ w = PAGE_W, h = tall }
+  end)
+
+  if not made or not paper then
+    paper, paper_h = nil, 0
+    say(("no memory for a %dx%d band of the page"):format(PAGE_W, tall))
+    return
+  end
+
+  paper_h = tall
+  top = math.max(0, math.min(top, math.max(0, content_h - VIEW_H)))
+
+  if ns_doc then pictures_to_boxes() end
+
+  paint_band(top - (paper_h - VIEW_H) // 2)
+
+  -- Said, for whoever is watching it happen (`tools/run_browser.py`) -
+  -- and what it is drawn into, which is the region the kit handed over.
+  local sw, sh = win:surface():size()
+
+  print(("browser: laid out again at %dx%d, %d pixels tall, drawn at %dx%d")
+        :format(PAGE_W, VIEW_H, content_h, sw, sh))
+end
+
 local sink = ui.view{ x = 0, y = 0, w = W, h = H }
 sink.focusable = true
 
@@ -2147,6 +2209,21 @@ function sink:mouse(action, x, y)
 end
 
 win:add(sink)
+
+--
+-- **Resized**, by the grip or by the window manager's maximise (6zz e). The
+-- kit has already made a region the new size and handed it over; this is
+-- the browser's half: its geometry from the new size, the toolbar laid out
+-- along the new width, the status line cut to it, and the page reflowed.
+--
+win.on_resize = function(_, w, h)
+  geometry(w, h)
+  sink.w, sink.h = W, H
+  lay_out_toolbar()
+  status_for = nil
+  reflow()
+  frame()
+end
 
 --------------------------------------------------------------------------
 

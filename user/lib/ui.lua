@@ -5462,6 +5462,34 @@ function ui.sized(role, px, variant)
   return got or role
 end
 
+--
+-- **Two surfaces' worth of memory, shared**: what a window that draws its
+-- own pixels draws into - one shown while the other is drawn - mapped here
+-- and handed to the window manager as a capability. The region, and the
+-- capability, which the window keeps so it can let the region go: when it
+-- closes, and when it is resized and a region of the new size replaces it
+-- (`roadmap.md` 6zz e).
+--
+local function direct_region(w, h)
+  local bytes = gfx.bytes(w, h)
+  local pages = (bytes * 2 + 4095) // 4096
+  local cap = sys.memory(pages)
+
+  if not cap then return nil, nil end
+
+  local at = sys.memory_map(cap)
+
+  if not at then
+    sys.release(cap)
+    return nil, nil
+  end
+
+  return { [1] = gfx.wrap{ at = at, w = w, h = h },
+           [2] = gfx.wrap{ at = at + bytes, w = w, h = h },
+           draw_into = 2 }, cap
+end
+
+
 function ui.window(spec)
   spec = spec or {}
 
@@ -5483,24 +5511,7 @@ function ui.window(spec)
   local region = nil
 
   if spec.direct then
-    local w_ = spec.w or 400
-    local h_ = spec.h or 240
-    local bytes = gfx.bytes(w_, h_)
-    local pages = (bytes * 2 + 4095) // 4096
-
-    shared_cap = sys.memory(pages)
-
-    if shared_cap then
-      local at = sys.memory_map(shared_cap)
-
-      if at then
-        region = {
-          [1] = gfx.wrap{ at = at, w = w_, h = h_ },
-          [2] = gfx.wrap{ at = at + bytes, w = w_, h = h_ },
-          draw_into = 2,
-        }
-      end
-    end
+    region, shared_cap = direct_region(spec.w or 400, spec.h or 240)
   end
 
   local reply, err = fs.send("/Running/wm", {
@@ -5538,6 +5549,10 @@ function ui.window(spec)
     -- and opens at it, since it cannot be resized into place afterwards.
     --
     maximised = spec.maximised or nil,
+
+    -- A window that draws its own pixels and can make a new region at
+    -- another size, and says so: it gets a grip (`take_size`, 6zz e).
+    resizable = (spec.direct and spec.resizable) or nil,
 
     -- And its opposite: a strip across the top, undecorated and pinned,
     -- which takes room away from the screen rather than sitting over it.
@@ -5665,6 +5680,7 @@ function ui.window(spec)
     properties = {},
     dirty = false,
     region = region,
+    shared_cap = region and shared_cap or nil,
     ticking = {},
     tick_every = spec.tick_every or 0,
   }, window)
@@ -5779,6 +5795,41 @@ function window:commit(damage)
   return true
 end
 
+--
+-- **A window that draws its own pixels, at a new size** (`roadmap.md` 6zz
+-- e): a region of two surfaces that size, handed to the window manager in
+-- place of the one it has, and the old one let go once it has been. The
+-- window manager went on showing the old picture stretched to the new frame
+-- until now, and keeps the new region aside until the first frame drawn in
+-- it is committed - so the window is never blank between. `w` and `h` are
+-- the region's, which is the window less any menu bar.
+--
+function window:take_size(w, h)
+  if not self.region then return false, "this window does not draw its own pixels" end
+
+  local region, cap = direct_region(w, h)
+
+  if not region then return false, "no memory for a surface that size" end
+
+  local reply, why = fs.send("/Running/wm", { type = "surface",
+                                          window = self.handle, w = w, h = h },
+                             cap)
+
+  if not reply or not reply.ok then
+    sys.release(cap)
+    return false, why or (reply and reply.error)
+  end
+
+  local old = self.shared_cap
+
+  region.draw_into = reply.draw_into or 1
+  self.region, self.shared_cap = region, cap
+
+  if old then sys.release(old) end
+
+  return true
+end
+
 function window:publish(name, get, set)
   self.properties[name] = { get = get, set = set }
 end
@@ -5813,6 +5864,10 @@ function window:resize(w, h)
                                           window = self.handle, w = w, h = h })
 
   if not reply then return false, why end
+
+  -- Refused, it says so, and the window keeps the size it has: this took
+  -- the reply's fields whatever they were, and a refusal has none.
+  if not reply.ok then return false, reply.error end
 
   self.w, self.h = reply.w, reply.h
   self.root:resize(reply.w, reply.h)
@@ -6029,6 +6084,13 @@ function window:close()
   self.running = false
 
   fs.send("/Running/wm", { type = "close", window = self.handle })
+
+  -- Its pixels' region, which the window manager has let go of with the
+  -- window: kept, it was the process's until the process ended.
+  if self.shared_cap then
+    sys.release(self.shared_cap)
+    self.shared_cap, self.region = nil, nil
+  end
 
   if self.control then
     fs.answer_here("/Running/" .. self.name, nil)
@@ -6462,6 +6524,14 @@ function window:direct_event(ev)
     self.origin_x, self.origin_y = ev.x, ev.y
     self.x, self.y = ev.x, ev.y
     return true
+  end
+
+  -- Resized, for one that runs its own loop: a region the new size, and
+  -- the event left for the application, which lays out for it (6zz e).
+  if ev.type == "resize" and self.region then
+    self.w, self.h = ev.w, ev.h
+    self:take_size(ev.w, ev.h)
+    return false
   end
 
   if ev.type == "menubar" then
@@ -7139,6 +7209,11 @@ function window:run()
         -- fields are taken from the reply.
         --
         self.w, self.h = ev.w, ev.h
+
+        -- A window that draws its own pixels gets a region the new size
+        -- first, so what it draws next is drawn at it (6zz e).
+        if self.region then self:take_size(ev.w, ev.h) end
+
         self.root:resize(ev.w, ev.h)
 
         if self.on_resize then pcall(self.on_resize, self, ev.w, ev.h) end
