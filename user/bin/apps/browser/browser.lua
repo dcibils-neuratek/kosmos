@@ -76,6 +76,7 @@ local http  = use("/Kosmos/Libraries/http.lua")
 local httpcache = use("/Kosmos/Libraries/httpcache.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local favorites = use("/Kosmos/Libraries/favorites.lua")
+local history = use("/Kosmos/Libraries/history.lua")
 local theme = ui.theme
 
 --
@@ -319,14 +320,31 @@ selection all attach. That is why layout keeps its runs.</blockquote>
 local HOME = "about:start"
 
 --
--- **The page a new tab opens on** (`docs/browser.html`): what was open
--- lately, each a link, newest first - and favorites above them once they
--- are files (d3). Lately is this window's for now, the pages shown since it
--- opened; history on the disk (d4) is where it goes next.
+-- **The page a new tab opens on** (`docs/browser.html`): the favorites, and
+-- what was open lately - the newest pages of the history on the disk (d4),
+-- each once.
 --
 local NEWTAB = "about:newtab"
-local lately = {}
 local LATELY_SHOWN = 12
+
+--
+-- **How long history is kept**, in days: thirty, until Settings says
+-- otherwise (d5) - and what a day is called where it is shown: Today,
+-- Yesterday, or its date.
+--
+local HISTORY_DAYS = 30
+
+local function day_words(day)
+  local now = clock.now()
+
+  if not now then return day end
+  if day == history.day_of(now) then return "Today" end
+  if day == history.day_of(clock.at(now.epoch - 86400)) then return "Yesterday" end
+
+  local _, m, d = day:match("^(%d+)%-(%d+)%-(%d+)$")
+
+  return d and ("%d %s"):format(tonumber(d), clock.FULL_MONTHS[tonumber(m)] or m) or day
+end
 
 --------------------------------------------------------------------------
 -- State.
@@ -735,10 +753,6 @@ local show_tab, close_tab, new_tab           -- filled in further down
 
 local tabs, current = {}, nil
 
--- As wide as the drawing's and no wider, and narrower as more are open: at
--- the least, a tab is its favicon.
-local TAB_MOST, TAB_LEAST, TAB_GAP = 206, 28, 2
-
 local function index_of(t)
   for i, u in ipairs(tabs) do
     if u == t then return i end
@@ -773,23 +787,27 @@ end
 -- favicon is for, telling tabs apart at a glance. The page inside the image
 -- and a new tab are Kosmos's.
 --
-local FAVICON = { 0xff8b1e1e, 0xff1a1a1a, 0xff2f8a55, 0xffc0392b,
-                  0xff555555, 0xff2a55c9, 0xff7a4fb5, 0xffb7791f }
+local favicon_of
 
-local function favicon_of(at)
-  at = at or NEWTAB
+do
+  local FAVICON = { 0xff8b1e1e, 0xff1a1a1a, 0xff2f8a55, 0xffc0392b,
+                    0xff555555, 0xff2a55c9, 0xff7a4fb5, 0xffb7791f }
 
-  if at == HOME or at == NEWTAB then return "K", FAVICON[1] end
+  function favicon_of(at)
+    at = at or NEWTAB
 
-  local host = address_parts(at):gsub("^www%.", "")
+    if at == HOME or at == NEWTAB then return "K", FAVICON[1] end
 
-  if host == "" then host = at:match("([^/]+)/*$") or at end
+    local host = address_parts(at):gsub("^www%.", "")
 
-  local sum = 0
+    if host == "" then host = at:match("([^/]+)/*$") or at end
 
-  for i = 1, #host do sum = (sum * 31 + host:byte(i)) % 65521 end
+    local sum = 0
 
-  return (host:match("%w") or "?"):upper(), FAVICON[sum % #FAVICON + 1]
+    for i = 1, #host do sum = (sum * 31 + host:byte(i)) % 65521 end
+
+    return (host:match("%w") or "?"):upper(), FAVICON[sum % #FAVICON + 1]
+  end
 end
 
 local function favicon(t)
@@ -835,116 +853,124 @@ local new_b = ui.iconbutton{ icon = "plus" }
 strip:add(new_b)
 
 
-local function tab_view(t)
-  local v = ui.view{ x = 0, y = 0, w = TAB_MOST, h = TABS }
+local tab_view, lay_out_tabs
 
-  v.tab = t
+do
+  -- As wide as the drawing's and no wider, and narrower as more are open:
+  -- at the least, a tab is its favicon.
+  local TAB_MOST, TAB_LEAST, TAB_GAP = 206, 28, 2
 
-  -- Its cross: on the shown tab always, and on the others while they are
-  -- wide enough to say what they are as well.
-  local function crossed(self)
-    return self.w >= 60 and (t == current or self.w >= 90)
-  end
+  function tab_view(t)
+    local v = ui.view{ x = 0, y = 0, w = TAB_MOST, h = TABS }
 
-  function v:draw(g)
-    local on = t == current
-    local top = 6
-    local h = TABS - top
+    v.tab = t
 
-    if on then
-      -- Rounded above, square where it meets the header, which paints over
-      -- what reaches below the strip.
-      g:fill_round(0, top, self.w, h + 8, theme.window, 8)
-    else
-      g:fill(self.w - 1, top + 9, 1, h - 18, theme.line)
+    -- Its cross: on the shown tab always, and on the others while they are
+    -- wide enough to say what they are as well.
+    local function crossed(self)
+      return self.w >= 60 and (t == current or self.w >= 90)
     end
 
-    local fx = (self.w < 60) and (self.w - 14) // 2 or 10
+    function v:draw(g)
+      local on = t == current
+      local top = 6
+      local h = TABS - top
 
-    draw_favicon(g, fx, top + (h - 14) // 2, 14, t.going or tab_at(t))
+      if on then
+        -- Rounded above, square where it meets the header, which paints over
+        -- what reaches below the strip.
+        g:fill_round(0, top, self.w, h + 8, theme.window, 8)
+      else
+        g:fill(self.w - 1, top + 9, 1, h - 18, theme.line)
+      end
 
-    if self.w < 60 then return end
+      local fx = (self.w < 60) and (self.w - 14) // 2 or 10
 
-    local cross = crossed(self)
-    local room = self.w - 32 - (cross and 26 or 10)
+      draw_favicon(g, fx, top + (h - 14) // 2, 14, t.going or tab_at(t))
 
-    g:text(32, top + (h - gfx.height()) // 2, cut_to(tab_name(t), room),
-           on and theme.text or theme.text_dim)
+      if self.w < 60 then return end
 
-    if cross then
-      g:line_icon(self.w - 24, top + (h - 15) // 2, "close", theme.text_dim)
-    end
-  end
+      local cross = crossed(self)
+      local room = self.w - 32 - (cross and 26 or 10)
 
-  -- A press shows it; a click on its cross closes it, and only if the
-  -- pointer is still on the cross when it lets go.
-  function v:mouse(action, x, y)
-    local on_cross = crossed(self) and x >= self.w - 28 and x < self.w
-                     and y >= 0 and y < self.h
+      g:text(32, top + (h - gfx.height()) // 2, cut_to(tab_name(t), room),
+             on and theme.text or theme.text_dim)
 
-    if action == "press" then
-      self.crossing = on_cross
-
-      if not on_cross then show_tab(t) end
-
-      return true
-    elseif action == "release" then
-      if self.crossing and on_cross then close_tab(t) end
-
-      self.crossing = nil
-      return true
+      if cross then
+        g:line_icon(self.w - 24, top + (h - 15) // 2, "close", theme.text_dim)
+      end
     end
 
-    return false
+    -- A press shows it; a click on its cross closes it, and only if the
+    -- pointer is still on the cross when it lets go.
+    function v:mouse(action, x, y)
+      local on_cross = crossed(self) and x >= self.w - 28 and x < self.w
+                       and y >= 0 and y < self.h
+
+      if action == "press" then
+        self.crossing = on_cross
+
+        if not on_cross then show_tab(t) end
+
+        return true
+      elseif action == "release" then
+        if self.crossing and on_cross then close_tab(t) end
+
+        self.crossing = nil
+        return true
+      end
+
+      return false
+    end
+
+    return v
   end
 
-  return v
-end
+  --
+  -- Placed along the width the window has, and again only when that, the
+  -- number of tabs or the title bar changes - every frame asks, so a look
+  -- that takes the title bars off moves the tabs out of the three's way.
+  -- Said, for whoever drives the window from outside, as places in it: the
+  -- first tab's middle, the new tab button's and the empty band's.
+  --
+  local tabs_laid = {}
 
---
--- Placed along the width the window has, and again only when that, the
--- number of tabs or the title bar changes - every frame asks, so a look
--- that takes the title bars off moves the tabs out of the three's way.
--- Said, for whoever drives the window from outside, as places in it: the
--- first tab's middle, the new tab button's and the empty band's.
---
-local tabs_laid = {}
+  function lay_out_tabs()
+    local lights = win.headed and win.lights or nil
 
-local function lay_out_tabs()
-  local lights = win.headed and win.lights or nil
+    if tabs_laid.w == W and tabs_laid.n == #tabs and tabs_laid.lights == lights then
+      return
+    end
 
-  if tabs_laid.w == W and tabs_laid.n == #tabs and tabs_laid.lights == lights then
-    return
+    tabs_laid.w, tabs_laid.n, tabs_laid.lights = W, #tabs, lights
+    strip.w = W
+
+    local right = lights and (W - ui.layout.lights_in - lights.w - 12) or (W - 8)
+    local room = right - 8 - (new_b.w + 8)
+    local n = math.max(1, #tabs)
+    local each = math.max(TAB_LEAST, math.min(TAB_MOST,
+                                              (room - TAB_GAP * (n - 1)) // n))
+    local x = 8
+
+    for _, t in ipairs(tabs) do
+      t.view.x, t.view.y, t.view.w, t.view.h = x, 0, each, TABS
+      x = x + each + TAB_GAP
+    end
+
+    new_b.x = math.min(x + 2, right - new_b.w)
+    new_b.y = (TABS - new_b.h) // 2
+
+    if lights then
+      win:place_lights(strip, W - ui.layout.lights_in - lights.w,
+                       (TABS - lights.h) // 2)
+    end
+
+    print(("browser: tabs %d, each %d wide, the first at %d,%d, new %d,%d, "
+           .. "band %d,%d")
+          :format(#tabs, each, 8 + each // 2, TABS // 2,
+                  new_b.x + new_b.w // 2, new_b.y + new_b.h // 2,
+                  (new_b.x + new_b.w + right) // 2, TABS // 2))
   end
-
-  tabs_laid.w, tabs_laid.n, tabs_laid.lights = W, #tabs, lights
-  strip.w = W
-
-  local right = lights and (W - ui.layout.lights_in - lights.w - 12) or (W - 8)
-  local room = right - 8 - (new_b.w + 8)
-  local n = math.max(1, #tabs)
-  local each = math.max(TAB_LEAST, math.min(TAB_MOST,
-                                            (room - TAB_GAP * (n - 1)) // n))
-  local x = 8
-
-  for _, t in ipairs(tabs) do
-    t.view.x, t.view.y, t.view.w, t.view.h = x, 0, each, TABS
-    x = x + each + TAB_GAP
-  end
-
-  new_b.x = math.min(x + 2, right - new_b.w)
-  new_b.y = (TABS - new_b.h) // 2
-
-  if lights then
-    win:place_lights(strip, W - ui.layout.lights_in - lights.w,
-                     (TABS - lights.h) // 2)
-  end
-
-  print(("browser: tabs %d, each %d wide, the first at %d,%d, new %d,%d, "
-         .. "band %d,%d")
-        :format(#tabs, each, 8 + each // 2, TABS // 2,
-                new_b.x + new_b.w // 2, new_b.y + new_b.h // 2,
-                (new_b.x + new_b.w + right) // 2, TABS // 2))
 end
 
 --------------------------------------------------------------------------
@@ -1077,17 +1103,25 @@ function side:draw(g)
 end
 
 local side_seg = ui.segments{ items = { "Favorites", "History" } }
+local side_find = ui.field{ hint = "Search history" }
 local side_tree = ui.tree{}
 
 side_seg:fit()
 side:add(side_seg)
+side:add(side_find)
 side:add(side_tree)
 
+-- History's half has its search field above the tree; Favorites' has none.
 local function lay_out_side()
   side.hidden = not side_open
   side.y, side.h = VIEW_Y, VIEW_H
   side_seg.x, side_seg.y = (SIDE - side_seg.w) // 2, 10
-  side_tree.x, side_tree.y = 8, side_seg.y + side_seg.h + 8
+  side_find.hidden = side_seg.on ~= 2
+  side_find.x, side_find.y, side_find.w = 8, side_seg.y + side_seg.h + 8, SIDE - 16
+
+  local below = side_find.hidden and side_seg or side_find
+
+  side_tree.x, side_tree.y = 8, below.y + below.h + 8
   side_tree.w, side_tree.h = SIDE - 16, math.max(40, side.h - side_tree.y - 8)
 end
 
@@ -1116,27 +1150,64 @@ do
     return out
   end
 
-  -- And what was open lately, newest first, with when.
-  local function lately_nodes()
+  --
+  -- **The history, by day, searched as typed** (d4): each day a heading -
+  -- Today, Yesterday, its date - and under it its pages, newest first, with
+  -- the time each was last shown.
+  --
+  local function history_nodes(text)
     local out = {}
 
-    for _, l in ipairs(lately) do
-      out[#out + 1] = { text = l.title ~= "" and l.title or l.at, note = l.when,
-                        address = l.at }
+    for _, d in ipairs(history.search(text)) do
+      out[#out + 1] = { text = day_words(d.day), heading = true }
+
+      for _, e in ipairs(d.pages) do
+        out[#out + 1] = { text = e.title ~= "" and e.title or e.address,
+                          note = e.time, address = e.address }
+      end
     end
 
-    if #out == 0 then out[1] = { text = "Nothing opened yet", quiet = true } end
+    if #out == 0 then
+      out[1] = { text = text ~= "" and "Nothing like it" or "Nothing opened yet",
+                 quiet = true }
+    end
 
     return out
   end
 
   function fill_side()
-    side_tree.roots = (side_seg.on == 1) and fav_nodes() or lately_nodes()
     side_tree.top = 1
+
+    if side_seg.on == 1 then
+      side_tree.roots = fav_nodes()
+      return
+    end
+
+    side_tree.roots = history_nodes(side_find.text)
+
+    -- Said, with where its first page is - under the first day's heading.
+    local pages = 0
+
+    for _, n in ipairs(side_tree.roots) do
+      if n.address then pages = pages + 1 end
+    end
+
+    local row = ui.theme.metrics.row
+
+    print(("browser: history, %d pages, searched for \"%s\", the first at %d,%d, "
+           .. "the field at %d,%d")
+          :format(pages, side_find.text, side_tree.x + 40,
+                  VIEW_Y + side_tree.y + 2 + row + row // 2,
+                  side_find.x + side_find.w // 2, VIEW_Y + side_find.y + side_find.h // 2))
   end
 end
 
-side_seg.on_change = function() fill_side() end
+side_seg.on_change = function()
+  lay_out_side()
+  fill_side()
+end
+
+side_find.on_change = function() fill_side() end
 side_tree.on_select = function(_, node)
   if node.address then open_address(node.address) end
 end
@@ -1491,21 +1562,26 @@ local function newtab_page()
     end
   end
 
+  local lately = history.lately(LATELY_SHOWN)
+
   for _, l in ipairs(lately) do
-    local host = address_parts(l.at)
+    local host = address_parts(l.address)
+    local when = day_words(l.day)
 
     rows[#rows + 1] = ('<p class="it"><a href="%s">%s</a> <small>%s, %s</small></p>')
-                      :format(escaped(ns_address(l.at)),
-                              escaped(l.title ~= "" and l.title or l.at),
-                              escaped(host ~= "" and host or l.at), escaped(l.when))
+                      :format(escaped(ns_address(l.address)),
+                              escaped(l.title ~= "" and l.title or l.address),
+                              escaped(host ~= "" and host or l.address),
+                              escaped(when == "Today" and l.time
+                                      or when == "Yesterday" and "yesterday" or when))
   end
 
   if #rows == 0 then
-    rows[1] = "<p>Nothing yet: the pages this window opens are listed here.</p>"
+    rows[1] = "<p>Nothing yet: the pages you open are listed here.</p>"
   end
 
   print(("browser: a new tab's page, %d favorites, %d lately, the newest %s")
-        :format(#tiles, #lately, lately[1] and lately[1].at or "none"))
+        :format(#tiles, #lately, lately[1] and lately[1].address or "none"))
 
   local favs = #tiles > 0
                and ("<h3>Favorites</h3>\n<p class=\"tiles\">" .. table.concat(tiles, "\n")
@@ -2202,17 +2278,10 @@ local function load_page(text, post)
 
   current.title = title
 
-  -- What was open lately, for a new tab to offer: the newest first and
-  -- each address once.
-  if text ~= NEWTAB then
-    for i = #lately, 1, -1 do
-      if lately[i].at == text then table.remove(lately, i) end
-    end
-
-    table.insert(lately, 1, { at = text, title = title or "",
-                              when = clock.time_string(clock.now()) })
-
-    while #lately > LATELY_SHOWN do table.remove(lately) end
+  -- **In the history** (d4), on the disk: every page shown in any tab,
+  -- but a new tab's own and one refused for its certificate.
+  if text ~= NEWTAB and not (came and came.refused) then
+    history.record(text, title, clock.now())
   end
 
   --
@@ -3073,9 +3142,13 @@ toggle_side = function()
 
   local row = ui.theme.metrics.row
 
-  print(("browser: the sidebar %s, its first row at %d,%d")
+  local fav_w = gfx.measure("Favorites") + 22
+
+  print(("browser: the sidebar %s, its first row at %d,%d, History at %d,%d")
         :format(side_open and "open" or "closed", side_tree.x + 40,
-                VIEW_Y + side_tree.y + 2 + row // 2))
+                VIEW_Y + side_tree.y + 2 + row // 2,
+                side_seg.x + 1 + fav_w + (gfx.measure("History") + 22) // 2,
+                VIEW_Y + side_seg.y + side_seg.h // 2))
 end
 
 open_address = function(address)
@@ -3162,6 +3235,16 @@ end
 --------------------------------------------------------------------------
 
 read_favorites()
+
+-- The days of history older than are kept, let go as the window opens.
+do
+  local now = clock.now()
+
+  if now then
+    history.prune(history.day_of(clock.at(now.epoch - (HISTORY_DAYS - 1) * 86400)))
+  end
+end
+
 geometry(W, H)
 lay_out_header()
 lay_out_bar()

@@ -428,9 +428,11 @@ what was open lately, the three at the strip's end in Plex, and Super keys
 reaching a window (Super Tab stays the window manager's, so tabs go round
 on Super Shift ] and [); **d3 built** (18.322) - favorites as files in
 `/Home/Favorites`, the star, the bar, the sidebar and the new tab's tiles,
-and Tracker opening a file by its type; **d4 next**, history on the disk in
-`/Home/Preferences/browser`, by day, searched as typed; then d5 Settings, d6
-searching from the field. `browser.lua` is near Lua's 200 locals - new
+and Tracker opening a file by its type; **d4 built** (18.323) - history on
+the disk, a file a day in `/Home/Preferences/browser/history/`, the
+sidebar's History half by day and searched as typed, a new tab's Lately
+from it; **d5 next**, Settings in `/Home/Preferences/browser/settings`; then
+d6 searching from the field. `browser.lua` is near Lua's 200 locals - new
 helpers go in `do` blocks.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10

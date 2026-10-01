@@ -1753,6 +1753,50 @@ def main():
                "the page did not move back up to where it began when the bar "
                "went", seconds=20)
 
+        #
+        # **History, on the disk, by day** (`roadmap.md` 6zz d4): the
+        # sidebar's History half lists the pages shown today under Today;
+        # "dam" typed into its field leaves the Dam article alone, and its
+        # row pressed shows it. Then the long page again, for the resize.
+        #
+        mark = len(guest.seen)
+        chord("meta_l", "y")
+        opened = tab_said("the sidebar open, its first row at ",
+                          "Super Y to open the sidebar again", mark)
+        hx, hy = (int(v) for v in re.search(r"History at (\d+),(\d+)", opened).groups())
+        time.sleep(1.0)
+        press(x0 + hx, wtop + hy)
+        listed = tab_said("history, ", "the sidebar's History half", mark)
+        whole = re.match(r'(\d+) pages, searched for "", the first at \d+,\d+, '
+                         r'the field at (\d+),(\d+)', listed)
+
+        if not whole or int(whole.group(1)) < 5:
+            raise Failure(f"the sidebar's history did not list today's pages: "
+                          f"{listed.strip()!r}")
+
+        press(x0 + int(whole.group(2)), wtop + int(whole.group(3)))
+        mark = len(guest.seen)
+        typed("dam")
+        guest.wait_for_line('searched for "dam", ', "the history searched as typed",
+                            since=mark)
+        searched = re.search(r'history, (\d+) pages, searched for "dam", the first at '
+                             r'(\d+),(\d+)', guest.seen[mark:])
+
+        if not searched or searched.group(1) != "1":
+            raise Failure(f"the history searched for \"dam\" did not leave the Dam "
+                          f"article alone: {searched and searched.group(0)!r}")
+
+        mark = len(guest.seen)
+        press(x0 + int(searched.group(2)), wtop + int(searched.group(3)))
+        tab_said("showing " + dam, "the Dam article's row in the history pressed",
+                 mark)
+        chord("meta_l", "y")
+        tab_said("the sidebar closed", "Super Y to close the sidebar again", mark)
+        showing(long_url, "the long page again, after the history")
+
+        print(f"history: the sidebar listed {whole.group(1)} pages today, "
+              f"\"dam\" left one, and it showed the Dam article", flush=True)
+
         print(f"favorites: the star kept the long page as a file, gold "
               f"({lit} pixels, {unlit} before); the bar showed it and opened "
               f"it; the sidebar did, the page 600 wide beside it; a new tab "
@@ -1975,6 +2019,19 @@ def main():
             raise Failure(f"the browser dragged by its tabs' band by 120,80 "
                           f"from {wx},{wy} moved to: {dragged.strip()!r}")
 
+        # **And the history read back from the disk** (6zz d4): this browser
+        # was started by Tracker and has shown one page, so a new tab
+        # offering more is offering what the first one wrote.
+        mark = len(guest.seen)
+        chord("meta_l", "t")
+        offered = tab_said("a new tab's page, ", "a new tab in the browser Tracker "
+                           "started", mark)
+        back_from_disk = re.match(r"(\d+) favorites, (\d+) lately", offered)
+
+        if not back_from_disk or int(back_from_disk.group(2)) < 5:
+            raise Failure(f"a new browser's new tab did not offer the history the "
+                          f"last one wrote: {offered.strip()!r}")
+
         print(f"title bar: a favorite opened from Tracker showed its page; in "
               f"Plex the tabs are the browser's title bar, the three at "
               f"{lx},{ly}, and the strip's band moved the window to "
@@ -1993,7 +2050,8 @@ def main():
               f"end of a page {long_page.group(1)} pixels tall was drawn, its "
               f"picture fetched once, tabs kept their pages and histories, "
               f"a favorite was a file the star, the bar and the sidebar kept "
-              f"and Tracker opened, and in Plex the tabs were the title bar.")
+              f"and Tracker opened, the history was kept by day on the disk "
+              f"and searched, and in Plex the tabs were the title bar.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)

@@ -15269,3 +15269,48 @@ Favorite. Control: the browser not declaring `favorite`.
   Tracker to show its page" never came.
 
 **The gate**: 76 of 76, in 9:26.
+
+## 18.323 The browser's history, a file a day (6zz d4)
+
+**`roadmap.md` 6zz d4**: history on the disk, "in `/Home/Preferences/browser`"
+as the drawing has it - a folder there, the browser's own, with `history/`
+holding a file a day named by its date.
+
+- **`user/lib/history.lua`**: a day's file is a Lua table through the
+  system's serialiser, as every settings file is - its pages newest first,
+  each once, a page shown again that day moved to the top with its time, a
+  title kept on one line. The days newest first; what was open lately
+  across them, each page once; searched in titles and addresses without
+  regard to case, by day; a file edited by hand read for what it still
+  says; the days before the oldest kept let go, or all of them.
+- **Why a file a day and not a table**: every other settings file in Kosmos
+  is one table at `/Home/Preferences/<application>`, and history in one
+  would be thirty days written whole on every page shown. A day is the size
+  of a day, the sidebar shows it by day anyway, and letting one go is
+  deleting it. Settings (d5) will be `browser/settings` beside it.
+- **The browser** records every page shown in any tab but a new tab's own
+  and a refused one; the sidebar's History half lists it under Today,
+  Yesterday and the date, with a field that searches as it is typed; a new
+  tab's Lately is its newest pages; thirty days are kept, the older let go
+  as the window opens. `browser.lua` reached 194 of 200 slots again, and
+  the tab strip's constants and the favicons' colours went into `do`
+  blocks - 189.
+
+**`tools/test_history.lua`**, 15 checks on the Mac over an `fs` that copies
+tables in and out as the serialiser does. Control: a page shown again not
+moved but added twice - "a page shown again moves to the top of its day,
+once".
+
+**`arm-browser` and `x86-browser`**:
+
+- The tab phase's new tab offers the long page as the newest of what was
+  open lately - from the history now. Control: the browser not recording -
+  "0 lately, the newest none".
+- The sidebar's History half lists the 14 pages shown today; "dam" typed in
+  its field leaves the Dam article, and its row pressed shows it.
+- In Plex, the browser Tracker started has shown one page, and its new tab
+  offers more: the history the first browser wrote, read back from the
+  disk. Control: the history cleared whenever the browser starts - "1
+  favorites, 1 lately".
+
+**The gate**: 76 of 76, in 9:25.

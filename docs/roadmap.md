@@ -2766,7 +2766,21 @@ processors, and still what follows USB:
       without its attributes, so a file's type decided its Kind column and
       Open with and never what opening it did. Not yet: a favorite dragged
       on the bar, or onto it from the field; a folder made from the
-      browser; the sidebar searched (with d4).
+      browser; the favorites searched.
+
+      **d4 BUILT 1 October** (`testing.md` 18.323): history on the disk,
+      in `/Home/Preferences/browser` as agreed - a folder there, the
+      browser's own, with a file a day in `history/` named by its date
+      (`user/lib/history.lua`). Every other settings file is one table at
+      `/Home/Preferences/<application>`; thirty days of history in one
+      table would be written whole on every page shown, so a day is a file,
+      a list of pages newest first, each once - and letting a day go is
+      deleting it. Settings (d5) goes beside it, `browser/settings`. Every
+      page shown in any tab is recorded but a new tab's and a refused one;
+      the sidebar's History half lists it by day - Today, Yesterday, the
+      date - and searches titles and addresses as they are typed; a new
+      tab's Lately is the newest pages of it, each once; thirty days are
+      kept, the older let go as the window opens.
    e. **Windows that draw their own pixels, resizable** - the browser's,
       Cafesa3D's, Camera's, Video's: the window manager refuses today
       ("its surface is shared and has a size"). On letting go of the grip
