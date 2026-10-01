@@ -15923,3 +15923,34 @@ sans - both 231.
 
 **Run as the new rule has it**: the full gate, 80 suites in 9:52 - the fonts are in every
 image.
+
+## 18.336 `@import` (6zz j5)
+
+**What it fixes**: a stylesheet's `@import` was parsed and never fetched, so
+whatever a site keeps in imported sheets - a theme, a print sheet, a whole
+framework behind one line - was not there.
+
+**libcss leaves imports to the client**: `css_stylesheet_next_pending_import`
+names the first one of a sheet not yet given a sheet, and
+`css_stylesheet_register_import` gives it one. The glue keeps every sheet in
+one list that only grows - the page's, then those imported - so a sheet is
+known by its place; `doc:ns_imports()` lists each with an import pending and
+the address, and `doc:ns_import(n, text)` hands one back, nil for one that
+could not be had. The browser fetches each round side by side, from the
+linked sheets and the page's own `<style>`s alike, round after round since
+an imported sheet may import in its turn; one asked for again is handed back
+empty, which ends a sheet that imports itself or two that import each other;
+and sixteen deep at most, as a redirect is followed five times. The imported
+sheets are destroyed after the sheets that imported them, which keep
+pointers to them. libcss skips an import left with no sheet, and applies an
+import's media itself.
+
+**The test** (`run_browser.py --part 1`): a page of its own linking
+`outer.css` and with a `<style>` importing `inline.css`; `outer.css` imports
+`inner.css`, which imports `outer.css` back. A colour only `inner.css` has
+and one only `inline.css` has are both on the screen, and the browser says
+three sheets were imported from three asked for - the third `outer.css`
+again, whose own import of `inner.css` was handed back empty. **The control
+bit**: every import handed back empty - nothing imported, nothing said.
+
+**Run as the new rule has it**: the browser's four halves.

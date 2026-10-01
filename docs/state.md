@@ -475,8 +475,23 @@ wait of a tick). **Item 2 is done.** Item 3: **select menus built**
 code, a list longer than the screen grouped into submenus that fit
 (`longmenu.lua`); **favorites dragged on the bar** (18.334), and the page
 onto it by its star (`favorites.move`); **a serif face** (18.335), IBM Plex
-Serif 2.0.0 in four styles. Next in item 3: other scripts' glyphs,
-`@import`.
+Serif 2.0.0 in four styles; **`@import`** (18.336), round by round, cycles
+ended. Left of item 3: other scripts' glyphs - a question for Diego:
+
+**Other scripts: Diego's call, on what the image carries.** Plex Sans has
+Latin, Greek and Cyrillic and nothing else. Two different things are
+missing. *Glyphs*: a font that has them, and `gfx` falling back to it for a
+character the face lacks - Japanese, Korean and Chinese need only that, and
+it is their size that is the question: one regular weight each from IBM's
+Plex, JP 5.7 MB, KR 2.5, SC 8.4, TC 5.5 - 22 MB for all four, against an
+image of 35, and bold would double it; Georgian and Armenian (Noto, about
+0.1 MB each) and Thai (0.12) are small. *Shaping and direction*: Arabic
+joins its letters, Devanagari reorders and combines them, Hebrew and Arabic
+run right to left - glyphs alone would draw them wrong, so those wait for a
+shaper and bidi (HarfBuzz and FriBidi, or our own) and are a step of their
+own; their fonts are a few hundred KB. Options: all four CJK in the image;
+the CJK fonts on the disk, loaded when a page needs them (the image stays
+as it is, `/Home` or a stick carries them); or only the small scripts now.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

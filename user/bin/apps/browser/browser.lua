@@ -2579,24 +2579,69 @@ local function fetch_sheets(d)
   if not NS then return 0 end
 
   local wanted = d:ns_sheets(ns_address(current.here))
+  local n = 0
 
-  if #wanted == 0 then return 0 end
+  local function fetched(asked)
+    local list = {}
 
-  local list, n = {}, 0
+    for _, sheet in ipairs(asked) do list[#list + 1] = { where = from_ns(sheet.url) } end
 
-  for _, sheet in ipairs(wanted) do list[#list + 1] = { where = from_ns(sheet.url) } end
+    local got = fetch_pictures(list, "stylesheets")
+    local out = {}
 
-  local got = fetch_pictures(list, "stylesheets")
+    for i, item in ipairs(list) do
+      local where = item.where
 
-  for i, sheet in ipairs(wanted) do
-    local where = list[i].where
-    local text = got[where] or ((where:match("^asset:")
-                 or where:sub(1, 1) == "/") and bytes_at(where))
+      out[i] = got[where] or ((where:match("^asset:")
+               or where:sub(1, 1) == "/") and bytes_at(where)) or nil
+    end
 
-    if text and d:ns_sheet(sheet.n, text) then n = n + 1 end
+    return out, list
   end
 
-  return n
+  if #wanted > 0 then
+    local texts = fetched(wanted)
+
+    for i, sheet in ipairs(wanted) do
+      if texts[i] and d:ns_sheet(sheet.n, texts[i]) then n = n + 1 end
+    end
+  end
+
+  --
+  -- **What they `@import`** (`roadmap.md` 6zz j5), a round at a time, each
+  -- round's side by side - a sheet imported may import in its turn - from
+  -- the linked sheets and the page's own `<style>`s alike. One asked for
+  -- again is handed back empty, as one that could not be had is: a sheet
+  -- that imports itself, or two that import each other, end there. And
+  -- sixteen deep at most, as a redirect is followed five times: a server
+  -- can make every import name a new one, and a page whose sheets nest
+  -- deeper than that is not one anybody wrote.
+  --
+  local seen, imported = {}, 0
+
+  for _ = 1, 16 do
+    local asked = d:ns_imports()
+
+    if #asked == 0 then break end
+
+    local texts, list = fetched(asked)
+
+    for i, sheet in ipairs(asked) do
+      local where = list[i].where
+      local text = not seen[where] and texts[i] or nil
+
+      seen[where] = true
+
+      if d:ns_import(sheet.n, text) then imported = imported + 1 end
+    end
+  end
+
+  if imported > 0 then
+    print(("browser: %d sheets imported, from %d asked for"):format(imported,
+          (function() local c = 0 for _ in pairs(seen) do c = c + 1 end return c end)()))
+  end
+
+  return n + imported
 end
 
 local function load_page(text, post)

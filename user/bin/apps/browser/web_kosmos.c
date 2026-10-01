@@ -939,6 +939,41 @@ static int l_ns_sheet(lua_State *L)
     return 1;
 }
 
+/* `doc:ns_imports()` -> each sheet with an `@import` to fetch, `{ n, url }`;
+ * `doc:ns_import(n, text)` hands it back - nil for one that could not be had
+ * (`roadmap.md` 6zz j5). */
+static int l_ns_imports(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    const char *url = NULL;
+    size_t k = 0, n;
+
+    lua_newtable(L);
+
+    while (d->ns != NULL && (n = web_ns_imports(d->ns, k, &url)) != 0) {
+        lua_createtable(L, 0, 2);
+        lua_pushinteger(L, (lua_Integer)n);
+        lua_setfield(L, -2, "n");
+        lua_pushstring(L, url);
+        lua_setfield(L, -2, "url");
+        lua_rawseti(L, -2, (lua_Integer)++k);
+    }
+
+    return 1;
+}
+
+static int l_ns_import(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    lua_Integer n = luaL_checkinteger(L, 2);
+    size_t len = 0;
+    const char *text = luaL_optlstring(L, 3, NULL, &len);
+
+    lua_pushboolean(L, d->ns != NULL && n > 0
+                       && web_ns_import(d->ns, (size_t)n, text, len));
+    return 1;
+}
+
 /*
  * `doc:ns_objects()` -> the pictures the layout asked for, in page order:
  * `{ url, x, y, w, h, background, arrived }` each, where its box is now.
@@ -1487,6 +1522,8 @@ void kosmos_web_kit(lua_State *L)
         { "ns_link_at", l_ns_link_at },
         { "ns_sheets", l_ns_sheets },
         { "ns_sheet", l_ns_sheet },
+        { "ns_imports", l_ns_imports },
+        { "ns_import", l_ns_import },
         { "ns_objects", l_ns_objects },
         { "ns_picture", l_ns_picture },
         { "charset", l_charset },

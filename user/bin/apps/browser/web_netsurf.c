@@ -1184,7 +1184,8 @@ css_fixed nscss_screen_dpi = F_96;
 static css_stylesheet *ua_default, *ua_quirks;
 
 /* A stylesheet from text, its `url()`s resolved against `url` by NetSurf's
- * own resolver. An `@import` is not fetched yet (6zz j4). */
+ * own resolver. What it `@import`s is fetched by the browser and handed back
+ * (`web_ns_imports`, `web_ns_import`). */
 static css_stylesheet *sheet_of(const char *text, size_t len,
                                 const char *url, bool quirks)
 {
@@ -1319,6 +1320,12 @@ struct web_ns_doc {
     html_content       html;        /* first: NetSurf casts a content to it */
     struct page_sheet *sheets;
     size_t             nsheets, sheets_room;
+
+    /* Sheets an `@import` brought (`roadmap.md` 6zz j5), each registered
+     * with the sheet that asked for it - which does not own it, so it is
+     * destroyed from here - and asked in turn for what it imports. */
+    css_stylesheet   **imported;
+    size_t             nimported, imported_room;
     struct hlcache_handle *objects; /* the pictures asked for, newest first */
     size_t             nobjects;
     bool               built;
@@ -2405,6 +2412,111 @@ bool web_ns_sheet(struct web_ns_doc *d, size_t n, const char *text,
     return at->sheet != NULL;
 }
 
+/*
+ * **`@import`** (`roadmap.md` 6zz j5). libcss parses a sheet's imports and
+ * leaves them for the client to fetch: `css_stylesheet_next_pending_import`
+ * names the first one not yet given a sheet, and
+ * `css_stylesheet_register_import` gives it one. So a sheet is known by its
+ * place in one list that only grows - the page's sheets, then those
+ * imported, in the order they came - and the browser is told, for every
+ * sheet with an import pending, that place and the address; it fetches them
+ * side by side and hands each back, round after round, since an imported
+ * sheet may import too. What could not be fetched is handed back empty,
+ * which is what NetSurf does, and what ends a sheet that imports itself.
+ */
+static css_stylesheet *sheet_at(struct web_ns_doc *d, size_t id)
+{
+    if (id >= 1 && id <= d->nsheets) {
+        return d->sheets[id - 1].sheet;
+    }
+
+    if (id > d->nsheets && id - d->nsheets <= d->nimported) {
+        return d->imported[id - d->nsheets - 1];
+    }
+
+    return NULL;
+}
+
+/* The import a sheet is waiting on - its address, which the sheet's rule
+ * keeps alive - or NULL. */
+static const char *pending_import(css_stylesheet *s)
+{
+    lwc_string *u = NULL;
+    const char *url;
+
+    if (s == NULL || css_stylesheet_next_pending_import(s, &u) != CSS_OK
+        || u == NULL) {
+        return NULL;
+    }
+
+    url = lwc_string_data(u);
+    lwc_string_unref(u);            /* the rule holds its own reference */
+    return url;
+}
+
+/* The `k`th sheet with an import to fetch: its place, and the address. */
+size_t web_ns_imports(struct web_ns_doc *d, size_t k, const char **url)
+{
+    size_t id, total = d->nsheets + d->nimported, seen = 0;
+
+    if (d->built) {
+        return 0;
+    }
+
+    for (id = 1; id <= total; id++) {
+        const char *u = pending_import(sheet_at(d, id));
+
+        if (u != NULL && seen++ == k) {
+            *url = u;
+            return id;
+        }
+    }
+
+    return 0;
+}
+
+/* The sheet at place `id`'s pending import, fetched: `text`, or nothing when
+ * it could not be had, made a sheet and registered with it. */
+bool web_ns_import(struct web_ns_doc *d, size_t id, const char *text, size_t len)
+{
+    css_stylesheet *parent = sheet_at(d, id), *child;
+    const char *url = pending_import(parent);
+    bool quirks = d->html.quirks != DOM_DOCUMENT_QUIRKS_MODE_NONE;
+
+    if (url == NULL || d->built) {
+        return false;
+    }
+
+    if (d->nimported == d->imported_room) {
+        size_t room = d->imported_room ? d->imported_room * 2 : 8;
+        css_stylesheet **more = realloc(d->imported, room * sizeof(*more));
+
+        if (more == NULL) {
+            return false;
+        }
+
+        d->imported = more;
+        d->imported_room = room;
+    }
+
+    child = sheet_of(text != NULL ? text : "", text != NULL ? len : 0, url, quirks);
+
+    if (child == NULL) {
+        child = sheet_of("", 0, url, quirks);
+    }
+
+    if (child == NULL || css_stylesheet_register_import(parent, child) != CSS_OK) {
+        if (child != NULL) {
+            css_stylesheet_destroy(child);
+        }
+
+        return false;
+    }
+
+    d->imported[d->nimported++] = child;
+    return text != NULL;
+}
+
 struct web_ns_doc *web_ns_open(void *document, const char *base,
                                const char *charset)
 {
@@ -2835,6 +2947,13 @@ void web_ns_close(struct web_ns_doc *d, lua_State *L)
     }
 
     free(d->sheets);
+
+    /* After those that imported them, which keep pointers to them. */
+    for (i = 0; i < d->nimported; i++) {
+        css_stylesheet_destroy(d->imported[i]);
+    }
+
+    free(d->imported);
 
     for (o = d->objects; o != NULL; o = next) {
         next = o->next;

@@ -3152,7 +3152,7 @@ processors, and still what follows USB:
         `<link rel="stylesheet">` fetched side by side and given to the
         cascade in order; pictures as the objects the layout sizes, fetched
         a band at a time. The Dam article live in 1.6 s, laid out as
-        Wikipedia lays it out. `@import` not fetched yet.
+        Wikipedia lays it out. `@import` fetched since 1 October (j5).
       - j5. **The Dam article as Chrome draws it**: the article at the top,
         the infobox to the right, pictures beside the text - held by the
         gate, and its time on the status line. What it still lacks, in the
@@ -3160,8 +3160,9 @@ processors, and still what follows USB:
         NetSurf's own libsvgtiny (MIT), and a rasteriser of ours for the
         shapes it gives - Wikipedia's logo and icons, and most sites' -
         then a serif face (IBM Plex Serif) - **BUILT 1 October**
-        (`testing.md` 18.335) - and other scripts' glyphs, then `@import`,
-        and `web_paint.c` retired.
+        (`testing.md` 18.335) - and other scripts' glyphs, then `@import` -
+        **BUILT 1 October** (`testing.md` 18.336) - and `web_paint.c`
+        retired.
 
         **SVG BUILT 30 September** (`testing.md` 18.313): expat 2.8.5 and
         libsvgtiny 0.1.8 vendored, unmodified, both MIT; the shapes drawn by

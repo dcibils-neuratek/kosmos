@@ -179,6 +179,21 @@ FACES_PAGE = ("<!doctype html><html><head><title>Faces</title><style>"
               "<p id=\"sans\">Hamburgefonstiv</p></body></html>")
 SERIF_INK, SANS_INK = (176, 32, 28), (28, 122, 32)
 
+# Sheets that `@import` (`roadmap.md` 6zz j5): a linked one importing another,
+# which imports the first back - a cycle - and a `<style>` importing one of
+# its own. Each colour is only in a sheet that came by an import.
+IMPORTS_PAGE = ("<!doctype html><html><head><title>Imports</title>"
+                "<link rel=\"stylesheet\" href=\"outer.css\">"
+                "<style>@import url(\"inline.css\");</style></head><body>"
+                "<p id=\"deep\">Imported by an imported sheet</p>"
+                "<p id=\"inline\">Imported by a style</p></body></html>")
+SHEETS = {
+    "/outer.css": "@import \"inner.css\";\np { margin: 12px; }\n",
+    "/inner.css": "@import url(outer.css);\n#deep { background: #2f8f6f; color: #ffffff; }\n",
+    "/inline.css": "#inline { background: #8f2f6f; color: #ffffff; }\n",
+}
+DEEP, INLINE = (47, 143, 111), (143, 47, 111)
+
 # A page that takes thirty seconds to come (`roadmap.md` 6zz l3), and is
 # never meant to be shown: Escape stops it first.
 SLOW_PAGE = ("<!doctype html><html><head><title>Slow</title></head><body>"
@@ -318,6 +333,19 @@ def serve(directory, asked, tls=None):
 
             if self.path == "/faces.html":
                 self.answer_page(FACES_PAGE)
+                return
+
+            if self.path == "/imports.html":
+                self.answer_page(IMPORTS_PAGE)
+                return
+
+            if self.path in SHEETS:
+                sheet = SHEETS[self.path].encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/css")
+                self.send_header("Content-Length", str(len(sheet)))
+                self.end_headers()
+                self.wfile.write(sheet)
                 return
 
             # The cache (`roadmap.md` 6zz k): a page asked about every time
@@ -1724,6 +1752,30 @@ def main():
                               f"Wrote {args.out}.")
 
             print(f"faces: the word {serif_w} pixels wide in serif, {sans_w} in sans",
+                  flush=True)
+
+            #
+            # **`@import`** (`roadmap.md` 6zz j5): a colour that only an imported
+            # sheet has - one imported by an imported sheet, one by a `<style>` -
+            # on the screen, and the cycle between the two linked sheets ended:
+            # three sheets imported, the third the first again.
+            #
+            mark = len(guest.seen)
+            go_to("imports.html", "the page of imports")
+            imported = re.search(r"browser: (\d+) sheets imported, from (\d+) asked for",
+                                 guest.seen[mark:])
+            time.sleep(1.0)
+
+            if imported is None or imported.group(1, 2) != ("3", "3"):
+                raise Failure(f"the page's @imports were not fetched, the cycle ended: "
+                              f"{imported.group(0) if imported else 'nothing said'!r}")
+
+            if box_of(DEEP) is None or box_of(INLINE) is None:
+                raise Failure(f"a colour only an imported sheet has is not on the "
+                              f"screen: #2f8f6f {box_of(DEEP)}, #8f2f6f {box_of(INLINE)}. "
+                              f"Wrote {args.out}.")
+
+            print(f"imports: {imported.group(0)[9:]}, both their colours drawn",
                   flush=True)
 
             #

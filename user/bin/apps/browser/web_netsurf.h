@@ -57,6 +57,8 @@ bool   web_ns_sheet(struct web_ns_doc *d, size_t n, const char *text,
  * address, box and whether it has arrived; and one arrived - the surface on
  * top of the stack, and its natural size. */
 size_t web_ns_objects(struct web_ns_doc *d);
+size_t web_ns_imports(struct web_ns_doc *d, size_t k, const char **url);
+bool   web_ns_import(struct web_ns_doc *d, size_t id, const char *text, size_t len);
 bool   web_ns_object(struct web_ns_doc *d, size_t k, const char **url,
                      int *x, int *y, int *w, int *h, bool *background,
                      bool *arrived);
