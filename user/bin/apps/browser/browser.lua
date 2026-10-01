@@ -371,13 +371,23 @@ end
 
 --------------------------------------------------------------------------
 -- State.
+--
+-- **The page is the tab's.** Everything below that says which page is shown
+-- - its document, its band, where it is read, its pictures, how it came,
+-- where it has been - is a field of the shown tab, `current`, and a tab not
+-- shown keeps its own in its own table (`blank_tab` makes one). They were
+-- twenty-five locals of this chunk, copied into a tab and back each time
+-- another was shown, and Lua holds a chunk to two hundred: on 1 October the
+-- browser was at 194 of them (`roadmap.md` 6zz, a follow-up of d2-d5).
 --------------------------------------------------------------------------
 
-local paper                  -- a band of the page, painted and scrolled by blit
-local paper_h  = 0           -- how tall that surface is
-local band_top = 0           -- the page's row at the band's first
-local content_h = 0          -- how tall the document turned out to be
-local top      = 0           -- the page's row at the top of the view
+local tabs, current = {}, nil
+
+-- `current.paper`      a band of the page, painted and scrolled by blit
+-- `current.paper_h`    how tall that surface is
+-- `current.band_top`   the page's row at the band's first
+-- `current.content_h`  how tall the document turned out to be
+-- `current.top`        the page's row at the top of the view
 
 --
 -- The document's pictures: where the layout put each box, where its bytes
@@ -388,28 +398,23 @@ local top      = 0           -- the page's row at the top of the view
 -- whenever the view comes back to it, and a JPEG decoded twice is the
 -- slowest thing on the page. Scaled to the box, so what is kept is what is
 -- shown: a photograph of 4000 by 3000 in a box of 220 by 165 keeps 145 KB
--- rather than 48 MB.
+-- rather than 48 MB. `current.pictures`, and `current.kept_bytes` what they
+-- hold.
 --
-local pictures = {}
-local kept_bytes = 0
-
 -- Whether this document is NetSurf's to lay out - it is, unless NetSurf
--- could not - and which of its pictures have been asked for.
-local ns_doc = false
-local ns_tried = {}
+-- could not - and which of its pictures have been asked for:
+-- `current.ns_doc` and `current.ns_tried`.
 
 -- Its SVGs, by the picture's number: the SVG as read, and the size it was
 -- last drawn at - an SVG is drawn at its box's size rather than stretched
--- to it, so a box that changes size has it drawn again.
-local ns_svgs = {}
+-- to it, so a box that changes size has it drawn again. `current.ns_svgs`.
 
 -- And the rest of its pictures, by number: each as it was decoded, its own
 -- size, and the size it was last scaled to. A picture shown at a size not
 -- its own - Wikipedia's logo is 100 pixels drawn at 50 - was scaled again
 -- every time its band was painted, which was most of a band's pictures'
 -- cost (`roadmap.md` 6zz h); it is scaled once, to its box, and the band
--- draws it at its own size.
-local ns_raster = {}
+-- draws it at its own size. `current.ns_raster`.
 
 local paint_band             -- below, once the pictures can be fetched
 
@@ -420,10 +425,8 @@ local paint_band             -- below, once the pictures can be fetched
 -- point - so closing it would leave a page you can read and cannot click.
 -- One document at a time: the previous one is closed when the next arrives,
 -- which is what bounds this rather than hoping nobody opens many pages.
+-- `current.doc`; and `current.said`, what the browser last said of it.
 --
-local doc
-
-local said = ""
 
 --
 -- Where the time went, along the bottom right.
@@ -434,8 +437,8 @@ local said = ""
 -- entirely different work. `CLAUDE.md` is clear that a number from QEMU is
 -- for detecting a regression rather than for claiming a speed - what it is
 -- honestly good for is *attribution*, which is the question here.
+-- `current.timing`.
 --
-local timing = ""
 
 local HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
@@ -491,9 +494,9 @@ local band_ms
 -- by `gc_pause_max`, and the collector runs when it chooses.
 --
 
-local address = { text = HOME, caret = #HOME, from = 0 }
-local here                                          -- what is on screen
-local back, forward = {}, {}
+-- `current.address`    the address the field shows, as typed
+-- `current.here`       what is on screen
+-- `current.back`, `current.forward`   where this tab has been
 
 --
 -- How the page on screen came - `http.lua`'s table, or nil for one from
@@ -501,10 +504,9 @@ local back, forward = {}, {}
 --
 -- **Open anyway is this window's and nobody else's**, and it is forgotten
 -- when the window closes: the drawing agreed "for this tab only ... and
--- nothing is remembered". A table in this process is exactly that.
+-- nothing is remembered". A table in this process is exactly that - and
+-- a field of the tab: `current.came`, `current.anyway`.
 --
-local came
-local anyway = {}
 
 --
 -- **A page on its way**: which host, how many bytes of how many, while
@@ -598,7 +600,7 @@ local field    = ui.field{ text = HOME, hint = "Search, or type an address" }
 local star_b = ui.iconbutton{ icon = "star" }
 
 function star_b:draw(g)
-  local on = here ~= nil and kept[here] ~= nil
+  local on = current.here ~= nil and kept[current.here] ~= nil
 
   if self.pressed then g:fill_round(0, 0, self.w, self.h, theme.line_soft, 6) end
 
@@ -621,12 +623,14 @@ end
 -- network had a part in - and nothing for the page inside the image.
 --
 local function how_came()
-  if here == nil or here == HOME or here == NEWTAB then return nil end
-  if here == prefs.PAGE then return "settings", "Settings" end
-  if came == nil then return "plain", "This machine" end
-  if came.refused then return "refused", "Refused" end
-  if came.scheme ~= "https" then return "plain", "Not encrypted" end
-  if came.secure then return "secure", "Secure" end
+  local at = current.here
+
+  if at == nil or at == HOME or at == NEWTAB then return nil end
+  if current.here == prefs.PAGE then return "settings", "Settings" end
+  if current.came == nil then return "plain", "This machine" end
+  if current.came.refused then return "refused", "Refused" end
+  if current.came.scheme ~= "https" then return "plain", "Not encrypted" end
+  if current.came.secure then return "secure", "Secure" end
 
   return "refused", "Not secure"
 end
@@ -644,7 +648,7 @@ end
 -- **Taken to be typed in**: the page's address, all of it chosen, so what
 -- is typed replaces it.
 function field:take_address()
-  self.text = address.text
+  self.text = current.address.text
   self.caret = #self.text + 1
   self.all = true
 end
@@ -690,7 +694,7 @@ do
     end
 
     -- Cut to end before the star, which sits inside the field's right end.
-    local host, rest = address_parts(address.text)
+    local host, rest = address_parts(current.address.text)
     local room = self.w - x - (star_b.hidden and 8 or (star_b.w + 8))
     local hw = gfx.measure(host, "label")
 
@@ -761,12 +765,13 @@ local status_for, status_cut = nil, ""
 
 
 local function status_text()
-  local left = pointing or said
-  local key = left .. "\0" .. timing .. "\0" .. W .. tostring(setting.costs)
+  local left = pointing or current.said
+  local key = left .. "\0" .. current.timing .. "\0" .. W .. tostring(setting.costs)
 
   if key == status_for then return status_cut end
 
-  local right = (timing ~= "" and setting.costs) and gfx.measure(timing) + 20 or 0
+  local right = (current.timing ~= "" and setting.costs)
+                and gfx.measure(current.timing) + 20 or 0
   local room = W - 20 - right
   local text = left
 
@@ -803,18 +808,14 @@ end
 
 local show_tab, close_tab, new_tab           -- filled in further down
 
-local tabs, current = {}, nil
-
 local function index_of(t)
   for i, u in ipairs(tabs) do
     if u == t then return i end
   end
 end
 
--- A tab's page: the shown one's is in the locals above, the others' in
--- their tables.
+-- Where a tab is - or will be, opened on the tabs it had and not shown yet.
 local function tab_at(t)
-  if t == current then return here end
   return t.here or t.pending
 end
 
@@ -1300,14 +1301,14 @@ end
 --------------------------------------------------------------------------
 
 local function reach()
-  return math.max(0, content_h - VIEW_H)
+  return math.max(0, current.content_h - VIEW_H)
 end
 
 -- The track the kit's pill runs in (`ui.lua`, `thumb_of`): two pixels in
 -- at each end, and a thumb never shorter than sixteen.
 local function thumb()
   local track = VIEW_H - 4
-  local shown = content_h
+  local shown = current.content_h
   local last  = reach()
 
   if track < 8 or shown <= VIEW_H then
@@ -1315,7 +1316,7 @@ local function thumb()
   end
 
   local h = math.max(16, (track * VIEW_H) // shown)
-  local y = VIEW_Y + 2 + ((track - h) * top) // last
+  local y = VIEW_Y + 2 + ((track - h) * current.top) // last
 
   return y, h
 end
@@ -1354,8 +1355,8 @@ local function frame()
   -- forward dim when there is nowhere to go, and the field told the page's
   -- address whenever it is taken to be typed in, all of it chosen.
   --
-  hb.back.disabled = #back == 0
-  hb.forward.disabled = #forward == 0
+  hb.back.disabled = #current.back == 0
+  hb.forward.disabled = #current.forward == 0
 
   if field.focused and not field.had then field:take_address() end
 
@@ -1363,7 +1364,7 @@ local function frame()
 
   -- The star, on a page there is something to keep of and while nobody is
   -- typing an address over it.
-  star_b.hidden = field.focused or here == nil or here == NEWTAB
+  star_b.hidden = field.focused or current.here == nil or current.here == NEWTAB
 
   -- The tabs, then the header - which paints over the foot of the shown
   -- tab, so the two read as one.
@@ -1389,18 +1390,19 @@ local function frame()
   local drew_chrome = sys.ticks()
 
   -- Settings in place of a page, its own widgets over the whole of it.
-  settings_page.hidden = here ~= prefs.PAGE
+  settings_page.hidden = current.here ~= prefs.PAGE
 
   if not settings_page.hidden then
     ui.paint_view(settings_page, s, VIEW_X, VIEW_Y)
   else
-    s:fill(VIEW_X, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
+    s:fill(VIEW_X, VIEW_Y, VIEW_W, VIEW_H, current.paper and PAPER or theme.window)
 
-    if paper then
-      local rows = math.min(VIEW_H, band_top + paper_h - top)
+    if current.paper then
+      local rows = math.min(VIEW_H, current.band_top + current.paper_h - current.top)
 
       if rows > 0 then
-        s:blit(paper, 0, top - band_top, PAGE_W, rows, VIEW_X + PAD, VIEW_Y)
+        s:blit(current.paper, 0, current.top - current.band_top, PAGE_W, rows,
+               VIEW_X + PAD, VIEW_Y)
       end
     else
       local lines = web
@@ -1435,8 +1437,8 @@ local function frame()
 
   s:text(10, sy, status_text(), theme.text_dim)
 
-  if timing ~= "" and setting.costs then
-    s:text(W - 10 - gfx.measure(timing), sy, timing, theme.text_dim)
+  if current.timing ~= "" and setting.costs then
+    s:text(W - 10 - gfx.measure(current.timing), sy, current.timing, theme.text_dim)
   end
 
   local drew_all = sys.ticks()
@@ -1457,7 +1459,7 @@ local function frame()
 end
 
 local function say(text)
-  said = text
+  current.said = text
   frame()
 end
 
@@ -1470,17 +1472,16 @@ end
 -- and happens for the band being read (`paint_band`, below).
 --------------------------------------------------------------------------
 
-local laid_ms, painted_ms = 0, 0
-
+-- How long the layout and the paint took: `current.laid_ms` and
+-- `current.painted_ms`.
+--
 -- The size the document was laid out at, and its zoom, so a tab shown
 -- again after the window changed size or the zoom changed knows to lay it
--- out again.
-local laid_for
-
+-- out again: `current.laid_for`.
+--
 -- Of the paint, what went on the band's pictures: fetched, decoded and the
 -- page laid out again around them. It was counted as painting, and on
--- Wikipedia it was nearly all of it (`roadmap.md` 6zz h).
-local pictures_ms = 0
+-- Wikipedia it was nearly all of it (`roadmap.md` 6zz h). `current.pictures_ms`.
 
 --
 -- An address as NetSurf takes one, and one it gives back as this browser
@@ -1518,22 +1519,23 @@ local function from_ns(url)
 end
 
 local function forget_pictures()
-  for _, p in ipairs(pictures) do
+  for _, p in ipairs(current.pictures) do
     if p.kept then p.kept:free() end
   end
 
-  pictures, kept_bytes = {}, 0
+  current.pictures, current.kept_bytes = {}, 0
 end
 
 local function lay_out(doc)
-  if paper then
-    paper:free()
-    paper = nil
+  if current.paper then
+    current.paper:free()
+    current.paper = nil
   end
 
   forget_pictures()
-  paper_h, band_top, content_h, top = 0, 0, 0, 0
-  ns_doc, ns_tried, ns_svgs, ns_raster = false, {}, {}, {}
+  current.paper_h, current.band_top, current.content_h, current.top = 0, 0, 0, 0
+  current.ns_doc, current.ns_tried = false, {}
+  current.ns_svgs, current.ns_raster = {}, {}
 
   --
   -- Timed apart from the painting, and the split is the measurement:
@@ -1546,44 +1548,46 @@ local function lay_out(doc)
   local t0 = sys.ticks()
 
   if NS then
-    local tall, why = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
+    local tall, why = doc:ns_layout(PAGE_W, VIEW_H, ns_address(current.here))
 
     if tall then
-      content_h, ns_doc = tall, true
+      current.content_h, current.ns_doc = tall, true
     else
       say("NetSurf could not lay this page out: " .. tostring(why))
     end
   end
 
-  if not ns_doc then
-    content_h = doc:render(nil, PAGE_W)
+  if not current.ns_doc then
+    current.content_h = doc:render(nil, PAGE_W)
   end
 
-  laid_ms = since(t0)
-  laid_for = PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296
+  current.laid_ms = since(t0)
+  current.laid_for = PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296
 
   -- The whole page with a margin under it when that is less than a band,
   -- so a short page is painted once and never again.
-  local tall = math.max(VIEW_H, math.min(content_h + 16, VIEW_H * BAND_SCREENS))
+  local tall = math.max(VIEW_H, math.min(current.content_h + 16,
+                                         VIEW_H * BAND_SCREENS))
 
   local made = pcall(function()
-    paper = gfx.surface{ w = PAGE_W, h = tall }
+    current.paper = gfx.surface{ w = PAGE_W, h = tall }
   end)
 
-  if not made or not paper then
-    paper = nil
+  if not made or not current.paper then
+    current.paper = nil
     return nil, ("no memory for a %dx%d band of the page"):format(PAGE_W, tall)
   end
 
-  paper_h = tall
+  current.paper_h = tall
 
-  if not ns_doc then
+  if not current.ns_doc then
     for _, im in ipairs(doc:images()) do
-      pictures[#pictures + 1] = { im = im, where = resolve(here or "", im.src) }
+      current.pictures[#current.pictures + 1] = { im = im,
+                                                  where = resolve(current.here or "", im.src) }
     end
   end
 
-  return content_h
+  return current.content_h
 end
 
 --------------------------------------------------------------------------
@@ -1752,7 +1756,7 @@ local function fetch(text, page, post)
       say = page and say or nil,
       agent = AGENT,
       progress = progress,
-      anyway = parts.scheme == "https" and anyway[parts.hostport] or nil,
+      anyway = parts.scheme == "https" and current.anyway[parts.hostport] or nil,
       body = post and post.body,
       content_type = post and post.type,
       cache = CACHE,
@@ -1793,10 +1797,10 @@ local function fetch(text, page, post)
       if status ~= 307 and status ~= 308 then post = nil end
 
       if page then
-        here = next_at
-        address.text = next_at
-        address.caret = #next_at
-        address.from = 0
+        current.here = next_at
+        current.address.text = next_at
+        current.address.caret = #next_at
+        current.address.from = 0
       end
     else
       -- The charset the server said the page is in, which the parser holds
@@ -1895,7 +1899,7 @@ local function fetch_pictures(wanted, noun)
   local results = http.get_many(urls, {
     agent = AGENT,
     anyway = function(parts)
-      return parts.scheme == "https" and anyway[parts.hostport] or nil
+      return parts.scheme == "https" and current.anyway[parts.hostport] or nil
     end,
     cache = CACHE,
     revalidate = reloading,
@@ -1937,16 +1941,16 @@ end
 local function in_band(p)
   local im = p.im
 
-  return im.y + im.h > band_top and im.y < band_top + paper_h
+  return im.y + im.h > current.band_top and im.y < current.band_top + current.paper_h
 end
 
 -- Never one the band holds, which is about to be drawn.
 local function keep_within(room)
-  if kept_bytes <= room then return end
+  if current.kept_bytes <= room then return end
 
-  local centre, far = band_top + paper_h // 2, {}
+  local centre, far = current.band_top + current.paper_h // 2, {}
 
-  for _, p in ipairs(pictures) do
+  for _, p in ipairs(current.pictures) do
     if p.kept and not in_band(p) then far[#far + 1] = p end
   end
 
@@ -1955,9 +1959,9 @@ local function keep_within(room)
   end)
 
   for _, p in ipairs(far) do
-    if kept_bytes <= room then break end
+    if current.kept_bytes <= room then break end
 
-    kept_bytes = kept_bytes - p.w * p.h * 4
+    current.kept_bytes = current.kept_bytes - p.w * p.h * 4
     p.kept:free()
     p.kept = nil
   end
@@ -1966,14 +1970,14 @@ end
 local function band_pictures()
   local wanted = {}
 
-  for _, p in ipairs(pictures) do
+  for _, p in ipairs(current.pictures) do
     if p.kept == nil and in_band(p) then wanted[#wanted + 1] = p end
   end
 
   if #wanted > 0 and setting.images then
     -- The status line says so while they come, and then says again what
     -- it said: a band painted while scrolling is not news.
-    local before = said
+    local before = current.said
     local fetched = fetch_pictures(wanted)
 
     for _, p in ipairs(wanted) do
@@ -1998,7 +2002,7 @@ local function band_pictures()
            end) and p.kept then
           p.kept:stretch(pic, 0, 0, pw, ph, 0, 0, w, h, nil, true)
           p.x, p.y, p.w, p.h = im.x + (im.w - w) // 2, im.y + (im.h - h) // 2, w, h
-          kept_bytes = kept_bytes + w * h * 4
+          current.kept_bytes = current.kept_bytes + w * h * 4
         else
           p.kept = false
         end
@@ -2007,16 +2011,17 @@ local function band_pictures()
       end
     end
 
-    keep_within((((sys.info() or {}).pages_free or 16384) * 4096 + kept_bytes) // 8)
-    said = before
+    keep_within((((sys.info() or {}).pages_free or 16384) * 4096
+                 + current.kept_bytes) // 8)
+    current.said = before
   end
 
   local drawn, missing = 0, 0
 
-  for _, p in ipairs(pictures) do
+  for _, p in ipairs(current.pictures) do
     if in_band(p) then
       if p.kept then
-        paper:blit(p.kept, 0, 0, p.w, p.h, p.x, p.y - band_top)
+        current.paper:blit(p.kept, 0, 0, p.w, p.h, p.x, p.y - current.band_top)
         drawn = drawn + 1
       else
         missing = missing + 1
@@ -2071,7 +2076,7 @@ local function picture_of(bytes, k)
     local w = math.min(sw, PAGE_W)
     local pic, dw, dh = svg_surface(svg, w, math.max(1, sh * w // sw))
 
-    if pic and k then ns_svgs[k] = { svg = svg, w = dw, h = dh } end
+    if pic and k then current.ns_svgs[k] = { svg = svg, w = dw, h = dh } end
 
     return pic, sw, sh
   end
@@ -2106,12 +2111,12 @@ end
 -- natural size goes back unchanged, so the layout does not move.
 --
 local function pictures_to_boxes()
-  if not next(ns_svgs) and not next(ns_raster) then return end
+  if not next(current.ns_svgs) and not next(current.ns_raster) then return end
 
   local most = math.max(PAGE_W, VIEW_H) * 2
 
-  for k, o in ipairs(doc:ns_objects()) do
-    local s, r = ns_svgs[k], ns_raster[k]
+  for k, o in ipairs(current.doc:ns_objects()) do
+    local s, r = current.ns_svgs[k], current.ns_raster[k]
 
     if s and o.w > 0 and o.h > 0 and (o.w ~= s.w or o.h ~= s.h) then
       local pic = svg_surface(s.svg, o.w, o.h)
@@ -2119,7 +2124,7 @@ local function pictures_to_boxes()
       if pic then
         local sw, sh = s.svg:size()
 
-        doc:ns_picture(k, pic, sw, sh)
+        current.doc:ns_picture(k, pic, sw, sh)
         s.w, s.h = o.w, o.h
       end
     elseif r and not o.background and o.w > 0 and o.h > 0
@@ -2133,7 +2138,7 @@ local function pictures_to_boxes()
         local sw, sh = r.pic:size()
 
         scaled:stretch(r.pic, 0, 0, sw, sh, 0, 0, o.w, o.h, nil, true)
-        doc:ns_picture(k, scaled, r.pw, r.ph)
+        current.doc:ns_picture(k, scaled, r.pw, r.ph)
         r.w, r.h = o.w, o.h
       end
     end
@@ -2150,14 +2155,15 @@ end
 --
 local function ns_band_pictures()
   local function in_view(o)
-    return o.y + math.max(o.h, 1) > band_top and o.y < band_top + paper_h
+    return o.y + math.max(o.h, 1) > current.band_top
+           and o.y < current.band_top + current.paper_h
   end
 
   for _ = 1, 3 do
     local wanted = {}
 
-    for k, o in ipairs(doc:ns_objects()) do
-      if not o.arrived and not ns_tried[k] and in_view(o) then
+    for k, o in ipairs(current.doc:ns_objects()) do
+      if not o.arrived and not current.ns_tried[k] and in_view(o) then
         wanted[#wanted + 1] = { k = k, where = from_ns(o.url) }
       end
     end
@@ -2165,7 +2171,7 @@ local function ns_band_pictures()
     -- Settings' Load images off: the boxes laid out, nothing asked for.
     if #wanted == 0 or not setting.images then break end
 
-    local before = said
+    local before = current.said
     local fetched = fetch_pictures(wanted)
     local arrived = 0
 
@@ -2175,40 +2181,42 @@ local function ns_band_pictures()
                     or where:sub(1, 1) == "/") and bytes_at(where))
       local pic, pw, ph = picture_of(bytes, w.k)
 
-      ns_tried[w.k] = true
+      current.ns_tried[w.k] = true
 
-      if pic and doc:ns_picture(w.k, pic, pw, ph) then
+      if pic and current.doc:ns_picture(w.k, pic, pw, ph) then
         arrived = arrived + 1
 
-        if not ns_svgs[w.k] then
+        if not current.ns_svgs[w.k] then
           local sw, sh = pic:size()
 
-          ns_raster[w.k] = { pic = pic, pw = pw, ph = ph, w = sw, h = sh }
+          current.ns_raster[w.k] = { pic = pic, pw = pw, ph = ph, w = sw, h = sh }
         end
       end
     end
 
-    said = before
+    current.said = before
 
     if arrived == 0 then break end
 
-    local tall = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
+    local tall = current.doc:ns_layout(PAGE_W, VIEW_H, ns_address(current.here))
 
-    if tall then content_h = tall end
+    if tall then current.content_h = tall end
 
-    band_top = math.max(0, math.min(band_top, content_h + 16 - paper_h))
-    top = math.max(0, math.min(top, math.max(0, content_h - VIEW_H)))
+    current.band_top = math.max(0, math.min(current.band_top,
+                                            current.content_h + 16 - current.paper_h))
+    current.top = math.max(0, math.min(current.top,
+                                       math.max(0, current.content_h - VIEW_H)))
     pictures_to_boxes()
-    doc:ns_paint(paper, PAGE_W, paper_h, band_top)
+    current.doc:ns_paint(current.paper, PAGE_W, current.paper_h, current.band_top)
   end
 
   local drawn, missing = 0, 0
 
-  for k, o in ipairs(doc:ns_objects()) do
+  for k, o in ipairs(current.doc:ns_objects()) do
     if in_view(o) then
       if o.arrived then
         drawn = drawn + 1
-      elseif ns_tried[k] then
+      elseif current.ns_tried[k] then
         missing = missing + 1
       end
     end
@@ -2223,24 +2231,25 @@ end
 -- drawn and how many could not be had.
 --
 paint_band = function(at)
-  band_top = math.max(0, math.min(at, content_h + 16 - paper_h))
+  current.band_top = math.max(0, math.min(at, current.content_h + 16
+                                              - current.paper_h))
 
-  if ns_doc then
-    doc:ns_paint(paper, PAGE_W, paper_h, band_top)
+  if current.ns_doc then
+    current.doc:ns_paint(current.paper, PAGE_W, current.paper_h, current.band_top)
   else
-    doc:render(paper, PAGE_W, paper_h, band_top)
+    current.doc:render(current.paper, PAGE_W, current.paper_h, current.band_top)
   end
 
   local t0 = sys.ticks()
   local shown, missing
 
-  if ns_doc then
+  if current.ns_doc then
     shown, missing = ns_band_pictures()
   else
     shown, missing = band_pictures()
   end
 
-  pictures_ms = since(t0)
+  current.pictures_ms = since(t0)
   return shown, missing
 end
 
@@ -2254,7 +2263,7 @@ end
 local function fetch_sheets(d)
   if not NS then return 0 end
 
-  local wanted = d:ns_sheets(ns_address(here))
+  local wanted = d:ns_sheets(ns_address(current.here))
 
   if #wanted == 0 then return 0 end
 
@@ -2289,10 +2298,10 @@ local function load_page(text, post)
   -- do the third could not be tried without a server somewhere, which is
   -- what this arrangement exists to fix.
   --
-  here = text
-  address.text = (text == NEWTAB or text == prefs.PAGE) and "" or text
-  address.caret = #address.text
-  address.from = 0
+  current.here = text
+  current.address.text = (text == NEWTAB or text == prefs.PAGE) and "" or text
+  current.address.caret = #current.address.text
+  current.address.from = 0
 
   local body, fetched_ms, how
 
@@ -2302,14 +2311,16 @@ local function load_page(text, post)
   -- next one comes, and Back goes to it.
   --
   if text == prefs.PAGE then
-    if doc then doc:close() end
+    if current.doc then current.doc:close() end
 
-    if paper then paper:free() end
+    if current.paper then current.paper:free() end
 
     forget_pictures()
-    doc, came, paper, paper_h, band_top, content_h, top = nil, nil, nil, 0, 0, 0, 0
-    ns_doc, ns_tried, ns_svgs, ns_raster = false, {}, {}, {}
-    current.title, timing = "Settings", ""
+    current.doc, current.came, current.paper, current.paper_h = nil, nil, nil, 0
+    current.band_top, current.content_h, current.top = 0, 0, 0
+    current.ns_doc, current.ns_tried = false, {}
+    current.ns_svgs, current.ns_raster = {}, {}
+    current.title, current.timing = "Settings", ""
     win:retitle("Browser - Settings")
     fill_settings()
     say("Settings")
@@ -2418,18 +2429,19 @@ of these.</p>
 
   -- The one before it, and only once this one exists: a page that fails to
   -- parse should leave what is on screen alone rather than blank it.
-  if doc then doc:close() end
+  if current.doc then current.doc:close() end
 
-  doc = fresh
-  came = how
+  current.doc = fresh
+  current.came = how
 
-  local title = doc:title()
+  local title = current.doc:title()
 
   current.title = title
 
   -- **In the history** (d4), on the disk: every page shown in any tab,
   -- but a new tab's own and one refused for its certificate.
-  if text ~= NEWTAB and text ~= prefs.ROOTS and not (came and came.refused) then
+  if text ~= NEWTAB and text ~= prefs.ROOTS
+     and not (current.came and current.came.refused) then
     history.record(text, title, clock.now())
   end
 
@@ -2442,22 +2454,23 @@ of these.</p>
   win:retitle(title and ("Browser - " .. title) or "Browser")
 
   local counts = ("%d bytes, %d paragraphs, %d links, %d headings")
-                 :format(#body, doc:count("p"), doc:count("a"),
-                         doc:count("h1") + doc:count("h2") + doc:count("h3"))
+                 :format(#body, current.doc:count("p"), current.doc:count("a"),
+                         current.doc:count("h1") + current.doc:count("h2")
+                         + current.doc:count("h3"))
 
   local sheets_from = sys.ticks()
 
-  fetch_sheets(doc)
+  fetch_sheets(current.doc)
   fetched_ms = fetched_ms + since(sheets_from)
 
-  local drawn, why_not = lay_out(doc)
+  local drawn, why_not = lay_out(current.doc)
   local shown, missing = 0, 0
 
   if drawn then
     local t1 = sys.ticks()
 
     shown, missing = paint_band(0)
-    painted_ms = since(t1)
+    current.painted_ms = since(t1)
   end
 
   if not drawn then
@@ -2472,12 +2485,12 @@ of these.</p>
   -- knowing which of the five to work on - and the band's pictures are
   -- their own, since fetching them was being read as painting.
   --
-  timing = ("fetch %s  parse %s  layout %s  pictures %s  paint %s ms")
-           :format(tenths(fetched_ms), tenths(parsed_ms), tenths(laid_ms),
-                   tenths(pictures_ms),
-                   tenths(math.max(0, painted_ms - pictures_ms)))
+  current.timing = ("fetch %s  parse %s  layout %s  pictures %s  paint %s ms")
+           :format(tenths(fetched_ms), tenths(parsed_ms), tenths(current.laid_ms),
+                   tenths(current.pictures_ms),
+                   tenths(math.max(0, current.painted_ms - current.pictures_ms)))
 
-  say(how_said(came) .. " - " .. counts)
+  say(how_said(current.came) .. " - " .. counts)
 
   if missing > 0 then
     say(("%d of %d pictures could not be read or decoded"):format(missing,
@@ -2489,18 +2502,19 @@ of these.</p>
   -- The pictures are the first band's, which are the ones fetched before
   -- the page is shown.
   print(("browser: showing %s, \"%s\", %d pixels tall, %d pictures, %d missing, %s")
-        :format(text, title or "", content_h, shown, missing, how_said(came)))
+        :format(text, title or "", current.content_h, shown, missing,
+                how_said(current.came)))
 
   -- Its costs as the status line has them, for whoever measures from
   -- outside - a page from the cache is a fetch of nothing (6zz k).
-  print("browser: took " .. timing)
+  print("browser: took " .. current.timing)
 
   --
   -- And what drawing its first band spent, by kind (`roadmap.md` 6zz h):
   -- the band last painted, which with pictures is the last of up to three.
   -- What is left of the whole is NetSurf walking its boxes.
   --
-  local c = ns_doc and doc:ns_costs()
+  local c = current.ns_doc and current.doc:ns_costs()
 
   if c then
     local function ms(t) return tenths((t * 10000) // HZ) end
@@ -2531,7 +2545,7 @@ local function keep_tabs()
   local list, shown = {}, 1
 
   for _, t in ipairs(tabs) do
-    local at = (t == current) and here or (t.here or t.pending)
+    local at = t.here or t.pending
 
     if at and at ~= NEWTAB then
       list[#list + 1] = at
@@ -2559,16 +2573,16 @@ end
 -- A page that only refreshes itself at once is not followed.
 --
 local function refresh_of(text)
-  if not doc then return nil end
+  if not current.doc then return nil end
 
-  for _, m in ipairs(doc:meta()) do
+  for _, m in ipairs(current.doc:meta()) do
     if tostring(m.http_equiv or ""):lower() == "refresh" then
       local seconds, to = http.refresh(m.content)
 
       if seconds then
         if not to then return seconds, text end
 
-        local whole = ns_doc and web.join and web.join(ns_address(text), to)
+        local whole = current.ns_doc and web.join and web.join(ns_address(text), to)
 
         return seconds, whole and from_ns(whole) or resolve(text, to) or to
       end
@@ -2624,37 +2638,37 @@ end
 -- page that came by a link would be.
 --
 local function visit(text, post)
-  if here then back[#back + 1] = here end
+  if current.here then current.back[#current.back + 1] = current.here end
 
-  forward = {}
+  current.forward = {}
   load(text, post)
 end
 
 go_back = function()
-  if #back == 0 then
+  if #current.back == 0 then
     say("nothing to go back to")
     return
   end
 
-  if here then forward[#forward + 1] = here end
+  if current.here then current.forward[#current.forward + 1] = current.here end
 
-  load(table.remove(back))
+  load(table.remove(current.back))
 end
 
 go_forward = function()
-  if #forward == 0 then
+  if #current.forward == 0 then
     say("nothing to go forward to")
     return
   end
 
-  if here then back[#back + 1] = here end
+  if current.here then current.back[#current.back + 1] = current.here end
 
-  load(table.remove(forward))
+  load(table.remove(current.forward))
 end
 
 reload = function()
   reloading = true
-  load(here or address.text)
+  load(current.here or current.address.text)
   reloading = false
 end
 
@@ -2667,25 +2681,26 @@ end
 --------------------------------------------------------------------------
 
 local function scroll_to(y)
-  local was = top
+  local was = current.top
 
-  top = math.max(0, math.min(y, reach()))
+  current.top = math.max(0, math.min(y, reach()))
   band_ms = nil
 
   -- Out of the band, and the band moves to put the view in its middle, so
   -- the next screen either way is already painted.
-  if paper and (top < band_top or top + VIEW_H > band_top + paper_h) then
+  if current.paper and (current.top < current.band_top
+                        or current.top + VIEW_H > current.band_top + current.paper_h) then
     local t0 = sys.ticks()
 
-    paint_band(top - (paper_h - VIEW_H) // 2)
+    paint_band(current.top - (current.paper_h - VIEW_H) // 2)
     band_ms = since(t0)
   end
 
-  return top ~= was
+  return current.top ~= was
 end
 
 local function scroll_by(dy)
-  return scroll_to(top + dy)
+  return scroll_to(current.top + dy)
 end
 
 --------------------------------------------------------------------------
@@ -2707,13 +2722,16 @@ end
 -- it says.
 --
 local function form_changed()
-  if not (doc and ns_doc) then return end
+  if not (current.doc and current.ns_doc) then return end
 
-  local x, y, w, h = doc:ns_dirty()
+  local x, y, w, h = current.doc:ns_dirty()
 
-  if x and paper then doc:ns_paint(paper, PAGE_W, paper_h, band_top, x, y, w, h) end
+  if x and current.paper then
+    current.doc:ns_paint(current.paper, PAGE_W, current.paper_h, current.band_top,
+                         x, y, w, h)
+  end
 
-  local url, body, kind = doc:ns_sent()
+  local url, body, kind = current.doc:ns_sent()
 
   if url then
     say(("sending the form to %s"):format(url))
@@ -2723,8 +2741,8 @@ end
 
 -- The caret out of the page's field, for the address bar to have it.
 local function page_blur()
-  if doc and ns_doc then
-    doc:ns_blur()
+  if current.doc and current.ns_doc then
+    current.doc:ns_blur()
     form_changed()
   end
 end
@@ -2742,42 +2760,46 @@ end
 -- another was shown.
 --
 local function make_band()
-  if paper then
-    paper:free()
-    paper = nil
+  if current.paper then
+    current.paper:free()
+    current.paper = nil
   end
 
-  local tall = math.max(VIEW_H, math.min(content_h + 16, VIEW_H * BAND_SCREENS))
+  local tall = math.max(VIEW_H, math.min(current.content_h + 16,
+                                         VIEW_H * BAND_SCREENS))
   local made = pcall(function()
-    paper = gfx.surface{ w = PAGE_W, h = tall }
+    current.paper = gfx.surface{ w = PAGE_W, h = tall }
   end)
 
-  if not made or not paper then
-    paper, paper_h = nil, 0
+  if not made or not current.paper then
+    current.paper, current.paper_h = nil, 0
     say(("no memory for a %dx%d band of the page"):format(PAGE_W, tall))
     return false
   end
 
-  paper_h = tall
-  top = math.max(0, math.min(top, math.max(0, content_h - VIEW_H)))
-  paint_band(top - (paper_h - VIEW_H) // 2)
+  current.paper_h = tall
+  current.top = math.max(0, math.min(current.top,
+                                     math.max(0, current.content_h - VIEW_H)))
+  paint_band(current.top - (current.paper_h - VIEW_H) // 2)
   return true
 end
 
 local function reflow()
-  if not doc then return end
+  -- No tab yet: the favorites read as the window opens can bring the bar,
+  -- and the room it takes, before the first tab is made.
+  if not (current and current.doc) then return end
 
-  if ns_doc then
-    local tall = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
+  if current.ns_doc then
+    local tall = current.doc:ns_layout(PAGE_W, VIEW_H, ns_address(current.here))
 
-    if tall then content_h = tall end
+    if tall then current.content_h = tall end
   else
-    content_h = doc:render(nil, PAGE_W) or content_h
+    current.content_h = current.doc:render(nil, PAGE_W) or current.content_h
   end
 
-  laid_for = PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296
+  current.laid_for = PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296
 
-  if ns_doc then pictures_to_boxes() end
+  if current.ns_doc then pictures_to_boxes() end
 
   if not make_band() then return end
 
@@ -2786,7 +2808,7 @@ local function reflow()
   local sw, sh = win:surface():size()
 
   print(("browser: laid out again at %dx%d, %d pixels tall, drawn at %dx%d")
-        :format(PAGE_W, VIEW_H, content_h, sw, sh))
+        :format(PAGE_W, VIEW_H, current.content_h, sw, sh))
 end
 
 local sink = ui.view{ x = 0, y = 0, w = W, h = H }
@@ -2804,7 +2826,8 @@ end
 function sink:key(c)
   -- A field on the page with the caret has the keyboard - every letter,
   -- space and arrow - and what it does not want (Control-L) goes on.
-  if ns_doc and doc and doc:ns_focused() and doc:ns_key(c) then
+  if current.ns_doc and current.doc and current.doc:ns_focused()
+     and current.doc:ns_key(c) then
     form_changed()
     frame()
     return true
@@ -2831,7 +2854,7 @@ function sink:key(c)
   -- its own total before it has drawn the line it would report it on, and
   -- while a key is held down one frame behind is the same number.
   --
-  timing = ("frame %s (page %s, commit %s) worst %s ms, %s KB")
+  current.timing = ("frame %s (page %s, commit %s) worst %s ms, %s KB")
            :format(tenths(frame_cost.ms), tenths(frame_cost.blit),
                    tenths(frame_cost.commit), tenths(frame_cost.worst),
                    ("%d.%02d"):format(frame_cost.kb // 100, frame_cost.kb % 100))
@@ -2884,12 +2907,12 @@ end
 -- Following it is a `visit`, so it joins the history like anything typed.
 --
 local function page_press(x, y)
-  if not doc or not paper then return end
+  if not current.doc or not current.paper then return end
 
   -- A form's field first: a click there is the field's, and a click
   -- anywhere else takes the caret out of whichever had it.
-  if ns_doc then
-    local did = doc:ns_click(x - VIEW_X - PAD, y - VIEW_Y + top)
+  if current.ns_doc then
+    local did = current.doc:ns_click(x - VIEW_X - PAD, y - VIEW_Y + current.top)
 
     form_changed()
 
@@ -2898,10 +2921,10 @@ local function page_press(x, y)
 
   local href
 
-  if ns_doc then
-    href = doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + top)
+  if current.ns_doc then
+    href = current.doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + current.top)
   else
-    href = doc:link_at(x - VIEW_X - PAD, y - VIEW_Y + top)
+    href = current.doc:link_at(x - VIEW_X - PAD, y - VIEW_Y + current.top)
   end
 
   if not href then return end
@@ -2912,10 +2935,10 @@ local function page_press(x, y)
     go_back()
     return
   elseif href == "kosmos:anyway" then
-    local parts = here and http.split(here)
+    local parts = current.here and http.split(current.here)
 
     if parts and parts.scheme == "https" then
-      anyway[parts.hostport] = true
+      current.anyway[parts.hostport] = true
       reload()
     end
 
@@ -2924,17 +2947,18 @@ local function page_press(x, y)
 
   local where, why
 
-  if ns_doc then
+  if current.ns_doc then
     -- Whole already: NetSurf joined it to the page as it laid the page
     -- out. A link into this page - `#top` - has nowhere to go yet.
     where = from_ns(href)
 
     if where:find("#", 1, true)
-       and where:gsub("#.*$", "") == tostring(here or ""):gsub("#.*$", "") then
+       and where:gsub("#.*$", "")
+           == tostring(current.here or ""):gsub("#.*$", "") then
       where, why = nil, "that link points into this page, and there is no anchor yet"
     end
   else
-    where, why = resolve(here or address.text, href)
+    where, why = resolve(current.here or current.address.text, href)
   end
 
   if not where then
@@ -2953,11 +2977,11 @@ end
 local function breakdown(x)
   local items = {}
 
-  for part in timing:gmatch("[^%s][^%s]*%s+[%d.]+") do
+  for part in current.timing:gmatch("[^%s][^%s]*%s+[%d.]+") do
     items[#items + 1] = { text = part .. " ms" }
   end
 
-  local c = ns_doc and doc and doc:ns_costs()
+  local c = current.ns_doc and current.doc and current.doc:ns_costs()
 
   if c then
     local function ms(t) return tenths((t * 10000) // HZ) end
@@ -2983,7 +3007,8 @@ function sink:mouse(action, x, y)
       scrollbar_press(y)
     elseif y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= VIEW_X then
       page_press(x, y)
-    elseif timing ~= "" and setting.costs and x >= W - 10 - gfx.measure(timing) then
+    elseif current.timing ~= "" and setting.costs
+           and x >= W - 10 - gfx.measure(current.timing) then
       breakdown(x)
     end
   elseif action == "move" then
@@ -3077,7 +3102,8 @@ hb.menu.on_click = function()
     { text = "New tab", on_choose = function() new_tab() end },
     { text = "Close tab", on_choose = function() close_tab(current) end },
     { separator = true },
-    { text = (here and kept[here]) and "Remove from favorites" or "Add to favorites",
+    { text = (current.here and kept[current.here]) and "Remove from favorites"
+             or "Add to favorites",
       on_choose = function() toggle_favorite() end },
     { text = side_open and "Hide favorites and history" or "Favorites and history",
       on_choose = function() toggle_side() end },
@@ -3128,9 +3154,9 @@ use("/Kosmos/Libraries/wmproto.lua").track(win.handle, true)
 win.on_hover = function(_, x, y)
   local now = nil
 
-  if ns_doc and doc and y >= VIEW_Y and y < VIEW_Y + VIEW_H
+  if current.ns_doc and current.doc and y >= VIEW_Y and y < VIEW_Y + VIEW_H
      and x >= VIEW_X and x < W - SBAR then
-    local href = doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + top)
+    local href = current.doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + current.top)
 
     now = href and from_ns(href) or nil
   end
@@ -3161,7 +3187,7 @@ local function room_changed(w, h)
   status_for = nil
   reflow()
 
-  if here == prefs.PAGE then fill_settings() end
+  if current and current.here == prefs.PAGE then fill_settings() end
 end
 
 win.on_resize = function(_, w, h)
@@ -3171,43 +3197,28 @@ end
 --------------------------------------------------------------------------
 -- **The tabs, kept and shown.**
 --
--- `stow` writes the shown tab's page out of the locals into its table and
--- lets its band go; `unstow` reads one back. Every name either touches is
--- one the page above is drawn, scrolled and clicked from, which is why
--- they are listed here and nowhere else: a new piece of a page's state is
--- a line in each.
+-- A tab is the page it shows (State, above), so showing another is making
+-- it `current`: `stow` lets the one left behind give back its band - three
+-- screens of pixels, painted again when it is shown - and `unstow` forgets
+-- what belonged to the moment rather than the page. They copied twenty-five
+-- names out of the chunk into the tab and back, until 1 October.
 --------------------------------------------------------------------------
 
 local function stow(t)
-  if paper then paper:free() end
+  if t.paper then t.paper:free() end
 
-  paper, paper_h = nil, 0
-
-  t.band_top, t.content_h, t.top = band_top, content_h, top
-  t.pictures, t.kept_bytes = pictures, kept_bytes
-  t.ns_doc, t.ns_tried, t.ns_svgs, t.ns_raster = ns_doc, ns_tried, ns_svgs, ns_raster
-  t.doc, t.said, t.timing, t.came, t.anyway = doc, said, timing, came, anyway
-  t.address, t.here, t.back, t.forward = address, here, back, forward
-  t.laid_for, t.laid_ms, t.painted_ms, t.pictures_ms = laid_for, laid_ms,
-                                                       painted_ms, pictures_ms
+  t.paper, t.paper_h = nil, 0
 end
 
-local function unstow(t)
-  band_top, content_h, top = t.band_top, t.content_h, t.top
-  pictures, kept_bytes = t.pictures, t.kept_bytes
-  ns_doc, ns_tried, ns_svgs, ns_raster = t.ns_doc, t.ns_tried, t.ns_svgs, t.ns_raster
-  doc, said, timing, came, anyway = t.doc, t.said, t.timing, t.came, t.anyway
-  address, here, back, forward = t.address, t.here, t.back, t.forward
-  laid_for, laid_ms, painted_ms, pictures_ms = t.laid_for, t.laid_ms,
-                                               t.painted_ms, t.pictures_ms
-
+local function unstow()
   -- What belongs to the moment rather than the page.
   pointing, band_ms, dragging, status_for = nil, nil, nil, nil
 end
 
 -- A tab with nothing in it yet.
 local function blank_tab()
-  local t = { band_top = 0, content_h = 0, top = 0, pictures = {}, kept_bytes = 0,
+  local t = { paper_h = 0, band_top = 0, content_h = 0, top = 0,
+              pictures = {}, kept_bytes = 0,
               ns_doc = false, ns_tried = {}, ns_svgs = {}, ns_raster = {},
               said = "", timing = "", anyway = {},
               address = { text = "", caret = 0, from = 0 },
@@ -3220,7 +3231,7 @@ end
 
 local function say_tab(how)
   print(("browser: tab %d of %d, %s, showing %s"):format(index_of(current), #tabs,
-        how, tostring(here)))
+        how, tostring(current.here)))
 end
 
 show_tab = function(t)
@@ -3229,22 +3240,22 @@ show_tab = function(t)
   if current then stow(current) end
 
   current = t
-  unstow(t)
+  unstow()
   win:retitle(t.title and ("Browser - " .. t.title) or "Browser")
 
   -- Its band painted again from what it kept - laid out again first if
   -- the window is not the size it was laid out at.
-  if doc then
-    if laid_for == PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296 then
+  if current.doc then
+    if current.laid_for == PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296 then
       make_band()
     else
       reflow()
     end
   end
 
-  if here == prefs.PAGE then fill_settings() end
+  if current.here == prefs.PAGE then fill_settings() end
 
-  if here == NEWTAB then field:take_keys() else win:focus_on(sink) end
+  if current.here == NEWTAB then field:take_keys() else win:focus_on(sink) end
 
   say_tab("shown")
 
@@ -3271,7 +3282,7 @@ new_tab = function(where)
   if current then stow(current) end
 
   current = t
-  unstow(t)
+  unstow()
   say_tab("new")
   visit(where or NEWTAB)
 
@@ -3387,7 +3398,7 @@ do
     if r and sys.ticks() >= r.at then
       current.refresh = nil
 
-      if here == r.from then
+      if current.here == r.from then
         print(("browser: refreshed to %s"):format(r.to))
         visit(r.to)
         return true
@@ -3406,19 +3417,19 @@ end
 -- kept.
 --
 toggle_favorite = function()
-  if here == nil or here == NEWTAB then return end
+  if current.here == nil or current.here == NEWTAB then return end
 
-  if kept[here] then
-    local n = favorites.remove(here)
+  if kept[current.here] then
+    local n = favorites.remove(current.here)
 
     say("not a favorite any more")
-    print(("browser: %s is not a favorite, %d removed"):format(here, n))
+    print(("browser: %s is not a favorite, %d removed"):format(current.here, n))
   else
-    local path, why = favorites.add(here, current.title)
+    local path, why = favorites.add(current.here, current.title)
 
     if path then
       say("a favorite, in " .. path)
-      print(("browser: a favorite, %s, of %s"):format(path, here))
+      print(("browser: a favorite, %s, of %s"):format(path, current.here))
     else
       say("it could not be kept: " .. tostring(why))
     end

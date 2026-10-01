@@ -15508,3 +15508,30 @@ Rendered and F12, Stop, full screen, the Render tab and the render read off
 the disk, a broken scene, import and export. 341 seconds became 128 and 131
 on ARM, 127 and 218 on x86; 72 checks and 54, the opening's five in both.
 Run alone, as the new rule has it: `make test ONLY=` the four, 4:05.
+
+## 18.328 The page is the tab's (a follow-up of 6zz d2-d5)
+
+`browser.lua` was at 186 of the 194 slots Lua lets a chunk hold at once -
+two hundred locals - after d5, held there by `do` blocks. Twenty-five of
+them were the page a tab shows: its document, band, scroll, pictures, how it
+came, its history. `stow` copied them into the tab being left and `unstow`
+back out of the one shown.
+
+They are fields of the tab now - `current.paper`, `current.here` and the rest
+- and showing a tab is making it `current`: `stow` lets the band go,
+`unstow` forgets what belonged to the moment. 164 slots. The 358 references
+were renamed by a tokenizer that knows Lua's scopes: a field after `.`, a key
+in a table constructor - not a function's own assignment written inside one
+- and a name a function declares itself (`lay_out(doc)`, a tab's
+`local top`) were left as they were.
+
+**What the suite found**: a favorite on the disk brings the favorites bar as
+the window opens, before the first tab exists, and laying the page out for
+the room the bar takes asked `current` for a document there was not yet
+one of - where a plain local had been nil. `arm-browser-2` and
+`x86-browser-2` start a browser with a favorite kept, which is how it was
+found; `reflow` and `room_changed` wait for a tab now.
+
+**Run as the new rule has it**: the browser's four halves, the change being
+the browser's alone - `make test ONLY=arm-browser-1,arm-browser-2,
+x86-browser-1,x86-browser-2`.

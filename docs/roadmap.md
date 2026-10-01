@@ -2867,11 +2867,12 @@ processors, and still what follows USB:
       the end of the old address. It takes the address the moment it is
       given the keys now.
 
-      **A follow-up, noticed building d2 to d5**: `browser.lua` is near
-      Lua's two hundred locals in a chunk (186 slots after d5), held there
-      by `do` blocks and two tables. The page a tab shows is twenty-five
-      locals that `stow` and `unstow` copy in and out; as one table per tab
-      they would be a swap, and the limit far away.
+      **A follow-up, noticed building d2 to d5, DONE 1 October**
+      (`testing.md` 18.328): the page a tab shows was twenty-five locals of
+      `browser.lua` that `stow` and `unstow` copied in and out, near Lua's
+      two hundred a chunk; they are fields of the tab now, `current.here`
+      and the rest, so showing a tab is making it `current` - 164 slots
+      from 194.
    e. **Windows that draw their own pixels, resizable** - the browser's,
       Cafesa3D's, Camera's, Video's: the window manager refuses today
       ("its surface is shared and has a size"). On letting go of the grip
