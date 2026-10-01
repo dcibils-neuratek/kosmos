@@ -91,8 +91,15 @@ struct web_ns_cost {
     unsigned long ticks, calls;
 };
 
+/*
+ * And what the last layout spent, apart (`roadmap.md` 6zz, the browser's
+ * speed): `boxes`, the tree made from the document the first time - the
+ * cascade, every element's style selected, and the boxes built - and
+ * `layout`, the boxes placed at a width, every time.
+ */
 struct web_ns_costs {
     struct web_ns_cost whole, fills, text, pictures, scaled, shapes, other;
+    struct web_ns_cost boxes, layout;
 };
 
 const struct web_ns_costs *web_ns_costs(struct web_ns_doc *d);

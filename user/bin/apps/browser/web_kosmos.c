@@ -933,7 +933,7 @@ static int l_ns_costs(lua_State *L)
     }
 
     c = web_ns_costs(d->ns);
-    lua_createtable(L, 0, 6);
+    lua_createtable(L, 0, 9);
     push_cost(L, "whole", &c->whole);
     push_cost(L, "fills", &c->fills);
     push_cost(L, "text", &c->text);
@@ -941,6 +941,8 @@ static int l_ns_costs(lua_State *L)
     push_cost(L, "scaled", &c->scaled);
     push_cost(L, "shapes", &c->shapes);
     push_cost(L, "other", &c->other);
+    push_cost(L, "boxes", &c->boxes);
+    push_cost(L, "layout", &c->layout);
     return 1;
 }
 

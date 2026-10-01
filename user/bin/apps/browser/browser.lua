@@ -2530,6 +2530,14 @@ of these.</p>
                   c.pictures.calls, ms(c.scaled.ticks), c.scaled.calls,
                   ms(c.shapes.ticks), c.shapes.calls,
                   ms(c.other.ticks), c.other.calls, ms(rest)))
+
+    -- And the layout, apart: the tree made from the document - every
+    -- element's style selected, the cascade, and its boxes built - and
+    -- the boxes placed at the width. Which of the two to make faster is
+    -- this line's to say, not a guess's.
+    print(("browser: laid out in %s ms - the cascade and the tree %s, "
+           .. "placed at the width %s")
+          :format(tenths(current.laid_ms), ms(c.boxes.ticks), ms(c.layout.ticks)))
   end
 
   return true

@@ -781,6 +781,7 @@ def newest_profile():
 
 def main(argv):
     path = symbols_dir = out = summary = None
+    functions = 12
     rest = list(argv)
 
     while rest:
@@ -792,6 +793,11 @@ def main(argv):
             out = rest.pop(0)
         elif a == "--json":
             summary = rest.pop(0)
+        elif a == "--functions":
+            # How many of each process's functions the JSON keeps, busiest
+            # first: twelve, as the page shows, unless a reader of the JSON
+            # wants the whole of one - the browser's spread over a hundred.
+            functions = int(rest.pop(0))
         else:
             path = a
 
@@ -822,11 +828,12 @@ def main(argv):
             for cls, k in c.items():
                 by[LAYER_OF[cls]] += k
 
-            top = sorted(s["proc_funcs"][pid].items(), key=lambda kv: -kv[1])[:12]
+            top = sorted(s["proc_funcs"][pid].items(),
+                         key=lambda kv: -kv[1])[:functions]
             per[proc_name(head, pid)] = {
                 "samples": n, "layers": dict(by), "classes": dict(c),
-                "functions": [{"name": f, "class": cl, "samples": k}
-                              for (f, _, cl), k in top]}
+                "functions": [{"name": f, "file": where, "class": cl, "samples": k}
+                              for (f, where, cl), k in top]}
 
         with open(summary, "w") as f:
             json.dump({"samples": s["total"], "busy": busy, "lost": int(head.get("lost", 0)),

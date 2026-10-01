@@ -2482,6 +2482,7 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
 {
     html_content *h = &d->html;
     struct box *top;
+    unsigned long began;
     int tall;
 
     faces_L = L;
@@ -2529,12 +2530,15 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
         }
 
         converting = d;
+        began = kosmos_ticks();
         e = dom_to_box(root, h, converted, &h->box_conversion_context);
 
         if (e == NSERROR_OK) {
             web_netsurf_run();
         }
 
+        d->costs.boxes.ticks = kosmos_ticks() - began;
+        d->costs.boxes.calls = 1;
         converting = NULL;
         dom_node_unref(root);
 
@@ -2560,11 +2564,16 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
     h->unit_len_ctx.viewport_height = INTTOFIX(height);
     h->unit_len_ctx.root_style = top->style;
 
+    began = kosmos_ticks();
+
     if (!layout_document(h, width, height)) {
         d->why = "NetSurf's layout ran out of memory";
         faces_L = NULL;
         return -1;
     }
+
+    d->costs.layout.ticks = kosmos_ticks() - began;
+    d->costs.layout.calls++;
 
     /* The margin box, or further where something overflows it - as
      * NetSurf's `html_reformat` measures a page. */
@@ -2641,6 +2650,9 @@ void web_ns_paint(struct web_ns_doc *d, lua_State *L, struct surface *s,
     (void)html_redraw(&d->html.base, &data, &clip, &ctx);
     faces_L = NULL;
     costs.whole.ticks = kosmos_ticks() - costs.whole.ticks;
+    /* The layout's own, which a paint does not measure, kept across it. */
+    costs.boxes = d->costs.boxes;
+    costs.layout = d->costs.layout;
     d->costs = costs;
 
     if (d->focus != NULL) {
