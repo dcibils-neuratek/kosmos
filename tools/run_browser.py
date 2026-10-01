@@ -168,6 +168,17 @@ SELECT_PAGE = ("<!doctype html><html><head><title>Choose</title><style>"
                "</p></form></body></html>")
 MACHINE, LONG, SEND = (43, 111, 158), (158, 43, 111), (111, 158, 43)
 
+# One word twice, in serif and in sans (`roadmap.md` 6zz j5), large and in
+# a colour each, so how wide each is drawn can be measured off the screen.
+FACES_PAGE = ("<!doctype html><html><head><title>Faces</title><style>"
+              "#serif { font-family: Georgia, 'Times New Roman', serif; "
+              "font-size: 40px; color: #b0201c; }"
+              "#sans { font-family: Helvetica, Arial, sans-serif; font-size: 40px; "
+              "color: #1c7a20; }"
+              "</style></head><body><p id=\"serif\">Hamburgefonstiv</p>"
+              "<p id=\"sans\">Hamburgefonstiv</p></body></html>")
+SERIF_INK, SANS_INK = (176, 32, 28), (28, 122, 32)
+
 # A page that takes thirty seconds to come (`roadmap.md` 6zz l3), and is
 # never meant to be shown: Escape stops it first.
 SLOW_PAGE = ("<!doctype html><html><head><title>Slow</title></head><body>"
@@ -303,6 +314,10 @@ def serve(directory, asked, tls=None):
 
             if self.path == "/select.html":
                 self.answer_page(SELECT_PAGE)
+                return
+
+            if self.path == "/faces.html":
+                self.answer_page(FACES_PAGE)
                 return
 
             # The cache (`roadmap.md` 6zz k): a page asked about every time
@@ -1685,6 +1700,31 @@ def main():
 
             print(f"select: QEMU from three, Option 120 from {groups} groups of up to "
                   f"{fit}, sent as {sent}", flush=True)
+
+            #
+            # **A serif face** (`roadmap.md` 6zz j5): what a page asks to be in
+            # serif is drawn in IBM Plex Serif, not in the sans it fell back to -
+            # one word in each, forty pixels, measured off the screen: the two
+            # are not the same width.
+            #
+            go_to("faces.html", "the page of faces")
+            time.sleep(1.0)
+            serif_box, sans_box = box_of(SERIF_INK), box_of(SANS_INK)
+
+            if serif_box is None or sans_box is None:
+                raise Failure(f"the word in serif, #b0201c, or in sans, #1c7a20, is not "
+                              f"on the screen. Wrote {args.out}.")
+
+            serif_w = serif_box[2] - serif_box[0]
+            sans_w = sans_box[2] - sans_box[0]
+
+            if abs(serif_w - sans_w) < 6:
+                raise Failure(f"the word in serif was drawn as wide as the one in sans, "
+                              f"{serif_w} and {sans_w} pixels: the same face. "
+                              f"Wrote {args.out}.")
+
+            print(f"faces: the word {serif_w} pixels wide in serif, {sans_w} in sans",
+                  flush=True)
 
             #
             # **The cache, in the browser** (`roadmap.md` 6zz k): a page sent

@@ -474,8 +474,9 @@ wait of a tick). **Item 2 is done.** Item 3: **select menus built**
 (18.333) - the kit's menu under the control, a choice through NetSurf's own
 code, a list longer than the screen grouped into submenus that fit
 (`longmenu.lua`); **favorites dragged on the bar** (18.334), and the page
-onto it by its star (`favorites.move`). Next in item 3: a serif face, other
-scripts' glyphs, `@import`.
+onto it by its star (`favorites.move`); **a serif face** (18.335), IBM Plex
+Serif 2.0.0 in four styles. Next in item 3: other scripts' glyphs,
+`@import`.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

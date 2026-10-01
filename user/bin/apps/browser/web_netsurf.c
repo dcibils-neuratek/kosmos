@@ -226,10 +226,12 @@ void web_netsurf_run(void)
  * A face is `gfx`'s - a font file rasterised at a size - and asking for one
  * is a call into Lua (`gfx.face`), which is not something to do for every
  * word the layout measures. So a face is asked for once per kind and size
- * and kept: six kinds, the files the image carries - sans in four weights
- * and slants, mono in two; there is no serif in the image, and a serif page
- * is drawn in sans rather than in boxes - and sizes rounded to the ladder
- * `web_paint.c` rounds to, which is what keeps the set bounded.
+ * and kept: ten kinds, the files the image carries - sans in four weights
+ * and slants, serif in four (IBM Plex Serif, for what a page asks to be in
+ * serif: Wikipedia's headings, a newspaper's text; `roadmap.md` 6zz j5),
+ * mono in two - and sizes rounded to the ladder `web_paint.c` rounds to,
+ * which is what keeps the set bounded. A family the image has no face for
+ * - cursive, fantasy - is drawn in sans.
  *
  * `faces_L` is the Lua state the kit was called from, set for the length of
  * a layout or a painting and nowhere else.
@@ -246,11 +248,13 @@ static const int LADDER[] = {
 static int zoom_pct = 100;
 
 #define RUNGS  (sizeof(LADDER) / sizeof(LADDER[0]))
-#define KINDS  6
+#define KINDS  10
 
 static const char *const KIND_FILE[KINDS] = {
     "ibmplexsans", "ibmplexsans-bold", "ibmplexsans-italic",
     "ibmplexsans-bolditalic", "ibmplexmono", "ibmplexmono-bold",
+    "ibmplexserif", "ibmplexserif-bold", "ibmplexserif-italic",
+    "ibmplexserif-bolditalic",
 };
 
 static int faces[KINDS][RUNGS];
@@ -287,7 +291,8 @@ static unsigned kind_of(const plot_font_style_t *fstyle)
         return bold ? 5 : 4;
     }
 
-    return (bold ? 1u : 0u) + (slanted ? 2u : 0u);
+    return (fstyle->family == PLOT_FONT_FAMILY_SERIF ? 6u : 0u)
+           + (bold ? 1u : 0u) + (slanted ? 2u : 0u);
 }
 
 static int face_for(const plot_font_style_t *fstyle)

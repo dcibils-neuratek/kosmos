@@ -15896,3 +15896,30 @@ at 2.
 
 **Run as the new rule has it**: the browser's four halves and the host
 suite.
+
+## 18.335 A serif face (6zz j5)
+
+**What it fixes**: the image carried no serif, so everything a page asked to
+be in serif - Wikipedia's headings ('Linux Libertine', Georgia, Times,
+serif), a newspaper's text - was drawn in sans.
+
+**IBM Plex Serif**, the family the image's sans and mono come from: Regular,
+Bold, Italic and BoldItalic, 2.0.0 as IBM released it on 2 February 2026
+(`@ibm/plex-serif@2.0.0`, `ibm-plex-serif.zip` from github.com/IBM/plex,
+9,272,432 bytes, SHA-256 `c006b095...51f1e`), the four TTFs and their
+licence copied out unchanged - OFL 1.1, the same terms as Plex Sans -
+`assets/fonts/LICENSE.IBMPlexSerif` beside them, 895 KB in all. Every TTF
+there joins the image under its lowercased name, so they are `ibmplexserif`
+and its three weights with nothing in the build changed. The NetSurf glue
+has ten kinds of face now: a family NetSurf resolves as serif is drawn in
+Plex Serif; cursive and fantasy, which the image has no face for, still in
+sans.
+
+**The test** (`run_browser.py --part 1`): a page of its own, one word
+twice at forty pixels - in serif (`Georgia, 'Times New Roman', serif`) and
+in sans - each in a colour, measured off the screen: 249 pixels wide in
+serif, 231 in sans, on both machines. **The control bit**: serif drawn as
+sans - both 231.
+
+**Run as the new rule has it**: the full gate, 80 suites in 9:52 - the fonts are in every
+image.

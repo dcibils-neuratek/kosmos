@@ -3159,8 +3159,9 @@ processors, and still what follows USB:
         order agreed on 30 September ("go ahead with SVG"): **SVG**, through
         NetSurf's own libsvgtiny (MIT), and a rasteriser of ours for the
         shapes it gives - Wikipedia's logo and icons, and most sites' -
-        then a serif face (IBM Plex Serif) and other scripts' glyphs, then
-        `@import`, and `web_paint.c` retired.
+        then a serif face (IBM Plex Serif) - **BUILT 1 October**
+        (`testing.md` 18.335) - and other scripts' glyphs, then `@import`,
+        and `web_paint.c` retired.
 
         **SVG BUILT 30 September** (`testing.md` 18.313): expat 2.8.5 and
         libsvgtiny 0.1.8 vendored, unmodified, both MIT; the shapes drawn by
