@@ -445,11 +445,19 @@ ONLY=...`); Cafesa3D's suite in two halves. Diego's order after it: the
 plan's items 2 (the browser's speed - the page as one table per tab, the
 style cascade, pictures and the parser fed as the page arrives), 3 (select
 menus, favorites dragged, a serif face, other scripts, `@import`) and 4
-(`diskfs` step 4, virglrenderer, the M700's codec, the hardware cursor). Next for the browser,
-from the roadmap: the page's state as one table per tab (Lua's 200 locals),
-favorites dragged on the bar, select menus in forms, the rest of j5 (a serif
-face, other scripts' glyphs, `@import`). `browser.lua` is near Lua's 200 locals - new
-helpers go in `do` blocks.
+(`diskfs` step 4, virglrenderer, the M700's codec, the hardware cursor).
+**Item 2, in steps**: the page is the tab's (18.328) - `current.here` and
+the rest, 164 of Lua's 194 slots; then **the libc's memory a word at a
+time** (18.329) - the layout measured as the cascade and the tree apart
+from placing, a profile in which no function of the cascade is above 2%
+and the libc's byte loops were 9%: the Dam article's layout 12% fewer
+instructions under `-icount`, the cascade 14%, parse 5% (and parse 7%
+slower in TCG's wall time, recorded). Left, and why: the kernel's clearing
+of a process's new pages (`sys_map`, `grow` 3-4% of the browser) - on real
+cores it is bound by memory bandwidth, and what `DC ZVA` would win is TCG's.
+**Next in item 2, 6zz l, the page read as it arrives**: l1 a load the
+window lives through, l2 the parser fed as the bytes come, l3 the rest of
+the pictures while the page is read.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

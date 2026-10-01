@@ -2989,7 +2989,16 @@ processors, and still what follows USB:
       leaked - and now answers from what the tree holds, as NetSurf's own
       handler does; libdom patched to split classes on any white space. The
       Dam article 1.6 s from this Mac, from 2.1. Next: libcss itself, the
-      parser, and the rest of the byte path. **What real pages
+      parser, and the rest of the byte path. **Then what libcss and the
+      parser stand on** (1 October, `testing.md` 18.329): the layout timed
+      as the cascade and the tree apart from placing them, a profile with
+      no function of the cascade above 2%, and `memcmp`, `memcpy` and
+      `memset` 9% of the browser in loops over single bytes - a word at a
+      time now, in every process: the Dam article's layout 12% fewer
+      instructions, the cascade 14%, parse 5%. The kernel's clearing of a
+      process's new pages (`grow`, 3-4%) is left: on real cores it is bound
+      by memory bandwidth, and what `DC ZVA` would win is TCG's. Next, l.
+      **What real pages
       showed on 30 September**, the first ones Diego asked for: DuckDuckGo's
       front page, 225 KB, took **50 seconds** to arrive - about 4.5 KB a
       second, and not the handshake, since Wikipedia's first answer came
@@ -3240,6 +3249,30 @@ processors, and still what follows USB:
       on a machine with no disk, `/Home` is `ramfs`, whose files are 16 KB
       at most - a page does not fit, which is that server's fixed limit,
       already on the no-limits list.
+   l. **The page read as it arrives** - the last of the speed Diego ordered
+      on 1 October ("continue now with 2, 3 and 4 items of the plan"):
+      "pictures and the parser fed while the page arrives". Today a page is
+      fetched whole, then parsed, then laid out, inside one `http.get` that
+      holds the window: nothing answers while it comes but the progress
+      line, and the parse - 250 ms of the Dam article under TCG - starts
+      only when the last byte is in. In steps:
+      - l1. **A load the window lives through.** The page, its stylesheets
+        and its first pictures fetched by a coroutine the window steps on
+        each pass, as `get_many` steps its eight (`http.get` already waits
+        through `opts.pause`), the window's wait shortened to a tick while
+        one runs. Keys, the pointer and the strip answer while a page
+        comes; Escape stops it, and so does a new address, Back, or showing
+        another tab - a load is the tab's it was asked for.
+      - l2. **The parser fed as the bytes come.** `http.get` hands the body
+        on as it arrives - its chunks undone, and inflated as a stream when
+        it came gzipped, which the Compression Kit's inflater learns - and
+        `web.parser` gives each piece to hubbub, starting once more from the
+        bytes it kept when a `<meta>` names another encoding, as `web.parse`
+        does now. The parse goes on under the fetch rather than after it.
+      - l3. **The rest of the pictures while the page is read.** After the
+        first band is shown, the page's other pictures are fetched in the
+        background, so a scroll that reaches them finds them instead of
+        stopping for them.
    **The order since 30 September**: f's kernel step, i, then f, g and h,
    with j's parser and paper beside g (the paper BUILT), then e and d - the
    browser fast before it is redrawn. **Then NetSurf's layout (j1-j5)**,

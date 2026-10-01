@@ -15535,3 +15535,100 @@ found; `reflow` and `room_changed` wait for a tab now.
 **Run as the new rule has it**: the browser's four halves, the change being
 the browser's alone - `make test ONLY=arm-browser-1,arm-browser-2,
 x86-browser-1,x86-browser-2`.
+
+## 18.329 Where a page's layout goes, and the libc's memory a word at a time
+
+**What was asked**: the browser faster (Diego, 1 October: items 2, 3 and 4
+of the plan, in that order), and first the cascade - which `browser: took`
+said was most of a page's layout and nothing said more about.
+
+**The layout split in two, in the status line's log**: `browser: laid out in
+N ms - the cascade and the tree A, placed at the width B` - the tree made
+from the document, every element's style selected and its boxes built
+(`dom_to_box`), and then those boxes placed (`layout_document`), each timed
+in `web_ns_layout`. On the Dam article, served from this Mac, under TCG:
+503 ms, of which the cascade and the tree 408 and placing 90.
+
+**A profile of five loads said it was nobody's function.** `profile 40 dam &`,
+with `tools/profile_report.py --functions N` now able to keep more than
+twelve of a process's functions in the JSON: 1026 of the browser's samples,
+libcss 23%, libdom 13%, NetSurf 12%, the allocator 10%, `string.c` 9%,
+parserutils 9%, hubbub 7%, Lua 3% - and no function of the cascade above
+2%. The one piece of that with a single owner and an obvious shape was the
+libc: `memcmp` 32 samples, `memcpy` 31, `memset` 27, every one of them a
+loop over single bytes at whatever addresses NetSurf's libraries hand them.
+
+**So the four that move and compare memory work a word at a time**
+(`runtime/libc/string.c`), and every process gets it, since every process
+links the file. **Two copies, two sets of paths**: a process may load and
+store a word at any address - it always runs with translation on, over
+Normal memory, which both machines let it access unaligned (`SCTLR_EL1.A`
+is clear) - so a short copy is two words that may overlap and a long one
+words from start to end, with no byte loop at either; the kernel runs C
+before `mmu_init`, where every access is to Device memory and an unaligned
+word is a fault, so its copy moves words only where both addresses agree.
+`memmove` overlapping goes a word at a time in the direction that reads
+each word before anything writes over it; `memcmp` compares words while
+they are equal and finds the first different byte among the next eight.
+
+**Measured on the same day, the same machine, the old `string.c` swapped
+back in for the control**, three to four loads each, alternated:
+
+| Dam article          | TCG, old   | TCG, new   | `-icount`, old | `-icount`, new |
+|----------------------|-----------:|-----------:|---------------:|---------------:|
+| parse                | 246-264 ms | 264-279 ms | 403-405        | 384-385        |
+| layout               | 468-513 ms | 437-476 ms | 602-605        | 532-534        |
+| the cascade and tree | 391-407 ms | 356-376 ms | 507-509        | 437-439        |
+| pictures             | 11.0-11.6  | 10.5-10.9  | 12.1           | 9.5            |
+
+(`-icount shift=0`: a millisecond is a million guest instructions.) In
+instructions, which is what this project detects a regression with, the
+layout is 12% less and the cascade 14%; parse 5% less. **Under TCG the
+parse read 7% slower** and did so every time - the one number that went
+the other way, while it executes 5% fewer instructions. TCG's cost for an
+access is not the hardware's, and an unaligned one is the likely
+difference; it is recorded rather than explained away, and the ThinkPad or
+the M700 is what answers it. The profile agrees with `-icount`: the libc's
+samples 206 to 159 in five loads, `memcpy` 47 to 16, `memcmp` 25 to 4,
+`memset` 17 to 7.
+
+**What the vector unit does with it**: a process's copy is compiled without
+`-mgeneral-regs-only`, and GCC turns `memcpy`'s four-word turn into 128-bit
+`q` loads and stores - as it already turned the old aligned word loop into
+them (6 references to a SIMD register before, 8 now; none in the other
+three, before or after). So a C server that copies memory took the lazy FP
+trap before this, as it does now; what changes is that an unaligned copy of
+32 bytes or more takes it too.
+
+**The test**: `tools/test_string.c`, built twice - `test_string` as a process
+links the file and `test_string_kernel` as the kernel does - holds each of
+the four to a byte loop at every alignment of both addresses (sixteen by
+sixteen), every length to 80 and either side of the loops' boundaries up to
+4099: the bytes asked for, none either side (a guard before and after every
+destination), the pointer returned, `memcmp`'s sign decided by the first
+difference with bytes either side of 127, and `memmove` overlapping both ways
+at every distance to twenty. 284,548 checks. **And the kernel's promise,
+which the Mac cannot see broken** - an unaligned word is nothing here and a
+fault before the MMU - is checked by `string.c` reporting every word its
+kernel copy touches when built with `KOSMOS_TEST_ALIGNMENT`, which only the
+test is; one more check, that not one was unaligned.
+
+**Every control bit, on its side and not the other**: the process copy's
+`memcpy` and `memset` without their last word (17,007 and 5,250 failures,
+the kernel's copy passing); `memcmp` comparing signed bytes (209,920, both);
+`memmove` always forwards (14,264 and 14,320, both); and the kernel's
+`memcpy` moving words when the addresses disagree, and its `memset` not
+aligning first (the kernel's copy failing with 257,000 and 82,320 unaligned
+words, the process copy passing). GCC was checked for the trap a libc's own
+loops set - a loop recognised as a call to the function it is in: the only
+call inside the four is `memmove`'s to `memcpy` when the regions are apart.
+
+**What was looked at and left**: `grow`, the allocator asking the kernel for
+256 KB more, is 30-38 samples of the five loads - the kernel clearing each
+new page with `memset` (`sys_map`), a word at a time already, since a page
+is aligned. `DC ZVA` would clear a 64-byte block an instruction and is
+exactly what TCG is fastest at; on real cores clearing is bound by memory
+bandwidth either way, and this project does not optimise against QEMU.
+
+**Run as the new rule has it**: the full gate, `string.c` being in every
+process and in the kernel.
