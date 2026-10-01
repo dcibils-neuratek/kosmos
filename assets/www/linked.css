@@ -1,0 +1,8 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+/*
+ * The browser test page's own stylesheet, linked rather than written in the
+ * page: a rule only this file has, so a green ground under the paragraph it
+ * names says the browser fetched it and gave it to the cascade
+ * (`roadmap.md` 6zz j4, `tools/run_browser.py`).
+ */
+.linked { background: #3fa06a; color: #ffffff; padding: 4px; }

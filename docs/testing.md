@@ -14677,3 +14677,50 @@ first link found under its place - "3352 862 8198 1373 .../second.html" on
 both. Control: NetSurf's colours handed to `gfx` unconverted, "0 0" for the
 border and ground. A control that did not bite: stroked rectangles not drawn -
 NetSurf draws borders filled.
+
+## 18.312 The browser changed over to NetSurf's layout (6zz j4)
+
+**`roadmap.md` 6zz j4.** The browser lays pages out with NetSurf now. Three
+pieces made it possible.
+
+- **Linked stylesheets**, gathered with the `<style>`s in document order by a
+  walk of the tree, fetched side by side before the first layout
+  (`fetch_sheets`, `doc:ns_sheets`, `doc:ns_sheet`), and the cascade made from
+  them all at that layout. A `media` that names neither `screen` nor `all` is
+  left out; `@import` is not fetched yet.
+- **Pictures as NetSurf's objects.** Its layout asks for each through
+  `html_fetch_object`, which notes it; the browser fetches the ones whose
+  boxes reach into a band the first time the band is painted, decodes them -
+  no wider than the page, their own size said beside - and hands them over
+  (`doc:ns_picture`), and the page is laid out again, since a picture the page
+  gave no size to takes its own. `content_redraw` scales it to its box as the
+  band is drawn, through the scaler `stretch` uses, now also `gfx_draw_stretch`
+  for C.
+- **Addresses as NetSurf takes them**: the address bar keeps http's without
+  `http://`, and NetSurf could not parse that and joined every link and
+  picture to `about:blank` - found by the first run, whose link went nowhere.
+  A namespace path goes as a `file:` URL and comes back as the path.
+
+And two more of NetSurf's start-up tables, found by the pages that needed
+them: the system colours (`Canvas` and the rest - Wikipedia's stylesheet
+names them, and the browser faulted in `ns_system_colour` until
+`ns_system_colour_init` ran after the options).
+
+**Wikipedia's Dam article, live**: 1.6 s once the browser is running, and laid
+out as Wikipedia lays it out - the title and its tabs at the top, the article
+in its column, the infobox to its right with its photograph, the menus and
+136 languages folded away where they belong. Still not there: SVG (the logo
+and the icons are empty boxes), a serif face, glyphs for other scripts. The
+page the gate holds is the saved copy, whose stylesheets are links to
+Wikipedia's own server and are not served there - shown whole in 3 s.
+
+`web_paint.c` stays for a page NetSurf cannot lay out, with the reason on the
+status line; it is retired with j5.
+
+**`arm-browser` and `x86-browser`**, every check on the changed-over browser -
+links, pictures, TLS, the refusal page, the Dam article, the end of the long
+page (76,236 pixels in NetSurf's layout) - and a new one: the test page links
+`linked.css`, whose one rule puts a paragraph on a green ground, #3fa06a,
+nothing else on the page has; at least 1,000 pixels of it on the first screen.
+Control: sheets not fetched, 0. `arm-cafesa3d`: the tutorial's `asset:` pages,
+122 checks.

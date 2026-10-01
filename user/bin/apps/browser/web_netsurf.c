@@ -66,6 +66,7 @@
 #include "desktop/gui_table.h"
 #include "desktop/print.h"
 #include "desktop/scrollbar.h"
+#include "desktop/system_colour.h"
 #include "desktop/selection.h"
 #include "desktop/textarea.h"
 #include "html/private.h"
@@ -639,90 +640,6 @@ bool content_textsearch_ishighlighted(struct textsearch_context *textsearch,
     (void)start_idx;
     (void)end_idx;
     return false;
-}
-
-/*
- * Objects - pictures, and what an `<object>` embeds. j1 fetches none: a
- * box keeps no object, and is laid out by the size its attributes and
- * style give it, as NetSurf lays out one still arriving. j4 fetches them.
- */
-bool html_fetch_object(struct html_content *c, struct nsurl *url,
-                       struct box *box, content_type permitted_types,
-                       bool background)
-{
-    (void)c;
-    (void)url;
-    (void)box;
-    (void)permitted_types;
-    (void)background;
-    return true;
-}
-
-content_type content_factory_type_from_mime_type(lwc_string *mime_type)
-{
-    (void)mime_type;
-    return CONTENT_NONE;
-}
-
-struct nsurl *hlcache_handle_get_url(const struct hlcache_handle *handle)
-{
-    (void)handle;
-    return NULL;
-}
-
-bool content_can_reformat(struct hlcache_handle *h)
-{
-    (void)h;
-    return false;
-}
-
-int content_get_available_width(struct hlcache_handle *h)
-{
-    (void)h;
-    return 0;
-}
-
-int content_get_width(struct hlcache_handle *h)
-{
-    (void)h;
-    return 0;
-}
-
-int content_get_height(struct hlcache_handle *h)
-{
-    (void)h;
-    return 0;
-}
-
-bool content_get_opaque(struct hlcache_handle *h)
-{
-    (void)h;
-    return false;
-}
-
-content_type content_get_type(struct hlcache_handle *h)
-{
-    (void)h;
-    return CONTENT_NONE;
-}
-
-bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
-                    const struct rect *clip, const struct redraw_context *ctx)
-{
-    (void)h;
-    (void)data;
-    (void)clip;
-    (void)ctx;
-    return true;
-}
-
-void content_reformat(struct hlcache_handle *h, bool background, int width,
-                      int height)
-{
-    (void)h;
-    (void)background;
-    (void)width;
-    (void)height;
 }
 
 struct box *html_get_box_tree(struct hlcache_handle *h)
@@ -1466,9 +1383,20 @@ int web_netsurf_setup(lua_State *L)
         return luaL_error(L, "NetSurf's names could not be made");
     }
 
-    if (nsoptions == NULL && nsoption_init(option_defaults, NULL, NULL)
-                             != NSERROR_OK) {
-        return luaL_error(L, "NetSurf's options could not be made");
+    /*
+     * And after the options, the system colours - CSS's `Canvas`,
+     * `ButtonText` and the rest, which read them - as NetSurf's own
+     * `netsurf_init` makes them; Wikipedia's stylesheet names them, and
+     * the first page that did faulted in `ns_system_colour`.
+     */
+    if (nsoptions == NULL) {
+        if (nsoption_init(option_defaults, NULL, NULL) != NSERROR_OK) {
+            return luaL_error(L, "NetSurf's options could not be made");
+        }
+
+        if (ns_system_colour_init() != NSERROR_OK) {
+            return luaL_error(L, "NetSurf's system colours could not be made");
+        }
     }
 
     if (ua_default == NULL) {
@@ -1483,13 +1411,39 @@ int web_netsurf_setup(lua_State *L)
     return 1;
 }
 
+/*
+ * A stylesheet of the page's, in the order the page gives it: a `<style>`'s
+ * made at once, a `<link rel="stylesheet">`'s when the browser has fetched
+ * it and handed the text over (`web_ns_sheet`). The cascade is made from
+ * them all, in this order, at the first layout.
+ */
+struct page_sheet {
+    css_stylesheet *sheet;          /* NULL until a link's text arrives */
+    nsurl          *url;            /* a link's, joined to the page */
+};
+
+/* A picture the layout asked for (`html_fetch_object`, below): NetSurf's
+ * name for a fetched content, opaque to everything vendored. */
+struct hlcache_handle {
+    struct box            *box;
+    nsurl                 *url;
+    bool                   background;
+    int                    width, height;   /* natural, once arrived */
+    struct surface        *pic;             /* NULL until it has */
+    int                    ref;             /* the registry's hold on it */
+    struct hlcache_handle *next;
+};
+
 struct web_ns_doc {
-    html_content     html;          /* first: NetSurf casts a content to it */
-    css_stylesheet **sheets;        /* the page's own, in order */
-    size_t           nsheets;
-    bool             built;
-    bool             converted;     /* the box tree was made */
-    const char      *why;           /* why the last layout failed */
+    html_content       html;        /* first: NetSurf casts a content to it */
+    struct page_sheet *sheets;
+    size_t             nsheets, sheets_room;
+    struct hlcache_handle *objects; /* the pictures asked for, newest first */
+    size_t             nobjects;
+    lua_State         *L;           /* whose registry holds the pictures */
+    bool               built;
+    bool               converted;   /* the box tree was made */
+    const char        *why;         /* why the last layout failed */
 };
 
 /* The box tree finished: NetSurf says whether it was made. The document is
@@ -1511,7 +1465,7 @@ const char *web_ns_why(struct web_ns_doc *d)
     return d->why != NULL ? d->why : "NetSurf could not lay this page out";
 }
 
-/* Is a `<style media="...">` for a screen? No attribute, or one naming
+/* Is a `<style>` or `<link>` for a screen? No `media`, or one naming
  * `screen` or `all`: a print sheet is not this page's. */
 static bool for_screen(dom_node *node)
 {
@@ -1523,13 +1477,12 @@ static bool for_screen(dom_node *node)
         const char *m = dom_string_data(media);
         size_t n = dom_string_byte_length(media), i;
 
-        yes = false;
+        yes = n == 0;
 
-        for (i = 0; i + 3 <= n; i++) {
-            if (strncasecmp(m + i, "screen", n - i < 6 ? n - i : 6) == 0
-                || strncasecmp(m + i, "all", 3) == 0) {
+        for (i = 0; !yes && i < n; i++) {
+            if ((n - i >= 6 && strncasecmp(m + i, "screen", 6) == 0)
+                || (n - i >= 3 && strncasecmp(m + i, "all", 3) == 0)) {
                 yes = true;
-                break;
             }
         }
 
@@ -1539,53 +1492,224 @@ static bool for_screen(dom_node *node)
     return yes;
 }
 
-/* Every `<style>` of the page, in order, as author sheets. */
-static void page_sheets(struct web_ns_doc *d, const char *base)
+/* Does a `rel` name a stylesheet, and not an alternate one? Its words,
+ * without regard to case. */
+static bool rel_is_stylesheet(dom_node *node)
 {
-    dom_nodelist *list = NULL;
-    uint32_t n = 0, i;
+    dom_string *rel = NULL;
+    bool sheet = false, alternate = false;
 
-    if (dom_document_get_elements_by_tag_name(d->html.document,
-            corestring_dom_style, &list) != DOM_NO_ERR || list == NULL) {
-        return;
+    if (dom_element_get_attribute(node, corestring_dom_rel, &rel)
+        != DOM_NO_ERR || rel == NULL) {
+        return false;
     }
 
-    (void)dom_nodelist_get_length(list, &n);
-    d->sheets = calloc(n ? n : 1, sizeof(*d->sheets));
+    {
+        const char *r = dom_string_data(rel);
+        size_t n = dom_string_byte_length(rel), i = 0;
 
-    for (i = 0; d->sheets != NULL && i < n; i++) {
-        dom_node *node = NULL;
-        dom_string *text = NULL;
+        while (i < n) {
+            size_t start;
 
-        if (dom_nodelist_item(list, i, &node) != DOM_NO_ERR || node == NULL) {
-            continue;
+            while (i < n && (r[i] == ' ' || r[i] == '\t' || r[i] == '\n'
+                             || r[i] == '\r' || r[i] == '\f')) {
+                i++;
+            }
+
+            start = i;
+
+            while (i < n && r[i] != ' ' && r[i] != '\t' && r[i] != '\n'
+                   && r[i] != '\r' && r[i] != '\f') {
+                i++;
+            }
+
+            if (i - start == 10 && strncasecmp(r + start, "stylesheet", 10) == 0) {
+                sheet = true;
+            } else if (i - start == 9
+                       && strncasecmp(r + start, "alternate", 9) == 0) {
+                alternate = true;
+            }
         }
+    }
+
+    dom_string_unref(rel);
+    return sheet && !alternate;
+}
+
+static struct page_sheet *more_sheet(struct web_ns_doc *d)
+{
+    if (d->nsheets == d->sheets_room) {
+        size_t room = d->sheets_room ? d->sheets_room * 2 : 8;
+        struct page_sheet *grown = realloc(d->sheets, room * sizeof(*grown));
+
+        if (grown == NULL) {
+            return NULL;
+        }
+
+        d->sheets = grown;
+        d->sheets_room = room;
+    }
+
+    memset(&d->sheets[d->nsheets], 0, sizeof(d->sheets[0]));
+    return &d->sheets[d->nsheets++];
+}
+
+/* One element of the walk: a `<style>` made now, a `<link>` noted. */
+static void sheet_from_element(struct web_ns_doc *d, dom_node *node,
+                               dom_string *tag)
+{
+    bool quirks = d->html.quirks != DOM_DOCUMENT_QUIRKS_MODE_NONE;
+
+    if (dom_string_caseless_lwc_isequal(tag, corestring_lwc_style)) {
+        dom_string *text = NULL;
 
         if (for_screen(node)
             && dom_node_get_text_content(node, &text) == DOM_NO_ERR
             && text != NULL) {
             css_stylesheet *sheet = sheet_of(dom_string_data(text),
-                    dom_string_byte_length(text), base,
-                    d->html.quirks != DOM_DOCUMENT_QUIRKS_MODE_NONE);
+                    dom_string_byte_length(text),
+                    nsurl_access(d->html.base_url), quirks);
+            struct page_sheet *at = sheet != NULL ? more_sheet(d) : NULL;
 
-            if (sheet != NULL) {
-                d->sheets[d->nsheets++] = sheet;
+            if (at != NULL) {
+                at->sheet = sheet;
+            } else if (sheet != NULL) {
+                css_stylesheet_destroy(sheet);
             }
-
-            dom_string_unref(text);
         }
 
-        dom_node_unref(node);
+        if (text != NULL) {
+            dom_string_unref(text);
+        }
+    } else if (dom_string_caseless_lwc_isequal(tag, corestring_lwc_link)
+               && rel_is_stylesheet(node) && for_screen(node)) {
+        dom_string *href = NULL;
+        nsurl *url = NULL;
+
+        if (dom_element_get_attribute(node, corestring_dom_href, &href)
+            == DOM_NO_ERR && href != NULL) {
+            if (nsurl_join(d->html.base_url, dom_string_data(href), &url)
+                == NSERROR_OK) {
+                struct page_sheet *at = more_sheet(d);
+
+                if (at != NULL) {
+                    at->url = url;
+                } else {
+                    nsurl_unref(url);
+                }
+            }
+
+            dom_string_unref(href);
+        }
+    }
+}
+
+/*
+ * Every `<style>` and `<link rel="stylesheet">` of the page, in document
+ * order, which is the order the cascade takes them in: a walk of the tree
+ * by its first children and next siblings, back up by parents, so it needs
+ * no stack however deep the page nests.
+ */
+static void page_sheets(struct web_ns_doc *d)
+{
+    dom_node *at = NULL;
+
+    if (dom_document_get_document_element(d->html.document, (void *)&at)
+        != DOM_NO_ERR) {
+        return;
     }
 
-    dom_nodelist_unref(list);
+    while (at != NULL) {
+        dom_node *next = NULL;
+        dom_node_type type;
+
+        if (dom_node_get_node_type(at, &type) == DOM_NO_ERR
+            && type == DOM_ELEMENT_NODE) {
+            dom_string *tag = NULL;
+
+            if (dom_node_get_node_name(at, &tag) == DOM_NO_ERR
+                && tag != NULL) {
+                sheet_from_element(d, at, tag);
+                dom_string_unref(tag);
+            }
+
+            (void)dom_node_get_first_child(at, &next);
+        }
+
+        while (next == NULL && at != NULL) {
+            dom_node *parent = NULL;
+
+            (void)dom_node_get_next_sibling(at, &next);
+
+            if (next != NULL) {
+                break;
+            }
+
+            (void)dom_node_get_parent_node(at, &parent);
+            dom_node_unref(at);
+            at = parent;
+
+            if (at != NULL) {
+                dom_node_type ptype;
+
+                if (dom_node_get_node_type(at, &ptype) == DOM_NO_ERR
+                    && ptype == DOM_DOCUMENT_NODE) {
+                    dom_node_unref(at);
+                    at = NULL;
+                }
+            }
+        }
+
+        if (at != NULL) {
+            dom_node_unref(at);
+        }
+
+        at = next;
+    }
+}
+
+/* The links' addresses still to be fetched: `(n, url)` for each. */
+size_t web_ns_sheets(struct web_ns_doc *d, size_t k, const char **url)
+{
+    size_t i, seen = 0;
+
+    for (i = 0; i < d->nsheets; i++) {
+        if (d->sheets[i].url != NULL && d->sheets[i].sheet == NULL) {
+            if (seen++ == k) {
+                *url = nsurl_access(d->sheets[i].url);
+                return i + 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+/* A link's text, fetched, made its sheet. */
+bool web_ns_sheet(struct web_ns_doc *d, size_t n, const char *text,
+                  size_t len)
+{
+    struct page_sheet *at;
+
+    if (n == 0 || n > d->nsheets || d->built) {
+        return false;
+    }
+
+    at = &d->sheets[n - 1];
+
+    if (at->url == NULL || at->sheet != NULL) {
+        return false;
+    }
+
+    at->sheet = sheet_of(text, len, nsurl_access(at->url),
+                         d->html.quirks != DOM_DOCUMENT_QUIRKS_MODE_NONE);
+    return at->sheet != NULL;
 }
 
 struct web_ns_doc *web_ns_open(void *document, const char *base)
 {
     struct web_ns_doc *d;
     html_content *h;
-    size_t i;
 
     if (!netsurf_ready() || ua_default == NULL) {
         return NULL;
@@ -1614,10 +1738,24 @@ struct web_ns_doc *web_ns_open(void *document, const char *base)
     h->unit_len_ctx.font_size_minimum = INTTOFIX(6);
 
     if (lwc_intern_string("*", 1, &h->universal) != lwc_error_ok
-        || h->bctx == NULL
-        || css_select_ctx_create(&h->select_ctx) != CSS_OK) {
+        || h->bctx == NULL || h->base_url == NULL) {
         web_ns_close(d);
         return NULL;
+    }
+
+    page_sheets(d);
+    return d;
+}
+
+/* The cascade, from NetSurf's defaults and the page's sheets in order -
+ * made once, at the first layout, when every link has had its chance. */
+static bool make_cascade(struct web_ns_doc *d)
+{
+    html_content *h = &d->html;
+    size_t i;
+
+    if (css_select_ctx_create(&h->select_ctx) != CSS_OK) {
+        return false;
     }
 
     (void)css_select_ctx_append_sheet(h->select_ctx, ua_default,
@@ -1628,14 +1766,15 @@ struct web_ns_doc *web_ns_open(void *document, const char *base)
                                           CSS_ORIGIN_UA, NULL);
     }
 
-    page_sheets(d, base);
-
     for (i = 0; i < d->nsheets; i++) {
-        (void)css_select_ctx_append_sheet(h->select_ctx, d->sheets[i],
-                                          CSS_ORIGIN_AUTHOR, NULL);
+        if (d->sheets[i].sheet != NULL) {
+            (void)css_select_ctx_append_sheet(h->select_ctx,
+                                              d->sheets[i].sheet,
+                                              CSS_ORIGIN_AUTHOR, NULL);
+        }
     }
 
-    return d;
+    return true;
 }
 
 /* Laid out at `width`; the page's whole height, or -1. The box tree is
@@ -1654,6 +1793,12 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
         nserror e;
 
         d->built = true;
+
+        if (!make_cascade(d)) {
+            d->why = "no memory for the cascade";
+            faces_L = NULL;
+            return -1;
+        }
 
         if (dom_document_get_document_element(h->document, (void *)&root)
             != DOM_NO_ERR || root == NULL) {
@@ -1784,6 +1929,7 @@ const char *web_ns_link_at(struct web_ns_doc *d, int x, int y)
 void web_ns_close(struct web_ns_doc *d)
 {
     html_content *h;
+    struct hlcache_handle *o, *next;
     size_t i;
 
     if (d == NULL) {
@@ -1797,10 +1943,27 @@ void web_ns_close(struct web_ns_doc *d)
     }
 
     for (i = 0; i < d->nsheets; i++) {
-        css_stylesheet_destroy(d->sheets[i]);
+        if (d->sheets[i].sheet != NULL) {
+            css_stylesheet_destroy(d->sheets[i].sheet);
+        }
+
+        if (d->sheets[i].url != NULL) {
+            nsurl_unref(d->sheets[i].url);
+        }
     }
 
     free(d->sheets);
+
+    for (o = d->objects; o != NULL; o = next) {
+        next = o->next;
+
+        if (o->ref != LUA_NOREF && d->L != NULL) {
+            luaL_unref(d->L, LUA_REGISTRYINDEX, o->ref);
+        }
+
+        nsurl_unref(o->url);
+        free(o);
+    }
 
     if (h->bctx != NULL) {
         talloc_free(h->bctx);
@@ -1819,4 +1982,213 @@ void web_ns_close(struct web_ns_doc *d)
     }
 
     free(d);
+}
+
+/*--------------------------------------------------------------------------
+ * Pictures, as NetSurf's objects (`roadmap.md` 6zz j4).
+ *
+ * NetSurf's layout asks for a picture - an `<img>`, an `<object>`, a
+ * background - through `html_fetch_object`, and gets it later as a content
+ * it measures and draws. Here the asking is noted, the browser fetches and
+ * decodes as it always has - side by side, the band's first - and hands the
+ * decoded surface back (`web_ns_picture`); from then the box has its object,
+ * the layout its natural size and `content_redraw` the pixels, scaled to the
+ * box as the page is drawn. A picture that never arrives leaves its box laid
+ * out by what the page said of it, as NetSurf lays one out still loading.
+ *
+ * `struct hlcache_handle`, above the document, is the whole of one here.
+ *------------------------------------------------------------------------*/
+
+bool html_fetch_object(struct html_content *c, struct nsurl *url,
+                       struct box *box, content_type permitted_types,
+                       bool background)
+{
+    struct web_ns_doc *d = (struct web_ns_doc *)c;
+    struct hlcache_handle *o;
+
+    (void)permitted_types;
+
+    o = calloc(1, sizeof(*o));
+
+    if (o == NULL) {
+        return false;
+    }
+
+    o->box = box;
+    o->url = nsurl_ref(url);
+    o->background = background;
+    o->ref = LUA_NOREF;
+    o->next = d->objects;
+    d->objects = o;
+    d->nobjects++;
+    return true;
+}
+
+/* The `k`th picture asked for, in page order: its address, where its box
+ * is on the page and how big, and whether it has arrived. */
+bool web_ns_object(struct web_ns_doc *d, size_t k, const char **url,
+                   int *x, int *y, int *w, int *h, bool *background,
+                   bool *arrived)
+{
+    struct hlcache_handle *o = d->objects;
+    size_t from_end = d->nobjects - 1 - k;
+
+    if (k >= d->nobjects) {
+        return false;
+    }
+
+    while (from_end-- > 0) {
+        o = o->next;
+    }
+
+    *url = nsurl_access(o->url);
+    box_coords(o->box, x, y);
+    *w = o->box->width;
+    *h = o->box->height;
+    *background = o->background;
+    *arrived = o->pic != NULL;
+    return true;
+}
+
+size_t web_ns_objects(struct web_ns_doc *d)
+{
+    return d->nobjects;
+}
+
+/* The `k`th picture, arrived: the surface on top of `L`'s stack, held in
+ * its registry for as long as the document is, and its natural size. */
+bool web_ns_picture(struct web_ns_doc *d, lua_State *L, size_t k, int width,
+                    int height)
+{
+    struct hlcache_handle *o = d->objects;
+    size_t from_end = d->nobjects - 1 - k;
+
+    if (k >= d->nobjects) {
+        lua_pop(L, 1);
+        return false;
+    }
+
+    while (from_end-- > 0) {
+        o = o->next;
+    }
+
+    if (o->ref != LUA_NOREF) {
+        luaL_unref(L, LUA_REGISTRYINDEX, o->ref);
+    }
+
+    o->pic = luaL_checkudata(L, -1, "kosmos.surface");
+    o->ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    o->width = width;
+    o->height = height;
+    d->L = L;
+
+    if (o->background) {
+        o->box->background = o;
+    } else {
+        o->box->object = o;
+    }
+
+    return true;
+}
+
+/* NetSurf's questions about a content, for a picture that has arrived. */
+content_type content_factory_type_from_mime_type(lwc_string *mime_type)
+{
+    (void)mime_type;
+    return CONTENT_IMAGE;
+}
+
+struct nsurl *hlcache_handle_get_url(const struct hlcache_handle *handle)
+{
+    return handle->url;
+}
+
+content_type content_get_type(struct hlcache_handle *h)
+{
+    (void)h;
+    return CONTENT_IMAGE;
+}
+
+int content_get_width(struct hlcache_handle *h)
+{
+    return h->width;
+}
+
+int content_get_height(struct hlcache_handle *h)
+{
+    return h->height;
+}
+
+int content_get_available_width(struct hlcache_handle *h)
+{
+    return h->width;
+}
+
+bool content_get_opaque(struct hlcache_handle *h)
+{
+    (void)h;
+    return false;
+}
+
+bool content_can_reformat(struct hlcache_handle *h)
+{
+    (void)h;
+    return false;
+}
+
+void content_reformat(struct hlcache_handle *h, bool background, int width,
+                      int height)
+{
+    (void)h;
+    (void)background;
+    (void)width;
+    (void)height;
+}
+
+/*
+ * A picture drawn where its box says, at the size it says - once, or tiled
+ * across the clip for a background that repeats - within the clip the box
+ * gave and the one the plotter holds.
+ */
+bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
+                    const struct rect *clip, const struct redraw_context *ctx)
+{
+    const struct paint *p = ctx->priv;
+    int cx0 = clip->x0 > p->clip.x0 ? clip->x0 : p->clip.x0;
+    int cy0 = clip->y0 > p->clip.y0 ? clip->y0 : p->clip.y0;
+    int cx1 = clip->x1 < p->clip.x1 ? clip->x1 : p->clip.x1;
+    int cy1 = clip->y1 < p->clip.y1 ? clip->y1 : p->clip.y1;
+    int x0 = data->x, y0 = data->y, x, y;
+
+    if (h->pic == NULL || data->width <= 0 || data->height <= 0
+        || cx0 >= cx1 || cy0 >= cy1) {
+        return true;
+    }
+
+    if (data->repeat_x) {
+        while (x0 > cx0) x0 -= data->width;
+        while (x0 + data->width <= cx0) x0 += data->width;
+    }
+
+    if (data->repeat_y) {
+        while (y0 > cy0) y0 -= data->height;
+        while (y0 + data->height <= cy0) y0 += data->height;
+    }
+
+    for (y = y0; y < cy1; y += data->height) {
+        for (x = x0; x < cx1; x += data->width) {
+            gfx_draw_stretch(p->s, h->pic, x, y, data->width, data->height,
+                             cx0, cy0, cx1, cy1);
+
+            if (!data->repeat_x) {
+                break;
+            }
+        }
+
+        if (!data->repeat_y) {
+            break;
+        }
+    }
+
+    return true;
 }

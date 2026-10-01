@@ -57,6 +57,8 @@ mostly a camera, and a check that goes stale is worse than no check:
     box's border and ground and the table's cell borders on the surface -
     none of which the browser's own layout ever drew - and the first link
     found under its place.
+  * **A linked stylesheet is fetched and applied** (6zz j4): `linked.css`
+    puts a paragraph on a green ground nothing else on the page has.
   * **A class after a line break is a class**: the test page's second
     paragraph is maroon by a class that follows a newline in its attribute,
     which the cascade finds in the list libdom keeps on the element.
@@ -116,6 +118,9 @@ SECOND_BLUE = (42, 85, 201)
 # The test page's maroon, #b03060: the `broken` class, which follows a line
 # break in its paragraph's attribute. Nothing else on the page is this colour.
 CLASS_MAROON = (176, 48, 96)
+
+# The ground `linked.css` gives its paragraph, #3fa06a.
+LINKED_GREEN = (63, 160, 106)
 
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
@@ -464,8 +469,8 @@ def main():
         # set up, the page laid out at the browser's width and drawn whole,
         # and three things counted that `web_paint.c` never drew - the CSS
         # box's blue border (#2a55c9) and pale blue ground (#eef2fb), and
-        # the table's grey cell borders (#999999) - and the link under the
-        # first link's place asked for.
+        # the table's grey cell borders (#999999) - and the first link found
+        # looking down the page's left side.
         #
         page_url = f"http://10.0.2.2:{port}/{name}"
         probe = ('local http = use("/Kosmos/Libraries/http.lua") local w = sys.kit("web") '
@@ -477,8 +482,9 @@ def main():
                  'local blue, ground, grid = 0, 0, 0 for y = 0, h - 1, 2 do for x = 0, 867, 2 do '
                  'local c = s:get(x, y) & 0xffffff if c == 0x2a55c9 then blue = blue + 1 '
                  'elseif c == 0xeef2fb then ground = ground + 1 elseif c == 0x999999 then grid = grid + 1 end end end '
+                 'local link for y = 60, 400, 3 do link = doc:ns_link_at(60, y) if link then break end end '
                  'print("NS" .. "BOX " .. h .. " " .. blue .. " " .. ground .. " " .. grid .. " " '
-                 '.. tostring(doc:ns_link_at(60, 165)))')
+                 '.. tostring(link))')
         parts = [probe[i:i + 600] for i in range(0, len(probe), 600)]
 
         for i, part in enumerate(parts):
@@ -580,6 +586,23 @@ def main():
                 f"{maroon} pixels of #b03060's colour on the first screen. Either the "
                 "classes were not split on white space, or the cascade does not "
                 f"answer from the element's list. Wrote {args.out}.")
+
+        #
+        # **A stylesheet the page links to** (`roadmap.md` 6zz j4): fetched
+        # before the page is laid out and given to the cascade, where
+        # `linked.css`'s one rule puts a paragraph on a green ground -
+        # #3fa06a, which nothing else on the page is. Wikipedia keeps every
+        # rule it has in sheets like this one.
+        #
+        green = sum(1 for y in range(y0, y0 + band)
+                    for x in range(x0, x0 + WIN_W - SBAR)
+                    if at(x, y) == LINKED_GREEN)
+
+        if green < 1000:
+            raise Failure(
+                f"the paragraph styled by the linked stylesheet has no green "
+                f"ground: {green} pixels of #3fa06a on the first screen - the "
+                f"sheet was not fetched, or not given to the cascade. Wrote {args.out}.")
 
         #
         # And that it moves.

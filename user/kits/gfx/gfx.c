@@ -2733,32 +2733,26 @@ static uint32_t area_sample(const struct surface *s, long sx, long sy,
          | (uint32_t)((b + a / 2) / a);
 }
 
-static int l_stretch(lua_State *L)
+/*
+ * The scaler behind `stretch`, apart from its Lua arguments, so that another
+ * kit can scale a picture into a surface of its own without a crossing -
+ * NetSurf's layout drawing a page's pictures at their boxes' sizes
+ * (`gfx_draw_stretch`, `roadmap.md` 6zz j4). `global` below 0 copies, 0 to
+ * 255 blends at that alpha; the clip is [cx0, cx1) by [cy0, cy1).
+ */
+static void stretch_into(struct surface *d, const struct surface *s,
+                         long sx, long sy, long sw, long sh,
+                         long dx, long dy, long dw, long dh,
+                         long global, bool smooth,
+                         long cx0, long cy0, long cx1, long cy1)
 {
-    struct surface *d = check_surface(L, 1);
-    struct surface *s = check_surface(L, 2);
-    long sx = (long)luaL_checkinteger(L, 3);
-    long sy = (long)luaL_checkinteger(L, 4);
-    long sw = (long)luaL_checkinteger(L, 5);
-    long sh = (long)luaL_checkinteger(L, 6);
-    long dx = (long)luaL_checkinteger(L, 7);
-    long dy = (long)luaL_checkinteger(L, 8);
-    long dw = (long)luaL_checkinteger(L, 9);
-    long dh = (long)luaL_checkinteger(L, 10);
-    long global = (long)luaL_optinteger(L, 11, -1);
-    bool smooth = lua_toboolean(L, 12);
-    bool clipped = !lua_isnoneornil(L, 13);
     long x0, y0, x1, y1, y;
     uint32_t xstep, ystep;
-
-    if (global > 255 || (global < 0 && !lua_isnoneornil(L, 11))) {
-        return luaL_error(L, "alpha is 0 to 255, not %d", (int)global);
-    }
 
     /* Nothing to draw rather than something to complain about, which is the
      * answer `clip()` gives for a rectangle that is entirely off-screen. */
     if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) {
-        return 0;
+        return;
     }
 
     x0 = dx < 0 ? 0 : dx;
@@ -2766,20 +2760,13 @@ static int l_stretch(lua_State *L)
     x1 = dx + dw > (long)d->width ? (long)d->width : dx + dw;
     y1 = dy + dh > (long)d->height ? (long)d->height : dy + dh;
 
-    if (clipped) {
-        long cx = (long)luaL_checkinteger(L, 13);
-        long cy = (long)luaL_checkinteger(L, 14);
-        long cw = (long)luaL_checkinteger(L, 15);
-        long ch = (long)luaL_checkinteger(L, 16);
-
-        if (cx > x0) x0 = cx;
-        if (cy > y0) y0 = cy;
-        if (cx + cw < x1) x1 = cx + cw;
-        if (cy + ch < y1) y1 = cy + ch;
-    }
+    if (cx0 > x0) x0 = cx0;
+    if (cy0 > y0) y0 = cy0;
+    if (cx1 < x1) x1 = cx1;
+    if (cy1 < y1) y1 = cy1;
 
     if (x0 >= x1 || y0 >= y1) {
-        return 0;
+        return;
     }
 
     xstep = (uint32_t)((sw << 16) / dw);
@@ -2801,7 +2788,7 @@ static int l_stretch(lua_State *L)
             }
         }
 
-        return 0;
+        return;
     }
 
     for (y = y0; y < y1; y++) {
@@ -2842,7 +2829,56 @@ static int l_stretch(lua_State *L)
         }
     }
 
+    return;
+}
+
+static int l_stretch(lua_State *L)
+{
+    struct surface *d = check_surface(L, 1);
+    struct surface *s = check_surface(L, 2);
+    long sx = (long)luaL_checkinteger(L, 3);
+    long sy = (long)luaL_checkinteger(L, 4);
+    long sw = (long)luaL_checkinteger(L, 5);
+    long sh = (long)luaL_checkinteger(L, 6);
+    long dx = (long)luaL_checkinteger(L, 7);
+    long dy = (long)luaL_checkinteger(L, 8);
+    long dw = (long)luaL_checkinteger(L, 9);
+    long dh = (long)luaL_checkinteger(L, 10);
+    long global = (long)luaL_optinteger(L, 11, -1);
+    bool smooth = lua_toboolean(L, 12);
+    long cx0 = 0, cy0 = 0, cx1 = (long)d->width, cy1 = (long)d->height;
+
+    if (global > 255 || (global < 0 && !lua_isnoneornil(L, 11))) {
+        return luaL_error(L, "alpha is 0 to 255, not %d", (int)global);
+    }
+
+    if (!lua_isnoneornil(L, 13)) {
+        cx0 = (long)luaL_checkinteger(L, 13);
+        cy0 = (long)luaL_checkinteger(L, 14);
+        cx1 = cx0 + (long)luaL_checkinteger(L, 15);
+        cy1 = cy0 + (long)luaL_checkinteger(L, 16);
+    }
+
+    stretch_into(d, s, sx, sy, sw, sh, dx, dy, dw, dh, global, smooth,
+                 cx0, cy0, cx1, cy1);
     return 0;
+}
+
+/* `gfx_draw.h`: all of `src` into [dx, dx+dw) by [dy, dy+dh) of `dst`,
+ * smoothed when scaled, within the clip. */
+void gfx_draw_stretch(struct surface *dst, const struct surface *src,
+                      long dx, long dy, long dw, long dh,
+                      long cx0, long cy0, long cx1, long cy1)
+{
+    if (dst == NULL || src == NULL || dst->pixels == NULL
+        || src->pixels == NULL) {
+        return;
+    }
+
+    stretch_into(dst, src, 0, 0, (long)src->width, (long)src->height,
+                 dx, dy, dw, dh, -1,
+                 dw != (long)src->width || dh != (long)src->height,
+                 cx0, cy0, cx1, cy1);
 }
 
 /*

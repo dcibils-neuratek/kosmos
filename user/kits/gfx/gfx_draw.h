@@ -37,6 +37,15 @@ void gfx_draw_text(struct surface *s, int face, long x, long y,
                    const char *str, size_t len,
                    uint32_t fg, const uint32_t *bg);
 
+/*
+ * All of `src` into [dx, dx+dw) by [dy, dy+dh) of `dst`, smoothed when it is
+ * scaled, and nothing outside [cx0, cx1) by [cy0, cy1) - a page's picture
+ * at its box's size (`roadmap.md` 6zz j4). The same scaler as `stretch`.
+ */
+void gfx_draw_stretch(struct surface *dst, const struct surface *src,
+                      long dx, long dy, long dw, long dh,
+                      long cx0, long cy0, long cx1, long cy1);
+
 long gfx_draw_measure(int face, const char *str, size_t len);
 int  gfx_draw_height(int face);
 

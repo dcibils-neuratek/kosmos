@@ -585,6 +585,108 @@ static int l_ns_layout(lua_State *L)
     return 1;
 }
 
+/*
+ * `doc:ns_sheets(address)` -> the page's linked stylesheets still to fetch,
+ * `{ n = number, url = address }` each, in the order the cascade takes them;
+ * and `doc:ns_sheet(n, text)` -> true, a fetched one made a sheet. Both
+ * before the first `ns_layout`, which makes the cascade from them all.
+ */
+static int l_ns_sheets(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    const char *url = NULL;
+    size_t k = 0, n;
+
+    if (d->ns == NULL) {
+        d->ns = web_ns_open(d->dom, luaL_optstring(L, 2, NULL));
+    }
+
+    lua_newtable(L);
+
+    while (d->ns != NULL && (n = web_ns_sheets(d->ns, k, &url)) != 0) {
+        lua_createtable(L, 0, 2);
+        lua_pushinteger(L, (lua_Integer)n);
+        lua_setfield(L, -2, "n");
+        lua_pushstring(L, url);
+        lua_setfield(L, -2, "url");
+        lua_rawseti(L, -2, (lua_Integer)++k);
+    }
+
+    return 1;
+}
+
+static int l_ns_sheet(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    lua_Integer n = luaL_checkinteger(L, 2);
+    size_t len = 0;
+    const char *text = luaL_checklstring(L, 3, &len);
+
+    lua_pushboolean(L, d->ns != NULL && n > 0
+                       && web_ns_sheet(d->ns, (size_t)n, text, len));
+    return 1;
+}
+
+/*
+ * `doc:ns_objects()` -> the pictures the layout asked for, in page order:
+ * `{ url, x, y, w, h, background, arrived }` each, where its box is now.
+ * And `doc:ns_picture(k, surface, width, height)`: the `k`th arrived, its
+ * natural size; the page wants laying out again after, since a picture the
+ * page gave no size to takes its own.
+ */
+static int l_ns_objects(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    size_t k, n = d->ns != NULL ? web_ns_objects(d->ns) : 0;
+
+    lua_createtable(L, (int)n, 0);
+
+    for (k = 0; k < n; k++) {
+        const char *url = NULL;
+        int x = 0, y = 0, w = 0, h = 0;
+        bool background = false, arrived = false;
+
+        if (!web_ns_object(d->ns, k, &url, &x, &y, &w, &h, &background,
+                           &arrived)) {
+            break;
+        }
+
+        lua_createtable(L, 0, 7);
+        lua_pushstring(L, url);
+        lua_setfield(L, -2, "url");
+        lua_pushinteger(L, x);
+        lua_setfield(L, -2, "x");
+        lua_pushinteger(L, y);
+        lua_setfield(L, -2, "y");
+        lua_pushinteger(L, w);
+        lua_setfield(L, -2, "w");
+        lua_pushinteger(L, h);
+        lua_setfield(L, -2, "h");
+        lua_pushboolean(L, background);
+        lua_setfield(L, -2, "background");
+        lua_pushboolean(L, arrived);
+        lua_setfield(L, -2, "arrived");
+        lua_rawseti(L, -2, (lua_Integer)k + 1);
+    }
+
+    return 1;
+}
+
+static int l_ns_picture(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    lua_Integer k = luaL_checkinteger(L, 2);
+    int width = (int)luaL_checkinteger(L, 4);
+    int height = (int)luaL_checkinteger(L, 5);
+
+    luaL_checkudata(L, 3, "kosmos.surface");
+    lua_pushvalue(L, 3);
+    lua_pushboolean(L, d->ns != NULL && k >= 1
+                       && web_ns_picture(d->ns, L, (size_t)(k - 1), width,
+                                         height));
+    return 1;
+}
+
 /* `doc:ns_paint(surface, width, height, from)`: the band of the page that
  * starts `from` rows down, drawn into the surface by NetSurf. */
 static int l_ns_paint(lua_State *L)
@@ -895,6 +997,10 @@ void kosmos_web_kit(lua_State *L)
         { "ns_layout", l_ns_layout },
         { "ns_paint", l_ns_paint },
         { "ns_link_at", l_ns_link_at },
+        { "ns_sheets", l_ns_sheets },
+        { "ns_sheet", l_ns_sheet },
+        { "ns_objects", l_ns_objects },
+        { "ns_picture", l_ns_picture },
         { NULL, NULL }
     };
 

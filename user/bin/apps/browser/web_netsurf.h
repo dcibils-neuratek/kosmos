@@ -39,6 +39,23 @@ void        web_ns_paint(struct web_ns_doc *d, lua_State *L,
                          struct surface *s, int width, int height, long from);
 const char *web_ns_link_at(struct web_ns_doc *d, int x, int y);
 const char *web_ns_why(struct web_ns_doc *d);
+
+/* The page's linked stylesheets still to fetch: the `k`th's number and
+ * address, or 0; and one's text, fetched, made its sheet - before the first
+ * layout, which makes the cascade (`roadmap.md` 6zz j4). */
+size_t web_ns_sheets(struct web_ns_doc *d, size_t k, const char **url);
+bool   web_ns_sheet(struct web_ns_doc *d, size_t n, const char *text,
+                    size_t len);
+
+/* The pictures the layout asked for, in page order: how many; the `k`th's
+ * address, box and whether it has arrived; and one arrived - the surface on
+ * top of the stack, and its natural size. */
+size_t web_ns_objects(struct web_ns_doc *d);
+bool   web_ns_object(struct web_ns_doc *d, size_t k, const char **url,
+                     int *x, int *y, int *w, int *h, bool *background,
+                     bool *arrived);
+bool   web_ns_picture(struct web_ns_doc *d, lua_State *L, size_t k,
+                      int width, int height);
 void        web_ns_close(struct web_ns_doc *d);
 
 #endif

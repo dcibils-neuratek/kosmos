@@ -2926,7 +2926,7 @@ disk: $(DISK)
 www: $(HOSTDIR)/lua
 	@test -s $(DISK) || { echo "$(DISK): boot it once first (make qemu), so it is formatted"; exit 1; }
 	@if pgrep -f "qemu-system.*$(DISK)" >/dev/null; then echo "QEMU has $(DISK) open: quit it first"; exit 1; fi
-	@for f in $(wildcard assets/www/*.html assets/www/*.png assets/www/*.jpg); do \
+	@for f in $(wildcard assets/www/*.html assets/www/*.css assets/www/*.png assets/www/*.jpg); do \
 	    $(HOSTDIR)/lua tools/kfs.lua put $(DISK) $$f /Home/www/$$(basename $$f) || exit 1; \
 	done
 	@echo "the test page is in /Home/www: switch Web on in Servers, and make HTTP=8080 qemu serves it at localhost:8080"

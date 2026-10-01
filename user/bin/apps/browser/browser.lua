@@ -110,6 +110,16 @@ local have, web = pcall(use, "/Kosmos/Kits/web")
 
 if not have or type(web) ~= "table" then web = nil end
 
+--
+-- **NetSurf's layout** (`roadmap.md` 6zz j): the page laid out and drawn by
+-- the engine NetSurf wrote for exactly these libraries, set up once with its
+-- own default stylesheets. Without them - an image built before they were
+-- carried - the pages are laid out by `web_paint.c`, as they were.
+--
+local UA_SHEET = sys.asset("netsurf/default.css")
+local NS = web ~= nil and web.setup ~= nil and UA_SHEET ~= nil
+           and web.setup(UA_SHEET, sys.asset("netsurf/quirks.css")) == true
+
 local win, err = ui.window{
   title = "Browser", w = W, h = H, x = 80, y = 60, direct = true,
 }
@@ -276,6 +286,11 @@ local top      = 0           -- the page's row at the top of the view
 --
 local pictures = {}
 local kept_bytes = 0
+
+-- Whether this document is NetSurf's to lay out - it is, unless NetSurf
+-- could not - and which of its pictures have been asked for.
+local ns_doc = false
+local ns_tried = {}
 
 local paint_band             -- below, once the pictures can be fetched
 
@@ -786,6 +801,37 @@ end
 
 local laid_ms, painted_ms = 0, 0
 
+--
+-- An address as NetSurf takes one, and one it gives back as this browser
+-- writes it. NetSurf joins links by the rules for URLs, so a file of this
+-- machine's goes to it as a `file:` URL; what comes back loses `http://`,
+-- which the address bar has never shown, and `file://` becomes the path.
+--
+local KNOWN = { http = true, https = true, asset = true, about = true,
+                file = true, kosmos = true }
+
+local function ns_address(text)
+  if text == nil then return nil end
+  if text:sub(1, 1) == "/" then return "file://" .. text end
+
+  local scheme = text:match("^(%a[%w+.%-]*):")
+
+  -- An address the bar keeps without its scheme is http's - and a host
+  -- with a port looks like a scheme to the pattern, so only the ones this
+  -- browser speaks count as one.
+  if scheme and KNOWN[scheme:lower()] then return text end
+
+  return "http://" .. text
+end
+
+local function from_ns(url)
+  if url == nil then return nil end
+  if url:match("^file:///") then return url:sub(8) end
+  if url:lower():match("^http://") then return url:sub(8) end
+
+  return url
+end
+
 local function forget_pictures()
   for _, p in ipairs(pictures) do
     if p.kept then p.kept:free() end
@@ -802,15 +848,32 @@ local function lay_out(doc)
 
   forget_pictures()
   paper_h, band_top, content_h, top = 0, 0, 0, 0
+  ns_doc, ns_tried = false, {}
 
   --
   -- Timed apart from the painting, and the split is the measurement:
   -- timing them together would answer "the page took 90 ms" and leave the
   -- only useful question - *which half* - unanswered.
   --
+  -- NetSurf's, unless it could not: then `web_paint.c`'s, and the status
+  -- line says why.
+  --
   local t0 = sys.ticks()
 
-  content_h = doc:render(nil, PAGE_W)
+  if NS then
+    local tall, why = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
+
+    if tall then
+      content_h, ns_doc = tall, true
+    else
+      say("NetSurf could not lay this page out: " .. tostring(why))
+    end
+  end
+
+  if not ns_doc then
+    content_h = doc:render(nil, PAGE_W)
+  end
+
   laid_ms = since(t0)
 
   -- The whole page with a margin under it when that is less than a band,
@@ -828,8 +891,10 @@ local function lay_out(doc)
 
   paper_h = tall
 
-  for _, im in ipairs(doc:images()) do
-    pictures[#pictures + 1] = { im = im, where = resolve(here or "", im.src) }
+  if not ns_doc then
+    for _, im in ipairs(doc:images()) do
+      pictures[#pictures + 1] = { im = im, where = resolve(here or "", im.src) }
+    end
   end
 
   return content_h
@@ -1036,7 +1101,7 @@ end
 -- redirects is followed on its own; one the image carries or a file on this
 -- machine is read as before.
 --
-local function fetch_pictures(wanted)
+local function fetch_pictures(wanted, noun)
   local urls, seen, got = {}, {}, {}
 
   for _, w in ipairs(wanted) do
@@ -1051,7 +1116,7 @@ local function fetch_pictures(wanted)
 
   if #urls == 0 then return got end
 
-  say(("fetching %d pictures ..."):format(#urls))
+  say(("fetching %d %s ..."):format(#urls, noun or "pictures"))
 
   local results = http.get_many(urls, {
     agent = AGENT,
@@ -1187,15 +1252,152 @@ local function band_pictures()
 end
 
 --
+-- A picture's bytes decoded, PNG or JPEG by their first bytes; nil for
+-- anything else. Kept no wider than the page, which is as wide as NetSurf
+-- will ever draw it - a photograph of 4000 pixels in a column of 250 does
+-- not keep 48 MB - and its own size said beside it, which is what the layout
+-- measures a picture the page gave no size to by.
+--
+local function picture_of(bytes)
+  local decode = bytes and ((bytes:sub(1, 4) == "\x89PNG" and gfx.png)
+                            or (bytes:sub(1, 2) == "\xff\xd8" and gfx.jpeg))
+  local ok, pic = false, nil
+
+  if decode then ok, pic = pcall(decode, bytes) end
+  if not ok or not pic then return nil end
+
+  local pw, ph = pic:size()
+
+  if pw > PAGE_W then
+    local h = math.max(1, ph * PAGE_W // pw)
+    local made, small = pcall(gfx.surface, { w = PAGE_W, h = h })
+
+    if made and small then
+      small:stretch(pic, 0, 0, pw, ph, 0, 0, PAGE_W, h, nil, true)
+      pic:free()
+      pic = small
+    end
+  end
+
+  return pic, pw, ph
+end
+
+--
+-- NetSurf's pictures in the band: the ones its layout asked for whose boxes
+-- reach into it, fetched side by side the first time, handed over, and the
+-- page laid out and the band drawn again - a picture the page gave no size
+-- to takes its own, and can move others into the band, so up to three
+-- rounds. Returns how many in the band were drawn and how many could not
+-- be had.
+--
+local function ns_band_pictures()
+  local function in_view(o)
+    return o.y + math.max(o.h, 1) > band_top and o.y < band_top + paper_h
+  end
+
+  for _ = 1, 3 do
+    local wanted = {}
+
+    for k, o in ipairs(doc:ns_objects()) do
+      if not o.arrived and not ns_tried[k] and in_view(o) then
+        wanted[#wanted + 1] = { k = k, where = from_ns(o.url) }
+      end
+    end
+
+    if #wanted == 0 then break end
+
+    local before = said
+    local fetched = fetch_pictures(wanted)
+    local arrived = 0
+
+    for _, w in ipairs(wanted) do
+      local where = w.where
+      local bytes = fetched[where] or ((where:match("^asset:")
+                    or where:sub(1, 1) == "/") and bytes_at(where))
+      local pic, pw, ph = picture_of(bytes)
+
+      ns_tried[w.k] = true
+
+      if pic and doc:ns_picture(w.k, pic, pw, ph) then
+        arrived = arrived + 1
+      end
+    end
+
+    said = before
+
+    if arrived == 0 then break end
+
+    local tall = doc:ns_layout(PAGE_W, VIEW_H, ns_address(here))
+
+    if tall then content_h = tall end
+
+    band_top = math.max(0, math.min(band_top, content_h + 16 - paper_h))
+    top = math.max(0, math.min(top, math.max(0, content_h - VIEW_H)))
+    doc:ns_paint(paper, PAGE_W, paper_h, band_top)
+  end
+
+  local drawn, missing = 0, 0
+
+  for k, o in ipairs(doc:ns_objects()) do
+    if in_view(o) then
+      if o.arrived then
+        drawn = drawn + 1
+      elseif ns_tried[k] then
+        missing = missing + 1
+      end
+    end
+  end
+
+  return drawn, missing
+end
+
+--
 -- The band starting `at` rows down the page, painted: its runs, which the
 -- layout already placed, and its pictures. Returns how many of those were
 -- drawn and how many could not be had.
 --
 paint_band = function(at)
   band_top = math.max(0, math.min(at, content_h + 16 - paper_h))
+
+  if ns_doc then
+    doc:ns_paint(paper, PAGE_W, paper_h, band_top)
+    return ns_band_pictures()
+  end
+
   doc:render(paper, PAGE_W, paper_h, band_top)
 
   return band_pictures()
+end
+
+--
+-- The page's linked stylesheets, fetched side by side before it is laid out
+-- (`roadmap.md` 6zz j4) - the cascade is made from them all, in the order
+-- the page gives them, at the first layout. Wikipedia keeps every one of its
+-- rules in these; without them its menus and its languages were twelve
+-- screens of lists before the article.
+--
+local function fetch_sheets(d)
+  if not NS then return 0 end
+
+  local wanted = d:ns_sheets(ns_address(here))
+
+  if #wanted == 0 then return 0 end
+
+  local list, n = {}, 0
+
+  for _, sheet in ipairs(wanted) do list[#list + 1] = { where = from_ns(sheet.url) } end
+
+  local got = fetch_pictures(list, "stylesheets")
+
+  for i, sheet in ipairs(wanted) do
+    local where = list[i].where
+    local text = got[where] or ((where:match("^asset:")
+                 or where:sub(1, 1) == "/") and bytes_at(where))
+
+    if text and d:ns_sheet(sheet.n, text) then n = n + 1 end
+  end
+
+  return n
 end
 
 local function load(text)
@@ -1298,6 +1500,11 @@ local function load(text)
   local counts = ("%d bytes, %d paragraphs, %d links, %d headings")
                  :format(#body, doc:count("p"), doc:count("a"),
                          doc:count("h1") + doc:count("h2") + doc:count("h3"))
+
+  local sheets_from = sys.ticks()
+
+  fetch_sheets(doc)
+  fetched_ms = fetched_ms + since(sheets_from)
 
   local drawn, why_not = lay_out(doc)
   local shown, missing = 0, 0
@@ -1630,7 +1837,13 @@ local function page_press(x, y)
 
   if not doc or not paper then return end
 
-  local href = doc:link_at(x - PAD, y - VIEW_Y + top)
+  local href
+
+  if ns_doc then
+    href = doc:ns_link_at(x - PAD, y - VIEW_Y + top)
+  else
+    href = doc:link_at(x - PAD, y - VIEW_Y + top)
+  end
 
   if not href then return end
 
@@ -1650,7 +1863,20 @@ local function page_press(x, y)
     return
   end
 
-  local where, why = resolve(here or address.text, href)
+  local where, why
+
+  if ns_doc then
+    -- Whole already: NetSurf joined it to the page as it laid the page
+    -- out. A link into this page - `#top` - has nowhere to go yet.
+    where = from_ns(href)
+
+    if where:find("#", 1, true)
+       and where:gsub("#.*$", "") == tostring(here or ""):gsub("#.*$", "") then
+      where, why = nil, "that link points into this page, and there is no anchor yet"
+    end
+  else
+    where, why = resolve(here or address.text, href)
+  end
 
   if not where then
     say(("%s: %s"):format(href, why))

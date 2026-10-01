@@ -2881,9 +2881,12 @@ processors, and still what follows USB:
         (its box's border and ground, its table's borders, its form). The
         browser changes over with j4, when pictures come through it too,
         and `web_paint.c`'s layout is retired then.
-      - j4. **External stylesheets**: `<link rel="stylesheet">` and
-        `@import` fetched side by side and given to the cascade in order;
-        pictures as the objects the layout sizes.
+      - j4. **BUILT 30 September (`testing.md` 18.312). External
+        stylesheets and pictures, and the browser changed over**:
+        `<link rel="stylesheet">` fetched side by side and given to the
+        cascade in order; pictures as the objects the layout sizes, fetched
+        a band at a time. The Dam article live in 1.6 s, laid out as
+        Wikipedia lays it out. `@import` not fetched yet.
       - j5. **The Dam article as Chrome draws it**: the article at the top,
         the infobox to the right, pictures beside the text - held by the
         gate, and its time on the status line.
