@@ -106,6 +106,55 @@ local function numbers(host)
   return string.char(a, b, c, d)
 end
 
+--
+-- **A refresh's words**, `5; url=next.html`, as a `<meta http-equiv=
+-- "refresh">` and the `Refresh` header both say them: the seconds, and the
+-- address or nil for the page itself - or nil for words that are not one.
+-- The grammar is HTML's ("shared declarative refresh steps"): a number,
+-- then `;` or `,` and `url=`, which may be left out, and the address,
+-- which may be in quotes. DuckDuckGo's, to a browser that runs no scripts:
+-- `0; url="https://html.duckduckgo.com/html"`.
+--
+function http.refresh(content)
+  local s = tostring(content or "")
+  local i = s:find("%S") or #s + 1
+  local whole = s:match("^%d*", i)
+
+  i = i + #whole
+
+  if whole == "" and s:sub(i, i) ~= "." then return nil end
+
+  i = i + #s:match("^[%d.]*", i)
+
+  local seconds = tonumber(whole) or 0
+
+  if i > #s then return seconds, nil end
+
+  if not s:sub(i, i):match("[;,%s]") then return nil end
+
+  i = s:find("%S", i) or #s + 1
+
+  if s:sub(i, i):match("[;,]") then i = s:find("%S", i + 1) or #s + 1 end
+
+  if s:sub(i, i + 2):lower() == "url" then
+    local j = s:find("%S", i + 3) or #s + 1
+
+    if s:sub(j, j) == "=" then i = s:find("%S", j + 1) or #s + 1 end
+  end
+
+  local quote, address = s:sub(i, i), nil
+
+  if quote == "'" or quote == '"' then
+    local close = s:find(quote, i + 1, true)
+
+    address = s:sub(i + 1, (close or #s + 1) - 1)
+  else
+    address = s:sub(i):match("^(.-)%s*$")
+  end
+
+  return seconds, address ~= "" and address or nil
+end
+
 -- Kosmos and its revision: `Kosmos/0.10.200`.
 function http.agent()
   local build = sys.build and sys.build() or {}

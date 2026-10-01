@@ -184,8 +184,8 @@ do
   NS = web ~= nil and web.setup ~= nil and sheet ~= nil
        and web.setup(sheet, sys.asset("netsurf/quirks.css")) == true
 
-  -- The text size Settings chose, for every page this window opens.
-  if NS and web.text_size then web.text_size(16 * setting.text // 100) end
+  -- The zoom Settings chose, for every page this window lays out.
+  if NS and web.zoom then web.zoom(setting.zoom) end
 end
 
 --
@@ -518,13 +518,15 @@ local loading
 --
 -- **What this browser says it is**, which is what a site decides what to
 -- send on. Diego, 30 September: "to browse websites we need to send user
--- agent that aligns to what our browser is capable of". The engine is
--- NetSurf's - hubbub, libcss and libdom as NetSurf 3.11 released them - so
--- its token is the true one, and the one sites already know means HTML and
--- CSS without JavaScript: the same shape as NetSurf's own `NetSurf/3.11
--- (Linux)`, with Kosmos where the system goes.
+-- agent that aligns to what our browser is capable of" - so it was
+-- NetSurf's, the engine's true name. And 1 October: "we have a very basic
+-- browser so we need to announce that to the server", "send simple ones",
+-- and to change it as the browser grows: so Settings chooses it, and the
+-- default is a plain browser's, Lynx's, which measured is the one sites
+-- send simpler pages - every choice still saying Kosmos
+-- (`browserprefs.lua`). Changed in Settings, it is changed here.
 --
-local AGENT = ("NetSurf/3.11 (Kosmos %s)"):format((sys.build and sys.build() or {}).version or "0")
+local AGENT = prefs.agent(setting, (sys.build and sys.build() or {}).version)
 
 local dragging               -- the scrollbar thumb, while it is held
 
@@ -1017,7 +1019,7 @@ end
 --------------------------------------------------------------------------
 
 local open_entry, open_address           -- filled in further down
-local toggle_favorite, toggle_side, open_settings
+local toggle_favorite, toggle_side, open_settings, set_zoom
 
 local favbar = ui.view{ x = 0, y = TABS + HEAD, w = W, h = FAVS }
 favbar.hidden = true
@@ -1451,8 +1453,9 @@ end
 
 local laid_ms, painted_ms = 0, 0
 
--- The size the document was laid out at, so a tab shown again after the
--- window changed size knows to lay it out again.
+-- The size the document was laid out at, and its zoom, so a tab shown
+-- again after the window changed size or the zoom changed knows to lay it
+-- out again.
 local laid_for
 
 -- Of the paint, what went on the band's pictures: fetched, decoded and the
@@ -1538,7 +1541,7 @@ local function lay_out(doc)
   end
 
   laid_ms = since(t0)
-  laid_for = PAGE_W * 65536 + VIEW_H
+  laid_for = PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296
 
   -- The whole page with a margin under it when that is less than a band,
   -- so a short page is painted once and never again.
@@ -2525,7 +2528,38 @@ end
 -- One load, with the tab saying where it is going while it goes - its
 -- title is the host's until the page arrives with one of its own.
 --
-local function load(text, post)
+--
+-- **A page that says to go somewhere else** - `<meta http-equiv="refresh"
+-- content="0; url=...">` (`roadmap.md` 6zz, meta refresh). DuckDuckGo's
+-- front page, to a browser that runs no scripts, is a hidden body and one
+-- of these to its page without them, and this browser showed the hidden
+-- body: nothing. Gone to at once when it says so, as a redirect is - the
+-- page that said it is not kept in the history - and five of those in a
+-- row at most, since two pages can send each other round; after its
+-- seconds otherwise, while the same page is still shown (`on_frame`, below).
+-- A page that only refreshes itself at once is not followed.
+--
+local function refresh_of(text)
+  if not doc then return nil end
+
+  for _, m in ipairs(doc:meta()) do
+    if tostring(m.http_equiv or ""):lower() == "refresh" then
+      local seconds, to = http.refresh(m.content)
+
+      if seconds then
+        if not to then return seconds, text end
+
+        local whole = ns_doc and web.join and web.join(ns_address(text), to)
+
+        return seconds, whole and from_ns(whole) or resolve(text, to) or to
+      end
+    end
+  end
+
+  return nil
+end
+
+local function load(text, post, refreshed)
   -- A favorite's file - Tracker hands the browser one it opens - is the
   -- page it keeps.
   if type(text) == "string" and text:sub(1, 1) == "/" then
@@ -2533,12 +2567,27 @@ local function load(text, post)
   end
 
   current.going = text
+  current.refresh = nil
   frame()
 
   local ok = load_page(text, post)
 
   current.going = nil
   keep_tabs()
+
+  local seconds, to = nil, nil
+
+  if ok then seconds, to = refresh_of(text) end
+
+  if seconds and seconds < 1 and to ~= text and (refreshed or 0) < 5 then
+    print(("browser: refreshed to %s"):format(to))
+    return load(to, nil, (refreshed or 0) + 1)
+  elseif seconds and seconds >= 1 then
+    current.refresh = { at = sys.ticks() + seconds * HZ, to = to, from = text }
+    say(("this page goes to %s in %d s"):format(to, seconds))
+    print(("browser: goes to %s in %d s"):format(to, seconds))
+  end
+
   return ok
 end
 
@@ -2707,7 +2756,7 @@ local function reflow()
     content_h = doc:render(nil, PAGE_W) or content_h
   end
 
-  laid_for = PAGE_W * 65536 + VIEW_H
+  laid_for = PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296
 
   if ns_doc then pictures_to_boxes() end
 
@@ -2990,6 +3039,16 @@ hb.menu.on_click = function()
     { text = side_open and "Hide favorites and history" or "Favorites and history",
       on_choose = function() toggle_side() end },
     { separator = true },
+    { text = ("Zoom, %d%%"):format(setting.zoom), submenu = (function()
+        local items = {}
+
+        for _, c in ipairs(prefs.CHOICES.zoom) do
+          items[#items + 1] = { text = c[2], mark = c[1] == setting.zoom,
+                                on_choose = function() set_zoom(c[1]) end }
+        end
+
+        return items
+      end)() },
     { text = "Settings", on_choose = function() open_settings() end },
     { separator = true },
     { text = "Home", on_choose = function() go_home() end },
@@ -3133,7 +3192,11 @@ show_tab = function(t)
   -- Its band painted again from what it kept - laid out again first if
   -- the window is not the size it was laid out at.
   if doc then
-    if laid_for == PAGE_W * 65536 + VIEW_H then make_band() else reflow() end
+    if laid_for == PAGE_W * 65536 + VIEW_H + setting.zoom * 4294967296 then
+      make_band()
+    else
+      reflow()
+    end
   end
 
   if here == prefs.PAGE then fill_settings() end
@@ -3272,7 +3335,22 @@ do
     return true
   end
 
+  --
+  -- And a refresh that is due, on the page that asked for it (`load`).
+  --
   win.on_frame = function()
+    local r = current and current.refresh
+
+    if r and sys.ticks() >= r.at then
+      current.refresh = nil
+
+      if here == r.from then
+        print(("browser: refreshed to %s"):format(r.to))
+        visit(r.to)
+        return true
+      end
+    end
+
     if sys.ticks() - fav_read_at < HZ * 3 then return false end
 
     return read_favorites()
@@ -3508,13 +3586,32 @@ do
       fill_settings()
     end)
 
-    local text = choice("text", function(v)
-      if web and web.text_size then web.text_size(16 * v // 100) end
+    local zoom = choice("zoom", function(v)
+      if web and web.zoom then web.zoom(v) end
     end)
 
     local costs = switch("costs", function() status_for = nil end)
     local images = switch("images")
     local opens = choice("opens")
+
+    -- What it tells sites it is, chosen, and the words themselves - which
+    -- may be edited, making them its own (`browserprefs.agent`).
+    local version = (sys.build and sys.build() or {}).version
+    local agent = choice("agent", function()
+      AGENT = prefs.agent(setting, version)
+      fill_settings()
+    end)
+    local words = ui.field{ text = AGENT }
+
+    words.fill = true
+    words.on_change = function(_, text)
+      if text ~= "" and not text:find("%c") and text ~= AGENT then
+        setting.agent, setting.agent_words = "own", text
+        prefs.write(setting)
+        AGENT = prefs.agent(setting, version)
+        agent.value = "own"
+      end
+    end
 
     local groups = {
       { name = "Starting", rows = {
@@ -3523,12 +3620,15 @@ do
           { label = "Show the favorites bar",
             control = switch("bar", function() room_changed() end) } } },
       { name = "Pages", rows = {
-          { label = "Text size", note = "Where a page leaves it to the browser",
-            control = text },
+          { label = "Zoom", note = "All of the page: its words, pictures and boxes",
+            control = zoom },
           { label = "Load images", control = images },
           { label = "What each page cost",
             note = "Fetch, parse, layout, paint, in the status line",
-            control = costs } } },
+            control = costs },
+          { label = "Tell sites it is",
+            note = "Some send a plainer browser a simpler page", control = agent },
+          { label = "In words", control = words } } },
       { name = "Searching", rows = {
           { label = "Search with",
             note = "Words typed that are not an address",
@@ -3585,14 +3685,32 @@ do
       return ("%d,%d"):format(x + v.w // 2, y + v.h // 2)
     end
 
-    print(("browser: settings, %d columns, %d tall, costs %s, text %s, opens %s, "
-           .. "clear %s, empty %s, images %s")
-          :format(#columns, page.tall, at(costs), at(text), at(opens), at(clear),
-                  at(empty), at(images)))
+    print(("browser: settings, %d columns, %d tall, costs %s, zoom %s, opens %s, "
+           .. "clear %s, empty %s, images %s, agent %s")
+          :format(#columns, page.tall, at(costs), at(zoom), at(opens), at(clear),
+                  at(empty), at(images), at(agent)))
   end
 end
 
 -- Settings, in the tab that shows it or a new one.
+--
+-- **Zoom**, from the menu, Settings or the keys: written, handed to the
+-- kit, and the page on screen laid out again at it - the others when they
+-- are shown (`laid_for`).
+--
+set_zoom = function(pct)
+  if pct == setting.zoom then return end
+
+  setting.zoom = pct
+  prefs.write(setting)
+
+  if web and web.zoom then web.zoom(pct) end
+
+  reflow()
+  say(("Zoom %d%%"):format(pct))
+  print(("browser: zoom %d"):format(pct))
+end
+
 open_settings = function()
   for _, t in ipairs(tabs) do
     if tab_at(t) == prefs.PAGE then
@@ -3638,6 +3756,15 @@ win.on_key = function(_, c)
   elseif k == 100 or k == 68 then toggle_favorite()             -- D
   elseif k == 121 or k == 89 then toggle_side()                 -- Y
   elseif k == 44 then open_settings()                           -- ,
+  elseif k == 61 or k == 43 or k == 45 then                     -- = + -
+    local list, at = prefs.CHOICES.zoom, 1
+
+    for i, c in ipairs(list) do
+      if c[1] == setting.zoom then at = i end
+    end
+
+    set_zoom(list[math.max(1, math.min(#list, at + (k == 45 and -1 or 1)))][1])
+  elseif k == 48 then set_zoom(100)                             -- 0
   else return false end
 
   return true

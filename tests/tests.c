@@ -867,8 +867,17 @@ static bool test_a_thread_that_returns_exits_cleanly(void)
      * held, and its slot went back to being available. The count returning
      * to where it started is what says thread_exit ran: a thread that fell
      * through would still be counted as alive.
+     *
+     * **Counted after the create, or already gone by then.** A tick between
+     * `thread_create` and `thread_count` can run the new thread to its end
+     * first, and then the count after the create is the count before it.
+     * The diagnostic below said exactly that in a gate on 1 October - 8, 8
+     * and 8, the thread ran, no slot changed hands - and it is this test's
+     * own order, not the kernel's: what it asks is that the thread ran and
+     * the count came back.
      */
-    if (made == before + 1 && finished && after == before) {
+    if ((made == before + 1 || (made == before && finished)) && finished
+        && after == before) {
         return true;
     }
 

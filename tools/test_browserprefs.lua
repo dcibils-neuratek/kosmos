@@ -58,14 +58,14 @@ do
   local s = prefs.read()
 
   check(s.home == "about:start" and s.opens == "home" and s.bar == true
-        and s.text == 100 and s.search == "duckduckgo" and s.history_days == 30,
+        and s.zoom == 100 and s.search == "duckduckgo" and s.history_days == 30,
         "no file is the defaults")
 end
 
 do
   local s = prefs.read()
 
-  s.bar, s.images, s.text, s.search, s.home = false, false, 125, "google",
+  s.bar, s.images, s.zoom, s.search, s.home = false, false, 150, "google",
                                               "https://www.lua.org/"
 
   check(prefs.write(s) and dirs["/Home/Preferences"] and dirs[prefs.DIR],
@@ -75,19 +75,19 @@ do
 
   check(back.bar == false and back.images == false,
         "false read back as false, not as the default")
-  check(back.text == 125 and back.search == "google"
+  check(back.zoom == 150 and back.search == "google"
         and back.home == "https://www.lua.org/" and back.costs == true,
         "the rest as written, and what was not changed its default")
 end
 
 do
-  files[prefs.FILE] = { text = 133, search = "altavista", bar = "yes",
+  files[prefs.FILE] = { zoom = 133, search = "altavista", bar = "yes",
                         history_days = 30.5, home = "", nonsense = 1,
                         opens = "tabs" }
 
   local s = prefs.read()
 
-  check(s.text == 100 and s.search == "duckduckgo" and s.bar == true
+  check(s.zoom == 100 and s.search == "duckduckgo" and s.bar == true
         and s.history_days == 30 and s.home == "about:start",
         "a choice that is not one, the wrong kind, a fraction and an empty "
         .. "home page are the defaults")
@@ -99,8 +99,34 @@ do
   check(files[prefs.FILE].nonsense == nil, "and not written either")
 end
 
+do
+  local s = prefs.read()
+
+  check(s.agent == "lynx" and prefs.agent(s, "0.10.200")
+        == "Lynx/2.9.0 (Kosmos 0.10.200; NetSurf/3.11)",
+        "it says it is a plain browser, Lynx, and Kosmos, unless told otherwise")
+
+  s.agent = "netsurf"
+  check(prefs.agent(s, "1") == "NetSurf/3.11 (Kosmos 1)", "its engine, as it is")
+
+  s.agent, s.agent_words = "own", "Mozilla/5.0 (Kosmos; like nothing else)"
+  prefs.write(s)
+  check(prefs.agent(prefs.read(), "1") == "Mozilla/5.0 (Kosmos; like nothing else)",
+        "words of its own, written and read back")
+
+  s.agent_words = "Evil/1.0\r\nX-Injected: yes"
+  prefs.write(s)
+
+  local back = prefs.read()
+
+  check(back.agent_words == "" and prefs.agent(back, "1"):match("^Lynx/"),
+        "words with a line's end in them refused, so no header can be made of them")
+  s.agent, s.agent_words = "lynx", ""
+  prefs.write(s)
+end
+
 check(prefs.name_of("history_days", 90) == "90 days"
-      and prefs.name_of("text", 125) == "125%"
+      and prefs.name_of("zoom", 125) == "125%, larger"
       and prefs.name_of("search", "google") == "Google",
       "a choice called what it is")
 

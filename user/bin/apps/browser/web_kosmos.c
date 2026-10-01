@@ -336,6 +336,79 @@ static int text_of(lua_State *L, struct doc *d, const char *tag, size_t taglen)
     return 1;
 }
 
+/*
+ * An attribute of an element as a field of the table on the top of the
+ * stack, when it has one - under the name it has in the markup.
+ */
+static void attribute_field(lua_State *L, dom_node *node, const char *attr,
+                            const char *field)
+{
+    dom_string *name = to_dom(attr, strlen(attr));
+    dom_string *value = NULL;
+
+    if (name == NULL) {
+        return;
+    }
+
+    if (dom_element_get_attribute((dom_element *)node, name, &value) == DOM_NO_ERR
+        && value != NULL) {
+        lua_pushlstring(L, dom_string_data(value), dom_string_byte_length(value));
+        lua_setfield(L, -2, field);
+        dom_string_unref(value);
+    }
+
+    dom_string_unref(name);
+}
+
+/*
+ * `doc:meta()` -> every `<meta>` in the document, `{ http_equiv =, name =,
+ * content = }` each, in order - wherever it is, a `<noscript>`'s included,
+ * since no script runs here and a page without them means what is in one.
+ * The browser reads a refresh out of it (`roadmap.md` 6zz, meta refresh):
+ * DuckDuckGo's front page, to a browser that runs no scripts, is a hidden
+ * body and a refresh to its page without them.
+ */
+static int l_meta(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    dom_string *tag = to_dom("meta", 4);
+    dom_nodelist *list = NULL;
+    uint32_t n = 0, i;
+
+    lua_newtable(L);
+
+    if (tag == NULL) {
+        return 1;
+    }
+
+    if (dom_document_get_elements_by_tag_name(d->dom, tag, &list) != DOM_NO_ERR
+        || list == NULL) {
+        dom_string_unref(tag);
+        return 1;
+    }
+
+    dom_string_unref(tag);
+    (void)dom_nodelist_get_length(list, &n);
+
+    for (i = 0; i < n; i++) {
+        dom_node *node = NULL;
+
+        if (dom_nodelist_item(list, i, &node) != DOM_NO_ERR || node == NULL) {
+            continue;
+        }
+
+        lua_createtable(L, 0, 3);
+        attribute_field(L, node, "http-equiv", "http_equiv");
+        attribute_field(L, node, "name", "name");
+        attribute_field(L, node, "content", "content");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+        dom_node_unref(node);
+    }
+
+    dom_nodelist_unref(list);
+    return 1;
+}
+
 /* text(tag) -> the text inside the first such element. */
 static int l_text(lua_State *L)
 {
@@ -1166,7 +1239,7 @@ void kosmos_web_kit(lua_State *L)
         { "events",     l_events },
         { "join",       web_netsurf_join },
         { "setup",      web_netsurf_setup },
-        { "text_size",  web_netsurf_text_size },
+        { "zoom",       web_netsurf_zoom },
         { "log",        web_netsurf_log },
         { "svg",        web_svg },
         { NULL, NULL }
@@ -1174,6 +1247,7 @@ void kosmos_web_kit(lua_State *L)
 
     static const luaL_Reg doc[] = {
         { "count", l_count },
+        { "meta",  l_meta },
         { "style", l_style },
         { "text",   l_text },
         { "blocks", l_blocks },

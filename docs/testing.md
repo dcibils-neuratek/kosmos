@@ -2180,7 +2180,11 @@ three other tests showed through:
   before it returns and is not counted, and the stale flag above costs a yield
   round per spurious preemption, which is a suspicion rather than a diagnosis.
   It now says which count was wrong and whose thread moved it, and a hundred
-  loaded runs since have not failed it once.
+  loaded runs since have not failed it once. **Answered on 1 October**, by
+  what it said in a gate: 8 live before, 8 after the create, 8 after the
+  yields, the thread ran, no slot changed hands - a tick between the create
+  and the count ran the new thread to its end first. The test's order, not
+  the kernel's; it accepts that order now.
 
 **A kernel fault on a secondary passed.** x86 reported one as `***` and
 `halted.`, and `tools/run_tests.py` ends a run on `PANIC:` and nothing else. A
@@ -15380,3 +15384,66 @@ back - "false read back as false, not as the default".
   no address opens on the long page. Control: the setting ignored at start.
 
 **The gate**: 76 of 76, in 9:39 - the browser suites 187 and 198 s, near enough the ten-minute budget that they are split before more is added to them.
+
+## 18.325 Zoom, meta refresh, and what the browser tells sites it is
+
+Three things Diego asked for on 1 October, built the same day, and the
+browser suite split in two to make room for them.
+
+- **Zoom** - "we need a way to zoom the page likke chrome does to increase
+  or decrease sizes of all fonts, etc", "just put 4 options": 100% normal,
+  125% larger, 150% even larger, 200% largest. How many of the screen's
+  pixels a CSS pixel is: `device_dpi` for every length libcss converts when
+  the page is laid out, a picture's own size in `content_get_width`, and
+  the font ladder in `rung_of`, since libcss gives a font's size in points
+  at 96 whatever the dpi. A page zoomed while open is laid out again rather
+  than fetched, and NetSurf's measurements - each run's width and the space
+  after it, each box's least and most, a list item's marker - forgotten
+  first (`unmeasure`). In the menu, in Settings where Text size was (whose
+  `web.text_size` went with it), and Super =, Super - and Super 0.
+- **What the first zoom got wrong, twice, found by looking**: laid out at
+  150% with its letters drawn at 100%, the points never converted through
+  the zoom; then letters at 150% with each run placed at the width it had at
+  100%, runs in another face running into each other. Both are checks now.
+- **Meta refresh** - "duckduckgo.com is not loading at all". Its front page,
+  to a browser that runs no scripts, hides its body and refreshes, in a
+  `<noscript>`, to its page without scripts. `doc:meta()` reads the page's
+  `<meta>`s, `http.refresh` their words as HTML does, and a refresh is
+  followed at once as a redirect is - five in a row at most, never a page
+  to itself - or after its seconds while the page is still shown.
+- **The user agent in Settings** - "we have a very basic browser so we need
+  to announce that to the server", "send simple ones". Measured from the Mac
+  first, eight names against six sites: most send everyone the same page;
+  Lynx's name is sent DuckDuckGo's plain front page; a TV's is refused by
+  Google and sent YouTube's "not supported"; and Google sends results to
+  none, since it stopped answering searches without scripts. So: a plain
+  browser, as Lynx, by default, the engine as it is, a 3DS, or words of its
+  own - every one saying Kosmos, and words with a control character refused,
+  since a line's end in a header is a header of its own.
+
+**`tools/test_http.lua`**, 12 checks on the Mac: a refresh's words -
+DuckDuckGo's, URL in capitals, a comma and single quotes, `url=` left out,
+the seconds alone, a fraction, spaces, and what is not a refresh. Control:
+quotes taken as part of the address. **`tools/test_browserprefs.lua`**, 15:
+Zoom's four, the user agent's choices, and a header's injection refused.
+Control: control characters allowed.
+
+**The browser suite in two halves**, side by side in the gate: `--part 1`
+the page - drawn, followed, forms, charset, cache, TLS, refresh, the
+user agent, the Dam article, the long page, the resize - and `--part 2` the
+window around it - tabs, favorites, history, Settings, zoom, the title bar
+in Plex. The one suite had reached 198 seconds and the gate 9:39.
+
+- **Part 1**: the DuckDuckGo-shaped page goes to the second page at once,
+  and the one that waits two seconds after them; the first request says
+  `Lynx/2.9.0 (Kosmos 0.10.200; NetSurf/3.11)`. Controls: the refresh never
+  followed; the old name always said.
+- **Part 2**: the engine's name chosen in Settings is what the next request
+  says; the long page at 150% from Settings 176,423 pixels tall from 76,236;
+  Super = twice lays it out again at 150% to exactly that height, its
+  letters 18 pixels from 11, and Super 0 brings back 76,236. Controls: the
+  letters drawn without the zoom - "11 pixels tall, against 11"; the
+  measurements not forgotten - "114423 ... where opened at 150% it is
+  176423".
+
+**The gate**: 78 of 78, in 9:36 - the browser halves 98 to 134 s, side by side; the slowest suite is now `x86-cafesa3d` at 335 s, which with the images' build is most of the nine and a half minutes.

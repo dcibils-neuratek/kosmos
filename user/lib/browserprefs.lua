@@ -32,22 +32,56 @@ prefs.DEFAULTS = {
   home = "about:start",         -- Home page
   opens = "home",               -- When the browser opens
   bar = true,                   -- Show the favorites bar
-  text = 100,                   -- Text size, per cent
+  zoom = 100,                   -- Zoom, per cent: all of the page
   images = true,                -- Load images
   costs = true,                 -- What each page cost, in the status line
   search = "duckduckgo",        -- Search with (d6)
   history_days = 30,            -- Keep history for
+  agent = "lynx",               -- What it tells sites it is
+  agent_words = "",             -- ... in words of its own
 }
 
 -- A choice's value and what it is called, in the order offered.
 prefs.CHOICES = {
   opens = { { "home", "The home page" }, { "tabs", "The tabs it had" } },
-  text = { { 80, "80%" }, { 90, "90%" }, { 100, "100%" }, { 110, "110%" },
-           { 125, "125%" }, { 150, "150%" }, { 175, "175%" }, { 200, "200%" } },
+  --
+  -- **Zoom's four**, in Diego's words, 1 October: "just put 4 options",
+  -- "100% normal", "125% larger", "150% even larger", "200% largest".
+  --
+  zoom = { { 100, "100%, normal" }, { 125, "125%, larger" },
+           { 150, "150%, even larger" }, { 200, "200%, largest" } },
   search = { { "duckduckgo", "DuckDuckGo" }, { "google", "Google" } },
   history_days = { { 7, "A week" }, { 30, "30 days" }, { 90, "90 days" },
                    { 365, "A year" } },
+  agent = { { "lynx", "A plain browser, as Lynx" }, { "netsurf", "Its engine, NetSurf" },
+            { "console", "A game console, as a 3DS" }, { "own", "Words of its own" } },
 }
+
+--
+-- **What the browser tells a site it is** - Diego, 1 October: "we have a
+-- very basic browser so we need to announce that to the server", "dont
+-- send complex sites, send simple ones", and to keep changing it as the
+-- browser grows. Measured before any was offered, against Google,
+-- DuckDuckGo, the BBC, Wikipedia, GitHub and YouTube from the Mac: most
+-- send everyone the same page. **Lynx is the one that is sent simpler
+-- ones** - DuckDuckGo's front page in plain HTML 4 rather than its script -
+-- so it is the default; a smart TV's was refused by Google and sent
+-- YouTube's "not supported", and a 3DS's only trimmed YouTube. Every one
+-- still says Kosmos. Google sends no results to any of them: it stopped
+-- answering searches without scripts.
+--
+local AGENTS = {
+  lynx = "Lynx/2.9.0 (Kosmos %s; NetSurf/3.11)",
+  netsurf = "NetSurf/3.11 (Kosmos %s)",
+  console = "Mozilla/5.0 (Nintendo 3DS; U; ; en) Version/1.7412.EU Kosmos/%s",
+}
+
+-- The words sent, for these settings and this build's version.
+function prefs.agent(t, version)
+  if t.agent == "own" and t.agent_words ~= "" then return t.agent_words end
+
+  return (AGENTS[t.agent] or AGENTS.lynx):format(version or "0")
+end
 
 local function made(dir)
   if fs.getattr(dir) then return true end
@@ -80,7 +114,11 @@ local function valid(key, value)
     return false
   end
 
-  if type(value) == "string" then return value ~= "" end
+  -- No control character in any of them: an address, a name - and the
+  -- words sent as a header, where a line's end would be a header of its own.
+  if type(value) == "string" then
+    return value ~= "" and #value <= 512 and not value:find("%c")
+  end
 
   return true
 end

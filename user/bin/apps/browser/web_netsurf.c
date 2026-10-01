@@ -238,8 +238,12 @@ void web_netsurf_run(void)
 static lua_State *faces_L;
 
 static const int LADDER[] = {
-    9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40, 48, 64
+    9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 80, 96
 };
+
+/* The zoom in force, per cent (`web.zoom`, below): the text is drawn at it
+ * as everything else on the page is laid out at it. */
+static int zoom_pct = 100;
 
 #define RUNGS  (sizeof(LADDER) / sizeof(LADDER[0]))
 #define KINDS  6
@@ -252,12 +256,17 @@ static const char *const KIND_FILE[KINDS] = {
 static int faces[KINDS][RUNGS];
 static bool faces_known[KINDS][RUNGS];
 
-/* A style's size in points, as pixels at the reference 96 to the inch,
- * and the rung of the ladder at or above it. */
+/*
+ * A style's size in points, as pixels at the reference 96 to the inch and
+ * the zoom, and the rung of the ladder at or above it. libcss gives a
+ * font's size in points reckoned at 96 whatever `device_dpi` is, so the
+ * zoom that lays the page out larger has to draw its words larger here -
+ * the first zoom laid the page out at 150% and drew its letters at 100%.
+ */
 static unsigned rung_of(const plot_font_style_t *fstyle)
 {
-    int px = (int)((fstyle->size * 96 / 72 + PLOT_STYLE_SCALE / 2)
-                   / PLOT_STYLE_SCALE);
+    int px = (int)(((long)fstyle->size * 96 / 72 * zoom_pct / 100
+                    + PLOT_STYLE_SCALE / 2) / PLOT_STYLE_SCALE);
     unsigned i;
 
     for (i = 0; i < RUNGS; i++) {
@@ -1201,36 +1210,42 @@ static css_stylesheet *sheet_of(const char *text, size_t len,
     return sheet;
 }
 
-/*
- * **The text size a page leaves to the browser** (`roadmap.md` 6zz d5): 16
- * pixels, what every browser starts from, and Settings' Text size scales
- * it. It is libcss's default - what "medium", `em` and `rem` are reckoned
- * from - and NetSurf's `font_size` option, in tenths of a point, which an
- * old page's `<font size>` is; a size a page gives in pixels stays its own.
- * Taken by each document as it is opened, so a page shown already keeps
- * the size it was laid out at until it is opened again.
- */
-static int text_px = 16;
-
-/* NetSurf's options at their defaults, but for the text size. */
+/* NetSurf's options at their defaults, but for the text size: 12 point,
+ * which is 16 pixels, what every browser starts from. */
 static nserror option_defaults(struct nsoption_s *defaults)
 {
     (void)defaults;
-    nsoption_set_int(font_size, text_px * 15 / 2);
+    nsoption_set_int(font_size, 120);
     return NSERROR_OK;
 }
 
-/* `web.text_size(px)`: the size the next document opened starts from. */
-int web_netsurf_text_size(lua_State *L)
+/*
+ * **Zoom, all of the page** - Diego, 1 October: "we need a way to zoom the
+ * page likke chrome does to increase or decrease sizes of all fonts, etc",
+ * in four steps. How many of the screen's pixels a CSS pixel is: libcss
+ * turns every length a page gives - a font's size, a margin, a border, a
+ * box's width - into the screen's pixels through `device_dpi` when the page
+ * is laid out, so 96 is 100% and 192 is 200%, and the page is laid out
+ * again at it rather than parsed again. A picture with no size of its own
+ * in the page takes its own pixels, which are scaled the same way
+ * (`content_get_width`). It replaced a text size that scaled only what a
+ * page leaves to the browser (d5).
+ */
+static css_fixed zoomed_dpi(void)
 {
-    lua_Integer px = luaL_checkinteger(L, 1);
+    return FDIV(INTTOFIX(96 * zoom_pct), INTTOFIX(100));
+}
 
-    if (px < 6 || px > 96) {
-        return luaL_error(L, "a text size of %d pixels", (int)px);
+/* `web.zoom(percent)`: the zoom every page is laid out at from now on. */
+int web_netsurf_zoom(lua_State *L)
+{
+    lua_Integer pct = luaL_checkinteger(L, 1);
+
+    if (pct < 25 || pct > 500) {
+        return luaL_error(L, "a zoom of %d%%", (int)pct);
     }
 
-    text_px = (int)px;
-    nsoption_set_int(font_size, text_px * 15 / 2);
+    zoom_pct = (int)pct;
     return 0;
 }
 
@@ -1303,6 +1318,7 @@ struct web_ns_doc {
     size_t             nobjects;
     lua_State         *L;           /* whose registry holds the pictures */
     bool               built;
+    int                laid_zoom;   /* the zoom it was last laid out at */
     bool               converted;   /* the box tree was made */
     const char        *why;         /* why the last layout failed */
 
@@ -2326,8 +2342,8 @@ struct web_ns_doc *web_ns_open(void *document, const char *base,
     h->media.type = CSS_MEDIA_SCREEN;
     h->font_func = &layout_table;
     h->bctx = talloc_zero(NULL, int);
-    h->unit_len_ctx.device_dpi = nscss_screen_dpi;
-    h->unit_len_ctx.font_size_default = INTTOFIX(text_px);
+    h->unit_len_ctx.device_dpi = zoomed_dpi();
+    h->unit_len_ctx.font_size_default = INTTOFIX(16);
     h->unit_len_ctx.font_size_minimum = INTTOFIX(6);
 
     if (lwc_intern_string("*", 1, &h->universal) != lwc_error_ok
@@ -2409,6 +2425,59 @@ static bool page_forms(struct web_ns_doc *d)
 
 /* Laid out at `width`; the page's whole height, or -1. The box tree is
  * built the first time, and a new width lays the same tree out again. */
+/*
+ * **What a layout measured, forgotten**, for the zoom: NetSurf measures a
+ * run of text once and keeps its width and the space after it in its box,
+ * and keeps each box's least and most widths, for every layout after - so
+ * a page laid out again at 150% placed each run after the one before at
+ * the width it had at 100%, and runs in another face ran into each other.
+ * Put back to what a box is made with, `UNKNOWN_WIDTH` and
+ * `UNKNOWN_MAX_WIDTH`, so the next layout measures in the new size. The
+ * tree walked by its links rather than by recursion, which a deep page
+ * would take a stack's depth of.
+ */
+static void unmeasure(struct box *top)
+{
+    struct box *at = top;
+
+    while (at != NULL) {
+        if (at->text != NULL) {
+            at->width = UNKNOWN_WIDTH;
+        }
+
+        if (at->space != 0) {
+            at->space = UNKNOWN_WIDTH;
+        }
+
+        at->min_width = 0;
+        at->max_width = UNKNOWN_MAX_WIDTH;
+
+        /* A list item's marker hangs off it rather than among its children,
+         * and is measured as a run of text is: the bullet that touched its
+         * words at 150% was the one box the walk did not reach. */
+        if (at->list_marker != NULL) {
+            at->list_marker->width = UNKNOWN_WIDTH;
+            at->list_marker->space = at->list_marker->space != 0 ? UNKNOWN_WIDTH : 0;
+            at->list_marker->max_width = UNKNOWN_MAX_WIDTH;
+        }
+
+        if (at->children != NULL) {
+            at = at->children;
+            continue;
+        }
+
+        while (at != NULL && at != top && at->next == NULL) {
+            at = at->parent;
+        }
+
+        if (at == NULL || at == top) {
+            break;
+        }
+
+        at = at->next;
+    }
+}
+
 int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
 {
     html_content *h = &d->html;
@@ -2417,6 +2486,16 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
 
     faces_L = L;
     d->why = NULL;
+
+    /* At the zoom in force now, which may have changed since the last - and
+     * then what the last measured, at the old size, measured again. */
+    h->unit_len_ctx.device_dpi = zoomed_dpi();
+
+    if (d->laid_zoom != 0 && d->laid_zoom != zoom_pct && h->layout != NULL) {
+        unmeasure(h->layout);
+    }
+
+    d->laid_zoom = zoom_pct;
 
     if (!d->built) {
         dom_node *root = NULL;
@@ -2809,19 +2888,20 @@ content_type content_get_type(struct hlcache_handle *h)
     return CONTENT_IMAGE;
 }
 
+/* A picture's own size, in the screen's pixels at the zoom in force. */
 int content_get_width(struct hlcache_handle *h)
 {
-    return h->width;
+    return h->width * zoom_pct / 100;
 }
 
 int content_get_height(struct hlcache_handle *h)
 {
-    return h->height;
+    return h->height * zoom_pct / 100;
 }
 
 int content_get_available_width(struct hlcache_handle *h)
 {
-    return h->width;
+    return h->width * zoom_pct / 100;
 }
 
 bool content_get_opaque(struct hlcache_handle *h)

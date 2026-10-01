@@ -2837,6 +2837,21 @@ processors, and still what follows USB:
       8-pixel cell while drawing in the look's proportional face; fixed with
       d5, measured in the face it draws in.
 
+      **Zoom, meta refresh and the user agent BUILT 1 October**
+      (`testing.md` 18.325). Zoom is how many of the screen's pixels a CSS
+      pixel is (`device_dpi`), so every length a page gives grows with it,
+      and the words, measured and drawn on the font ladder, which gained 80
+      and 96 pixels; a page zoomed while open is laid out again as tall as
+      one opened at that zoom, its text measured afresh. In the menu, in
+      Settings in Text size's place, and Super =, Super - and Super 0. A
+      refresh is followed at once as a redirect is, five in a row at most,
+      or after its seconds while the page is still shown - DuckDuckGo's
+      front page arrives. And Settings says what the browser tells sites
+      it is: a plain browser, as Lynx, by default, the engine as it is, a
+      3DS, or words of its own - measured first: Lynx is the one sites
+      send simpler pages, a TV's was refused by Google, and Google sends
+      results to none of them now that it wants scripts.
+
       **A follow-up, noticed building d2 to d5**: `browser.lua` is near
       Lua's two hundred locals in a chunk (186 slots after d5), held there
       by `do` blocks and two tables. The page a tab shows is twenty-five
