@@ -247,8 +247,14 @@ SUITES = [
     # Cafesa3D, used as a person uses it (`roadmap.md` 4l): the still life,
     # a click in the view and in the Outliner, an eye, a drag, the wheel,
     # Wireframe and a view from the top - by the log and by the picture.
-    Suite("arm-cafesa3d", ["python3", "tools/run_cafesa3d.py", ARM]),
-    Suite("x86-cafesa3d", ["python3", "tools/run_cafesa3d.py", X86], x86=True),
+    # In two halves side by side since 1 October (`--part`): editing a scene,
+    # and keeping and showing one - the gate's longest suite, at 341 s.
+    Suite("arm-cafesa3d-1", ["python3", "tools/run_cafesa3d.py", ARM, "--part", "1"]),
+    Suite("arm-cafesa3d-2", ["python3", "tools/run_cafesa3d.py", ARM, "--part", "2"]),
+    Suite("x86-cafesa3d-1", ["python3", "tools/run_cafesa3d.py", X86, "--part", "1"],
+          x86=True),
+    Suite("x86-cafesa3d-2", ["python3", "tools/run_cafesa3d.py", X86, "--part", "2"],
+          x86=True),
 
     # A frame off the card and onto the wire, read back out of QEMU's own
     # capture - because nothing inside the guest can establish that one

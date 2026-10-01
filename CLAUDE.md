@@ -164,7 +164,8 @@ make FULL=0 qemu         # without the browser and FFmpeg, and quicker to link
 make MEGA=1 qemu         # the same as FULL now; kept for the stick's command
 make install-apps        # Doom, Quake, the Super Nintendo into the QEMU disk's /Home/Apps
 make serial      # the same, serial only, no window
-make test        # every suite, side by side, in about five minutes; 0 or 1
+make test        # every suite, side by side, in under ten minutes; 0 or 1
+make test ONLY=arm-browser-1,host   # only the suites for what changed
 make screenshot  # boot, screendump, and check the picture QEMU scans out
 make bench       # the benchmarks, under -icount
 make debug       # QEMU with a gdbserver on :1234
@@ -868,6 +869,20 @@ anything else lands. `make test` is `tools/gate.py`: every suite side by side,
 4:37 on this Mac on 18 September, with each suite's time printed and the
 slowest named at the end - so the budget is watched rather than remembered.
 
+**Test what changed; the whole gate when something shared changed.** Diego,
+1 October 2026, asking why Cafesa3D's suite ran for work on the browser:
+"the tests should be shorter", "and test whats changed", "and then do a
+full gate when a significant pice that affects other apps changed". So a
+change to one application is proved by its own suites -
+`make test ONLY=arm-browser-1,x86-browser-1,host` - with their
+controls. The whole gate, `make test`, runs
+when a piece other applications stand on changed - the kit (`ui.lua`,
+`keys.lua`), `gfx`, the window manager, a server, a driver, the kernel, the
+libc, `files` and `filetypes` - and before every push, which `make prepush`
+already does. And a suite is kept short: split in halves that run side by
+side (the browser's on 1 October, Cafesa3D's after), waiting for the thing
+rather than for a number of seconds.
+
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the
 wishlist because it looks cheap - that is the main way a project like this
@@ -892,7 +907,7 @@ something happened.
 
 **When something does not work, instrument over UART first.** A well-placed `printf` beats a hypothesis.
 
-**Everything that gets finished leaves a permanent test.** What proved it works becomes a test that is never deleted, and `make test` passes before the next thing starts. See `docs/testing.md`.
+**Everything that gets finished leaves a permanent test.** What proved it works becomes a test that is never deleted, and its suites pass before the next thing starts - the whole of `make test` when something shared changed (above). See `docs/testing.md`.
 
 **Pixels never go inside a Lua table.** A surface is a userdata over flat bytes. A Lua array holding 2M pixels makes the GC walk 2M slots per cycle and the system falls apart. See `gfx.md` §19.1.
 

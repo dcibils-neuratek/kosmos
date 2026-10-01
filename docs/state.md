@@ -438,7 +438,14 @@ October and built (18.325): meta refresh (DuckDuckGo's front page), Zoom in
 four steps replacing Text size, and the user agent in Settings (Lynx by
 default, measured). The browser suite is two halves now (`--part`).
 **d6 built** (18.326): searching from the address field, DuckDuckGo's page
-without scripts - **the new design (6zz d1-d6) is done**. Next for the browser,
+without scripts - **the new design (6zz d1-d6) is done**. **Pushed as 0.10.201**
+(`7c05585..58726d8`). Then (18.327) Diego's rule: test what changed, the
+whole gate when a shared piece changed and before a push (`make test
+ONLY=...`); Cafesa3D's suite in two halves. Diego's order after it: the
+plan's items 2 (the browser's speed - the page as one table per tab, the
+style cascade, pictures and the parser fed as the page arrives), 3 (select
+menus, favorites dragged, a serif face, other scripts, `@import`) and 4
+(`diskfs` step 4, virglrenderer, the M700's codec, the hardware cursor). Next for the browser,
 from the roadmap: the page's state as one table per tab (Lua's 200 locals),
 favorites dragged on the bar, select menus in forms, the rest of j5 (a serif
 face, other scripts' glyphs, `@import`). `browser.lua` is near Lua's 200 locals - new

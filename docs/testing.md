@@ -15488,3 +15488,23 @@ words as typed - no search said; the keys given without the address - the
 second address never shown.
 
 **The gate**: 78 of 78, in 9:38.
+
+## 18.327 Test what changed, and Cafesa3D's suite in two
+
+Diego, 1 October, asking why Cafesa3D's suite ran for work on the browser:
+"the tests should be shorter", "and test whats changed", "and then do a full
+gate when a significant pice that affects other apps changed". CLAUDE.md's
+"How to work here" says so now: an application's change is proved by its
+own suites - `make test ONLY=arm-browser-1,x86-browser-1,host`, which
+`tools/gate.py --only` already took and the Makefile passes on - and the
+whole gate runs when a piece other applications stand on changed, and
+before every push (`make prepush`).
+
+**`arm-cafesa3d` and `x86-cafesa3d` in two halves** (`--part`), the browser's
+way: part 1 edits a scene - selecting, the Material tab, adding, G R S, the
+handles, Properties, F, the samples - and part 2 keeps and shows one - the
+plane opened from the samples, then saving and opening, the tutorial,
+Rendered and F12, Stop, full screen, the Render tab and the render read off
+the disk, a broken scene, import and export. 341 seconds became 128 and 131
+on ARM, 127 and 218 on x86; 72 checks and 54, the opening's five in both.
+Run alone, as the new rule has it: `make test ONLY=` the four, 4:05.

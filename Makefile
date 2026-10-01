@@ -4054,8 +4054,10 @@ gate-images: $(TARGET) $(HOSTDIR)/lua
 # want 40 minutes tests any more, 5 to 10 minutes max from now on". The same
 # checks as ever, run side by side by `tools/gate.py`, which says why each
 # suite is there and how long it took. `J=` sets how many at once.
+# `make test ONLY=arm-browser-1,x86-browser-1`: the suites for what changed,
+# by name (CLAUDE.md, "Test what changed"); with no ONLY, all of them.
 test:
-	@python3 tools/gate.py --jobs $(J)
+	@python3 tools/gate.py --jobs $(J) $(if $(ONLY),--only $(ONLY),)
 
 # Used for a while, then asked whether it gave everything back.
 #
