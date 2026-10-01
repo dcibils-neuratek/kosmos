@@ -35,6 +35,7 @@
 #include "web_select.h"
 #include "web_paint.h"
 #include "web_netsurf.h"
+#include "web_svg.h"
 
 #define DOC_HANDLE  "kosmos.dom"
 
@@ -981,6 +982,7 @@ void kosmos_web_kit(lua_State *L)
         { "join",       web_netsurf_join },
         { "setup",      web_netsurf_setup },
         { "log",        web_netsurf_log },
+        { "svg",        web_svg },
         { NULL, NULL }
     };
 
@@ -1012,5 +1014,6 @@ void kosmos_web_kit(lua_State *L)
     luaL_setfuncs(L, doc, 0);
     lua_pop(L, 1);
 
+    web_svg_kit(L);
     luaL_newlib(L, api);
 }

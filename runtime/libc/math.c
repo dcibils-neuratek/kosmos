@@ -108,6 +108,25 @@ float ceilf(float x)
     return (float)ceil((double)x);
 }
 
+/* The same, down - for the SVG rasteriser, finding the pixel an edge starts
+ * in (`roadmap.md` 6zz j5). Declared in `math.h` long before it was here. */
+float floorf(float x)
+{
+    return (float)floor((double)x);
+}
+
+/* The nearest whole number, halves away from zero, as a long - libsvgtiny
+ * rounds a stroke's width this way (`roadmap.md` 6zz j5). Through `floor`,
+ * which is this file's own: musl's `round` is not in every image this file
+ * is linked into - the kernel's test image has none, and said so. A float
+ * and a half are exact as a double, so nothing is rounded on the way. */
+long lroundf(float x)
+{
+    double d = (double)x;
+
+    return (long)(d < 0.0 ? -floor(0.5 - d) : floor(d + 0.5));
+}
+
 double frexp(double x, int *exponent)
 {
     dbits b;

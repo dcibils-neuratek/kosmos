@@ -2865,7 +2865,9 @@ static int l_stretch(lua_State *L)
 }
 
 /* `gfx_draw.h`: all of `src` into [dx, dx+dw) by [dy, dy+dh) of `dst`,
- * smoothed when scaled, within the clip. */
+ * smoothed when scaled, within the clip - and over what is there, by the
+ * picture's own alpha, so a transparent PNG or an SVG's empty background
+ * shows the page behind it. An opaque pixel is a plain store (`over`). */
 void gfx_draw_stretch(struct surface *dst, const struct surface *src,
                       long dx, long dy, long dw, long dh,
                       long cx0, long cy0, long cx1, long cy1)
@@ -2876,7 +2878,7 @@ void gfx_draw_stretch(struct surface *dst, const struct surface *src,
     }
 
     stretch_into(dst, src, 0, 0, (long)src->width, (long)src->height,
-                 dx, dy, dw, dh, -1,
+                 dx, dy, dw, dh, 255,
                  dw != (long)src->width || dh != (long)src->height,
                  cx0, cy0, cx1, cy1);
 }

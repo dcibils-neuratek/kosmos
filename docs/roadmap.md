@@ -2705,6 +2705,14 @@ processors, and still what follows USB:
       kit's widgets already paint into such a surface (`ui.paint_view`, as
       Cafesa3D's do), so the browser keeps its own page and wears the new
       components.
+
+      **And it comes first.** Diego, 30 September, again: "make sure our
+      browser new design is resizable". So the new chrome (d) is built on
+      a window that already resizes, rather than resizing being fitted to
+      it afterwards: e lands, then d. NetSurf's layout (j) makes the
+      browser's half small - a new width is `layout_document` again at
+      that width, which is what a reflow is - and the chrome's widgets
+      are laid out by the kit, so they follow without code of their own.
    f. **First, the kernel's share window** (`testing.md` 18.297): a
       region's pages are held by capabilities and not by mappings, so a
       program that drops its last capability keeps a mapping onto pages the
@@ -2808,6 +2816,25 @@ processors, and still what follows USB:
       blit a scroll is: profiled first, so the vector unit goes where the
       time is, in GCC's vector types as `gfx.c` and `pack.c` are written,
       each held to its scalar self by a host test.
+
+      **Asked again on 30 September** - "where are you using simd
+      instructions for quick vector operation" - and answered from the
+      objects rather than from memory, counting NEON instructions in each:
+      in lanes are the windows' blend (`gfx.c`), `pack.c`, `yuv.c`, PNG's
+      unfiltering, Cafesa3D's tracer and, on x86, BearSSL's ChaCha20. **Not
+      in lanes, and where the browser spends its time**: text
+      (`gfx_draw_text`), fills, and pictures scaled and laid over the page
+      (`stretch_into`) - NetSurf draws through all three - and outside the
+      browser stb_image's JPEG on ARM (its NEON path is a switch nobody
+      set), AES on both processors, and inflate, which is serial by nature.
+      **The first browser loop in lanes is SVG's** (j5, `web_raster.c`),
+      and it taught two things worth keeping for the rest: the lanes were
+      no faster until the running sum went four at a time too, since each
+      pixel's waited on the one before; and then no faster until three
+      divides became one reciprocal, a lane's divide costing what a scalar
+      one does. 2.7x natively and 1.8x through Rosetta once both were done.
+      And clang turns a scalar reference into lanes by itself, so a host
+      test that times the two builds with its vectorisers off.
    i. **BUILT 30 September (`testing.md` 18.299). A progress bar while a
       page loads, in the status panel** - Diego,
       30 September, watching Wikipedia's Dam article sit on "waiting for
@@ -2889,7 +2916,38 @@ processors, and still what follows USB:
         Wikipedia lays it out. `@import` not fetched yet.
       - j5. **The Dam article as Chrome draws it**: the article at the top,
         the infobox to the right, pictures beside the text - held by the
-        gate, and its time on the status line.
+        gate, and its time on the status line. What it still lacks, in the
+        order agreed on 30 September ("go ahead with SVG"): **SVG**, through
+        NetSurf's own libsvgtiny (MIT), and a rasteriser of ours for the
+        shapes it gives - Wikipedia's logo and icons, and most sites' -
+        then a serif face (IBM Plex Serif) and other scripts' glyphs, then
+        `@import`, and `web_paint.c` retired.
+
+        **SVG BUILT 30 September** (`testing.md` 18.313): expat 2.8.5 and
+        libsvgtiny 0.1.8 vendored, unmodified, both MIT; the shapes drawn by
+        `web_raster.c`, edges accumulated as font-rs does and laid over the
+        page four pixels at a time, an SVG drawn at its box's size and drawn
+        again when its box changes; pictures laid over the page by their
+        alpha. Wikipedia's main page: six pictures of six, the wordmark
+        whole. It took three things of the libc's `sscanf` - `%[`, `%n`,
+        and numbers measured by their grammar - and `floorf`. Not drawn yet:
+        gradients as more than their first colour's fill, text inside an
+        SVG, `evenodd`, joins at a stroke's corners.
+      - j6. **Forms that work** - Diego, 1 October, with Google drawn but
+        deaf: "google renders nicely but text entry does not work". The
+        fields are j1's stand-ins, drawn and inert: NetSurf's own form and
+        text-area code (`form.c`, `forms.c`, `desktop/textarea.c`), the
+        keyboard and the pointer handed to the field that has focus, and a
+        form sent - GET as an address with its query, POST through
+        `http.lua` with a body. Proposed next after SVG, before the cache
+        (k) and the redesign (d). Wikipedia shows the stand-ins' other
+        cost: its menus open from checkboxes CSS hides, and here each is an
+        empty square on the page.
+      - j7. **A page's charset as its server says it**: Google's Spanish
+        page came as ISO-8859-1, said in its `Content-Type`, and the parser
+        was handed the bytes without that - "B?squeda", "Im?genes". The
+        header's charset given to the parser, which then has what a
+        browser has.
    k. **A cache**, as every browser has - Diego, 30 September: "we should
       add a browser cache feature as well", "as all browser rely on this for
       performance reasons". What the page costs today makes the case: gnu.org
@@ -2960,6 +3018,15 @@ processors, and still what follows USB:
    30 busy loops, `x86-film` passed twice each), so host CPU alone is not
    it; the next idea is `-icount`, which ties QEMU's audio timer to the
    guest's instructions.
+
+   **And one not of sound**, in the gate for SVG (6zz j5): `x86-cafesa3d`
+   scrubbing Rotation Z turned it 16 degrees where 20 were asked - four of
+   the drag's five 8-pixel moves, the last lost against the release - in
+   its slowest run yet, 410 s against 352, with this Mac's own indexing
+   busy; all 122 checks alone after, on the same image. The harness waits
+   0.15 s between a move and the release; the window manager may take a
+   release before the move queued ahead of it is applied, which is worth a
+   look of its own: input that arrives in order should be acted on in it.
 
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need

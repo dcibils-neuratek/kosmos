@@ -74,6 +74,9 @@ void  *bsearch(const void *key, const void *base, size_t count, size_t size,
  * (`user/init/misc_user.c`). */
 int    atexit(void (*fn)(void));
 
+/* Bytes of the kernel's entropy, under BSD's name (`user/init/misc_user.c`). */
+void   arc4random_buf(void *buf, size_t n);
+
 /*
  * The standard pseudo-random pair.
  *

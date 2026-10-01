@@ -605,6 +605,55 @@ def main():
                 f"sheet was not fetched, or not given to the cascade. Wrote {args.out}.")
 
         #
+        # **An SVG** (`web_svg.c`, `roadmap.md` 6zz j5): `mark.svg`, read by
+        # libsvgtiny, drawn by the browser's own rasteriser at its box's
+        # size - twice its own - and laid over the page. Its orange disc,
+        # #e8761e, is on the screen; its purple curve, #6a2c9e, is to the
+        # right of it - not blue, which `find_link` would take for a link and
+        # click; and the corner of the disc's square, which the SVG leaves
+        # empty, is the paragraph's pale yellow. A picture copied rather
+        # than laid over the page would leave that corner black.
+        #
+        ORANGE, YELLOW = (232, 118, 30), (253, 241, 199)
+        disc = [(x, y) for y in range(y0, y0 + band)
+                for x in range(x0, x0 + WIN_W - SBAR)
+                if at(x, y) == ORANGE]
+
+        if len(disc) < 800:
+            raise Failure(
+                f"the test page's SVG was not drawn: {len(disc)} pixels of its "
+                f"orange disc, #e8761e, on the first screen, where a disc of "
+                f"radius 20 is about 1,250. Wrote {args.out}.")
+
+        bx0 = min(x for x, _ in disc)
+        by0 = min(y for _, y in disc)
+        corner = at(bx0 + 2, by0 + 2)
+
+        if corner != YELLOW:
+            raise Failure(
+                f"the SVG's empty corner is {corner}, not the paragraph's pale "
+                f"yellow {YELLOW}: the picture was put on the page instead of "
+                f"over it. Wrote {args.out}.")
+
+        def purple(c):
+            return c[2] > c[0] > c[1] + 40 and c[2] - c[1] > 80
+
+        curve = sum(1 for y in range(by0 - 4, by0 + 44)
+                    for x in range(bx0 + 46, bx0 + 90)
+                    if purple(at(x, y)))
+
+        if curve < 60:
+            raise Failure(
+                f"the SVG's stroked curve is missing: {curve} purple pixels to "
+                f"the right of its disc - a <path> libsvgtiny could not read "
+                f"(its compact start, every number's sign its separator, "
+                f"is what `sscanf` once refused), or a stroke not drawn. "
+                f"Wrote {args.out}.")
+
+        print(f"SVG: {len(disc)} pixels of its disc, its corner the page's "
+              f"own, {curve} of its curve", flush=True)
+
+        #
         # And that it moves.
         #
         # Six presses rather than one: a line is forty pixels and the check

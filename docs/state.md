@@ -389,8 +389,20 @@ built** (18.311): the test page laid out and drawn by NetSurf on the machine -
 tables, borders, backgrounds, forms - through a plotter table on `gfx`.
 **j4 built** (18.312): the browser lays pages out with NetSurf - linked
 stylesheets fetched, pictures as its objects; Wikipedia's Dam article live in
-1.6 s, looking like Wikipedia (title, tabs, column, infobox). **j5 next**: SVG,
-a serif face and other scripts' glyphs, `@import`, and `web_paint.c` retired. The gate's audio
+1.6 s, looking like Wikipedia (title, tabs, column, infobox). **j5's SVG
+built** (18.313): expat and libsvgtiny vendored, the shapes drawn by
+`web_raster.c` four pixels at a time (NEON, SSE2; 2.7x on this Mac), pictures
+laid over the page by their alpha, and the libc's `sscanf` given `%[`, `%n`
+and numbers measured by their grammar - Wikipedia's main page has six
+pictures of six and its wordmark whole. **Rest of j5**: a serif face and
+other scripts' glyphs, `@import`, and `web_paint.c` retired. Diego asked on
+30 September where SIMD is used: the answer, counted in the objects, is in
+6zz h - not yet in the browser's text, fills or picture scaling, which is
+where NetSurf's drawing spends its time. And "make sure our browser new
+design is resizable": **e comes before d**, so the chrome is built on a
+window that already resizes. Proposed order now: j6 forms (Google's field is
+deaf, Wikipedia's hidden checkboxes are drawn as squares), j7 charset, h,
+k the cache, then e and d. The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
 next idea is `-icount`, which ties the guest's clock and QEMU's audio timer

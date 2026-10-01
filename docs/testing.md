@@ -14724,3 +14724,87 @@ page (76,236 pixels in NetSurf's layout) - and a new one: the test page links
 nothing else on the page has; at least 1,000 pixels of it on the first screen.
 Control: sheets not fetched, 0. `arm-cafesa3d`: the tutorial's `asset:` pages,
 122 checks.
+
+## 18.313 SVG, read by libsvgtiny and drawn four pixels at a time (6zz j5)
+
+**`roadmap.md` 6zz j5** - Diego, 30 September: "go ahead with SVG". An SVG
+is XML: **expat 2.8.5** reads it, through libdom's XML binding, into the DOM
+**libsvgtiny 0.1.8** walks into paths of one colour each - both MIT, both
+vendored unmodified, expat held to its signature and both to their
+releases by `cmp`. The pixels are ours.
+
+- **`web_raster.c`**, the rasteriser: each edge adds to the pixels it
+  crosses the signed area to its right, and a running sum along the row is
+  the coverage - font-rs's way, exact for straight edges, anti-aliased with
+  nothing more, `nonzero` by construction. Each row keeps the span its edges
+  touched and only that is visited, so a small shape on a large picture
+  costs its own size. Coverage is laid over the pixels **four at a time** in
+  GCC's vector types - NEON here, SSE2 on x86 - with the scalar function as
+  the tail and the reference, and the two agree to the bit.
+- **`web_svg.c`**, the binding: `web.svg(bytes)` keeps the parsed picture,
+  `svg:size()` says its own size, `svg:draw(surface)` draws it scaled to
+  fill. Curves are flattened a segment every three pixels; a stroke is a
+  quadrilateral a segment.
+- **The browser** recognises an SVG by its tag, draws it at its own size,
+  and again at its box's once the layout has given it one - drawn at a size
+  rather than stretched to it.
+- **Pictures are laid over the page by their alpha** (`gfx_draw_stretch`),
+  where they were copied onto it: an SVG's empty background, or a
+  transparent PNG's, now shows the page.
+
+**What it found in the libc's `sscanf`**, which libsvgtiny reads every path
+with: no `%[...]` and no `%n`, so every `<path>` was refused at its first
+letter and only circles and rectangles, which it builds without scanning,
+were drawn; and **a number was every character that might be in one** - a
+minus sign and a to f included - so a path written the compact way,
+`c-1.2-3.4-5.6...`, was one number as long as the path, refused past 63
+characters, and the path ended there. Wikipedia's wordmark drew a W and "of
+the f". A number is measured by its grammar now. And `floorf`, declared in
+`math.h` and never written; and `lroundf` written over `floor` rather than
+musl's `round`, which the kernel's test image does not have - the gate's
+first run said so.
+
+**What the lanes taught**, measured on this Mac by `test_raster`: four lanes
+laying colour were no faster than one, because each pixel's running sum
+waited on the one before; summed four at a time inside the register they
+were still no faster, because straight alpha divided three times a pixel
+and a lane's divide costs what a scalar one does. One reciprocal and three
+multiplies: **2.7x natively, 1.8x through Rosetta**. And clang made the
+scalar reference into lanes by itself, so the test builds with its
+vectorisers off - written vector types are untouched by that.
+
+**`host`**: `test_raster` and `test_raster_x86`, 15 checks each - a
+rectangle with half-pixel sides exact and the same wound either way, two
+overlapping covering once, half red over opaque blue and over nothing,
+edges not finite refused and edges a long way off drawn at the border, the
+accumulator empty after every paint, and random polygons on every width
+from 1 to 40 over random pixels, four lanes against one, to the bit. Control:
+the second shuffle of the running sum wrong, 6 of 15 fail. `test_scan`, 37
+checks, 18 of them new: `%[` with ranges, negation, a leading `]`, a width
+and a length; `%n` at the end and not counted; and numbers by their grammar
+- a 74-character compact path, `1.2.3`, exponents with and without digits,
+`-inf`, `%i` of `0x1F`. Controls: `%[` and `%n` taken out, 7 of 29 fail; the
+greedy number put back, 2 of 37.
+
+**`arm-browser` and `x86-browser`**: the test page carries `mark.svg`, 48 by
+24 drawn at twice that in a paragraph on a pale yellow ground - an orange
+disc, #e8761e, at least 800 pixels of it (1,176); the corner of the disc's
+square, which the SVG leaves empty, exactly the paragraph's yellow; and a
+purple curve, #6a2c9e, whose path starts with 84 characters written the
+compact way, at least 60 pixels of it (212). Purple and not blue, because
+the first blue tried was taken by `find_link` for a link and clicked.
+Controls: pictures copied rather than laid over, the corner (0, 0, 0); SVGs
+not recognised, 0 pixels of the disc; the greedy scanner in the image, 0
+pixels of the curve.
+
+**Wikipedia's main page, live**: six pictures of six where two could not be
+read, and the wordmark whole - "WIKIPEDIA", its puzzle piece and "25 years
+of the free encyclopedia". The empty squares beside it are not SVG: they
+are the checkboxes Wikipedia's menus open from, hidden by its CSS and drawn
+here by j1's stand-ins, which is the forms work (j6).
+
+**The gate**: 74 of 75. The first run did not build - the kernel's test image
+links `math.c` without musl, and `lroundf` called `round` - and the second
+lost `x86-cafesa3d`'s Rotation Z scrub, 16 degrees for 20, the last of five
+drag moves lost against the release in that suite's slowest run (410 s); 122
+of 122 alone after on the same image (`roadmap.md` 6zw).

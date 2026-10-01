@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The browser test page's SVG (roadmap.md 6zz j5): 48 by 24 of its own,
+  drawn at twice that, on a ground of nothing - so the page's pale yellow
+  shows round the disc. An orange disc, #e8761e, which nothing else on the
+  page is, and a purple curve, #6a2c9e, stroked across the right
+  half - not blue, which a check reads as a link. The curve starts with
+  twelve short lines written the compact way, every number's sign or point
+  its separator, 84 characters with no space in them: the scanner once took
+  that for one number too long to read, and dropped the rest of the path.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24" viewBox="0 0 48 24">
+  <circle cx="12" cy="12" r="10" fill="#e8761e"/>
+  <path d="M46 6l-.5.25-.5.25-.5.25-.5.25-.5.25-.5.25-.5.25-.5.25-.5.25-.5.25-.5.25-.5.25L38 12C36 4 30 4 26 18" fill="none" stroke="#6a2c9e" stroke-width="2"/>
+</svg>

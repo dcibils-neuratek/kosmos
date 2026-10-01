@@ -387,6 +387,31 @@ int atexit(void (*fn)(void))
 }
 
 /*
+ * `n` bytes the kernel's entropy chose (`SYS_ENTROPY`, `kernel/entropy.c`),
+ * under BSD's name: expat salts its hash tables with them, so a document
+ * cannot be written to make every name collide (`runtime/config/
+ * expat_config.h`). It cannot fail, by its contract; a kernel that will not
+ * answer is a machine with nothing to salt with, and stops rather than
+ * salting with nothing.
+ */
+void arc4random_buf(void *buf, size_t n)
+{
+    unsigned char *at = buf;
+
+    while (n > 0) {
+        size_t take = n > 256 ? 256 : n;
+        long got = kosmos_entropy(at, (unsigned long)take);
+
+        if (got <= 0) {
+            abort();
+        }
+
+        at += got;
+        n -= (size_t)got;
+    }
+}
+
+/*
  * There is no shell to hand a command line to, and there will not be one.
  *
  * `system()` is a POSIX personality in a single function: it takes a string,

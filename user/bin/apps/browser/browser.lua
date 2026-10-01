@@ -292,6 +292,11 @@ local kept_bytes = 0
 local ns_doc = false
 local ns_tried = {}
 
+-- Its SVGs, by the picture's number: the SVG as read, and the size it was
+-- last drawn at - an SVG is drawn at its box's size rather than stretched
+-- to it, so a box that changes size has it drawn again.
+local ns_svgs = {}
+
 local paint_band             -- below, once the pictures can be fetched
 
 --
@@ -848,7 +853,7 @@ local function lay_out(doc)
 
   forget_pictures()
   paper_h, band_top, content_h, top = 0, 0, 0, 0
-  ns_doc, ns_tried = false, {}
+  ns_doc, ns_tried, ns_svgs = false, {}, {}
 
   --
   -- Timed apart from the painting, and the split is the measurement:
@@ -1252,13 +1257,54 @@ local function band_pictures()
 end
 
 --
--- A picture's bytes decoded, PNG or JPEG by their first bytes; nil for
--- anything else. Kept no wider than the page, which is as wide as NetSurf
--- will ever draw it - a photograph of 4000 pixels in a column of 250 does
--- not keep 48 MB - and its own size said beside it, which is what the layout
--- measures a picture the page gave no size to by.
+-- An SVG drawn at `w` by `h`, kept no larger than a page could show.
+local function svg_surface(svg, w, h)
+  local most = math.max(PAGE_W, VIEW_H) * 2
+
+  if w > most or h > most then
+    local k = most / math.max(w, h)
+
+    w, h = math.max(1, math.floor(w * k)), math.max(1, math.floor(h * k))
+  end
+
+  local made, pic = pcall(gfx.surface, { w = w, h = h })
+
+  if not made or not pic then return nil end
+
+  -- A picture there is no memory to draw is a picture missing, not a
+  -- browser stopped.
+  if not pcall(svg.draw, svg, pic) then
+    pic:free()
+    return nil
+  end
+
+  return pic, w, h
+end
+
 --
-local function picture_of(bytes)
+-- A picture's bytes decoded, PNG or JPEG by their first bytes and SVG by
+-- its tag; nil for anything else. Kept no wider than the page, which is as
+-- wide as NetSurf will ever draw it - a photograph of 4000 pixels in a
+-- column of 250 does not keep 48 MB - and its own size said beside it,
+-- which is what the layout measures a picture the page gave no size to by.
+-- An SVG is drawn at its own size here, and at its box's once the layout
+-- has given it one (`svgs_to_boxes`); `k` is which picture it is.
+--
+local function picture_of(bytes, k)
+  if bytes and web and bytes:sub(1, 1024):find("<svg", 1, true) then
+    local svg = web.svg(bytes)
+
+    if not svg then return nil end
+
+    local sw, sh = svg:size()
+    local w = math.min(sw, PAGE_W)
+    local pic, dw, dh = svg_surface(svg, w, math.max(1, sh * w // sw))
+
+    if pic and k then ns_svgs[k] = { svg = svg, w = dw, h = dh } end
+
+    return pic, sw, sh
+  end
+
   local decode = bytes and ((bytes:sub(1, 4) == "\x89PNG" and gfx.png)
                             or (bytes:sub(1, 2) == "\xff\xd8" and gfx.jpeg))
   local ok, pic = false, nil
@@ -1280,6 +1326,31 @@ local function picture_of(bytes)
   end
 
   return pic, pw, ph
+end
+
+--
+-- Each SVG drawn again at its box's size, where the layout gave it one that
+-- is not the size it was drawn at: its own, or the page's width, until the
+-- page said otherwise. Its natural size goes back unchanged, so the layout
+-- does not move.
+--
+local function svgs_to_boxes()
+  if not next(ns_svgs) then return end
+
+  for k, o in ipairs(doc:ns_objects()) do
+    local s = ns_svgs[k]
+
+    if s and o.w > 0 and o.h > 0 and (o.w ~= s.w or o.h ~= s.h) then
+      local pic = svg_surface(s.svg, o.w, o.h)
+
+      if pic then
+        local sw, sh = s.svg:size()
+
+        doc:ns_picture(k, pic, sw, sh)
+        s.w, s.h = o.w, o.h
+      end
+    end
+  end
 end
 
 --
@@ -1314,7 +1385,7 @@ local function ns_band_pictures()
       local where = w.where
       local bytes = fetched[where] or ((where:match("^asset:")
                     or where:sub(1, 1) == "/") and bytes_at(where))
-      local pic, pw, ph = picture_of(bytes)
+      local pic, pw, ph = picture_of(bytes, w.k)
 
       ns_tried[w.k] = true
 
@@ -1333,6 +1404,7 @@ local function ns_band_pictures()
 
     band_top = math.max(0, math.min(band_top, content_h + 16 - paper_h))
     top = math.max(0, math.min(top, math.max(0, content_h - VIEW_H)))
+    svgs_to_boxes()
     doc:ns_paint(paper, PAGE_W, paper_h, band_top)
   end
 

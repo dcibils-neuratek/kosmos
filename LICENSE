@@ -49,8 +49,14 @@ Vendored third-party code keeps its own licence, which travels beside it:
       README.kosmos.md beside it
 
   NetSurf's libraries, by J-M Bell and the NetSurf Browser Project, MIT
-      runtime/upstream/netsurf/: libcss, libdom, libhubbub, libparserutils
-      and libwapcaplet, each under the COPYING file in its own directory
+      runtime/upstream/netsurf/: libcss, libdom, libhubbub, libparserutils,
+      libsvgtiny and libwapcaplet, each under the COPYING file in its own
+      directory
+
+  expat 2.8.5, by the Thai Open Source Software Center, Clark Cooper and
+      the Expat maintainers, MIT
+      runtime/upstream/expat/COPYING, with the vendoring recorded in
+      README.kosmos.md beside it
 
   minimp3, by lieff, CC0 1.0 (public domain)
       runtime/upstream/minimp3/LICENSE, and the notice at the top of

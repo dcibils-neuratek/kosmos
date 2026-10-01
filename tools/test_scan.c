@@ -175,6 +175,126 @@ int main(void)
               "a number longer than the scanner holds is refused, not cut");
     }
 
+    /*
+     * `%[` and `%n`, as libsvgtiny reads a path with them (`roadmap.md`
+     * 6zz j5).
+     */
+    {
+        char cmd[2] = "";
+        float x = 0, y = 0;
+        int n = -1;
+
+        check(sscanf(" M 26 18 C", " %1[MmLl] %f %f %n", cmd, &x, &y, &n) == 3
+              && strcmp(cmd, "M") == 0 && x == 26.0f && y == 18.0f && n == 9,
+              "a path's moveto: its letter, two numbers, and how far it read");
+    }
+    {
+        char cmd[2] = "";
+        float x = 0, y = 0;
+        int n = -1;
+
+        check(sscanf(" C 30 4", " %1[MmLl] %f %f %n", cmd, &x, &y, &n) == 0
+              && n == -1,
+              "a letter not in the set matches nothing and stores nothing");
+    }
+    {
+        int i = 0, n = -1;
+
+        check(sscanf("12", "%d%n", &i, &n) == 1 && i == 12 && n == 2,
+              "%n answers at the end of the input, and is not counted");
+    }
+    {
+        char buf[8] = "x";
+
+        check(sscanf(" a", "%[a]", buf) == 0 && strcmp(buf, "x") == 0,
+              "%[ skips no white space");
+    }
+    {
+        char k[8] = "", v[8] = "";
+
+        check(sscanf("key=value", "%[^=]=%s", k, v) == 2
+              && strcmp(k, "key") == 0 && strcmp(v, "value") == 0,
+              "%[^=] reads up to what it excludes");
+    }
+    {
+        char buf[8] = "";
+        int i = 0;
+
+        check(sscanf("abc123", "%[a-z]%d", buf, &i) == 2
+              && strcmp(buf, "abc") == 0 && i == 123,
+              "%[a-z] is a range");
+    }
+    {
+        char buf[8] = "";
+
+        check(sscanf("]]x", "%[]]", buf) == 1 && strcmp(buf, "]]") == 0,
+              "a ] first in the set is itself");
+    }
+    {
+        char buf[8] = "";
+
+        check(sscanf("MMM", "%1[M]", buf) == 1 && strcmp(buf, "M") == 0,
+              "a width bounds a set");
+    }
+    {
+        char buf[8] = "x";
+        char unclosed[] = "%[abc";      /* an array, so no compiler checks it */
+
+        check(sscanf("abc", unclosed, buf) == 0 && strcmp(buf, "x") == 0,
+              "a set with no ] is not one");
+    }
+    {
+        size_t used = 0;
+        char buf[8] = "";
+
+        check(scan("aaaa", 2, &used, "%[a]", buf) == 1
+              && strcmp(buf, "aa") == 0 && used == 2,
+              "%[ stops at the length it was given");
+    }
+
+    /*
+     * A number ends where its grammar does, not where the characters that
+     * could be in some number end: an SVG path written the compact way.
+     */
+    {
+        const char *path = " c-1.2-3.4-5.6-7.8-9.1-2.3-4.5-6.7-8.9-1.2-3.4"
+                           "-5.6-7.8-9.1-2.3-4.5-6.7-8.9";
+        char cmd[2] = "";
+        float a = 0, b = 0;
+        int n = -1;
+
+        check(sscanf(path, " %1[Cc] %f %f %n", cmd, &a, &b, &n) == 3
+              && a == -1.2f && b == -3.4f && n == 10,
+              "numbers whose signs are their separators, a long path of them");
+    }
+    {
+        float a = 0, b = 0;
+
+        check(sscanf("1.2.3", "%f%f", &a, &b) == 2 && a == 1.2f && b == 0.3f,
+              "a second point starts the next number");
+    }
+    {
+        float a = 0;
+        char c = 0;
+
+        check(sscanf("1e5x", "%f%c", &a, &c) == 2 && a == 1e5f && c == 'x',
+              "an exponent is part of a number");
+        check(sscanf("2ex", "%f%c", &a, &c) == 2 && a == 2.0f && c == 'e',
+              "an e with no digits after it is not");
+    }
+    {
+        double v = 0;
+        int i = 0;
+        unsigned u = 0;
+
+        check(sscanf("-inf", "%lf", &v) == 1 && v < -1e308,
+              "-inf is a number");
+        check(sscanf("0x1Fg", "%i", &i) == 1 && i == 31, "%i reads 0x1F");
+        check(sscanf("ff", "%x", &u) == 1 && u == 255, "%x reads ff");
+        check(sscanf("12abc", "%d", &i) == 1 && i == 12,
+              "%d stops at a letter");
+    }
+
     if (failures == 0) {
         printf("PASS: %d checks on the scanf family's scanner, on this "
                "machine.\n", checks);
