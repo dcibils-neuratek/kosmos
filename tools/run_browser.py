@@ -2294,6 +2294,75 @@ def main():
             chord("meta_l", "w")
             tab_said("tab 1 of 1, shown", "Super W on the new tab", mark)
 
+            #
+            # **Dragged on the bar** (`roadmap.md` 6zz d3): on the second page,
+            # the star dragged down onto the bar, left of the long page's
+            # favorite - the second page kept there, first; the long page's
+            # favorite dragged back to first place; then the second page let go
+            # with Super D, and the long page shown again from the bar.
+            #
+            def drag(fx, fy, tx, ty):
+                guest.mouse_to(*_to_tablet(fx, fy, w4, h4))
+                time.sleep(0.4)
+                guest.mouse_button(True)
+                time.sleep(0.2)
+
+                for k in range(1, 7):
+                    guest.mouse_to(*_to_tablet(fx + (tx - fx) * k // 6,
+                                               fy + (ty - fy) * k // 6, w4, h4))
+                    time.sleep(0.15)
+
+                time.sleep(0.3)
+                guest.mouse_button(False)
+                time.sleep(0.4)
+                guest.mouse_to(*_to_tablet(w4 - 30, h4 - 30, w4, h4))
+                time.sleep(0.6)
+
+            def on_bar(since, what):
+                line = tab_said("on the bar, ", what, since).strip()
+                return [(m.group(1), int(m.group(2)), int(m.group(3)))
+                        for m in re.finditer(r"(.+?) at (\d+),(\d+)(?:; |$)", line)]
+
+            def bar_now():
+                lines = re.findall(r"browser: on the bar, ([^\n]*)", guest.seen)
+                return [(m.group(1), int(m.group(2)), int(m.group(3)))
+                        for m in re.finditer(r"(.+?) at (\d+),(\d+)(?:; |$)",
+                                             lines[-1].strip())]
+
+            go_to(LINKED, "the second page, to drag onto the bar")
+            time.sleep(1.0)
+            (long_name, lx, ly), = bar_now()
+            mark = len(guest.seen)
+            drag(x0 + sx, wtop + sy, x0 + lx - 15, wtop + ly)
+            put = tab_said("/Home/Favorites/", "the star dropped on the bar", mark)
+            order = on_bar(mark, "the bar with the dropped page")
+
+            if not put.rstrip().endswith("put at 1 on the bar") or len(order) != 2 \
+               or order[1][0] != long_name or "second page" not in order[0][0]:
+                raise Failure(f"the star dragged onto the bar did not keep the second "
+                              f"page first: {put.strip()!r}, the bar {order!r}")
+
+            mark = len(guest.seen)
+            drag(x0 + order[1][1], wtop + order[1][2], x0 + order[0][1] - 15,
+                 wtop + order[0][2])
+            moved = tab_said("/Home/Favorites/", "the long page's favorite dragged", mark)
+            again = on_bar(mark, "the bar after the drag")
+
+            if not moved.rstrip().endswith("put at 1 on the bar") \
+               or [n for n, _, _ in again] != [long_name, order[0][0]]:
+                raise Failure(f"the long page's favorite dragged to the front did not "
+                              f"go there: {moved.strip()!r}, the bar {again!r}")
+
+            mark = len(guest.seen)
+            chord("meta_l", "d")
+            tab_said("http://10.0.2.2:%d/%s is not a favorite, 1 removed" % (port, LINKED),
+                     "Super D on the second page", mark)
+            (_, lx, ly), = on_bar(mark, "the bar with the long page alone")
+            press(x0 + lx, wtop + ly)
+            tab_said("showing " + long_url, "the bar's favorite pressed again", mark)
+            print(f"dragged: the second page dropped first on the bar from the star, "
+                  f"the long page dragged back before it", flush=True)
+
             # Super D: not a favorite, and the bar gone with the page back up.
             mark = len(guest.seen)
             chord("meta_l", "d")

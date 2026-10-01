@@ -190,6 +190,51 @@ do
   check(favorites.all()["https://www.lua.org/"] ~= nil, "and nothing else")
 end
 
+--
+-- **Moved, as dragging on the bar does** (6zz d3): a place in the order as
+-- it is now - before what is there, or after the last - the folder's order
+-- written again; and one added at a place, or added again where it already
+-- is, put there.
+--
+do
+  local dir = "/Home/Order"
+
+  local function names()
+    local out = {}
+
+    for _, e in ipairs(favorites.read(dir)) do out[#out + 1] = e.name end
+
+    return table.concat(out, " ")
+  end
+
+  local a = favorites.add("http://a.example/", "A", dir)
+  local b = favorites.add("http://b.example/", "B", dir)
+  local c = favorites.add("http://c.example/", "C", dir)
+
+  check(names() == "A B C", "three in the order they came: " .. names())
+  check(favorites.move(c, 1, dir) == 1 and names() == "C A B",
+        "the last put first: " .. names())
+  check(favorites.move(c, 4, dir) == 3 and names() == "A B C",
+        "and past the end, last again: " .. names())
+  check(favorites.move(a, 3, dir) == 2 and names() == "B A C",
+        "put before the third, it is second: " .. names())
+  check(favorites.move(b, 1, dir) == 1 and names() == "B A C", "where it is, it stays")
+  check(favorites.move(dir .. "/Nothing", 1, dir) == nil, "one that is not there is nil")
+
+  favorites.add("http://d.example/", "D", dir, 2)
+  check(names() == "B D A C", "one added at a place is there: " .. names())
+
+  favorites.add("http://c.example/", "C again", dir, 1)
+  check(names() == "C B D A", "one kept already, added at a place, moves there: " .. names())
+
+  local orders = {}
+
+  for _, e in ipairs(favorites.read(dir)) do orders[#orders + 1] = tostring(e.order) end
+
+  check(table.concat(orders, " ") == "1 2 3 4", "and the order is written one to four: "
+        .. table.concat(orders, " "))
+end
+
 if failures == 0 then
   print(("PASS: %d checks on the browser's favorites, on this machine."):format(checks))
   os.exit(0)

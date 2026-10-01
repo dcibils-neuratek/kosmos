@@ -1061,9 +1061,35 @@ local toggle_favorite, toggle_side, open_settings, set_zoom
 local favbar = ui.view{ x = 0, y = TABS + HEAD, w = W, h = FAVS }
 favbar.hidden = true
 
+--
+-- **Dragged on the bar** (`roadmap.md` 6zz d3): a favorite pressed and
+-- moved rather than pressed, or the star dragged down onto it - `drag` is
+-- what is carried and the place it would go (`to`, among the bar's items),
+-- `slot_at` the place for a point, `drop` what letting go does. One table,
+-- since this chunk is near Lua's two hundred locals.
+--
+local bar_dnd = {}
+
 function favbar:draw(g)
   g:fill(0, 0, self.w, self.h, theme.window)
   g:fill(0, self.h - 1, self.w, 1, theme.line)
+
+  -- Where it would go: a bar between two items, or after the last.
+  local d = bar_dnd.drag
+
+  if d and d.to then
+    local target, x = self.children[d.to], nil
+
+    if target and target.entry then
+      x = target.x - 2
+    else
+      for _, v in ipairs(self.children) do
+        if v.entry then x = v.x + v.w end
+      end
+    end
+
+    g:fill(x or 8, 3, 2, self.h - 7, theme.accent)
+  end
 end
 
 local bar_more = ui.iconbutton{ icon = "more" }
@@ -1096,15 +1122,30 @@ do
       g:text(8 + 14 + 6, (self.h - gfx.height()) // 2, name, theme.text)
     end
 
-    -- Shown on letting go over it, as a button is.
+    -- Shown on letting go over it, as a button is - unless it was moved
+    -- more than a few pixels first, which is a drag: a mark where it would
+    -- go, and letting go puts it there.
     function v:mouse(action, x, y)
       if action == "press" then
-        self.pressed = true
+        self.pressed, self.from_x = true, x
         return true
-      elseif action == "release" then
-        self.pressed = false
+      elseif action == "move" and self.pressed then
+        if bar_dnd.drag or math.abs(x - self.from_x) > 6 then
+          bar_dnd.drag = { entry = e, to = bar_dnd.slot_at(self.x + x) }
+          return true
+        end
 
-        if x >= 0 and x < self.w and y >= 0 and y < self.h then open_entry(e, self) end
+        return false
+      elseif action == "release" then
+        local d = bar_dnd.drag
+
+        self.pressed, bar_dnd.drag = false, nil
+
+        if d then
+          bar_dnd.drop(d)
+        elseif x >= 0 and x < self.w and y >= 0 and y < self.h then
+          open_entry(e, self)
+        end
 
         return true
       end
@@ -1113,6 +1154,22 @@ do
     end
 
     return v
+  end
+
+  -- The place among the bar's items for a point `bx` across it: before the
+  -- first whose middle it is left of, or after the last shown.
+  function bar_dnd.slot_at(bx)
+    local slot = 1
+
+    for i, v in ipairs(favbar.children) do
+      if v.entry then
+        if bx < v.x + v.w // 2 then return i end
+
+        slot = i + 1
+      end
+    end
+
+    return slot
   end
 
   --
@@ -1159,6 +1216,17 @@ do
     print(("browser: favorites bar %d of %d, the first at %d,%d")
           :format(#bar_list - #bar_rest, #bar_list,
                   first and first.x + first.w // 2 or 0, favbar.y + FAVS // 2))
+
+    local where = {}
+
+    for _, v in ipairs(favbar.children) do
+      if v.entry then
+        where[#where + 1] = ("%s at %d,%d"):format(v.entry.name, v.x + v.w // 2,
+                                                   favbar.y + FAVS // 2)
+      end
+    end
+
+    print("browser: on the bar, " .. table.concat(where, "; "))
   end
 end
 
@@ -3988,6 +4056,60 @@ do
 end
 
 star_b.on_click = then_page(function() toggle_favorite() end)
+
+--
+-- **The page dragged onto the bar** (6zz d3): the star pressed and moved
+-- rather than pressed. Over the bar, a mark where it would go; let go there,
+-- the page is a favorite in that place - or moved there, if it was one
+-- already. Let go anywhere else, and nothing.
+--
+do
+  local star_mouse = star_b.mouse
+
+  function star_b:mouse(action, x, y)
+    if action == "press" then
+      self.from_x, self.from_y, self.dragging = x, y, false
+    elseif action == "move" and self.from_x
+           and (self.dragging or math.abs(x - self.from_x) + math.abs(y - self.from_y) > 6) then
+      local wx, wy = self.x + x, header.y + self.y + y
+      local over = not favbar.hidden and wy >= favbar.y and wy < favbar.y + FAVS
+
+      self.dragging, self.pressed = true, false
+      bar_dnd.drag = over and current.here and current.here ~= NEWTAB
+                     and { page = current.here, title = current.title,
+                           to = bar_dnd.slot_at(wx) } or nil
+      return true
+    elseif action == "release" and self.dragging then
+      local d = bar_dnd.drag
+
+      self.dragging, self.from_x, bar_dnd.drag = false, nil, nil
+
+      if d then bar_dnd.drop(d) end
+
+      return true
+    end
+
+    if action == "release" then self.from_x = nil end
+
+    return star_mouse(self, action, x, y)
+  end
+end
+
+-- Let go on the bar: a favorite moved to its place, or the page kept there.
+function bar_dnd.drop(d)
+  local path
+
+  if d.entry then
+    path = d.entry.path
+    favorites.move(path, d.to)
+  else
+    path = favorites.add(d.page, d.title, nil, d.to)
+  end
+
+  if path then print(("browser: %s put at %d on the bar"):format(path, d.to)) end
+
+  read_favorites()
+end
 hb.side.on_click = then_page(function() toggle_side() end)
 
 --------------------------------------------------------------------------

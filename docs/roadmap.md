@@ -2764,9 +2764,10 @@ processors, and still what follows USB:
       again every three seconds, since nothing tells a window that Tracker
       changed a folder. **And a fix it needed**: Tracker opened a file
       without its attributes, so a file's type decided its Kind column and
-      Open with and never what opening it did. Not yet: a favorite dragged
-      on the bar, or onto it from the field; a folder made from the
-      browser; the favorites searched.
+      Open with and never what opening it did. **Dragged on the bar, and
+      onto it from the field's star: BUILT 1 October** (`testing.md`
+      18.334). Not yet: a folder made from the browser; the favorites
+      searched.
 
       **d4 BUILT 1 October** (`testing.md` 18.323): history on the disk,
       in `/Home/Preferences/browser` as agreed - a folder there, the

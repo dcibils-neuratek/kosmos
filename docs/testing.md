@@ -15863,3 +15863,36 @@ do; recorded for the kit's menus.)
 
 **Run as the new rule has it**: the browser's four halves and the host
 suite - the browser and a library only it uses.
+
+## 18.334 Favorites dragged on the bar, and the page dragged onto it (6zz d3)
+
+**What it adds**: the bar's favorites stayed in the order they were starred,
+and the only way onto the bar was the end of it. Now a favorite pressed and
+moved more than a few pixels is a drag - a mark between two items, or after
+the last, where it would go - and letting go puts it there; and the star,
+dragged rather than pressed, carries the page down onto the bar, kept as a
+favorite where it is let go (or moved there, if it was one already). Let go
+anywhere else, and nothing. The roadmap's other half, "onto it from the
+field", is the star at the field's end.
+
+`favorites.move(path, at)` puts one at a place of its folder's order as it is
+now and writes the order again as one to however many, only where it
+changed; `favorites.add` takes a place too. The disk server merges what
+`setattr` sends, so the order is all that changes. `tools/test_favorites.lua`
+holds both, nine checks more: the last put first and back past the end, one
+put before the third being second, one where it is staying there, one added
+at a place, one already kept moving to where it was added again, and the
+order written one to four. Its control - the place not counted as it is with
+the one moved taken out - failed.
+
+**In the guest** (`run_browser.py --part 2`, with the favorites): on the
+second page, the star dragged down to just left of the long page's favorite
+- the browser says the second page was put at 1, and the bar lists it first;
+the long page's favorite dragged to just left of it - put at 1, first again;
+Super D lets the second page go, and the bar's favorite shows the long page.
+The bar now says where each of its items is, as the header does. **The
+control bit**: a place that is never before an item - the second page put
+at 2.
+
+**Run as the new rule has it**: the browser's four halves and the host
+suite.

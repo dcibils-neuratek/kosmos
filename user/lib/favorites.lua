@@ -12,7 +12,9 @@
 -- sidebar as a branch.
 --
 -- **In the order they were starred**, as Places are in the order they were
--- pinned (`places.lua`): `order` is one past the highest when one is made.
+-- pinned (`places.lua`): `order` is one past the highest when one is made -
+-- or wherever it was dropped, and then the folder's order is written again
+-- (`favorites.move`).
 -- One that has none - a file put there by hand, a folder Tracker made -
 -- comes first, by name without regard to case.
 --
@@ -141,7 +143,7 @@ end
 -- another page's favorite is given a number - "Lua 2" - rather than taking
 -- that one's place.
 --
-function favorites.add(address, title, dir)
+function favorites.add(address, title, dir, at)
   dir = dir or favorites.DIR
 
   if type(address) ~= "string" or address == "" then
@@ -154,7 +156,11 @@ function favorites.add(address, title, dir)
   local top = 0
 
   for _, e in ipairs(list) do
-    if e.address == address then return e.path end
+    if e.address == address then
+      if at then favorites.move(e.path, at, dir) end
+
+      return e.path
+    end
 
     top = math.max(top, tonumber(e.order) or 0)
   end
@@ -175,7 +181,42 @@ function favorites.add(address, title, dir)
   if not fs.write(path, "") then return nil, "the file could not be written" end
 
   fs.setattr(path, { type = favorites.TYPE, address = address, order = top + 1 })
+
+  if at then favorites.move(path, at, dir) end
+
   return path
+end
+
+--
+-- **A favorite moved** (`roadmap.md` 6zz d3, dragged on the bar): `path`,
+-- in `dir`, put at place `at` of the folder's order as it is now - before
+-- what is there, or after the last past the end - and the folder's order
+-- written as one to however many, only where it changed. A folder moves
+-- the same way. Its place now, or nil when it is not there.
+--
+function favorites.move(path, at, dir)
+  local list = favorites.read(dir or favorites.DIR)
+  local from
+
+  for i, e in ipairs(list) do
+    if e.path == path then from = i break end
+  end
+
+  if not from then return nil end
+
+  at = math.max(1, math.min(math.floor(tonumber(at) or from), #list + 1))
+
+  local e = table.remove(list, from)
+
+  if at > from then at = at - 1 end
+
+  table.insert(list, at, e)
+
+  for i, one in ipairs(list) do
+    if tonumber(one.order) ~= i then fs.setattr(one.path, { order = i }) end
+  end
+
+  return at
 end
 
 --
