@@ -1186,7 +1186,7 @@ static int l_close(lua_State *L)
     struct doc *d = luaL_checkudata(L, 1, DOC_HANDLE);
 
     forget_layout(d);
-    web_ns_close(d->ns);
+    web_ns_close(d->ns, L);
     d->ns = NULL;
 
     if (d->dom != NULL) {

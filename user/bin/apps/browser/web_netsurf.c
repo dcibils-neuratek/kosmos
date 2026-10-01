@@ -1316,7 +1316,6 @@ struct web_ns_doc {
     size_t             nsheets, sheets_room;
     struct hlcache_handle *objects; /* the pictures asked for, newest first */
     size_t             nobjects;
-    lua_State         *L;           /* whose registry holds the pictures */
     bool               built;
     int                laid_zoom;   /* the zoom it was last laid out at */
     bool               converted;   /* the box tree was made */
@@ -2348,7 +2347,7 @@ struct web_ns_doc *web_ns_open(void *document, const char *base,
 
     if (lwc_intern_string("*", 1, &h->universal) != lwc_error_ok
         || h->bctx == NULL || h->base_url == NULL || h->encoding == NULL) {
-        web_ns_close(d);
+        web_ns_close(d, NULL);      /* no pictures yet, so none to let go */
         return NULL;
     }
 
@@ -2704,7 +2703,16 @@ static void free_lone_controls(struct box *box)
     }
 }
 
-void web_ns_close(struct web_ns_doc *d)
+/*
+ * `L` is whoever is closing it - the pictures' references are let go
+ * through it. It is never one kept from earlier: a load runs in a coroutine
+ * now (`roadmap.md` 6zz l3), and the state that handed a picture over can be
+ * a coroutine long ended and collected by the time the page is closed -
+ * which is what a kept `d->L` was, and what closing the browser's test
+ * page from the Dam article's load read through: a data abort in
+ * `luaH_getint`, at an address of 0xd.
+ */
+void web_ns_close(struct web_ns_doc *d, lua_State *L)
 {
     html_content *h;
     struct hlcache_handle *o, *next;
@@ -2736,8 +2744,8 @@ void web_ns_close(struct web_ns_doc *d)
     for (o = d->objects; o != NULL; o = next) {
         next = o->next;
 
-        if (o->ref != LUA_NOREF && d->L != NULL) {
-            luaL_unref(d->L, LUA_REGISTRYINDEX, o->ref);
+        if (o->ref != LUA_NOREF && L != NULL) {
+            luaL_unref(L, LUA_REGISTRYINDEX, o->ref);
         }
 
         nsurl_unref(o->url);
@@ -2871,7 +2879,6 @@ bool web_ns_picture(struct web_ns_doc *d, lua_State *L, size_t k, int width,
     o->ref = luaL_ref(L, LUA_REGISTRYINDEX);
     o->width = width;
     o->height = height;
-    d->L = L;
 
     if (o->background) {
         o->box->background = o;

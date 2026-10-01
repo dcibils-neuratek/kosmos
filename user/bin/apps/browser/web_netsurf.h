@@ -62,7 +62,7 @@ bool   web_ns_object(struct web_ns_doc *d, size_t k, const char **url,
                      bool *arrived);
 bool   web_ns_picture(struct web_ns_doc *d, lua_State *L, size_t k,
                       int width, int height);
-void        web_ns_close(struct web_ns_doc *d);
+void        web_ns_close(struct web_ns_doc *d, lua_State *L);
 
 /*
  * Its forms (`roadmap.md` 6zz j6). A press on the page - what it did:

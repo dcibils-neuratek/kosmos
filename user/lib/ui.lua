@@ -7368,6 +7368,14 @@ function window:run()
       end
     end
 
+    -- The batch has ended: an Escape the decoder still holds started no
+    -- sequence, and is the key itself (`keys.lua`).
+    do
+      local held = decode_key(nil)
+
+      if held and dispatch(self, held) then changed = true end
+    end
+
     -- A replicant with a `tick` is something that changes on its own - a
     -- clock is the archetype - so the window repaints on a slow clock of its
     -- own rather than only when a key arrives.

@@ -141,6 +141,14 @@ end
 -- Stateful, because several bytes make one key, so each reader needs its
 -- own decoder.
 --
+-- **Given nil, the batch has ended** (`roadmap.md` 6zz l3): an Escape still
+-- held started nothing, and is the key itself. The window manager posts a
+-- key's bytes one after another into the window's queue, which the window
+-- takes whole, so a sequence's bytes come in the batch its Escape came in -
+-- and without this a lone Escape waited for the next key to be pressed: the
+-- browser's Escape stopped nothing, and the address field's gave the page
+-- its keys back only once another key came.
+--
 function keys.decoder()
   local state = nil          -- nil, "escape", "csi", "ss3" or "super"
   local params = ""
@@ -155,6 +163,15 @@ function keys.decoder()
   end
 
   return function(c)
+    if c == nil then
+      if state == "escape" then
+        state = nil
+        return 27
+      end
+
+      return nil
+    end
+
     if state == "escape" then
       if c == 91 then                                         -- [
         state, params = "csi", ""

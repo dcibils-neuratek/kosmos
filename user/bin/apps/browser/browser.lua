@@ -92,10 +92,22 @@ local theme = ui.theme
 -- `/Home/Cache/Browser` - Diego's choice - and used again for as long as
 -- their servers said they may be, or asked about with their validators.
 -- One for the process, so a picture on every page of a site is fetched
--- once. Reload asks the server about everything it shows (`reloading`).
+-- once. Reload asks the server about everything it shows - its load says
+-- so (`reloading`, below).
 --
 local CACHE = httpcache.open{ dir = "/Home/Cache/Browser" }
-local reloading = false
+
+--
+-- **The page a tab is fetching**, while the window goes on (`roadmap.md`
+-- 6zz l3): a coroutine the window steps on each pass, `load`'s, below. At
+-- most one; nil when nothing is being fetched.
+--
+local loading_job
+
+-- Whether the load going on is a Reload, which asks about everything.
+local function reloading()
+  return loading_job ~= nil and loading_job.reloading == true
+end
 
 --------------------------------------------------------------------------
 -- The window, and what is where in it.
@@ -573,6 +585,7 @@ end
 --------------------------------------------------------------------------
 
 local go_back, go_forward, go_home, reload      -- filled in further down
+local stop_loading, load                        -- and these
 
 local header = ui.view{ x = 0, y = TABS, w = W, h = HEAD }
 
@@ -1753,10 +1766,25 @@ local function fetch(text, page, post)
     -- would flicker it once each.
     local progress
 
+    --
+    -- **The page's own fetch waits by giving the window its turn** (6zz l3):
+    -- inside a load the window is stepping, a wait yields, and the window
+    -- answers keys and the pointer before it comes back - and so does every
+    -- thirtieth of a second of bytes arriving without a wait, so a fast
+    -- server cannot hold the window either. A picture's fetch, or a page's
+    -- outside a load, waits as it always did.
+    --
+    local job = page and loading_job
+    local stepped = job and coroutine.running() == job.co and job or nil
+
     if page then
       progress = function(got, total)
         loading = { host = parts.hostport, got = got, total = total }
         say(loading_words())
+
+        if stepped and sys.ticks() - stepped.resumed >= stepped.slice then
+          coroutine.yield()
+        end
       end
     end
 
@@ -1802,11 +1830,24 @@ local function fetch(text, page, post)
       agent = AGENT,
       progress = progress,
       on_body = page and on_body or nil,
+      --
+      -- A wait of a tick, and then the window's turn. The wait is a word to
+      -- the network's server, which says a connection's window again on the
+      -- pass a message brings, once its ring has been read (`net.c`,
+      -- `window_update`). Yielding alone told it nothing: the ring read
+      -- empty, no message came, and the sender waited for its own probe
+      -- timer - the browser's test page took nine seconds on x86.
+      --
+      pause = stepped and function(conn)
+        conn:wait(1)
+        stepped.conn = conn
+        coroutine.yield()
+      end or nil,
       anyway = parts.scheme == "https" and current.anyway[parts.hostport] or nil,
       body = post and post.body,
       content_type = post and post.type,
       cache = CACHE,
-      revalidate = reloading,
+      revalidate = reloading(),
     })
 
     if page then loading = nil end
@@ -1937,6 +1978,22 @@ end
 --
 local ahead_jobs = {}
 
+--
+-- How long the window waits between passes when nothing happens: a tick
+-- while a page is being fetched, so the bytes are read as they come; a
+-- fiftieth of a second while pictures are fetched ahead; and as long as
+-- the kit likes otherwise.
+--
+local function set_wait()
+  if loading_job then
+    win.poll_wait_ticks = 1
+  elseif #ahead_jobs > 0 then
+    win.poll_wait_ticks = math.max(1, ((sys.info() or {}).tick_hz or 250) // 50)
+  else
+    win.poll_wait_ticks = nil
+  end
+end
+
 -- One step of a fetch ahead; false once it has ended.
 local function ahead_step(job)
   local ok, why = coroutine.resume(job.co)
@@ -2014,7 +2071,7 @@ local function fetch_pictures(wanted, noun)
       return parts.scheme == "https" and current.anyway[parts.hostport] or nil
     end,
     cache = CACHE,
-    revalidate = reloading,
+    revalidate = reloading(),
   })
 
   for i, r in ipairs(results) do
@@ -2087,7 +2144,7 @@ local function look_ahead(t)
 
   t.ahead_job = job
   ahead_jobs[#ahead_jobs + 1] = job
-  win.poll_wait_ticks = math.max(1, ((sys.info() or {}).tick_hz or 250) // 50)
+  set_wait()
   print(("browser: fetching %d pictures ahead"):format(#urls))
 end
 
@@ -2107,7 +2164,7 @@ local function step_ahead()
     end
   end
 
-  if #ahead_jobs == 0 then win.poll_wait_ticks = nil end
+  if #ahead_jobs == 0 then set_wait() end
 end
 
 --
@@ -2821,7 +2878,94 @@ local function refresh_of(text)
   return nil
 end
 
-local function load(text, post, refreshed)
+--
+-- **A load the window lives through** (`roadmap.md` 6zz l3). The page is
+-- fetched by a coroutine the window steps on each pass (`step_loading`, from
+-- `on_frame`), and while it waits the window answers - the page on screen
+-- scrolls, the strip and the field take the pointer and keys. Only the
+-- fetch waits that way: from the parse on, a load runs to its end in one
+-- step, as it always did, so a suspended load never leaves a page half
+-- replaced for a scroll or a zoom to find.
+--
+-- **Stopped** by Escape, by another load - an address, a link, Back,
+-- Forward, Reload - and by the tab it is for being left or closed: the
+-- connection let go, and the address and the history as they were before
+-- it began (`before`, taken by whoever changed the history to start it).
+--
+local function history_now()
+  local function copy(list)
+    local out = {}
+
+    for i, v in ipairs(list) do out[i] = v end
+
+    return out
+  end
+
+  return { here = current.here, back = copy(current.back),
+           forward = copy(current.forward) }
+end
+
+stop_loading = function(why)
+  local job = loading_job
+
+  if not job then return end
+
+  loading_job = nil
+  job.co = nil
+
+  if job.conn then job.conn:close() end
+
+  local t, b = job.tab, job.before
+
+  t.here, t.back, t.forward, t.going = b.here, b.back, b.forward, nil
+  loading = nil
+
+  if t == current then
+    local shown = (b.here == nil or b.here == NEWTAB or b.here == prefs.PAGE) and ""
+                  or b.here
+
+    current.address.text, current.address.caret, current.address.from = shown, #shown, 0
+    say("stopped")
+  end
+
+  set_wait()
+  print(("browser: stopped loading %s%s"):format(job.text, why and (", " .. why) or ""))
+  frame()
+end
+
+-- One step of the load going on: to its next wait, or to its end. True
+-- when it ended, for the window to be drawn again.
+local function step_loading()
+  local job = loading_job
+
+  if not job then return false end
+
+  job.resumed = sys.ticks()
+
+  local ok, why = coroutine.resume(job.co)
+
+  if ok and coroutine.status(job.co) ~= "dead" then return false end
+
+  if loading_job == job then loading_job = nil end
+
+  if not ok then
+    say("loading the page failed: " .. tostring(why))
+    print("browser: loading failed: " .. debug.traceback(job.co, tostring(why)))
+  end
+
+  set_wait()
+
+  -- A page that said to go elsewhere at once goes now, as its own load.
+  if job.next and loading_job == nil then
+    load(job.next.to, nil, job.next.refreshed)
+  end
+
+  return true
+end
+
+load = function(text, post, refreshed, before, reloads)
+  stop_loading("another page asked for")
+
   -- A favorite's file - Tracker hands the browser one it opens - is the
   -- page it keeps.
   if type(text) == "string" and text:sub(1, 1) == "/" then
@@ -2832,25 +2976,37 @@ local function load(text, post, refreshed)
   current.refresh = nil
   frame()
 
-  local ok = load_page(text, post)
+  local job = { tab = current, text = text, before = before or history_now(),
+                reloading = reloads, slice = HZ * 30 // 1000, resumed = sys.ticks() }
 
-  current.going = nil
-  keep_tabs()
+  job.co = coroutine.create(function()
+    local ok = load_page(text, post)
 
-  local seconds, to = nil, nil
+    current.going = nil
+    keep_tabs()
 
-  if ok then seconds, to = refresh_of(text) end
+    local seconds, to = nil, nil
 
-  if seconds and seconds < 1 and to ~= text and (refreshed or 0) < 5 then
-    print(("browser: refreshed to %s"):format(to))
-    return load(to, nil, (refreshed or 0) + 1)
-  elseif seconds and seconds >= 1 then
-    current.refresh = { at = sys.ticks() + seconds * HZ, to = to, from = text }
-    say(("this page goes to %s in %d s"):format(to, seconds))
-    print(("browser: goes to %s in %d s"):format(to, seconds))
-  end
+    if ok then seconds, to = refresh_of(text) end
 
-  return ok
+    if seconds and seconds < 1 and to ~= text and (refreshed or 0) < 5 then
+      print(("browser: refreshed to %s"):format(to))
+      job.next = { to = to, refreshed = (refreshed or 0) + 1 }
+    elseif seconds and seconds >= 1 then
+      current.refresh = { at = sys.ticks() + seconds * HZ, to = to, from = text }
+      say(("this page goes to %s in %d s"):format(to, seconds))
+      print(("browser: goes to %s in %d s"):format(to, seconds))
+    end
+
+    return ok
+  end)
+
+  loading_job = job
+  set_wait()
+
+  -- At once: the request goes now, and a page that needs no network - this
+  -- image's, a file - is shown before this returns, as it always was.
+  step_loading()
 end
 
 --------------------------------------------------------------------------
@@ -2866,39 +3022,53 @@ end
 -- address alone, so Back to such a page asks for it again with a GET - as a
 -- page that came by a link would be.
 --
+-- Each stops the load going on first, so the history it changes is the
+-- page's on screen and not one that never came - and says what the history
+-- was, for a load that is stopped in its turn to put back.
 local function visit(text, post)
+  stop_loading("another page asked for")
+
+  local before = history_now()
+
   if current.here then current.back[#current.back + 1] = current.here end
 
   current.forward = {}
-  load(text, post)
+  load(text, post, nil, before)
 end
 
 go_back = function()
+  stop_loading("Back")
+
   if #current.back == 0 then
     say("nothing to go back to")
     return
   end
 
+  local before = history_now()
+
   if current.here then current.forward[#current.forward + 1] = current.here end
 
-  load(table.remove(current.back))
+  load(table.remove(current.back), nil, nil, before)
 end
 
 go_forward = function()
+  stop_loading("Forward")
+
   if #current.forward == 0 then
     say("nothing to go forward to")
     return
   end
 
+  local before = history_now()
+
   if current.here then current.back[#current.back + 1] = current.here end
 
-  load(table.remove(current.forward))
+  load(table.remove(current.forward), nil, nil, before)
 end
 
 reload = function()
-  reloading = true
-  load(current.here or current.address.text)
-  reloading = false
+  stop_loading("Reload")
+  load(current.here or current.address.text, nil, nil, nil, true)
 end
 
 go_home = function()
@@ -3076,6 +3246,8 @@ function sink:key(c)
   elseif c == 114 then reload()                      -- r
   elseif c == 91 then go_back()                      -- [
   elseif c == 93 then go_forward()                   -- ]
+  elseif c == 27 and loading_job then                -- Escape, while loading
+    stop_loading("Escape")
   else return false end
 
   --
@@ -3434,6 +3606,8 @@ end
 --------------------------------------------------------------------------
 
 local function stow(t)
+  if loading_job and loading_job.tab == t then stop_loading("its tab was left") end
+
   if t.paper then t.paper:free() end
 
   t.paper, t.paper_h = nil, 0
@@ -3524,6 +3698,8 @@ end
 -- the end. The last one closes the window, as in every browser.
 --
 local function forget_tab(t)
+  if loading_job and loading_job.tab == t then stop_loading("its tab was closed") end
+
   if t.doc then t.doc:close() end
 
   for _, p in ipairs(t.pictures or {}) do
@@ -3623,7 +3799,11 @@ do
   -- And a refresh that is due, on the page that asked for it (`load`).
   --
   win.on_frame = function()
+    local ended = loading_job ~= nil and step_loading()
+
     if #ahead_jobs > 0 then step_ahead() end
+
+    if ended then return true end
 
     local r = current and current.refresh
 

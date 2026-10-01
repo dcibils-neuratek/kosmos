@@ -463,8 +463,16 @@ the fetch is slower under this Mac's QEMU, which runs an x86 guest's cores
 on one thread - the parser measured to cost the same in pieces, 18.330).
 **l2 built** (18.331): a page's other pictures fetched in the background
 once it is shown, stepped by the window, their bytes kept on the tab; a
-band takes them or waits for them, never asks twice. Next l3, a load the
-window lives through.
+band takes them or waits for them, never asks twice. **l3 built** (18.332):
+a load is a coroutine the window steps; Escape, another load or leaving the
+tab stops it and puts the history back. It found three older faults: a
+NetSurf document freeing through a kept `lua_State` (a crash, now through
+the closing state), Escape held by both the kit's decoder and the window
+manager until the next key (both flush at the end of what was read), and the
+net server saying a window again only on a message (a stepped wait is a
+wait of a tick). **Item 2 is done.** Next, item 3: select menus in forms,
+favorites dragged on the bar, a serif face, other scripts' glyphs,
+`@import`.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

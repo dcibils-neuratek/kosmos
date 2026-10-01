@@ -401,6 +401,25 @@ return function(ctx)
 
   local function key(c)
     --
+    -- **Given nil, the input just read has ended** (`roadmap.md` 6zz l3):
+    -- Super's sequence only begun was not Super - the board writes its
+    -- bytes together (`hal/keys.c`), so the rest would have come with them -
+    -- and what was held goes on to the window, an Escape pressed alone the
+    -- commonest of it. Without this a lone Escape waited in here for the
+    -- next key: the browser's Escape stopped nothing until another came.
+    --
+    if c == nil then
+      if super_at > 0 then
+        local was = super_at
+
+        super_at = 0
+        flush_super(was, nil)
+      end
+
+      return
+    end
+
+    --
     -- Collecting `ESC [ 1 ; 9`. Each byte either continues the sequence or
     -- ends the attempt, and ending it hands back everything taken so far.
     --

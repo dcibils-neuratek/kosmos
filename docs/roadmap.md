@@ -3272,7 +3272,8 @@ processors, and still what follows USB:
         coroutine the window steps on each pass, as `get_many` steps its
         eight (`http.get` already waits through `opts.pause`), so a scroll
         that reaches them finds them instead of stopping for them.
-      - l3. **A load the window lives through.** The page itself fetched the
+      - l3. **BUILT 1 October (`testing.md` 18.332). A load the window
+        lives through.** The page itself fetched the
         same way: keys, the pointer and the strip answer while it comes;
         Escape stops it, and so does a new address, Back, or showing
         another tab - a load is the tab's it was asked for, and its

@@ -6046,6 +6046,8 @@ remote.handlers.key = function(req)
     key(chars:byte(i))
   end
 
+  key(nil)                  -- the end of what was read (`wm/keys.lua`)
+
   return { ok = true }
 end
 
@@ -6218,6 +6220,8 @@ while OUT.running do
   for _, c in ipairs(input.keys or {}) do
     key(c)
   end
+
+  if input.keys and #input.keys > 0 then key(nil) end
 
   -- The same presses as transitions, for whoever wants them that way.
   for _, ev in ipairs(input.events or {}) do

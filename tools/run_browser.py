@@ -84,7 +84,9 @@ import html
 import http.server
 import os
 import re
+import select
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
@@ -149,6 +151,13 @@ def _arrives_page():
 
 
 ARRIVES_PAGE = _arrives_page()
+
+# A page that takes thirty seconds to come (`roadmap.md` 6zz l3), and is
+# never meant to be shown: Escape stops it first.
+SLOW_PAGE = ("<!doctype html><html><head><title>Slow</title></head><body>"
+             + "".join("<p>Line %d of a page that comes slowly.</p>" % i
+                       for i in range(2000))
+             + "</body></html>")
 
 LATIN1_PAGE = (
     "<!doctype html><html><head><meta charset=\"utf-8\">"
@@ -317,6 +326,39 @@ def serve(directory, asked, tls=None):
             if self.path in ("/refresh.html", "/later.html"):
                 self.answer_page(REFRESH_PAGE if self.path == "/refresh.html"
                                  else LATER_PAGE)
+                return
+
+            # Thirty seconds in coming, a piece every quarter of one (6zz l3),
+            # so nothing the check does in between can outlast it - and
+            # whether the browser let the connection go before the end.
+            if self.path == "/slow.html":
+                page = SLOW_PAGE.encode()
+                self.close_connection = True
+
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(page)))
+                    self.end_headers()
+                    self.wfile.flush()
+                    step = (len(page) + 119) // 120
+
+                    for at in range(0, len(page), step):
+                        time.sleep(0.25)
+
+                        # The browser's end closed - its FIN, read as the
+                        # end of what it sends - is it letting the page go.
+                        readable, _, _ = select.select([self.connection], [], [], 0)
+
+                        if readable and not self.connection.recv(1, socket.MSG_PEEK):
+                            asked.append("/slow.html let go")
+                            return
+
+                        self.wfile.write(page[at:at + step])
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    asked.append("/slow.html let go")
+
                 return
 
             # Gzipped, chunked, a pause between the pieces (6zz l1): written
@@ -1345,6 +1387,7 @@ def main():
                     "typing into the search field put nothing in it: "
                     f"{letters} dark pixels against {empty} before. Wrote {args.out}.")
 
+            mark = len(guest.seen)
             typed("\n")
             found = asked_for(lambda p: p.startswith("/found.html?"))
 
@@ -1357,6 +1400,11 @@ def main():
             print(f"forms: a caret of {caret} pixels, {letters - empty} pixels "
                   f"of letters typed, sent as {found}", flush=True)
 
+            # The answer shown before Back: a load goes on while the window
+            # answers (6zz l3), and Back during one is Back from the page on
+            # screen, as in every browser - which here is the test page's.
+            guest.wait_for_line("browser: showing 10.0.2.2:%d/found.html" % port,
+                                "the form's answer", since=mark)
             typed("[")
             time.sleep(3.0)
             post_it = box_of(POST_IT)
@@ -1452,6 +1500,72 @@ def main():
 
             print(f"arrives: read in UTF-8 after its <meta>, {fed.group(0)[9:]}",
                   flush=True)
+
+            #
+            # **A load the window lives through** (`roadmap.md` 6zz l3): a page
+            # thirty seconds in coming, and while it comes the page on screen
+            # scrolls at a key - the window answering, not waiting for the
+            # network. Escape stops it: the connection let go before the
+            # server was done, the page never shown, and the address as it was
+            # - so Reload loads the page that was on screen.
+            #
+            w_, h_, px = parse_ppm(guest.screendump())
+            band = min(WIN_H - TOOL - STAT, h_ - y0 - 2)
+            still = dark_rows(px, w_, x0 + 4, y0, WIN_W - SBAR - 8, band)
+            mark = len(guest.seen)
+            slow = "http://10.0.2.2:%d/slow.html" % port
+            typed("\x0c")
+            time.sleep(0.4)
+            typed(slow + "\n")
+
+            if asked_for(lambda p: p == "/slow.html") is None:
+                raise Failure("the slow page was never asked for")
+
+            time.sleep(0.5)
+
+            for _ in range(6):
+                guest.sendkey("down")
+
+            time.sleep(1.0)
+            w2, h2, px2 = parse_ppm(guest.screendump())
+            moving = dark_rows(px2, w2, x0 + 4, y0, WIN_W - SBAR - 8, band)
+            moved_loading = sum(1 for a, b in zip(still, moving) if abs(a - b) > 2)
+
+            if "browser: showing " + slow in guest.seen[mark:]:
+                raise Failure("the slow page came before the window could be "
+                              "tried while it was loading")
+
+            if moved_loading < band // 8:
+                raise Failure(
+                    f"the page on screen did not scroll while another was loading: "
+                    f"{moved_loading} rows changed of {band}. Wrote {args.out}.")
+
+            guest.sendkey("esc")
+            stopped = guest.wait_for_line("browser: stopped loading ", "Escape stopping "
+                                          "the slow page", since=mark)
+
+            if not stopped.startswith(slow) or "Escape" not in stopped:
+                raise Failure(f"Escape stopped something else: {stopped!r}")
+
+            if asked_for(lambda p: p == "/slow.html let go") is None:
+                raise Failure("Escape did not let the slow page's connection go: "
+                              "the server went on sending it")
+
+            if "browser: showing " + slow in guest.seen[mark:]:
+                raise Failure("the slow page was shown after Escape stopped it")
+
+            mark = len(guest.seen)
+            typed("r")
+            again = guest.wait_for_line("browser: showing ", "Reload after Escape",
+                                        since=mark)
+
+            if not again.startswith("http://10.0.2.2:%d/arrives.html" % port):
+                raise Failure(f"Reload after Escape did not load the page on screen, "
+                              f"whose address it should be again: {again!r}")
+
+            print(f"loading: the page on screen scrolled while another came "
+                  f"({moved_loading} rows), Escape stopped it and let it go, Reload "
+                  f"loaded the one on screen", flush=True)
 
             #
             # **The cache, in the browser** (`roadmap.md` 6zz k): a page sent

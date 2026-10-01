@@ -15759,3 +15759,63 @@ what came ahead nor waits for it - the server asked a second time.
 **Run as the new rule has it**: the browser's four halves, the TLS and
 network suites - `http.lua`'s waiting changed for `fetch` too - and the
 host suite.
+
+## 18.332 A load the window lives through (6zz l3)
+
+**What it fixes**: a page's fetch held the browser's window - nothing
+answered while it came but the progress line, and a page that never came
+could only be waited out.
+
+**A load is a coroutine the window steps** on each pass (`step_loading`,
+from `on_frame`). The page's own fetch waits by yielding - and every
+thirtieth of a second of bytes arriving without a wait yields too, so a fast
+server cannot hold the window either - and while it waits the page on
+screen scrolls, the strip and the field take the pointer and keys. Only the
+fetch waits that way: from the parse on, a load runs to its end in one step,
+as before, so a suspended load never leaves a page half replaced for a
+scroll or a zoom to find. **Stopped** by Escape, by another load - an
+address, a link, Back, Forward, Reload - and by its tab being left or
+closed: the connection closed, and the address and the history put back as
+they were before it began. Back during a load is Back from the page on
+screen, as in every browser. Reload's "ask about everything" travels with
+the load rather than in a flag that was reset before the load was done.
+
+**Three faults it found, each older than it and each a class:**
+
+- **A kept `lua_State`.** A NetSurf document freed its pictures' Lua
+  references through the state that last handed one over - now a load's
+  coroutine, ended and collected by the time the next page closed it. A data
+  abort in `luaH_getint` at address 0xd, closing the test page from the Dam
+  article's load (`arm-browser-2`). `web_ns_close` now takes the state that
+  is closing it. The other places C keeps a state were looked at: `faces_L`
+  is set and cleared around every call, and the rest are a call's own.
+- **Escape held in two layers.** A lone Escape might begin a sequence, so
+  the kit's key decoder held it until the next byte - and so did the window
+  manager, collecting Super's `ESC [ 1 ; 9`. An Escape pressed alone reached
+  nothing until another key came: the browser's stopped nothing, and the
+  address field's gave the page its keys back only then. Both now take nil
+  as the end of what was read: a key's bytes are written together and taken
+  together, so an Escape still held then started nothing and is the key.
+  `tools/test_keys.lua` holds the decoder to it, three checks more.
+- **A window said again only on a message.** The network's server says a
+  connection's window again on the pass a message brings, once its ring has
+  been read; a fetch stepped by the window read the ring and yielded, and
+  told it nothing - so the sender waited for its probe timer, and the
+  browser's test page took nine seconds on x86. A stepped wait is a wait of
+  a tick now, and `get_many` stepped by the window polls for a tick: both
+  are messages.
+
+**The test** (`run_browser.py --part 1`): `/slow.html`, thirty seconds in
+coming, a piece every quarter second. While it comes, six presses of Down
+scroll the page on screen - 148 rows changed on ARM, 265 on x86, of 528 -
+and it has not been shown. Escape: the browser says it stopped loading it,
+for Escape; the server reads the browser's end closed; the page is never
+shown; and Reload loads the page that was on screen, whose address the
+field says again. And Back from a form's answer now waits for the answer
+to be shown, since Back during its load is Back from the page before it.
+**Both controls bit**: a fetch that never yields - the page on screen did
+not move, 0 rows; and the window manager's end-of-input flush taken out -
+Escape never stopped the load.
+
+**Run as the new rule has it**: the full gate, 80 suites in 9:46 - the kit, the key decoder,
+the window manager and `http.lua` are every application's.

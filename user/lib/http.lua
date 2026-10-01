@@ -1043,27 +1043,25 @@ function http.get_many(addresses, opts)
 
   --
   -- **Stepped by somebody else** (`roadmap.md` 6zz l2): given `opts.pause`,
-  -- this waits by calling it, rather than in `fs.poll` - a window fetching
-  -- a page's pictures between its own passes, and back at the next one. No
-  -- poll answers at once, so then each fetch is simply stepped: a read of a
-  -- ring that holds nothing is a look at two numbers, and quiet is measured
-  -- in time, so stepping often gives nothing up sooner.
+  -- this polls for a tick rather than a tenth of a second and then calls
+  -- it - a window fetching a page's pictures between its own passes, and
+  -- back at the next one. Quiet is measured in time, so stepping often gives
+  -- nothing up sooner. The poll is not only for the news: it is a word to
+  -- the network's server, which says a connection's window again on the pass
+  -- a message brings, once its ring has been read (`net.c`,
+  -- `window_update`). A client that only read the ring and yielded told it
+  -- nothing, and the sender waited for its probe timer.
   --
   local outer = opts and opts.pause
 
   while #waiting > 0 do
-    local ready
+    local conns = {}
 
-    if outer then
-      outer()
-      ready = {}
-    else
-      local conns = {}
+    for _, job in ipairs(waiting) do conns[#conns + 1] = job.conn end
 
-      for _, job in ipairs(waiting) do conns[#conns + 1] = job.conn end
+    local ready = fs.poll("/Network", conns, {}, nil, outer and 1 or tick) or {}
 
-      ready = fs.poll("/Network", conns, {}, nil, tick) or {}
-    end
+    if outer then outer() end
 
     local news = {}
 

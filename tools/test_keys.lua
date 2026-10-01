@@ -137,6 +137,18 @@ check(super_t and super_t < 0 and select(2, keys.parts(super_t)) == SUPER,
 -- Escape, alone and doubled, and an Escape that starts nothing: the key
 -- itself and the byte after it, both, in order.
 check(same(decode("\27x"), { 27, 120 }), "Escape then x: " .. show(decode("\27x")))
+
+-- A batch ended (nil): an Escape still held is the key; a sequence half way
+-- is not cut short, and nothing held is nothing.
+do
+  local d = keys.decoder()
+
+  check(d(27) == nil and d(nil) == 27 and d(nil) == nil,
+        "a lone Escape is the key once its batch has ended, and only once")
+  check(d(27) == nil and d(91) == nil and d(nil) == nil and d(65) == keys.UP,
+        "an Escape that has begun a sequence is not given up at the batch's end")
+  check(d(nil) == nil and d(97) == 97, "nothing held, nothing given")
+end
 check(same(decode("\27\27[A"), { 27, keys.UP }),
       "Escape then Up: " .. show(decode("\27\27[A")))
 check(same(decode("\27[\27[B"), { keys.DOWN }),
