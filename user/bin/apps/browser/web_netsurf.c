@@ -2181,7 +2181,8 @@ bool web_ns_sheet(struct web_ns_doc *d, size_t n, const char *text,
     return at->sheet != NULL;
 }
 
-struct web_ns_doc *web_ns_open(void *document, const char *base)
+struct web_ns_doc *web_ns_open(void *document, const char *base,
+                               const char *charset)
 {
     struct web_ns_doc *d;
     html_content *h;
@@ -2204,6 +2205,9 @@ struct web_ns_doc *web_ns_open(void *document, const char *base)
         (void)nsurl_create("about:blank", &h->base_url);
     }
 
+    /* What the page was read in, and what its forms are sent in. */
+    h->encoding = strdup(charset != NULL && charset[0] != '\0' ? charset
+                                                                : "UTF-8");
     h->background_colour = NS_TRANSPARENT;
     h->media.type = CSS_MEDIA_SCREEN;
     h->font_func = &layout_table;
@@ -2213,7 +2217,7 @@ struct web_ns_doc *web_ns_open(void *document, const char *base)
     h->unit_len_ctx.font_size_minimum = INTTOFIX(6);
 
     if (lwc_intern_string("*", 1, &h->universal) != lwc_error_ok
-        || h->bctx == NULL || h->base_url == NULL) {
+        || h->bctx == NULL || h->base_url == NULL || h->encoding == NULL) {
         web_ns_close(d);
         return NULL;
     }
@@ -2540,6 +2544,7 @@ void web_ns_close(struct web_ns_doc *d)
 
     free(d->sent_url);
     free(d->sent_body);
+    free(h->encoding);
 
     if (h->bctx != NULL) {
         talloc_free(h->bctx);

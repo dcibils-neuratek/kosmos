@@ -57,6 +57,10 @@ struct doc {
     /* The same document laid out by NetSurf (`roadmap.md` 6zz j3), made
      * the first time `ns_layout` is asked. */
     struct web_ns_doc *ns;
+
+    /* The charset it was read in, which its forms are sent in too
+     * (`roadmap.md` 6zz j7). */
+    char charset[64];
 };
 
 static void forget_layout(struct doc *d)
@@ -117,25 +121,43 @@ static const char *parse_error(dom_hubbub_error e)
 }
 
 /*
- * parse(html) -> document, or nil and why.
+ * parse(html [, charset]) -> document, or nil and why.
  *
  * One chunk, because a Lua string is already whole. The streaming shape the
  * parser offers is what a fetch wants and this is not one.
+ *
+ * **`charset` is what the server said** in the page's `Content-Type`, and it
+ * is held to: HTML ranks the header above anything the page says of itself
+ * (WHATWG, "determining the character encoding"), so a `<meta>` cannot
+ * change it. Google serves Latin America its page as ISO-8859-1 by the
+ * header and UTF-8 by its `<meta>`, and the bytes are the header's - read
+ * the other way, "Búsqueda" was "B?squeda" (`roadmap.md` 6zz j7). A name the
+ * parser does not know is read as no name at all, and the page's own word
+ * is taken instead.
  */
 static int l_parse(lua_State *L)
 {
     size_t len = 0;
     const char *html = luaL_checklstring(L, 1, &len);
+    const char *said = luaL_optstring(L, 2, NULL);
     dom_hubbub_parser_params params;
     dom_hubbub_parser *parser = NULL;
     dom_document *document = NULL;
+    dom_hubbub_encoding_source source;
     struct doc *d;
-    char charset[64];
+    char charset[64], used[64];
+    bool from_header = false;
 
     memset(&params, 0, sizeof(params));
 
     params.enc           = NULL;     /* detect it, which is what a browser does */
     params.fix_enc       = true;
+
+    if (said != NULL && said[0] != '\0' && strlen(said) < sizeof(charset)) {
+        strcpy(charset, said);
+        params.enc = charset;
+        from_header = true;
+    }
     params.enable_script = false;    /* there is no interpreter to enable */
     params.msg           = NULL;
     params.ctx           = NULL;
@@ -154,6 +176,12 @@ static int l_parse(lua_State *L)
         dom_hubbub_error e;
 
         if (dom_hubbub_parser_create(&params, &parser, &document) != DOM_HUBBUB_OK) {
+            if (from_header) {
+                params.enc = NULL;      /* a name it does not know */
+                from_header = false;
+                continue;
+            }
+
             lua_pushnil(L);
             lua_pushliteral(L, "the parser could not be created");
             return 2;
@@ -196,6 +224,8 @@ static int l_parse(lua_State *L)
     }
 
     (void)dom_hubbub_parser_completed(parser);
+    (void)snprintf(used, sizeof(used), "%s",
+                   dom_hubbub_parser_get_encoding(parser, &source));
     dom_hubbub_parser_destroy(parser);
 
     if (document == NULL) {
@@ -209,8 +239,18 @@ static int l_parse(lua_State *L)
     d = lua_newuserdatauv(L, sizeof(*d), 0);
     memset(d, 0, sizeof(*d));
     d->dom = document;
+    memcpy(d->charset, used, sizeof(d->charset));
     luaL_setmetatable(L, DOC_HANDLE);
 
+    return 1;
+}
+
+/* `doc:charset()` -> the charset the page was read in. */
+static int l_charset(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+
+    lua_pushstring(L, d->charset);
     return 1;
 }
 
@@ -565,7 +605,7 @@ static int l_ns_layout(lua_State *L)
     int tall;
 
     if (d->ns == NULL) {
-        d->ns = web_ns_open(d->dom, base);
+        d->ns = web_ns_open(d->dom, base, d->charset);
 
         if (d->ns == NULL) {
             lua_pushnil(L);
@@ -599,7 +639,7 @@ static int l_ns_sheets(lua_State *L)
     size_t k = 0, n;
 
     if (d->ns == NULL) {
-        d->ns = web_ns_open(d->dom, luaL_optstring(L, 2, NULL));
+        d->ns = web_ns_open(d->dom, luaL_optstring(L, 2, NULL), d->charset);
     }
 
     lua_newtable(L);
@@ -1111,6 +1151,7 @@ void kosmos_web_kit(lua_State *L)
         { "ns_sheet", l_ns_sheet },
         { "ns_objects", l_ns_objects },
         { "ns_picture", l_ns_picture },
+        { "charset", l_charset },
         { "ns_click", l_ns_click },
         { "ns_key", l_ns_key },
         { "ns_focused", l_ns_focused },

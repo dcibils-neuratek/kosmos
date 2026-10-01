@@ -404,8 +404,10 @@ window that already resizes. **j6 built, forms that work** (18.314):
 NetSurf's own form and text-area code, a caret, typing, checkboxes, and a
 form sent by GET or POST - Wikipedia's search answers live; Google answers
 that it needs JavaScript. Diego agreed the order on 1 October ("Let's
-continue with the plan"): **j7 charset next**, then h (SIMD in the
-browser's drawing), k the cache, then e (resizing) and d (the new chrome).
+continue with the plan"): **j7 charset - built** (18.315: the header's
+charset held to over a `<meta>`, forms sent in the page's charset; Google
+reads "Imágenes" now), then **h next** (SIMD in the browser's drawing, profiled
+first), k the cache, then e (resizing) and d (the new chrome).
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

@@ -14862,3 +14862,31 @@ page for a browser without JavaScript, which it has required since January
 2025.
 
 **The gate**: 75 of 75, in 9:30.
+
+## 18.315 A page's charset as its server says it (6zz j7)
+
+**`roadmap.md` 6zz j7.** Google serves Latin America its front page as
+ISO-8859-1 by its `Content-Type` and UTF-8 by its `<meta>`, and the browser
+handed the parser the bytes alone: it believed the `<meta>`, and every
+accented letter became a replacement character - "B?squeda", "Im?genes".
+
+- **`web.parse(bytes, charset)`**: the server's charset, and the parser held
+  to it (`fix_enc`), so a `<meta>` cannot change it - HTML ranks the header
+  first. A name the parser does not know is read as none, and the page's
+  own word is taken. `browser.lua` reads it from the reply's `Content-Type`
+  as it fetches.
+- **The charset a page was read in is kept** (`doc:charset()`), and given to
+  NetSurf's document as its encoding, which is what its forms are sent in -
+  Google's form says `ie=ISO-8859-1` of itself, and expects that.
+
+**`arm-browser` and `x86-browser`**: the suite's server answers
+`latin1.html` as ISO-8859-1 by the header, with a `<meta charset="utf-8">`,
+a title "Búsqueda" in Latin-1 bytes, and a form whose field holds "ñandú"
+and whose button is #8a5a00. The browser names the page "Búsqueda", and the
+button sends exactly `/found.html?q=%F1and%FA`. Controls: the charset not
+handed to the parser, the title "B�squeda" - the bug itself; the forms told
+UTF-8 whatever the page was read in, `q=%C3%B1and%C3%BA`.
+
+**Live**: Google's front page reads "Imágenes" and "Búsqueda avanzada".
+
+**The gate**: 75 of 75, in 8:58.

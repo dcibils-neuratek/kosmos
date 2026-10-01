@@ -123,6 +123,19 @@ CLASS_MAROON = (176, 48, 96)
 # The ground `linked.css` gives its paragraph, #3fa06a.
 LINKED_GREEN = (63, 160, 106)
 
+# A page whose server says ISO-8859-1 and whose <meta> says UTF-8, with a
+# title and a field's value outside ASCII - Google's Spanish page, in small
+# (`roadmap.md` 6zz j7). The header is right about the bytes, and wins.
+LATIN1_PAGE = (
+    "<!doctype html><html><head><meta charset=\"utf-8\">"
+    "<title>B\u00fasqueda</title>"
+    "<style>#ask { background: #8a5a00; color: #ffffff; }</style></head>"
+    "<body><form action=\"found.html\" method=\"get\"><p>"
+    "<input type=\"text\" name=\"q\" value=\"\u00f1and\u00fa\"> "
+    "<input id=\"ask\" type=\"submit\" value=\"Buscar\"></p></form>"
+    "</body></html>")
+ASK = (138, 90, 0)
+
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
 # adds a title bar above them, which `find_window` finds.
@@ -178,6 +191,17 @@ def serve(directory, asked, tls=None):
             # The test page's first form, sent: what it asked for, said back.
             if self.path.startswith("/found.html?"):
                 self.answer("asked for " + self.path)
+                return
+
+            # A page in ISO-8859-1 by its header and UTF-8 by its <meta>, as
+            # Google serves Latin America (`roadmap.md` 6zz j7).
+            if self.path == "/latin1.html":
+                page = LATIN1_PAGE.encode("latin-1")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=ISO-8859-1")
+                self.send_header("Content-Length", str(len(page)))
+                self.end_headers()
+                self.wfile.write(page)
                 return
 
             if not self.path.endswith((".png", ".jpg")):
@@ -1057,6 +1081,46 @@ def main():
                 f"note=from+Kosmos&tick=yes'. Wrote {args.out}.")
 
         print(f"forms: {posted}", flush=True)
+
+        #
+        # **A page's charset as its server says it** (`roadmap.md` 6zz j7):
+        # ISO-8859-1 by the header, UTF-8 by its <meta> - the bytes are
+        # the header's, so its title is "Búsqueda" and not "B?squeda", and
+        # its form sends "ñandú" in ISO-8859-1, %F1and%FA, as a server
+        # that serves that page expects it.
+        #
+        mark = len(guest.seen)
+        typed("\x0c")
+        time.sleep(0.4)
+        typed("http://10.0.2.2:%d/latin1.html\n" % port)
+        shown = guest.wait_for_line("browser: showing http://10.0.2.2:%d/latin1.html"
+                                    % port, "the ISO-8859-1 page", since=mark)
+
+        if '"B\u00fasqueda"' not in shown:
+            raise Failure(
+                "a page the server said is ISO-8859-1 was not read in it: "
+                f"{shown!r}, where its title is \"B\u00fasqueda\". Wrote {args.out}.")
+
+        time.sleep(1.5)
+        ask = box_of(ASK)
+
+        if ask is None:
+            raise Failure(f"the ISO-8859-1 page's button, #8a5a00, is not on "
+                          f"the screen. Wrote {args.out}.")
+
+        before_ask = len(asked)
+        press((ask[0] + ask[2]) // 2, (ask[1] + ask[3]) // 2)
+        sent = asked_for(lambda p: p.startswith("/found.html?") and
+                         p not in asked[:before_ask])
+
+        if sent != "/found.html?q=%F1and%FA":
+            raise Failure(
+                "the ISO-8859-1 page's form was not sent in ISO-8859-1: the "
+                f"server was asked for {sent!r}, not '/found.html?q=%F1and%FA'. "
+                f"Wrote {args.out}.")
+
+        print(f"charset: the title read as B\u00fasqueda, the form sent as {sent}",
+              flush=True)
 
         #
         # **HTTPS** (`roadmap.md` 6zz c). The second page from the server

@@ -32,7 +32,8 @@ int web_netsurf_setup(lua_State *L);
 struct web_ns_doc;
 struct surface;
 
-struct web_ns_doc *web_ns_open(void *document, const char *base);
+struct web_ns_doc *web_ns_open(void *document, const char *base,
+                               const char *charset);
 int         web_ns_layout(struct web_ns_doc *d, lua_State *L, int width,
                           int height);
 void        web_ns_paint(struct web_ns_doc *d, lua_State *L,

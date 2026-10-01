@@ -1048,6 +1048,11 @@ local function fetch(text, page, post)
         address.from = 0
       end
     else
+      -- The charset the server said the page is in, which the parser holds
+      -- to over anything the page says of itself (`roadmap.md` 6zz j7).
+      how.charset = head:match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Tt][Yy][Pp][Ee]:"
+                               .. "[^\r\n]-[Cc][Hh][Aa][Rr][Ss][Ee][Tt]%s*=%s*\"?"
+                               .. "([%w%-_:%.]+)")
       return body, how
     end
   end
@@ -1545,7 +1550,7 @@ local function load(text, post)
   say(("parsing %d bytes..."):format(#body))
 
   local parse_from = sys.ticks()
-  local fresh, bad = web.parse(body)
+  local fresh, bad = web.parse(body, how and how.charset)
   local parsed_ms = since(parse_from)
 
   if not fresh then

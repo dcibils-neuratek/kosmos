@@ -2968,6 +2968,15 @@ processors, and still what follows USB:
         was handed the bytes without that - "B?squeda", "Im?genes". The
         header's charset given to the parser, which then has what a
         browser has.
+
+        **BUILT 1 October** (`testing.md` 18.315): `web.parse(bytes,
+        charset)` holds the parser to the header's charset over the page's
+        `<meta>` - Google's `<meta>` says UTF-8 of ISO-8859-1 bytes - and
+        a name it does not know falls back to the page's own; the charset a
+        page was read in is kept, and its forms are sent in it, as Google's
+        `ie=ISO-8859-1` expects. Google live: "Imágenes", "Búsqueda
+        avanzada". Stylesheets keep their own rules (`@charset`, the
+        page's), which libcss reads; not looked at yet.
    k. **A cache**, as every browser has - Diego, 30 September: "we should
       add a browser cache feature as well", "as all browser rely on this for
       performance reasons". What the page costs today makes the case: gnu.org
