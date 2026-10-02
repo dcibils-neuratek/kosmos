@@ -16258,3 +16258,47 @@ list - which is what correctness on four processors costs.
 **The tool stays** (`tools/qemu_pcprof.c`, `tools/prof_bench.py`, `make
 bench-profile`): the next question about where kernel time goes is answered
 the same way, exactly, under `-icount`.
+
+## 18.344 The window manager: Lua or C, measured
+
+**Diego's question, 2 October**: the window manager is close to ten thousand
+lines of Lua (8,674 with its modules) - "costly to parse and interpret";
+should it be C? It is Lua and C already: every pixel is the `gfx` kit's;
+Lua decides what to draw, routes input and keeps the windows.
+
+**Parsing** - a load at the prompt under `-icount`, every file the window
+manager loads compiled and timed: 23 million instructions altogether
+(`wm.lua` alone 15.1 M for 250 KB), once, when it starts; the kit every
+application loads, `ui.lua`, 19.3 M, once a launch. About 3 to 5 ms on the
+M700's cores. Never per frame.
+
+**A frame, by stage** (`make frames`, 10 s each, TCG): composing - C - is
+58% of a drag's busy time and 70% of four stacked animations'; the rest is
+the window manager's fixed work at every wake - keys, pointer, polls,
+finished programs - which with one window animating ran 30,000 times in 10
+seconds and composed 1,663 of them. The worst passes, 129 to 493 ms under
+TCG, were a collection landing on an application's request in three of the
+four loads.
+
+**A drag, by thread and kind of code.** `tools/qemu_pcprof.c` learned to
+charge every instruction to the thread running it: given `context_switch`'s
+address it reads the next thread's context from x1 as each switch begins -
+one register read a switch, not a block - and with `names=664` reads the
+thread's name. The same scenario run with the window dragged and with it
+still, the window manager's own thread compared between them: the drag cost
+it 24.7 M instructions, **52% the Lua interpreter, 25% drawing in C, 9%
+copying memory**, the collector and the allocator a few percent, the kernel
+under 1%. An earlier run, by subtracting the whole machine, said 61% and
+read another program's work as the window manager's - the reason for the
+per-thread charging.
+
+**What it comes to.** About 1.2 M instructions of the window manager's own
+a drag frame - 0.3 to 0.4 ms on the M700, of a 16.7 ms frame. Lua is most
+of the window manager's work and the window manager is a small part of a
+frame's cost; the felt problems are the worst passes - a collection, an
+application's request - and the wake that rechecks everything. And one of
+the programs the window manager started - not the window manager - spent
+6.9 M instructions on text matching (`match`, `gsub`, `utf8.offset`) while
+the window was dragged, a quarter of the window manager's own drag.
+
+Not a permanent test: a measurement to decide from, with the tool kept.

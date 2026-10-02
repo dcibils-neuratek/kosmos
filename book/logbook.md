@@ -232,3 +232,30 @@ only when a lock is actually busy, and empty messages copy nothing.
 from 13.4 to 12.8 (−5.1%). *Noticeable*: on its own, probably not - a round
 trip is about a microsecond on real hardware - but every program pays it
 thousands of times a second. (18.343)
+
+## 2 October - should the window manager be written in C?
+
+**In short:** the window manager is already part C (all the drawing) and
+part Lua (the decisions). Measured: Lua is most of the window manager's own
+work, but that work is small - about a third of a millisecond per frame on
+the M700 - so rewriting it all in C would not be visible. What people feel
+are occasional long pauses, and those have other causes that can be fixed
+directly.
+
+**Starting up.** Lua programs are compiled from source each time they
+start. The window manager's files are about 23 million instructions to
+compile - 3 to 5 ms on the M700, once. Every application also compiles the
+UI kit, about 19 million instructions, once per launch. Never per frame.
+
+**While working.** A new version of the instruction-counting tool charges
+every instruction to the thread that ran it. Dragging a window, the window
+manager's own extra work was 52% the Lua interpreter, 25% drawing in C, 9%
+copying memory. About 1.2 million instructions a frame: 0.3 to 0.4 ms of
+the 16.7 ms a frame has at 60 a second.
+
+**What is actually felt.** The worst moments are long single passes - a
+garbage collection landing at the same time as a program asking for
+something - and the window manager re-checking everything every time it is
+woken, which with one animated window was 3,000 times a second. And another
+program, not the window manager, did a lot of text matching while a window
+was dragged. Those are the things to fix. (`testing.md` 18.344)
