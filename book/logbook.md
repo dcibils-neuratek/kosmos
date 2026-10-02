@@ -259,3 +259,65 @@ something - and the window manager re-checking everything every time it is
 woken, which with one animated window was 3,000 times a second. And another
 program, not the window manager, did a lot of text matching while a window
 was dragged. Those are the things to fix. (`testing.md` 18.344)
+
+## 2 October - the M700 that would not answer
+
+**In short:** on the M700 the Deskbar took 23 seconds to appear, its menu
+ignored clicks, and one processor ran flat out doing nothing. Two mistakes
+were feeding each other. The network card's driver waited for the card to
+confirm every message it sent, and the M700's card never confirms, so
+everything that asked about the network waited too - the Deskbar on every
+redraw. And the window manager, asked by a window to check back "very
+soon", rounded "very soon" down to "now" and looped. Now the driver never
+waits for its card, the Deskbar draws what it last heard and asks again in
+the background, and the window manager rounds up. The network on the M700
+still doesn't work - its card still sends nothing - but the desktop no
+longer cares, and the log now says what the card is doing.
+
+**What it looked like.** Diego, on 0.10.203: "non responsive", "the menu
+does not work", "like 60 seconds per window", then "something consuming
+100% of the cpu" and "the deskbar is the thing that is really slow to load
+at first". The same build ran fine under QEMU.
+
+**How it was found.** Two readings off the machine itself, each copied back
+on its stick. A sixty-second profile said one processor was at 98%, all of
+it the window manager and the console, asking each other "anything happen?"
+68,000 times a second. A diagnosis of the next boot gave the timeline: every
+application opened within milliseconds, but the Deskbar's first picture came
+23 seconds after it started, and the moment it finally drew was the moment
+the network stack had answered whether there was a card. `neofetch`, run by
+a Terminal, was still waiting on the same question 19 seconds later - and a
+Terminal running a program asks the window manager to check back every
+tick, which is what set the window manager looping.
+
+**Why the network stalled.** Sending a frame, the driver handed it to the
+card and then slept a tick at a time, up to a thousand times, until the
+card said it was sent. The M700's card never said. So each frame held the
+driver four seconds, more on the M700; the network stack was waiting on the
+driver; and every program asking the stack anything waited behind that. The
+network stack was asking the router for an address every few seconds, each
+time a new frame, so it was stuck almost all the time.
+
+**The fixes.** The driver now gives the card a frame and moves on, and
+collects the card's confirmations later; a card that keeps a frame a second
+is reported once in the log, with the registers that say why. The Deskbar
+asks its questions - time, sound, network, battery, processor, memory -
+once a second on its own, and a redraw or a click only paints what it last
+heard. The window manager sleeps to the next tick instead of not at all.
+Diego's rule from this: "all that needs to be programmed async so it does
+not wait or hang waiting for network or anything".
+
+**Measured** under QEMU, whose Intel card behaves the same way when its
+transmitter is left off: a question to the network stack took 14 seconds
+with the old driver and 1 ms with the new one. A window asking to be
+checked every tick cost the window manager and the console 97% of a
+processor before and 20% after (an emulated processor; on the M700 it
+should be far less). Both are tests in every gate now, and each was shown
+to fail on the old code.
+
+**Noticeable:** the Deskbar appears with the desktop and its menu opens
+when clicked, on the M700 with or without a working network; no processor
+sits at 100% while a Terminal runs something. Not yet: the M700 has no
+network address, because its card still sends nothing - the next stick's
+log says what the card thinks it is doing. And the USB driver has the same
+waiting habit, which is next. (`testing.md` 18.345)

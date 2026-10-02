@@ -6180,8 +6180,20 @@ local function sleep_for()
   -- pass that slept would be a load that crawled.
   if #launching > 0 then return 0 end
 
+  --
+  -- **Rounded up, and that is the difference between idle and a core at a
+  -- hundred per cent** (`testing.md` 18.345). It was rounded down, so a
+  -- deadline less than a tick away was a sleep of nought: the wait came
+  -- straight back, the deadline had not passed, and round again - 68,000
+  -- passes a second on the M700, for as long as any window polled every
+  -- tick. A Terminal does, while a program runs in it, and on 2 October one
+  -- was running `neofetch`, stuck on the network: the window manager and
+  -- the console held a processor between them for as long as it waited.
+  -- Rounded up, the pass sleeps to the tick the deadline falls in and is at
+  -- most that tick late - and a tick is the unit the window asked in.
+  --
   for i = 1, #waiting do
-    local left = (waiting[i].deadline - now) // scale
+    local left = -((now - waiting[i].deadline) // scale)
 
     if left < shortest then
       shortest = left

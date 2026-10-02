@@ -433,6 +433,39 @@ local function network_now()
   return info
 end
 
+--
+-- **What the bar last heard, which is all it draws from** (`testing.md`
+-- 18.345; Diego, 2 October: "all that needs to be programmed async so it
+-- does not wait or hang waiting for network or anything").
+--
+-- The draw asked five servers on every repaint - the clock, the sound, the
+-- network, the battery, the processor and memory - so a repaint was only
+-- as quick as the slowest of them. On 2 October the slowest was the network
+-- stack, held four seconds and more at a time by a card that would not
+-- send, and the bar's first picture came 23 seconds late, its menu with it:
+-- a click is a repaint too. Now the questions are asked on the bar's own
+-- second (`clockwork:tick`), a repaint draws what was heard, and an
+-- indicator nobody has answered yet is a gap - the honest picture of "not
+-- yet", as the meters already were. The first second is asked at once,
+-- after the first picture rather than before it.
+--
+-- Asking is still a call, and a server that never answered would still hold
+-- the tick; that is what a call with a deadline is for (`roadmap.md`), and
+-- a server that answers at once is the rule the network stack's card driver
+-- was brought back to the same day.
+--
+local heard = {}
+
+local function listen()
+  heard.at = sys.ticks()
+  heard.now = clock.now()
+  heard.level, heard.muted = volume_now()
+  heard.network = network_now() and "wired" or "offline"
+  heard.battery = battery_now()
+  heard.busy = load_now()
+  heard.used, heard.total = memory_now()
+end
+
 
 local H = theme.metrics.deskbar
 local ICON = 24
@@ -682,13 +715,17 @@ end
 -- The tick used to ask for the list of windows too, and that is what made
 -- the bar a second late.
 --
--- Empty on purpose, which `testing.md` §18.23 warns is a hook the kit
--- cannot tell from a full one - and it is exactly that: the whole bar is
--- repainted every second whether or not the minute or a meter moved.
+-- **It is where the bar listens** (`heard`, above): the indicators' servers
+-- are asked here, once a second, and never from the draw. It was empty, and
+-- the whole bar is still repainted every second whether or not the minute
+-- or a meter moved.
 --
 local clockwork = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
-function clockwork:tick() end
+function clockwork:tick()
+  listen()
+  pace_breathing()
+end
 
 win:add(clockwork)
 
@@ -1204,9 +1241,8 @@ function bar:draw(g)
   local PAD = 16
   local KERN = 10             -- inside a group: the date and its time
 
-  local now = clock.now()
-  local time = clock.time_string(now)
-  local date = clock.date_string(now)
+  local time = heard.now and clock.time_string(heard.now) or ""
+  local date = heard.now and clock.date_string(heard.now) or ""
 
   local x = self.w - PAD - gfx.measure(time)
 
@@ -1233,7 +1269,7 @@ function bar:draw(g)
   -- speaker is crossed, which the picture could not say.
   --
   local ly = (self.h - LINE) // 2
-  local level, muted = volume_now()
+  local level, muted = heard.level, heard.muted
 
   if level then
     x = x - PAD - LINE
@@ -1250,16 +1286,20 @@ function bar:draw(g)
   -- since every card Kosmos drives is wired; Wi-Fi's arcs when there is a
   -- driver for one.
   --
-  local net = network_now() and "wired" or "offline"
+  local net = heard.network
 
-  x = x - PAD - LINE
-  g:line_icon(x, ly, net, theme.tab_text, LINE)
-  self.network_x = x
+  if net then
+    x = x - PAD - LINE
+    g:line_icon(x, ly, net, theme.tab_text, LINE)
+    self.network_x = x
 
-  -- Said in the log when it changes, as the battery is, for a harness.
-  if self.network_said ~= net then
-    print("deskbar: network " .. net)
-    self.network_said = net
+    -- Said in the log when it changes, as the battery is, for a harness.
+    if self.network_said ~= net then
+      print("deskbar: network " .. net)
+      self.network_said = net
+    end
+  else
+    self.network_x = nil
   end
 
   --
@@ -1280,7 +1320,7 @@ function bar:draw(g)
   -- Said in the log when the words change, which is how a harness knows
   -- what the bar is showing without reading pixels as text.
   --
-  local bat = battery_now()
+  local bat = heard.battery
 
   if bat then
     --
@@ -1328,8 +1368,8 @@ function bar:draw(g)
   -- two readings, so on the first pass there is nothing here, and a gap is
   -- the honest shape of "not yet".
   --
-  local busy = load_now()
-  local used, total = memory_now()
+  local busy = heard.busy
+  local used, total = heard.used, heard.total
 
   if busy or used then
     local mw = 28
@@ -1613,5 +1653,10 @@ end
 -- themselves come twelve times a second then (`pace_breathing`) - and on
 -- its own reasons otherwise.
 win.on_frame = function() return any_starting() end
+
+-- The first second at once, after the first picture (`heard`, above): a
+-- pass a tick from now rather than a second, which `pace_breathing` puts
+-- back when the tick has listened.
+win.poll_wait_ticks = 1
 
 win:run()

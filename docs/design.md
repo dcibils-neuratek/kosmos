@@ -61,7 +61,7 @@ apologised for.
 
 ## 2. Principles
 
-Seven non-negotiable decisions. If something collides with one of them, the feature gets cut, not the principle.
+Eight non-negotiable decisions. If something collides with one of them, the feature gets cut, not the principle.
 
 **The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. That is the rule. The 10k-line figure that used to sit here as though it were one is a symptom of it: if the kernel grows past about that much code — comments excluded, which `make size` counts — it is worth looking for what crept in. Finding nothing means the number was the wrong thing to look at, not that something has to leave.
 
@@ -76,6 +76,8 @@ Seven non-negotiable decisions. If something collides with one of them, the feat
 **The system is modified while running.** ~~A server reloads its code without losing its state or its clients.~~ **Withdrawn, September 2026** - see §10. Servers are C now and there is no dynamic linking, so none of them can be reloaded. Level 2, a supervisor restarting a server that died, is unaffected and is the architectural property.
 
 **Compatibility inside a process, never at system level.** A libc inside an app is fine and necessary. A POSIX personality in the system is forbidden. The line is drawn in section 17.
+
+**A server answers; it does not wait on its hardware, and a window does not wait on a server to draw.** Added 2 October 2026 - Diego: "all that needs to be programmed async so it does not wait or hang waiting for network or anything". A call here blocks until it is answered, which is what makes IPC cheap and simple, and what makes a server that waits a server that stops everyone behind it - and everyone behind them. On the M700 the Intel card's driver waited for an I219 that never sent, the network stack waited on the driver, and the Deskbar, asking the stack on every repaint, drew nothing for 23 seconds (`testing.md` 18.345). So a driver hands its hardware work and collects the result when the hardware says, never inside a request; a server that must wait for something holds the caller's reply and goes on answering others; and a window draws what it has already heard, asking on its own clock rather than in a repaint or a click. The xHCI driver's bulk transfers and a call with a deadline are what is left (`roadmap.md`, *Nothing waits on hardware*).
 
 ---
 

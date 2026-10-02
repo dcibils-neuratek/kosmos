@@ -303,7 +303,8 @@ SUITES = [
     # quarter minutes alone - so it runs as four groups of its parts, each a
     # machine of its own, side by side (`--parts`).
     Suite("x86-core", ["python3", "tools/run_x86.py", X86, "--parts",
-                       "core,power_button,battery,ethernet"], x86=True),
+                       "core,power_button,battery,ethernet,ethernet_unsent"],
+          x86=True),
     Suite("x86-storage", ["python3", "tools/run_x86.py", X86, "--parts",
                           "storage,memdisk,memory,identity,firmware,machine_report"],
           x86=True),
@@ -397,6 +398,10 @@ SUITES = [
     # More windows than one message can list: twenty Calculators and the
     # Deskbar, and `tile` arranging every one from the list in pages (6zp).
     Suite("arm-windows", ["python3", "tools/run_windows.py", ARM]),
+    # One window polling every tick, as a busy Terminal does: answered at
+    # the tick, and the window manager and the console well under one
+    # processor - they held all of one on the M700, 2 October (18.345).
+    Suite("arm-wmwait", ["python3", "tools/run_wmwait.py", ARM]),
     # `/Devices/midi` through its virtual keyboard (6zg, step b): from the
     # wait with no controller on ARM, and from the whole five-endpoint wait
     # on x86, which is given an xHCI for it.

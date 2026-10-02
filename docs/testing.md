@@ -16302,3 +16302,99 @@ the programs the window manager started - not the window manager - spent
 the window was dragged, a quarter of the window manager's own drag.
 
 Not a permanent test: a measurement to decide from, with the tool kept.
+
+## 18.345 Nothing waits on a card that will not send, and nothing spins
+
+**Diego, 2 October, on 0.10.203 on the M700**: the desktop "non
+responsive", "the menu does not work", "like 60 seconds per window", and
+then "something consuming 100% of the cpu", "the deskbar is the thing that
+is really slow to load at first", "other apps seem to launch fine". And,
+once the cause was named: "all that needs to be programmed async so it does
+not wait or hang waiting for network or anything".
+
+**What the machine said.** `profile 60` (`build/stick-profiles/
+2026-10-02-205711.kprof`): processor 2 at 98%, the window manager and the
+console between them, `SYS_WAIT_INPUT_OR_CALL` 68,139 times a second at
+0.4 us each - every wait coming straight back. `diagnose`
+(`build/stick-diagnose.txt`, the next boot): every application opened in
+milliseconds, but the Deskbar's first picture came at 32.6 s, 23 seconds
+after it started, `neofetch` was still running in the Terminal at 47.7 s,
+`telnetd` gave up for want of an address at 40.5 s, and the window manager
+and the console had used 20 s of processor in the 19 s since the Terminal
+opened.
+
+**Two faults, each making the other worse.**
+
+- **The card's driver waited for the card.** `send_frame` in
+  `user/drivers/net/e1000.c` wrote a descriptor and slept a tick at a time,
+  up to a thousand, for the card's write-back. The M700's I219 never wrote
+  one, so each frame held the driver four seconds (fifteen on the M700,
+  where a tick's sleep averaged 15 ms). The network stack asks the driver
+  to send in a call, so it was held too; and it serves a request *after*
+  its DHCP step in each pass, so every question to it - the Deskbar's
+  network indicator, asked on every repaint, `neofetch`'s Network row,
+  `telnetd`'s address - waited behind a frame that would never go. DHCP
+  made it constant: a DISCOVER every few seconds, each one a frame. The
+  menu was deaf because a click is a repaint.
+- **The window manager rounded its sleep down.** `sleep_for` took the time
+  to the soonest poll's deadline in ticks with `//`, so a deadline less
+  than a tick away was a sleep of nought: the wait returned at once, the
+  deadline had not passed, and round again. A Terminal with a program
+  running in it polls every tick - and its program was `neofetch`, held by
+  the network stack.
+
+**Mended.**
+
+- **The driver never waits** (`send_frame`, `tx_reclaim`, `tx_watch`): a
+  frame is written and the card told, and the card's confirmations are
+  collected afterwards - before a descriptor is written and every time the
+  driver wakes. A ring with no room refuses the frame and counts it. The
+  accounting is `e1000_tx_room`, `e1000_tx_out` and `e1000_tx_reclaim` in
+  `e1000_decode.c`, so the Mac holds it. A frame kept a second is said in
+  the log, once, with the transmitter's registers - TCTL, TDH against TDT,
+  TXDCTL, CTRL, CTRL_EXT, STATUS - which is what the M700 has to say about
+  why its I219 does not send. That fault itself is not mended here; this
+  is what will describe it.
+- **The window manager rounds up** (`-((now - deadline) // scale)`): the
+  pass sleeps to the tick the deadline falls in, and a poll is at most that
+  tick late.
+- **The Deskbar draws what it heard** (`heard`, `listen`): the clock, the
+  sound, the network, the battery, the processor and memory are asked on
+  its own second, never in a repaint, and an indicator not yet answered is
+  a gap. The first second is asked straight after the first picture.
+
+**`ethernet_unsent`, in `x86-core`**: QEMU's 82574L keeps every frame and
+confirms none when TCTL.EN is clear, which is the M700's symptom, so
+`opt/kosmos/e1000fault=transmitter` leaves it so. The stack asks DHCP for
+an address it will never get, and three questions to the stack a little
+apart must each be answered in under 500 ms; the driver must say the card
+has kept a frame, with the registers, and TCTL's enable bit must read
+clear in them. **1 ms**, and:
+
+    e1000: the card has kept a frame a second without sending it, 1 waiting
+    e1000: its transmitter: TCTL 00040108 TDH 0 TDT 1 TXDCTL 00000000 ...
+
+Its control - the same driver with the old wait put back in `send_frame` -
+fails: **14,082 ms** for the slowest question.
+
+**`arm-wmwait`, new** (`tools/run_wmwait.py`): one window that polls every
+tick, as a busy Terminal does, for three seconds: answered at least 300
+times in the 750 ticks, and the window manager and the console under half a
+processor between them. **375 answered, 20%** of a processor under TCG; the
+control, the window manager before this change, **666 answered, 97%** - the
+M700's spin, under QEMU. A poll asked for every tick is now answered every
+second tick: the pass sleeps to the next tick, and the deadline set a tick
+after the poll arrived falls just past it. A Terminal serves its program's
+writes in bursts within a pass, so that is latency between bursts rather
+than output halved.
+
+**`test_e1000decode`, 30 checks** (9 new, in `host-check`): an empty ring
+has room and nothing out; a ring the card confirms nothing of takes seven
+of eight and refuses the eighth; three confirmations are three back, with
+room; a done bit past one that is not done is not taken; the rest collected
+across the end of the ring.
+
+**Not mended, and the same fault** (`roadmap.md`): the xHCI driver waits for
+each bulk transfer of the USB Ethernet adapter, inside the process that
+serves the keyboard, the mouse and `/Home`; and a call has no deadline, so
+a server that never answers still holds whoever asked it.

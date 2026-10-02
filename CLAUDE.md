@@ -409,6 +409,20 @@ to say, and hard guarantees, which would mean bounding every kernel
 operation. Kosmos wants a desktop that feels alive, not an airbag that fires
 in time.
 
+**Nothing waits on hardware, and nothing on the desktop waits on a server**
+(2 October 2026; Diego: "all that needs to be programmed async so it does
+not wait or hang waiting for network or anything"). A call blocks until it
+is answered, so a server that waits stops everyone behind it. On the M700
+the Intel card's driver waited for an I219 that never sent, the network
+stack waited on the driver, and the Deskbar - asking the stack on every
+repaint - drew nothing for 23 seconds (`testing.md` 18.345). So: a driver
+hands its hardware work and collects the result when the hardware says,
+never inside a request; a server that must wait holds the caller's reply
+and goes on answering others; a window draws what it has already heard and
+asks on its own clock, never in a repaint or a click; and no loop sleeps
+for nought while it waits for a time. `design.md` §2 has the rule and
+`roadmap.md` what is left of it.
+
 **Sound is above every program** (28 September 2026; Diego: "audio should be
 prioritized", "and not be jerky under heavy load"). The sixth band is
 AUDIO, between the compositor's and the input reader's. A thread enters it

@@ -20,7 +20,8 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
+
+import scratch                                              # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.join(os.path.dirname(HERE), "build", "host", "qemu_pcprof.dylib")
@@ -77,21 +78,22 @@ def main():
     by_name = {n: a for a, n in syms}
     start, stop, ops = WINDOWS[args.which]
 
-    with tempfile.TemporaryDirectory() as work:
-        raw = os.path.join(work, "blocks.txt")
-        subprocess.run(["qemu-system-aarch64", "-M", "virt,gic-version=3", "-cpu", "cortex-a72",
-                        "-m", "512M", "-nographic",
-                        "-semihosting-config", "enable=on,target=native",
-                        "-icount", "shift=0",
-                        "-plugin", "%s,start=%#x,stop=%#x,out=%s"
-                        % (PLUGIN, by_name[start], by_name[stop], raw),
-                        "-kernel", args.elf],
-                       capture_output=True, text=True, timeout=1800)
-        blocks = []
-        with open(raw) as f:
-            for line in f:
-                pc, n, runs = line.split()
-                blocks.append((int(pc, 16), int(n), int(runs)))
+    # In this process's scratch, as every tool's temporary files are
+    # (`scratch.py`); it goes when the process does.
+    raw = scratch.path("prof-blocks.txt")
+    subprocess.run(["qemu-system-aarch64", "-M", "virt,gic-version=3", "-cpu", "cortex-a72",
+                    "-m", "512M", "-nographic",
+                    "-semihosting-config", "enable=on,target=native",
+                    "-icount", "shift=0",
+                    "-plugin", "%s,start=%#x,stop=%#x,out=%s"
+                    % (PLUGIN, by_name[start], by_name[stop], raw),
+                    "-kernel", args.elf],
+                   capture_output=True, text=True, timeout=1800)
+    blocks = []
+    with open(raw) as f:
+        for line in f:
+            pc, n, runs = line.split()
+            blocks.append((int(pc, 16), int(n), int(runs)))
 
     def function_of(pc):
         i = bisect.bisect_right(addrs, pc) - 1

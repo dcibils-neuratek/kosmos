@@ -147,12 +147,89 @@ int main(void)
     check(e1000_decode_tx_done(desc), "a finished transmit did not read so");
     check(!e1000_decode_tx_done(NULL), "no transmit descriptor read as done");
 
+    /*
+     * **The transmit ring, kept without waiting** (`testing.md` 18.345). The
+     * driver waited for every frame's write-back, so a card that never wrote
+     * one - the M700's I219 - held the driver, the network stack behind it,
+     * and every program asking the stack anything. Now the confirmations are
+     * collected afterwards, and this is the arithmetic that has to be right
+     * for that: never a descriptor the card still has, every one it finished.
+     */
+    {
+        uint8_t ring[8 * E1000_DESC_BYTES];
+        struct e1000_tx_ring r = { 8u, 0u, 0u };
+        unsigned i, written = 0;
+
+        memset(ring, 0, sizeof(ring));
+
+        check(e1000_tx_room(&r) && e1000_tx_out(&r) == 0,
+              "an empty ring had no room, or said frames were out");
+        check(e1000_tx_reclaim(&r, ring) == 0 && r.clean == 0,
+              "an empty ring gave back a confirmation nobody was owed");
+
+        /* A card that confirms nothing: seven go out and the eighth is
+         * refused, because one descriptor is always left unwritten. */
+        while (e1000_tx_room(&r)) {
+            r.next = (r.next + 1u) % r.slots;
+            written++;
+        }
+
+        check(written == 7 && e1000_tx_out(&r) == 7,
+              "a ring of eight that the card never confirmed took a number "
+              "of frames other than seven before it had no room");
+        check(e1000_tx_reclaim(&r, ring) == 0 && !e1000_tx_room(&r),
+              "a ring the card confirmed none of was given room back");
+
+        /* The card finishes the first three, in order: three back, and
+         * room again. */
+        for (i = 0; i < 3u; i++) {
+            ring[i * E1000_DESC_BYTES + 12u] = 0x01u;
+        }
+
+        check(e1000_tx_reclaim(&r, ring) == 3 && r.clean == 3
+              && e1000_tx_out(&r) == 4 && e1000_tx_room(&r),
+              "three confirmations were not collected as three, with room "
+              "after them");
+
+        /* A done bit past one that is not done is not taken: the card
+         * finishes in order, and skipping a hole would hand a descriptor it
+         * still holds back to the writer. */
+        ring[5u * E1000_DESC_BYTES + 12u] = 0x01u;
+        check(e1000_tx_reclaim(&r, ring) == 0 && r.clean == 3,
+              "a confirmation past an unconfirmed frame was collected");
+
+        /* And the rest, across the end of the ring and round to the start. */
+        ring[3u * E1000_DESC_BYTES + 12u] = 0x01u;
+        ring[4u * E1000_DESC_BYTES + 12u] = 0x01u;
+        ring[6u * E1000_DESC_BYTES + 12u] = 0x01u;
+        check(e1000_tx_reclaim(&r, ring) == 4 && r.clean == r.next
+              && e1000_tx_out(&r) == 0,
+              "the last four were not collected, or the ring did not read as "
+              "empty after them");
+
+        memset(ring, 0, sizeof(ring));
+        r.clean = 6u;                   /* 6, 7 and 0 out: across the end */
+        r.next = 1u;
+        ring[6u * E1000_DESC_BYTES + 12u] = 0x01u;
+        ring[7u * E1000_DESC_BYTES + 12u] = 0x01u;
+        ring[0u * E1000_DESC_BYTES + 12u] = 0x01u;
+        check(e1000_tx_out(&r) == 3 && e1000_tx_reclaim(&r, ring) == 3
+              && r.clean == 1u,
+              "frames out across the end of the ring were not counted and "
+              "collected as three");
+
+        check(!e1000_tx_room(NULL) && e1000_tx_out(NULL) == 0
+              && e1000_tx_reclaim(NULL, ring) == 0,
+              "no ring at all read as one with room or frames out");
+    }
+
     if (fails == 0) {
         printf("PASS: %d checks on an Intel Ethernet controller's registers "
                "and descriptors (the link and its speed, the MAC out of RAL "
                "and RAH, a frame received, one not written back, one that is "
                "not the end of its packet, the errors that matter and the "
-               "two that do not).\n", checks);
+               "two that do not, and the transmit ring kept without "
+               "waiting).\n", checks);
         return 0;
     }
 

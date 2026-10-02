@@ -4454,6 +4454,90 @@ def ethernet(image, check):
               % min(times))
 
 
+def ethernet_unsent(image, check):
+    """A card that keeps every frame cannot stop the network stack.
+
+    `testing.md` 18.345. On 2 October the M700 sat with its Deskbar blank for
+    23 seconds, its menu deaf and a processor at a hundred per cent, and the
+    cause was its I219 confirming no frame it was given. The driver waited
+    for each confirmation - a thousand sleeps of a tick - and the stack asks
+    the driver to send in a call, so the stack waited with it, and every
+    program asking the stack anything waited behind that. DHCP made it
+    constant: a question every few seconds, each one a frame.
+
+    **QEMU's 82574L does the same with its transmitter off** - it takes the
+    descriptors and confirms nothing - so `opt/kosmos/e1000fault` leaves
+    TCTL.EN clear, and the stack asks DHCP for an address it will never get.
+
+    **The time of an answer is the check**: three questions to the stack, a
+    little apart, and the slowest in milliseconds. A driver that waits holds
+    the stack four seconds a frame and a question behind a retry waits that
+    long; one that does not wait answers in the time a message takes. And
+    the driver has to say what it saw, once, with the transmitter's
+    registers - which is what the M700's log needs to say why it will not
+    send.
+    """
+    extra = ("-netdev", "user,id=n0", "-device", "e1000e,netdev=n0",
+             "-fw_cfg", "name=opt/kosmos/e1000fault,string=transmitter")
+
+    # Split so the echo of the typed line cannot be read as its answer.
+    probe = ('local hz = fs.read("/Devices/cpu").counter_hz local worst = 0 '
+             'for i = 1, 3 do local t = sys.ticks() fs.net_info("/Network") '
+             'worst = math.max(worst, sys.ticks() - t) sys.sleep(100) end '
+             'print("NET" .. "INFO worst", worst * 1000 // hz, "ms")')
+
+    out = boot(image, None, 120.0, extra=extra, typed=(probe,),
+               until="e1000: the card has kept a frame")
+
+    if out is None:
+        check(False, "the machine would not boot with a card whose "
+                     "transmitter is off")
+        return
+
+    shown = "\n    ".join(l.strip() for l in out.splitlines()
+                          if l.strip().startswith(("e1000:", "net:")))
+
+    check("e1000: its transmitter left off, as opt/kosmos/e1000fault asks"
+          in out,
+          "the driver did not take `opt/kosmos/e1000fault`, so this machine "
+          "was not the one the check is about:\n    " + shown)
+
+    held = re.search(r"e1000: the card has kept a frame a second without "
+                     r"sending it, (\d+) waiting\s+e1000: its transmitter: "
+                     r"TCTL ([0-9a-f]{8}) TDH (\d+) TDT (\d+) TXDCTL "
+                     r"[0-9a-f]{8} CTRL [0-9a-f]{8} CTRL_EXT [0-9a-f]{8} "
+                     r"STATUS ([0-9a-f]{8})", out)
+
+    check(held is not None,
+          "the driver never said the card was keeping its frames. "
+          "`tx_watch` says so once a frame has waited a second, with the "
+          "transmitter's registers, and that line is what the M700's log "
+          "needs:\n    " + shown)
+
+    if held is not None:
+        # The registers are the card's own, read when it was said: the
+        # transmitter really is off, and the card has not read past where
+        # this end has written.
+        check(int(held.group(2), 16) & 0x2 == 0,
+              "TCTL was said as %s, with its enable bit set, on a card whose "
+              "transmitter was left off - so the line did not read the card"
+              % held.group(2))
+
+    worst = re.search(r"NETINFO worst\s+(\d+)\s+ms", out)
+
+    check(worst is not None,
+          "the three questions to the network stack never came back:\n    "
+          + out[-600:])
+
+    if worst is not None:
+        check(int(worst.group(1)) < 500,
+              "the slowest of three questions to the network stack took %s ms "
+              "while the card kept its frames. A driver that waits for the "
+              "card holds the stack four seconds a frame; one that collects "
+              "the card's confirmations afterwards answers at once"
+              % worst.group(1))
+
+
 def memory(image, check):
     """More RAM than the kernel used to be able to describe.
 
@@ -4546,7 +4630,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent',
     'memory', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -4660,6 +4744,10 @@ def main():
     # And an Intel Ethernet card on a PCI line, which is the M700's.
     if 'ethernet' in wanted:
         ethernet(image, check)
+
+    # And a card that keeps every frame, which is the M700's (18.345).
+    if 'ethernet_unsent' in wanted:
+        ethernet_unsent(image, check)
 
     if 'identity' in wanted:
         identity(image, check)

@@ -112,3 +112,34 @@ bool e1000_decode_tx_done(const uint8_t *desc)
 {
     return desc != NULL && (desc[TX_STATUS_AT] & TX_STATUS_DD) != 0;
 }
+
+bool e1000_tx_room(const struct e1000_tx_ring *r)
+{
+    return r != NULL && r->slots > 1u && (r->next + 1u) % r->slots != r->clean;
+}
+
+unsigned e1000_tx_out(const struct e1000_tx_ring *r)
+{
+    if (r == NULL || r->slots == 0u) {
+        return 0;
+    }
+
+    return (r->next + r->slots - r->clean) % r->slots;
+}
+
+unsigned e1000_tx_reclaim(struct e1000_tx_ring *r, const uint8_t *descs)
+{
+    unsigned taken = 0;
+
+    if (r == NULL || descs == NULL || r->slots == 0u) {
+        return 0;
+    }
+
+    while (r->clean != r->next
+           && e1000_decode_tx_done(descs + r->clean * E1000_DESC_BYTES)) {
+        r->clean = (r->clean + 1u) % r->slots;
+        taken++;
+    }
+
+    return taken;
+}

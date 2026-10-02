@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-01
+Last updated: 2026-10-02
 
 ---
 
@@ -563,6 +563,24 @@ with `frames 30` while dragging as the measurement to bring back. Diego
 chose **A** for the window manager (18.344): keep Lua, and fix what a pass
 does on every wake, the frame path's garbage, and the program that
 text-matches during a drag.
+**The M700 on 0.10.203 would not answer** (18.345, 2 October): the Deskbar
+blank 23 s, its menu deaf, a processor at 100%. Read off the machine with
+`profile 60` and `diagnose` (`build/stick-profiles/2026-10-02-205711.kprof`,
+`build/stick-diagnose.txt`). The Intel driver waited for every frame's
+confirmation and the I219 confirms none, so the network stack - waiting on
+the driver for its DHCP frames - held the Deskbar (network indicator, every
+repaint) and `neofetch`; and the window manager rounded a sub-tick sleep
+down to nought, spinning while a Terminal ran a program. Fixed: the driver
+collects confirmations afterwards and logs a card that keeps frames, with
+TCTL/TDH/TDT/TXDCTL/CTRL/CTRL_EXT/STATUS; `sleep_for` rounds up; the
+Deskbar draws only what it heard on its own second. New checks
+`ethernet_unsent` (x86-core; control 14,082 ms) and `arm-wmwait` (control
+97% of a processor), and 9 in `test_e1000decode`. Diego's rule, now in
+`CLAUDE.md` and `design.md` §2: "all that needs to be programmed async so
+it does not wait or hang waiting for network or anything" - the roadmap's
+*Nothing waits on hardware* has what is left: the xHCI driver's bulk
+transfers, a call with a deadline, an audit, and the I219 itself, whose
+next stick's log will say what its transmitter does.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

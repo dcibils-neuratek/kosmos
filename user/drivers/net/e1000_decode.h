@@ -80,4 +80,34 @@ void e1000_decode_rx(const uint8_t *desc, struct e1000_rx *out);
  * Done bit, which it writes back only for one that asked (Report Status). */
 bool e1000_decode_tx_done(const uint8_t *desc);
 
+/*
+ * **The transmit ring, as this end keeps account of it** (`testing.md`
+ * 18.345). A frame is written into the descriptor at `next` and the card is
+ * told; the card's confirmation - Descriptor Done - is collected afterwards,
+ * from `clean`, the oldest it has not confirmed. Nothing waits for it.
+ *
+ * Equal means nothing is out. One descriptor is always left unwritten, so a
+ * full ring and an empty one never look alike - which is also what keeps
+ * this end from ever writing a descriptor the card has not finished with.
+ */
+struct e1000_tx_ring {
+    unsigned slots;             /* how many descriptors there are */
+    unsigned next;              /* where the next frame goes */
+    unsigned clean;             /* the oldest the card has not confirmed */
+};
+
+/* Whether a frame may be written now. */
+bool e1000_tx_room(const struct e1000_tx_ring *r);
+
+/* How many frames the card has been given and has not confirmed. */
+unsigned e1000_tx_out(const struct e1000_tx_ring *r);
+
+/*
+ * Every confirmation the card has written, collected in order from `clean`:
+ * the count of frames it has sent since the last call. `descs` is the ring's
+ * first descriptor, `slots` of them in a row. It stops at the first the card
+ * has not finished, because the card finishes them in order.
+ */
+unsigned e1000_tx_reclaim(struct e1000_tx_ring *r, const uint8_t *descs);
+
 #endif /* KOSMOS_DRIVERS_NET_E1000_DECODE_H */

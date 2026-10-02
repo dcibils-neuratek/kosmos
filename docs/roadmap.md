@@ -112,6 +112,42 @@ unblocks.
 
 ### Being built now
 
+**Nothing waits on hardware, and nothing on the desktop waits on a
+server.** Diego, 2 October 2026, after 0.10.203 on the M700 sat with its
+Deskbar blank for 23 seconds, its menu deaf and a processor at a hundred
+per cent - the card's driver waiting for an I219 that never sent, the
+network stack waiting on the driver, and the Deskbar and `neofetch`
+waiting on the stack: "all that needs to be programmed async so it does
+not wait or hang waiting for network or anything" (`testing.md` 18.345).
+
+1. **BUILT the same day** (18.345): the Intel card's driver never waits for
+   its card - confirmations collected afterwards, a full ring refusing the
+   frame, a frame kept a second said in the log with the transmitter's
+   registers; the window manager's sleep rounded up, so a window polling
+   every tick no longer spins it; the Deskbar asking its indicators on its
+   own second and drawing only what it heard.
+2. **The xHCI driver's bulk transfers, the same way.** The USB Ethernet
+   adapter's frames wait in `bulk` for the transfer to finish, inside the
+   one process that serves the keyboard, the mouse and `/Home` - an
+   adapter that stops answering stops all of them. Submitted, and collected
+   from the event ring when the controller says, as the keyboard's and the
+   mouse's interrupt transfers already are. The stick's blocks after,
+   since `/Home` waits for those by its nature; what must not wait is
+   everything else the process serves.
+3. **A call with a deadline**: `SYS_CALL` with a timeout, BeOS's
+   `SendMessage` with a reply timeout, so a window can ask any server and be
+   sure of an answer or a refusal in bounded time - and a server that never
+   answers cannot hold whoever asked. The Deskbar's indicators then use it,
+   and a window that waits is a window that chose to.
+4. **An audit**: every server and driver for a wait on hardware or on
+   another process inside a request; every window for a call in its draw
+   or its click.
+5. **The M700's I219 itself**: the next stick's log says what the
+   transmitter is doing (TCTL, TDH against TDT, TXDCTL, CTRL, CTRL_EXT,
+   STATUS), and the PCH datasheet and Linux's `e1000e` say what an I219
+   needs that an 82574L does not. Until it sends, the M700 has no DHCP
+   address and `telnetd` none to listen on.
+
 **Remote: the Mac runs commands on the M700 over the network, by Telnet.** Diego, 29
 September, after a day of sticks carried back and forth for a log and a
 profile: "why dont we build a python app that can run on this mac that

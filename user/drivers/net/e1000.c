@@ -48,10 +48,13 @@
  * Offsets into the first BAR, from Intel's own manuals for this family
  * (82540EM 13.4, 82574L 8.2, I219 in the PCH datasheets). Only the ones this
  * driver writes are here; a register nobody touches is a register nobody has
- * to have got right.
+ * to have got right - and the two it only reads, so that a card which will
+ * not send can be described in the log, are at the offsets Linux's e1000e
+ * gives every chip it drives, the I219 included (`hw.h`).
  */
 #define REG_CTRL        0x0000u
 #define REG_STATUS      0x0008u
+#define REG_CTRL_EXT    0x0018u     /* read only, for the log */
 #define REG_ICR         0x00C0u     /* read to clear */
 #define REG_IMS         0x00D0u
 #define REG_IMC         0x00D8u
@@ -68,6 +71,7 @@
 #define REG_TDLEN       0x3808u
 #define REG_TDH         0x3810u
 #define REG_TDT         0x3818u
+#define REG_TXDCTL      0x3828u     /* queue 0; read only, for the log */
 #define REG_MTA         0x5200u     /* 128 entries of the multicast table */
 #define REG_RAL0        0x5400u
 #define REG_RAH0        0x5404u
@@ -142,8 +146,14 @@ static struct {
     bool          link_said;
 
     uint32_t      rx_next;          /* the descriptor this end looks at next */
-    uint32_t      tx_next;
+    struct e1000_tx_ring tx;        /* which transmit descriptors are whose */
+    uint64_t      tx_posted[RING_SLOTS];    /* when each was handed over */
     unsigned long sent, received, dropped;
+    unsigned long refused;          /* frames for a ring with no room */
+    bool          tx_held;          /* the card has kept a frame a second */
+    unsigned      tx_said;          /* how often that has been said */
+    bool          tx_off;           /* `opt/kosmos/e1000fault`, for a test */
+    uint64_t      hz;               /* the counter's, for "a second" */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
     long          ring_cap;
@@ -258,10 +268,21 @@ static void rings_start(void)
     reg_write(REG_TDT, 0);
 
     card.rx_next = 0;
-    card.tx_next = 0;
+    card.tx.slots = RING_SLOTS;
+    card.tx.next = 0;
+    card.tx.clean = 0;
 
     reg_write(REG_TIPG, TIPG_IEEE);
-    reg_write(REG_TCTL, TCTL_EN | TCTL_PSP | TCTL_CT | TCTL_COLD);
+
+    /*
+     * **The transmitter left off, when a test asks** (`testing.md` 18.345):
+     * the card then keeps every frame it is given and confirms none, which
+     * is what the M700's I219 did on 2 October - and QEMU's 82574L does
+     * exactly that with TCTL.EN clear. It is the one way to show, under
+     * QEMU, that a card which never sends cannot stop the stack.
+     */
+    reg_write(REG_TCTL, (card.tx_off ? 0u : TCTL_EN)
+                        | TCTL_PSP | TCTL_CT | TCTL_COLD);
 
     /*
      * **Frames addressed to this card and broadcast, and nothing else.**
@@ -340,6 +361,24 @@ static bool bring_up(struct say_line *line)
 
     card.mem = (uintptr_t)mapped;
     card.bus = (uint64_t)bus;
+
+    {
+        struct sysinfo info;
+        char fault[16];
+
+        card.hz = (kosmos_sysinfo(&info) == 0 && info.counter_hz != 0)
+                  ? info.counter_hz : 62500000u;
+
+        if (kosmos_boot_option("opt/kosmos/e1000fault", fault, sizeof(fault))
+                == 11 && memcmp(fault, "transmitter", 11u) == 0) {
+            card.tx_off = true;
+            say_begin(line);
+            say_text(line, "e1000: its transmitter left off, as "
+                           "opt/kosmos/e1000fault asks");
+            say_send(console, line);
+        }
+    }
+
     rings_start();
 
     card.irq = kosmos_irq_claim(dev.intid);
@@ -352,48 +391,145 @@ static bool bring_up(struct say_line *line)
 /*----------------------------------------------------------------- frames */
 
 /*
- * A frame out: the next transmit descriptor, the doorbell, and the card's
- * write-back waited for.
+ * Every confirmation the card has written since the last look: frames it
+ * has sent, and descriptors this end may write again.
+ */
+static void tx_reclaim(void)
+{
+    RING_BARRIER();
+    card.sent += e1000_tx_reclaim(&card.tx,
+                                  (const uint8_t *)(card.mem + TX_DESC_AT));
+}
+
+/*
+ * A frame out: the next transmit descriptor and the doorbell - **and
+ * nothing waited for** (`testing.md` 18.345).
  *
- * Waiting is right here and would not be on a faster link than this system
- * can saturate: the caller has the frame in hand and a descriptor that was
- * refused is a frame that did not go, which is something it has to know. A
- * ring of thirty-two that nobody waits on is a ring that wraps onto
- * descriptors the card has not finished with.
+ * It waited for the card's write-back, a tick's sleep at a time for up to a
+ * thousand of them, on the grounds that a ring nobody waits on wraps onto
+ * descriptors the card has not finished with. The M700's I219 never wrote
+ * one back (2 October), so every frame held this driver four seconds and
+ * more - and the network stack, which asks this driver to send in a call,
+ * waited with it, and every program asking the stack anything waited behind
+ * that: the Deskbar's first picture 23 seconds late, its menu deaf, and
+ * `neofetch` still waiting when the machine was looked at. A driver is a
+ * server, and a server does not wait on its hardware while somebody waits
+ * on it.
+ *
+ * The wrap is answered by counting rather than waiting: confirmations are
+ * collected as they arrive (`tx_reclaim`), before a descriptor is written
+ * and every time this process wakes, and a ring with no room refuses the
+ * frame and counts it. A frame the card keeps for a second is said in the
+ * log with the registers that describe the transmitter (`tx_watch`).
  */
 static bool send_frame(const uint8_t *frame, unsigned length)
 {
-    uint8_t *desc = tx_desc(card.tx_next);
-    unsigned tries;
+    unsigned slot;
+    uint8_t *desc;
 
     if (!card.present || length < 14u || length > FRAME_SLOT) {
         return false;
     }
 
-    memcpy((uint8_t *)(card.mem + TX_FRAMES_AT + card.tx_next * FRAME_SLOT),
+    tx_reclaim();
+
+    if (!e1000_tx_room(&card.tx)) {
+        card.refused++;
+        return false;
+    }
+
+    slot = card.tx.next;
+    desc = tx_desc(slot);
+
+    memcpy((uint8_t *)(card.mem + TX_FRAMES_AT + slot * FRAME_SLOT),
            frame, length);
 
     memset(desc, 0, E1000_DESC_BYTES);
-    put64(desc, card.bus + TX_FRAMES_AT + card.tx_next * FRAME_SLOT);
+    put64(desc, card.bus + TX_FRAMES_AT + slot * FRAME_SLOT);
     put16(desc + 8, (uint16_t)length);
     desc[11] = TX_CMD_EOP | TX_CMD_IFCS | TX_CMD_RS;
 
     RING_BARRIER();
-    card.tx_next = (card.tx_next + 1u) % RING_SLOTS;
-    reg_write(REG_TDT, card.tx_next);
+    card.tx_posted[slot] = kosmos_ticks();
+    card.tx.next = (slot + 1u) % RING_SLOTS;
+    reg_write(REG_TDT, card.tx.next);
 
-    for (tries = 0; tries < 1000u; tries++) {
-        RING_BARRIER();
+    return true;
+}
 
-        if (e1000_decode_tx_done(desc)) {
-            card.sent++;
-            return true;
-        }
+/*
+ * **A card that keeps its frames, said once, with what it says about
+ * itself.** The oldest frame not confirmed after a second is a transmitter
+ * that is not sending - nothing on a link that is up takes that long - and
+ * the registers are what would say why: whether it is enabled (TCTL), how
+ * far it has read (TDH against TDT), its queue's control (TXDCTL) and the
+ * device's (CTRL, CTRL_EXT, STATUS). Said again when it sends once more, so
+ * the log has both ends of the gap, and a few times at most.
+ */
+static void tx_watch(struct say_line *line)
+{
+    uint64_t now;
 
-        kosmos_sleep(1);
+    if (!card.present || card.mem == 0) {
+        return;
     }
 
-    return false;
+    tx_reclaim();
+
+    if (e1000_tx_out(&card.tx) == 0) {
+        if (card.tx_held) {
+            card.tx_held = false;
+
+            if (card.tx_said < 8u) {
+                card.tx_said++;
+                say_begin(line);
+                say_text(line, "e1000: the card is sending again; ");
+                say_dec(line, card.refused);
+                say_text(line, " frames refused so far for want of room");
+                say_send(console, line);
+            }
+        }
+
+        return;
+    }
+
+    now = kosmos_ticks();
+
+    if (card.tx_held || now - card.tx_posted[card.tx.clean] < card.hz) {
+        return;
+    }
+
+    card.tx_held = true;
+
+    if (card.tx_said >= 8u) {
+        return;
+    }
+
+    card.tx_said++;
+    say_begin(line);
+    say_text(line, "e1000: the card has kept a frame a second without sending "
+                   "it, ");
+    say_dec(line, e1000_tx_out(&card.tx));
+    say_text(line, " waiting");
+    say_send(console, line);
+
+    /* A line of its own: both would not fit in one (`SAY_LINE_MAX`). */
+    say_begin(line);
+    say_text(line, "e1000: its transmitter: TCTL ");
+    say_hex(line, reg_read(REG_TCTL), 8);
+    say_text(line, " TDH ");
+    say_dec(line, reg_read(REG_TDH));
+    say_text(line, " TDT ");
+    say_dec(line, reg_read(REG_TDT));
+    say_text(line, " TXDCTL ");
+    say_hex(line, reg_read(REG_TXDCTL), 8);
+    say_text(line, " CTRL ");
+    say_hex(line, reg_read(REG_CTRL), 8);
+    say_text(line, " CTRL_EXT ");
+    say_hex(line, reg_read(REG_CTRL_EXT), 8);
+    say_text(line, " STATUS ");
+    say_hex(line, reg_read(REG_STATUS), 8);
+    say_send(console, line);
 }
 
 /*
@@ -698,6 +834,7 @@ void e1000_server(long console_cap, long frames_cap)
             (void)reg_read(REG_ICR);     /* read to clear */
             take_frames();
             say_link(&line);
+            tx_watch(&line);
 
             if (card.irq >= 0) {
                 (void)kosmos_irq_ack(card.irq);
