@@ -1519,6 +1519,29 @@ void thread_tick(void)
     }
 }
 
+/*
+ * **A choice is being made, so whatever asked for one has its answer**
+ * (`testing.md` 18.340). Called under this core's queue lock, before the
+ * policy picks.
+ *
+ * `preempt_pending` asks the next exception's epilogue to choose again. It
+ * was cleared only there, so a thread that chose by itself - yielding,
+ * blocking, exiting - left a flag standing from before its choice, and the
+ * next interrupt preempted whichever thread it had chosen. The kernel
+ * suite's own thread, idle-band, set it on every thread it made under the
+ * priority policy and then yielded to them; `sched: the policy is
+ * pluggable` then saw its first thread preempted before its first line and
+ * put behind the other two - `231`, seven times in 230 loaded runs.
+ *
+ * Under the lock because a wake sets the flag under the same one: a flag
+ * set before this was set with its thread already in the queue the policy
+ * is about to read, and one set after stands.
+ */
+static inline void choosing(void)
+{
+    this_cpu()->preempt_pending = false;
+}
+
 void thread_preempt_if_needed(void)
 {
     struct thread *next;
@@ -1567,6 +1590,7 @@ void thread_preempt_if_needed(void)
         unsigned      cpu   = here();
         unsigned long flags = spin_lock(&runq_lock[cpu]);
 
+        choosing();
         policy->enqueue(cpu, current);
         next = policy->pick_next(cpu);
 
@@ -1669,6 +1693,7 @@ void thread_yield(void)
         unsigned      cpu   = here();
         unsigned long flags = spin_lock(&runq_lock[cpu]);
 
+        choosing();
         next = policy->pick_next(cpu);
 
         if (next != NULL) {
@@ -1756,6 +1781,7 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
     rq = spin_lock(&runq_lock[cpu]);
 
     current->state = THREAD_BLOCKED;
+    choosing();
     next = policy->pick_next(cpu);
 
     spin_unlock(&runq_lock[cpu], rq);
@@ -1835,6 +1861,7 @@ void thread_block(void)
     flags = spin_lock(&runq_lock[cpu]);
 
     current->state = THREAD_BLOCKED;
+    choosing();
     next = policy->pick_next(cpu);
 
     spin_unlock(&runq_lock[cpu], flags);
@@ -2055,30 +2082,6 @@ void thread_wake(struct thread *t)
 
         policy->enqueue(cpu, t);
 
-        spin_unlock(&runq_lock[cpu], flags);
-
-        /*
-         * And if it lives somewhere else, tell that processor to look.
-         *
-         * **Outside the lock, and after the enqueue**, both deliberately.
-         * After, because the poke is only meaningful once the thread is
-         * findable - the barrier inside `hal_cpu_wake` is what makes that
-         * ordering visible to the other core rather than merely written
-         * here. Outside, because the target takes the interrupt immediately
-         * and its first act is to want this same lock.
-         *
-         * Without this the wake is not lost, it is late: the target notices
-         * at its own next tick, up to four milliseconds away. For a
-         * background thread that is nothing. For IPC it is everything - a
-         * shell command is dozens of round trips, and a tick each way would
-         * make four processors slower than one, which is the way this whole
-         * exercise could have been got exactly wrong.
-         *
-         * Not sent to this core. An interrupt to oneself is a wasted
-         * exception: the epilogue on the way out of whatever is running
-         * already asks the scheduler, which is the thing the poke exists to
-         * make happen.
-         */
         /*
          * **And if it outranks whoever is running *there*, say so there.**
          *
@@ -2120,6 +2123,14 @@ void thread_wake(struct thread *t)
          * call. It assumes a larger band outranks a smaller one, which is a
          * property of `SCHED_PRIO_*` in sched.h rather than a secret of any
          * one policy; the call below still has the final say.
+         *
+         * **Under the queue lock, beside the enqueue** (`testing.md`
+         * 18.340). Every choice of a next thread clears the flag under this
+         * same lock, so a flag is either set before a choice - which then
+         * saw this thread in the queue - or after it, and stands. Set after
+         * the unlock, as it was, it could land just after the target had
+         * chosen and stand over whatever it chose, preempting a thread for
+         * a reason already answered.
          */
         {
             struct percpu *target  = percpu_at(cpu);
@@ -2132,6 +2143,30 @@ void thread_wake(struct thread *t)
             }
         }
 
+        spin_unlock(&runq_lock[cpu], flags);
+
+        /*
+         * And if it lives somewhere else, tell that processor to look.
+         *
+         * **Outside the lock, and after the enqueue**, both deliberately.
+         * After, because the poke is only meaningful once the thread is
+         * findable - the barrier inside `hal_cpu_wake` is what makes that
+         * ordering visible to the other core rather than merely written
+         * here. Outside, because the target takes the interrupt immediately
+         * and its first act is to want this same lock.
+         *
+         * Without this the wake is not lost, it is late: the target notices
+         * at its own next tick, up to four milliseconds away. For a
+         * background thread that is nothing. For IPC it is everything - a
+         * shell command is dozens of round trips, and a tick each way would
+         * make four processors slower than one, which is the way this whole
+         * exercise could have been got exactly wrong.
+         *
+         * Not sent to this core. An interrupt to oneself is a wasted
+         * exception: the epilogue on the way out of whatever is running
+         * already asks the scheduler, which is the thing the poke exists to
+         * make happen.
+         */
         /*
          * And then tell that processor to look, which is what turns the flag
          * above into a switch: the target takes the interrupt, and the
@@ -2244,6 +2279,7 @@ void thread_exit(void)
         unsigned long flags = spin_lock(&runq_lock[cpu]);
 
         current->state = THREAD_DEAD;
+        choosing();
         next = policy->pick_next(cpu);
 
         spin_unlock(&runq_lock[cpu], flags);

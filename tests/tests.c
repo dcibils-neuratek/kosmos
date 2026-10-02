@@ -1173,6 +1173,72 @@ static bool test_the_scheduler_is_pluggable(void)
     return false;
 }
 
+/*
+ * **A choice leaves no preemption standing** (`testing.md` 18.340).
+ *
+ * `preempt_pending` asks the next exception's epilogue to choose again, and
+ * it was cleared only there: a thread that chose by itself - yielding here -
+ * left it set, and the next interrupt preempted the thread it had chosen.
+ * That is what `sched: the policy is pluggable` met seven times in 230
+ * loaded runs, its first thread preempted before its first line; this asks
+ * the same thing every time rather than when a tick happens to land.
+ *
+ * This suite's thread is idle-band, so a thread it makes outranks it and a
+ * wake asks for a preemption - checked first, with interrupts masked so no
+ * epilogue can answer it, or the rest would prove nothing. Then a yield
+ * chooses that thread: it must start with nothing standing, and nothing may
+ * be left once it is done.
+ */
+static volatile int stale_at_start = -1;
+
+static void stale_probe(void *arg)
+{
+    (void)arg;
+    stale_at_start = this_cpu()->preempt_pending ? 1 : 0;
+}
+
+static bool test_a_choice_leaves_no_preemption_standing(void)
+{
+    struct thread *t;
+    unsigned long  irqstate;
+    unsigned long  guard;
+    bool           asked, left;
+
+    stale_at_start = -1;
+    t = thread_create_suspended("stale", stale_probe, NULL);
+
+    if (t == NULL) {
+        return false;
+    }
+
+    irqstate = cpu_interrupts_save();
+    thread_wake(t);
+    asked = this_cpu()->preempt_pending;
+    thread_yield();
+    left = this_cpu()->preempt_pending;
+    cpu_interrupts_restore(irqstate);
+
+    guard = hal_ticks() + 1250;             /* five seconds, and only a cap */
+
+    while (stale_at_start < 0 && hal_ticks() < guard) {
+        thread_yield();
+    }
+
+    if (asked && stale_at_start == 0 && !left) {
+        return true;
+    }
+
+    kputs("\n   (");
+    kputs(asked ? "the wake asked for a preemption"
+                : "the wake asked for no preemption - this suite's thread is "
+                  "not below the thread it made, and the test proves nothing");
+    kputs("; the thread chosen ");
+    kputs(stale_at_start < 0 ? "never ran"
+          : stale_at_start ? "started with one standing" : "started with none");
+    kputs(left ? "; one left after it)\n" : "; none left after it)\n");
+    return false;
+}
+
 static bool test_thread_stacks_have_guard_pages(void)
 {
     /*
@@ -9421,6 +9487,8 @@ static const struct test tests[] = {
     { "thread: a switch preserves x19 and d8", test_context_switch_preserves_registers },
     { "thread: returning exits cleanly",       test_a_thread_that_returns_exits_cleanly },
     { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },
+    { "sched: a choice leaves no preemption standing",
+                                               test_a_choice_leaves_no_preemption_standing },
     { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
     { "el0: a process runs and exits",         test_a_process_runs_at_el0 },
     { "el0: Lua runs in a process",            test_lua_runs_at_el0 },

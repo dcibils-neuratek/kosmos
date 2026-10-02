@@ -2167,7 +2167,8 @@ three other tests showed through:
   it and flags core zero, `thread_yield` switches to that thread and leaves the
   flag, and the next interrupt preempts whoever is running. LIFO is immune,
   because a preempted thread goes back on top. It is older than this work and
-  is left for work of its own. Waiting for this test's thread to be gone was
+  is left for work of its own. **Fixed on 1 October** (18.340): every choice
+  of a next thread clears the flag. Waiting for this test's thread to be gone was
   added while it looked like the cause, and is kept because the hazard it
   closes is real, not because it fixed anything;
 - the old kernel against the fixed one, thirty runs each, side by side: the
@@ -16093,3 +16094,37 @@ blocks before the throttle started (the first version of this test, which
 passed on the old kernel in under a second). 7 checks, 10 s for the read,
 on both machines. **The control bit on both**: the kernels from before the
 fix read "the disk refused" after 1.9 s on ARM and 0.4 s on the PC.
+
+## 18.340 A choice leaves no preemption standing
+
+**What failed**: the push's second gate, 81 of 82 - `x86-kernel`, with `sched:
+the policy is pluggable` running its round-robin threads `231`. Eight runs
+alone afterwards were green. It is the failure 18.39 recorded from 230
+loaded runs and left "for work of its own": `preempt_pending`, set on core
+zero by a wake, still standing when the test's first thread started, so the
+next interrupt preempted that thread before its first line and put it behind
+the other two.
+
+**The fault**: `preempt_pending` asks the next exception's epilogue to choose
+again, and only that epilogue cleared it. A thread that chose by itself -
+yielding, blocking, exiting - left it standing, and the next interrupt then
+preempted whichever thread it had chosen, for a reason that choice had
+already answered. The kernel suite's own thread is idle-band, so every
+thread it made under the priority policy raised the flag, and its yields
+carried it on.
+
+**The fix** (`kernel/thread.c`): every choice of a next thread clears the flag
+under the core's queue lock, before the policy picks (`choosing()`, at the
+yield, both blocks, the exit and the preemption itself) - and a wake sets it
+under the same lock, beside its enqueue, where it was set after the unlock.
+So a flag is either set before a choice, which then saw its thread in the
+queue, or after one, and stands.
+
+**The test** (`sched: a choice leaves no preemption standing`, both kernel
+suites): the suite's thread makes a thread and wakes it with interrupts
+masked, so no epilogue can answer - the wake must have asked for a
+preemption, or the test says it proves nothing - then yields to it. The
+chosen thread must start with nothing standing, and nothing may be left once
+it is done. Every run rather than when a tick happens to land: **the control
+bit on both machines**, the old `thread.c` with this test - "started with
+one standing; one left after it". 197 of 197 on ARM, 195 of 195 on x86.

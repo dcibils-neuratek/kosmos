@@ -6886,7 +6886,10 @@ twice, and `sched: the higher priority runs first`, twice - the second time in
 0.10.60's first `make prepush` on 13 September 2026. `state.md` has the two
 suspicions - the harness's load, and the two threads homed on different cores
 so that the lower runs before the higher is awake - and neither is measured.
-The next step is many runs with each thread's core printed. **On x86 too,
+The next step is many runs with each thread's core printed. **The first of
+them is fixed, 1 October** (`testing.md` 18.340): a preemption flag left
+standing by a yield, which the earlier record had measured and left; the
+second is not shown to share it. **On x86 too,
 on 28 September**: `the higher priority runs first` failed once in the
 whole gate on the 6s (d) change, which does not reach the kernel, and the
 same binary (kept) passed 187 of 187 three times out of three alone - the
