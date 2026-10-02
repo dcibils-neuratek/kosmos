@@ -16182,3 +16182,25 @@ and drew `中文` as two `?`.
 **What it does not do yet**: each process holds its own copy of a face it
 loaded. Sharing one copy is `gfx.md` 19.13's font server - one parser, one
 copy, atlases handed out as regions - recorded in `roadmap.md` 6zz j5.
+
+## 18.342 A thread granted before it runs
+
+**What failed**: the fonts' full gate, 83 of 84 - `x86-kernel`, with `ipc: a
+receive with a deadline gives up` returning a bare false. Four runs alone
+were green.
+
+**The fault was the test's.** It made its helper with `thread_create` and
+granted it its capability on the next line, on the comment that "a created
+thread does not run until something yields to it". `thread_create` makes a
+thread runnable at once, and this suite's thread is idle-band, so the one it
+made outranked it: a tick between the two lines ran the helper first, with
+no capability, and its receive was refused. Every other test here that
+grants to a thread it made creates it suspended, grants, then wakes it - the
+lesson `thread_create_suspended` records for processes, and 18.39's for
+`sched: the policy is pluggable`.
+
+**The fix**: the same - suspended, granted, woken. And the test says what it
+saw when it fails - the receive's answer and the ticks it waited - where it
+said nothing. **The control**: the old shape with a yield where the tick
+fell, "the receive answered -1 after 0 ticks"; ARM 197 of 197, x86 195 of
+195 four times with the fix.

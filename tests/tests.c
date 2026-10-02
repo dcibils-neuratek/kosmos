@@ -3310,7 +3310,7 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
     deadline_status = 12345;            /* neither an error nor a success */
     deadline_waited = 0;
 
-    t = thread_create("deadline", deadline_thread, NULL);
+    t = thread_create_suspended("deadline", deadline_thread, NULL);
 
     if (t == NULL) {
         ipc_endpoint_destroy(cap);
@@ -3326,8 +3326,13 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
      * and a test that fails for a reason that has nothing to do with what
      * it is testing. Which is how the first version of this failed.
      *
-     * Granted after `thread_create` and before the first `thread_yield`,
-     * because a created thread does not run until something yields to it.
+     * **Created suspended, granted, then woken** (`testing.md` 18.342).
+     * This said a created thread "does not run until something yields to
+     * it", and made it with `thread_create`, which makes it runnable at
+     * once: this suite's thread is idle-band, so the thread it made
+     * outranked it and the next interrupt ran it - before this line, when a
+     * tick fell between the two, with no capability yet. Every other test
+     * here that grants to a thread it made does it this way already.
      */
     deadline_cap = ipc_cap_grant(t, cap);
 
@@ -3335,6 +3340,8 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
         ipc_endpoint_destroy(cap);
         return false;
     }
+
+    thread_wake(t);
 
     /*
      * Waited out in *ticks*, not in iterations.
@@ -3358,13 +3365,25 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
 
     ipc_endpoint_destroy(cap);
 
-    if (deadline_status != IPC_NO_MESSAGE) {
-        return false;
-    }
-
     /* It waited, and it did not wait for ever. Two ticks is the floor
      * because the first may land almost immediately. */
-    return deadline_waited >= 2 && deadline_waited < 200;
+    if (deadline_status == IPC_NO_MESSAGE && deadline_waited >= 2
+        && deadline_waited < 200) {
+        return true;
+    }
+
+    /* And which, when not: the receive's answer and how long it took. */
+    kputs("\n   (the receive answered ");
+    if (deadline_status < 0) {
+        kputs("-");
+        kputu((unsigned long)-(long)deadline_status);
+    } else {
+        kputu((unsigned long)deadline_status);
+    }
+    kputs(" after ");
+    kputu((unsigned long)deadline_waited);
+    kputs(" ticks; wanted no message, after 2 to 199)\n");
+    return false;
 }
 
 static bool test_endpoints_are_reclaimed(void)
