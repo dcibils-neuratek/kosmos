@@ -557,6 +557,12 @@ nothing and the per-core register read once in the switch. Baselines
 recorded, every move attributed. **Next, Diego's question**: whether the
 window manager should be C - measured first. And `book/logbook.md` holds
 every major change in plain words, an *In short* first (Diego, 2 October).
+**Stick 0.10.203** (`9e9efc0`): OVMF 32 checks, /Home/Fonts on the stick with
+the four faces; handed over for the M700 on 2 October in place of 0.10.200,
+with `frames 30` while dragging as the measurement to bring back. Diego
+chose **A** for the window manager (18.344): keep Lua, and fix what a pass
+does on every wake, the frame path's garbage, and the program that
+text-matches during a drag.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
