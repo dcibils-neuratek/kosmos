@@ -1304,7 +1304,17 @@ processors, and still what follows USB:
      two implementations to design it against.
    - **d** - virgl, 3D on the Mac's GPU and windows as textures: needs a
      QEMU built with virglrenderer, which is a change to this Mac's
-     toolchain and Diego's to decide.
+     toolchain and Diego's to decide. **Tried on 2 October and paused, for
+     Diego**: QEMU 11.1.1 configures with virglrenderer 1.3.0 and SDL, and
+     then refuses OpenGL - it takes it only through libepoxy built with
+     EGL, and Homebrew's is not. Two ways on: libepoxy built with EGL
+     against Homebrew's Mesa, an hour or two, whose EGL on macOS renders on
+     the CPU (llvmpipe) - the guest sees the same protocol and nothing runs
+     on the Mac's GPU, which was the point of the step; or ANGLE, GL on
+     Metal as UTM does it, a Chromium-sized build. Recommended: leave it
+     for the M700's own driver, which Diego put next (2D first), since that
+     machine has no virgl and needs its own driver either way. `ninja` and
+     `pkgconf` were installed for the build.
    - **e** - the M700's Intel GPU: its video codec and its driver. **The
      study is written** (`docs/m700-gpu.md`, 29 September): H.264 decode in
      hardware needs no firmware; Linux's pair - i915 and media-driver - does

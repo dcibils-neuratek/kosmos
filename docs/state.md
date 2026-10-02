@@ -538,6 +538,12 @@ first time a character needs one, the Han in the page's language; the glyph
 table grows past 128. `make install-apps` puts them on the QEMU disk - Diego's
 `build/kosmos.img` has room, and it is his to run. The font server of
 `gfx.md` 19.13 is the next step for fonts, due when a person can install one.
+Then (18.342) the deadline test made its helper suspended - a race of the
+test's own the fonts' gate met. **The virgl QEMU, tried and paused for
+Diego** (roadmap 4h d): QEMU takes OpenGL only through libepoxy built with
+EGL, which Homebrew's is not; Mesa's EGL would render on the CPU, ANGLE is a
+Chromium-sized build. Recommended to go to the M700's 2D instead, his next;
+the unpacked source is in `build/qemu-virgl-src` (872 MB) until he decides.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
