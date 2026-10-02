@@ -248,6 +248,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/rtc.c \
         hal/qemu-virt/power.c \
         hal/qemu-virt/virtio.c \
+        hal/virtio/wait.c \
         hal/virtio/net.c \
         hal/virtio/snd.c \
         hal/qemu-virt/snd_bind.c \
@@ -3293,6 +3294,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/smbios_decode.c \
              hal/pc/pci.c \
              hal/pc/virtio.c \
+             hal/virtio/wait.c \
              hal/virtio/blk.c \
              hal/pc/nvme.c \
              hal/pc/memdisk.c \

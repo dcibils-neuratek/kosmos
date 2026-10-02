@@ -84,7 +84,7 @@ static struct {
     struct virtio_device dev;
     bool      present;
     uint64_t  sectors;              /* capacity, in 512-byte sectors */
-    uint16_t  last_used;
+    bool      given_up;             /* a request never came back (`wait.c`) */
 
     struct vqueue queue;
 
@@ -114,7 +114,7 @@ bool virtio_blk_init(struct blkdev *out)
         }
 
         memset(&blk.queue, 0, sizeof(blk.queue));
-        blk.last_used = 0;
+        blk.given_up = false;
 
         if (!virtio_queue_attach(&blk.dev, 0, QUEUE_SIZE, &blk.queue.desc,
                                  &blk.queue.avail, &blk.queue.used)) {
@@ -176,15 +176,18 @@ static struct spinlock blk_lock = SPINLOCK("virtio-blk");
  * of times.
  *
  * The bound exists so a device that never answers is a failed read rather
- * than a hung machine. It is a count and not a clock on purpose - this can
- * run before the timer is anything to rely on.
+ * than a hung machine. **It is the clock, and it was a count**: a hundred
+ * million turns, about a second under TCG, which a busy host outlasted on 1
+ * October - and the driver then ran one request behind the device for good,
+ * every read after it failing (`wait.c` has the whole account). A request
+ * the device never finished leaves the disk reset and given up on: its
+ * chain, this header and the caller's buffer were still the device's.
  */
 static bool request(uint32_t type, uint64_t sector, void *buf, uint32_t bytes)
 {
-    unsigned long spins;
     uint16_t at;
 
-    if (!blk.present || buf == NULL || bytes == 0) {
+    if (!blk.present || blk.given_up || buf == NULL || bytes == 0) {
         return false;
     }
 
@@ -229,23 +232,19 @@ static bool request(uint32_t type, uint64_t sector, void *buf, uint32_t bytes)
 
     virtio_notify(&blk.dev, 0);
 
-    for (spins = 0; spins < 100000000UL; spins++) {
-        virtio_consume();
-
-        if (blk.queue.used.idx != blk.last_used) {
-            blk.last_used = blk.queue.used.idx;
-
-            /* The interrupt is acknowledged even though nothing waited on
-             * it: leaving it asserted would have the controller re-deliver
-             * for ever the moment interrupts are enabled for this device. */
-            (void)virtio_ack_interrupt(&blk.dev);
-
-            virtio_consume();
-            return blk.status == VIRTIO_BLK_S_OK;
-        }
+    if (!virtio_wait_done(&blk.queue.used.idx, blk.queue.avail.idx)) {
+        blk.given_up = true;
+        virtio_give_up(&blk.dev, "virtio-blk");
+        return false;
     }
 
-    return false;
+    /* The interrupt is acknowledged even though nothing waited on it:
+     * leaving it asserted would have the controller re-deliver for ever the
+     * moment interrupts are enabled for this device. */
+    (void)virtio_ack_interrupt(&blk.dev);
+
+    virtio_consume();
+    return blk.status == VIRTIO_BLK_S_OK;
 }
 
 /* Whether this board found a disk, asked after init the way the network

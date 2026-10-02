@@ -161,7 +161,7 @@ static struct {
     struct virtio_device dev;
 
     struct vqueue q[VQ_COUNT];
-    uint16_t last_used[VQ_COUNT];
+    bool given_up;              /* a control request never came back (`wait.c`) */
 
     uint32_t streams;
     uint32_t stream_id;
@@ -253,14 +253,18 @@ static void ring_setup(unsigned n)
  * Synchronous because every one of them happens at setup: querying the
  * streams, setting the format, starting. Nothing here is on the path that
  * has a deadline - that is the transmit queue, below, and it does not wait
- * for anything.
+ * for anything. A request that never came back leaves the device reset and
+ * given up on (`wait.c`): no sound, rather than a queue one behind.
  */
 static bool control(const void *request, unsigned request_len,
                     void *reply, unsigned reply_len)
 {
     struct vqueue *q = &snd.q[VQ_CONTROL];
-    unsigned long spins;
     unsigned at;
+
+    if (snd.given_up) {
+        return false;
+    }
 
     q->desc[0].addr  = (uint64_t)virt_to_phys(request);
     q->desc[0].len   = request_len;
@@ -281,19 +285,18 @@ static bool control(const void *request, unsigned request_len,
 
     virtio_notify(&snd.dev, VQ_CONTROL);
 
-    for (spins = 0; spins < 100000000UL; spins++) {
-        consume();
-
-        if (q->used.idx != snd.last_used[VQ_CONTROL]) {
-            snd.last_used[VQ_CONTROL] = q->used.idx;
-            (void)virtio_ack_interrupt(&snd.dev);
-            consume();
-
-            return true;
-        }
+    if (!virtio_wait_done(&q->used.idx, q->avail.idx)) {
+        snd.given_up = true;
+        snd.present = false;
+        snd.running = false;
+        virtio_give_up(&snd.dev, "virtio-snd");
+        return false;
     }
 
-    return false;
+    (void)virtio_ack_interrupt(&snd.dev);
+    consume();
+
+    return true;
 }
 
 static bool pcm_command(uint32_t code)

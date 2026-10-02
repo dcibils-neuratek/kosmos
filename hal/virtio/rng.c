@@ -45,7 +45,7 @@ struct vqueue { VIRTQ_FIELDS(QUEUE_SIZE); };
 static struct {
     struct virtio_device dev;
     bool      present;
-    uint16_t  last_used;
+    bool      given_up;         /* a request never came back (`wait.c`) */
 
     struct vqueue queue;
 
@@ -73,7 +73,7 @@ bool virtio_rng_init(void)
         }
 
         memset(&rng.queue, 0, sizeof(rng.queue));
-        rng.last_used = 0;
+        rng.given_up = false;
 
         if (!virtio_queue_attach(&rng.dev, 0, QUEUE_SIZE, &rng.queue.desc,
                                  &rng.queue.avail, &rng.queue.used)) {
@@ -97,13 +97,17 @@ bool virtio_rng_present(void)
 /*
  * Up to `CHUNK` bytes, into the buffer; how many the device wrote, or 0.
  *
- * Bounded by a count and not a clock, as `blk.c`'s is: a device that never
- * answers is no randomness rather than a hung machine.
+ * Bounded by the clock, as `blk.c`'s is: a device that never answers is no
+ * randomness rather than a hung machine - reset and given up on (`wait.c`).
  */
 static size_t request(void)
 {
-    unsigned long spins;
     uint16_t at;
+    uint32_t len;
+
+    if (rng.given_up) {
+        return 0;
+    }
 
     memset((void *)rng.buffer, 0, sizeof(rng.buffer));
 
@@ -121,22 +125,18 @@ static size_t request(void)
 
     virtio_notify(&rng.dev, 0);
 
-    for (spins = 0; spins < 100000000UL; spins++) {
-        virtio_consume();
-
-        if (rng.queue.used.idx != rng.last_used) {
-            uint32_t len;
-
-            len = rng.queue.used.ring[rng.last_used % QUEUE_SIZE].len;
-            rng.last_used = rng.queue.used.idx;
-            (void)virtio_ack_interrupt(&rng.dev);
-            virtio_consume();
-
-            return (len > CHUNK) ? CHUNK : len;
-        }
+    if (!virtio_wait_done(&rng.queue.used.idx, rng.queue.avail.idx)) {
+        rng.given_up = true;
+        virtio_give_up(&rng.dev, "virtio-rng");
+        return 0;
     }
 
-    return 0;
+    /* The one request just finished is the used ring's last entry. */
+    len = rng.queue.used.ring[(uint16_t)(rng.queue.used.idx - 1u) % QUEUE_SIZE].len;
+    (void)virtio_ack_interrupt(&rng.dev);
+    virtio_consume();
+
+    return (len > CHUNK) ? CHUNK : len;
 }
 
 size_t virtio_rng_read(void *buf, size_t bytes)

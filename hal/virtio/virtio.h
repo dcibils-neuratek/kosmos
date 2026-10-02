@@ -287,6 +287,35 @@ void virtio_fail(const struct virtio_device *dev);
 /* Kick a queue. */
 void virtio_notify(const struct virtio_device *dev, unsigned queue);
 
+/*
+ * **The device has done everything it was handed**: the used ring's index
+ * has caught up with the available ring's - waited for by the clock, for
+ * `VIRTIO_WAIT_SECONDS`, and false when it never did (`wait.c`).
+ *
+ * Every driver here that waits - the disk, the screen's two queues,
+ * randomness, sound's control queue - hands the device one chain at a
+ * time, with a header and a buffer it then writes again for the next. So
+ * the answer is all of them done, and not the index merely having moved:
+ * a device that is still working on a chain must never have it rewritten
+ * under it. A false answer means the chain is still the device's, and the
+ * driver gives the device up (`virtio_give_up`).
+ */
+#define VIRTIO_WAIT_SECONDS 30u
+
+bool virtio_wait_done(const volatile uint16_t *used_idx, uint16_t avail_idx);
+
+/*
+ * A device that did not finish in time: reset, which is how virtio takes
+ * back every buffer it was handed - the chain, the header, and the bytes a
+ * caller lent - and said so on the console. Its driver asks it nothing
+ * more until the machine restarts.
+ */
+void virtio_give_up(const struct virtio_device *dev, const char *name);
+
+/* The device reset - its queues and every buffer in them dropped - and
+ * waited for until it reads back as reset, as the specification asks. */
+void virtio_reset(const struct virtio_device *dev);
+
 /* Read the interrupt status and acknowledge exactly what was read - not
  * whatever is set by the time the acknowledgement is written, which is a
  * race that loses an interrupt that arrived in between. */

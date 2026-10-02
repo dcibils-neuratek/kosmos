@@ -165,6 +165,17 @@ void virtio_fail(const struct virtio_device *dev)
     reg_write(dev, REG_STATUS, STATUS_FAILED);
 }
 
+void virtio_reset(const struct virtio_device *dev)
+{
+    reg_write(dev, REG_STATUS, 0);
+
+    /* QEMU finishes a reset inside the write; the read is the
+     * specification's way of being told, bounded so a device that never
+     * says so is still left behind. */
+    for (unsigned i = 0; i < 1000000u && reg_read(dev, REG_STATUS) != 0; i++) {
+    }
+}
+
 void virtio_notify(const struct virtio_device *dev, unsigned queue)
 {
     reg_write(dev, REG_QUEUE_NOTIFY, queue);

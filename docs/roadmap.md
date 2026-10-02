@@ -374,6 +374,8 @@ of now we dont have". So, one at a time:
 3. **Storage at full speed** - the filesystem's byte path in C (above).
 4. **4h** - the GPU: video encode and decode in hardware first, and from
    the driver that takes, accelerated 2D - which Kosmos does not have.
+   **On the M700 the 2D comes first since 1 October** (4h, "The M700's
+   order"): the desktop, then video, then 3D through Vulkan or OpenGL.
    **Where to start, Diego on 29 September**: "Gpu do the qemu virtio-gpu
    which you can try in the Mac mini without the m700 hardware. After that
    do the m700 gpu codec and driver." So virtio-gpu under QEMU first, then
@@ -1256,6 +1258,19 @@ processors, and still what follows USB:
    but no blit. A native driver for the ThinkPad's Intel GPU after that, for
    its own sake. The Game Kit (4f) is the first program-facing user, and its
    renderer interface is where the switch happens.
+   **The M700's order, changed on 1 October** - Diego, after the fix of
+   the day and the rest of the plan: "after that lets do gpu 2d
+   acceleration for the m700 so we can have a faster desktop experience,
+   video decoding and encoding and 3d acceleration in the future via
+   vulkan driver or opengl". So on the M700 the **desktop comes first**:
+   the driver's foundation (waking the GPU, its GTT, submitting and
+   completing), then the **blitter engine** for copies and fills and the
+   **display engine's planes** for flips without a copy - the compositor
+   faster where it spends its time. **Then the video engine**, decode and
+   encode (the study, `docs/m700-gpu.md`). **3D later**, through a Vulkan
+   or OpenGL driver of the render engine. This replaces the codec-first
+   order of 28 September for that machine; virtio-gpu and virgl under QEMU
+   stay where they were.
    **And video in hardware, on the wishlist since 27 September** - Diego:
    "Can't we use the gpu for hardware encoding and decoding video?", and yes
    to keeping it here. The ThinkPad's and the M700's Intel graphics encode
@@ -3166,6 +3181,20 @@ processors, and still what follows USB:
         (`testing.md` 18.335) - and other scripts' glyphs, then `@import` -
         **BUILT 1 October** (`testing.md` 18.336) - and `web_paint.c`
         retired.
+
+        **Other scripts' glyphs, AGREED on 1 October** - Diego, of the three
+        ways put to him (`state.md`): "go with the fonts on disk, loaded when
+        needed". Japanese, Korean and Chinese (IBM Plex Sans JP, KR, SC and
+        TC, a regular weight each, about 22 MB together against an image of
+        35) live on the disk rather than in the image: installed into
+        `/Home` the way Doom and Quake are - `make install-apps` on the QEMU
+        disk, a stick's `/Home` carrying them - and opened the first time a
+        character the face lacks needs one, `gfx` falling back to them for
+        that character. Fetched by the build with their checksums, as
+        FFmpeg is, rather than committed. Georgian, Armenian and Thai are a
+        tenth of a megabyte each and can sit beside them. Arabic, Hebrew and
+        Devanagari need shaping and right-to-left as well as glyphs - a step
+        of their own, after.
 
         **SVG BUILT 30 September** (`testing.md` 18.313): expat 2.8.5 and
         libsvgtiny 0.1.8 vendored, unmodified, both MIT; the shapes drawn by

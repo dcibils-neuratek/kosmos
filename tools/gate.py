@@ -140,6 +140,16 @@ SUITES = [
     # was afterwards.
     Suite("arm-diskwire", ["python3", "tools/run_diskwire.py", ARM]),
 
+    # **A disk that answers slowly is waited for** (`testing.md` 18.339): the
+    # disk throttled to 16 KB a second through QMP, and a 160 KB file nothing
+    # had read is read whole. The kernel's virtio drivers gave a request up
+    # after a count - about a second under TCG, 0.4 s on the PC - and then
+    # ran one behind the device for good: on 1 October every file in /Home
+    # read as 0 bytes for the rest of a session, while this gate filled the
+    # Mac. Both machines, since the PC's bound was the shorter.
+    Suite("arm-slowdisk", ["python3", "tools/run_slowdisk.py", ARM]),
+    Suite("x86-slowdisk", ["python3", "tools/run_slowdisk.py", X86], x86=True),
+
     # **The profiler** (`roadmap.md`, the App Inspector's first step): a
     # loop that is only the interpreter has to come out Lua and a copy that
     # is only C has to come out C, named from the symbols that ran; about a

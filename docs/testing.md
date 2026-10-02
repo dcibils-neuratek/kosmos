@@ -16038,3 +16038,58 @@ six presses made clicks - the suite's `press` moves the pointer away and
 lets the page settle for two seconds after, which a menu whose answers are
 waited for does not need - the browser's first half 141 s to 131 on ARM,
 156 to 145 on x86. The full gate: 80 suites in 9:44.
+
+## 18.339 A slow disk waited for, and the drivers kept in step
+
+**What happened**: on 1 October, in the middle of a session under `make
+qemu`, Tracker drew every file in `/Home` at 0 B and every folder as a file,
+and a film opened and closed in a second. The bytes were whole - the image
+read on the Mac, every file of it (400, and 345 attribute sets), and 39
+files byte for byte against the originals in `~/Kosmos/home`.
+
+**Found by elimination, then made on purpose.** The same build on a copy of
+the same disk answered every `getattr` right - from the shell, with four
+processors, after both films had been read through, and with the desktop up
+and Tracker open. What differed was the Mac: the session began two minutes
+before `make prepush`'s gate filled it with QEMUs and builds. Every virtio
+driver in the kernel waited for a request by a count - a hundred million
+turns of a loop and then a failed request - which is about a second under
+TCG on ARM and 0.4 s on the PC. A read slower than that was given up on
+while the device still had it, and the driver then ran **one request behind
+for good**: each new request found the last one's late completion, took it
+for its own, and returned with its status still at "not answered". Every
+read failed from then on; blocks in the disk server's cache kept answering,
+so a folder still listed and nothing in it could be looked at. QEMU's
+`throttling.bps-total=2048` on the disk did the same to the same build in
+three seconds: every `getattr` in `/Home` "not a directory".
+
+**The fix, in one place for all five** (`hal/virtio/wait.c`): the disk, the
+screen's two queues, randomness and sound's control queue each handed the
+device one chain at a time and waited the same way.
+
+  - **The clock, not a count**: thirty seconds by the counter, which runs
+    from reset on both machines. An x86 board's rate is measured a little
+    after boot; until then one above any real TSC is assumed, which makes a
+    wait longer, never shorter.
+  - **Done means all of it**: the used index equal to the available one,
+    not merely moved.
+  - **A device that never got there is reset and given up on**, and says so
+    on the console. Not merely left alone: the disk's chain points at the
+    kernel's bounce buffer, which the next write fills, and a device still
+    holding it could write a later request's bytes where an earlier one
+    said. A reset is how virtio takes every buffer back (`virtio_reset`,
+    both transports).
+
+**The test** (`run_slowdisk.py`, `arm-slowdisk` and `x86-slowdisk`): the
+machine boots at full speed and lists `/Home`; QMP's
+`block_set_io_throttle` then lets the disk move 16 KB a second, and a
+160 KB file nothing had read is read whole - two of the disk server's
+requests, several seconds each - and its bytes checked; two small files
+answer with their sizes; no device is given up on; the throttle lifted, a
+file answers again. The read is timed by the guest's counter and held to at
+least 5 s, so a throttle that did not take cannot pass it: small files
+could not show it, since the listing and the disk server's cache had their
+blocks before the throttle started (the first version of this test, which
+passed on the old kernel in under a second). 7 checks, 10 s for the read,
+on both machines. **The control bit on both**: the kernels from before the
+fix read "the disk refused" after 1.9 s on ARM and 0.4 s on the PC.

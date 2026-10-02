@@ -478,7 +478,9 @@ onto it by its star (`favorites.move`); **a serif face** (18.335), IBM Plex
 Serif 2.0.0 in four styles; **`@import`** (18.336), round by round, cycles
 ended. Left of item 3: other scripts' glyphs - a question for Diego:
 
-**Other scripts: Diego's call, on what the image carries.** Plex Sans has
+**Other scripts: decided by Diego on 1 October - "go with the fonts on
+disk, loaded when needed"** (roadmap 6zz j5); what follows is what was put
+to him. Plex Sans has
 Latin, Greek and Cyrillic and nothing else. Two different things are
 missing. *Glyphs*: a font that has them, and `gfx` falling back to it for a
 character the face lacks - Japanese, Korean and Chinese need only that, and
@@ -511,6 +513,23 @@ wanted yet. Nothing was deleted but this session's own scratch images. The M700'
 30` and the 1080p film's numbers from the 0.10.190 stick). **The hardware
 cursor built** (4h b, 18.338): under virtio-gpu the display draws the
 pointer and a move composes no frame; ramfb composites it as before.
+
+**Then, during the push's check, `/Home` read as zero-byte files** in
+Diego's `make qemu` session - every file 0 B in Tracker, every folder a file,
+a film closing in a second. **The bytes were whole** (every file read on the
+Mac, 39 byte for byte against `~/Kosmos/home`). The cause was the kernel's
+virtio drivers waiting by a count, which the gate's load on this Mac
+outlasted; the disk driver then ran one request behind the device for good,
+every read failing while cached blocks still listed. Reproduced with QEMU's
+disk throttle, and **fixed in one place for all five drivers**
+(`hal/virtio/wait.c`, `testing.md` 18.339): thirty seconds by the counter,
+done meaning the used index equals the available one, and a device that
+never answers reset - which takes its buffers back - and given up on aloud.
+`run_slowdisk.py` holds it, in the gate on both machines. The push waits for
+the full gate on it. **Diego's orders after it, 1 October**: the rest of the
+roadmap's plan - the fonts on the disk first - and then **the M700's GPU, 2D
+first** for a faster desktop, then video decode and encode, then 3D through
+Vulkan or OpenGL (roadmap 4h, "The M700's order").
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

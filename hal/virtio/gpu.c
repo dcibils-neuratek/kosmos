@@ -160,14 +160,13 @@ _Static_assert(sizeof(struct attach_backing) == 48,
 static struct {
     struct virtio_device dev;
     bool      present;
-    uint16_t  last_used;
+    bool      given_up;         /* a command never came back (`wait.c`) */
 
     uint32_t  width, height;    /* what is shown */
     uint32_t  pitch;            /* bytes a row, in the backing and the host */
 
     struct vqueue queue;
     struct vqueue cursor_queue;
-    uint16_t  cursor_used;
     bool      cursor_ready;     /* its picture made, and the queue there */
     bool      cursor_shown;
 
@@ -193,12 +192,17 @@ static struct spinlock gpu_lock = SPINLOCK("virtio-gpu");
 
 /*
  * One command and its answer: the request the device reads, the header it
- * writes back. False when it did not answer OK, or not at all.
+ * writes back. False when it did not answer OK, or not at all - and a
+ * command that never came back leaves the screen reset and given up on
+ * (`wait.c`).
  */
 static bool command(size_t bytes)
 {
-    unsigned long spins;
     uint16_t at;
+
+    if (gpu.given_up) {
+        return false;
+    }
 
     gpu.req.hdr.flags = 0;
     gpu.req.hdr.fence_id = 0;
@@ -225,23 +229,19 @@ static bool command(size_t bytes)
 
     virtio_notify(&gpu.dev, CONTROL_QUEUE);
 
-    for (spins = 0; spins < 100000000UL; spins++) {
-        virtio_consume();
-
-        if (gpu.queue.used.idx != gpu.last_used) {
-            gpu.last_used = gpu.queue.used.idx;
-
-            /* Acknowledged though nothing waits on it, as `blk.c` does: a
-             * status left set is an interrupt delivered for ever the moment
-             * the line is unmasked. */
-            (void)virtio_ack_interrupt(&gpu.dev);
-
-            virtio_consume();
-            return gpu.resp.type == RESP_OK_NODATA;
-        }
+    if (!virtio_wait_done(&gpu.queue.used.idx, gpu.queue.avail.idx)) {
+        gpu.given_up = true;
+        virtio_give_up(&gpu.dev, "virtio-gpu");
+        return false;
     }
 
-    return false;
+    /* Acknowledged though nothing waits on it, as `blk.c` does: a status
+     * left set is an interrupt delivered for ever the moment the line is
+     * unmasked. */
+    (void)virtio_ack_interrupt(&gpu.dev);
+
+    virtio_consume();
+    return gpu.resp.type == RESP_OK_NODATA;
 }
 
 /*
@@ -251,8 +251,11 @@ static bool command(size_t bytes)
  */
 static void cursor_command(void)
 {
-    unsigned long spins;
     uint16_t at;
+
+    if (gpu.given_up) {
+        return;
+    }
 
     gpu.cursor.hdr.flags = 0;
     gpu.cursor.hdr.fence_id = 0;
@@ -274,16 +277,14 @@ static void cursor_command(void)
 
     virtio_notify(&gpu.dev, CURSOR_QUEUE);
 
-    for (spins = 0; spins < 100000000UL; spins++) {
-        virtio_consume();
-
-        if (gpu.cursor_queue.used.idx != gpu.cursor_used) {
-            gpu.cursor_used = gpu.cursor_queue.used.idx;
-            (void)virtio_ack_interrupt(&gpu.dev);
-            virtio_consume();
-            return;
-        }
+    if (!virtio_wait_done(&gpu.cursor_queue.used.idx, gpu.cursor_queue.avail.idx)) {
+        gpu.given_up = true;
+        virtio_give_up(&gpu.dev, "virtio-gpu's cursor");
+        return;
     }
+
+    (void)virtio_ack_interrupt(&gpu.dev);
+    virtio_consume();
 }
 
 /*
@@ -354,7 +355,7 @@ bool virtio_gpu_init(struct fb *out)
         }
 
         memset(&gpu.queue, 0, sizeof(gpu.queue));
-        gpu.last_used = 0;
+        gpu.given_up = false;
 
         if (!virtio_queue_attach(&gpu.dev, CONTROL_QUEUE, QUEUE_SIZE,
                                  &gpu.queue.desc, &gpu.queue.avail,
@@ -367,7 +368,6 @@ bool virtio_gpu_init(struct fb *out)
          * refused it would still show a screen, with the pointer drawn by
          * whoever draws it otherwise. */
         memset(&gpu.cursor_queue, 0, sizeof(gpu.cursor_queue));
-        gpu.cursor_used = 0;
         gpu.cursor_ready = virtio_queue_attach(&gpu.dev, CURSOR_QUEUE, QUEUE_SIZE,
                                                &gpu.cursor_queue.desc,
                                                &gpu.cursor_queue.avail,

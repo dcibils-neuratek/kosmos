@@ -349,6 +349,17 @@ void virtio_fail(const struct virtio_device *dev)
     write8(dev->base + COMMON_DEVICE_STATUS, STATUS_FAILED);
 }
 
+void virtio_reset(const struct virtio_device *dev)
+{
+    write8(dev->base + COMMON_DEVICE_STATUS, 0);
+
+    /* As `virtio_begin` waits, but bounded: a device that never reads back
+     * as reset is still left behind. */
+    for (unsigned i = 0; i < 1000000u
+                        && read8(dev->base + COMMON_DEVICE_STATUS) != 0; i++) {
+    }
+}
+
 /*
  * The doorbell, and it is a different address per queue.
  *
