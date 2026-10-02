@@ -16204,3 +16204,57 @@ saw when it fails - the receive's answer and the ticks it waited - where it
 said nothing. **The control**: the old shape with a yield where the tick
 fell, "the receive answered -1 after 0 ticks"; ARM 197 of 197, x86 195 of
 195 four times with the fix.
+
+## 18.343 What a round trip costs, instruction by instruction
+
+**The question** (`roadmap.md` 4i-b): an IPC round trip cost 70% more and a
+context switch 44% more on 19 September than on 5 September, attributed to
+the SMP programme as a whole and never taken apart. Measured again on 2
+October: **68.088 and 13.441 ticks** - 7% and 9% above the 19 September
+baselines, so it had gone on growing.
+
+**Taken apart with an instruction count rather than a guess.** A QEMU
+plugin counted every instruction the benchmark executed, by the block it was
+in, between `bench_ipc_roundtrip` starting and `bench_context_switch`
+starting; the blocks were summed by kernel function from the symbol table,
+and the same was done to the benchmark built at `802d0be`, 5 September:
+
+| per round trip | 5 September | 2 October |
+|---|---|---|
+| instructions | 602.75 | 1090.57 |
+| locks taken | 0 | 7 |
+| interrupt masks and restores | 6 | 35 |
+| reads of the per-core register | 0 | 31 |
+| calls | 23 | 46 |
+| calls to `panicking` | 0 | 14 |
+
+**The seven locks are the price of four processors** - a run queue each
+for both blocks and both wakes, the endpoint on call, reply and receive -
+and stay. What had grown around them is what was paid on every one:
+
+  - `panicking()` was a function, asked on every lock and every unlock -
+    fourteen calls; inline now, a load of the flag (`panic.h`);
+  - `this_cpu()` and `thread_current()` were functions in `thread.c`, so
+    every other file paid a call to read one register; inline now
+    (`percpu.h`, `thread.h`);
+  - the lock's loop - a count, a constant of ten million, and a deadline
+    kept on the stack because `spin_patient` takes its address - was set up
+    before the first try, on locks that were free every time; one try is
+    inline now, and the wait out of line (`spin_lock_wait`);
+  - `message_copy` called `memcpy` for messages with no data, five times a
+    round trip, eight instructions each to find there was nothing to copy;
+  - the switch and the block read the per-core register for each `current`
+    and `this_cpu()`, the read being volatile; each reads it once now, which
+    is safe because a thread never leaves its core (`running_slot`).
+
+**After: 59.397 ticks a round trip and 12.754 a switch - 12.8% and 5.1%
+less**, 951.50 instructions a round trip. Below the 19 September baseline
+for the round trip (63.523); the switch is still above its own (12.316),
+and what grew there since is the next thing to take apart. What remains
+against 5 September is the seven locks and the work around them - the
+queues, the capability lookup through the process's table, the reply
+list - which is what correctness on four processors costs.
+
+**The tool stays** (`tools/qemu_pcprof.c`, `tools/prof_bench.py`, `make
+bench-profile`): the next question about where kernel time goes is answered
+the same way, exactly, under `-icount`.

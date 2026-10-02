@@ -22,6 +22,11 @@ intended, and this project has already changed its mind in public several
 times — that is the interesting part and it only survives if the writing
 follows the building.
 
+**The logbook** (`logbook.md`) is the running record the chapters draw
+on: every major decision and development as it happens, each with a
+high-level *In short* and then the technical account - what was done, why,
+what a person notices, and how it was measured.
+
 ---
 
 ## Part I — Why

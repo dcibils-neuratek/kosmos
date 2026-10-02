@@ -71,11 +71,6 @@ unsigned thread_ceiling(void)
  */
 static struct percpu cpus[NR_CPUS];
 
-struct percpu *this_cpu(void)
-{
-    return cpu_self();
-}
-
 struct percpu *percpu_at(unsigned index)
 {
     return (index < NR_CPUS) ? &cpus[index] : NULL;
@@ -104,6 +99,16 @@ void percpu_init(unsigned index)
 struct thread *percpu_running(struct percpu *p)
 {
     return (p != NULL) ? p->current : NULL;
+}
+
+/*
+ * The same field, to read and write, for code that has read its own core's
+ * slot once (`switch_into`, `testing.md` 18.343): `current` below is a
+ * macro, so the field cannot be named through a slot pointer.
+ */
+static inline struct thread **running_slot(struct percpu *p)
+{
+    return &p->current;
 }
 
 /*
@@ -436,11 +441,6 @@ void thread_set_tls(unsigned long address)
     current->tls = address;
     cpu_set_thread_pointer(address);
     cpu_interrupts_restore(flags);
-}
-
-struct thread *thread_current(void)
-{
-    return current;
 }
 
 const struct thread *thread_by_index(unsigned i)
@@ -1025,6 +1025,15 @@ static void time_cross(unsigned char side)
 static void switch_into(struct thread *prev, struct thread *next)
 {
     /*
+     * **This core's slot, read once** (`testing.md` 18.343). The register
+     * read is volatile, so every `current` and `this_cpu()` below was a read
+     * of its own - four a switch; and it cannot change under this function,
+     * since a thread never leaves its core: what resumes after the switch is
+     * this thread, here.
+     */
+    struct percpu *me = this_cpu();
+
+    /*
      * **With interrupts masked, and checked rather than hoped.**
      *
      * From `current = next` below until `context_switch` has saved `prev`'s
@@ -1073,16 +1082,16 @@ static void switch_into(struct thread *prev, struct thread *next)
 
     next->state = THREAD_RUNNING;
     next->switches++;
-    current = next;
+    *running_slot(me) = next;
 
     /*
      * Into idle, or out of it, is a crossing (`time_cross`): the time
      * before it was the kernel's - a switch is always made from kernel code
      * - and the time after it is nobody's until something runs.
      */
-    if (next == this_cpu()->idle_thread) {
+    if (next == me->idle_thread) {
         time_cross(TIME_IDLE);
-    } else if (prev == this_cpu()->idle_thread) {
+    } else if (prev == me->idle_thread) {
         time_cross(TIME_KERNEL);
     }
 
@@ -1099,7 +1108,7 @@ static void switch_into(struct thread *prev, struct thread *next)
     context_switch(&prev->ctx, &next->ctx);
 
     /* Reached as whichever thread this processor has just resumed. */
-    thread_switch_finished();
+    me->leaving = NULL;         /* `thread_switch_finished`, with `me` */
 }
 
 static void switch_to(struct thread *next)
@@ -1765,6 +1774,7 @@ void thread_yield(void)
  */
 void thread_block_and_release(struct spinlock *lock, unsigned long flags)
 {
+    struct percpu *me;
     struct thread *next;
     unsigned       cpu;
     unsigned long  rq;
@@ -1777,10 +1787,11 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
      */
     irqstate = cpu_interrupts_save();
 
-    cpu = here();
+    me = this_cpu();            /* once: `switch_into` says why */
+    cpu = me->index;
     rq = spin_lock(&runq_lock[cpu]);
 
-    current->state = THREAD_BLOCKED;
+    (*running_slot(me))->state = THREAD_BLOCKED;
     choosing();
     next = policy->pick_next(cpu);
 
@@ -1816,10 +1827,10 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
      * their first thread.
      */
     if (next == NULL) {
-        next = this_cpu()->idle_thread;
+        next = me->idle_thread;
     }
 
-    if (next == NULL || next == current) {
+    if (next == NULL || next == *running_slot(me)) {
         panic("thread_block: this processor has no idle thread");
     }
 

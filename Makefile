@@ -4258,6 +4258,23 @@ bench:
 	@$(MAKE) --no-print-directory BENCH=1 build/bench/kosmos.elf
 	python3 tools/run_bench.py build/bench/kosmos.elf
 
+# **Where a benchmark's instructions go**, by kernel function and exactly
+# (`testing.md` 18.343): the benchmark image under a QEMU plugin that counts
+# every instruction, summed by the symbol table. The plugin is built against
+# the header the installed QEMU ships, so its API is the binary's.
+QEMU_PLUGIN_INCLUDE := $(abspath $(dir $(shell command -v qemu-system-aarch64))../include)
+
+$(HOSTDIR)/qemu_pcprof.dylib: tools/qemu_pcprof.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -O2 -Wall -Wextra -shared -fPIC -undefined dynamic_lookup \
+	        -I$(QEMU_PLUGIN_INCLUDE) $(shell pkg-config --cflags glib-2.0) -o $@ $<
+
+.PHONY: bench-profile
+bench-profile: $(HOSTDIR)/qemu_pcprof.dylib
+	@$(MAKE) --no-print-directory BENCH=1 build/bench/kosmos.elf
+	python3 tools/prof_bench.py build/bench/kosmos.elf ipc --kinds
+	python3 tools/prof_bench.py build/bench/kosmos.elf switch --kinds
+
 # Records the current numbers as the new baseline. By hand, never
 # automatically: testing.md 18.6 is explicit that a baseline which updates
 # itself detects nothing. Run it when a number moves on purpose, and say why

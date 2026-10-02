@@ -34,7 +34,16 @@ void panic(const char *msg) __attribute__((noreturn));
  * So from the first line of `panic` every lock stops being taken. Nothing
  * is racing with a machine that is halting, and a message on the panel is
  * worth more than a structure that stays consistent on the way to `hlt`.
+ *
+ * **Inline, a load of the flag** (`testing.md` 18.343): every lock and
+ * every unlock asks, and as a function it was a call and a return each
+ * time - fourteen calls in one IPC round trip.
  */
-bool panicking(void);
+extern volatile bool panic_in_progress;
+
+static inline bool panicking(void)
+{
+    return panic_in_progress;
+}
 
 #endif /* KERNEL_PANIC_H */

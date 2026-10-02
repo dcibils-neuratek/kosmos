@@ -57,6 +57,31 @@ static void raw_num(unsigned long v)
     }
 }
 
+unsigned long spin_lock_wait(struct spinlock *lock, const char *taker,
+                             unsigned long flags)
+{
+    unsigned long spins;
+    uint64_t since = 0;
+
+    do {
+        for (spins = 0; spins < SPIN_GIVE_UP; spins++) {
+            /* Not only a pause: on x86 a waiting core answers TLB shootdowns
+             * here, because with interrupts masked it cannot take the IPI
+             * that asks - and the core asking may hold this very lock. */
+            cpu_lock_wait();
+
+            if (cpu_lock_try(&lock->locked)) {
+                lock->holder = this_cpu()->index;
+                lock->taker = taker;
+                return flags;
+            }
+        }
+    } while (spin_patient(&since));
+
+    spin_panic(lock);
+    return flags;
+}
+
 void spin_panic(const struct spinlock *lock)
 {
     /*

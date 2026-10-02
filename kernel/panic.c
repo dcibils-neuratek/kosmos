@@ -6,14 +6,9 @@
 /*
  * Set once, never cleared: there is no coming back from here, and a second
  * core arriving in `panic` must find it already true rather than race to
- * set it.
+ * set it. Read by `panicking`, inline in `panic.h`.
  */
-static volatile bool in_panic;
-
-bool panicking(void)
-{
-    return in_panic;
-}
+volatile bool panic_in_progress;
 
 void panic(const char *msg)
 {
@@ -23,7 +18,7 @@ void panic(const char *msg)
      * holds the console lock, and a panic that waits for it deadlocks
      * against its own caller.
      */
-    in_panic = true;
+    panic_in_progress = true;
 
     /*
      * The screen back, whatever had it.

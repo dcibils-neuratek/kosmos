@@ -8,6 +8,7 @@
 
 #include "context.h"
 #include "ipc.h"
+#include "percpu.h"
 
 /*
  * Threads and the scheduler.
@@ -646,7 +647,12 @@ void thread_exit(void) __attribute__((noreturn));
  */
 void thread_switch_finished(void);
 
-struct thread *thread_current(void);
+static inline struct thread *thread_current(void)
+{
+    /* Inline (`testing.md` 18.343): one register read and one load, where
+     * it was a call from every file but `thread.c`. */
+    return this_cpu()->current;
+}
 
 /*
  * The thread in slot `i`, or NULL when nothing there could still run.

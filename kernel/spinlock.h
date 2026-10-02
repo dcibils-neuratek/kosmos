@@ -114,17 +114,30 @@ void spin_panic(const struct spinlock *lock);
 bool spin_patient(uint64_t *since);
 
 /*
+ * The wait, when the lock was held: out of line, since it is the uncommon
+ * case and everything it needs - a count, a deadline on the stack, a
+ * constant of ten million - cost the common case instructions it never used
+ * (`spinlock.c`, `testing.md` 18.343).
+ */
+unsigned long spin_lock_wait(struct spinlock *lock, const char *taker,
+                             unsigned long flags);
+
+/*
  * Take the lock, and return what the interrupt state was.
  *
  * The flags go back to `spin_unlock`, which is why they are returned rather
  * than kept in the lock: two cores hold two different previous states, and a
  * field in the lock would be one of them overwriting the other.
+ *
+ * **One try inline, and the wait out of line** (`testing.md` 18.343). An
+ * IPC round trip takes seven locks and finds every one free, and the loop
+ * this was - its count, its deadline kept on the stack because
+ * `spin_patient` takes its address, its constant - was paid on each of them
+ * before the first try.
  */
 static inline unsigned long spin_lock_at(struct spinlock *lock, const char *taker)
 {
     unsigned long flags = cpu_interrupts_save();
-    unsigned long spins;
-    uint64_t since = 0;
 
     /*
      * A machine that is halting takes no locks. `panic.h` says why, and it
@@ -135,22 +148,12 @@ static inline unsigned long spin_lock_at(struct spinlock *lock, const char *take
         return flags;
     }
 
-    do {
-        for (spins = 0; spins < SPIN_GIVE_UP; spins++) {
-            if (cpu_lock_try(&lock->locked)) {
-                lock->holder = this_cpu()->index;
-                lock->taker = taker;
-                return flags;
-            }
+    if (__builtin_expect(!cpu_lock_try(&lock->locked), 0)) {
+        return spin_lock_wait(lock, taker, flags);
+    }
 
-            /* Not only a pause: on x86 a waiting core answers TLB shootdowns
-             * here, because with interrupts masked it cannot take the IPI
-             * that asks - and the core asking may hold this very lock. */
-            cpu_lock_wait();
-        }
-    } while (spin_patient(&since));
-
-    spin_panic(lock);
+    lock->holder = this_cpu()->index;
+    lock->taker = taker;
     return flags;
 }
 

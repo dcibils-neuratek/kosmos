@@ -179,8 +179,15 @@ struct percpu {
  * `vectors.S` and `user.S`, and work that belongs with x86's second core
  * rather than before it. Until then that board answers from `cpus[0]`,
  * which is correct for one processor and says so.
+ *
+ * **Inline** (`testing.md` 18.343): it was a function in `thread.c`, so
+ * every other file - every lock, every IPC - paid a call and a return to
+ * read one register.
  */
-struct percpu *this_cpu(void);
+static inline struct percpu *this_cpu(void)
+{
+    return (struct percpu *)cpu_self();
+}
 
 /*
  * Claims this processor's slot and makes `this_cpu` work.

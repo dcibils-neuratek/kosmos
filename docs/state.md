@@ -548,6 +548,15 @@ the unpacked source is in `build/qemu-virgl-src` (872 MB) until he decides.
 blitter does not blend, so the display engine first - a cursor plane, then
 page flips - then the blitter, then the render engine; and step 1, measuring
 the desktop, needs no code: `frames 30` in a Terminal on his 0.10.200 stick.
+**Diego's step 2 of 2 October, the cost of a message between programs**
+(18.343, roadmap 4i-b): counted by a QEMU plugin (`make bench-profile`), a
+round trip 1090 instructions against 603 on 5 September; 68.1 -> 59.4 ticks
+(-12.8%) and a switch 13.4 -> 12.8 by making `panicking`, `this_cpu` and
+`thread_current` inline, the lock's wait out of line, empty messages copy
+nothing and the per-core register read once in the switch. Baselines
+recorded, every move attributed. **Next, Diego's question**: whether the
+window manager should be C - measured first. And `book/logbook.md` holds
+every major change in plain words, an *In short* first (Diego, 2 October).
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

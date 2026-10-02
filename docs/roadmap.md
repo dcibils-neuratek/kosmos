@@ -1466,6 +1466,14 @@ processors, and still what follows USB:
    is to bisect those two numbers over the fortnight's commits. **And to run
    `make bench` where it would be seen**: it is in neither `make test` nor
    `make prepush`, which is why two weeks passed.
+   **Taken apart on 2 October** (`testing.md` 18.343) - not by bisecting but
+   by counting: `make bench-profile` counts every instruction a benchmark
+   runs, by kernel function. A round trip was 1090 instructions against 603
+   on 5 September; the seven locks stay, and what had grown around each was
+   removed: **68.1 -> 59.4 ticks a round trip (-12.8%), 13.4 -> 12.8 a
+   switch**. Still open: a switch is 205 instructions against 193 at the
+   baseline's commit, the difference being the per-core time Monitor shows
+   and the preemption fix (18.340), both on purpose.
 
 4j. **AGREED on 19 September - threads in a process.** Diego: "Why don't we
    add threading? To the kernel!", "Every modern os has multi threading as

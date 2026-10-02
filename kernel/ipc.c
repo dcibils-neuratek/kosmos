@@ -181,7 +181,13 @@ static void message_copy(struct message *dst, const struct message *src)
     dst->tag = src->tag;
     dst->cap_plus_one = src->cap_plus_one;
     dst->length = n;
-    memcpy(dst->data, src->data, n);
+
+    /* A message that is only its tag - a wake, an acknowledgement - copies
+     * nothing, and does not pay `memcpy`'s way to finding that out: eight
+     * instructions, five times a round trip (`testing.md` 18.343). */
+    if (n != 0) {
+        memcpy(dst->data, src->data, n);
+    }
 }
 
 /*
