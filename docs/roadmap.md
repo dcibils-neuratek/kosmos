@@ -1270,7 +1270,12 @@ processors, and still what follows USB:
    encode (the study, `docs/m700-gpu.md`). **3D later**, through a Vulkan
    or OpenGL driver of the render engine. This replaces the codec-first
    order of 28 September for that machine; virtio-gpu and virgl under QEMU
-   stay where they were.
+   stay where they were. **The plan is `docs/m700-2d.md`** (2 October), for
+   Diego to decide: Gen9's blitter copies and fills but does not blend, so
+   the first wins are the display engine's - a cursor plane, then page
+   flips, which remove the 19.8 MB copy a frame at 3440x1440 - then the
+   blitter for opaque work, then the render engine; a stick to measure the
+   desktop first.
    **And video in hardware, on the wishlist since 27 September** - Diego:
    "Can't we use the gpu for hardware encoding and decoding video?", and yes
    to keeping it here. The ThinkPad's and the M700's Intel graphics encode

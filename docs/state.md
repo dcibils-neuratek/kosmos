@@ -544,6 +544,10 @@ Diego** (roadmap 4h d): QEMU takes OpenGL only through libepoxy built with
 EGL, which Homebrew's is not; Mesa's EGL would render on the CPU, ANGLE is a
 Chromium-sized build. Recommended to go to the M700's 2D instead, his next;
 the unpacked source is in `build/qemu-virgl-src` (872 MB) until he decides.
+**The M700's 2D, planned** (`docs/m700-2d.md`, for Diego to decide): Gen9's
+blitter does not blend, so the display engine first - a cursor plane, then
+page flips - then the blitter, then the render engine; and step 1, measuring
+the desktop, needs no code: `frames 30` in a Terminal on his 0.10.200 stick.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
