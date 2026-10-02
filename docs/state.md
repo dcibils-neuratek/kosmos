@@ -525,8 +525,11 @@ disk throttle, and **fixed in one place for all five drivers**
 (`hal/virtio/wait.c`, `testing.md` 18.339): thirty seconds by the counter,
 done meaning the used index equals the available one, and a device that
 never answers reset - which takes its buffers back - and given up on aloud.
-`run_slowdisk.py` holds it, in the gate on both machines. The push waits for
-the full gate on it. **Diego's orders after it, 1 October**: the rest of the
+`run_slowdisk.py` holds it, in the gate on both machines. The next gate
+then met the scheduler's old `231` (18.39): a preemption flag a yield left
+standing, now cleared at every choice of a next thread (18.340), with a test
+that bites every run. **Pushed as 0.10.202** (`58726d8..af5f34f`), 82 of 82
+in 9:57. **Diego's orders after it, 1 October**: the rest of the
 roadmap's plan - the fonts on the disk first - and then **the M700's GPU, 2D
 first** for a faster desktop, then video decode and encode, then 3D through
 Vulkan or OpenGL (roadmap 4h, "The M700's order").
