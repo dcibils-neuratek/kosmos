@@ -583,7 +583,7 @@ transfers, a call with a deadline, an audit, and the I219 itself, whose
 next stick's log will say what its transmitter does. **Stick 0.10.204**
 (`db88c3d`): OVMF 32 checks, handed over for the M700 in place of 0.10.203,
 to try the Deskbar and its menu, a Terminal running something without a
-processor at 100%, and `log e1000` for the I219's transmitter.
+processor at 100%, and `log e1000` for the I219's transmitter. **Booted there the same evening: "now it works great"** (Diego); `log e1000` not yet seen, and the stable is still 0.10.193 until he says otherwise.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

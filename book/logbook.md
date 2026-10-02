@@ -321,3 +321,6 @@ sits at 100% while a Terminal runs something. Not yet: the M700 has no
 network address, because its card still sends nothing - the next stick's
 log says what the card thinks it is doing. And the USB driver has the same
 waiting habit, which is next. (`testing.md` 18.345)
+
+**Confirmed on the machine.** The same evening, on the 0.10.204 stick: "now
+it works great".
