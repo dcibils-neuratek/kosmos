@@ -1327,7 +1327,7 @@ As in Erlang: complexity goes far from the root, and what is near the root is so
 - **Framebuffer and input: restartable but visible.** They come back within a couple of frames and it shows.
 - **App server, filesystem, everything else: restartable.** This is where complexity lives.
 
-Level 1 gets done at stage 5, as soon as there are servers. Level 2 after stage 6, once you know what state matters. Designing recovery before knowing what has to be recovered is guessing.
+**Level 2 is being built, from 2 October 2026** - Diego: "based on the fact we have a microkernel arch we can have all these serveres, drivers, etc be restarted from the command line with a tool or from a system app" (`roadmap.md`, *Servers and drivers restarted*). This said level 2 would come "once you know what state matters", and by now every server's state is known. What already holds: `init` makes each server's endpoint, and an endpoint lives as long as its maker, so a server started again on the same one is reached by everyone holding it. What did not, and comes first: a caller whose message the dying server had already taken was never answered, since its endpoint outlives it. The list above predates the namespace becoming a kit, run in each process: there is no namespace server to lose. The console and the window manager are the visible ones, and come last.
 
 ---
 

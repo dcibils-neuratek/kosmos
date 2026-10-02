@@ -148,6 +148,44 @@ not wait or hang waiting for network or anything" (`testing.md` 18.345).
    needs that an 82574L does not. Until it sends, the M700 has no DHCP
    address and `telnetd` none to listen on.
 
+**Servers and drivers restarted, from the prompt or from a system
+application.** Diego, 2 October 2026, asking whether one can be restarted
+"instead of restarting the computer": "based on the fact we have a
+microkernel arch we can have all these serveres, drivers, etc be restarted
+from the command line with a tool or from a system app". `design.md` §10's
+level 2, named there as *the* architectural property and never built.
+`init` already makes every server's endpoint and the kernel keeps an
+endpoint alive while its maker lives (`ipc.c`, `owner`), so a server
+started again on the same endpoint is reached by everyone who held it.
+
+1. **The kernel answers what a dying server had taken.** A caller whose
+   message the server had already received waits on `awaiting_reply` with
+   the server's thread as its `peer`; the endpoint outlives the server, so
+   nothing ever answers it. Every such caller is answered `IPC_ERR_GONE`
+   when that thread ends - a crash today leaves its callers hung for ever.
+2. **`init` supervises**: it keeps how each server and driver was started -
+   role, capabilities, authority - and one that ends is started again on the
+   same endpoints, said in the log, and given up on after a few failures in
+   a short time so one that dies at start does not loop. A server stopped on
+   purpose stays stopped.
+3. **`restart`, `stop` and `start` at the prompt**, asked of `init` on an
+   endpoint of its own, held by what is given the authority - the shell, and
+   the application below.
+4. **Each server made to come back, one at a time, with a check in the gate
+   each**: the Intel driver and the network stack first (the stack attaches
+   again to a driver that came back; open connections said lost); audio
+   (streams opened again by the Synth Kit); `devices`, `binfs`, `libfs`,
+   `appfs`, `drives`; `diskfs` (its journal); the xHCI driver (keyboard,
+   mouse and the stick under `/Home` found again); `ramfs` (`/Temporary`
+   lost, and said); the console and the window manager last, if at all.
+5. **A system application**, drawn first (`docs/services.html`): every
+   server and driver, running or not, since when, how often restarted, its
+   lines in the log, and Restart, Stop and Start.
+
+Order: after the I219's stick (*Nothing waits on hardware* step 5, its
+reset done as Linux's `e1000e` does it), then 1 to 3 with the network pair of step 4, then the
+drawing for Diego.
+
 **Remote: the Mac runs commands on the M700 over the network, by Telnet.** Diego, 29
 September, after a day of sticks carried back and forth for a log and a
 profile: "why dont we build a python app that can run on this mac that
