@@ -472,6 +472,16 @@ region** - the machinery the shared surfaces already use. One IPC per
 It gets built when fonts come from the disk, because that is when the
 security argument stops being hypothetical.
 
+**Fonts come from the disk since 1 October** (`testing.md` 18.341) - and
+the letter of that line is met while its reason is not yet. The faces in
+`/Home/Fonts` are the four the build installs, IBM Plex Sans JP, KR, SC and
+TC, fetched and held to their sums: the parser still reads only files the
+build put there, never one a person chose. So the server is still not built,
+and the line is restated as what it meant: **it gets built the day a person
+can install a font of their own.** It is also what will make a face one copy
+on the machine - each process that draws Japanese holds its own today, the
+cost the first argument above weighed and set aside (`roadmap.md` 6zz j5).
+
 ## 19.14 The vector unit, and why the kernel's ban does not reach here
 
 **Compositing is 84.7% of a busy pass** - `frames` says so - and compositing

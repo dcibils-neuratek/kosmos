@@ -16128,3 +16128,57 @@ chosen thread must start with nothing standing, and nothing may be left once
 it is done. Every run rather than when a tick happens to land: **the control
 bit on both machines**, the old `thread.c` with this test - "started with
 one standing; one left after it". 197 of 197 on ARM, 195 of 195 on x86.
+
+## 18.341 Faces off the disk, loaded when a character needs one
+
+**What it is**: Plex Sans draws Latin, Greek and Cyrillic, and Japanese,
+Korean and Chinese were `?`. Their faces - IBM Plex Sans JP, KR, SC and TC, a
+regular weight each - are 22 MB against an image of 35, and Diego chose on 1
+October: "go with the fonts on disk, loaded when needed".
+
+  - **Fetched once, held to sums** (`tools/fetch_fonts.py`): the one file of
+    each out of IBM's repository at its release's tag - the releases' zips
+    are 1.3 GB together - checked against the git hash GitHub reports for it
+    there, and pinned by SHA-256. `make install-apps` and a stick's `/Home`
+    put them in `/Home/Fonts` with the OFL beside them (`tools/installed.py`
+    `fonts()`, apart from the list the game suites build their disks from).
+  - **Looked up in C, loaded where Lua is** (`gfx.c`): a face missing a
+    character asks the faces off the disk in its script's order - kana
+    Japanese, Hangul Korean, Han by the page's language (`gfx.font_prefer`,
+    from `doc:lang()`), Japanese by default - and, when the first of them
+    has not been tried, notes it as wanted and draws `?` without keeping it.
+    `surface:text` and `gfx.measure` load what a string needs before
+    drawing it, through `gfx.font_loader`, which the runner sets for every
+    program to read `/Home/Fonts/<face>` into a region; the browser, whose
+    text NetSurf measures from C, loads what its layout wanted and lays the
+    page out again. A face not on the disk is asked for once, and the next
+    in the order is wanted instead.
+  - **Scaled to the em** of the face it stands beside, not the line height,
+    which the two faces set differently.
+  - **The glyph table grows**: 128 slots a face, fixed, filled within a
+    paragraph of Japanese and drew the rest `?` with its face loaded; it
+    doubles at three quarters now.
+
+**The tests**: `run_fonts.py` (`arm-fonts`, `x86-fonts`) boots with Korean
+and Japanese in `/Home/Fonts` and a program that wraps the runtime's loader
+to count what it is asked: Latin loads nothing; Hangul loads Korean, kana
+Japanese, and Han is drawn from Japanese without reading more; told the page
+is Simplified Chinese, Han asks for SC and then TC - not on this disk - once
+each and draws from Japanese; four hundred syllables measure as four hundred
+glyphs; a drawn syllable inks more than a `?`; bytes that are not a face are
+refused. 11 checks on each machine. And the browser's first half
+(`run_browser.py`): a page in Japanese and Korean, eight characters of each
+and eight `?`, its faces read only once it was opened and no Chinese face
+asked for, as the page says `lang="ja"` - eight Japanese characters 239
+pixels wide, eight Korean 214, eight `?` 115.
+
+**The controls bit**: the same disk without the faces fails six checks
+(every width a `?`); the glyph table fixed at 128 fails the four hundred
+(3280 against 2800); the first version, which took the first face already
+in memory, drew a Chinese page's Han from Japanese without asking for
+Chinese; and the second stopped trying once one face was not on the disk,
+and drew `中文` as two `?`.
+
+**What it does not do yet**: each process holds its own copy of a face it
+loaded. Sharing one copy is `gfx.md` 19.13's font server - one parser, one
+copy, atlases handed out as regions - recorded in `roadmap.md` 6zz j5.

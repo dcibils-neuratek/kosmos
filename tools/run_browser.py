@@ -179,6 +179,19 @@ FACES_PAGE = ("<!doctype html><html><head><title>Faces</title><style>"
               "<p id=\"sans\">Hamburgefonstiv</p></body></html>")
 SERIF_INK, SANS_INK = (176, 32, 28), (28, 122, 32)
 
+# Japanese and Korean (`roadmap.md` 6zz j5): eight characters of each, and
+# eight `?`, large and in a colour each - the faces come off the disk the
+# first time a page needs them, and a character drawn is a glyph as wide as
+# its face says, not a `?`. The page says it is Japanese, so its Han is
+# drawn from the Japanese face and the Chinese ones are never asked for.
+SCRIPTS_PAGE = ("<!doctype html><html lang=\"ja\"><head><title>Scripts</title>"
+                "<style>p { font-size: 40px; }"
+                "#jp { color: #2050c0; } #kr { color: #c05020; } #q { color: #20a0a0; }"
+                "</style></head><body><p id=\"jp\">日本語の文字です</p>"
+                "<p id=\"kr\">한국어글자입니다</p><p id=\"q\">????????</p>"
+                "</body></html>")
+JP_INK, KR_INK, Q_INK = (32, 80, 192), (192, 80, 32), (32, 160, 160)
+
 # Sheets that `@import` (`roadmap.md` 6zz j5): a linked one importing another,
 # which imports the first back - a cycle - and a `<style>` importing one of
 # its own. Each colour is only in a sheet that came by an import.
@@ -333,6 +346,10 @@ def serve(directory, asked, tls=None):
 
             if self.path == "/faces.html":
                 self.answer_page(FACES_PAGE)
+                return
+
+            if self.path == "/scripts.html":
+                self.answer_page(SCRIPTS_PAGE)
                 return
 
             if self.path == "/imports.html":
@@ -651,6 +668,7 @@ def main():
     # guest's `/Home/Preferences/Authorities`, on a disk made for the run,
     # which is how a person adds one of their own.
     #
+    import fetch_fonts
     import run_tls
     import scratch
 
@@ -668,11 +686,17 @@ def main():
     https_good, good_port = serve(directory, tls_asked, context("good"))
     https_other, other_port = serve(directory, tls_asked, context("untrusted"))
 
+    # With the Japanese and Korean faces in `/Home/Fonts`, as a machine
+    # that had `make install-apps` has them (`fetch_fonts.py`).
+    fetch_fonts.main()
     disk = os.path.join(work, "disk.img")
     subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
-                    os.path.join(HERE, "kfs.lua"), "create", disk, "16",
+                    os.path.join(HERE, "kfs.lua"), "create", disk, "32",
                     os.path.join(work, "ca.der")
-                    + ":/Home/Preferences/Authorities/test.der"],
+                    + ":/Home/Preferences/Authorities/test.der"]
+                   + [os.path.join(fetch_fonts.OUT, name) + ":/Home/Fonts/" + name
+                      for name in ("IBMPlexSansJP-Regular.ttf",
+                                   "IBMPlexSansKR-Regular.ttf")],
                    check=True, capture_output=True)
 
     #
@@ -1762,6 +1786,50 @@ def main():
                               f"Wrote {args.out}.")
 
             print(f"faces: the word {serif_w} pixels wide in serif, {sans_w} in sans",
+                  flush=True)
+
+            #
+            # **Japanese and Korean, from faces off the disk** (`roadmap.md`
+            # 6zz j5, `testing.md` 18.341): read the first time a page needs
+            # them and not before, the page laid out again with them, and each
+            # line of eight characters far wider than the line of eight `?` -
+            # glyphs, not the question mark they were. Its Han from the
+            # Japanese face, as the page says it is Japanese.
+            #
+            mark = len(guest.seen)
+            early = guest.seen
+
+            go_to("scripts.html", "the page in Japanese and Korean")
+            time.sleep(1.0)
+            loaded = guest.seen[mark:]
+
+            for face in ("IBMPlexSansJP-Regular.ttf", "IBMPlexSansKR-Regular.ttf"):
+                if f"fonts: {face}" in early:
+                    raise Failure(f"{face} was read before a page needed it")
+
+                if not re.search(r"fonts: %s, \d+ bytes, loaded" % re.escape(face), loaded):
+                    raise Failure(f"{face} was not loaded for the page in Japanese and "
+                                  f"Korean: {loaded[-600:]!r}")
+
+            if "IBMPlexSansSC" in loaded or "IBMPlexSansTC" in loaded:
+                raise Failure("a page in Japanese asked for a Chinese face: "
+                              f"{loaded[-600:]!r}")
+
+            jp_box, kr_box, q_box = box_of(JP_INK), box_of(KR_INK), box_of(Q_INK)
+
+            if jp_box is None or kr_box is None or q_box is None:
+                raise Failure(f"the Japanese, the Korean or the line of ? is not on the "
+                              f"screen. Wrote {args.out}.")
+
+            jp_w, kr_w, q_w = (b[2] - b[0] for b in (jp_box, kr_box, q_box))
+
+            if jp_w < 1.5 * q_w or kr_w < 1.5 * q_w:
+                raise Failure(f"eight Japanese characters drawn {jp_w} pixels wide and "
+                              f"eight Korean {kr_w}, against {q_w} for eight ?: not "
+                              f"glyphs. Wrote {args.out}.")
+
+            print(f"scripts: Japanese {jp_w} pixels wide, Korean {kr_w}, eight ? {q_w}; "
+                  "JP and KR read off the disk for the page, no Chinese face",
                   flush=True)
 
             #

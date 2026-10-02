@@ -532,7 +532,12 @@ that bites every run. **Pushed as 0.10.202** (`58726d8..af5f34f`), 82 of 82
 in 9:57. **Diego's orders after it, 1 October**: the rest of the
 roadmap's plan - the fonts on the disk first - and then **the M700's GPU, 2D
 first** for a faster desktop, then video decode and encode, then 3D through
-Vulkan or OpenGL (roadmap 4h, "The M700's order").
+Vulkan or OpenGL (roadmap 4h, "The M700's order"). **The fonts on the disk,
+built** (18.341): Japanese, Korean and Chinese in `/Home/Fonts`, read the
+first time a character needs one, the Han in the page's language; the glyph
+table grows past 128. `make install-apps` puts them on the QEMU disk - Diego's
+`build/kosmos.img` has room, and it is his to run. The font server of
+`gfx.md` 19.13 is the next step for fonts, due when a person can install one.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

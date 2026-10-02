@@ -1599,6 +1599,16 @@ local function from_ns(url)
   return url
 end
 
+--
+-- Which face draws the page's Han ideographs - Japanese, Korean, or
+-- Simplified or Traditional Chinese - from the language it says it is in,
+-- before it is laid out (`gfx.font_prefer`, `roadmap.md` 6zz j5). The faces
+-- themselves come off the disk the first time the page needs one.
+--
+local function han_for(doc)
+  gfx.font_prefer(doc:lang() or "")
+end
+
 local function forget_pictures()
   for _, p in ipairs(current.pictures) do
     if p.kept then p.kept:free() end
@@ -1629,6 +1639,7 @@ local function lay_out(doc)
   local t0 = sys.ticks()
 
   if NS then
+    han_for(doc)
     local tall, why = doc:ns_layout(PAGE_W, VIEW_H, ns_address(current.here))
 
     if tall then
@@ -2513,6 +2524,7 @@ local function ns_band_pictures()
 
     if arrived == 0 then break end
 
+    han_for(current.doc)
     local tall = current.doc:ns_layout(PAGE_W, VIEW_H, ns_address(current.here))
 
     if tall then current.content_h = tall end
@@ -3302,6 +3314,7 @@ local function reflow()
   if not (current and current.doc) then return end
 
   if current.ns_doc then
+    han_for(current.doc)
     local tall = current.doc:ns_layout(PAGE_W, VIEW_H, ns_address(current.here))
 
     if tall then current.content_h = tall end

@@ -2778,6 +2778,26 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
         return -1;
     }
 
+    /*
+     * **And again when a face arrived** (`roadmap.md` 6zz j5): text NetSurf
+     * measured had characters no face this process holds draws - Japanese,
+     * Korean, Chinese - and `gfx` noted which face from `/Home/Fonts` each
+     * wanted, with no Lua state to load it from inside a measurement. Loaded
+     * here, everything is measured again with it, as a change of zoom does -
+     * and again when a face was not on the disk, so the next in the page's
+     * order is wanted: at most once a face, and only the first page that
+     * needs it.
+     */
+    while (gfx_fonts_load(L)) {
+        unmeasure(top);
+
+        if (!layout_document(h, width, height)) {
+            d->why = "NetSurf's layout ran out of memory";
+            faces_L = NULL;
+            return -1;
+        }
+    }
+
     d->costs.layout.ticks = kosmos_ticks() - began;
     d->costs.layout.calls++;
 

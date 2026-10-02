@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""What the build installs into /Home/Apps, as `host:/Home/path` pairs.
+"""What the build installs into /Home/Apps and /Home/Fonts, as
+`host:/Home/path` pairs.
 
     python3 tools/installed.py aarch64 ~/Kosmos/home
     python3 tools/installed.py x86_64  ~/Kosmos/home
@@ -95,11 +96,25 @@ def pairs(arch, home, apps=None):
     return out
 
 
+def fonts():
+    """The faces Kosmos keeps on the disk rather than in its image, into
+    /Home/Fonts with their licence: Japanese, Korean and Chinese
+    (`tools/fetch_fonts.py`, which fetches them the first time). Apart from
+    `pairs`, which the game suites also ask for their own disks and which
+    would carry 22 MB more for nothing."""
+    import fetch_fonts
+
+    fetch_fonts.main()
+
+    return ["%s:/Home/Fonts/%s" % (os.path.join(fetch_fonts.OUT, name), name)
+            for name, _, _, _ in fetch_fonts.FILES]
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: installed.py <aarch64|x86_64> [home folder]")
 
-    for pair in pairs(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None):
+    for pair in pairs(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None) + fonts():
         print(pair)
 
 

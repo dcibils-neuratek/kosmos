@@ -5504,6 +5504,36 @@ if role == ROLE_RUNNER then
   local function out(s) write_text(ns, "/Devices/console", s) end
 
   --
+  -- **Faces off the disk** (`roadmap.md` 6zz j5): what `gfx` reads when a
+  -- character needs a face the image does not carry - Japanese, Korean,
+  -- Chinese - from `/Home/Fonts`, into a region of its own that the face
+  -- keeps for the life of the process. Asked for only when a character
+  -- needs it, so a process that never draws one reads nothing; and through
+  -- this program's namespace, so one with no `/Home` has none and draws `?`.
+  --
+  gfx.font_loader(function(file)
+    local path = "/Home/Fonts/" .. file
+    local attrs = ns.getattr(path)
+    local size = attrs and tonumber(attrs.size)
+
+    if not size or size < 12 then return false end
+
+    local region = sys.memory((size + 4095) // 4096)
+    local at = region and sys.memory_map(region)
+
+    if not at or ns.read_into(path, region, 0, size) ~= size then
+      if region then sys.release(region) end
+      return false
+    end
+
+    local ok, why = gfx.font_fallback(file, at, size)
+
+    out(("fonts: %s, %d bytes, %s\n"):format(file, size,
+                                             ok and "loaded" or tostring(why)))
+    return ok == true
+  end)
+
+  --
   -- A program can start a program.
   --
   -- The shell does it by spawning one of these and naming a path; a program

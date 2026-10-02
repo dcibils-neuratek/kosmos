@@ -150,6 +150,14 @@ SUITES = [
     Suite("arm-slowdisk", ["python3", "tools/run_slowdisk.py", ARM]),
     Suite("x86-slowdisk", ["python3", "tools/run_slowdisk.py", X86], x86=True),
 
+    # **Faces off the disk** (`testing.md` 18.341): Japanese, Korean and
+    # Chinese from `/Home/Fonts`, loaded the first time a character needs
+    # one, a face not on the disk asked for once, the glyph table past its
+    # old 128, and bytes that are not a face refused. Both machines, since
+    # the kit is compiled for each.
+    Suite("arm-fonts", ["python3", "tools/run_fonts.py", ARM]),
+    Suite("x86-fonts", ["python3", "tools/run_fonts.py", X86], x86=True),
+
     # **The profiler** (`roadmap.md`, the App Inspector's first step): a
     # loop that is only the interpreter has to come out Lua and a copy that
     # is only C has to come out C, named from the symbols that ran; about a

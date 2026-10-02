@@ -3184,17 +3184,24 @@ processors, and still what follows USB:
 
         **Other scripts' glyphs, AGREED on 1 October** - Diego, of the three
         ways put to him (`state.md`): "go with the fonts on disk, loaded when
-        needed". Japanese, Korean and Chinese (IBM Plex Sans JP, KR, SC and
-        TC, a regular weight each, about 22 MB together against an image of
-        35) live on the disk rather than in the image: installed into
-        `/Home` the way Doom and Quake are - `make install-apps` on the QEMU
-        disk, a stick's `/Home` carrying them - and opened the first time a
-        character the face lacks needs one, `gfx` falling back to them for
-        that character. Fetched by the build with their checksums, as
-        FFmpeg is, rather than committed. Georgian, Armenian and Thai are a
-        tenth of a megabyte each and can sit beside them. Arabic, Hebrew and
-        Devanagari need shaping and right-to-left as well as glyphs - a step
-        of their own, after.
+        needed". **BUILT the same night** (`testing.md` 18.341): Japanese,
+        Korean and Chinese (IBM Plex Sans JP, KR, SC and TC, a regular
+        weight each, 22 MB together against an image of 35) in
+        `/Home/Fonts`, fetched by `tools/fetch_fonts.py` and held to their
+        sums, put there by `make install-apps` and a stick's `/Home`; a
+        process reads one the first time it has a character only that face
+        draws, the Han in the page's language. The glyph table grows past
+        its old 128.
+        **Next for fonts, wanted: the font server of `gfx.md` 19.13** - one
+        process parsing the faces and handing out atlases a (face, size) as
+        shared regions, so a face is one copy on the machine rather than one
+        per process that drew from it, and `stb_truetype` reads a font file
+        in one address space rather than in every one. Due the day a person
+        can install a font of their own; until then the only faces on the
+        disk are the four the build puts there.
+        Georgian, Armenian and Thai are a tenth of a megabyte each and can
+        sit beside them. Arabic, Hebrew and Devanagari need shaping and
+        right-to-left as well as glyphs - a step of their own, after.
 
         **SVG BUILT 30 September** (`testing.md` 18.313): expat 2.8.5 and
         libsvgtiny 0.1.8 vendored, unmodified, both MIT; the shapes drawn by

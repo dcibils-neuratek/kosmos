@@ -1582,12 +1582,16 @@ static int font_table_ref = LUA_NOREF;
  * `codepoint - 32` is as fast as a lookup gets. Unicode cannot be
  * pre-rasterised, so the rest arrive on demand and stay.
  *
- * A hundred and twenty-eight, open-addressed, and nothing is ever evicted:
- * a page of accented Latin, Greek or Cyrillic fits several times over, and
- * a document that overflows it draws `?` rather than growing without a
- * bound. Fixed pools are what this system does everywhere else.
+ * Open-addressed, and nothing is ever evicted. **It grows** (1 October,
+ * `roadmap.md` 6zz j5): it was a hundred and twenty-eight slots, fixed,
+ * which a page of accented Latin, Greek or Cyrillic fits several times
+ * over and a paragraph of Japanese does not - a page of it uses a thousand
+ * characters, and past the hundred and twenty-eighth every one drew `?`
+ * with its face loaded. So it starts at a hundred and twenty-eight and
+ * doubles when three quarters full, as every pool here grows now; what
+ * bounds it is the characters a process actually draws.
  */
-#define WIDE_SLOTS  128
+#define WIDE_FIRST  128u
 
 struct outline_font {
     bool  loaded;
@@ -1602,9 +1606,202 @@ struct outline_font {
     stbtt_fontinfo info;
     float scale;
 
-    unsigned     wide_cp[WIDE_SLOTS];       /* 0 means the slot is free */
-    struct glyph wide[WIDE_SLOTS];
+    unsigned     *wide_cp;      /* 0 means the slot is free */
+    struct glyph *wide;
+    unsigned      wide_cap;     /* slots, a power of two; 0 until the first */
+    unsigned      wide_used;
 };
+
+/*
+ * ------------------------------------------------------------------------
+ * Faces from the disk, for what the image's faces do not draw (`roadmap.md`
+ * 6zz j5, `testing.md` 18.341).
+ * ------------------------------------------------------------------------
+ *
+ * Plex Sans draws Latin, Greek and Cyrillic and nothing else, so Japanese,
+ * Korean and Chinese were `?`. Their faces are 22 MB together against an
+ * image of 35, and Diego chose on 1 October: "go with the fonts on disk,
+ * loaded when needed". They live in `/Home/Fonts`, and a process loads one
+ * the first time it has a character to draw that only that face has.
+ *
+ * **This file never reads a disk.** A kit is C in the caller's process
+ * with no namespace of its own, so the reading is a Lua function the
+ * runtime hands it (`gfx.font_loader`), which reads the file into a region
+ * and gives the bytes back through `gfx.font_fallback`. It is called only
+ * where Lua already is - at `surface:text` and `gfx.measure`, before they
+ * draw, and where the browser lays a page out - never from inside a glyph
+ * lookup, which the browser reaches from NetSurf's C with no Lua state to
+ * call with. A lookup that misses notes which face it wanted; the next
+ * place with Lua loads it.
+ *
+ * **Scaled to the em, not the line.** A fallback stands beside the face it
+ * stands in for, so it takes that face's em in pixels: Plex Sans JP and
+ * Plex Sans are drawn to sit together, and their ascents and descents are
+ * not the same numbers, so scaling each to the line height would draw one
+ * of them smaller.
+ *
+ * Each process holds its own copy of a face it loaded. Sharing one copy
+ * needs a region that maps read-only - a writable shared face would let any
+ * process rewrite the bytes another one's parser reads, and `stb_truetype`
+ * is not written for hostile input - which the kernel does not have yet
+ * (`roadmap.md` 6zz j5).
+ */
+#define CJK_JP "IBMPlexSansJP-Regular.ttf"
+#define CJK_KR "IBMPlexSansKR-Regular.ttf"
+#define CJK_SC "IBMPlexSansSC-Regular.ttf"
+#define CJK_TC "IBMPlexSansTC-Regular.ttf"
+
+/* The faces this kit knows a script for, and what became of each. */
+enum { FACE_JP, FACE_KR, FACE_SC, FACE_TC, KNOWN_FACES };
+
+static const char *const known_file[KNOWN_FACES] = { CJK_JP, CJK_KR, CJK_SC, CJK_TC };
+
+enum { FACE_UNTRIED, FACE_LOADED, FACE_ABSENT };
+
+static unsigned char known_state[KNOWN_FACES];
+
+/* Faces a lookup missed and the next place with Lua should load. */
+static unsigned wanted_faces;
+
+/*
+ * The faces loaded, in the order they arrived. A face loaded under a name
+ * this kit has no script for is still asked, after the known ones, for any
+ * character nothing else draws. Sixteen: four are known, and each is a
+ * file somebody put in `/Home/Fonts`.
+ */
+#define FALLBACKS_MAX 16
+
+struct fallback_face {
+    char           file[48];
+    stbtt_fontinfo info;
+    int            known;       /* FACE_*, or -1 */
+};
+
+static struct fallback_face fallbacks[FALLBACKS_MAX];
+static unsigned fallback_count;
+
+static int loader_ref = LUA_NOREF;
+
+enum { SCRIPT_NONE, SCRIPT_KANA, SCRIPT_HANGUL, SCRIPT_HAN };
+
+/*
+ * Which script a codepoint is, for choosing its face. Kana is Japanese and
+ * Hangul Korean whatever the page; the Han ideographs - and the punctuation,
+ * fullwidth forms and symbols the four share - are all four's, and which
+ * draws them is the page's language (`gfx.font_prefer`).
+ */
+static int script_of(unsigned cp)
+{
+    if (cp < 0x1100u) {
+        return SCRIPT_NONE;
+    }
+
+    if ((cp >= 0x3040u && cp <= 0x30ffu) || (cp >= 0x31f0u && cp <= 0x31ffu)
+        || (cp >= 0xff65u && cp <= 0xff9fu)) {
+        return SCRIPT_KANA;
+    }
+
+    if (cp <= 0x11ffu || (cp >= 0x3130u && cp <= 0x318fu)
+        || (cp >= 0xa960u && cp <= 0xa97fu) || (cp >= 0xac00u && cp <= 0xd7ffu)
+        || (cp >= 0xffa0u && cp <= 0xffdcu)) {
+        return SCRIPT_HANGUL;
+    }
+
+    if ((cp >= 0x2e80u && cp <= 0x2fdfu) || (cp >= 0x3000u && cp <= 0x303fu)
+        || (cp >= 0x3190u && cp <= 0x31bfu) || (cp >= 0x31c0u && cp <= 0x31efu)
+        || (cp >= 0x3200u && cp <= 0x33ffu) || (cp >= 0x3400u && cp <= 0x4dbfu)
+        || (cp >= 0x4e00u && cp <= 0x9fffu) || (cp >= 0xf900u && cp <= 0xfaffu)
+        || (cp >= 0xfe30u && cp <= 0xfe4fu) || (cp >= 0xff00u && cp <= 0xff64u)
+        || (cp >= 0xffe0u && cp <= 0xffefu)
+        || (cp >= 0x20000u && cp <= 0x3134fu)) {
+        return SCRIPT_HAN;
+    }
+
+    return SCRIPT_NONE;
+}
+
+/* Japanese first unless a page says otherwise (`gfx.font_prefer`). */
+static int han_order[KNOWN_FACES] = { FACE_JP, FACE_SC, FACE_TC, FACE_KR };
+
+/* The faces a script may be drawn from, best first; -1 ends the list. */
+static const int *order_of(int script)
+{
+    static const int kana[] = { FACE_JP, FACE_SC, FACE_TC, -1 };
+    static const int hangul[] = { FACE_KR, -1 };
+    static int han[KNOWN_FACES + 1];
+    int i;
+
+    if (script == SCRIPT_KANA) {
+        return kana;
+    }
+
+    if (script == SCRIPT_HANGUL) {
+        return hangul;
+    }
+
+    for (i = 0; i < KNOWN_FACES; i++) {
+        han[i] = han_order[i];
+    }
+
+    han[KNOWN_FACES] = -1;
+    return han;
+}
+
+static const struct fallback_face *loaded_known(int known)
+{
+    unsigned i;
+
+    for (i = 0; i < fallback_count; i++) {
+        if (fallbacks[i].known == known) {
+            return &fallbacks[i];
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * The face that draws `cp`, in its script's order: a loaded one that has
+ * it, or - at the first face in the order not yet tried - none yet, with
+ * that face noted as wanted for the next place with Lua. **The order is
+ * kept even when a later face is loaded**: a page in Chinese is drawn in
+ * the Chinese face once it has been read, not in the Japanese one that
+ * happened to be in memory first; only a face that is not on the disk is
+ * passed over. Then any other loaded face that has the character.
+ */
+static const struct fallback_face *fallback_for(unsigned cp)
+{
+    int script = script_of(cp);
+    unsigned i;
+
+    if (script != SCRIPT_NONE) {
+        const int *order = order_of(script);
+
+        for (i = 0; order[i] >= 0; i++) {
+            const struct fallback_face *fb;
+
+            if (known_state[order[i]] == FACE_UNTRIED) {
+                wanted_faces |= 1u << order[i];
+                return NULL;
+            }
+
+            fb = loaded_known(order[i]);
+
+            if (fb != NULL && stbtt_FindGlyphIndex(&fb->info, (int)cp) != 0) {
+                return fb;
+            }
+        }
+    }
+
+    for (i = 0; i < fallback_count; i++) {
+        if (fallbacks[i].known < 0
+            && stbtt_FindGlyphIndex(&fallbacks[i].info, (int)cp) != 0) {
+            return &fallbacks[i];
+        }
+    }
+
+    return NULL;
+}
 
 /*
  * One codepoint from a UTF-8 string, and how many bytes it was.
@@ -1760,6 +1957,49 @@ static int role_of(lua_State *L, int index)
 }
 
 /*
+ * The wide table twice the size, or its first: every glyph kept is moved to
+ * where its codepoint now probes from. False when there was no memory for
+ * it, and the table as it was.
+ */
+static bool wide_grow(struct outline_font *f)
+{
+    unsigned cap = f->wide_cap != 0 ? f->wide_cap * 2u : WIDE_FIRST;
+    unsigned *cps = calloc(cap, sizeof(*cps));
+    struct glyph *glyphs = calloc(cap, sizeof(*glyphs));
+    unsigned i;
+
+    if (cps == NULL || glyphs == NULL) {
+        free(cps);
+        free(glyphs);
+        return false;
+    }
+
+    for (i = 0; i < f->wide_cap; i++) {
+        unsigned cp = f->wide_cp[i], slot;
+
+        if (cp == 0) {
+            continue;
+        }
+
+        slot = cp & (cap - 1u);
+
+        while (cps[slot] != 0) {
+            slot = (slot + 1u) & (cap - 1u);
+        }
+
+        cps[slot] = cp;
+        glyphs[slot] = f->wide[i];
+    }
+
+    free(f->wide_cp);
+    free(f->wide);
+    f->wide_cp = cps;
+    f->wide = glyphs;
+    f->wide_cap = cap;
+    return true;
+}
+
+/*
  * The glyph for a codepoint, rasterising it if this is the first time.
  *
  * ASCII takes the array and costs a subtraction, which is what it cost
@@ -1783,39 +2023,58 @@ static const struct glyph *glyph_for(const struct outline_font *cf, unsigned cp)
         return &f->glyphs['?' - GLYPH_MIN];
     }
 
-    slot = cp % WIDE_SLOTS;
+    /* Room first, so the probe below always finds a free slot: three
+     * quarters full doubles it. When even that fails, `?` says so. */
+    if ((f->wide_used + 1u) * 4u > f->wide_cap * 3u && !wide_grow(f)) {
+        return &f->glyphs['?' - GLYPH_MIN];
+    }
 
-    for (tried = 0; tried < WIDE_SLOTS; tried++) {
+    slot = cp & (f->wide_cap - 1u);
+
+    for (tried = 0; tried < f->wide_cap; tried++) {
         if (f->wide_cp[slot] == cp) {
             return &f->wide[slot];
         }
 
         if (f->wide_cp[slot] == 0) {
             struct glyph *gl = &f->wide[slot];
+            const stbtt_fontinfo *from = &f->info;
+            float scale = f->scale;
             int adv, lsb;
 
-            /* A codepoint the face does not have rasterises to nothing, and
-             * `?` is a better answer than an empty box the width of a space:
-             * it says something is missing rather than hiding it. */
+            /*
+             * A codepoint the face does not have: from a face off the disk
+             * that has it, at this face's em; and when none is loaded yet,
+             * `?` - a better answer than an empty box the width of a space,
+             * since it says something is missing - and not kept, so the
+             * same character draws properly once its face has arrived.
+             */
             if (stbtt_FindGlyphIndex(&f->info, (int)cp) == 0) {
-                return &f->glyphs['?' - GLYPH_MIN];
+                const struct fallback_face *fb = fallback_for(cp);
+
+                if (fb == NULL) {
+                    return &f->glyphs['?' - GLYPH_MIN];
+                }
+
+                from = &fb->info;
+                scale = stbtt_ScaleForMappingEmToPixels(
+                            from, f->scale
+                                  / stbtt_ScaleForMappingEmToPixels(&f->info, 1.0f));
             }
 
-            stbtt_GetCodepointHMetrics(&f->info, (int)cp, &adv, &lsb);
-            gl->advance = (int)(adv * f->scale + 0.5f);
-            gl->coverage = stbtt_GetCodepointBitmap(&f->info, f->scale,
-                                                    f->scale, (int)cp,
+            stbtt_GetCodepointHMetrics(from, (int)cp, &adv, &lsb);
+            gl->advance = (int)(adv * scale + 0.5f);
+            gl->coverage = stbtt_GetCodepointBitmap(from, scale, scale, (int)cp,
                                                     &gl->w, &gl->h,
                                                     &gl->xoff, &gl->yoff);
             f->wide_cp[slot] = cp;
+            f->wide_used++;
             return gl;
         }
 
-        slot = (slot + 1) % WIDE_SLOTS;
+        slot = (slot + 1u) & (f->wide_cap - 1u);
     }
 
-    /* Full. Bounded pools mean this can happen, and saying so with a `?` is
-     * better than evicting something the next character will want back. */
     return &f->glyphs['?' - GLYPH_MIN];
 }
 
@@ -1830,14 +2089,18 @@ static void outline_release(struct outline_font *f)
         }
     }
 
-    for (i = 0; i < WIDE_SLOTS; i++) {
+    for (i = 0; i < (int)f->wide_cap; i++) {
         if (f->wide[i].coverage != NULL) {
             free(f->wide[i].coverage);
-            f->wide[i].coverage = NULL;
         }
-
-        f->wide_cp[i] = 0;
     }
+
+    free(f->wide_cp);
+    free(f->wide);
+    f->wide_cp = NULL;
+    f->wide = NULL;
+    f->wide_cap = 0;
+    f->wide_used = 0;
 
     f->loaded = false;
 }
@@ -2272,13 +2535,296 @@ static int l_height(lua_State *L)
 /* How wide a string would be. What the fifty places computing
  * `#text * gfx.font.w` should ask instead, and what a proportional font
  * makes compulsory. */
+/*
+ * ------------------------------------------------------------------------
+ * The faces off the disk, loaded where Lua is (see `fallback_for`).
+ * ------------------------------------------------------------------------
+ */
+
+/*
+ * Every face a lookup wanted, through the runtime's loader, each asked for
+ * once: a face it could not give - no `/Home`, no file - is not asked for
+ * again, and the next face in its order is wanted instead. True when a face
+ * was tried, whether it arrived or not: either way what was looked up
+ * without it should be looked up again, and four faces bound how often.
+ */
+static bool load_wanted(lua_State *L)
+{
+    bool any = false;
+
+    while (wanted_faces != 0) {
+        int i;
+
+        for (i = 0; i < KNOWN_FACES; i++) {
+            if ((wanted_faces & (1u << i)) == 0) {
+                continue;
+            }
+
+            wanted_faces &= ~(1u << i);
+
+            if (known_state[i] != FACE_UNTRIED) {
+                continue;
+            }
+
+            /* Absent unless the loader hands it over through
+             * `gfx.font_fallback`, which says loaded. */
+            known_state[i] = FACE_ABSENT;
+            any = true;
+
+            if (loader_ref == LUA_NOREF) {
+                continue;
+            }
+
+            lua_rawgeti(L, LUA_REGISTRYINDEX, loader_ref);
+            lua_pushstring(L, known_file[i]);
+            (void)lua_pcall(L, 1, 1, 0);
+            lua_pop(L, 1);
+        }
+    }
+
+    return any;
+}
+
+/*
+ * Before a string is drawn or measured from Lua: every face it needs and
+ * this process has not loaded, loaded - so the first drawing of a Japanese
+ * word is already Japanese, and nothing has to be drawn twice. A string with
+ * no byte from U+1100 up costs one pass over its bytes and nothing else.
+ */
+static void fonts_for(lua_State *L, const struct outline_font *f,
+                      const char *str, size_t len)
+{
+    size_t i;
+
+    if (!f->loaded) {
+        return;
+    }
+
+    for (i = 0; i < len && (unsigned char)str[i] < 0xe1u; i++) {
+    }
+
+    if (i == len) {
+        return;
+    }
+
+    /* Again after a face is tried: a character its script's first face did
+     * not have - or that face not being on the disk - wants the next one.
+     * Four faces bound it. */
+    do {
+        size_t at = 0;
+
+        while (at < len) {
+            unsigned cp = utf8_next(str, len, &at);
+
+            if (script_of(cp) != SCRIPT_NONE
+                && stbtt_FindGlyphIndex(&f->info, (int)cp) == 0) {
+                (void)fallback_for(cp);
+            }
+        }
+    } while (wanted_faces != 0 && load_wanted(L));
+}
+
+/* What a lookup from C wanted, loaded now that there is a Lua state to load
+ * with (`gfx_draw.h`); true when a face was tried, and what was measured
+ * without it should be measured again - which may want the next face. */
+bool gfx_fonts_load(lua_State *L)
+{
+    return wanted_faces != 0 && load_wanted(L);
+}
+
+/*
+ * `gfx.font_loader(fn)` - how this process reads a face off the disk:
+ * `fn(file)` is handed a file name in `/Home/Fonts` and gives the bytes to
+ * `gfx.font_fallback`, returning true; the runtime sets it for every
+ * program it starts. With no argument, the loader in force, or nil - so a
+ * program can wrap it, which is how the test counts what it was asked.
+ */
+static int l_font_loader(lua_State *L)
+{
+    if (lua_isnoneornil(L, 1)) {
+        if (loader_ref == LUA_NOREF) {
+            lua_pushnil(L);
+        } else {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, loader_ref);
+        }
+
+        return 1;
+    }
+
+    luaL_checktype(L, 1, LUA_TFUNCTION);
+
+    if (loader_ref != LUA_NOREF) {
+        luaL_unref(L, LUA_REGISTRYINDEX, loader_ref);
+    }
+
+    lua_pushvalue(L, 1);
+    loader_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    return 0;
+}
+
+/*
+ * `gfx.font_fallback(file, address, size)` -> true, or nil and why: a face's
+ * bytes, already in this process at `address` (a region `sys.memory_map`
+ * mapped), drawn from for whatever the faces in force do not have. The
+ * region is the face's for the life of the process: nothing gives it back.
+ */
+static int l_font_fallback(lua_State *L)
+{
+    size_t n;
+    const char *file = luaL_checklstring(L, 1, &n);
+    uintptr_t at = (uintptr_t)luaL_checkinteger(L, 2);
+    size_t size = (size_t)luaL_checkinteger(L, 3);
+    struct fallback_face *fb;
+    unsigned i;
+    int offset, known = -1;
+
+    if (n == 0 || n >= sizeof(fb->file)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "a face's name is 1 to 47 bytes");
+        return 2;
+    }
+
+    for (i = 0; i < fallback_count; i++) {
+        if (strcmp(fallbacks[i].file, file) == 0) {
+            lua_pushboolean(L, 1);
+            return 1;
+        }
+    }
+
+    if (fallback_count == FALLBACKS_MAX) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "sixteen faces off the disk are loaded already");
+        return 2;
+    }
+
+    if (at == 0 || size < 12) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "no bytes to make a face of");
+        return 2;
+    }
+
+    fb = &fallbacks[fallback_count];
+    offset = stbtt_GetFontOffsetForIndex((const unsigned char *)at, 0);
+
+    if (offset < 0 || !stbtt_InitFont(&fb->info, (const unsigned char *)at, offset)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "not a TrueType face");
+        return 2;
+    }
+
+    memcpy(fb->file, file, n + 1);
+
+    for (i = 0; i < KNOWN_FACES; i++) {
+        if (strcmp(known_file[i], file) == 0) {
+            known = (int)i;
+            known_state[i] = FACE_LOADED;
+        }
+    }
+
+    fb->known = known;
+    fallback_count++;
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* `gfx.fallbacks()` -> the faces off the disk this process has, in the
+ * order they arrived. */
+static int l_fallbacks(lua_State *L)
+{
+    unsigned i;
+
+    lua_createtable(L, (int)fallback_count, 0);
+
+    for (i = 0; i < fallback_count; i++) {
+        lua_pushstring(L, fallbacks[i].file);
+        lua_rawseti(L, -2, (lua_Integer)(i + 1));
+    }
+
+    return 1;
+}
+
+/* Every glyph a face drew from the wide table, dropped, so the next drawing
+ * asks again - after the order Han is drawn in changed. */
+static void wide_forget(struct outline_font *f)
+{
+    unsigned i;
+
+    for (i = 0; i < f->wide_cap; i++) {
+        if (f->wide_cp[i] != 0) {
+            free(f->wide[i].coverage);
+            f->wide[i].coverage = NULL;
+            f->wide_cp[i] = 0;
+        }
+    }
+
+    f->wide_used = 0;
+}
+
+/*
+ * `gfx.font_prefer(lang)` -> true when the order changed: which face draws
+ * the Han ideographs, from a page's language - `ja` Japanese, `ko` Korean,
+ * `zh` with Taiwan, Hong Kong, Macau or `Hant` Traditional Chinese, other
+ * `zh` Simplified, and anything else Japanese. One order a process, since a
+ * glyph once drawn is kept; a change forgets what was drawn the other way.
+ */
+static int l_font_prefer(lua_State *L)
+{
+    char tag[32];
+    const char *lang = luaL_optstring(L, 1, "");
+    size_t i;
+    int order[KNOWN_FACES] = { FACE_JP, FACE_SC, FACE_TC, FACE_KR };
+    bool changed = false;
+
+    for (i = 0; i + 1 < sizeof(tag) && lang[i] != '\0'; i++) {
+        char c = lang[i];
+
+        tag[i] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : (c == '_' ? '-' : c);
+    }
+
+    tag[i] = '\0';
+
+    if (strncmp(tag, "ko", 2) == 0) {
+        order[0] = FACE_KR; order[1] = FACE_JP; order[2] = FACE_SC; order[3] = FACE_TC;
+    } else if (strncmp(tag, "zh", 2) == 0) {
+        bool trad = strstr(tag, "hant") != NULL || strstr(tag, "-tw") != NULL
+                    || strstr(tag, "-hk") != NULL || strstr(tag, "-mo") != NULL;
+
+        order[0] = trad ? FACE_TC : FACE_SC;
+        order[1] = trad ? FACE_SC : FACE_TC;
+        order[2] = FACE_JP;
+        order[3] = FACE_KR;
+    }
+
+    for (i = 0; i < KNOWN_FACES; i++) {
+        if (han_order[i] != order[i]) {
+            han_order[i] = order[i];
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        for (i = 0; i < FACES_MAX; i++) {
+            struct outline_font *f = face_slot((int)i);
+
+            if (f != &no_face && f->loaded) {
+                wide_forget(f);
+            }
+        }
+    }
+
+    lua_pushboolean(L, changed);
+    return 1;
+}
+
 static int l_measure(lua_State *L)
 {
     size_t len;
     const char *str = luaL_checklstring(L, 1, &len);
+    const struct outline_font *f = face_slot(role_of(L, 2));
 
-    lua_pushinteger(L,
-        (lua_Integer)text_width(face_slot(role_of(L, 2)), str, len));
+    fonts_for(L, f, str, len);
+    lua_pushinteger(L, (lua_Integer)text_width(f, str, len));
     return 1;
 }
 
@@ -2332,6 +2878,7 @@ static int l_text(lua_State *L)
         const struct outline_font *f = face_slot(role_of(L, 7));
 
         if (f->loaded) {
+            fonts_for(L, f, text, len);
             draw_outline_text(s, f, x, y, text, len, fg,
                               opaque ? &bg : NULL);
             lua_pushinteger(L, x + text_width(f, text, len));
@@ -3491,6 +4038,10 @@ static const luaL_Reg gfx_functions[] = {
     { "measure",  l_measure },
     { "height",   l_height },
     { "fonts",    l_font_names },
+    { "font_loader",   l_font_loader },
+    { "font_fallback", l_font_fallback },
+    { "font_prefer",   l_font_prefer },
+    { "fallbacks",     l_fallbacks },
     { "surface", l_new },
     { "wrap",    l_wrap },
     { "bytes",   l_surface_bytes },

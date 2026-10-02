@@ -607,6 +607,28 @@ static int l_meta(lua_State *L)
     return 1;
 }
 
+/*
+ * `doc:lang()` -> the language the page says it is in, `<html lang>`, or nil:
+ * which face draws its Han ideographs, Japanese, Korean or Chinese
+ * (`gfx.font_prefer`, `roadmap.md` 6zz j5).
+ */
+static int l_lang(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    dom_node *root = NULL;
+
+    lua_createtable(L, 0, 1);
+
+    if (dom_document_get_document_element(d->dom, (void *)&root) == DOM_NO_ERR
+        && root != NULL) {
+        attribute_field(L, root, "lang", "lang");
+        dom_node_unref(root);
+    }
+
+    lua_getfield(L, -1, "lang");
+    return 1;
+}
+
 /* text(tag) -> the text inside the first such element. */
 static int l_text(lua_State *L)
 {
@@ -1509,6 +1531,7 @@ void kosmos_web_kit(lua_State *L)
     static const luaL_Reg doc[] = {
         { "count", l_count },
         { "meta",  l_meta },
+        { "lang",  l_lang },
         { "style", l_style },
         { "text",   l_text },
         { "blocks", l_blocks },

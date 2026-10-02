@@ -70,4 +70,14 @@ void gfx_draw_i420(struct surface *s, const uint8_t *const plane[3],
                    const int stride[3], unsigned width, unsigned height,
                    bool bt709, bool full_range);
 
+/*
+ * The faces off the disk a lookup from C wanted and could not have - a
+ * page's text measured by NetSurf, which has no Lua state to load with -
+ * loaded now (`gfx.c`, `fallback_for`). True when a face was tried - it
+ * arrived, or is not on the disk and the next one will be wanted - and what
+ * was measured without it should be measured again.
+ */
+struct lua_State;
+bool gfx_fonts_load(struct lua_State *L);
+
 #endif /* KOSMOS_GFX_DRAW_H */
