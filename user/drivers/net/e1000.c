@@ -172,9 +172,13 @@
 #define RCTL_SECRC      (1u << 26)  /* strip the CRC the card checked */
 #define RCTL_UPE        (1u << 3)   /* unicast promiscuous */
 
-/* RXDCTL's write-back threshold, bits 21:16, and its unit (`ich8lan.h`'s
- * E1000_RXDCTL_THRESH_UNIT_DESC): descriptors rather than cache lines. The
- * prefetch and host thresholds below it are left as they were. */
+/* RXDCTL: the prefetch and host thresholds in its low fourteen bits (5:0
+ * and 13:8), the write-back threshold in 21:16, and their unit in bit 24
+ * (`ich8lan.h`'s E1000_RXDCTL_THRESH_UNIT_DESC): descriptors rather than
+ * cache lines. The values are `e1000_flush_rx_ring`'s for an I219. */
+#define RXDCTL_THRESHOLDS       0x00003FFFu
+#define RXDCTL_PTHRESH_31       0x0000001Fu
+#define RXDCTL_HTHRESH_ONE      (1u << 8)
 #define RXDCTL_WTHRESH          0x003F0000u
 #define RXDCTL_WTHRESH_ONE      (1u << 16)
 #define RXDCTL_UNIT_DESC        0x01000000u
@@ -517,16 +521,31 @@ static void rings_start(void)
         card.rx_ext = true;
 
         /*
-         * **Each frame written back as it arrives** (`testing.md` 18.352).
-         * The firmware's driver batches them - a write-back threshold, which
-         * `e1000e` notes "only takes effect if the RDTR is set" - and taken
-         * as the firmware left it, the M700 answered the Mac's pings 7 to 18
-         * seconds late: a frame waited in the card until several more had
-         * come. The threshold is one, counted in descriptors, and both of
-         * the receive timers are nought, which is where `e1000e` leaves a
-         * chip of this kind after its reset.
+         * **Each frame written back as it arrives** (`testing.md` 18.352),
+         * and **free descriptors fetched as soon as there is one** (18.353).
+         *
+         * The write-back threshold is one and both receive timers nought,
+         * which is where `e1000e` leaves a chip of this kind after its
+         * reset. The fetch is the other half, and 0.10.209 left it as the
+         * firmware set it while changing the unit it is counted in - from
+         * cache lines to descriptors - under it. The card fetches the
+         * descriptors it is given only while it holds fewer than the
+         * prefetch threshold and the ring has at least the host threshold
+         * free; this driver hands them back one at a time, as each frame is
+         * taken, so a host threshold above one can leave the card with
+         * nowhere to put a frame and a ring full of places for it. That is
+         * what 0.10.210's counts said on the M700: a third to half of what
+         * arrived "missed" - the card's own buffer full - while "no buffer"
+         * stayed nought.
+         *
+         * So the thresholds are the ones Linux gives an I219 when it must be
+         * sure the card takes what it is handed (`e1000_flush_rx_ring`):
+         * "prefetch threshold to 31, host threshold to 1 and make sure the
+         * granularity is "descriptors" and not "cache lines"".
          */
-        reg_write(REG_RXDCTL, (reg_read(REG_RXDCTL) & ~RXDCTL_WTHRESH)
+        reg_write(REG_RXDCTL, (reg_read(REG_RXDCTL)
+                               & ~(RXDCTL_THRESHOLDS | RXDCTL_WTHRESH))
+                              | RXDCTL_PTHRESH_31 | RXDCTL_HTHRESH_ONE
                               | RXDCTL_WTHRESH_ONE | RXDCTL_UNIT_DESC);
         reg_write(REG_RDTR, 0);
         reg_write(REG_RADV, 0);
@@ -613,6 +632,23 @@ static void say_memory(struct say_line *line, const char *what)
     say_send(console, line);
 }
 
+/* When the card fetches and writes back receive descriptors, and how long it
+ * may wait to say so (`rings_start`). */
+static void say_timing(struct say_line *line, const char *what)
+{
+    say_begin(line);
+    say_text(line, what);
+    say_text(line, ": RXDCTL ");
+    say_hex(line, reg_read(REG_RXDCTL), 8);
+    say_text(line, " RDTR ");
+    say_hex(line, reg_read(REG_RDTR), 8);
+    say_text(line, " RADV ");
+    say_hex(line, reg_read(REG_RADV), 8);
+    say_text(line, " ITR ");
+    say_hex(line, reg_read(REG_ITR), 8);
+    say_send(console, line);
+}
+
 /*
  * **What the firmware left**, before anything is touched: the M700's boots
  * its own network stack first, and what it did to the card is the first
@@ -660,17 +696,7 @@ static void say_firmware(struct say_line *line)
     say_hex(line, reg_read(REG_RFCTL), 8);
     say_send(console, line);
 
-    say_begin(line);
-    say_text(line, "e1000: its receive timing as the firmware left it: RXDCTL ");
-    say_hex(line, reg_read(REG_RXDCTL), 8);
-    say_text(line, " RDTR ");
-    say_hex(line, reg_read(REG_RDTR), 8);
-    say_text(line, " RADV ");
-    say_hex(line, reg_read(REG_RADV), 8);
-    say_text(line, " ITR ");
-    say_hex(line, reg_read(REG_ITR), 8);
-    say_send(console, line);
-
+    say_timing(line, "e1000: its receive timing as the firmware left it");
     say_memory(line, "e1000: its memory transfers as the firmware left them");
 }
 
@@ -1116,6 +1142,7 @@ static bool bring_up(struct say_line *line)
 
     if (card.pch) {
         pch_bring_up(line);
+        say_timing(line, "e1000: its receive timing now");
         say_memory(line, "e1000: its memory transfers now");
     } else {
         /*

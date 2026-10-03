@@ -4613,6 +4613,16 @@ def ethernet_pch(image, check):
               "left not snooping, the card was not put back to snooping with "
               "its writes in order - or the driver did not say so:\n    "
               + shown(out))
+        # The receive thresholds (18.353): fetch while fewer than 31 are
+        # held and one is free, write each back alone, all counted in
+        # descriptors - `e1000_flush_rx_ring`'s for an I219 - read back
+        # from the card after bring-up.
+        timing = re.search(r"e1000: its receive timing now: RXDCTL ([0-9a-f]{8})",
+                           out)
+        check(timing is not None
+              and int(timing.group(1), 16) & 0x013F3FFF == 0x0101011F,
+              "after bring-up the card's receive thresholds were not prefetch "
+              "31, host 1 and write-back 1, in descriptors:\n    " + shown(out))
         check(re.search(r"e1000: on PCI Express: device control [0-9a-f]{4}, "
                         r"no-snoop (not )?allowed, relaxed ordering (not )?"
                         r"allowed", out) is not None,
