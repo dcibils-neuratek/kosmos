@@ -54,7 +54,7 @@
  */
 #define REG_CTRL        0x0000u
 #define REG_STATUS      0x0008u
-#define REG_CTRL_EXT    0x0018u     /* read only, for the log */
+#define REG_CTRL_EXT    0x0018u
 #define REG_ICR         0x00C0u     /* read to clear */
 #define REG_IMS         0x00D0u
 #define REG_IMC         0x00D8u
@@ -71,7 +71,7 @@
 #define REG_TDLEN       0x3808u
 #define REG_TDH         0x3810u
 #define REG_TDT         0x3818u
-#define REG_TXDCTL      0x3828u     /* queue 0; read only, for the log */
+#define REG_TXDCTL      0x3828u     /* queue 0's transmit descriptor control */
 #define REG_MTA         0x5200u     /* 128 entries of the multicast table */
 #define REG_RAL0        0x5400u
 #define REG_RAH0        0x5404u
@@ -101,6 +101,7 @@
 #define REG_RXDCTL      0x2828u     /* queue 0's receive descriptor control */
 #define REG_RADV        0x282Cu     /* receive absolute delay */
 #define REG_ITR         0x00C4u     /* interrupt throttling */
+#define REG_GCR         0x5B00u     /* PCI Express control: snooping */
 
 /* The card's own counts, each cleared as it is read (`regs.h`). */
 #define REG_CRCERRS     0x4000u
@@ -118,6 +119,12 @@
 #define CTRL_EXT_BIT22          (1u << 22)
 #define CTRL_EXT_PHYPDEN        0x00100000u
 #define CTRL_EXT_DRV_LOAD       0x10000000u
+#define CTRL_EXT_RO_DIS         0x00020000u     /* relaxed ordering off */
+#define GCR_NO_SNOOP_ALL        0x0000003Fu     /* PCIE_NO_SNOOP_ALL: six kinds */
+#define TXDCTL_PTHRESH          0x0000003Fu
+#define TXDCTL_WTHRESH          0x003F0000u
+#define TXDCTL_FULL_TX_DESC_WB  0x01010000u     /* GRAN=1, WTHRESH=1 */
+#define TXDCTL_MAX_PREFETCH     0x0100001Fu     /* GRAN=1, PTHRESH=31 */
 #define TXDCTL_COUNT_DESC       (1u << 22)
 #define TARC0_BITS              ((1u << 23) | (1u << 24) | (1u << 26) | (1u << 27))
 #define TARC0_CB_MULTIQ_3_REQ   0x30000000u
@@ -142,8 +149,18 @@
 /* In configuration space (`SYS_DEV_CONFIG`): `e1000.h`'s. */
 #define PCI_COMMAND_WORD        0x04u
 #define PCI_COMMAND_MASTER      0x0004u
+#define PCI_STATUS_CAP_LIST     0x0010u     /* in the word above the command */
 #define PCICFG_DESC_RING_STATUS 0xE4u
 #define FLUSH_DESC_REQUIRED     0x0100u
+
+/* ...and the PCI Express capability's, from Linux's `pci_regs.h` (QEMU
+ * 11.1.1's copy): where the list starts, the capability's identifier, and
+ * in its device control word what the card is allowed to ask of memory. */
+#define PCI_CAPABILITY_LIST     0x34u
+#define PCI_CAP_ID_EXP          0x10u
+#define PCI_EXP_DEVCTL          0x08u
+#define PCI_EXP_DEVCTL_RELAX_EN 0x0010u
+#define PCI_EXP_DEVCTL_NOSNOOP_EN 0x0800u
 
 #define CTRL_SLU        (1u << 6)   /* set link up */
 #define CTRL_ASDE       (1u << 5)   /* auto-speed detection */
@@ -244,6 +261,7 @@ static struct {
         unsigned long management, management_dropped;
     } counted;                      /* the card's counts, accumulated */
     bool          reset_first;      /* `opt/kosmos/e1000path=pch-reset` */
+    bool          snoop_firmware;   /* `opt/kosmos/e1000snoop=firmware` */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
     long          ring_cap;
@@ -346,6 +364,14 @@ static void pch_transmit_bits(void)
 
     reg_write(REG_TXDCTL, reg_read(REG_TXDCTL) | TXDCTL_COUNT_DESC);
 
+    /* `e1000_init_hw_ich8lan`: "Set the transmit descriptor write-back
+     * policy for both queues" - each one written back on its own, and more
+     * fetched while fewer than 31 are held. */
+    v = reg_read(REG_TXDCTL);
+    v = (v & ~TXDCTL_WTHRESH) | TXDCTL_FULL_TX_DESC_WB;
+    v = (v & ~TXDCTL_PTHRESH) | TXDCTL_MAX_PREFETCH;
+    reg_write(REG_TXDCTL, v);
+
     /* "erratum work around: set txdctl the same for both queues" */
     reg_write(REG_TXDCTL1, reg_read(REG_TXDCTL));
 
@@ -366,6 +392,39 @@ static void pch_transmit_bits(void)
 
     /* "SPT and KBL Si errata workaround to avoid data corruption" */
     reg_write(REG_IOSFPC, reg_read(REG_IOSFPC) | RDMTS_HEX);
+}
+
+/*
+ * **The card looks in the processor's cache, and its writes arrive in the
+ * order it made them** (`testing.md` 18.353) - where `e1000_init_hw_ich8lan`
+ * leaves every chip of this kind: GCR's six no-snoop bits cleared ("By
+ * default, we should use snoop behavior"), and CTRL_EXT.RO_DIS set, so no
+ * write of the card's may pass an earlier one.
+ *
+ * Why it matters: the rings and frames are ordinary cached memory
+ * (`RING_BARRIER`), which is right only while every transfer the card makes
+ * is snooped. A read that is not looks past the cache at memory that may
+ * still hold what a slot said one trip round the ring ago; a write that is
+ * not lands beneath a cached line the driver goes on reading. Either way a
+ * frame turns up late, by however long its line takes to leave the cache -
+ * and on 0.10.209 the M700 answered the Mac 5 to 29 seconds late, with the
+ * receive write-back already made immediate. QEMU's memory is coherent
+ * whatever the bits say, so only the machine can tell whether this was it.
+ *
+ * Linux writes `e1000e_set_pcie_no_snoop(hw, ~PCIE_NO_SNOOP_ALL)`, which
+ * clears the six and, by the shape of that function, sets every other bit of
+ * GCR as well. Only the six are cleared here: the rest is not what its
+ * comment asks for. `opt/kosmos/e1000snoop=firmware` leaves both as the
+ * firmware set them, for the comparison on the machine.
+ */
+static void pch_memory_bits(void)
+{
+    if (card.snoop_firmware) {
+        return;
+    }
+
+    reg_write(REG_GCR, reg_read(REG_GCR) & ~GCR_NO_SNOOP_ALL);
+    reg_write(REG_CTRL_EXT, reg_read(REG_CTRL_EXT) | CTRL_EXT_RO_DIS);
 }
 
 /*
@@ -410,6 +469,7 @@ static void rings_start(void)
 
     if (card.pch) {
         pch_transmit_bits();
+        pch_memory_bits();
     }
 
     /*
@@ -532,6 +592,28 @@ static void say_transmitter(struct say_line *line, const char *what)
 }
 
 /*
+ * What the card's transfers may skip (`pch_memory_bits`): of its six kinds,
+ * which do not look in the processor's cache, and whether its writes may
+ * pass one another.
+ */
+static void say_memory(struct say_line *line, const char *what)
+{
+    uint32_t gcr = reg_read(REG_GCR), ctrl_ext = reg_read(REG_CTRL_EXT);
+
+    say_begin(line);
+    say_text(line, what);
+    say_text(line, ": GCR ");
+    say_hex(line, gcr, 8);
+    say_text(line, ", no-snoop bits ");
+    say_hex(line, gcr & GCR_NO_SNOOP_ALL, 2);
+    say_text(line, " of 3f; CTRL_EXT ");
+    say_hex(line, ctrl_ext, 8);
+    say_text(line, (ctrl_ext & CTRL_EXT_RO_DIS) != 0 ? ", relaxed ordering off"
+                                                     : ", relaxed ordering on");
+    say_send(console, line);
+}
+
+/*
  * **What the firmware left**, before anything is touched: the M700's boots
  * its own network stack first, and what it did to the card is the first
  * thing to know when the card does not do what it is told.
@@ -588,6 +670,8 @@ static void say_firmware(struct say_line *line)
     say_text(line, " ITR ");
     say_hex(line, reg_read(REG_ITR), 8);
     say_send(console, line);
+
+    say_memory(line, "e1000: its memory transfers as the firmware left them");
 }
 
 /*
@@ -597,10 +681,44 @@ static void say_firmware(struct say_line *line)
  * reset, whose bit 8 says the rings must be emptied first or the chip
  * "enter[s] a unit hang state which can only be released by PCI reset".
  */
+/* The PCI Express capability's device control word, or -1 without one: the
+ * capability list walked from its start, at most 48 entries of it. */
+static long pcie_devctl(void)
+{
+    long at = kosmos_dev_config(DEV_INTEL_ETHERNET, 0, PCI_CAPABILITY_LIST);
+    unsigned ptr, i;
+
+    if (at < 0) {
+        return -1;
+    }
+
+    ptr = (unsigned)at & 0xFCu;
+
+    for (i = 0; i < 48u && ptr >= 0x40u; i++) {
+        long cap = kosmos_dev_config(DEV_INTEL_ETHERNET, 0, ptr);
+
+        if (cap < 0) {
+            return -1;
+        }
+
+        if (((unsigned long)cap & 0xFFu) == PCI_CAP_ID_EXP) {
+            long ctl = kosmos_dev_config(DEV_INTEL_ETHERNET, 0,
+                                         ptr + PCI_EXP_DEVCTL);
+
+            return ctl < 0 ? -1 : (long)((unsigned long)ctl & 0xFFFFu);
+        }
+
+        ptr = ((unsigned)cap >> 8) & 0xFCu;
+    }
+
+    return -1;
+}
+
 static void say_pci(struct say_line *line)
 {
     long command = kosmos_dev_config(DEV_INTEL_ETHERNET, 0, PCI_COMMAND_WORD);
     long rings = kosmos_dev_config(DEV_INTEL_ETHERNET, 0, PCICFG_DESC_RING_STATUS);
+    long devctl;
 
     say_begin(line);
     say_text(line, "e1000: on PCI: ");
@@ -626,6 +744,24 @@ static void say_pci(struct say_line *line)
     }
 
     say_send(console, line);
+
+    /* What the card may ask of memory at all (`testing.md` 18.353): the bus
+     * allows no-snoop and reordered writes, and GCR and CTRL_EXT say
+     * whether the card does. */
+    devctl = (((unsigned long)command >> 16) & PCI_STATUS_CAP_LIST) != 0
+             ? pcie_devctl() : -1;
+
+    if (devctl >= 0) {
+        say_begin(line);
+        say_text(line, "e1000: on PCI Express: device control ");
+        say_hex(line, (unsigned long)devctl, 4);
+        say_text(line, (devctl & PCI_EXP_DEVCTL_NOSNOOP_EN) != 0
+                       ? ", no-snoop allowed" : ", no-snoop not allowed");
+        say_text(line, (devctl & PCI_EXP_DEVCTL_RELAX_EN) != 0
+                       ? ", relaxed ordering allowed"
+                       : ", relaxed ordering not allowed");
+        say_send(console, line);
+    }
 }
 
 /*
@@ -915,12 +1051,35 @@ static bool bring_up(struct say_line *line)
         }
     }
 
-    if (kosmos_boot_option("opt/kosmos/e1000fault", option, sizeof(option))
-            == 11 && memcmp(option, "transmitter", 11u) == 0) {
+    n = kosmos_boot_option("opt/kosmos/e1000fault", option, sizeof(option));
+
+    if (n == 11 && memcmp(option, "transmitter", 11u) == 0) {
         card.tx_off = true;
         say_begin(line);
         say_text(line, "e1000: its transmitter left off, as "
                        "opt/kosmos/e1000fault asks");
+        say_send(console, line);
+    } else if (n == 7 && memcmp(option, "nosnoop", 7u) == 0) {
+        /*
+         * **A firmware that left the card not snooping** (`testing.md`
+         * 18.353): every no-snoop bit set and reordering allowed, before
+         * anything is read, so the I219's way has to put them back. QEMU's
+         * memory is coherent either way, which is why it can be asked.
+         */
+        reg_write(REG_GCR, reg_read(REG_GCR) | GCR_NO_SNOOP_ALL);
+        reg_write(REG_CTRL_EXT, reg_read(REG_CTRL_EXT) & ~CTRL_EXT_RO_DIS);
+        say_begin(line);
+        say_text(line, "e1000: its transfers set not to snoop, as "
+                       "opt/kosmos/e1000fault asks");
+        say_send(console, line);
+    }
+
+    if (kosmos_boot_option("opt/kosmos/e1000snoop", option, sizeof(option))
+            == 8 && memcmp(option, "firmware", 8u) == 0) {
+        card.snoop_firmware = true;
+        say_begin(line);
+        say_text(line, "e1000: snooping and ordering left as the firmware set "
+                       "them, as opt/kosmos/e1000snoop asks");
         say_send(console, line);
     }
 
@@ -957,6 +1116,7 @@ static bool bring_up(struct say_line *line)
 
     if (card.pch) {
         pch_bring_up(line);
+        say_memory(line, "e1000: its memory transfers now");
     } else {
         /*
          * **Quiet first, then reset.** An interrupt from a card mid-reset is

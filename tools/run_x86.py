@@ -4557,13 +4557,20 @@ def ethernet_pch(image, check):
     otherwise be free to claim success. Each must still ping, or say why it
     cannot. What QEMU cannot say is whether the I219 needed any of it; the
     M700's log says that.
+
+    The first is also left by its "firmware" not snooping (18.353):
+    `opt/kosmos/e1000fault=nosnoop` sets GCR's six no-snoop bits and allows
+    reordered writes before the driver looks, and the I219's way has to say
+    so and put both back, as `e1000_init_hw_ich8lan` does. QEMU's memory is
+    coherent whatever the bits say, so it pings either way; the machine is
+    where the bits matter.
     """
-    def run(path, fault=False):
+    def run(path, fault=None):
         extra = ["-netdev", "user,id=n0", "-device", "e1000e,netdev=n0",
                  "-fw_cfg", "name=opt/kosmos/e1000path,string=" + path]
 
         if fault:
-            extra += ["-fw_cfg", "name=opt/kosmos/e1000fault,string=transmitter"]
+            extra += ["-fw_cfg", "name=opt/kosmos/e1000fault,string=" + fault]
 
         return boot(image, None, 120.0, extra=tuple(extra),
                     typed=("ping 10.0.2.2",))
@@ -4572,7 +4579,7 @@ def ethernet_pch(image, check):
         return "\n    ".join(l.strip() for l in out.splitlines()
                              if l.strip().startswith("e1000:"))
 
-    out = run("pch")
+    out = run("pch", fault="nosnoop")
 
     if out is None:
         check(False, "the machine would not boot with its card on the I219's way")
@@ -4591,6 +4598,26 @@ def ethernet_pch(image, check):
               "the driver did not say what the card is on PCI - command, "
               "status and the descriptor-ring status - through SYS_DEV_CONFIG:"
               "\n    " + shown(out))
+        # Snooping put back (18.353): the firmware's state said - every
+        # no-snoop bit, as the fault left it - then none, and reordering off;
+        # and what PCI Express allows, from the capability list.
+        check("e1000: its transfers set not to snoop, as opt/kosmos/e1000fault "
+              "asks" in out
+              and re.search(r"e1000: its memory transfers as the firmware left "
+                            r"them: GCR [0-9a-f]{8}, no-snoop bits 3f of 3f; "
+                            r"CTRL_EXT [0-9a-f]{8}, relaxed ordering on", out)
+              is not None
+              and re.search(r"e1000: its memory transfers now: GCR [0-9a-f]{8}, "
+                            r"no-snoop bits 00 of 3f; CTRL_EXT [0-9a-f]{8}, "
+                            r"relaxed ordering off", out) is not None,
+              "left not snooping, the card was not put back to snooping with "
+              "its writes in order - or the driver did not say so:\n    "
+              + shown(out))
+        check(re.search(r"e1000: on PCI Express: device control [0-9a-f]{4}, "
+                        r"no-snoop (not )?allowed, relaxed ordering (not )?"
+                        r"allowed", out) is not None,
+              "the driver did not say what PCI Express allows the card - its "
+              "capability's device control:\n    " + shown(out))
         check(re.search(r"e1000: a frame to itself went out in \d+ us - it "
                         r"sends", out) is not None
               and "its MAC reset" not in out,
@@ -4617,7 +4644,7 @@ def ethernet_pch(image, check):
               "after the I219's reset the card answered %d of 4 pings"
               % len(re.findall(r"ttl=255 time=", out)))
 
-    out = run("pch", fault=True)
+    out = run("pch", fault="transmitter")
 
     if out is None:
         check(False, "the machine would not boot with the I219's way and the "
