@@ -23,7 +23,15 @@ So the words come out of the stick's image - the newest development one
 unless `--stick` says otherwise - read off its FAT the way `run_uefi.py`
 reads them.
 
+**And words of its own after them** (`--add`): `make netboot` adds
+`opt/kosmos/vnc=control`, which lends the screen's keys and pointer to a
+viewer from boot - the Mac's half of the build, boot and test loop (Diego, 3
+October, choosing the command line over the Servers window's switch). The
+boot server already hands the machine its kernel, so the word grants it
+nothing it did not have.
+
 Usage: netboot.py KERNEL --loader BOOTX64.EFI [--stick IMAGE] [--out DIR]
+                  [--words WORDS] [--add WORDS]
 """
 
 import glob
@@ -67,14 +75,18 @@ def main():
     kernel = args.pop(0) if args and not args[0].startswith("--") else \
         os.path.join(ROOT, "build", "x86_64", "kosmos.bin")
     loader, stick, out, words = None, None, os.path.join(ROOT, "build", "netboot"), None
+    added = ""
 
-    while len(args) >= 2 and args[0] in ("--loader", "--stick", "--out", "--words"):
+    while len(args) >= 2 and args[0] in ("--loader", "--stick", "--out", "--words",
+                                         "--add"):
         if args[0] == "--loader":
             loader = args[1]
         elif args[0] == "--stick":
             stick = args[1]
         elif args[0] == "--out":
             out = args[1]
+        elif args[0] == "--add":
+            added = args[1].strip()
         else:
             words = args[1]
 
@@ -98,6 +110,9 @@ def main():
 
         if words is None:
             sys.exit("netboot: %s has no boot/kosmos.cmdline to take" % stick)
+
+    if added:
+        words = (words + " " + added).strip()
 
     boot = os.path.join(out, "boot")
     os.makedirs(boot, exist_ok=True)

@@ -77,6 +77,21 @@ end
 
 print(("vncd: on port %d, at %s"):format(port, dotted(info.address)))
 
+-- **Keys and the pointer lent by the boot command line** (`roadmap.md`,
+-- build, boot and test the M700 in a loop; Diego, 3 October, choosing it
+-- over the Servers window's switch): `opt/kosmos/vnc=control` lends them to
+-- every viewer, whatever the window says. It grants nothing new - the words
+-- come from whoever started the machine, which on a network boot is the
+-- server that also handed it its kernel - and it survives every restart,
+-- which a setting in a `/Home` held in memory does not. A machine started
+-- from its own stick has it only if the stick's line says so. Said here, so
+-- the log shows why a viewer could type.
+local LENT_BY_BOOT = sys.boot("opt/kosmos/vnc") == "control"
+
+if LENT_BY_BOOT then
+  print("vncd: keys and the pointer lent to every viewer, as opt/kosmos/vnc asks")
+end
+
 -- A name in `/Running`, for the Servers window's Disconnect, as `telnetd`
 -- has one.
 local control = sys.endpoint()
@@ -223,7 +238,7 @@ local function settings()
   local p = vnc.password
 
   return (type(p) == "string" and p ~= "") and p:sub(1, 8) or nil,
-         vnc.control == true
+         LENT_BY_BOOT or vnc.control == true
 end
 
 --------------------------------------------------------------------------

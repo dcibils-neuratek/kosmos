@@ -3713,8 +3713,13 @@ USB_TELNETD ?= 23
 #
 .PHONY: netboot netboot-serve
 
+# `NETBOOT_ADD` - words after the stick's: the screen's keys and pointer lent
+# to a viewer from boot, for the build, boot and test loop (Diego, 3
+# October). `make netboot NETBOOT_ADD=` serves the stick's words alone.
+NETBOOT_ADD ?= opt/kosmos/vnc=control
+
 netboot: x86-build $(EFI_LOADER)
-	python3 tools/netboot.py $(X86_BUILD)/kosmos.bin --loader $(EFI_LOADER) $(if $(STICK),--stick $(STICK)) --out build/netboot
+	python3 tools/netboot.py $(X86_BUILD)/kosmos.bin --loader $(EFI_LOADER) $(if $(STICK),--stick $(STICK)) $(if $(NETBOOT_ADD),--add "$(NETBOOT_ADD)") --out build/netboot
 
 netboot-serve:
 	bash tools/netboot-serve.sh build/netboot

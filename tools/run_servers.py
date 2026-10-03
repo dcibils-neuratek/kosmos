@@ -158,7 +158,7 @@ def where_differs(frame, width, height, px):
     return "%d,%d to %d,%d" % (min(xs), min(ys), max(xs), max(ys))
 
 
-def boot(image, telnet, web, vnc=None):
+def boot(image, telnet, web, vnc=None, extra=()):
     import run_screenshot as R
 
     board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
@@ -173,7 +173,7 @@ def boot(image, telnet, web, vnc=None):
         "-device", R.device(image, "net") + ",netdev=net0",
         "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
         "-fw_cfg", "name=opt/kosmos/boot,string=wm",
-    ])
+    ] + list(extra))
 
     try:
         return R.Guest(image, 120)
@@ -484,8 +484,13 @@ def main():
     said = {}
 
     # ---- 1: the window, the Disconnect, and what is kept ----
+    # With the screen's keys and pointer lent by the command line, as the
+    # M700's network boot lends them (`opt/kosmos/vnc=control`): nothing kept
+    # says so on this disk, so a click that arrives is the word's alone.
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
-    guest = boot(image, telnet, web)
+    lent = random.randint(60001, 64000)
+    guest = boot(image, telnet, web, lent,
+                 extra=("-fw_cfg", "name=opt/kosmos/vnc,string=control"))
 
     try:
         guest.wait_for("net: an address from DHCP", "a lease")
@@ -522,6 +527,18 @@ def main():
         guest.wait_for("servers: web=", "the Servers window's first look")
         guest.wait_for("telnet=running · 1 session", "the window seeing this session")
         said["keep"] = session.run("/Home/keep.lua").decode(errors="replace")
+
+        said["vncd"] = session.run("open vncd").decode(errors="replace")
+        guest.wait_for("vncd: keys and the pointer lent to every viewer, as "
+                       "opt/kosmos/vnc asks", "the boot's word taken")
+        import kosmos_vnc as V
+
+        viewer = V.Viewer("127.0.0.1:%d" % lent)
+        viewer.pointer(233, 333)
+        viewer.pointer(233, 333, 1)
+        viewer.pointer(233, 333, 0)
+        guest.wait_for("wm: button down at 233,333", "a click lent by the boot")
+        viewer.close()
 
         # The Disconnect ends this very session, so it is read to its close.
         session.sock.sendall(b"/Home/kick.lua\r\n")
@@ -563,6 +580,11 @@ def main():
         fails.append("the window did not say the web server and the screen "
                      "stopped:\n" + "\n".join(l for l in first.splitlines()
                                                 if "servers:" in l)[:600])
+
+    if "wm: button down at 233,333" not in first:
+        fails.append("with opt/kosmos/vnc=control and no control kept, a "
+                     "viewer's click did not reach the desktop:\n"
+                     + "\n".join(l for l in first.splitlines() if "vncd" in l)[:600])
 
     if "KEPT 8080" not in said.get("keep", ""):
         fails.append("the settings were not kept: %r" % said.get("keep"))
@@ -612,7 +634,7 @@ def main():
         if line not in guest.seen:
             fails.append("the log never said %r" % line)
 
-    checks = 23
+    checks = 24
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))
@@ -635,7 +657,8 @@ def main():
           "refused wrong and admitted right, and with control kept a command "
           "typed into a Terminal, a click at its own place and the pointer "
           "staying there with the mouse at rest; the desktop "
-          "lent to vncd and to nothing else)."
+          "lent to vncd and to nothing else; and a click lent by "
+          "opt/kosmos/vnc=control alone)."
           % (checks, seen.get("whole"), seen.get("update"), seen.get("565")))
     return 0
 
