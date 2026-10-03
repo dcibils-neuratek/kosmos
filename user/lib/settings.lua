@@ -122,7 +122,7 @@ settings.ITEMS = {
         --
         choices = { { "endeavour", "Endeavour" }, { "plex", "Plex" },
                     { "plexnight", "Plex Night" }, { "classic", "Classic" },
-                    { "studio", "Studio" } },
+                    { "studio", "Studio" }, { "night", "Night" } },
         --
         -- **Written by name even when it is the default**, which no other
         -- row is: the file is what a desktop starting up reads, and a

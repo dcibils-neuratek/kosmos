@@ -595,6 +595,11 @@ local function load_appearance()
 
     if palette then
       theme.apply(palette)
+
+      -- Its corner and shadow, which `scale.chrome` above read before the
+      -- look was known (Night's are rounder).
+      OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
+      OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
       print("wm: theme " .. tostring(saved.palette))
     else
       print("wm: theme " .. tostring(saved.palette) .. " would not load: "
@@ -5186,6 +5191,12 @@ handlers.theme = function(req)
     print(("wm: theme applied, window #%06x desktop #%06x")
           :format((theme.window or 0) & 0xffffff,
                   (theme.desktop or 0) & 0xffffff))
+
+    -- A look's own corner and shadow (Night's are rounder), in force at
+    -- once rather than at the next scale change.
+    OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
+    OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
+    add_damage(0, 0, W, H)
   end
 
   -- The desktop colour is chosen separately from the palette it sits with,

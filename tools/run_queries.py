@@ -333,9 +333,9 @@ def main():
                        "/Kosmos/Programs/ls.lua /Kosmos/Apps/tracker.lua",
              "the Clock was not in /Kosmos/Apps and ls in /Kosmos/Programs, each "
              "only there, and found by name and by a launcher's old /bin path"),
-            ("K-THEMES", "Classic.theme,Endeavour.theme,Plex.theme,PlexNight.theme,"
-                         "Studio.theme file library directory 1 0",
-             "/Kosmos/Themes did not hold the five looks, a look a file and a "
+            ("K-THEMES", "Classic.theme,Endeavour.theme,Night.theme,Plex.theme,"
+                         "PlexNight.theme,Studio.theme file library directory 1 0",
+             "/Kosmos/Themes did not hold the six looks, a look a file and a "
              "library a library, or /Kosmos/Libraries did not show luacheck as "
              "one folder and no path as a name"),
             ("K-KITS", "3",

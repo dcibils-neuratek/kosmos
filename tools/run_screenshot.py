@@ -4653,7 +4653,7 @@ def check_appearance(guest):
     checks += 1
 
     #
-    # **Five, and the number is Diego's to move.** This asked for four and
+    # **Six, and the number is Diego's to move.** This asked for four and
     # was right to: "Let's just make 3 or 4 good design options in colors and
     # fonts and stick to those", 22 September. Endeavour is the fifth and he
     # asked for it by name on 23 September, with two screenshots of a GNOME
@@ -4664,9 +4664,13 @@ def check_appearance(guest):
     # conversation - and a check that counts whatever is there guards
     # nothing.
     #
-    if looks != 5:
-        raise Failure("Preferences offers %d looks; there are five - Plex, "
-                      "Plex Night, Classic, Studio and Endeavour" % looks)
+    # **Six since 3 October**: Night, which he asked for by name with
+    # photographs of Googlebook, and named - "4. night" (`roadmap.md`, a dock
+    # at the bottom). The sixth had its conversation.
+    #
+    if looks != 6:
+        raise Failure("Preferences offers %d looks; there are six - Plex, "
+                      "Plex Night, Classic, Studio, Endeavour and Night" % looks)
 
     checks += 1
 

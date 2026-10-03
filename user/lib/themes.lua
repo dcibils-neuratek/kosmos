@@ -43,12 +43,14 @@ local themes = {}
 -- amber minimise sits on its own colour there; Endeavour's tab is a light
 -- blue the three read cleanly on. Being first is the whole of being the
 -- default: the window manager and Preferences both take `order[1]`.
-themes.order = { "endeavour", "plex", "plexnight", "classic", "studio" }
+-- Night, the sixth, last (`roadmap.md`, a dock at the bottom): offered
+-- beside the others, never the default.
+themes.order = { "endeavour", "plex", "plexnight", "classic", "studio", "night" }
 
 -- What each is called where a person reads it.
 themes.titles = {
   plex = "Plex", plexnight = "Plex Night", classic = "Classic",
-  studio = "Studio", endeavour = "Endeavour",
+  studio = "Studio", endeavour = "Endeavour", night = "Night",
 }
 
 --

@@ -1,0 +1,65 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Night: Googlebook's design language, in Kosmos.
+#
+# Diego, 3 October 2026, with photographs of Google's Googlebook: "replicate
+# as mich as possible the design language of googlebook", beside the
+# BeOS-style look rather than instead of it, and the name "night" for it.
+# Drawn first in `docs/dock.html` and agreed there: "everything else is just
+# perfect!". Every colour below is that page's - its `--d-*` tokens.
+#
+# Night blue rather than black: the surfaces are a blue-grey a little lifted
+# from the dark, in three steps - the window, what is raised on it, and the
+# one lower for a field. The one colour is a pale blue, and what is written
+# on it is a dark navy rather than white: Googlebook's selected tiles and
+# pills read that way, and white on a pale blue does not read at all.
+#
+# Rounder than the others: a window's corner is 18 points where every other
+# look's is 10, and its shadow reaches 24 - the drawing's `.win`.
+#
+# Flat, as Plex and Endeavour are; and a title bar on every window, as
+# Googlebook's windows all have one.
+
+name       = night
+flat       = yes
+title_bars = yes
+corner     = 18
+shadow     = 24
+
+desktop    = #0b1220
+window     = #1e2636
+raised     = #2a3446
+sunken     = #161d2b
+
+line       = #0b0f17
+line_soft  = #313b4e
+track      = #3a4458
+swatch     = #a8c7fa
+
+edge_light = #343f53
+edge_dark  = #0b0f17
+
+text       = #e6eaf2
+text_dim   = #a3adbf
+text_on    = #0a1b38
+
+tab        = #2a3446
+tab_idle   = #1a2130
+tab_text   = #e6eaf2
+desktop_text = #ffffff
+console      = #0d1220
+console_text = #d6dae0
+
+accent     = #a8c7fa
+good       = #6dd58c
+bad        = #ffb4ab
+ring       = #a8c7fa
+stamp      = #3a4a6e
+
+# Plex's faces at the sizes the fixed layout holds (`theme.lua`), as every
+# look has them.
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

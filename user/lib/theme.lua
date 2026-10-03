@@ -273,7 +273,22 @@ theme.tokens = {
   -- looks are content-first and the BeOS look is its tab.
   --
   "title_bars",
+
+  --
+  -- **`corner` and `shadow`: how round a window is and how far its shadow
+  -- reaches**, in points, which `theme.metrics` carried for every look
+  -- alike until Night (`roadmap.md`, a dock at the bottom; Diego, 3 October:
+  -- "replicate as mich as possible the design language of googlebook"),
+  -- whose windows are rounder than the others'. A look that does not say
+  -- has the ten and fourteen every look had, so leaving Night for another
+  -- puts them back.
+  --
+  "corner", "shadow",
 }
+
+-- What `corner` and `shadow` are in a look that does not name them, and the
+-- most a look may: past that a window is a capsule.
+theme.CORNER, theme.SHADOW, theme.METRIC_MOST = 10, 14, 40
 
 local known = {}
 
@@ -341,8 +356,8 @@ theme.metrics = {
   -- until 23 September and what a look may still ask for: the metrics are
   -- the same table a theme may set, so a look that wants 1995 can have it.
   --
-  corner  = 10,   -- a window's rounded corner: the drawings' `.win`
-  shadow  = 14,   -- how far its shadow reaches
+  corner  = theme.CORNER,   -- a window's rounded corner: the drawings' `.win`
+  shadow  = theme.SHADOW,   -- how far its shadow reaches - and a look's own, if it says
 }
 
 -- The five roles and their faces are defined at the end of this file;
@@ -443,6 +458,16 @@ function theme.read(text, base)
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
       elseif key == "name" then
         out.name = value
+      elseif key == "corner" or key == "shadow" then
+        local v = math.tointeger(tonumber(value))
+
+        if v and v >= 0 and v <= theme.METRIC_MOST then
+          out[key] = v
+        else
+          said[#said + 1] = ("line %d: `%s` is a number of points from 0 to "
+                             .. "%d, not `%s`"):format(n, key,
+                                                       theme.METRIC_MOST, value)
+        end
       elseif key == "flat" or key == "title_bars" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
@@ -473,6 +498,8 @@ function theme.read(text, base)
   --
   if out.flat == nil then out.flat = false end
   if out.title_bars == nil then out.title_bars = true end
+  if out.corner == nil then out.corner = theme.CORNER end
+  if out.shadow == nil then out.shadow = theme.SHADOW end
 
   return out, said
 end
@@ -551,6 +578,12 @@ function theme.apply(palette)
   for _, k in ipairs(theme.tokens) do
     if palette[k] ~= nil then theme[k] = palette[k] end
   end
+
+  -- A window's corner and shadow are the look's, and every look's are said
+  -- (`theme.read`); a palette from before they were - a running desktop's,
+  -- sent by an older Preferences - leaves them as they are.
+  if palette.corner ~= nil then theme.metrics.corner = palette.corner end
+  if palette.shadow ~= nil then theme.metrics.shadow = palette.shadow end
 
   return theme
 end
