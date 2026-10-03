@@ -432,3 +432,59 @@ build has the card hand over each message as it arrives.
 **And the remote program** (`telnetd`) used to give up if it started before
 the M700 had an address, which on every network boot it did. It now waits
 for one.
+
+## 3 October, evening - the M700 on the network for real, and driven from the Mac
+
+**In short:** the M700's network now works properly - an address from the
+router, answers in half a millisecond, Wikipedia in the browser. The fault
+was not any of the settings blamed for it over six builds, this morning's
+entry included: the card was still following the list of memory slots the
+M700's firmware had given it for its own network boot. Resetting the card
+before Kosmos uses it, as Linux always does, cleared it. And the M700 can
+now be rebuilt, restarted, looked at and used entirely from the Mac: a new
+build reaches it and answers in about a minute, and a window on the Mac
+shows its screen and passes on the keyboard and mouse.
+
+**What was wrong.** A network card is handed a ring of empty slots in
+memory and puts each arriving message into the next one. When the M700
+boots from the network, its firmware drives the card first and gives it a
+ring of its own. Kosmos then gave the card a new ring - but without a
+reset, the card kept working from slots it had already taken from the
+firmware's. Messages arrived, the card counted them as received, and they
+went into memory Kosmos no longer expected anything in; now and then one
+landed in Kosmos's ring, seconds late. That is why pings came back after 5
+to 29 seconds, why the router's answer to "who has this address" got lost,
+and why the morning's explanation - the card holding messages back in
+batches - looked right for a day: the delays fitted it, and the fix for it
+changed nothing.
+
+**How it was found.** Each build added numbers to the log: how many
+messages the card counted, how many it dropped, how many reached Kosmos,
+and where in the ring the card was. The telling build had the card count
+2,460 messages, drop none, lack no slot - and put none in Kosmos's ring,
+its position never leaving the first slot. A card that receives everything
+and delivers nothing somewhere else is a card using somebody else's ring.
+The reset was tried by changing one line the Mac serves to the M700 at
+boot, with nothing rebuilt: 686 messages counted, 686 delivered.
+
+**Visible impact.** The M700 answers the Mac in 0.5 ms instead of not at
+all, reaches the internet in 15 ms, looks names up, and loads Wikipedia.
+Nothing in the emulator could ever have shown this: its cards keep no
+leftovers from a firmware.
+
+**The loop.** Diego asked for a cycle where the M700 is rebuilt, restarted,
+tested and looked at without anyone touching it. It now runs: the Mac
+builds and serves the new Kosmos, one command restarts the M700 over the
+network and waits - "0.10.213, answering again after 59 s" - and others
+open an application on it, click and type on its screen, and take a
+picture of it. A click sent from the Mac opened the Kosmos menu on the
+M700. The keyboard and mouse are lent to a remote viewer only because the
+boot line the Mac serves says so; a machine started from its own stick
+does not lend them.
+
+**And a window for Diego.** `tools/kosmos_view.py` shows the M700's screen
+on the Mac and sends the keyboard and mouse back, finding the machine by
+itself and reconnecting after each restart. It is built on the same code
+the tests use. The first picture takes about 7 seconds, because the M700
+sends at only 1.4 MB a second - the next thing to measure. A viewer the
+other way round, inside Kosmos, is agreed and will be drawn first.

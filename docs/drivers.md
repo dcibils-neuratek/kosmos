@@ -343,6 +343,21 @@ word. They cost 150x on the round trip and were found only because somebody
 looked at the number - so the permanent test checks the *time*, not the
 answer.
 
+**On the I219, the firmware's state is not a starting point** (`testing.md`
+18.346 to 18.353, October 2026). The driver first took the M700's card as
+its firmware left it - no reset, because a reset is where Linux's `e1000e`
+has its warnings for this chip, and the firmware's own network boot had
+already brought it up. It sent; it received late, or not at all, through
+six builds, each fixing a register that turned out to be innocent. The
+firmware's receive ring was still in the card, and the card went on working
+from what it had fetched of it, writing frames into memory that is the
+system's now. **So an I219's MAC is reset before anything is handed to it**,
+as `e1000e` always resets it; the firmware-first way is kept behind
+`opt/kosmos/e1000path=pch` for the gate and for comparing. The lesson that
+generalises: a device a firmware has *used* - for its own network boot, its
+own disk - carries that use in state no register dump shows, and QEMU's
+models carry none of it.
+
 ### WiFi - OpenBSD, not FreeBSD
 
 The card is an **Intel AX201**, `VEN_8086&DEV_A0F0`. It is **CNVi**: the MAC

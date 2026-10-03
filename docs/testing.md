@@ -16739,3 +16739,98 @@ arrived all along, delayed by the write-back batching; `ping 8.8.8.8`
 gave up on a router whose ARP answer was still in the card. 0.10.208's
 filter experiment stays as a measurement, and 0.10.209's write-back is the
 fix the evidence points to. Gate 86 of 86 in 10:00.
+
+## 18.353 The I219 reset before it is used, and the M700 used from the Mac
+
+**What 0.10.209 to 0.10.212 said on the M700, each served by network boot
+and read in Diego's photos of `log e1000`:**
+
+- **0.10.209**, the receive write-back made immediate (18.352): the Mac's
+  pings answered 5 to 29 seconds late - so the write-back was not it.
+- **0.10.210**, GCR's no-snoop bits cleared and relaxed ordering turned
+  off, as `e1000_init_hw_ich8lan` does: the firmware had left GCR
+  `00000000` and RO_DIS set, so the card was snooping all along. The counts
+  at 30, 60 and 120 s: 244, 525 and 891 frames *missed* - the card's own
+  buffer full - against 266, 556 and 1179 taken, and *no buffer* nought.
+- **0.10.211**, RXDCTL's thresholds set as `e1000_flush_rx_ring` sets them
+  (prefetch 31, host 1, in descriptors): **nothing taken at all**. At five
+  seconds RDH 0 and RDT 31; by 120 s 2460 broadcasts counted good, none
+  missed, none short of a descriptor, none in this driver's ring.
+- **0.10.212**, the tail written after the receiver is enabled (`e1000e`'s
+  order) and written again whenever the card counted frames for a second
+  and used no descriptor: rung 18 times by 30 s and 37 by 60, and RDH never
+  left nought.
+
+**Read together**: frames counted good, none missed, and none in the ring
+the driver gave the card - so they were going somewhere else. The
+firmware's own ring was still in the card: its network boot leaves 64
+descriptors (RDLEN 1024) with the head at 63 or 32 or 15, and taken without
+a reset the I219 went on working from what it had fetched of that ring -
+writing frames into memory that had been the firmware's and is the
+system's now. Every delay since 0.10.207 is that, in one shape or another;
+QEMU's cards keep no such state, which is why no suite could show it.
+
+**The reset, from the boot server's command line alone** - nothing
+rebuilt: `opt/kosmos/e1000path=pch-reset opt/kosmos/e1000rxdctl=firmware`
+added to `build/netboot/boot/kosmos.cmdline`, and Diego restarted the M700.
+`its MAC reset as e1000e does it: bus requests stopped in 21 us, the flag
+taken`, a frame to itself in 6548 us, RXDCTL after the reset `00010000`,
+and at 60 s **686 frames counted and 686 taken**, nothing missed, the tail
+never rung. From the Mac, `ping 192.168.1.40`: 10 of 10 in 0.39 to 0.65 ms.
+From the M700, over Telnet: the router in 0.5 ms, 8.8.8.8 in 15,
+`host en.wikipedia.org` 195.200.68.224; and Diego, at the machine:
+"wikipedia runs on the browser!".
+
+**0.10.213: the reset is the I219's way**, as `e1000e` always resets.
+The way without one stays behind `opt/kosmos/e1000path=pch` - the gate runs
+it on QEMU's 82574L, and a machine can be compared by its command line. What
+the hunt set and did not need went: the receive thresholds and timers
+0.10.209 to 0.10.211 wrote, the tail rung again, 18.351's address-filter
+experiment and the foreign-frame skip it needed, and the `e1000snoop` and
+`e1000rxdctl` options. Kept because the reference does them: the snoop and
+relaxed-ordering bits, the transmit write-back policy, the tail after the
+enable. **`ethernet_pch`, 11 checks** - the "now" lines said, snooping put
+back where the `nosnoop` fault took it away (its control: the same boot with
+the bits left alone says `3f of 3f` and fails), and the firmware-first line
+renamed. `ethernet`, `ethernet_unsent` and `ethernet_pch`: 27 checks.
+Booted on the M700 by the loop below: reset, sent, 64 of 64 frames taken at
+30 s, 8.8.8.8 in 12.6 ms.
+
+**A correction to 18.352**: its reading - received frames held back by the
+firmware's write-back batching, so unicast very likely arrived all along -
+was wrong in its cause. The frames were late because the card was working
+from the firmware's ring; making the write-back immediate changed nothing,
+as 0.10.209's pings showed.
+
+**The loop, from the Mac** (`roadmap.md`, build, boot and test the M700):
+
+- `kosmos_telnet.py ADDRESS restart [SECONDS]` - `restart` at the prompt,
+  the machine gone, then back, and which build answered. **The first turn,
+  3 October**: 0.10.213 laid out by `make netboot`, then "restart: Kosmos
+  0.10.212 -> Kosmos 0.10.213, answering again after 59 s"; the second,
+  0.10.214, 61 s.
+- `kosmos_vnc.py ADDRESS do "STEP; STEP"` - `shot`, `click`, `rclick`,
+  `dclick`, `move`, `drag`, `type`, `key` with `ctrl`, `shift`, `alt` or
+  `super` held, `wait` - on one connection. A whole 1720x1440 frame of the
+  M700 in 7.2 s: 1.4 MB a second, the M700's sending side (roadmap).
+- **`opt/kosmos/vnc=control`** lends the screen's keys and pointer to every
+  viewer, said in the log (Diego chose the command line over the Servers
+  window's switch, whose setting a `/Home` in memory loses at every
+  restart). `make netboot` adds it (`NETBOOT_ADD`, `netboot.py --add`). On
+  0.10.214: `open vncd` over Telnet, `kosmos_vnc.py do "click 55 16; wait
+  1.5; shot ..."` - `wm: button down at 55,16`, and the picture shows the
+  Kosmos menu open. **`run_servers.py`, 24 checks**: its first boot, with
+  nothing kept that lends control, is given the word, opens `vncd` over
+  Telnet, and a viewer's click at 233,333 reaches the window manager; its
+  control, `vncd` without the word's line, never sees the click. x86 and
+  ARM pass.
+- **`tools/kosmos_view.py`**, for Diego: `kosmos_vnc.py`'s viewer in a Tk 9
+  window - each changed rectangle handed to the window as a PPM and copied
+  in, at half size when the machine's screen is larger than the Mac's; keys
+  by keysym, buttons, the wheel and a trackpad's scroll; the machine found
+  on the network, `open vncd` asked over Telnet when its port refuses, and
+  a reconnect after every restart. Against the M700: the frame drawn at
+  half in 7.2 s, and 300 sampled pixels of 300 the frame's. Tk from
+  Homebrew - `tcl-tk` 9.0.4 and `python-tk@3.14` alone, 44 MB, with
+  Python, OpenSSL and SQLite left as they were (`--ignore-dependencies`;
+  a plain install would have upgraded all three).

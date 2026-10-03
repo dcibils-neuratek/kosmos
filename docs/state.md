@@ -590,6 +590,36 @@ restarted*, written the same evening). **The I219 brought up as `e1000e`
 does** (18.346): Linux v6.12's e1000e read from `build/downloads/
 e1000e-v6.12`; no reset first, then its MAC reset, each with a frame to
 itself, and the registers said; `ethernet_pch` in x86-core with a control. **The gate ran 85 of 85 in 10:02** - two seconds over Diego's ten minutes (9:56 before it), the slowest `x86-cafesa3d-2` at 202 s and `x86-core` at 52 s, off the longest path: to bring back under before the next thing lands. **Stick 0.10.205** (`ec1114f`): OVMF 32 checks, handed over for the M700 with `log e1000` to read. **Its log** (18.347): the firmware left the card in good order (its own ring drained, TARC0 already e1000e's), the ME present, and both tries failed with TDH 0 against TDT 1; this driver cleared TCTL's MULR, which e1000e keeps. **Changed**: TCTL read-modify-write, PBA before the reset, WUC cleared, and `SYS_DEV_CONFIG` (65) to say the PCI command and the descriptor-ring status; gate 85/85 in 10:14 (over the budget, to trim). **Then network boot, Diego's ask** (18.348): the loader fetches by TFTP through the firmware's PXE, `make netboot` + `bash tools/netboot-serve.sh` (dnsmasq proxy, Diego's sudo), `x86-netboot` in the gate (OVMF needs `-device virtio-rng-pci` for its network stack). The M700 needs network boot on in its setup, F12, the network entry; the 0.10.205 stick stays in for /Home. **0.10.206 booted on the M700 over the network the same night** ("it booted over network!"); its `log e1000` is next. **It said the I219 sends** - a frame to itself in 13 ms, no reset (18.349) - and got no address: receiving. **0.10.207** (`make netboot`): extended receive descriptors on the I219 as e1000e uses (RFCTL.EXTEN), the firmware's RFCTL and the first five seconds' frames said. Network boot is first in the M700's boot order (Diego), so a restart takes the newest build. Next: the build-boot-test loop (roadmap), the late `/Home` stick, `diagnose`'s nil, and the gate back under ten minutes.
+
+**3 October: the M700 on the network, and used from the Mac.** A power cut
+the night before; the Mac came back as 192.168.1.38. **0.10.208 to 0.10.212**,
+each served by network boot and read in Diego's photos of `log e1000`
+(`testing.md` 18.351 to 18.353): the I219's counts at 30, 60 and 120 s,
+`restart` that works on a PC (the FADT's reset register first), `telnetd`
+waiting for its address, and four tries at the late frames - the write-back,
+the snoop bits, the receive thresholds, the tail's order - each disproved by
+the next log. **The cause was the firmware's receive ring**, still in the
+card: taken without a reset the I219 went on working from it. **Reset, from
+the boot server's command line alone**, it took 686 frames of 686, answered
+the Mac in 0.5 ms, reached 8.8.8.8 in 15, and Diego: "wikipedia runs on the
+browser!". **0.10.213** makes the reset the I219's way and drops what the
+hunt did not need (`ethernet_pch` 11 checks). **The loop**: `make netboot`,
+then `kosmos_telnet.py 192.168.1.40 restart` - "0.10.212 -> 0.10.213,
+answering again after 59 s", and 0.10.214 in 61; `open <app>` over Telnet;
+`kosmos_vnc.py do "click ...; type ...; shot ..."`; keys and the pointer
+lent by `opt/kosmos/vnc=control`, which `make netboot` serves (Diego's
+choice; `run_servers.py` 24 checks); a click from the Mac opened the Kosmos
+menu on the M700. **`tools/kosmos_view.py`** for Diego - Python with Tk 9
+(Homebrew's `tcl-tk` and `python-tk@3.14`, nothing upgraded), the screen in a
+window, keys and pointer, reconnecting after a restart; 300 of 300 sampled
+pixels the frame's. **Agreed and on the roadmap**: a VNC viewer in Kosmos,
+drawn first. **Not pushed** - every commit since 0.10.202 (`af5f34f`), a
+push being Diego's word, after a full gate. **The M700 runs 0.10.214 by
+network boot**, `/Home` in memory (no stick at boot). **Next**: the late
+`/Home` stick (A, B or C, his; B recommended), `vncd` started at boot on a
+network boot, the M700's TCP send (a whole frame 7.2 s, 1.4 MB/s), the
+browser's blocking name lookup (the async audit), servers and drivers
+restarted, and the gate back under ten minutes.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the

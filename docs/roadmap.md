@@ -145,8 +145,9 @@ not wait or hang waiting for network or anything" (`testing.md` 18.345).
    **Found already, 3 October**: the browser on the M700 (0.10.207) stopped
    collecting its events - "Browser - Kosmos is not collecting its events;
    dropped a mouse move ... 100" - while it waited for wikipedia.org, whose
-   name's answer could not arrive (the I219 took no unicast). A load is
-   meant to be walked away from (18.332); one step of it still blocks.
+   name's answer could not arrive (the I219 was still working from the
+   firmware's ring, 18.353). A load is meant to be walked away from
+   (18.332); one step of it still blocks.
 5. **The M700's I219 itself**: the next stick's log says what the
    transmitter is doing (TCTL, TDH against TDT, TXDCTL, CTRL, CTRL_EXT,
    STATUS), and the PCH datasheet and Linux's `e1000e` say what an I219
@@ -157,7 +158,15 @@ not wait or hang waiting for network or anything" (`testing.md` 18.345).
    (`testing.md` 18.346): the I219 brought up as Linux's `e1000e` brings
    one up - first with no reset, then with its MAC reset if a frame to
    itself does not go out - and the log says which. Diego: "lets fix the
-   network now on the m700". Waiting on the M700's log.
+   network now on the m700".
+   **DONE on 3 October, 0.10.213** (`testing.md` 18.347 to 18.353): it
+   sent from 0.10.206, received from 0.10.207 - late, or not at all - and
+   the cause was the firmware's receive ring, still in the card: taken
+   without a reset, the I219 went on working from what it had fetched of
+   it. Its MAC is now reset first, as `e1000e` always resets it, and the
+   M700 took its address by DHCP, answered the Mac in half a millisecond,
+   reached 8.8.8.8 in 15 and loaded Wikipedia in the browser ("wikipedia
+   runs on the browser!", Diego).
 
 **The M700 booted over the network from the Mac.** Diego, 2 October
 2026, after three sticks for the I219: "is there any way we can simulate
@@ -209,7 +218,8 @@ exists - network boot (above), `telnetd` and `tools/kosmos_telnet.py` with
 manager's `power`) - and what is missing is the joining:
 
 1. **The M700 on the network in Kosmos** - the I219 sending (18.347) and
-   receiving (18.349); being built.
+   receiving (18.349). **DONE on 3 October** (18.353): its MAC reset before
+   it is used.
 2. **Network first in the M700's boot order**, set once by Diego in its
    setup: with the Mac serving, every restart takes the newest build; with
    nothing served, the firmware falls through to the stick. **Done by
@@ -221,8 +231,11 @@ manager's `power`) - and what is missing is the joining:
    **`restart` BUILT on 3 October** (`testing.md` 18.352), with restart
    itself made to work on a PC - the FADT's reset register first, then
    0xCF9, the 8042 and a triple fault (Diego: "Right now only shutdown is
-   done") - and `telnetd` waiting for its address instead of leaving. The
-   Mac's half, waiting for the machine to come back, is next.
+   done") - and `telnetd` waiting for its address instead of leaving.
+   **The Mac's half BUILT the same day** (18.353): `kosmos_telnet.py
+   192.168.1.40 restart` - "Kosmos 0.10.212 -> Kosmos 0.10.213, answering
+   again after 59 s", the first turn of the loop, and 0.10.214 the second
+   in 61.
 4. **One command on the Mac** - build, `make netboot`, restart the M700,
    wait, check the version it runs, run the commands asked for (`log`,
    `diagnose`, `frames`, a suite), bring the output and the files back,
@@ -231,6 +244,35 @@ manager's `power`) - and what is missing is the joining:
 5. **What it cannot do**, said rather than discovered: a build that hangs
    the machine, or breaks its network, cannot be restarted from here - a
    hand on the power button, or a watchdog later.
+6. **The screen, looked at and used from the Mac.** Diego, 3 October: "via
+   telnet i want you to be able to test and grab screenshots of the screen
+   so you can code, build, deploy on m700 via netbook, launch, use the
+   apps, grab how they look and work, fix and repeat". **BUILT the same
+   day** (18.353): `open <app>` over Telnet launches; `kosmos_vnc.py
+   ADDRESS do "click X Y; type ...; key ctrl+s; shot out.png"` uses and
+   looks; and the keys and the pointer are lent by `opt/kosmos/vnc=control`
+   on the boot command line, which `make netboot` serves - Diego's choice
+   over the Servers window's switch, whose setting a `/Home` in memory
+   forgets at every restart. A click from the Mac opened the Kosmos menu
+   on the M700.
+7. **A viewer on the Mac for Diego**: "Can we do a small and fast vnc
+   client in python for macOS using all the code we have already?", "So I
+   can use it to connect to my m700 remotely". **BUILT the same day**:
+   `tools/kosmos_view.py` - `kosmos_vnc.py`'s viewer in a Tk window, finding
+   the machine, starting its screen and reconnecting after a restart
+   (Python with Tk chosen over LÖVE, whose download fails Gatekeeper, and a
+   Swift application).
+8. **Next**: the screen's server started at boot on a network boot, so
+   nothing has to ask for it; and **the M700 sends slowly** - a whole
+   1720x1440 frame, 9.9 MB, takes 7.2 s, 1.4 MB a second over a gigabit
+   card. The TCP send path, measured from both ends, before the 7c
+   compressed encoding is reached for.
+
+**A VNC viewer in Kosmos**, to use other machines from this one. Diego, 3
+October 2026: "Then we can do a vnc client for kosmos as well so we can
+control remote machines from kosmos using vnc". An application, so drawn
+first as an HTML mockup in `docs/` and agreed before any code; RFB's client
+half in C - a loop over pixels - beside `vncd`'s, and the window in Lua.
 
 **Servers and drivers restarted, from the prompt or from a system
 application.** Diego, 2 October 2026, asking whether one can be restarted

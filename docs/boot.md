@@ -419,6 +419,18 @@ over the network, against the build: same".
 **First on the M700 on 2 October**, 0.10.206 (`736ef1e`): "it booted over
 network!" (Diego), with `/Home` on the 0.10.205 stick.
 
+**And every build since, 0.10.207 to 0.10.214** (2 and 3 October), each
+the next restart's - network boot is first in the M700's boot order, so a
+restart takes whatever the Mac serves. From 0.10.213 the I219 is reset
+before Kosmos uses it and the M700 is on the network (`testing.md` 18.353),
+so the restart can come from the Mac: `kosmos_telnet.py 192.168.1.40
+restart` - "Kosmos 0.10.212 -> Kosmos 0.10.213, answering again after 59
+s". **The served command line is the stick's plus `opt/kosmos/vnc=control`**
+(`NETBOOT_ADD`), which lends the screen's keys and pointer to a viewer;
+`build/netboot/boot/kosmos.cmdline` can be edited by hand for one boot -
+that is how the I219's reset was first tried - and `make netboot` writes
+it again.
+
 ---
 
 ## 3b. The screen, in the largest mode the firmware has
