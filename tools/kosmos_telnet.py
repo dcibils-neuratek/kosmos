@@ -14,6 +14,8 @@ rather than seen: it is the next prompt.
   kosmos_telnet.py ADDRESS put FILE PATH       a file of this Mac's, to PATH
   kosmos_telnet.py ADDRESS push APP            an application written here,
                                                into /Home/Apps, and started
+  kosmos_telnet.py ADDRESS restart [SECONDS]   restart it, wait for it to
+                                               answer again, say which build
 
 `push` takes a Lua file or a folder. A file `hello.lua` goes to
 `/Home/Apps/hello/hello.lua`; a folder `Hello/` goes to `/Home/Apps/Hello/`
@@ -165,6 +167,9 @@ def main(argv):
 
         return 0 if found else 1
 
+    if len(argv) >= 2 and argv[1] == "restart":
+        return restart(argv[0], float(argv[2]) if len(argv) > 2 else 300.0)
+
     if len(argv) < 3:
         print(__doc__)
         return 2
@@ -201,6 +206,56 @@ def main(argv):
         return 2
     finally:
         session.close()
+
+
+def restart(address, seconds):
+    """**Restart the machine, and wait for it to come back** (`roadmap.md`,
+    build, boot and test the M700 in a loop; `testing.md` 18.352).
+
+    `restart` at its prompt, then the machine gone - `telnetd` not answering
+    - and then answering again, with the build its banner names. A machine
+    on network boot comes back with whatever the Mac serves now, so the
+    version is the proof that the new build is the one running. Not coming
+    back within `seconds` is a result too, and said.
+    """
+    host = address.partition(":")[0]
+    before = answers(host)
+
+    if before is None:
+        print("restart: no Kosmos telnetd at %s" % host)
+        return 1
+
+    session = Session(address, timeout=10.0)
+    session.sock.sendall(b"restart\r\n")
+
+    try:
+        session.until_prompt()
+    except (ConnectionError, TimeoutError, OSError):
+        pass                                # gone, which is the point
+
+    try:
+        session.sock.close()
+    except OSError:
+        pass
+
+    started = time.monotonic()
+    gone = False
+
+    while time.monotonic() - started < seconds:
+        now = answers(host)
+
+        if now is None:
+            gone = True
+        elif gone:
+            print("restart: Kosmos %s -> Kosmos %s, answering again after %.0f s"
+                  % (before[1], now[1], time.monotonic() - started))
+            return 0
+
+        time.sleep(2.0)
+
+    print("restart: %s did not %s within %.0f s"
+          % (host, "come back" if gone else "go away", seconds))
+    return 1
 
 
 def push(session, local):

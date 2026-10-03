@@ -8,6 +8,27 @@ The Mac's half of `vncd` for a script (`user/bin/programs/vncd.lua`;
 free". This is for what is checked, or taken, from here:
 
   kosmos_vnc.py ADDRESS shot OUT.png [--password P]    the screen, as a PNG
+  kosmos_vnc.py ADDRESS do "STEP; STEP; ..." [--password P]
+                                                       several, on one connection
+
+A STEP is one of:
+
+  shot FILE.png          the screen as it is now
+  click X Y              the left button, down and up, at X,Y
+  rclick X Y             the right button
+  dclick X Y             two clicks
+  move X Y               the pointer there, no button
+  drag X1 Y1 X2 Y2       the left button held from one place to the other
+  type TEXT              the rest of the step, as keys (`\\n` is Return)
+  key NAME[+NAME...]     Return, Escape, Tab, BackSpace, Delete, Home, End,
+                         Up, Down, Left, Right, PageUp, PageDown, F1-F12,
+                         a character - with ctrl, shift, alt or super held
+                         first: `key ctrl+s`, `key super+Tab`
+  wait SECONDS           for the machine to draw what was asked
+
+`click`, `type`, `key` and the rest may also be given alone, without `do`.
+Keys and the pointer reach the desktop only when the Servers window lets a
+viewer use them; otherwise the machine looks and does not listen.
 
 ADDRESS may be `host:port`; the port is 5900 otherwise. RFB 3.3, the Raw
 encoding, and VNC Authentication when the machine asks for it, answered with
@@ -20,6 +41,7 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 import zlib
 
 
@@ -231,23 +253,129 @@ def png(path, width, height, rgb):
                 + chunk(b"IEND", b""))
 
 
+# X keysyms (`keysymdef.h`) by the names a step uses: the ones `vncd`
+# turns into a keyboard's keys.
+KEYS = {
+    "return": 0xff0d, "enter": 0xff0d, "escape": 0xff1b, "esc": 0xff1b,
+    "tab": 0xff09, "backspace": 0xff08, "delete": 0xffff, "insert": 0xff63,
+    "home": 0xff50, "end": 0xff57, "left": 0xff51, "up": 0xff52,
+    "right": 0xff53, "down": 0xff54, "pageup": 0xff55, "pagedown": 0xff56,
+    "space": 0x20,
+}
+KEYS.update({"f%d" % n: 0xffbe + n - 1 for n in range(1, 13)})
+MODIFIERS = {"shift": 0xffe1, "ctrl": 0xffe3, "control": 0xffe3,
+             "alt": 0xffe9, "super": 0xffeb, "cmd": 0xffeb}
+
+
+def keysym(name):
+    if name.lower() in KEYS:
+        return KEYS[name.lower()]
+
+    if len(name) == 1:
+        return ord(name)
+
+    raise RFBError("no key called %r" % name)
+
+
+def step(viewer, text):
+    """One step of `do`; what it said, if anything."""
+    verb, _, rest = text.strip().partition(" ")
+    words = rest.split()
+
+    def numbers(n):
+        if len(words) != n:
+            raise RFBError("%s takes %d numbers: %r" % (verb, n, text))
+
+        return [int(w) for w in words]
+
+    if verb == "shot":
+        viewer.request(False)
+        viewer.update()
+        png(rest.strip(), viewer.width, viewer.height, viewer.frame)
+        return "%dx%d -> %s" % (viewer.width, viewer.height,
+                                os.path.abspath(rest.strip()))
+    elif verb in ("click", "rclick", "dclick"):
+        x, y = numbers(2)
+        button = 4 if verb == "rclick" else 1
+        viewer.pointer(x, y)
+
+        for _ in range(2 if verb == "dclick" else 1):
+            viewer.pointer(x, y, button)
+            viewer.pointer(x, y, 0)
+    elif verb == "move":
+        viewer.pointer(*numbers(2))
+    elif verb == "drag":
+        x1, y1, x2, y2 = numbers(4)
+        viewer.pointer(x1, y1)
+        viewer.pointer(x1, y1, 1)
+
+        for i in range(1, 9):
+            viewer.pointer(x1 + (x2 - x1) * i // 8, y1 + (y2 - y1) * i // 8, 1)
+
+        viewer.pointer(x2, y2, 0)
+    elif verb == "type":
+        viewer.type_text(rest.replace("\\n", "\n"))
+    elif verb == "key":
+        names = rest.strip().split("+")
+        held = [MODIFIERS[n.lower()] for n in names[:-1] if n.lower() in MODIFIERS]
+
+        if len(held) != len(names) - 1:
+            raise RFBError("held keys are shift, ctrl, alt and super: %r" % text)
+
+        for k in held:
+            viewer.key(k, True)
+
+        k = keysym(names[-1])
+        viewer.key(k, True)
+        viewer.key(k, False)
+
+        for k in reversed(held):
+            viewer.key(k, False)
+    elif verb == "wait":
+        time.sleep(float(rest))
+    else:
+        raise RFBError("no step called %r" % verb)
+
+    return None
+
+
 def main(argv):
-    if len(argv) < 3 or argv[1] != "shot":
+    if len(argv) < 2:
         print(__doc__)
         return 2
 
     password = None
 
     if "--password" in argv:
-        password = argv[argv.index("--password") + 1]
+        at = argv.index("--password")
+        password = argv[at + 1]
+        argv = argv[:at] + argv[at + 2:]
 
-    viewer = Viewer(argv[0], password=password)
-    viewer.request(False)
-    viewer.update()
-    png(argv[2], viewer.width, viewer.height, viewer.frame)
-    print("%s: %dx%d from %s -> %s" % (argv[0], viewer.width, viewer.height,
-                                        viewer.name, os.path.abspath(argv[2])))
-    viewer.close()
+    address, verb = argv[0], argv[1]
+
+    if verb == "do" and len(argv) == 3:
+        steps = [s for s in argv[2].split(";") if s.strip()]
+    elif verb in ("shot", "click", "rclick", "dclick", "move", "drag", "type",
+                  "key", "wait") and len(argv) >= 3:
+        steps = [" ".join(argv[1:])]
+    else:
+        print(__doc__)
+        return 2
+
+    viewer = Viewer(address, password=password)
+
+    try:
+        for s in steps:
+            said = step(viewer, s)
+
+            if said:
+                print("%s: %s" % (address, said))
+    except RFBError as e:
+        print("%s: %s" % (address, e))
+        return 1
+    finally:
+        viewer.close()
+
     return 0
 
 
