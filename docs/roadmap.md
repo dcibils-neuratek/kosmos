@@ -147,6 +147,12 @@ not wait or hang waiting for network or anything" (`testing.md` 18.345).
    STATUS), and the PCH datasheet and Linux's `e1000e` say what an I219
    needs that an 82574L does not. Until it sends, the M700 has no DHCP
    address and `telnetd` none to listen on.
+   **Read on 2 October** (0.10.204: TCTL enabled, TDH 0 against TDT 1 -
+   the card never read a descriptor) **and BUILT the same night**
+   (`testing.md` 18.346): the I219 brought up as Linux's `e1000e` brings
+   one up - first with no reset, then with its MAC reset if a frame to
+   itself does not go out - and the log says which. Diego: "lets fix the
+   network now on the m700". Waiting on the M700's log.
 
 **Servers and drivers restarted, from the prompt or from a system
 application.** Diego, 2 October 2026, asking whether one can be restarted

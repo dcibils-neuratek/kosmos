@@ -324,3 +324,47 @@ waiting habit, which is next. (`testing.md` 18.345)
 
 **Confirmed on the machine.** The same evening, on the 0.10.204 stick: "now
 it works great".
+
+## 2 October, night - the M700's network card, read and approached again
+
+**In short:** the M700's network card was switched on but had never once
+looked at the messages it was given. Linux's driver for the same chip says
+why that can happen: this chip needs to be started more carefully than the
+one in the emulator - quietened first, left alone for a moment after a
+reset, and given some settings the older chip does without. Kosmos now
+starts it the way Linux does, first gently without any reset, and checks
+that it works by sending a message to itself. Whether this fixes it is for
+the M700 to say.
+
+**What the log said.** The previous fix made the driver report a card that
+holds its messages, and on the M700 it did: the transmitter switched on,
+the cable connected at a gigabit, and the card's own counter showing it had
+read nothing it was given.
+
+**Why this chip and not the emulator's.** The emulator's card is an older
+Intel model of the same family; the M700's is an I219, built into the
+chipset. Linux's driver for both was fetched and read - Intel's own engineers
+wrote most of it, and it is the best description of the hardware there is.
+It does several things for the I219 that Kosmos did not: it stops the card
+using the memory bus before resetting it, waits for anything in flight to
+finish, and then does not touch the card at all for 20 milliseconds after
+the reset, because - its comment says - doing so "hangs the hardware".
+Kosmos's driver checked the card immediately after resetting it. Linux also
+sets several transmit settings this chip needs, in a particular order, and
+tells the chip's firmware that a driver is now in charge.
+
+**What the driver does now.** For the I219 only: it writes down what the
+computer's firmware left in the card, then tries without any reset - the
+firmware has already brought the card up for its own network boot - and
+checks by sending a message addressed to itself, which the network switch
+quietly drops. If that message doesn't go out within 50 milliseconds, it
+resets the card exactly as Linux does and checks again. Either way, the log
+says what happened.
+
+**Measured** under the emulator, made to take the I219's path: the
+message to itself went out in 126 microseconds without a reset and 140
+after Linux's reset, and the network worked after both. With the
+emulator's transmitter held off, both attempts are reported as failed - and
+a version that pretends the test passed is caught by the test. What the
+emulator cannot say is whether this is what the I219 needed. (`testing.md`
+18.346)

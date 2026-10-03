@@ -4538,6 +4538,93 @@ def ethernet_unsent(image, check):
               % worst.group(1))
 
 
+def ethernet_pch(image, check):
+    """The I219's way, run on the one Intel card QEMU has.
+
+    `testing.md` 18.346. The M700's I219 took a frame and never read its
+    descriptor (TDH 0 against TDT 1), and Linux's `e1000e` brings one up
+    differently from an 82574L: no register touched for 20 ms after a reset
+    ("it hangs the hardware"), the bus requests stopped first, the units
+    quiet, the firmware's flag taken, and transmit bits set before the
+    transmitter is enabled. The driver now does that for the I219s `e1000e`
+    calls SPT - first with no reset at all, as the firmware left the card,
+    then with `e1000e`'s reset if a frame to itself does not go out.
+
+    QEMU has no I219, so `opt/kosmos/e1000path` puts its 82574L through the
+    same way, three times: as the firmware left it (`pch`), straight to the
+    reset (`pch-reset`), and with the transmitter held off, where both tries
+    must fail and say so - the control on the self-test, which would
+    otherwise be free to claim success. Each must still ping, or say why it
+    cannot. What QEMU cannot say is whether the I219 needed any of it; the
+    M700's log says that.
+    """
+    def run(path, fault=False):
+        extra = ["-netdev", "user,id=n0", "-device", "e1000e,netdev=n0",
+                 "-fw_cfg", "name=opt/kosmos/e1000path,string=" + path]
+
+        if fault:
+            extra += ["-fw_cfg", "name=opt/kosmos/e1000fault,string=transmitter"]
+
+        return boot(image, None, 120.0, extra=tuple(extra),
+                    typed=("ping 10.0.2.2",))
+
+    def shown(out):
+        return "\n    ".join(l.strip() for l in out.splitlines()
+                             if l.strip().startswith("e1000:"))
+
+    out = run("pch")
+
+    if out is None:
+        check(False, "the machine would not boot with its card on the I219's way")
+    else:
+        check("e1000: an I219, taken as Linux's e1000e takes one - first as "
+              "the firmware left it, without a reset" in out
+              and "e1000: as the firmware left it: CTRL " in out,
+              "the card did not go the I219's way, or did not say what the "
+              "firmware left:\n    " + shown(out))
+        check(re.search(r"e1000: a frame to itself went out in \d+ us - it "
+                        r"sends", out) is not None
+              and "its MAC reset" not in out,
+              "taken without a reset, the card did not send its frame to "
+              "itself - or was reset anyway:\n    " + shown(out))
+        check(len(re.findall(r"ttl=255 time=", out)) >= 3,
+              "taken without a reset, the card answered %d of 4 pings"
+              % len(re.findall(r"ttl=255 time=", out)))
+
+    out = run("pch-reset")
+
+    if out is None:
+        check(False, "the machine would not boot with its card reset the I219's way")
+    else:
+        check(re.search(r"e1000: its MAC reset as e1000e does it: bus requests "
+                        r"stopped in \d+ us, the flag taken", out) is not None,
+              "the MAC reset did not say its bus requests stopped and the "
+              "flag was taken:\n    " + shown(out))
+        check(re.search(r"e1000: after the reset, a frame to itself went out "
+                        r"in \d+ us - it sends", out) is not None,
+              "after the I219's reset the card did not send its frame to "
+              "itself:\n    " + shown(out))
+        check(len(re.findall(r"ttl=255 time=", out)) >= 3,
+              "after the I219's reset the card answered %d of 4 pings"
+              % len(re.findall(r"ttl=255 time=", out)))
+
+    out = run("pch", fault=True)
+
+    if out is None:
+        check(False, "the machine would not boot with the I219's way and the "
+                     "transmitter held off")
+    else:
+        check("e1000: a frame to itself did not go out in 50 ms: TCTL " in out
+              and "e1000: after the reset, a frame to itself did not go out "
+                  "either: TCTL " in out,
+              "with the transmitter held off, the self-test did not say both "
+              "tries failed - it would claim a card sends that does not:\n    "
+              + shown(out))
+        check("ping: this machine has no address yet" in out,
+              "with nothing sent, ping did not say the machine has no "
+              "address:\n    " + out[-500:])
+
+
 def memory(image, check):
     """More RAM than the kernel used to be able to describe.
 
@@ -4630,7 +4717,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -4748,6 +4835,10 @@ def main():
     # And a card that keeps every frame, which is the M700's (18.345).
     if 'ethernet_unsent' in wanted:
         ethernet_unsent(image, check)
+
+    # And the I219's way, on QEMU's 82574L (18.346).
+    if 'ethernet_pch' in wanted:
+        ethernet_pch(image, check)
 
     if 'identity' in wanted:
         identity(image, check)

@@ -76,6 +76,45 @@
 #define REG_RAL0        0x5400u
 #define REG_RAH0        0x5404u
 
+/*
+ * **The I219's own**, for what Linux's `e1000e` does to one that an 82574L
+ * does not need (`pch_bring_up`, `testing.md` 18.346): every offset and bit
+ * here is from v6.12's `regs.h`, `defines.h` and `ich8lan.h`, read on 2
+ * October 2026, and none is from memory.
+ */
+#define REG_EXTCNF_CTRL 0x0F00u     /* the software flag, shared with firmware */
+#define REG_IOSFPC      0x0F28u
+#define REG_PBECCSTS    0x100Cu
+#define REG_KABGTXD     0x3004u
+#define REG_TXDCTL1     0x3928u
+#define REG_TARC0       0x3840u
+#define REG_TARC1       0x3940u
+#define REG_RFCTL       0x5008u
+#define REG_FWSM        0x5B54u
+
+#define CTRL_GIO_MASTER_DISABLE 0x00000004u
+#define CTRL_MEHE               0x00080000u
+#define STATUS_GIO_MASTER_ENABLE 0x00080000u
+#define CTRL_EXT_BIT22          (1u << 22)
+#define CTRL_EXT_PHYPDEN        0x00100000u
+#define CTRL_EXT_DRV_LOAD       0x10000000u
+#define TXDCTL_COUNT_DESC       (1u << 22)
+#define TARC0_BITS              ((1u << 23) | (1u << 24) | (1u << 26) | (1u << 27))
+#define TARC0_CB_MULTIQ_3_REQ   0x30000000u
+#define TARC0_CB_MULTIQ_2_REQ   0x20000000u
+#define TARC1_BITS              ((1u << 24) | (1u << 26) | (1u << 30))
+#define TARC1_BIT28             (1u << 28)
+#define TCTL_RTLC               0x01000000u
+#define TCTL_MULR               0x10000000u
+#define TCTL_CT_E1000E          (15u << 4)
+#define TCTL_COLD_E1000E        (63u << 12)
+#define RFCTL_NFS_DIS           0x000000C0u     /* NFSW_DIS | NFSR_DIS */
+#define PBECCSTS_ECC_ENABLE     0x00010000u
+#define RDMTS_HEX               0x00010000u     /* E1000_RCTL_RDMTS_HEX */
+#define KABGTXD_BGSQLBIAS       0x00050000u
+#define EXTCNF_CTRL_SWFLAG      0x00000020u
+#define RAH_AV                  0x80000000u
+
 #define CTRL_SLU        (1u << 6)   /* set link up */
 #define CTRL_ASDE       (1u << 5)   /* auto-speed detection */
 #define CTRL_RST        (1u << 26)
@@ -154,10 +193,16 @@ static struct {
     unsigned      tx_said;          /* how often that has been said */
     bool          tx_off;           /* `opt/kosmos/e1000fault`, for a test */
     uint64_t      hz;               /* the counter's, for "a second" */
+    unsigned long tick_hz;          /* the scheduler's, for a sleep */
+    bool          pch;              /* an I219, brought up as e1000e does */
+    bool          reset_first;      /* `opt/kosmos/e1000path=pch-reset` */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
     long          ring_cap;
 } card;
+
+static bool send_frame(const uint8_t *frame, unsigned length);
+static void tx_reclaim(void);
 
 static uint32_t reg_read(unsigned at)
 {
@@ -235,6 +280,47 @@ static bool wait_for_reset(void)
 }
 
 /*
+ * **What `e1000e` sets on an I219 that an 82574L does without**, in its
+ * order: `e1000_initialize_hw_bits_ich8lan`, then `e1000_configure_tx` with
+ * its errata for this generation (SPT) - and all of it before the
+ * transmitter is enabled, which Linux's own comment insists on for TARC0
+ * ("need to do this after setting TARC(0)"). Our driver set none of it, and
+ * the I219 took a frame and never read its descriptor (`testing.md`
+ * 18.346). Which of these that was, if any, is not known: this is the
+ * whole of what the reference does, not a guess at the one that matters.
+ */
+static void pch_transmit_bits(void)
+{
+    uint32_t v;
+
+    reg_write(REG_CTRL_EXT, reg_read(REG_CTRL_EXT) | CTRL_EXT_BIT22
+                            | CTRL_EXT_PHYPDEN);
+
+    reg_write(REG_TXDCTL, reg_read(REG_TXDCTL) | TXDCTL_COUNT_DESC);
+
+    /* "erratum work around: set txdctl the same for both queues" */
+    reg_write(REG_TXDCTL1, reg_read(REG_TXDCTL));
+
+    v = reg_read(REG_TARC0) | TARC0_BITS;
+
+    /* "SPT and KBL Si errata workaround to avoid Tx hang": two outstanding
+     * requests rather than three. */
+    v = (v & ~TARC0_CB_MULTIQ_3_REQ) | TARC0_CB_MULTIQ_2_REQ;
+    reg_write(REG_TARC0, v);
+
+    v = reg_read(REG_TARC1);
+    v = (reg_read(REG_TCTL) & TCTL_MULR) ? (v & ~TARC1_BIT28) : (v | TARC1_BIT28);
+    reg_write(REG_TARC1, v | TARC1_BITS);
+
+    reg_write(REG_RFCTL, reg_read(REG_RFCTL) | RFCTL_NFS_DIS);
+    reg_write(REG_PBECCSTS, reg_read(REG_PBECCSTS) | PBECCSTS_ECC_ENABLE);
+    reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_MEHE);
+
+    /* "SPT and KBL Si errata workaround to avoid data corruption" */
+    reg_write(REG_IOSFPC, reg_read(REG_IOSFPC) | RDMTS_HEX);
+}
+
+/*
  * The rings, and the buffers each descriptor points at.
  *
  * The receive ring is handed to the card full - every descriptor pointing at
@@ -274,6 +360,10 @@ static void rings_start(void)
 
     reg_write(REG_TIPG, TIPG_IEEE);
 
+    if (card.pch) {
+        pch_transmit_bits();
+    }
+
     /*
      * **The transmitter left off, when a test asks** (`testing.md` 18.345):
      * the card then keeps every frame it is given and confirms none, which
@@ -281,8 +371,9 @@ static void rings_start(void)
      * exactly that with TCTL.EN clear. It is the one way to show, under
      * QEMU, that a card which never sends cannot stop the stack.
      */
-    reg_write(REG_TCTL, (card.tx_off ? 0u : TCTL_EN)
-                        | TCTL_PSP | TCTL_CT | TCTL_COLD);
+    reg_write(REG_TCTL, (card.tx_off ? 0u : TCTL_EN) | TCTL_PSP
+                        | (card.pch ? TCTL_RTLC | TCTL_CT_E1000E | TCTL_COLD_E1000E
+                                    : TCTL_CT | TCTL_COLD));
 
     /*
      * **Frames addressed to this card and broadcast, and nothing else.**
@@ -295,10 +386,337 @@ static void rings_start(void)
     reg_write(REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_BSIZE_2048 | RCTL_SECRC);
 }
 
+/*--------------------------------------------------------------- the I219 */
+
+/* The I219s `e1000e` drives as `board_pch_spt` (`netdev.c`, `hw.h`). */
+static bool is_pch_spt(unsigned device)
+{
+    switch (device) {
+    case 0x156Fu: case 0x1570u: case 0x15B7u: case 0x15B8u: case 0x15B9u:
+    case 0x15D6u: case 0x15D7u: case 0x15D8u: case 0x15E3u:
+    case 0x0D53u: case 0x0D55u:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* At least `ms`: a sleep of n ticks ends at the nth tick from now, which is
+ * between n - 1 and n of them away. */
+static void sleep_ms(unsigned ms)
+{
+    unsigned long hz = card.tick_hz != 0 ? card.tick_hz : 250ul;
+
+    kosmos_sleep((ms * hz + 999ul) / 1000ul + 1ul);
+}
+
+static unsigned long micros_since(uint64_t start)
+{
+    return (unsigned long)((kosmos_ticks() - start) * 1000000ull / card.hz);
+}
+
+/*
+ * The transmitter, said: what the line after a failed attempt shows, so the
+ * log says how far the card got.
+ */
+static void say_transmitter(struct say_line *line, const char *what)
+{
+    say_begin(line);
+    say_text(line, what);
+    say_text(line, ": TCTL ");
+    say_hex(line, reg_read(REG_TCTL), 8);
+    say_text(line, " TDH ");
+    say_dec(line, reg_read(REG_TDH));
+    say_text(line, " TDT ");
+    say_dec(line, reg_read(REG_TDT));
+    say_text(line, " TXDCTL ");
+    say_hex(line, reg_read(REG_TXDCTL), 8);
+    say_text(line, " TARC0 ");
+    say_hex(line, reg_read(REG_TARC0), 8);
+    say_text(line, " STATUS ");
+    say_hex(line, reg_read(REG_STATUS), 8);
+    say_send(console, line);
+}
+
+/*
+ * **What the firmware left**, before anything is touched: the M700's boots
+ * its own network stack first, and what it did to the card is the first
+ * thing to know when the card does not do what it is told.
+ */
+static void say_firmware(struct say_line *line)
+{
+    say_begin(line);
+    say_text(line, "e1000: as the firmware left it: CTRL ");
+    say_hex(line, reg_read(REG_CTRL), 8);
+    say_text(line, " STATUS ");
+    say_hex(line, reg_read(REG_STATUS), 8);
+    say_text(line, " CTRL_EXT ");
+    say_hex(line, reg_read(REG_CTRL_EXT), 8);
+    say_text(line, " RCTL ");
+    say_hex(line, reg_read(REG_RCTL), 8);
+    say_text(line, " TCTL ");
+    say_hex(line, reg_read(REG_TCTL), 8);
+    say_text(line, " FWSM ");
+    say_hex(line, reg_read(REG_FWSM), 8);
+    say_send(console, line);
+
+    say_begin(line);
+    say_text(line, "e1000: its rings as the firmware left them: TDLEN ");
+    say_dec(line, reg_read(REG_TDLEN));
+    say_text(line, " TDH ");
+    say_dec(line, reg_read(REG_TDH));
+    say_text(line, " TDT ");
+    say_dec(line, reg_read(REG_TDT));
+    say_text(line, " RDLEN ");
+    say_dec(line, reg_read(REG_RDLEN));
+    say_text(line, " RDH ");
+    say_dec(line, reg_read(REG_RDH));
+    say_text(line, " RDT ");
+    say_dec(line, reg_read(REG_RDT));
+    say_text(line, " TARC0 ");
+    say_hex(line, reg_read(REG_TARC0), 8);
+    say_send(console, line);
+}
+
+/*
+ * Both units stopped and a moment for whatever they were doing to finish -
+ * `e1000_reset_hw_ich8lan`'s first steps, "to allow any pending
+ * transactions to complete".
+ */
+static void pch_quiet(void)
+{
+    reg_write(REG_IMC, 0xFFFFFFFFu);
+    reg_write(REG_RCTL, 0);
+    reg_write(REG_TCTL, TCTL_PSP);
+    (void)reg_read(REG_STATUS);
+    sleep_ms(10);
+}
+
+/*
+ * **The MAC reset, as `e1000e` does it** (`e1000_reset_hw_ich8lan`), for the
+ * case where the first try sent nothing.
+ *
+ * The card's bus requests stopped first - "Prevent the PCI-E bus from
+ * sticking if there is no TLP connection on the last TLP read/write
+ * transaction when MAC is reset" - then the units, then the flag the
+ * firmware shares, then the reset, and then **nothing read or written for
+ * twenty milliseconds**: "cannot issue a flush here because it hangs the
+ * hardware". The driver before this read CTRL in a loop straight after the
+ * reset, which is exactly that.
+ *
+ * The MAC only. `e1000e` resets the PHY with it unless the firmware forbids
+ * that, and then programs the PHY again over its own interface, which this
+ * driver does not have; resetting the MAC alone is what `e1000e` does when
+ * the PHY reset is forbidden, and the PHY keeps the link the firmware made.
+ */
+static void pch_reset(struct say_line *line)
+{
+    uint64_t start = kosmos_ticks();
+    unsigned long stopped_us = 0;
+    bool stopped = false, flag = false;
+    uint32_t ctrl;
+    unsigned i;
+
+    reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_GIO_MASTER_DISABLE);
+
+    /* MASTER_DISABLE_TIMEOUT, 800 looks a hundred microseconds apart. */
+    while (micros_since(start) < 80000ul) {
+        if ((reg_read(REG_STATUS) & STATUS_GIO_MASTER_ENABLE) == 0) {
+            stopped = true;
+            stopped_us = micros_since(start);
+            break;
+        }
+    }
+
+    pch_quiet();
+
+    /*
+     * The software flag: free first (PHY_CFG_TIMEOUT, 100 ms), then taken
+     * and read back as ours (SW_FLAG_TIMEOUT is a second; a tenth is
+     * plenty to know). The reset goes ahead either way, as in `e1000e`.
+     */
+    for (i = 0; i < 25u && (reg_read(REG_EXTCNF_CTRL) & EXTCNF_CTRL_SWFLAG) != 0; i++) {
+        sleep_ms(4);
+    }
+
+    ctrl = reg_read(REG_CTRL);
+    reg_write(REG_EXTCNF_CTRL, reg_read(REG_EXTCNF_CTRL) | EXTCNF_CTRL_SWFLAG);
+
+    for (i = 0; i < 25u; i++) {
+        if ((reg_read(REG_EXTCNF_CTRL) & EXTCNF_CTRL_SWFLAG) != 0) {
+            flag = true;
+            break;
+        }
+
+        sleep_ms(4);
+    }
+
+    reg_write(REG_CTRL, ctrl | CTRL_RST);
+    sleep_ms(20);
+
+    reg_write(REG_IMC, 0xFFFFFFFFu);
+    (void)reg_read(REG_ICR);
+    reg_write(REG_KABGTXD, reg_read(REG_KABGTXD) | KABGTXD_BGSQLBIAS);
+
+    say_begin(line);
+    say_text(line, "e1000: its MAC reset as e1000e does it: bus requests ");
+
+    if (stopped) {
+        say_text(line, "stopped in ");
+        say_dec(line, stopped_us);
+        say_text(line, " us");
+    } else {
+        say_text(line, "still pending after 80 ms");
+    }
+
+    say_text(line, flag ? ", the flag taken" : ", the flag held by firmware");
+    say_text(line, "; after it CTRL ");
+    say_hex(line, reg_read(REG_CTRL), 8);
+    say_text(line, " STATUS ");
+    say_hex(line, reg_read(REG_STATUS), 8);
+    say_send(console, line);
+}
+
+/*
+ * **A frame to itself**: addressed to this card's own MAC, from it, of the
+ * IEEE's local experimental type 0x88B5, so a switch learns the address is
+ * on this port and drops the frame there - nothing else on the network sees
+ * it. The card's confirmation within fifty milliseconds is the whole test;
+ * on a link that is up it takes microseconds.
+ */
+static bool self_test(unsigned long *took_us)
+{
+    uint8_t frame[60];
+    uint64_t start;
+
+    memset(frame, 0, sizeof(frame));
+    memcpy(frame, card.mac, 6);
+    memcpy(frame + 6, card.mac, 6);
+    frame[12] = 0x88u;
+    frame[13] = 0xB5u;
+    memcpy(frame + 14, "Kosmos e1000 self-test", 22);
+
+    start = kosmos_ticks();
+
+    if (!send_frame(frame, sizeof(frame))) {
+        return false;
+    }
+
+    while (micros_since(start) < 50000ul) {
+        tx_reclaim();
+
+        if (e1000_tx_out(&card.tx) == 0) {
+            *took_us = micros_since(start);
+            return true;
+        }
+
+        kosmos_sleep(1);
+    }
+
+    return false;
+}
+
+/* The MAC address back in RAL0 and RAH0, if a reset left them empty. */
+static void mac_restore(void)
+{
+    uint8_t now[6];
+
+    if (e1000_decode_mac(reg_read(REG_RAL0), reg_read(REG_RAH0), now)) {
+        return;
+    }
+
+    reg_write(REG_RAL0, (uint32_t)card.mac[0] | ((uint32_t)card.mac[1] << 8)
+                        | ((uint32_t)card.mac[2] << 16)
+                        | ((uint32_t)card.mac[3] << 24));
+    reg_write(REG_RAH0, (uint32_t)card.mac[4] | ((uint32_t)card.mac[5] << 8)
+                        | RAH_AV);
+}
+
+static void pch_start(void)
+{
+    unsigned i;
+
+    mac_restore();
+
+    for (i = 0; i < 128u; i++) {
+        reg_write(REG_MTA + i * 4u, 0);
+    }
+
+    reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_SLU);
+    rings_start();
+
+    /* "let the f/w know that the h/w is now under the control of the
+     * driver" - set when the interface is up, on a part with AMT. */
+    reg_write(REG_CTRL_EXT, reg_read(REG_CTRL_EXT) | CTRL_EXT_DRV_LOAD);
+}
+
+/*
+ * **An I219, brought up as `e1000e` would** (`testing.md` 18.346).
+ *
+ * First as the firmware left it - the units stopped, the rings this
+ * driver's, the bits `e1000e` sets - with no reset at all: a reset is where
+ * `e1000e`'s warnings about this chip are, and the firmware's own network
+ * boot has already brought it up. A frame to itself says whether that
+ * sends. If it does not, the MAC is reset as `e1000e` resets it and the
+ * test is made again. Either way the log says what happened and with what
+ * the card said, and the driver goes on: a card that will not send is the
+ * stack's to live with (18.345), not a reason to stop.
+ */
+static void pch_bring_up(struct say_line *line)
+{
+    unsigned long took = 0;
+
+    say_firmware(line);
+
+    card.have_mac = e1000_decode_mac(reg_read(REG_RAL0), reg_read(REG_RAH0),
+                                     card.mac);
+    card.present = true;
+
+    if (!card.reset_first) {
+        say_begin(line);
+        say_text(line, "e1000: an I219, taken as Linux's e1000e takes one - "
+                       "first as the firmware left it, without a reset");
+        say_send(console, line);
+
+        pch_quiet();
+        pch_start();
+
+        if (self_test(&took)) {
+            say_begin(line);
+            say_text(line, "e1000: a frame to itself went out in ");
+            say_dec(line, took);
+            say_text(line, " us - it sends");
+            say_send(console, line);
+            return;
+        }
+
+        say_transmitter(line, "e1000: a frame to itself did not go out in "
+                              "50 ms");
+    }
+
+    pch_reset(line);
+    pch_start();
+
+    if (self_test(&took)) {
+        say_begin(line);
+        say_text(line, "e1000: after the reset, a frame to itself went out in ");
+        say_dec(line, took);
+        say_text(line, " us - it sends");
+        say_send(console, line);
+        return;
+    }
+
+    say_transmitter(line, "e1000: after the reset, a frame to itself did not "
+                          "go out either");
+}
+
 static bool bring_up(struct say_line *line)
 {
     struct dev_info dev;
+    struct sysinfo info;
     long region, mapped, bus, regs;
+    char option[16];
+    long n;
     unsigned i;
 
     if (kosmos_dev_find(DEV_INTEL_ETHERNET, 0, &dev) != 0) {
@@ -319,34 +737,42 @@ static bool bring_up(struct say_line *line)
     card.device = dev.line;
     card.intid = dev.intid;
 
-    /*
-     * **Quiet first, then reset.** An interrupt from a card mid-reset is one
-     * nobody can answer, and the mask survives the reset on this family only
-     * by being set again afterwards - so it is written twice on purpose.
-     */
-    reg_write(REG_IMC, 0xFFFFFFFFu);
-    reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_RST);
+    card.hz = 62500000u;
+    card.tick_hz = 250u;
 
-    if (!wait_for_reset()) {
+    if (kosmos_sysinfo(&info) == 0) {
+        if (info.counter_hz != 0) {
+            card.hz = info.counter_hz;
+        }
+
+        if (info.tick_hz != 0) {
+            card.tick_hz = info.tick_hz;
+        }
+    }
+
+    if (kosmos_boot_option("opt/kosmos/e1000fault", option, sizeof(option))
+            == 11 && memcmp(option, "transmitter", 11u) == 0) {
+        card.tx_off = true;
         say_begin(line);
-        say_text(line, "e1000: the card did not come out of its reset");
+        say_text(line, "e1000: its transmitter left off, as "
+                       "opt/kosmos/e1000fault asks");
         say_send(console, line);
-        return false;
     }
 
-    reg_write(REG_IMC, 0xFFFFFFFFu);
-    (void)reg_read(REG_ICR);
+    /*
+     * The I219's way for an I219, and - when a test asks - for QEMU's
+     * 82574L, so that the way is run in the gate on the one card QEMU has
+     * (`opt/kosmos/e1000path`, `pch` or `pch-reset`).
+     */
+    card.pch = is_pch_spt(card.device);
+    n = kosmos_boot_option("opt/kosmos/e1000path", option, sizeof(option));
 
-    card.have_mac = e1000_decode_mac(reg_read(REG_RAL0), reg_read(REG_RAH0),
-                                     card.mac);
-
-    /* The multicast table, every entry, before the receiver is enabled. */
-    for (i = 0; i < 128u; i++) {
-        reg_write(REG_MTA + i * 4u, 0);
+    if (n == 3 && memcmp(option, "pch", 3u) == 0) {
+        card.pch = true;
+    } else if (n == 9 && memcmp(option, "pch-reset", 9u) == 0) {
+        card.pch = true;
+        card.reset_first = true;
     }
-
-    /* Link up, and let the PHY work out the speed with the far end. */
-    reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_SLU | CTRL_ASDE);
 
     region = kosmos_mem_create_flags(REGION_PAGES, MEM_CONTIGUOUS);
     mapped = region < 0 ? region : kosmos_mem_map(region);
@@ -362,24 +788,41 @@ static bool bring_up(struct say_line *line)
     card.mem = (uintptr_t)mapped;
     card.bus = (uint64_t)bus;
 
-    {
-        struct sysinfo info;
-        char fault[16];
+    if (card.pch) {
+        pch_bring_up(line);
+    } else {
+        /*
+         * **Quiet first, then reset.** An interrupt from a card mid-reset is
+         * one nobody can answer, and the mask survives the reset on this
+         * family only by being set again afterwards - so it is written twice
+         * on purpose.
+         */
+        reg_write(REG_IMC, 0xFFFFFFFFu);
+        reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_RST);
 
-        card.hz = (kosmos_sysinfo(&info) == 0 && info.counter_hz != 0)
-                  ? info.counter_hz : 62500000u;
-
-        if (kosmos_boot_option("opt/kosmos/e1000fault", fault, sizeof(fault))
-                == 11 && memcmp(fault, "transmitter", 11u) == 0) {
-            card.tx_off = true;
+        if (!wait_for_reset()) {
             say_begin(line);
-            say_text(line, "e1000: its transmitter left off, as "
-                           "opt/kosmos/e1000fault asks");
+            say_text(line, "e1000: the card did not come out of its reset");
             say_send(console, line);
+            return false;
         }
-    }
 
-    rings_start();
+        reg_write(REG_IMC, 0xFFFFFFFFu);
+        (void)reg_read(REG_ICR);
+
+        card.have_mac = e1000_decode_mac(reg_read(REG_RAL0),
+                                         reg_read(REG_RAH0), card.mac);
+
+        /* The multicast table, every entry, before the receiver is enabled. */
+        for (i = 0; i < 128u; i++) {
+            reg_write(REG_MTA + i * 4u, 0);
+        }
+
+        /* Link up, and let the PHY work out the speed with the far end. */
+        reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_SLU | CTRL_ASDE);
+
+        rings_start();
+    }
 
     card.irq = kosmos_irq_claim(dev.intid);
     reg_write(REG_IMS, ICR_RXT0 | ICR_LSC | ICR_RXDMT0);

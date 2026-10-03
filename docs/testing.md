@@ -16398,3 +16398,72 @@ across the end of the ring.
 each bulk transfer of the USB Ethernet adapter, inside the process that
 serves the keyboard, the mouse and `/Home`; and a call has no deadline, so
 a server that never answers still holds whoever asked it.
+
+## 18.346 The I219 brought up as Linux's e1000e brings one up
+
+**What the M700 said** on 0.10.204 (`build/stick-diagnose.txt`, 2
+October), from 18.345's new lines:
+
+    e1000: the card has kept a frame a second without sending it, 1 waiting
+    e1000: its transmitter: TCTL 0004010a TDH 0 TDT 1 TXDCTL 00000000
+           CTRL 00100240 CTRL_EXT 815a1027 STATUS 00080483
+
+The transmitter enabled, the link up at a gigabit, and the card had not
+read a single descriptor: TDH 0 against TDT 1. Its fetching was not
+running at all.
+
+**What Linux does that this driver did not.** Linux's `e1000e`, v6.12,
+fetched into `build/downloads/e1000e-v6.12` and read rather than
+remembered - `ich8lan.c`, `netdev.c`, `mac.c`, `defines.h`, `regs.h`,
+`ich8lan.h`, `hw.h`, `e1000.h`; 8086:15b8 is its `PCH_SPT_I219_V2`, driven
+as `board_pch_spt`. Its reset (`e1000_reset_hw_ich8lan`) stops the card's
+bus requests first ("Prevent the PCI-E bus from sticking"), stops both
+units and waits 10 ms, takes the flag it shares with the firmware, resets
+- and then reads nothing for 20 ms: "cannot issue a flush here because it
+hangs the hardware". This driver read CTRL in a loop straight after the
+reset. It then sets bits on the transmit side an 82574L does without
+(`e1000_initialize_hw_bits_ich8lan`, `e1000_configure_tx` with its SPT
+errata) and enables the transmitter only after TARC0 - "need to do this
+after setting TARC(0)" - and tells the firmware a driver has the card
+(`DRV_LOAD`). It also warns that an I219 reset with descriptors still in
+its rings enters "a unit hang state which can only be released by PCI
+reset". And the M700's firmware runs its own network boot on the card
+before Kosmos is loaded.
+
+**What the driver does now, for the eleven I219s `e1000e` calls SPT**
+(`pch_bring_up`):
+
+1. Says what the firmware left - CTRL, STATUS, CTRL_EXT, RCTL, TCTL, FWSM,
+   the rings and TARC0 - before touching anything.
+2. **No reset at all first**: both units stopped and 10 ms, then the rings
+   this driver's, `e1000e`'s transmit bits, the transmitter last, and
+   `DRV_LOAD`.
+3. **A frame to itself** - to its own MAC, type 0x88B5, which a switch
+   drops at the port - and the card's confirmation within 50 ms.
+4. If it did not go: the registers said, the MAC reset as `e1000e` resets
+   it (bus requests, quiet, the flag, the reset, 20 ms untouched), the MAC
+   address put back if the reset emptied it, the same bring-up, and the
+   same test, said either way.
+
+The PHY is not reset: `e1000e` programs it again afterwards over an
+interface this driver does not have, and a MAC-only reset is what `e1000e`
+itself does when the firmware forbids the PHY's. Every register and bit is
+from the headers above, and a mistake found writing them - TARC0's four
+bits summed to `0x1B800000` rather than `0x0D800000` - is why they are
+written as shifts now, as Linux writes them. Other cards keep the 82574L's
+way, as QEMU's does by default.
+
+**`ethernet_pch`, in `x86-core`**: QEMU has no I219, so
+`opt/kosmos/e1000path` puts its 82574L through the I219's way three times.
+As the firmware left it: the frame to itself went out in **126 us**, no
+reset, four pings. Straight to the reset (`pch-reset`): bus requests
+stopped in **29 us**, the flag taken, the frame out in **140 us**, four
+pings. And with the transmitter held off (`e1000fault`): both tries said
+to have failed, with the registers, and `ping` saying there is no address.
+24 checks with `ethernet` and `ethernet_unsent`, in 24 seconds.
+
+**Its control** - a self-test that claims success - fails the third:
+"with the transmitter held off, the self-test did not say both tries
+failed". What QEMU cannot say is which of `e1000e`'s steps the I219
+needed, if any; the M700's log will, either "a frame to itself went out"
+or both tries with the transmitter's registers after each.
